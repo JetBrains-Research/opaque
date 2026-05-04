@@ -1921,7 +1921,7 @@
 <p>Pure-Python step-indexed scalar schedules.  Each public function
 returns a plain <code>Callable[[int], float]</code> that plugs straight into
 <code>torchopt.adamw(lr=...)</code>, <code>torchopt.adam(lr=...)</code>,
-<code>torchopt.sgd(lr=...)</code>, or <a href="../optimizers/"><code>opaque.dpsgd.adamw_bc</code></a>.
+<code>torchopt.sgd(lr=...)</code>, or <a href="../optimizers/"><code>opaque.optimizers.adamw</code></a>.
 TorchOpt's <code>scale_by_neg_lr</code> advances the schedule via the
 optimizer-state step counter — no manual <code>.step()</code> call.</p>
 <p>Public surface:</p>

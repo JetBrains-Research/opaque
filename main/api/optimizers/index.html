@@ -1638,46 +1638,46 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#why-torchopt" class="md-nav__link">
+  <a href="#api-shape" class="md-nav__link">
     <span class="md-ellipsis">
-      Why TorchOpt?
+      API shape
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#supported-optimizers" class="md-nav__link">
+  <a href="#whats-in-opaqueoptimizers" class="md-nav__link">
     <span class="md-ellipsis">
-      Supported Optimizers
+      What's in opaque.optimizers
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Supported Optimizers">
+    <nav class="md-nav" aria-label="What&#39;s in opaque.optimizers">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#sgd" class="md-nav__link">
+  <a href="#opaque-built-factories-dp-aware" class="md-nav__link">
     <span class="md-ellipsis">
-      SGD
+      Opaque-built factories (DP-aware)
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#adam" class="md-nav__link">
+  <a href="#re-exported-from-torchopt" class="md-nav__link">
     <span class="md-ellipsis">
-      Adam
+      Re-exported from torchopt
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#adamw" class="md-nav__link">
+  <a href="#not-re-exported" class="md-nav__link">
     <span class="md-ellipsis">
-      AdamW
+      Not re-exported
     </span>
   </a>
   
@@ -1689,9 +1689,60 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#complete-pattern" class="md-nav__link">
+  <a href="#dp-aware-kwargs" class="md-nav__link">
     <span class="md-ellipsis">
-      Complete Pattern
+      DP-aware kwargs
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="DP-aware kwargs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#noise_stddev" class="md-nav__link">
+    <span class="md-ellipsis">
+      noise_stddev
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#noisy_squared_grads" class="md-nav__link">
+    <span class="md-ellipsis">
+      noisy_squared_grads
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#complete-pattern-dp-sgd" class="md-nav__link">
+    <span class="md-ellipsis">
+      Complete pattern (DP-SGD)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#schedule-free-wrapper" class="md-nav__link">
+    <span class="md-ellipsis">
+      Schedule-free wrapper
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#serialisation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Serialisation
     </span>
   </a>
   
@@ -1700,97 +1751,16 @@
         <li class="md-nav__item">
   <a href="#ddp-compatibility" class="md-nav__link">
     <span class="md-ellipsis">
-      DDP Compatibility
+      DDP compatibility
     </span>
   </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#dp-aware-optimizers" class="md-nav__link">
-    <span class="md-ellipsis">
-      DP-Aware Optimizers
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="DP-Aware Optimizers">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#opaque.dpsgd.optimizers.adamw_bc" class="md-nav__link">
-    <span class="md-ellipsis">
-      adamw_bc
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="adamw_bc">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#opaque.dpsgd.optimizers.adamw_bc.AdamWBCState" class="md-nav__link">
-    <span class="md-ellipsis">
-      AdamWBCState
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#opaque.dpsgd.optimizers.adamw_bc.adamw_bc" class="md-nav__link">
-    <span class="md-ellipsis">
-      adamw_bc
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#opaque.dpftrl.optimizers.adamw_jme" class="md-nav__link">
-    <span class="md-ellipsis">
-      adamw_jme
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="adamw_jme">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#opaque.dpftrl.optimizers.adamw_jme.AdamWJMEState" class="md-nav__link">
-    <span class="md-ellipsis">
-      AdamWJMEState
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#opaque.dpftrl.optimizers.adamw_jme.adamw_jme" class="md-nav__link">
-    <span class="md-ellipsis">
-      adamw_jme
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
-      See Also
+      See also
     </span>
   </a>
   
@@ -1862,46 +1832,46 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#why-torchopt" class="md-nav__link">
+  <a href="#api-shape" class="md-nav__link">
     <span class="md-ellipsis">
-      Why TorchOpt?
+      API shape
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#supported-optimizers" class="md-nav__link">
+  <a href="#whats-in-opaqueoptimizers" class="md-nav__link">
     <span class="md-ellipsis">
-      Supported Optimizers
+      What's in opaque.optimizers
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Supported Optimizers">
+    <nav class="md-nav" aria-label="What&#39;s in opaque.optimizers">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#sgd" class="md-nav__link">
+  <a href="#opaque-built-factories-dp-aware" class="md-nav__link">
     <span class="md-ellipsis">
-      SGD
+      Opaque-built factories (DP-aware)
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#adam" class="md-nav__link">
+  <a href="#re-exported-from-torchopt" class="md-nav__link">
     <span class="md-ellipsis">
-      Adam
+      Re-exported from torchopt
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#adamw" class="md-nav__link">
+  <a href="#not-re-exported" class="md-nav__link">
     <span class="md-ellipsis">
-      AdamW
+      Not re-exported
     </span>
   </a>
   
@@ -1913,9 +1883,60 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#complete-pattern" class="md-nav__link">
+  <a href="#dp-aware-kwargs" class="md-nav__link">
     <span class="md-ellipsis">
-      Complete Pattern
+      DP-aware kwargs
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="DP-aware kwargs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#noise_stddev" class="md-nav__link">
+    <span class="md-ellipsis">
+      noise_stddev
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#noisy_squared_grads" class="md-nav__link">
+    <span class="md-ellipsis">
+      noisy_squared_grads
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#complete-pattern-dp-sgd" class="md-nav__link">
+    <span class="md-ellipsis">
+      Complete pattern (DP-SGD)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#schedule-free-wrapper" class="md-nav__link">
+    <span class="md-ellipsis">
+      Schedule-free wrapper
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#serialisation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Serialisation
     </span>
   </a>
   
@@ -1924,97 +1945,16 @@
         <li class="md-nav__item">
   <a href="#ddp-compatibility" class="md-nav__link">
     <span class="md-ellipsis">
-      DDP Compatibility
+      DDP compatibility
     </span>
   </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#dp-aware-optimizers" class="md-nav__link">
-    <span class="md-ellipsis">
-      DP-Aware Optimizers
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="DP-Aware Optimizers">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#opaque.dpsgd.optimizers.adamw_bc" class="md-nav__link">
-    <span class="md-ellipsis">
-      adamw_bc
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="adamw_bc">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#opaque.dpsgd.optimizers.adamw_bc.AdamWBCState" class="md-nav__link">
-    <span class="md-ellipsis">
-      AdamWBCState
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#opaque.dpsgd.optimizers.adamw_bc.adamw_bc" class="md-nav__link">
-    <span class="md-ellipsis">
-      adamw_bc
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#opaque.dpftrl.optimizers.adamw_jme" class="md-nav__link">
-    <span class="md-ellipsis">
-      adamw_jme
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="adamw_jme">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#opaque.dpftrl.optimizers.adamw_jme.AdamWJMEState" class="md-nav__link">
-    <span class="md-ellipsis">
-      AdamWJMEState
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#opaque.dpftrl.optimizers.adamw_jme.adamw_jme" class="md-nav__link">
-    <span class="md-ellipsis">
-      adamw_jme
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
-      See Also
+      See also
     </span>
   </a>
   
@@ -2040,1221 +1980,294 @@
 
 
 <h1 id="optimizers">Optimizers<a class="headerlink" href="#optimizers" title="Permanent link">&para;</a></h1>
-<p>Opaque does <strong>not</strong> bundle optimizers. Use <a href="https://torchopt.readthedocs.io/">TorchOpt</a>
-functional optimizers for the parameter-update step.</p>
+<p>Opaque ships its own functional optimizer library at
+<a href="#opaque.optimizers"><code>opaque.optimizers</code></a>: Opaque-built factories with
+DP-aware paths, plus a curated set of <code>torchopt</code> re-exports for the
+stateless primitives where vanilla behaviour is acceptable under DP
+noise.  All factories return
+<a href="https://torchopt.readthedocs.io/">TorchOpt</a> <code>GradientTransformation</code>s
+and accept optional DP-aware kwargs (<code>noise_stddev</code>,
+<code>noisy_squared_grads</code>) at update time.</p>
 <hr />
-<h2 id="why-torchopt">Why TorchOpt?<a class="headerlink" href="#why-torchopt" title="Permanent link">&para;</a></h2>
-<p>TorchOpt provides <strong>functional</strong> optimizers: no hidden mutable state, explicit
-<code>(updates, new_state) = optimizer.update(grads, state)</code> interface.  This matches
-Opaque's functional gradient pipeline (<code>clipped_grad → noise_fn → optimizer</code>).</p>
+<h2 id="api-shape">API shape<a class="headerlink" href="#api-shape" title="Permanent link">&para;</a></h2>
+<p>Functional: no hidden mutable state, explicit
+<code>(updates, new_state) = optimizer.update(grads, state)</code> interface.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torchopt</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">adam</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1"># Explicit state in, state out</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Explicit state in, state out</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
 </code></pre></div>
 <hr />
-<h2 id="supported-optimizers">Supported Optimizers<a class="headerlink" href="#supported-optimizers" title="Permanent link">&para;</a></h2>
-<p>Any TorchOpt functional optimizer works. The most common choices for DP training:</p>
-<h3 id="sgd">SGD<a class="headerlink" href="#sgd" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">sgd</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.9</span><span class="p">)</span>
+<h2 id="whats-in-opaqueoptimizers">What's in <code>opaque.optimizers</code><a class="headerlink" href="#whats-in-opaqueoptimizers" title="Permanent link">&para;</a></h2>
+<h3 id="opaque-built-factories-dp-aware">Opaque-built factories (DP-aware)<a class="headerlink" href="#opaque-built-factories-dp-aware" title="Permanent link">&para;</a></h3>
+<p>All accept <code>noise_stddev</code> (constructor default + per-step
+<code>update()</code> override) to activate the optimizer's noise-aware path.
+Where applicable they also accept <code>noisy_squared_grads</code> for JME
+paired-stream substitution.</p>
+<table>
+<thead>
+<tr>
+<th>Factory</th>
+<th>DP-aware mode</th>
+<th>When to use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>adamw</code></strong></td>
+<td>φ-EMA on v̂ (DP-AdamW-BC) + JME</td>
+<td>Default for DP training</td>
+</tr>
+<tr>
+<td><strong><code>ademamix</code></strong></td>
+<td>φ-EMA on v̂ + JME</td>
+<td>Long-horizon training (slow EMA captures long-range signal)</td>
+</tr>
+<tr>
+<td><strong><code>adafactor</code></strong></td>
+<td>(deferred)</td>
+<td>Memory-constrained large-LM fine-tuning; ship vanilla + WD only for now</td>
+</tr>
+<tr>
+<td><strong><code>lion</code></strong></td>
+<td>(planned: sign gating)</td>
+<td>Smaller state than Adam; vanilla works under noise but the gated mode is the real DP variant</td>
+</tr>
+<tr>
+<td><strong><code>rmsprop</code></strong></td>
+<td>φ-EMA on v + JME</td>
+<td>Adaptive without first moment; cheaper than Adam</td>
+</tr>
+<tr>
+<td><strong><code>adagrad</code></strong></td>
+<td>cumulative <code>Φ_acc</code> subtraction</td>
+<td>Sparse-gradient settings; <strong>the correction is mandatory</strong> — vanilla Adagrad's denominator runs away under DP noise</td>
+</tr>
+<tr>
+<td><strong><code>schedule_free</code></strong></td>
+<td>post-processing (transparent forward)</td>
+<td>Wrapper around any base optimizer; replaces external LR schedules</td>
+</tr>
+</tbody>
+</table>
+<p>Constructor knobs vary per optimizer (e.g. <code>decoupled_weight_decay</code>,
+<code>update_rms_clip</code> on <code>adamw</code> and <code>ademamix</code>); see the docstrings.</p>
+<h3 id="re-exported-from-torchopt">Re-exported from <code>torchopt</code><a class="headerlink" href="#re-exported-from-torchopt" title="Permanent link">&para;</a></h3>
+<p>For users who want a vanilla baseline or who're explicitly OK with the
+non-corrected behaviour under DP.  Same names as torchopt's, no DP-aware
+modes — slow under noise but functional.</p>
+<table>
+<thead>
+<tr>
+<th>Re-export</th>
+<th>DP behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sgd</code></td>
+<td>Update is unbiased (<code>E[g + ξ] = g</code>); momentum's variance is bounded but doesn't bias direction.  Canonical DP baseline.</td>
+</tr>
+<tr>
+<td><code>adam</code></td>
+<td>Has bias from the squared-noise term; bounded by EMA decay.  Slow without correction; prefer <code>adamw(decoupled_weight_decay=False, noise_stddev=σ)</code>.</td>
+</tr>
+<tr>
+<td><code>adadelta</code></td>
+<td>Two EMAs whose ratio partially self-corrects under noise.  Functional, not optimal.</td>
+</tr>
+<tr>
+<td><code>radam</code></td>
+<td>Same DP-BC story as Adam, just no Opaque-built variant yet.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="not-re-exported">Not re-exported<a class="headerlink" href="#not-re-exported" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>torchopt.adamax</code> — the max-norm tracker <code>v_t = max(β v_{t-1}, |g_t + ξ|)</code>
+  permanently absorbs the half-normal noise mean (<code>σ·√(2/π)</code>); per-coordinate
+  effective LR is floored by accumulated noise magnitude regardless of the
+  true gradient.  No clean DP-aware variant; for non-DP use,
+  <code>from torchopt import adamax</code> directly.</li>
+</ul>
+<hr />
+<h2 id="dp-aware-kwargs">DP-aware kwargs<a class="headerlink" href="#dp-aware-kwargs" title="Permanent link">&para;</a></h2>
+<p>Two optional kwargs on <code>update()</code> activate the optimizer's noise-aware
+behaviour.  Both default to the constructor-time value (or absent).</p>
+<h3 id="noise_stddev"><code>noise_stddev</code><a class="headerlink" href="#noise_stddev" title="Permanent link">&para;</a></h3>
+<p>Tells the optimizer the per-step noise σ.  Each optimizer activates
+whatever noise-aware machinery it has:</p>
+<table>
+<thead>
+<tr>
+<th>Optimizer</th>
+<th>What <code>noise_stddev</code> does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>adamw</code>, <code>ademamix</code></td>
+<td>β₂-EMA of σ², subtracted from v̂ before sqrt (Chooi et al., <a href="https://arxiv.org/abs/2511.07843">arXiv:2511.07843</a>)</td>
+</tr>
+<tr>
+<td><code>rmsprop</code></td>
+<td>α-EMA of σ², subtracted from v before sqrt (no <code>(1−α^t)</code> divide; v and φ accumulate at the same rate)</td>
+</tr>
+<tr>
+<td><code>adagrad</code></td>
+<td>Cumulative Σ σ², subtracted from v_acc before sqrt (no decay in either)</td>
+</tr>
+<tr>
+<td><code>lion</code></td>
+<td>(planned) sign gating when per-coordinate SNR is below threshold</td>
+</tr>
+<tr>
+<td><code>schedule_free</code></td>
+<td>Forwarded transparently to the wrapped base</td>
+</tr>
+</tbody>
+</table>
+<p>Constructor takes a default (scalar <code>float</code> or
+<a href="../clipping/#per-group-allocation"><code>PerGroup</code></a>); per-step override at
+<code>update()</code> time:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">noise_stddev</span><span class="o">=</span><span class="n">initial_sigma</span><span class="p">)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1"># Adaptive clipping changes the per-step σ → override per call:</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">updates</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">p</span><span class="p">,</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">noise_stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="adam">Adam<a class="headerlink" href="#adam" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">adam</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
+<p><code>noise_stddev = 0</code> (the default) disables the noise-aware path; the
+optimizer reduces to its standard math.</p>
+<h3 id="noisy_squared_grads"><code>noisy_squared_grads</code><a class="headerlink" href="#noisy_squared_grads" title="Permanent link">&para;</a></h3>
+<p>Substitutes a JME paired-stream privately-estimated <code>g²</code> in place of
+squaring the (already noised) gradient.  Required by <code>jme_noise()</code>'s
+output shape; opt-in everywhere it applies (Adam-family + RMSprop):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">jme_noise</span><span class="p">,</span> <span class="n">blt_strategy</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">blt_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">jme_noise</span><span class="p">(</span><span class="n">grad_template</span><span class="p">,</span> <span class="n">strategy</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># Per-step:</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noisy_sq</span><span class="p">),</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">p</span><span class="p">,</span> <span class="n">noisy_squared_grads</span><span class="o">=</span><span class="n">noisy_sq</span><span class="p">,</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="adamw">AdamW<a class="headerlink" href="#adamw" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+<p>Reference: Kalinin et al., <a href="https://arxiv.org/abs/2502.06597">arXiv:2502.06597</a>.</p>
+<p><code>noise_stddev</code> and <code>noisy_squared_grads</code> are <strong>mutually exclusive</strong> at
+any single <code>update()</code> call; passing both raises <code>ValueError</code>.</p>
+<hr />
+<h2 id="complete-pattern-dp-sgd">Complete pattern (DP-SGD)<a class="headerlink" href="#complete-pattern-dp-sgd" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torchopt</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Gradient pipeline</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="p">)</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="n">sigma</span> <span class="o">=</span> <span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">stddev</span><span class="o">=</span><span class="n">sigma</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="c1"># Optimizer with DP-AdamW-BC active</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">noise_stddev</span><span class="o">=</span><span class="n">sigma</span><span class="p">)</span>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>    <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
+<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>        <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">,</span>
+<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a>        <span class="n">noise_stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>  <span class="c1"># adaptive σ</span>
+<a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a>    <span class="p">)</span>
+<a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
 </code></pre></div>
 <hr />
-<h2 id="complete-pattern">Complete Pattern<a class="headerlink" href="#complete-pattern" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torchopt</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
+<h2 id="schedule-free-wrapper">Schedule-free wrapper<a class="headerlink" href="#schedule-free-wrapper" title="Permanent link">&para;</a></h2>
+<p><code>schedule_free</code> wraps any base <code>GradientTransformation</code> (Opaque-built
+or torchopt) with Defazio's schedule-free averaging
+(<a href="https://arxiv.org/abs/2405.15682">arXiv:2405.15682</a>).  Three weight
+sequences internally: <code>z</code> (raw iterate), <code>x</code> (Polyak-Ruppert average,
+the published params), <code>y = (1-β)z + βx</code> (forward-pass weights).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span><span class="p">,</span> <span class="n">schedule_free</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">schedule_free</span><span class="p">(</span><span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">),</span> <span class="n">beta</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span> <span class="n">warmup_steps</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># Gradient pipeline</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">)</span>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="c1"># Optimizer</span>
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">adam</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
-<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
-<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
-<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>    <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="c1"># Trainer treats params as y_t; wrapper internally maintains z, x.</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="c1"># At save / eval time, read the published x_t:</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers.schedule_free</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_eval_params</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="n">eval_params</span> <span class="o">=</span> <span class="n">get_eval_params</span><span class="p">(</span><span class="n">opt_state</span><span class="p">)</span>
 </code></pre></div>
+<p><strong>DP-utility note</strong>: under DP, <code>x_t = (1/n) Σ z_s</code> is a Polyak-Ruppert
+average of noised iterates.  When per-step iterate noise is approximately
+independent, <code>Var[x_n] ≈ Var[z]/n</code> — the published checkpoint has
+significantly lower noise than the final iterate at the same privacy
+budget.  This is a real DP-utility win specific to averaging-based
+methods.</p>
 <hr />
-<h2 id="ddp-compatibility">DDP Compatibility<a class="headerlink" href="#ddp-compatibility" title="Permanent link">&para;</a></h2>
-<p>When using <code>torch.nn.parallel.DistributedDataParallel</code>, Opaque's functional
-gradient pipeline runs <em>inside</em> each rank.  DDP handles the all-reduce of noisy
-gradients across ranks.  No changes to the clipping, noise, or optimizer API are
-needed.</p>
+<h2 id="serialisation">Serialisation<a class="headerlink" href="#serialisation" title="Permanent link">&para;</a></h2>
+<p><code>state_dict</code> / <code>load_state_dict</code> live in
+<code>opaque.optimizers.serialization</code> (a less-common building block, not
+in the package's top-level <code>__all__</code>).  Walks the chain state,
+encoding every tensor leaf and Python primitive into a flat
+<code>{path: value}</code> dict ready for <code>torch.save</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">state_dict</span><span class="p">,</span> <span class="n">load_state_dict</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">opt</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">state</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1"># ... train ...</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="c1"># Save</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">),</span> <span class="s2">&quot;opt.pt&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="c1"># Load — template must have the same shape (init from same params).</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="n">template</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="n">state</span> <span class="o">=</span> <span class="n">load_state_dict</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;opt.pt&quot;</span><span class="p">))</span>
+</code></pre></div>
+<p>Forward-compatible: paths missing from the saved dict keep the
+template's value, so optimizers that gain new state fields between
+releases load cleanly from older checkpoints.</p>
+<hr />
+<h2 id="ddp-compatibility">DDP compatibility<a class="headerlink" href="#ddp-compatibility" title="Permanent link">&para;</a></h2>
+<p>When using <code>torch.nn.parallel.DistributedDataParallel</code>, Opaque's
+functional gradient pipeline runs <em>inside</em> each rank.  DDP handles the
+all-reduce of noisy gradients across ranks; the optimizer state stays
+synchronised because <code>optimizer.update</code> is a pure function and all
+ranks receive identical noisy gradients after <code>sum_gradients</code> + noise
+addition with the same key on all ranks.</p>
 <p>Use <code>local_shard()</code> to partition the dataset across ranks and pass a
 per-rank key via <code>fold_in(key, rank)</code> to each <code>PoissonSampler</code>.</p>
 <hr />
-<h2 id="dp-aware-optimizers">DP-Aware Optimizers<a class="headerlink" href="#dp-aware-optimizers" title="Permanent link">&para;</a></h2>
-<p>Standard Adam's second moment is biased upward in DP training because it
-squares noised gradients (<span class="arithmatex">\(\tilde{g}^2 = g^2 + 2gz + z^2\)</span>).  Opaque provides
-two independent corrections — see the
-<a href="../../user-guide/optimizers/#the-second-moment-problem-in-dp-training">Optimizers User Guide</a>
-for details:</p>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong><code>adamw_bc</code></strong> — subtracts the known noise variance from <span class="arithmatex">\(\hat{v}_t\)</span>
-  (Chooi et al., <a href="https://arxiv.org/abs/2511.07843">arXiv:2511.07843</a>).
-  Works with any Gaussian noise source.  With <code>noise_stddev=0</code> (default),
-  identical to <code>torchopt.adamw</code>.</li>
-<li><strong><code>adamw_jme</code></strong> — uses a separately privatized <span class="arithmatex">\(g^2\)</span> estimate from JME
-  (Kalinin et al., <a href="https://arxiv.org/abs/2502.06597">arXiv:2502.06597</a>).
-  Requires MF correlated noise (<code>jme_noise</code>).</li>
-</ul>
-<p>These address the same problem from different angles and <strong>must not be
-combined</strong>.</p>
-
-
-<div class="doc doc-object doc-module">
-
-
-
-<h3 id="opaque.dpsgd.optimizers.adamw_bc" class="doc doc-heading">
-            <code>adamw_bc</code>
-
-
-<a href="#opaque.dpsgd.optimizers.adamw_bc" class="headerlink" title="Permanent link">&para;</a></h3>
-
-    <div class="doc doc-contents first">
-
-        <p>AdamW-BC optimizer: AdamW with DP bias correction.</p>
-<p>Implements Algorithm 1 (standard AdamW) and Algorithm 2 (AdamW-BC) from::</p>
-<div class="codehilite"><pre><span></span><code>Chooi et al., &quot;DP-AdamW: Investigating Decoupled Weight Decay and Bias
-Correction in Private Deep Learning&quot;, arXiv:2511.07843 (ICML 2025).
-</code></pre></div>
-
-<p>Algorithm 1 (<code>noise_stddev=0</code>, default):
-    Standard AdamW applied to (already noised) gradients.  Moment scaling
-    is mathematically identical to <code>torchopt.transform.scale_by_adam</code>;
-    weight decay and learning-rate application reuse torchopt transforms.</p>
-<p>Algorithm 2 (<code>noise_stddev &gt; 0</code>):
-    AdamW-BC.  Tracks an exponential moving average of the per-step
-    noise variance using the same beta_2 coefficient as the second moment,
-    then subtracts the bias-corrected noise EMA from v-hat_t::</p>
-<div class="codehilite"><pre><span></span><code><span class="w">    </span><span class="n">phi_t</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">beta_2</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">phi_</span><span class="p">{</span><span class="n">t</span><span class="o">-</span><span class="mi">1</span><span class="p">}</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="n">beta_2</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">Phi_t</span>
-<span class="w">    </span><span class="n">v_hat_corrected</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">max</span><span class="p">(</span><span class="n">v_hat_t</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">phi_t</span><span class="o">/</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="n">beta_2</span><span class="o">^</span><span class="n">t</span><span class="p">),</span><span class="w"> </span><span class="n">gamma</span><span class="p">)</span>
-
-<span class="n">This</span><span class="w"> </span><span class="n">correctly</span><span class="w"> </span><span class="n">handles</span><span class="w"> </span><span class="n">adaptive</span><span class="w"> </span><span class="n">clipping</span><span class="w"> </span><span class="p">(</span><span class="n">where</span><span class="w"> </span><span class="n">Phi_t</span><span class="w"> </span><span class="n">varies</span><span class="w"> </span><span class="n">per</span><span class="w"> </span><span class="n">step</span><span class="p">)</span>
-<span class="ow">and</span><span class="w"> </span><span class="n">reduces</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">paper</span><span class="s1">&#39;s constant subtraction when Phi is fixed.</span>
-</code></pre></div>
-
-<p>Follows TorchOpt's <code>GradientTransformation</code> protocol::</p>
-<div class="codehilite"><pre><span></span><code>state = opt.init(params)
-updates, state = opt.update(grads, state, params=params)
-params = torchopt.apply_updates(params, updates)
-</code></pre></div>
-
-
-
-
-
-
-
-
-
-
-  <div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-<div class="doc doc-object doc-class">
-
-
-
-<h4 id="opaque.dpsgd.optimizers.adamw_bc.AdamWBCState" class="doc doc-heading">
-            <code>AdamWBCState</code>
-
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
-  </span>
-
-<a href="#opaque.dpsgd.optimizers.adamw_bc.AdamWBCState" class="headerlink" title="Permanent link">&para;</a></h4>
-
-
-    <div class="doc doc-contents ">
-
-
-        <p>Immutable state for the bias-corrected moment scaling (Algorithm 2).</p>
-<p>This is the first element of the chain state returned by
-:func:<code>adamw_bc</code>.  The full optimizer state is a tuple
-<code>(AdamWBCState, wd_state, lr_state)</code>.</p>
-
-
-<p><span class="doc-section-title">Attributes:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td><code><span title="opaque.dpsgd.optimizers.adamw_bc.AdamWBCState.mu">mu</span></code></td>
-            <td>
-                  <code><span title="typing.Any">Any</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>First moment estimates (pytree matching params).</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="opaque.dpsgd.optimizers.adamw_bc.AdamWBCState.nu">nu</span></code></td>
-            <td>
-                  <code><span title="typing.Any">Any</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Second moment estimates (pytree matching params).</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="opaque.dpsgd.optimizers.adamw_bc.AdamWBCState.phi">phi</span></code></td>
-            <td>
-                  <code><span title="typing.Any">Any</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Noise variance EMA.  A <code>float</code> for scalar noise_stddev,
-or <code>dict[str, float]</code> for per-group noise_stddev.  Tracks
-the beta_2-weighted running average of the per-step noise
-variance Phi_t injected into gradients.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="opaque.dpsgd.optimizers.adamw_bc.AdamWBCState.step">step</span></code></td>
-            <td>
-                  <code><span title="int">int</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Number of update steps completed.</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-
-
-
-
-
-
-              <details class="quote">
-                <summary>Source code in <code>packages/opaque-dpsgd/src/opaque/dpsgd/optimizers/adamw_bc.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-95"> 95</a></span>
-<span class="normal"><a href="#__codelineno-0-96"> 96</a></span>
-<span class="normal"><a href="#__codelineno-0-97"> 97</a></span>
-<span class="normal"><a href="#__codelineno-0-98"> 98</a></span>
-<span class="normal"><a href="#__codelineno-0-99"> 99</a></span>
-<span class="normal"><a href="#__codelineno-0-100">100</a></span>
-<span class="normal"><a href="#__codelineno-0-101">101</a></span>
-<span class="normal"><a href="#__codelineno-0-102">102</a></span>
-<span class="normal"><a href="#__codelineno-0-103">103</a></span>
-<span class="normal"><a href="#__codelineno-0-104">104</a></span>
-<span class="normal"><a href="#__codelineno-0-105">105</a></span>
-<span class="normal"><a href="#__codelineno-0-106">106</a></span>
-<span class="normal"><a href="#__codelineno-0-107">107</a></span>
-<span class="normal"><a href="#__codelineno-0-108">108</a></span>
-<span class="normal"><a href="#__codelineno-0-109">109</a></span>
-<span class="normal"><a href="#__codelineno-0-110">110</a></span>
-<span class="normal"><a href="#__codelineno-0-111">111</a></span>
-<span class="normal"><a href="#__codelineno-0-112">112</a></span>
-<span class="normal"><a href="#__codelineno-0-113">113</a></span>
-<span class="normal"><a href="#__codelineno-0-114">114</a></span>
-<span class="normal"><a href="#__codelineno-0-115">115</a></span>
-<span class="normal"><a href="#__codelineno-0-116">116</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-95" name="__codelineno-0-95"></a><span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-0-96" name="__codelineno-0-96"></a><span class="k">class</span><span class="w"> </span><span class="nc">AdamWBCState</span><span class="p">:</span>
-<a id="__codelineno-0-97" name="__codelineno-0-97"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Immutable state for the bias-corrected moment scaling (Algorithm 2).</span>
-<a id="__codelineno-0-98" name="__codelineno-0-98"></a>
-<a id="__codelineno-0-99" name="__codelineno-0-99"></a><span class="sd">    This is the first element of the chain state returned by</span>
-<a id="__codelineno-0-100" name="__codelineno-0-100"></a><span class="sd">    :func:`adamw_bc`.  The full optimizer state is a tuple</span>
-<a id="__codelineno-0-101" name="__codelineno-0-101"></a><span class="sd">    ``(AdamWBCState, wd_state, lr_state)``.</span>
-<a id="__codelineno-0-102" name="__codelineno-0-102"></a>
-<a id="__codelineno-0-103" name="__codelineno-0-103"></a><span class="sd">    Attributes:</span>
-<a id="__codelineno-0-104" name="__codelineno-0-104"></a><span class="sd">        mu: First moment estimates (pytree matching params).</span>
-<a id="__codelineno-0-105" name="__codelineno-0-105"></a><span class="sd">        nu: Second moment estimates (pytree matching params).</span>
-<a id="__codelineno-0-106" name="__codelineno-0-106"></a><span class="sd">        phi: Noise variance EMA.  A ``float`` for scalar noise_stddev,</span>
-<a id="__codelineno-0-107" name="__codelineno-0-107"></a><span class="sd">            or ``dict[str, float]`` for per-group noise_stddev.  Tracks</span>
-<a id="__codelineno-0-108" name="__codelineno-0-108"></a><span class="sd">            the beta_2-weighted running average of the per-step noise</span>
-<a id="__codelineno-0-109" name="__codelineno-0-109"></a><span class="sd">            variance Phi_t injected into gradients.</span>
-<a id="__codelineno-0-110" name="__codelineno-0-110"></a><span class="sd">        step: Number of update steps completed.</span>
-<a id="__codelineno-0-111" name="__codelineno-0-111"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-112" name="__codelineno-0-112"></a>
-<a id="__codelineno-0-113" name="__codelineno-0-113"></a>    <span class="n">mu</span><span class="p">:</span> <span class="n">Any</span>
-<a id="__codelineno-0-114" name="__codelineno-0-114"></a>    <span class="n">nu</span><span class="p">:</span> <span class="n">Any</span>
-<a id="__codelineno-0-115" name="__codelineno-0-115"></a>    <span class="n">phi</span><span class="p">:</span> <span class="n">Any</span>
-<a id="__codelineno-0-116" name="__codelineno-0-116"></a>    <span class="n">step</span><span class="p">:</span> <span class="nb">int</span>
-</code></pre></div></td></tr></table></div>
-              </details>
-
-
-
-  <div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div>
-
-
-<div class="doc doc-object doc-function">
-
-
-<h4 id="opaque.dpsgd.optimizers.adamw_bc.adamw_bc" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">adamw_bc</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">0.001</span><span class="p">,</span> <span class="n">betas</span><span class="o">=</span><span class="p">(</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.999</span><span class="p">),</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-08</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">noise_stddev</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">bc_floor</span><span class="o">=</span><span class="mf">1e-08</span><span class="p">)</span></code>
-
-<a href="#opaque.dpsgd.optimizers.adamw_bc.adamw_bc" class="headerlink" title="Permanent link">&para;</a></h4>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Create an AdamW-BC optimizer.</p>
-<p>When <code>noise_stddev=0</code> (default), the moment scaling is identical to
-<code>torchopt.transform.scale_by_adam</code> (Algorithm 1, standard AdamW).</p>
-<p>When <code>noise_stddev &gt; 0</code>, the second moment is bias-corrected by
-tracking a beta_2-EMA of the noise variance and subtracting the
-bias-corrected EMA from v-hat (Algorithm 2, AdamW-BC)::</p>
-<div class="codehilite"><pre><span></span><code>phi_t = beta_2 <span class="gs">* phi_{t-1} + (1-beta_2) *</span> Phi_t
-v_hat_corrected = max(v_hat - phi_t/(1-beta_2^t), bc_floor)
-</code></pre></div>
-
-<p>The <code>noise_stddev</code> parameter sets the default.  It can be
-overridden per step via <code>opt.update(..., noise_stddev=current_stddev)</code>
-— this is necessary with adaptive clipping, where the sensitivity
-(and thus the injected noise variance) changes every step.</p>
-<p>When <code>noise_stddev</code> is a :class:<code>~opaque.utils.per_group.PerGroup</code>
-(from MSE-optimal per-group noise allocation), each parameter group
-has its own noise <strong>stddev</strong> looked up and squared internally.</p>
-<p>The optimizer expects gradients that are already clipped and noised.
-Clipping and noise injection are separate concerns handled by
-:func:<code>opaque.clipped_grad</code> and :func:<code>opaque.gaussian_noise</code>.</p>
-
-
-<p><span class="doc-section-title">Parameters:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-          <th>Default</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                <code>lr</code>
-            </td>
-            <td>
-                  <code><span title="float">float</span> | <span title="collections.abc.Callable">Callable</span>[[<span title="int">int</span>], <span title="float">float</span>]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Learning rate eta — a float or a callable <code>step -&gt; float</code>
-for LR schedules.</p>
-              </div>
-            </td>
-            <td>
-                  <code>0.001</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>betas</code>
-            </td>
-            <td>
-                  <code><span title="tuple">tuple</span>[<span title="float">float</span>, <span title="float">float</span>]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Coefficients (beta_1, beta_2) for moment estimation.</p>
-              </div>
-            </td>
-            <td>
-                  <code>(0.9, 0.999)</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>eps</code>
-            </td>
-            <td>
-                  <code><span title="float">float</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Denominator stability constant epsilon.</p>
-              </div>
-            </td>
-            <td>
-                  <code>1e-08</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>weight_decay</code>
-            </td>
-            <td>
-                  <code><span title="float">float</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Decoupled weight decay coefficient lambda.</p>
-              </div>
-            </td>
-            <td>
-                  <code>0.01</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>noise_stddev</code>
-            </td>
-            <td>
-                  <code><span title="float">float</span> | <span title="opaque.clipping.per_group.PerGroup">PerGroup</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Default DP noise stddev (sigma) for bias correction.
-The optimizer squares it internally to build Phi.
-A :class:<code>~opaque.utils.per_group.PerGroup</code> of <strong>stddevs</strong>
-(as returned by
-:func:<code>~opaque.dpsgd.noise.per_group_noise_stddev</code>) applies
-per-group correction (each group's stddev is squared
-internally).
-When <code>0</code>, moment scaling matches standard AdamW exactly.
-Can be overridden per step in <code>.update()</code>.</p>
-              </div>
-            </td>
-            <td>
-                  <code>0.0</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>bc_floor</code>
-            </td>
-            <td>
-                  <code><span title="float">float</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Minimum value gamma for the corrected second moment.
-Prevents division by zero in the BC variant.</p>
-              </div>
-            </td>
-            <td>
-                  <code>1e-08</code>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-    <p><span class="doc-section-title">Returns:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="torchopt.base.GradientTransformation">GradientTransformation</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>A <code>torchopt.base.GradientTransformation</code> with <code>.init</code> and</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="torchopt.base.GradientTransformation">GradientTransformation</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p><code>.update</code> methods.  The <code>.update</code> method accepts an optional</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="torchopt.base.GradientTransformation">GradientTransformation</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p><code>noise_stddev</code> keyword to override the default for that step.</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-        <p>Example (standard AdamW on noised gradients)::</p>
-<div class="codehilite"><pre><span></span><code>&gt;&gt;&gt; opt = adamw_bc(lr=1e-4, weight_decay=0.01)
-&gt;&gt;&gt; state = opt.init(params)
-&gt;&gt;&gt; updates, state = opt.update(noisy_grads, state, params=params)
-&gt;&gt;&gt; params = torchopt.apply_updates(params, updates)
-</code></pre></div>
-
-<p>Example (AdamW-BC, fixed noise)::</p>
-<div class="codehilite"><pre><span></span><code>&gt;&gt;&gt; noise_stddev = noise_multiplier * clip_state.sensitivity
-&gt;&gt;&gt; opt = adamw_bc(lr=1e-4, noise_stddev=noise_stddev)
-&gt;&gt;&gt; state = opt.init(params)
-&gt;&gt;&gt; updates, state = opt.update(noisy_grads, state, params=params)
-</code></pre></div>
-
-<p>Example (AdamW-BC, adaptive clipping)::</p>
-<div class="codehilite"><pre><span></span><code>&gt;&gt;&gt; opt = adamw_bc(lr=1e-4, noise_stddev=initial_stddev)
-&gt;&gt;&gt; state = opt.init(params)
-&gt;&gt;&gt; # Each step, pass current noise stddev:
-&gt;&gt;&gt; current_stddev = noise_multiplier * clip_state.sensitivity
-&gt;&gt;&gt; updates, state = opt.update(grads, state, params=params,
-<span class="k">...</span>                             noise_stddev=current_stddev)
-</code></pre></div>
-
-<p>Example (AdamW-BC, per-group noise)::</p>
-<div class="codehilite"><pre><span></span><code><span class="o">&gt;&gt;&gt;</span> <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise.per_group_noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">per_group_noise_stddev</span>
-<span class="o">&gt;&gt;&gt;</span> <span class="n">stddev</span> <span class="o">=</span> <span class="n">per_group_noise_stddev</span><span class="p">(</span><span class="n">clip_state</span><span class="p">,</span> <span class="n">noise_multiplier</span><span class="p">)</span>
-<span class="o">&gt;&gt;&gt;</span> <span class="n">opt</span> <span class="o">=</span> <span class="n">adamw_bc</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">,</span> <span class="n">noise_stddev</span><span class="o">=</span><span class="n">stddev</span><span class="p">)</span>
-</code></pre></div>
-
-
-<details class="references" open>
-  <summary>References</summary>
-  <p>Chooi et al., "DP-AdamW: Investigating Decoupled Weight Decay and
-Bias Correction in Private Deep Learning", arXiv:2511.07843 (2025).</p>
-</details>
-
-            <details class="quote">
-              <summary>Source code in <code>packages/opaque-dpsgd/src/opaque/dpsgd/optimizers/adamw_bc.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-240">240</a></span>
-<span class="normal"><a href="#__codelineno-0-241">241</a></span>
-<span class="normal"><a href="#__codelineno-0-242">242</a></span>
-<span class="normal"><a href="#__codelineno-0-243">243</a></span>
-<span class="normal"><a href="#__codelineno-0-244">244</a></span>
-<span class="normal"><a href="#__codelineno-0-245">245</a></span>
-<span class="normal"><a href="#__codelineno-0-246">246</a></span>
-<span class="normal"><a href="#__codelineno-0-247">247</a></span>
-<span class="normal"><a href="#__codelineno-0-248">248</a></span>
-<span class="normal"><a href="#__codelineno-0-249">249</a></span>
-<span class="normal"><a href="#__codelineno-0-250">250</a></span>
-<span class="normal"><a href="#__codelineno-0-251">251</a></span>
-<span class="normal"><a href="#__codelineno-0-252">252</a></span>
-<span class="normal"><a href="#__codelineno-0-253">253</a></span>
-<span class="normal"><a href="#__codelineno-0-254">254</a></span>
-<span class="normal"><a href="#__codelineno-0-255">255</a></span>
-<span class="normal"><a href="#__codelineno-0-256">256</a></span>
-<span class="normal"><a href="#__codelineno-0-257">257</a></span>
-<span class="normal"><a href="#__codelineno-0-258">258</a></span>
-<span class="normal"><a href="#__codelineno-0-259">259</a></span>
-<span class="normal"><a href="#__codelineno-0-260">260</a></span>
-<span class="normal"><a href="#__codelineno-0-261">261</a></span>
-<span class="normal"><a href="#__codelineno-0-262">262</a></span>
-<span class="normal"><a href="#__codelineno-0-263">263</a></span>
-<span class="normal"><a href="#__codelineno-0-264">264</a></span>
-<span class="normal"><a href="#__codelineno-0-265">265</a></span>
-<span class="normal"><a href="#__codelineno-0-266">266</a></span>
-<span class="normal"><a href="#__codelineno-0-267">267</a></span>
-<span class="normal"><a href="#__codelineno-0-268">268</a></span>
-<span class="normal"><a href="#__codelineno-0-269">269</a></span>
-<span class="normal"><a href="#__codelineno-0-270">270</a></span>
-<span class="normal"><a href="#__codelineno-0-271">271</a></span>
-<span class="normal"><a href="#__codelineno-0-272">272</a></span>
-<span class="normal"><a href="#__codelineno-0-273">273</a></span>
-<span class="normal"><a href="#__codelineno-0-274">274</a></span>
-<span class="normal"><a href="#__codelineno-0-275">275</a></span>
-<span class="normal"><a href="#__codelineno-0-276">276</a></span>
-<span class="normal"><a href="#__codelineno-0-277">277</a></span>
-<span class="normal"><a href="#__codelineno-0-278">278</a></span>
-<span class="normal"><a href="#__codelineno-0-279">279</a></span>
-<span class="normal"><a href="#__codelineno-0-280">280</a></span>
-<span class="normal"><a href="#__codelineno-0-281">281</a></span>
-<span class="normal"><a href="#__codelineno-0-282">282</a></span>
-<span class="normal"><a href="#__codelineno-0-283">283</a></span>
-<span class="normal"><a href="#__codelineno-0-284">284</a></span>
-<span class="normal"><a href="#__codelineno-0-285">285</a></span>
-<span class="normal"><a href="#__codelineno-0-286">286</a></span>
-<span class="normal"><a href="#__codelineno-0-287">287</a></span>
-<span class="normal"><a href="#__codelineno-0-288">288</a></span>
-<span class="normal"><a href="#__codelineno-0-289">289</a></span>
-<span class="normal"><a href="#__codelineno-0-290">290</a></span>
-<span class="normal"><a href="#__codelineno-0-291">291</a></span>
-<span class="normal"><a href="#__codelineno-0-292">292</a></span>
-<span class="normal"><a href="#__codelineno-0-293">293</a></span>
-<span class="normal"><a href="#__codelineno-0-294">294</a></span>
-<span class="normal"><a href="#__codelineno-0-295">295</a></span>
-<span class="normal"><a href="#__codelineno-0-296">296</a></span>
-<span class="normal"><a href="#__codelineno-0-297">297</a></span>
-<span class="normal"><a href="#__codelineno-0-298">298</a></span>
-<span class="normal"><a href="#__codelineno-0-299">299</a></span>
-<span class="normal"><a href="#__codelineno-0-300">300</a></span>
-<span class="normal"><a href="#__codelineno-0-301">301</a></span>
-<span class="normal"><a href="#__codelineno-0-302">302</a></span>
-<span class="normal"><a href="#__codelineno-0-303">303</a></span>
-<span class="normal"><a href="#__codelineno-0-304">304</a></span>
-<span class="normal"><a href="#__codelineno-0-305">305</a></span>
-<span class="normal"><a href="#__codelineno-0-306">306</a></span>
-<span class="normal"><a href="#__codelineno-0-307">307</a></span>
-<span class="normal"><a href="#__codelineno-0-308">308</a></span>
-<span class="normal"><a href="#__codelineno-0-309">309</a></span>
-<span class="normal"><a href="#__codelineno-0-310">310</a></span>
-<span class="normal"><a href="#__codelineno-0-311">311</a></span>
-<span class="normal"><a href="#__codelineno-0-312">312</a></span>
-<span class="normal"><a href="#__codelineno-0-313">313</a></span>
-<span class="normal"><a href="#__codelineno-0-314">314</a></span>
-<span class="normal"><a href="#__codelineno-0-315">315</a></span>
-<span class="normal"><a href="#__codelineno-0-316">316</a></span>
-<span class="normal"><a href="#__codelineno-0-317">317</a></span>
-<span class="normal"><a href="#__codelineno-0-318">318</a></span>
-<span class="normal"><a href="#__codelineno-0-319">319</a></span>
-<span class="normal"><a href="#__codelineno-0-320">320</a></span>
-<span class="normal"><a href="#__codelineno-0-321">321</a></span>
-<span class="normal"><a href="#__codelineno-0-322">322</a></span>
-<span class="normal"><a href="#__codelineno-0-323">323</a></span>
-<span class="normal"><a href="#__codelineno-0-324">324</a></span>
-<span class="normal"><a href="#__codelineno-0-325">325</a></span>
-<span class="normal"><a href="#__codelineno-0-326">326</a></span>
-<span class="normal"><a href="#__codelineno-0-327">327</a></span>
-<span class="normal"><a href="#__codelineno-0-328">328</a></span>
-<span class="normal"><a href="#__codelineno-0-329">329</a></span>
-<span class="normal"><a href="#__codelineno-0-330">330</a></span>
-<span class="normal"><a href="#__codelineno-0-331">331</a></span>
-<span class="normal"><a href="#__codelineno-0-332">332</a></span>
-<span class="normal"><a href="#__codelineno-0-333">333</a></span>
-<span class="normal"><a href="#__codelineno-0-334">334</a></span>
-<span class="normal"><a href="#__codelineno-0-335">335</a></span>
-<span class="normal"><a href="#__codelineno-0-336">336</a></span>
-<span class="normal"><a href="#__codelineno-0-337">337</a></span>
-<span class="normal"><a href="#__codelineno-0-338">338</a></span>
-<span class="normal"><a href="#__codelineno-0-339">339</a></span>
-<span class="normal"><a href="#__codelineno-0-340">340</a></span>
-<span class="normal"><a href="#__codelineno-0-341">341</a></span>
-<span class="normal"><a href="#__codelineno-0-342">342</a></span>
-<span class="normal"><a href="#__codelineno-0-343">343</a></span>
-<span class="normal"><a href="#__codelineno-0-344">344</a></span>
-<span class="normal"><a href="#__codelineno-0-345">345</a></span>
-<span class="normal"><a href="#__codelineno-0-346">346</a></span>
-<span class="normal"><a href="#__codelineno-0-347">347</a></span>
-<span class="normal"><a href="#__codelineno-0-348">348</a></span>
-<span class="normal"><a href="#__codelineno-0-349">349</a></span>
-<span class="normal"><a href="#__codelineno-0-350">350</a></span>
-<span class="normal"><a href="#__codelineno-0-351">351</a></span>
-<span class="normal"><a href="#__codelineno-0-352">352</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-240" name="__codelineno-0-240"></a><span class="k">def</span><span class="w"> </span><span class="nf">adamw_bc</span><span class="p">(</span>
-<a id="__codelineno-0-241" name="__codelineno-0-241"></a>    <span class="n">lr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1e-3</span><span class="p">,</span>
-<a id="__codelineno-0-242" name="__codelineno-0-242"></a>    <span class="n">betas</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.999</span><span class="p">),</span>
-<a id="__codelineno-0-243" name="__codelineno-0-243"></a>    <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-8</span><span class="p">,</span>
-<a id="__codelineno-0-244" name="__codelineno-0-244"></a>    <span class="n">weight_decay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
-<a id="__codelineno-0-245" name="__codelineno-0-245"></a>    <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-0-246" name="__codelineno-0-246"></a>    <span class="n">noise_stddev</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">PerGroup</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
-<a id="__codelineno-0-247" name="__codelineno-0-247"></a>    <span class="n">bc_floor</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-8</span><span class="p">,</span>
-<a id="__codelineno-0-248" name="__codelineno-0-248"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GradientTransformation</span><span class="p">:</span>
-<a id="__codelineno-0-249" name="__codelineno-0-249"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Create an AdamW-BC optimizer.</span>
-<a id="__codelineno-0-250" name="__codelineno-0-250"></a>
-<a id="__codelineno-0-251" name="__codelineno-0-251"></a><span class="sd">    When ``noise_stddev=0`` (default), the moment scaling is identical to</span>
-<a id="__codelineno-0-252" name="__codelineno-0-252"></a><span class="sd">    ``torchopt.transform.scale_by_adam`` (Algorithm 1, standard AdamW).</span>
-<a id="__codelineno-0-253" name="__codelineno-0-253"></a>
-<a id="__codelineno-0-254" name="__codelineno-0-254"></a><span class="sd">    When ``noise_stddev &gt; 0``, the second moment is bias-corrected by</span>
-<a id="__codelineno-0-255" name="__codelineno-0-255"></a><span class="sd">    tracking a beta_2-EMA of the noise variance and subtracting the</span>
-<a id="__codelineno-0-256" name="__codelineno-0-256"></a><span class="sd">    bias-corrected EMA from v-hat (Algorithm 2, AdamW-BC)::</span>
-<a id="__codelineno-0-257" name="__codelineno-0-257"></a>
-<a id="__codelineno-0-258" name="__codelineno-0-258"></a><span class="sd">        phi_t = beta_2 * phi_{t-1} + (1-beta_2) * Phi_t</span>
-<a id="__codelineno-0-259" name="__codelineno-0-259"></a><span class="sd">        v_hat_corrected = max(v_hat - phi_t/(1-beta_2^t), bc_floor)</span>
-<a id="__codelineno-0-260" name="__codelineno-0-260"></a>
-<a id="__codelineno-0-261" name="__codelineno-0-261"></a><span class="sd">    The ``noise_stddev`` parameter sets the default.  It can be</span>
-<a id="__codelineno-0-262" name="__codelineno-0-262"></a><span class="sd">    overridden per step via ``opt.update(..., noise_stddev=current_stddev)``</span>
-<a id="__codelineno-0-263" name="__codelineno-0-263"></a><span class="sd">    — this is necessary with adaptive clipping, where the sensitivity</span>
-<a id="__codelineno-0-264" name="__codelineno-0-264"></a><span class="sd">    (and thus the injected noise variance) changes every step.</span>
-<a id="__codelineno-0-265" name="__codelineno-0-265"></a>
-<a id="__codelineno-0-266" name="__codelineno-0-266"></a><span class="sd">    When ``noise_stddev`` is a :class:`~opaque.utils.per_group.PerGroup`</span>
-<a id="__codelineno-0-267" name="__codelineno-0-267"></a><span class="sd">    (from MSE-optimal per-group noise allocation), each parameter group</span>
-<a id="__codelineno-0-268" name="__codelineno-0-268"></a><span class="sd">    has its own noise **stddev** looked up and squared internally.</span>
-<a id="__codelineno-0-269" name="__codelineno-0-269"></a>
-<a id="__codelineno-0-270" name="__codelineno-0-270"></a><span class="sd">    The optimizer expects gradients that are already clipped and noised.</span>
-<a id="__codelineno-0-271" name="__codelineno-0-271"></a><span class="sd">    Clipping and noise injection are separate concerns handled by</span>
-<a id="__codelineno-0-272" name="__codelineno-0-272"></a><span class="sd">    :func:`opaque.clipped_grad` and :func:`opaque.gaussian_noise`.</span>
-<a id="__codelineno-0-273" name="__codelineno-0-273"></a>
-<a id="__codelineno-0-274" name="__codelineno-0-274"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-275" name="__codelineno-0-275"></a><span class="sd">        lr: Learning rate eta — a float or a callable ``step -&gt; float``</span>
-<a id="__codelineno-0-276" name="__codelineno-0-276"></a><span class="sd">            for LR schedules.</span>
-<a id="__codelineno-0-277" name="__codelineno-0-277"></a><span class="sd">        betas: Coefficients (beta_1, beta_2) for moment estimation.</span>
-<a id="__codelineno-0-278" name="__codelineno-0-278"></a><span class="sd">        eps: Denominator stability constant epsilon.</span>
-<a id="__codelineno-0-279" name="__codelineno-0-279"></a><span class="sd">        weight_decay: Decoupled weight decay coefficient lambda.</span>
-<a id="__codelineno-0-280" name="__codelineno-0-280"></a><span class="sd">        noise_stddev: Default DP noise stddev (sigma) for bias correction.</span>
-<a id="__codelineno-0-281" name="__codelineno-0-281"></a><span class="sd">            The optimizer squares it internally to build Phi.</span>
-<a id="__codelineno-0-282" name="__codelineno-0-282"></a><span class="sd">            A :class:`~opaque.utils.per_group.PerGroup` of **stddevs**</span>
-<a id="__codelineno-0-283" name="__codelineno-0-283"></a><span class="sd">            (as returned by</span>
-<a id="__codelineno-0-284" name="__codelineno-0-284"></a><span class="sd">            :func:`~opaque.dpsgd.noise.per_group_noise_stddev`) applies</span>
-<a id="__codelineno-0-285" name="__codelineno-0-285"></a><span class="sd">            per-group correction (each group&#39;s stddev is squared</span>
-<a id="__codelineno-0-286" name="__codelineno-0-286"></a><span class="sd">            internally).</span>
-<a id="__codelineno-0-287" name="__codelineno-0-287"></a><span class="sd">            When ``0``, moment scaling matches standard AdamW exactly.</span>
-<a id="__codelineno-0-288" name="__codelineno-0-288"></a><span class="sd">            Can be overridden per step in ``.update()``.</span>
-<a id="__codelineno-0-289" name="__codelineno-0-289"></a><span class="sd">        bc_floor: Minimum value gamma for the corrected second moment.</span>
-<a id="__codelineno-0-290" name="__codelineno-0-290"></a><span class="sd">            Prevents division by zero in the BC variant.</span>
-<a id="__codelineno-0-291" name="__codelineno-0-291"></a>
-<a id="__codelineno-0-292" name="__codelineno-0-292"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-293" name="__codelineno-0-293"></a><span class="sd">        A ``torchopt.base.GradientTransformation`` with ``.init`` and</span>
-<a id="__codelineno-0-294" name="__codelineno-0-294"></a><span class="sd">        ``.update`` methods.  The ``.update`` method accepts an optional</span>
-<a id="__codelineno-0-295" name="__codelineno-0-295"></a><span class="sd">        ``noise_stddev`` keyword to override the default for that step.</span>
-<a id="__codelineno-0-296" name="__codelineno-0-296"></a>
-<a id="__codelineno-0-297" name="__codelineno-0-297"></a><span class="sd">    Example (standard AdamW on noised gradients)::</span>
-<a id="__codelineno-0-298" name="__codelineno-0-298"></a>
-<a id="__codelineno-0-299" name="__codelineno-0-299"></a><span class="sd">        &gt;&gt;&gt; opt = adamw_bc(lr=1e-4, weight_decay=0.01)</span>
-<a id="__codelineno-0-300" name="__codelineno-0-300"></a><span class="sd">        &gt;&gt;&gt; state = opt.init(params)</span>
-<a id="__codelineno-0-301" name="__codelineno-0-301"></a><span class="sd">        &gt;&gt;&gt; updates, state = opt.update(noisy_grads, state, params=params)</span>
-<a id="__codelineno-0-302" name="__codelineno-0-302"></a><span class="sd">        &gt;&gt;&gt; params = torchopt.apply_updates(params, updates)</span>
-<a id="__codelineno-0-303" name="__codelineno-0-303"></a>
-<a id="__codelineno-0-304" name="__codelineno-0-304"></a><span class="sd">    Example (AdamW-BC, fixed noise)::</span>
-<a id="__codelineno-0-305" name="__codelineno-0-305"></a>
-<a id="__codelineno-0-306" name="__codelineno-0-306"></a><span class="sd">        &gt;&gt;&gt; noise_stddev = noise_multiplier * clip_state.sensitivity</span>
-<a id="__codelineno-0-307" name="__codelineno-0-307"></a><span class="sd">        &gt;&gt;&gt; opt = adamw_bc(lr=1e-4, noise_stddev=noise_stddev)</span>
-<a id="__codelineno-0-308" name="__codelineno-0-308"></a><span class="sd">        &gt;&gt;&gt; state = opt.init(params)</span>
-<a id="__codelineno-0-309" name="__codelineno-0-309"></a><span class="sd">        &gt;&gt;&gt; updates, state = opt.update(noisy_grads, state, params=params)</span>
-<a id="__codelineno-0-310" name="__codelineno-0-310"></a>
-<a id="__codelineno-0-311" name="__codelineno-0-311"></a><span class="sd">    Example (AdamW-BC, adaptive clipping)::</span>
-<a id="__codelineno-0-312" name="__codelineno-0-312"></a>
-<a id="__codelineno-0-313" name="__codelineno-0-313"></a><span class="sd">        &gt;&gt;&gt; opt = adamw_bc(lr=1e-4, noise_stddev=initial_stddev)</span>
-<a id="__codelineno-0-314" name="__codelineno-0-314"></a><span class="sd">        &gt;&gt;&gt; state = opt.init(params)</span>
-<a id="__codelineno-0-315" name="__codelineno-0-315"></a><span class="sd">        &gt;&gt;&gt; # Each step, pass current noise stddev:</span>
-<a id="__codelineno-0-316" name="__codelineno-0-316"></a><span class="sd">        &gt;&gt;&gt; current_stddev = noise_multiplier * clip_state.sensitivity</span>
-<a id="__codelineno-0-317" name="__codelineno-0-317"></a><span class="sd">        &gt;&gt;&gt; updates, state = opt.update(grads, state, params=params,</span>
-<a id="__codelineno-0-318" name="__codelineno-0-318"></a><span class="sd">        ...                             noise_stddev=current_stddev)</span>
-<a id="__codelineno-0-319" name="__codelineno-0-319"></a>
-<a id="__codelineno-0-320" name="__codelineno-0-320"></a><span class="sd">    Example (AdamW-BC, per-group noise)::</span>
-<a id="__codelineno-0-321" name="__codelineno-0-321"></a>
-<a id="__codelineno-0-322" name="__codelineno-0-322"></a><span class="sd">        &gt;&gt;&gt; from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev</span>
-<a id="__codelineno-0-323" name="__codelineno-0-323"></a><span class="sd">        &gt;&gt;&gt; stddev = per_group_noise_stddev(clip_state, noise_multiplier)</span>
-<a id="__codelineno-0-324" name="__codelineno-0-324"></a><span class="sd">        &gt;&gt;&gt; opt = adamw_bc(lr=1e-4, noise_stddev=stddev)</span>
-<a id="__codelineno-0-325" name="__codelineno-0-325"></a>
-<a id="__codelineno-0-326" name="__codelineno-0-326"></a><span class="sd">    References:</span>
-<a id="__codelineno-0-327" name="__codelineno-0-327"></a><span class="sd">        Chooi et al., &quot;DP-AdamW: Investigating Decoupled Weight Decay and</span>
-<a id="__codelineno-0-328" name="__codelineno-0-328"></a><span class="sd">        Bias Correction in Private Deep Learning&quot;, arXiv:2511.07843 (2025).</span>
-<a id="__codelineno-0-329" name="__codelineno-0-329"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-330" name="__codelineno-0-330"></a>    <span class="k">if</span> <span class="n">eps</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-331" name="__codelineno-0-331"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;eps must be positive, got </span><span class="si">{</span><span class="n">eps</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-332" name="__codelineno-0-332"></a>    <span class="k">if</span> <span class="n">bc_floor</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-333" name="__codelineno-0-333"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;bc_floor must be positive, got </span><span class="si">{</span><span class="n">bc_floor</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-334" name="__codelineno-0-334"></a>    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">betas</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
-<a id="__codelineno-0-335" name="__codelineno-0-335"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;betas must contain exactly two values, got </span><span class="si">{</span><span class="n">betas</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-336" name="__codelineno-0-336"></a>    <span class="n">b1</span><span class="p">,</span> <span class="n">b2</span> <span class="o">=</span> <span class="n">betas</span>
-<a id="__codelineno-0-337" name="__codelineno-0-337"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">b1</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-338" name="__codelineno-0-338"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;beta_1 must satisfy 0 &lt;= beta_1 &lt; 1, got </span><span class="si">{</span><span class="n">b1</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-339" name="__codelineno-0-339"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">b2</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-340" name="__codelineno-0-340"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;beta_2 must satisfy 0 &lt;= beta_2 &lt; 1, got </span><span class="si">{</span><span class="n">b2</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-341" name="__codelineno-0-341"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">noise_stddev</span><span class="p">,</span> <span class="n">PerGroup</span><span class="p">):</span>
-<a id="__codelineno-0-342" name="__codelineno-0-342"></a>        <span class="k">for</span> <span class="n">gname</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">noise_stddev</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-<a id="__codelineno-0-343" name="__codelineno-0-343"></a>            <span class="k">if</span> <span class="n">val</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-344" name="__codelineno-0-344"></a>                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-<a id="__codelineno-0-345" name="__codelineno-0-345"></a>                    <span class="sa">f</span><span class="s2">&quot;noise_stddev must be non-negative for all groups, &quot;</span>
-<a id="__codelineno-0-346" name="__codelineno-0-346"></a>                    <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">val</span><span class="si">}</span><span class="s2"> for group &#39;</span><span class="si">{</span><span class="n">gname</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
-<a id="__codelineno-0-347" name="__codelineno-0-347"></a>                <span class="p">)</span>
-<a id="__codelineno-0-348" name="__codelineno-0-348"></a>    <span class="k">elif</span> <span class="n">noise_stddev</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-349" name="__codelineno-0-349"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;noise_stddev must be non-negative, got </span><span class="si">{</span><span class="n">noise_stddev</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-350" name="__codelineno-0-350"></a>
-<a id="__codelineno-0-351" name="__codelineno-0-351"></a>    <span class="n">adam_bc</span> <span class="o">=</span> <span class="n">_scale_by_adam_bc</span><span class="p">(</span><span class="n">betas</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">betas</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">eps</span><span class="p">,</span> <span class="n">noise_stddev</span><span class="p">,</span> <span class="n">bc_floor</span><span class="p">)</span>
-<a id="__codelineno-0-352" name="__codelineno-0-352"></a>    <span class="k">return</span> <span class="n">_adamw_chain</span><span class="p">(</span><span class="n">adam_bc</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span> <span class="n">weight_decay</span><span class="p">)</span>
-</code></pre></div></td></tr></table></div>
-            </details>
-    </div>
-
-</div>
-
-
-
-  </div>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-module">
-
-
-
-<h3 id="opaque.dpftrl.optimizers.adamw_jme" class="doc doc-heading">
-            <code>adamw_jme</code>
-
-
-<a href="#opaque.dpftrl.optimizers.adamw_jme" class="headerlink" title="Permanent link">&para;</a></h3>
-
-    <div class="doc doc-contents first">
-
-        <p>AdamW-JME optimizer: AdamW with JME dual-stream noise.</p>
-<p>Paired with :func:<code>~opaque.dpftrl.noise.jme_noise</code>, this optimizer
-consumes noisy gradients (first moment) and noisy squared gradients
-(second moment) produced by the JME mechanism::</p>
-<div class="codehilite"><pre><span></span><code>Kalinin, Upadhyay, Lampert, &quot;Continual Release Moment Estimation
-with Differential Privacy&quot;, arXiv:2502.06597 (2025).
-</code></pre></div>
-
-<p>Instead of squaring the noised gradient (which amplifies noise in
-the second moment), JME provides a separately privatized estimate
-of g² via a matrix-factorization mechanism.</p>
-<p>Follows TorchOpt's <code>GradientTransformation</code> protocol::</p>
-<div class="codehilite"><pre><span></span><code>state = opt.init(params)
-updates, state = opt.update(grads, state, params=params,
-                            noisy_squared_grads=noisy_sq)
-params = torchopt.apply_updates(params, updates)
-</code></pre></div>
-
-
-
-
-
-
-
-
-
-
-  <div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-<div class="doc doc-object doc-class">
-
-
-
-<h4 id="opaque.dpftrl.optimizers.adamw_jme.AdamWJMEState" class="doc doc-heading">
-            <code>AdamWJMEState</code>
-
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
-  </span>
-
-<a href="#opaque.dpftrl.optimizers.adamw_jme.AdamWJMEState" class="headerlink" title="Permanent link">&para;</a></h4>
-
-
-    <div class="doc doc-contents ">
-
-
-        <p>Immutable state for the JME moment-scaling transform.</p>
-<p>First element of the chain state returned by :func:<code>adamw_jme</code>.</p>
-
-
-<p><span class="doc-section-title">Attributes:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td><code><span title="opaque.dpftrl.optimizers.adamw_jme.AdamWJMEState.mu">mu</span></code></td>
-            <td>
-                  <code><span title="typing.Any">Any</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>First-moment EMA (pytree matching params).</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="opaque.dpftrl.optimizers.adamw_jme.AdamWJMEState.nu">nu</span></code></td>
-            <td>
-                  <code><span title="typing.Any">Any</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Second-moment EMA (pytree matching params).</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="opaque.dpftrl.optimizers.adamw_jme.AdamWJMEState.step">step</span></code></td>
-            <td>
-                  <code><span title="int">int</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Update count (1-indexed after first call).</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-
-
-
-
-
-
-              <details class="quote">
-                <summary>Source code in <code>packages/opaque-dpftrl/src/opaque/dpftrl/optimizers/adamw_jme.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-85">85</a></span>
-<span class="normal"><a href="#__codelineno-0-86">86</a></span>
-<span class="normal"><a href="#__codelineno-0-87">87</a></span>
-<span class="normal"><a href="#__codelineno-0-88">88</a></span>
-<span class="normal"><a href="#__codelineno-0-89">89</a></span>
-<span class="normal"><a href="#__codelineno-0-90">90</a></span>
-<span class="normal"><a href="#__codelineno-0-91">91</a></span>
-<span class="normal"><a href="#__codelineno-0-92">92</a></span>
-<span class="normal"><a href="#__codelineno-0-93">93</a></span>
-<span class="normal"><a href="#__codelineno-0-94">94</a></span>
-<span class="normal"><a href="#__codelineno-0-95">95</a></span>
-<span class="normal"><a href="#__codelineno-0-96">96</a></span>
-<span class="normal"><a href="#__codelineno-0-97">97</a></span>
-<span class="normal"><a href="#__codelineno-0-98">98</a></span>
-<span class="normal"><a href="#__codelineno-0-99">99</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-85" name="__codelineno-0-85"></a><span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-0-86" name="__codelineno-0-86"></a><span class="k">class</span><span class="w"> </span><span class="nc">AdamWJMEState</span><span class="p">:</span>
-<a id="__codelineno-0-87" name="__codelineno-0-87"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Immutable state for the JME moment-scaling transform.</span>
-<a id="__codelineno-0-88" name="__codelineno-0-88"></a>
-<a id="__codelineno-0-89" name="__codelineno-0-89"></a><span class="sd">    First element of the chain state returned by :func:`adamw_jme`.</span>
-<a id="__codelineno-0-90" name="__codelineno-0-90"></a>
-<a id="__codelineno-0-91" name="__codelineno-0-91"></a><span class="sd">    Attributes:</span>
-<a id="__codelineno-0-92" name="__codelineno-0-92"></a><span class="sd">        mu: First-moment EMA (pytree matching params).</span>
-<a id="__codelineno-0-93" name="__codelineno-0-93"></a><span class="sd">        nu: Second-moment EMA (pytree matching params).</span>
-<a id="__codelineno-0-94" name="__codelineno-0-94"></a><span class="sd">        step: Update count (1-indexed after first call).</span>
-<a id="__codelineno-0-95" name="__codelineno-0-95"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-96" name="__codelineno-0-96"></a>
-<a id="__codelineno-0-97" name="__codelineno-0-97"></a>    <span class="n">mu</span><span class="p">:</span> <span class="n">Any</span>
-<a id="__codelineno-0-98" name="__codelineno-0-98"></a>    <span class="n">nu</span><span class="p">:</span> <span class="n">Any</span>
-<a id="__codelineno-0-99" name="__codelineno-0-99"></a>    <span class="n">step</span><span class="p">:</span> <span class="nb">int</span>
-</code></pre></div></td></tr></table></div>
-              </details>
-
-
-
-  <div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div>
-
-
-<div class="doc doc-object doc-function">
-
-
-<h4 id="opaque.dpftrl.optimizers.adamw_jme.adamw_jme" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">adamw_jme</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">0.001</span><span class="p">,</span> <span class="n">betas</span><span class="o">=</span><span class="p">(</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.999</span><span class="p">),</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-08</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span></code>
-
-<a href="#opaque.dpftrl.optimizers.adamw_jme.adamw_jme" class="headerlink" title="Permanent link">&para;</a></h4>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Create an AdamW-JME optimizer (AdamW with JME dual-stream noise).</p>
-<p>Composes:</p>
-<ol>
-<li>JME moment scaling (custom — external <code>noisy_squared_grads</code>)</li>
-<li>Decoupled weight decay (<code>torchopt.transform.add_decayed_weights</code>)</li>
-<li>Learning rate (<code>scale_by_neg_lr</code> — supports callable schedules)</li>
-</ol>
-<p>With <code>weight_decay=0</code> (default) this is plain Adam per the JME
-paper.  With <code>weight_decay &gt; 0</code> it is AdamW (decoupled — weight
-decay bypasses the moment EMAs).</p>
-<p>The <code>noisy_squared_grads</code> kwarg on <code>update()</code> provides the
-privately-estimated second moment from :func:<code>~opaque.dpftrl.noise.jme_noise</code>.</p>
-
-
-<p><span class="doc-section-title">Parameters:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-          <th>Default</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                <code>lr</code>
-            </td>
-            <td>
-                  <code><span title="float">float</span> | <span title="collections.abc.Callable">Callable</span>[[<span title="int">int</span>], <span title="float">float</span>]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Learning rate — a float or a callable <code>step -&gt; float</code>
-for LR schedules.</p>
-              </div>
-            </td>
-            <td>
-                  <code>0.001</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>betas</code>
-            </td>
-            <td>
-                  <code><span title="tuple">tuple</span>[<span title="float">float</span>, <span title="float">float</span>]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p><code>(beta1, beta2)</code> for moment estimation.</p>
-              </div>
-            </td>
-            <td>
-                  <code>(0.9, 0.999)</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>eps</code>
-            </td>
-            <td>
-                  <code><span title="float">float</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Denominator stability constant.</p>
-              </div>
-            </td>
-            <td>
-                  <code>1e-08</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>weight_decay</code>
-            </td>
-            <td>
-                  <code><span title="float">float</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Decoupled weight decay (default 0 = pure Adam).</p>
-              </div>
-            </td>
-            <td>
-                  <code>0.0</code>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-    <p><span class="doc-section-title">Returns:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="torchopt.base.GradientTransformation">GradientTransformation</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>A <code>torchopt.base.GradientTransformation</code>.</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-        <p>Example::</p>
-<div class="codehilite"><pre><span></span><code>optimizer = adamw_jme(lr=1e-3, weight_decay=0.01)
-opt_state = optimizer.init(params)
-
-(noisy_grads, noisy_sq), noise_state = noise_fn(grads, noise_state)
-updates, opt_state = optimizer.update(
-    noisy_grads, opt_state,
-    params=params, noisy_squared_grads=noisy_sq,
-)
-params = torchopt.apply_updates(params, updates)
-</code></pre></div>
-
-
-<details class="references" open>
-  <summary>References</summary>
-  <p>Kalinin, Upadhyay, Lampert, "Continual Release Moment Estimation
-with Differential Privacy", arXiv:2502.06597 (2025).</p>
-</details>
-
-            <details class="quote">
-              <summary>Source code in <code>packages/opaque-dpftrl/src/opaque/dpftrl/optimizers/adamw_jme.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-169">169</a></span>
-<span class="normal"><a href="#__codelineno-0-170">170</a></span>
-<span class="normal"><a href="#__codelineno-0-171">171</a></span>
-<span class="normal"><a href="#__codelineno-0-172">172</a></span>
-<span class="normal"><a href="#__codelineno-0-173">173</a></span>
-<span class="normal"><a href="#__codelineno-0-174">174</a></span>
-<span class="normal"><a href="#__codelineno-0-175">175</a></span>
-<span class="normal"><a href="#__codelineno-0-176">176</a></span>
-<span class="normal"><a href="#__codelineno-0-177">177</a></span>
-<span class="normal"><a href="#__codelineno-0-178">178</a></span>
-<span class="normal"><a href="#__codelineno-0-179">179</a></span>
-<span class="normal"><a href="#__codelineno-0-180">180</a></span>
-<span class="normal"><a href="#__codelineno-0-181">181</a></span>
-<span class="normal"><a href="#__codelineno-0-182">182</a></span>
-<span class="normal"><a href="#__codelineno-0-183">183</a></span>
-<span class="normal"><a href="#__codelineno-0-184">184</a></span>
-<span class="normal"><a href="#__codelineno-0-185">185</a></span>
-<span class="normal"><a href="#__codelineno-0-186">186</a></span>
-<span class="normal"><a href="#__codelineno-0-187">187</a></span>
-<span class="normal"><a href="#__codelineno-0-188">188</a></span>
-<span class="normal"><a href="#__codelineno-0-189">189</a></span>
-<span class="normal"><a href="#__codelineno-0-190">190</a></span>
-<span class="normal"><a href="#__codelineno-0-191">191</a></span>
-<span class="normal"><a href="#__codelineno-0-192">192</a></span>
-<span class="normal"><a href="#__codelineno-0-193">193</a></span>
-<span class="normal"><a href="#__codelineno-0-194">194</a></span>
-<span class="normal"><a href="#__codelineno-0-195">195</a></span>
-<span class="normal"><a href="#__codelineno-0-196">196</a></span>
-<span class="normal"><a href="#__codelineno-0-197">197</a></span>
-<span class="normal"><a href="#__codelineno-0-198">198</a></span>
-<span class="normal"><a href="#__codelineno-0-199">199</a></span>
-<span class="normal"><a href="#__codelineno-0-200">200</a></span>
-<span class="normal"><a href="#__codelineno-0-201">201</a></span>
-<span class="normal"><a href="#__codelineno-0-202">202</a></span>
-<span class="normal"><a href="#__codelineno-0-203">203</a></span>
-<span class="normal"><a href="#__codelineno-0-204">204</a></span>
-<span class="normal"><a href="#__codelineno-0-205">205</a></span>
-<span class="normal"><a href="#__codelineno-0-206">206</a></span>
-<span class="normal"><a href="#__codelineno-0-207">207</a></span>
-<span class="normal"><a href="#__codelineno-0-208">208</a></span>
-<span class="normal"><a href="#__codelineno-0-209">209</a></span>
-<span class="normal"><a href="#__codelineno-0-210">210</a></span>
-<span class="normal"><a href="#__codelineno-0-211">211</a></span>
-<span class="normal"><a href="#__codelineno-0-212">212</a></span>
-<span class="normal"><a href="#__codelineno-0-213">213</a></span>
-<span class="normal"><a href="#__codelineno-0-214">214</a></span>
-<span class="normal"><a href="#__codelineno-0-215">215</a></span>
-<span class="normal"><a href="#__codelineno-0-216">216</a></span>
-<span class="normal"><a href="#__codelineno-0-217">217</a></span>
-<span class="normal"><a href="#__codelineno-0-218">218</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-169" name="__codelineno-0-169"></a><span class="k">def</span><span class="w"> </span><span class="nf">adamw_jme</span><span class="p">(</span>
-<a id="__codelineno-0-170" name="__codelineno-0-170"></a>    <span class="n">lr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1e-3</span><span class="p">,</span>
-<a id="__codelineno-0-171" name="__codelineno-0-171"></a>    <span class="n">betas</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.999</span><span class="p">),</span>
-<a id="__codelineno-0-172" name="__codelineno-0-172"></a>    <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-8</span><span class="p">,</span>
-<a id="__codelineno-0-173" name="__codelineno-0-173"></a>    <span class="n">weight_decay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
-<a id="__codelineno-0-174" name="__codelineno-0-174"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GradientTransformation</span><span class="p">:</span>
-<a id="__codelineno-0-175" name="__codelineno-0-175"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Create an AdamW-JME optimizer (AdamW with JME dual-stream noise).</span>
-<a id="__codelineno-0-176" name="__codelineno-0-176"></a>
-<a id="__codelineno-0-177" name="__codelineno-0-177"></a><span class="sd">    Composes:</span>
-<a id="__codelineno-0-178" name="__codelineno-0-178"></a>
-<a id="__codelineno-0-179" name="__codelineno-0-179"></a><span class="sd">    1. JME moment scaling (custom — external ``noisy_squared_grads``)</span>
-<a id="__codelineno-0-180" name="__codelineno-0-180"></a><span class="sd">    2. Decoupled weight decay (``torchopt.transform.add_decayed_weights``)</span>
-<a id="__codelineno-0-181" name="__codelineno-0-181"></a><span class="sd">    3. Learning rate (``scale_by_neg_lr`` — supports callable schedules)</span>
-<a id="__codelineno-0-182" name="__codelineno-0-182"></a>
-<a id="__codelineno-0-183" name="__codelineno-0-183"></a><span class="sd">    With ``weight_decay=0`` (default) this is plain Adam per the JME</span>
-<a id="__codelineno-0-184" name="__codelineno-0-184"></a><span class="sd">    paper.  With ``weight_decay &gt; 0`` it is AdamW (decoupled — weight</span>
-<a id="__codelineno-0-185" name="__codelineno-0-185"></a><span class="sd">    decay bypasses the moment EMAs).</span>
-<a id="__codelineno-0-186" name="__codelineno-0-186"></a>
-<a id="__codelineno-0-187" name="__codelineno-0-187"></a><span class="sd">    The ``noisy_squared_grads`` kwarg on ``update()`` provides the</span>
-<a id="__codelineno-0-188" name="__codelineno-0-188"></a><span class="sd">    privately-estimated second moment from :func:`~opaque.dpftrl.noise.jme_noise`.</span>
-<a id="__codelineno-0-189" name="__codelineno-0-189"></a>
-<a id="__codelineno-0-190" name="__codelineno-0-190"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-191" name="__codelineno-0-191"></a><span class="sd">        lr: Learning rate — a float or a callable ``step -&gt; float``</span>
-<a id="__codelineno-0-192" name="__codelineno-0-192"></a><span class="sd">            for LR schedules.</span>
-<a id="__codelineno-0-193" name="__codelineno-0-193"></a><span class="sd">        betas: ``(beta1, beta2)`` for moment estimation.</span>
-<a id="__codelineno-0-194" name="__codelineno-0-194"></a><span class="sd">        eps: Denominator stability constant.</span>
-<a id="__codelineno-0-195" name="__codelineno-0-195"></a><span class="sd">        weight_decay: Decoupled weight decay (default 0 = pure Adam).</span>
-<a id="__codelineno-0-196" name="__codelineno-0-196"></a>
-<a id="__codelineno-0-197" name="__codelineno-0-197"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-198" name="__codelineno-0-198"></a><span class="sd">        A ``torchopt.base.GradientTransformation``.</span>
-<a id="__codelineno-0-199" name="__codelineno-0-199"></a>
-<a id="__codelineno-0-200" name="__codelineno-0-200"></a><span class="sd">    Example::</span>
-<a id="__codelineno-0-201" name="__codelineno-0-201"></a>
-<a id="__codelineno-0-202" name="__codelineno-0-202"></a><span class="sd">        optimizer = adamw_jme(lr=1e-3, weight_decay=0.01)</span>
-<a id="__codelineno-0-203" name="__codelineno-0-203"></a><span class="sd">        opt_state = optimizer.init(params)</span>
-<a id="__codelineno-0-204" name="__codelineno-0-204"></a>
-<a id="__codelineno-0-205" name="__codelineno-0-205"></a><span class="sd">        (noisy_grads, noisy_sq), noise_state = noise_fn(grads, noise_state)</span>
-<a id="__codelineno-0-206" name="__codelineno-0-206"></a><span class="sd">        updates, opt_state = optimizer.update(</span>
-<a id="__codelineno-0-207" name="__codelineno-0-207"></a><span class="sd">            noisy_grads, opt_state,</span>
-<a id="__codelineno-0-208" name="__codelineno-0-208"></a><span class="sd">            params=params, noisy_squared_grads=noisy_sq,</span>
-<a id="__codelineno-0-209" name="__codelineno-0-209"></a><span class="sd">        )</span>
-<a id="__codelineno-0-210" name="__codelineno-0-210"></a><span class="sd">        params = torchopt.apply_updates(params, updates)</span>
-<a id="__codelineno-0-211" name="__codelineno-0-211"></a>
-<a id="__codelineno-0-212" name="__codelineno-0-212"></a><span class="sd">    References:</span>
-<a id="__codelineno-0-213" name="__codelineno-0-213"></a><span class="sd">        Kalinin, Upadhyay, Lampert, &quot;Continual Release Moment Estimation</span>
-<a id="__codelineno-0-214" name="__codelineno-0-214"></a><span class="sd">        with Differential Privacy&quot;, arXiv:2502.06597 (2025).</span>
-<a id="__codelineno-0-215" name="__codelineno-0-215"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-216" name="__codelineno-0-216"></a>    <span class="n">b1</span><span class="p">,</span> <span class="n">b2</span> <span class="o">=</span> <span class="n">betas</span>
-<a id="__codelineno-0-217" name="__codelineno-0-217"></a>    <span class="n">adam_scale</span> <span class="o">=</span> <span class="n">_scale_by_adam_jme</span><span class="p">(</span><span class="n">b1</span><span class="p">,</span> <span class="n">b2</span><span class="p">,</span> <span class="n">eps</span><span class="p">)</span>
-<a id="__codelineno-0-218" name="__codelineno-0-218"></a>    <span class="k">return</span> <span class="n">_adamw_chain</span><span class="p">(</span><span class="n">adam_scale</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span> <span class="n">weight_decay</span><span class="p">)</span>
-</code></pre></div></td></tr></table></div>
-            </details>
-    </div>
-
-</div>
-
-
-
-  </div>
-
-    </div>
-
-</div><h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
-<ul>
-<li><a href="../clipping/">Gradient Clipping API</a> — includes <code>adaptive_clipped_grad()</code> and <code>auto_clipped_grad()</code></li>
-<li><a href="../../user-guide/optimizers/">Optimizers User Guide</a></li>
-<li><a href="../../tutorials/llm_finetuning/">Fine-tuning an LLM Tutorial</a></li>
-<li><a href="https://torchopt.readthedocs.io/">TorchOpt Documentation</a></li>
+<li><a href="../../user-guide/optimizers/">Optimizers User Guide</a> — concept-level
+  explanation of the second-moment problem, when to use which DP mode.</li>
+<li><a href="../clipping/">Gradient Clipping API</a> — <code>clipped_grad</code>,
+  <code>adaptive_clipped_grad</code>, <code>auto_clipped_grad</code>, <code>PerGroup</code>.</li>
+<li><a href="../schedules/">Schedules API</a> — LR schedules that pair with
+  optimizer factories.</li>
+<li><a href="https://torchopt.readthedocs.io/">TorchOpt Documentation</a> — for
+  re-exports and lower-level transforms.</li>
 </ul>
 
 
