@@ -2,10 +2,6 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from opaque.patches.transformers.runtime.loss_mapping import apply_loss_mapping_patch
-
-apply_loss_mapping_patch(cross_entropy=True)
-
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(),
     reason="Kernel patch compatibility tests require CUDA/Triton",
@@ -88,16 +84,3 @@ class TestCrossEntropyPatches:
         assert logits.grad is not None, "No gradient through patched loss"
         assert not torch.isnan(logits.grad).any(), "NaN in loss gradients"
         assert not torch.isinf(logits.grad).any(), "Inf in loss gradients"
-
-    def test_loss_mapping_patched(self):
-        """LOSS_MAPPING should point to Opaque loss function after patching."""
-        from opaque.patches.transformers.components.cross_entropy import (
-            _opaque_causal_lm_loss,
-        )
-
-        try:
-            from transformers.loss.loss_utils import LOSS_MAPPING
-        except ImportError:
-            pytest.skip("transformers not available")
-        if torch.cuda.is_available():
-            assert LOSS_MAPPING.get("ForCausalLM") is _opaque_causal_lm_loss

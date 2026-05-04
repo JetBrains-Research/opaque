@@ -14,7 +14,7 @@ Patched components:
 - RMSNorm: Llama-style, Gemma-style, OLMo2-style, GLM4-style, and Gemma3-style RMSNorm modules (incl. q_norm/k_norm rebinds inside Gemma3Attention / Exaone4Attention)
 - Fused add + post-attention RMSNorm on decoder layers with Llama-style residual ordering (Llama, Mistral/Ministral, Qwen2/3, SmolLM3, Gemma, Phi-3, Granite). OLMo2/OLMo3/Cohere/Cohere2/Gemma3/Exaone4 keep this OFF because their decoder layers apply ``post_attention_layernorm`` between attention output and the residual add (incompatible with the fused primitive's residual-first contract).
 - RoPE: apply_rotary_pos_emb for all supported models (standard half-split rotation)
-- Cross-entropy loss: ForCausalLM loss via LOSS_MAPPING (fp32 fallback)
+- Cross-entropy loss: per-model ForCausalLM ``loss_function`` override (fp32 fallback)
 - Fused linear + CE: ForCausalLM.forward replaced to skip lm_head materialization (bf16/fp16)
 - LoRA: peft.tuners.lora.Linear forward + explicit fused QKV (Opaque_LoRA_QKV) and MLP (Opaque_LoRA_MLP) when ``apply_model_patches()`` is called on a PEFT-wrapped model
 """

@@ -203,6 +203,52 @@ def test_activation_kwarg_gates_family_selected_activation_patch(monkeypatch):
     assert getattr(FakeMLP.forward, "__opaque_patched__", False)
 
 
+def test_cross_entropy_sets_loss_function_on_model_instance(monkeypatch):
+    import torch
+
+    from opaque.patches.transformers.components.cross_entropy import (
+        _opaque_causal_lm_loss,
+    )
+
+    module_name = "public_api_fake_loss_function_module"
+    mod = types.ModuleType(module_name)
+
+    def original_loss(*args, **kwargs):
+        return None
+
+    class FakeForCausalLM(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.loss_function = original_loss
+
+        def forward(self, *args, **kwargs):
+            return None
+
+    mod.FakeForCausalLM = FakeForCausalLM
+    monkeypatch.setitem(sys.modules, module_name, mod)
+
+    fam = make_apply_family_patches(
+        family="public_api_test_loss_function_patch",
+        module_path=module_name,
+    )
+    apply = make_apply_model_patches(
+        family="public_api_test_loss_function_patch",
+        family_apply=fam,
+        module_path=module_name,
+        classes={"causal_lm": "FakeForCausalLM"},
+    )
+
+    patched = FakeForCausalLM()
+    untouched = FakeForCausalLM()
+
+    apply(patched, performance=True, compat=False, cross_entropy=False)
+    assert patched.loss_function is original_loss
+
+    apply(patched, performance=True, compat=False, cross_entropy=True)
+    assert patched.loss_function is _opaque_causal_lm_loss
+    assert untouched.loss_function is original_loss
+
+
 # ----------------------------------------------------------------------------
 # family_name detection
 # ----------------------------------------------------------------------------

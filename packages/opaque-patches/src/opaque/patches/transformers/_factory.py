@@ -29,6 +29,7 @@ from opaque.patches.transformers._router import _patch_forward
 from opaque.patches.transformers.components.batchify import apply_batchify_patch
 from opaque.patches.transformers.components.cross_entropy import (
     _make_fused_ce_causal_lm_forward,
+    apply_causal_lm_loss_function_patch,
 )
 from opaque.patches.transformers.components.fused_add_rms_norm import (
     _fused_add_rms_fac_gemma,
@@ -229,29 +230,20 @@ def make_apply_model_patches(
                         model,
                     )
 
-        # Cross-entropy: per-instance ``XForCausalLM.forward`` patch +
-        # the global ``LOSS_MAPPING["ForCausalLM"]`` registry update.
-        # Both belong to the cross_entropy=True request:
-        # the per-instance patch routes ``model(...)`` through the fused
-        # CE wrapper, and LOSS_MAPPING covers paths inside HF that look
-        # the loss up by string ("ForCausalLM" → opaque's fused CE).
-        # The LOSS_MAPPING set is idempotent; calling per-model is safe.
+        # Cross-entropy: patch ``XForCausalLM.forward`` and attach the
+        # Opaque causal-LM loss function to the current model instance.
+        # This avoids mutating HuggingFace's process-global loss registry.
         if kwargs.get("cross_entropy", performance):
             causal_lm_class = classes.get("causal_lm")
             if causal_lm_class is not None:
+                causal_lm_obj = getattr(mod, causal_lm_class, None)
                 _patch_forward(
-                    getattr(mod, causal_lm_class, None),
+                    causal_lm_obj,
                     _make_fused_ce_causal_lm_forward,
                     model,
                 )
-            try:
-                from opaque.patches.transformers.runtime.loss_mapping import (
-                    apply_loss_mapping_patch,
-                )
-
-                apply_loss_mapping_patch(cross_entropy=True)
-            except ImportError:
-                pass
+                if causal_lm_obj is not None:
+                    apply_causal_lm_loss_function_patch(model, causal_lm_obj)
 
         # vmap-safety patches on the causal-LM class.
         causal_lm_class = classes.get("causal_lm")
