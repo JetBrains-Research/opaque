@@ -28,16 +28,18 @@ from opaque.patches.transformers import (
     register_rms_norm_kind,
     supported_families,
 )
-from opaque.patches.transformers._registry import _FAMILY_REGISTRY
+from opaque.patches.transformers._registry import SUPPORTED_FAMILIES, _FAMILY_REGISTRY
 
 
 @pytest.fixture
 def _restore_registry():
     """Snapshot/restore the family registry around tests that mutate it."""
     snapshot = dict(_FAMILY_REGISTRY)
+    supported_snapshot = list(SUPPORTED_FAMILIES)
     yield
     _FAMILY_REGISTRY.clear()
     _FAMILY_REGISTRY.update(snapshot)
+    SUPPORTED_FAMILIES[:] = supported_snapshot
 
 
 def _passthrough_factory(orig):
@@ -279,6 +281,59 @@ def test_family_factory_accepts_none_to_skip_concern():
     )
     closure = {c.cell_contents for c in (apply.__closure__ or ())}
     assert None in closure  # one of the skip-this slots
+
+
+def test_family_factory_tracks_idempotency_per_enabled_concern(monkeypatch):
+    from opaque.patches.transformers._family import _reset_patched_families
+
+    _reset_patched_families()
+    module_name = "public_api_fake_family_module"
+    mod = types.ModuleType(module_name)
+
+    def original_repeat_kv(x):
+        return x
+
+    def original_eager_attention_forward(x):
+        return x
+
+    def original_rope(x):
+        return x
+
+    def replacement_repeat_kv(x):
+        return x
+
+    def replacement_eager_attention_forward(x):
+        return x
+
+    def replacement_rope(x):
+        return x
+
+    mod.repeat_kv = original_repeat_kv
+    mod.eager_attention_forward = original_eager_attention_forward
+    mod.apply_rotary_pos_emb = original_rope
+    monkeypatch.setitem(sys.modules, module_name, mod)
+
+    apply = make_apply_family_patches(
+        family="public_api_test_family_concern_tracking",
+        module_path=module_name,
+        repeat_kv_replacement=replacement_repeat_kv,
+        eager_attention_replacement=replacement_eager_attention_forward,
+        rope_replacement=replacement_rope,
+        masking_module_patcher=None,
+    )
+
+    apply(performance=False, compat=False)
+    assert mod.repeat_kv is original_repeat_kv
+    assert mod.eager_attention_forward is original_eager_attention_forward
+    assert mod.apply_rotary_pos_emb is original_rope
+
+    apply(performance=False, compat=True)
+    assert mod.repeat_kv is replacement_repeat_kv
+    assert mod.eager_attention_forward is replacement_eager_attention_forward
+    assert mod.apply_rotary_pos_emb is original_rope
+
+    apply(performance=True, compat=False)
+    assert mod.apply_rotary_pos_emb is replacement_rope
 
 
 # ----------------------------------------------------------------------------

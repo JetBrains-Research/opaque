@@ -16,9 +16,11 @@ regardless of how many model *instances* exist.
 Per-class patches (``LlamaMLP.forward``, ``LlamaRMSNorm.forward``, etc.)
 live in :mod:`._factory` and run per-model-instance.
 
-Idempotency: keyed on family name in :data:`_PATCHED_FAMILIES`.  Calling
-``apply_llama_family_patches()`` twice in the same process is a no-op
-the second time.  Tests that need to re-apply can clear the set via
+Idempotency: keyed on family name and enabled concern in
+:data:`_PATCHED_FAMILIES`.  Calling ``apply_llama_family_patches()``
+twice with the same enabled concerns in the same process is a no-op the
+second time, while a later call can still enable a concern that was
+previously disabled. Tests that need to re-apply can clear the cache via
 :func:`_reset_patched_families`.
 """
 
@@ -39,7 +41,7 @@ from opaque.patches.transformers.components.rope import _opaque_apply_rotary_pos
 log = logging.getLogger(__name__)
 
 
-_PATCHED_FAMILIES: set[str] = set()
+_PATCHED_FAMILIES: dict[str, set[str]] = {}
 
 
 def _reset_patched_families() -> None:
@@ -114,33 +116,54 @@ def make_apply_family_patches(
     """
 
     def apply(*, performance: bool = True, compat: bool = True, **kwargs) -> None:
-        if family in _PATCHED_FAMILIES:
+        eager_attention = kwargs.get("eager_attention", compat)
+        rope = kwargs.get("rope", performance)
+        requested_concerns = set()
+        if eager_attention:
+            requested_concerns.add("eager_attention")
+        if rope:
+            requested_concerns.add("rope")
+        if not requested_concerns:
             return
-        _PATCHED_FAMILIES.add(family)
+
+        patched_concerns = _PATCHED_FAMILIES.get(family, set())
+        if requested_concerns <= patched_concerns:
+            return
 
         try:
             mod = importlib.import_module(module_path)
         except ImportError:
             return
 
-        eager_attention = kwargs.get("eager_attention", compat)
-        rope = kwargs.get("rope", performance)
+        patched_now: set[str] = set()
 
-        if eager_attention:
+        if eager_attention and "eager_attention" not in patched_concerns:
+            patched = False
             if repeat_kv_replacement is not None and hasattr(mod, "repeat_kv"):
                 mod.repeat_kv = repeat_kv_replacement
+                patched = True
             if eager_attention_replacement is not None and hasattr(
                 mod, "eager_attention_forward"
             ):
                 mod.eager_attention_forward = eager_attention_replacement
+                patched = True
             if masking_module_patcher is not None:
-                masking_module_patcher(mod)
+                masking_result = masking_module_patcher(mod)
+                if masking_result is not False:
+                    patched = True
+            if patched:
+                patched_now.add("eager_attention")
         if (
             rope
+            and "rope" not in patched_concerns
             and rope_replacement is not None
             and hasattr(mod, "apply_rotary_pos_emb")
         ):
             mod.apply_rotary_pos_emb = rope_replacement
+            patched_now.add("rope")
+
+        if patched_now:
+            _PATCHED_FAMILIES.setdefault(family, set()).update(patched_now)
 
     apply.__name__ = f"apply_{family}_family_patches"
     apply.__qualname__ = apply.__name__

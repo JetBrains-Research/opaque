@@ -1,9 +1,10 @@
 import pytest
-from opaque.patches import apply_runtime_patches
 import torch
 import torch.nn.functional as F
 
-apply_runtime_patches(cross_entropy=True)
+from opaque.patches.transformers.runtime.loss_mapping import apply_loss_mapping_patch
+
+apply_loss_mapping_patch(cross_entropy=True)
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(),
