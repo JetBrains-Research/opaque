@@ -6,6 +6,11 @@ Opaque ships its own functional optimizer library at
 protocol and accept optional DP-aware kwargs (``noise_stddev``,
 ``noisy_squared_grads``) at update time.
 
+The library does **not** re-export torchopt primitives — Opaque ships
+only what it adds value to.  For vanilla SGD / Adam / RMSprop / etc.
+in a non-DP baseline or custom training loop, import them from
+torchopt directly: ``from torchopt import sgd``.
+
 ---
 
 ## API shape
@@ -29,9 +34,7 @@ params = torchopt.apply_updates(params, updates)
 
 ## Supported Optimizers
 
-Single import path: everything below lives at ``opaque.optimizers``.
-
-**Opaque-built** (DP-aware modes via ``update()`` kwargs):
+The library ships:
 
 - ``opaque.optimizers.adamw`` — universal Adam / AdamW; optional DP
   modes via ``noise_stddev`` (φ-EMA bias correction) or
@@ -43,20 +46,29 @@ Single import path: everything below lives at ``opaque.optimizers``.
 - ``opaque.optimizers.adafactor`` — Adafactor (factored second moment;
   vanilla + WD only in this release).
 - ``opaque.optimizers.schedule_free`` — wrapper around any base
-  optimizer implementing Defazio's schedule-free averaging.
+  ``GradientTransformation`` implementing Defazio's schedule-free
+  averaging.  Composes with Opaque-built factories or torchopt
+  primitives interchangeably.
 
-**Re-exported from torchopt** (stateless primitives, no DP-aware modes):
-
-- ``opaque.optimizers.sgd`` — vanilla / Polyak-momentum SGD.
-- ``opaque.optimizers.adam``, ``adagrad``, ``adadelta``, ``adamax``,
-  ``radam``, ``rmsprop``.
+For vanilla SGD / Adam / RMSprop / etc., import directly from torchopt:
 
 ```python
-from opaque.optimizers import sgd, adamw, schedule_free
+import torchopt
+from opaque.optimizers import adamw, schedule_free
 
-opt = sgd(lr=0.01, momentum=0.9)
-opt = schedule_free(adamw(lr=1e-3))
+opt = torchopt.sgd(lr=0.01, momentum=0.9)        # canonical DP baseline
+opt = adamw(lr=1e-3, noise_stddev=sigma)         # DP-AdamW-BC
+opt = schedule_free(adamw(lr=1e-3))              # composition
+opt = schedule_free(torchopt.sgd(lr=0.01))       # also fine
 ```
+
+**A note on torchopt primitives under DP**: most are slow-but-functional
+(`sgd`, `adam`, `rmsprop`, `radam`, `adadelta`).  Two are unsafe and
+should be avoided for DP training: `torchopt.adagrad` (cumulative `∑ g²`
+accumulates `t·σ²` with no decay; denominator runs away) and
+`torchopt.adamax` (max-norm absorbs the half-normal noise mean
+`σ·√(2/π)` permanently; per-coordinate LR is floored by noise).
+Use ``adamw(..., noise_stddev=σ)`` for adaptive DP training instead.
 
 ---
 

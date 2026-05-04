@@ -119,7 +119,7 @@ from opaque.dpftrl.noise import (
     mf_noise,
     jme_noise,
 )
-from opaque.optimizers import adamw, sgd
+from opaque.optimizers import adamw
 from opaque.core.profiling import (
     StepTimer,
     TrainingProfiler,
@@ -324,8 +324,8 @@ def parse_args():
         "--weight-decay",
         type=float,
         default=0.0,
-        help="Optimizer weight decay: opaque.optimizers.sgd L2-style coefficient, "
-        "or opaque.optimizers.adamw decoupled WD (default 0; many JME runs omit WD).",
+        help="Optimizer weight decay: torchopt.sgd L2-style coefficient, or "
+        "opaque.optimizers.adamw decoupled WD (default 0; many JME runs omit WD).",
     )
     train_g.add_argument(
         "--beta1",
@@ -1113,7 +1113,7 @@ def main():
             weight_decay=args.weight_decay,
         )
     else:
-        optimizer = sgd(
+        optimizer = torchopt.sgd(
             lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
             momentum=args.momentum,
             weight_decay=args.weight_decay,

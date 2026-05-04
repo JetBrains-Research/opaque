@@ -9,6 +9,9 @@ wrapper. All factories return [TorchOpt](https://torchopt.readthedocs.io/)
 DP-aware paths (DP-AdamW-BC, JME) are exposed as optional ``update()``
 kwargs.
 
+The library does not bundle vanilla SGD / Adam / RMSprop — for those
+import directly from torchopt: ``from torchopt import sgd``.
+
 ## Why functional optimizers
 
 Opaque's gradient pipeline is functional: every function takes state in and
@@ -75,13 +78,11 @@ optimizer = adamw(lr=1e-3, weight_decay=0.01)
 # Plain Adam (no decoupled WD): adamw(..., decoupled_weight_decay=False).
 ```
 
-**SGD** (`opaque.optimizers.sgd`, re-exported from torchopt) is simpler
-and useful as a debugging baseline:
+**SGD** (`torchopt.sgd`) is simpler and useful as a debugging baseline:
 
 ```python
-from opaque.optimizers import sgd
-
-optimizer = sgd(lr=0.01, momentum=0.9)
+import torchopt
+optimizer = torchopt.sgd(lr=0.01, momentum=0.9)
 ```
 
 ## The second-moment problem in DP training

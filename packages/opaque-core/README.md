@@ -16,14 +16,14 @@ Top-level (user-facing):
 
 - `opaque.functional` — `make_functional`, `with_batch_dim` (PyTorch <->
   functional API bridges)
-- `opaque.optimizers` — single import path for functional optimizers.
-  Opaque-built factories with DP-aware modes (`adamw`, `lion`,
-  `ademamix`, `adafactor`) plus the `schedule_free` wrapper, alongside
-  re-exports of the stateless `torchopt` primitives we don't extend
-  (`sgd`, `adam`, `adagrad`, `adadelta`, `adamax`, `radam`, `rmsprop`).
-  All return `torchopt`-compatible `GradientTransformation`s; DP-aware
-  modes are selected at `update()` time via optional `noise_stddev`
-  (DP-AdamW-BC) and `noisy_squared_grads` (JME paired stream) kwargs.
+- `opaque.optimizers` — Opaque-built functional optimizer factories
+  with DP-aware paths: `adamw`, `lion`, `ademamix`, `adafactor`, and
+  the `schedule_free` wrapper.  All return `torchopt`-compatible
+  `GradientTransformation`s; DP-aware modes are selected at `update()`
+  time via optional `noise_stddev` (DP-AdamW-BC) and
+  `noisy_squared_grads` (JME paired stream) kwargs.  Vanilla SGD /
+  Adam / RMSprop / etc. are not re-exported here — import them from
+  torchopt directly when needed (`from torchopt import sgd`).
   Less-common building blocks live in submodules:
   `opaque.optimizers.serialization` (`state_dict` / `load_state_dict`
   for checkpoint round-tripping) and
