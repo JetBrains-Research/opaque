@@ -10,9 +10,9 @@ torchopt = pytest.importorskip("torchopt")
 from opaque.optimizers import (  # noqa: E402
     ScheduleFreeState,
     adamw,
-    get_eval_params,
     schedule_free,
 )
+from opaque.optimizers.schedule_free import get_eval_params  # noqa: E402
 
 
 @pytest.fixture

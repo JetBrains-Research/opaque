@@ -1,4 +1,4 @@
-"""Tests for opaque.optimizers.state_dict / load_state_dict.
+"""Tests for opaque.optimizers.serialization (state_dict / load_state_dict).
 
 Round-trip coverage for every optimizer + the schedule-free wrapper.
 The contract: after serialise → fresh init → deserialise, the next
@@ -17,10 +17,12 @@ from opaque.optimizers import (  # noqa: E402
     adafactor,
     adamw,
     ademamix,
-    get_eval_params,
     lion,
-    load_state_dict,
     schedule_free,
+)
+from opaque.optimizers.schedule_free import get_eval_params  # noqa: E402
+from opaque.optimizers.serialization import (  # noqa: E402
+    load_state_dict,
     state_dict,
 )
 

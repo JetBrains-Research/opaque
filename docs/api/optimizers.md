@@ -147,13 +147,16 @@ combined** — passing both kwargs at the same ``update()`` call raises
 
 ## Serialisation
 
-``opaque.optimizers.state_dict`` flattens any chain optimizer state
-into a ``dict[str, Any]`` of tensors and Python primitives, ready
-for ``torch.save``.  ``load_state_dict`` rebuilds the state from a
-freshly-initialised template:
+``state_dict`` and ``load_state_dict`` live in
+``opaque.optimizers.serialization`` (a less-common building block,
+not in the package's top-level ``__all__``).  ``state_dict`` flattens
+any chain optimizer state into a ``dict[str, Any]`` of tensors and
+Python primitives, ready for ``torch.save``; ``load_state_dict``
+rebuilds the state from a freshly-initialised template:
 
 ```python
-from opaque.optimizers import adamw, state_dict, load_state_dict
+from opaque.optimizers import adamw
+from opaque.optimizers.serialization import state_dict, load_state_dict
 
 opt = adamw(lr=1e-3, weight_decay=0.01)
 state = opt.init(params)

@@ -24,10 +24,13 @@ Top-level (user-facing):
   All return `torchopt`-compatible `GradientTransformation`s; DP-aware
   modes are selected at `update()` time via optional `noise_stddev`
   (DP-AdamW-BC) and `noisy_squared_grads` (JME paired stream) kwargs.
-  Helpers: `state_dict` / `load_state_dict` for checkpoint
-  serialisation, `get_eval_params` for schedule-free's published
-  weights.  See [`docs/api/optimizers.md`](../../docs/api/optimizers.md)
-  for the full reference.
+  Less-common building blocks live in submodules:
+  `opaque.optimizers.serialization` (`state_dict` / `load_state_dict`
+  for checkpoint round-tripping) and
+  `opaque.optimizers.schedule_free` (`get_eval_params` for the
+  published `x` weights).  See
+  [`docs/api/optimizers.md`](../../docs/api/optimizers.md) for the
+  full reference.
 - `opaque.distributed` — DDP plumbing (`is_distributed`, `get_rank`,
   `all_reduce`, `reduce_pytree`, `sum_gradients`, `gather_pytree`,
   `reduce_scalar`, `sync_object`, `sync`, `local_shard`). Submodules:
