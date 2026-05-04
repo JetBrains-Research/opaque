@@ -160,9 +160,7 @@ def _walk_for_load(template: Any, sd: dict[str, Any], prefix: str) -> Any:
             _walk_for_load(v, sd, f"{prefix}[{i}]") for i, v in enumerate(template)
         )
     if isinstance(template, list):
-        return [
-            _walk_for_load(v, sd, f"{prefix}[{i}]") for i, v in enumerate(template)
-        ]
+        return [_walk_for_load(v, sd, f"{prefix}[{i}]") for i, v in enumerate(template)]
     if isinstance(template, dict):
         return {
             k: _walk_for_load(v, sd, f"{prefix}.{k}" if prefix else str(k))

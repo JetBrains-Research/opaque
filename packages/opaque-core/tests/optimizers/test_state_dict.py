@@ -70,9 +70,7 @@ class TestAdamW:
     def test_round_trip_jme(self, params, grads):
         sq = {k: v.pow(2) + 0.01 for k, v in grads.items()}
         opt = adamw(lr=1e-3)
-        u_orig, u_rest = _round_trip(
-            opt, params, grads, noisy_squared_grads=sq
-        )
+        u_orig, u_rest = _round_trip(opt, params, grads, noisy_squared_grads=sq)
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
@@ -239,9 +237,7 @@ class TestRobustness:
         _, state = opt.update(grads, state, params=params)
         sd = state_dict(state)
         # Find a tensor key and replace its value with a string.
-        tensor_key = next(
-            k for k, v in sd.items() if isinstance(v, torch.Tensor)
-        )
+        tensor_key = next(k for k, v in sd.items() if isinstance(v, torch.Tensor))
         sd[tensor_key] = "not a tensor"
         template = opt.init(params)
         with pytest.raises(TypeError, match="torch.Tensor"):
