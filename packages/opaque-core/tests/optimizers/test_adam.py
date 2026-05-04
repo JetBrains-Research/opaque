@@ -329,6 +329,16 @@ class TestJMEMode:
             )
         assert _adam_state(state).phi == 0.0
 
+    def test_jme_negative_squared_stream_is_floored(self, params, grads):
+        """JME's privatized g² stream is noisy and can be negative;
+        the denominator must floor before sqrt instead of producing NaNs."""
+        sq = {k: -torch.ones_like(v) for k, v in grads.items()}
+        opt = adamw(lr=1e-3)
+        state = opt.init(params)
+        updates, _ = opt.update(grads, state, params=params, noisy_squared_grads=sq)
+        for k in updates:
+            assert torch.isfinite(updates[k]).all()
+
     def test_both_kwargs_raises(self, params, grads, sq_grads):
         opt = adamw(lr=1e-3)
         state = opt.init(params)

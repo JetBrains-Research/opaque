@@ -116,7 +116,7 @@ def _scale_by_rmsprop(
             )
             new_phi = state.phi
             result = tree_map(
-                lambda g, v: g / (v.sqrt() + eps),
+                lambda g, v: g / (torch.clamp(v, min=bc_floor).sqrt() + eps),
                 updates,
                 new_nu,
             )

@@ -11,7 +11,7 @@ Reference:
     Memory Cost", arXiv:1804.04235.
 
 The factored estimator approximates the full ``v_t`` matrix as the
-outer product ``v_row · v_col / sum(v_row)``.  This saves
+outer product ``v_row · v_col / mean(v_row)``.  This saves
 ``rows·cols − rows − cols`` floats of state per matrix parameter, which
 matters at LM scale.
 
@@ -19,9 +19,10 @@ Scope.  Vanilla + decoupled / L2 weight decay, with the paper's RMS
 update clip (threshold 1.0 by default).  DP-aware modes (``noise_stddev``
 φ-EMA, ``noisy_squared_grads`` JME) are **not offered** yet — the
 per-axis bias derivation for the factored ``v̂`` needs to be written
-down before they can land — the bias on ``v_row[i]`` after one Gaussian
-noise injection is ``(1 − β₂) · d_col · σ²``, so the φ-EMA tracks one
-term per axis with axis-dimension scaling.  Until then ``adafactor``'s
+down before they can land.  Because the row and column factors are
+means, a homogeneous Gaussian noise contribution adds ``(1 − β₂) · σ²``
+to each factor; the remaining work is deriving the right factored
+post-processing path for non-homogeneous per-axis noise.  Until then ``adafactor``'s
 moment scaler does not accept the DP kwargs in its signature; passing
 them raises ``TypeError`` immediately.
 

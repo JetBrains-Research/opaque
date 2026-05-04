@@ -100,6 +100,14 @@ class TestJMEMode:
         for k in params:
             torch.testing.assert_close(st.nu[k], (1 - b2) * sq_grads[k])
 
+    def test_negative_squared_stream_is_floored(self, params, grads):
+        sq = {k: -torch.ones_like(v) for k, v in grads.items()}
+        opt = ademamix(lr=1e-3)
+        state = opt.init(params)
+        updates, _ = opt.update(grads, state, params=params, noisy_squared_grads=sq)
+        for k in updates:
+            assert torch.isfinite(updates[k]).all()
+
     def test_both_kwargs_raises(self, params, grads, sq_grads):
         opt = ademamix(lr=1e-3)
         state = opt.init(params)

@@ -126,7 +126,8 @@ def _scale_by_ademamix(
             )
             new_phi = state.phi
             result = tree_map(
-                lambda mf, ms, v: ((mf / bc1) + alpha * ms) / ((v / bc2).sqrt() + eps),
+                lambda mf, ms, v: ((mf / bc1) + alpha * ms)
+                / (torch.clamp(v / bc2, min=bc_floor).sqrt() + eps),
                 new_mf,
                 new_ms,
                 new_nu,

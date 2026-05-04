@@ -30,6 +30,34 @@ def _rms_state(chain_state) -> RMSpropState:
 
 
 class TestVanilla:
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            dict(lr=1e-2, alpha=0.99, eps=1e-8, weight_decay=0.0),
+            dict(lr=5e-3, alpha=0.95, eps=1e-6, weight_decay=0.0),
+            dict(lr=0.1, alpha=0.9, eps=1e-4, weight_decay=0.0),
+        ],
+        ids=["default", "alpha_095", "high_lr"],
+    )
+    def test_matches_torchopt_rmsprop(self, params, kwargs):
+        """Vanilla RMSprop is numerically identical to torchopt.rmsprop."""
+        opt_opaque = rmsprop(**kwargs)
+        opt_ref = torchopt.rmsprop(**kwargs)
+        state_opaque = opt_opaque.init(params)
+        state_ref = opt_ref.init(params)
+
+        torch.manual_seed(42)
+        for _ in range(10):
+            step_grads = {k: torch.randn_like(v) for k, v in params.items()}
+            updates_opaque, state_opaque = opt_opaque.update(
+                step_grads, state_opaque, params=params
+            )
+            updates_ref, state_ref = opt_ref.update(
+                step_grads, state_ref, params=params
+            )
+            for k in params:
+                torch.testing.assert_close(updates_opaque[k], updates_ref[k])
+
     def test_state_carries_phi_at_zero(self, params):
         opt = rmsprop(lr=1e-2)
         st = _rms_state(opt.init(params))
@@ -120,6 +148,14 @@ class TestJMEMode:
         st = _rms_state(state)
         for k in params:
             torch.testing.assert_close(st.nu[k], (1 - alpha) * sq_grads[k])
+
+    def test_negative_squared_stream_is_floored(self, params, grads):
+        sq = {k: -torch.ones_like(v) for k, v in grads.items()}
+        opt = rmsprop(lr=1e-2)
+        state = opt.init(params)
+        updates, _ = opt.update(grads, state, params=params, noisy_squared_grads=sq)
+        for k in updates:
+            assert torch.isfinite(updates[k]).all()
 
     def test_both_kwargs_raises(self, params, grads, sq_grads):
         opt = rmsprop(lr=1e-2)
