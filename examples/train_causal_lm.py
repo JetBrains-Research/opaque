@@ -1261,16 +1261,13 @@ def main():
     # support it.  We construct with ``noise_stddev`` set to the
     # initial value here; the per-step adaptive override is passed at
     # ``opt.update()`` time below.  For optimizers without a BC path,
-    # ``--bc`` is a no-op except for ``adagrad`` where vanilla mode
-    # is unsafe under DP — we error out so users don't get garbage.
+    # ``--bc`` is a silent no-op.  Notably ``--optimizer adagrad``
+    # without ``--bc`` is *expected* to misbehave under DP noise (the
+    # cumulative ``v_acc`` denominator absorbs ``t·σ²`` with no decay)
+    # — that's the empirical observation this example exists to
+    # demonstrate.  We don't gate it.
     BC_CAPABLE = {"adamw", "ademamix", "rmsprop", "adagrad"}
     bc_active = args.bc and args.optimizer in BC_CAPABLE
-    if args.optimizer == "adagrad" and not args.bc:
-        raise ValueError(
-            "--optimizer adagrad without --bc: vanilla Adagrad's "
-            "denominator runs away under DP noise.  Add --bc to enable "
-            "the cumulative Φ subtraction."
-        )
 
     if bc_active:
         initial_stddev = _noise_stddev(clip_state, noise_multiplier)
