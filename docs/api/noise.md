@@ -3,7 +3,7 @@
 Opaque's noise mechanisms live next to the training paradigm they support:
 `opaque.dpsgd.noise` for independent Gaussian-family noise, and
 `opaque.dpftrl.noise` for matrix-factorization (correlated) noise. The base
-`NoiseState` type that both build on lives in `opaque.core.noise`.
+`NoiseState` type that both build on lives in `opaque.types`.
 
 ## Overview
 
@@ -94,12 +94,12 @@ across ranks. It auto-dispatches based on type:
 
 ## State Classes
 
-::: opaque.core.noise.NoiseState
+::: opaque.types.NoiseState
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.core.noise.SecondMomentNoiseOutput
+::: opaque.types.SecondMomentNoiseOutput
     options:
       show_source: true
       heading_level: 3
