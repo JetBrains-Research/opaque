@@ -1,10 +1,11 @@
-"""Tests for the ``compute_dtype`` parameter on bounded Gaussian noise."""
+"""Tests for the ``compute_dtype`` parameter on clipped Gaussian noise."""
 
 from __future__ import annotations
 
 import torch
 
-from opaque.bounded import bounded
+from opaque.clipping.types import clipped
+
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.random import key
 
@@ -12,31 +13,31 @@ from opaque.random import key
 def test_default_compute_dtype_is_fp32():
     noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
     grads = {"a": torch.zeros(1024, dtype=torch.bfloat16)}
-    noisy, _ = noise_fn(bounded(grads, bound=1.0), state)
-    assert noisy.pytree["a"].dtype == torch.bfloat16
+    noised, _ = noise_fn(clipped(grads, max_norm=1.0), state)
+    assert noised.pytree["a"].dtype == torch.bfloat16
 
 
 def test_fp32_input_stays_fp32():
     noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
     grads = {"a": torch.zeros(1024, dtype=torch.float32)}
-    noisy, _ = noise_fn(bounded(grads, bound=1.0), state)
-    assert noisy.pytree["a"].dtype == torch.float32
+    noised, _ = noise_fn(clipped(grads, max_norm=1.0), state)
+    assert noised.pytree["a"].dtype == torch.float32
 
 
 @torch.no_grad()
 def test_observed_variance_matches_calibrated_stddev():
     noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(42))
     grads = {"a": torch.zeros(8192, dtype=torch.float32)}
-    noisy, _ = noise_fn(bounded(grads, bound=1.0), state)
-    observed_std = noisy.pytree["a"].float().std().item()
+    noised, _ = noise_fn(clipped(grads, max_norm=1.0), state)
+    observed_std = noised.pytree["a"].float().std().item()
     assert abs(observed_std - 1.0) < 0.05, f"observed_std={observed_std}"
 
 
 def test_bf16_observed_variance_matches_calibrated_stddev():
     noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(42))
     grads = {"a": torch.zeros(8192, dtype=torch.bfloat16)}
-    noisy, _ = noise_fn(bounded(grads, bound=1.0), state)
-    observed_std = noisy.pytree["a"].float().std().item()
+    noised, _ = noise_fn(clipped(grads, max_norm=1.0), state)
+    observed_std = noised.pytree["a"].float().std().item()
     assert abs(observed_std - 1.0) < 0.05, f"observed_std={observed_std}"
 
 
@@ -45,21 +46,21 @@ def test_compute_dtype_overridable_to_fp64():
         noise_multiplier=1.0, key=key(0), compute_dtype=torch.float64
     )
     grads = {"a": torch.zeros(64, dtype=torch.float64)}
-    noisy, _ = noise_fn(bounded(grads, bound=1.0), state)
-    assert noisy.pytree["a"].dtype == torch.float64
+    noised, _ = noise_fn(clipped(grads, max_norm=1.0), state)
+    assert noised.pytree["a"].dtype == torch.float64
 
 
 def test_bf16_default_compute_dtype_beats_native_bf16():
     noise_fn, state = gaussian_noise(noise_multiplier=2.0, key=key(7))
     grads = {"a": torch.zeros(16384, dtype=torch.bfloat16)}
-    noisy, _ = noise_fn(bounded(grads, bound=1.0), state)
-    observed_std = noisy.pytree["a"].float().std().item()
+    noised, _ = noise_fn(clipped(grads, max_norm=1.0), state)
+    observed_std = noised.pytree["a"].float().std().item()
     assert abs(observed_std - 2.0) < 0.05
 
 
 def test_zero_noise_multiplier_short_circuits():
     noise_fn, state = gaussian_noise(noise_multiplier=0.0, key=key(0))
     grads = {"a": torch.ones(8, dtype=torch.bfloat16)}
-    noisy, _ = noise_fn(bounded(grads, bound=1.0), state)
-    assert torch.equal(noisy.pytree["a"], grads["a"])
-    assert noisy.pytree["a"].dtype == torch.bfloat16
+    noised, _ = noise_fn(clipped(grads, max_norm=1.0), state)
+    assert torch.equal(noised.pytree["a"], grads["a"])
+    assert noised.pytree["a"].dtype == torch.bfloat16

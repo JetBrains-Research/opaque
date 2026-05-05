@@ -3,7 +3,7 @@
 The ``PerGroup`` type carries pre-resolved parameter-to-group assignments
 and per-group values (clipping norms, sensitivities, noise stddevs).  It
 flows through the entire DP-SGD pipeline unchanged and supports arithmetic
-so that training-loop code like ``noise_multiplier * bounded_grads.bound``
+so that training-loop code like ``noise_multiplier * clipped_grads.max_norm``
 works without modification.
 
 The ``per_group()`` factory constructs a ``PerGroup`` from a parameter dict
@@ -52,7 +52,7 @@ class PerGroup:
 
     For MSE-optimal per-group noise allocation, use
     :func:`~opaque.noise.per_group_noise_stddev` instead of
-    ``noise_multiplier * bounded_grads.bound``.
+    ``noise_multiplier * clipped_grads.max_norm``.
 
     Attributes:
         groups: Mapping from parameter key to group name (pre-resolved).

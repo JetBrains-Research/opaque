@@ -1,9 +1,14 @@
-"""Private second-moment transformation for MF Gaussian mechanisms.
+"""Private second-moment transformation for Gaussian / MF Gaussian mechanisms.
 
-When a training loop releases both noisy gradients and noisy element-wise
+When a training loop releases both noised gradients and noised element-wise
 squared gradients, the first stream needs a larger sensitivity.  Under
 Opaque's add/remove adjacency model the default d >= 2 overhead is
 ``sqrt(3/2)`` over the first-moment-only stream.
+
+The transformation accepts either a :class:`Gaussian` (DP-SGD baseline)
+or :class:`MfGaussian` (DP-FTRL with correlated noise) inner mechanism.
+For Gaussian inner the c1 / c2 max column norms collapse to 1.0 (identity
+strategy); for MfGaussian they come from the strategy's encoder matrix.
 """
 
 from __future__ import annotations
@@ -15,10 +20,12 @@ from dataclasses import dataclass
 from .. import _native
 
 from opaque.accounting.base import DpProcess, Pld
+from opaque.accounting.mechanisms.gaussian import Gaussian
 from opaque.accounting.mechanisms.mf_gaussian import MfGaussian
 
 
 _DEFAULT_SECOND_MOMENT_OVERHEAD = math.sqrt(3.0 / 2.0)
+_Inner = Gaussian | MfGaussian
 
 
 def _second_moment_joint_sensitivity(
@@ -45,7 +52,7 @@ def _second_moment_joint_sensitivity(
 class SecondMoment(DpProcess):
     """Transformation for private first+second moment estimation."""
 
-    inner: MfGaussian
+    inner: _Inner
     input_sensitivity: float
     max_column_norm: float | None = None
     first_moment_overhead: float = _DEFAULT_SECOND_MOMENT_OVERHEAD
@@ -56,10 +63,17 @@ class SecondMoment(DpProcess):
 
     @property
     def _c1_norm(self) -> float:
-        """Max column norm of the first-moment strategy matrix."""
+        """Max column norm of the first-moment strategy matrix.
+
+        For :class:`MfGaussian` inner this is the encoder's column-norm
+        (or an explicit override).  For :class:`Gaussian` inner the
+        identity strategy has unit columns, so c1 = 1.0.
+        """
         if self.max_column_norm is not None:
             return self.max_column_norm
-        return self.inner.sensitivity
+        if isinstance(self.inner, MfGaussian):
+            return self.inner.sensitivity
+        return 1.0
 
     @property
     def sensitivity(self) -> float:
@@ -95,6 +109,13 @@ class SecondMoment(DpProcess):
             pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
+        if isinstance(self.inner, Gaussian):
+            if self.noise_multiplier == 0:
+                return _native.non_private_pld(config.to_native())
+            # Effective noise multiplier for the first stream: σ ÷ joint
+            # sensitivity = σ ÷ (input_sensitivity · c1 · overhead).
+            effective_nm = self.noise_multiplier / self.sensitivity
+            return _native.gaussian_pld(effective_nm, config.to_native())
         return _native.mf_gaussian_pld(
             self.noise_multiplier,
             self.sensitivity,
@@ -103,7 +124,7 @@ class SecondMoment(DpProcess):
 
 
 def second_moment(
-    inner: MfGaussian,
+    inner: _Inner,
     *,
     sensitivity: float,
     max_column_norm: float | None = None,
@@ -112,23 +133,25 @@ def second_moment(
     """Account for releasing private squared gradients alongside gradients.
 
     Args:
-        inner: Any MF Gaussian mechanism, such as ``band_mf()``, ``blt()``,
-            ``lambda_cgd()``, ``bisr()``, or ``bsr()``.
-        sensitivity: Clipped-gradient sensitivity before the MF strategy is
+        inner: A Gaussian-family mechanism — :func:`gaussian` for DP-SGD
+            or any MF Gaussian (``band_mf()``, ``blt()``, ``lambda_cgd()``,
+            ``bisr()``, ``bsr()``) for DP-FTRL.
+        sensitivity: Clipped-gradient sensitivity before the strategy is
             applied.  For averaged gradients this is typically
             ``clipping_norm / batch_size``.
-        max_column_norm: Max column norm of the first strategy matrix.  If
-            ``None``, falls back to ``inner.sensitivity``.
+        max_column_norm: Max column norm of the first-moment strategy
+            matrix.  If ``None``, defaults to ``inner.sensitivity`` for
+            MF inner or ``1.0`` for Gaussian inner.
         first_moment_overhead: Overhead applied to the first stream.  Defaults
             to ``sqrt(3/2)`` for d >= 2 add/remove DP.
 
     Returns:
         A :class:`SecondMoment` process.
     """
-    if not isinstance(inner, MfGaussian):
+    if not isinstance(inner, (Gaussian, MfGaussian)):
         raise TypeError(
-            "second_moment() requires an MfGaussian mechanism "
-            "(band_mf, blt, lambda_cgd, bisr, bsr), "
+            "second_moment() requires a Gaussian mechanism — gaussian() "
+            "or any MF Gaussian (band_mf, blt, lambda_cgd, bisr, bsr); "
             f"got {type(inner).__name__}."
         )
     if sensitivity <= 0:

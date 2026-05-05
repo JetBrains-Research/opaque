@@ -46,7 +46,7 @@ grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 3. Each per-example gradient is clipped to L2 norm at most `clipping_norm`.
 4. The clipped gradients are summed across the batch.
 
-The returned gradients are a `BoundedPytree`. Its `.pytree` holds the clipped
+The returned gradients are a `ClippedPytree`. Its `.pytree` holds the clipped
 gradient sum, and its `.bound` holds the per-step sensitivity used to calibrate
 noise.
 

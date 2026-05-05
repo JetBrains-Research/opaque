@@ -18,8 +18,8 @@ class TestDenseMatrixFactorizationNoise:
         noising = torch.eye(5, dtype=torch.float64)
         grad = torch.zeros(10, dtype=torch.float64)
         noise_fn, state = _matrix_factorization_noise(grad, noising, key=key(42))
-        noisy, state = noise_fn(grad, state, stddev=1.0)
-        assert noisy.shape == grad.shape
+        noised, state = noise_fn(grad, state, stddev=1.0)
+        assert noised.shape == grad.shape
 
     def test_stepping(self):
         """State advances through matrix rows."""
@@ -44,15 +44,15 @@ class TestStreamingMatrixFactorizationNoise:
         noising = identity()
         grad = torch.zeros(10, dtype=torch.float32)
         noise_fn, state = _matrix_factorization_noise(grad, noising, key=key(42))
-        noisy, state = noise_fn(grad, state, stddev=1.0)
-        assert noisy.shape == grad.shape
+        noised, state = noise_fn(grad, state, stddev=1.0)
+        assert noised.shape == grad.shape
 
     def test_adds_noise(self):
         """Noise is actually added to gradients."""
         grad = torch.zeros(10, dtype=torch.float32)
         noise_fn, state = _matrix_factorization_noise(grad, identity(), key=key(42))
-        noisy, _ = noise_fn(grad, state, stddev=1.0)
-        assert not torch.allclose(noisy, grad)
+        noised, _ = noise_fn(grad, state, stddev=1.0)
+        assert not torch.allclose(noised, grad)
 
     def test_stateful(self):
         """Successive calls produce different noise."""
@@ -68,13 +68,13 @@ class TestStreamingMatrixFactorizationNoise:
 
         # Large stddev
         noise_fn, state = _matrix_factorization_noise(grad, identity(), key=key(0))
-        noisy, _ = noise_fn(grad, state, stddev=100.0)
-        large_std = noisy.std().item()
+        noised, _ = noise_fn(grad, state, stddev=100.0)
+        large_std = noised.std().item()
 
         # Small stddev
         noise_fn, state = _matrix_factorization_noise(grad, identity(), key=key(1))
-        noisy, _ = noise_fn(grad, state, stddev=1.0)
-        small_std = noisy.std().item()
+        noised, _ = noise_fn(grad, state, stddev=1.0)
+        small_std = noised.std().item()
 
         assert large_std > small_std * 10
 
@@ -85,8 +85,8 @@ class TestStreamingMatrixFactorizationNoise:
         grad = torch.zeros(10, dtype=torch.float32)
         noise_fn, state = _matrix_factorization_noise(grad, noising, key=key(42))
         for _ in range(5):
-            noisy, state = noise_fn(grad, state, stddev=1.0)
-            assert noisy.shape == grad.shape
+            noised, state = noise_fn(grad, state, stddev=1.0)
+            assert noised.shape == grad.shape
 
     def test_pytree_grads(self):
         """Test with dict-structured gradients."""
@@ -96,10 +96,10 @@ class TestStreamingMatrixFactorizationNoise:
             "bias": torch.zeros(3, dtype=torch.float32),
         }
         noise_fn, state = _matrix_factorization_noise(grad, noising, key=key(42))
-        noisy, state = noise_fn(grad, state, stddev=1.0)
-        assert isinstance(noisy, dict)
-        assert noisy["weight"].shape == (5, 3)
-        assert noisy["bias"].shape == (3,)
+        noised, state = noise_fn(grad, state, stddev=1.0)
+        assert isinstance(noised, dict)
+        assert noised["weight"].shape == (5, 3)
+        assert noised["bias"].shape == (3,)
 
     def test_noise_is_correlated(self):
         """With prefix sum noising, noise should accumulate."""
@@ -109,8 +109,8 @@ class TestStreamingMatrixFactorizationNoise:
 
         variances = []
         for _ in range(20):
-            noisy, state = noise_fn(grad, state, stddev=1.0)
-            variances.append(noisy.var().item())
+            noised, state = noise_fn(grad, state, stddev=1.0)
+            variances.append(noised.var().item())
 
         # With prefix sum, variance should increase
         assert variances[-1] > variances[0]

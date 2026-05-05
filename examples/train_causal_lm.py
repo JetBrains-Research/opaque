@@ -93,11 +93,11 @@ def _effective(value):
     return value.effective if isinstance(value, PerGroup) else value
 
 
-def _noise_stddev(bound, noise_multiplier, *, per_group=True):
+def _noise_stddev(max_norm, noise_multiplier, *, per_group=True):
     """Noise stddev: MSE-optimal per-group when available, isotropic otherwise."""
-    if per_group and isinstance(bound, PerGroup):
-        return per_group_noise_stddev(bound, noise_multiplier)
-    return noise_multiplier * bound
+    if per_group and isinstance(max_norm, PerGroup):
+        return per_group_noise_stddev(max_norm, noise_multiplier)
+    return noise_multiplier * max_norm
 
 
 def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
@@ -450,7 +450,7 @@ def parse_args():
         type=float,
         default=1.0,
         help="Clipping norm: fixed threshold C (fixed mode), starting threshold "
-        "(adaptive mode), or sensitivity bound R (auto mode).",
+        "(adaptive mode), or sensitivity max_norm R (auto mode).",
     )
     dp_group.add_argument(
         "--target-clipping-rate",
@@ -483,7 +483,7 @@ def parse_args():
         choices=["poisson", "truncated_poisson"],
         default="poisson",
         help="Sampling strategy: poisson (standard, variable batch size) "
-        "or truncated_poisson (batch capped at --max-batch-size for bounded memory)",
+        "or truncated_poisson (batch capped at --max-batch-size for clipped memory)",
     )
     dp_group.add_argument(
         "--max-batch-size",
@@ -497,8 +497,8 @@ def parse_args():
         type=str,
         choices=["gaussian", "truncated_gaussian"],
         default="gaussian",
-        help="Noise mechanism: gaussian (standard, unbounded) "
-        "or truncated_gaussian (renormalized, bounded support)",
+        help="Noise mechanism: gaussian (standard, unclipped) "
+        "or truncated_gaussian (renormalized, clipped support)",
     )
     dp_group.add_argument(
         "--noise-radius",
@@ -554,13 +554,13 @@ def parse_args():
         "--calibration-min",
         type=float,
         default=0.11,
-        help="Lower bound for noise calibration search",
+        help="Lower max_norm for noise calibration search",
     )
     privacy_group.add_argument(
         "--calibration-max",
         type=float,
         default=3.5,
-        help="Upper bound for noise calibration search",
+        help="Upper max_norm for noise calibration search",
     )
     privacy_group.add_argument(
         "--calibration-tolerance",
@@ -1174,7 +1174,7 @@ def main():
 
     # Noise injection — bind mechanism-specific parameters once.
     # Chain: base mechanism → adaclip (optional) → amplification.
-    # Truncated Gaussian noise provides bounded support but converges to
+    # Truncated Gaussian noise provides clipped support but converges to
     # Gaussian for high-dimensional tasks, so we use acc.gaussian() for accounting.
     _num_groups = len(clip_norm.values) if isinstance(clip_norm, PerGroup) else 1
     if args.noise_multiplier == 0:
@@ -1247,7 +1247,7 @@ def main():
             f"(iterations={calibration.iterations}, converged={calibration.converged})"
         )
 
-    # Setup optimizer.  Noise metadata travels with ``NoisyPytree`` updates,
+    # Setup optimizer.  Noise metadata travels with ``NoisedPytree`` updates,
     # so optimizer construction does not need a precomputed stddev;
     # ``--noise-bias-correction`` only controls whether the optimizer's
     # DP-aware path consumes that metadata.  For optimizers without a BC
@@ -1316,8 +1316,8 @@ def main():
     opt_state = base_opt.init(trainable_params)
     accounting = Accountant()
 
-    # Noise functions consume BoundedPytree metadata directly and return
-    # NoisyPytree updates carrying the realized per-step stddev.
+    # Noise functions consume ClippedPytree metadata directly and return
+    # NoisedPytree updates carrying the realized per-step stddev.
     initial_bound = clip_norm / args.batch_size
     if args.noise_mechanism == "truncated_gaussian" and noise_multiplier != 0:
         noise_fn, noise_state = truncated_gaussian_noise(
@@ -1414,7 +1414,7 @@ def main():
                     clip_state, aux = sync(clip_state, aux)
                     sum_gradients_(grads_tuple)
 
-                step_clip_norm = grads_tuple.bound
+                step_clip_norm = grads_tuple.max_norm
                 noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
                 noise_stddev = noisy_grads.noise_stddev
                 if is_ddp:
@@ -1552,8 +1552,8 @@ def main():
                 )
             print(f"  Effective (final): {last_clip_bound.effective:.3f}")
         else:
-            print(f"  Initial output bound: {_effective(initial_bound):.3f}")
-            print(f"  Final output bound: {last_clip_bound:.3f}")
+            print(f"  Initial output max_norm: {_effective(initial_bound):.3f}")
+            print(f"  Final output max_norm: {last_clip_bound:.3f}")
         print(
             f"  Clip norm range: [{min(clip_norms_history):.3f}, {max(clip_norms_history):.3f}]"
         )

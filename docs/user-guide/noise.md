@@ -31,7 +31,7 @@ noise_fn, noise_state = gaussian_noise(
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
-`grads` must be a `BoundedPytree` from a clipping transform. The noise function
+`grads` must be a `ClippedPytree` from a clipping transform. The noise function
 reads `grads.bound`, adds Gaussian noise with stddev
 `noise_multiplier * grads.bound`, and returns a `NoisyPytree` carrying the
 realized `noise_stddev` metadata for optimizers.

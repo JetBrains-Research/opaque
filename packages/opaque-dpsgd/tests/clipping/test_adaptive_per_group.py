@@ -5,14 +5,15 @@ import math
 import pytest
 import torch
 
-from opaque.bounded import BoundedPytree
+from opaque.clipping.types import ClippedPytree
+
 from opaque.clipping.per_group import PerGroup, per_group
 from opaque.dpsgd.clipping.adaptive import AdaptiveClipState, adaptive_clipped_grad
 from opaque.random import key
 
 
-def _unwrap_bounded(value):
-    assert isinstance(value, BoundedPytree)
+def _unwrap_clipped(value):
+    assert isinstance(value, ClippedPytree)
     return value.pytree
 
 
@@ -103,14 +104,14 @@ class TestAdaptivePerGroupBasic:
         batch_y = torch.randn(8)
 
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
 
         assert isinstance(grads, dict)
         assert grads["a"].shape == params["a"].shape
         assert grads["b"].shape == params["b"].shape
 
     def test_per_group_output_bound_metadata(self):
-        """Adaptive clipping returns per-group bound metadata after normalization."""
+        """Adaptive clipping returns per-group max_norm metadata after normalization."""
         loss_fn = _make_per_group_loss_fn()
         params = {"a": torch.randn(10), "b": torch.randn(5)}
         pg = _make_per_group(params, a_norm=1.0, b_norm=2.0)
@@ -126,11 +127,11 @@ class TestAdaptivePerGroupBasic:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
         grads, _ = grad_fn(params, batch_x, batch_y, state=clip_state)
-        assert isinstance(grads.bound, PerGroup)
-        assert grads.bound.values == {"a": pytest.approx(0.1), "b": pytest.approx(0.2)}
+        assert isinstance(grads.max_norm, PerGroup)
+        assert grads.max_norm.values == {"a": pytest.approx(0.1), "b": pytest.approx(0.2)}
         import math
 
-        assert grads.bound.effective == pytest.approx(math.sqrt(5) / 10)
+        assert grads.max_norm.effective == pytest.approx(math.sqrt(5) / 10)
 
 
 class TestAdaptivePerGroupConvergence:
@@ -399,7 +400,7 @@ class TestAdaptivePerGroupMicrobatch:
         batch_y = torch.randn(8)
 
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
 
         assert isinstance(grads, dict)
         assert grads["a"].shape == params["a"].shape

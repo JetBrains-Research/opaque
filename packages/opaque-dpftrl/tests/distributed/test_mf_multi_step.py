@@ -77,9 +77,9 @@ def _worker_identity_mf_three_steps(rank: int, world_size: int, port: int) -> No
         step_stds = []
         for _step in range(3):
             grads = {"weight": torch.zeros(batch_size, param_dim, device=device)}
-            noisy, state = noise_fn(grads, state)
-            step_noise_values.append(noisy["weight"].clone())
-            step_stds.append(noisy["weight"].std().item())
+            noised, state = noise_fn(grads, state)
+            step_noise_values.append(noised["weight"].clone())
+            step_stds.append(noised["weight"].std().item())
 
         # Verify each step produces different noise
         assert not torch.allclose(step_noise_values[0], step_noise_values[1])

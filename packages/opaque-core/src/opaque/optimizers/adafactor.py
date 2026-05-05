@@ -83,7 +83,7 @@ class AdafactorState:
             - ``(v,)`` for tensors of rank < 2 (scalar).
         phi_flat: Per-leaf noise-variance EMA.  Tracks ``β₂_t``-weighted
             ``σ²`` for DP bias correction; stays at ``0.0`` per leaf
-            unless ``NoisyPytree`` updates supply realized σ metadata
+            unless ``NoisedPytree`` updates supply realized σ metadata
             and ``noise_bias_correction`` is enabled.
         treespec: Frozen tree spec from ``optree`` so updates can be
             re-packed in the same shape.
@@ -299,7 +299,7 @@ def adafactor(
             :func:`opaque.optimizers.adamw`.
         noise_bias_correction: If ``True``, subtract a β₂_t-EMA of the
             realized noise variance from each factor (``v_row``,
-            ``v_col``, or scalar ``v``) when ``NoisyPytree`` updates are
+            ``v_col``, or scalar ``v``) when ``NoisedPytree`` updates are
             passed.  Defaults to ``False``; flip on to ablate.  No
             effect when ``SecondMomentNoiseOutput`` is passed —
             Adafactor does not consume the privatised ``g²`` stream

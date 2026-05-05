@@ -7,7 +7,7 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.bounded import noisy  # noqa: E402
+from opaque.core.noise import noised  # noqa: E402
 from opaque.clipping.per_group import PerGroup  # noqa: E402
 from opaque.optimizers import AdafactorState, adafactor  # noqa: E402
 
@@ -96,7 +96,7 @@ class TestVanilla:
 
 class TestExplicitKwargsRejected:
     """The optimizer surface no longer takes per-step metadata kwargs;
-    metadata travels via ``NoisyPytree`` only.  Python's natural
+    metadata travels via ``NoisedPytree`` only.  Python's natural
     ``TypeError`` surfaces this for users who try the old API."""
 
     def test_noise_stddev_rejected(self, matrix_params, matrix_grads):
@@ -120,12 +120,12 @@ class TestBCMode:
 
     def test_default_keeps_phi_zero(self, matrix_params, matrix_grads):
         """Default ``noise_bias_correction=False``: φ stays at 0 even
-        under NoisyPytree updates."""
+        under NoisedPytree updates."""
         opt = adafactor(lr=1e-3)
         state = opt.init(matrix_params)
         for _ in range(5):
             _, state = opt.update(
-                noisy(matrix_grads, bound=1.0, noise_stddev=0.5),
+                noised(matrix_grads, max_norm=1.0, noise_stddev=0.5),
                 state,
                 params=matrix_params,
             )
@@ -139,7 +139,7 @@ class TestBCMode:
         # Drive 8 steps of constant σ; phi should approach σ² steady state.
         for _ in range(8):
             _, state = opt.update(
-                noisy(matrix_grads, bound=1.0, noise_stddev=sigma),
+                noised(matrix_grads, max_norm=1.0, noise_stddev=sigma),
                 state,
                 params=matrix_params,
             )
@@ -166,7 +166,7 @@ class TestBCMode:
         opt = adafactor(lr=1e-3, noise_bias_correction=True)
         state = opt.init(matrix_params)
         _, state = opt.update(
-            noisy(matrix_grads, bound=1.0, noise_stddev=pg),
+            noised(matrix_grads, max_norm=1.0, noise_stddev=pg),
             state,
             params=matrix_params,
         )
@@ -194,22 +194,22 @@ class TestBCMode:
         # Run a few warmup steps so phi has built up.
         for _ in range(3):
             _, s_bc = opt_bc.update(
-                noisy(matrix_grads, bound=1.0, noise_stddev=sigma),
+                noised(matrix_grads, max_norm=1.0, noise_stddev=sigma),
                 s_bc,
                 params=matrix_params,
             )
             _, s_no = opt_no.update(
-                noisy(matrix_grads, bound=1.0, noise_stddev=sigma),
+                noised(matrix_grads, max_norm=1.0, noise_stddev=sigma),
                 s_no,
                 params=matrix_params,
             )
         u_bc, _ = opt_bc.update(
-            noisy(matrix_grads, bound=1.0, noise_stddev=sigma),
+            noised(matrix_grads, max_norm=1.0, noise_stddev=sigma),
             s_bc,
             params=matrix_params,
         )
         u_no, _ = opt_no.update(
-            noisy(matrix_grads, bound=1.0, noise_stddev=sigma),
+            noised(matrix_grads, max_norm=1.0, noise_stddev=sigma),
             s_no,
             params=matrix_params,
         )

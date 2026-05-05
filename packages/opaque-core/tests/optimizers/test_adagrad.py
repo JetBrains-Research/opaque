@@ -7,7 +7,7 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.bounded import noisy  # noqa: E402
+from opaque.core.noise import noised  # noqa: E402
 from opaque.optimizers import AdagradState, adagrad  # noqa: E402
 
 
@@ -90,7 +90,7 @@ class TestDPCorrection:
         state = opt.init(params)
         for t in range(1, 6):
             _, state = opt.update(
-                noisy(grads, bound=1.0, noise_stddev=sigma),
+                noised(grads, max_norm=1.0, noise_stddev=sigma),
                 state,
                 params=params,
             )
@@ -104,7 +104,7 @@ class TestDPCorrection:
         expected = 0.0
         for sigma in [0.1, 0.2, 0.3]:
             _, state = opt.update(
-                noisy(grads, bound=1.0, noise_stddev=sigma),
+                noised(grads, max_norm=1.0, noise_stddev=sigma),
                 state,
                 params=params,
             )
@@ -116,7 +116,7 @@ class TestDPCorrection:
         v̂ tracks signal contribution only.  Without correction, v_acc
         would carry t·σ² forever.
 
-        We feed zero gradients with ``NoisyPytree`` σ metadata,
+        We feed zero gradients with ``NoisedPytree`` σ metadata,
         and verify v̂_corrected stays at the floor (no signal → no
         denominator inflation)."""
         zero_grads = {k: torch.zeros_like(v) for k, v in params.items()}
@@ -128,7 +128,7 @@ class TestDPCorrection:
         # grows by σ² per step.  v_acc - φ_acc < 0 → clamped to floor.
         for _ in range(20):
             updates, state = opt.update(
-                noisy(zero_grads, bound=1.0, noise_stddev=sigma),
+                noised(zero_grads, max_norm=1.0, noise_stddev=sigma),
                 state,
                 params=params,
             )
@@ -145,7 +145,7 @@ class TestDPCorrection:
         state = opt.init(params)
         for _ in range(10):
             updates, state = opt.update(
-                noisy(grads, bound=1.0, noise_stddev=1e3),
+                noised(grads, max_norm=1.0, noise_stddev=1e3),
                 state,
                 params=params,
             )
@@ -155,7 +155,7 @@ class TestDPCorrection:
         opt = adagrad(lr=1e-2, noise_bias_correction=False)
         state = opt.init(params)
         _, state = opt.update(
-            noisy(grads, bound=1.0, noise_stddev=0.5),
+            noised(grads, max_norm=1.0, noise_stddev=0.5),
             state,
             params=params,
         )

@@ -6,7 +6,8 @@ from typing import Any, cast
 
 import torch
 
-from opaque.bounded import bounded
+from opaque.clipping.types import clipped
+
 from opaque.clipping._helpers import (
     batch_size_from_args,
     normalize_to_tuple,
@@ -26,7 +27,7 @@ class AdaptiveClippedGradAux(ClippedGradAux):
 
     All fields are diagnostic — they reflect pre-noise, pre-aggregation
     values and must not be fed back into private computation.  Use the
-    returned ``BoundedPytree.bound`` metadata for noise calibration.
+    returned ``ClippedPytree.max_norm`` metadata for noise calibration.
 
     Inherits all fields from :class:`ClippedGradAux`.
     """
@@ -210,8 +211,8 @@ def adaptive_clipped_grad(
         ...     params = torchopt.apply_updates(params, updates)
         ...
         ...     # Monitor adaptation
-        ...     # The current DP bound is attached to the clipped output.
-        ...     current_bound = grad.bound
+        ...     # The current DP max_norm is attached to the clipped output.
+        ...     current_bound = grad.max_norm
 
     Example with distributed training (DDP with Poisson sampling):
         >>> import torch.distributed as dist
@@ -335,9 +336,9 @@ def adaptive_clipped_grad(
         # Empty batch: zero grads, no adaptation, step still incremented
         if batch_size_from_args(args, batch_argnums_tuple) == 0:
             new_state = _empty_batch_state(state)
-            grads = bounded(
+            grads = clipped(
                 zero_grads_like(args, argnums_tuple),
-                bound=output_bound(state._next_clipping_norm),
+                max_norm=output_bound(state._next_clipping_norm),
             )
             if return_aux:
                 empty = torch.empty(0)

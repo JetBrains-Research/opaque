@@ -8,10 +8,10 @@ Hinton's RMSprop: pure second-moment EMA, no first moment::
 DP behaviour.  Under noised gradients ``g̃ = g + ξ`` with
 ``ξ ~ N(0, σ²)``, ``E[g̃²] = g² + σ²``, so ``nu`` is biased upward by
 ``σ²`` in steady state.  The vanilla optimizer survives this (the
-denominator is bounded, unlike Adagrad's runaway), but the inflated
+denominator is clipped, unlike Adagrad's runaway), but the inflated
 denominator shrinks the effective LR.
 
-``NoisyPytree`` updates activate a φ-EMA correction using the realized σ
+``NoisedPytree`` updates activate a φ-EMA correction using the realized σ
 carried by the wrapper.  Unlike Adam, RMSprop does *not* divide ``nu``
 by ``1 − α^t`` for bias correction, so ``φ`` and ``nu`` accumulate the
 noise contribution at exactly the same rate.  Subtracting one from the
@@ -62,7 +62,7 @@ class RMSpropState:
     Attributes:
         nu: Second-moment EMA (pytree matching params).
         phi: Noise-variance EMA (scalar or ``dict[group, float]``).
-            Stays at zero unless a ``NoisyPytree`` update supplies
+            Stays at zero unless a ``NoisedPytree`` update supplies
             realized σ metadata.  Same accumulation rate as ``nu`` (no
             bias-correction division), so subtracting directly yields the
             unbiased estimate.
@@ -210,7 +210,7 @@ def rmsprop(
             moment-scaled update.
         noise_bias_correction: If ``True``, subtract an ``alpha``-EMA of
             the realized noise variance from the second moment when
-            ``NoisyPytree`` updates are passed.  Defaults to ``False``;
+            ``NoisedPytree`` updates are passed.  Defaults to ``False``;
             flip on to ablate.
 
     Returns:

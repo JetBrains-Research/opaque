@@ -13,7 +13,7 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.bounded import noisy  # noqa: E402
+from opaque.core.noise import noised  # noqa: E402
 from opaque.core.noise import SecondMomentNoiseOutput  # noqa: E402
 from opaque.optimizers import (  # noqa: E402
     adafactor,
@@ -70,16 +70,16 @@ class TestAdamW:
         u_orig, u_rest = _round_trip(
             opt,
             params,
-            noisy(grads, bound=1.0, noise_stddev=0.5),
+            noised(grads, max_norm=1.0, noise_stddev=0.5),
         )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
-    def test_round_trip_jme(self, params, grads):
+    def test_round_trip_second_moment(self, params, grads):
         sq = {k: v.pow(2) + 0.01 for k, v in grads.items()}
         output = SecondMomentNoiseOutput(
-            noisy(grads, bound=1.0, noise_stddev=0.1),
-            noisy(sq, bound=1.0, noise_stddev=0.1),
+            noised(grads, max_norm=1.0, noise_stddev=0.1),
+            noised(sq, max_norm=1.0, noise_stddev=0.1),
         )
         opt = adamw(lr=1e-3)
         u_orig, u_rest = _round_trip(opt, params, output)
@@ -103,7 +103,7 @@ class TestAdamW:
         state = opt.init(params)
         for _ in range(7):
             _, state = opt.update(
-                noisy(grads, bound=1.0, noise_stddev=0.3),
+                noised(grads, max_norm=1.0, noise_stddev=0.3),
                 state,
                 params=params,
             )
@@ -159,7 +159,7 @@ class TestAdEMAMix:
         u_orig, u_rest = _round_trip(
             opt,
             params,
-            noisy(grads, bound=1.0, noise_stddev=0.4),
+            noised(grads, max_norm=1.0, noise_stddev=0.4),
         )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])

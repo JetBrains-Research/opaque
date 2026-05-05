@@ -5,7 +5,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset
 
-from opaque.bounded import bounded
+from opaque.clipping.types import clipped
+
 from opaque.dpftrl.noise import mf_noise
 from opaque.dpftrl.noise import (
     band_mf_strategy,
@@ -51,11 +52,11 @@ def _engine_train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps,
     return losses
 
 
-def _mf_train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps, *, bound):
+def _mf_train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps, *, max_norm):
     """Run a DP-FTRL training loop through the :func:`mf_noise` dispatcher.
 
-    Wraps gradients as :class:`BoundedPytree`, applies the dispatcher's
-    noise_fn, and unwraps the resulting :class:`NoisyPytree`.
+    Wraps gradients as :class:`ClippedPytree`, applies the dispatcher's
+    noise_fn, and unwraps the resulting :class:`NoisedPytree`.
     """
     params = list(model.parameters())
 
@@ -67,9 +68,9 @@ def _mf_train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps, *, 
         loss.backward()
 
         grads = {i: p.grad.clone() for i, p in enumerate(params)}
-        noisy, state = noise_fn(bounded(grads, bound=bound), state)
+        noised, state = noise_fn(clipped(grads, max_norm=max_norm), state)
         for i, p in enumerate(params):
-            p.grad = noisy.pytree[i].to(p.dtype)
+            p.grad = noised.pytree[i].to(p.dtype)
 
         optimizer.step()
         losses.append(loss.item())
@@ -192,7 +193,7 @@ class TestDPFTRLTrainingLoop:
         assert losses[-1] < losses[0]
 
     def test_deterministic_with_seed(self):
-        """Same seed produces same noisy updates."""
+        """Same seed produces same noised updates."""
         results = []
         for _ in range(2):
             torch.manual_seed(0)
@@ -357,9 +358,9 @@ class TestBLTWithBnB:
             loss.backward()
 
             grads = {i: p.grad.clone() for i, p in enumerate(params)}
-            noisy, noise_state = noise_fn(bounded(grads, bound=0.05), noise_state)
+            noised, noise_state = noise_fn(clipped(grads, max_norm=0.05), noise_state)
             for i, p in enumerate(params):
-                p.grad = noisy.pytree[i].to(p.dtype)
+                p.grad = noised.pytree[i].to(p.dtype)
 
             optimizer.step()
             losses.append(loss.item())
@@ -471,7 +472,7 @@ class TestMfNoiseStrategies:
     def test_strategy_trains(self, strategy_factory):
         model, opt, tmpl, x, y = self._setup()
         nf, ns = mf_noise(tmpl, strategy_factory(), noise_multiplier=1.0, key=key(42))
-        losses = _mf_train_loop(model, opt, nf, ns, x, y, steps=50, bound=0.1)
+        losses = _mf_train_loop(model, opt, nf, ns, x, y, steps=50, max_norm=0.1)
         assert losses[-1] < losses[0]
 
     def test_identity_matches_raw_engine(self):
@@ -481,6 +482,6 @@ class TestMfNoiseStrategies:
         nf2, ns2 = _matrix_factorization_noise(tmpl, identity(), key=key(42))
 
         grad = {"w": torch.ones(10)}
-        out1, _ = nf1(bounded(grad, bound=1.0), ns1)
+        out1, _ = nf1(clipped(grad, max_norm=1.0), ns1)
         out2, _ = nf2(grad, ns2, stddev=1.0)
         torch.testing.assert_close(out1.pytree["w"], out2["w"])

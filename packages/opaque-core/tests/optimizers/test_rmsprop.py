@@ -7,7 +7,7 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.bounded import noisy  # noqa: E402
+from opaque.core.noise import noised  # noqa: E402
 from opaque.core.noise import SecondMomentNoiseOutput  # noqa: E402
 from opaque.optimizers import RMSpropState, rmsprop  # noqa: E402
 
@@ -102,7 +102,7 @@ class TestBCMode:
         expected_phi = 0.0
         for _ in range(10):
             _, state = opt.update(
-                noisy(grads, bound=1.0, noise_stddev=sigma),
+                noised(grads, max_norm=1.0, noise_stddev=sigma),
                 state,
                 params=params,
             )
@@ -116,7 +116,7 @@ class TestBCMode:
         expected_phi = 0.0
         for sigma in [0.1, 0.2, 0.3, 0.2, 0.1]:
             _, state = opt.update(
-                noisy(grads, bound=1.0, noise_stddev=sigma),
+                noised(grads, max_norm=1.0, noise_stddev=sigma),
                 state,
                 params=params,
             )
@@ -132,7 +132,7 @@ class TestBCMode:
         for _ in range(10):
             u_std, s_std = opt_std.update(big, s_std, params=params)
             u_bc, s_bc = opt_bc.update(
-                noisy(big, bound=1.0, noise_stddev=0.01),
+                noised(big, max_norm=1.0, noise_stddev=0.01),
                 s_bc,
                 params=params,
             )
@@ -146,7 +146,7 @@ class TestBCMode:
         opt = rmsprop(lr=1e-3)
         state = opt.init(params)
         updates, _ = opt.update(
-            noisy(grads, bound=1.0, noise_stddev=1e6),
+            noised(grads, max_norm=1.0, noise_stddev=1e6),
             state,
             params=params,
         )
@@ -156,14 +156,14 @@ class TestBCMode:
         opt = rmsprop(lr=1e-2, noise_bias_correction=False)
         state = opt.init(params)
         _, state = opt.update(
-            noisy(grads, bound=1.0, noise_stddev=0.5),
+            noised(grads, max_norm=1.0, noise_stddev=0.5),
             state,
             params=params,
         )
         assert _rms_state(state).phi == 0.0
 
 
-class TestJMEMode:
+class TestSecondMomentMode:
     @pytest.fixture
     def sq_grads(self, grads):
         return {k: v.pow(2) + 0.01 for k, v in grads.items()}
@@ -173,8 +173,8 @@ class TestJMEMode:
         opt = rmsprop(lr=1e-2, alpha=alpha)
         state = opt.init(params)
         output = SecondMomentNoiseOutput(
-            noisy(grads, bound=1.0, noise_stddev=0.1),
-            noisy(sq_grads, bound=1.0, noise_stddev=0.1),
+            noised(grads, max_norm=1.0, noise_stddev=0.1),
+            noised(sq_grads, max_norm=1.0, noise_stddev=0.1),
         )
         _, state = opt.update(output, state, params=params)
         st = _rms_state(state)
@@ -186,8 +186,8 @@ class TestJMEMode:
         opt = rmsprop(lr=1e-2)
         state = opt.init(params)
         output = SecondMomentNoiseOutput(
-            noisy(grads, bound=1.0, noise_stddev=0.1),
-            noisy(sq, bound=1.0, noise_stddev=0.1),
+            noised(grads, max_norm=1.0, noise_stddev=0.1),
+            noised(sq, max_norm=1.0, noise_stddev=0.1),
         )
         updates, _ = opt.update(output, state, params=params)
         for k in updates:

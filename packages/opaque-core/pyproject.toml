@@ -31,7 +31,6 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["src"]
 include = [
-    "opaque.bounded*",
     "opaque.core*",
     "opaque.clipping*",
     "opaque.random*",

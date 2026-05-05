@@ -14,7 +14,10 @@ except ImportError as exc:
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
 
-from opaque.bounded import BoundedPytree, NoisyPytree
+from opaque.clipping.types import ClippedPytree
+
+from opaque.core.noise import NoisedPytree
+
 from opaque.core.noise import SecondMomentNoiseOutput
 
 
@@ -22,12 +25,12 @@ _LR = float | Callable[[Any], Any]
 
 
 def _unwrap_update_value(updates: Any) -> Any:
-    if isinstance(updates, NoisyPytree):
+    if isinstance(updates, NoisedPytree):
         return updates.pytree
-    if isinstance(updates, BoundedPytree):
+    if isinstance(updates, ClippedPytree):
         raise TypeError(
-            "optimizer.update() received BoundedPytree updates that have not "
-            "passed through a noise mechanism. Pass NoisyPytree outputs from "
+            "optimizer.update() received ClippedPytree updates that have not "
+            "passed through a noise mechanism. Pass NoisedPytree outputs from "
             "a DP mechanism, or unwrap `.pytree` explicitly for non-private use."
         )
     if isinstance(updates, SecondMomentNoiseOutput):
@@ -48,7 +51,7 @@ def sgd(
     """Create SGD with Opaque's wrapper-aware update API.
 
     SGD's update is unbiased under additive zero-mean DP noise, so it does not
-    consume ``NoisyPytree.noise_stddev``. The wrapper accepts ``NoisyPytree``
+    consume ``NoisedPytree.noise_stddev``. The wrapper accepts ``NoisedPytree``
     anyway and forwards the privatized pytree to TorchOpt's SGD primitive.
     """
     base = torchopt.sgd(

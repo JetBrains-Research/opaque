@@ -14,7 +14,7 @@ behaviors selected at factory time and by the update value type:
    "Stable and low-precision training for large-scale vision-language
    models" (2023).
 
-3. **DP noise-variance bias correction** — pass ``NoisyPytree`` updates
+3. **DP noise-variance bias correction** — pass ``NoisedPytree`` updates
     from a DP noise mechanism with ``noise_bias_correction=True``.  The
     wrapper carries the realized per-step σ; the second moment is then
     corrected by a β₂-EMA of the noise variance.  Chooi et al.,
@@ -30,7 +30,7 @@ Modes (3) and (4) target the same source of bias — that ``E[(g+noise)²]``
 is not ``E[g²]`` — by different means.  They are alternatives, not stack
 on top of each other; pick one per training run.  They are also mutually
 exclusive per step by construction, because a single ``update()`` value
-is either ``NoisyPytree`` or ``SecondMomentNoiseOutput``.
+is either ``NoisedPytree`` or ``SecondMomentNoiseOutput``.
 
 The optimizer follows torchopt's ``GradientTransformation`` protocol::
 
@@ -94,7 +94,7 @@ class AdamState:
         mu: First-moment EMA (pytree matching params).
         nu: Second-moment EMA (pytree matching params).
         phi: Noise-variance EMA (scalar or ``dict[group, float]``).
-            Stays at zero unless ``NoisyPytree`` updates supply realized
+            Stays at zero unless ``NoisedPytree`` updates supply realized
             σ metadata.
         step: Number of completed updates.
     """
@@ -271,7 +271,7 @@ def adam(
     """Create an Adam optimizer with Opaque's wrapper-aware update API.
 
     This is the original Adam/L2 weight-decay variant of :func:`adamw`.
-    ``NoisyPytree`` and ``SecondMomentNoiseOutput`` updates are routed the
+    ``NoisedPytree`` and ``SecondMomentNoiseOutput`` updates are routed the
     same way as AdamW, so callers do not need an optimizer-specific branch.
     """
     return adamw(
@@ -311,7 +311,7 @@ def adamw(
             is the global root-mean-square over all tensor leaves.
         noise_bias_correction: If ``True``, subtract a β₂-EMA of the
             realized noise variance from the second moment when
-            ``NoisyPytree`` updates are passed (DP-AdamW-BC, Chooi et al.).
+            ``NoisedPytree`` updates are passed (DP-AdamW-BC, Chooi et al.).
             Defaults to ``False``; flip on to ablate.  Has no effect on
             steps where the update is a ``SecondMomentNoiseOutput``,
             since the privatised ``g²`` stream is an alternative answer
@@ -322,7 +322,7 @@ def adamw(
 
     DP usage notes:
 
-        - At ``update()`` time, pass ``NoisyPytree`` updates from the DP noise
+        - At ``update()`` time, pass ``NoisedPytree`` updates from the DP noise
             mechanism; the realized σ overrides the constructor default.
         - Alternatively pass ``SecondMomentNoiseOutput`` to consume an
             externally privatised second-moment stream — same purpose as

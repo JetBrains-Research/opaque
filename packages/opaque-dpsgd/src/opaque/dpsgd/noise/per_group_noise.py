@@ -31,7 +31,7 @@ import math
 from opaque.clipping.per_group import PerGroup
 
 
-def per_group_noise_stddev(bound: PerGroup, noise_multiplier: float) -> PerGroup:
+def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGroup:
     r"""Compute MSE-optimal per-group noise standard deviations.
 
     Given per-group contribution bounds :math:`B_1, \dots, B_K`, returns
@@ -51,8 +51,8 @@ def per_group_noise_stddev(bound: PerGroup, noise_multiplier: float) -> PerGroup
     with no composition penalty regardless of the number of groups.
 
     Args:
-        bound: Per-group contribution bounds, typically
-            ``bounded_grads.bound`` from per-group clipping.
+        max_norm: Per-group contribution bounds, typically
+            ``clipped_grads.max_norm`` from per-group clipping.
         noise_multiplier: The noise multiplier used for privacy
             accounting via ``gaussian(nm)``.
 
@@ -61,7 +61,7 @@ def per_group_noise_stddev(bound: PerGroup, noise_multiplier: float) -> PerGroup
         standard deviations.
 
     Raises:
-        TypeError: If ``bound`` is not ``PerGroup``.
+        TypeError: If ``max_norm`` is not ``PerGroup``.
 
     Example::
 
@@ -70,27 +70,27 @@ def per_group_noise_stddev(bound: PerGroup, noise_multiplier: float) -> PerGroup
 
         grad_fn, clip_state = clipped_grad(loss_fn, clipping_norm=pg, ...)
         grads, clip_state = grad_fn(params, batch, state=clip_state)
-        stddev = per_group_noise_stddev(grads.bound, nm)
+        stddev = per_group_noise_stddev(grads.max_norm, nm)
         # stddev is a PerGroup allocation for mechanisms that accept
         # per-group standard deviations directly.
 
         # Accounting: just gaussian(nm), same as isotropic.
     """
-    if not isinstance(bound, PerGroup):
+    if not isinstance(max_norm, PerGroup):
         raise TypeError(
-            "per_group_noise_stddev requires a PerGroup bound, "
-            f"got {type(bound).__name__}."
+            "per_group_noise_stddev requires a PerGroup max_norm, "
+            f"got {type(max_norm).__name__}."
         )
-    for group_name, value in bound.values.items():
+    for group_name, value in max_norm.values.items():
         if value < 0:
             raise ValueError(
                 "per-group bounds must be non-negative, "
                 f"got {value} for group '{group_name}'."
             )
-    sum_c = sum(bound.values.values())
+    sum_c = sum(max_norm.values.values())
     return PerGroup(
-        bound.groups,
-        {k: noise_multiplier * math.sqrt(c * sum_c) for k, c in bound.values.items()},
+        max_norm.groups,
+        {k: noise_multiplier * math.sqrt(c * sum_c) for k, c in max_norm.values.items()},
     )
 
 

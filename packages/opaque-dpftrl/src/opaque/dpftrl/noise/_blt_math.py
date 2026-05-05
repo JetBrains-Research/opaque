@@ -200,7 +200,7 @@ class BufferedToeplitz:
         Args:
             num_buffers: Number of buffers (degree of rational function).
             max_buf_decay: Maximum value for buf_decay.
-            max_pillutla_score: If set, enforce this bound.
+            max_pillutla_score: If set, enforce this max_norm.
             buf_decay_scale: Factor scaling the dynamic range.
             buf_decay_shift: Shift for the counter k.
 

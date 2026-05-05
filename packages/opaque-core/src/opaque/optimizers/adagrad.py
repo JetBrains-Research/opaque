@@ -30,7 +30,7 @@ denominator now tracks only the signal contribution and the per-
 coordinate LR adapts as intended.
 
 This module is mechanism-agnostic: the noise mechanism carries realized
-``noise_stddev`` metadata on ``NoisyPytree`` updates; the noise injection
+``noise_stddev`` metadata on ``NoisedPytree`` updates; the noise injection
 lives elsewhere (``opaque.dpsgd.noise``, ``opaque.dpftrl.noise``).
 """
 
@@ -71,7 +71,7 @@ class AdagradState:
             params).
         phi_acc: Cumulative noise variance ``∑ σ²`` (scalar or
             ``dict[group, float]``).  Stays at zero unless
-            ``NoisyPytree`` updates supply realized σ metadata.
+            ``NoisedPytree`` updates supply realized σ metadata.
         step: Number of completed updates.
     """
 
@@ -192,7 +192,7 @@ def adagrad(
             ``False`` folds ``wd·params`` into the gradient.
         noise_bias_correction: If ``True``, subtract a cumulative
             ``Φ_acc`` of the realized noise variance from ``v_acc`` when
-            ``NoisyPytree`` updates are passed (Adagrad does not decay
+            ``NoisedPytree`` updates are passed (Adagrad does not decay
             its accumulator, so unmitigated noise compounds linearly).
             Defaults to ``False``; flip on to ablate.
 

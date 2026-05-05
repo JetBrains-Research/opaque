@@ -11,7 +11,7 @@ KEY DIFFERENCES FROM DP-SGD (train_causal_lm.py):
      Opaque-built v-using optimizers (``adamw``, ``ademamix``).  For
     adaptive optimizers, pair with ``--second-moment`` to activate a
     private squared-gradient stream.  The optimizer consumes the
-    privately-estimated ``g²`` stream alongside standard noisy gradients.
+    privately-estimated ``g²`` stream alongside standard noised gradients.
     ``lion`` is also exposed but has no v, so ``--second-moment`` is
     rejected for it.
 
@@ -342,7 +342,7 @@ def parse_args():
         default=False,
         help=(
             "Activate private second-moment noise: ``mf_noise`` produces a "
-            "privately-estimated ``g²`` stream alongside noisy gradients, "
+            "privately-estimated ``g²`` stream alongside noised gradients, "
             "and Opaque optimizers consume it automatically.  Costs ~22% "
             "extra noise on the first-moment stream under add/remove DP; "
             "in exchange the optimizer's v̂ is unbiased.  Requires an "
@@ -920,6 +920,7 @@ def main():
         normalize_by=args.batch_size,
         microbatch_size=args.microbatch_size,
         return_aux=True,
+        second_moment=args.second_moment,
     )
     zeta = args.clipping_norm / args.batch_size
 
@@ -958,9 +959,6 @@ def main():
     #     Requires the optimizer to consume ``SecondMomentNoiseOutput``.
     is_adam_family = args.optimizer in ("adamw", "ademamix", "lion")
     use_second_moment = args.second_moment
-    second_moment_noise_arg = (
-        args.second_moment_overhead if args.second_moment_overhead is not None else True
-    )
     second_moment_accounting_overhead = (
         args.second_moment_overhead
         if args.second_moment_overhead is not None
@@ -1179,8 +1177,8 @@ def main():
             strategy,
             noise_multiplier=noise_multiplier,
             key=key(args.seed),
-            second_moment=second_moment_noise_arg,
             second_moment_strategy=second_strategy,
+            first_moment_overhead=second_moment_accounting_overhead,
         )
     elif args.mechanism in ("identity", "none"):
         noise_fn, noise_state = mf_noise(
@@ -1397,6 +1395,10 @@ def main():
                         state=clip_state,
                     )
 
+                # ``grads`` is a ``SecondMomentClippingOutput`` when
+                # ``--second-moment`` is on (clipped_grad produced both
+                # streams per-example), or a single ``ClippedPytree``
+                # otherwise — the noise function dispatches polymorphically.
                 noisy_grads, noise_state = noise_fn(grads, noise_state)
                 if isinstance(noisy_grads, SecondMomentNoiseOutput):
                     step_noise_stddev = noisy_grads.noisy_grads.noise_stddev

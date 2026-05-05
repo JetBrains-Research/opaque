@@ -7,7 +7,8 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.bounded import bounded, noisy  # noqa: E402
+from opaque.clipping.types import clipped  # noqa: E402
+from opaque.core.noise import noised  # noqa: E402
 from opaque.optimizers import LionState, lion  # noqa: E402
 
 
@@ -97,19 +98,19 @@ class TestLion:
 
     def test_noisy_updates_unwrap_silently(self, params, grads):
         """Lion has no DP-aware path, so it silently uses the wrapped
-        pytree values when handed a NoisyPytree.  No warning."""
+        pytree values when handed a NoisedPytree.  No warning."""
         opt = lion(lr=1e-4)
         state = opt.init(params)
         updates, _ = opt.update(
-            noisy(grads, bound=1.0, noise_stddev=0.25),
+            noised(grads, max_norm=1.0, noise_stddev=0.25),
             state,
             params=params,
         )
         for k in params:
             assert updates[k].shape == params[k].shape
 
-    def test_bounded_updates_are_rejected(self, params, grads):
+    def test_clipped_updates_are_rejected(self, params, grads):
         opt = lion(lr=1e-4)
         state = opt.init(params)
         with pytest.raises(TypeError, match="have not passed through a noise mechanism"):
-            opt.update(bounded(grads, bound=1.0), state, params=params)
+            opt.update(clipped(grads, max_norm=1.0), state, params=params)

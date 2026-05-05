@@ -3,15 +3,16 @@
 import pytest
 import torch
 
-from opaque.bounded import BoundedPytree
+from opaque.clipping.types import ClippedPytree
+
 from opaque.clipping import clipped_grad
 from opaque.clipping.pytree import clip_pytree
 from opaque.clipping.types import FixedClipState
 from opaque.clipping.per_group import PerGroup, per_group
 
 
-def _unwrap_bounded(value):
-    assert isinstance(value, BoundedPytree)
+def _unwrap_clipped(value):
+    assert isinstance(value, ClippedPytree)
     return value.pytree
 
 
@@ -39,9 +40,9 @@ class TestClipPytreePerGroup:
             torch.testing.assert_close(clipped[key], pytree[key])
 
     def test_clips_groups_independently(self):
-        """Each group should be clipped to its own norm bound."""
-        # attn group: norm = sqrt(9 + 16) = 5, bound = 1 → scale = 0.2
-        # mlp group: norm = 3, bound = 6 → no clipping (scale = 1)
+        """Each group should be clipped to its own norm max_norm."""
+        # attn group: norm = sqrt(9 + 16) = 5, max_norm = 1 → scale = 0.2
+        # mlp group: norm = 3, max_norm = 6 → no clipping (scale = 1)
         pytree = {
             "attn.q": torch.tensor([3.0]),
             "attn.k": torch.tensor([4.0]),
@@ -150,13 +151,13 @@ class TestClippedGradPerGroup:
 
         data = torch.tensor([1.0, 2.0, 3.0])
         grads, _ = grad_fn(params, data, state=clip_state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
 
         assert isinstance(grads, dict)
         assert "w1" in grads and "w2" in grads
 
     def test_output_bound_preserves_per_group_metadata(self):
-        """The clipped output carries per-group bound metadata after normalization."""
+        """The clipped output carries per-group max_norm metadata after normalization."""
 
         def loss(params, data):
             return (params["a"] * data).mean()
@@ -173,9 +174,9 @@ class TestClippedGradPerGroup:
         )
 
         grads, _ = grad_fn(params, torch.randn(8), state=clip_state)
-        assert isinstance(grads.bound, PerGroup)
-        assert grads.bound.groups == pg.groups
-        assert grads.bound.values == {"a": pytest.approx(0.2), "b": pytest.approx(0.4)}
+        assert isinstance(grads.max_norm, PerGroup)
+        assert grads.max_norm.groups == pg.groups
+        assert grads.max_norm.values == {"a": pytest.approx(0.2), "b": pytest.approx(0.4)}
 
     def test_per_group_with_microbatch(self):
         """Per-group clipping should work with microbatching."""
@@ -196,7 +197,7 @@ class TestClippedGradPerGroup:
 
         data = torch.tensor([1.0, 2.0, 3.0, 4.0])
         grads, _ = grad_fn(params, data, state=clip_state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
         assert isinstance(grads, dict)
 
     def test_per_group_with_return_aux(self):
@@ -218,7 +219,7 @@ class TestClippedGradPerGroup:
 
         data = torch.tensor([1.0, 2.0, 3.0])
         (grads, aux), _ = grad_fn(params, data, state=clip_state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
         assert isinstance(grads, dict)
         assert aux.grad_norms is not None
 
@@ -244,13 +245,13 @@ class TestClippedGradPerGroup:
         data = torch.tensor([5.0, 10.0, -3.0])
         grads_g, _ = grad_fn_g(params, data, state=cs_g)
         grads_pg, _ = grad_fn_pg(params, data, state=cs_pg)
-        grads_g = _unwrap_bounded(grads_g)
-        grads_pg = _unwrap_bounded(grads_pg)
+        grads_g = _unwrap_clipped(grads_g)
+        grads_pg = _unwrap_clipped(grads_pg)
 
         torch.testing.assert_close(grads_g["w"], grads_pg["w"])
 
     def test_noise_multiplier_bound_arithmetic(self):
-        """noise_multiplier * grads.bound should preserve PerGroup metadata."""
+        """noise_multiplier * grads.max_norm should preserve PerGroup metadata."""
 
         def loss(params, data):
             return (params["a"] * data).mean()
@@ -264,6 +265,6 @@ class TestClippedGradPerGroup:
 
         noise_multiplier = 1.1
         grads, _ = grad_fn(params, torch.randn(4), state=clip_state)
-        stddev = noise_multiplier * grads.bound
+        stddev = noise_multiplier * grads.max_norm
         assert isinstance(stddev, PerGroup)
         assert stddev.values == {"a": pytest.approx(1.1), "b": pytest.approx(2.2)}

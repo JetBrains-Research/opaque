@@ -7,7 +7,8 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.bounded import bounded, noisy  # noqa: E402
+from opaque.clipping.types import clipped  # noqa: E402
+from opaque.core.noise import noised  # noqa: E402
 from opaque.core.noise import SecondMomentNoiseOutput  # noqa: E402
 from opaque.optimizers import sgd  # noqa: E402
 
@@ -41,18 +42,18 @@ class TestSGD:
         opt = sgd(lr=1e-2)
         state = opt.init(params)
         updates, _ = opt.update(
-            noisy(grads, bound=1.0, noise_stddev=0.25),
+            noised(grads, max_norm=1.0, noise_stddev=0.25),
             state,
             params=params,
         )
         for name in updates:
             assert updates[name].shape == params[name].shape
 
-    def test_bounded_updates_are_rejected(self, params, grads):
+    def test_clipped_updates_are_rejected(self, params, grads):
         opt = sgd(lr=1e-2)
         state = opt.init(params)
         with pytest.raises(TypeError, match="have not passed through a noise mechanism"):
-            opt.update(bounded(grads, bound=1.0), state, params=params)
+            opt.update(clipped(grads, max_norm=1.0), state, params=params)
 
     def test_explicit_metadata_kwargs_are_rejected(self, params, grads):
         opt = sgd(lr=1e-2)
@@ -69,8 +70,8 @@ class TestSGD:
         state = opt.init(params)
         sq = {name: value.square() for name, value in grads.items()}
         output = SecondMomentNoiseOutput(
-            noisy(grads, bound=1.0, noise_stddev=0.1),
-            noisy(sq, bound=1.0, noise_stddev=0.1),
+            noised(grads, max_norm=1.0, noise_stddev=0.1),
+            noised(sq, max_norm=1.0, noise_stddev=0.1),
         )
         updates, _ = opt.update(output, state, params=params)
         for name in updates:

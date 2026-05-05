@@ -12,15 +12,16 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from opaque.bounded import bounded
+from opaque.clipping.types import clipped
+
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.dpftrl.noise import mf_noise, identity_strategy
 from opaque.random import key
 
 
 def _noise_raw(noise_fn, grads, state):
-    noisy, state = noise_fn(bounded(grads, bound=1.0), state)
-    return noisy.pytree, state
+    noised, state = noise_fn(clipped(grads, max_norm=1.0), state)
+    return noised.pytree, state
 
 
 class TestDistributedNoise:
@@ -126,11 +127,11 @@ class TestDistributedNoise:
         grads = {"weight": torch.randn(10, 5), "bias": torch.randn(5)}
 
         noise_fn, state = gaussian_noise(noise_multiplier=0.0, key=key(seed))
-        noisy, state = _noise_raw(noise_fn, grads, state)
+        noised, state = _noise_raw(noise_fn, grads, state)
 
         # Should be unchanged
-        assert torch.allclose(noisy["weight"], grads["weight"])
-        assert torch.allclose(noisy["bias"], grads["bias"])
+        assert torch.allclose(noised["weight"], grads["weight"])
+        assert torch.allclose(noised["bias"], grads["bias"])
 
     def test_negative_stddev_raises(self):
         """Negative stddev raises ValueError."""
@@ -152,16 +153,16 @@ class TestDistributedNoiseWithPyTree:
         }
 
         noise_fn, state = gaussian_noise(noise_multiplier=stddev, key=key(seed))
-        noisy, state = _noise_raw(noise_fn, grads, state)
+        noised, state = _noise_raw(noise_fn, grads, state)
 
         # Should preserve structure
-        assert "layer1" in noisy
-        assert "layer2" in noisy
-        assert "weight" in noisy["layer1"]
-        assert "bias" in noisy["layer1"]
+        assert "layer1" in noised
+        assert "layer2" in noised
+        assert "weight" in noised["layer1"]
+        assert "bias" in noised["layer1"]
 
         # Should add noise
-        assert not torch.allclose(noisy["layer1"]["weight"], grads["layer1"]["weight"])
+        assert not torch.allclose(noised["layer1"]["weight"], grads["layer1"]["weight"])
 
     def test_list_of_tensors(self):
         """Distributed noise works with list of tensors."""
@@ -171,12 +172,12 @@ class TestDistributedNoiseWithPyTree:
         grads = [torch.randn(10, 5), torch.randn(5)]
 
         noise_fn, state = gaussian_noise(noise_multiplier=stddev, key=key(seed))
-        noisy, state = _noise_raw(noise_fn, grads, state)
+        noised, state = _noise_raw(noise_fn, grads, state)
 
         # Should preserve structure
-        assert len(noisy) == 2
-        assert noisy[0].shape == grads[0].shape
-        assert noisy[1].shape == grads[1].shape
+        assert len(noised) == 2
+        assert noised[0].shape == grads[0].shape
+        assert noised[1].shape == grads[1].shape
 
     def test_single_tensor(self):
         """Distributed noise works with single tensor (not dict)."""
@@ -186,11 +187,11 @@ class TestDistributedNoiseWithPyTree:
         grad = torch.randn(10, 5)
 
         noise_fn, state = gaussian_noise(noise_multiplier=stddev, key=key(seed))
-        noisy, state = _noise_raw(noise_fn, grad, state)
+        noised, state = _noise_raw(noise_fn, grad, state)
 
         # Should add noise
-        assert not torch.allclose(noisy, grad)
-        assert noisy.shape == grad.shape
+        assert not torch.allclose(noised, grad)
+        assert noised.shape == grad.shape
 
     def test_preserves_dtype(self):
         """Distributed noise preserves tensor dtype."""
@@ -203,10 +204,10 @@ class TestDistributedNoiseWithPyTree:
         }
 
         noise_fn, state = gaussian_noise(noise_multiplier=stddev, key=key(seed))
-        noisy, state = _noise_raw(noise_fn, grads, state)
+        noised, state = _noise_raw(noise_fn, grads, state)
 
-        assert noisy["float32"].dtype == torch.float32
-        assert noisy["float64"].dtype == torch.float64
+        assert noised["float32"].dtype == torch.float32
+        assert noised["float64"].dtype == torch.float64
 
     def test_preserves_device(self, device):
         """Distributed noise preserves tensor device."""
@@ -219,10 +220,10 @@ class TestDistributedNoiseWithPyTree:
         }
 
         noise_fn, state = gaussian_noise(noise_multiplier=stddev, key=key(seed))
-        noisy, state = _noise_raw(noise_fn, grads, state)
+        noised, state = _noise_raw(noise_fn, grads, state)
 
-        assert noisy["weight"].device.type == device.type
-        assert noisy["bias"].device.type == device.type
+        assert noised["weight"].device.type == device.type
+        assert noised["bias"].device.type == device.type
 
 
 class TestNoiseCalibration:
@@ -237,10 +238,10 @@ class TestNoiseCalibration:
         # Generate large sample of noise
         grad = torch.zeros(n_samples)
         noise_fn, state = gaussian_noise(noise_multiplier=stddev, key=key(seed))
-        noisy, state = _noise_raw(noise_fn, grad, state)
+        noised, state = _noise_raw(noise_fn, grad, state)
 
         # Noise should have mean ≈ 0 and std ≈ stddev
-        noise = noisy - grad  # Extract noise
+        noise = noised - grad  # Extract noise
         assert abs(noise.mean().item()) < 0.1  # Mean close to 0
         assert abs(noise.std().item() - stddev) < 0.1  # Std close to stddev
 
@@ -274,10 +275,10 @@ def _worker_mf_shared_noise(rank: int, world_size: int, port: int) -> None:
             grad_template, identity_strategy(), stddev=1.0, key=key(0)
         )
         grads = {"weight": torch.zeros(4, device=device)}
-        noisy, _ = noise_fn(grads, state)
+        noised, _ = noise_fn(grads, state)
 
-        gathered = [torch.zeros_like(noisy["weight"]) for _ in range(world_size)]
-        dist.all_gather(gathered, noisy["weight"])
+        gathered = [torch.zeros_like(noised["weight"]) for _ in range(world_size)]
+        dist.all_gather(gathered, noised["weight"])
         if rank == 0:
             for other in gathered[1:]:
                 assert torch.allclose(gathered[0], other)

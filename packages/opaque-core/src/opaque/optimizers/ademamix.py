@@ -24,7 +24,7 @@ unstable).
 DP behavior.  The second moment EMA is structurally identical to
 Adam's, so:
 
-- ``NoisyPytree`` carries realized per-step σ and drives the φ-EMA bias
+- ``NoisedPytree`` carries realized per-step σ and drives the φ-EMA bias
     correction on ``v̂`` exactly as in :func:`opaque.optimizers.adamw`.
 - ``SecondMomentNoiseOutput`` substitutes a private squared-gradient
     moment by post-processing.
@@ -238,7 +238,7 @@ def ademamix(
             moment-scaled update.
         noise_bias_correction: If ``True``, subtract a β₂-EMA of the
             realized noise variance from the second moment when
-            ``NoisyPytree`` updates are passed.  Defaults to ``False``;
+            ``NoisedPytree`` updates are passed.  Defaults to ``False``;
             flip on to ablate.
 
     Returns:

@@ -18,7 +18,8 @@ import torch.multiprocessing as mp
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
-from opaque.bounded import bounded
+from opaque.clipping.types import clipped
+
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.distributed import (
@@ -271,10 +272,10 @@ def _worker_shared_noise_is_deterministic(
             "bias": torch.zeros(5, device=device),
         }
         noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
-        noisy, _ = noise_fn(bounded(grads, bound=1.0), state)
+        noised, _ = noise_fn(clipped(grads, max_norm=1.0), state)
 
-        gathered = [torch.zeros_like(noisy.pytree["weight"]) for _ in range(world_size)]
-        dist.all_gather(gathered, noisy.pytree["weight"])
+        gathered = [torch.zeros_like(noised.pytree["weight"]) for _ in range(world_size)]
+        dist.all_gather(gathered, noised.pytree["weight"])
         if rank == 0:
             for other in gathered[1:]:
                 assert torch.allclose(gathered[0], other)
@@ -293,7 +294,7 @@ def _worker_sync_noise_states(rank: int, world_size: int, port: int) -> None:
 
         gaussian_fn, gaussian_state = gaussian_noise(noise_multiplier=1.0, key=key(42))
         _noisy_gauss, gaussian_state = gaussian_fn(
-            bounded(grads, bound=1.0), gaussian_state
+            clipped(grads, max_norm=1.0), gaussian_state
         )
         synced_gaussian_state = sync(gaussian_state)
         assert synced_gaussian_state._step_counter == 1
@@ -301,7 +302,7 @@ def _worker_sync_noise_states(rank: int, world_size: int, port: int) -> None:
         mf_fn, mf_state = mf_noise(
             grads, identity_strategy(), noise_multiplier=1.0, key=key(42)
         )
-        _noisy_mf, mf_state = mf_fn(bounded(grads, bound=1.0), mf_state)
+        _noisy_mf, mf_state = mf_fn(clipped(grads, max_norm=1.0), mf_state)
         synced_mf_state = sync(mf_state)
         assert synced_mf_state._step_counter == 1
     finally:

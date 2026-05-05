@@ -3,7 +3,7 @@
 Covers all four orthogonal modes:
 
 - vanilla AdamW (no DP kwargs at update)
-- DP-AdamW-BC (``NoisyPytree`` metadata)
+- DP-AdamW-BC (``NoisedPytree`` metadata)
 - DP-Adam with a private second-moment stream (``SecondMomentNoiseOutput``)
 - StableAdamW (``update_rms_clip`` constructor knob)
 
@@ -17,7 +17,8 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.bounded import bounded, noisy  # noqa: E402
+from opaque.clipping.types import clipped  # noqa: E402
+from opaque.core.noise import noised  # noqa: E402
 from opaque.clipping.per_group import PerGroup  # noqa: E402
 from opaque.core.noise import SecondMomentNoiseOutput  # noqa: E402
 from opaque.optimizers import AdamState, adam, adamw  # noqa: E402
@@ -139,7 +140,7 @@ class TestAdamAlias:
         opt = adam(lr=1e-3, noise_bias_correction=True)
         state = opt.init(params)
         _, state = opt.update(
-            noisy(grads, bound=1.0, noise_stddev=0.5),
+            noised(grads, max_norm=1.0, noise_stddev=0.5),
             state,
             params=params,
         )
@@ -163,7 +164,7 @@ class TestAdamAlias:
 
 
 # ---------------------------------------------------------------------------
-# DP-AdamW-BC: NoisyPytree metadata
+# DP-AdamW-BC: NoisedPytree metadata
 # ---------------------------------------------------------------------------
 
 
@@ -183,7 +184,7 @@ class TestBCMode:
         expected_phi = 0.0
         for _ in range(10):
             _, state = opt.update(
-                noisy(grads, bound=1.0, noise_stddev=sigma),
+                noised(grads, max_norm=1.0, noise_stddev=sigma),
                 state,
                 params=params,
             )
@@ -198,7 +199,7 @@ class TestBCMode:
         sigmas = [0.1, 0.2, 0.3, 0.2, 0.1]
         for sigma in sigmas:
             _, state = opt.update(
-                noisy(grads, bound=1.0, noise_stddev=sigma),
+                noised(grads, max_norm=1.0, noise_stddev=sigma),
                 state,
                 params=params,
             )
@@ -211,7 +212,7 @@ class TestBCMode:
         opt = adamw(lr=1e-3, betas=(0.9, b2), noise_bias_correction=True)
         state = opt.init(params)
         _, state = opt.update(
-            noisy(grads, bound=1.0, noise_stddev=sigma),
+            noised(grads, max_norm=1.0, noise_stddev=sigma),
             state,
             params=params,
         )
@@ -219,18 +220,18 @@ class TestBCMode:
 
     def test_explicit_noise_stddev_kwarg_rejected(self, params, grads):
         """The optimizer surface no longer takes a per-step ``noise_stddev``
-        kwarg; metadata travels via ``NoisyPytree`` only.  Python's natural
+        kwarg; metadata travels via ``NoisedPytree`` only.  Python's natural
         TypeError surfaces this for users who try the old API."""
         opt = adamw(lr=1e-3)
         state = opt.init(params)
         with pytest.raises(TypeError, match="noise_stddev"):
             opt.update(grads, state, params=params, noise_stddev=0.5)
 
-    def test_bounded_updates_are_rejected(self, params, grads):
+    def test_clipped_updates_are_rejected(self, params, grads):
         opt = adamw(lr=1e-3)
         state = opt.init(params)
         with pytest.raises(TypeError, match="have not passed through a noise mechanism"):
-            opt.update(bounded(grads, bound=1.0), state, params=params)
+            opt.update(clipped(grads, max_norm=1.0), state, params=params)
 
     def test_raw_pytree_matches_torchopt(self, params, grads):
         """Raw pytrees are non-private and match torchopt.adamw."""
@@ -254,7 +255,7 @@ class TestBCMode:
         for _ in range(10):
             u_std, s_std = opt_std.update(big, s_std, params=params)
             u_bc, s_bc = opt_bc.update(
-                noisy(big, bound=1.0, noise_stddev=0.01),
+                noised(big, max_norm=1.0, noise_stddev=0.01),
                 s_bc,
                 params=params,
             )
@@ -269,7 +270,7 @@ class TestBCMode:
         opt = adamw(lr=1e-3)
         state = opt.init(params)
         updates, _ = opt.update(
-            noisy(grads, bound=1.0, noise_stddev=1e6),
+            noised(grads, max_norm=1.0, noise_stddev=1e6),
             state,
             params=params,
         )
@@ -279,7 +280,7 @@ class TestBCMode:
         opt = adamw(lr=1e-3, noise_bias_correction=False)
         state = opt.init(params)
         _, state = opt.update(
-            noisy(grads, bound=1.0, noise_stddev=0.5),
+            noised(grads, max_norm=1.0, noise_stddev=0.5),
             state,
             params=params,
         )
@@ -287,7 +288,7 @@ class TestBCMode:
 
 
 # ---------------------------------------------------------------------------
-# Per-group BC (PerGroup NoisyPytree metadata)
+# Per-group BC (PerGroup NoisedPytree metadata)
 # ---------------------------------------------------------------------------
 
 
@@ -311,7 +312,7 @@ class TestPerGroupBC:
         opt = adamw(lr=1e-3, noise_bias_correction=True)
         state = opt.init(pg_params)
         _, state = opt.update(
-            noisy(pg_params, bound=1.0, noise_stddev=pg_stddev),
+            noised(pg_params, max_norm=1.0, noise_stddev=pg_stddev),
             state,
             params=pg_params,
         )
@@ -326,12 +327,12 @@ class TestPerGroupBC:
         s_sc = opt_scalar.init(pg_params)
         for _ in range(5):
             u_pg, s_pg = opt_pg.update(
-                noisy(pg_grads, bound=1.0, noise_stddev=pg_stddev),
+                noised(pg_grads, max_norm=1.0, noise_stddev=pg_stddev),
                 s_pg,
                 params=pg_params,
             )
             u_sc, s_sc = opt_scalar.update(
-                noisy(pg_grads, bound=1.0, noise_stddev=0.3),
+                noised(pg_grads, max_norm=1.0, noise_stddev=0.3),
                 s_sc,
                 params=pg_params,
             )
@@ -373,7 +374,7 @@ class TestPerGroupBC:
         # Update should not raise (the old code crashed on the
         # ``resolve_noise_variance(pg, "layer1")`` lookup).
         updates, new_state = opt.update(
-            noisy(nested_grads, bound=1.0, noise_stddev=pg),
+            noised(nested_grads, max_norm=1.0, noise_stddev=pg),
             state,
             params=nested_params,
         )
@@ -414,8 +415,8 @@ class TestSecondMomentMode:
         opt = adamw(lr=1e-3, betas=(0.9, b2))
         state = opt.init(params)
         output = SecondMomentNoiseOutput(
-            noisy(grads, bound=1.0, noise_stddev=0.1),
-            noisy(sq_grads, bound=1.0, noise_stddev=0.1),
+            noised(grads, max_norm=1.0, noise_stddev=0.1),
+            noised(sq_grads, max_norm=1.0, noise_stddev=0.1),
         )
         _, state = opt.update(output, state, params=params)
         adam = _adam_state(state)
@@ -431,8 +432,8 @@ class TestSecondMomentMode:
         opt = adamw(lr=1e-3, betas=(0.9, b2))
         state = opt.init(params)
         output = SecondMomentNoiseOutput(
-            noisy(grads, bound=1.0, noise_stddev=0.5),
-            noisy(sq_grads, bound=1.0, noise_stddev=0.1),
+            noised(grads, max_norm=1.0, noise_stddev=0.5),
+            noised(sq_grads, max_norm=1.0, noise_stddev=0.1),
         )
         _, state = opt.update(output, state, params=params)
         adam = _adam_state(state)
@@ -441,12 +442,12 @@ class TestSecondMomentMode:
             expected_v = (1 - b2) * sq_grads[k]
             torch.testing.assert_close(adam.nu[k], expected_v)
 
-    def test_second_moment_output_rejects_bounded_stream(self, params, grads, sq_grads):
+    def test_second_moment_output_rejects_clipped_stream(self, params, grads, sq_grads):
         opt = adamw(lr=1e-3)
         state = opt.init(params)
         output = SecondMomentNoiseOutput(
-            noisy(grads, bound=1.0, noise_stddev=0.5),
-            bounded(sq_grads, bound=1.0),
+            noised(grads, max_norm=1.0, noise_stddev=0.5),
+            clipped(sq_grads, max_norm=1.0),
         )
         with pytest.raises(TypeError, match="SecondMomentNoiseOutput.noisy_squared_grads"):
             opt.update(output, state, params=params)
@@ -457,21 +458,21 @@ class TestSecondMomentMode:
         # External second-moment path explicitly bypasses φ; phi stays at 0.
         for _ in range(3):
             output = SecondMomentNoiseOutput(
-                noisy(grads, bound=1.0, noise_stddev=0.1),
-                noisy(sq_grads, bound=1.0, noise_stddev=0.1),
+                noised(grads, max_norm=1.0, noise_stddev=0.1),
+                noised(sq_grads, max_norm=1.0, noise_stddev=0.1),
             )
             _, state = opt.update(output, state, params=params)
         assert _adam_state(state).phi == 0.0
 
     def test_second_moment_negative_squared_stream_is_floored(self, params, grads):
-        """Private g² streams are noisy and can be negative;
+        """Private g² streams are noised and can be negative;
         the denominator must floor before sqrt instead of producing NaNs."""
         sq = {k: -torch.ones_like(v) for k, v in grads.items()}
         opt = adamw(lr=1e-3)
         state = opt.init(params)
         output = SecondMomentNoiseOutput(
-            noisy(grads, bound=1.0, noise_stddev=0.1),
-            noisy(sq, bound=1.0, noise_stddev=0.1),
+            noised(grads, max_norm=1.0, noise_stddev=0.1),
+            noised(sq, max_norm=1.0, noise_stddev=0.1),
         )
         updates, _ = opt.update(output, state, params=params)
         for k in updates:
@@ -552,7 +553,7 @@ class TestConvergence:
         for _ in range(200):
             grads = {"x": 2.0 * (params["x"] - target)}
             updates, state = opt.update(
-                noisy(grads, bound=1.0, noise_stddev=0.01),
+                noised(grads, max_norm=1.0, noise_stddev=0.01),
                 state,
                 params=params,
             )

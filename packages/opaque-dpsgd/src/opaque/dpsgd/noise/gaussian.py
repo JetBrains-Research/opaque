@@ -1,19 +1,19 @@
 """Gaussian noise generation for differential privacy.
 
 This module provides a higher-order function for adding calibrated Gaussian noise
-to bounded DP query values.
+to clipped DP query values.
 
 The API returns ``(noise_fn, state)`` where state is always immutable:
 
     >>> from opaque.random import key
-    >>> from opaque.bounded import bounded
+    >>> from opaque.clipping.types import clipped
     >>> from opaque.dpsgd.noise.gaussian import gaussian_noise
     >>> noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(42))
-    >>> noisy_grads, state = noise_fn(bounded(grads, bound=1.0), state)
+    >>> noisy_grads, state = noise_fn(clipped(grads, max_norm=1.0), state)
 
 The constructor takes a noise multiplier, not a raw standard deviation.
-Per-step sensitivity flows through the input ``BoundedPytree.bound`` metadata,
-and the returned ``NoisyPytree`` carries the realized ``noise_stddev`` for
+Per-step sensitivity flows through the input ``ClippedPytree.max_norm`` metadata,
+and the returned ``NoisedPytree`` carries the realized ``noise_stddev`` for
 downstream optimizers.
 
 The noise function is **purely local** — it uses exactly the key you provide.
@@ -29,17 +29,22 @@ from typing import Any
 
 import torch
 
-from opaque.bounded import BoundedPytree, NoisyPytree
 from opaque.clipping.per_group import PerGroup
+from opaque.clipping.types import ClippedPytree
+from opaque.core.noise import (
+    DEFAULT_SECOND_MOMENT_OVERHEAD,
+    NOISE_STATE_FIELD_OPS,
+    NoiseState,
+    NoisedPytree,
+    SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
+    assert_rng_key_equal,
+    second_moment_stddevs,
+)
 from opaque.distributed import (
     is_distributed,
     register_sync_type,
     sync_object,
-)
-from opaque.core.noise import (
-    NOISE_STATE_FIELD_OPS,
-    NoiseState,
-    assert_rng_key_equal,
 )
 from opaque.random import RngKey, generator_from_key
 from opaque.random import (
@@ -97,6 +102,7 @@ def gaussian_noise(
     noise_multiplier: float,
     key: RngKey,
     compute_dtype: torch.dtype = torch.float32,
+    first_moment_overhead: float = DEFAULT_SECOND_MOMENT_OVERHEAD,
 ) -> tuple[
     Callable[..., tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
@@ -104,10 +110,10 @@ def gaussian_noise(
     """Create a Gaussian noise function with immutable state.
 
     Returns ``(noise_fn, state)`` where ``noise_fn`` adds calibrated Gaussian
-    noise to :class:`opaque.bounded.BoundedPytree` inputs and returns updated
+    noise to :class:`opaque.clipping.types.ClippedPytree` inputs and returns updated
     state.  The realized standard deviation is
-    ``noise_multiplier * bounded.bound``.  The output is a
-    :class:`opaque.bounded.NoisyPytree` carrying that realized
+    ``noise_multiplier * clipped.max_norm``.  The output is a
+    :class:`opaque.core.noise.NoisedPytree` carrying that realized
     ``noise_stddev`` metadata.
 
     The noise function uses exactly the ``key`` you provide — no auto-detection
@@ -120,7 +126,7 @@ def gaussian_noise(
 
     Args:
         noise_multiplier: Gaussian noise multiplier.  The realized standard
-            deviation is ``noise_multiplier * bounded.bound``.
+            deviation is ``noise_multiplier * clipped.max_norm``.
         key: Explicit RNG key for deterministic, functional randomness.
             Same key on all ranks → same noise (synchronized).
             ``fold_in(key, rank)`` → independent noise per rank.
@@ -136,18 +142,18 @@ def gaussian_noise(
     Returns:
         A tuple ``(noise_fn, state)`` where:
 
-        - ``noise_fn(bounded_grads, state) -> (noisy_grads, new_state)``
+        - ``noise_fn(clipped_grads, state) -> (noisy_grads, new_state)``
         - ``state`` is a :class:`GaussianNoiseState`
 
     Example:
         >>> import torch
-        >>> from opaque.bounded import bounded
+        >>> from opaque.clipping.types import clipped
         >>> from opaque.dpsgd.noise.gaussian import gaussian_noise
         >>> from opaque.random import key
         >>>
         >>> noise_fn, state = gaussian_noise(noise_multiplier=1.1, key=key(42))
         >>> grads = torch.zeros(10)
-        >>> noisy_grads, state = noise_fn(bounded(grads, bound=1.0), state)
+        >>> noisy_grads, state = noise_fn(clipped(grads, max_norm=1.0), state)
 
     Example (distributed — independent noise per rank):
         >>> from opaque.random import key, fold_in
@@ -186,12 +192,12 @@ def gaussian_noise(
             if all(v == 0 for v in effective_stddev.values.values()):
                 return grads
 
-            noisy = {}
+            noised = {}
             for param_key, tensor in grads.items():
                 group_std = effective_stddev.for_key(param_key)
-                noisy[param_key] = _add_noise(tensor, group_std, generator)
+                noised[param_key] = _add_noise(tensor, group_std, generator)
 
-            return noisy
+            return noised
 
         # Global (scalar) noise path
         if effective_stddev == 0:
@@ -199,33 +205,108 @@ def gaussian_noise(
 
         return tree_map(lambda t: _add_noise(t, effective_stddev, generator), grads)
 
-    def _bounded_stddev(bounded: BoundedPytree) -> float | PerGroup:
-        if isinstance(bounded.bound, PerGroup):
-            return per_group_noise_stddev(bounded.bound, resolved_noise_multiplier)
-        effective = resolved_noise_multiplier * bounded.bound
+    def _clipped_stddev(clipped: ClippedPytree) -> float | PerGroup:
+        if isinstance(clipped.max_norm, PerGroup):
+            return per_group_noise_stddev(clipped.max_norm, resolved_noise_multiplier)
+        effective = resolved_noise_multiplier * clipped.max_norm
         _validate_noise_stddev(effective)
         return effective
 
+    def _reject_per_group_for_paired(clipped_grads: ClippedPytree) -> None:
+        if isinstance(clipped_grads.max_norm, PerGroup):
+            raise TypeError(
+                "gaussian_noise paired-stream output (SecondMomentNoiseOutput) "
+                "does not support PerGroup max_norm.  Per-group second-moment "
+                "allocation has not been validated.  Use a scalar max_norm or "
+                "pass a single-stream ClippedPytree input."
+            )
+
+    def _add_paired(
+        clipped_input: SecondMomentClippingOutput, st: GaussianNoiseState
+    ) -> tuple[SecondMomentNoiseOutput, GaussianNoiseState]:
+        first_clipped = clipped_input.grads
+        second_clipped = clipped_input.squared_grads
+        if not isinstance(first_clipped, ClippedPytree):
+            raise TypeError(
+                "SecondMomentClippingOutput.grads must be a ClippedPytree."
+            )
+        if not isinstance(second_clipped, ClippedPytree):
+            raise TypeError(
+                "SecondMomentClippingOutput.squared_grads must be a ClippedPytree."
+            )
+        _reject_per_group_for_paired(first_clipped)
+        _reject_per_group_for_paired(second_clipped)
+        # Identity strategy → c1 = c2 = 1.0; pass per-record bounds for
+        # both streams so the joint allocation is correct (per-example
+        # squared, not (Σg)²).
+        first_stddev, second_stddev = second_moment_stddevs(
+            resolved_noise_multiplier,
+            first_max_norm=float(first_clipped.sensitivity),
+            squared_max_norm=float(second_clipped.sensitivity),
+            first_moment_overhead=first_moment_overhead,
+        )
+        # Two independent noise streams; fold-in 1 / 2 namespaces them so
+        # they don't collide with the single-stream key derivation
+        # (``fold_in(_rng_key, _step_counter)``).
+        first_step_key = rng_fold_in(
+            rng_fold_in(st._rng_key, 1), st._step_counter
+        )
+        second_step_key = rng_fold_in(
+            rng_fold_in(st._rng_key, 2), st._step_counter
+        )
+        noisy_grads = _add_noise_tree(
+            first_clipped.pytree,
+            first_stddev,
+            generator_from_key(first_step_key),
+        )
+        noisy_squared = _add_noise_tree(
+            second_clipped.pytree,
+            second_stddev,
+            generator_from_key(second_step_key),
+        )
+        next_state = GaussianNoiseState(
+            _step_counter=st._step_counter + 1,
+            _rng_key=st._rng_key,
+        )
+        return (
+            SecondMomentNoiseOutput(
+                NoisedPytree(
+                    pytree=noisy_grads,
+                    max_norm=first_clipped.max_norm,
+                    noise_stddev=first_stddev,
+                ),
+                NoisedPytree(
+                    pytree=noisy_squared,
+                    max_norm=second_clipped.max_norm,
+                    noise_stddev=second_stddev,
+                ),
+            ),
+            next_state,
+        )
+
     def noise_fn(grads, st):
-        """Add Gaussian noise to a bounded pytree."""
+        """Add Gaussian noise to a clipped pytree (or paired stream)."""
+        if isinstance(grads, SecondMomentClippingOutput):
+            return _add_paired(grads, st)
+
         next_state = GaussianNoiseState(
             _step_counter=st._step_counter + 1,
             _rng_key=st._rng_key,
         )
 
-        if isinstance(grads, NoisyPytree):
+        if isinstance(grads, NoisedPytree):
             raise TypeError(
-                "gaussian_noise expects BoundedPytree inputs, not NoisyPytree "
+                "gaussian_noise expects ClippedPytree inputs, not NoisedPytree "
                 "values that have already passed through a noise mechanism."
             )
 
-        if not isinstance(grads, BoundedPytree):
+        if not isinstance(grads, ClippedPytree):
             raise TypeError(
-                "gaussian_noise expects BoundedPytree inputs. Wrap manual "
-                "values with opaque.bounded.bounded(...)."
+                "gaussian_noise expects ClippedPytree inputs. Wrap manual "
+                "values with opaque.clipping.types.clipped(...)."
             )
 
-        effective_stddev = _bounded_stddev(grads)
+        effective_stddev = _clipped_stddev(grads)
         step_key = rng_fold_in(st._rng_key, st._step_counter)
         noisy_tree = _add_noise_tree(
             grads.pytree,
@@ -233,9 +314,9 @@ def gaussian_noise(
             generator_from_key(step_key),
         )
         return (
-            NoisyPytree(
+            NoisedPytree(
                 pytree=noisy_tree,
-                bound=grads.bound,
+                max_norm=grads.max_norm,
                 noise_stddev=effective_stddev,
             ),
             next_state,

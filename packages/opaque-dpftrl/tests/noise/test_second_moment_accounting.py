@@ -78,9 +78,19 @@ class TestSecondMomentAccounting:
         eps = pld.epsilon_at(1e-5)
         assert eps > 0
 
-    def test_rejects_non_mf(self):
+    def test_accepts_gaussian_inner(self):
+        """DP-SGD second-moment: the joint sensitivity collapses to
+        ``input_sensitivity · overhead`` (c1 = 1.0 for identity strategy)."""
+        mech = acc.gaussian(1.1)
+        wrapped = acc.second_moment(mech, sensitivity=0.05)
+        assert wrapped.sensitivity > 0
+        eps = wrapped.epsilon_at(1e-5)
+        assert eps > 0
+
+    def test_rejects_non_gaussian_family(self):
+        """Inner must be a Gaussian-family mechanism."""
         with pytest.raises(TypeError):
-            acc.second_moment(acc.gaussian(1.0), sensitivity=0.1)
+            acc.second_moment(acc.nonprivate(), sensitivity=0.1)
 
     def test_rejects_nonpositive_sensitivity(self):
         mech = acc.band_mf(1.0, sensitivity=1.0, num_groups=1)

@@ -4,7 +4,10 @@ import pytest
 import torch
 
 import opaque.accounting as acc
-from opaque.bounded import NoisyPytree, bounded
+from opaque.clipping.types import clipped
+
+from opaque.core.noise import NoisedPytree
+
 from opaque.dpftrl.noise.lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
 from opaque.dpftrl.noise import mf_noise
 from opaque.random import key
@@ -14,7 +17,7 @@ def _make_noise(template, n_steps=100, lambda_=0.9, normalized=True, seed=42):
     """Helper: create lambda-CGD noise via the strategy + mf_noise API.
 
     Uses ``noise_multiplier=1.0`` so realized stddev equals each call's
-    ``BoundedPytree.bound``; tests pass ``bound=1.0`` to recover the
+    ``ClippedPytree.max_norm``; tests pass ``max_norm=1.0`` to recover the
     historical ``stddev=1.0`` semantics.
     """
     strategy = lambda_cgd_strategy(
@@ -27,10 +30,10 @@ def _make_noise(template, n_steps=100, lambda_=0.9, normalized=True, seed=42):
     return mf_noise(template, strategy, noise_multiplier=1.0, key=key(seed))
 
 
-def _call(noise_fn, grad_pytree, state, *, bound=1.0):
-    """Wrap ``grad_pytree`` as bounded, run noise, return (noisy_pytree, state)."""
-    noisy_out, new_state = noise_fn(bounded(grad_pytree, bound=bound), state)
-    assert isinstance(noisy_out, NoisyPytree)
+def _call(noise_fn, grad_pytree, state, *, max_norm=1.0):
+    """Wrap ``grad_pytree`` as clipped, run noise, return (noisy_pytree, state)."""
+    noisy_out, new_state = noise_fn(clipped(grad_pytree, max_norm=max_norm), state)
+    assert isinstance(noisy_out, NoisedPytree)
     return noisy_out.pytree, new_state
 
 
@@ -42,8 +45,8 @@ class TestLambdaCgdNoise:
         """Noise function returns correctly shaped output."""
         template = self._make_template()
         noise_fn, state = _make_noise(template)
-        noisy, new_state = _call(noise_fn, {"w": torch.zeros(10)}, state)
-        assert noisy["w"].shape == (10,)
+        noised, new_state = _call(noise_fn, {"w": torch.zeros(10)}, state)
+        assert noised["w"].shape == (10,)
         assert new_state._step_counter == 1
 
     def test_deterministic_with_same_key(self):
@@ -52,9 +55,9 @@ class TestLambdaCgdNoise:
         results = []
         for _ in range(2):
             noise_fn, state = _make_noise(template)
-            noisy, state = _call(noise_fn, {"w": torch.zeros(10)}, state)
+            noised, state = _call(noise_fn, {"w": torch.zeros(10)}, state)
             noisy2, state = _call(noise_fn, {"w": torch.zeros(10)}, state)
-            results.append(torch.cat([noisy["w"], noisy2["w"]]))
+            results.append(torch.cat([noised["w"], noisy2["w"]]))
         torch.testing.assert_close(results[0], results[1])
 
     def test_different_keys_give_different_noise(self):
@@ -108,23 +111,23 @@ class TestLambdaCgdNoise:
         """Works with multiple parameter tensors."""
         template = {"w1": torch.zeros(5), "w2": torch.zeros(3, 4)}
         noise_fn, state = _make_noise(template)
-        noisy, new_state = _call(
+        noised, new_state = _call(
             noise_fn,
             {"w1": torch.zeros(5), "w2": torch.zeros(3, 4)},
             state,
         )
-        assert noisy["w1"].shape == (5,)
-        assert noisy["w2"].shape == (3, 4)
+        assert noised["w1"].shape == (5,)
+        assert noised["w2"].shape == (3, 4)
 
     def test_noise_adds_to_grads(self):
         """Noise is added to the gradient, not overwriting it."""
         template = self._make_template()
         noise_fn, state = _make_noise(template)
         grad = {"w": torch.ones(10) * 5.0}
-        noisy, _ = _call(noise_fn, grad, state)
+        noised, _ = _call(noise_fn, grad, state)
         noise_fn2, state2 = _make_noise(template)
         noise_only, _ = _call(noise_fn2, {"w": torch.zeros(10)}, state2)
-        torch.testing.assert_close(noisy["w"] - 5.0, noise_only["w"])
+        torch.testing.assert_close(noised["w"] - 5.0, noise_only["w"])
 
     def test_step_counter_increments(self):
         """Step counter increments with each call."""

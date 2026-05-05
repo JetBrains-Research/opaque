@@ -20,17 +20,17 @@ from typing import Any
 
 import torch
 
-from opaque.bounded import BoundedPytree, NoisyPytree
 from opaque.clipping.per_group import PerGroup
+from opaque.clipping.types import ClippedPytree
 from opaque.core.noise import (
     DEFAULT_SECOND_MOMENT_OVERHEAD,
+    NoisedPytree,
+    SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
-    resolve_second_moment_overhead,
     second_moment_joint_sensitivity,
     second_moment_noise_scale,
     second_moment_stddevs,
 )
-from opaque.core.pytree import tree_map
 from opaque.random import RngKey
 from opaque.random import fold_in as rng_fold_in
 
@@ -70,8 +70,8 @@ def mf_noise(
     noise_multiplier: float,
     key: RngKey,
     dtype: torch.dtype | None = None,
-    second_moment: bool | float = False,
     second_moment_strategy: MfStrategy | None = None,
+    first_moment_overhead: float = DEFAULT_SECOND_MOMENT_OVERHEAD,
 ) -> tuple[
     Callable[..., tuple[Any, MFNoiseState | SecondMomentMFNoiseState]],
     MFNoiseState | SecondMomentMFNoiseState,
@@ -84,18 +84,31 @@ def mf_noise(
       :class:`BsrStrategy`:
       StreamingMatrix-based noise.
 
+    The returned ``noise_fn`` polymorphically dispatches on its input
+    type:
+
+    - ``ClippedPytree`` → ``NoisedPytree`` (single-stream noise).
+    - ``SecondMomentClippingOutput`` → ``SecondMomentNoiseOutput``
+      (paired-stream noise; only available when
+      ``second_moment_strategy`` was supplied at construction).
+
     Args:
         grad_template: Pytree with same structure/shapes as gradients.
         strategy: MF strategy from one of the factory functions.
         noise_multiplier: Gaussian noise multiplier. The clipped-gradient
-            contribution bound is read from each ``BoundedPytree`` input.
+            ``max_norm`` is read from each ``ClippedPytree`` input.
         key: Explicit RNG key for deterministic randomness.
         dtype: Optional dtype for intermediate noise computation.
-        second_moment: ``False`` for the regular single stream.  ``True``
-            enables the default first-stream overhead ``sqrt(3/2)``; a float
-            supplies the overhead directly and must be greater than 1.
-        second_moment_strategy: Explicit strategy for the squared-gradient
-            stream.  Required when ``second_moment`` is enabled.
+        second_moment_strategy: Optional explicit strategy for the
+            squared-gradient stream.  When supplied the mechanism allocates
+            a second noise stream and only accepts
+            ``SecondMomentClippingOutput`` inputs at call time.  When
+            ``None`` (default) only single-stream ``ClippedPytree`` inputs
+            are accepted.
+        first_moment_overhead: First-stream noise overhead used when
+            paired-stream output is requested.  Defaults to ``√(3/2)``
+            (the d ≥ 2 add/remove DP value).  Ignored when
+            ``second_moment_strategy`` is ``None``.
 
     Returns:
         A tuple ``(noise_fn, state)`` for the training loop.
@@ -104,12 +117,7 @@ def mf_noise(
     if not isinstance(key, RngKey):
         raise TypeError(f"key must be RngKey, got {type(key)}")
 
-    if second_moment is not False:
-        if second_moment_strategy is None:
-            raise ValueError(
-                "second_moment_strategy is required when second_moment is enabled. "
-                "Build it explicitly for the squared-gradient workload."
-            )
+    if second_moment_strategy is not None:
         return _make_second_moment_mf_noise(
             grad_template,
             strategy,
@@ -117,7 +125,7 @@ def mf_noise(
             noise_multiplier=resolved_noise_multiplier,
             key=key,
             dtype=dtype,
-            second_moment=second_moment,
+            first_moment_overhead=first_moment_overhead,
         )
 
     raw_noise_fn, raw_state = _make_raw_mf_noise(
@@ -130,24 +138,31 @@ def mf_noise(
     def noise_fn(
         clipped_grads: Any,
         st: MFNoiseState,
-    ) -> tuple[NoisyPytree, MFNoiseState]:
-        bounded_grads = _expect_bounded(clipped_grads, op="mf_noise")
-        bound = _validate_constant_bound(
-            bounded_grads, st._first_bound, op="mf_noise"
+    ) -> tuple[NoisedPytree, MFNoiseState]:
+        if isinstance(clipped_grads, SecondMomentClippingOutput):
+            raise TypeError(
+                "mf_noise was constructed without `second_moment_strategy` and "
+                "cannot consume SecondMomentClippingOutput inputs.  Either pass "
+                "a single-stream ClippedPytree, or rebuild the noise function "
+                "with `second_moment_strategy=...`."
+            )
+        clipped_grads = _expect_clipped(clipped_grads, op="mf_noise")
+        max_norm = _validate_constant_max_norm(
+            clipped_grads, st._first_max_norm, op="mf_noise"
         )
-        base_stddev = resolved_noise_multiplier * bound
+        base_stddev = resolved_noise_multiplier * max_norm
         noisy_tree, new_state = raw_noise_fn(
-            bounded_grads.pytree,
+            clipped_grads.pytree,
             st,
             stddev=base_stddev,
         )
         return (
-            NoisyPytree(
+            NoisedPytree(
                 pytree=noisy_tree,
-                bound=bounded_grads.bound,
+                max_norm=clipped_grads.max_norm,
                 noise_stddev=base_stddev,
             ),
-            replace(new_state, _first_bound=bound),
+            replace(new_state, _first_max_norm=max_norm),
         )
 
     return noise_fn, raw_state
@@ -199,18 +214,18 @@ def _resolve_noise_multiplier(noise_multiplier: float) -> float:
     return multiplier
 
 
-def _expect_bounded(value: Any, *, op: str) -> BoundedPytree:
-    if isinstance(value, NoisyPytree):
+def _expect_clipped(value: Any, *, op: str) -> ClippedPytree:
+    if isinstance(value, NoisedPytree):
         raise TypeError(
-            f"{op} expects BoundedPytree inputs, not NoisyPytree values that "
+            f"{op} expects ClippedPytree inputs, not NoisedPytree values that "
             "have already passed through a noise mechanism."
         )
-    if not isinstance(value, BoundedPytree):
+    if not isinstance(value, ClippedPytree):
         raise TypeError(
-            f"{op} expects BoundedPytree inputs. Wrap manual values with "
-            "opaque.bounded.bounded(...)."
+            f"{op} expects ClippedPytree inputs. Wrap manual values with "
+            "opaque.clipping.types.clipped(...)."
         )
-    if isinstance(value.bound, PerGroup):
+    if isinstance(value.max_norm, PerGroup):
         raise TypeError(
             f"{op} does not support PerGroup bounds. Per-group noise allocation "
             "for matrix-factorization mechanisms has not been validated; the "
@@ -221,32 +236,32 @@ def _expect_bounded(value: Any, *, op: str) -> BoundedPytree:
     return value
 
 
-def _validate_constant_bound(
-    grads: BoundedPytree,
-    first_bound: float | None,
+def _validate_constant_max_norm(
+    grads: ClippedPytree,
+    first_max_norm: float | None,
     *,
     op: str,
 ) -> float:
-    """Latch the per-step bound and reject changes across calls.
+    """Latch the per-step max_norm and reject changes across calls.
 
     MF privacy analyses calibrate noise from a sensitivity that is constant
-    across the sequence; varying ``BoundedPytree.bound`` per call (e.g. from
+    across the sequence; varying ``ClippedPytree.max_norm`` per call (e.g. from
     adaptive clipping) breaks the proof.  The dispatcher latches the
-    first-call bound in the state and rejects any subsequent call whose
-    bound differs.
+    first-call max_norm in the state and rejects any subsequent call whose
+    max_norm differs.
     """
     sensitivity = grads.sensitivity
     if sensitivity < 0:
-        raise ValueError(f"BoundedPytree bound must be non-negative, got {grads.bound}")
-    bound = float(sensitivity)
-    if first_bound is not None and bound != first_bound:
+        raise ValueError(f"ClippedPytree max_norm must be non-negative, got {grads.max_norm}")
+    max_norm = float(sensitivity)
+    if first_max_norm is not None and max_norm != first_max_norm:
         raise ValueError(
-            f"{op} saw a varying BoundedPytree.bound across calls "
-            f"(first={first_bound}, now={bound}). MF privacy proofs assume a "
+            f"{op} saw a varying ClippedPytree.max_norm across calls "
+            f"(first={first_max_norm}, now={max_norm}). MF privacy proofs assume a "
             "constant per-step sensitivity; adaptive clipping with MF noise "
             "is not supported."
         )
-    return bound
+    return max_norm
 
 
 def _make_second_moment_mf_noise(
@@ -257,7 +272,7 @@ def _make_second_moment_mf_noise(
     noise_multiplier: float,
     key: RngKey,
     dtype: torch.dtype | None,
-    second_moment: bool | float,
+    first_moment_overhead: float,
 ) -> tuple[
     Callable[
         [Any, SecondMomentMFNoiseState],
@@ -265,7 +280,11 @@ def _make_second_moment_mf_noise(
     ],
     SecondMomentMFNoiseState,
 ]:
-    overhead = resolve_second_moment_overhead(second_moment)
+    if first_moment_overhead <= 1.0:
+        raise ValueError(
+            "first_moment_overhead must be greater than 1.0, "
+            f"got {first_moment_overhead}"
+        )
 
     first_fn, first_state = _make_raw_mf_noise(
         grad_template,
@@ -286,48 +305,65 @@ def _make_second_moment_mf_noise(
     )
 
     def noise_fn(
-        clipped_grads: Any,
+        clipped_input: Any,
         st: SecondMomentMFNoiseState,
     ) -> tuple[SecondMomentNoiseOutput, SecondMomentMFNoiseState]:
-        bounded_grads = _expect_bounded(clipped_grads, op="mf_noise")
-        bound = _validate_constant_bound(
-            bounded_grads, st._first_state._first_bound, op="mf_noise"
+        if not isinstance(clipped_input, SecondMomentClippingOutput):
+            raise TypeError(
+                "mf_noise was constructed with `second_moment_strategy` and "
+                "expects SecondMomentClippingOutput inputs (paired-stream).  "
+                "Wrap a ClippedPytree with `with_second_moment(clipped)` to "
+                "produce the paired form, or rebuild the noise function "
+                "without `second_moment_strategy` for single-stream mode."
+            )
+        first_clipped = _expect_clipped(clipped_input.grads, op="mf_noise")
+        second_clipped = _expect_clipped(
+            clipped_input.squared_grads, op="mf_noise (squared stream)"
         )
-        squared_bound = bound * bound
+        max_norm = _validate_constant_max_norm(
+            first_clipped, st._first_state._first_max_norm, op="mf_noise"
+        )
+        squared_max_norm = _validate_constant_max_norm(
+            second_clipped,
+            st._second_state._first_max_norm,
+            op="mf_noise (squared stream)",
+        )
         first_stddev, second_stddev = second_moment_stddevs(
             noise_multiplier,
-            bound,
+            first_max_norm=max_norm,
+            squared_max_norm=squared_max_norm,
             c1_max_column_norm=first_strategy._max_column_norm,
             c2_max_column_norm=second_strategy._max_column_norm,
-            first_moment_overhead=overhead,
+            first_moment_overhead=first_moment_overhead,
         )
         noisy_grads, new_first = first_fn(
-            bounded_grads.pytree,
+            first_clipped.pytree,
             st._first_state,
             stddev=first_stddev,
         )
-        squared_grads = tree_map(lambda grad: grad * grad, bounded_grads.pytree)
         noisy_squared, new_second = second_fn(
-            squared_grads,
+            second_clipped.pytree,
             st._second_state,
             stddev=second_stddev,
         )
         return (
             SecondMomentNoiseOutput(
-                NoisyPytree(
+                NoisedPytree(
                     pytree=noisy_grads,
-                    bound=bounded_grads.bound,
+                    max_norm=first_clipped.max_norm,
                     noise_stddev=first_stddev,
                 ),
-                NoisyPytree(
+                NoisedPytree(
                     pytree=noisy_squared,
-                    bound=squared_bound,
+                    max_norm=second_clipped.max_norm,
                     noise_stddev=second_stddev,
                 ),
             ),
             SecondMomentMFNoiseState(
-                _first_state=replace(new_first, _first_bound=bound),
-                _second_state=replace(new_second, _first_bound=squared_bound),
+                _first_state=replace(new_first, _first_max_norm=max_norm),
+                _second_state=replace(
+                    new_second, _first_max_norm=squared_max_norm
+                ),
             ),
         )
 

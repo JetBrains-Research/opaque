@@ -3,13 +3,14 @@
 import pytest
 import torch
 
-from opaque.bounded import BoundedPytree
+from opaque.clipping.types import ClippedPytree
+
 from opaque.dpsgd.clipping.adaptive import adaptive_clipped_grad
 from opaque.random import key
 
 
-def _unwrap_bounded(value):
-    assert isinstance(value, BoundedPytree)
+def _unwrap_clipped(value):
+    assert isinstance(value, ClippedPytree)
     return value.pytree
 
 
@@ -222,7 +223,7 @@ class TestQuantileNoise:
         batch_y = torch.randn(8)
 
         (grads, aux), state = grad_fn(params, batch_x, batch_y, state=state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
 
         # Check aux contains expected fields
         assert aux.clipping_rate is not None

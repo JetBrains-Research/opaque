@@ -8,7 +8,8 @@ tensors, preserving adaptive clipping_norm, and avoiding DDP deadlocks.
 import torch
 import pytest
 
-from opaque.bounded import BoundedPytree
+from opaque.clipping.types import ClippedPytree
+
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.dpsgd.clipping.adaptive import (
@@ -20,8 +21,8 @@ from opaque.clipping.clipped_grad import ClippedGradAux
 from opaque.random import key
 
 
-def _unwrap_bounded(value):
-    assert isinstance(value, BoundedPytree)
+def _unwrap_clipped(value):
+    assert isinstance(value, ClippedPytree)
     return value.pytree
 
 
@@ -92,7 +93,7 @@ class TestClippedGradEmptyBatch:
             clipping_norm=1.0,
         )
         grads, new_state = grad_fn(params, *empty_batch, state=clip_state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
         assert grads.shape == params.shape
         assert torch.all(grads == 0)
 
@@ -105,7 +106,7 @@ class TestClippedGradEmptyBatch:
             return_aux=True,
         )
         (grads, aux), _ = grad_fn(params, *empty_batch, state=clip_state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
         assert grads.shape == params.shape
         assert torch.all(grads == 0)
         assert isinstance(aux, ClippedGradAux)
@@ -138,7 +139,7 @@ class TestClippedGradEmptyBatch:
             clipping_norm=1.0,
         )
         grads, _ = grad_fn(params, *empty_batch, state=clip_state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
         assert isinstance(grads, dict)
         assert torch.all(grads["w"] == 0)
         assert torch.all(grads["b"] == 0)
@@ -154,7 +155,7 @@ class TestClippedGradEmptyBatch:
             return_aux=True,
         )
         (grads, aux), _ = grad_fn(params, *empty_batch, state=clip_state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
         assert grads.shape == params.shape
         assert torch.all(grads == 0)
         assert aux.grad_norms.shape == (0,)
@@ -175,7 +176,7 @@ class TestAdaptiveClippedGradEmptyBatch:
         )
         initial_cn = clip_state._current_clipping_norm
         grads, new_state = grad_fn(params, *empty_batch, state=clip_state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
 
         assert grads.shape == params.shape
         assert torch.all(grads == 0)

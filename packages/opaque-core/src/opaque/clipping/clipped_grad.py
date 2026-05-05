@@ -9,7 +9,8 @@ from typing import Any
 import torch
 from torch.func import grad_and_value
 
-from opaque.bounded import bounded
+from opaque.clipping.types import clipped
+
 from opaque.clipping._helpers import (
     batch_size_from_args,
     normalize_fun_to_return_aux,
@@ -27,7 +28,7 @@ class ClippedGradAux:
 
     All fields are diagnostic — they reflect pre-noise, pre-aggregation
     values and must not be fed back into private computation.  Use the
-    returned ``BoundedPytree.bound`` metadata for noise calibration.
+    returned ``ClippedPytree.max_norm`` metadata for noise calibration.
 
     Fields:
         loss_values: Per-example loss values before clipping.
@@ -80,6 +81,7 @@ def clipped_grad(
     normalize_by: float = 1.0,
     batch_argnums: int | tuple[int, ...] = 1,
     return_aux: bool = False,
+    second_moment: bool = False,
     pre_clipping_transform: Callable = lambda x: x,
     microbatch_size: int | None = None,
     dtype: torch.dtype | None = None,
@@ -185,15 +187,35 @@ def clipped_grad(
             - loss_aux: Per-example auxiliary data (if has_aux=True)
     """
     _validate_static_args(argnums, batch_argnums, normalize_by)
+    if second_moment and isinstance(clipping_norm, PerGroup):
+        raise TypeError(
+            "second_moment=True is not supported with PerGroup clipping_norm. "
+            "Per-group second-moment allocation has not been validated."
+        )
     argnums_tuple = normalize_to_tuple(argnums)
     batch_argnums_tuple = normalize_to_tuple(batch_argnums)
     loss_fn = normalize_fun_to_return_aux(loss_fn, has_aux)
 
-    output_bound = clipping_norm / normalize_by
+    output_max_norm = clipping_norm / normalize_by
+    output_squared_max_norm = (
+        (clipping_norm * clipping_norm) / normalize_by if second_moment else None
+    )
 
     def _empty_batch_response(args, state):
         """Short-circuit for empty batches: zero grads + empty aux, no vmap."""
-        grads = bounded(zero_grads_like(args, argnums_tuple), bound=output_bound)
+        zeros = zero_grads_like(args, argnums_tuple)
+        if second_moment:
+            from opaque.core.noise import SecondMomentClippingOutput
+
+            grads = SecondMomentClippingOutput(
+                grads=clipped(zeros, max_norm=output_max_norm),
+                squared_grads=clipped(
+                    zero_grads_like(args, argnums_tuple),
+                    max_norm=output_squared_max_norm,
+                ),
+            )
+        else:
+            grads = clipped(zeros, max_norm=output_max_norm)
         if return_aux or _force_grad_norms:
             empty = torch.empty(0)
             grad_aux = ClippedGradAux(
@@ -232,6 +254,7 @@ def clipped_grad(
         clipping_norm=clipping_norm,
         normalize_by=normalize_by,
         return_aux=return_aux or _force_grad_norms,
+        second_moment=second_moment,
         microbatch_size=microbatch_size,
         dtype=dtype,
         compute_dtype=compute_dtype,

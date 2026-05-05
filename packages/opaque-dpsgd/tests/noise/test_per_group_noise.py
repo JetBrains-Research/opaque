@@ -1,11 +1,14 @@
-"""Tests for bounded gaussian_noise with PerGroup bounds."""
+"""Tests for clipped gaussian_noise with PerGroup bounds."""
 
 import math
 
 import pytest
 import torch
 
-from opaque.bounded import NoisyPytree, bounded
+from opaque.clipping.types import clipped
+
+from opaque.core.noise import NoisedPytree
+
 from opaque.clipping.per_group import PerGroup
 from opaque.dpsgd.noise.gaussian import GaussianNoiseState, gaussian_noise
 from opaque.random import key
@@ -25,7 +28,7 @@ class TestGaussianNoisePerGroup:
         assert isinstance(state, GaussianNoiseState)
 
     def test_adds_per_group_noise(self):
-        bound = PerGroup(
+        max_norm = PerGroup(
             groups={"weight": "attn", "bias": "mlp"},
             values={"attn": 1.0, "mlp": 5.0},
         )
@@ -34,9 +37,9 @@ class TestGaussianNoisePerGroup:
             "weight": torch.zeros(100),
             "bias": torch.zeros(100),
         }
-        output, state = noise_fn(bounded(grads, bound=bound), state)
+        output, state = noise_fn(clipped(grads, max_norm=max_norm), state)
 
-        assert isinstance(output, NoisyPytree)
+        assert isinstance(output, NoisedPytree)
         assert isinstance(output.noise_stddev, PerGroup)
         assert output.noise_stddev.values == {
             "attn": pytest.approx(math.sqrt(6.0)),
@@ -50,56 +53,56 @@ class TestGaussianNoisePerGroup:
         assert mlp_var > attn_var * 2.5
 
     def test_zero_bound_group_returns_original(self):
-        bound = PerGroup(
-            groups={"noisy": "g1", "clean": "g2"},
+        max_norm = PerGroup(
+            groups={"noised": "g1", "clean": "g2"},
             values={"g1": 1.0, "g2": 0.0},
         )
         noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         grads = {
-            "noisy": torch.ones(5),
+            "noised": torch.ones(5),
             "clean": torch.ones(5),
         }
-        output, state = noise_fn(bounded(grads, bound=bound), state)
+        output, state = noise_fn(clipped(grads, max_norm=max_norm), state)
         torch.testing.assert_close(output.pytree["clean"], grads["clean"])
-        assert not torch.allclose(output.pytree["noisy"], grads["noisy"])
+        assert not torch.allclose(output.pytree["noised"], grads["noised"])
 
     def test_all_zero_bound_returns_original(self):
-        bound = PerGroup(
+        max_norm = PerGroup(
             groups={"a": "g1", "b": "g2"},
             values={"g1": 0.0, "g2": 0.0},
         )
         noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         grads = {"a": torch.randn(3), "b": torch.randn(3)}
-        output, state = noise_fn(bounded(grads, bound=bound), state)
+        output, state = noise_fn(clipped(grads, max_norm=max_norm), state)
         torch.testing.assert_close(output.pytree["a"], grads["a"])
         torch.testing.assert_close(output.pytree["b"], grads["b"])
 
     def test_dtype_preservation(self):
-        bound = PerGroup(groups={"w": "g"}, values={"g": 1.0})
+        max_norm = PerGroup(groups={"w": "g"}, values={"g": 1.0})
         noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
 
         grads_f32 = {"w": torch.randn(5, dtype=torch.float32)}
-        out_f32, state = noise_fn(bounded(grads_f32, bound=bound), state)
+        out_f32, state = noise_fn(clipped(grads_f32, max_norm=max_norm), state)
         assert out_f32.pytree["w"].dtype == torch.float32
 
         grads_f64 = {"w": torch.randn(5, dtype=torch.float64)}
-        out_f64, state = noise_fn(bounded(grads_f64, bound=bound), state)
+        out_f64, state = noise_fn(clipped(grads_f64, max_norm=max_norm), state)
         assert out_f64.pytree["w"].dtype == torch.float64
 
     def test_step_counter_advances(self):
-        bound = PerGroup(groups={"w": "g"}, values={"g": 1.0})
+        max_norm = PerGroup(groups={"w": "g"}, values={"g": 1.0})
         noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         assert state._step_counter == 0
 
-        grads = bounded({"w": torch.zeros(3)}, bound=bound)
+        grads = clipped({"w": torch.zeros(3)}, max_norm=max_norm)
         _, state = noise_fn(grads, state)
         assert state._step_counter == 1
         _, state = noise_fn(grads, state)
         assert state._step_counter == 2
 
     def test_deterministic_noise(self):
-        bound = PerGroup(groups={"w": "g"}, values={"g": 1.0})
-        grads = bounded({"w": torch.zeros(10)}, bound=bound)
+        max_norm = PerGroup(groups={"w": "g"}, values={"g": 1.0})
+        grads = clipped({"w": torch.zeros(10)}, max_norm=max_norm)
 
         noise_fn1, state1 = gaussian_noise(noise_multiplier=1.0, key=key(42))
         noisy1, _ = noise_fn1(grads, state1)
@@ -110,14 +113,14 @@ class TestGaussianNoisePerGroup:
         torch.testing.assert_close(noisy1.pytree["w"], noisy2.pytree["w"])
 
     def test_negative_bound_raises(self):
-        bound = PerGroup(groups={"w": "g"}, values={"g": -1.0})
+        max_norm = PerGroup(groups={"w": "g"}, values={"g": -1.0})
         noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         with pytest.raises(ValueError, match="non-negative"):
-            noise_fn(bounded({"w": torch.zeros(3)}, bound=bound), state)
+            noise_fn(clipped({"w": torch.zeros(3)}, max_norm=max_norm), state)
 
 
 class TestEndToEndPerGroup:
-    """Integration test: clipped_grad emits bounded values for gaussian_noise."""
+    """Integration test: clipped_grad emits clipped values for gaussian_noise."""
 
     def test_full_pipeline_per_group_bound(self):
         from opaque.clipping import clipped_grad
@@ -147,7 +150,7 @@ class TestEndToEndPerGroup:
         grads, clip_state = grad_fn(params, torch.randn(10), state=clip_state)
         noisy_grads, noise_state = noise_fn(grads, noise_state)
 
-        assert isinstance(noisy_grads, NoisyPytree)
+        assert isinstance(noisy_grads, NoisedPytree)
         assert isinstance(noisy_grads.pytree, dict)
         assert isinstance(noisy_grads.noise_stddev, PerGroup)
         assert noisy_grads.noise_stddev.values == {

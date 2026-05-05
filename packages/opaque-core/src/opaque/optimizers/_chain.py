@@ -6,7 +6,7 @@ for Lion, …).  The composer decides where weight decay attaches (decoupled
 post-moment vs. L2 pre-moment), whether to clip the update by its RMS
 (StableAdamW), and applies the (negative) learning rate at the end.
 
-The composer understands the public bounded/noisy metadata wrappers and routes
+The composer understands the public clipped/noised metadata wrappers and routes
 their DP metadata into the moment scaler when the scaler accepts it.
 """
 
@@ -28,7 +28,10 @@ except ImportError as exc:
 
 import torch
 
-from opaque.bounded import BoundedPytree, NoisyPytree
+from opaque.clipping.types import ClippedPytree
+
+from opaque.core.noise import NoisedPytree
+
 from opaque.core.noise import SecondMomentNoiseOutput
 from opaque.core.pytree import tree_map
 
@@ -119,7 +122,7 @@ def make_optimizer_chain(
     not to the weight-decay term.
 
     The returned ``GradientTransformation`` extracts DP metadata from
-    ``NoisyPytree`` / ``SecondMomentNoiseOutput`` updates and threads
+    ``NoisedPytree`` / ``SecondMomentNoiseOutput`` updates and threads
     it into the moment scaler internally — there is no public per-step
     metadata kwarg.
     """
@@ -132,24 +135,24 @@ def make_optimizer_chain(
     )
 
     def _route_noisy_pytree(updates: Any) -> tuple[Any, dict[str, Any]]:
-        if isinstance(updates, NoisyPytree):
+        if isinstance(updates, NoisedPytree):
             if not accepts_noise_stddev:
                 return updates.pytree, {}
             return updates.pytree, {"noise_stddev": updates.noise_stddev}
-        if isinstance(updates, BoundedPytree):
+        if isinstance(updates, ClippedPytree):
             raise TypeError(
-                "optimizer.update() received BoundedPytree updates that have not "
-                "passed through a noise mechanism. Pass NoisyPytree outputs from "
+                "optimizer.update() received ClippedPytree updates that have not "
+                "passed through a noise mechanism. Pass NoisedPytree outputs from "
                 "a DP mechanism, or unwrap `.pytree` explicitly for non-private use."
             )
         return updates, {}
 
     def _unwrap_second_moment_value(value: Any, *, name: str) -> Any:
-        if isinstance(value, NoisyPytree):
+        if isinstance(value, NoisedPytree):
             return value.pytree
-        if isinstance(value, BoundedPytree):
+        if isinstance(value, ClippedPytree):
             raise TypeError(
-                f"SecondMomentNoiseOutput.{name} is a BoundedPytree that has not "
+                f"SecondMomentNoiseOutput.{name} is a ClippedPytree that has not "
                 "passed through a noise mechanism."
             )
         return value

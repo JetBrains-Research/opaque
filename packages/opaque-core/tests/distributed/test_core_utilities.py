@@ -7,7 +7,10 @@ For actual multi-device distributed tests, see test_ddp_integration.py.
 import pytest
 import torch
 
-from opaque.bounded import BoundedPytree, NoisyPytree
+from opaque.clipping.types import ClippedPytree
+
+from opaque.core.noise import NoisedPytree
+
 from opaque.distributed import gradients as gradients_module
 
 import opaque.distributed as dist_utils
@@ -108,74 +111,74 @@ class TestAllReduceValidation:
 class TestBoundedGradientAggregation:
     """Tests for wrapper-aware gradient aggregation outside distributed mode."""
 
-    def test_sum_gradients_preserves_bounded_pytree(self):
-        gradients = BoundedPytree({"w": torch.tensor([1.0, 2.0])}, bound=0.5)
+    def test_sum_gradients_preserves_clipped_pytree(self):
+        gradients = ClippedPytree({"w": torch.tensor([1.0, 2.0])}, max_norm=0.5)
 
         reduced = dist_utils.sum_gradients(gradients)
 
-        assert isinstance(reduced, BoundedPytree)
-        assert not isinstance(reduced, NoisyPytree)
-        assert reduced.bound == gradients.bound
+        assert isinstance(reduced, ClippedPytree)
+        assert not isinstance(reduced, NoisedPytree)
+        assert reduced.max_norm == gradients.max_norm
         assert reduced.pytree is not gradients.pytree
         torch.testing.assert_close(reduced.pytree["w"], gradients.pytree["w"])
 
-    def test_sum_gradients_inplace_preserves_bounded_pytree(self):
-        gradients = BoundedPytree({"w": torch.tensor([1.0, 2.0])}, bound=0.5)
+    def test_sum_gradients_inplace_preserves_clipped_pytree(self):
+        gradients = ClippedPytree({"w": torch.tensor([1.0, 2.0])}, max_norm=0.5)
 
         result = dist_utils.sum_gradients_(gradients)
 
         assert result is None
-        assert gradients.bound == 0.5
+        assert gradients.max_norm == 0.5
         torch.testing.assert_close(gradients.pytree["w"], torch.tensor([1.0, 2.0]))
 
-    def test_mean_gradients_preserves_bounded_pytree_outside_distributed(self):
-        gradients = BoundedPytree({"w": torch.tensor([1.0])}, bound=0.5)
+    def test_mean_gradients_preserves_clipped_pytree_outside_distributed(self):
+        gradients = ClippedPytree({"w": torch.tensor([1.0])}, max_norm=0.5)
 
         reduced = dist_utils.reduce_pytree(gradients, op="mean")
 
-        assert isinstance(reduced, BoundedPytree)
-        assert reduced.bound == gradients.bound
+        assert isinstance(reduced, ClippedPytree)
+        assert reduced.max_norm == gradients.max_norm
         torch.testing.assert_close(reduced.pytree["w"], gradients.pytree["w"])
 
-    def test_unsupported_bounded_reduction_raises(self):
-        gradients = BoundedPytree({"w": torch.tensor([1.0])}, bound=0.5)
+    def test_unsupported_clipped_reduction_raises(self):
+        gradients = ClippedPytree({"w": torch.tensor([1.0])}, max_norm=0.5)
 
         with pytest.raises(TypeError, match="supports op='sum' or op='mean'"):
             dist_utils.reduce_pytree(gradients, op="max")
 
     def test_sum_gradients_preserves_noisy_pytree_outside_distributed(self):
-        gradients = NoisyPytree(
-            {"w": torch.tensor([1.0])}, bound=0.5, noise_stddev=1.0
+        gradients = NoisedPytree(
+            {"w": torch.tensor([1.0])}, max_norm=0.5, noise_stddev=1.0
         )
 
         reduced = dist_utils.sum_gradients(gradients)
 
-        assert isinstance(reduced, NoisyPytree)
-        assert reduced.bound == gradients.bound
+        assert isinstance(reduced, NoisedPytree)
+        assert reduced.max_norm == gradients.max_norm
         assert reduced.noise_stddev == gradients.noise_stddev
         torch.testing.assert_close(reduced.pytree["w"], gradients.pytree["w"])
 
-    def test_bounded_metadata_scales_for_distributed_mean(self):
-        gradients = BoundedPytree({"w": torch.tensor([1.0])}, bound=2.0)
+    def test_clipped_metadata_scales_for_distributed_mean(self):
+        gradients = ClippedPytree({"w": torch.tensor([1.0])}, max_norm=2.0)
 
         reduced = gradients_module._reduced_metadata(gradients, "mean", world_size=4)
 
-        assert isinstance(reduced, BoundedPytree)
-        assert reduced.bound == pytest.approx(0.5)
+        assert isinstance(reduced, ClippedPytree)
+        assert reduced.max_norm == pytest.approx(0.5)
 
     def test_noisy_metadata_scales_for_distributed_sum_and_mean(self):
-        gradients = NoisyPytree(
-            {"w": torch.tensor([1.0])}, bound=2.0, noise_stddev=0.5
+        gradients = NoisedPytree(
+            {"w": torch.tensor([1.0])}, max_norm=2.0, noise_stddev=0.5
         )
 
         summed = gradients_module._reduced_metadata(gradients, "sum", world_size=4)
         averaged = gradients_module._reduced_metadata(gradients, "mean", world_size=4)
 
-        assert isinstance(summed, NoisyPytree)
-        assert summed.bound == pytest.approx(2.0)
+        assert isinstance(summed, NoisedPytree)
+        assert summed.max_norm == pytest.approx(2.0)
         assert summed.noise_stddev == pytest.approx(1.0)
-        assert isinstance(averaged, NoisyPytree)
-        assert averaged.bound == pytest.approx(0.5)
+        assert isinstance(averaged, NoisedPytree)
+        assert averaged.max_norm == pytest.approx(0.5)
         assert averaged.noise_stddev == pytest.approx(0.25)
 
 

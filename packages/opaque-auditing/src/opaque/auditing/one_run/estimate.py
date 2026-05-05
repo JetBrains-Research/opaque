@@ -119,7 +119,7 @@ class OneRunEstimate:
         eps_max: float = 20.0,
         tol: float = 1e-4,
     ) -> float:
-        """Epsilon lower bound using the one-run method (Steinke et al. 2023).
+        """Epsilon lower max_norm using the one-run method (Steinke et al. 2023).
 
         Uses a likelihood-ratio test tailored for DP auditing. For each
         Pareto-optimal threshold, tries positive-only, negative-only,
@@ -135,7 +135,7 @@ class OneRunEstimate:
             tol: Binary search tolerance. Default: 1e-4.
 
         Returns:
-            Epsilon lower bound at the specified confidence level.
+            Epsilon lower max_norm at the specified confidence level.
         """
         validate_significance(significance)
         validate_delta(delta)

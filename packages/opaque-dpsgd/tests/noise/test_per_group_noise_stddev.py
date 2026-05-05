@@ -19,13 +19,13 @@ class TestPerGroupNoiseStddev:
     """Tests for the per_group_noise_stddev function."""
 
     def test_returns_pergroup(self):
-        bound = _make_bound([1.0, 2.0, 3.0])
-        result = per_group_noise_stddev(bound, 1.0)
+        max_norm = _make_bound([1.0, 2.0, 3.0])
+        result = per_group_noise_stddev(max_norm, 1.0)
         assert isinstance(result, PerGroup)
-        assert result.groups == bound.groups
+        assert result.groups == max_norm.groups
 
     def test_raises_for_scalar_clipping(self):
-        with pytest.raises(TypeError, match="PerGroup bound"):
+        with pytest.raises(TypeError, match="PerGroup max_norm"):
             per_group_noise_stddev(1.0, 1.0)
 
     def test_mahalanobis_constraint(self):
@@ -33,12 +33,12 @@ class TestPerGroupNoiseStddev:
         for values in [[1.0, 1.0, 1.0], [0.1, 0.5, 2.0], [0.01, 0.1, 1.0, 5.0]]:
             for nm in [0.5, 1.0, 2.0]:
                 for n in [1.0, 10.0]:
-                    bound = _make_bound(values, normalize_by=n)
-                    stddev = per_group_noise_stddev(bound, nm)
+                    max_norm = _make_bound(values, normalize_by=n)
+                    stddev = per_group_noise_stddev(max_norm, nm)
                     # Check Σ B_i² / σ_i² = 1/nm²
                     mahal = sum(
                         c**2 / stddev.values[g] ** 2
-                        for g, c in bound.values.items()
+                        for g, c in max_norm.values.items()
                     )
                     assert mahal == pytest.approx(1.0 / nm**2, rel=1e-10), (
                         f"Mahalanobis constraint violated: {mahal} != {1 / nm**2} "
@@ -47,8 +47,8 @@ class TestPerGroupNoiseStddev:
 
     def test_stddev_proportional_to_sqrt_clipping_norm(self):
         """σ_i / σ_j = √(C_i / C_j) for any two groups."""
-        bound = _make_bound([0.1, 0.4, 0.9])
-        stddev = per_group_noise_stddev(bound, 1.0)
+        max_norm = _make_bound([0.1, 0.4, 0.9])
+        stddev = per_group_noise_stddev(max_norm, 1.0)
         vals = list(stddev.values.values())
         norms = [0.1, 0.4, 0.9]
         ratio_01 = vals[0] / vals[1]
@@ -57,25 +57,25 @@ class TestPerGroupNoiseStddev:
 
     def test_single_group_equals_isotropic(self):
         """With K=1, per-group noise == isotropic noise."""
-        bound = _make_bound([2.0], normalize_by=5.0)
-        stddev = per_group_noise_stddev(bound, 1.5)
+        max_norm = _make_bound([2.0], normalize_by=5.0)
+        stddev = per_group_noise_stddev(max_norm, 1.5)
         # σ = nm * sqrt(B * B) = nm * B
         expected = 1.5 * 2.0 / 5.0
         assert list(stddev.values.values())[0] == pytest.approx(expected)
 
     def test_equal_norms_gives_equal_stddev(self):
         """With equal C_i, all σ_i should be the same."""
-        bound = _make_bound([1.0, 1.0, 1.0])
-        stddev = per_group_noise_stddev(bound, 2.0)
+        max_norm = _make_bound([1.0, 1.0, 1.0])
+        stddev = per_group_noise_stddev(max_norm, 2.0)
         vals = list(stddev.values.values())
         assert all(v == pytest.approx(vals[0]) for v in vals)
 
     def test_less_noise_on_small_groups(self):
         """Small clipping norm groups get less noise than isotropic."""
-        bound = _make_bound([0.1, 1.0])
+        max_norm = _make_bound([0.1, 1.0])
         nm = 1.0
-        stddev = per_group_noise_stddev(bound, nm)
-        iso = nm * bound.effective
+        stddev = per_group_noise_stddev(max_norm, nm)
+        iso = nm * max_norm.effective
         small_opt = stddev.values["g0"]
         assert small_opt < iso, (
             f"Optimal noise {small_opt} should be < isotropic {iso} for small group"
@@ -83,12 +83,12 @@ class TestPerGroupNoiseStddev:
 
     def test_mse_less_than_isotropic(self):
         """Total noise MSE < isotropic when clipping norms differ."""
-        bound = _make_bound([0.1, 0.5, 2.0])
+        max_norm = _make_bound([0.1, 0.5, 2.0])
         nm = 1.0
-        stddev = per_group_noise_stddev(bound, nm)
-        iso_sigma = nm * bound.effective
+        stddev = per_group_noise_stddev(max_norm, nm)
+        iso_sigma = nm * max_norm.effective
         mse_opt = sum(v**2 for v in stddev.values.values())
-        mse_iso = len(bound.values) * iso_sigma**2
+        mse_iso = len(max_norm.values) * iso_sigma**2
         assert mse_opt < mse_iso, (
             f"Optimal MSE {mse_opt} should be < isotropic MSE {mse_iso}"
         )
@@ -105,8 +105,8 @@ class TestPerGroupNoiseStddev:
 
     def test_linear_in_noise_multiplier(self):
         """Doubling nm should double all stddevs."""
-        bound = _make_bound([1.0, 3.0])
-        stddev_1 = per_group_noise_stddev(bound, 1.0)
-        stddev_2 = per_group_noise_stddev(bound, 2.0)
+        max_norm = _make_bound([1.0, 3.0])
+        stddev_1 = per_group_noise_stddev(max_norm, 1.0)
+        stddev_2 = per_group_noise_stddev(max_norm, 2.0)
         for g in stddev_1.values:
             assert stddev_2.values[g] == pytest.approx(2.0 * stddev_1.values[g])

@@ -7,7 +7,7 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.bounded import noisy  # noqa: E402
+from opaque.core.noise import noised  # noqa: E402
 from opaque.core.noise import SecondMomentNoiseOutput  # noqa: E402
 from opaque.optimizers import AdEMAMixState, ademamix  # noqa: E402
 
@@ -84,7 +84,7 @@ class TestBCMode:
         expected_phi = 0.0
         for _ in range(8):
             _, state = opt.update(
-                noisy(grads, bound=1.0, noise_stddev=sigma),
+                noised(grads, max_norm=1.0, noise_stddev=sigma),
                 state,
                 params=params,
             )
@@ -95,14 +95,14 @@ class TestBCMode:
         opt = ademamix(lr=1e-3, noise_bias_correction=False)
         state = opt.init(params)
         _, state = opt.update(
-            noisy(grads, bound=1.0, noise_stddev=0.4),
+            noised(grads, max_norm=1.0, noise_stddev=0.4),
             state,
             params=params,
         )
         assert _ame(state).phi == 0.0
 
 
-class TestJMEMode:
+class TestSecondMomentMode:
     @pytest.fixture
     def sq_grads(self, grads):
         return {k: v.pow(2) + 0.05 for k, v in grads.items()}
@@ -112,8 +112,8 @@ class TestJMEMode:
         opt = ademamix(lr=1e-3, betas=(0.9, b2, 0.9999))
         state = opt.init(params)
         output = SecondMomentNoiseOutput(
-            noisy(grads, bound=1.0, noise_stddev=0.1),
-            noisy(sq_grads, bound=1.0, noise_stddev=0.1),
+            noised(grads, max_norm=1.0, noise_stddev=0.1),
+            noised(sq_grads, max_norm=1.0, noise_stddev=0.1),
         )
         _, state = opt.update(output, state, params=params)
         st = _ame(state)
@@ -125,8 +125,8 @@ class TestJMEMode:
         opt = ademamix(lr=1e-3)
         state = opt.init(params)
         output = SecondMomentNoiseOutput(
-            noisy(grads, bound=1.0, noise_stddev=0.1),
-            noisy(sq, bound=1.0, noise_stddev=0.1),
+            noised(grads, max_norm=1.0, noise_stddev=0.1),
+            noised(sq, max_norm=1.0, noise_stddev=0.1),
         )
         updates, _ = opt.update(output, state, params=params)
         for k in updates:

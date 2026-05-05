@@ -7,13 +7,13 @@ extend.
 
 Opaque-built (DP-aware modes selected by update value type):
 
-- :func:`adamw` — universal Adam / AdamW; consumes ``NoisyPytree``
+- :func:`adamw` — universal Adam / AdamW; consumes ``NoisedPytree``
   and ``SecondMomentNoiseOutput`` metadata.
   Knobs: ``decoupled_weight_decay``, ``update_rms_clip`` (StableAdamW),
   ``noise_bias_correction``.
 - :func:`adam` — original Adam/L2 variant of ``adamw`` with the same
   wrapper-aware update surface.
-- :func:`sgd` — SGD wrapper that accepts ``NoisyPytree`` updates and ignores
+- :func:`sgd` — SGD wrapper that accepts ``NoisedPytree`` updates and ignores
   noise metadata because the update is unbiased under additive DP noise.
 - :func:`lion` — Lion (sign-of-momentum); no DP-aware mode (no v).
 - :func:`ademamix` — AdEMAMix (two first moments, single v); consumes
@@ -26,7 +26,7 @@ Opaque-built (DP-aware modes selected by update value type):
 - :func:`rmsprop` — RMSprop with optional DP-aware φ-EMA correction
   on the second moment.
 - :func:`adagrad` — Adagrad with optional DP-aware cumulative noise
-  variance subtraction.  ``NoisyPytree`` updates with
+  variance subtraction.  ``NoisedPytree`` updates with
   ``noise_bias_correction=True`` activate the ``v_acc - Φ_acc``
   correction; whether that helps in practice depends on the workload.
 - :func:`schedule_free` — wrapper around any base
@@ -36,7 +36,7 @@ Opaque-built (DP-aware modes selected by update value type):
 DP-aware behavior is selected at ``update()`` time by passing metadata
 wrappers:
 
-- ``NoisyPytree`` — carries the realized per-step noise σ with the
+- ``NoisedPytree`` — carries the realized per-step noise σ with the
   privatized update; this activates whatever noise-aware path the
   optimizer has (φ-EMA on ``v̂`` for Adam-family / RMSprop, cumulative
   Φ subtraction for Adagrad, planned sign gating for Lion, …).

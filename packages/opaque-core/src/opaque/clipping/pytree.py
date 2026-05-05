@@ -103,7 +103,7 @@ def auto_scale_pytree(
     r"""AUTO-S automatic scaling of a PyTree (Bu et al., NeurIPS 2023).
 
     Scales the PyTree by ``R / (\|pytree\| + gamma)`` so the output L2
-    norm is bounded by ``R`` for any input. Unlike :func:`clip_pytree`, there
+    norm is clipped by ``R`` for any input. Unlike :func:`clip_pytree`, there
     is no threshold to tune — every example contributes an approximately
     unit-length update, with the effective step size absorbed into the
     learning rate.
@@ -172,7 +172,7 @@ def _clip_pytree_per_group(
     return_zero: bool,
     compute_dtype: torch.dtype | None,
 ) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
-    """Per-group clipping: each group is clipped to its own L2 norm bound."""
+    """Per-group clipping: each group is clipped to its own L2 norm max_norm."""
     acc_dtype = _resolve_compute_dtype_for_reduction(pytree, compute_dtype)
 
     # 1. Accumulate squared norms per group

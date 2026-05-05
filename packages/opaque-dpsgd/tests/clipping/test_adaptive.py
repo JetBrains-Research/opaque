@@ -5,13 +5,16 @@ import math
 import pytest
 import torch
 
-from opaque.bounded import BoundedPytree, NoisyPytree
+from opaque.clipping.types import ClippedPytree
+
+from opaque.core.noise import NoisedPytree
+
 from opaque.dpsgd.clipping.adaptive import adaptive_clipped_grad
 from opaque.random import key
 
 
-def _unwrap_bounded(value):
-    assert isinstance(value, BoundedPytree)
+def _unwrap_clipped(value):
+    assert isinstance(value, ClippedPytree)
     return value.pytree
 
 
@@ -43,7 +46,7 @@ class TestAdaptiveClippedGrad:
         batch_y = torch.randn(8)
 
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
 
         # Check state updated
         assert isinstance(clip_state._next_clipping_norm, float)
@@ -264,7 +267,7 @@ class TestAdaptiveClippedGrad:
         (grads, grad_aux), clip_state = grad_fn(
             params, batch_x, batch_y, state=clip_state
         )
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
 
         assert grads.shape == params.shape
 
@@ -378,7 +381,7 @@ class TestAdaptiveClippedGrad:
         (grads, grad_aux), clip_state = grad_fn(
             params, batch_x, batch_y, state=clip_state
         )
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
 
         assert grads.shape == params.shape
         assert grad_aux.loss_values is not None
@@ -406,12 +409,12 @@ class TestAdaptiveClippedGrad:
         # Compute clipped gradients
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
-        # Add noise scaled to the bounded gradient metadata.
+        # Add noise scaled to the clipped gradient metadata.
         noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(0))
         noisy_grads, noise_state = noise_fn(grads, noise_state)
 
-        assert isinstance(noisy_grads, NoisyPytree)
-        assert noisy_grads.noise_stddev == pytest.approx(1.1 * grads.bound)
+        assert isinstance(noisy_grads, NoisedPytree)
+        assert noisy_grads.noise_stddev == pytest.approx(1.1 * grads.max_norm)
         assert noisy_grads.pytree.shape == grads.pytree.shape
         assert not torch.allclose(noisy_grads.pytree, grads.pytree)  # Noise added
 
@@ -453,8 +456,8 @@ class TestAdaptiveClippedGrad:
                 params, batch_x, batch_y, state=state_no_mb
             )
             grads_mb, state_mb = grad_fn_mb(params, batch_x, batch_y, state=state_mb)
-            grads_no_mb = _unwrap_bounded(grads_no_mb)
-            grads_mb = _unwrap_bounded(grads_mb)
+            grads_no_mb = _unwrap_clipped(grads_no_mb)
+            grads_mb = _unwrap_clipped(grads_mb)
 
             # Gradients should be identical
             torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
@@ -545,7 +548,7 @@ class TestEdgeCases:
         batch_y = torch.randn(1)
 
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
 
         assert grads.shape == params.shape
 
@@ -567,7 +570,7 @@ class TestEdgeCases:
         batch_y = torch.randn(8)
 
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
 
         # Should handle gracefully
         assert torch.allclose(grads, torch.zeros_like(grads))
@@ -643,6 +646,6 @@ class TestEdgeCases:
         batch_y = torch.randn(1000)
 
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-        grads = _unwrap_bounded(grads)
+        grads = _unwrap_clipped(grads)
 
         assert grads.shape == params.shape

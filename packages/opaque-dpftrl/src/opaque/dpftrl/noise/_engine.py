@@ -48,18 +48,18 @@ class MFNoiseState(NoiseState):
         _inner_state: Internal state (streaming matrix state or step counter).
         _step_counter: Number of noise_fn calls made.
         _rng_key: Immutable RNG key for deterministic per-step derivation.
-        _first_bound: ``BoundedPytree.bound`` from the first call, latched by
+        _first_max_norm: ``ClippedPytree.max_norm`` from the first call, latched by
             the dispatcher to enforce constant per-step sensitivity.  ``None``
             until the first call.  MF privacy analyses assume the per-step
             sensitivity is constant across the sequence; varying it (e.g.
             via adaptive clipping) breaks the standard proof, so the
-            dispatcher rejects subsequent calls whose ``bound`` differs.
+            dispatcher rejects subsequent calls whose ``max_norm`` differs.
     """
 
     _inner_state: Any
     _step_counter: int
     _rng_key: RngKey
-    _first_bound: float | None = None
+    _first_max_norm: float | None = None
 
 
 def _internal_compute_dtype(dtype: torch.dtype) -> torch.dtype:
@@ -167,9 +167,9 @@ def _matrix_factorization_noise(
 
     Returns:
         ``(noise_fn, state)`` where
-        ``noise_fn(grads, state, *, stddev) -> (noisy, state)``.  ``stddev``
+        ``noise_fn(grads, state, *, stddev) -> (noised, state)``.  ``stddev``
         is the per-step standard deviation for the base IID noise; the
-        dispatcher derives it from ``noise_multiplier * BoundedPytree.bound``.
+        dispatcher derives it from ``noise_multiplier * ClippedPytree.max_norm``.
     """
     if isinstance(noising, torch.Tensor):
         return _tensor_mf_noise(grad_template, noising, key=key, dtype=dtype)
@@ -279,7 +279,7 @@ def _streaming_mf_noise(
 
 _MF_NOISE_STATE_FIELD_OPS: dict[str, str] = {
     **NOISE_STATE_FIELD_OPS,
-    "_first_bound": "assert_equal",
+    "_first_max_norm": "assert_equal",
 }
 
 
