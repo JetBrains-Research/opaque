@@ -43,7 +43,7 @@ except ImportError as exc:
     ) from exc
 
 from opaque.clipping.per_group import PerGroup
-from opaque.core.pytree import tree_map
+from opaque.core.pytree import TensorPytree, tree_map
 from opaque.optimizers._bias_correction import (
     is_per_group,
     resolve_noise_variance,
@@ -69,8 +69,8 @@ class RMSpropState:
         step: Number of completed updates.
     """
 
-    nu: Any
-    phi: Any
+    nu: TensorPytree
+    phi: float | dict[str, float]
     step: int
 
 

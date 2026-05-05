@@ -23,10 +23,34 @@ Notes
 """
 
 from collections.abc import Callable  # noqa: E402
-from typing import Any  # noqa: E402
+from typing import Any, Union  # noqa: E402
 
 import optree as _ot  # noqa: E402
 import torch  # noqa: E402
+
+
+# A pytree whose leaves are ``torch.Tensor``.  Documents intent on
+# state dataclass fields and function signatures that work over tensor
+# pytrees; the recursive shape is too dynamic to enforce statically
+# (Python's type system can't check arbitrary nested-dict-of-T without
+# heavy generics), but the alias is far more searchable than ``Any``.
+#
+# Restricted to the concrete container types the rest of the library
+# actually rebuilds and serialises: ``dict``, ``list``, ``tuple``.
+# Custom ``Mapping`` / ``Sequence`` subclasses (``deque``, ``range``,
+# user-defined types) are not supported by the pytree helpers
+# (``tree_map_with_path``, ``partition``, ``_iter_leaves``,
+# ``serialization._walk_for_*``) so the alias intentionally does not
+# advertise them.
+#
+# Static checkers see this as ``Any`` after expansion — that's fine,
+# the goal is reader documentation, not strict checking.
+TensorPytree = Union[
+    torch.Tensor,
+    dict[str, "TensorPytree"],
+    list["TensorPytree"],
+    tuple["TensorPytree", ...],
+]
 
 
 def tree_leaves(tree: Any) -> list[torch.Tensor]:
