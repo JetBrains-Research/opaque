@@ -2,10 +2,11 @@
 
 Opaque ships its own functional optimizer library at
 [`opaque.optimizers`](../api/optimizers.md): Opaque-built factories with a
-common wrapper-aware update surface (`sgd`, `adam`, `adamw`, `lion`,
-`ademamix`, `adafactor`, `rmsprop`, `adagrad`, `schedule_free`) plus a small
-set of `torchopt` re-exports for primitives where Opaque does not add behavior
-(`adadelta`, `radam`).
+common wrapper-aware update surface (`sgd`, `adam`, `adamw`, `radam`, `lion`,
+`ademamix`, `adafactor`, `rmsprop`, `adagrad`, `adadelta`, `schedule_free`).
+Every factory carries DP-aware behaviour selectable at construction time and
+activated by the metadata wrappers (`NoisedPytree`, `SecondMomentNoiseOutput`)
+landing in `update()`.
 
 All factories return [TorchOpt](https://torchopt.readthedocs.io/)
 `GradientTransformation`s, so they compose with TorchOpt's lower-level
@@ -302,6 +303,41 @@ cumulative $\Phi_\text{acc}$ to counter this.  Whether the corrected
 denominator is preferable to vanilla Adagrad in practice depends on
 the workload — ablate against ``noise_bias_correction=False`` rather
 than treating BC as a default.
+
+### RAdam under DP
+
+RAdam (Liu et al., [arXiv:1908.03265](https://arxiv.org/abs/1908.03265))
+keeps Adam's `m`/`v` accumulators but post-multiplies the update by a
+variance-rectification factor `r_t` that depends only on `(β₂, t)`.  Below
+the rectification threshold (`ρ_t ≤ 5`, roughly the first
+`O(1/(1-β₂))` steps) the rule degenerates to SGD-of-momentum — `v` is
+not consumed at all.  This makes the warmup phase naturally DP-robust:
+the noise in `v` cannot affect the update because it isn't read.
+
+Once `ρ_t > 5`, the standard Adam DP-BC story applies — subtract a
+β₂-EMA of `σ²` from `v̂` before the sqrt.  ``opaque.optimizers.radam``
+advances the φ-EMA every step (warmup included) so that at the first
+rectified step the correction reflects all prior noise contributions to
+`v`, not just the current step.
+
+### Adadelta under DP
+
+Vanilla Adadelta (Zeiler 2012) is learning-rate-free: the update is
+the per-element ratio `RMS[Δx]_{t-1} / RMS[g]_t` times the gradient.
+Under DP both EMAs accumulate noise:
+
+- `E[g²]_t` inherits the Adam-shaped `σ²` offset.
+- `E[Δx²]_t` accumulates `coef_t² · σ²` per element because
+  `Δx_t = -coef_t · g̃_t` is linear in the noised gradient.
+
+``opaque.optimizers.adadelta`` maintains two parallel φ-EMAs at the
+same decay `ρ` and subtracts both biases.  `φ_g` is scalar (or
+per-group), `φ_dx` is per-element because the per-step update-noise
+variance varies element-wise even when `σ` is scalar.  Total state
+is roughly 1.5× vanilla Adadelta — still less than Adam's `m + v + φ`.
+
+The Adadelta two-EMA derivation has no published prior; it falls out
+of direct propagation of Gaussian variance through the linear scaling.
 
 ### Why Adamax isn't shipped
 
