@@ -1,0 +1,767 @@
+"""End-to-end DP-SGD LoRA training with Opaque's HuggingFace DPTrainer.
+
+This script mirrors examples/train_causal_lm.py for model/data/LoRA/privacy
+configuration, but delegates the training loop to opaque.transformers.trainer.
+
+USAGE:
+
+  # Quick smoke test, GPT-2 on ag_news
+  python examples/train_causal_lm_trainer.py --preset smoke
+
+  # Full production-style configuration on Mellum-4b + KStack
+  python examples/train_causal_lm_trainer.py --preset mellum-kstack
+
+  # Save DPTrainer checkpoints every eval interval
+  python examples/train_causal_lm_trainer.py --preset smoke --save-steps 10
+
+  # Disable W&B/HF reporting callbacks
+  python examples/train_causal_lm_trainer.py --preset smoke --no-wandb
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import logging
+import os
+import sys
+import time
+from typing import Any
+
+import torch
+from datasets import Dataset, load_dataset
+from peft import LoraConfig, get_peft_model
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    DataCollatorForLanguageModeling,
+)
+
+from opaque.transformers import is_patched as is_transformers_patched
+from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.performance.huggingface import is_kernel_patched
+
+log = logging.getLogger(__name__)
+
+
+def _select_device() -> tuple[torch.device, str]:
+    """Select best available single-process device with user-facing label."""
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        return device, torch.cuda.get_device_name(0)
+    if torch.backends.mps.is_available():
+        return torch.device("mps"), "Apple Silicon"
+    return torch.device("cpu"), "CPU"
+
+
+def _is_dtype_supported(device: torch.device, dtype: torch.dtype) -> bool:
+    """Check whether a dtype can be allocated on a specific device."""
+    try:
+        torch.empty((1,), device=device, dtype=dtype)
+        return True
+    except (RuntimeError, TypeError):
+        return False
+
+
+def _resolve_trainer_dtype(
+    requested_name: str,
+    device: torch.device,
+) -> tuple[str, torch.dtype, str | None]:
+    """Resolve dtype for DPTrainer's current full-cast precision support."""
+    dtype_map = {
+        "float32": torch.float32,
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+    }
+    if requested_name == "float16":
+        raise ValueError(
+            "DPTrainer does not support fp16 training yet because autocast and "
+            "GradScaler validation are still pending. Use --dtype bfloat16 or "
+            "--dtype float32."
+        )
+
+    requested_dtype = dtype_map[requested_name]
+    if _is_dtype_supported(device, requested_dtype):
+        return requested_name, requested_dtype, None
+
+    fallback_order = {
+        "cuda": ["bfloat16", "float32"],
+        "mps": ["float32"],
+        "cpu": ["float32", "bfloat16"],
+    }
+    for fallback_name in fallback_order.get(device.type, ["float32"]):
+        fallback_dtype = dtype_map[fallback_name]
+        if _is_dtype_supported(device, fallback_dtype):
+            reason = (
+                f"Requested dtype '{requested_name}' is not supported on "
+                f"{device.type} for DPTrainer; using '{fallback_name}' instead."
+            )
+            return fallback_name, fallback_dtype, reason
+
+    raise RuntimeError(
+        f"No supported dtype found for device={device.type}. "
+        f"Requested dtype was '{requested_name}'."
+    )
+
+
+def _kernel_mode_summary(device: torch.device, dtype_name: str) -> tuple[str, str]:
+    """Return concise status of kernel optimization mode for this run."""
+    if os.environ.get("OPAQUE_NO_PATCH", "0") == "1":
+        return "disabled", "OPAQUE_NO_PATCH=1"
+    if os.environ.get("OPAQUE_NO_KERNEL_PATCH", "0") == "1":
+        return "disabled", "OPAQUE_NO_KERNEL_PATCH=1"
+    if device.type != "cuda":
+        return "disabled", f"device={device.type} (Triton kernels are CUDA-only)"
+    if importlib.util.find_spec("triton") is None:
+        return "disabled", "triton package not installed"
+    if dtype_name != "bfloat16":
+        return "partial", f"dtype={dtype_name} (fused CE prefers bf16 here)"
+    if is_kernel_patched():
+        return "enabled", "global kernel patches applied"
+    return "partial", "kernel patch state unavailable"
+
+
+def _print_runtime_mode_report(
+    device: torch.device,
+    device_label: str,
+    dtype_name: str,
+    dtype: torch.dtype,
+    dtype_warning: str | None,
+) -> None:
+    """Print active runtime mode so fallback behavior is explicit."""
+    kernel_mode, kernel_reason = _kernel_mode_summary(device, dtype_name)
+    kernels_on = device.type == "cuda" and is_kernel_patched()
+
+    print("\nRuntime mode:")
+    print(f"  Device: {device} ({device_label})")
+    print(f"  Dtype: {dtype_name} ({dtype})")
+    if dtype_warning:
+        print(f"  Dtype fallback: {dtype_warning}")
+    print(f"  Kernel optimizations: {kernel_mode} ({kernel_reason})")
+    print(f"  Patches: transformers={is_transformers_patched()}, kernels={kernels_on}")
+
+    if device.type == "cpu":
+        print("  Note: CPU path prioritizes correctness over throughput.")
+    elif device.type == "mps":
+        print("  Note: MPS uses compatibility fallbacks for CUDA-only kernels.")
+
+
+def _load_streaming_subset(
+    dataset_name: str,
+    dataset_subset: str | None,
+    dataset_split: str,
+    dataset_text_field: str,
+    total_needed: int,
+) -> Dataset:
+    """Stream only required rows, then materialize to an in-memory Dataset."""
+    print("  Streaming source dataset and materializing required subset...")
+    stream_ds = load_dataset(
+        dataset_name,
+        name=dataset_subset,
+        split=dataset_split,
+        streaming=True,
+    )
+
+    rows = list(stream_ds.take(total_needed))
+    if rows and dataset_text_field not in rows[0]:
+        raise ValueError(
+            f"Text field '{dataset_text_field}' not found in streamed sample. "
+            f"Available fields: {list(rows[0].keys())}"
+        )
+    if len(rows) < total_needed:
+        raise ValueError(
+            f"Stream ended after {len(rows)} examples, but {total_needed} are "
+            "required (train + eval)."
+        )
+    return Dataset.from_list(rows)
+
+
+def _provided_dests(parser: argparse.ArgumentParser) -> set[str]:
+    provided: set[str] = set()
+    argv_tokens = sys.argv[1:]
+    for action in parser._actions:
+        if not action.option_strings:
+            continue
+        for opt in action.option_strings:
+            if any(
+                token == opt or token.startswith(f"{opt}=") for token in argv_tokens
+            ):
+                provided.add(action.dest)
+                break
+    return provided
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments with logical groups."""
+    parser = argparse.ArgumentParser(
+        description="DP-SGD LoRA training for causal LMs using DPTrainer"
+    )
+    parser.add_argument(
+        "--preset",
+        type=str,
+        choices=["custom", "smoke", "mellum-kstack"],
+        default="smoke",
+        help="Apply preset configuration (CLI args take precedence).",
+    )
+
+    model_group = parser.add_argument_group("model", "Model and tokenizer settings")
+    model_group.add_argument("--model-name", type=str, default="gpt2")
+    model_group.add_argument(
+        "--attention",
+        type=str,
+        choices=["eager", "sdpa"],
+        default="sdpa",
+        help="Attention implementation.",
+    )
+    model_group.add_argument(
+        "--sdpa-backend",
+        type=str,
+        choices=["flash", "efficient", "cudnn", "math"],
+        default=None,
+        help="Force a specific CUDA SDPA backend.",
+    )
+    model_group.add_argument(
+        "--dtype",
+        type=str,
+        default="bfloat16",
+        choices=["float32", "float16", "bfloat16"],
+        help="Model precision. DPTrainer currently supports float32 and bf16.",
+    )
+
+    data_group = parser.add_argument_group("data", "Dataset and tokenization settings")
+    data_group.add_argument("--dataset", type=str, default="ag_news")
+    data_group.add_argument(
+        "--dataset-subset",
+        "--dataset-name",
+        dest="dataset_subset",
+        type=str,
+        default=None,
+        help="Optional HF load_dataset name/subset argument.",
+    )
+    data_group.add_argument("--dataset-split", type=str, default="train")
+    data_group.add_argument("--dataset-text-field", type=str, default="text")
+    data_group.add_argument("--num-train-samples", type=int, default=5000)
+    data_group.add_argument(
+        "--num-eval-samples",
+        "--num-eval-samples-alt",
+        dest="num_eval_samples",
+        type=int,
+        default=100,
+    )
+    data_group.add_argument("--max-seq-len", type=int, default=512)
+
+    train_group = parser.add_argument_group("training", "Training loop settings")
+    train_group.add_argument(
+        "--output-dir", type=str, default="trainer_output/dp_trainer_causal_lm"
+    )
+    train_group.add_argument(
+        "--batch-size",
+        type=int,
+        default=16,
+        help="Expected Poisson batch size, i.e. DPTrainer logical batch.",
+    )
+    train_group.add_argument(
+        "--eval-batch-size",
+        type=int,
+        default=None,
+        help="Evaluation batch size (default: microbatch_size or batch_size).",
+    )
+    train_group.add_argument("--num-epochs", type=int, default=3)
+    train_group.add_argument("--learning-rate", type=float, default=1.0e-5)
+    train_group.add_argument(
+        "--optimizer",
+        type=str,
+        default="adam",
+        choices=["sgd", "adam", "adamw", "adamw-bc"],
+        help="Torchopt-backed optimizer name passed to DPTrainingArguments.optim.",
+    )
+    train_group.add_argument("--weight-decay", type=float, default=0.01)
+    train_group.add_argument("--log-steps", type=int, default=1)
+    train_group.add_argument("--eval-steps", type=int, default=10)
+    train_group.add_argument(
+        "--save-steps",
+        type=int,
+        default=None,
+        help="Save DPTrainer checkpoints every N steps. Default: disabled.",
+    )
+    train_group.add_argument("--max-steps", type=int, default=None)
+    train_group.add_argument("--seed", type=int, default=42)
+    train_group.add_argument(
+        "--data-seed",
+        type=int,
+        default=None,
+        help="Optional separate seed for Poisson sampling.",
+    )
+    train_group.add_argument(
+        "--gradient-checkpointing",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    train_group.add_argument(
+        "--cpu-offload",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use DPTrainer cpu_offload_activations.",
+    )
+    train_group.add_argument(
+        "--auto-find-batch-size",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Let DPTrainer retry with smaller physical microbatches on OOM.",
+    )
+
+    lora_group = parser.add_argument_group("lora", "LoRA adapter settings")
+    lora_group.add_argument("--lora-r", type=int, default=4)
+    lora_group.add_argument("--lora-alpha", type=int, default=8)
+    lora_group.add_argument(
+        "--lora-modules",
+        type=str,
+        nargs="+",
+        default=["c_attn", "c_proj"],
+    )
+
+    dp_group = parser.add_argument_group("dp", "DP-SGD clipping and noise")
+    dp_group.add_argument(
+        "--clipping-mode",
+        type=str,
+        choices=["fixed", "adaptive", "auto"],
+        default="adaptive",
+    )
+    dp_group.add_argument("--clipping-norm", type=float, default=1.0)
+    dp_group.add_argument("--target-clipping-rate", type=float, default=0.5)
+    dp_group.add_argument("--clipping-norm-max", type=float, default=10.0)
+    dp_group.add_argument("--auto-clipping-gamma", type=float, default=0.01)
+    dp_group.add_argument(
+        "--microbatch-size",
+        type=int,
+        default=None,
+        help="Physical batch size. Use 0 to mean no microbatching.",
+    )
+    dp_group.add_argument(
+        "--sampler",
+        type=str,
+        choices=["poisson", "truncated_poisson"],
+        default="poisson",
+    )
+    dp_group.add_argument("--max-batch-size", type=int, default=None)
+    dp_group.add_argument(
+        "--noise-mechanism",
+        type=str,
+        choices=["gaussian", "truncated_gaussian"],
+        default="gaussian",
+    )
+    dp_group.add_argument("--noise-radius", type=float, default=3.0)
+    dp_group.add_argument(
+        "--per-group-clipping",
+        type=str,
+        nargs="+",
+        default=None,
+        metavar="PATTERN=NORM",
+    )
+
+    privacy_group = parser.add_argument_group("privacy", "Privacy accounting")
+    privacy_group.add_argument("--target-epsilon", type=float, default=3.0)
+    privacy_group.add_argument("--target-delta", type=float, default=None)
+    privacy_group.add_argument("--noise-multiplier", type=float, default=None)
+    privacy_group.add_argument("--calibration-min", type=float, default=0.11)
+    privacy_group.add_argument("--calibration-max", type=float, default=3.5)
+    privacy_group.add_argument("--calibration-tolerance", type=float, default=1e-3)
+
+    tracking_group = parser.add_argument_group("tracking", "Experiment tracking")
+    tracking_group.add_argument("--no-wandb", action="store_true")
+    tracking_group.add_argument(
+        "--wandb-project",
+        type=str,
+        default=os.environ.get("WANDB_PROJECT", "opaque"),
+    )
+    tracking_group.add_argument(
+        "--wandb-run-name",
+        type=str,
+        default=os.environ.get("WANDB_NAME") or os.environ.get("RUN_NAME"),
+    )
+    tracking_group.add_argument(
+        "--wandb-entity",
+        type=str,
+        default=os.environ.get("WANDB_ENTITY"),
+    )
+
+    args = parser.parse_args()
+    provided_dests = _provided_dests(parser)
+
+    def _set(name: str, value: Any) -> None:
+        if name not in provided_dests:
+            setattr(args, name, value)
+
+    if args.preset == "smoke":
+        _set("model_name", "gpt2")
+        _set("dataset", "ag_news")
+        _set("dataset_text_field", "text")
+        _set("num_train_samples", 1000)
+        _set("num_eval_samples", 100)
+        _set("num_epochs", 3)
+        _set("batch_size", 32)
+        _set("log_steps", 10)
+        _set("eval_steps", 10)
+        _set("target_epsilon", 3.0)
+        _set("learning_rate", 1e-5)
+        _set("lora_r", 4)
+        _set("lora_alpha", 8)
+        _set("max_seq_len", 512)
+        _set("lora_modules", ["c_attn", "c_proj"])
+        _set("dtype", "bfloat16")
+    elif args.preset == "mellum-kstack":
+        _set("model_name", "JetBrains/Mellum-4b-base")
+        _set("dataset", "JetBrains/KStack")
+        _set("dataset_text_field", "content")
+        _set("num_train_samples", 50000)
+        _set("num_eval_samples", 1000)
+        _set("num_epochs", 3)
+        _set("batch_size", 128)
+        _set("log_steps", 2)
+        _set("eval_steps", 10)
+        _set("target_epsilon", 10.0)
+        _set("learning_rate", 5e-5)
+        _set("lora_r", 16)
+        _set("lora_alpha", 32)
+        _set("max_seq_len", 1024)
+        _set(
+            "lora_modules",
+            [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+        )
+        _set("dtype", "bfloat16")
+        _set("microbatch_size", 16)
+    elif args.preset == "custom":
+        pass
+
+    if args.microbatch_size == 0:
+        args.microbatch_size = None
+
+    if args.per_group_clipping:
+        parsed: dict[str, float] = {}
+        fallback_value = None
+        for item in args.per_group_clipping:
+            if "=" not in item:
+                parser.error(
+                    f"--per-group-clipping values must be PATTERN=NORM, got '{item}'"
+                )
+            pattern, value = item.split("=", 1)
+            if pattern == "fallback":
+                fallback_value = float(value)
+            else:
+                parsed[pattern] = float(value)
+        args.per_group_clipping = parsed
+        if fallback_value is not None:
+            args.clipping_norm = fallback_value
+
+    return args
+
+
+def _resolve_trainer_batching(args: argparse.Namespace) -> tuple[int, int]:
+    """Return physical batch size and DPTrainer GA preserving logical batch."""
+    if args.microbatch_size is None:
+        return args.batch_size, 1
+    if args.microbatch_size <= 0:
+        raise ValueError("--microbatch-size must be positive, or 0 for None.")
+    physical_batch = min(args.microbatch_size, args.batch_size)
+    if args.batch_size % physical_batch != 0:
+        raise ValueError(
+            "DPTrainer requires --microbatch-size to divide --batch-size so "
+            "gradient_accumulation_steps can preserve the expected Poisson batch. "
+            f"Got batch_size={args.batch_size}, microbatch_size={args.microbatch_size}."
+        )
+    return physical_batch, args.batch_size // physical_batch
+
+
+def _reject_distributed_runtime() -> None:
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    if world_size > 1:
+        raise ValueError(
+            "This DPTrainer example is single-process. Distributed DPTrainer "
+            "support is tracked in Phase 10 and requires multi-GPU validation. "
+            "Use examples/train_causal_lm.py for the current manual DDP loop."
+        )
+
+
+def _configure_reporting(args: argparse.Namespace) -> list[str]:
+    """Set W&B env defaults and return TrainingArguments.report_to."""
+    if args.no_wandb:
+        return []
+
+    if args.wandb_project:
+        os.environ["WANDB_PROJECT"] = args.wandb_project
+    if args.wandb_entity:
+        os.environ["WANDB_ENTITY"] = args.wandb_entity
+    if not os.environ.get("WANDB_MODE"):
+        os.environ["WANDB_MODE"] = (
+            "online" if os.environ.get("WANDB_API_KEY") else "offline"
+        )
+    return ["wandb"]
+
+
+def main() -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    args = parse_args()
+    _reject_distributed_runtime()
+
+    if args.eval_batch_size is None:
+        args.eval_batch_size = args.microbatch_size or args.batch_size
+
+    print("=" * 80)
+    print("DP-SGD LoRA Training for Causal Language Models with DPTrainer")
+    print("=" * 80)
+
+    device, device_label = _select_device()
+    dtype_name, torch_dtype, dtype_warning = _resolve_trainer_dtype(args.dtype, device)
+    args.dtype = dtype_name
+    _print_runtime_mode_report(
+        device, device_label, dtype_name, torch_dtype, dtype_warning
+    )
+
+    physical_batch_size, ga_steps = _resolve_trainer_batching(args)
+    report_to = _configure_reporting(args)
+
+    if args.sdpa_backend is not None and device.type == "cuda":
+        backends = {
+            "flash": torch.backends.cuda.enable_flash_sdp,
+            "efficient": torch.backends.cuda.enable_mem_efficient_sdp,
+            "cudnn": torch.backends.cuda.enable_cudnn_sdp,
+            "math": torch.backends.cuda.enable_math_sdp,
+        }
+        for name, setter in backends.items():
+            setter(name == args.sdpa_backend)
+        print(f"SDPA backend forced: {args.sdpa_backend}")
+
+    print(f"\nLoading model: {args.model_name}...")
+    config = AutoConfig.from_pretrained(args.model_name)
+    for attr in (
+        "attn_pdrop",
+        "resid_pdrop",
+        "embd_pdrop",
+        "attention_dropout",
+        "hidden_dropout",
+        "dropout",
+        "attn_dropout",
+        "ffn_dropout",
+    ):
+        if hasattr(config, attr):
+            setattr(config, attr, 0.0)
+    if args.gradient_checkpointing and hasattr(config, "use_cache"):
+        config.use_cache = False
+
+    use_eager = args.attention == "eager" or device.type == "mps"
+    model_kwargs = {
+        "config": config,
+        "dtype": torch_dtype,
+        "trust_remote_code": True,
+    }
+    if use_eager:
+        print("Attention: eager")
+        model_kwargs["attn_implementation"] = "eager"
+    else:
+        backend_label = args.sdpa_backend or "auto"
+        print(f"Attention: sdpa (backend={backend_label})")
+
+    start_time = time.time()
+    try:
+        model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
+    except TypeError as exc:
+        if "unexpected keyword argument 'dtype'" not in str(exc):
+            raise
+        model_kwargs.pop("dtype")
+        model_kwargs["torch_dtype"] = torch_dtype
+        model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
+    if getattr(model, "loss_type", None) is None:
+        model.loss_type = "ForCausalLM"
+    print(f"Model loaded in {time.time() - start_time:.1f}s")
+
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    print("Applying LoRA...")
+    lora_config = LoraConfig(
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        target_modules=args.lora_modules,
+        lora_dropout=0.0,
+        bias="none",
+        task_type="CAUSAL_LM",
+    )
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
+
+    print(f"\nLoading dataset: {args.dataset}...")
+    if args.dataset_subset:
+        print(f"  Subset: {args.dataset_subset}")
+    print(f"  Split: {args.dataset_split}")
+    print(f"  Text field: {args.dataset_text_field}")
+
+    total_needed = args.num_train_samples + args.num_eval_samples
+    dataset = _load_streaming_subset(
+        dataset_name=args.dataset,
+        dataset_subset=args.dataset_subset,
+        dataset_split=args.dataset_split,
+        dataset_text_field=args.dataset_text_field,
+        total_needed=total_needed,
+    )
+    print(f"  Total examples in dataset: {len(dataset)}")
+
+    if len(dataset) > 0:
+        sample_text = dataset[0][args.dataset_text_field]
+        print("\n  Sample data (first example):")
+        print(f"    Text length: {len(sample_text)} chars")
+        print(f"    Preview: {sample_text[:200]}...")
+
+    print(
+        f"\nPreparing {args.num_eval_samples} eval + "
+        f"{args.num_train_samples} train samples..."
+    )
+    eval_dataset = dataset.take(args.num_eval_samples)
+    train_dataset = dataset.skip(args.num_eval_samples).take(args.num_train_samples)
+
+    def tokenize_function(examples):
+        return tokenizer(
+            examples[args.dataset_text_field],
+            truncation=True,
+            max_length=args.max_seq_len,
+        )
+
+    print(f"\nTokenizing (max_seq_len={args.max_seq_len})...")
+    eval_dataset = eval_dataset.map(
+        tokenize_function,
+        batched=True,
+        remove_columns=eval_dataset.column_names,
+        desc="Tokenizing eval",
+    )
+    train_dataset = train_dataset.map(
+        tokenize_function,
+        batched=True,
+        remove_columns=train_dataset.column_names,
+        desc="Tokenizing train",
+    )
+    print(
+        f"Prepared datasets: {len(train_dataset)} train samples, "
+        f"{len(eval_dataset)} eval samples"
+    )
+
+    data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+    max_batch_size = args.max_batch_size or args.batch_size
+
+    if args.wandb_run_name is None:
+        model_short = args.model_name.split("/")[-1]
+        args.wandb_run_name = (
+            f"trainer_{model_short}_n{args.num_train_samples}_e{args.num_epochs}_"
+            f"b{args.batch_size}_eps{args.target_epsilon}_lr{args.learning_rate}"
+        )
+
+    save_strategy = "steps" if args.save_steps is not None else "no"
+    training_args = DPTrainingArguments(
+        output_dir=args.output_dir,
+        overwrite_output_dir=True,
+        report_to=report_to,
+        run_name=args.wandb_run_name,
+        logging_dir=os.path.join(args.output_dir, "runs"),
+        logging_strategy="steps",
+        logging_steps=args.log_steps,
+        eval_strategy="steps" if args.num_eval_samples > 0 else "no",
+        eval_steps=args.eval_steps,
+        save_strategy=save_strategy,
+        save_steps=args.save_steps or args.eval_steps,
+        max_steps=args.max_steps if args.max_steps is not None else -1,
+        num_train_epochs=args.num_epochs,
+        per_device_train_batch_size=physical_batch_size,
+        per_device_eval_batch_size=args.eval_batch_size,
+        gradient_accumulation_steps=ga_steps,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        optim=args.optimizer,
+        seed=args.seed,
+        data_seed=args.data_seed,
+        use_cpu=device.type == "cpu",
+        use_mps_device=device.type == "mps",
+        bf16=dtype_name == "bfloat16",
+        fp16=False,
+        gradient_checkpointing=args.gradient_checkpointing,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+        cpu_offload_activations=args.cpu_offload,
+        auto_find_batch_size=args.auto_find_batch_size,
+        remove_unused_columns=True,
+        include_tokens_per_second=True,
+        include_num_input_tokens_seen="all",
+        dp_target_epsilon=args.target_epsilon,
+        dp_target_delta=args.target_delta,
+        dp_noise_multiplier=args.noise_multiplier,
+        dp_calibration_min=args.calibration_min,
+        dp_calibration_max=args.calibration_max,
+        dp_calibration_tolerance=args.calibration_tolerance,
+        dp_clipping_mode=args.clipping_mode,
+        dp_clipping_norm=args.clipping_norm,
+        dp_target_clipping_rate=args.target_clipping_rate,
+        dp_clipping_norm_max=args.clipping_norm_max,
+        dp_auto_clipping_gamma=args.auto_clipping_gamma,
+        dp_per_group_clipping=args.per_group_clipping,
+        dp_sampler=args.sampler,
+        dp_max_batch_size=max_batch_size
+        if args.sampler == "truncated_poisson"
+        else None,
+        dp_noise_mechanism=args.noise_mechanism,
+        dp_noise_radius=args.noise_radius,
+    )
+
+    print("\nDPTrainer argument summary:")
+    print(f"  Output dir: {training_args.output_dir}")
+    print(f"  Optimizer: {training_args.optim}")
+    print(f"  Learning rate: {training_args.learning_rate}")
+    print(f"  Clipping mode: {training_args.dp_clipping_mode}")
+    print(f"  Clip norm: {training_args.dp_clipping_norm}")
+    print(f"  Noise mechanism: {training_args.dp_noise_mechanism}")
+    print(f"  Target epsilon: {training_args.dp_target_epsilon}")
+    print(f"  Target delta: {training_args.dp_target_delta or 'auto'}")
+    print(f"  Save strategy: {training_args.save_strategy}")
+
+    trainer = DPTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset if args.num_eval_samples > 0 else None,
+        data_collator=data_collator,
+        processing_class=tokenizer,
+    )
+
+    print("\n" + "=" * 80)
+    print("Starting DPTrainer training...")
+    print("=" * 80)
+    train_output = trainer.train()
+
+    print("\n" + "=" * 80)
+    print("Training Complete")
+    print("=" * 80)
+    print(f"Model: {args.model_name}")
+    print(f"Dataset: {args.dataset} ({len(train_dataset)} train samples)")
+    print("\nTraining metrics:")
+    for key_name in sorted(train_output.metrics):
+        print(f"  {key_name}: {train_output.metrics[key_name]}")
+
+    if args.num_eval_samples > 0:
+        print("\nRunning final evaluation...")
+        eval_metrics = trainer.evaluate()
+        for key_name in sorted(eval_metrics):
+            print(f"  {key_name}: {eval_metrics[key_name]}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

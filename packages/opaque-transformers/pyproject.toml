@@ -1,26 +1,41 @@
 [build-system]
-requires = ["setuptools>=61.0.0", "setuptools-scm>=8.0.0"]
+requires = ["setuptools>=68.0", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "opaque-transformers"
 dynamic = ["version"]
-description = "Hugging Face compatibility layer for Opaque."
+description = "Opaque HuggingFace Transformers patches: vmap compatibility + fused kernel integration"
 readme = "README.md"
-requires-python = ">=3.11"
-license = { file = "LICENSE" }
-authors = [
-    { name = "Opaque Authors", email = "federated-compute@jetbrains.com" },
+license = { text = "Apache-2.0" }
+authors = [{ name = "Opaque Contributors" }]
+requires-python = ">=3.11,<3.13"
+keywords = ["differential-privacy", "huggingface", "transformers", "lora", "vmap"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "transformers==4.57.1",
-    "peft>=0.13.0",
-    "datasets>=2.0.0",
-    "opaque-core",
+    "torch>=2.10.0",
+    "transformers>=4.57.0",
+    "opaque-core>=0.0.0.dev0",
+    "opaque-patches>=0.0.0.dev0",
 ]
 
-[tool.setuptools]
-package-dir = { "" = "src" }
+[project.optional-dependencies]
+peft = ["peft>=0.13.0"]
+trainer = [
+    "opaque-dpsgd>=0.0.0.dev0",
+    "opaque-accounting>=0.0.0.dev0",
+    "datasets>=2.0.0",
+    "torchopt>=0.7.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -29,7 +44,7 @@ namespaces = true
 
 [tool.setuptools_scm]
 root = "../.."
-fallback_version = "0.0.0.dev0"
+fallback_version = "0.0.0"
 git_describe_command = "git describe --dirty --tags --long --match v*"
 
 [tool.uv]
@@ -37,3 +52,6 @@ package = true
 
 [tool.uv.sources]
 opaque-core = { workspace = true }
+opaque-patches = { workspace = true }
+opaque-dpsgd = { workspace = true }
+opaque-accounting = { workspace = true }

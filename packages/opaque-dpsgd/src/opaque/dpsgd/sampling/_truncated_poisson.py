@@ -68,25 +68,27 @@ class TruncatedPoissonSampler(PoissonSampler):
 
         self.max_batch_size = max_batch_size
 
+    def state_dict(self) -> dict:
+        state = super().state_dict()
+        state["max_batch_size"] = int(self.max_batch_size)
+        return state
+
+    def load_state_dict(self, state: dict) -> None:
+        super().load_state_dict(state)
+        if "max_batch_size" in state:
+            self.max_batch_size = int(state["max_batch_size"])
+
     def __iter__(self) -> Iterator[list[int]]:
-        """Yield variable-size batches capped at max_batch_size.
+        """Yield variable-size batches capped at ``max_batch_size``.
 
-        Calls parent's Poisson sampling, then truncates if needed by randomly
-        selecting max_batch_size examples from the Poisson sample.
-
-        Returns:
-            Iterator yielding lists of indices (variable size, capped)
+        Uses one per-iteration generator for both Poisson sampling and
+        truncation, keeping randomness deterministic across save/resume.
         """
-        # Use parent's Poisson sampling
-        for indices in super().__iter__():
-            # Truncate if needed
-            if len(indices) > self.max_batch_size:
-                # Randomly select max_batch_size examples (uniform from Poisson sample)
-                indices_array = np.array(indices)
-                indices = self.generator.choice(
-                    indices_array,
-                    size=self.max_batch_size,
-                    replace=False,
-                ).tolist()
-
-            yield indices
+        while self.num_iterations is None or self._iter_count < self.num_iterations:
+            gen = self._generator_for_iter(self._iter_count)
+            included = gen.random(self._num_samples) < self.sample_rate
+            indices = np.where(included)[0]
+            if indices.size > self.max_batch_size:
+                indices = gen.choice(indices, size=self.max_batch_size, replace=False)
+            self._iter_count += 1
+            yield indices.tolist()

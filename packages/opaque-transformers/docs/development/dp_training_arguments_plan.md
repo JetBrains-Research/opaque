@@ -802,7 +802,7 @@ accounting, and torchopt updates.
 - Validate `torch.compile(model, backend=..., mode=...)` before
   `make_functional`, including per-example gradient parity, clipped-gradient
   parity, optimizer update shape/state parity, and final metric parity.
-- Define precedence between Liger patches and `opaque.patches`
+- Define precedence between Liger patches and `opaque.performance.huggingface`
   patches before enabling `use_liger_kernel`.
 - Validate `jit_mode_eval` separately in eval-only paths where no training
   `vmap(grad(...))` is involved.

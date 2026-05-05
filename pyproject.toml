@@ -41,14 +41,16 @@ dependencies = [
 auditing = ["opaque-auditing"]
 dpftrl = ["opaque-dpftrl"]
 transformers = [
-  "opaque-transformers",
-  "opaque-patches[transformers]"
+    "opaque-transformers",
+    "opaque-transformers[peft]",
+    "opaque-patches[transformers]",
 ]
 all = [
     "opaque-auditing",
     "opaque-dpftrl",
     "opaque-patches",
-    "opaque-transformers"
+    "opaque-transformers",
+    "opaque-transformers[peft]",
 ]
 
 # The ``opaque`` namespace is pure PEP 420, composed by whichever

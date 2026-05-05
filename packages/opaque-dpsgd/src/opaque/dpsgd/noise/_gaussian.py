@@ -63,6 +63,22 @@ class GaussianNoiseState(NoiseState):
     _step_counter: int
     _rng_key: RngKey
 
+    def state_dict(self) -> dict:
+        """Serialize to a JSON-compatible dict for checkpointing."""
+        return {
+            "_step_counter": int(self._step_counter),
+            "_rng_key": {"seed": int(self._rng_key.seed), "impl": str(self._rng_key.impl)},
+        }
+
+    @classmethod
+    def from_state_dict(cls, state: dict) -> "GaussianNoiseState":
+        """Reconstruct from :meth:`state_dict` output."""
+        rng = state["_rng_key"]
+        return cls(
+            _step_counter=int(state["_step_counter"]),
+            _rng_key=RngKey(seed=int(rng["seed"]), impl=str(rng["impl"])),
+        )
+
 
 def _validate_noise_stddev(noise_stddev: float | PerGroup) -> None:
     """Validate that realized noise standard deviation is non-negative."""

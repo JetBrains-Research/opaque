@@ -30,29 +30,35 @@ def with_warmup(
     transition_steps: int,
     *,
     ramp: str | Callable[[float], float] = "linear",
+    init_value: float = 0.0,
 ) -> Schedule:
-    """Multiply ``schedule`` by a 0 → 1 ramp over the first
-    ``transition_steps`` steps; afterwards return ``schedule(step)``
-    unchanged.
+    """Multiply ``schedule`` by an ``init_value`` → 1 ramp over the
+    first ``transition_steps`` steps; afterwards return
+    ``schedule(step)`` unchanged.
 
     For the standard "warmup, then decay" shape, configure the decay
     with ``transition_begin = transition_steps``: schedules in this
     module return their ``init_value`` while
     ``step < transition_begin``, so the multiplicative ramp turns
-    that plateau into a 0 → ``init_value`` warmup and the decay runs
-    untouched afterwards.
+    that plateau into an ``init_value * inner_init`` →
+    ``inner_init`` warmup and the decay runs untouched afterwards.
 
     A scalar ``float`` for ``schedule`` is treated as
     :func:`~opaque.scheduling.constant_schedule`, which makes
     ``with_warmup(1e-3, transition_steps=100)`` a complete
     "warmup-then-constant" schedule.
 
-    The ``ramp`` kwarg controls the warmup curve:
+    The ``ramp`` kwarg controls the warmup curve shape:
 
     * ``"linear"`` (default): ``progress``
     * ``"cosine"``:            ``0.5 * (1 - cos(pi * progress))``
     * ``"1-sqrt"``:            ``1 - sqrt(1 - progress)``
     * Callable ``f(progress)`` returning a factor in ``[0, 1]``.
+
+    ``init_value`` sets the factor at step 0; the ramp ends at 1.0
+    over ``transition_steps`` and the inner schedule runs unchanged
+    afterwards.  The factor at intermediate steps is
+    ``init_value + (1 - init_value) * ramp(progress)``.
 
     Raises :class:`ValueError` if ``transition_steps <= 0`` or ``ramp``
     is an unknown string.
@@ -73,10 +79,19 @@ def with_warmup(
 
     inner: Schedule = schedule if callable(schedule) else constant_schedule(schedule)
 
-    def wrapped(step: int) -> float:
-        if step < transition_steps:
-            return ramp_fn(step / transition_steps) * inner(step)
-        return inner(step)
+    if init_value == 0.0:
+        def wrapped(step: int) -> float:
+            if step < transition_steps:
+                return ramp_fn(step / transition_steps) * inner(step)
+            return inner(step)
+    else:
+        span = 1.0 - init_value
+
+        def wrapped(step: int) -> float:
+            if step < transition_steps:
+                factor = init_value + span * ramp_fn(step / transition_steps)
+                return factor * inner(step)
+            return inner(step)
 
     return wrapped
 

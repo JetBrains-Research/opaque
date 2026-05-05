@@ -367,6 +367,43 @@ class TestWithWarmup:
         with pytest.raises(ValueError, match="Unknown ramp"):
             with_warmup(constant_schedule(1.0), transition_steps=10, ramp="bogus")
 
+    def test_init_value_starts_above_zero(self):
+        # init_value=0.25: ramp goes from 0.25 to 1 over [0, 10).
+        sched = with_warmup(constant_schedule(1.0), transition_steps=10, init_value=0.25)
+        assert sched(0) == pytest.approx(0.25)
+        # Linear ramp: factor = 0.25 + 0.75 * (step/10).
+        assert sched(5) == pytest.approx(0.25 + 0.75 * 0.5)
+        assert sched(10) == pytest.approx(1.0)
+
+    def test_init_value_with_cosine_ramp(self):
+        # With init_value, the named ramp is rescaled into [init_value, 1].
+        sched = with_warmup(
+            constant_schedule(1.0), transition_steps=10,
+            ramp="cosine", init_value=0.2,
+        )
+        # cosine ramp at p=0.5 is 0.5, rescaled: 0.2 + 0.8 * 0.5 = 0.6.
+        assert sched(0) == pytest.approx(0.2)
+        assert sched(5) == pytest.approx(0.6, abs=1e-12)
+        assert sched(10) == pytest.approx(1.0)
+
+    def test_init_value_with_callable_ramp(self):
+        # Callable ramp also gets rescaled into [init_value, 1].
+        sched = with_warmup(
+            constant_schedule(1.0), transition_steps=10,
+            ramp=lambda p: p * p, init_value=0.5,
+        )
+        # At step 5: ramp(0.5) = 0.25; factor = 0.5 + 0.5 * 0.25 = 0.625.
+        assert sched(0) == pytest.approx(0.5)
+        assert sched(5) == pytest.approx(0.625)
+        assert sched(10) == pytest.approx(1.0)
+
+    def test_init_value_zero_matches_default_path(self):
+        # init_value=0.0 must produce identical output to omitting the kwarg.
+        a = with_warmup(constant_schedule(1.0), transition_steps=10)
+        b = with_warmup(constant_schedule(1.0), transition_steps=10, init_value=0.0)
+        for s in range(15):
+            assert a(s) == pytest.approx(b(s))
+
 
 class TestWithRestarts:
     def test_zero_cycles_raises(self):
