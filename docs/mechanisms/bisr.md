@@ -86,10 +86,9 @@ strategy = bisr_strategy(
     max_participations=num_epochs,
     momentum=0.9,
 )
-clip_bound = clipping_norm / batch_size
 noise_fn, state = mf_noise(
     grad_template, strategy,
-    stddev=noise_multiplier * clip_bound,
+    noise_multiplier=noise_multiplier,
     key=key(seed),
 )
 ```

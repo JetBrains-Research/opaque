@@ -160,18 +160,17 @@ from opaque.dpftrl.noise import mf_noise, band_mf_strategy
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-clip_bound = clipping_norm / batch_size
 noise_fn, noise_state = mf_noise(
     grad_template=params,
     strategy=strategy,
-    stddev=noise_multiplier * clip_bound,
+    noise_multiplier=noise_multiplier,
     key=key(42),
 )
 
 for step in range(1000):
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = params - lr * noisy_grads
+    params = params - lr * noisy_grads.pytree
 ```
 
 ### Privacy accounting
@@ -223,10 +222,9 @@ grad_fn, clip_state = clipped_grad(
     normalize_by=batch_size,
 )
 strategy = band_mf_strategy(n_steps, bands)
-clip_bound = clipping_norm / batch_size
 noise_fn, noise_state = mf_noise(
     params, strategy,
-    stddev=result.param * clip_bound,
+    noise_multiplier=result.param,
     key=key_noise,
 )
 sampler = CyclicPoissonSampler(
@@ -239,7 +237,7 @@ loader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
 for batch in loader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = params - lr * noisy_grads
+    params = params - lr * noisy_grads.pytree
 ```
 
 ## Parameter guide

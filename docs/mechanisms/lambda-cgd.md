@@ -90,10 +90,9 @@ strategy = lambda_cgd_strategy(
     min_sep=steps_per_epoch,
     max_participations=num_epochs,
 )
-clip_bound = clipping_norm / batch_size
 noise_fn, state = mf_noise(
     grad_template, strategy,
-    stddev=noise_multiplier * clip_bound,
+    noise_multiplier=noise_multiplier,
     key=key(seed),
 )
 ```

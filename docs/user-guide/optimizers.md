@@ -221,7 +221,6 @@ from opaque.optimizers import adamw
 # Strategy: momentum=beta1 (Adam's first moment workload)
 strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.9)
 second_strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.999)
-clip_bound = clipping_norm / batch_size
 
 # Noise: passing second_moment_strategy creates two MF streams (g, g²).
 noise_fn, noise_state = mf_noise(

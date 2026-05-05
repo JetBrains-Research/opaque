@@ -217,18 +217,17 @@ from opaque.dpftrl.noise import mf_noise, band_mf_strategy
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-clip_bound = clipping_norm / batch_size
 noise_fn, noise_state = mf_noise(
     grad_template=params,
     strategy=strategy,
-    stddev=noise_multiplier * clip_bound,
+    noise_multiplier=noise_multiplier,
     key=key(42),
 )
 
 for step in range(1000):
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = params - lr * noisy_grads
+    params = params - lr * noisy_grads.pytree
 ```
 
 The `grad_template` argument provides shape and dtype information for
@@ -246,7 +245,6 @@ from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.9)
 second_strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.999)
-clip_bound = clipping_norm / batch_size
 
 noise_fn, noise_state = mf_noise(
     params,
@@ -287,7 +285,7 @@ from opaque.random import key
 strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.95)
 noise_fn, noise_state = mf_noise(
     params, strategy,
-    stddev=noise_multiplier * clip_bound,
+    noise_multiplier=noise_multiplier,
     key=key(42),
 )
 ```
@@ -307,7 +305,7 @@ strategy = blt_strategy(
 )
 noise_fn, noise_state = mf_noise(
     params, strategy,
-    stddev=noise_multiplier * clip_bound,
+    noise_multiplier=noise_multiplier,
     key=key(42),
 )
 ```
@@ -327,7 +325,7 @@ strategy = lambda_cgd_strategy(
 )
 noise_fn, noise_state = mf_noise(
     params, strategy,
-    stddev=noise_multiplier * clip_bound,
+    noise_multiplier=noise_multiplier,
     key=key(42),
 )
 ```
@@ -346,7 +344,7 @@ strategy = bisr_strategy(
 )
 noise_fn, noise_state = mf_noise(
     params, strategy,
-    stddev=noise_multiplier * clip_bound,
+    noise_multiplier=noise_multiplier,
     key=key(42),
 )
 ```
@@ -363,7 +361,7 @@ from opaque.random import key
 strategy = identity_strategy()
 noise_fn, noise_state = mf_noise(
     params, strategy,
-    stddev=noise_multiplier * clip_bound,
+    noise_multiplier=noise_multiplier,
     key=key(42),
 )
 ```
@@ -435,7 +433,7 @@ strategy = blt_strategy(
 )
 noise_fn, state = mf_noise(
     grad_template, strategy,
-    stddev=noise_multiplier * clipping_norm,
+    noise_multiplier=noise_multiplier,
     key=key(42),
 )
 ```

@@ -71,11 +71,10 @@ strategy = bsr_strategy(
     alpha=1.0,
     beta=0.95,
 )
-clip_bound = clipping_norm / batch_size
 noise_fn, state = mf_noise(
     grad_template=params,
     strategy=strategy,
-    stddev=noise_multiplier * clip_bound,
+    noise_multiplier=noise_multiplier,
     key=key(seed),
 )
 ```

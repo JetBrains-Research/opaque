@@ -111,12 +111,10 @@ from opaque.optimizers import adamw
 
 strategy = blt_strategy(n_steps=1000, ...)
 second_strategy = blt_strategy(n_steps=1000, ...)
-clip_bound = clipping_norm / batch_size
 noise_fn, noise_state = mf_noise(
   grad_template,
   strategy,
   noise_multiplier=noise_multiplier,
-  sensitivity=clip_bound,
   key=key(42),
   second_moment_strategy=second_strategy,
 )
