@@ -7,6 +7,8 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
+from opaque.bounded import noisy  # noqa: E402
+from opaque.clipping.per_group import PerGroup  # noqa: E402
 from opaque.optimizers import AdafactorState, adafactor  # noqa: E402
 
 
@@ -92,11 +94,10 @@ class TestVanilla:
             assert torch.isfinite(updates[k]).all()
 
 
-class TestDPKwargsNotOffered:
-    """Factored-v DP corrections aren't supported yet; the moment scaler
-    doesn't list ``noise_stddev`` or ``noisy_squared_grads`` in its
-    signature, so passing either raises ``TypeError`` immediately
-    (instead of silently ignoring or returning a half-baked result)."""
+class TestExplicitKwargsRejected:
+    """The optimizer surface no longer takes per-step metadata kwargs;
+    metadata travels via ``NoisyPytree`` only.  Python's natural
+    ``TypeError`` surfaces this for users who try the old API."""
 
     def test_noise_stddev_rejected(self, matrix_params, matrix_grads):
         opt = adafactor(lr=1e-3)
@@ -112,6 +113,111 @@ class TestDPKwargsNotOffered:
             opt.update(
                 matrix_grads, state, params=matrix_params, noisy_squared_grads=sq
             )
+
+
+class TestBCMode:
+    """DP noise-variance bias correction on the row/col factors."""
+
+    def test_default_keeps_phi_zero(self, matrix_params, matrix_grads):
+        """Default ``noise_bias_correction=False``: φ stays at 0 even
+        under NoisyPytree updates."""
+        opt = adafactor(lr=1e-3)
+        state = opt.init(matrix_params)
+        for _ in range(5):
+            _, state = opt.update(
+                noisy(matrix_grads, bound=1.0, noise_stddev=0.5),
+                state,
+                params=matrix_params,
+            )
+        assert all(v == 0.0 for v in _af_state(state).phi_flat)
+
+    def test_phi_advances_under_noisy_metadata(self, matrix_params, matrix_grads):
+        """With BC on, φ tracks the β₂_t-EMA of σ² per leaf."""
+        sigma = 0.5
+        opt = adafactor(lr=1e-3, noise_bias_correction=True)
+        state = opt.init(matrix_params)
+        # Drive 8 steps of constant σ; phi should approach σ² steady state.
+        for _ in range(8):
+            _, state = opt.update(
+                noisy(matrix_grads, bound=1.0, noise_stddev=sigma),
+                state,
+                params=matrix_params,
+            )
+        # All leaves have the same scalar σ → all phi entries equal.
+        phi = _af_state(state).phi_flat
+        assert all(p == pytest.approx(phi[0]) for p in phi)
+        assert phi[0] > 0.0
+        # Steady-state target: σ² (mostly converged after 8 steps).
+        assert phi[0] == pytest.approx(sigma**2, rel=0.2)
+
+    def test_per_group_routes_to_per_leaf_phi(
+        self, matrix_params, matrix_grads
+    ):
+        """PerGroup noise_stddev with σ varying per group → phi varies per leaf
+        according to the group its dotted-path key resolves to."""
+        pg = PerGroup(
+            groups={
+                "fc1.weight": "attn",
+                "fc2.weight": "mlp",
+                "bias": "mlp",
+            },
+            values={"attn": 0.2, "mlp": 0.8},
+        )
+        opt = adafactor(lr=1e-3, noise_bias_correction=True)
+        state = opt.init(matrix_params)
+        _, state = opt.update(
+            noisy(matrix_grads, bound=1.0, noise_stddev=pg),
+            state,
+            params=matrix_params,
+        )
+        af = _af_state(state)
+        path_to_phi = dict(zip(af.paths, af.phi_flat))
+        # Group "attn" → σ=0.2 → variance 0.04 (× one-step EMA factor)
+        # Group "mlp"  → σ=0.8 → variance 0.64
+        # The two should differ proportionally to (0.04, 0.64).
+        attn_phi = path_to_phi["fc1.weight"]
+        mlp_phi = path_to_phi["fc2.weight"]
+        bias_phi = path_to_phi["bias"]
+        assert mlp_phi > attn_phi
+        # Bias is in the same group as fc2.weight → same phi.
+        assert mlp_phi == pytest.approx(bias_phi)
+        # Variance ratio is (0.8/0.2)² = 16.
+        assert mlp_phi / attn_phi == pytest.approx(16.0, rel=1e-4)
+
+    def test_bc_changes_updates(self, matrix_params, matrix_grads):
+        """With non-zero σ, BC actually changes the update vs vanilla."""
+        sigma = 0.5
+        opt_bc = adafactor(lr=1e-3, noise_bias_correction=True)
+        opt_no = adafactor(lr=1e-3, noise_bias_correction=False)
+        s_bc = opt_bc.init(matrix_params)
+        s_no = opt_no.init(matrix_params)
+        # Run a few warmup steps so phi has built up.
+        for _ in range(3):
+            _, s_bc = opt_bc.update(
+                noisy(matrix_grads, bound=1.0, noise_stddev=sigma),
+                s_bc,
+                params=matrix_params,
+            )
+            _, s_no = opt_no.update(
+                noisy(matrix_grads, bound=1.0, noise_stddev=sigma),
+                s_no,
+                params=matrix_params,
+            )
+        u_bc, _ = opt_bc.update(
+            noisy(matrix_grads, bound=1.0, noise_stddev=sigma),
+            s_bc,
+            params=matrix_params,
+        )
+        u_no, _ = opt_no.update(
+            noisy(matrix_grads, bound=1.0, noise_stddev=sigma),
+            s_no,
+            params=matrix_params,
+        )
+        # On at least one leaf the BC and no-BC updates differ.
+        any_diff = any(
+            not torch.allclose(u_bc[k], u_no[k]) for k in matrix_params
+        )
+        assert any_diff
 
 
 class TestValidation:

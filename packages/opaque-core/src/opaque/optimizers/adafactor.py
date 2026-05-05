@@ -15,17 +15,26 @@ outer product ``v_row · v_col / mean(v_row)``.  This saves
 ``rows·cols − rows − cols`` floats of state per matrix parameter, which
 matters at LM scale.
 
-Scope.  Vanilla + decoupled / L2 weight decay, with the paper's RMS
-update clip (threshold 1.0 by default).  DP-aware modes (``noise_stddev``
-φ-EMA, ``noisy_squared_grads`` private second moments) are **not offered** yet — the
-per-axis bias derivation for the factored ``v̂`` needs to be written
-down before they can land.  Because the row and column factors are
-means, a homogeneous Gaussian noise contribution adds ``(1 − β₂) · σ²``
-to each factor; the remaining work is deriving the right factored
-post-processing path for non-homogeneous per-axis noise.  Until then ``adafactor``'s
-moment scaler does not consume the DP metadata wrappers; passing raw
-per-step metadata kwargs raises ``TypeError`` immediately, while
-``NoisyPytree`` values are unwrapped with a warning.
+DP noise-variance bias correction.  Under additive Gaussian noise
+``g_ij → g_ij + ξ_ij`` with ``ξ_ij ~ N(0, σ²)``,
+``E[(g_ij + ξ_ij)²] = g_ij² + σ²``.  The bias is a uniform ``+σ²``
+per element, so it propagates cleanly through the row and column
+*means*::
+
+    E[mean_j (g_ij + ξ_ij)²] = mean_j g_ij² + σ²
+    E[mean_i (g_ij + ξ_ij)²] = mean_i g_ij² + σ²
+
+A single scalar φ-EMA tracking ``β₂_t`` matches the v_row/v_col EMAs;
+subtracting it (with a positive floor) from each factor before the
+``v̂`` approximation recovers the clean second-moment estimate.
+``noise_bias_correction=True`` activates this path; defaults to
+``False`` so vanilla Adafactor parity is the baseline.
+
+The private second-moment substitution path (``noisy_squared_grads``)
+is **not** offered for Adafactor.  Substituting a privately-estimated
+``g²`` stream for ``(g+ξ)²`` does not preserve the rank-1 ``r ⊗ c``
+factorisation in any obvious way; deriving a sound factored variant
+is left as future work.
 
 Skipped (orthogonal knobs, can be added later):
 
@@ -53,6 +62,8 @@ except ImportError as exc:
 
 import optree
 
+from opaque.clipping.per_group import PerGroup
+from opaque.optimizers._bias_correction import resolve_noise_variance
 from opaque.optimizers._chain import make_optimizer_chain
 
 
@@ -70,14 +81,23 @@ class AdafactorState:
 
             - ``(v_row, v_col)`` for tensors of rank ≥ 2 (factored),
             - ``(v,)`` for tensors of rank < 2 (scalar).
+        phi_flat: Per-leaf noise-variance EMA.  Tracks ``β₂_t``-weighted
+            ``σ²`` for DP bias correction; stays at ``0.0`` per leaf
+            unless ``NoisyPytree`` updates supply realized σ metadata
+            and ``noise_bias_correction`` is enabled.
         treespec: Frozen tree spec from ``optree`` so updates can be
             re-packed in the same shape.
+        paths: Dotted-path string per leaf, aligned with ``v_flat`` /
+            ``phi_flat``.  Used to look up per-group ``noise_stddev``
+            values during BC.
         step: Number of completed updates.
     """
 
     m: Any
     v_flat: tuple
+    phi_flat: tuple[float, ...]
     treespec: Any
+    paths: tuple[str, ...]
     step: int
 
 
@@ -114,12 +134,18 @@ def _approx_v_hat(
     return (v_row / r_mean).unsqueeze(-1) * v_col.unsqueeze(-2)
 
 
+def _path_to_dotted(path: tuple) -> str:
+    """Convert an ``optree`` path tuple to PerGroup's dotted-string form."""
+    return ".".join(str(component) for component in path)
+
+
 def _scale_by_adafactor(
     b1: float,
     b2_decay: float,
     eps_grad: float,
     eps_root: float,
     update_rms_clip: float,
+    noise_bias_correction: bool,
 ) -> GradientTransformation:
     """Adafactor moment scaling.
 
@@ -129,13 +155,22 @@ def _scale_by_adafactor(
     use_first_moment = b1 > 0.0
 
     def init_fn(params: Any) -> AdafactorState:
-        flat, treespec = optree.tree_flatten(params)
+        path_list, flat, treespec = optree.tree_flatten_with_path(params)
+        paths = tuple(_path_to_dotted(p) for p in path_list)
         v_flat = tuple(_init_v_for_leaf(leaf) for leaf in flat)
+        phi_flat = tuple(0.0 for _ in flat)
         m = None
         if use_first_moment:
             m_flat = tuple(torch.zeros_like(leaf) for leaf in flat)
             m = optree.tree_unflatten(treespec, list(m_flat))
-        return AdafactorState(m=m, v_flat=v_flat, treespec=treespec, step=0)
+        return AdafactorState(
+            m=m,
+            v_flat=v_flat,
+            phi_flat=phi_flat,
+            treespec=treespec,
+            paths=paths,
+            step=0,
+        )
 
     def update_fn(
         updates: Any,
@@ -143,6 +178,7 @@ def _scale_by_adafactor(
         *,
         params: Any = None,  # noqa: ARG001
         inplace: bool = False,  # noqa: ARG001
+        noise_stddev: float | PerGroup | None = None,
     ) -> tuple[Any, AdafactorState]:
         t = state.step + 1
         # Time-varying β₂_t per the paper: β₂_t = 1 − t^c.
@@ -156,23 +192,46 @@ def _scale_by_adafactor(
                 "shape mismatch."
             )
 
+        bc_active = noise_bias_correction and noise_stddev is not None
+
         new_v_flat: list[tuple] = []
+        new_phi_flat: list[float] = []
         new_grads: list[torch.Tensor] = []
 
-        for g, v_state in zip(flat_grads, state.v_flat, strict=True):
+        for i, (g, v_state) in enumerate(zip(flat_grads, state.v_flat, strict=True)):
             g_sq = g.pow(2) + eps_grad
+
+            if bc_active:
+                nv = resolve_noise_variance(noise_stddev, state.paths[i])
+                old_phi = state.phi_flat[i]
+                new_phi = beta2_t * old_phi + (1.0 - beta2_t) * nv
+            else:
+                new_phi = state.phi_flat[i]
+
+            new_phi_flat.append(new_phi)
+
             if len(v_state) == 2:
                 v_row, v_col = v_state
                 # Factored update.
                 new_v_row = beta2_t * v_row + (1.0 - beta2_t) * g_sq.mean(dim=-1)
                 new_v_col = beta2_t * v_col + (1.0 - beta2_t) * g_sq.mean(dim=-2)
-                v_hat = _approx_v_hat(new_v_row, new_v_col, eps_root)
+                if bc_active and new_phi > 0.0:
+                    v_row_eff = (new_v_row - new_phi).clamp(min=eps_root)
+                    v_col_eff = (new_v_col - new_phi).clamp(min=eps_root)
+                else:
+                    v_row_eff = new_v_row
+                    v_col_eff = new_v_col
+                v_hat = _approx_v_hat(v_row_eff, v_col_eff, eps_root)
                 update = g / v_hat.sqrt().clamp(min=eps_root)
                 new_v_flat.append((new_v_row, new_v_col))
             else:
                 (v,) = v_state
                 new_v = beta2_t * v + (1.0 - beta2_t) * g_sq
-                update = g / new_v.sqrt().clamp(min=eps_root)
+                if bc_active and new_phi > 0.0:
+                    v_eff = (new_v - new_phi).clamp(min=eps_root)
+                else:
+                    v_eff = new_v
+                update = g / v_eff.sqrt().clamp(min=eps_root)
                 new_v_flat.append((new_v,))
 
             # RMS clip (Adafactor's "update clipping").
@@ -196,7 +255,9 @@ def _scale_by_adafactor(
         return updates_unflat, AdafactorState(
             m=new_m,
             v_flat=tuple(new_v_flat),
+            phi_flat=tuple(new_phi_flat),
             treespec=state.treespec,
+            paths=state.paths,
             step=t,
         )
 
@@ -213,8 +274,9 @@ def adafactor(
     update_rms_clip: float = 1.0,
     *,
     decoupled_weight_decay: bool = True,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
-    """Create an Adafactor optimizer (Phase A: vanilla + WD only).
+    """Create an Adafactor optimizer.
 
     Args:
         lr: Learning rate, scalar or schedule.  In the paper this is
@@ -235,14 +297,16 @@ def adafactor(
             paper default 1.0 (Adafactor bakes this in).
         decoupled_weight_decay: Same semantics as
             :func:`opaque.optimizers.adamw`.
+        noise_bias_correction: If ``True``, subtract a β₂_t-EMA of the
+            realized noise variance from each factor (``v_row``,
+            ``v_col``, or scalar ``v``) when ``NoisyPytree`` updates are
+            passed.  Defaults to ``False``; flip on to ablate.  No
+            effect when ``SecondMomentNoiseOutput`` is passed —
+            Adafactor does not consume the privatised ``g²`` stream
+            (deriving a sound factored variant is future work).
 
     Returns:
         A ``torchopt.base.GradientTransformation``.
-
-    The factory does not accept ``noise_stddev`` or ``noisy_squared_grads``
-    at update time — passing either raises ``TypeError`` from the
-    moment-scaler signature.  Use :func:`opaque.optimizers.adamw` for
-    DP-aware modes until the per-axis Adafactor derivation lands.
     """
     if decay_rate >= 0:
         raise ValueError(f"decay_rate must be negative, got {decay_rate}")
@@ -263,6 +327,7 @@ def adafactor(
         eps_grad=eps_grad,
         eps_root=eps_root,
         update_rms_clip=update_rms_clip,
+        noise_bias_correction=noise_bias_correction,
     )
     # NB: do not stack the chain-level ``update_rms_clip`` on top of
     # Adafactor's built-in RMS clip — it's already applied inside the

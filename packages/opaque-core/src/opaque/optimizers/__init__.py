@@ -18,9 +18,11 @@ Opaque-built (DP-aware modes selected by update value type):
 - :func:`lion` — Lion (sign-of-momentum); no DP-aware mode (no v).
 - :func:`ademamix` — AdEMAMix (two first moments, single v); consumes
   the same DP metadata wrappers as AdamW.
-- :func:`adafactor` — Adafactor with factored second moment.  Phase A
-  ships vanilla + WD only; DP-aware modes deferred (see module
-  docstring for the per-axis bias derivation that's pending).
+- :func:`adafactor` — Adafactor with factored second moment.  Optional
+  DP noise-variance bias correction subtracts a φ-EMA from each factor
+  (``noise_bias_correction``).  No private second-moment substitution
+  path — the privatised ``g²`` stream doesn't preserve the factorisation
+  cleanly (see module docstring).
 - :func:`rmsprop` — RMSprop with optional DP-aware φ-EMA correction
   on the second moment.
 - :func:`adagrad` — Adagrad with optional DP-aware cumulative noise
