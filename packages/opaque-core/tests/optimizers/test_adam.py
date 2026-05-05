@@ -4,7 +4,7 @@ Covers all four orthogonal modes:
 
 - vanilla AdamW (no DP kwargs at update)
 - DP-AdamW-BC (``noise_stddev`` constructor default + per-step override)
-- DP-Adam-JME (``noisy_squared_grads`` paired-stream substitution)
+- DP-Adam with a private second-moment stream (``noisy_squared_grads`` substitution)
 - StableAdamW (``update_rms_clip`` constructor knob)
 
 Plus the L2 weight decay branch (``decoupled_weight_decay=False``).
@@ -295,18 +295,18 @@ class TestPerGroupBC:
 
 
 # ---------------------------------------------------------------------------
-# JME paired-stream
+# Private second-moment stream
 # ---------------------------------------------------------------------------
 
 
-class TestJMEMode:
+class TestSecondMomentMode:
     @pytest.fixture
     def sq_grads(self, grads):
-        # Real JME would deliver privatised g²; this synthetic stream
+        # Real private second-moment noise would deliver privatised g²; this synthetic stream
         # is enough to exercise the v-update branch.
         return {k: v.pow(2) + 0.01 for k, v in grads.items()}
 
-    def test_jme_consumes_external_g_squared(self, params, grads, sq_grads):
+    def test_second_moment_consumes_external_g_squared(self, params, grads, sq_grads):
         """The v EMA must use ``noisy_squared_grads`` instead of g·g."""
         b2 = 0.999
         opt = adamw(lr=1e-3, betas=(0.9, b2))
@@ -318,10 +318,10 @@ class TestJMEMode:
             expected_v = (1 - b2) * sq_grads[k]
             torch.testing.assert_close(adam.nu[k], expected_v)
 
-    def test_jme_phi_unchanged(self, params, grads, sq_grads):
+    def test_second_moment_phi_unchanged(self, params, grads, sq_grads):
         opt = adamw(lr=1e-3, noise_stddev=0.5)
         state = opt.init(params)
-        # JME path explicitly bypasses φ; phi stays at 0 even though
+        # External second-moment path explicitly bypasses φ; phi stays at 0 even though
         # ``noise_stddev`` was set as the constructor default.
         for _ in range(3):
             _, state = opt.update(
@@ -329,8 +329,8 @@ class TestJMEMode:
             )
         assert _adam_state(state).phi == 0.0
 
-    def test_jme_negative_squared_stream_is_floored(self, params, grads):
-        """JME's privatized g² stream is noisy and can be negative;
+    def test_second_moment_negative_squared_stream_is_floored(self, params, grads):
+        """Private g² streams are noisy and can be negative;
         the denominator must floor before sqrt instead of producing NaNs."""
         sq = {k: -torch.ones_like(v) for k, v in grads.items()}
         opt = adamw(lr=1e-3)

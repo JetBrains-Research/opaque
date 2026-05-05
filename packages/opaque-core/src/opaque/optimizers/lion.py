@@ -11,7 +11,7 @@ Reference:
     arXiv:2302.06675.
 
 DP notes.  Lion has no second moment, so neither the φ-EMA bias
-correction (DP-AdamW-BC) nor the JME paired-stream substitution apply.
+correction (DP-AdamW-BC) nor private second-moment substitution apply.
 The update accepts noised gradients unchanged; ``sign()`` produces a
 direction-only step.  No DP-aware mode is provided.
 """

@@ -22,6 +22,7 @@ For independent noise, derive a per-rank key with ``fold_in(key, rank)``.
 from __future__ import annotations
 
 import dataclasses
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -35,7 +36,9 @@ from opaque.distributed import (
 from opaque.core.noise import (
     NOISE_STATE_FIELD_OPS,
     NoiseState,
+    SecondMomentNoiseOutput,
     assert_rng_key_equal,
+    resolve_second_moment_overhead,
 )
 from opaque.random import RngKey, generator_from_key
 from opaque.random import (
@@ -75,10 +78,81 @@ def _validate_stddev(stddev: float | PerGroup) -> None:
             raise ValueError(f"stddev must be non-negative, got {stddev}")
 
 
-def gaussian_noise(
+def _resolve_stddev(
+    stddev: float | PerGroup | None,
+) -> float | PerGroup:
+    """Resolve the required Gaussian noise standard deviation."""
+    if stddev is None:
+        raise ValueError("gaussian_noise() requires stddev.")
+    return stddev
+
+
+def _scale_stddev(stddev: float | PerGroup, factor: float) -> float | PerGroup:
+    if isinstance(stddev, PerGroup):
+        return PerGroup(
+            stddev.groups,
+            {name: value * factor for name, value in stddev.values.items()},
+        )
+    return float(stddev) * factor
+
+
+def _second_moment_stddev_from_base(
     stddev: float | PerGroup,
+    sensitivity: float | PerGroup | None,
+    overhead: float,
+) -> tuple[float | PerGroup, float | PerGroup]:
+    if sensitivity is None:
+        raise ValueError(
+            "second_moment=True requires stddev and sensitivity so both moment "
+            "streams can be calibrated."
+        )
+
+    first_stddev = _scale_stddev(stddev, overhead)
+    denom = math.sqrt(overhead**2 - 1.0)
+
+    if isinstance(stddev, PerGroup):
+        if isinstance(sensitivity, PerGroup):
+            second_values = {
+                name: stddev.values[name] * sensitivity.values[name] * overhead / denom
+                for name in stddev.values
+            }
+        else:
+            second_values = {
+                name: value * float(sensitivity) * overhead / denom
+                for name, value in stddev.values.items()
+            }
+        return first_stddev, PerGroup(stddev.groups, second_values)
+
+    if isinstance(sensitivity, PerGroup):
+        return first_stddev, PerGroup(
+            sensitivity.groups,
+            {
+                name: float(stddev) * value * overhead / denom
+                for name, value in sensitivity.values.items()
+            },
+        )
+
+    return first_stddev, float(stddev) * float(sensitivity) * overhead / denom
+
+
+def _resolve_second_moment_stddevs(
+    stddev: float | PerGroup | None,
+    sensitivity: float | PerGroup | None,
+    overhead: float,
+) -> tuple[float | PerGroup, float | PerGroup]:
+    return _second_moment_stddev_from_base(
+        _resolve_stddev(stddev),
+        sensitivity,
+        overhead,
+    )
+
+
+def gaussian_noise(
+    stddev: float | PerGroup | None = None,
     *,
     key: RngKey,
+    sensitivity: float | PerGroup | None = None,
+    second_moment: bool | float = False,
     compute_dtype: torch.dtype = torch.float32,
 ) -> tuple[
     Callable[..., tuple[Any, GaussianNoiseState]],
@@ -87,11 +161,18 @@ def gaussian_noise(
     """Create a Gaussian noise function with immutable state.
 
     Returns ``(noise_fn, state)`` where ``noise_fn`` adds calibrated Gaussian
-    noise N(0, stddev²) to gradients and returns updated state.
+    noise to gradients and returns updated state.
 
-    The ``stddev`` provided here is the default. It can be overridden on each
-    call via ``noise_fn(grads, state, stddev=new_stddev)`` — useful when the
-    noise scale changes between steps (e.g., with adaptive clipping).
+    The noise scale is supplied as ``stddev``.  Without ``second_moment``, the
+    scale can be overridden on each call via
+    ``noise_fn(grads, state, stddev=new_stddev)``.
+
+    When ``second_moment`` is ``True`` or a float overhead, ``noise_fn`` returns
+    :class:`opaque.core.noise.SecondMomentNoiseOutput` containing both noisy
+    gradients and noisy element-wise squared gradients.  In that mode,
+    ``sensitivity`` is also required so the squared-gradient stream can be
+    calibrated.  Per-call overrides can pass both ``stddev`` and ``sensitivity``
+    to track adaptive clipping changes.
 
     When ``stddev`` is a :class:`~opaque.utils.per_group.PerGroup`, each
     parameter receives noise scaled by its group's stddev value.
@@ -105,8 +186,14 @@ def gaussian_noise(
         noise_fn, state = gaussian_noise(stddev=1.1, key=my_key)
 
     Args:
-        stddev: Standard deviation of Gaussian noise
-            (usually ``noise_multiplier * clip_state.sensitivity``).
+        stddev: Standard deviation of Gaussian noise.
+        sensitivity: Clipped-gradient sensitivity.  Required when using
+            ``second_moment`` because the squared-gradient stream sensitivity is
+            derived from it.
+        second_moment: ``False`` for the regular single stream.  ``True``
+            enables the default private second-moment overhead ``sqrt(3/2)``;
+            a float supplies the first-stream overhead directly and must be
+            greater than 1.
             When ``PerGroup``, each parameter group gets its own noise scale.
         key: Explicit RNG key for deterministic, functional randomness.
             Same key on all ranks → same noise (synchronized).
@@ -144,7 +231,21 @@ def gaussian_noise(
         >>> rank = torch.distributed.get_rank()
         >>> noise_fn, state = gaussian_noise(stddev=1.1, key=fold_in(key(42), rank))
     """
-    _validate_stddev(stddev)
+    second_moment_enabled = second_moment is not False
+    if second_moment_enabled:
+        overhead = resolve_second_moment_overhead(second_moment)
+        default_stddev, default_second_stddev = _resolve_second_moment_stddevs(
+            stddev,
+            sensitivity,
+            overhead,
+        )
+    else:
+        default_stddev = _resolve_stddev(stddev)
+        default_second_stddev = None
+
+    _validate_stddev(default_stddev)
+    if default_second_stddev is not None:
+        _validate_stddev(default_second_stddev)
 
     if not isinstance(key, RngKey):
         raise TypeError(f"key must be RngKey, got {type(key)}")
@@ -153,8 +254,6 @@ def gaussian_noise(
         _step_counter=0,
         _rng_key=key,
     )
-
-    default_stddev = stddev
 
     def _add_noise(tensor: torch.Tensor, std: float, generator) -> torch.Tensor:
         """Sample noise in compute_dtype, add, downcast to input dtype."""
@@ -168,41 +267,71 @@ def gaussian_noise(
         # Type-stable boundary: upcast input, add in compute_dtype, downcast.
         return (tensor.to(compute_dtype) + noise * std).to(dtype=tensor.dtype)
 
-    def noise_fn(grads, st, *, stddev=None):
-        """Add Gaussian noise to gradients."""
-        effective_stddev = stddev if stddev is not None else default_stddev
+    def _add_noise_tree(grads, effective_stddev, generator):
         _validate_stddev(effective_stddev)
 
+        # Per-group noise path
+        if isinstance(effective_stddev, PerGroup):
+            if all(v == 0 for v in effective_stddev.values.values()):
+                return grads
+
+            noisy = {}
+            for param_key, tensor in grads.items():
+                group_std = effective_stddev.for_key(param_key)
+                noisy[param_key] = _add_noise(tensor, group_std, generator)
+
+            return noisy
+
+        # Global (scalar) noise path
+        if effective_stddev == 0:
+            return grads
+
+        return tree_map(lambda t: _add_noise(t, effective_stddev, generator), grads)
+
+    def noise_fn(
+        grads,
+        st,
+        *,
+        stddev=None,
+        sensitivity=None,
+    ):
+        """Add Gaussian noise to gradients."""
         next_state = GaussianNoiseState(
             _step_counter=st._step_counter + 1,
             _rng_key=st._rng_key,
         )
 
-        # Per-group noise path
-        if isinstance(effective_stddev, PerGroup):
-            if all(v == 0 for v in effective_stddev.values.values()):
-                return grads, next_state
-
+        if second_moment_enabled:
+            effective_stddev = stddev if stddev is not None else locals_default_stddev
+            effective_sensitivity = (
+                sensitivity if sensitivity is not None else locals_default_sensitivity
+            )
+            first_stddev, second_stddev = _resolve_second_moment_stddevs(
+                effective_stddev,
+                effective_sensitivity,
+                overhead,
+            )
             step_key = rng_fold_in(st._rng_key, st._step_counter)
-            g = generator_from_key(step_key)
+            first_key = rng_fold_in(step_key, 0)
+            second_key = rng_fold_in(step_key, 1)
+            noisy = _add_noise_tree(grads, first_stddev, generator_from_key(first_key))
+            squared = tree_map(lambda grad: grad * grad, grads)
+            noisy_squared = _add_noise_tree(
+                squared,
+                second_stddev,
+                generator_from_key(second_key),
+            )
+            return SecondMomentNoiseOutput(noisy, noisy_squared), next_state
 
-            noisy = {}
-            for param_key, tensor in grads.items():
-                group_std = effective_stddev.for_key(param_key)
-                noisy[param_key] = _add_noise(tensor, group_std, g)
-
-            return noisy, next_state
-
-        # Global (scalar) noise path
-        if effective_stddev == 0:
-            return grads, next_state
+        effective_stddev = stddev if stddev is not None else default_stddev
 
         step_key = rng_fold_in(st._rng_key, st._step_counter)
-        g = generator_from_key(step_key)
+        return _add_noise_tree(
+            grads, effective_stddev, generator_from_key(step_key)
+        ), next_state
 
-        noisy = tree_map(lambda t: _add_noise(t, effective_stddev, g), grads)
-
-        return noisy, next_state
+    locals_default_stddev = stddev
+    locals_default_sensitivity = sensitivity
 
     return noise_fn, state
 

@@ -6,6 +6,6 @@ mechanism with subsampling), transformations change the mechanism itself.
 """
 
 from opaque.accounting.transformations.adaclip import AdaClip, adaclip
-from opaque.accounting.transformations.jme import Jme, jme
+from opaque.accounting.transformations.second_moment import SecondMoment, second_moment
 
-__all__ = ["AdaClip", "adaclip", "Jme", "jme"]
+__all__ = ["AdaClip", "adaclip", "SecondMoment", "second_moment"]

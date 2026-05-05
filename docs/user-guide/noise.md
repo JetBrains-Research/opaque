@@ -12,7 +12,7 @@ For mathematical details, privacy analysis, and parameter guidance for
 each mechanism, see the [Mechanisms](../mechanisms/index.md) reference.
 
 For MF-specific assumptions (workload fidelity vs DP correctness, LR schedules,
-JME, BSR scope), see [Correlated noise (DP-FTRL)](dp-ftrl.md).
+private second moments, BSR scope), see [Correlated noise (DP-FTRL)](dp-ftrl.md).
 
 ## Gaussian noise
 
@@ -31,11 +31,43 @@ noise_fn, noise_state = gaussian_noise(
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
+For private second moments, keep `stddev` as the noise scale and also pass the
+clipped-gradient `sensitivity` so the squared-gradient stream can be calibrated:
+
+```python
+noise_fn, noise_state = gaussian_noise(
+    stddev=noise_multiplier * clip_state.sensitivity,
+    sensitivity=clip_state.sensitivity,
+    key=key(42),
+    second_moment=True,
+)
+```
+
+With adaptive clipping, override both values per step:
+
+```python
+stddev = noise_multiplier * clip_state.sensitivity
+noise_output, noise_state = noise_fn(
+    grads,
+    noise_state,
+    stddev=stddev,
+    sensitivity=clip_state.sensitivity,
+)
+```
+
+`gaussian_noise(..., second_moment=True)` returns a
+`SecondMomentNoiseOutput` with `noisy_grads` and `noisy_squared_grads` for
+optimizers that consume private second moments. Accounting for the public
+`acc.second_moment(...)` transformation currently targets MF mechanisms; use
+the MF flow below when you need end-to-end private second-moment accounting.
+
 ### Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `stddev` | `float` | Standard deviation of Gaussian noise. Typically `noise_multiplier * sensitivity`. |
+| `sensitivity` | `float` or `PerGroup` | Clipped-gradient sensitivity. Required for `second_moment=True`. |
+| `second_moment` | `bool` or `float` | Return private first and squared-gradient streams. `True` uses the default `sqrt(3/2)` first-stream overhead; a float supplies a custom overhead. |
 | `key` | `RngKey` | Explicit RNG key for deterministic noise. Create with `key(seed)`. |
 
 ### Calibrating stddev
@@ -227,6 +259,41 @@ The `grad_template` argument provides shape and dtype information for
 pre-allocating noise buffers. Pass any pytree with the same structure as
 the gradients (e.g., the model parameters).
 
+### Private second moments
+
+MF noise can release both noisy gradients and a private squared-gradient stream
+for adaptive optimizers:
+
+```python
+from opaque.dpftrl.noise import mf_noise, band_mf_strategy
+from opaque.random import key
+
+strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.9)
+second_strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.999)
+
+noise_fn, noise_state = mf_noise(
+    params,
+    strategy,
+    noise_multiplier=noise_multiplier,
+    sensitivity=clip_state.sensitivity,
+    key=key(42),
+    second_moment=True,
+    second_moment_strategy=second_strategy,
+)
+
+noise_output, noise_state = noise_fn(grads, noise_state)
+updates, opt_state = optimizer.update(
+    noise_output,
+    opt_state,
+    params=params,
+)
+```
+
+`second_moment_strategy` is explicit by design: the squared-gradient workload
+can differ from the first-moment workload. Opaque optimizers route
+`SecondMomentNoiseOutput` automatically when they support private squared
+gradients.
+
 In distributed training, pass the same `key(seed)` on all ranks to produce
 identical noise. See [Distributed Training](distributed.md) and
 [RNG Key](rng-key.md) for details.
@@ -354,6 +421,18 @@ strategy = lambda_cgd_strategy(
 proc = acc.balls_in_bins(
     acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
                    gram_matrix=strategy.gram_matrix),
+    num_bins=steps_per_epoch, num_epochs=num_epochs,
+)
+
+# Private second moments — wrap the MF mechanism before amplification
+mechanism = acc.second_moment(
+    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+                   gram_matrix=strategy.gram_matrix),
+    sensitivity=clip_state.sensitivity,
+    max_column_norm=strategy._max_column_norm,
+)
+proc = acc.balls_in_bins(
+    mechanism,
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
 ```

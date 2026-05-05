@@ -36,16 +36,16 @@ params = torchopt.apply_updates(params, updates)
 
 All accept `noise_stddev` (constructor default + per-step
 `update()` override) to activate the optimizer's noise-aware path.
-Where applicable they also accept `noisy_squared_grads` for JME
-paired-stream substitution.
+Where applicable they also accept `noisy_squared_grads` for private
+squared-gradient substitution.
 
 | Factory | DP-aware mode | When to use |
 |---|---|---|
-| **`adamw`** | φ-EMA on v̂ (DP-AdamW-BC) + JME | Default for DP training |
-| **`ademamix`** | φ-EMA on v̂ + JME | Long-horizon training (slow EMA captures long-range signal) |
+| **`adamw`** | φ-EMA on v̂ (DP-AdamW-BC) + private second moments | Default for DP training |
+| **`ademamix`** | φ-EMA on v̂ + private second moments | Long-horizon training (slow EMA captures long-range signal) |
 | **`adafactor`** | (deferred) | Memory-constrained large-LM fine-tuning; ship vanilla + WD only for now |
 | **`lion`** | (planned: sign gating) | Smaller state than Adam; vanilla works under noise but the gated mode is the real DP variant |
-| **`rmsprop`** | φ-EMA on v + JME | Adaptive without first moment; cheaper than Adam |
+| **`rmsprop`** | φ-EMA on v + private second moments | Adaptive without first moment; cheaper than Adam |
 | **`adagrad`** | cumulative `Φ_acc` subtraction | Sparse-gradient settings; **the correction is mandatory** — vanilla Adagrad's denominator runs away under DP noise |
 | **`schedule_free`** | post-processing (transparent forward) | Wrapper around any base optimizer; replaces external LR schedules |
 
@@ -112,24 +112,33 @@ optimizer reduces to its standard math.
 
 ### `noisy_squared_grads`
 
-Substitutes a JME paired-stream privately-estimated `g²` in place of
-squaring the (already noised) gradient.  Required by `jme_noise()`'s
-output shape; opt-in everywhere it applies (Adam-family + RMSprop):
+Substitutes a privately-estimated `g²` stream in place of squaring the
+(already noised) gradient.  `mf_noise(..., second_moment=True)` returns
+a paired output that Opaque optimizers route automatically:
 
 ```python
-from opaque.dpftrl.noise import jme_noise, blt_strategy
+from opaque.dpftrl.noise import blt_strategy, mf_noise
 from opaque.optimizers import adamw
 
 strategy = blt_strategy(n_steps=1000, ...)
-noise_fn, noise_state = jme_noise(grad_template, strategy, ...)
+second_strategy = blt_strategy(n_steps=1000, ...)
+noise_fn, noise_state = mf_noise(
+  grad_template,
+  strategy,
+  noise_multiplier=noise_multiplier,
+  sensitivity=clip_state.sensitivity,
+  key=key(42),
+  second_moment=True,
+  second_moment_strategy=second_strategy,
+)
 
 optimizer = adamw(lr=1e-3, weight_decay=0.01)
 opt_state = optimizer.init(params)
 
 # Per-step:
-(noisy_grads, noisy_sq), noise_state = noise_fn(grads, noise_state)
+noisy_grads, noise_state = noise_fn(grads, noise_state)
 updates, opt_state = optimizer.update(
-    noisy_grads, opt_state, params=p, noisy_squared_grads=noisy_sq,
+  noisy_grads, opt_state, params=p,
 )
 ```
 

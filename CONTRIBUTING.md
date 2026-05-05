@@ -48,7 +48,7 @@ README.md                # top-level description
 packages/
 ├── opaque-core/         # RNG, pytree, clipping, scheduling, distributed plumbing
 ├── opaque-dpsgd/        # Gaussian/per-group noise, AdamW-BC, Poisson samplers
-├── opaque-dpftrl/       # Correlated-noise mechanisms (BLT, BSR, BiSR, band-MF, JME, λ-CGD)
+├── opaque-dpftrl/       # Correlated-noise mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD)
 ├── opaque-auditing/     # Empirical privacy auditing
 ├── opaque-patches/      # Triton kernels, checkpoint patches, HF compatibility + PEFT patching
 ├── opaque-transformers/  # Transformers compat patches (vmap-safe attention, KV cache)

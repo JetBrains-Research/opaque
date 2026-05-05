@@ -17,7 +17,7 @@ matters at LM scale.
 
 Scope.  Vanilla + decoupled / L2 weight decay, with the paper's RMS
 update clip (threshold 1.0 by default).  DP-aware modes (``noise_stddev``
-φ-EMA, ``noisy_squared_grads`` JME) are **not offered** yet — the
+φ-EMA, ``noisy_squared_grads`` private second moments) are **not offered** yet — the
 per-axis bias derivation for the factored ``v̂`` needs to be written
 down before they can land.  Because the row and column factors are
 means, a homogeneous Gaussian noise contribution adds ``(1 − β₂) · σ²``

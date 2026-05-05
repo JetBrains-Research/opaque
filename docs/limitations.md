@@ -6,8 +6,8 @@ Correlated-noise mechanisms are analyzed for a **specific linear map** (the stra
 matrix) and optional subsampling model. **DP correctness** requires that accounting,
 noise, and sampling match that map. **Utility** can depend on how closely the
 encoded workload matches your optimizer (for example, BandMF/BLT `lr_schedule` as a
-Toeplitz surrogate when \(\eta_t\) varies). JME adds a second MF stream; new strategy
-types must extend `_derive_second_strategy` explicitly.
+Toeplitz surrogate when \(\eta_t\) varies). Private second moments add a second MF
+stream; pass its strategy explicitly.
 
 See [Matrix factorization (MF)](user-guide/dp-ftrl.md).
 

@@ -13,6 +13,8 @@ passes in.
 
 from __future__ import annotations
 
+import inspect
+import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -28,6 +30,7 @@ except ImportError as exc:
 
 import torch
 
+from opaque.core.noise import SecondMomentNoiseOutput
 from opaque.core.pytree import tree_map
 
 
@@ -122,6 +125,34 @@ def make_optimizer_chain(
     moment scalers can read ``noise_stddev`` / ``noisy_squared_grads``
     from the caller without the chain knowing about them.
     """
+    moment_update_params = inspect.signature(moment_scaler.update).parameters
+    accepts_second_moment = "noisy_squared_grads" in moment_update_params or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in moment_update_params.values()
+    )
+
+    def _route_second_moment_output(
+        updates: Any,
+        kwargs: dict[str, Any],
+    ) -> tuple[Any, dict[str, Any]]:
+        if not isinstance(updates, SecondMomentNoiseOutput):
+            return updates, kwargs
+        if "noisy_squared_grads" in kwargs:
+            raise ValueError(
+                "optimizer.update() received SecondMomentNoiseOutput and an explicit "
+                "noisy_squared_grads kwarg; pass only one second-moment source."
+            )
+        if not accepts_second_moment:
+            warnings.warn(
+                "This optimizer does not consume private second-moment outputs; "
+                "using noisy_grads and ignoring noisy_squared_grads.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            return updates.noisy_grads, kwargs
+        routed = dict(kwargs)
+        routed["noisy_squared_grads"] = updates.noisy_squared_grads
+        return updates.noisy_grads, routed
+
     wd = torchopt.transform.add_decayed_weights(weight_decay=weight_decay)
     neg_lr = scale_by_neg_lr(lr)
     clip = (
@@ -149,6 +180,7 @@ def make_optimizer_chain(
             **kwargs: Any,
         ) -> tuple[Any, tuple]:
             s_mom, s_clip, s_wd, s_lr = state
+            updates, kwargs = _route_second_moment_output(updates, kwargs)
             updates, s_mom = moment_scaler.update(
                 updates, s_mom, params=params, inplace=inplace, **kwargs
             )
@@ -179,6 +211,7 @@ def make_optimizer_chain(
             **kwargs: Any,
         ) -> tuple[Any, tuple]:
             s_wd, s_mom, s_clip, s_lr = state
+            updates, kwargs = _route_second_moment_output(updates, kwargs)
             updates, s_wd = wd.update(updates, s_wd, params=params, inplace=inplace)
             updates, s_mom = moment_scaler.update(
                 updates, s_mom, params=params, inplace=inplace, **kwargs

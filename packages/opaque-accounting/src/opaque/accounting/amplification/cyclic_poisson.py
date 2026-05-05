@@ -24,10 +24,10 @@ from opaque.accounting.discretization import (
     get_discretization,
 )
 from opaque.accounting.mechanisms.band_mf import BandMf
-from opaque.accounting.transformations.jme import Jme
+from opaque.accounting.transformations.second_moment import SecondMoment
 
 #: Mechanism types accepted by :func:`cyclic_poisson`.
-_Inner = BandMf | Jme
+_Inner = BandMf | SecondMoment
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,15 +58,15 @@ class CyclicPoisson(DpProcess):
         )
 
         match self.inner:
-            case Jme(inner=BandMf()) as j:
-                effective_nm = j.noise_multiplier / j.sensitivity
-                num_groups = j.num_groups
+            case SecondMoment(inner=BandMf()) as second:
+                effective_nm = second.noise_multiplier / second.sensitivity
+                num_groups = second.num_groups
             case BandMf():
                 effective_nm = self.inner.noise_multiplier / self.inner.sensitivity
                 num_groups = self.inner.num_groups
             case _:
                 raise TypeError(
-                    f"CyclicPoisson requires BandMf or Jme(BandMf) inner, "
+                    f"CyclicPoisson requires BandMf or SecondMoment(BandMf) inner, "
                     f"got {type(self.inner).__name__}."
                 )
 
@@ -104,9 +104,9 @@ def cyclic_poisson(
         )
         eps = proc.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (BandMf, Jme)):
+    if not isinstance(inner, (BandMf, SecondMoment)):
         raise TypeError(
-            f"cyclic_poisson() requires a BandMf or Jme(BandMf) inner mechanism, got "
+            f"cyclic_poisson() requires a BandMf or SecondMoment(BandMf) inner mechanism, got "
             f"{type(inner).__name__}. "
             "Use: acc.cyclic_poisson(acc.band_mf(nm, sensitivity, num_groups), sample_rate)"
         )

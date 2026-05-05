@@ -21,7 +21,7 @@ Top-level (user-facing):
   the `schedule_free` wrapper.  All return `torchopt`-compatible
   `GradientTransformation`s; DP-aware modes are selected at `update()`
   time via optional `noise_stddev` (DP-AdamW-BC) and
-  `noisy_squared_grads` (JME paired stream) kwargs.  Vanilla SGD /
+  `noisy_squared_grads` (private second-moment stream) kwargs.  Vanilla SGD /
   Adam / RMSprop / etc. are not re-exported here — import them from
   torchopt directly when needed (`from torchopt import sgd`).
   Less-common building blocks live in submodules:
@@ -65,5 +65,5 @@ rng = key(0)
 `opaque-core` holds only algorithm-agnostic primitives. DP-SGD-specific
 mechanisms (Gaussian noise, adaptive/auto clipping, truncated + standard
 Poisson samplers) live in `opaque-dpsgd`. DP-FTRL mechanisms (BLT / Toeplitz
-/ BSR / BiSR / JME / λ-CGD noise, b-min-sep / cyclic-Poisson / balls-in-bins
-/ sequential samplers) live in `opaque-dpftrl`.
+/ BSR / BiSR / λ-CGD noise, private second-moment streams, b-min-sep /
+cyclic-Poisson / balls-in-bins / sequential samplers) live in `opaque-dpftrl`.

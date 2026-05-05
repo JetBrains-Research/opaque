@@ -11,7 +11,7 @@ behaviour is acceptable under DP noise (`sgd`, `adam`, `adadelta`,
 All factories return [TorchOpt](https://torchopt.readthedocs.io/)
 `GradientTransformation`s, so they compose with TorchOpt's lower-level
 transforms and `torchopt.apply_updates`.  DP-aware paths (DP-AdamW-BC,
-JME, Adagrad's mandatory variance subtraction) are exposed as optional
+private second moments, Adagrad's mandatory variance subtraction) are exposed as optional
 `update()` kwargs.
 
 ## Why functional optimizers
@@ -177,17 +177,16 @@ updates, opt_state = optimizer.update(
 )
 ```
 
-### `noisy_squared_grads`: privately-estimated second moments (JME)
+### `noisy_squared_grads`: privately-estimated second moments
 
 **Idea:** instead of squaring the noisy gradient (which amplifies
 noise), use a *separately privatized* estimate of $g_t^2$ from a
 second noise stream.
 
-**JME** (Joint Moment Estimation,
-[Kalinin et al., arXiv:2502.06597](https://arxiv.org/abs/2502.06597))
-maintains two independent matrix-factorization correlated noise streams
-— one for $g_t$ (first moment) and one for $g_t^2$ (second moment).
-The optimizer receives both and uses each for its respective EMA:
+Private second-moment estimation maintains two independent correlated
+noise streams — one for $g_t$ (first moment) and one for $g_t^2$
+(second moment).  The optimizer receives both and uses each for its
+respective EMA:
 
 $$\mu_t = \beta_1 \mu_{t-1} + (1-\beta_1) \tilde{g}_t, \qquad
 v_t = \beta_2 v_{t-1} + (1-\beta_2) \widetilde{g^2}_t$$
@@ -196,41 +195,43 @@ The additional second-moment stream costs ~22% extra privacy budget
 under add/remove DP, but the optimizer-side cost is trivial: just
 substitute the privatized stream in the v-update.
 
-JME requires a compatible MF noise mechanism (`jme_noise`), so it
-applies to **DP-FTRL** training, not standard DP-SGD with i.i.d.
-Gaussian noise.
+This mode requires an MF noise mechanism with
+`mf_noise(..., second_moment=True, second_moment_strategy=...)`, so it
+applies to **DP-FTRL** training, not standard DP-SGD with i.i.d. Gaussian
+noise.
 
 ### When to use which
 
 | Scenario | Recommended | Why |
 |---|---|---|
-| DP-SGD with Gaussian noise | `adamw(noise_stddev=σ)` | No MF streams available for JME |
+| DP-SGD with Gaussian noise | `adamw(noise_stddev=σ)` | Independent Gaussian noise pairs with bias correction |
 | DP-FTRL without Adam | `sgd` | No second moment to correct |
-| DP-FTRL with Adam, fresh budget | `adamw(...) + noisy_squared_grads` | Better v estimate; JME streams available |
-| DP-FTRL with Adam, no extra budget | `adamw(noise_stddev=σ)` | BC is free; JME costs ~22% ε |
+| DP-FTRL with Adam, fresh budget | `adamw(...) + noisy_squared_grads` | Better v estimate from a private squared-gradient stream |
+| DP-FTRL with Adam, no extra budget | `adamw(noise_stddev=σ)` | BC is free; private second moments add first-stream overhead |
 | Sparse gradients under DP | `adagrad(noise_stddev=σ)` | Required to prevent denominator runaway |
 | RMSprop user under DP | `rmsprop(noise_stddev=σ)` | Same flavour of correction as AdamW |
 
-## AdamW with JME: setup and usage
+## AdamW With Private Second Moments
 
 ```python
-from opaque.dpftrl.noise import jme_noise, band_mf_strategy
+from opaque.dpftrl.noise import band_mf_strategy, mf_noise
 from opaque.optimizers import adamw
 
 # Strategy: momentum=beta1 (Adam's first moment workload)
 strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.9)
+second_strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.999)
 
-# Noise: jme_noise computes g², creates two MF streams, calibrates stddevs
-noise_fn, noise_state = jme_noise(
+# Noise: second_moment=True computes g² and creates two MF streams.
+noise_fn, noise_state = mf_noise(
     grad_template, strategy,
-    noise_multiplier=sigma,
+    noise_multiplier=noise_multiplier,
+    sensitivity=clip_state.sensitivity,
     key=key(42),
-    zeta=clip_state.sensitivity,
-    beta2=0.999,
+    second_moment=True,
+    second_moment_strategy=second_strategy,
 )
 
 # Optimizer: decoupled weight decay, callable LR schedule.
-# JME path is selected by passing noisy_squared_grads at update() time.
 optimizer = adamw(lr=lr_schedule_fn, betas=(0.9, 0.999), weight_decay=0.01)
 opt_state = optimizer.init(params)
 ```
@@ -240,36 +241,38 @@ opt_state = optimizer.init(params)
 ```python
 for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
-    (noisy_grads, noisy_sq), noise_state = noise_fn(grads, noise_state)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
     updates, opt_state = optimizer.update(
         noisy_grads, opt_state,
-        params=params, noisy_squared_grads=noisy_sq,
+        params=params,
     )
     params = torchopt.apply_updates(params, updates)
 ```
 
 ### Accounting
 
-Wrap the base mechanism with `acc.jme()` to account for both moment streams:
+Wrap the base mechanism with `acc.second_moment()` to account for both moment streams:
 
 ```python
 mechanism = acc.band_mf(nm, sensitivity=S, num_groups=k)
 if use_adam:
-    mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
-                        max_column_norm=strategy._max_column_norm)
+    mechanism = acc.second_moment(
+        mechanism,
+        sensitivity=clip_state.sensitivity,
+        max_column_norm=strategy._max_column_norm,
+    )
 process = acc.cyclic_poisson(mechanism, sample_rate=q)
 ```
 
 ### CLI
 
 ```bash
-python examples/train_dp_ftrl.py --preset smoke --optimizer adam --mechanism blt
+python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --mechanism blt --second-moment
 ```
 
-Works with MF mechanisms supported by `jme_noise` auto-derivation
-(see [DP-FTRL](dp-ftrl.md)): `band_mf`, `blt`, `bisr`, `bsr`,
-`identity`.  For `lambda_cgd`, pass `second_moment_strategy`
-explicitly.
+Works with MF mechanisms supported by `mf_noise`: `band_mf`, `blt`,
+`bisr`, `bsr`, and `lambda_cgd`.  In second-moment mode, pass
+`second_moment_strategy` explicitly.
 
 ## DP-specific optimizer considerations
 

@@ -20,7 +20,7 @@ behaviors selected at factory time and at update time:
    non-zero, the second moment is corrected by a β₂-EMA of the noise
    variance — Chooi et al., "DP-AdamW", arXiv:2511.07843.
 
-4. **JME paired-stream second moment** — pass ``noisy_squared_grads``
+4. **Private second-moment stream** — pass ``noisy_squared_grads``
    to ``update()`` to bypass squaring the noised gradient and use a
    privately-estimated ``g²`` instead.  Kalinin, Upadhyay, Lampert,
    "Continual Release Moment Estimation with Differential Privacy",
@@ -43,7 +43,7 @@ The optimizer follows torchopt's ``GradientTransformation`` protocol::
     updates, state = opt.update(noisy_grads, state, params=p,
                                 noise_stddev=current_sigma)
 
-    # DP-AdamW-JME:
+    # DP-AdamW with a private second-moment stream:
     updates, state = opt.update(noisy_grads, state, params=p,
                                 noisy_squared_grads=noisy_sq)
 """
@@ -108,7 +108,7 @@ class AdamState:
 
 
 # ---------------------------------------------------------------------------
-# Moment scaler — handles vanilla / BC / JME branches
+# Moment scaler — handles vanilla / BC / external second-moment branches
 # ---------------------------------------------------------------------------
 
 
@@ -119,13 +119,13 @@ def _scale_by_adam(
     default_noise_stddev: float | PerGroup,
     bc_floor: float,
 ) -> GradientTransformation:
-    """Adam moment scaling with optional DP bias correction or JME.
+    """Adam moment scaling with optional DP bias correction or private second moments.
 
     Update modes selected by the kwargs passed to ``update()``:
 
     - ``noisy_squared_grads`` not None: v-update consumes the externally
       privatised second-moment stream directly.  ``noise_stddev`` is
-      ignored for this step (the JME post-processing argument means no
+        ignored for this step (the second-moment post-processing argument means no
       φ-EMA correction is needed).
 
     - ``noise_stddev`` non-zero (or default non-zero): v-update squares
@@ -154,7 +154,7 @@ def _scale_by_adam(
     ) -> tuple[Any, AdamState]:
         if noisy_squared_grads is not None and noise_stddev is not None:
             raise ValueError(
-                "adamw.update() received both noisy_squared_grads (JME) and "
+                "adamw.update() received both noisy_squared_grads and "
                 "noise_stddev (DP-BC); these select mutually exclusive v-update "
                 "branches.  Pass exactly one (or neither, for vanilla AdamW)."
             )
@@ -166,7 +166,7 @@ def _scale_by_adam(
 
         # ---- v-update ----------------------------------------------------
         if noisy_squared_grads is not None:
-            # JME branch: external g² stream replaces (g·g).  No φ-EMA
+            # External second-moment branch: g² stream replaces (g·g).  No φ-EMA
             # correction (post-processing already gave us an unbiased v).
             new_nu = tree_map(
                 lambda v, g2: b2 * v + (1 - b2) * g2,
@@ -297,7 +297,7 @@ def adamw(
       the constructor default (necessary under adaptive clipping where
       σ changes per step).
     - Alternatively pass ``noisy_squared_grads`` to consume an externally
-      privatised second-moment stream (JME); ``noise_stddev`` is ignored
+        privatised second-moment stream; ``noise_stddev`` is ignored
       for that step.
     - Passing both ``noise_stddev`` and ``noisy_squared_grads`` at the
       same call raises ``ValueError``.

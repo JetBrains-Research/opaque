@@ -21,7 +21,7 @@ unbiased estimate::
     nu_corrected = max(nu_t − φ_t, floor)
     update = g_t / (√nu_corrected + eps)
 
-The ``noisy_squared_grads`` kwarg substitutes a JME paired-stream
+The ``noisy_squared_grads`` kwarg substitutes a private squared-gradient
 ``g²`` directly into the ``nu`` update (post-processing); no φ-EMA
 correction is applied in that branch.
 
@@ -101,14 +101,14 @@ def _scale_by_rmsprop(
     ) -> tuple[Any, RMSpropState]:
         if noisy_squared_grads is not None and noise_stddev is not None:
             raise ValueError(
-                "rmsprop.update() received both noisy_squared_grads (JME) and "
+                "rmsprop.update() received both noisy_squared_grads and "
                 "noise_stddev (DP-BC); pass exactly one (or neither)."
             )
 
         t = state.step + 1
 
         if noisy_squared_grads is not None:
-            # JME branch: external g² stream replaces (g·g).
+            # External second-moment branch: g² stream replaces (g·g).
             new_nu = tree_map(
                 lambda v, g2: alpha * v + (1 - alpha) * g2,
                 state.nu,

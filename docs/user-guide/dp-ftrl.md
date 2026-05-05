@@ -49,17 +49,24 @@ See [BandMF — Assumptions and limitations](../mechanisms/band-mf.md#assumption
 | [BSR](../mechanisms/bsr.md) | Banded square root (closed form) | BnB | \(O(p)\) | Paper `alpha`, `beta` (kw-only); bind `beta` from SGD momentum or Adam \(\beta_1\) |
 | Identity | Independent (DP-SGD style) | Poisson / standard | \(O(1)\) | Baseline via MF API |
 
-## JME (DP-Adam) and MF
+## Private Second Moments And MF
 
-[JME](https://arxiv.org/abs/2502.06597) uses **two** correlated noise streams (gradients and squared gradients) with a **joint sensitivity**. It is **not** the same workload model as single-stream SGD+momentum mechanisms.
+Private second-moment estimation uses **two** correlated noise streams
+(gradients and squared gradients) with a **joint sensitivity**. It is
+**not** the same workload model as single-stream SGD+momentum mechanisms.
 
-When adding a new `MfStrategy`, ensure `opaque.dpftrl.noise.jme._derive_second_strategy` has an explicit branch for it. Unknown strategy types raise `TypeError`; unsupported ones (e.g. `LambdaCgdStrategy`, which has no principled second-moment mapping) raise `ValueError`. Pass `second_moment_strategy` explicitly to override auto-derivation when needed.
+When using `mf_noise(..., second_moment=True)`, pass
+`second_moment_strategy` explicitly. This keeps first-moment and
+second-moment workload choices visible, especially for λCGD where there
+is no single universally correct mapping from optimizer β₂ to strategy λ.
 
 ## BSR scope
 
 [BSR](../mechanisms/bsr.md) ships **closed-form** coefficients for the Kalinin–Lampert workload in \((\alpha,\beta)\). It does **not** accept arbitrary `lr_schedule` inside the closed-form path. For general schedules or optimizers, use **BandMF** (numerical Toeplitz optimization) or **BLT**.
 
-With JME + BSR, the second stream is a second `bsr_strategy(..., alpha=..., beta=β₂)`; require \(\alpha > \beta\) for each stream’s \(\beta\) (see `jme.py`).
+With private second moments + BSR, the second stream is a second
+`bsr_strategy(..., alpha=..., beta=β₂)`; require \(\alpha > \beta\) for
+each stream’s \(\beta\).
 
 ## LR schedule and workload modeling
 
@@ -71,4 +78,4 @@ BandMF and BLT accept `lr_schedule` as a **Toeplitz-surrogate** workload optimiz
 
 - [Noise addition](noise.md) — Gaussian vs MF entry points
 - [Mechanisms index](../mechanisms/index.md) — per-mechanism docs
-- [Optimizers](optimizers.md) — SGD vs JME-AdamW
+- [Optimizers](optimizers.md) — SGD vs private second-moment AdamW

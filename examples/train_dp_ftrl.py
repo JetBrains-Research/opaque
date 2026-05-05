@@ -9,11 +9,11 @@ KEY DIFFERENCES FROM DP-SGD (train_causal_lm.py):
 
   1. Optimizer: SGD with Polyak momentum (default), or one of the
      Opaque-built v-using optimizers (``adamw``, ``ademamix``).  For
-     adaptive optimizers, pair with ``--jme`` to activate JME paired
-     noise (Joint Moment Estimation, arXiv:2502.06597); the optimizer
-     consumes the privately-estimated ``g²`` stream alongside the
-     standard noisy gradients.  ``lion`` is also exposed but has no v,
-     so ``--jme`` is rejected for it.
+    adaptive optimizers, pair with ``--second-moment`` to activate a
+    private squared-gradient stream.  The optimizer consumes the
+    privately-estimated ``g²`` stream alongside standard noisy gradients.
+    ``lion`` is also exposed but has no v, so ``--second-moment`` is
+    rejected for it.
 
   2. Clipping: Fixed norm ONLY (adaptive clipping changes sensitivity
      mid-training which invalidates the single-shot MF privacy proof).
@@ -26,8 +26,8 @@ KEY DIFFERENCES FROM DP-SGD (train_causal_lm.py):
 
   5. Noise: Fixed stddev, correlated across steps via C^{-1} streaming
      multiplication. Cannot change noise level mid-training.
-     With ``--jme`` (Adam-family only): two independent MF noise streams
-     (one per Adam moment), calibrated via JME joint sensitivity.
+    With ``--second-moment`` (Adam-family only): two independent MF noise
+    streams, calibrated via joint first+second moment sensitivity.
 
 MECHANISMS:
 
@@ -70,18 +70,18 @@ USAGE:
   # Non-DP baseline (no noise, no privacy accounting, same loop)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism none
 
-  # Adam-family without JME (single-stream MF noise, vanilla Adam math)
+    # Adam-family without private second moments (single-stream MF noise)
   python examples/train_dp_ftrl.py --preset smoke --optimizer adamw
 
-  # DP-Adam via JME (two MF noise streams, second moment is "free")
-  python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --jme
-  python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --jme --mechanism blt
-  python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --jme --beta1 0.9 --beta2 0.999
+    # DP-Adam with private second moments (two MF noise streams)
+    python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --second-moment
+    python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --second-moment --mechanism blt
+    python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --second-moment --beta1 0.9 --beta2 0.999
 
-  # AdEMAMix with JME — slow EMA captures long-range gradient signal
-  python examples/train_dp_ftrl.py --preset smoke --optimizer ademamix --jme
+    # AdEMAMix with private second moments — slow EMA captures long-range gradient signal
+    python examples/train_dp_ftrl.py --preset smoke --optimizer ademamix --second-moment
 
-  # Lion under MF noise (no JME — lion has no second moment)
+    # Lion under MF noise (no private second moment — lion has no second moment)
   python examples/train_dp_ftrl.py --preset smoke --optimizer lion
 
 REFERENCES:
@@ -92,8 +92,10 @@ REFERENCES:
   - BISR: https://arxiv.org/abs/2505.12128
   - BSR: https://arxiv.org/abs/2405.13763
   - DP-FTRL: https://arxiv.org/abs/2103.00039
-  - JME (DP-Adam): https://arxiv.org/abs/2502.06597
+    - Private second moments: https://arxiv.org/abs/2502.06597
 """
+
+# ruff: noqa: E402
 
 import argparse
 import contextlib
@@ -113,6 +115,7 @@ from transformers import (
 )
 
 from opaque.patches import apply_model_patches, apply_runtime_patches
+
 apply_runtime_patches()
 
 import torchopt
@@ -121,15 +124,15 @@ import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 from opaque.clipping import clipped_grad
 from opaque.dpftrl.noise import (
+    DEFAULT_SECOND_MOMENT_OVERHEAD,
     band_mf_strategy,
     bisr_strategy,
     bsr_strategy,
     blt_strategy,
     identity_strategy,
-    jme_joint_sensitivity,
     lambda_cgd_strategy,
     mf_noise,
-    jme_noise,
+    second_moment_joint_sensitivity,
 )
 from opaque.core.profiling import (
     StepTimer,
@@ -326,25 +329,33 @@ def parse_args():
         help=(
             "Optimizer.  ``sgd`` is the canonical DP-FTRL baseline "
             "(torchopt.sgd, Polyak momentum).  ``adamw`` and ``ademamix`` "
-            "are Adam-family adaptive optimizers; pair with ``--jme`` to "
-            "activate the paired-stream second-moment mechanism.  ``lion`` "
+            "are Adam-family adaptive optimizers; pair with ``--second-moment`` to "
+            "activate a private squared-gradient stream.  ``lion`` "
             "is sign-of-momentum; works under MF noise but has no v so "
-            "``--jme`` is rejected for it."
+            "``--second-moment`` is rejected for it."
         ),
     )
     train_g.add_argument(
-        "--jme",
+        "--second-moment",
         action=argparse.BooleanOptionalAction,
         default=False,
         help=(
-            "Activate JME paired-stream noise: ``jme_noise`` produces a "
-            "privately-estimated second moment ``g²`` alongside the "
-            "first-moment stream, and the optimizer consumes it via "
-            "``noisy_squared_grads`` at every update.  Costs ~22% extra "
-            "noise on the first-moment stream under add/remove DP; in "
-            "exchange the optimizer's v̂ is unbiased.  Requires an "
+            "Activate private second-moment noise: ``mf_noise`` produces a "
+            "privately-estimated ``g²`` stream alongside noisy gradients, "
+            "and Opaque optimizers consume it automatically.  Costs ~22% "
+            "extra noise on the first-moment stream under add/remove DP; "
+            "in exchange the optimizer's v̂ is unbiased.  Requires an "
             "Adam-family optimizer (``adamw`` or ``ademamix``) with a "
             "second moment to consume the paired stream.  Off by default."
+        ),
+    )
+    train_g.add_argument(
+        "--second-moment-overhead",
+        type=float,
+        default=None,
+        help=(
+            "Optional first-stream noise overhead for --second-moment.  "
+            "Defaults to sqrt(3/2) for d>=2 add/remove DP."
         ),
     )
     train_g.add_argument(
@@ -358,7 +369,7 @@ def parse_args():
         type=float,
         default=0.0,
         help="Optimizer weight decay: torchopt.sgd L2-style coefficient, or "
-        "opaque.optimizers.adamw decoupled WD (default 0; many JME runs omit WD).",
+        "opaque.optimizers.adamw decoupled WD (default 0).",
     )
     train_g.add_argument(
         "--beta1",
@@ -922,7 +933,9 @@ def main():
     )
 
     if args.warmup_frac > 0:
-        print(f"\nLR schedule: linear warmup {args.warmup_frac:.0%} of steps → constant {args.learning_rate}")
+        print(
+            f"\nLR schedule: linear warmup {args.warmup_frac:.0%} of steps → constant {args.learning_rate}"
+        )
     else:
         print(f"\nLR schedule: constant {args.learning_rate} (no warmup)")
     print(f"  Peak LR: {args.learning_rate}")
@@ -938,19 +951,30 @@ def main():
     #   ``is_adam_family``: optimizer has a first-moment EMA at β₁
     #     (``adamw``, ``ademamix``, ``lion``).  Drives MF workload
     #     momentum.
-    #   ``use_jme`` (= ``args.jme``): switch from single-stream MF noise
-    #     to paired-stream JME noise.  Requires the optimizer to consume
-    #     ``noisy_squared_grads``, which only Adam-family optimizers
-    #     with v support.  Validated below.
+    #   ``use_second_moment`` (= ``args.second_moment``): switch from
+    #     single-stream MF noise to private first+second moment noise.
+    #     Requires the optimizer to consume ``noisy_squared_grads``.
     is_adam_family = args.optimizer in ("adamw", "ademamix", "lion")
-    use_jme = args.jme
+    use_second_moment = args.second_moment
+    second_moment_noise_arg = (
+        args.second_moment_overhead if args.second_moment_overhead is not None else True
+    )
+    second_moment_accounting_overhead = (
+        args.second_moment_overhead
+        if args.second_moment_overhead is not None
+        else DEFAULT_SECOND_MOMENT_OVERHEAD
+    )
 
-    if use_jme and args.optimizer not in ("adamw", "ademamix"):
+    if use_second_moment and args.optimizer not in ("adamw", "ademamix"):
         raise ValueError(
-            f"--jme requires an Adam-family optimizer with a second moment "
+            f"--second-moment requires an Adam-family optimizer with a second moment "
             f"to consume the paired ``noisy_squared_grads`` stream "
             f"(``adamw`` or ``ademamix``); got --optimizer {args.optimizer}.  "
-            f"Run without --jme, or switch optimizer."
+            f"Run without --second-moment, or switch optimizer."
+        )
+    if use_second_moment and args.mechanism in ("identity", "none"):
+        raise ValueError(
+            "--second-moment requires a correlated MF mechanism, not identity/none."
         )
 
     def _workload_momentum() -> float:
@@ -959,29 +983,39 @@ def main():
 
     def _make_strategy(momentum_override=None, lr_sched=None):
         """Build a strategy for the selected mechanism with given workload momentum."""
-        mom = momentum_override if momentum_override is not None else _workload_momentum()
+        mom = (
+            momentum_override if momentum_override is not None else _workload_momentum()
+        )
         if args.mechanism == "band_mf":
             return band_mf_strategy(
-                n_steps=total_steps, bands=args.bands,
-                momentum=mom, lr_schedule=lr_sched,
+                n_steps=total_steps,
+                bands=args.bands,
+                momentum=mom,
+                lr_schedule=lr_sched,
             )
         elif args.mechanism == "blt":
             return blt_strategy(
-                n_steps=total_steps, min_sep=expected_steps_per_epoch,
-                max_participations=args.num_epochs, max_buffers=args.max_buffers,
-                momentum=mom, lr_schedule=lr_sched,
+                n_steps=total_steps,
+                min_sep=expected_steps_per_epoch,
+                max_participations=args.num_epochs,
+                max_buffers=args.max_buffers,
+                momentum=mom,
+                lr_schedule=lr_sched,
             )
         elif args.mechanism == "lambda_cgd":
             return lambda_cgd_strategy(
-                lambda_=args.lambda_, n_steps=total_steps,
+                lambda_=args.lambda_,
+                n_steps=total_steps,
                 min_sep=expected_steps_per_epoch,
                 max_participations=args.num_epochs,
             )
         elif args.mechanism == "bisr":
             return bisr_strategy(
-                bandwidth=args.bisr_bandwidth, n_steps=total_steps,
+                bandwidth=args.bisr_bandwidth,
+                n_steps=total_steps,
                 min_sep=expected_steps_per_epoch,
-                max_participations=args.num_epochs, momentum=mom,
+                max_participations=args.num_epochs,
+                momentum=mom,
             )
         elif args.mechanism == "bsr":
             return bsr_strategy(
@@ -999,16 +1033,25 @@ def main():
 
     strategy = _make_strategy(lr_sched=lr_schedule)
 
+    def _wrap_second_moment(mechanism):
+        if not use_second_moment:
+            return mechanism
+        return acc.second_moment(
+            mechanism,
+            sensitivity=clip_state.sensitivity,
+            max_column_norm=strategy._max_column_norm,
+            first_moment_overhead=second_moment_accounting_overhead,
+        )
+
     acc.set_discretization(num_mc_samples=args.mc_samples, seed=args.seed)
 
     if args.mechanism == "band_mf" and strategy is not None:
+
         def acct_mechanism(nm):
             mechanism = acc.band_mf(
                 nm, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups
             )
-            if use_jme:
-                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
-                                   max_column_norm=strategy._max_column_norm)
+            mechanism = _wrap_second_moment(mechanism)
             if args.band_mf_sampling == "cyclic_poisson":
                 return acc.cyclic_poisson(mechanism, sample_rate=sampling_prob)
             return acc.b_min_sep(
@@ -1018,61 +1061,59 @@ def main():
                 p0=p0,
             )
     elif args.mechanism == "blt" and strategy is not None:
+
         def acct_mechanism(nm):
             mechanism = acc.blt(nm, sensitivity=strategy.sensitivity)
-            if use_jme:
-                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
-                                   max_column_norm=strategy._max_column_norm)
+            mechanism = _wrap_second_moment(mechanism)
             return mechanism
     elif args.mechanism == "lambda_cgd" and strategy is not None:
+
         def acct_mechanism(nm):
             mechanism = acc.lambda_cgd(
                 nm,
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
-            if use_jme:
-                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
-                                   max_column_norm=strategy._max_column_norm)
+            mechanism = _wrap_second_moment(mechanism)
             return acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
             )
     elif args.mechanism == "bisr" and strategy is not None:
+
         def acct_mechanism(nm):
             mechanism = acc.bisr(
                 nm,
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
-            if use_jme:
-                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
-                                   max_column_norm=strategy._max_column_norm)
+            mechanism = _wrap_second_moment(mechanism)
             return acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
             )
     elif args.mechanism == "bsr" and strategy is not None:
+
         def acct_mechanism(nm):
             mechanism = acc.bsr(
                 nm,
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
-            if use_jme:
-                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
-                                   max_column_norm=strategy._max_column_norm)
+            mechanism = _wrap_second_moment(mechanism)
             return acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
             )
     elif args.mechanism == "identity":
+
         def acct_mechanism(nm):
             return acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
     elif args.mechanism == "none":
+
         def acct_mechanism(nm):
             return acc.nonprivate()
     else:
@@ -1120,20 +1161,26 @@ def main():
         print("\nNon-DP mode: using identity noise with stddev=0...")
     elif args.mechanism == "identity":
         print("\nCreating identity noise (i.i.d. Gaussian, DP-SGD baseline)...")
-    elif use_jme:
-        print(f"\nCreating JME noise (β₁={args.beta1}, β₂={args.beta2})...")
+    elif use_second_moment:
+        print(
+            f"\nCreating private second-moment noise (β₁={args.beta1}, β₂={args.beta2})..."
+        )
     else:
         print(f"\nCreating MF noise (β={args.momentum})...")
     t0 = time.time()
 
-    if use_jme and args.mechanism not in ("identity", "none"):
-        noise_fn, noise_state = jme_noise(
+    if use_second_moment and args.mechanism not in ("identity", "none"):
+        second_strategy = _make_strategy(
+            momentum_override=args.beta2, lr_sched=lr_schedule
+        )
+        noise_fn, noise_state = mf_noise(
             trainable_params,
             strategy,
             noise_multiplier=noise_multiplier,
+            sensitivity=zeta,
             key=key(args.seed),
-            zeta=zeta,
-            beta2=args.beta2,
+            second_moment=second_moment_noise_arg,
+            second_moment_strategy=second_strategy,
         )
     elif args.mechanism in ("identity", "none"):
         noise_fn, noise_state = mf_noise(
@@ -1162,9 +1209,8 @@ def main():
     elif args.optimizer == "adamw":
         from opaque.optimizers import adamw
 
-        # ``--jme`` (when on) drives the noise side; the optimizer side
-        # consumes ``noisy_squared_grads`` at every update() — same factory
-        # in either case.
+        # ``--second-moment`` drives the noise side; the same optimizer
+        # consumes ``noisy_squared_grads`` when the noise output carries it.
         optimizer = adamw(
             lr=lr_callable,
             betas=(args.beta1, args.beta2),
@@ -1199,10 +1245,12 @@ def main():
     identity_sigma = None
     if args.mechanism not in ("identity", "none") and args.noise_multiplier is None:
         try:
-            identity_acct = (
-                lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=sample_rate)
-                * total_steps
-            )
+
+            def identity_acct(nm):
+                return (
+                    acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
+                )
+
             identity_cal = cal.calibrate(
                 cal.epsilon_budget(args.target_epsilon, delta=args.target_delta),
                 identity_acct,
@@ -1216,14 +1264,14 @@ def main():
 
     print("\nDP-FTRL setup:")
     print(f"  Mechanism: {args.mechanism}")
-    jme_note = " + JME paired noise" if use_jme else ""
+    second_moment_note = " + private second moment" if use_second_moment else ""
     if is_adam_family:
         print(
-            f"  Optimizer: {args.optimizer}{jme_note} "
+            f"  Optimizer: {args.optimizer}{second_moment_note} "
             f"(β₁={args.beta1}, β₂={args.beta2}, "
             f"ε={args.adam_eps}, weight_decay={args.weight_decay})"
         )
-        if use_jme:
+        if use_second_moment:
             print(
                 f"  Workload: EMA β₁={args.beta1} (1st moment), β₂={args.beta2} (2nd moment)"
             )
@@ -1235,8 +1283,8 @@ def main():
                 "noise strategy uses paper (α,β); independent of optimizer --weight-decay; require α>β."
             )
     else:
-        # sgd / lion (lion technically has β₁ but no JME; treat like the
-        # SGD-style printout since neither uses JME).
+        # sgd / lion (lion technically has β₁ but no second moment; treat like
+        # the SGD-style printout since neither consumes a squared-gradient stream).
         print(
             f"  Optimizer: {args.optimizer} (β={args.momentum}, "
             f"weight_decay={args.weight_decay})"
@@ -1255,13 +1303,15 @@ def main():
                 "this script still uses the LR schedule only in the optimizer."
             )
     print(f"  Clipping norm: {args.clipping_norm} (fixed)")
-    print(
-        f"  Sensitivity: {zeta:.6f} (= {args.clipping_norm} / {args.batch_size})"
-    )
+    print(f"  Sensitivity: {zeta:.6f} (= {args.clipping_norm} / {args.batch_size})")
     print(f"  Noise multiplier (σ): {noise_multiplier:.4f}")
-    if use_jme and args.mechanism not in ("identity", "none"):
-        joint_sens = jme_joint_sensitivity(strategy.sensitivity, zeta)
-        print(f"  JME joint sensitivity: {joint_sens:.6f}")
+    if use_second_moment and args.mechanism not in ("identity", "none"):
+        joint_sens = second_moment_joint_sensitivity(
+            strategy._max_column_norm,
+            zeta,
+            first_moment_overhead=second_moment_accounting_overhead,
+        )
+        print(f"  Second-moment joint sensitivity: {joint_sens:.6f}")
         print(f"  Noise stddev (1st moment): {noise_multiplier * joint_sens:.6f}")
     else:
         print(
@@ -1345,21 +1395,12 @@ def main():
                         state=clip_state,
                     )
 
-                if use_jme:
-                    (noisy_grads, noisy_sq), noise_state = noise_fn(grads, noise_state)
-                    updates, opt_state = optimizer.update(
-                        noisy_grads,
-                        opt_state,
-                        params=trainable_params,
-                        noisy_squared_grads=noisy_sq,
-                    )
-                else:
-                    noisy_grads, noise_state = noise_fn(grads, noise_state)
-                    updates, opt_state = optimizer.update(
-                        noisy_grads,
-                        opt_state,
-                        params=trainable_params,
-                    )
+                noisy_grads, noise_state = noise_fn(grads, noise_state)
+                updates, opt_state = optimizer.update(
+                    noisy_grads,
+                    opt_state,
+                    params=trainable_params,
+                )
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
 
             profiler = profiler.add_step(step_timer)
@@ -1428,10 +1469,10 @@ def main():
     print(f"Model: {args.model_name}")
     print(f"Dataset: {args.dataset} ({global_train_size} train samples)")
     print(f"\nMechanism: {args.mechanism}")
-    jme_suffix = " + JME paired noise" if use_jme else ""
+    second_moment_suffix = " + private second moment" if use_second_moment else ""
     if is_adam_family:
         print(
-            f"Optimizer: {args.optimizer}{jme_suffix} "
+            f"Optimizer: {args.optimizer}{second_moment_suffix} "
             f"(β₁={args.beta1}, β₂={args.beta2})"
         )
     else:

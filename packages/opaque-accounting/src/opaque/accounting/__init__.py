@@ -117,7 +117,7 @@ from opaque.accounting.mechanisms import (
 )
 
 # Transformations
-from opaque.accounting.transformations import adaclip, jme
+from opaque.accounting.transformations import adaclip, second_moment
 
 __all__ = [
     # Submodules
@@ -152,7 +152,7 @@ __all__ = [
     "cyclic_poisson",
     # Transformations
     "adaclip",
-    "jme",
+    "second_moment",
     # Composition
     "repeat",
     "compose",

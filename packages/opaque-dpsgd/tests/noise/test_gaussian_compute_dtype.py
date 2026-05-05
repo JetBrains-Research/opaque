@@ -16,6 +16,7 @@ from __future__ import annotations
 import pytest
 import torch
 
+from opaque.core.noise import SecondMomentNoiseOutput
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.random import key
 
@@ -84,3 +85,44 @@ def test_zero_stddev_short_circuits():
     noisy, _ = noise_fn(grads, state)
     assert torch.equal(noisy["a"], grads["a"])
     assert noisy["a"].dtype == torch.bfloat16
+
+
+def test_second_moment_output_contains_noisy_squared_grads():
+    noise_fn, state = gaussian_noise(
+        stddev=0.2,
+        sensitivity=0.2,
+        key=key(0),
+        second_moment=True,
+    )
+    grads = {"a": torch.ones(16, dtype=torch.float32)}
+    output, _ = noise_fn(grads, state)
+    assert isinstance(output, SecondMomentNoiseOutput)
+    assert output.noisy_grads["a"].shape == grads["a"].shape
+    assert output.noisy_squared_grads["a"].shape == grads["a"].shape
+    assert not torch.allclose(output.noisy_squared_grads["a"], grads["a"] ** 2)
+
+
+def test_second_moment_requires_stddev_and_sensitivity():
+    with pytest.raises(ValueError, match="requires stddev"):
+        gaussian_noise(key=key(0), second_moment=True)
+
+
+def test_second_moment_rejects_missing_sensitivity():
+    with pytest.raises(ValueError, match="requires stddev and sensitivity"):
+        gaussian_noise(stddev=1.0, key=key(0), second_moment=True)
+
+
+def test_second_moment_accepts_per_call_stddev_and_sensitivity_override():
+    noise_fn, state = gaussian_noise(
+        stddev=1.0,
+        sensitivity=1.0,
+        key=key(0),
+        second_moment=True,
+    )
+    grads = {"a": torch.ones(16, dtype=torch.float32)}
+
+    output, _ = noise_fn(grads, state, stddev=0.5, sensitivity=0.25)
+
+    assert isinstance(output, SecondMomentNoiseOutput)
+    assert output.noisy_grads["a"].shape == grads["a"].shape
+    assert output.noisy_squared_grads["a"].shape == grads["a"].shape

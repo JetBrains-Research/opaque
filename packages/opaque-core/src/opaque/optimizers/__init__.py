@@ -33,9 +33,9 @@ kwargs:
   Adam-family / RMSprop, cumulative Φ subtraction for Adagrad,
   planned sign gating for Lion, …).  Per-step override of the
   constructor default.
-- ``noisy_squared_grads`` — substitutes a JME paired-stream second
-  moment in place of ``g²`` (post-processing argument; no extra
-  privacy work needed in the optimizer itself).
+- ``noisy_squared_grads`` — substitutes a private squared-gradient
+  stream in place of ``g²`` (post-processing argument; no extra privacy
+  work needed in the optimizer itself).
 
 Re-exported from ``torchopt`` (no DP-aware modes; vanilla but safe
 under DP noise — slow without bias correction but converges):

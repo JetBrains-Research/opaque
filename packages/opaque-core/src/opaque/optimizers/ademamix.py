@@ -26,7 +26,7 @@ Adam's, so:
 
 - ``noise_stddev`` (default + per-step override) drives the φ-EMA bias
   correction on ``v̂`` exactly as in :func:`opaque.optimizers.adamw`.
-- ``noisy_squared_grads`` substitutes the JME paired-stream second
+- ``noisy_squared_grads`` substitutes a private squared-gradient
   moment by post-processing.
 - The two first-moment EMAs are unaffected — they remain unbiased
   estimates of E[g] regardless of the noise injected into g.
@@ -106,7 +106,7 @@ def _scale_by_ademamix(
     ) -> tuple[Any, AdEMAMixState]:
         if noisy_squared_grads is not None and noise_stddev is not None:
             raise ValueError(
-                "ademamix.update() received both noisy_squared_grads (JME) and "
+                "ademamix.update() received both noisy_squared_grads and "
                 "noise_stddev (DP-BC); pass exactly one (or neither)."
             )
 

@@ -42,9 +42,9 @@
 
 pub mod bisr;
 pub mod gram_matrix;
-pub mod jme;
 pub mod lambda_cgd;
 mod mf_gaussian;
+pub mod second_moment;
 pub mod sensitivity;
 
 pub use bisr::{
@@ -52,12 +52,14 @@ pub use bisr::{
     bisr_sensitivity_squared, toeplitz_gram_matrix,
 };
 pub use gram_matrix::{lambda_cgd_gram_matrix, lambda_cgd_gram_matrix_lr};
-pub use jme::{jme_joint_sensitivity, jme_lambda, jme_second_moment_noise_scale};
 pub use lambda_cgd::{
     lambda_cgd_max_column_norm, lambda_cgd_normalized_sensitivity_squared,
     lambda_cgd_sensitivity_squared,
 };
 pub use mf_gaussian::mf_gaussian_pld;
+pub use second_moment::{
+    second_moment_joint_sensitivity, second_moment_lambda, second_moment_noise_scale,
+};
 pub use sensitivity::{
     banded_sensitivity, blt_sensitivity_squared, fixed_epoch_sensitivity,
     general_sensitivity_upper_bound, max_participation_for_linear_fn,
