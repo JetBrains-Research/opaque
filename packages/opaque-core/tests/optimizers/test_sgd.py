@@ -52,7 +52,9 @@ class TestSGD:
     def test_clipped_updates_are_rejected(self, params, grads):
         opt = sgd(lr=1e-2)
         state = opt.init(params)
-        with pytest.raises(TypeError, match="have not passed through a noise mechanism"):
+        with pytest.raises(
+            TypeError, match="have not passed through a noise mechanism"
+        ):
             opt.update(clipped(grads, max_norm=1.0), state, params=params)
 
     def test_explicit_metadata_kwargs_are_rejected(self, params, grads):

@@ -259,7 +259,9 @@ class TestQuantileNoiseClipNorm:
         )
 
         # clipping_norm should be identical (same initial_clipping_norm)
-        assert state_no_noise._current_clipping_norm == state_noise._current_clipping_norm
+        assert (
+            state_no_noise._current_clipping_norm == state_noise._current_clipping_norm
+        )
         assert state_no_noise._current_clipping_norm == 1.0
 
     def test_clip_norm_matches_initial(self):

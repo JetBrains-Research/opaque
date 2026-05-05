@@ -25,7 +25,9 @@ from opaque.random import key
 from opaque.dpftrl.sampling import BallsInBinsSampler
 
 
-def _engine_train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps, *, stddev):
+def _engine_train_loop(
+    model, optimizer, noise_fn, state, x_data, y_data, steps, *, stddev
+):
     """Run a DP-FTRL training loop with the raw engine noise function.
 
     The engine returns a noise_fn that takes the per-call ``stddev`` directly
@@ -52,7 +54,9 @@ def _engine_train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps,
     return losses
 
 
-def _mf_train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps, *, max_norm):
+def _mf_train_loop(
+    model, optimizer, noise_fn, state, x_data, y_data, steps, *, max_norm
+):
     """Run a DP-FTRL training loop through the :func:`mf_noise` dispatcher.
 
     Wraps gradients as :class:`ClippedPytree`, applies the dispatcher's
@@ -478,7 +482,9 @@ class TestMfNoiseStrategies:
     def test_identity_matches_raw_engine(self):
         """identity_strategy via mf_noise gives same noise as _matrix_factorization_noise + identity()."""
         tmpl = {"w": torch.zeros(10)}
-        nf1, ns1 = mf_noise(tmpl, identity_strategy(), noise_multiplier=1.0, key=key(42))
+        nf1, ns1 = mf_noise(
+            tmpl, identity_strategy(), noise_multiplier=1.0, key=key(42)
+        )
         nf2, ns2 = _matrix_factorization_noise(tmpl, identity(), key=key(42))
 
         grad = {"w": torch.ones(10)}

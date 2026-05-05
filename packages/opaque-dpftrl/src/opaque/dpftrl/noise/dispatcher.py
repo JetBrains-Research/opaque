@@ -252,7 +252,9 @@ def _validate_constant_max_norm(
     """
     sensitivity = grads.sensitivity
     if sensitivity < 0:
-        raise ValueError(f"ClippedPytree max_norm must be non-negative, got {grads.max_norm}")
+        raise ValueError(
+            f"ClippedPytree max_norm must be non-negative, got {grads.max_norm}"
+        )
     max_norm = float(sensitivity)
     if first_max_norm is not None and max_norm != first_max_norm:
         raise ValueError(
@@ -362,9 +364,7 @@ def _make_second_moment_mf_noise(
             ),
             SecondMomentMFNoiseState(
                 _first_state=replace(new_first, _first_max_norm=max_norm),
-                _second_state=replace(
-                    new_second, _first_max_norm=squared_max_norm
-                ),
+                _second_state=replace(new_second, _first_max_norm=squared_max_norm),
             ),
         )
 

@@ -537,9 +537,7 @@ def clipped_fun(
         if normalize_by != 1.0:
             result = tree_map(lambda x: x / normalize_by, result)
             if second_moment:
-                squared_result = tree_map(
-                    lambda x: x / normalize_by, squared_result
-                )
+                squared_result = tree_map(lambda x: x / normalize_by, squared_result)
 
         if second_moment:
             output = SecondMomentClippingOutput(

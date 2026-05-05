@@ -227,9 +227,7 @@ def gaussian_noise(
         first_clipped = clipped_input.grads
         second_clipped = clipped_input.squared_grads
         if not isinstance(first_clipped, ClippedPytree):
-            raise TypeError(
-                "SecondMomentClippingOutput.grads must be a ClippedPytree."
-            )
+            raise TypeError("SecondMomentClippingOutput.grads must be a ClippedPytree.")
         if not isinstance(second_clipped, ClippedPytree):
             raise TypeError(
                 "SecondMomentClippingOutput.squared_grads must be a ClippedPytree."
@@ -248,12 +246,8 @@ def gaussian_noise(
         # Two independent noise streams; fold-in 1 / 2 namespaces them so
         # they don't collide with the single-stream key derivation
         # (``fold_in(_rng_key, _step_counter)``).
-        first_step_key = rng_fold_in(
-            rng_fold_in(st._rng_key, 1), st._step_counter
-        )
-        second_step_key = rng_fold_in(
-            rng_fold_in(st._rng_key, 2), st._step_counter
-        )
+        first_step_key = rng_fold_in(rng_fold_in(st._rng_key, 1), st._step_counter)
+        second_step_key = rng_fold_in(rng_fold_in(st._rng_key, 2), st._step_counter)
         noisy_grads = _add_noise_tree(
             first_clipped.pytree,
             first_stddev,

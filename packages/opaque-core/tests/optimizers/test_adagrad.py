@@ -187,4 +187,3 @@ class TestValidation:
     def test_negative_weight_decay_raises(self):
         with pytest.raises(ValueError, match="weight_decay"):
             adagrad(weight_decay=-0.1)
-

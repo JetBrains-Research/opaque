@@ -42,9 +42,7 @@ def _paired(grads):
     grads_clipped = clipped(grads, max_norm=_SENSITIVITY)
     sq_pytree = {k: v * v for k, v in grads.items()}
     sq_clipped = clipped(sq_pytree, max_norm=_SENSITIVITY * _SENSITIVITY)
-    return SecondMomentClippingOutput(
-        grads=grads_clipped, squared_grads=sq_clipped
-    )
+    return SecondMomentClippingOutput(grads=grads_clipped, squared_grads=sq_clipped)
 
 
 def _clipped(grads):
@@ -80,9 +78,7 @@ class TestSecondMomentCalibration:
             c2_max_column_norm=1.5,
         )
         expected_first = 3.0 * 0.2 * 2.0 * math.sqrt(1.5)
-        expected_second = expected_first * (
-            0.04 * 1.5 / (0.2 * 2.0 * math.sqrt(0.5))
-        )
+        expected_second = expected_first * (0.04 * 1.5 / (0.2 * 2.0 * math.sqrt(0.5)))
         assert first == pytest.approx(expected_first, rel=1e-10)
         assert second == pytest.approx(expected_second, rel=1e-10)
 

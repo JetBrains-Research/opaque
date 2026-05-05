@@ -150,9 +150,7 @@ class TestBCMode:
         # Steady-state target: σ² (mostly converged after 8 steps).
         assert phi[0] == pytest.approx(sigma**2, rel=0.2)
 
-    def test_per_group_routes_to_per_leaf_phi(
-        self, matrix_params, matrix_grads
-    ):
+    def test_per_group_routes_to_per_leaf_phi(self, matrix_params, matrix_grads):
         """PerGroup noise_stddev with σ varying per group → phi varies per leaf
         according to the group its dotted-path key resolves to."""
         pg = PerGroup(
@@ -214,9 +212,7 @@ class TestBCMode:
             params=matrix_params,
         )
         # On at least one leaf the BC and no-BC updates differ.
-        any_diff = any(
-            not torch.allclose(u_bc[k], u_no[k]) for k in matrix_params
-        )
+        any_diff = any(not torch.allclose(u_bc[k], u_no[k]) for k in matrix_params)
         assert any_diff
 
 

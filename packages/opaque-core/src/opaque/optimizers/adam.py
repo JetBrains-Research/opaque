@@ -133,6 +133,7 @@ def _scale_by_adam(
 
     - both absent: standard Adam.
     """
+
     def init_fn(params: Any) -> AdamState:
         mu = tree_map(torch.zeros_like, params)
         nu = tree_map(torch.zeros_like, params)

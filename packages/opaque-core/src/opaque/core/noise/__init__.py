@@ -94,9 +94,7 @@ def noised(
     noise_stddev: NoiseStddev,
 ) -> NoisedPytree:
     """Manually wrap an already-privatised pytree with noise metadata."""
-    return NoisedPytree(
-        pytree=pytree, max_norm=max_norm, noise_stddev=noise_stddev
-    )
+    return NoisedPytree(pytree=pytree, max_norm=max_norm, noise_stddev=noise_stddev)
 
 
 # ---------------------------------------------------------------------------
@@ -219,9 +217,7 @@ def second_moment_noise_scale(
     if first_max_norm <= 0:
         raise ValueError(f"first_max_norm must be positive, got {first_max_norm}")
     if squared_max_norm <= 0:
-        raise ValueError(
-            f"squared_max_norm must be positive, got {squared_max_norm}"
-        )
+        raise ValueError(f"squared_max_norm must be positive, got {squared_max_norm}")
     if first_moment_overhead <= 1.0:
         raise ValueError(
             "first_moment_overhead must be greater than 1.0, "

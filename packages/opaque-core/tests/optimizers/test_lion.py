@@ -112,5 +112,7 @@ class TestLion:
     def test_clipped_updates_are_rejected(self, params, grads):
         opt = lion(lr=1e-4)
         state = opt.init(params)
-        with pytest.raises(TypeError, match="have not passed through a noise mechanism"):
+        with pytest.raises(
+            TypeError, match="have not passed through a noise mechanism"
+        ):
             opt.update(clipped(grads, max_norm=1.0), state, params=params)

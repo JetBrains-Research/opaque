@@ -90,7 +90,10 @@ def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGr
     sum_c = sum(max_norm.values.values())
     return PerGroup(
         max_norm.groups,
-        {k: noise_multiplier * math.sqrt(c * sum_c) for k, c in max_norm.values.items()},
+        {
+            k: noise_multiplier * math.sqrt(c * sum_c)
+            for k, c in max_norm.values.items()
+        },
     )
 
 

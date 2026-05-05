@@ -657,7 +657,7 @@ class TestSecondMoment:
             [clean_grad(params, x[i], y[i])["w"] for i in range(batch_size)]
         )
         expected_first = per_example_grads.sum(dim=0) / batch_size
-        expected_squared = (per_example_grads ** 2).sum(dim=0) / batch_size
+        expected_squared = (per_example_grads**2).sum(dim=0) / batch_size
         torch.testing.assert_close(
             out.grads.pytree["w"], expected_first, rtol=1e-5, atol=1e-5
         )
@@ -705,12 +705,16 @@ class TestSecondMoment:
         out_full, _ = gf_full(params, x, y, state=_)
         out_mb, _ = gf_mb(params, x, y, state=_)
         torch.testing.assert_close(
-            out_full.grads.pytree["w"], out_mb.grads.pytree["w"],
-            rtol=1e-5, atol=1e-5,
+            out_full.grads.pytree["w"],
+            out_mb.grads.pytree["w"],
+            rtol=1e-5,
+            atol=1e-5,
         )
         torch.testing.assert_close(
-            out_full.squared_grads.pytree["w"], out_mb.squared_grads.pytree["w"],
-            rtol=1e-5, atol=1e-5,
+            out_full.squared_grads.pytree["w"],
+            out_mb.squared_grads.pytree["w"],
+            rtol=1e-5,
+            atol=1e-5,
         )
         # Bounds identical too.
         assert out_full.grads.max_norm == out_mb.grads.max_norm

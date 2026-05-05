@@ -128,7 +128,10 @@ class TestAdaptivePerGroupBasic:
         batch_y = torch.randn(8)
         grads, _ = grad_fn(params, batch_x, batch_y, state=clip_state)
         assert isinstance(grads.max_norm, PerGroup)
-        assert grads.max_norm.values == {"a": pytest.approx(0.1), "b": pytest.approx(0.2)}
+        assert grads.max_norm.values == {
+            "a": pytest.approx(0.1),
+            "b": pytest.approx(0.2),
+        }
         import math
 
         assert grads.max_norm.effective == pytest.approx(math.sqrt(5) / 10)

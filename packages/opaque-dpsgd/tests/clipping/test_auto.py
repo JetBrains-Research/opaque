@@ -360,7 +360,10 @@ class TestAutoClippedGradPerGroup:
         )
         grads, _ = grad_fn(params, torch.randn(8, 4), state=state)
         assert isinstance(grads.max_norm, PerGroup)
-        assert grads.max_norm.values == {"g1": pytest.approx(1.5), "g2": pytest.approx(2.0)}
+        assert grads.max_norm.values == {
+            "g1": pytest.approx(1.5),
+            "g2": pytest.approx(2.0),
+        }
         assert grads.max_norm.effective == pytest.approx(5.0 / 2.0)
 
     def test_per_group_applies_correct_scales(self):

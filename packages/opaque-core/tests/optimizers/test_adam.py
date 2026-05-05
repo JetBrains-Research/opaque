@@ -230,7 +230,9 @@ class TestBCMode:
     def test_clipped_updates_are_rejected(self, params, grads):
         opt = adamw(lr=1e-3)
         state = opt.init(params)
-        with pytest.raises(TypeError, match="have not passed through a noise mechanism"):
+        with pytest.raises(
+            TypeError, match="have not passed through a noise mechanism"
+        ):
             opt.update(clipped(grads, max_norm=1.0), state, params=params)
 
     def test_raw_pytree_matches_torchopt(self, params, grads):
@@ -425,9 +427,7 @@ class TestSecondMomentMode:
             expected_v = (1 - b2) * sq_grads[k]
             torch.testing.assert_close(adam.nu[k], expected_v)
 
-    def test_second_moment_output_unwraps_noisy_streams(
-        self, params, grads, sq_grads
-    ):
+    def test_second_moment_output_unwraps_noisy_streams(self, params, grads, sq_grads):
         b2 = 0.999
         opt = adamw(lr=1e-3, betas=(0.9, b2))
         state = opt.init(params)
@@ -449,7 +449,9 @@ class TestSecondMomentMode:
             noised(grads, max_norm=1.0, noise_stddev=0.5),
             clipped(sq_grads, max_norm=1.0),
         )
-        with pytest.raises(TypeError, match="SecondMomentNoiseOutput.noisy_squared_grads"):
+        with pytest.raises(
+            TypeError, match="SecondMomentNoiseOutput.noisy_squared_grads"
+        ):
             opt.update(output, state, params=params)
 
     def test_second_moment_phi_unchanged(self, params, grads, sq_grads):

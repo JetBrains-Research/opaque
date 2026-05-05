@@ -124,13 +124,16 @@ class TestFixedClipStatePerGroup:
             groups={"a": "g1", "b": "g2"},
             values={"g1": 2.0, "g2": 4.0},
         )
-        _, state = clipped_grad(lambda params, data: params["a"].sum(), clipping_norm=pg)
+        _, state = clipped_grad(
+            lambda params, data: params["a"].sum(), clipping_norm=pg
+        )
         assert isinstance(state, FixedClipState)
 
     def test_validation_rejects_non_positive_group(self):
         pg = PerGroup(groups={"a": "g1"}, values={"g1": -1.0})
         with pytest.raises(ValueError, match="positive"):
             clipped_grad(lambda params, data: params["a"].sum(), clipping_norm=pg)
+
 
 class TestClippedGradPerGroup:
     """Tests for clipped_grad with PerGroup clipping_norm."""
@@ -176,7 +179,10 @@ class TestClippedGradPerGroup:
         grads, _ = grad_fn(params, torch.randn(8), state=clip_state)
         assert isinstance(grads.max_norm, PerGroup)
         assert grads.max_norm.groups == pg.groups
-        assert grads.max_norm.values == {"a": pytest.approx(0.2), "b": pytest.approx(0.4)}
+        assert grads.max_norm.values == {
+            "a": pytest.approx(0.2),
+            "b": pytest.approx(0.4),
+        }
 
     def test_per_group_with_microbatch(self):
         """Per-group clipping should work with microbatching."""

@@ -274,7 +274,9 @@ def _worker_shared_noise_is_deterministic(
         noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         noised, _ = noise_fn(clipped(grads, max_norm=1.0), state)
 
-        gathered = [torch.zeros_like(noised.pytree["weight"]) for _ in range(world_size)]
+        gathered = [
+            torch.zeros_like(noised.pytree["weight"]) for _ in range(world_size)
+        ]
         dist.all_gather(gathered, noised.pytree["weight"])
         if rank == 0:
             for other in gathered[1:]:
@@ -492,7 +494,9 @@ def _worker_sync_aux_adaptive_clipping(rank: int, world_size: int, port: int) ->
         assert synced_aux.grad_norms.shape[0] == expected_n
         assert synced_aux.clipped_grad_norms.shape[0] == expected_n
 
-        local_clipped = float((aux.grad_norms > new_state._current_clipping_norm).sum().item())
+        local_clipped = float(
+            (aux.grad_norms > new_state._current_clipping_norm).sum().item()
+        )
         local_total = float(aux.grad_norms.numel())
         global_clipped = reduce_scalar(local_clipped, op="sum", device=device)
         global_total = reduce_scalar(local_total, op="sum", device=device)

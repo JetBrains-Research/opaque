@@ -37,8 +37,7 @@ class TestPerGroupNoiseStddev:
                     stddev = per_group_noise_stddev(max_norm, nm)
                     # Check Σ B_i² / σ_i² = 1/nm²
                     mahal = sum(
-                        c**2 / stddev.values[g] ** 2
-                        for g, c in max_norm.values.items()
+                        c**2 / stddev.values[g] ** 2 for g, c in max_norm.values.items()
                     )
                     assert mahal == pytest.approx(1.0 / nm**2, rel=1e-10), (
                         f"Mahalanobis constraint violated: {mahal} != {1 / nm**2} "
