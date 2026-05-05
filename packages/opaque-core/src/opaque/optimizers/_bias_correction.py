@@ -89,10 +89,10 @@ def is_per_group(noise_stddev: float | PerGroup) -> bool:
 
 
 def update_phi_ema(
-    phi: Any,
-    new_variance: Any,
+    phi: float | dict[str, float],
+    new_variance: float | dict[str, float],
     b2: float,
-) -> Any:
+) -> float | dict[str, float]:
     """Advance the noise-variance EMA by one step::
 
         φ_t = β₂ φ_{t-1} + (1 − β₂) Φ_t

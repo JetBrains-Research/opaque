@@ -60,7 +60,7 @@ except ImportError as exc:
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
 
-from opaque.core.pytree import tree_map
+from opaque.core.pytree import TensorPytree, tree_map
 
 
 @dataclasses.dataclass(frozen=True)
@@ -75,9 +75,9 @@ class ScheduleFreeState:
         beta: Interpolation coefficient β.
     """
 
-    z: Any
-    x: Any
-    inner: Any
+    z: TensorPytree
+    x: TensorPytree
+    inner: Any  # opaque ChainState — the inner GradientTransformation's state
     step: int
     beta: float
 

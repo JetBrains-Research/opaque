@@ -22,11 +22,26 @@ Notes
 - Handles microbatching for memory efficiency in gradient clipping.
 """
 
-from collections.abc import Callable  # noqa: E402
-from typing import Any  # noqa: E402
+from collections.abc import Callable, Mapping, Sequence  # noqa: E402
+from typing import Any, Union  # noqa: E402
 
 import optree as _ot  # noqa: E402
 import torch  # noqa: E402
+
+
+# A pytree whose leaves are ``torch.Tensor``.  Documents intent on
+# state dataclass fields and function signatures that work over tensor
+# pytrees; the recursive shape is too dynamic to enforce statically
+# (Python's type system can't check arbitrary nested-dict-of-T without
+# heavy generics), but the alias is far more searchable than ``Any``.
+#
+# Static checkers see this as ``Any`` after expansion — that's fine,
+# the goal is reader documentation, not strict checking.
+TensorPytree = Union[
+    torch.Tensor,
+    Mapping[str, "TensorPytree"],
+    Sequence["TensorPytree"],
+]
 
 
 def tree_leaves(tree: Any) -> list[torch.Tensor]:

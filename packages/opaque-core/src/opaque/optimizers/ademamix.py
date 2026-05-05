@@ -49,7 +49,7 @@ except ImportError as exc:
     ) from exc
 
 from opaque.clipping.per_group import PerGroup
-from opaque.core.pytree import tree_map
+from opaque.core.pytree import TensorPytree, tree_map
 from opaque.optimizers._bias_correction import (
     is_per_group,
     resolve_noise_variance,
@@ -65,10 +65,10 @@ _LR = float | Callable[[int], float]
 class AdEMAMixState:
     """State for AdEMAMix moment scaling."""
 
-    m_fast: Any
-    m_slow: Any
-    nu: Any
-    phi: Any
+    m_fast: TensorPytree
+    m_slow: TensorPytree
+    nu: TensorPytree
+    phi: float | dict[str, float]
     step: int
 
 

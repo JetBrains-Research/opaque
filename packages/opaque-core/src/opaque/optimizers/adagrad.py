@@ -51,7 +51,7 @@ except ImportError as exc:
     ) from exc
 
 from opaque.clipping.per_group import PerGroup
-from opaque.core.pytree import tree_map
+from opaque.core.pytree import TensorPytree, tree_map
 from opaque.optimizers._bias_correction import (
     is_per_group,
     resolve_noise_variance,
@@ -75,8 +75,8 @@ class AdagradState:
         step: Number of completed updates.
     """
 
-    v_acc: Any
-    phi_acc: Any
+    v_acc: TensorPytree
+    phi_acc: float | dict[str, float]
     step: int
 
 
