@@ -176,7 +176,7 @@ def truncated_gaussian_noise(
     Example:
         >>> import torch
         >>> from opaque.clipping.types import clipped
-        >>> from opaque.dpsgd.noise.truncated_gaussian import truncated_gaussian_noise
+        >>> from opaque.dpsgd.noise import truncated_gaussian_noise
         >>> from opaque.random import key
         >>>
         >>> noise_fn, state = truncated_gaussian_noise(

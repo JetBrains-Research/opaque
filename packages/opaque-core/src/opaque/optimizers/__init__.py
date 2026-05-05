@@ -97,6 +97,12 @@ from opaque.optimizers.radam import RAdamState as RAdamState
 from opaque.optimizers.rmsprop import RMSpropState as RMSpropState
 from opaque.optimizers.schedule_free import ScheduleFreeState as ScheduleFreeState
 
+# Serialization helpers — flatten / rebuild any chain state for
+# ``torch.save`` / ``torch.load``.  Promoted to the package root for
+# discoverability; the implementation lives in
+# :mod:`opaque.optimizers.serialization`.
+from opaque.optimizers.serialization import load_state_dict, state_dict
+
 
 __all__ = [
     # Opaque-built factories.
@@ -111,4 +117,7 @@ __all__ = [
     "adadelta",
     "radam",
     "schedule_free",
+    # Serialization.
+    "state_dict",
+    "load_state_dict",
 ]

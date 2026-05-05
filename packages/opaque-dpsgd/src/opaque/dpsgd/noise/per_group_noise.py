@@ -66,7 +66,7 @@ def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGr
     Example::
 
         from opaque.clipping import clipped_grad
-        from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
+        from opaque.dpsgd.noise import per_group_noise_stddev
 
         grad_fn, clip_state = clipped_grad(loss_fn, clipping_norm=pg, ...)
         grads, clip_state = grad_fn(params, batch, state=clip_state)

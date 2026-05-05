@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
+from opaque.dpsgd.noise import per_group_noise_stddev
 from opaque.types import PerGroup
 
 

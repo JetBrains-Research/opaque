@@ -14,7 +14,7 @@ import torch.multiprocessing as mp
 
 from opaque.types import clipped
 
-from opaque.dpsgd.noise.gaussian import gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpftrl.noise import mf_noise, identity_strategy
 from opaque.random import key
 

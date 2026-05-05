@@ -29,7 +29,7 @@ import torch.nn as nn
 import torchopt
 
 from opaque.clipping import clipped_grad
-from opaque.dpsgd.noise.gaussian import gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise
 from opaque.optimizers import adamw
 from opaque.functional import make_functional
 from opaque.random import key

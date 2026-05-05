@@ -9,8 +9,13 @@ from opaque.types import clipped
 
 from opaque.types import NoisedPytree
 
+<<<<<<< HEAD
 from opaque.types import PerGroup
 from opaque.dpsgd.noise.gaussian import GaussianNoiseState, gaussian_noise
+=======
+from opaque.clipping.per_group import PerGroup
+from opaque.dpsgd.noise import GaussianNoiseState, gaussian_noise
+>>>>>>> 5844de8 (refactor(exports): flatten public import paths)
 from opaque.random import key
 
 

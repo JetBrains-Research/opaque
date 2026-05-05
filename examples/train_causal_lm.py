@@ -70,9 +70,9 @@ from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.distributed import sum_gradients_, sync
-from opaque.dpsgd.noise.gaussian import gaussian_noise
-from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
-from opaque.dpsgd.noise.truncated_gaussian import truncated_gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.dpsgd.noise import per_group_noise_stddev
+from opaque.dpsgd.noise import truncated_gaussian_noise
 from opaque.core.profiling import (
     StepTimer,
     TrainingProfiler,
