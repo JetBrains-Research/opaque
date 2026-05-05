@@ -143,7 +143,6 @@ def schedule_free(
         *,
         params: Any = None,
         inplace: bool = False,
-        **kwargs: Any,
     ) -> tuple[Any, ScheduleFreeState]:
         # ``updates`` is the gradient ∇L(y_t); ``params`` is y_t.
         if params is None:
@@ -160,7 +159,7 @@ def schedule_free(
         # pass.  Mismatching this regularises the wrong tensor and
         # quietly changes the algorithm.
         inner_update, new_inner = base.update(
-            updates, state.inner, params=state.z, inplace=inplace, **kwargs
+            updates, state.inner, params=state.z, inplace=inplace
         )
         # z_{t+1} = z_t + inner_update  (inner_update is the negative
         # step the wrapped optimizer would have applied to params).

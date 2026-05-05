@@ -75,7 +75,7 @@ has a closed-form expression in terms of λ, min_sep, and max_participations.
 
 - Bandwidth is **fixed** (bidiagonal inverse); correlation is controlled by a single \(\lambda\). Does **not** accept `momentum` (use `bisr_strategy` with bandwidth > 2 for momentum-aware coefficients).
 - Uses **Balls-in-Bins** amplification like other epoch-structured MF mechanisms; sampler semantics must match accounting.
-- **JME (DP-Adam)**: auto-deriving the second-moment strategy is **not supported** for λCGD. If using JME, pass `second_moment_strategy` explicitly.
+- **Private second moments (DP-Adam)**: auto-deriving the second-moment strategy is **not supported** for λCGD. Pass `second_moment_strategy` explicitly.
 - Broader MF context: [Correlated noise (DP-FTRL)](../user-guide/dp-ftrl.md).
 
 ## Noise generation
@@ -92,7 +92,7 @@ strategy = lambda_cgd_strategy(
 )
 noise_fn, state = mf_noise(
     grad_template, strategy,
-    stddev=noise_multiplier * clip_state.sensitivity,
+    noise_multiplier=noise_multiplier,
     key=key(seed),
 )
 ```

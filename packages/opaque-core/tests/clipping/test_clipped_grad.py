@@ -7,7 +7,14 @@ For comprehensive validation against JAX-Privacy, see tests/jax_validation/test_
 import pytest
 import torch
 
+from opaque.clipping.types import ClippedPytree
+
 from opaque.clipping import clipped_grad
+
+
+def _unwrap_clipped(value):
+    assert isinstance(value, ClippedPytree)
+    return value.pytree
 
 
 def test_clipped_grad_validate_args_overlap():
@@ -57,6 +64,7 @@ def test_clipped_grad_basic():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     grad, _ = grad_fn(param, data, state=clip_state)
+    grad = _unwrap_clipped(grad)
 
     # Check grad is a tensor
     assert isinstance(grad, torch.Tensor)
@@ -85,6 +93,7 @@ def test_clipped_grad_with_pytree_params():
     data = torch.tensor([0.0, 1.0, 2.0])
 
     grads, _ = grad_fn(params, data, state=clip_state)
+    grads = _unwrap_clipped(grads)
 
     # Check grads has same structure as params
     assert isinstance(grads, dict)
@@ -111,6 +120,7 @@ def test_clipped_grad_return_grad_norms():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
+    grad = _unwrap_clipped(grad)
 
     # Check gradient
     assert isinstance(grad, torch.Tensor)
@@ -140,6 +150,7 @@ def test_clipped_grad_return_values():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
+    grad = _unwrap_clipped(grad)
 
     # Check gradient
     assert isinstance(grad, torch.Tensor)
@@ -171,6 +182,7 @@ def test_clipped_grad_has_aux():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
+    grad = _unwrap_clipped(grad)
 
     # Check gradient
     assert isinstance(grad, torch.Tensor)
@@ -201,6 +213,7 @@ def test_clipped_grad_with_normalize_by():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     grad, _ = grad_fn(param, data, state=clip_state)
+    grad = _unwrap_clipped(grad)
 
     # Check grad is normalized (smaller than without normalization)
     assert isinstance(grad, torch.Tensor)
@@ -262,6 +275,7 @@ def test_clipped_grad_preserves_direction():
 
     # Compute clipped gradient
     (grad, grad_aux), _ = grad_fn(param, data_single, state=clip_state)
+    grad = _unwrap_clipped(grad)
 
     # Check direction is preserved (signs match)
     assert torch.sign(grad) == torch.sign(unclipped_grad), (
@@ -293,6 +307,7 @@ def test_clipped_grad_no_clipping_below_threshold():
     data = torch.tensor([1.1, 0.9, 1.05])  # Small differences -> small gradients
 
     (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
+    grad = _unwrap_clipped(grad)
 
     # All norms should be below threshold
     assert (grad_aux.grad_norms < large_clip_norm).all(), (
@@ -321,6 +336,7 @@ def test_clipped_grad_zero_gradients():
     data = torch.zeros(3)
 
     (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
+    grad = _unwrap_clipped(grad)
 
     # Check all zero
     assert grad.abs() < 1e-7, "Gradient should be zero"
@@ -348,6 +364,7 @@ def test_clipped_grad_with_batch_dim():
         loss_no_batch, argnums=0, batch_argnums=1, clipping_norm=10.0
     )
     grad_no_batch, _ = grad_fn(param, data, state=clip_state)
+    grad_no_batch = _unwrap_clipped(grad_no_batch)
 
     # With with_batch_dim: loss receives (1,) per-example
     grad_fn2, clip_state2 = clipped_grad(
@@ -357,6 +374,7 @@ def test_clipped_grad_with_batch_dim():
         clipping_norm=10.0,
     )
     grad_with_batch, _ = grad_fn2(param, data, state=clip_state2)
+    grad_with_batch = _unwrap_clipped(grad_with_batch)
 
     # Both should produce non-zero gradients
     assert grad_no_batch.abs() > 1e-6, "Should have non-zero gradient"
@@ -389,6 +407,8 @@ def test_clipped_grad_microbatching_identical_results():
         loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0, microbatch_size=8
     )
     grads_mb, _ = grad_fn_mb(params, x, y, state=clip_state_mb)
+    grads_no_mb = _unwrap_clipped(grads_no_mb)
+    grads_mb = _unwrap_clipped(grads_mb)
 
     # Results should be identical
     torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
@@ -422,6 +442,7 @@ def test_clipped_grad_microbatching_with_aux():
     (grads_no_mb, grad_aux_no_mb), _ = grad_fn_no_mb(
         params, x, y, state=clip_state_no_mb
     )
+    grads_no_mb = _unwrap_clipped(grads_no_mb)
 
     # With microbatching
     grad_fn_mb, clip_state_mb = clipped_grad(
@@ -434,6 +455,7 @@ def test_clipped_grad_microbatching_with_aux():
         microbatch_size=8,
     )
     (grads_mb, grad_aux_mb), _ = grad_fn_mb(params, x, y, state=clip_state_mb)
+    grads_mb = _unwrap_clipped(grads_mb)
 
     # Gradients should be identical
     torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
@@ -480,6 +502,7 @@ def test_clipped_grad_microbatching_with_return_values_and_norms():
     (grads_no_mb, grad_aux_no_mb), _ = grad_fn_no_mb(
         params, x, y, state=clip_state_no_mb
     )
+    grads_no_mb = _unwrap_clipped(grads_no_mb)
 
     # With microbatching
     grad_fn_mb, clip_state_mb = clipped_grad(
@@ -491,6 +514,7 @@ def test_clipped_grad_microbatching_with_return_values_and_norms():
         microbatch_size=12,
     )
     (grads_mb, grad_aux_mb), _ = grad_fn_mb(params, x, y, state=clip_state_mb)
+    grads_mb = _unwrap_clipped(grads_mb)
 
     # Gradients should be identical
     torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
@@ -544,6 +568,8 @@ def test_clipped_grad_microbatching_with_pytree_params():
         loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0, microbatch_size=10
     )
     grads_mb, _ = grad_fn_mb(params, x, y, state=clip_state_mb)
+    grads_no_mb = _unwrap_clipped(grads_no_mb)
+    grads_mb = _unwrap_clipped(grads_mb)
 
     # Both gradients should be PyTrees with same structure
     assert isinstance(grads_mb, dict)
@@ -553,3 +579,188 @@ def test_clipped_grad_microbatching_with_pytree_params():
     # Gradient values should be identical
     torch.testing.assert_close(grads_mb["w"], grads_no_mb["w"], rtol=1e-5, atol=1e-6)
     torch.testing.assert_close(grads_mb["b"], grads_no_mb["b"], rtol=1e-5, atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Second-moment paired-stream clipping
+# ---------------------------------------------------------------------------
+
+
+class TestSecondMoment:
+    """clipped_grad(..., second_moment=True) returns
+    ``SecondMomentClippingOutput`` with streams ``Σᵢ gᵢ`` and
+    ``Σᵢ gᵢ²`` and bounds ``(C/n, C²/n)``."""
+
+    @pytest.fixture
+    def setup(self):
+        torch.manual_seed(0)
+        params = {"w": torch.randn(4)}
+        true_w = torch.randn(4)
+        batch_size = 8
+        x = torch.randn(batch_size, 4)
+        y = x @ true_w + 0.01 * torch.randn(batch_size)
+
+        def loss_fn(p, x, y):
+            return ((x @ p["w"] - y) ** 2).mean()
+
+        return params, x, y, loss_fn, batch_size
+
+    def test_output_is_paired_with_correct_bounds(self, setup):
+        from opaque.core.noise import SecondMomentClippingOutput
+
+        params, x, y, loss_fn, batch_size = setup
+        C = 5.0
+        gf, _ = clipped_grad(
+            loss_fn,
+            argnums=0,
+            batch_argnums=(1, 2),
+            clipping_norm=C,
+            normalize_by=batch_size,
+            second_moment=True,
+        )
+        out, _ = gf(params, x, y, state=_)
+        assert isinstance(out, SecondMomentClippingOutput)
+        assert isinstance(out.grads, ClippedPytree)
+        assert isinstance(out.squared_grads, ClippedPytree)
+        # First stream bound: C/n.
+        assert out.grads.max_norm == C / batch_size
+        # Second stream bound: C²/n.
+        assert out.squared_grads.max_norm == C * C / batch_size
+        # Sanity: shape matches params.
+        assert out.grads.pytree["w"].shape == params["w"].shape
+        assert out.squared_grads.pytree["w"].shape == params["w"].shape
+
+    def test_squared_stream_is_per_example(self, setup):
+        """Squared stream is the element-wise mean of per-example
+        gradient squares: ``(1/n) Σᵢ gᵢ²``.  Reconstructs per-example
+        gradients independently and compares."""
+        import torch.func as tf
+
+        params, x, y, loss_fn, batch_size = setup
+        C = 100.0  # Large enough that nothing actually clips.
+        gf, _ = clipped_grad(
+            loss_fn,
+            argnums=0,
+            batch_argnums=(1, 2),
+            clipping_norm=C,
+            normalize_by=batch_size,
+            second_moment=True,
+        )
+        out, _ = gf(params, x, y, state=_)
+
+        # Reconstruct per-example grads via grad on a single-example loss.
+        def per_loss(p, xi, yi):
+            return (xi @ p["w"] - yi) ** 2
+
+        clean_grad = tf.grad(per_loss)
+        per_example_grads = torch.stack(
+            [clean_grad(params, x[i], y[i])["w"] for i in range(batch_size)]
+        )
+        expected_first = per_example_grads.sum(dim=0) / batch_size
+        expected_squared = (per_example_grads**2).sum(dim=0) / batch_size
+        torch.testing.assert_close(
+            out.grads.pytree["w"], expected_first, rtol=1e-5, atol=1e-5
+        )
+        torch.testing.assert_close(
+            out.squared_grads.pytree["w"], expected_squared, rtol=1e-5, atol=1e-5
+        )
+        # Sanity: ``(1/n) Σᵢ gᵢ²`` differs from ``((1/n) Σᵢ gᵢ)²`` for
+        # non-colinear per-example grads, so they're distinct quantities.
+        squared_of_mean = expected_first.pow(2)
+        assert not torch.allclose(expected_squared, squared_of_mean, atol=1e-3)
+
+    def test_per_group_rejected(self, setup):
+        from opaque.clipping.per_group import PerGroup
+
+        params, x, y, loss_fn, _ = setup
+        pg = PerGroup(groups={"w": "g1"}, values={"g1": 1.0})
+        with pytest.raises(TypeError, match="PerGroup"):
+            clipped_grad(
+                loss_fn,
+                argnums=0,
+                batch_argnums=(1, 2),
+                clipping_norm=pg,
+                second_moment=True,
+            )
+
+    def test_microbatch_matches_full_batch(self, setup):
+        params, x, y, loss_fn, batch_size = setup
+        gf_full, _ = clipped_grad(
+            loss_fn,
+            argnums=0,
+            batch_argnums=(1, 2),
+            clipping_norm=1.0,
+            normalize_by=batch_size,
+            second_moment=True,
+        )
+        gf_mb, _ = clipped_grad(
+            loss_fn,
+            argnums=0,
+            batch_argnums=(1, 2),
+            clipping_norm=1.0,
+            normalize_by=batch_size,
+            second_moment=True,
+            microbatch_size=2,
+        )
+        out_full, _ = gf_full(params, x, y, state=_)
+        out_mb, _ = gf_mb(params, x, y, state=_)
+        torch.testing.assert_close(
+            out_full.grads.pytree["w"],
+            out_mb.grads.pytree["w"],
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        torch.testing.assert_close(
+            out_full.squared_grads.pytree["w"],
+            out_mb.squared_grads.pytree["w"],
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        # Bounds identical too.
+        assert out_full.grads.max_norm == out_mb.grads.max_norm
+        assert out_full.squared_grads.max_norm == out_mb.squared_grads.max_norm
+
+    def test_empty_batch(self, setup):
+        from opaque.core.noise import SecondMomentClippingOutput
+
+        params, x, y, loss_fn, batch_size = setup
+        # Empty batch: shape (0, 4) for x, (0,) for y.
+        empty_x = x[:0]
+        empty_y = y[:0]
+        C = 2.0
+        gf, _ = clipped_grad(
+            loss_fn,
+            argnums=0,
+            batch_argnums=(1, 2),
+            clipping_norm=C,
+            normalize_by=batch_size,
+            second_moment=True,
+        )
+        out, _ = gf(params, empty_x, empty_y, state=_)
+        assert isinstance(out, SecondMomentClippingOutput)
+        # Both streams zero-grads with the appropriate bounds.
+        assert out.grads.max_norm == C / batch_size
+        assert out.squared_grads.max_norm == C * C / batch_size
+        assert torch.all(out.grads.pytree["w"] == 0.0)
+        assert torch.all(out.squared_grads.pytree["w"] == 0.0)
+
+    def test_with_return_aux(self, setup):
+        from opaque.clipping.clipped_grad import ClippedGradAux
+        from opaque.core.noise import SecondMomentClippingOutput
+
+        params, x, y, loss_fn, batch_size = setup
+        gf, _ = clipped_grad(
+            loss_fn,
+            argnums=0,
+            batch_argnums=(1, 2),
+            clipping_norm=1.0,
+            normalize_by=batch_size,
+            second_moment=True,
+            return_aux=True,
+        )
+        (out, aux), _ = gf(params, x, y, state=_)
+        assert isinstance(out, SecondMomentClippingOutput)
+        assert isinstance(aux, ClippedGradAux)
+        assert aux.batch_size == batch_size
+        assert aux.grad_norms is not None
+        assert aux.grad_norms.shape == (batch_size,)

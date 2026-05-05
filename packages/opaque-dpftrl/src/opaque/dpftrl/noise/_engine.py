@@ -48,11 +48,18 @@ class MFNoiseState(NoiseState):
         _inner_state: Internal state (streaming matrix state or step counter).
         _step_counter: Number of noise_fn calls made.
         _rng_key: Immutable RNG key for deterministic per-step derivation.
+        _first_max_norm: ``ClippedPytree.max_norm`` from the first call, latched by
+            the dispatcher to enforce constant per-step sensitivity.  ``None``
+            until the first call.  MF privacy analyses assume the per-step
+            sensitivity is constant across the sequence; varying it (e.g.
+            via adaptive clipping) breaks the standard proof, so the
+            dispatcher rejects subsequent calls whose ``max_norm`` differs.
     """
 
     _inner_state: Any
     _step_counter: int
     _rng_key: RngKey
+    _first_max_norm: float | None = None
 
 
 def _internal_compute_dtype(dtype: torch.dtype) -> torch.dtype:
@@ -141,11 +148,10 @@ def _matrix_factorization_noise(
     grad_template: Any,
     noising: torch.Tensor | streaming_matrix.StreamingMatrix,
     *,
-    stddev: float,
     key: RngKey,
     dtype: torch.dtype | None = None,
 ) -> tuple[
-    Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
+    Callable[..., tuple[Any, MFNoiseState]],
     MFNoiseState,
 ]:
     """Internal: create ``(noise_fn, state)`` from a noising matrix.
@@ -156,21 +162,19 @@ def _matrix_factorization_noise(
     Args:
         grad_template: Pytree with the same structure/shapes as gradients.
         noising: Dense 2D tensor or ``StreamingMatrix`` representing C^{-1}.
-        stddev: Standard deviation for the base noise.
         key: Pre-resolved base ``RngKey``.
         dtype: Optional dtype for intermediate noise computation.
 
     Returns:
-        ``(noise_fn, state)`` where ``noise_fn(grads, state) -> (noisy, state)``.
+        ``(noise_fn, state)`` where
+        ``noise_fn(grads, state, *, stddev) -> (noised, state)``.  ``stddev``
+        is the per-step standard deviation for the base IID noise; the
+        dispatcher derives it from ``noise_multiplier * ClippedPytree.max_norm``.
     """
     if isinstance(noising, torch.Tensor):
-        return _tensor_mf_noise(
-            grad_template, noising, stddev=stddev, key=key, dtype=dtype
-        )
+        return _tensor_mf_noise(grad_template, noising, key=key, dtype=dtype)
     elif isinstance(noising, streaming_matrix.StreamingMatrix):
-        return _streaming_mf_noise(
-            grad_template, noising, stddev=stddev, key=key, dtype=dtype
-        )
+        return _streaming_mf_noise(grad_template, noising, key=key, dtype=dtype)
     else:
         raise TypeError(f"Unsupported noising type: {type(noising)}")
 
@@ -179,7 +183,6 @@ def _tensor_mf_noise(
     grad_template: Any,
     noising: torch.Tensor,
     *,
-    stddev: float,
     key: RngKey,
     dtype: torch.dtype | None = None,
 ) -> tuple[Callable, MFNoiseState]:
@@ -193,7 +196,8 @@ def _tensor_mf_noise(
         _rng_key=key,
     )
 
-    def noise_fn(clipped_grads, st):
+    def noise_fn(clipped_grads, st, *, stddev: float):
+        effective_stddev = float(stddev)
         index = st._inner_state
         step_key = rng_fold_in(st._rng_key, st._step_counter)
         g = generator_from_key(step_key)
@@ -203,7 +207,7 @@ def _tensor_mf_noise(
                 f"Step {index} exceeds noising matrix size {max_steps}. "
                 f"The noising matrix must have at least as many rows as steps."
             )
-        matrix_row = noising[index] * stddev
+        matrix_row = noising[index] * effective_stddev
 
         def add_noise(grad_tensor):
             compute_dtype = _internal_compute_dtype(dtype or grad_tensor.dtype)
@@ -231,7 +235,6 @@ def _streaming_mf_noise(
     grad_template: Any,
     noising: streaming_matrix.StreamingMatrix,
     *,
-    stddev: float,
     key: RngKey,
     dtype: torch.dtype | None = None,
 ) -> tuple[Callable, MFNoiseState]:
@@ -243,12 +246,18 @@ def _streaming_mf_noise(
         _rng_key=key,
     )
 
-    def noise_fn(clipped_grads, st):
+    def noise_fn(clipped_grads, st, *, stddev: float):
+        effective_stddev = float(stddev)
         step_key = rng_fold_in(st._rng_key, st._step_counter)
         g = generator_from_key(step_key)
         s_state = st._inner_state
 
-        iid_noise = _iid_normal_noise(clipped_grads, stddev, generator=g, dtype=dtype)
+        iid_noise = _iid_normal_noise(
+            clipped_grads,
+            effective_stddev,
+            generator=g,
+            dtype=dtype,
+        )
         corr_noise, new_streaming_state = noising.multiply_next(iid_noise, s_state)
         noisy_grads = tree_map(
             lambda grad, n: (grad + n).to(grad.dtype),
@@ -268,17 +277,24 @@ def _streaming_mf_noise(
 # ---- Distributed state validation ----
 
 
+_MF_NOISE_STATE_FIELD_OPS: dict[str, str] = {
+    **NOISE_STATE_FIELD_OPS,
+    "_first_max_norm": "assert_equal",
+}
+
+
 def sync_mf_noise_state(state: MFNoiseState) -> MFNoiseState:
     """Validate MF noise state consistency across ranks.
 
-    Asserts that all ranks share the same seed and step counter.  No-op
-    outside ``torch.distributed``.  Registered automatically with
+    Asserts that all ranks share the same seed, step counter, and (once
+    latched) first-call sensitivity bound.  No-op outside
+    ``torch.distributed``.  Registered automatically with
     :func:`opaque.distributed.sync`.
     """
     if not is_distributed():
         return state
     assert_rng_key_equal(state, "MFNoiseState")
-    return sync_object(state, field_ops=NOISE_STATE_FIELD_OPS)
+    return sync_object(state, field_ops=_MF_NOISE_STATE_FIELD_OPS)
 
 
 register_sync_type(MFNoiseState, sync_mf_noise_state)

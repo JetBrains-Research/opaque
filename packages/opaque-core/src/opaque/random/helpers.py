@@ -29,7 +29,7 @@ def random_key() -> RngKey:
         >>> from opaque.random import random_key
         >>> from opaque.dpsgd.noise import gaussian_noise
         >>> k = random_key()
-        >>> noise_fn, state = gaussian_noise(stddev=1.1, key=k)
+        >>> noise_fn, state = gaussian_noise(noise_multiplier=1.1, key=k)
     """
     random_seed = secrets.randbits(64)
     return key(random_seed)
@@ -66,7 +66,7 @@ def set_reproducible_pytorch_seed(key_val: RngKey) -> None:
         >>> base = key(42)
         >>> for step in range(num_steps):
         ...     step_key = fold_in(base, step)
-        ...     noise_fn, state = gaussian_noise(stddev=1.1, key=step_key)
+        ...     noise_fn, state = gaussian_noise(noise_multiplier=1.1, key=step_key)
         ...     # ... training step ...
 
     Note:

@@ -32,12 +32,17 @@ Strategy factories (passed to `mf_noise()`):
 - **`identity_strategy()`** — Identity (DP-SGD via MF API, easy to swap)
 
 All noise functions return `(noise_fn, state)` where `noise_fn(grads, state) -> (noisy_grads, new_state)`.
+When private second moments are enabled, the noisy value is a
+`SecondMomentNoiseOutput` carrying both `noisy_grads` and
+`noisy_squared_grads`.
 
 ### State Classes
 
 - **`NoiseState`** — Abstract base class for all noise state types. Defines `_step_counter` and `_rng_key`.
+- **`SecondMomentNoiseOutput`** — Paired first/squared-gradient output for private second moments.
 - **`GaussianNoiseState`** — State for `gaussian_noise()`. Holds step counter and RNG key.
 - **`MFNoiseState`** — State for `mf_noise()`. Holds internal correlation state, step counter, and RNG key.
+- **`SecondMomentMFNoiseState`** — Paired-stream MF state used by `mf_noise(..., second_moment_strategy=...)`.
 
 ### Distributed Sync Helpers
 
@@ -94,12 +99,22 @@ across ranks. It auto-dispatches based on type:
       show_source: true
       heading_level: 3
 
+::: opaque.core.noise.SecondMomentNoiseOutput
+    options:
+      show_source: true
+      heading_level: 3
+
 ::: opaque.dpsgd.noise.gaussian.GaussianNoiseState
     options:
       show_source: true
       heading_level: 3
 
 ::: opaque.dpftrl.noise.MFNoiseState
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.dpftrl.noise.SecondMomentMFNoiseState
     options:
       show_source: true
       heading_level: 3

@@ -8,24 +8,22 @@ Hinton's RMSprop: pure second-moment EMA, no first moment::
 DP behaviour.  Under noised gradients ``g̃ = g + ξ`` with
 ``ξ ~ N(0, σ²)``, ``E[g̃²] = g² + σ²``, so ``nu`` is biased upward by
 ``σ²`` in steady state.  The vanilla optimizer survives this (the
-denominator is bounded, unlike Adagrad's runaway), but the inflated
+denominator is clipped, unlike Adagrad's runaway), but the inflated
 denominator shrinks the effective LR.
 
-The ``noise_stddev`` kwarg activates a φ-EMA correction.  Unlike Adam,
-RMSprop does *not* divide ``nu`` by ``1 − α^t`` for bias correction,
-so ``φ`` and ``nu`` accumulate the noise contribution at exactly the
-same rate.  Subtracting one from the other directly yields the
-unbiased estimate::
+``NoisedPytree`` updates activate a φ-EMA correction using the realized σ
+carried by the wrapper.  Unlike Adam, RMSprop does *not* divide ``nu``
+by ``1 − α^t`` for bias correction, so ``φ`` and ``nu`` accumulate the
+noise contribution at exactly the same rate.  Subtracting one from the
+other directly yields the unbiased estimate::
 
     φ_t = α φ_{t-1} + (1 − α) σ_t²
     nu_corrected = max(nu_t − φ_t, floor)
     update = g_t / (√nu_corrected + eps)
 
-The ``noisy_squared_grads`` kwarg substitutes a JME paired-stream
-``g²`` directly into the ``nu`` update (post-processing); no φ-EMA
-correction is applied in that branch.
-
-Both DP kwargs are mutually exclusive at any single ``update()`` call.
+``SecondMomentNoiseOutput`` substitutes a private squared-gradient ``g²``
+directly into the ``nu`` update (post-processing); no φ-EMA correction is
+applied in that branch.
 """
 
 from __future__ import annotations
@@ -47,7 +45,6 @@ except ImportError as exc:
 from opaque.clipping.per_group import PerGroup
 from opaque.core.pytree import tree_map
 from opaque.optimizers._bias_correction import (
-    init_per_group_phi,
     is_per_group,
     resolve_noise_variance,
     update_phi_ema,
@@ -65,10 +62,10 @@ class RMSpropState:
     Attributes:
         nu: Second-moment EMA (pytree matching params).
         phi: Noise-variance EMA (scalar or ``dict[group, float]``).
-            Stays at zero unless ``noise_stddev`` is passed at update
-            time.  Same accumulation rate as ``nu`` (no bias-correction
-            division), so subtracting directly yields the unbiased
-            estimate.
+            Stays at zero unless a ``NoisedPytree`` update supplies
+            realized σ metadata.  Same accumulation rate as ``nu`` (no
+            bias-correction division), so subtracting directly yields the
+            unbiased estimate.
         step: Number of completed updates.
     """
 
@@ -80,15 +77,12 @@ class RMSpropState:
 def _scale_by_rmsprop(
     alpha: float,
     eps: float,
-    default_noise_stddev: float | PerGroup,
+    noise_bias_correction: bool,
     bc_floor: float,
 ) -> GradientTransformation:
-    _default_per_group = is_per_group(default_noise_stddev)
-
     def init_fn(params: Any) -> RMSpropState:
         nu = tree_map(torch.zeros_like, params)
-        phi: Any = init_per_group_phi(params) if _default_per_group else 0.0
-        return RMSpropState(nu=nu, phi=phi, step=0)
+        return RMSpropState(nu=nu, phi=0.0, step=0)
 
     def update_fn(
         updates: Any,
@@ -101,14 +95,14 @@ def _scale_by_rmsprop(
     ) -> tuple[Any, RMSpropState]:
         if noisy_squared_grads is not None and noise_stddev is not None:
             raise ValueError(
-                "rmsprop.update() received both noisy_squared_grads (JME) and "
+                "rmsprop.update() received both noisy_squared_grads and "
                 "noise_stddev (DP-BC); pass exactly one (or neither)."
             )
 
         t = state.step + 1
 
         if noisy_squared_grads is not None:
-            # JME branch: external g² stream replaces (g·g).
+            # External second-moment branch: g² stream replaces (g·g).
             new_nu = tree_map(
                 lambda v, g2: alpha * v + (1 - alpha) * g2,
                 state.nu,
@@ -128,7 +122,15 @@ def _scale_by_rmsprop(
             updates,
         )
 
-        effective = noise_stddev if noise_stddev is not None else default_noise_stddev
+        effective = noise_stddev if noise_stddev is not None else 0.0
+        if not noise_bias_correction:
+            result = tree_map(
+                lambda g, v: g / (v.sqrt() + eps),
+                updates,
+                new_nu,
+            )
+            return result, RMSpropState(nu=new_nu, phi=state.phi, step=t)
+
         per_group = is_per_group(effective) or isinstance(state.phi, dict)
 
         if per_group:
@@ -192,7 +194,7 @@ def rmsprop(
     *,
     decoupled_weight_decay: bool = True,
     update_rms_clip: float | None = None,
-    noise_stddev: float | PerGroup = 0.0,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
     """Create an RMSprop optimizer with optional DP-aware bias correction.
 
@@ -206,9 +208,10 @@ def rmsprop(
             the gradient before moment scaling (L2 regularisation).
         update_rms_clip: Optional StableAdamW-style RMS clip on the
             moment-scaled update.
-        noise_stddev: Default per-step noise σ for the φ-EMA bias
-            correction; ``0.0`` disables it.  Per-step override at
-            ``update()`` time.
+        noise_bias_correction: If ``True``, subtract an ``alpha``-EMA of
+            the realized noise variance from the second moment when
+            ``NoisedPytree`` updates are passed.  Defaults to ``False``;
+            flip on to ablate.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.
@@ -223,21 +226,11 @@ def rmsprop(
         raise ValueError(
             f"update_rms_clip must be positive when set, got {update_rms_clip}"
         )
-    if isinstance(noise_stddev, PerGroup):
-        for gname, val in noise_stddev.values.items():
-            if val < 0:
-                raise ValueError(
-                    f"noise_stddev must be non-negative for all groups, "
-                    f"got {val} for group '{gname}'"
-                )
-    elif noise_stddev < 0:
-        raise ValueError(f"noise_stddev must be non-negative, got {noise_stddev}")
-
     bc_floor = eps * eps
     moment = _scale_by_rmsprop(
         alpha=alpha,
         eps=eps,
-        default_noise_stddev=noise_stddev,
+        noise_bias_correction=noise_bias_correction,
         bc_floor=bc_floor,
     )
     return make_optimizer_chain(

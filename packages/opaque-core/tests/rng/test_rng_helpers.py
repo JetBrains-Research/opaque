@@ -44,7 +44,7 @@ class TestHelperIntegration:
 
         k = random_key()
         noise_fn, state = gaussian_noise(
-            stddev=1.0,
+            noise_multiplier=1.0,
             key=k,
         )
         assert callable(noise_fn)
@@ -56,7 +56,7 @@ class TestHelperIntegration:
 
         k = fold_in(key(42), 10)
         noise_fn, state = gaussian_noise(
-            stddev=1.0,
+            noise_multiplier=1.0,
             key=k,
         )
         assert callable(noise_fn)
@@ -71,7 +71,7 @@ class TestHelperIntegration:
         for step in range(3):
             k = fold_in(base, step)
             noise_fn, state = gaussian_noise(
-                stddev=1.0,
+                noise_multiplier=1.0,
                 key=k,
             )
             # Simulate loss

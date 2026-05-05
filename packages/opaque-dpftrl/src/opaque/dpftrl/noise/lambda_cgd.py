@@ -168,11 +168,10 @@ def _make_lambda_cgd_noise(
     grad_template: Any,
     strategy: LambdaCgdStrategy,
     *,
-    stddev: float,
     key: RngKey,
     dtype: torch.dtype | None = None,
 ) -> tuple[
-    Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
+    Callable[..., tuple[Any, MFNoiseState]],
     MFNoiseState,
 ]:
     """DP-lambda-CGD noise via PRNG replay (zero extra memory)."""
@@ -189,12 +188,20 @@ def _make_lambda_cgd_noise(
     def noise_fn(
         clipped_grads: Any,
         st: MFNoiseState,
+        *,
+        stddev: float,
     ) -> tuple[Any, MFNoiseState]:
+        effective_stddev = float(stddev)
         step = st._step_counter
 
         current_key = rng_fold_in(st._rng_key, step)
         g_current = generator_from_key(current_key)
-        z_t = _iid_normal_noise(clipped_grads, stddev, generator=g_current, dtype=dtype)
+        z_t = _iid_normal_noise(
+            clipped_grads,
+            effective_stddev,
+            generator=g_current,
+            dtype=dtype,
+        )
 
         if step == 0 or lambda_ == 0.0:
             corr_noise = z_t
@@ -203,7 +210,7 @@ def _make_lambda_cgd_noise(
             g_prev = generator_from_key(prev_key)
             z_prev = _iid_normal_noise(
                 clipped_grads,
-                stddev,
+                effective_stddev,
                 generator=g_prev,
                 dtype=dtype,
             )

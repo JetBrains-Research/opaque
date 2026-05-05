@@ -1,50 +1,52 @@
 """Functional optimizers for Opaque.
 
 Single import path for every functional optimizer used in the Opaque
-DP training pipeline — Opaque-built factories with DP-aware paths,
-plus the stateless ``torchopt`` primitives we don't need to extend.
+DP training pipeline — Opaque-built factories with a common wrapper-aware
+update surface, plus a few stateless ``torchopt`` primitives we don't need to
+extend.
 
-Opaque-built (DP-aware modes selectable at ``update()`` time):
+Opaque-built (DP-aware modes selected by update value type):
 
-- :func:`adamw` — universal Adam / AdamW; accepts both DP kwargs.
+- :func:`adamw` — universal Adam / AdamW; consumes ``NoisedPytree``
+  and ``SecondMomentNoiseOutput`` metadata.
   Knobs: ``decoupled_weight_decay``, ``update_rms_clip`` (StableAdamW),
-  ``noise_stddev`` (DP-AdamW-BC default).
+  ``noise_bias_correction``.
+- :func:`adam` — original Adam/L2 variant of ``adamw`` with the same
+  wrapper-aware update surface.
+- :func:`sgd` — SGD wrapper that accepts ``NoisedPytree`` updates and ignores
+  noise metadata because the update is unbiased under additive DP noise.
 - :func:`lion` — Lion (sign-of-momentum); no DP-aware mode (no v).
-- :func:`ademamix` — AdEMAMix (two first moments, single v); accepts
-  both DP kwargs.
-- :func:`adafactor` — Adafactor with factored second moment.  Phase A
-  ships vanilla + WD only; DP-aware modes deferred (see module
-  docstring for the per-axis bias derivation that's pending).
+- :func:`ademamix` — AdEMAMix (two first moments, single v); consumes
+  the same DP metadata wrappers as AdamW.
+- :func:`adafactor` — Adafactor with factored second moment.  Optional
+  DP noise-variance bias correction subtracts a φ-EMA from each factor
+  (``noise_bias_correction``).  No private second-moment substitution
+  path — the privatised ``g²`` stream doesn't preserve the factorisation
+  cleanly (see module docstring).
 - :func:`rmsprop` — RMSprop with optional DP-aware φ-EMA correction
   on the second moment.
 - :func:`adagrad` — Adagrad with optional DP-aware cumulative noise
-  variance subtraction.  Vanilla Adagrad's denominator runs away
-  under DP noise; the ``noise_stddev`` kwarg activates the
-  ``v_acc - Φ_acc`` correction so the optimizer stays usable.
+  variance subtraction.  ``NoisedPytree`` updates with
+  ``noise_bias_correction=True`` activate the ``v_acc - Φ_acc``
+  correction; whether that helps in practice depends on the workload.
 - :func:`schedule_free` — wrapper around any base
   ``GradientTransformation`` (Opaque-built or torchopt-imported)
   implementing Defazio's schedule-free averaging.
 
-DP-aware behavior is selected at ``update()`` time via two optional
-kwargs:
+DP-aware behavior is selected at ``update()`` time by passing metadata
+wrappers:
 
-- ``noise_stddev`` — tells the optimizer the per-step noise σ;
-  activates whatever noise-aware path it has (φ-EMA on ``v̂`` for
-  Adam-family / RMSprop, cumulative Φ subtraction for Adagrad,
-  planned sign gating for Lion, …).  Per-step override of the
-  constructor default.
-- ``noisy_squared_grads`` — substitutes a JME paired-stream second
-  moment in place of ``g²`` (post-processing argument; no extra
-  privacy work needed in the optimizer itself).
+- ``NoisedPytree`` — carries the realized per-step noise σ with the
+  privatized update; this activates whatever noise-aware path the
+  optimizer has (φ-EMA on ``v̂`` for Adam-family / RMSprop, cumulative
+  Φ subtraction for Adagrad, planned sign gating for Lion, …).
+- ``SecondMomentNoiseOutput`` — carries private first- and second-moment
+  streams together and substitutes the private squared-gradient stream
+  in place of ``g²`` (post-processing inside the optimizer).
 
 Re-exported from ``torchopt`` (no DP-aware modes; vanilla but safe
 under DP noise — slow without bias correction but converges):
 
-- :func:`sgd` — vanilla / Polyak-momentum SGD.  Update is unbiased
-  under noise; canonical DP baseline.
-- :func:`adam` — for users who specifically want torchopt's Adam
-  without DP modes.  For DP, prefer :func:`adamw` with
-  ``decoupled_weight_decay=False`` and ``noise_stddev``.
 - :func:`adadelta` — has two EMAs; the ratio partially self-corrects
   under noise so it's not broken, just non-optimal.  Re-exported
   for users who specifically want it.
@@ -70,26 +72,23 @@ surface is functional):
   state for ``torch.save`` / ``torch.load``.
 """
 
-# Re-exports from torchopt: stateless primitives we don't extend
-# because their vanilla behaviour is acceptable (if non-optimal) under
-# DP noise.  ``adagrad``, ``rmsprop`` are *not* re-exported — Opaque
-# ships its own factories with DP-aware corrections at the same names
-# below.  ``adamax`` is omitted because the max-norm structurally
-# misbehaves under DP (half-normal noise mean is permanently absorbed);
-# users who want it can ``from torchopt import adamax`` directly.
+# Re-exports from torchopt: stateless primitives we don't extend because their
+# vanilla behaviour is acceptable (if non-optimal) under DP noise. ``adamax`` is
+# omitted because the max-norm structurally misbehaves under DP (half-normal
+# noise mean is permanently absorbed); users who want it can import it from
+# torchopt directly.
 from torchopt import adadelta as adadelta
-from torchopt import adam as adam
 from torchopt import radam as radam
-from torchopt import sgd as sgd
 
 # Functional surface — listed in ``__all__``.
 from opaque.optimizers.adafactor import adafactor
 from opaque.optimizers.adagrad import adagrad
-from opaque.optimizers.adam import adamw
+from opaque.optimizers.adam import adam, adamw
 from opaque.optimizers.ademamix import ademamix
 from opaque.optimizers.lion import lion
 from opaque.optimizers.rmsprop import rmsprop
 from opaque.optimizers.schedule_free import schedule_free
+from opaque.optimizers.sgd import sgd
 
 # State dataclasses — re-exported with ``as X`` for type annotation
 # discoverability, intentionally not part of ``__all__``.  Same
@@ -105,7 +104,9 @@ from opaque.optimizers.schedule_free import ScheduleFreeState as ScheduleFreeSta
 
 __all__ = [
     # Opaque-built factories.
+    "adam",
     "adamw",
+    "sgd",
     "lion",
     "ademamix",
     "adafactor",
@@ -113,8 +114,6 @@ __all__ = [
     "adagrad",
     "schedule_free",
     # Re-exported torchopt primitives.
-    "sgd",
-    "adam",
     "adadelta",
     "radam",
 ]

@@ -5,6 +5,8 @@ import math
 import pytest
 import torch
 
+from opaque.clipping.types import ClippedPytree
+
 from opaque.clipping import clipped_grad
 from opaque.clipping.pytree import auto_scale_pytree
 from opaque.dpsgd.clipping import (
@@ -14,6 +16,11 @@ from opaque.dpsgd.clipping import (
     auto_clipped_grad,
 )
 from opaque.clipping.per_group import PerGroup
+
+
+def _unwrap_clipped(value):
+    assert isinstance(value, ClippedPytree)
+    return value.pytree
 
 
 class TestAutoScalePytree:
@@ -29,7 +36,7 @@ class TestAutoScalePytree:
         assert aux.norm.item() == pytest.approx(5.0)
         assert aux.group_norms is None
 
-    def test_output_norm_bounded_by_R(self):
+    def test_output_norm_clipped_by_R(self):
         """For any input, ||output|| must be <= R."""
         generator = torch.Generator().manual_seed(42)
         R = 0.7
@@ -97,7 +104,7 @@ class TestAutoScalePytree:
         assert aux.group_norms["mlp"].item() == pytest.approx(6.0)
 
     def test_per_group_sensitivity_bound(self):
-        """Per-group output norm is bounded by sqrt(sum R_k^2)."""
+        """Per-group output norm is clipped by sqrt(sum R_k^2)."""
         pytree = {
             "a": torch.randn(5) * 1000,
             "b": torch.randn(5) * 1000,
@@ -110,30 +117,23 @@ class TestAutoScalePytree:
         total_norm = float(
             torch.linalg.vector_norm(torch.cat([scaled["a"], scaled["b"]]))
         )
-        bound = math.sqrt(0.5**2 + 1.5**2)
-        assert total_norm <= bound + 1e-4
+        max_norm = math.sqrt(0.5**2 + 1.5**2)
+        assert total_norm <= max_norm + 1e-4
 
 
 class TestAutoClipState:
-    """Tests for AutoClipState validation and sensitivity."""
+    """Tests for AutoClipState marker behavior and factory validation."""
 
-    def test_scalar_sensitivity(self):
-        state = AutoClipState(clipping_norm=2.0, normalize_by=4.0, gamma=0.01)
-        assert state.sensitivity == pytest.approx(0.5)
-
-    def test_per_group_sensitivity(self):
-        pg = PerGroup(groups={"a": "g1"}, values={"g1": 3.0, "g2": 4.0})
-        state = AutoClipState(clipping_norm=pg, normalize_by=1.0)
-        # sqrt(9 + 16) / 1 = 5
-        assert state.sensitivity == pytest.approx(5.0)
+    def test_state_is_marker(self):
+        assert AutoClipState() == AutoClipState()
 
     def test_rejects_non_positive_R(self):
         with pytest.raises(ValueError, match="positive"):
-            AutoClipState(clipping_norm=0.0, normalize_by=1.0)
+            auto_clipped_grad(lambda params, x: (params * x).sum(), R=0.0)
 
     def test_rejects_non_positive_gamma(self):
         with pytest.raises(ValueError, match="gamma"):
-            AutoClipState(clipping_norm=1.0, normalize_by=1.0, gamma=0.0)
+            auto_clipped_grad(lambda params, x: (params * x).sum(), R=1.0, gamma=0.0)
 
 
 class TestAutoClippedGrad:
@@ -151,9 +151,9 @@ class TestAutoClippedGrad:
         batch_y = torch.randn(8)
 
         grads, new_state = grad_fn(params, batch_x, batch_y, state=state)
+        grads = _unwrap_clipped(grads)
         assert grads.shape == params.shape
         assert isinstance(new_state, AutoClipState)
-        assert new_state.clipping_norm == 1.0
 
     def test_state_is_fixed(self):
         """State does not change across steps (no adaptation)."""
@@ -168,22 +168,26 @@ class TestAutoClippedGrad:
         _, s2 = grad_fn(params, batch_x, batch_y, state=s1)
         assert s1 == s2  # dataclasses with same values
 
-    def test_sensitivity_via_state(self):
-        """sensitivity = R / normalize_by."""
-        _, state = auto_clipped_grad(
+    def test_bound_via_output_metadata(self):
+        """Output max_norm equals R / normalize_by."""
+        grad_fn, state = auto_clipped_grad(
             self._loss,
             argnums=0,
             batch_argnums=(1, 2),
             R=2.5,
             normalize_by=10.0,
         )
-        assert state.sensitivity == pytest.approx(0.25)
+        params = torch.randn(10)
+        batch_x = torch.randn(8, 10)
+        batch_y = torch.randn(8)
+        grads, _ = grad_fn(params, batch_x, batch_y, state=state)
+        assert grads.max_norm == pytest.approx(0.25)
 
-    def test_grad_norm_bounded(self):
-        """Sum of per-example scaled gradients has bounded norm.
+    def test_grad_norm_clipped(self):
+        """Sum of per-example scaled gradients has clipped norm.
 
         With B examples, each scaled to norm <= R, the triangle-inequality
-        bound is B * R.  We check this holds.
+        max_norm is B * R.  We check this holds.
         """
         R = 0.3
         grad_fn, state = auto_clipped_grad(
@@ -195,6 +199,7 @@ class TestAutoClippedGrad:
         batch_y = torch.randn(batch_size) * 100
 
         grads, _ = grad_fn(params, batch_x, batch_y, state=state)
+        grads = _unwrap_clipped(grads)
         norm = float(torch.linalg.vector_norm(grads))
         assert norm <= batch_size * R + 1e-5
 
@@ -212,6 +217,8 @@ class TestAutoClippedGrad:
         )
         g1, _ = fn1(params, batch_x, batch_y, state=s1)
         g2, _ = fn2(params, batch_x, batch_y, state=s2)
+        g1 = _unwrap_clipped(g1)
+        g2 = _unwrap_clipped(g2)
         torch.testing.assert_close(g1 / 4.0, g2)
 
     def test_return_aux(self):
@@ -255,6 +262,8 @@ class TestAutoClippedGrad:
         )
         g_full, _ = fn_full(params, batch_x, batch_y, state=s_full)
         g_mb, _ = fn_mb(params, batch_x, batch_y, state=s_mb)
+        g_full = _unwrap_clipped(g_full)
+        g_mb = _unwrap_clipped(g_mb)
         torch.testing.assert_close(g_full, g_mb, rtol=1e-5, atol=1e-6)
 
     def test_empty_batch(self):
@@ -267,6 +276,7 @@ class TestAutoClippedGrad:
         batch_y = torch.empty(0)
 
         grads, new_state = grad_fn(params, batch_x, batch_y, state=state)
+        grads = _unwrap_clipped(grads)
         assert grads.shape == params.shape
         torch.testing.assert_close(grads, torch.zeros_like(params))
         assert new_state == state
@@ -305,6 +315,8 @@ class TestAutoClippedGrad:
         )
         g_auto, _ = fn_auto(params, batch_x, batch_y, state=s_auto)
         g_fixed, _ = fn_fixed(params, batch_x, batch_y, state=s_fixed)
+        g_auto = _unwrap_clipped(g_auto)
+        g_fixed = _unwrap_clipped(g_fixed)
 
         # Gradients should be materially different (AUTO-S amplifies small grads).
         assert not torch.allclose(g_auto, g_fixed, rtol=1e-3)
@@ -335,17 +347,24 @@ class TestAutoClippedGrad:
 class TestAutoClippedGradPerGroup:
     """Per-group AUTO-S."""
 
-    def test_per_group_sensitivity_bound(self):
-        """Per-group sensitivity is sqrt(sum R_k^2) / normalize_by."""
-        pg = PerGroup(groups={}, values={"g1": 3.0, "g2": 4.0})
-        _, state = auto_clipped_grad(
-            lambda p, x: (x - p).pow(2).mean(),
+    def test_per_group_bound_metadata(self):
+        """Per-group output max_norm is R / normalize_by."""
+        params = {"a": torch.randn(4), "b": torch.randn(4)}
+        pg = PerGroup(groups={"a": "g1", "b": "g2"}, values={"g1": 3.0, "g2": 4.0})
+        grad_fn, state = auto_clipped_grad(
+            lambda p, x: ((p["a"] + p["b"] - x) ** 2).mean(),
             argnums=0,
             batch_argnums=1,
             R=pg,
             normalize_by=2.0,
         )
-        assert state.sensitivity == pytest.approx(5.0 / 2.0)
+        grads, _ = grad_fn(params, torch.randn(8, 4), state=state)
+        assert isinstance(grads.max_norm, PerGroup)
+        assert grads.max_norm.values == {
+            "g1": pytest.approx(1.5),
+            "g2": pytest.approx(2.0),
+        }
+        assert grads.max_norm.effective == pytest.approx(5.0 / 2.0)
 
     def test_per_group_applies_correct_scales(self):
         """Per-group AUTO-S scales each group by its own R_k."""
@@ -379,7 +398,7 @@ class TestAutoClippedFun:
     """Tests for auto_clipped_fun (general-purpose scaling)."""
 
     def test_basic_scaling_and_sum(self):
-        """Sum of scaled per-example outputs; each output bounded by R."""
+        """Sum of scaled per-example outputs; each output clipped by R."""
 
         def per_example(x):
             return x  # identity per-example, batch sums
@@ -387,6 +406,7 @@ class TestAutoClippedFun:
         fn, state = auto_clipped_fun(per_example, batch_argnums=0, R=1.0)
         batch = torch.randn(5, 3) * 10
         result, new_state = fn(batch, state=state)
+        result = _unwrap_clipped(result)
 
         expected = torch.zeros(3)
         for i in range(5):

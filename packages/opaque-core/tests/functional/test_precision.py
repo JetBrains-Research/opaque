@@ -65,14 +65,14 @@ def _full_step(
     )
     grads, _ = grad_fn(params, x, y, state=clip_state)
 
-    noise_fn, ns = gaussian_noise(stddev=noise_stddev, key=key(42))
-    noisy, _ = noise_fn(grads, ns)
+    noise_fn, ns = gaussian_noise(noise_multiplier=noise_stddev, key=key(42))
+    noised, _ = noise_fn(grads, ns)
 
-    optimizer = adamw(lr=1e-2, noise_stddev=noise_stddev)
+    optimizer = adamw(lr=1e-2)
     opt_state = optimizer.init(params)
-    updates, _ = optimizer.update(noisy, opt_state, params=params)
+    updates, _ = optimizer.update(noised, opt_state, params=params)
     new_params = torchopt.apply_updates(params, updates, inplace=False)
-    return grads, noisy, new_params
+    return grads.pytree, noised.pytree, new_params
 
 
 # ----------------------------------------------------------------------------
@@ -84,22 +84,22 @@ def test_bf16_grad_finite_cpu():
     """Full-cast bf16 produces finite per-example clipped gradients."""
     model = _build_model().to(dtype=torch.bfloat16)
     x, y = _make_batch(torch.bfloat16, torch.device("cpu"))
-    grads, noisy, _ = _full_step(model, x, y, noise_stddev=0.0)
+    grads, noised, _ = _full_step(model, x, y, noise_stddev=0.0)
     for g in grads:
         assert torch.isfinite(g).all(), "non-finite bf16 gradient"
-    for n in noisy:
-        assert torch.isfinite(n).all(), "non-finite noisy gradient"
+    for n in noised:
+        assert torch.isfinite(n).all(), "non-finite noised gradient"
 
 
 def test_bf16_grad_dtype_preserved_cpu():
     """Reduction promotes to fp32 internally, but caller sees bf16 back."""
     model = _build_model().to(dtype=torch.bfloat16)
     x, y = _make_batch(torch.bfloat16, torch.device("cpu"))
-    grads, noisy, _ = _full_step(model, x, y, noise_stddev=0.0)
+    grads, noised, _ = _full_step(model, x, y, noise_stddev=0.0)
     for g in grads:
         assert g.dtype == torch.bfloat16, f"grad dtype leaked to {g.dtype}"
-    for n in noisy:
-        assert n.dtype == torch.bfloat16, f"noisy dtype leaked to {n.dtype}"
+    for n in noised:
+        assert n.dtype == torch.bfloat16, f"noised dtype leaked to {n.dtype}"
 
 
 def test_bf16_full_pipeline_proximity_to_fp32_cpu():
@@ -132,10 +132,10 @@ def test_bf16_full_pipeline_cuda():
     """Same end-to-end claim on CUDA (bf16 hardware path)."""
     model = _build_model().to(device="cuda", dtype=torch.bfloat16)
     x, y = _make_batch(torch.bfloat16, torch.device("cuda"))
-    grads, noisy, new_params = _full_step(model, x, y, noise_stddev=0.5)
+    grads, noised, new_params = _full_step(model, x, y, noise_stddev=0.5)
     for g in grads:
         assert torch.isfinite(g).all() and g.dtype == torch.bfloat16
-    for n in noisy:
+    for n in noised:
         assert torch.isfinite(n).all() and n.dtype == torch.bfloat16
     for p in new_params:
         assert torch.isfinite(p).all() and p.dtype == torch.bfloat16
@@ -169,12 +169,12 @@ def _step_simple(model: nn.Module, x: torch.Tensor, y: torch.Tensor):
     )
     grads, _ = grad_fn(params, x, y, state=clip_state)
 
-    noise_fn, ns = gaussian_noise(stddev=0.0, key=key(42))
-    noisy, _ = noise_fn(grads, ns)
+    noise_fn, ns = gaussian_noise(noise_multiplier=0.0, key=key(42))
+    noised, _ = noise_fn(grads, ns)
 
     optimizer = torchopt.adamw(lr=1e-2)
     opt_state = optimizer.init(params)
-    updates, _ = optimizer.update(noisy, opt_state, params=params)
+    updates, _ = optimizer.update(noised.pytree, opt_state, params=params)
     new_params = torchopt.apply_updates(params, updates, inplace=False)
     return grads, new_params
 
@@ -353,12 +353,12 @@ def test_fp16_autocast_full_pipeline_with_optimizer():
     )
     grads, _ = grad_fn(params, x, y, state=clip_state)
 
-    noise_fn, ns = gaussian_noise(stddev=0.5, key=key(42))
-    noisy, _ = noise_fn(grads, ns)
+    noise_fn, ns = gaussian_noise(noise_multiplier=0.5, key=key(42))
+    noised, _ = noise_fn(grads, ns)
 
     optimizer = torchopt.adamw(lr=1e-2)
     opt_state = optimizer.init(params)
-    updates, _ = optimizer.update(noisy, opt_state, params=params)
+    updates, _ = optimizer.update(noised.pytree, opt_state, params=params)
     new_params = torchopt.apply_updates(params, updates, inplace=False)
 
     for p in new_params:

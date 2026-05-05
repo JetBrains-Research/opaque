@@ -17,13 +17,13 @@ Top-level (user-facing):
 - `opaque.functional` — `make_functional`, `with_batch_dim` (PyTorch <->
   functional API bridges)
 - `opaque.optimizers` — Opaque-built functional optimizer factories
-  with DP-aware paths: `adamw`, `lion`, `ademamix`, `adafactor`, and
-  the `schedule_free` wrapper.  All return `torchopt`-compatible
-  `GradientTransformation`s; DP-aware modes are selected at `update()`
-  time via optional `noise_stddev` (DP-AdamW-BC) and
-  `noisy_squared_grads` (JME paired stream) kwargs.  Vanilla SGD /
-  Adam / RMSprop / etc. are not re-exported here — import them from
-  torchopt directly when needed (`from torchopt import sgd`).
+  with a wrapper-aware update surface: `sgd`, `adam`, `adamw`, `lion`,
+  `ademamix`, `adafactor`, `rmsprop`, `adagrad`, and the `schedule_free`
+  wrapper. All return `torchopt`-compatible
+  `GradientTransformation`s; DP-aware modes read `NoisyPytree` metadata
+  (DP-AdamW-BC) or private second-moment streams at `update()` time. A small
+  set of vanilla TorchOpt primitives (`adadelta`, `radam`) is re-exported for
+  convenience.
   Less-common building blocks live in submodules:
   `opaque.optimizers.serialization` (`state_dict` / `load_state_dict`
   for checkpoint round-tripping) and
@@ -65,5 +65,5 @@ rng = key(0)
 `opaque-core` holds only algorithm-agnostic primitives. DP-SGD-specific
 mechanisms (Gaussian noise, adaptive/auto clipping, truncated + standard
 Poisson samplers) live in `opaque-dpsgd`. DP-FTRL mechanisms (BLT / Toeplitz
-/ BSR / BiSR / JME / λ-CGD noise, b-min-sep / cyclic-Poisson / balls-in-bins
-/ sequential samplers) live in `opaque-dpftrl`.
+/ BSR / BiSR / λ-CGD noise, private second-moment streams, b-min-sep /
+cyclic-Poisson / balls-in-bins / sequential samplers) live in `opaque-dpftrl`.

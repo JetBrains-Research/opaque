@@ -1,7 +1,7 @@
 """Universal Adam / AdamW factory.
 
 Single entry point for the Adam family.  Handles four orthogonal
-behaviors selected at factory time and at update time:
+behaviors selected at factory time and by the update value type:
 
 1. **L2 vs decoupled weight decay** — constructor flag
    ``decoupled_weight_decay``.  ``True`` is AdamW (Loshchilov &
@@ -14,22 +14,23 @@ behaviors selected at factory time and at update time:
    "Stable and low-precision training for large-scale vision-language
    models" (2023).
 
-3. **DP noise-variance bias correction** — pass ``noise_stddev`` either
-   at construction (default) or at every ``update()`` call (per-step
-   override; useful under adaptive clipping where σ varies).  When
-   non-zero, the second moment is corrected by a β₂-EMA of the noise
-   variance — Chooi et al., "DP-AdamW", arXiv:2511.07843.
+3. **DP noise-variance bias correction** — pass ``NoisedPytree`` updates
+    from a DP noise mechanism with ``noise_bias_correction=True``.  The
+    wrapper carries the realized per-step σ; the second moment is then
+    corrected by a β₂-EMA of the noise variance.  Chooi et al.,
+    "DP-AdamW", arXiv:2511.07843.
 
-4. **JME paired-stream second moment** — pass ``noisy_squared_grads``
-   to ``update()`` to bypass squaring the noised gradient and use a
-   privately-estimated ``g²`` instead.  Kalinin, Upadhyay, Lampert,
-   "Continual Release Moment Estimation with Differential Privacy",
-   arXiv:2502.06597.
+4. **Private second-moment stream** — pass ``SecondMomentNoiseOutput``
+    to ``update()`` to bypass squaring the noised gradient and use a
+    privately-estimated ``g²`` instead.  Kalinin, Upadhyay, Lampert,
+    "Continual Release Moment Estimation with Differential Privacy",
+    arXiv:2502.06597.
 
-Modes (3) and (4) are mutually exclusive at any single ``update()``
-call: passing both raises ``ValueError`` (the optimizer would have
-to discard one or the other).  Either may be active when the other
-is not.
+Modes (3) and (4) target the same source of bias — that ``E[(g+noise)²]``
+is not ``E[g²]`` — by different means.  They are alternatives, not stack
+on top of each other; pick one per training run.  They are also mutually
+exclusive per step by construction, because a single ``update()`` value
+is either ``NoisedPytree`` or ``SecondMomentNoiseOutput``.
 
 The optimizer follows torchopt's ``GradientTransformation`` protocol::
 
@@ -39,13 +40,11 @@ The optimizer follows torchopt's ``GradientTransformation`` protocol::
     # Vanilla AdamW:
     updates, state = opt.update(grads, state, params=p)
 
-    # DP-AdamW-BC (per-step σ override):
-    updates, state = opt.update(noisy_grads, state, params=p,
-                                noise_stddev=current_sigma)
+    # DP-AdamW-BC (σ travels with the noised gradients):
+    updates, state = opt.update(noisy_grads, state, params=p)
 
-    # DP-AdamW-JME:
-    updates, state = opt.update(noisy_grads, state, params=p,
-                                noisy_squared_grads=noisy_sq)
+    # DP-AdamW with a private second-moment stream:
+    updates, state = opt.update(second_moment_output, state, params=p)
 """
 
 from __future__ import annotations
@@ -67,7 +66,6 @@ except ImportError as exc:
 from opaque.clipping.per_group import PerGroup
 from opaque.core.pytree import tree_map
 from opaque.optimizers._bias_correction import (
-    init_per_group_phi,
     is_per_group,
     resolve_noise_variance,
     update_phi_ema,
@@ -96,8 +94,8 @@ class AdamState:
         mu: First-moment EMA (pytree matching params).
         nu: Second-moment EMA (pytree matching params).
         phi: Noise-variance EMA (scalar or ``dict[group, float]``).
-            Stays at zero unless ``noise_stddev`` is passed at update
-            time.
+            Stays at zero unless ``NoisedPytree`` updates supply realized
+            σ metadata.
         step: Number of completed updates.
     """
 
@@ -108,7 +106,7 @@ class AdamState:
 
 
 # ---------------------------------------------------------------------------
-# Moment scaler — handles vanilla / BC / JME branches
+# Moment scaler — handles vanilla / BC / external second-moment branches
 # ---------------------------------------------------------------------------
 
 
@@ -116,32 +114,30 @@ def _scale_by_adam(
     b1: float,
     b2: float,
     eps: float,
-    default_noise_stddev: float | PerGroup,
+    noise_bias_correction: bool,
     bc_floor: float,
 ) -> GradientTransformation:
-    """Adam moment scaling with optional DP bias correction or JME.
+    """Adam moment scaling with optional DP bias correction or private second moments.
 
     Update modes selected by the kwargs passed to ``update()``:
 
     - ``noisy_squared_grads`` not None: v-update consumes the externally
-      privatised second-moment stream directly.  ``noise_stddev`` is
-      ignored for this step (the JME post-processing argument means no
-      φ-EMA correction is needed).
+            privatised second-moment stream directly.  ``noise_stddev`` is
+            ignored for this step (the second-moment post-processing argument
+            means no φ-EMA correction is needed).
 
-    - ``noise_stddev`` non-zero (or default non-zero): v-update squares
-      the noised gradient, then subtracts the bias-corrected φ-EMA::
+        - ``noise_stddev`` non-zero: v-update squares the noised gradient,
+            then subtracts the bias-corrected φ-EMA::
 
           v̂_corrected = max(v̂ − φ̂, floor)
 
-    - both absent (and default ``noise_stddev==0``): standard Adam.
+    - both absent: standard Adam.
     """
-    _default_per_group = is_per_group(default_noise_stddev)
 
     def init_fn(params: Any) -> AdamState:
         mu = tree_map(torch.zeros_like, params)
         nu = tree_map(torch.zeros_like, params)
-        phi: Any = init_per_group_phi(params) if _default_per_group else 0.0
-        return AdamState(mu=mu, nu=nu, phi=phi, step=0)
+        return AdamState(mu=mu, nu=nu, phi=0.0, step=0)
 
     def update_fn(
         updates: Any,
@@ -154,7 +150,7 @@ def _scale_by_adam(
     ) -> tuple[Any, AdamState]:
         if noisy_squared_grads is not None and noise_stddev is not None:
             raise ValueError(
-                "adamw.update() received both noisy_squared_grads (JME) and "
+                "adamw.update() received both noisy_squared_grads and "
                 "noise_stddev (DP-BC); these select mutually exclusive v-update "
                 "branches.  Pass exactly one (or neither, for vanilla AdamW)."
             )
@@ -166,7 +162,7 @@ def _scale_by_adam(
 
         # ---- v-update ----------------------------------------------------
         if noisy_squared_grads is not None:
-            # JME branch: external g² stream replaces (g·g).  No φ-EMA
+            # External second-moment branch: g² stream replaces (g·g).  No φ-EMA
             # correction (post-processing already gave us an unbiased v).
             new_nu = tree_map(
                 lambda v, g2: b2 * v + (1 - b2) * g2,
@@ -188,13 +184,18 @@ def _scale_by_adam(
         # Standard / BC branch: square the (possibly noised) gradient.
         new_nu = tree_map(lambda v, g: b2 * v + (1 - b2) * g * g, state.nu, updates)
 
-        effective_stddev = (
-            noise_stddev if noise_stddev is not None else default_noise_stddev
-        )
-        per_group = is_per_group(effective_stddev) or isinstance(state.phi, dict)
-
         bc1 = 1 - b1**t
         bc2 = 1 - b2**t
+        effective_stddev = noise_stddev if noise_stddev is not None else 0.0
+        if not noise_bias_correction:
+            result = tree_map(
+                lambda m, v: (m / bc1) / ((v / bc2).sqrt() + eps),
+                new_mu,
+                new_nu,
+            )
+            return result, AdamState(mu=new_mu, nu=new_nu, phi=state.phi, step=t)
+
+        per_group = is_per_group(effective_stddev) or isinstance(state.phi, dict)
 
         if per_group:
             # Per-leaf path: walk ``new_mu`` and ``new_nu`` in lockstep
@@ -259,6 +260,32 @@ def _scale_by_adam(
 # ---------------------------------------------------------------------------
 
 
+def adam(
+    lr: _LR = 1e-3,
+    betas: tuple[float, float] = (0.9, 0.999),
+    eps: float = 1e-8,
+    weight_decay: float = 0.0,
+    *,
+    update_rms_clip: float | None = None,
+    noise_bias_correction: bool = False,
+) -> GradientTransformation:
+    """Create an Adam optimizer with Opaque's wrapper-aware update API.
+
+    This is the original Adam/L2 weight-decay variant of :func:`adamw`.
+    ``NoisedPytree`` and ``SecondMomentNoiseOutput`` updates are routed the
+    same way as AdamW, so callers do not need an optimizer-specific branch.
+    """
+    return adamw(
+        lr=lr,
+        betas=betas,
+        eps=eps,
+        weight_decay=weight_decay,
+        decoupled_weight_decay=False,
+        update_rms_clip=update_rms_clip,
+        noise_bias_correction=noise_bias_correction,
+    )
+
+
 def adamw(
     lr: _LR = 1e-3,
     betas: tuple[float, float] = (0.9, 0.999),
@@ -267,7 +294,7 @@ def adamw(
     *,
     decoupled_weight_decay: bool = True,
     update_rms_clip: float | None = None,
-    noise_stddev: float | PerGroup = 0.0,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
     """Universal Adam / AdamW factory.
 
@@ -283,32 +310,34 @@ def adamw(
         update_rms_clip: When not ``None``, divides the moment-scaled
             update by ``max(1, rms / threshold)`` (StableAdamW).  ``rms``
             is the global root-mean-square over all tensor leaves.
-        noise_stddev: Default per-step noise σ (scalar or
-            :class:`PerGroup`) used for DP-AdamW-BC bias correction.
-            ``0.0`` (default) disables the correction; a non-zero value
-            activates it.  Can be overridden per step at ``update()``.
+        noise_bias_correction: If ``True``, subtract a β₂-EMA of the
+            realized noise variance from the second moment when
+            ``NoisedPytree`` updates are passed (DP-AdamW-BC, Chooi et al.).
+            Defaults to ``False``; flip on to ablate.  Has no effect on
+            steps where the update is a ``SecondMomentNoiseOutput``,
+            since the privatised ``g²`` stream is an alternative answer
+            to the same v-update bias.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.
 
     DP usage notes:
 
-    - At ``update()`` time, pass ``noise_stddev=current_σ`` to override
-      the constructor default (necessary under adaptive clipping where
-      σ changes per step).
-    - Alternatively pass ``noisy_squared_grads`` to consume an externally
-      privatised second-moment stream (JME); ``noise_stddev`` is ignored
-      for that step.
-    - Passing both ``noise_stddev`` and ``noisy_squared_grads`` at the
-      same call raises ``ValueError``.
+        - At ``update()`` time, pass ``NoisedPytree`` updates from the DP noise
+            mechanism; the realized σ overrides the constructor default.
+        - Alternatively pass ``SecondMomentNoiseOutput`` to consume an
+            externally privatised second-moment stream — same purpose as
+            BC, different mechanism; cannot be combined per step.
+        - Explicit per-step ``noise_stddev`` / ``noisy_squared_grads`` kwargs
+            are rejected by the optimizer chain.
     """
-    _validate(eps, betas, weight_decay, update_rms_clip, noise_stddev)
+    _validate(eps, betas, weight_decay, update_rms_clip)
     bc_floor = eps * eps  # see module docstring on the rationale.
     moment = _scale_by_adam(
         b1=betas[0],
         b2=betas[1],
         eps=eps,
-        default_noise_stddev=noise_stddev,
+        noise_bias_correction=noise_bias_correction,
         bc_floor=bc_floor,
     )
     return make_optimizer_chain(
@@ -325,7 +354,6 @@ def _validate(
     betas: tuple[float, float],
     weight_decay: float,
     update_rms_clip: float | None,
-    noise_stddev: float | PerGroup,
 ) -> None:
     if eps <= 0:
         raise ValueError(f"eps must be positive, got {eps}")
@@ -342,15 +370,6 @@ def _validate(
         raise ValueError(
             f"update_rms_clip must be positive when set, got {update_rms_clip}"
         )
-    if isinstance(noise_stddev, PerGroup):
-        for gname, val in noise_stddev.values.items():
-            if val < 0:
-                raise ValueError(
-                    f"noise_stddev must be non-negative for all groups, "
-                    f"got {val} for group '{gname}'"
-                )
-    elif noise_stddev < 0:
-        raise ValueError(f"noise_stddev must be non-negative, got {noise_stddev}")
 
 
-__all__ = ["adamw", "AdamState"]
+__all__ = ["adam", "adamw", "AdamState"]

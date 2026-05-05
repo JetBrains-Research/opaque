@@ -24,10 +24,10 @@ unstable).
 DP behavior.  The second moment EMA is structurally identical to
 Adam's, so:
 
-- ``noise_stddev`` (default + per-step override) drives the φ-EMA bias
-  correction on ``v̂`` exactly as in :func:`opaque.optimizers.adamw`.
-- ``noisy_squared_grads`` substitutes the JME paired-stream second
-  moment by post-processing.
+- ``NoisedPytree`` carries realized per-step σ and drives the φ-EMA bias
+    correction on ``v̂`` exactly as in :func:`opaque.optimizers.adamw`.
+- ``SecondMomentNoiseOutput`` substitutes a private squared-gradient
+    moment by post-processing.
 - The two first-moment EMAs are unaffected — they remain unbiased
   estimates of E[g] regardless of the noise injected into g.
 """
@@ -51,7 +51,6 @@ except ImportError as exc:
 from opaque.clipping.per_group import PerGroup
 from opaque.core.pytree import tree_map
 from opaque.optimizers._bias_correction import (
-    init_per_group_phi,
     is_per_group,
     resolve_noise_variance,
     update_phi_ema,
@@ -79,19 +78,16 @@ def _scale_by_ademamix(
     b3: float,
     alpha: float,
     eps: float,
-    default_noise_stddev: float | PerGroup,
+    noise_bias_correction: bool,
     bc_floor: float,
 ) -> GradientTransformation:
-    _default_per_group = is_per_group(default_noise_stddev)
-
     def init_fn(params: Any) -> AdEMAMixState:
         zeros = lambda p: torch.zeros_like(p)  # noqa: E731
-        phi: Any = init_per_group_phi(params) if _default_per_group else 0.0
         return AdEMAMixState(
             m_fast=tree_map(zeros, params),
             m_slow=tree_map(zeros, params),
             nu=tree_map(zeros, params),
-            phi=phi,
+            phi=0.0,
             step=0,
         )
 
@@ -106,7 +102,7 @@ def _scale_by_ademamix(
     ) -> tuple[Any, AdEMAMixState]:
         if noisy_squared_grads is not None and noise_stddev is not None:
             raise ValueError(
-                "ademamix.update() received both noisy_squared_grads (JME) and "
+                "ademamix.update() received both noisy_squared_grads and "
                 "noise_stddev (DP-BC); pass exactly one (or neither)."
             )
 
@@ -139,7 +135,22 @@ def _scale_by_ademamix(
             )
 
         new_nu = tree_map(lambda v, g: b2 * v + (1 - b2) * g * g, state.nu, updates)
-        effective = noise_stddev if noise_stddev is not None else default_noise_stddev
+        effective = noise_stddev if noise_stddev is not None else 0.0
+        if not noise_bias_correction:
+            result = tree_map(
+                lambda mf, ms, v: ((mf / bc1) + alpha * ms) / ((v / bc2).sqrt() + eps),
+                new_mf,
+                new_ms,
+                new_nu,
+            )
+            return result, AdEMAMixState(
+                m_fast=new_mf,
+                m_slow=new_ms,
+                nu=new_nu,
+                phi=state.phi,
+                step=t,
+            )
+
         per_group = is_per_group(effective) or isinstance(state.phi, dict)
 
         if per_group:
@@ -210,7 +221,7 @@ def ademamix(
     *,
     decoupled_weight_decay: bool = True,
     update_rms_clip: float | None = None,
-    noise_stddev: float | PerGroup = 0.0,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
     """Create an AdEMAMix optimizer.
 
@@ -225,8 +236,10 @@ def ademamix(
         decoupled_weight_decay: ``False`` switches to L2-style.
         update_rms_clip: Optional StableAdamW-style RMS clip on the
             moment-scaled update.
-        noise_stddev: Default DP noise σ for the φ-EMA correction on
-            ``v̂``; can be overridden per step at ``update()``.
+        noise_bias_correction: If ``True``, subtract a β₂-EMA of the
+            realized noise variance from the second moment when
+            ``NoisedPytree`` updates are passed.  Defaults to ``False``;
+            flip on to ablate.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.
@@ -247,16 +260,6 @@ def ademamix(
         raise ValueError(
             f"update_rms_clip must be positive when set, got {update_rms_clip}"
         )
-    if isinstance(noise_stddev, PerGroup):
-        for gname, val in noise_stddev.values.items():
-            if val < 0:
-                raise ValueError(
-                    f"noise_stddev must be non-negative for all groups, "
-                    f"got {val} for group '{gname}'"
-                )
-    elif noise_stddev < 0:
-        raise ValueError(f"noise_stddev must be non-negative, got {noise_stddev}")
-
     bc_floor = eps * eps
     moment = _scale_by_ademamix(
         b1=b1,
@@ -264,7 +267,7 @@ def ademamix(
         b3=b3,
         alpha=alpha,
         eps=eps,
-        default_noise_stddev=noise_stddev,
+        noise_bias_correction=noise_bias_correction,
         bc_floor=bc_floor,
     )
     return make_optimizer_chain(

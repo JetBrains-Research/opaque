@@ -237,7 +237,7 @@ def calibrate(
     # but inf on the "low" side means target is unreachable.
     if math.isinf(hi_val):
         raise ValueError(
-            f"Budget evaluation returned infinity on the wrong bound: "
+            f"Budget evaluation returned infinity on the wrong max_norm: "
             f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
             f"This typically means the privacy target is unreachable with these parameter bounds. "
             f"Try expanding the search range or checking that process() produces valid DpProcess objects."
@@ -253,7 +253,7 @@ def calibrate(
 
     if math.isinf(lo_val) and budget.value < hi_val:
         raise ValueError(
-            f"Budget {budget.name}={budget.value:.6f} below finite bound {hi_val:.6f} "
+            f"Budget {budget.name}={budget.value:.6f} below finite max_norm {hi_val:.6f} "
             f"for param range [{param_min}, {param_max}]. "
             f"The target may be unreachable with these bounds."
         )

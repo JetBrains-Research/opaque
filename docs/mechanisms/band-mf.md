@@ -163,14 +163,14 @@ strategy = band_mf_strategy(n_steps=1000, bands=10)
 noise_fn, noise_state = mf_noise(
     grad_template=params,
     strategy=strategy,
-    stddev=noise_multiplier * clip_state.sensitivity,
+    noise_multiplier=noise_multiplier,
     key=key(42),
 )
 
 for step in range(1000):
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = params - lr * noisy_grads
+    params = params - lr * noisy_grads.pytree
 ```
 
 ### Privacy accounting
@@ -224,7 +224,7 @@ grad_fn, clip_state = clipped_grad(
 strategy = band_mf_strategy(n_steps, bands)
 noise_fn, noise_state = mf_noise(
     params, strategy,
-    stddev=result.param * clip_state.sensitivity,
+    noise_multiplier=result.param,
     key=key_noise,
 )
 sampler = CyclicPoissonSampler(
@@ -237,7 +237,7 @@ loader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
 for batch in loader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = params - lr * noisy_grads
+    params = params - lr * noisy_grads.pytree
 ```
 
 ## Parameter guide

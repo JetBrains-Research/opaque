@@ -9,19 +9,18 @@ Bounded Gaussian Mechanism from:
 
 The mechanism uses a truncated normal distribution restricted to the symmetric
 domain [−radius·stddev, radius·stddev], ensuring all privatized outputs stay
-bounded.  Unlike the standard Gaussian mechanism which has unbounded support
+clipped.  Unlike the standard Gaussian mechanism which has unclipped support
 (and may produce invalid values that require post-hoc projection), this
-mechanism confines noise to a bounded region from the start.
+mechanism confines noise to a clipped region from the start.
 
 The API returns ``(noise_fn, state)`` where state is always immutable:
 
     >>> from opaque.random import key
-    >>> noise_fn, state = truncated_gaussian_noise(stddev=1.0, radius=5.0, key=key(42))
-    >>> noisy_grads, state = noise_fn(grads, state)
-
-The ``stddev`` can be overridden per call for adaptive clipping:
-
-    >>> noisy_grads, state = noise_fn(grads, state, stddev=new_stddev)
+    >>> from opaque.clipping.types import clipped
+    >>> noise_fn, state = truncated_gaussian_noise(
+    ...     noise_multiplier=1.0, radius=5.0, key=key(42)
+    ... )
+    >>> noisy_grads, state = noise_fn(clipped(grads, max_norm=1.0), state)
 
 References:
     Bo Chen and Matthew Hale, "The Bounded Gaussian Mechanism for
@@ -35,7 +34,12 @@ from typing import Any
 
 import torch
 
+from opaque.clipping.types import ClippedPytree
+
+from opaque.core.noise import NoisedPytree
+
 from opaque.dpsgd.noise.gaussian import GaussianNoiseState
+from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
 from opaque.random import RngKey, generator_from_key
 from opaque.random import fold_in as rng_fold_in
 from opaque.clipping.per_group import PerGroup
@@ -99,25 +103,38 @@ def _truncated_normal_around(
     return samples.to(device=device)
 
 
-def _validate_truncated_stddev(stddev: float | PerGroup) -> None:
-    """Validate that stddev is non-negative (scalar or per-group)."""
-    if isinstance(stddev, PerGroup):
-        for gname, val in stddev.values.items():
+def _validate_truncated_stddev(noise_stddev: float | PerGroup) -> None:
+    """Validate that realized noise stddev is non-negative."""
+    if isinstance(noise_stddev, PerGroup):
+        for gname, val in noise_stddev.values.items():
             if val < 0:
                 raise ValueError(
-                    f"stddev must be non-negative for all groups, "
+                    f"noise standard deviation must be non-negative for all groups, "
                     f"got {val} for group '{gname}'"
                 )
     else:
-        if stddev < 0:
-            raise ValueError(f"stddev must be non-negative, got {stddev}")
+        if noise_stddev < 0:
+            raise ValueError(
+                f"noise standard deviation must be non-negative, got {noise_stddev}"
+            )
+
+
+def _resolve_noise_multiplier(noise_multiplier: float | None) -> float:
+    if noise_multiplier is None:
+        raise ValueError("truncated_gaussian_noise() requires noise_multiplier.")
+    multiplier = float(noise_multiplier)
+    if multiplier < 0:
+        raise ValueError(
+            f"noise_multiplier must be non-negative, got {noise_multiplier}"
+        )
+    return multiplier
 
 
 def truncated_gaussian_noise(
-    stddev: float | PerGroup,
-    radius: float = 3.0,
     *,
+    noise_multiplier: float,
     key: RngKey,
+    radius: float = 3.0,
 ) -> tuple[
     Callable[..., tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
@@ -125,29 +142,20 @@ def truncated_gaussian_noise(
     """Create a truncated Gaussian noise function with immutable state.
 
     Returns ``(noise_fn, state)`` where ``noise_fn`` adds noise from a
-    truncated normal distribution centred at each input value, with support
-    restricted to [−radius·stddev, radius·stddev]. This implements the
-    Bounded Gaussian Mechanism (Chen & Hale, 2024).
-
-    The ``stddev`` provided here is the default. It can be overridden on each
-    call via ``noise_fn(grads, state, stddev=new_stddev)`` — useful when the
-    noise scale changes between steps (e.g., with adaptive clipping). The
-    ``radius`` (in σ-units) is fixed at creation and the truncation bounds
-    adjust automatically: [−radius·stddev, radius·stddev].
-
-    When ``stddev`` is a :class:`~opaque.utils.per_group.PerGroup`, each
-    parameter receives noise scaled by its group's stddev value, with
-    per-group truncation bounds [−radius·σ_g, radius·σ_g].
+    truncated normal distribution centred at each clipped input value. The
+    realized standard deviation is derived from the input
+    :class:`opaque.clipping.types.ClippedPytree` metadata and carried by the returned
+    :class:`opaque.core.noise.NoisedPytree`.
 
     The noise function uses exactly the ``key`` you provide — no auto-detection
     of distributed state. For synchronized noise in DDP, pass the same key on
     every rank.
 
     Args:
-        stddev: Standard deviation of the underlying Gaussian noise
-            (usually ``noise_multiplier * clip_state.sensitivity``).
-            When ``PerGroup``, each parameter group gets its own noise scale
-            and truncation bounds.
+        noise_multiplier: Gaussian noise multiplier. The realized standard
+            deviation is derived from ``noise_multiplier`` and the input max_norm.
+            For ``PerGroup`` bounds, the same MSE-optimal allocation used by
+            :func:`gaussian_noise` is applied.
         radius: Truncation radius in units of standard deviations.
             Noise is truncated to [−radius·stddev, radius·stddev].
             Must be positive. Typical values: 3–10.
@@ -158,34 +166,32 @@ def truncated_gaussian_noise(
     Returns:
         A tuple ``(noise_fn, state)`` where:
 
-        - ``noise_fn(grads, state, *, stddev=None) -> (noisy_grads, new_state)``
+        - ``noise_fn(clipped_grads, state) -> (noisy_grads, new_state)``
         - ``state`` is a :class:`~opaque.dpsgd.noise.gaussian.GaussianNoiseState`
 
     Raises:
-        ValueError: If ``stddev`` is negative, or ``radius`` is not positive.
+        ValueError: If ``noise_multiplier`` or the realized max_norm-derived
+            standard deviation is negative, or ``radius`` is not positive.
 
     Example:
         >>> import torch
+        >>> from opaque.clipping.types import clipped
         >>> from opaque.dpsgd.noise.truncated_gaussian import truncated_gaussian_noise
         >>> from opaque.random import key
         >>>
         >>> noise_fn, state = truncated_gaussian_noise(
-        ...     stddev=1.0, radius=3.0, key=key(42),
+        ...     noise_multiplier=1.0, radius=3.0, key=key(42),
         ... )
         >>> grads = torch.zeros(100)
-        >>> noisy, state = noise_fn(grads, state)
-        >>> assert noisy.min() >= -3.0 and noisy.max() <= 3.0
-
-    Example (per-call override for adaptive clipping):
-        >>> noise_fn, state = truncated_gaussian_noise(stddev=1.0, radius=5.0, key=key(42))
-        >>> noisy, state = noise_fn(grads, state, stddev=0.8)  # bounds become ±4.0
+        >>> noised, state = noise_fn(clipped(grads, max_norm=1.0), state)
+        >>> assert noised.pytree.min() >= -3.0 and noised.pytree.max() <= 3.0
 
     References:
         Bo Chen and Matthew Hale, "The Bounded Gaussian Mechanism for
         Differential Privacy," J. Privacy and Confidentiality, 14(1), 2024.
         https://arxiv.org/abs/2211.17230
     """
-    _validate_truncated_stddev(stddev)
+    resolved_noise_multiplier = _resolve_noise_multiplier(noise_multiplier)
 
     if radius <= 0:
         raise ValueError(f"radius must be positive, got {radius}")
@@ -198,11 +204,28 @@ def truncated_gaussian_noise(
         _rng_key=key,
     )
 
-    default_stddev = stddev
+    def _clipped_stddev(clipped: ClippedPytree) -> float | PerGroup:
+        if isinstance(clipped.max_norm, PerGroup):
+            return per_group_noise_stddev(clipped.max_norm, resolved_noise_multiplier)
+        effective = resolved_noise_multiplier * clipped.max_norm
+        _validate_truncated_stddev(effective)
+        return effective
 
-    def noise_fn(grads, st, *, stddev=None):
-        """Add truncated Gaussian noise to gradients."""
-        effective_stddev = stddev if stddev is not None else default_stddev
+    def noise_fn(grads, st):
+        """Add truncated Gaussian noise to a clipped pytree."""
+        if isinstance(grads, NoisedPytree):
+            raise TypeError(
+                "truncated_gaussian_noise expects ClippedPytree inputs, not "
+                "NoisedPytree values that have already passed through a noise "
+                "mechanism."
+            )
+        if not isinstance(grads, ClippedPytree):
+            raise TypeError(
+                "truncated_gaussian_noise expects ClippedPytree inputs. Wrap "
+                "manual values with opaque.clipping.types.clipped(...)."
+            )
+
+        effective_stddev = _clipped_stddev(grads)
         _validate_truncated_stddev(effective_stddev)
 
         next_state = GaussianNoiseState(
@@ -213,48 +236,65 @@ def truncated_gaussian_noise(
         # Per-group noise path
         if isinstance(effective_stddev, PerGroup):
             if all(v == 0 for v in effective_stddev.values.values()):
-                return grads, next_state
+                return NoisedPytree(
+                    pytree=grads.pytree,
+                    max_norm=grads.max_norm,
+                    noise_stddev=effective_stddev,
+                ), next_state
 
             step_key = rng_fold_in(st._rng_key, st._step_counter)
             g = generator_from_key(step_key)
 
-            noisy = {}
-            for param_key, tensor in grads.items():
+            noised = {}
+            for param_key, tensor in grads.pytree.items():
                 group_std = effective_stddev.for_key(param_key)
-                bound = group_std * radius
-                noisy[param_key] = _truncated_normal_around(
+                max_norm = group_std * radius
+                noised[param_key] = _truncated_normal_around(
                     tensor,
                     stddev=group_std,
-                    lower=-bound,
-                    upper=bound,
+                    lower=-max_norm,
+                    upper=max_norm,
                     generator=g,
                 )
 
-            return noisy, next_state
+            return NoisedPytree(
+                pytree=noised,
+                max_norm=grads.max_norm,
+                noise_stddev=effective_stddev,
+            ), next_state
 
         # Global (scalar) noise path
-        bound = effective_stddev * radius
+        max_norm = effective_stddev * radius
 
         if effective_stddev == 0:
-            return tree_map(
-                lambda t: torch.clamp(t, min=-bound, max=bound), grads
+            noised = tree_map(
+                lambda t: torch.clamp(t, min=-max_norm, max=max_norm), grads.pytree
+            )
+            return NoisedPytree(
+                pytree=noised,
+                max_norm=grads.max_norm,
+                noise_stddev=effective_stddev,
             ), next_state
 
         step_key = rng_fold_in(st._rng_key, st._step_counter)
         g = generator_from_key(step_key)
 
-        def add_bounded_noise(tensor: torch.Tensor) -> torch.Tensor:
+        def add_clipped_noise(tensor: torch.Tensor) -> torch.Tensor:
             return _truncated_normal_around(
                 tensor,
                 stddev=effective_stddev,
-                lower=-bound,
-                upper=bound,
+                lower=-max_norm,
+                upper=max_norm,
                 generator=g,
             )
 
-        noisy = tree_map(add_bounded_noise, grads)
+        noised = tree_map(add_clipped_noise, grads.pytree)
 
-        return noisy, next_state
+        return NoisedPytree(
+            pytree=noised,
+            max_norm=grads.max_norm,
+            noise_stddev=effective_stddev,
+        ), next_state
 
     return noise_fn, state
 

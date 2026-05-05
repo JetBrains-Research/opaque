@@ -26,14 +26,14 @@ class TestAttentionImplementations:
         qwen2_config._attn_implementation = "eager"
         model = prepare_lora_model(qwen2_config).to(device)
         grads, _ = run_clipped_grad_test(model, qwen2_tokenizer)
-        assert len(grads) > 0
+        assert len(grads.pytree) > 0
 
     def test_sdpa_attention(self, qwen2_config, qwen2_tokenizer, device):
         """Test SDPA attention (default, uses patched repeat_kv). Works on CPU and CUDA."""
         qwen2_config._attn_implementation = "sdpa"
         model = prepare_lora_model(qwen2_config).to(device)
         grads, _ = run_clipped_grad_test(model, qwen2_tokenizer)
-        assert len(grads) > 0
+        assert len(grads.pytree) > 0
 
 
 class TestAttentionWithMicrobatching:
@@ -76,13 +76,13 @@ class TestAttentionWithMicrobatching:
         """Test eager attention with microbatching."""
         qwen2_config._attn_implementation = "eager"
         grads = self._run_with_microbatch(qwen2_config, qwen2_tokenizer, device)
-        assert len(grads) > 0
+        assert len(grads.pytree) > 0
 
     def test_sdpa_with_microbatching(self, qwen2_config, qwen2_tokenizer, device):
         """Test SDPA attention with microbatching."""
         qwen2_config._attn_implementation = "sdpa"
         grads = self._run_with_microbatch(qwen2_config, qwen2_tokenizer, device)
-        assert len(grads) > 0
+        assert len(grads.pytree) > 0
 
     def test_sdpa_microbatch_size_3(self, qwen2_config, qwen2_tokenizer, device):
         """Test SDPA with microbatch_size=3 (uneven split of batch=4)."""
@@ -90,7 +90,7 @@ class TestAttentionWithMicrobatching:
         grads = self._run_with_microbatch(
             qwen2_config, qwen2_tokenizer, device, microbatch_size=3
         )
-        assert len(grads) > 0
+        assert len(grads.pytree) > 0
 
 
 class TestAttentionNumericalParity:
@@ -139,10 +139,10 @@ class TestAttentionNumericalParity:
         # Eager uses manual Q@K matmul; SDPA uses fused CUDA kernels (flash/efficient).
         # These use different algorithms with different floating-point rounding,
         # so we only check that gradients are in the same ballpark.
-        assert set(grads_eager.keys()) == set(grads_sdpa.keys())
-        for key in grads_eager:
-            eager_grad = grads_eager[key]
-            sdpa_grad = grads_sdpa[key]
+        assert set(grads_eager.pytree.keys()) == set(grads_sdpa.pytree.keys())
+        for key in grads_eager.pytree:
+            eager_grad = grads_eager.pytree[key]
+            sdpa_grad = grads_sdpa.pytree[key]
             # Wide tolerance: eager uses manual matmul, SDPA uses fused flash/efficient
             # kernels with different FP rounding. Near-zero values can differ by ~2e-3.
             assert torch.allclose(eager_grad, sdpa_grad, rtol=0.2, atol=5e-3), (

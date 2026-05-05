@@ -1,20 +1,41 @@
-"""Type definitions for clipping operations."""
+"""Type definitions for clipping: state markers and the clipped pytree wrapper.
+
+``ClippedPytree`` carries a pytree together with a public maximum L2 norm
+on one private record's contribution to that pytree.  The wrapper is
+mechanism-agnostic: anything that establishes a per-record L2 cap on the
+contained value can construct one, but the typical producer is
+per-example clipping (``clipped_grad`` and ``clipped_fun``).
+
+The post-mechanism counterpart ``NoisedPytree`` (extends ``ClippedPytree``
+with a ``noise_stddev`` field) lives in :mod:`opaque.core.noise` —
+colocated with the noise math helpers.
+"""
 
 from __future__ import annotations
 
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from numbers import Real
+from typing import Any
 
-from opaque.clipping.per_group import PerGroup
+import torch
+
+from opaque.core.pytree import tree_map
+
+
+# ---------------------------------------------------------------------------
+# Clipping state markers
+# ---------------------------------------------------------------------------
 
 
 class ClipState(ABC):
-    """Base class for clipping state with clipping norm and sensitivity.
+    """Base class for clipping state.
 
-    All clipping operations (fixed and adaptive) return a state object that
-    inherits from this class, providing a unified ``clipping_norm`` attribute
-    (the raw clipping threshold), ``normalize_by`` divisor, and a
-    ``sensitivity`` property (the L2 sensitivity of the query).
+    Clipping state is the explicit state token returned by clipping transforms.
+    Fixed clipping uses it as an immutable marker; adaptive schemes may carry
+    the threshold and counters needed for the next step. Privacy calibration
+    metadata lives on the returned :class:`ClippedPytree`, not on the state
+    object.
 
     Example:
         >>> from opaque.clipping import clipped_grad
@@ -24,113 +45,150 @@ class ClipState(ABC):
         >>> grad_fn, clip_state = clipped_grad(loss_fn, clipping_norm=1.0, batch_argnums=(1, 2))
         >>> grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
         >>>
-        >>> # Use sensitivity for noise calibration
+        >>> # Noise calibration reads ``max_norm`` from the clipped output
         >>> from opaque.dpsgd.noise import gaussian_noise
-        >>> noise_fn, noise_state = gaussian_noise(stddev=1.1 * clip_state.sensitivity)
+        >>> noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(0))
         >>> noisy_grads, noise_state = noise_fn(grads, noise_state)
     """
-
-    clipping_norm: float | PerGroup
-    """The raw per-example clipping norm used at the current step.
-
-    For fixed clipping this is the constant L2 norm bound.
-    For adaptive clipping this is the threshold that was actually applied
-    to clip the gradients, **not** the updated threshold for the next step.
-    When ``PerGroup``, each group has its own norm bound.
-    """
-
-    normalize_by: float
-    """Divisor applied to the clipped gradient sum.
-
-    When ``normalize_by > 1`` the clipped sum is divided by this value,
-    reducing the L2 sensitivity accordingly.  Defaults to ``1.0``
-    (no averaging).
-    """
-
-    @property
-    def sensitivity(self) -> float:
-        r"""L2 sensitivity of the clipped query (always a scalar).
-
-        For scalar ``clipping_norm`` this is simply ``clipping_norm / normalize_by``.
-
-        For per-group clipping with group norms :math:`C_1, \dots, C_K`,
-        the L2 sensitivity of the full parameter vector is the norm of the
-        per-group bounds:
-
-        .. math::
-
-            \Delta_2 = \frac{\lVert C \rVert_2}{n}
-                     = \frac{\sqrt{\sum_{i=1}^{K} C_i^2}}{n}
-
-        This is always a **scalar** — it represents the maximum L2 change
-        in the output when one record is added or removed.
-
-        Multiply by ``noise_multiplier`` to get the isotropic noise standard
-        deviation:
-
-        .. math::
-
-            \sigma = \text{nm} \cdot \Delta_2
-
-        Accounting is simply ``gaussian(nm)`` — no composition penalty,
-        regardless of the number of groups.
-
-        See :func:`~opaque.noise.per_group_noise_stddev` for an alternative
-        that allocates less total noise by varying σ across groups.
-        """
-        if isinstance(self.clipping_norm, PerGroup):
-            return self.clipping_norm.effective / self.normalize_by
-        return self.clipping_norm / self.normalize_by
 
 
 @dataclass(frozen=True)
 class FixedClipState(ClipState):
-    """Clipping state for fixed (non-adaptive) gradient clipping.
+    """Marker state for fixed (non-adaptive) clipping."""
 
-    This state is returned by `clipped_grad` and `clipped_fun` for fixed clipping,
-    where the clipping norm remains constant throughout training.
 
-    Attributes:
-        clipping_norm: The L2 norm bound after clipping.  When ``PerGroup``,
-            each parameter group has its own norm bound.
-        normalize_by: Divisor applied to the clipped sum (1.0 = no averaging).
+# ---------------------------------------------------------------------------
+# ClippedPytree
+# ---------------------------------------------------------------------------
 
-    Example:
-        >>> from opaque.clipping import clipped_grad
-        >>> loss_fn = lambda params, x, y: ((x @ params - y) ** 2).mean()
-        >>> grad_fn, clip_state = clipped_grad(loss_fn, clipping_norm=1.5, batch_argnums=(1, 2))
-        >>>
-        >>> # State is fixed throughout training
-        >>> assert clip_state.clipping_norm == 1.5
-        >>> assert clip_state.sensitivity == 1.5  # normalize_by defaults to 1.0
-        >>>
-        >>> # After gradient computation, state is unchanged
-        >>> grads, new_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-        >>> assert new_state.clipping_norm == 1.5  # Still the same
+
+MaxNorm = Any
+
+
+def _validate_public_scalar(scalar: Any, *, op: str) -> float:
+    if isinstance(scalar, bool) or not isinstance(scalar, Real):
+        raise TypeError(
+            f"{op} only supports public real-number scalars. "
+            "Operate on `.pytree` and reconstruct the clipped value with an "
+            "explicit max_norm when the clipped interpretation is unclear."
+        )
+    return float(scalar)
+
+
+def _scale_tensor_leaves(pytree: Any, scalar: float) -> Any:
+    return tree_map(
+        lambda leaf: leaf * scalar if isinstance(leaf, torch.Tensor) else leaf,
+        pytree,
+    )
+
+
+def _apply_tensor_method(pytree: Any, method: str, *args: Any, **kwargs: Any) -> Any:
+    def _apply(leaf: Any) -> Any:
+        if isinstance(leaf, torch.Tensor):
+            return getattr(leaf, method)(*args, **kwargs)
+        return leaf
+
+    return tree_map(_apply, pytree)
+
+
+def _scale_max_norm(max_norm: MaxNorm, factor: float) -> MaxNorm:
+    return abs(factor) * max_norm
+
+
+def _unsupported_message(op: str) -> str:
+    return (
+        f"ClippedPytree {op} does not preserve DP max_norm semantics "
+        "automatically. Operate on `.pytree` and reconstruct the clipped "
+        "value with an explicit max_norm."
+    )
+
+
+@dataclass(frozen=True)
+class ClippedPytree:
+    """A pytree with a public maximum L2 norm on one record's contribution.
+
+    Arithmetic is intentionally narrow.  Public scalar multiplication,
+    division, and negation preserve the clipped-query interpretation.
+    Other operations should be applied to ``.pytree`` directly, followed
+    by explicit reconstruction with the correct ``max_norm``.
     """
 
-    clipping_norm: float | PerGroup
-    normalize_by: float = 1.0
+    pytree: Any
+    max_norm: MaxNorm
 
-    def __post_init__(self):
-        """Validate state parameters."""
-        if isinstance(self.clipping_norm, PerGroup):
-            for gname, val in self.clipping_norm.values.items():
-                if val <= 0:
-                    raise ValueError(
-                        f"clipping_norm must be positive for all groups, "
-                        f"got {val} for group '{gname}'"
-                    )
-        else:
-            if self.clipping_norm <= 0:
-                raise ValueError(
-                    f"clipping_norm must be positive, got {self.clipping_norm}"
-                )
-        if self.normalize_by <= 0:
-            raise ValueError(f"normalize_by must be positive, got {self.normalize_by}")
+    @property
+    def sensitivity(self) -> float:
+        """Scalar effective L2 sensitivity implied by ``max_norm``."""
+        effective = getattr(self.max_norm, "effective", None)
+        if effective is not None:
+            return float(effective)
+        return float(self.max_norm)
+
+    def _scaled(self, scalar: float) -> ClippedPytree:
+        return replace(
+            self,
+            pytree=_scale_tensor_leaves(self.pytree, scalar),
+            max_norm=_scale_max_norm(self.max_norm, scalar),
+        )
+
+    def __mul__(self, scalar: Any) -> ClippedPytree:
+        return self._scaled(_validate_public_scalar(scalar, op="ClippedPytree *"))
+
+    def __rmul__(self, scalar: Any) -> ClippedPytree:
+        return self._scaled(_validate_public_scalar(scalar, op="* ClippedPytree"))
+
+    def __truediv__(self, scalar: Any) -> ClippedPytree:
+        factor = _validate_public_scalar(scalar, op="ClippedPytree /")
+        if factor == 0.0:
+            raise ZeroDivisionError("ClippedPytree division by zero")
+        return self._scaled(1.0 / factor)
+
+    def __rtruediv__(self, scalar: Any) -> ClippedPytree:  # noqa: ARG002
+        raise TypeError(_unsupported_message("reverse division"))
+
+    def __neg__(self) -> ClippedPytree:
+        return self._scaled(-1.0)
+
+    def __add__(self, other: Any) -> ClippedPytree:  # noqa: ARG002
+        raise TypeError(_unsupported_message("addition"))
+
+    def __radd__(self, other: Any) -> ClippedPytree:  # noqa: ARG002
+        raise TypeError(_unsupported_message("addition"))
+
+    def __sub__(self, other: Any) -> ClippedPytree:  # noqa: ARG002
+        raise TypeError(_unsupported_message("subtraction"))
+
+    def __rsub__(self, other: Any) -> ClippedPytree:  # noqa: ARG002
+        raise TypeError(_unsupported_message("subtraction"))
+
+    def __pow__(self, exponent: Any) -> ClippedPytree:  # noqa: ARG002
+        raise TypeError(_unsupported_message("power"))
+
+    def clone(self) -> ClippedPytree:
+        """Clone tensor leaves while preserving metadata."""
+        return replace(self, pytree=_apply_tensor_method(self.pytree, "clone"))
+
+    def detach(self) -> ClippedPytree:
+        """Detach tensor leaves while preserving metadata."""
+        return replace(self, pytree=_apply_tensor_method(self.pytree, "detach"))
+
+    def to(self, *args: Any, **kwargs: Any) -> ClippedPytree:
+        """Call ``Tensor.to`` on tensor leaves while preserving metadata."""
+        return replace(
+            self,
+            pytree=_apply_tensor_method(self.pytree, "to", *args, **kwargs),
+        )
+
+
+def clipped(pytree: Any, *, max_norm: MaxNorm) -> ClippedPytree:
+    """Manually wrap a pytree with public DP max-norm metadata."""
+    return ClippedPytree(pytree=pytree, max_norm=max_norm)
 
 
 __all__ = [
     "ClipState",
+    "ClippedPytree",
     "FixedClipState",
+    "MaxNorm",
+    "clipped",
 ]

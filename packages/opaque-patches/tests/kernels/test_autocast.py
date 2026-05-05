@@ -201,15 +201,15 @@ def test_kernels_autocast_proximity_to_full_cast(amp_dtype: torch.dtype):
 
 
 # ----------------------------------------------------------------------------
-# Numerical backward parity: autocast vs fp32 reference (mse-bounded)
+# Numerical backward parity: autocast vs fp32 reference (mse-clipped)
 # ----------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("amp_dtype", [torch.float16, torch.bfloat16])
 def test_block_backward_grad_proximity_to_fp32(amp_dtype: torch.dtype):
-    """Per-parameter grad mse(autocast, fp32) within calibrated bound.
+    """Per-parameter grad mse(autocast, fp32) within calibrated max_norm.
 
-    Goes beyond ``finite_grads`` — a lower-bound on numerical agreement
+    Goes beyond ``finite_grads`` — a lower-max_norm on numerical agreement
     between an autocast-driven backward and the fp32 reference. Bound is
     generous (autocast is intentionally lower-precision) but tight enough
     to fail if the kernel backward silently drops precision.
@@ -242,10 +242,10 @@ def test_block_backward_grad_proximity_to_fp32(amp_dtype: torch.dtype):
         a = fp32_grads[n].float()
         b = amp_grads[n].float()
         mse = (a - b).pow(2).mean().item()
-        # bf16 has ~3 decimal digits, fp16 ~3-4; bound calibrated against the block size.
-        bound = 5e-2 if amp_dtype is torch.float16 else 1e-1
-        assert mse < bound, (
-            f"param {n}: grad mse {mse:.4f} exceeds bound {bound} for autocast({amp_dtype})"
+        # bf16 has ~3 decimal digits, fp16 ~3-4; threshold calibrated against the block size.
+        mse_bound = 5e-2 if amp_dtype is torch.float16 else 1e-1
+        assert mse < mse_bound, (
+            f"param {n}: grad mse {mse:.4f} exceeds mse_bound {mse_bound} for autocast({amp_dtype})"
         )
 
 

@@ -4,6 +4,10 @@ import pytest
 import torch
 
 import opaque.accounting as acc
+from opaque.clipping.types import clipped
+
+from opaque.core.noise import NoisedPytree
+
 from opaque.dpftrl.noise import (
     BandMfStrategy,
     BisrStrategy,
@@ -289,45 +293,60 @@ class TestMfNoise:
 
     grad = {"w": torch.randn(3, 4)}
 
+    def _clipped_grad(self):
+        return clipped(self.grad, max_norm=1.0)
+
     def test_band_mf_noise(self):
         s = band_mf_strategy(n_steps=50, bands=10, momentum=0.95)
-        nf, ns = mf_noise(self.grad, s, stddev=1.0, key=key(42))
-        noisy, ns2 = nf(self.grad, ns)
+        nf, ns = mf_noise(self.grad, s, noise_multiplier=1.0, key=key(42))
+        noised, ns2 = nf(self._clipped_grad(), ns)
         assert ns2._step_counter == 1
-        assert "w" in noisy
-        assert noisy["w"].shape == self.grad["w"].shape
+        assert isinstance(noised, NoisedPytree)
+        assert noised.max_norm == pytest.approx(1.0)
+        assert noised.noise_stddev == pytest.approx(1.0)
+        assert "w" in noised.pytree
+        assert noised.pytree["w"].shape == self.grad["w"].shape
 
     def test_blt_noise(self):
         s = blt_strategy(n_steps=50, min_sep=10, max_participations=5, momentum=0.95)
-        nf, ns = mf_noise(self.grad, s, stddev=1.0, key=key(42))
-        noisy, ns2 = nf(self.grad, ns)
+        nf, ns = mf_noise(self.grad, s, noise_multiplier=1.0, key=key(42))
+        noised, ns2 = nf(self._clipped_grad(), ns)
         assert ns2._step_counter == 1
+        assert isinstance(noised, NoisedPytree)
 
     def test_lambda_cgd_noise(self):
         s = lambda_cgd_strategy(0.9, n_steps=50, min_sep=10, max_participations=5)
-        nf, ns = mf_noise(self.grad, s, stddev=1.0, key=key(42))
-        noisy, ns2 = nf(self.grad, ns)
+        nf, ns = mf_noise(self.grad, s, noise_multiplier=1.0, key=key(42))
+        noised, ns2 = nf(self._clipped_grad(), ns)
         assert ns2._step_counter == 1
+        assert isinstance(noised, NoisedPytree)
 
     def test_bisr_noise(self):
         s = bisr_strategy(bandwidth=4, n_steps=50, min_sep=10, max_participations=5)
-        nf, ns = mf_noise(self.grad, s, stddev=1.0, key=key(42))
-        noisy, ns2 = nf(self.grad, ns)
+        nf, ns = mf_noise(self.grad, s, noise_multiplier=1.0, key=key(42))
+        noised, ns2 = nf(self._clipped_grad(), ns)
         assert ns2._step_counter == 1
+        assert isinstance(noised, NoisedPytree)
 
     def test_lambda_cgd_multi_step(self):
         """λCGD noise correctly handles step 0 (no prev) and step 1+ (with prev)."""
         s = lambda_cgd_strategy(0.9, n_steps=50, min_sep=10, max_participations=5)
-        nf, ns = mf_noise(self.grad, s, stddev=1.0, key=key(42))
-        _, ns = nf(self.grad, ns)
-        _, ns = nf(self.grad, ns)
-        _, ns = nf(self.grad, ns)
+        nf, ns = mf_noise(self.grad, s, noise_multiplier=1.0, key=key(42))
+        _, ns = nf(self._clipped_grad(), ns)
+        _, ns = nf(self._clipped_grad(), ns)
+        _, ns = nf(self._clipped_grad(), ns)
         assert ns._step_counter == 3
 
     def test_noise_is_nonzero(self):
         """Noise adds something to the gradients."""
         s = band_mf_strategy(n_steps=50, bands=10, momentum=0.95)
-        nf, ns = mf_noise(self.grad, s, stddev=1.0, key=key(42))
-        noisy, _ = nf(self.grad, ns)
-        diff = torch.norm(noisy["w"] - self.grad["w"])
+        nf, ns = mf_noise(self.grad, s, noise_multiplier=1.0, key=key(42))
+        noised, _ = nf(self._clipped_grad(), ns)
+        diff = torch.norm(noised.pytree["w"] - self.grad["w"])
         assert diff > 0.1
+
+    def test_raw_grads_are_rejected(self):
+        s = band_mf_strategy(n_steps=50, bands=10, momentum=0.95)
+        nf, ns = mf_noise(self.grad, s, noise_multiplier=1.0, key=key(42))
+        with pytest.raises(TypeError, match="ClippedPytree"):
+            nf(self.grad, ns)

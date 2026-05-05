@@ -34,13 +34,13 @@ from opaque.accounting.mechanisms.blt import Blt
 from opaque.accounting.mechanisms.lambda_cgd import LambdaCgd
 from opaque.accounting.mechanisms.nonprivate import NonPrivate
 from opaque.accounting.transformations.adaclip import AdaClip
-from opaque.accounting.transformations.jme import Jme
+from opaque.accounting.transformations.second_moment import SecondMoment
 
 #: MF types with pre-computed Gram matrix for MC BnB.
 _BnbMf = Blt | LambdaCgd | Bisr | Bsr
 
 #: Mechanism types accepted by :func:`balls_in_bins`.
-_Inner = Gaussian | _BnbMf | AdaClip | Jme | NonPrivate
+_Inner = Gaussian | _BnbMf | AdaClip | SecondMoment | NonPrivate
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,22 +122,22 @@ class BallsInBins(DpProcess):
                     mg.noise_multiplier,
                     native_cfg,
                 )
-            case Jme(inner=Blt() | LambdaCgd() | Bisr() | Bsr()) as j:
-                if not j.gram_matrix:
+            case SecondMoment(inner=Blt() | LambdaCgd() | Bisr() | Bsr()) as second:
+                if not second.gram_matrix:
                     raise ValueError(
-                        f"Jme({type(j.inner).__name__}) requires a non-empty "
+                        f"SecondMoment({type(second.inner).__name__}) requires a non-empty "
                         "gram_matrix for BnB amplification."
                     )
                 return _native.bnb_mc_pld(
-                    list(j.gram_matrix),
+                    list(second.gram_matrix),
                     self.num_bins,
-                    j.noise_multiplier,
+                    second.noise_multiplier,
                     native_cfg,
                 )
             case _:
                 raise TypeError(
                     "BallsInBins requires a Gaussian, Blt, LambdaCgd, Bisr, Bsr, "
-                    f"AdaClip, or Jme inner mechanism, got {type(self.inner).__name__}."
+                    f"AdaClip, or SecondMoment inner mechanism, got {type(self.inner).__name__}."
                 )
 
 
@@ -177,11 +177,11 @@ def balls_in_bins(
     """
     if not isinstance(
         inner,
-        (Gaussian, Blt, LambdaCgd, Bisr, Bsr, AdaClip, Jme, NonPrivate),
+        (Gaussian, Blt, LambdaCgd, Bisr, Bsr, AdaClip, SecondMoment, NonPrivate),
     ):
         raise TypeError(
             f"balls_in_bins() requires a Gaussian, Blt, LambdaCgd, Bisr, Bsr, "
-            f"AdaClip, Jme, or NonPrivate inner mechanism, got {type(inner).__name__}. "
+            f"AdaClip, SecondMoment, or NonPrivate inner mechanism, got {type(inner).__name__}. "
             "Example: acc.balls_in_bins(acc.gaussian(nm), num_bins=k, num_epochs=E)"
         )
     if num_bins < 2:

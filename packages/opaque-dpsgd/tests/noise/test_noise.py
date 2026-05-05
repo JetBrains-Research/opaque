@@ -1,11 +1,15 @@
-"""Unit tests for noise module - unified (noise_fn, state) API."""
+"""Unit tests for Gaussian noise over clipped DP query pytrees."""
 
 import pytest
 import scipy.stats
 import torch
 
-from opaque.dpsgd.noise.gaussian import gaussian_noise
-from opaque.dpsgd.noise.gaussian import GaussianNoiseState
+from opaque.clipping.types import ClippedPytree, clipped
+
+from opaque.core.noise import NoisedPytree, noised
+
+from opaque.clipping.per_group import PerGroup
+from opaque.dpsgd.noise.gaussian import GaussianNoiseState, gaussian_noise
 from opaque.random import key
 
 
@@ -13,214 +17,244 @@ class TestGaussian:
     """Tests for gaussian_noise() function."""
 
     def test_returns_tuple(self):
-        """gaussian_noise() should return (noise_fn, state) tuple."""
-        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         assert callable(noise_fn)
         assert isinstance(state, GaussianNoiseState)
 
     def test_adds_noise_to_tensor(self):
-        """Noise function should add noise to a tensor."""
-        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         grad = torch.zeros(10, 5)
-        noisy, state = noise_fn(grad, state)
+        output, state = noise_fn(clipped(grad, max_norm=1.0), state)
 
-        assert noisy.shape == grad.shape
-        assert noisy.dtype == grad.dtype
-        assert not torch.allclose(noisy, grad)
+        assert isinstance(output, NoisedPytree)
+        assert output.pytree.shape == grad.shape
+        assert output.pytree.dtype == grad.dtype
+        assert output.max_norm == pytest.approx(1.0)
+        assert output.noise_stddev == pytest.approx(1.0)
+        assert not torch.allclose(output.pytree, grad)
 
     def test_adds_noise_to_pytree(self):
-        """Noise function should work with PyTrees."""
-        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         grads = {
             "weight": torch.zeros(10, 5),
             "bias": torch.zeros(10),
         }
-        noisy, state = noise_fn(grads, state)
+        output, state = noise_fn(clipped(grads, max_norm=1.0), state)
 
-        assert set(noisy.keys()) == set(grads.keys())
-        assert noisy["weight"].shape == grads["weight"].shape
-        assert noisy["bias"].shape == grads["bias"].shape
-        assert not torch.allclose(noisy["weight"], grads["weight"])
+        assert isinstance(output, NoisedPytree)
+        assert set(output.pytree.keys()) == set(grads.keys())
+        assert output.pytree["weight"].shape == grads["weight"].shape
+        assert output.pytree["bias"].shape == grads["bias"].shape
+        assert not torch.allclose(output.pytree["weight"], grads["weight"])
 
-    def test_zero_stddev(self):
-        """stddev=0 should return original gradients."""
-        noise_fn, state = gaussian_noise(stddev=0.0, key=key(0))
+    def test_zero_noise_multiplier(self):
+        noise_fn, state = gaussian_noise(noise_multiplier=0.0, key=key(0))
         grad = torch.randn(5, 3)
-        noisy, state = noise_fn(grad, state)
-        assert torch.equal(noisy, grad)
+        output, state = noise_fn(clipped(grad, max_norm=1.0), state)
+        assert torch.equal(output.pytree, grad)
+        assert output.noise_stddev == pytest.approx(0.0)
 
-    def test_negative_stddev_raises(self):
-        """Negative stddev should raise ValueError."""
-        with pytest.raises(ValueError, match="stddev must be non-negative"):
-            gaussian_noise(stddev=-1.0, key=key(0))
+    def test_negative_noise_multiplier_raises(self):
+        with pytest.raises(ValueError, match="noise_multiplier must be non-negative"):
+            gaussian_noise(noise_multiplier=-1.0, key=key(0))
+
+    def test_negative_bound_raises_at_call(self):
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
+        with pytest.raises(ValueError, match="non-negative"):
+            noise_fn(clipped(torch.zeros(3), max_norm=-1.0), state)
 
     def test_dtype_preservation(self):
-        """Noise function should preserve dtype."""
-        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
 
         grad_f32 = torch.randn(5, 3, dtype=torch.float32)
-        noisy_f32, state = noise_fn(grad_f32, state)
-        assert noisy_f32.dtype == torch.float32
+        out_f32, state = noise_fn(clipped(grad_f32, max_norm=1.0), state)
+        assert out_f32.pytree.dtype == torch.float32
 
         grad_f64 = torch.randn(5, 3, dtype=torch.float64)
-        noisy_f64, state = noise_fn(grad_f64, state)
-        assert noisy_f64.dtype == torch.float64
+        out_f64, state = noise_fn(clipped(grad_f64, max_norm=1.0), state)
+        assert out_f64.pytree.dtype == torch.float64
 
     def test_device_preservation(self):
-        """Noise function should preserve device."""
-        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
 
         grad_cpu = torch.randn(5, 3)
-        noisy_cpu, state = noise_fn(grad_cpu, state)
-        assert noisy_cpu.device == torch.device("cpu")
+        out_cpu, state = noise_fn(clipped(grad_cpu, max_norm=1.0), state)
+        assert out_cpu.pytree.device == torch.device("cpu")
 
         if torch.backends.mps.is_available():
             grad_mps = torch.randn(5, 3, device="mps")
-            noisy_mps, state = noise_fn(grad_mps, state)
-            assert noisy_mps.device.type == "mps"
+            out_mps, state = noise_fn(clipped(grad_mps, max_norm=1.0), state)
+            assert out_mps.pytree.device.type == "mps"
 
     def test_noise_normality(self):
-        """Noise should follow normal distribution."""
-        noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(42))
         zeros = torch.zeros(10000)
-        noisy, state = noise_fn(zeros, state)
+        output, state = noise_fn(clipped(zeros, max_norm=1.0), state)
 
-        _, p_value = scipy.stats.kstest(noisy.numpy(), "norm", args=(0, 1))
+        _, p_value = scipy.stats.kstest(output.pytree.numpy(), "norm", args=(0, 1))
         assert p_value > 0.01
 
     def test_noise_stddev(self):
-        """Noise should have correct stddev."""
         target_stddev = 2.5
-        noise_fn, state = gaussian_noise(stddev=target_stddev, key=key(0))
+        noise_fn, state = gaussian_noise(noise_multiplier=target_stddev, key=key(0))
         zeros = torch.zeros(10000)
-        noisy, state = noise_fn(zeros, state)
+        output, state = noise_fn(clipped(zeros, max_norm=1.0), state)
 
-        measured_stddev = noisy.std().item()
+        measured_stddev = output.pytree.std().item()
+        assert output.noise_stddev == pytest.approx(target_stddev)
         assert abs(measured_stddev - target_stddev) < 0.1
 
     def test_uniqueness(self):
-        """Successive calls should produce different noise."""
-        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
-        grad = torch.zeros(100)
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
+        grad = clipped(torch.zeros(100), max_norm=1.0)
 
         noisy1, state = noise_fn(grad, state)
         noisy2, state = noise_fn(grad, state)
 
-        assert not torch.allclose(noisy1, noisy2)
+        assert not torch.allclose(noisy1.pytree, noisy2.pytree)
 
     def test_nested_pytree(self):
-        """Works with nested PyTree structures."""
-        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         grads = {
             "layer1": {"w": torch.zeros(10, 5), "b": torch.zeros(10)},
             "layer2": {"w": torch.zeros(5, 3), "b": torch.zeros(3)},
         }
-        noisy, state = noise_fn(grads, state)
+        output, state = noise_fn(clipped(grads, max_norm=1.0), state)
 
-        assert set(noisy.keys()) == {"layer1", "layer2"}
-        assert not torch.allclose(noisy["layer1"]["w"], grads["layer1"]["w"])
+        assert set(output.pytree.keys()) == {"layer1", "layer2"}
+        assert not torch.allclose(output.pytree["layer1"]["w"], grads["layer1"]["w"])
 
     def test_tuple_pytree(self):
-        """Works with tuple PyTrees."""
-        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         grads = (torch.zeros(10, 5), torch.zeros(10))
-        noisy, state = noise_fn(grads, state)
+        output, state = noise_fn(clipped(grads, max_norm=1.0), state)
 
-        assert len(noisy) == 2
-        assert not torch.allclose(noisy[0], grads[0])
+        assert len(output.pytree) == 2
+        assert not torch.allclose(output.pytree[0], grads[0])
 
-    def test_stddev_override(self):
-        """Per-call stddev override should change noise scale."""
-        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
-        grad = torch.zeros(10000)
+    def test_requires_clipped_input(self):
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
 
-        # Override with smaller stddev
-        noisy, state = noise_fn(grad, state, stddev=0.5)
-        measured_stddev = noisy.std().item()
-        assert abs(measured_stddev - 0.5) < 0.05
+        with pytest.raises(TypeError, match="expects ClippedPytree"):
+            noise_fn(torch.zeros(8), state)
 
-    def test_stddev_override_does_not_affect_default(self):
-        """Per-call override should not change the default for next call."""
-        noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
-        grad = torch.zeros(10000)
+    def test_rejects_already_noisy_input(self):
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
 
-        # Override with small stddev
-        _, state = noise_fn(grad, state, stddev=0.1)
+        with pytest.raises(TypeError, match="not NoisedPytree"):
+            noise_fn(noised(torch.zeros(8), max_norm=2.0, noise_stddev=2.0), state)
 
-        # Default should still be 1.0
-        noisy, state = noise_fn(grad, state)
-        assert noisy.var().item() > 0.5  # should have variance ~1.0, not ~0.01
+    def test_clipped_input_returns_noisy_pytree(self):
+        noise_fn, state = gaussian_noise(noise_multiplier=1.5, key=key(0))
+        clipped_value = ClippedPytree(torch.zeros(10000), max_norm=2.0)
+
+        output, state = noise_fn(clipped_value, state)
+
+        assert isinstance(output, NoisedPytree)
+        assert output.max_norm == pytest.approx(2.0)
+        assert output.noise_stddev == pytest.approx(3.0)
+        assert output.pytree.shape == clipped_value.pytree.shape
+        assert abs(output.pytree.std().item() - 3.0) < 0.1
+
+    def test_clipped_zero_multiplier_preserves_pytree(self):
+        noise_fn, state = gaussian_noise(noise_multiplier=0.0, key=key(0))
+        clipped_value = ClippedPytree(torch.ones(8), max_norm=2.0)
+
+        output, state = noise_fn(clipped_value, state)
+
+        assert isinstance(output, NoisedPytree)
+        assert output.max_norm == pytest.approx(2.0)
+        assert output.noise_stddev == pytest.approx(0.0)
+        assert torch.equal(output.pytree, clipped_value.pytree)
+
+    def test_clipped_per_group_noise_multiplier(self):
+        noise_fn, state = gaussian_noise(noise_multiplier=2.0, key=key(0))
+        max_norm = PerGroup(
+            groups={"w": "small", "b": "large"},
+            values={"small": 1.0, "large": 3.0},
+        )
+        clipped_value = ClippedPytree(
+            {"w": torch.zeros(4), "b": torch.zeros(4)},
+            max_norm=max_norm,
+        )
+
+        output, state = noise_fn(clipped_value, state)
+
+        assert isinstance(output, NoisedPytree)
+        assert isinstance(output.noise_stddev, PerGroup)
+        assert output.noise_stddev.groups == max_norm.groups
+        assert output.noise_stddev.values == {
+            "small": pytest.approx(4.0),
+            "large": pytest.approx(6.928203230275509),
+        }
+        assert output.pytree["w"].shape == clipped_value.pytree["w"].shape
+        assert output.pytree["b"].shape == clipped_value.pytree["b"].shape
 
 
 class TestGaussianKey:
     """Tests for required key parameter."""
 
-    def test_key_required(self):
-        """Missing key should raise TypeError."""
+    def test_noise_multiplier_required(self):
         with pytest.raises(TypeError, match="missing 1 required keyword-only argument"):
-            gaussian_noise(stddev=1.0)
+            gaussian_noise(key=key(0))
+
+    def test_key_required(self):
+        with pytest.raises(TypeError, match="missing 1 required keyword-only argument"):
+            gaussian_noise(noise_multiplier=1.0)
 
     def test_generator_int_reproducible(self):
-        """key(42) should produce reproducible noise."""
-        noise_fn1, state1 = gaussian_noise(stddev=1.0, key=key(42))
-        noise_fn2, state2 = gaussian_noise(stddev=1.0, key=key(42))
+        noise_fn1, state1 = gaussian_noise(noise_multiplier=1.0, key=key(42))
+        noise_fn2, state2 = gaussian_noise(noise_multiplier=1.0, key=key(42))
 
-        grad = torch.zeros(10, 10)
+        grad = clipped(torch.zeros(10, 10), max_norm=1.0)
         noisy1, state1 = noise_fn1(grad, state1)
         noisy2, state2 = noise_fn2(grad, state2)
 
-        assert torch.allclose(noisy1, noisy2)
+        assert torch.allclose(noisy1.pytree, noisy2.pytree)
 
     def test_generator_different_seeds(self):
-        """Different keys should produce different noise."""
-        noise_fn1, state1 = gaussian_noise(stddev=1.0, key=key(42))
-        noise_fn2, state2 = gaussian_noise(stddev=1.0, key=key(43))
+        noise_fn1, state1 = gaussian_noise(noise_multiplier=1.0, key=key(42))
+        noise_fn2, state2 = gaussian_noise(noise_multiplier=1.0, key=key(43))
 
-        grad = torch.zeros(10, 10)
+        grad = clipped(torch.zeros(10, 10), max_norm=1.0)
         noisy1, _ = noise_fn1(grad, state1)
         noisy2, _ = noise_fn2(grad, state2)
 
-        assert not torch.allclose(noisy1, noisy2)
+        assert not torch.allclose(noisy1.pytree, noisy2.pytree)
 
     def test_seed_int_produces_reproducible_state(self):
-        """key(42) should initialize RNG state deterministically."""
-        noise_fn1, state1 = gaussian_noise(stddev=1.0, key=key(42))
-        noise_fn2, state2 = gaussian_noise(stddev=1.0, key=key(42))
+        noise_fn1, state1 = gaussian_noise(noise_multiplier=1.0, key=key(42))
+        noise_fn2, state2 = gaussian_noise(noise_multiplier=1.0, key=key(42))
 
-        # Both should produce same initial state
-        grad = torch.zeros(10)
+        grad = clipped(torch.zeros(10), max_norm=1.0)
         noisy1, _ = noise_fn1(grad, state1)
         noisy2, _ = noise_fn2(grad, state2)
-        assert torch.allclose(noisy1, noisy2)
+        assert torch.allclose(noisy1.pytree, noisy2.pytree)
 
     def test_state_evolution(self):
-        """State should evolve, producing different noise each call."""
-        noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(42))
 
-        grad = torch.zeros(10)
+        grad = clipped(torch.zeros(10), max_norm=1.0)
         noisy1, state = noise_fn(grad, state)
         noisy2, state = noise_fn(grad, state)
 
-        assert not torch.allclose(noisy1, noisy2)
+        assert not torch.allclose(noisy1.pytree, noisy2.pytree)
 
     def test_saved_state_replay_is_deterministic(self):
-        """Re-using the same immutable state should replay identical noise."""
-        noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
-        grad = torch.zeros(10)
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(42))
+        grad = clipped(torch.zeros(10), max_norm=1.0)
 
         noisy1, _ = noise_fn(grad, state)
         noisy2, _ = noise_fn(grad, state)
 
-        assert torch.allclose(noisy1, noisy2)
+        assert torch.allclose(noisy1.pytree, noisy2.pytree)
 
-    def test_zero_stddev_with_seed(self):
-        """stddev=0 should return original gradients even with explicit key."""
-        noise_fn, state = gaussian_noise(stddev=0.0, key=key(42))
+    def test_zero_multiplier_with_seed(self):
+        noise_fn, state = gaussian_noise(noise_multiplier=0.0, key=key(42))
         grad = torch.randn(5, 3)
-        noisy, state = noise_fn(grad, state)
-        assert torch.equal(noisy, grad)
+        output, state = noise_fn(clipped(grad, max_norm=1.0), state)
+        assert torch.equal(output.pytree, grad)
 
-    def test_invalid_seed_type_raises(self):
-        """Invalid key type should raise TypeError."""
+    def test_invalid_key_type_raises(self):
         with pytest.raises(TypeError, match="key must be"):
-            gaussian_noise(stddev=1.0, key="bad")
+            gaussian_noise(noise_multiplier=1.0, key="bad")

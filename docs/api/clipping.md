@@ -22,9 +22,9 @@ differential privacy.
 ### State Types
 
 - **`ClipState`** — Base class for clipping state.
-- **`FixedClipState`** — State for `clipped_grad` / `clipped_fun` (fixed threshold).
-- **`AdaptiveClipState`** — State for `adaptive_clipped_grad` (adapting threshold).
-- **`AutoClipState`** — State for `auto_clipped_grad` / `auto_clipped_fun` (fixed R and γ).
+- **`FixedClipState`** — Marker state for fixed `clipped_grad` / `clipped_fun`.
+- **`AdaptiveClipState`** — Internal execution state for `adaptive_clipped_grad`.
+- **`AutoClipState`** — Marker state for `auto_clipped_grad` / `auto_clipped_fun`.
 
 ### Auxiliary Output Types
 
@@ -39,8 +39,8 @@ differential privacy.
 Use `sync()` from `opaque.distributed` to synchronize any clipping state or aux
 object. It auto-dispatches to the right function based on type:
 
-- **`sync(FixedClipState)`** → asserts `clipping_norm` matches across ranks.
-- **`sync(AdaptiveClipState)`** → aggregates counts and recomputes global adaptive clip norm.
+- **`sync(FixedClipState)`** → marker-state passthrough.
+- **`sync(AdaptiveClipState)`** → aggregates counts and recomputes the internal adaptive threshold.
 - **`sync(ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux)`** → gathers aux across ranks.
 
 **See also**: [Per-Sample Gradient Clipping User Guide](../user-guide/clipping.md)

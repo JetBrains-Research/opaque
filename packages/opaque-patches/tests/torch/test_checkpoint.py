@@ -208,9 +208,11 @@ class TestCheckpointWithClippedGrad:
         )
         grads, _ = grad_fn(trainable, frozen, input_ids, labels, state=clip_state)
 
-        assert len(grads) > 0
-        assert all(v.shape == trainable[k].shape for k, v in grads.items())
-        assert any(v.abs().max() > 0 for v in grads.values()), "All gradients are zero"
+        assert len(grads.pytree) > 0
+        assert all(v.shape == trainable[k].shape for k, v in grads.pytree.items())
+        assert any(v.abs().max() > 0 for v in grads.pytree.values()), (
+            "All gradients are zero"
+        )
 
     def test_checkpoint_gradient_correctness(self, device):
         """Checkpointed gradients match non-checkpointed for same model."""

@@ -29,8 +29,8 @@ The correction makes the optimizer usable under DP noise — the
 denominator now tracks only the signal contribution and the per-
 coordinate LR adapts as intended.
 
-This module is mechanism-agnostic: ``noise_stddev`` is a number or a
-:class:`PerGroup` of numbers passed by the caller; the noise *injection*
+This module is mechanism-agnostic: the noise mechanism carries realized
+``noise_stddev`` metadata on ``NoisedPytree`` updates; the noise injection
 lives elsewhere (``opaque.dpsgd.noise``, ``opaque.dpftrl.noise``).
 """
 
@@ -53,7 +53,6 @@ except ImportError as exc:
 from opaque.clipping.per_group import PerGroup
 from opaque.core.pytree import tree_map
 from opaque.optimizers._bias_correction import (
-    init_per_group_phi,
     is_per_group,
     resolve_noise_variance,
 )
@@ -72,7 +71,7 @@ class AdagradState:
             params).
         phi_acc: Cumulative noise variance ``∑ σ²`` (scalar or
             ``dict[group, float]``).  Stays at zero unless
-            ``noise_stddev`` is passed at update time.
+            ``NoisedPytree`` updates supply realized σ metadata.
         step: Number of completed updates.
     """
 
@@ -84,18 +83,15 @@ class AdagradState:
 def _scale_by_adagrad(
     eps: float,
     initial_accumulator_value: float,
-    default_noise_stddev: float | PerGroup,
+    noise_bias_correction: bool,
     bc_floor: float,
 ) -> GradientTransformation:
-    _default_per_group = is_per_group(default_noise_stddev)
-
     def init_fn(params: Any) -> AdagradState:
         v_acc = tree_map(
             lambda p: torch.full_like(p, initial_accumulator_value),
             params,
         )
-        phi_acc: Any = init_per_group_phi(params) if _default_per_group else 0.0
-        return AdagradState(v_acc=v_acc, phi_acc=phi_acc, step=0)
+        return AdagradState(v_acc=v_acc, phi_acc=0.0, step=0)
 
     def update_fn(
         updates: Any,
@@ -110,7 +106,15 @@ def _scale_by_adagrad(
         # Cumulative second moment: v_acc += g².
         new_v = tree_map(lambda v, g: v + g * g, state.v_acc, updates)
 
-        effective = noise_stddev if noise_stddev is not None else default_noise_stddev
+        effective = noise_stddev if noise_stddev is not None else 0.0
+        if not noise_bias_correction:
+            result = tree_map(lambda g, v: g / (v.sqrt() + eps), updates, new_v)
+            return result, AdagradState(
+                v_acc=new_v,
+                phi_acc=state.phi_acc,
+                step=t,
+            )
+
         per_group = is_per_group(effective) or isinstance(state.phi_acc, dict)
 
         if per_group:
@@ -173,7 +177,7 @@ def adagrad(
     initial_accumulator_value: float = 0.0,
     *,
     decoupled_weight_decay: bool = True,
-    noise_stddev: float | PerGroup = 0.0,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
     """Create an Adagrad optimizer with optional DP-aware correction.
 
@@ -186,10 +190,11 @@ def adagrad(
             ``initial_accumulator_value``).  Default 0.
         decoupled_weight_decay: ``True`` selects decoupled WD;
             ``False`` folds ``wd·params`` into the gradient.
-        noise_stddev: Default per-step noise σ for the cumulative
-            ``Φ_acc`` correction.  ``0.0`` disables it (vanilla
-            Adagrad — **not safe for DP training**); pass the noise
-            multiplier × clipping sensitivity when training under DP.
+        noise_bias_correction: If ``True``, subtract a cumulative
+            ``Φ_acc`` of the realized noise variance from ``v_acc`` when
+            ``NoisedPytree`` updates are passed (Adagrad does not decay
+            its accumulator, so unmitigated noise compounds linearly).
+            Defaults to ``False``; flip on to ablate.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.
@@ -203,21 +208,11 @@ def adagrad(
             "initial_accumulator_value must be non-negative, got "
             f"{initial_accumulator_value}"
         )
-    if isinstance(noise_stddev, PerGroup):
-        for gname, val in noise_stddev.values.items():
-            if val < 0:
-                raise ValueError(
-                    f"noise_stddev must be non-negative for all groups, "
-                    f"got {val} for group '{gname}'"
-                )
-    elif noise_stddev < 0:
-        raise ValueError(f"noise_stddev must be non-negative, got {noise_stddev}")
-
     bc_floor = eps * eps
     moment = _scale_by_adagrad(
         eps=eps,
         initial_accumulator_value=initial_accumulator_value,
-        default_noise_stddev=noise_stddev,
+        noise_bias_correction=noise_bias_correction,
         bc_floor=bc_floor,
     )
     return make_optimizer_chain(

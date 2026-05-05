@@ -13,6 +13,8 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
+from opaque.core.noise import noised  # noqa: E402
+from opaque.core.noise import SecondMomentNoiseOutput  # noqa: E402
 from opaque.optimizers import (  # noqa: E402
     adafactor,
     adamw,
@@ -64,15 +66,23 @@ class TestAdamW:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_round_trip_bc(self, params, grads):
-        opt = adamw(lr=1e-3, noise_stddev=0.5)
-        u_orig, u_rest = _round_trip(opt, params, grads)
+        opt = adamw(lr=1e-3)
+        u_orig, u_rest = _round_trip(
+            opt,
+            params,
+            noised(grads, max_norm=1.0, noise_stddev=0.5),
+        )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
-    def test_round_trip_jme(self, params, grads):
+    def test_round_trip_second_moment(self, params, grads):
         sq = {k: v.pow(2) + 0.01 for k, v in grads.items()}
+        output = SecondMomentNoiseOutput(
+            noised(grads, max_norm=1.0, noise_stddev=0.1),
+            noised(sq, max_norm=1.0, noise_stddev=0.1),
+        )
         opt = adamw(lr=1e-3)
-        u_orig, u_rest = _round_trip(opt, params, grads, noisy_squared_grads=sq)
+        u_orig, u_rest = _round_trip(opt, params, output)
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
@@ -89,10 +99,14 @@ class TestAdamW:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_step_and_phi_preserved(self, params, grads):
-        opt = adamw(lr=1e-3, noise_stddev=0.3)
+        opt = adamw(lr=1e-3)
         state = opt.init(params)
         for _ in range(7):
-            _, state = opt.update(grads, state, params=params)
+            _, state = opt.update(
+                noised(grads, max_norm=1.0, noise_stddev=0.3),
+                state,
+                params=params,
+            )
         sd = state_dict(state)
         template = opt.init(params)
         restored = load_state_dict(template, sd)
@@ -141,8 +155,12 @@ class TestAdEMAMix:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_round_trip_bc(self, params, grads):
-        opt = ademamix(lr=1e-3, noise_stddev=0.4)
-        u_orig, u_rest = _round_trip(opt, params, grads)
+        opt = ademamix(lr=1e-3)
+        u_orig, u_rest = _round_trip(
+            opt,
+            params,
+            noised(grads, max_norm=1.0, noise_stddev=0.4),
+        )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 

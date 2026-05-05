@@ -23,7 +23,7 @@ Install and depend on `opaque` only. The repository is implemented as
 | `opaque` | — | Convenience installer; pulls in a curated bundle of sub-packages |
 | `opaque-core` | `opaque.core`, `opaque.functional`, `opaque.distributed` | RNG, pytree, clipping, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing |
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, AdamW-BC, Poisson samplers, adaptive + auto clipping |
-| `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, JME, λ-CGD), AdamW-JME, correlated-noise samplers |
+| `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers |
 | `opaque-auditing` | `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) |
 | `opaque-patches` | `opaque.patches` | Unified patching entrypoint for PyTorch checkpointing, Hugging Face compat wrappers, Triton kernels, and PEFT/LoRA fusion |
 | `opaque-transformers` | `opaque.transformers` | Transformers dependency bundle and namespace package for Hugging Face integrations |
@@ -115,7 +115,7 @@ grad_fn, clip_state = clipped_grad(
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
-    stddev=result.param * clip_state.sensitivity, key=key(42),
+  noise_multiplier=result.param, key=key(42),
 )
 
 # Training loop
@@ -132,7 +132,8 @@ for batch_x, batch_y in dataloader:
 - **Per-example gradient clipping** via `torch.func.vmap` + `torch.func.grad`,
   with fixed, adaptive (Andrew et al. 2021), and AUTO-S (Bu et al. 2023) variants.
 - **Noise injection**: Gaussian, truncated Gaussian, and correlated
-  matrix-factorization noise (band-MF, BLT, BSR, BiSR, DP-λCGD, JME).
+  matrix-factorization noise (band-MF, BLT, BSR, BiSR, DP-λCGD), including
+  private second-moment streams for adaptive optimizers.
 - **Privacy accounting**: Rust-based PLD engine with tight composition,
   multiple privacy metrics (ε-δ, f-DP advantage, error rates), and noise
   calibration via binary search.

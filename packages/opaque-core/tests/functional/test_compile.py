@@ -90,14 +90,14 @@ def _run_dp_step(
     )
     grads, _ = grad_fn(params, x, y, state=clip_state)
 
-    noise_fn, ns = gaussian_noise(stddev=noise_stddev, key=key(rng_seed))
-    noisy, _ = noise_fn(grads, ns)
+    noise_fn, ns = gaussian_noise(noise_multiplier=noise_stddev, key=key(rng_seed))
+    noised, _ = noise_fn(grads, ns)
 
     optimizer = torchopt.adamw(lr=1e-2)
     opt_state = optimizer.init(params)
-    updates, _ = optimizer.update(noisy, opt_state, params=params)
+    updates, _ = optimizer.update(noised.pytree, opt_state, params=params)
     new_params = torchopt.apply_updates(params, updates, inplace=False)
-    return grads, noisy, new_params
+    return grads.pytree, noised.pytree, new_params
 
 
 def _assert_pytree_close(a, b, *, rtol: float, atol: float):

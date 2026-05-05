@@ -4,8 +4,8 @@ When using per-group clipping, the simplest approach is isotropic noise:
 
 .. math::
 
-    \sigma = \text{nm} \cdot \Delta_2
-           = \text{nm} \cdot \frac{\lVert C \rVert_2}{n}
+        \sigma = \text{nm} \cdot \Delta_2
+            = \text{nm} \cdot \lVert B \rVert_2
 
 This uses the same noise standard deviation for every parameter and accounts
 correctly with ``gaussian(nm)``.
@@ -17,7 +17,7 @@ deviations satisfying the Mahalanobis privacy constraint:
 
 .. math::
 
-    \sigma_i = \text{nm} \cdot \sqrt{C_i \cdot \textstyle\sum_j C_j} \;/\; n
+    \sigma_i = \text{nm} \cdot \sqrt{B_i \cdot \textstyle\sum_j B_j}
 
 Privacy accounting is identical to the isotropic case — just
 ``gaussian(nm)`` — because the allocation satisfies the Mahalanobis
@@ -28,21 +28,19 @@ from __future__ import annotations
 
 import math
 
-from opaque.clipping.types import ClipState
 from opaque.clipping.per_group import PerGroup
 
 
-def per_group_noise_stddev(clip_state: ClipState, noise_multiplier: float) -> PerGroup:
+def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGroup:
     r"""Compute MSE-optimal per-group noise standard deviations.
 
-    Given a clip state with per-group clipping norms :math:`C_1, \dots, C_K`
-    and ``normalize_by`` :math:`= n`, returns per-group noise standard
-    deviations:
+    Given per-group contribution bounds :math:`B_1, \dots, B_K`, returns
+    per-group noise standard deviations:
 
     .. math::
 
         \sigma_i = \text{nm} \cdot
-            \frac{\sqrt{C_i \cdot \sum_j C_j}}{n}
+            \sqrt{B_i \cdot \sum_j B_j}
 
     This allocation minimizes the total noise MSE
     :math:`\sum_i d_i \sigma_i^2` (for equal group dimensions) among all
@@ -53,8 +51,8 @@ def per_group_noise_stddev(clip_state: ClipState, noise_multiplier: float) -> Pe
     with no composition penalty regardless of the number of groups.
 
     Args:
-        clip_state: Clipping state with per-group ``clipping_norm``
-            (:class:`~opaque.utils.per_group.PerGroup`).
+        max_norm: Per-group contribution bounds, typically
+            ``clipped_grads.max_norm`` from per-group clipping.
         noise_multiplier: The noise multiplier used for privacy
             accounting via ``gaussian(nm)``.
 
@@ -63,31 +61,39 @@ def per_group_noise_stddev(clip_state: ClipState, noise_multiplier: float) -> Pe
         standard deviations.
 
     Raises:
-        TypeError: If ``clip_state.clipping_norm`` is not ``PerGroup``.
+        TypeError: If ``max_norm`` is not ``PerGroup``.
 
     Example::
 
         from opaque.clipping import clipped_grad
-        from opaque.dpsgd.noise.gaussian import gaussian_noise
         from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
 
         grad_fn, clip_state = clipped_grad(loss_fn, clipping_norm=pg, ...)
-        stddev = per_group_noise_stddev(clip_state, nm)
-        noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+        grads, clip_state = grad_fn(params, batch, state=clip_state)
+        stddev = per_group_noise_stddev(grads.max_norm, nm)
+        # stddev is a PerGroup allocation for mechanisms that accept
+        # per-group standard deviations directly.
 
         # Accounting: just gaussian(nm), same as isotropic.
     """
-    cn = clip_state.clipping_norm
-    if not isinstance(cn, PerGroup):
+    if not isinstance(max_norm, PerGroup):
         raise TypeError(
-            f"per_group_noise_stddev requires per-group clipping_norm, "
-            f"got {type(cn).__name__}. Use nm * clip_state.sensitivity instead."
+            "per_group_noise_stddev requires a PerGroup max_norm, "
+            f"got {type(max_norm).__name__}."
         )
-    n = clip_state.normalize_by
-    sum_c = sum(cn.values.values())
+    for group_name, value in max_norm.values.items():
+        if value < 0:
+            raise ValueError(
+                "per-group bounds must be non-negative, "
+                f"got {value} for group '{group_name}'."
+            )
+    sum_c = sum(max_norm.values.values())
     return PerGroup(
-        cn.groups,
-        {k: noise_multiplier * math.sqrt(c * sum_c) / n for k, c in cn.values.items()},
+        max_norm.groups,
+        {
+            k: noise_multiplier * math.sqrt(c * sum_c)
+            for k, c in max_norm.values.items()
+        },
     )
 
 

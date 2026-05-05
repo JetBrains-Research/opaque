@@ -4,7 +4,7 @@ Gaussian / truncated-Gaussian noise, per-group noise allocation, adaptive
 and AUTO-S clipping, and the standard + truncated Poisson samplers.
 Fixed-clipping primitives used by this package live in
 :mod:`opaque.clipping`; functional optimizers (including the universal
-``adamw`` with DP bias-correction and JME paths) live in
+``adamw`` with DP bias-correction and private second-moment paths) live in
 :mod:`opaque.optimizers`.
 
 Data classes (``AdaptiveClipState``, ``AdaptiveClippedGradAux``,

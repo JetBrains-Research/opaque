@@ -5,8 +5,17 @@ import math
 import pytest
 import torch
 
+from opaque.clipping.types import ClippedPytree
+
+from opaque.core.noise import NoisedPytree
+
 from opaque.dpsgd.clipping.adaptive import adaptive_clipped_grad
 from opaque.random import key
+
+
+def _unwrap_clipped(value):
+    assert isinstance(value, ClippedPytree)
+    return value.pytree
 
 
 class TestAdaptiveClippedGrad:
@@ -29,7 +38,7 @@ class TestAdaptiveClippedGrad:
         )
 
         # Check initial state
-        assert clip_state.next_clipping_norm == 1.0
+        assert clip_state._next_clipping_norm == 1.0
 
         # Compute gradients
         params = torch.randn(10, requires_grad=False)
@@ -37,9 +46,10 @@ class TestAdaptiveClippedGrad:
         batch_y = torch.randn(8)
 
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        grads = _unwrap_clipped(grads)
 
         # Check state updated
-        assert isinstance(clip_state.next_clipping_norm, float)
+        assert isinstance(clip_state._next_clipping_norm, float)
         assert grads.shape == params.shape
 
     def test_threshold_increases_when_too_many_clipped(self):
@@ -63,13 +73,13 @@ class TestAdaptiveClippedGrad:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        initial_clipping_norm = clip_state.next_clipping_norm
+        initial_clipping_norm = clip_state._next_clipping_norm
 
         # First step
         _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Threshold should increase (many gradients clipped)
-        assert clip_state.next_clipping_norm > initial_clipping_norm
+        assert clip_state._next_clipping_norm > initial_clipping_norm
 
     def test_threshold_decreases_when_too_few_clipped(self):
         """Test that threshold decreases when clipping rate < target quantile."""
@@ -92,13 +102,13 @@ class TestAdaptiveClippedGrad:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        initial_clipping_norm = clip_state.next_clipping_norm
+        initial_clipping_norm = clip_state._next_clipping_norm
 
         # First step
         _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Threshold should decrease (few gradients clipped)
-        assert clip_state.next_clipping_norm < initial_clipping_norm
+        assert clip_state._next_clipping_norm < initial_clipping_norm
 
     def test_geometric_update_formula(self):
         """Test proportional update: C_{t+1} = C_t * exp(η * (ρ̃ - γ))."""
@@ -207,7 +217,7 @@ class TestAdaptiveClippedGrad:
             _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Threshold should be clamped
-        assert clipping_norm_min <= clip_state.next_clipping_norm <= clipping_norm_max
+        assert clipping_norm_min <= clip_state._next_clipping_norm <= clipping_norm_max
 
     def test_step_counter_increments(self):
         """Test that step counter increments correctly."""
@@ -257,6 +267,7 @@ class TestAdaptiveClippedGrad:
         (grads, grad_aux), clip_state = grad_fn(
             params, batch_x, batch_y, state=clip_state
         )
+        grads = _unwrap_clipped(grads)
 
         assert grads.shape == params.shape
 
@@ -302,7 +313,7 @@ class TestAdaptiveClippedGrad:
 
         # Low quantile should result in higher threshold (clip fewer)
         # High quantile should result in lower threshold (clip more)
-        assert clip_state_low.next_clipping_norm > clip_state_high.next_clipping_norm
+        assert clip_state_low._next_clipping_norm > clip_state_high._next_clipping_norm
 
     def test_different_learning_rates(self):
         """Test that learning rate affects adaptation speed."""
@@ -343,8 +354,8 @@ class TestAdaptiveClippedGrad:
             )
 
         # Fast should have adapted more
-        assert abs(clip_state_fast.next_clipping_norm - 0.01) > abs(
-            clip_state_slow.next_clipping_norm - 0.01
+        assert abs(clip_state_fast._next_clipping_norm - 0.01) > abs(
+            clip_state_slow._next_clipping_norm - 0.01
         )
 
     def test_kwargs_passed_to_clipped_grad(self):
@@ -370,6 +381,7 @@ class TestAdaptiveClippedGrad:
         (grads, grad_aux), clip_state = grad_fn(
             params, batch_x, batch_y, state=clip_state
         )
+        grads = _unwrap_clipped(grads)
 
         assert grads.shape == params.shape
         assert grad_aux.loss_values is not None
@@ -397,15 +409,14 @@ class TestAdaptiveClippedGrad:
         # Compute clipped gradients
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
-        # Add noise scaled to current clip norm
-        noise_fn, noise_state = gaussian_noise(
-            stddev=1.1 * clip_state.sensitivity,
-            key=key(0),
-        )
+        # Add noise scaled to the clipped gradient metadata.
+        noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(0))
         noisy_grads, noise_state = noise_fn(grads, noise_state)
 
-        assert noisy_grads.shape == grads.shape
-        assert not torch.allclose(noisy_grads, grads)  # Noise added
+        assert isinstance(noisy_grads, NoisedPytree)
+        assert noisy_grads.noise_stddev == pytest.approx(1.1 * grads.max_norm)
+        assert noisy_grads.pytree.shape == grads.pytree.shape
+        assert not torch.allclose(noisy_grads.pytree, grads.pytree)  # Noise added
 
     def test_microbatching_produces_identical_results(self):
         """Test that microbatching produces identical gradients and state updates."""
@@ -445,14 +456,16 @@ class TestAdaptiveClippedGrad:
                 params, batch_x, batch_y, state=state_no_mb
             )
             grads_mb, state_mb = grad_fn_mb(params, batch_x, batch_y, state=state_mb)
+            grads_no_mb = _unwrap_clipped(grads_no_mb)
+            grads_mb = _unwrap_clipped(grads_mb)
 
             # Gradients should be identical
             torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
 
             # State updates should be identical
             assert math.isclose(
-                state_mb.next_clipping_norm,
-                state_no_mb.next_clipping_norm,
+                state_mb._next_clipping_norm,
+                state_no_mb._next_clipping_norm,
                 rel_tol=1e-5,
             )
 
@@ -535,6 +548,7 @@ class TestEdgeCases:
         batch_y = torch.randn(1)
 
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        grads = _unwrap_clipped(grads)
 
         assert grads.shape == params.shape
 
@@ -556,6 +570,7 @@ class TestEdgeCases:
         batch_y = torch.randn(8)
 
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        grads = _unwrap_clipped(grads)
 
         # Should handle gracefully
         assert torch.allclose(grads, torch.zeros_like(grads))
@@ -631,5 +646,6 @@ class TestEdgeCases:
         batch_y = torch.randn(1000)
 
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        grads = _unwrap_clipped(grads)
 
         assert grads.shape == params.shape

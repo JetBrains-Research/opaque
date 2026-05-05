@@ -576,9 +576,9 @@ pub fn py_bisr_strategy_coefficients(coefficients: Vec<f64>, n: usize) -> Vec<f6
     crate::matrix_factorization::bisr::bisr_column_zero_pub(&coefficients, n)
 }
 
-// ── JME (Joint Moment Estimation) ────────────────────────────────
+// ── Private second-moment helpers ────────────────────────────────
 
-/// Compute the optimal JME scaling parameter λ.
+/// Compute the optimal private second-moment scaling parameter λ.
 ///
 /// Sets λ so that the second moment estimation is "free" (Theorem 3.2
 /// of arXiv:2502.06597): the joint sensitivity equals the first-moment-only
@@ -596,18 +596,18 @@ pub fn py_bisr_strategy_coefficients(coefficients: Vec<f64>, n: usize) -> Vec<f6
 /// Raises:
 ///     ValueError: If inputs are non-positive or d is 0.
 #[pyfunction]
-#[pyo3(name = "jme_lambda", signature = (c1_max_col_norm, c2_max_col_norm, zeta, d=2))]
-pub fn py_jme_lambda(
+#[pyo3(name = "second_moment_lambda", signature = (c1_max_col_norm, c2_max_col_norm, zeta, d=2))]
+pub fn py_second_moment_lambda(
     c1_max_col_norm: f64,
     c2_max_col_norm: f64,
     zeta: f64,
     d: usize,
 ) -> PyResult<f64> {
-    crate::matrix_factorization::jme_lambda(c1_max_col_norm, c2_max_col_norm, zeta, d)
+    crate::matrix_factorization::second_moment_lambda(c1_max_col_norm, c2_max_col_norm, zeta, d)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
 
-/// Compute the joint sensitivity for JME under add/remove DP.
+/// Compute the joint first+second moment sensitivity under add/remove DP.
 ///
 /// ``s = ζ · ‖C₁‖_{1→2} · √(1 + 1/c_d)``
 ///
@@ -624,9 +624,13 @@ pub fn py_jme_lambda(
 /// Raises:
 ///     ValueError: If inputs are non-positive or d is 0.
 #[pyfunction]
-#[pyo3(name = "jme_joint_sensitivity", signature = (c1_max_col_norm, zeta, d=2))]
-pub fn py_jme_joint_sensitivity(c1_max_col_norm: f64, zeta: f64, d: usize) -> PyResult<f64> {
-    crate::matrix_factorization::jme_joint_sensitivity(c1_max_col_norm, zeta, d)
+#[pyo3(name = "second_moment_joint_sensitivity", signature = (c1_max_col_norm, zeta, d=2))]
+pub fn py_second_moment_joint_sensitivity(
+    c1_max_col_norm: f64,
+    zeta: f64,
+    d: usize,
+) -> PyResult<f64> {
+    crate::matrix_factorization::second_moment_joint_sensitivity(c1_max_col_norm, zeta, d)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
 
@@ -636,7 +640,7 @@ pub fn py_jme_joint_sensitivity(c1_max_col_norm: f64, zeta: f64, d: usize) -> Py
 /// first moment noise.
 ///
 /// Args:
-///     lambda_jme (float): The JME scaling parameter λ.
+///     lambda_second_moment (float): The scaling parameter λ.
 ///
 /// Returns:
 ///     float: The scaling factor λ^{-1/2}.
@@ -644,8 +648,8 @@ pub fn py_jme_joint_sensitivity(c1_max_col_norm: f64, zeta: f64, d: usize) -> Py
 /// Raises:
 ///     ValueError: If λ is non-positive.
 #[pyfunction]
-#[pyo3(name = "jme_second_moment_noise_scale", signature = (lambda_jme,))]
-pub fn py_jme_second_moment_noise_scale(lambda_jme: f64) -> PyResult<f64> {
-    crate::matrix_factorization::jme_second_moment_noise_scale(lambda_jme)
+#[pyo3(name = "second_moment_noise_scale", signature = (lambda_second_moment,))]
+pub fn py_second_moment_noise_scale(lambda_second_moment: f64) -> PyResult<f64> {
+    crate::matrix_factorization::second_moment_noise_scale(lambda_second_moment)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }

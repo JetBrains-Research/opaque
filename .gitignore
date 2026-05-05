@@ -102,3 +102,6 @@ papers/
 outputs/
 results/
 output.log
+
+# Claude Code session state
+.claude/

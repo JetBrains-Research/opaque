@@ -101,7 +101,7 @@ def blt_strategy(
     )
 
     # Sensitivity
-    # max_column_norm = ‖C‖_{1→2} (single-participation, always needed for JME)
+    # max_column_norm = ‖C‖_{1→2} for single participation.
     max_col_norm_sq = _blt_sensitivity_squared(blt, n=n_steps)
     max_column_norm = float(max_col_norm_sq.sqrt())
 

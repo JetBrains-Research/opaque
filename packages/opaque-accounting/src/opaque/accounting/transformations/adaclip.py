@@ -1,6 +1,6 @@
 """Adaptive clipping transformation for privacy accounting.
 
-Accounts for the extra privacy cost of the noisy clipping-fraction
+Accounts for the extra privacy cost of the noised clipping-fraction
 query used by adaptive gradient clipping.  The ``fraction_noise_std``
 parameter controls the noise on the fraction (default 0.05); the
 absolute noise std is ``σ_b = expected_batch_size × fraction_noise_std``.
@@ -25,7 +25,7 @@ _Inner = Gaussian | NonPrivate
 class AdaClip(DpProcess):
     """Adaptive clipping transformation.
 
-    Wraps an ``inner`` mechanism and adds the privacy cost of the noisy
+    Wraps an ``inner`` mechanism and adds the privacy cost of the noised
     clipping-fraction query.  ``σ_b = expected_batch_size × fraction_noise_std``.
 
     When ``num_groups > 1``, accounts for ``K`` independent quantile queries
@@ -107,7 +107,7 @@ def adaclip(
 ) -> AdaClip:
     """Account for the privacy cost of adaptive clipping.
 
-    Wraps an ``inner`` mechanism and adds the cost of the noisy
+    Wraps an ``inner`` mechanism and adds the cost of the noised
     clipping-fraction query.
 
     Args:

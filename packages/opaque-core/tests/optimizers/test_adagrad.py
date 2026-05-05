@@ -7,6 +7,7 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
+from opaque.core.noise import noised  # noqa: E402
 from opaque.optimizers import AdagradState, adagrad  # noqa: E402
 
 
@@ -85,20 +86,28 @@ class TestVanilla:
 class TestDPCorrection:
     def test_phi_acc_accumulates_cumulatively(self, params, grads):
         sigma = 0.5
-        opt = adagrad(lr=1e-2, noise_stddev=sigma)
+        opt = adagrad(lr=1e-2, noise_bias_correction=True)
         state = opt.init(params)
         for t in range(1, 6):
-            _, state = opt.update(grads, state, params=params)
+            _, state = opt.update(
+                noised(grads, max_norm=1.0, noise_stddev=sigma),
+                state,
+                params=params,
+            )
             # Cumulative — every step adds σ², no decay.
             expected = t * (sigma**2)
             assert _ada_state(state).phi_acc == pytest.approx(expected)
 
-    def test_per_step_override(self, params, grads):
-        opt = adagrad(lr=1e-2, noise_stddev=0.0)
+    def test_noisy_updates_take_per_step_metadata(self, params, grads):
+        opt = adagrad(lr=1e-2, noise_bias_correction=True)
         state = opt.init(params)
         expected = 0.0
         for sigma in [0.1, 0.2, 0.3]:
-            _, state = opt.update(grads, state, params=params, noise_stddev=sigma)
+            _, state = opt.update(
+                noised(grads, max_norm=1.0, noise_stddev=sigma),
+                state,
+                params=params,
+            )
             expected += sigma**2
         assert _ada_state(state).phi_acc == pytest.approx(expected)
 
@@ -107,18 +116,22 @@ class TestDPCorrection:
         v̂ tracks signal contribution only.  Without correction, v_acc
         would carry t·σ² forever.
 
-        We feed zero gradients with noise injected via noise_stddev,
+        We feed zero gradients with ``NoisedPytree`` σ metadata,
         and verify v̂_corrected stays at the floor (no signal → no
         denominator inflation)."""
         zero_grads = {k: torch.zeros_like(v) for k, v in params.items()}
         sigma = 1.0
-        opt = adagrad(lr=1e-2, noise_stddev=sigma)
+        opt = adagrad(lr=1e-2, noise_bias_correction=True)
         state = opt.init(params)
-        # Update receives zero gradients; the optimizer thinks σ² has
-        # been injected into them.  v_acc grows to 0 (g²=0); φ_acc
+        # Update receives zero gradients plus σ metadata. v_acc grows
+        # to 0 (g²=0); φ_acc
         # grows by σ² per step.  v_acc - φ_acc < 0 → clamped to floor.
         for _ in range(20):
-            updates, state = opt.update(zero_grads, state, params=params)
+            updates, state = opt.update(
+                noised(zero_grads, max_norm=1.0, noise_stddev=sigma),
+                state,
+                params=params,
+            )
             # Updates should be ~zero (g/sqrt(floor) ≈ 0 since g=0).
             for k in updates:
                 assert torch.all(updates[k].abs() < 1e-3)
@@ -128,11 +141,25 @@ class TestDPCorrection:
         grads = {"w": torch.ones(3) * 0.01}
         # Huge sigma — phi_acc dominates, denom would be negative
         # without floor.
-        opt = adagrad(lr=1e-3, noise_stddev=1e3)
+        opt = adagrad(lr=1e-3, noise_bias_correction=True)
         state = opt.init(params)
         for _ in range(10):
-            updates, state = opt.update(grads, state, params=params)
+            updates, state = opt.update(
+                noised(grads, max_norm=1.0, noise_stddev=1e3),
+                state,
+                params=params,
+            )
             assert torch.isfinite(updates["w"]).all()
+
+    def test_bc_flag_disables_noisy_metadata_correction(self, params, grads):
+        opt = adagrad(lr=1e-2, noise_bias_correction=False)
+        state = opt.init(params)
+        _, state = opt.update(
+            noised(grads, max_norm=1.0, noise_stddev=0.5),
+            state,
+            params=params,
+        )
+        assert _ada_state(state).phi_acc == 0.0
 
 
 class TestWeightDecay:
@@ -160,7 +187,3 @@ class TestValidation:
     def test_negative_weight_decay_raises(self):
         with pytest.raises(ValueError, match="weight_decay"):
             adagrad(weight_decay=-0.1)
-
-    def test_negative_noise_stddev_raises(self):
-        with pytest.raises(ValueError, match="noise_stddev"):
-            adagrad(noise_stddev=-1.0)

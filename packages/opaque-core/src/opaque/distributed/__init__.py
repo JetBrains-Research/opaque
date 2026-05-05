@@ -29,11 +29,6 @@ from opaque.distributed.collectives import (
     get_world_size,
     is_distributed,
 )
-from opaque.distributed.gradients import reduce_pytree as reduce_pytree
-from opaque.distributed.gradients import reduce_pytree_ as reduce_pytree_
-from opaque.distributed.gradients import sum_gradients_ as sum_gradients_
-from opaque.distributed.gradients import sum_gradients
-from opaque.distributed.shard import local_shard
 from opaque.distributed.state import assert_pytree_equal as assert_pytree_equal
 from opaque.distributed.state import assert_scalar_equal as assert_scalar_equal
 from opaque.distributed.state import gather_pytree as gather_pytree
@@ -42,6 +37,16 @@ from opaque.distributed.state import reduce_scalar as reduce_scalar
 from opaque.distributed.state import register_sync_type as register_sync_type
 from opaque.distributed.state import sync_object as sync_object
 from opaque.distributed.state import sync
+
+# `gradients` imports ClippedPytree from `opaque.clipping.types`, which triggers
+# `opaque.clipping.__init__` to load `opaque.clipping.distributed`, which in turn
+# imports `gather_pytree` from this module. Importing `state` first ensures
+# `gather_pytree` is bound before that cycle closes.
+from opaque.distributed.gradients import reduce_pytree as reduce_pytree
+from opaque.distributed.gradients import reduce_pytree_ as reduce_pytree_
+from opaque.distributed.gradients import sum_gradients_ as sum_gradients_
+from opaque.distributed.gradients import sum_gradients
+from opaque.distributed.shard import local_shard
 
 __all__ = [
     "is_distributed",

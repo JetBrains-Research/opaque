@@ -88,7 +88,7 @@ strategy = bisr_strategy(
 )
 noise_fn, state = mf_noise(
     grad_template, strategy,
-    stddev=noise_multiplier * clip_state.sensitivity,
+    noise_multiplier=noise_multiplier,
     key=key(seed),
 )
 ```

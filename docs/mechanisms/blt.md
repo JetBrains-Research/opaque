@@ -124,14 +124,14 @@ strategy = blt_strategy(n_steps=10000, min_sep=1, max_buffers=10)
 noise_fn, noise_state = mf_noise(
     grad_template=params,
     strategy=strategy,
-    stddev=noise_multiplier * clip_state.sensitivity,
+    noise_multiplier=noise_multiplier,
     key=key(42),
 )
 
 for step in range(10000):
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = params - lr * noisy_grads
+    params = params - lr * noisy_grads.pytree
 ```
 
 ```python
@@ -142,7 +142,7 @@ strategy = blt_strategy(
 noise_fn, noise_state = mf_noise(
     grad_template=params,
     strategy=strategy,
-    stddev=noise_multiplier * clipping_norm,
+    noise_multiplier=noise_multiplier,
     key=key(42),
 )
 ```

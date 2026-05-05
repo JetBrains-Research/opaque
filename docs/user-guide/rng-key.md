@@ -72,12 +72,12 @@ first.
 
 ```python
 # Wrong: reusing the same key
-noise_fn, ns = gaussian_noise(stddev=1.0, key=k)
+noise_fn, ns = gaussian_noise(noise_multiplier=1.0, key=k)
 sampler = PoissonSampler(dataset, sample_rate=0.01, key=k)  # correlated
 
 # Right: split first
 k_noise, k_sample = split(k)
-noise_fn, ns = gaussian_noise(stddev=1.0, key=k_noise)
+noise_fn, ns = gaussian_noise(noise_multiplier=1.0, key=k_noise)
 sampler = PoissonSampler(dataset, sample_rate=0.01, key=k_sample)
 ```
 
@@ -143,7 +143,7 @@ For production training, always use `key(seed)` with a fixed seed.
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
-noise_fn, state = gaussian_noise(stddev=1.1, key=key(42))
+noise_fn, state = gaussian_noise(noise_multiplier=1.1, key=key(42))
 noisy_grads, state = noise_fn(grads, state)
 ```
 
@@ -195,7 +195,7 @@ from opaque.random import key, split
 k_noise, k_sample = split(key(42))
 
 grad_fn, clip_state = clipped_grad(loss_fn, clipping_norm=1.0, batch_argnums=(1, 2))
-noise_fn, noise_state = gaussian_noise(stddev=1.1, key=k_noise)
+noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=k_noise)
 
 for batch_x, batch_y in dataloader:
     grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
@@ -215,7 +215,7 @@ from opaque.random import key, fold_in
 base = key(42)
 for step in range(num_steps):
     step_key = fold_in(base, step)
-    noise_fn, noise_state = gaussian_noise(stddev=1.1, key=step_key)
+    noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=step_key)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
@@ -226,7 +226,7 @@ models stay in sync. Pass the same `key(seed)` on every rank:
 
 ```python
 # Same key on all ranks -> same noise -> models stay in sync
-noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
+noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
 ```
 
 For per-rank key control, use `fold_in()`:
@@ -258,10 +258,10 @@ import torch
 
 grads = {"w": torch.randn(100)}
 
-noise_fn, s1 = gaussian_noise(stddev=1.0, key=key(42))
+noise_fn, s1 = gaussian_noise(noise_multiplier=1.0, key=key(42))
 noisy1, _ = noise_fn(grads, s1)
 
-noise_fn, s2 = gaussian_noise(stddev=1.0, key=key(42))
+noise_fn, s2 = gaussian_noise(noise_multiplier=1.0, key=key(42))
 noisy2, _ = noise_fn(grads, s2)
 
 assert torch.equal(noisy1["w"], noisy2["w"])
@@ -296,7 +296,7 @@ torch.save(state, "checkpoint.pt")
 
 # Resume
 state = torch.load("checkpoint.pt")
-noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
+noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
 # Advance to the saved step by setting the internal counter
 noise_state = state["noise_state"]
 ```
@@ -307,7 +307,7 @@ Alternatively, reconstruct the key from the step counter using
 ```python
 # Resume from step 500
 k = fold_in(key(42), 500)
-noise_fn, noise_state = gaussian_noise(stddev=1.1, key=k)
+noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=k)
 ```
 
 ## API reference

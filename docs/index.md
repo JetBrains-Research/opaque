@@ -23,15 +23,15 @@ grads, clip_state = grad_fn(params, batch, state=clip_state)
 
 ## Noise injection
 
-Add calibrated Gaussian noise scaled to the clipping sensitivity. All noise
-functions return `(noise_fn, state)`. Pass the same key on all ranks for synchronized distributed noise.
+Add calibrated Gaussian noise scaled to `grads.max_norm`. All noise functions
+return `(noise_fn, state)`. Pass the same key on all ranks for synchronized distributed noise.
 
 ```python
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.sensitivity, key=key(42),
+    noise_multiplier=noise_multiplier, key=key(42),
 )
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```

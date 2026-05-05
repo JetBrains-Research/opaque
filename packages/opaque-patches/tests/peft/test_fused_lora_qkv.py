@@ -239,6 +239,6 @@ class TestFusedLoRAQKV:
             trainable, frozen, input_ids, attention_mask, labels, state=clip_state
         )
         assert grads is not None, "No gradients returned"
-        assert len(grads) > 0, "Empty gradient dict"
-        for name, g in grads.items():
+        assert len(grads.pytree) > 0, "Empty gradient dict"
+        for name, g in grads.pytree.items():
             assert not torch.isnan(g).any(), f"NaN in grad for {name}"

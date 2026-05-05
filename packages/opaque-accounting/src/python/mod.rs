@@ -146,14 +146,17 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
 
-    // JME (Joint Moment Estimation)
-    m.add_function(wrap_pyfunction!(matrix_factorization::py_jme_lambda, m)?)?;
+    // Private second-moment helpers
     m.add_function(wrap_pyfunction!(
-        matrix_factorization::py_jme_joint_sensitivity,
+        matrix_factorization::py_second_moment_lambda,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
-        matrix_factorization::py_jme_second_moment_noise_scale,
+        matrix_factorization::py_second_moment_joint_sensitivity,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_second_moment_noise_scale,
         m
     )?)?;
 
