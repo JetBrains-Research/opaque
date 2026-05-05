@@ -5,9 +5,9 @@ import math
 import pytest
 import torch
 
-from opaque.clipping.types import ClippedPytree
+from opaque.types import ClippedPytree
 
-from opaque.core.noise import NoisedPytree
+from opaque.types import NoisedPytree
 
 from opaque.dpsgd.clipping.adaptive import adaptive_clipped_grad
 from opaque.random import key

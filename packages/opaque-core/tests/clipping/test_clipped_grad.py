@@ -7,7 +7,7 @@ For comprehensive validation against JAX-Privacy, see tests/jax_validation/test_
 import pytest
 import torch
 
-from opaque.clipping.types import ClippedPytree
+from opaque.types import ClippedPytree
 
 from opaque.clipping import clipped_grad
 
@@ -606,7 +606,7 @@ class TestSecondMoment:
         return params, x, y, loss_fn, batch_size
 
     def test_output_is_paired_with_correct_bounds(self, setup):
-        from opaque.core.noise import SecondMomentClippingOutput
+        from opaque.types import SecondMomentClippingOutput
 
         params, x, y, loss_fn, batch_size = setup
         C = 5.0
@@ -670,7 +670,7 @@ class TestSecondMoment:
         assert not torch.allclose(expected_squared, squared_of_mean, atol=1e-3)
 
     def test_per_group_rejected(self, setup):
-        from opaque.clipping.per_group import PerGroup
+        from opaque.types import PerGroup
 
         params, x, y, loss_fn, _ = setup
         pg = PerGroup(groups={"w": "g1"}, values={"g1": 1.0})
@@ -721,7 +721,7 @@ class TestSecondMoment:
         assert out_full.squared_grads.max_norm == out_mb.squared_grads.max_norm
 
     def test_empty_batch(self, setup):
-        from opaque.core.noise import SecondMomentClippingOutput
+        from opaque.types import SecondMomentClippingOutput
 
         params, x, y, loss_fn, batch_size = setup
         # Empty batch: shape (0, 4) for x, (0,) for y.
@@ -746,7 +746,7 @@ class TestSecondMoment:
 
     def test_with_return_aux(self, setup):
         from opaque.clipping.clipped_grad import ClippedGradAux
-        from opaque.core.noise import SecondMomentClippingOutput
+        from opaque.types import SecondMomentClippingOutput
 
         params, x, y, loss_fn, batch_size = setup
         gf, _ = clipped_grad(

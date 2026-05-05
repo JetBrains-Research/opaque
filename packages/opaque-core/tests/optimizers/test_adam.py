@@ -17,10 +17,10 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.clipping.types import clipped  # noqa: E402
-from opaque.core.noise import noised  # noqa: E402
-from opaque.clipping.per_group import PerGroup  # noqa: E402
-from opaque.core.noise import SecondMomentNoiseOutput  # noqa: E402
+from opaque.types import clipped    # noqa: E402
+from opaque.types import noised    # noqa: E402
+from opaque.types import PerGroup    # noqa: E402
+from opaque.types import SecondMomentNoiseOutput    # noqa: E402
 from opaque.optimizers import AdamState, adam, adamw  # noqa: E402
 
 

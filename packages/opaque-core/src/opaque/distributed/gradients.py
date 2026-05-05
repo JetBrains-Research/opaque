@@ -19,7 +19,7 @@ from typing import Any
 import torch
 import torch.distributed as dist
 
-from opaque.clipping.types import ClippedPytree
+from opaque.types import ClippedPytree
 from opaque.core.pytree import tree_map
 
 from .collectives import all_reduce_, get_world_size, is_distributed
@@ -36,7 +36,7 @@ def _is_noised(pytree: Any) -> bool:
     ``from opaque.core.noise import NoisedPytree`` here would observe
     the partially-initialised module mid-cycle.
     """
-    from opaque.core.noise import NoisedPytree
+    from opaque.types import NoisedPytree
 
     return isinstance(pytree, NoisedPytree)
 

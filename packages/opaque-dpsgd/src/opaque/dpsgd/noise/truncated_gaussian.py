@@ -34,15 +34,15 @@ from typing import Any
 
 import torch
 
-from opaque.clipping.types import ClippedPytree
+from opaque.types import ClippedPytree
 
-from opaque.core.noise import NoisedPytree
+from opaque.types import NoisedPytree
 
 from opaque.dpsgd.noise.gaussian import GaussianNoiseState
 from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
 from opaque.random import RngKey, generator_from_key
 from opaque.random import fold_in as rng_fold_in
-from opaque.clipping.per_group import PerGroup
+from opaque.types import PerGroup
 from opaque.core.pytree import tree_map
 
 _SQRT2 = math.sqrt(2.0)

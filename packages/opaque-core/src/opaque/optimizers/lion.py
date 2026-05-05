@@ -32,7 +32,8 @@ except ImportError as exc:
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
 
-from opaque.core.pytree import TensorPytree, tree_map
+from opaque.types import TensorPytree
+from opaque.core.pytree import tree_map
 from opaque.optimizers._chain import make_optimizer_chain
 
 

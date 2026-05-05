@@ -18,7 +18,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from opaque.clipping.types import clipped
+from opaque.types import clipped
 from opaque.dpftrl.noise import mf_noise, identity_strategy
 from opaque.random import key as rng_key
 

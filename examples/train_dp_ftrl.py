@@ -123,7 +123,7 @@ import torchopt
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 from opaque.clipping import clipped_grad
-from opaque.core.noise import SecondMomentNoiseOutput
+from opaque.types import SecondMomentNoiseOutput
 from opaque.dpftrl.noise import (
     DEFAULT_SECOND_MOMENT_OVERHEAD,
     band_mf_strategy,

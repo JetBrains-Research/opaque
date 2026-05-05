@@ -32,6 +32,7 @@ dependencies = [
 where = ["src"]
 include = [
     "opaque.core*",
+    "opaque.types*",
     "opaque.clipping*",
     "opaque.random*",
     "opaque.functional*",

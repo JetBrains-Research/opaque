@@ -1,23 +1,19 @@
-"""Per-group values for per-group clipping and noise.
+"""Constructor for :class:`opaque.types.PerGroup` from params + patterns.
 
-The ``PerGroup`` type carries pre-resolved parameter-to-group assignments
-and per-group values (clipping norms, sensitivities, noise stddevs).  It
-flows through the entire DP-SGD pipeline unchanged and supports arithmetic
-so that training-loop code like ``noise_multiplier * clipped_grads.max_norm``
-works without modification.
+The ``PerGroup`` data type lives in :mod:`opaque.types` (it's a
+cross-cutting container used by clipping, noise, and optimizer
+factories).  This module keeps the parameter-key-pattern matching
+helper that builds a :class:`~opaque.types.PerGroup` from a
+parameter dict::
 
-The ``per_group()`` factory constructs a ``PerGroup`` from a parameter dict
-and substring patterns::
-
-    from opaque import per_group
+    from opaque.clipping import per_group
     pg = per_group(params, self_attn=1.0, mlp=2.0)
     pg = per_group(params, q_proj=1.0, fallback=0.5)  # catch-all
 """
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
+from opaque.types import PerGroup
 
 
 def _extract_keys(params) -> list[str]:
@@ -38,47 +34,6 @@ def _extract_keys(params) -> list[str]:
 
     _recurse(params, "")
     return keys
-
-
-@dataclass(frozen=True)
-class PerGroup:
-    """Per-group values with pre-resolved parameter-to-group assignment.
-
-    Flows through the DP-SGD pipeline as clipping norms, output bounds,
-    noise multipliers, and noise stddevs. Supports arithmetic so training
-    loop code is unchanged::
-
-        noise_multiplier * clipping_norm  # returns PerGroup when clipping_norm is PerGroup
-
-    For MSE-optimal per-group noise allocation, use
-    :func:`~opaque.noise.per_group_noise_stddev` instead of
-    ``noise_multiplier * clipped_grads.max_norm``.
-
-    Attributes:
-        groups: Mapping from parameter key to group name (pre-resolved).
-        values: Mapping from group name to the per-group value.
-    """
-
-    groups: dict[str, str]
-    values: dict[str, float]
-
-    @property
-    def effective(self) -> float:
-        """sqrt(sum v**2) -- effective global value for accounting."""
-        return math.sqrt(sum(v**2 for v in self.values.values()))
-
-    def __rmul__(self, scalar: float) -> PerGroup:
-        return PerGroup(self.groups, {k: scalar * v for k, v in self.values.items()})
-
-    def __mul__(self, scalar: float) -> PerGroup:
-        return PerGroup(self.groups, {k: v * scalar for k, v in self.values.items()})
-
-    def __truediv__(self, scalar: float) -> PerGroup:
-        return PerGroup(self.groups, {k: v / scalar for k, v in self.values.items()})
-
-    def for_key(self, key: str) -> float:
-        """Look up the per-group value for a parameter key."""
-        return self.values[self.groups[key]]
 
 
 def per_group(params, /, patterns=None, *, fallback=None, **kwargs) -> PerGroup:
@@ -111,7 +66,8 @@ def per_group(params, /, patterns=None, *, fallback=None, **kwargs) -> PerGroup:
             pattern and the value is the per-group value (e.g. clipping norm).
 
     Returns:
-        PerGroup with pre-resolved parameter-to-group assignments.
+        :class:`~opaque.types.PerGroup` with pre-resolved
+        parameter-to-group assignments.
 
     Raises:
         ValueError: If no patterns are provided, if a parameter matches zero
@@ -173,4 +129,4 @@ def per_group(params, /, patterns=None, *, fallback=None, **kwargs) -> PerGroup:
     return PerGroup(groups=groups, values=values)
 
 
-__all__ = ["PerGroup", "per_group"]
+__all__ = ["per_group"]

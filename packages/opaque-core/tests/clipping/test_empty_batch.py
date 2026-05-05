@@ -8,7 +8,7 @@ tensors, preserving adaptive clipping_norm, and avoiding DDP deadlocks.
 import torch
 import pytest
 
-from opaque.clipping.types import ClippedPytree
+from opaque.types import ClippedPytree
 
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad

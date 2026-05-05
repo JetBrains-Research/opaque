@@ -5,7 +5,7 @@ import math
 import pytest
 import torch
 
-from opaque.clipping.types import ClippedPytree
+from opaque.types import ClippedPytree
 
 from opaque.clipping import clipped_grad
 from opaque.clipping.pytree import auto_scale_pytree
@@ -15,7 +15,7 @@ from opaque.dpsgd.clipping import (
     auto_clipped_fun,
     auto_clipped_grad,
 )
-from opaque.clipping.per_group import PerGroup
+from opaque.types import PerGroup
 
 
 def _unwrap_clipped(value):

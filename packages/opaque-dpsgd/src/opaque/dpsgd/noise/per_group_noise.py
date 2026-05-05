@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import math
 
-from opaque.clipping.per_group import PerGroup
+from opaque.types import PerGroup
 
 
 def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGroup:

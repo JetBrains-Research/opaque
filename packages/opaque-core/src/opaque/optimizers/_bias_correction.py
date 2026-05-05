@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from opaque.clipping.per_group import PerGroup
+from opaque.types import PerGroup
 
 
 def walk_dict_leaves(tree: Any, prefix: str = "") -> Any:

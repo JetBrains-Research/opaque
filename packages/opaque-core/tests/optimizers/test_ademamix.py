@@ -9,9 +9,9 @@ torchopt = pytest.importorskip("torchopt")
 
 # Pre-load clipping.types so opaque.core.noise's import of
 # SecondMomentClippingOutput doesn't observe a partial module mid-cycle.
-from opaque.clipping.types import ClippedPytree  # noqa: E402, F401
-from opaque.core.noise import noised  # noqa: E402
-from opaque.core.noise import SecondMomentNoiseOutput  # noqa: E402
+from opaque.types import ClippedPytree    # noqa: E402, F401
+from opaque.types import noised    # noqa: E402
+from opaque.types import SecondMomentNoiseOutput    # noqa: E402
 from opaque.optimizers import AdEMAMixState, ademamix  # noqa: E402
 
 

@@ -3,7 +3,8 @@
 import pytest
 import torch
 
-from opaque.clipping.per_group import PerGroup, per_group
+from opaque.types import PerGroup
+from opaque.clipping.per_group import per_group
 
 
 class TestPerGroup:

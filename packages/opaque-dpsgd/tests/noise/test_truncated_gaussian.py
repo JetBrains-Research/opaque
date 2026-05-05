@@ -6,11 +6,11 @@ import pytest
 import scipy.stats
 import torch
 
-from opaque.clipping.types import clipped
+from opaque.types import clipped
 
-from opaque.core.noise import NoisedPytree, noised
+from opaque.types import NoisedPytree, noised
 
-from opaque.clipping.per_group import PerGroup
+from opaque.types import PerGroup
 from opaque.dpsgd.noise.gaussian import GaussianNoiseState
 from opaque.dpsgd.noise.truncated_gaussian import truncated_gaussian_noise
 from opaque.random import key

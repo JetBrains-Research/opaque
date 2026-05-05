@@ -14,7 +14,7 @@ import pytest
 import torch
 from torch.func import grad
 
-from opaque.clipping.types import ClippedPytree
+from opaque.types import ClippedPytree
 
 from opaque.clipping.clipped_fun import clipped_fun
 from opaque.clipping.pytree import clip_pytree
@@ -109,7 +109,7 @@ def test_clip_pytree_per_group_mixed_dtypes_promote_to_highest():
     the *first* leaf's dtype as the accumulator, silently downcasting
     higher-precision peers (e.g. fp64).
     """
-    from opaque.clipping.per_group import PerGroup
+    from opaque.types import PerGroup
 
     pg = PerGroup(
         groups={"a": "g", "b": "g"},

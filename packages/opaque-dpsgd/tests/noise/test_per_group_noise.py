@@ -5,11 +5,11 @@ import math
 import pytest
 import torch
 
-from opaque.clipping.types import clipped
+from opaque.types import clipped
 
-from opaque.core.noise import NoisedPytree
+from opaque.types import NoisedPytree
 
-from opaque.clipping.per_group import PerGroup
+from opaque.types import PerGroup
 from opaque.dpsgd.noise.gaussian import GaussianNoiseState, gaussian_noise
 from opaque.random import key
 

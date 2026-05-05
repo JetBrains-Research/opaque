@@ -84,7 +84,8 @@ from opaque.dpsgd.sampling import PoissonSampler
 from opaque.dpsgd.sampling import TruncatedPoissonSampler
 from opaque.distributed.shard import local_shard
 from opaque.functional import make_functional
-from opaque.clipping.per_group import PerGroup, per_group
+from opaque.types import PerGroup
+from opaque.clipping.per_group import per_group
 import wandb
 
 

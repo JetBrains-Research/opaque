@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from opaque.clipping.types import ClippedPytree
+from opaque.types import ClippedPytree
 
 from opaque.dpsgd.clipping.adaptive import adaptive_clipped_grad
 from opaque.random import key

@@ -20,13 +20,8 @@ References:
     - Private second moments: https://arxiv.org/abs/2502.06597
 """
 
-from opaque.core.noise import (
-    DEFAULT_SECOND_MOMENT_OVERHEAD,
-    SecondMomentNoiseOutput,
-    second_moment_joint_sensitivity,
-    second_moment_noise_scale,
-    second_moment_stddevs,
-)
+from opaque.core.noise import DEFAULT_SECOND_MOMENT_OVERHEAD, second_moment_joint_sensitivity, second_moment_noise_scale, second_moment_stddevs
+from opaque.types import SecondMomentNoiseOutput
 
 from .band_mf import BandMfStrategy, band_mf_strategy
 from .bisr import BisrStrategy, bisr_strategy

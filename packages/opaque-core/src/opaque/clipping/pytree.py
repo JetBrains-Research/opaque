@@ -6,7 +6,7 @@ from collections import namedtuple
 
 import torch
 
-from opaque.clipping.per_group import PerGroup
+from opaque.types import PerGroup
 from opaque.core.pytree import global_norm, tree_map
 
 ClipPytreeAux = namedtuple("ClipPytreeAux", ["norm", "group_norms"])

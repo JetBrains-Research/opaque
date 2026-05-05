@@ -14,11 +14,11 @@ except ImportError as exc:
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
 
-from opaque.clipping.types import ClippedPytree
+from opaque.types import ClippedPytree
 
-from opaque.core.noise import NoisedPytree
+from opaque.types import NoisedPytree
 
-from opaque.core.noise import SecondMomentNoiseOutput
+from opaque.types import SecondMomentNoiseOutput
 
 
 _LR = float | Callable[[Any], Any]
