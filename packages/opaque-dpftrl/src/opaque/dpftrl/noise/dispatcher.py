@@ -22,8 +22,17 @@ import torch
 
 from opaque.types import PerGroup
 from opaque.types import ClippedPytree
-from opaque.core.noise import DEFAULT_SECOND_MOMENT_OVERHEAD, second_moment_joint_sensitivity, second_moment_noise_scale, second_moment_stddevs
-from opaque.types import NoisedPytree, SecondMomentClippingOutput, SecondMomentNoiseOutput
+from opaque.core.noise import (
+    DEFAULT_SECOND_MOMENT_OVERHEAD,
+    second_moment_joint_sensitivity,
+    second_moment_noise_scale,
+    second_moment_stddevs,
+)
+from opaque.types import (
+    NoisedPytree,
+    SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
+)
 from opaque.random import RngKey
 from opaque.random import fold_in as rng_fold_in
 

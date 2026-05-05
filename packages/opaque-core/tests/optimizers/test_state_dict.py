@@ -13,8 +13,8 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.types import noised    # noqa: E402
-from opaque.types import SecondMomentNoiseOutput    # noqa: E402
+from opaque.types import noised  # noqa: E402
+from opaque.types import SecondMomentNoiseOutput  # noqa: E402
 from opaque.optimizers import (  # noqa: E402
     adafactor,
     adamw,
