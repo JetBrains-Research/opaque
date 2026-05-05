@@ -134,8 +134,11 @@ class TestRngSnapshot:
 
 class TestDpRuntimeBundle:
     def test_roundtrip(self, tmp_path):
-        clip = FixedClipState(clipping_norm=1.5, normalize_by=2.0)
-        _, noise = gaussian_noise(stddev=1.0, key=key(11))
+        # ``FixedClipState`` is a marker on origin/main; the configured
+        # clip threshold lives on ``DPTrainingArguments`` and flows
+        # through the ``ClippedPytree.max_norm`` wrapper at every step.
+        clip = FixedClipState()
+        _, noise = gaussian_noise(noise_multiplier=1.0, key=key(11))
 
         path = str(tmp_path / "dp_runtime.pt")
         ckpt.save_dp_runtime_state(
@@ -164,7 +167,7 @@ class TestDpRuntimeBundle:
 
     def test_unsupported_clip_state_type_raises(self, tmp_path):
         path = str(tmp_path / "dp.pt")
-        _, noise = gaussian_noise(stddev=1.0, key=key(0))
+        _, noise = gaussian_noise(noise_multiplier=1.0, key=key(0))
         with pytest.raises(TypeError, match="Unsupported clip_state"):
             ckpt.save_dp_runtime_state(
                 path,

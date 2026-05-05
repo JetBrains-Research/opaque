@@ -212,8 +212,12 @@ def restore_rng_state(snap: dict[str, Any]) -> None:
 
 
 def _serialize_clip_state(state: Any) -> dict[str, Any]:
+    # ``FixedClipState`` is a marker on origin/main — no fields to
+    # serialise.  Keep the wire format stable (always emit a ``data``
+    # blob) so older checkpoints with non-empty FixedClipState payloads
+    # still load (the fields are just ignored on the way back in).
     if isinstance(state, FixedClipState):
-        return {"type": "FixedClipState", "data": state.state_dict()}
+        return {"type": "FixedClipState", "data": {}}
     if isinstance(state, AdaptiveClipState):
         return {"type": "AdaptiveClipState", "data": state.state_dict()}
     raise TypeError(f"Unsupported clip_state type: {type(state).__name__}")
@@ -223,7 +227,10 @@ def _deserialize_clip_state(blob: dict[str, Any]) -> Any:
     kind = blob["type"]
     data = blob["data"]
     if kind == "FixedClipState":
-        return FixedClipState.from_state_dict(data)
+        # Discard any legacy ``clipping_norm`` / ``normalize_by`` fields
+        # that older checkpoints may carry; the new marker has none.
+        del data
+        return FixedClipState()
     if kind == "AdaptiveClipState":
         return AdaptiveClipState.from_state_dict(data)
     raise ValueError(f"Unknown clip_state type: {kind}")
