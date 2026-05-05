@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import math
 
-from opaque.types import NoiseState
+# Imported privately so ``from opaque.core.noise import NoiseState``
+# does not work — :mod:`opaque.types` is the single canonical home.
+from opaque.types import NoiseState as _NoiseState
 
 
 DEFAULT_SECOND_MOMENT_OVERHEAD = math.sqrt(3.0 / 2.0)
@@ -165,7 +167,7 @@ NOISE_STATE_FIELD_OPS: dict[str, str] = {
 }
 
 
-def assert_rng_key_equal(state: NoiseState, state_name: str) -> None:
+def assert_rng_key_equal(state: _NoiseState, state_name: str) -> None:
     """Assert that a ``NoiseState``'s RNG key seed matches across ranks.
 
     Shared across ``sync_gaussian_noise_state`` (opaque-dpsgd) and

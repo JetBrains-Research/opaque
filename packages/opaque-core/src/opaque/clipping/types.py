@@ -12,11 +12,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from opaque.types import ClipState
+# Imported privately so ``from opaque.clipping.types import ClipState``
+# does not work — :mod:`opaque.types` is the single canonical home.
+from opaque.types import ClipState as _ClipState
 
 
 @dataclass(frozen=True)
-class FixedClipState(ClipState):
+class FixedClipState(_ClipState):
     """Marker state for fixed (non-adaptive) clipping.
 
     Carries no fields; the configured clipping threshold flows through

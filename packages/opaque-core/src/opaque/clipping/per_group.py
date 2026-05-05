@@ -13,7 +13,9 @@ parameter dict::
 
 from __future__ import annotations
 
-from opaque.types import PerGroup
+# Imported privately so ``from opaque.clipping.per_group import PerGroup``
+# does not work — :mod:`opaque.types` is the single canonical home.
+from opaque.types import PerGroup as _PerGroup
 
 
 def _extract_keys(params) -> list[str]:
@@ -36,7 +38,7 @@ def _extract_keys(params) -> list[str]:
     return keys
 
 
-def per_group(params, /, patterns=None, *, fallback=None, **kwargs) -> PerGroup:
+def per_group(params, /, patterns=None, *, fallback=None, **kwargs) -> _PerGroup:
     """Construct PerGroup from parameter keys and substring patterns.
 
     Each pattern is a substring matched against parameter keys.  Params
@@ -126,7 +128,7 @@ def per_group(params, /, patterns=None, *, fallback=None, **kwargs) -> PerGroup:
     }
     if fallback is not None and "fallback" in used_groups:
         values["fallback"] = float(fallback)
-    return PerGroup(groups=groups, values=values)
+    return _PerGroup(groups=groups, values=values)
 
 
 __all__ = ["per_group"]

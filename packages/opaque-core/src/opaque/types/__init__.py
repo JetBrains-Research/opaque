@@ -33,7 +33,7 @@ import math
 from abc import ABC
 from dataclasses import dataclass, replace
 from numbers import Real
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Union
 
 import torch
 
@@ -50,7 +50,17 @@ from opaque.random import RngKey
 # concrete container types the rest of the library actually rebuilds
 # and serialises (``dict``, ``list``, ``tuple``); custom ``Mapping`` /
 # ``Sequence`` subclasses are intentionally excluded.
-TensorPytree = "torch.Tensor | dict[str, TensorPytree] | list[TensorPytree] | tuple[TensorPytree, ...]"
+#
+# Real ``Union`` (not a string) so ``typing.get_type_hints()`` and
+# ``typing.get_args()`` see the alias correctly.  Recursion is encoded
+# with forward references; static checkers expand the alias to ``Any``,
+# which is fine — the alias is documentation-grade typing.
+TensorPytree = Union[
+    torch.Tensor,
+    dict[str, "TensorPytree"],
+    list["TensorPytree"],
+    tuple["TensorPytree", ...],
+]
 
 
 # ===========================================================================
