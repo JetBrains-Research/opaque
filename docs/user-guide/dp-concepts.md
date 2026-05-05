@@ -367,7 +367,7 @@ The privacy guarantee depends on what "differ in one record" means:
 | Replace one | $D' = D$ with one record swapped | $2C$ |
 
 Opaque uses the **add-or-remove** convention: clipped outputs carry
-`grads.bound = C / normalize_by`. When `normalize_by` is set to the expected
+`grads.max_norm = C / normalize_by`. When `normalize_by` is set to the expected
 batch size $B$, the bound is $C/B$. If your analysis uses replace-one
 semantics, double the bound when calibrating noise.
 

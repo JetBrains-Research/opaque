@@ -11,7 +11,7 @@ All factories return [TorchOpt](https://torchopt.readthedocs.io/)
 `GradientTransformation`s, so they compose with TorchOpt's lower-level
 transforms and `torchopt.apply_updates`. DP-aware paths (DP-AdamW-BC, private
 second moments, Adagrad's mandatory variance subtraction) are selected by
-passing `NoisyPytree` or `SecondMomentNoiseOutput` updates.
+passing `NoisedPytree` or `SecondMomentNoiseOutput` updates.
 
 ## Why functional optimizers
 
@@ -48,7 +48,7 @@ grad_fn, clip_state = clipped_grad(
 )
 noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
 
-# DP-aware AdamW reads realized σ from NoisyPytree updates.
+# DP-aware AdamW reads realized σ from NoisedPytree updates.
 optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
 opt_state = optimizer.init(params)
 
@@ -66,7 +66,7 @@ DP training.  Per-parameter adaptive learning rates compensate for
 DP noise — different parameters receive different signal-to-noise
 ratios, and Adam scales updates accordingly.  Adam typically converges
 faster and is more robust to hyperparameter choices than SGD under DP.
-Pass `NoisyPytree` updates from a DP noise mechanism; enable
+Pass `NoisedPytree` updates from a DP noise mechanism; enable
 `noise_bias_correction` to opt into the φ-EMA correction path
 (off by default — flip on to ablate):
 
@@ -79,7 +79,7 @@ optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
 ```
 
 **SGD** (`opaque.optimizers.sgd`) is the canonical DP baseline. No second
-moment is corrected, but the Opaque wrapper accepts `NoisyPytree` updates so
+moment is corrected, but the Opaque wrapper accepts `NoisedPytree` updates so
 the training loop stays uniform. `E[g + ξ] = g` and momentum's variance is
 bounded. Good debugging baseline:
 
@@ -133,7 +133,7 @@ Opaque provides two independent corrections, both selected at
 angles and **must not be combined** at the same call — using both
 would double-correct the second moment.
 
-### `NoisyPytree`: bias correction by variance subtraction
+### `NoisedPytree`: bias correction by variance subtraction
 
 **Idea:** the noise variance $\Phi_t = \sigma_t^2$ is *known* (we
 chose it), so we can subtract it from the biased estimate.
@@ -159,7 +159,7 @@ DP-Adagrad — without it, the denominator runs away with $t \cdot \sigma^2$
 of accumulated noise variance and learning halts.
 
 When a raw pytree update is passed, each optimizer reduces to its standard
-math. `NoisyPytree` updates supply the realized per-step σ metadata.
+math. `NoisedPytree` updates supply the realized per-step σ metadata.
 
 ```python
 from opaque.optimizers import adamw
@@ -167,7 +167,7 @@ from opaque.optimizers import adamw
 # Without correction — standard AdamW math.
 optimizer = adamw(lr=1e-3, weight_decay=0.01)
 
-# With correction — pass NoisyPytree updates from gaussian_noise().
+# With correction — pass NoisedPytree updates from gaussian_noise().
 optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
 updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
 ```
@@ -204,7 +204,7 @@ something to ablate, not as a default recommendation.
 
 | Scenario | Optimizer | Notes |
 |---|---|---|
-| DP-SGD baseline | `adamw` | Plain AdamW on `NoisyPytree` updates |
+| DP-SGD baseline | `adamw` | Plain AdamW on `NoisedPytree` updates |
 | DP-SGD with BC ablation | `adamw(noise_bias_correction=True)` | φ-EMA subtraction from `v̂` |
 | DP-FTRL without an Adam-family update | `sgd` | No second moment to correct |
 | DP-FTRL with Adam, private second moments | `adamw(...) + SecondMomentNoiseOutput` | Substitutes a privatised `g²` stream in place of squaring noised grads |
@@ -424,8 +424,8 @@ function and all ranks receive identical noisy gradients after
 `sum_gradients` and noise addition (using the same key on all ranks).
 No explicit state synchronization is needed.
 
-**`NoisyPytree` is the unified contract.** Every optimizer that has a
-noise-aware path reads realized `noise_stddev` metadata from `NoisyPytree`
+**`NoisedPytree` is the unified contract.** Every optimizer that has a
+noise-aware path reads realized `noise_stddev` metadata from `NoisedPytree`
 updates. The trainer does not pass per-step optimizer kwargs; it just feeds
 the output of the DP noise mechanism into `optimizer.update()`.
 

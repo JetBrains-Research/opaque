@@ -47,7 +47,7 @@ grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 4. The clipped gradients are summed across the batch.
 
 The returned gradients are a `ClippedPytree`. Its `.pytree` holds the clipped
-gradient sum, and its `.bound` holds the per-step sensitivity used to calibrate
+gradient sum, and its `.max_norm` holds the per-step sensitivity used to calibrate
 noise.
 
 ### Parameters
@@ -89,7 +89,7 @@ example is added, removed, or replaced. Noise is calibrated to this value.
 
 ```python
 grads, clip_state = grad_fn(params, batch, state=clip_state)
-# With clipping_norm=1.0, normalize_by=32: grads.bound = 1.0 / 32
+# With clipping_norm=1.0, normalize_by=32: grads.max_norm = 1.0 / 32
 
 noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
 noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -210,12 +210,12 @@ where eta is the `learning_rate` parameter (default 0.2).
 Unlike `clipped_grad`, the state from `adaptive_clipped_grad` **does change**
 on each call. `AdaptiveClipState` keeps the next threshold and counters as
 internal execution state. Always use the returned state for the next call; use
-`grads.bound` when you need the current DP bound.
+`grads.max_norm` when you need the current DP bound.
 
 ```python
 for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
-    current_bound = grads.bound
+    current_bound = grads.max_norm
 ```
 
 ### Privacy accounting for adaptive clipping
@@ -375,7 +375,7 @@ inspect or pass that allocation to a mechanism that accepts stddev directly:
 ```python
 from opaque.dpsgd.noise import per_group_noise_stddev
 
-stddev = per_group_noise_stddev(grads.bound, noise_multiplier)
+stddev = per_group_noise_stddev(grads.max_norm, noise_multiplier)
 ```
 
 This sets $\sigma_i \propto \sqrt{C_i}$ instead of a uniform σ. Privacy
@@ -455,7 +455,7 @@ from the DP-SGD hyperparameter search.
 ### State and privacy accounting
 
 The returned `AutoClipState` is a fixed marker. `R`, `gamma`, and
-`normalize_by` are captured by the clipping closure, while `grads.bound`
+`normalize_by` are captured by the clipping closure, while `grads.max_norm`
 carries the sensitivity. Privacy accounting is plain Gaussian DP-SGD — AUTO-S
 introduces no extra data-dependent query:
 
@@ -486,7 +486,7 @@ grad_fn, clip_state = auto_clipped_grad(
     loss_fn, argnums=0, batch_argnums=(1, 2),
     R=pg, normalize_by=batch_size,
 )
-# grads.bound.effective = sqrt(sum R_k^2) / normalize_by
+# grads.max_norm.effective = sqrt(sum R_k^2) / normalize_by
 ```
 
 ### CLI usage in `train_causal_lm.py`

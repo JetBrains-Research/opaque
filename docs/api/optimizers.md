@@ -6,7 +6,7 @@ DP-aware paths, plus a curated set of `torchopt` re-exports for the
 stateless primitives where vanilla behaviour is acceptable under DP
 noise.  All factories return
 [TorchOpt](https://torchopt.readthedocs.io/) `GradientTransformation`s
-and route DP metadata from `NoisyPytree` or `SecondMomentNoiseOutput` updates.
+and route DP metadata from `NoisedPytree` or `SecondMomentNoiseOutput` updates.
 
 ---
 
@@ -34,14 +34,14 @@ params = torchopt.apply_updates(params, updates)
 ### Opaque-built factories (DP-aware)
 
 Noise-aware factories accept `noise_bias_correction=True` to subtract the
-known Gaussian variance carried by `NoisyPytree` updates (off by default;
+known Gaussian variance carried by `NoisedPytree` updates (off by default;
 flip on to ablate against vanilla). Where applicable they also route
 `SecondMomentNoiseOutput` for private squared-gradient substitution —
 an alternative answer to the same v-update bias.
 
 | Factory | DP-aware mode | When to use |
 |---|---|---|
-| **`sgd`** | No second moment; accepts `NoisyPytree` and ignores σ metadata | Canonical DP baseline |
+| **`sgd`** | No second moment; accepts `NoisedPytree` and ignores σ metadata | Canonical DP baseline |
 | **`adam`** | Original Adam/L2 variant with the same BC/private-moment paths as AdamW | Adam parity without decoupled WD |
 | **`adamw`** | φ-EMA on v̂ (DP-AdamW-BC) + private second moments | Default for DP training |
 | **`ademamix`** | φ-EMA on v̂ + private second moments | Long-horizon training (slow EMA captures long-range signal) |
@@ -79,12 +79,12 @@ modes — slow under noise but functional.
 
 Noise-aware behaviour is selected by the update object.
 
-### `NoisyPytree`
+### `NoisedPytree`
 
-`NoisyPytree` carries the realized per-step noise σ. Each optimizer activates
+`NoisedPytree` carries the realized per-step noise σ. Each optimizer activates
 whatever noise-aware machinery it has when `noise_bias_correction=True`:
 
-| Optimizer | What `NoisyPytree.noise_stddev` does |
+| Optimizer | What `NoisedPytree.noise_stddev` does |
 |---|---|
 | `adamw`, `ademamix` | β₂-EMA of σ², subtracted from v̂ before sqrt (Chooi et al., [arXiv:2511.07843](https://arxiv.org/abs/2511.07843)) |
 | `rmsprop` | α-EMA of σ², subtracted from v before sqrt (no `(1−α^t)` divide; v and φ accumulate at the same rate) |
@@ -133,7 +133,7 @@ updates, opt_state = optimizer.update(
 
 Reference: Kalinin et al., [arXiv:2502.06597](https://arxiv.org/abs/2502.06597).
 
-`NoisyPytree` metadata and private second-moment outputs are mutually exclusive
+`NoisedPytree` metadata and private second-moment outputs are mutually exclusive
 at any single `update()` call; passing both routes raises `ValueError`.
 
 ---

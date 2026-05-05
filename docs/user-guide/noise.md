@@ -32,15 +32,15 @@ noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
 `grads` must be a `ClippedPytree` from a clipping transform. The noise function
-reads `grads.bound`, adds Gaussian noise with stddev
-`noise_multiplier * grads.bound`, and returns a `NoisyPytree` carrying the
+reads `grads.max_norm`, adds Gaussian noise with stddev
+`noise_multiplier * grads.max_norm`, and returns a `NoisedPytree` carrying the
 realized `noise_stddev` metadata for optimizers.
 
 ### Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `noise_multiplier` | `float` | Gaussian noise multiplier. The realized stddev is `noise_multiplier * grads.bound`. |
+| `noise_multiplier` | `float` | Gaussian noise multiplier. The realized stddev is `noise_multiplier * grads.max_norm`. |
 | `key` | `RngKey` | Explicit RNG key for deterministic noise. Create with `key(seed)`. |
 
 ### Calibrating the noise multiplier
@@ -50,7 +50,7 @@ per-step bound at runtime:
 
 - `noise_multiplier` is determined by the target privacy budget (use
   `acc.calibrate()` to find it)
-- `grads.bound` comes from `clipped_grad`, `adaptive_clipped_grad`, or
+- `grads.max_norm` comes from `clipped_grad`, `adaptive_clipped_grad`, or
     `auto_clipped_grad`
 
 ```python
@@ -89,7 +89,7 @@ deterministic per-step noise regardless of execution order.
 
 ### Zero noise multiplier
 
-When `noise_multiplier=0`, `gaussian_noise` returns `NoisyPytree` updates with
+When `noise_multiplier=0`, `gaussian_noise` returns `NoisedPytree` updates with
 zero noise. This is useful for toggling DP on and off without changing the
 training loop.
 
@@ -102,12 +102,12 @@ automatically. To inspect the realized allocation, call `per_group_noise_stddev`
 ```python
 from opaque.dpsgd.noise import per_group_noise_stddev
 
-stddev = per_group_noise_stddev(grads.bound, noise_multiplier)
+stddev = per_group_noise_stddev(grads.max_norm, noise_multiplier)
 ```
 
 This returns a `PerGroup` of per-group standard deviations with
 $\sigma_i \propto \sqrt{C_i}$. `gaussian_noise` applies this allocation
-automatically when `grads.bound` is a `PerGroup`. Privacy accounting is
+automatically when `grads.max_norm` is a `PerGroup`. Privacy accounting is
 identical to the isotropic case — just `gaussian(nm)`.
 
 The [training script](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py) uses this by default

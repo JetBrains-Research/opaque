@@ -194,7 +194,7 @@ noise_state = sync(noise_state)
 `sync()` auto-dispatches based on the type of the state object. For
 `AdaptiveClipState`, it aggregates `num_clipped` and `total` across ranks
 (sum), recomputes the global clipping rate, and updates the internal next
-threshold. The current DP bound is carried by the clipped output's `.bound`
+threshold. The current DP bound is carried by the clipped output's `.max_norm`
 metadata.
 
 For fixed clipping (`clipped_grad`), the state is a deterministic marker and
