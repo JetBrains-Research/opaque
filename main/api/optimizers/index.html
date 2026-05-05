@@ -1666,18 +1666,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#re-exported-from-torchopt" class="md-nav__link">
+  <a href="#not-exposed" class="md-nav__link">
     <span class="md-ellipsis">
-      Re-exported from torchopt
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#not-re-exported" class="md-nav__link">
-    <span class="md-ellipsis">
-      Not re-exported
+      Not exposed
     </span>
   </a>
   
@@ -1860,18 +1851,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#re-exported-from-torchopt" class="md-nav__link">
+  <a href="#not-exposed" class="md-nav__link">
     <span class="md-ellipsis">
-      Re-exported from torchopt
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#not-re-exported" class="md-nav__link">
-    <span class="md-ellipsis">
-      Not re-exported
+      Not exposed
     </span>
   </a>
   
@@ -2034,6 +2016,16 @@ an alternative answer to the same v-update bias.</p>
 <td>Default for DP training</td>
 </tr>
 <tr>
+<td><strong><code>radam</code></strong></td>
+<td>φ-EMA on v̂ in the rectified phase (<code>ρ_t &gt; 5</code>); SGD-of-momentum in warmup</td>
+<td>Long runs where you want RAdam's variance rectification with DP correction</td>
+</tr>
+<tr>
+<td><strong><code>adadelta</code></strong></td>
+<td>Two-EMA BC: φ_g on <code>E[g²]</code> and per-element φ_dx on <code>E[Δx²]</code></td>
+<td>LR-free DP optimizer; useful when learning-rate tuning is hard</td>
+</tr>
+<tr>
 <td><strong><code>ademamix</code></strong></td>
 <td>φ-EMA on v̂ + private second moments</td>
 <td>Long-horizon training (slow EMA captures long-range signal)</td>
@@ -2067,29 +2059,7 @@ an alternative answer to the same v-update bias.</p>
 </table>
 <p>Constructor knobs vary per optimizer (e.g. <code>decoupled_weight_decay</code>,
 <code>update_rms_clip</code> on <code>adamw</code> and <code>ademamix</code>); see the docstrings.</p>
-<h3 id="re-exported-from-torchopt">Re-exported from <code>torchopt</code><a class="headerlink" href="#re-exported-from-torchopt" title="Permanent link">&para;</a></h3>
-<p>For users who want a vanilla baseline or who're explicitly OK with the
-non-corrected behaviour under DP.  Same names as torchopt's, no DP-aware
-modes — slow under noise but functional.</p>
-<table>
-<thead>
-<tr>
-<th>Re-export</th>
-<th>DP behaviour</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>adadelta</code></td>
-<td>Two EMAs whose ratio partially self-corrects under noise.  Functional, not optimal.</td>
-</tr>
-<tr>
-<td><code>radam</code></td>
-<td>Same DP-BC story as Adam, just no Opaque-built variant yet.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="not-re-exported">Not re-exported<a class="headerlink" href="#not-re-exported" title="Permanent link">&para;</a></h3>
+<h3 id="not-exposed">Not exposed<a class="headerlink" href="#not-exposed" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>torchopt.adamax</code> — the max-norm tracker <code>v_t = max(β v_{t-1}, |g_t + ξ|)</code>
   permanently absorbs the half-normal noise mean (<code>σ·√(2/π)</code>); per-coordinate
@@ -2114,6 +2084,14 @@ whatever noise-aware machinery it has when <code>noise_bias_correction=True</cod
 <tr>
 <td><code>adamw</code>, <code>ademamix</code></td>
 <td>β₂-EMA of σ², subtracted from v̂ before sqrt (Chooi et al., <a href="https://arxiv.org/abs/2511.07843">arXiv:2511.07843</a>)</td>
+</tr>
+<tr>
+<td><code>radam</code></td>
+<td>β₂-EMA of σ² advanced every step; subtracted from v̂ only in the rectified phase (<code>ρ_t &gt; 5</code>).  Warmup phase uses SGD-of-momentum (no v) and is naturally DP-robust.</td>
+</tr>
+<tr>
+<td><code>adadelta</code></td>
+<td>Two parallel ρ-EMAs: <code>φ_g</code> of σ² (subtracted from <code>E[g²]</code>) and <code>φ_dx</code> of <code>coef² σ²</code> per element (subtracted from <code>E[Δx²]</code>).  No published prior — derived by propagating Gaussian variance through the linear scaling step.</td>
 </tr>
 <tr>
 <td><code>rmsprop</code></td>

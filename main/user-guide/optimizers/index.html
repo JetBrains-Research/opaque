@@ -937,6 +937,24 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#radam-under-dp" class="md-nav__link">
+    <span class="md-ellipsis">
+      RAdam under DP
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adadelta-under-dp" class="md-nav__link">
+    <span class="md-ellipsis">
+      Adadelta under DP
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#why-adamax-isnt-shipped" class="md-nav__link">
     <span class="md-ellipsis">
       Why Adamax isn't shipped
@@ -2058,6 +2076,24 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#radam-under-dp" class="md-nav__link">
+    <span class="md-ellipsis">
+      RAdam under DP
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adadelta-under-dp" class="md-nav__link">
+    <span class="md-ellipsis">
+      Adadelta under DP
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#why-adamax-isnt-shipped" class="md-nav__link">
     <span class="md-ellipsis">
       Why Adamax isn't shipped
@@ -2156,10 +2192,11 @@
 <h1 id="optimizers">Optimizers<a class="headerlink" href="#optimizers" title="Permanent link">&para;</a></h1>
 <p>Opaque ships its own functional optimizer library at
 <a href="../../api/optimizers/"><code>opaque.optimizers</code></a>: Opaque-built factories with a
-common wrapper-aware update surface (<code>sgd</code>, <code>adam</code>, <code>adamw</code>, <code>lion</code>,
-<code>ademamix</code>, <code>adafactor</code>, <code>rmsprop</code>, <code>adagrad</code>, <code>schedule_free</code>) plus a small
-set of <code>torchopt</code> re-exports for primitives where Opaque does not add behavior
-(<code>adadelta</code>, <code>radam</code>).</p>
+common wrapper-aware update surface (<code>sgd</code>, <code>adam</code>, <code>adamw</code>, <code>radam</code>, <code>lion</code>,
+<code>ademamix</code>, <code>adafactor</code>, <code>rmsprop</code>, <code>adagrad</code>, <code>adadelta</code>, <code>schedule_free</code>).
+Every factory carries DP-aware behaviour selectable at construction time and
+activated by the metadata wrappers (<code>NoisedPytree</code>, <code>SecondMomentNoiseOutput</code>)
+landing in <code>update()</code>.</p>
 <p>All factories return <a href="https://torchopt.readthedocs.io/">TorchOpt</a>
 <code>GradientTransformation</code>s, so they compose with TorchOpt's lower-level
 transforms and <code>torchopt.apply_updates</code>. DP-aware paths (DP-AdamW-BC, private
@@ -2424,6 +2461,35 @@ cumulative <span class="arithmatex">\(\Phi_\text{acc}\)</span> to counter this. 
 denominator is preferable to vanilla Adagrad in practice depends on
 the workload — ablate against <code>noise_bias_correction=False</code> rather
 than treating BC as a default.</p>
+<h3 id="radam-under-dp">RAdam under DP<a class="headerlink" href="#radam-under-dp" title="Permanent link">&para;</a></h3>
+<p>RAdam (Liu et al., <a href="https://arxiv.org/abs/1908.03265">arXiv:1908.03265</a>)
+keeps Adam's <code>m</code>/<code>v</code> accumulators but post-multiplies the update by a
+variance-rectification factor <code>r_t</code> that depends only on <code>(β₂, t)</code>.  Below
+the rectification threshold (<code>ρ_t ≤ 5</code>, roughly the first
+<code>O(1/(1-β₂))</code> steps) the rule degenerates to SGD-of-momentum — <code>v</code> is
+not consumed at all.  This makes the warmup phase naturally DP-robust:
+the noise in <code>v</code> cannot affect the update because it isn't read.</p>
+<p>Once <code>ρ_t &gt; 5</code>, the standard Adam DP-BC story applies — subtract a
+β₂-EMA of <code>σ²</code> from <code>v̂</code> before the sqrt.  <code>opaque.optimizers.radam</code>
+advances the φ-EMA every step (warmup included) so that at the first
+rectified step the correction reflects all prior noise contributions to
+<code>v</code>, not just the current step.</p>
+<h3 id="adadelta-under-dp">Adadelta under DP<a class="headerlink" href="#adadelta-under-dp" title="Permanent link">&para;</a></h3>
+<p>Vanilla Adadelta (Zeiler 2012) is learning-rate-free: the update is
+the per-element ratio <code>RMS[Δx]_{t-1} / RMS[g]_t</code> times the gradient.
+Under DP both EMAs accumulate noise:</p>
+<ul>
+<li><code>E[g²]_t</code> inherits the Adam-shaped <code>σ²</code> offset.</li>
+<li><code>E[Δx²]_t</code> accumulates <code>coef_t² · σ²</code> per element because
+  <code>Δx_t = -coef_t · g̃_t</code> is linear in the noised gradient.</li>
+</ul>
+<p><code>opaque.optimizers.adadelta</code> maintains two parallel φ-EMAs at the
+same decay <code>ρ</code> and subtracts both biases.  <code>φ_g</code> is scalar (or
+per-group), <code>φ_dx</code> is per-element because the per-step update-noise
+variance varies element-wise even when <code>σ</code> is scalar.  Total state
+is roughly 1.5× vanilla Adadelta — still less than Adam's <code>m + v + φ</code>.</p>
+<p>The Adadelta two-EMA derivation has no published prior; it falls out
+of direct propagation of Gaussian variance through the linear scaling.</p>
 <h3 id="why-adamax-isnt-shipped">Why Adamax isn't shipped<a class="headerlink" href="#why-adamax-isnt-shipped" title="Permanent link">&para;</a></h3>
 <p>Adamax tracks <span class="arithmatex">\(v_t = \max(\beta v_{t-1}, |g_t + \xi|)\)</span>.  The max
 operator absorbs the half-normal noise mean (<span class="arithmatex">\(\sigma\sqrt{2/\pi} \approx
