@@ -54,7 +54,7 @@ def minsep_true_max_participations(
         n: Number of rounds.
         min_sep: Minimum separation between participations (min_sep=1 means
             adjacent indices can be selected).
-        max_participations: Optional upper max_norm on participations.
+        max_participations: Optional upper bound on participations.
 
     Returns:
         The largest possible number of participations.
@@ -139,7 +139,7 @@ def get_min_sep_sensitivity_upper_bound_for_X(
     min_sep: int = 1,
     max_participations: int | None = None,
 ) -> float:
-    """Computes an upper max_norm on the min_sep sensitivity of X.
+    """Computes an upper bound on the min_sep sensitivity of X.
 
     Unlike get_sensitivity_banded_for_X, this does not require X to be banded.
 
@@ -151,7 +151,7 @@ def get_min_sep_sensitivity_upper_bound_for_X(
         max_participations: Maximum number of participations.
 
     Returns:
-        An upper max_norm on the L2 sensitivity.
+        An upper bound on the L2 sensitivity.
     """
     checks.check(X=X)
     # Stage 1: For each row, find max participation value

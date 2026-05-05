@@ -110,11 +110,11 @@ def calibrate(
 
             Important: If process() raises an exception, it propagates immediately.
 
-        param_min: Lower max_norm for search (usually produces more private result)
+        param_min: Lower bound for search (usually produces more private result)
             - Assumed to satisfy: metric(param_min) > budget.value
             - Example: 0.5 for noise_multiplier at high privacy
 
-        param_max: Upper max_norm for search (usually produces less private result)
+        param_max: Upper bound for search (usually produces less private result)
             - Assumed to satisfy: metric(param_max) < budget.value
             - Example: 3.0 for noise_multiplier at lower privacy
 

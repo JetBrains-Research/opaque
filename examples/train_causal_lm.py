@@ -554,13 +554,13 @@ def parse_args():
         "--calibration-min",
         type=float,
         default=0.11,
-        help="Lower max_norm for noise calibration search",
+        help="Lower bound for noise calibration search",
     )
     privacy_group.add_argument(
         "--calibration-max",
         type=float,
         default=3.5,
-        help="Upper max_norm for noise calibration search",
+        help="Upper bound for noise calibration search",
     )
     privacy_group.add_argument(
         "--calibration-tolerance",

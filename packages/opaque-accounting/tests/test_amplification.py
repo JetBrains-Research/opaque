@@ -183,6 +183,6 @@ class TestParallelPoissonAutoTruncation:
         eps_tight = auto.epsilon_at(delta, log_x_mass_truncation_bound=-50.0)
         eps_loose = auto.epsilon_at(delta, log_x_mass_truncation_bound=-15.0)
 
-        # Looser truncation max_norm allows more aggressive k truncation, producing
+        # Looser truncation bound allows more aggressive k truncation, producing
         # a conservative (not tighter) epsilon.
         assert eps_loose >= eps_tight - 1e-10

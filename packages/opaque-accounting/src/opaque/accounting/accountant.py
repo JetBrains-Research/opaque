@@ -180,7 +180,7 @@ class Accountant:
 
         Returns False if no budget was specified. Otherwise, evaluates the
         target metric on the accumulated process and checks if it violates
-        the budget max_norm.
+        the budget bound.
 
         Returns:
             True if privacy budget is violated, False otherwise.

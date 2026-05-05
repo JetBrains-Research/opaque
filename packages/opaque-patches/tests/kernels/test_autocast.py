@@ -242,10 +242,10 @@ def test_block_backward_grad_proximity_to_fp32(amp_dtype: torch.dtype):
         a = fp32_grads[n].float()
         b = amp_grads[n].float()
         mse = (a - b).pow(2).mean().item()
-        # bf16 has ~3 decimal digits, fp16 ~3-4; max_norm calibrated against the block size.
-        max_norm = 5e-2 if amp_dtype is torch.float16 else 1e-1
-        assert mse < max_norm, (
-            f"param {n}: grad mse {mse:.4f} exceeds max_norm {max_norm} for autocast({amp_dtype})"
+        # bf16 has ~3 decimal digits, fp16 ~3-4; threshold calibrated against the block size.
+        mse_bound = 5e-2 if amp_dtype is torch.float16 else 1e-1
+        assert mse < mse_bound, (
+            f"param {n}: grad mse {mse:.4f} exceeds mse_bound {mse_bound} for autocast({amp_dtype})"
         )
 
 

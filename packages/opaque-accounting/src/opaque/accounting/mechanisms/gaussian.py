@@ -73,7 +73,7 @@ def gaussian(noise_multiplier: float) -> Gaussian:
     if 0 < noise_multiplier < 0.1:
         warnings.warn(
             f"noise_multiplier={noise_multiplier} is very small: epsilon bounds "
-            f"may explode and discretization grids may grow unclippedly, "
+            f"may explode and discretization grids may grow unboundedly, "
             f"leading to slow or inaccurate PLD computation.",
             stacklevel=2,
         )

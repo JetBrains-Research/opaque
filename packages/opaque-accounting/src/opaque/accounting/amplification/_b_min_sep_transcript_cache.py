@@ -10,7 +10,7 @@ from opaque.accounting import _native
 
 
 def _max_registry_bytes() -> int:
-    """Upper max_norm for registering one corpus (raw f64 storage ~3×S×n×8 bytes).
+    """Upper bound for registering one corpus (raw f64 storage ~3×S×n×8 bytes).
 
     Default 4 GiB fits realistic calibration (e.g. n=2000, S=50k → ~2.4 GiB).
     Set ``OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES`` to cap lower on small VMs,

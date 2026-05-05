@@ -70,8 +70,8 @@ def _truncated_normal_around(
     Args:
         center: Centre (mean) of the truncated Gaussian for each element.
         stddev: Standard deviation of the underlying Gaussian.
-        lower: Lower max_norm of the output domain.
-        upper: Upper max_norm of the output domain.
+        lower: Lower bound of the output domain.
+        upper: Upper bound of the output domain.
         generator: Optional ``torch.Generator`` for reproducibility.
 
     Returns:

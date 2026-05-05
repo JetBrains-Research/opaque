@@ -13,7 +13,7 @@ class DiscretizationConfig:
 
     Args:
         discretization: Grid spacing for the PLD PMF. Smaller = tighter, slower.
-        log_x_mass_truncation_bound: Log tail mass cutoff in x-space. Tails below exp(max_norm) are truncated.
+        log_x_mass_truncation_bound: Log tail mass cutoff in x-space. Tails below exp(bound) are truncated.
         pessimistic_estimate: Round upward for safe upper bounds (True) or downward (False).
         max_grid_size: Maximum grid bins before automatic coarsening.
         num_mc_samples: Number of Monte Carlo samples for MC-based accounting.
@@ -68,10 +68,10 @@ def set_discretization(
     Args:
         discretization: Grid spacing for PLD PMF. Smaller = more precise, larger = faster.
             Error scales as O(disc^2). Default: 1e-4.
-        log_x_mass_truncation_bound: Tails with log-probability below this max_norm in x-space
+        log_x_mass_truncation_bound: Tails with log-probability below this bound in x-space
             are truncated. Default: -50 (matching Google).
         pessimistic_estimate: If True (default), round probabilities upward to
-            produce an **upper max_norm** on privacy loss (safe for guarantees). If
+            produce an **upper bound** on privacy loss (safe for guarantees). If
             False, round downward (optimistic estimate, useful for debugging only).
         max_grid_size: If grid exceeds this many bins, coarsen discretization
             automatically. Default: 10,000,000.
