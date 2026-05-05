@@ -7,6 +7,9 @@ For actual multi-device distributed tests, see test_ddp_integration.py.
 import pytest
 import torch
 
+from opaque.bounded import BoundedPytree, NoisyPytree
+from opaque.distributed import gradients as gradients_module
+
 import opaque.distributed as dist_utils
 
 
@@ -91,14 +94,89 @@ class TestAllReduceValidation:
                 # Actually execute if initialized
                 dist_utils.all_reduce(tensor, op=op)
                 dist_utils.all_reduce_(tensor, op=op)
-            else:
-                # Just check it gets past parameter validation
-                try:
-                    dist_utils.all_reduce(tensor, op=op)
-                    dist_utils.all_reduce_(tensor, op=op)
-                except RuntimeError as e:
-                    # Expected if not initialized
-                    assert "not initialized" in str(e)
+                continue
+
+            # Just check it gets past parameter validation
+            try:
+                dist_utils.all_reduce(tensor, op=op)
+                dist_utils.all_reduce_(tensor, op=op)
+            except RuntimeError as e:
+                # Expected if not initialized
+                assert "not initialized" in str(e)
+
+
+class TestBoundedGradientAggregation:
+    """Tests for wrapper-aware gradient aggregation outside distributed mode."""
+
+    def test_sum_gradients_preserves_bounded_pytree(self):
+        gradients = BoundedPytree({"w": torch.tensor([1.0, 2.0])}, bound=0.5)
+
+        reduced = dist_utils.sum_gradients(gradients)
+
+        assert isinstance(reduced, BoundedPytree)
+        assert not isinstance(reduced, NoisyPytree)
+        assert reduced.bound == gradients.bound
+        assert reduced.pytree is not gradients.pytree
+        torch.testing.assert_close(reduced.pytree["w"], gradients.pytree["w"])
+
+    def test_sum_gradients_inplace_preserves_bounded_pytree(self):
+        gradients = BoundedPytree({"w": torch.tensor([1.0, 2.0])}, bound=0.5)
+
+        result = dist_utils.sum_gradients_(gradients)
+
+        assert result is None
+        assert gradients.bound == 0.5
+        torch.testing.assert_close(gradients.pytree["w"], torch.tensor([1.0, 2.0]))
+
+    def test_mean_gradients_preserves_bounded_pytree_outside_distributed(self):
+        gradients = BoundedPytree({"w": torch.tensor([1.0])}, bound=0.5)
+
+        reduced = dist_utils.reduce_pytree(gradients, op="mean")
+
+        assert isinstance(reduced, BoundedPytree)
+        assert reduced.bound == gradients.bound
+        torch.testing.assert_close(reduced.pytree["w"], gradients.pytree["w"])
+
+    def test_unsupported_bounded_reduction_raises(self):
+        gradients = BoundedPytree({"w": torch.tensor([1.0])}, bound=0.5)
+
+        with pytest.raises(TypeError, match="supports op='sum' or op='mean'"):
+            dist_utils.reduce_pytree(gradients, op="max")
+
+    def test_sum_gradients_preserves_noisy_pytree_outside_distributed(self):
+        gradients = NoisyPytree(
+            {"w": torch.tensor([1.0])}, bound=0.5, noise_stddev=1.0
+        )
+
+        reduced = dist_utils.sum_gradients(gradients)
+
+        assert isinstance(reduced, NoisyPytree)
+        assert reduced.bound == gradients.bound
+        assert reduced.noise_stddev == gradients.noise_stddev
+        torch.testing.assert_close(reduced.pytree["w"], gradients.pytree["w"])
+
+    def test_bounded_metadata_scales_for_distributed_mean(self):
+        gradients = BoundedPytree({"w": torch.tensor([1.0])}, bound=2.0)
+
+        reduced = gradients_module._reduced_metadata(gradients, "mean", world_size=4)
+
+        assert isinstance(reduced, BoundedPytree)
+        assert reduced.bound == pytest.approx(0.5)
+
+    def test_noisy_metadata_scales_for_distributed_sum_and_mean(self):
+        gradients = NoisyPytree(
+            {"w": torch.tensor([1.0])}, bound=2.0, noise_stddev=0.5
+        )
+
+        summed = gradients_module._reduced_metadata(gradients, "sum", world_size=4)
+        averaged = gradients_module._reduced_metadata(gradients, "mean", world_size=4)
+
+        assert isinstance(summed, NoisyPytree)
+        assert summed.bound == pytest.approx(2.0)
+        assert summed.noise_stddev == pytest.approx(1.0)
+        assert isinstance(averaged, NoisyPytree)
+        assert averaged.bound == pytest.approx(0.5)
+        assert averaged.noise_stddev == pytest.approx(0.25)
 
 
 class TestModuleExports:
