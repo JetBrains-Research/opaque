@@ -2,7 +2,7 @@
 <module external.system.id="pyproject.toml" type="PYTHON_MODULE" version="4">
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$/packages/opaque-patches">
-      <sourceFolder url="file://$MODULE_DIR$/packages/opaque-patches/src" />
+      <sourceFolder url="file://$MODULE_DIR$/packages/opaque-patches/src" isTestSource="false" />
     </content>
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="opaque-core" exported="" />

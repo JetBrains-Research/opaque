@@ -23,18 +23,18 @@ classifiers = [
 ]
 dependencies = [
     "torch>=2.10.0",
-    "transformers>=4.57.0",
-    "opaque-core>=0.0.0.dev0",
-    "opaque-patches>=0.0.0.dev0",
+    "transformers>=4.57.0,<5",
+    "peft>=0.18.0",
+    "datasets>=2.0.0",
+    "torchopt>=0.7.0",
+    "opaque-core",
+    "opaque-patches",
+    "opaque-accounting",
+    "opaque-dpsgd",
 ]
 
 [project.optional-dependencies]
-peft = ["peft>=0.13.0"]
 trainer = [
-    "opaque-dpsgd>=0.0.0.dev0",
-    "opaque-accounting>=0.0.0.dev0",
-    "datasets>=2.0.0",
-    "torchopt>=0.7.0",
 ]
 
 [tool.setuptools.packages.find]

@@ -27,8 +27,8 @@ from opaque.transformers.trainer import DPTrainingArguments
 from opaque.transformers.trainer._config import (
     DP_INCOMPATIBLE_PARAMETERS,
     _DP_OPTIMIZERS,
-    _DP_OPTIMIZER_UNSUPPORTED,
 )
+from opaque.transformers.trainer._optim import _DP_OPTIMIZER_UNSUPPORTED
 
 
 class TestLegacyAliases:

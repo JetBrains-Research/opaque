@@ -20,7 +20,7 @@ members = [
     "opaque-core",
     "opaque-dpftrl",
     "opaque-dpsgd",
-    "opaque-performance",
+    "opaque-patches",
     "opaque-transformers",
 ]
 constraints = [{ name = "torch", specifier = "<2.11" }]
@@ -2170,14 +2170,15 @@ dependencies = [
     { name = "opaque-accounting" },
     { name = "opaque-core" },
     { name = "opaque-dpsgd" },
+    { name = "opaque-patches" },
 ]
 
 [package.optional-dependencies]
 all = [
     { name = "opaque-auditing" },
     { name = "opaque-dpftrl" },
-    { name = "opaque-performance" },
-    { name = "opaque-transformers", extra = ["peft"] },
+    { name = "opaque-patches", extra = ["transformers"] },
+    { name = "opaque-transformers" },
 ]
 auditing = [
     { name = "opaque-auditing" },
@@ -2185,16 +2186,9 @@ auditing = [
 dpftrl = [
     { name = "opaque-dpftrl" },
 ]
-huggingface = [
-    { name = "opaque-performance" },
+transformers = [
+    { name = "opaque-patches", extra = ["transformers"] },
     { name = "opaque-transformers" },
-]
-peft = [
-    { name = "opaque-performance" },
-    { name = "opaque-transformers", extra = ["peft"] },
-]
-performance = [
-    { name = "opaque-performance" },
 ]
 
 [package.dev-dependencies]
@@ -2228,22 +2222,19 @@ examples = [
 
 [package.metadata]
 requires-dist = [
+    { name = "opaque", extras = ["auditing"], marker = "extra == 'all'" },
+    { name = "opaque", extras = ["dpftrl"], marker = "extra == 'all'" },
+    { name = "opaque", extras = ["transformers"], marker = "extra == 'all'" },
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
-    { name = "opaque-auditing", marker = "extra == 'all'", editable = "packages/opaque-auditing" },
     { name = "opaque-auditing", marker = "extra == 'auditing'", editable = "packages/opaque-auditing" },
     { name = "opaque-core", editable = "packages/opaque-core" },
-    { name = "opaque-dpftrl", marker = "extra == 'all'", editable = "packages/opaque-dpftrl" },
     { name = "opaque-dpftrl", marker = "extra == 'dpftrl'", editable = "packages/opaque-dpftrl" },
     { name = "opaque-dpsgd", editable = "packages/opaque-dpsgd" },
-    { name = "opaque-performance", marker = "extra == 'all'", editable = "packages/opaque-performance" },
-    { name = "opaque-performance", marker = "extra == 'huggingface'", editable = "packages/opaque-performance" },
-    { name = "opaque-performance", marker = "extra == 'peft'", editable = "packages/opaque-performance" },
-    { name = "opaque-performance", marker = "extra == 'performance'", editable = "packages/opaque-performance" },
-    { name = "opaque-transformers", marker = "extra == 'huggingface'", editable = "packages/opaque-transformers" },
-    { name = "opaque-transformers", extras = ["peft"], marker = "extra == 'all'", editable = "packages/opaque-transformers" },
-    { name = "opaque-transformers", extras = ["peft"], marker = "extra == 'peft'", editable = "packages/opaque-transformers" },
+    { name = "opaque-patches", editable = "packages/opaque-patches" },
+    { name = "opaque-patches", extras = ["transformers"], marker = "extra == 'transformers'", editable = "packages/opaque-patches" },
+    { name = "opaque-transformers", marker = "extra == 'transformers'", editable = "packages/opaque-transformers" },
 ]
-provides-extras = ["auditing", "dpftrl", "performance", "huggingface", "peft", "all"]
+provides-extras = ["auditing", "dpftrl", "transformers", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2270,7 +2261,7 @@ examples = [
     { name = "peft", specifier = ">=0.18.0" },
     { name = "torchopt", specifier = ">=0.7.3" },
     { name = "torchvision", specifier = ">=0.25.0" },
-    { name = "transformers", specifier = ">=4.57.0" },
+    { name = "transformers", specifier = ">=4.57.0,<5" },
     { name = "wandb", specifier = ">=0.16.0" },
 ]
 
@@ -2358,55 +2349,56 @@ requires-dist = [
 ]
 
 [[package]]
-name = "opaque-performance"
-source = { editable = "packages/opaque-performance" }
+name = "opaque-patches"
+source = { editable = "packages/opaque-patches" }
 dependencies = [
     { name = "opaque-core" },
     { name = "torch" },
-    { name = "triton", marker = "sys_platform == 'linux'" },
+]
+
+[package.optional-dependencies]
+transformers = [
+    { name = "peft" },
+    { name = "transformers" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "opaque-core", editable = "packages/opaque-core" },
+    { name = "peft", marker = "extra == 'transformers'", specifier = ">=0.18.0" },
     { name = "torch", specifier = ">=2.10.0" },
-    { name = "triton", marker = "sys_platform == 'linux'", specifier = ">=3.0.0" },
+    { name = "transformers", marker = "extra == 'transformers'", specifier = ">=4.57.0,<5" },
 ]
+provides-extras = ["transformers"]
 
 [[package]]
 name = "opaque-transformers"
 source = { editable = "packages/opaque-transformers" }
 dependencies = [
-    { name = "opaque-core" },
-    { name = "opaque-performance" },
-    { name = "torch" },
-    { name = "transformers" },
-]
-
-[package.optional-dependencies]
-peft = [
-    { name = "peft" },
-]
-trainer = [
     { name = "datasets" },
     { name = "opaque-accounting" },
+    { name = "opaque-core" },
     { name = "opaque-dpsgd" },
+    { name = "opaque-patches" },
+    { name = "peft" },
+    { name = "torch" },
     { name = "torchopt" },
+    { name = "transformers" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "datasets", marker = "extra == 'trainer'", specifier = ">=2.0.0" },
-    { name = "opaque-accounting", marker = "extra == 'trainer'", editable = "packages/opaque-accounting" },
+    { name = "datasets", specifier = ">=2.0.0" },
+    { name = "opaque-accounting", editable = "packages/opaque-accounting" },
     { name = "opaque-core", editable = "packages/opaque-core" },
-    { name = "opaque-dpsgd", marker = "extra == 'trainer'", editable = "packages/opaque-dpsgd" },
-    { name = "opaque-performance", editable = "packages/opaque-performance" },
-    { name = "peft", marker = "extra == 'peft'", specifier = ">=0.13.0" },
+    { name = "opaque-dpsgd", editable = "packages/opaque-dpsgd" },
+    { name = "opaque-patches", editable = "packages/opaque-patches" },
+    { name = "peft", specifier = ">=0.18.0" },
     { name = "torch", specifier = ">=2.10.0" },
-    { name = "torchopt", marker = "extra == 'trainer'", specifier = ">=0.7.0" },
-    { name = "transformers", specifier = ">=4.57.0" },
+    { name = "torchopt", specifier = ">=0.7.0" },
+    { name = "transformers", specifier = ">=4.57.0,<5" },
 ]
-provides-extras = ["peft", "trainer"]
+provides-extras = ["trainer"]
 
 [[package]]
 name = "optree"
@@ -3596,9 +3588,7 @@ name = "triton"
 version = "3.6.0"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0f/2c/96f92f3c60387e14cc45aed49487f3486f89ea27106c1b1376913c62abe4/triton-3.6.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:49df5ef37379c0c2b5c0012286f80174fcf0e073e5ade1ca9a86c36814553651", size = 176081190, upload-time = "2026-01-20T16:16:00.523Z" },
     { url = "https://files.pythonhosted.org/packages/e0/12/b05ba554d2c623bffa59922b94b0775673de251f468a9609bc9e45de95e9/triton-3.6.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e8e323d608e3a9bfcc2d9efcc90ceefb764a82b99dea12a86d643c72539ad5d3", size = 188214640, upload-time = "2026-01-20T16:00:35.869Z" },
-    { url = "https://files.pythonhosted.org/packages/17/5d/08201db32823bdf77a0e2b9039540080b2e5c23a20706ddba942924ebcd6/triton-3.6.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:374f52c11a711fd062b4bfbb201fd9ac0a5febd28a96fb41b4a0f51dde3157f4", size = 176128243, upload-time = "2026-01-20T16:16:07.857Z" },
     { url = "https://files.pythonhosted.org/packages/ab/a8/cdf8b3e4c98132f965f88c2313a4b493266832ad47fb52f23d14d4f86bb5/triton-3.6.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:74caf5e34b66d9f3a429af689c1c7128daba1d8208df60e81106b115c00d6fca", size = 188266850, upload-time = "2026-01-20T16:00:43.041Z" },
 ]
 

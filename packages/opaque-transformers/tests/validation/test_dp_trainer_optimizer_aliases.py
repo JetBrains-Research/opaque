@@ -1,24 +1,19 @@
-"""Optimizer name validation, HF-name rejection, and the torchopt set.
+"""Optimizer name validation, HF-alias remapping, and the opaque set.
 
-DPTrainer's optimizer chain is functional (``torchopt``); HF's
-``OptimizerNames`` enum binds to ``torch.optim`` / 8-bit / fused-CUDA
-implementations whose state shapes and update math do not match
-torchopt's.  Silently substituting ``torchopt.adamw`` for
-``torch.optim.AdamW`` (HF's ``adamw_torch``) would produce wrong
-numerics, so DPTrainer rejects every HF-specific name with a
-per-name redirection rather than aliasing it.
+DPTrainer's optimizer surface has two layers:
 
-This test module covers:
+1. Canonical opaque names (``adam``, ``adamw``, ``sgd``, ``rmsprop``,
+   ``adagrad``, ``adafactor``, ``ademamix``, ``lion``, ``schedule_free``)
+   route directly to ``opaque.optimizers.*`` factories with HF-canonical
+   ``TrainingArguments`` fields forwarded.
+2. HF compat aliases (``adamw_torch``, ``adamw_torch_fused``,
+   ``adamw_hf``, ``adafactor``, ``ademamix``, ``lion_32bit``) route to
+   the same opaque factories — DPTrainer honours the HF name by
+   selecting the matching DP-aware update math, not by substituting
+   a different one.
 
-- HF-specific names (``adamw_torch``, ``adamw_hf``, ``adafactor``,
-  ``lion_32bit``, ``adamw_bnb_8bit``, …) raise ``ValueError`` with a
-  message that names the optimizer and points at a torchopt-backed
-  alternative.
-- All names DPTrainer's factory wires (``adam``, ``adamw``,
-  ``adamw-bc``, ``sgd``, ``rmsprop``, ``adagrad``, ``adadelta``,
-  ``adamax``, ``radam``) construct successfully and run one step.
-- ``optim='sgd', weight_decay=…`` actually decays the params (the
-  SGD branch previously dropped ``weight_decay`` silently).
+Names with no DP-aware mapping (8-bit, paged, GaLore, fused-CUDA, XLA,
+NPU, ``adadelta``, ``radam``, ``adamax``) reject with redirect messages.
 """
 
 from __future__ import annotations
@@ -90,93 +85,95 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
 
 
 # ---------------------------------------------------------------------------
-# HF-name rejection
+# HF-alias remapping (accepted) and unsupported-name rejection
 # ---------------------------------------------------------------------------
 
 
-class TestOptimRejectsHFNames:
-    """HF ``OptimizerNames`` values raise — DPTrainer is torchopt-only.
+# HF ``OptimizerNames`` values that route transparently onto an
+# opaque factory.  Construction must succeed; the underlying update
+# math is the matching opaque factory, *not* the HF-named impl.
+ACCEPTED_HF_ALIASES = (
+    "adamw_torch",         # ↦ opaque.optimizers.adamw
+    "adamw_torch_fused",   # ↦ opaque.optimizers.adamw
+    "adamw_hf",            # ↦ opaque.optimizers.adamw
+    "adafactor",           # ↦ opaque.optimizers.adafactor
+    "ademamix",            # ↦ opaque.optimizers.ademamix
+    "lion_32bit",          # ↦ opaque.optimizers.lion
+)
 
-    The redirection is meant to save users the time of debugging why
-    their HF script silently misbehaves.  The error message must
-    (a) name the unsupported optimizer, (b) reference torchopt or the
-    redirection, and (c) point at the supported list.
-    """
 
-    @pytest.mark.parametrize(
-        "name",
-        [
-            # HF default — ``torch.optim.AdamW``, *not* equivalent to
-            # ``torchopt.adamw``.  This is the most important reject:
-            # silently substituting one for the other would change
-            # the numerics of every HF training script ported as-is.
-            "adamw_torch",
-            "adamw_torch_fused",
-            "adamw_torch_xla",
-            "adamw_torch_npu_fused",
-            # Pre-PyTorch-2 HF default.
-            "adamw_hf",
-            # APEX / quantized / specialised AdamW variants.
-            "adamw_apex_fused",
-            "adamw_anyprecision",
-            "adamw_bnb_8bit",
-            "adamw_8bit",
-            "adamw_torch_4bit",
-            "adamw_torch_8bit",
-            # Adafactor — factored second moments don't compose under
-            # vmap.
-            "adafactor",
-            # AdEMAMix / Lion / paged variants.
-            "ademamix",
-            "ademamix_8bit",
-            "lion_32bit",
-            "lion_8bit",
-            "paged_adamw_32bit",
-            "paged_adamw_8bit",
-            "paged_lion_32bit",
-            "paged_lion_8bit",
-            # bitsandbytes RMSprop variants — DPTrainer ships its own
-            # ``rmsprop`` (torchopt-backed).
-            "rmsprop_bnb",
-            "rmsprop_bnb_8bit",
-            "rmsprop_bnb_32bit",
-            # GaLore / LOMO / schedule-free / APOLLO / StableAdamW —
-            # all out of scope.
-            "galore_adamw",
-            "galore_adafactor",
-            "lomo",
-            "adalomo",
-            "grokadamw",
-            "schedule_free_adamw",
-            "schedule_free_sgd",
-            "apollo_adamw",
-            "stable_adamw",
-        ],
-    )
-    def test_hf_specific_optim_raises(self, tmp_path, name):
+# Names that DPTrainer cannot honour even with a remap: 8-bit / paged /
+# GaLore / Apex-fused / XLA / NPU / opaque primitives without DP-aware
+# modes.  Construction must raise ``ValueError`` with a redirect.
+REJECTED_OPTIMIZER_NAMES = (
+    "adamw_torch_xla",
+    "adamw_torch_npu_fused",
+    "adamw_apex_fused",
+    "adamw_anyprecision",
+    "adamw_bnb_8bit",
+    "adamw_8bit",
+    "adamw_torch_4bit",
+    "adamw_torch_8bit",
+    "ademamix_8bit",
+    "lion_8bit",
+    "paged_adamw_32bit",
+    "paged_adamw_8bit",
+    "paged_lion_32bit",
+    "paged_lion_8bit",
+    "rmsprop_bnb",
+    "rmsprop_bnb_8bit",
+    "rmsprop_bnb_32bit",
+    "galore_adamw",
+    "galore_adafactor",
+    "lomo",
+    "adalomo",
+    "grokadamw",
+    "apollo_adamw",
+    # Schedule-free with no opaque-built RAdam yet.
+    "schedule_free_radam",
+    # Schedule-free over adamw / sgd has a redirect to optim='schedule_free'.
+    "schedule_free_adamw",
+    "schedule_free_sgd",
+    "stable_adamw",
+    # Re-exported torchopt primitives without DP-aware modes.
+    "adadelta",
+    "radam",
+    "adamax",
+)
+
+
+class TestOptimAcceptsHFAliases:
+    """HF compat aliases route onto the matching opaque factory."""
+
+    @pytest.mark.parametrize("name", ACCEPTED_HF_ALIASES)
+    def test_hf_alias_constructs(self, tmp_path, name):
+        args = _args(tmp_path, optim=name)
+        # The raw ``args.optim`` keeps the user-supplied alias spelling;
+        # the resolver does the redirection at optimizer-build time.
+        assert args.optim == name
+
+    def test_optimizernames_enum_adamw_torch_constructs(self, tmp_path):
+        """``optim=OptimizerNames.ADAMW_TORCH`` is accepted via remap."""
+        args = _args(tmp_path, optim=OptimizerNames.ADAMW_TORCH)
+        assert str(args.optim) in {"adamw_torch", "OptimizerNames.ADAMW_TORCH"}
+
+
+class TestOptimRejectsUnsupportedNames:
+    """Names with no DP-aware mapping reject with a redirect."""
+
+    @pytest.mark.parametrize("name", REJECTED_OPTIMIZER_NAMES)
+    def test_unsupported_optim_raises(self, tmp_path, name):
         with pytest.raises(ValueError) as exc_info:
             _args(tmp_path, optim=name)
         message = str(exc_info.value)
         assert name in message, (
             f"error must name the rejected optimizer; got: {message}"
         )
-        assert "DPTrainer" in message
-        # The redirection mentions either the supported list or a
-        # specific torchopt-backed alternative.
-        assert "Supported optimizers" in message or "torchopt" in message
+        assert "Supported optimizers" in message or "optim=" in message
 
-    def test_optimizernames_enum_input_also_raises(self, tmp_path):
-        """``optim=OptimizerNames.ADAMW_TORCH`` must raise too."""
-        # Until Step 3 was rewound this enum input was silently
-        # folded onto ``adamw``.  After the rewind the enum's
-        # ``.value`` (``'adamw_torch'``) lands in the rejection
-        # table and raises.
-        with pytest.raises(ValueError, match="adamw_torch"):
-            _args(tmp_path, optim=OptimizerNames.ADAMW_TORCH)
-
-    def test_unknown_optim_still_raises(self, tmp_path):
-        """Names absent from both the rejection table and the supported
-        list fall through to the bare validation step."""
+    def test_unknown_optim_raises(self, tmp_path):
+        """Names absent from both the alias and the rejection layer
+        fall through to the bare validation step."""
         with pytest.raises(ValueError, match="expected one of"):
             _args(tmp_path, optim="nonsense_optim")
 
@@ -186,25 +183,20 @@ class TestOptimRejectsHFNames:
 # ---------------------------------------------------------------------------
 
 
-# All torchopt-backed names DPTrainer ships.  Each must (a) construct
-# the args without raising and (b) advance one training step
-# end-to-end.  ``adamw-bc`` is excluded from the smoke run because
-# it requires a ``clip_state`` payload that isn't trivially available
-# at args-construction time; it is exercised by the dedicated DP-SGD
-# tests under ``packages/opaque-dpsgd/tests/``.
+# Canonical opaque names DPTrainer ships.  ``schedule_free`` is not in
+# the smoke set because it requires an inner ``base=`` optim_args entry.
 SUPPORTED_OPTIMIZERS = (
     "adam",
     "adamw",
-    "adamw-bc",
     "sgd",
     "rmsprop",
     "adagrad",
-    "adadelta",
-    "adamax",
-    "radam",
+    "adafactor",
+    "ademamix",
+    "lion",
 )
 
-SMOKE_OPTIMIZERS = tuple(n for n in SUPPORTED_OPTIMIZERS if n != "adamw-bc")
+SMOKE_OPTIMIZERS = SUPPORTED_OPTIMIZERS
 
 
 class TestSupportedOptimizersConstruct:
