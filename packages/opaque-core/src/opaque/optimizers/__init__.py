@@ -47,16 +47,11 @@ wrappers:
   streams together and substitutes the private squared-gradient stream
   in place of ``g²`` (post-processing inside the optimizer).
 
-``adamax`` and ``adadelta`` are intentionally *not* exposed:
-
-- ``adamax`` — the L∞ ``u_t = max(β₂ u_{t-1}, |g_t|)`` rule rectifies
-  the gradient before the EMA, so the half-normal noise mean
-  ``σ √(2/π)`` is permanently absorbed; the standard variance-EMA BC
-  trick does not apply.  No principled fix has been published.
-- ``adadelta`` — see :func:`opaque.optimizers.adadelta` (the
-  Opaque-built version with two-EMA BC).  The torchopt re-export was
-  retired because its noise-blind ratio of EMAs converges much
-  slower under DP than the BC-corrected variant.
+``adamax`` is intentionally *not* exposed: its L∞
+``u_t = max(β₂ u_{t-1}, |g_t|)`` rule rectifies the gradient before
+the EMA, so the half-normal noise mean ``σ √(2/π)`` is permanently
+absorbed and the standard variance-EMA BC trick does not apply.  No
+principled fix has been published.
 
 Each factory returns a ``torchopt.base.GradientTransformation`` and is
 state-isolated; multiple optimizers can coexist in the same process

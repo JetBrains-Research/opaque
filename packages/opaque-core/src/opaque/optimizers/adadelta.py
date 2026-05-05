@@ -224,7 +224,15 @@ def _scale_by_adadelta(
 
             # Tensor leaf at path ``prefix``.
             v_g_t = v_g_node
-            phi_g_path = _phi_g_for(prefix) if noise_bias_correction else 0.0
+            # In the second-moment-substitution branch, ``E[g²]`` is
+            # already debiased by post-processing — applying φ_g would
+            # subtract the noise variance twice if a prior
+            # ``NoisedPytree`` step had grown φ_g.  Force zero here so
+            # the carried-over EMA does not silently double-correct.
+            if noise_bias_correction and noisy_squared_grads is None:
+                phi_g_path = _phi_g_for(prefix)
+            else:
+                phi_g_path = 0.0
 
             # Corrected E[g²] at this step.
             if phi_g_path > 0:
@@ -234,9 +242,14 @@ def _scale_by_adadelta(
 
             # Corrected E[Δx²] from previous step (the φ_dx is the
             # *previous* one because we read ``v_dx_node`` and the
-            # matching pre-step φ_dx_node).
-            if noise_bias_correction:
-                v_dx_corrected_prev = torch.clamp(v_dx_node - phi_dx_node, min=bc_floor)
+            # matching pre-step φ_dx_node).  Same double-correction
+            # concern as φ_g above: skip the subtraction in the
+            # second-moment-substitution branch where σ isn't available
+            # to advance the EMA.
+            if noise_bias_correction and noisy_squared_grads is None:
+                v_dx_corrected_prev = torch.clamp(
+                    v_dx_node - phi_dx_node, min=bc_floor
+                )
             else:
                 v_dx_corrected_prev = v_dx_node
 

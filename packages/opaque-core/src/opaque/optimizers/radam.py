@@ -316,12 +316,16 @@ def radam(
             ``weight_decay * params`` into the gradient before moment
             scaling — matching the original RAdam paper.
         update_rms_clip: When not ``None``, divides the moment-scaled
-            update by ``max(1, rms / threshold)``.  Ignored on the
-            SGD-of-momentum branch (early steps).
-        noise_bias_correction: If ``True``, subtract a β₂-EMA of the
-            realized noise variance from the second moment when
-            ``NoisedPytree`` updates are passed *and* the rectification
-            term is active.  No effect on the early branch.
+            update by ``max(1, rms / threshold)``.  Applies on every
+            step (clipping happens in the chain stage that follows the
+            moment scaler), including the SGD-of-momentum early branch.
+        noise_bias_correction: If ``True``, advance a β₂-EMA of the
+            realized noise variance every step when ``NoisedPytree``
+            updates are passed; subtract it from the second moment
+            before the sqrt only on rectified-branch steps
+            (``ρ_t > 5``).  The early branch advances ``φ`` to keep
+            it consistent with ``v``'s noise history but does not
+            apply it (``v`` is not consumed there).
 
     Returns:
         A ``torchopt.base.GradientTransformation``.

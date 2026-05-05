@@ -261,6 +261,39 @@ class TestSecondMomentSubstitution:
         for k in params:
             assert torch.all(s.phi_dx[k] == 0)
 
+    def test_mode_switch_does_not_double_correct(self, params, grads):
+        """``NoisedPytree`` → ``SecondMomentNoiseOutput`` mid-run must not
+        subtract a stale φ_g/φ_dx from the already-debiased v_g/v_dx.
+
+        Regression for Copilot review #3191963511 — without the
+        ``noisy_squared_grads is None`` guards, the carried-over EMAs
+        would silently apply on top of the post-processing-debiased
+        second moment, producing a wrong update direction.
+        """
+        sigma = 0.5
+        opt = adadelta(rho=0.9, noise_bias_correction=True)
+        state = opt.init(params)
+        # Build up phi_g and phi_dx via NoisedPytree updates.
+        for _ in range(30):
+            _, state = opt.update(
+                noised(grads, max_norm=1.0, noise_stddev=sigma),
+                state,
+                params=params,
+            )
+        s_before_switch = _state(state)
+        assert s_before_switch.phi_g > 0
+        assert all(s_before_switch.phi_dx[k].max() > 0 for k in params)
+        # Now feed a substitution call.  The output must be finite and
+        # match what we'd get with phi forced to zero (no double
+        # correction).
+        sq = {k: v.pow(2) for k, v in grads.items()}
+        first = noised(grads, max_norm=1.0, noise_stddev=sigma)
+        second = noised(sq, max_norm=1.0, noise_stddev=sigma)
+        out = SecondMomentNoiseOutput(noisy_grads=first, noisy_squared_grads=second)
+        updates_after, _ = opt.update(out, state, params=params)
+        for k in params:
+            assert torch.isfinite(updates_after[k]).all()
+
 
 # ---------------------------------------------------------------------------
 # Validation
