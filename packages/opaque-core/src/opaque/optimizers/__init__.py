@@ -78,6 +78,7 @@ surface is functional):
 """
 
 # Functional surface — listed in ``__all__``.
+from opaque.optimizers.adadelta import adadelta
 from opaque.optimizers.adafactor import adafactor
 from opaque.optimizers.adagrad import adagrad
 from opaque.optimizers.adam import adam, adamw
@@ -91,6 +92,7 @@ from opaque.optimizers.sgd import sgd
 # State dataclasses — re-exported with ``as X`` for type annotation
 # discoverability, intentionally not part of ``__all__``.  Same
 # convention as ``opaque.clipping.ClipState`` / ``opaque.random.RngKey``.
+from opaque.optimizers.adadelta import AdadeltaState as AdadeltaState
 from opaque.optimizers.adafactor import AdafactorState as AdafactorState
 from opaque.optimizers.adagrad import AdagradState as AdagradState
 from opaque.optimizers.adam import AdamState as AdamState
@@ -111,6 +113,7 @@ __all__ = [
     "adafactor",
     "rmsprop",
     "adagrad",
+    "adadelta",
     "radam",
     "schedule_free",
 ]
