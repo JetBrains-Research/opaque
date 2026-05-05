@@ -582,14 +582,14 @@ def test_clipped_grad_microbatching_with_pytree_params():
 
 
 # ---------------------------------------------------------------------------
-# Second-moment (per-example correct) clipping
+# Second-moment paired-stream clipping
 # ---------------------------------------------------------------------------
 
 
 class TestSecondMoment:
-    """clipped_grad(..., second_moment=True) returns paired streams with
-    per-example correct ``Σᵢ gᵢ²`` (NOT ``(Σᵢ gᵢ)²``) and bounds
-    ``(C/n, C²/n)`` on the two streams."""
+    """clipped_grad(..., second_moment=True) returns
+    ``SecondMomentClippingOutput`` with streams ``Σᵢ gᵢ`` and
+    ``Σᵢ gᵢ²`` and bounds ``(C/n, C²/n)``."""
 
     @pytest.fixture
     def setup(self):
@@ -624,16 +624,16 @@ class TestSecondMoment:
         assert isinstance(out.squared_grads, ClippedPytree)
         # First stream bound: C/n.
         assert out.grads.max_norm == C / batch_size
-        # Second stream bound: C²/n  (per-example correct, NOT (C/n)²).
+        # Second stream bound: C²/n.
         assert out.squared_grads.max_norm == C * C / batch_size
         # Sanity: shape matches params.
         assert out.grads.pytree["w"].shape == params["w"].shape
         assert out.squared_grads.pytree["w"].shape == params["w"].shape
 
     def test_squared_stream_is_per_example(self, setup):
-        """Verify the squared stream is element-wise ``Σᵢ gᵢ² / n``,
-        NOT ``(Σᵢ gᵢ / n)²``.  These differ unless all per-example
-        gradients are colinear."""
+        """Squared stream is the element-wise mean of per-example
+        gradient squares: ``(1/n) Σᵢ gᵢ²``.  Reconstructs per-example
+        gradients independently and compares."""
         import torch.func as tf
 
         params, x, y, loss_fn, batch_size = setup
@@ -664,9 +664,10 @@ class TestSecondMoment:
         torch.testing.assert_close(
             out.squared_grads.pytree["w"], expected_squared, rtol=1e-5, atol=1e-5
         )
-        # Sanity: per-example sum-of-squares ≠ squared-sum unless colinear.
-        wrong_squared = expected_first.pow(2)
-        assert not torch.allclose(expected_squared, wrong_squared, atol=1e-3)
+        # Sanity: ``(1/n) Σᵢ gᵢ²`` differs from ``((1/n) Σᵢ gᵢ)²`` for
+        # non-colinear per-example grads, so they're distinct quantities.
+        squared_of_mean = expected_first.pow(2)
+        assert not torch.allclose(expected_squared, squared_of_mean, atol=1e-3)
 
     def test_per_group_rejected(self, setup):
         from opaque.clipping.per_group import PerGroup

@@ -42,7 +42,7 @@ When private second moments are enabled, the noisy value is a
 - **`SecondMomentNoiseOutput`** — Paired first/squared-gradient output for private second moments.
 - **`GaussianNoiseState`** — State for `gaussian_noise()`. Holds step counter and RNG key.
 - **`MFNoiseState`** — State for `mf_noise()`. Holds internal correlation state, step counter, and RNG key.
-- **`SecondMomentMFNoiseState`** — Paired-stream MF state used by `mf_noise(..., second_moment=True)`.
+- **`SecondMomentMFNoiseState`** — Paired-stream MF state used by `mf_noise(..., second_moment_strategy=...)`.
 
 ### Distributed Sync Helpers
 

@@ -73,10 +73,6 @@ class TestSecondMomentCalibration:
         assert scale == pytest.approx(expected, rel=1e-10)
 
     def test_stddevs(self):
-        # Per-example correct: first_max_norm=0.2, squared_max_norm=0.04.
-        # (0.04 = 0.2² coincidentally matches the old "square the average"
-        # math because here Δ_first² = (0.2)² = 0.04 and we set squared
-        # explicitly to that value.)
         first, second = second_moment_stddevs(
             3.0,
             first_max_norm=0.2,
@@ -105,21 +101,18 @@ class TestSecondMomentCalibration:
             1.25 * 0.25 / (0.5 * 2.0 * math.sqrt(1.25**2 - 1.0))
         )
 
-    def test_per_example_squared_takes_more_noise(self):
-        """Per-example squared (Δ_y = C²/n) gets a factor n more noise on
-        the second stream than the old (Δ_y = (C/n)²) math, when n > 1."""
+    def test_squared_max_norm_scales_second_stream_linearly(self):
+        """second_stddev is proportional to ``squared_max_norm`` (linearly):
+        scaling Δ_y by ``n`` scales σ_second by ``n`` for fixed Δ_first."""
         n = 16
         C = 1.0
-        # Per-example correct
-        _, σ2_per_example = second_moment_stddevs(
+        _, σ2_a = second_moment_stddevs(
             1.0, first_max_norm=C / n, squared_max_norm=C**2 / n
         )
-        # Old (wrong) math: Δ_y = (C/n)² = C²/n²
-        _, σ2_old = second_moment_stddevs(
+        _, σ2_b = second_moment_stddevs(
             1.0, first_max_norm=C / n, squared_max_norm=(C / n) ** 2
         )
-        # Per-example correct gives n× more noise on the second stream.
-        assert σ2_per_example == pytest.approx(σ2_old * n, rel=1e-10)
+        assert σ2_a == pytest.approx(σ2_b * n, rel=1e-10)
 
     def test_rejects_invalid(self):
         with pytest.raises(ValueError):

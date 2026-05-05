@@ -84,4 +84,4 @@ def assert_vmap_grad(model, device):
     grads, _state = grad_fn(
         trainable, frozen, input_ids, attention_mask, labels, state=clip_state
     )
-    assert len(grads) > 0
+    assert len(grads.pytree) > 0

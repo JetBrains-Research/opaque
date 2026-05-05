@@ -336,12 +336,11 @@ def clipped_fun(
             dataclass containing the original per-example values, per-example norms
             before clipping, and any auxiliary data returned by `fun`.
         second_moment: If True, also accumulate the element-wise sum of
-            per-example squared clipped values (per-example correct
-            ``Σᵢ gᵢ²``, *not* the squared sum-of-grads ``(Σᵢ gᵢ)²``).
-            The squaring happens inside the per-example loop so the
-            second-stream bound is the per-record squared sensitivity
-            ``C²`` (averaged: ``C² / normalize_by``).  The wrapped output
-            becomes :class:`SecondMomentClippingOutput` with both
+            per-example squared clipped values, i.e. ``Σᵢ gᵢ²``.  The
+            squaring happens inside the per-example loop so the
+            second-stream sensitivity is the per-record squared bound
+            ``C²`` (averaged: ``C² / normalize_by``).  The wrapped
+            output becomes :class:`SecondMomentClippingOutput` with both
             streams.  Not supported with ``PerGroup`` ``clipping_norm``.
         microbatch_size: If set, the batch is split up into microbatches of this
             size for memory-efficient processing. Processes each microbatch separately

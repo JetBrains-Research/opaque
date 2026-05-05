@@ -219,9 +219,9 @@ class TestBCMode:
         assert _adam_state(state).phi == pytest.approx((1 - b2) * sigma**2)
 
     def test_explicit_noise_stddev_kwarg_rejected(self, params, grads):
-        """The optimizer surface no longer takes a per-step ``noise_stddev``
-        kwarg; metadata travels via ``NoisedPytree`` only.  Python's natural
-        TypeError surfaces this for users who try the old API."""
+        """``optimizer.update()`` does not take a per-step ``noise_stddev``
+        kwarg; metadata travels via ``NoisedPytree``.  Stray kwargs surface
+        as a Python ``TypeError`` from the unknown-keyword check."""
         opt = adamw(lr=1e-3)
         state = opt.init(params)
         with pytest.raises(TypeError, match="noise_stddev"):

@@ -312,9 +312,10 @@ def _make_second_moment_mf_noise(
             raise TypeError(
                 "mf_noise was constructed with `second_moment_strategy` and "
                 "expects SecondMomentClippingOutput inputs (paired-stream).  "
-                "Wrap a ClippedPytree with `with_second_moment(clipped)` to "
-                "produce the paired form, or rebuild the noise function "
-                "without `second_moment_strategy` for single-stream mode."
+                "Build the paired form upstream via "
+                "`clipped_grad(..., second_moment=True)`, or rebuild the "
+                "noise function without `second_moment_strategy` for "
+                "single-stream mode."
             )
         first_clipped = _expect_clipped(clipped_input.grads, op="mf_noise")
         second_clipped = _expect_clipped(

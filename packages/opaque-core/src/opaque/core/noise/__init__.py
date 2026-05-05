@@ -118,11 +118,11 @@ class SecondMomentClippingOutput(NamedTuple):
     into paired-stream mode without an explicit constructor flag.
 
     Attributes:
-        grads: Clipped per-example summed gradients (Σᵢ gᵢ).
+        grads: Clipped per-example summed gradients (``Σᵢ gᵢ``).
         squared_grads: Clipped per-example summed squared gradients
-            (Σᵢ gᵢ²) — the per-example squaring is what makes this
-            useful as Adam's second moment under DP, distinct from
-            squaring the noised summed gradient.
+            (``Σᵢ gᵢ²``).  The squaring happens per-example inside the
+            clipping loop so the second-stream sensitivity is ``C²``
+            (per record) and the streams are jointly DP-accountable.
     """
 
     grads: ClippedPytree
@@ -205,10 +205,8 @@ def second_moment_noise_scale(
         σ_second = σ_first · (c2 · Δ_second) / (c1 · Δ_first · sqrt(rho² − 1))
 
     so the scale returned here is the right-hand factor.  Pass
-    ``squared_max_norm`` from the second-stream's contribution bound
-    directly — for per-example correct DP-Adam it is ``C² / n`` (not
-    ``(C/n)²``); the two differ by a factor of ``n``, and the
-    distinction matters for getting the noise ratio right.
+    ``squared_max_norm`` as the per-record bound on the squared stream:
+    for averaged ``Σᵢ gᵢ² / n`` it is ``C² / n``.
     """
     if c1_max_column_norm <= 0:
         raise ValueError(
@@ -253,10 +251,8 @@ def second_moment_stddevs(
 
     ``first_max_norm`` is the per-record contribution bound on the
     first stream (``C / n`` for averaged clipped grads).
-    ``squared_max_norm`` is the analogous bound on the second stream —
-    for per-example correct ``Σᵢ gᵢ²`` it is ``C² / n``, *not*
-    ``first_max_norm²``.  Confusing the two under-samples the
-    second-stream noise by a factor of ``n``.
+    ``squared_max_norm`` is the analogous bound on the second stream;
+    for averaged ``Σᵢ gᵢ² / n`` it is ``C² / n``.
     """
     if noise_multiplier < 0:
         raise ValueError(

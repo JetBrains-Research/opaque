@@ -252,12 +252,12 @@ noise_fn, noise_state = mf_noise(
     params,
     strategy,
     noise_multiplier=noise_multiplier,
-    sensitivity=clip_bound,
     key=key(42),
-    second_moment=True,
     second_moment_strategy=second_strategy,
 )
 
+# `grads` is a SecondMomentClippingOutput when clipped_grad was called
+# with second_moment=True; the noise function dispatches polymorphically.
 noise_output, noise_state = noise_fn(grads, noise_state)
 updates, opt_state = optimizer.update(
     noise_output,

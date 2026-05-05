@@ -102,7 +102,7 @@ Raw pytree updates use standard optimizer math.
 ### `noisy_squared_grads`
 
 Substitutes a privately-estimated `g²` stream in place of squaring the
-(already noised) gradient.  `mf_noise(..., second_moment=True)` returns
+(already noised) gradient.  `mf_noise(..., second_moment_strategy=...)` returns
 a paired output that Opaque optimizers route automatically:
 
 ```python
@@ -118,7 +118,6 @@ noise_fn, noise_state = mf_noise(
   noise_multiplier=noise_multiplier,
   sensitivity=clip_bound,
   key=key(42),
-  second_moment=True,
   second_moment_strategy=second_strategy,
 )
 

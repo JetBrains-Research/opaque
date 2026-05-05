@@ -95,9 +95,9 @@ class TestVanilla:
 
 
 class TestExplicitKwargsRejected:
-    """The optimizer surface no longer takes per-step metadata kwargs;
-    metadata travels via ``NoisedPytree`` only.  Python's natural
-    ``TypeError`` surfaces this for users who try the old API."""
+    """``optimizer.update()`` does not take per-step metadata kwargs;
+    metadata travels via ``NoisedPytree``.  Stray kwargs surface as a
+    Python ``TypeError`` from the unknown-keyword check."""
 
     def test_noise_stddev_rejected(self, matrix_params, matrix_grads):
         opt = adafactor(lr=1e-3)

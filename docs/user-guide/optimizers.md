@@ -191,7 +191,7 @@ under add/remove DP, but the optimizer-side cost is trivial: just
 substitute the privatized stream in the v-update.
 
 This mode requires an MF noise mechanism with
-`mf_noise(..., second_moment=True, second_moment_strategy=...)`, so it
+`mf_noise(..., second_moment_strategy=...)`, so it
 applies to **DP-FTRL** training, not standard DP-SGD with i.i.d. Gaussian
 noise.
 
@@ -223,13 +223,11 @@ strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.9)
 second_strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.999)
 clip_bound = clipping_norm / batch_size
 
-# Noise: second_moment=True computes g² and creates two MF streams.
+# Noise: passing second_moment_strategy creates two MF streams (g, g²).
 noise_fn, noise_state = mf_noise(
     grad_template, strategy,
     noise_multiplier=noise_multiplier,
-    sensitivity=clip_bound,
     key=key(42),
-    second_moment=True,
     second_moment_strategy=second_strategy,
 )
 

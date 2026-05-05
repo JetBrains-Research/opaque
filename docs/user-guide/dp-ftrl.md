@@ -55,7 +55,7 @@ Private second-moment estimation uses **two** correlated noise streams
 (gradients and squared gradients) with a **joint sensitivity**. It is
 **not** the same workload model as single-stream SGD+momentum mechanisms.
 
-When using `mf_noise(..., second_moment=True)`, pass
+When using `mf_noise(..., second_moment_strategy=...)`, pass
 `second_moment_strategy` explicitly. This keeps first-moment and
 second-moment workload choices visible, especially for λCGD where there
 is no single universally correct mapping from optimizer β₂ to strategy λ.
