@@ -2723,7 +2723,7 @@ def per_example_loss(trainable, frozen, ids, mask, labels):
 <span class="p">)</span>
 
 <span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-    <span class="n">stddev</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">NOISE_MULTIPLIER</span><span class="p">,</span>
     <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <span class="p">)</span>
 
@@ -2768,7 +2768,7 @@ grad_fn, clip_state = adaptive_clipped_grad(
 )
 
 noise_fn, noise_state = gaussian_noise(
-    stddev=0,
+    noise_multiplier=NOISE_MULTIPLIER,
     key=key(42),
 )
 
@@ -2829,7 +2829,8 @@ print(f"Expected final epsilon: {expected_eps:.2f}")</div>
     <span class="k">if</span> <span class="n">step</span> <span class="o">&gt;=</span> <span class="n">NUM_STEPS</span><span class="p">:</span>
         <span class="k">break</span>
 
-    <span class="c1"># 1. Clipped gradients (adaptive threshold, microbatched)</span>
+    <span class="c1"># 1. Clipped gradients (adaptive threshold, microbatched).</span>
+    <span class="c1">#    `grads` is a ClippedPytree carrying the current per-step max_norm.</span>
     <span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">aux</span><span class="p">),</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span>
         <span class="n">trainable_params</span><span class="p">,</span>
         <span class="n">frozen_params</span><span class="p">,</span>
@@ -2839,9 +2840,8 @@ print(f"Expected final epsilon: {expected_eps:.2f}")</div>
         <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">,</span>
     <span class="p">)</span>
 
-    <span class="c1"># 2. Add noise scaled to current sensitivity</span>
-    <span class="n">stddev</span> <span class="o">=</span> <span class="n">NOISE_MULTIPLIER</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span>
-    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">,</span> <span class="n">stddev</span><span class="o">=</span><span class="n">stddev</span><span class="p">)</span>
+    <span class="c1"># 2. Add noise (sensitivity is read from grads.max_norm).</span>
+    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
 
     <span class="c1"># 3. Optimizer step</span>
     <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
@@ -2883,7 +2883,8 @@ for step, (batch_ids, batch_mask, batch_labels) in enumerate(train_loader):
     if step &gt;= NUM_STEPS:
         break
 
-    # 1. Clipped gradients (adaptive threshold, microbatched)
+    # 1. Clipped gradients (adaptive threshold, microbatched).
+    #    `grads` is a ClippedPytree carrying the current per-step max_norm.
     (grads, aux), clip_state = grad_fn(
         trainable_params,
         frozen_params,
@@ -2893,9 +2894,8 @@ for step, (batch_ids, batch_mask, batch_labels) in enumerate(train_loader):
         state=clip_state,
     )
 
-    # 2. Add noise scaled to current sensitivity
-    stddev = NOISE_MULTIPLIER * clip_state.sensitivity
-    noisy_grads, noise_state = noise_fn(grads, noise_state, stddev=stddev)
+    # 2. Add noise (sensitivity is read from grads.max_norm).
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
 
     # 3. Optimizer step
     updates, opt_state = optimizer.update(

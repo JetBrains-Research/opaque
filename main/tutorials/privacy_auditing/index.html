@@ -2565,7 +2565,7 @@ loss <em>reduction</em> from training (Steinke et al., Algorithm 3).</p>
     <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clipping_norm</span><span class="p">,</span>
+    <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span>
     <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
 <span class="p">)</span>
 
@@ -2596,7 +2596,7 @@ grad_fn, clip_state = clipped_grad(
     clipping_norm=clipping_norm,
 )
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clipping_norm,
+    noise_multiplier=noise_multiplier,
     key=key(0),
 )
 
@@ -2654,8 +2654,10 @@ print(f"Reference scores: mean={ref_scores.mean():.4f}, std={ref_scores.std():.4
     <span class="k">for</span> <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span> <span class="ow">in</span> <span class="n">train_loader</span><span class="p">:</span>
         <span class="n">bs</span> <span class="o">=</span> <span class="n">xb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
         <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-        <span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-        <span class="n">params</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">p</span> <span class="o">-</span> <span class="p">(</span><span class="n">lr</span> <span class="o">/</span> <span class="n">bs</span><span class="p">)</span> <span class="o">*</span> <span class="n">g</span> <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">grads</span><span class="p">))</span>
+        <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+            <span class="n">p</span> <span class="o">-</span> <span class="p">(</span><span class="n">lr</span> <span class="o">/</span> <span class="n">bs</span><span class="p">)</span> <span class="o">*</span> <span class="n">g</span> <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">noisy_grads</span><span class="o">.</span><span class="n">pytree</span><span class="p">)</span>
+        <span class="p">)</span>
 
     <span class="k">if</span> <span class="p">(</span><span class="n">epoch</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="mi">50</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
@@ -2669,8 +2671,10 @@ for epoch in range(n_epochs):
     for xb, yb in train_loader:
         bs = xb.shape[0]
         grads, clip_state = grad_fn(params, xb, yb, state=clip_state)
-        grads, noise_state = noise_fn(grads, noise_state)
-        params = tuple(p - (lr / bs) * g for p, g in zip(params, grads))
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
+        params = tuple(
+            p - (lr / bs) * g for p, g in zip(params, noisy_grads.pytree)
+        )
 
     if (epoch + 1) % 50 == 0:
         with torch.no_grad():

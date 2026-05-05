@@ -1853,8 +1853,8 @@
 matrix) and optional subsampling model. <strong>DP correctness</strong> requires that accounting,
 noise, and sampling match that map. <strong>Utility</strong> can depend on how closely the
 encoded workload matches your optimizer (for example, BandMF/BLT <code>lr_schedule</code> as a
-Toeplitz surrogate when <span class="arithmatex">\(\eta_t\)</span> varies). JME adds a second MF stream; new strategy
-types must extend <code>_derive_second_strategy</code> explicitly.</p>
+Toeplitz surrogate when <span class="arithmatex">\(\eta_t\)</span> varies). Private second moments add a second MF
+stream; pass its strategy explicitly.</p>
 <p>See <a href="../user-guide/dp-ftrl/">Matrix factorization (MF)</a>.</p>
 <h2 id="gradient-checkpointing">Gradient checkpointing<a class="headerlink" href="#gradient-checkpointing" title="Permanent link">&para;</a></h2>
 <p>Supported under <code>vmap(grad(...))</code> via automatic patches. See

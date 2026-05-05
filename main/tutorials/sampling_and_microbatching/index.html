@@ -2683,7 +2683,7 @@ size.</p>
     <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
     <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">stddev</span><span class="o">=</span><span class="mf">1.1</span> <span class="o">*</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.1</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
 
 <span class="n">sampler</span> <span class="o">=</span> <span class="n">TruncatedPoissonSampler</span><span class="p">(</span>
     <span class="n">dataset</span><span class="p">,</span>
@@ -2698,8 +2698,8 @@ size.</p>
 <span class="k">for</span> <span class="n">step</span><span class="p">,</span> <span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">loader</span><span class="p">):</span>
     <span class="n">bs</span> <span class="o">=</span> <span class="n">xb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
     <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">),</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-    <span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-    <span class="n">params</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">p</span> <span class="o">-</span> <span class="p">(</span><span class="n">lr</span> <span class="o">/</span> <span class="n">bs</span><span class="p">)</span> <span class="o">*</span> <span class="n">g</span> <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">grads</span><span class="p">))</span>
+    <span class="n">noisy</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+    <span class="n">params</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">p</span> <span class="o">-</span> <span class="p">(</span><span class="n">lr</span> <span class="o">/</span> <span class="n">bs</span><span class="p">)</span> <span class="o">*</span> <span class="n">g</span> <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">noisy</span><span class="o">.</span><span class="n">pytree</span><span class="p">))</span>
 
     <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">3</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
@@ -2722,7 +2722,7 @@ grad_fn, clip_state = clipped_grad(
     batch_argnums=1,
     clipping_norm=1.0,
 )
-noise_fn, noise_state = gaussian_noise(stddev=1.1 * 1.0, key=key(42))
+noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
 
 sampler = TruncatedPoissonSampler(
     dataset,
@@ -2737,8 +2737,8 @@ lr = 0.1
 for step, (xb, yb) in enumerate(loader):
     bs = xb.shape[0]
     grads, clip_state = grad_fn(params, (xb, yb), state=clip_state)
-    grads, noise_state = noise_fn(grads, noise_state)
-    params = tuple(p - (lr / bs) * g for p, g in zip(params, grads))
+    noisy, noise_state = noise_fn(grads, noise_state)
+    params = tuple(p - (lr / bs) * g for p, g in zip(params, noisy.pytree))
 
     if step % 3 == 0:
         with torch.no_grad():
@@ -2803,7 +2803,10 @@ result is numerically identical.</p>
 <span class="p">)</span>
 <span class="n">grads_mb</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">grad_fn_mb</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state_mb</span><span class="p">)</span>
 
-<span class="n">max_diff</span> <span class="o">=</span> <span class="nb">max</span><span class="p">((</span><span class="n">a</span> <span class="o">-</span> <span class="n">b</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">grads_full</span><span class="p">,</span> <span class="n">grads_mb</span><span class="p">))</span>
+<span class="n">max_diff</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+    <span class="p">(</span><span class="n">a</span> <span class="o">-</span> <span class="n">b</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">grads_full</span><span class="o">.</span><span class="n">pytree</span><span class="p">,</span> <span class="n">grads_mb</span><span class="o">.</span><span class="n">pytree</span><span class="p">)</span>
+<span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Max difference: </span><span class="si">{</span><span class="n">max_diff</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-6">batch = (torch.randn(256, 10), torch.randn(256))
@@ -2828,7 +2831,10 @@ grad_fn_mb, clip_state_mb = clipped_grad(
 )
 grads_mb, _ = grad_fn_mb(params, batch, state=clip_state_mb)
 
-max_diff = max((a - b).abs().max().item() for a, b in zip(grads_full, grads_mb))
+max_diff = max(
+    (a - b).abs().max().item()
+    for a, b in zip(grads_full.pytree, grads_mb.pytree)
+)
 print(f"Max difference: {max_diff:.2e}")</div>
 </div>
 </div>

@@ -2392,8 +2392,9 @@ primary API for DP-SGD training.</p>
 <li>Each per-example gradient is clipped to L2 norm at most <code>clipping_norm</code>.</li>
 <li>The clipped gradients are summed across the batch.</li>
 </ol>
-<p>The returned <code>clip_state</code> is a <code>FixedClipState</code> containing the clip norm
-used to calibrate noise.</p>
+<p>The returned gradients are a <code>ClippedPytree</code>. Its <code>.pytree</code> holds the clipped
+gradient sum, and its <code>.max_norm</code> holds the per-step sensitivity used to calibrate
+noise.</p>
 <h3 id="parameters">Parameters<a class="headerlink" href="#parameters" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -2445,7 +2446,7 @@ used to calibrate noise.</p>
 <td><code>normalize_by</code></td>
 <td><code>float</code></td>
 <td><code>1.0</code></td>
-<td>Divide the clipped sum and sensitivity by this constant. Set to expected batch size to get averaged gradients with sensitivity = <code>clipping_norm / batch_size</code>.</td>
+<td>Divide the clipped sum and output bound by this constant. Set to expected batch size to get averaged gradients with bound = <code>clipping_norm / batch_size</code>.</td>
 </tr>
 <tr>
 <td><code>pre_clipping_transform</code></td>
@@ -2476,19 +2477,17 @@ through each call:</p>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="c1"># clip_state is immutable; the returned value is the same object</span>
 </code></pre></div>
-<p>With fixed clipping, the state never changes -- <code>FixedClipState</code> is immutable
-and the same instance is returned on every call. The state-passing convention
-exists for API consistency with <code>adaptive_clipped_grad</code>, where the state does
-change.</p>
+<p>With fixed clipping, <code>FixedClipState</code> is an immutable marker and the same
+instance is returned on every call. The state-passing convention exists for API
+consistency with <code>adaptive_clipped_grad</code>, where the internal state does change.</p>
 <h3 id="sensitivity">Sensitivity<a class="headerlink" href="#sensitivity" title="Permanent link">&para;</a></h3>
 <p>The sensitivity is the maximum change in the clipped gradient sum when one
 example is added, removed, or replaced. Noise is calibrated to this value.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">sensitivity</span> <span class="o">=</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># With clipping_norm=1.0, normalize_by=32: sensitivity = 1.0 / 32</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># With clipping_norm=1.0, normalize_by=32: grads.max_norm = 1.0 / 32</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">sensitivity</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="p">)</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="diagnostics">Diagnostics<a class="headerlink" href="#diagnostics" title="Permanent link">&para;</a></h3>
 <p>Set <code>return_aux=True</code> to get per-example gradient norms and loss values:</p>
@@ -2562,7 +2561,7 @@ be clipped (the <em>target quantile</em>).</p>
 <a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="p">)</span>
 <a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>
 <a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="c1"># clip_state.clipping_norm has been updated</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="c1"># the returned state carries the next threshold internally</span>
 </code></pre></div>
 <h3 id="how-adaptive-clipping-works">How adaptive clipping works<a class="headerlink" href="#how-adaptive-clipping-works" title="Permanent link">&para;</a></h3>
 <p>After each step:</p>
@@ -2580,11 +2579,12 @@ be clipped (the <em>target quantile</em>).</p>
 <p>where eta is the <code>learning_rate</code> parameter (default 0.2).</p>
 <h3 id="state-changes">State changes<a class="headerlink" href="#state-changes" title="Permanent link">&para;</a></h3>
 <p>Unlike <code>clipped_grad</code>, the state from <code>adaptive_clipped_grad</code> <strong>does change</strong>
-on each call. The returned <code>AdaptiveClipState</code> contains the updated clip norm
-and step counter. Always use the returned state for the next call.</p>
+on each call. <code>AdaptiveClipState</code> keeps the next threshold and counters as
+internal execution state. Always use the returned state for the next call; use
+<code>grads.max_norm</code> when you need the current DP bound.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="c1"># clip_state.clipping_norm updates each step</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="n">current_bound</span> <span class="o">=</span> <span class="n">grads</span><span class="o">.</span><span class="n">max_norm</span>
 </code></pre></div>
 <h3 id="privacy-accounting-for-adaptive-clipping">Privacy accounting for adaptive clipping<a class="headerlink" href="#privacy-accounting-for-adaptive-clipping" title="Permanent link">&para;</a></h3>
 <p>Adaptive clipping introduces an additional privacy cost (the noisy clipping
@@ -2612,7 +2612,7 @@ After each step, synchronize the state:</p>
 </code></pre></div>
 <p><code>sync()</code> dispatches to <code>sync_adaptive_clip_state</code> internally, which aggregates
 counts across ranks, recomputes the global clipping rate,
-and updates <code>next_clipping_norm</code> to be identical on every device.</p>
+and updates the internal next threshold to be identical on every device.</p>
 <h2 id="loss-function-requirements">Loss function requirements<a class="headerlink" href="#loss-function-requirements" title="Permanent link">&para;</a></h2>
 <p>The loss function passed to <code>clipped_grad</code> must:</p>
 <ol>
@@ -2690,20 +2690,20 @@ against the patterns. Every parameter must match exactly one pattern. Use
 <h3 id="sensitivity-and-noise">Sensitivity and noise<a class="headerlink" href="#sensitivity-and-noise" title="Permanent link">&para;</a></h3>
 <p>The L2 sensitivity of the full clipped query is a <strong>scalar</strong>:</p>
 <div class="arithmatex">\[\Delta_2 = \frac{\lVert C \rVert_2}{n} = \frac{\sqrt{\sum_i C_i^2}}{n}\]</div>
-<p>This is always available via <code>clip_state.sensitivity</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">stddev</span> <span class="o">=</span> <span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">stddev</span><span class="o">=</span><span class="n">stddev</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<p>This is carried by the clipped output:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="n">stddev</span> <span class="o">=</span> <span class="n">noisy_grads</span><span class="o">.</span><span class="n">noise_stddev</span>
 </code></pre></div>
 <p>Accounting is simply <code>gaussian(nm)</code> — no composition penalty, regardless of
-the number of groups. The isotropic noise (same σ everywhere) is sufficient
-for correct privacy.</p>
+the number of groups.</p>
 <h3 id="per-group-noise-allocation">Per-group noise allocation<a class="headerlink" href="#per-group-noise-allocation" title="Permanent link">&para;</a></h3>
-<p>For an MSE-optimal allocation that puts less noise on small-norm groups, use
-<code>per_group_noise_stddev</code>:</p>
+<p>For per-group bounds, <code>gaussian_noise</code> uses an MSE-optimal allocation that puts
+less noise on small-norm groups. Use <code>per_group_noise_stddev</code> when you need to
+inspect or pass that allocation to a mechanism that accepts stddev directly:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">per_group_noise_stddev</span>
 <a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>
-<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="n">stddev</span> <span class="o">=</span> <span class="n">per_group_noise_stddev</span><span class="p">(</span><span class="n">clip_state</span><span class="p">,</span> <span class="n">noise_multiplier</span><span class="p">)</span>
-<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">stddev</span><span class="o">=</span><span class="n">stddev</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="n">stddev</span> <span class="o">=</span> <span class="n">per_group_noise_stddev</span><span class="p">(</span><span class="n">grads</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span> <span class="n">noise_multiplier</span><span class="p">)</span>
 </code></pre></div>
 <p>This sets <span class="arithmatex">\(\sigma_i \propto \sqrt{C_i}\)</span> instead of a uniform σ. Privacy
 accounting remains <code>gaussian(nm)</code> — the allocation satisfies the same
@@ -2765,16 +2765,16 @@ gradient, so the sensitivity <code>R / normalize_by</code> is guaranteed without
 adaptation or tuning. AUTO-S removes the clip-threshold hyperparameter
 from the DP-SGD hyperparameter search.</p>
 <h3 id="state-and-privacy-accounting">State and privacy accounting<a class="headerlink" href="#state-and-privacy-accounting" title="Permanent link">&para;</a></h3>
-<p>The returned <code>AutoClipState</code> is fixed (no adaptation) and carries
-<code>clipping_norm=R</code>, <code>normalize_by</code>, <code>gamma</code>, and the standard
-<code>sensitivity</code> property. Privacy accounting is plain Gaussian DP-SGD —
-AUTO-S introduces no extra data-dependent query:</p>
+<p>The returned <code>AutoClipState</code> is a fixed marker. <code>R</code>, <code>gamma</code>, and
+<code>normalize_by</code> are captured by the clipping closure, while <code>grads.max_norm</code>
+carries the sensitivity. Privacy accounting is plain Gaussian DP-SGD — AUTO-S
+introduces no extra data-dependent query:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
 <a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>
-<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="n">stddev</span> <span class="o">=</span> <span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span>
-<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">stddev</span><span class="o">=</span><span class="n">stddev</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
 <a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>
 <a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span>
 <a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="n">num_steps</span>
@@ -2791,7 +2791,7 @@ AUTO-S introduces no extra data-dependent query:</p>
 <a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
 <a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>    <span class="n">R</span><span class="o">=</span><span class="n">pg</span><span class="p">,</span> <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
 <a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a><span class="p">)</span>
-<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="c1"># clip_state.sensitivity = sqrt(sum R_k^2) / normalize_by</span>
+<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="c1"># grads.max_norm.effective = sqrt(sum R_k^2) / normalize_by</span>
 </code></pre></div>
 <h3 id="cli-usage-in-train_causal_lmpy">CLI usage in <code>train_causal_lm.py</code><a class="headerlink" href="#cli-usage-in-train_causal_lmpy" title="Permanent link">&para;</a></h3>
 <p>The training script exposes clipping mode through <code>--clipping-mode</code>:</p>

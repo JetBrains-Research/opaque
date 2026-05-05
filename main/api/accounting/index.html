@@ -2669,7 +2669,7 @@ Poisson-subsampled Gaussian. Only accepts <code>BandMf</code> inner processes.</
 </code></pre></div>
 <h3 id="b_min_sepinner-strategy_coefficients-n_steps-p0-num_mc_samples100_000-mc_seed42-dpprocess"><code>b_min_sep(inner, strategy_coefficients, n_steps, p0, *, num_mc_samples=100_000, mc_seed=42) -&gt; DpProcess</code><a class="headerlink" href="#b_min_sepinner-strategy_coefficients-n_steps-p0-num_mc_samples100_000-mc_seed42-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Warm-start <strong>b-min-sep</strong> amplification for BandMF (Dong &amp; Ganesh, arXiv:2602.09338).
-Uses Monte Carlo PLD accounting. <code>inner</code> must be <code>BandMf</code> or <code>Jme(BandMf)</code>.
+Uses Monte Carlo PLD accounting. <code>inner</code> must be <code>BandMf</code> or <code>SecondMoment(BandMf)</code>.
 <code>strategy_coefficients</code> is the first column of the same BandMF strategy matrix
 used for noise. <code>p0</code> is the per-example participation rate per iteration
 <code>E[|B|]/|D|</code> (match the training sampler’s target batch size).</p>

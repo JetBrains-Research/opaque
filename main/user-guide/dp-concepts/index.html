@@ -2671,10 +2671,10 @@ and have different amplification properties. See the
 </tr>
 </tbody>
 </table>
-<p>Opaque uses the <strong>add-or-remove</strong> convention: <code>clip_state.sensitivity</code> returns
-<span class="arithmatex">\(C / \text{normalize\_by}\)</span>. When <code>normalize_by</code> is set to the expected batch size <span class="arithmatex">\(B\)</span>,
-sensitivity is <span class="arithmatex">\(C/B\)</span>. If your analysis uses replace-one
-semantics, double it when calibrating noise (<span class="arithmatex">\(\sigma = \text{noise\_multiplier} \times 2 \times \text{sensitivity}\)</span>).</p>
+<p>Opaque uses the <strong>add-or-remove</strong> convention: clipped outputs carry
+<code>grads.max_norm = C / normalize_by</code>. When <code>normalize_by</code> is set to the expected
+batch size <span class="arithmatex">\(B\)</span>, the bound is <span class="arithmatex">\(C/B\)</span>. If your analysis uses replace-one
+semantics, double the bound when calibrating noise.</p>
 <h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="https://arxiv.org/abs/1607.00133">Abadi et al. 2016 - Deep Learning with Differential Privacy</a></li>

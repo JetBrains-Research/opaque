@@ -1964,7 +1964,7 @@ has a closed-form expression in terms of λ, min_sep, and max_participations.</p
 <ul>
 <li>Bandwidth is <strong>fixed</strong> (bidiagonal inverse); correlation is controlled by a single <span class="arithmatex">\(\lambda\)</span>. Does <strong>not</strong> accept <code>momentum</code> (use <code>bisr_strategy</code> with bandwidth &gt; 2 for momentum-aware coefficients).</li>
 <li>Uses <strong>Balls-in-Bins</strong> amplification like other epoch-structured MF mechanisms; sampler semantics must match accounting.</li>
-<li><strong>JME (DP-Adam)</strong>: auto-deriving the second-moment strategy is <strong>not supported</strong> for λCGD. If using JME, pass <code>second_moment_strategy</code> explicitly.</li>
+<li><strong>Private second moments (DP-Adam)</strong>: auto-deriving the second-moment strategy is <strong>not supported</strong> for λCGD. Pass <code>second_moment_strategy</code> explicitly.</li>
 <li>Broader MF context: <a href="../../user-guide/dp-ftrl/">Correlated noise (DP-FTRL)</a>.</li>
 </ul>
 <h2 id="noise-generation">Noise generation<a class="headerlink" href="#noise-generation" title="Permanent link">&para;</a></h2>
@@ -1979,7 +1979,7 @@ has a closed-form expression in terms of λ, min_sep, and max_participations.</p
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="p">)</span>
 <a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">mf_noise</span><span class="p">(</span>
 <a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">grad_template</span><span class="p">,</span> <span class="n">strategy</span><span class="p">,</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span>
 <a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="n">seed</span><span class="p">),</span>
 <a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="p">)</span>
 </code></pre></div>

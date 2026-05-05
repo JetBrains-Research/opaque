@@ -1689,19 +1689,19 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#dp-aware-kwargs" class="md-nav__link">
+  <a href="#dp-aware-update-metadata" class="md-nav__link">
     <span class="md-ellipsis">
-      DP-aware kwargs
+      DP-aware update metadata
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="DP-aware kwargs">
+    <nav class="md-nav" aria-label="DP-aware update metadata">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#noise_stddev" class="md-nav__link">
+  <a href="#noisedpytree" class="md-nav__link">
     <span class="md-ellipsis">
-      noise_stddev
+      NoisedPytree
     </span>
   </a>
   
@@ -1883,19 +1883,19 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#dp-aware-kwargs" class="md-nav__link">
+  <a href="#dp-aware-update-metadata" class="md-nav__link">
     <span class="md-ellipsis">
-      DP-aware kwargs
+      DP-aware update metadata
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="DP-aware kwargs">
+    <nav class="md-nav" aria-label="DP-aware update metadata">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#noise_stddev" class="md-nav__link">
+  <a href="#noisedpytree" class="md-nav__link">
     <span class="md-ellipsis">
-      noise_stddev
+      NoisedPytree
     </span>
   </a>
   
@@ -1986,8 +1986,7 @@ DP-aware paths, plus a curated set of <code>torchopt</code> re-exports for the
 stateless primitives where vanilla behaviour is acceptable under DP
 noise.  All factories return
 <a href="https://torchopt.readthedocs.io/">TorchOpt</a> <code>GradientTransformation</code>s
-and accept optional DP-aware kwargs (<code>noise_stddev</code>,
-<code>noisy_squared_grads</code>) at update time.</p>
+and route DP metadata from <code>NoisedPytree</code> or <code>SecondMomentNoiseOutput</code> updates.</p>
 <hr />
 <h2 id="api-shape">API shape<a class="headerlink" href="#api-shape" title="Permanent link">&para;</a></h2>
 <p>Functional: no hidden mutable state, explicit
@@ -2005,10 +2004,11 @@ and accept optional DP-aware kwargs (<code>noise_stddev</code>,
 <hr />
 <h2 id="whats-in-opaqueoptimizers">What's in <code>opaque.optimizers</code><a class="headerlink" href="#whats-in-opaqueoptimizers" title="Permanent link">&para;</a></h2>
 <h3 id="opaque-built-factories-dp-aware">Opaque-built factories (DP-aware)<a class="headerlink" href="#opaque-built-factories-dp-aware" title="Permanent link">&para;</a></h3>
-<p>All accept <code>noise_stddev</code> (constructor default + per-step
-<code>update()</code> override) to activate the optimizer's noise-aware path.
-Where applicable they also accept <code>noisy_squared_grads</code> for JME
-paired-stream substitution.</p>
+<p>Noise-aware factories accept <code>noise_bias_correction=True</code> to subtract the
+known Gaussian variance carried by <code>NoisedPytree</code> updates (off by default;
+flip on to ablate against vanilla). Where applicable they also route
+<code>SecondMomentNoiseOutput</code> for private squared-gradient substitution —
+an alternative answer to the same v-update bias.</p>
 <table>
 <thead>
 <tr>
@@ -2019,13 +2019,23 @@ paired-stream substitution.</p>
 </thead>
 <tbody>
 <tr>
+<td><strong><code>sgd</code></strong></td>
+<td>No second moment; accepts <code>NoisedPytree</code> and ignores σ metadata</td>
+<td>Canonical DP baseline</td>
+</tr>
+<tr>
+<td><strong><code>adam</code></strong></td>
+<td>Original Adam/L2 variant with the same BC/private-moment paths as AdamW</td>
+<td>Adam parity without decoupled WD</td>
+</tr>
+<tr>
 <td><strong><code>adamw</code></strong></td>
-<td>φ-EMA on v̂ (DP-AdamW-BC) + JME</td>
+<td>φ-EMA on v̂ (DP-AdamW-BC) + private second moments</td>
 <td>Default for DP training</td>
 </tr>
 <tr>
 <td><strong><code>ademamix</code></strong></td>
-<td>φ-EMA on v̂ + JME</td>
+<td>φ-EMA on v̂ + private second moments</td>
 <td>Long-horizon training (slow EMA captures long-range signal)</td>
 </tr>
 <tr>
@@ -2040,7 +2050,7 @@ paired-stream substitution.</p>
 </tr>
 <tr>
 <td><strong><code>rmsprop</code></strong></td>
-<td>φ-EMA on v + JME</td>
+<td>φ-EMA on v + private second moments</td>
 <td>Adaptive without first moment; cheaper than Adam</td>
 </tr>
 <tr>
@@ -2070,14 +2080,6 @@ modes — slow under noise but functional.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>sgd</code></td>
-<td>Update is unbiased (<code>E[g + ξ] = g</code>); momentum's variance is bounded but doesn't bias direction.  Canonical DP baseline.</td>
-</tr>
-<tr>
-<td><code>adam</code></td>
-<td>Has bias from the squared-noise term; bounded by EMA decay.  Slow without correction; prefer <code>adamw(decoupled_weight_decay=False, noise_stddev=σ)</code>.</td>
-</tr>
-<tr>
 <td><code>adadelta</code></td>
 <td>Two EMAs whose ratio partially self-corrects under noise.  Functional, not optimal.</td>
 </tr>
@@ -2096,17 +2098,16 @@ modes — slow under noise but functional.</p>
   <code>from torchopt import adamax</code> directly.</li>
 </ul>
 <hr />
-<h2 id="dp-aware-kwargs">DP-aware kwargs<a class="headerlink" href="#dp-aware-kwargs" title="Permanent link">&para;</a></h2>
-<p>Two optional kwargs on <code>update()</code> activate the optimizer's noise-aware
-behaviour.  Both default to the constructor-time value (or absent).</p>
-<h3 id="noise_stddev"><code>noise_stddev</code><a class="headerlink" href="#noise_stddev" title="Permanent link">&para;</a></h3>
-<p>Tells the optimizer the per-step noise σ.  Each optimizer activates
-whatever noise-aware machinery it has:</p>
+<h2 id="dp-aware-update-metadata">DP-aware update metadata<a class="headerlink" href="#dp-aware-update-metadata" title="Permanent link">&para;</a></h2>
+<p>Noise-aware behaviour is selected by the update object.</p>
+<h3 id="noisedpytree"><code>NoisedPytree</code><a class="headerlink" href="#noisedpytree" title="Permanent link">&para;</a></h3>
+<p><code>NoisedPytree</code> carries the realized per-step noise σ. Each optimizer activates
+whatever noise-aware machinery it has when <code>noise_bias_correction=True</code>:</p>
 <table>
 <thead>
 <tr>
 <th>Optimizer</th>
-<th>What <code>noise_stddev</code> does</th>
+<th>What <code>NoisedPytree.noise_stddev</code> does</th>
 </tr>
 </thead>
 <tbody>
@@ -2132,41 +2133,39 @@ whatever noise-aware machinery it has:</p>
 </tr>
 </tbody>
 </table>
-<p>Constructor takes a default (scalar <code>float</code> or
-<a href="../clipping/#per-group-allocation"><code>PerGroup</code></a>); per-step override at
-<code>update()</code> time:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">noise_stddev</span><span class="o">=</span><span class="n">initial_sigma</span><span class="p">)</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1"># Adaptive clipping changes the per-step σ → override per call:</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">updates</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">p</span><span class="p">,</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">noise_stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">noise_bias_correction</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">updates</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">p</span><span class="p">)</span>
 </code></pre></div>
-<p><code>noise_stddev = 0</code> (the default) disables the noise-aware path; the
-optimizer reduces to its standard math.</p>
+<p>Raw pytree updates use standard optimizer math.</p>
 <h3 id="noisy_squared_grads"><code>noisy_squared_grads</code><a class="headerlink" href="#noisy_squared_grads" title="Permanent link">&para;</a></h3>
-<p>Substitutes a JME paired-stream privately-estimated <code>g²</code> in place of
-squaring the (already noised) gradient.  Required by <code>jme_noise()</code>'s
-output shape; opt-in everywhere it applies (Adam-family + RMSprop):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">jme_noise</span><span class="p">,</span> <span class="n">blt_strategy</span>
+<p>Substitutes a privately-estimated <code>g²</code> stream in place of squaring the
+(already noised) gradient.  <code>mf_noise(..., second_moment_strategy=...)</code> returns
+a paired output that Opaque optimizers route automatically:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">blt_strategy</span><span class="p">,</span> <span class="n">mf_noise</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">blt_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">jme_noise</span><span class="p">(</span><span class="n">grad_template</span><span class="p">,</span> <span class="n">strategy</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># Per-step:</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noisy_sq</span><span class="p">),</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">p</span><span class="p">,</span> <span class="n">noisy_squared_grads</span><span class="o">=</span><span class="n">noisy_sq</span><span class="p">,</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="p">)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">second_strategy</span> <span class="o">=</span> <span class="n">blt_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">mf_noise</span><span class="p">(</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>  <span class="n">grad_template</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>  <span class="n">strategy</span><span class="p">,</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>  <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>  <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>  <span class="n">second_moment_strategy</span><span class="o">=</span><span class="n">second_strategy</span><span class="p">,</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="p">)</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="c1"># Per-step:</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>  <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">p</span><span class="p">,</span>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="p">)</span>
 </code></pre></div>
 <p>Reference: Kalinin et al., <a href="https://arxiv.org/abs/2502.06597">arXiv:2502.06597</a>.</p>
-<p><code>noise_stddev</code> and <code>noisy_squared_grads</code> are <strong>mutually exclusive</strong> at
-any single <code>update()</code> call; passing both raises <code>ValueError</code>.</p>
+<p><code>NoisedPytree</code> metadata and private second-moment outputs are mutually exclusive
+at any single <code>update()</code> call; passing both routes raises <code>ValueError</code>.</p>
 <hr />
 <h2 id="complete-pattern-dp-sgd">Complete pattern (DP-SGD)<a class="headerlink" href="#complete-pattern-dp-sgd" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torchopt</span>
@@ -2180,21 +2179,17 @@ any single <code>update()</code> call; passing both raises <code>ValueError</cod
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
 <a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="p">)</span>
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="n">sigma</span> <span class="o">=</span> <span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span>
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">stddev</span><span class="o">=</span><span class="n">sigma</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="c1"># Optimizer with DP-AdamW-BC active</span>
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">noise_stddev</span><span class="o">=</span><span class="n">sigma</span><span class="p">)</span>
-<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>
-<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
-<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>    <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
-<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>        <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">,</span>
-<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a>        <span class="n">noise_stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>  <span class="c1"># adaptive σ</span>
-<a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a>    <span class="p">)</span>
-<a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="c1"># Optimizer with DP-AdamW-BC active</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">noise_bias_correction</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>    <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
 </code></pre></div>
 <hr />
 <h2 id="schedule-free-wrapper">Schedule-free wrapper<a class="headerlink" href="#schedule-free-wrapper" title="Permanent link">&para;</a></h2>

@@ -780,9 +780,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#jme-dp-adam-and-mf" class="md-nav__link">
+  <a href="#private-second-moments-and-mf" class="md-nav__link">
     <span class="md-ellipsis">
-      JME (DP-Adam) and MF
+      Private Second Moments And MF
     </span>
   </a>
   
@@ -1841,9 +1841,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#jme-dp-adam-and-mf" class="md-nav__link">
+  <a href="#private-second-moments-and-mf" class="md-nav__link">
     <span class="md-ellipsis">
-      JME (DP-Adam) and MF
+      Private Second Moments And MF
     </span>
   </a>
   
@@ -1912,7 +1912,7 @@ details live in <a href="../../mechanisms/">Mechanisms</a>.</p>
 <p>a streaming representation for efficient noise generation.</p>
 </li>
 <li>
-<p><code>mf_noise(grad_template, strategy, stddev=..., key=...)</code> returns <code>(noise_fn, state)</code> that injects noise each step.</p>
+<p><code>mf_noise(grad_template, strategy, noise_multiplier=..., key=...)</code> returns <code>(noise_fn, state)</code> that injects noise each step. The mechanism reads the per-step contribution bound from each <code>ClippedPytree</code> input (typically produced by <code>clipped_grad</code>) and uses <code>noise_multiplier × bound</code> as the realized standard deviation; the latched first-call bound must remain constant across steps.</p>
 </li>
 <li>
 <p><strong>Privacy accounting</strong> uses the same sensitivity (and Gram matrix when needed) as the strategy passed to <code>mf_noise</code>. Always build the accounting mechanism from <strong>the same</strong> strategy object you use for noise.</p>
@@ -1983,12 +1983,19 @@ details live in <a href="../../mechanisms/">Mechanisms</a>.</p>
 </tr>
 </tbody>
 </table>
-<h2 id="jme-dp-adam-and-mf">JME (DP-Adam) and MF<a class="headerlink" href="#jme-dp-adam-and-mf" title="Permanent link">&para;</a></h2>
-<p><a href="https://arxiv.org/abs/2502.06597">JME</a> uses <strong>two</strong> correlated noise streams (gradients and squared gradients) with a <strong>joint sensitivity</strong>. It is <strong>not</strong> the same workload model as single-stream SGD+momentum mechanisms.</p>
-<p>When adding a new <code>MfStrategy</code>, ensure <code>opaque.dpftrl.noise.jme._derive_second_strategy</code> has an explicit branch for it. Unknown strategy types raise <code>TypeError</code>; unsupported ones (e.g. <code>LambdaCgdStrategy</code>, which has no principled second-moment mapping) raise <code>ValueError</code>. Pass <code>second_moment_strategy</code> explicitly to override auto-derivation when needed.</p>
+<h2 id="private-second-moments-and-mf">Private Second Moments And MF<a class="headerlink" href="#private-second-moments-and-mf" title="Permanent link">&para;</a></h2>
+<p>Private second-moment estimation uses <strong>two</strong> correlated noise streams
+(gradients and squared gradients) with a <strong>joint sensitivity</strong>. It is
+<strong>not</strong> the same workload model as single-stream SGD+momentum mechanisms.</p>
+<p>When using <code>mf_noise(..., second_moment_strategy=...)</code>, pass
+<code>second_moment_strategy</code> explicitly. This keeps first-moment and
+second-moment workload choices visible, especially for λCGD where there
+is no single universally correct mapping from optimizer β₂ to strategy λ.</p>
 <h2 id="bsr-scope">BSR scope<a class="headerlink" href="#bsr-scope" title="Permanent link">&para;</a></h2>
 <p><a href="../../mechanisms/bsr/">BSR</a> ships <strong>closed-form</strong> coefficients for the Kalinin–Lampert workload in <span class="arithmatex">\((\alpha,\beta)\)</span>. It does <strong>not</strong> accept arbitrary <code>lr_schedule</code> inside the closed-form path. For general schedules or optimizers, use <strong>BandMF</strong> (numerical Toeplitz optimization) or <strong>BLT</strong>.</p>
-<p>With JME + BSR, the second stream is a second <code>bsr_strategy(..., alpha=..., beta=β₂)</code>; require <span class="arithmatex">\(\alpha &gt; \beta\)</span> for each stream’s <span class="arithmatex">\(\beta\)</span> (see <code>jme.py</code>).</p>
+<p>With private second moments + BSR, the second stream is a second
+<code>bsr_strategy(..., alpha=..., beta=β₂)</code>; require <span class="arithmatex">\(\alpha &gt; \beta\)</span> for
+each stream’s <span class="arithmatex">\(\beta\)</span>.</p>
 <h2 id="lr-schedule-and-workload-modeling">LR schedule and workload modeling<a class="headerlink" href="#lr-schedule-and-workload-modeling" title="Permanent link">&para;</a></h2>
 <p><strong>No MF mechanism in Opaque currently implements schedule-aware factorizations</strong> from Kalinin &amp; Andersson (arXiv:2511.17994). That paper proposes constructions provably better under non-constant LR for the schedule workload <span class="arithmatex">\(A_\chi = A_1 D\)</span>, but the closed-form path only covers <strong>exponential decay</strong> and is not generic enough for general schedules (including warmup).</p>
 <p>BandMF and BLT accept <code>lr_schedule</code> as a <strong>Toeplitz-surrogate</strong> workload optimization input (utility heuristic, not exact schedule-aware construction). BISR, BSR, and λCGD do <strong>not</strong> accept <code>lr_schedule</code>.</p>
@@ -1996,7 +2003,7 @@ details live in <a href="../../mechanisms/">Mechanisms</a>.</p>
 <ul>
 <li><a href="../noise/">Noise addition</a> — Gaussian vs MF entry points</li>
 <li><a href="../../mechanisms/">Mechanisms index</a> — per-mechanism docs</li>
-<li><a href="../optimizers/">Optimizers</a> — SGD vs JME-AdamW</li>
+<li><a href="../optimizers/">Optimizers</a> — SGD vs private second-moment AdamW</li>
 </ul>
 
 
