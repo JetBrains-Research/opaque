@@ -5,7 +5,7 @@ import math
 import pytest
 import torch
 
-from opaque.clipping.types import ClippedPytree, clipped
+from opaque.clipping.types import clipped
 from opaque.core.noise import (
     NoisedPytree,
     SecondMomentClippingOutput,
@@ -39,7 +39,6 @@ def _paired(grads):
     stream's payload is element-wise g² and its bound is the squared
     contribution bound.
     """
-    import torch
     grads_clipped = clipped(grads, max_norm=_SENSITIVITY)
     sq_pytree = {k: v * v for k, v in grads.items()}
     sq_clipped = clipped(sq_pytree, max_norm=_SENSITIVITY * _SENSITIVITY)
@@ -60,9 +59,9 @@ class TestSecondMomentCalibration:
         assert sensitivity == pytest.approx(expected, rel=1e-10)
 
     def test_noise_scale_default_overhead(self):
-        # second_moment_noise_scale now takes Δ_first and Δ_second separately.
-        # For Δ_first=0.5 and Δ_second=0.25 (= Δ_first² — old "square the
-        # average" math), c1=2, c2=1, scale = 0.25 / (2 · 0.5 · √0.5).
+        # Δ_first=0.5, Δ_second=0.25, c1=2, c2=1
+        # → scale = Δ_second · c2 / (Δ_first · c1 · √(ρ²−1))
+        # = 0.25 / (2 · 0.5 · √0.5).
         scale = second_moment_noise_scale(
             c1_max_column_norm=2.0,
             c2_max_column_norm=1.0,
