@@ -57,6 +57,9 @@ Each factory returns a ``torchopt.base.GradientTransformation`` and is
 state-isolated; multiple optimizers can coexist in the same process
 without RNG / global state collisions.
 
+``state_dict`` / ``load_state_dict`` flatten / rebuild any chain state
+for ``torch.save`` / ``torch.load``.
+
 Less-common building blocks are reachable via the submodules and are
 intentionally not part of ``__all__`` (mirroring the
 :mod:`opaque.clipping` / :mod:`opaque.random` convention — the public
@@ -67,9 +70,6 @@ surface is functional):
   ``ScheduleFreeState`` — re-exported here for type annotations.
 - ``get_eval_params(state)`` from :mod:`opaque.optimizers.schedule_free`
   — returns the published ``x`` weights from a schedule-free state.
-- ``state_dict`` / ``load_state_dict`` from
-  :mod:`opaque.optimizers.serialization` — flatten / rebuild any chain
-  state for ``torch.save`` / ``torch.load``.
 """
 
 # Functional surface — listed in ``__all__``.
@@ -97,10 +97,6 @@ from opaque.optimizers.radam import RAdamState as RAdamState
 from opaque.optimizers.rmsprop import RMSpropState as RMSpropState
 from opaque.optimizers.schedule_free import ScheduleFreeState as ScheduleFreeState
 
-# Serialization helpers — flatten / rebuild any chain state for
-# ``torch.save`` / ``torch.load``.  Promoted to the package root for
-# discoverability; the implementation lives in
-# :mod:`opaque.optimizers.serialization`.
 from opaque.optimizers.serialization import load_state_dict, state_dict
 
 

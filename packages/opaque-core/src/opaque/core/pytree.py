@@ -29,12 +29,6 @@ import optree as _ot  # noqa: E402
 import torch  # noqa: E402
 
 
-# Note: the ``TensorPytree`` alias used to live here.  It moved to
-# :mod:`opaque.types` (alongside the wrapper data types) so that all
-# cross-cutting DP types share one canonical home.  Importers should
-# use ``from opaque.types import TensorPytree``.
-
-
 def tree_leaves(tree: Any) -> list[torch.Tensor]:
     """Extract all leaf tensors from a PyTree.
 
