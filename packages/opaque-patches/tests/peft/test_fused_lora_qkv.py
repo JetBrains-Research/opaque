@@ -96,7 +96,7 @@ class TestFusedLoRAQKV:
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)
-        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
+        apply_model_patches(model, performance=False, compat=True, lora=True)
         layers = model.model.model.layers
         for layer in layers:
             attn = layer.self_attn
@@ -117,7 +117,7 @@ class TestFusedLoRAQKV:
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)
-        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
+        apply_model_patches(model, performance=False, compat=True, lora=True)
         input_ids = torch.randint(0, config.vocab_size, (2, 16), device=device)
         outputs = model(input_ids, labels=input_ids)
         loss = outputs.loss
@@ -143,7 +143,7 @@ class TestFusedLoRAQKV:
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)
-        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
+        apply_model_patches(model, performance=False, compat=True, lora=True)
         layers = model.model.model.layers
         for layer in layers:
             attn = layer.self_attn
@@ -166,7 +166,7 @@ class TestFusedLoRAQKV:
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)
-        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
+        apply_model_patches(model, performance=False, compat=True, lora=True)
         layers = model.model.model.layers
         for layer in layers:
             attn = layer.self_attn
@@ -213,7 +213,7 @@ class TestFusedLoRAQKV:
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)
-        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
+        apply_model_patches(model, performance=False, compat=True, lora=True)
         tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B")
         tokenizer.pad_token = tokenizer.eos_token
         texts = ["Hello world", "Another test", "Third sample", "Last one"]

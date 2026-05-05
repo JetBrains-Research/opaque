@@ -27,9 +27,14 @@ def apply_model_patches(
 ) -> None:
     """Apply global and instance-level patches for a specific model.
 
-    This is a convenience orchestrator that handles both Transformers and PEFT natively.
-    Users with purely custom non-Transformers architectures can import and invoke
-    `apply_peft_model_patches` directly from the root namespace to apply LoRA kernels.
+    This is a convenience orchestrator that handles both Transformers and
+    PEFT natively.  Users with purely custom non-Transformers
+    architectures can import and invoke ``apply_peft_model_patches``
+    directly from the root namespace to apply LoRA kernels.
+
+    Liger-aligned per-model flags are passed through ``**kwargs``:
+    ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``, plus
+    opaque-specific ``eager_attention``, ``batchify``, ``kv_cache``.
     """
     global _runtime_patches_applied
     if not _runtime_patches_applied:
@@ -58,54 +63,47 @@ def apply_model_patches(
 def apply_runtime_patches(
     *, performance: bool = True, compat: bool = True, **kwargs
 ) -> None:
-    """Apply global runtime patches."""
+    """Apply global runtime patches.
+
+    Liger-style flag names: ``vmap_masking``, ``empty_batches``,
+    ``vmap_checkpointing``.  ``use_fused_loss`` was dropped — fused-CE
+    is now applied per-model via :func:`apply_model_patches` when
+    ``cross_entropy=True``.
+    """
     global _runtime_patches_applied
     _runtime_patches_applied = True
 
-    enable_vmap_masking = kwargs.get("enable_vmap_masking", compat)
-    allow_empty_batches = kwargs.get("allow_empty_batches", compat)
-    enable_vmap_checkpointing = kwargs.get("enable_vmap_checkpointing", compat)
-    use_fused_loss = kwargs.get("use_fused_loss", performance)
+    vmap_masking = kwargs.get("vmap_masking", compat)
+    empty_batches = kwargs.get("empty_batches", compat)
+    vmap_checkpointing = kwargs.get("vmap_checkpointing", compat)
 
-    if enable_vmap_masking:
+    if vmap_masking:
         try:
             from opaque.patches.transformers.runtime.masking import (
                 apply_masking_patches,
             )
 
-            apply_masking_patches(enable_vmap_masking=enable_vmap_masking)
+            apply_masking_patches(vmap_masking=vmap_masking)
         except ImportError:
             pass
 
-    if allow_empty_batches:
+    if empty_batches:
         try:
             from opaque.patches.transformers.runtime.collator import (
                 apply_collator_patches,
             )
 
-            apply_collator_patches(allow_empty_batches=allow_empty_batches)
+            apply_collator_patches(empty_batches=empty_batches)
         except ImportError:
             pass
 
-    if enable_vmap_checkpointing:
+    if vmap_checkpointing:
         try:
             from opaque.patches.torch.runtime import apply_checkpoint_patch
 
-            apply_checkpoint_patch(enable_vmap_checkpointing=enable_vmap_checkpointing)
+            apply_checkpoint_patch(vmap_checkpointing=vmap_checkpointing)
         except ImportError:
             pass
-
-    if use_fused_loss:
-        try:
-            from opaque.patches.transformers.runtime.loss_mapping import (
-                apply_loss_mapping_patch,
-            )
-
-            apply_loss_mapping_patch(use_fused_loss=use_fused_loss)
-        except ImportError:
-            logger.debug(
-                "opaque: Hugging Face kernel patches not available. Skipping loss mapping."
-            )
 
 
 __all__ = [

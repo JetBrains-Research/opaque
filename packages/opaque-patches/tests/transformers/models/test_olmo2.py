@@ -28,7 +28,7 @@ def tiny_model(device):
     config = Olmo2Config(**kwargs)
     config._attn_implementation = "eager"
     model = Olmo2ForCausalLM(config).to(device)
-    apply_model_patches(model, wrap_eager_attention=True)
+    apply_model_patches(model, eager_attention=True)
     return model
 
 

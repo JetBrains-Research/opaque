@@ -97,6 +97,19 @@ def _opaque_causal_lm_loss(
         return masked_losses.sum() / mask.sum().clamp(min=1)
 
 
+def apply_causal_lm_loss_function_patch(model, target_cls: type[nn.Module]) -> bool:
+    """Attach Opaque's causal-LM loss to matching model instances."""
+    if model is None:
+        return False
+
+    patched = False
+    for module in model.modules():
+        if type(module) is target_cls:
+            module.loss_function = _opaque_causal_lm_loss
+            patched = True
+    return patched
+
+
 # ForCausalLM classes eligible for fused linear + cross-entropy loss.
 # All share identical structure: self.model(backbone) → self.lm_head → loss.
 _FUSED_CE_CAUSAL_LM = [

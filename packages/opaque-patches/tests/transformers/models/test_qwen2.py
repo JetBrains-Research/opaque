@@ -28,7 +28,7 @@ def tiny_model(device):
     config = Qwen2Config(**kwargs)
     config._attn_implementation = "eager"
     model = Qwen2ForCausalLM(config).to(device)
-    apply_model_patches(model, wrap_eager_attention=True)
+    apply_model_patches(model, eager_attention=True)
     return model
 
 

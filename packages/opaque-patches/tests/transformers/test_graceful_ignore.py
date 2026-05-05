@@ -18,10 +18,10 @@ def test_graceful_ignore_kwargs():
     """Verify that unsupported kwargs (like rope) are gracefully ignored by specialized functions."""
 
     # Mistral does not have a custom RoPE patch in opaque
-    # However, we can pass fuse_rope=True to apply_kernels without raising an error.
+    # However, we can pass rope=True to apply_kernels without raising an error.
     mistral_model = MockModel("mistral")
     try:
-        apply_transformers_model_patches(mistral_model, fuse_rope=True)
+        apply_transformers_model_patches(mistral_model, rope=True)
     except TypeError:
         pytest.fail("apply_kernels raised TypeError for unsupported kwarg on mistral")
 

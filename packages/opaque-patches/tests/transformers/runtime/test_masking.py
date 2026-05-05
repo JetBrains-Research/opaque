@@ -6,7 +6,7 @@ from opaque.patches import apply_runtime_patches
 
 
 def test_vmap_causal_mask():
-    apply_runtime_patches(enable_vmap_masking=True)
+    apply_runtime_patches(vmap_masking=True)
 
     # create_causal_mask should be patched now
     import transformers.masking_utils as masking_utils
@@ -45,7 +45,7 @@ def test_vmap_causal_mask():
 
 
 def test_masking_runtime_patch_idempotent_for_ignore_causal_mask_sdpa():
-    apply_runtime_patches(enable_vmap_masking=True)
+    apply_runtime_patches(vmap_masking=True)
 
     import transformers.masking_utils as masking_utils
 
@@ -55,7 +55,7 @@ def test_masking_runtime_patch_idempotent_for_ignore_causal_mask_sdpa():
     assert original_fn is not patched_fn
 
     # Re-applying runtime patches must preserve the same original binding.
-    apply_runtime_patches(enable_vmap_masking=True)
+    apply_runtime_patches(vmap_masking=True)
     patched_fn_2 = masking_utils._ignore_causal_mask_sdpa
     original_fn_2 = getattr(patched_fn_2, "_original", None)
     assert patched_fn_2 is patched_fn

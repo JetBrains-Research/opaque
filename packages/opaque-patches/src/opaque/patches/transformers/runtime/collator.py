@@ -19,14 +19,14 @@ from opaque.functional.collate import empty_collate
 _WRAPPER_ATTR = "_opaque_collate"
 
 
-def apply_collator_patches(*, allow_empty_batches: bool = True) -> None:
+def apply_collator_patches(*, empty_batches: bool = True) -> None:
     """Patch HuggingFace data collators to handle empty example lists.
 
     Currently patches:
 
     - ``DataCollatorForLanguageModeling.torch_call``
     """
-    if allow_empty_batches is False:
+    if empty_batches is False:
         return
 
     try:

@@ -6,7 +6,7 @@ from opaque.patches import apply_runtime_patches
 
 
 def test_collator_empty_batch():
-    apply_runtime_patches(allow_empty_batches=True)
+    apply_runtime_patches(empty_batches=True)
 
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2-0.5B")
     if tokenizer.pad_token is None:
