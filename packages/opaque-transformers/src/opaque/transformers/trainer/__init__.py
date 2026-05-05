@@ -112,15 +112,6 @@ def _effective(value: Any) -> float:
     return value.effective if hasattr(value, "effective") else float(value)
 
 
-def _noise_stddev(clip_state: Any, noise_multiplier: float) -> Any:
-    """Noise stddev: MSE-optimal per-group when available, isotropic otherwise."""
-    if hasattr(clip_state.clipping_norm, "effective"):
-        from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
-
-        return per_group_noise_stddev(clip_state, noise_multiplier)
-    return noise_multiplier * clip_state.sensitivity
-
-
 class TrainOutput(NamedTuple):
     """Return type of ``DPTrainer.train()``, mirroring HF's TrainOutput."""
 
@@ -158,6 +149,11 @@ class _TrainingContext:
     opt_name: str = "adamw"
     current_sampler: Any = None
     save_steps_resolved: int = 0
+    # Configured clip threshold (scalar or PerGroup).  Adaptive mode
+    # overrides this each step via ``clip_state.clipping_norm``; fixed
+    # mode reads the configured value directly because the new
+    # ``FixedClipState`` is a marker without per-state fields.
+    clip_norm: Any = None
 
 
 class DPTrainer:
@@ -1328,14 +1324,21 @@ class DPTrainer:
         accounting = Accountant()
 
         # --- Noise ---
+        # Sensitivity flows through the ``ClippedPytree`` returned by
+        # ``clipped_grad`` (its ``.max_norm`` field).  ``noise_fn`` reads
+        # that wrapper at call time and emits a ``NoisedPytree`` whose
+        # ``.noise_stddev`` carries the realized σ for downstream
+        # consumers (e.g. opaque optimizers' DP bias correction).
         make_noise = gaussian_noise
         if a.dp_noise_mechanism == "truncated_gaussian":
             make_noise = functools.partial(
                 truncated_gaussian_noise, radius=a.dp_noise_radius
             )
 
-        initial_noise_std = _noise_stddev(clip_state, noise_multiplier)
-        noise_fn, noise_state = make_noise(stddev=initial_noise_std, key=key(a.seed))
+        noise_fn, noise_state = make_noise(
+            noise_multiplier=noise_multiplier,
+            key=key(a.seed),
+        )
 
         # --- Collate ---
         # Same wrapper used by the eval dataloader so train and eval
@@ -1367,6 +1370,7 @@ class DPTrainer:
             offload_ctx=offload_ctx,
             opt_name=a.optim,
             save_steps_resolved=save_steps_resolved,
+            clip_norm=clip_norm,
         )
 
     def _inner_training_loop(
@@ -1775,13 +1779,12 @@ class DPTrainer:
                     "loss_scale": self._loss_scaler.scale,
                 }
 
-        # Noise injection
-        noise_std = _noise_stddev(ctx.clip_state, ctx.noise_multiplier)
-        noisy_grads, ctx.noise_state = ctx.noise_fn(
-            grads,
-            ctx.noise_state,
-            stddev=noise_std,
-        )
+        # Noise injection — ``grads`` is a ``ClippedPytree`` whose
+        # ``.max_norm`` carries the per-step sensitivity; ``noise_fn``
+        # reads it directly and returns a ``NoisedPytree``.  Adaptive
+        # clipping flows through unchanged because the wrapper updates
+        # ``max_norm`` per call.
+        noisy_grads, ctx.noise_state = ctx.noise_fn(grads, ctx.noise_state)
 
         # HF parity: empty device cache *after* the forward/backward pass
         # (activations are freed) but *before* the optimizer update.
@@ -1806,15 +1809,13 @@ class DPTrainer:
             trainable_params=ctx.trainable_params,
         )
 
-        # Optimizer step (adamw-bc gets noise_stddev for bias correction)
-        opt_kwargs: dict[str, Any] = {}
-        if ctx.opt_name == "adamw-bc":
-            opt_kwargs["noise_stddev"] = noise_std
+        # Optimizer step — DP-aware optimizers read σ directly off the
+        # ``NoisedPytree`` when ``dp_noise_bias_correction=True`` was
+        # set at construction; no per-step kwargs are accepted.
         updates, ctx.opt_state = ctx.opt.update(
             noisy_grads,
             ctx.opt_state,
             params=ctx.trainable_params,
-            **opt_kwargs,
         )
         ctx.trainable_params = torchopt.apply_updates(ctx.trainable_params, updates)
 
@@ -1832,18 +1833,25 @@ class DPTrainer:
         if batch_size == 0:
             return {"loss": 0.0, "batch_size": 0}
 
+        # Noise σ travels on the ``NoisedPytree`` wrapper now;
+        # ``_effective`` handles both scalar and ``PerGroup`` shapes.
+        # Adaptive mode publishes the live threshold via
+        # ``clip_state.clipping_norm``; fixed mode keeps the
+        # configured value on the training context (the new
+        # ``FixedClipState`` carries no fields).
+        noise_std = noisy_grads.noise_stddev
+        clipping_norm = getattr(ctx.clip_state, "clipping_norm", ctx.clip_norm)
         metrics: dict[str, Any] = {
             "loss": aux.loss_values.mean().item(),
             "batch_size": batch_size,
             "grad_norm": aux.grad_norms.mean().item(),
             "clip_rate": aux.clipping_rate,
-            "clipping_norm": _effective(ctx.clip_state.clipping_norm),
+            "clipping_norm": _effective(clipping_norm),
             "noise_std": _effective(noise_std),
         }
         if aux.clipped_grad_norms is not None and aux.clipped_grad_norms.numel() > 0:
             metrics["clipped_grad_norm"] = aux.clipped_grad_norms.mean().item()
 
-        clipping_norm = ctx.clip_state.clipping_norm
         if aux.group_norms is not None and hasattr(clipping_norm, "values"):
             group_noise_std = noise_std if hasattr(noise_std, "values") else None
             group_metrics: dict[str, dict[str, float]] = {}
@@ -3120,103 +3128,28 @@ class DPTrainer:
     ) -> tuple[Any, Any]:
         """Create functional optimizer and initial state.
 
-        ``lr_schedule`` is a ``step -> learning_rate`` callable; torchopt
-        advances it via the step counter inside the optimizer state.
+        Dispatches via :func:`opaque.transformers.trainer._optim.build_optimizer`,
+        which resolves ``args.optim`` (canonical opaque name or HF alias)
+        and forwards HF-canonical fields (``learning_rate``,
+        ``weight_decay``, ``adam_beta1``/``adam_beta2``, ``adam_epsilon``)
+        plus DP-specific knobs (``dp_noise_bias_correction``,
+        ``dp_decoupled_weight_decay``, ``dp_update_rms_clip``) to the
+        underlying opaque factory.  ``args.optim_args`` is parsed via
+        :func:`parse_optim_args` and overrides any auto-mapped values;
+        opaque factories raise ``TypeError`` on unknown keys, so typos
+        surface immediately.
 
-        ``args.optim_args`` is parsed via :func:`parse_optim_args` and
-        forwarded to the underlying torchopt factory; unknown keys raise
-        ``TypeError`` from torchopt itself.
+        ``clip_state`` and ``noise_multiplier`` are accepted for
+        signature stability with subclasses; the wrapper-pytree noise
+        flow makes them irrelevant at construction time (sensitivity
+        flows through ``ClippedPytree.max_norm`` at every step).
         """
+        from opaque.transformers.trainer._optim import build_optimizer
+
+        del clip_state, noise_multiplier  # see docstring
         a = self.args
         extra = parse_optim_args(getattr(a, "optim_args", None))
-        # All branches dispatch to a torchopt functional factory (or the
-        # in-house ``adamw_bc``).  ``args.weight_decay`` is forwarded
-        # unconditionally; ``optim_args`` carries any per-optimizer
-        # tuning the user wants on top (e.g. ``momentum=0.9`` for
-        # ``sgd`` or ``alpha=0.95`` for ``rmsprop``) — torchopt raises
-        # on unknown keys, so typos surface immediately.
-        if a.optim == "adam":
-            opt = torchopt.adam(
-                lr=lr_schedule,
-                betas=(a.adam_beta1, a.adam_beta2),
-                eps=a.adam_epsilon,
-                weight_decay=a.weight_decay,
-                **extra,
-            )
-        elif a.optim == "adamw":
-            opt = torchopt.adamw(
-                lr=lr_schedule,
-                betas=(a.adam_beta1, a.adam_beta2),
-                eps=a.adam_epsilon,
-                weight_decay=a.weight_decay,
-                **extra,
-            )
-        elif a.optim == "adamw-bc":
-            from opaque.dpsgd.optimizers import adamw_bc
-
-            initial_noise_std = (
-                _noise_stddev(clip_state, noise_multiplier) if clip_state else 0.0
-            )
-            opt = adamw_bc(
-                lr=lr_schedule,
-                weight_decay=a.weight_decay,
-                noise_stddev=initial_noise_std,
-                **extra,
-            )
-        elif a.optim == "sgd":
-            opt = torchopt.sgd(
-                lr=lr_schedule,
-                weight_decay=a.weight_decay,
-                **extra,
-            )
-        elif a.optim == "rmsprop":
-            # ``args.adam_epsilon`` is the canonical HF default-epsilon
-            # field; reuse it rather than inventing a new arg, since
-            # any user-supplied override is expected via ``optim_args``.
-            opt = torchopt.rmsprop(
-                lr=lr_schedule,
-                eps=a.adam_epsilon,
-                weight_decay=a.weight_decay,
-                **extra,
-            )
-        elif a.optim == "adagrad":
-            opt = torchopt.adagrad(
-                lr=lr_schedule,
-                eps=a.adam_epsilon,
-                weight_decay=a.weight_decay,
-                **extra,
-            )
-        elif a.optim == "adadelta":
-            opt = torchopt.adadelta(
-                lr=lr_schedule,
-                eps=a.adam_epsilon,
-                weight_decay=a.weight_decay,
-                **extra,
-            )
-        elif a.optim == "adamax":
-            opt = torchopt.adamax(
-                lr=lr_schedule,
-                betas=(a.adam_beta1, a.adam_beta2),
-                eps=a.adam_epsilon,
-                weight_decay=a.weight_decay,
-                **extra,
-            )
-        elif a.optim == "radam":
-            opt = torchopt.radam(
-                lr=lr_schedule,
-                betas=(a.adam_beta1, a.adam_beta2),
-                eps=a.adam_epsilon,
-                weight_decay=a.weight_decay,
-                **extra,
-            )
-        else:
-            # Unreachable: ``__post_init__`` validates ``a.optim`` is
-            # in ``_DP_OPTIMIZERS`` before we get here.
-            raise AssertionError(
-                f"create_optimizer: unhandled optim={a.optim!r} "
-                "(this is a bug; _config.py validation diverged from "
-                "create_optimizer's dispatch)."
-            )
+        opt = build_optimizer(a, lr_schedule, extra_kwargs=extra)
         return opt, opt.init(trainable_params)
 
     def create_scheduler(self, num_training_steps: int) -> Callable[[int], float]:

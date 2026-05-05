@@ -20,13 +20,14 @@ DP divergences from HF, all flagged at ``__post_init__`` time:
   ``dataloader_drop_last``, ``fsdp*``, ``deepspeed``, ``tpu_*``,
   ``accelerator_config``, ``parallelism_config``) raise on construction
   when set to non-default values.
-- ``optim`` accepts the torchopt-backed names DPTrainer wires
-  (``adam``, ``adamw``, ``adamw-bc``, ``sgd``, ``rmsprop``, ``adagrad``,
-  ``adadelta``, ``adamax``, ``radam``); HF's ``OptimizerNames`` values
-  (``adamw_torch``, ``adafactor``, ``lion``, …) are rejected with a
-  per-name redirection — DPTrainer's optimizer chain is functional
-  (``torchopt``) and silently substituting ``torch.optim.AdamW`` for
-  ``torchopt.adamw`` would change the update math.
+- ``optim`` accepts the canonical opaque optimizer names
+  (``adam``, ``adamw``, ``sgd``, ``rmsprop``, ``adagrad``, ``adafactor``,
+  ``ademamix``, ``lion``, ``schedule_free``) and a curated set of HF
+  aliases (``adamw_torch``, ``adamw_torch_fused``, ``adamw_hf``,
+  ``adafactor``, ``lion_32bit``) that route to the same opaque
+  factories.  Quantized / paged / GaLore / fused-CUDA / XLA / NPU
+  variants are rejected with per-name redirection messages — see
+  :mod:`opaque.transformers.trainer._optim`.
 - ``metric_for_best_model`` must resolve to an eval-side metric (raise on
   bare ``"loss"`` shape that would map to *training* loss) when
   ``load_best_model_at_end`` is on.
@@ -142,116 +143,17 @@ _INCLUDE_NUM_INPUT_TOKENS_SEEN_VALUES = frozenset({"no", "all", "non_padding"})
 # raises ``TypeError`` redirecting to ``dp_clipping_norm``.
 _MAX_GRAD_NORM_HF_DEFAULT: float = 1.0
 
-# Optimizer names DPTrainer's optimizer factory understands.  Each maps
-# to a torchopt functional factory (or the in-house ``adamw_bc`` for
-# DP-SGD bias correction) — all expose a flat keyword surface and a
-# pytree-shaped state, which is what the per-example gradient path
-# requires.  HF's ``OptimizerNames`` enum (whose values are
-# ``torch.optim``-backed implementations) is *not* honored: those
-# implementations carry their own state shapes, fused kernels, and
-# reduction semantics that do not match torchopt's.  See
-# ``_DP_OPTIMIZER_UNSUPPORTED`` for the redirection table.
-_DP_OPTIMIZERS: tuple[str, ...] = (
-    "adam",
-    "adamw",
-    "adamw-bc",
-    "sgd",
-    "rmsprop",
-    "adagrad",
-    "adadelta",
-    "adamax",
-    "radam",
+# Optimizer surface — the canonical opaque names + HF compat aliases —
+# is owned by ``_optim``.  ``_DP_OPTIMIZERS`` is the deduplicated list
+# of names that ``args.optim`` may take; ``resolve_optimizer_name``
+# is the only validator.
+from opaque.transformers.trainer._optim import (  # noqa: E402
+    canonical_optimizer_names as _canonical_optimizer_names,
+    resolve_optimizer_name as _resolve_optimizer_name,
+    supported_names as _supported_optimizer_names,
 )
 
-# HF ``OptimizerNames`` values that DPTrainer cannot honor: they bind to
-# concrete ``torch.optim`` / 8-bit / fused-CUDA / Adafactor / Lion
-# implementations that torchopt does not provide.  Substituting one for
-# another silently — e.g. ``adamw_torch`` (``torch.optim.AdamW``) for
-# our ``adamw`` (``torchopt.adamw``) — is wrong: the two have different
-# state shapes, different reduction semantics, and different numerics.
-# Rejected at construction with a uniform "DPTrainer uses torchopt"
-# message + a name-by-name redirection.
-_DP_OPTIMIZER_UNSUPPORTED: dict[str, str] = {
-    # ``torch.optim.AdamW`` — HF default.  Differs from
-    # ``torchopt.adamw`` in state shape and update math.  Pass
-    # ``optim='adamw'`` to use DPTrainer's torchopt-backed AdamW.
-    "adamw_torch": (
-        "DPTrainer uses torchopt's functional optimizers, not "
-        "torch.optim; pass optim='adamw' for the torchopt AdamW factory."
-    ),
-    "adamw_torch_fused": (
-        "Fused torch.optim.AdamW is not exposed by torchopt; pass optim='adamw'."
-    ),
-    "adamw_torch_xla": (
-        "torch_xla AdamW is not supported (Opaque vmap targets "
-        "CUDA/CPU); pass optim='adamw'."
-    ),
-    "adamw_torch_npu_fused": (
-        "Ascend NPU optimizers are not supported; pass optim='adamw'."
-    ),
-    "adamw_hf": (
-        "The pre-PyTorch-2 ``adamw_hf`` (HF's bespoke ``AdamW``) is "
-        "not supported; pass optim='adamw' for the torchopt AdamW "
-        "factory."
-    ),
-    "adamw_apex_fused": ("APEX fused AdamW is not supported; pass optim='adamw'."),
-    "adamw_anyprecision": ("AnyPrecision AdamW is not supported; pass optim='adamw'."),
-    "adamw_bnb_8bit": ("8-bit quantized optimizers are not supported under DP-SGD."),
-    "adamw_8bit": ("8-bit AdamW is not supported under DP-SGD."),
-    "adamw_torch_4bit": ("4-bit AdamW is not supported under DP-SGD."),
-    "adamw_torch_8bit": ("8-bit torch.optim.AdamW is not supported under DP-SGD."),
-    "adafactor": (
-        "Adafactor relies on factored second-moment statistics that "
-        "do not compose under per-example gradients (vmap)."
-    ),
-    "ademamix": ("AdEMAMix is not exposed by torchopt."),
-    "ademamix_8bit": ("8-bit AdEMAMix is not supported."),
-    "lion_32bit": (
-        "Lion is not exposed by torchopt; pick a torchopt-backed "
-        f"optimizer from {_DP_OPTIMIZERS}."
-    ),
-    "lion_8bit": ("8-bit Lion is not supported."),
-    "paged_adamw_32bit": ("Paged optimizers (bitsandbytes) are not supported."),
-    "paged_adamw_8bit": ("Paged 8-bit AdamW is not supported."),
-    "paged_ademamix_32bit": ("Paged AdEMAMix is not supported."),
-    "paged_ademamix_8bit": ("Paged 8-bit AdEMAMix is not supported."),
-    "paged_lion_32bit": ("Paged Lion is not supported."),
-    "paged_lion_8bit": ("Paged 8-bit Lion is not supported."),
-    "rmsprop_bnb": (
-        "bitsandbytes RMSprop is not supported; pass optim='rmsprop' "
-        "for the torchopt RMSprop factory."
-    ),
-    "rmsprop_bnb_8bit": (
-        "8-bit RMSprop (bitsandbytes) is not supported; pass optim='rmsprop'."
-    ),
-    "rmsprop_bnb_32bit": (
-        "bitsandbytes 32-bit RMSprop is not supported; pass optim='rmsprop'."
-    ),
-    "galore_adamw": ("GaLore optimizers are not supported under DP-SGD."),
-    "galore_adamw_8bit": ("GaLore 8-bit AdamW is not supported under DP-SGD."),
-    "galore_adafactor": ("GaLore Adafactor is not supported under DP-SGD."),
-    "galore_adamw_layerwise": (
-        "GaLore layer-wise AdamW is not supported under DP-SGD."
-    ),
-    "galore_adamw_8bit_layerwise": (
-        "GaLore layer-wise 8-bit AdamW is not supported under DP-SGD."
-    ),
-    "galore_adafactor_layerwise": (
-        "GaLore layer-wise Adafactor is not supported under DP-SGD."
-    ),
-    "lomo": ("LOMO is not supported under DP-SGD."),
-    "adalomo": ("AdaLOMO is not supported under DP-SGD."),
-    "grokadamw": ("GrokAdamW is not supported under DP-SGD."),
-    "schedule_free_radam": ("Schedule-free RAdam is not supported under DP-SGD."),
-    "schedule_free_adamw": ("Schedule-free AdamW is not supported under DP-SGD."),
-    "schedule_free_sgd": ("Schedule-free SGD is not supported under DP-SGD."),
-    "apollo_adamw": ("APOLLO AdamW is not supported under DP-SGD."),
-    "apollo_adamw_layerwise": (
-        "APOLLO layer-wise AdamW is not supported under DP-SGD."
-    ),
-    "stable_adamw": ("StableAdamW is not supported under DP-SGD."),
-}
-
+_DP_OPTIMIZERS: tuple[str, ...] = _supported_optimizer_names()
 
 @dataclasses.dataclass
 class DPTrainingArguments(TrainingArguments):
@@ -363,6 +265,28 @@ class DPTrainingArguments(TrainingArguments):
     dp_calibration_max: float = 10.0
     # ε convergence tolerance for the binary search.
     dp_calibration_tolerance: float = 1e-3
+
+    # ---- Optimizer DP knobs ---------------------------------------
+    # ``dp_noise_bias_correction`` activates the φ-EMA correction in
+    # DP-aware optimizers (``adamw``, ``adam``, ``rmsprop``,
+    # ``adagrad``, ``ademamix``, ``adafactor``); the optimizer reads
+    # the realized per-step σ off the ``NoisedPytree`` and subtracts a
+    # β₂-EMA of the noise variance from the second moment (Chooi et
+    # al., arXiv:2511.07843).  No effect on ``sgd`` / ``lion``
+    # (no v) or under second-moment substitution.
+    dp_noise_bias_correction: bool = False
+    # ``dp_decoupled_weight_decay`` flips weight-decay between L2
+    # regularisation (added to the gradient) and decoupled weight
+    # decay (subtracted from params after the moment update).  HF's
+    # ``adamw_torch`` is decoupled by default; opaque mirrors that.
+    # ``None`` lets each factory pick its own default.
+    dp_decoupled_weight_decay: bool | None = None
+    # ``dp_update_rms_clip`` activates StableAdamW-style update
+    # rescaling in the moment-scaler stage: divides the moment-scaled
+    # update by ``max(1, rms / threshold)``.  ``None`` disables.
+    # Applies to ``adam`` / ``adamw`` / ``rmsprop`` / ``adafactor`` /
+    # ``ademamix``.
+    dp_update_rms_clip: float | None = None
 
     # ---- Resolved privacy metadata --------------------------------
     # Populated by DPTrainer after dataset-dependent privacy setup, before
@@ -747,29 +671,16 @@ class DPTrainingArguments(TrainingArguments):
             self.include_inputs_for_metrics = False
 
         # --- 9. Optimizer name validation -----------------------------------
-        # DPTrainer does *not* alias HF's ``OptimizerNames`` onto our
-        # torchopt-backed factories: ``adamw_torch`` is
-        # ``torch.optim.AdamW`` (different state shape, different
-        # update math) and silently substituting our ``adamw``
-        # (``torchopt.adamw``) for it would produce wrong numerics.
-        # Reject HF-specific names with a redirection table; reject
-        # everything else with the bare list of supported names.
-        # ``OptimizerNames`` enum values stringify to the same names so
-        # passing ``optim=OptimizerNames.ADAMW_TORCH`` is also covered.
-        optim_str = (
-            self.optim.value if hasattr(self.optim, "value") else str(self.optim)
-        )
-        if optim_str in _DP_OPTIMIZER_UNSUPPORTED:
-            raise ValueError(
-                f"optim={self.optim!r} is not supported by DPTrainer: "
-                f"{_DP_OPTIMIZER_UNSUPPORTED[optim_str]}  "
-                f"Supported optimizers: {_DP_OPTIMIZERS}."
-            )
-        if optim_str not in _DP_OPTIMIZERS:
-            raise ValueError(
-                f"optim={self.optim!r} is not supported by DPTrainer; "
-                f"expected one of {_DP_OPTIMIZERS}"
-            )
+        # ``optim`` accepts canonical opaque names (``adamw``, ``sgd``,
+        # …) and a curated set of HF aliases that map cleanly onto
+        # opaque factories (``adamw_torch`` → ``adamw``, ``adafactor``
+        # → ``adafactor``, ``lion_32bit`` → ``lion``).  Quantized /
+        # paged / fused-CUDA / GaLore variants and the few opaque
+        # primitives without DP-aware paths (``adadelta``, ``radam``,
+        # ``adamax``) are rejected by the resolver with redirect
+        # messages.  ``OptimizerNames`` enum inputs are normalised
+        # via ``.value`` inside the resolver.
+        _resolve_optimizer_name(self.optim)
 
         # --- 10. DP-incompat rejection --------------------------------------
         # ``max_grad_norm``: HF clips global gradient norm; DP clips
