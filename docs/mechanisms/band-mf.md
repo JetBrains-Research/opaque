@@ -160,10 +160,11 @@ from opaque.dpftrl.noise import mf_noise, band_mf_strategy
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
+clip_bound = clipping_norm / batch_size
 noise_fn, noise_state = mf_noise(
     grad_template=params,
     strategy=strategy,
-    stddev=noise_multiplier * clip_state.sensitivity,
+    stddev=noise_multiplier * clip_bound,
     key=key(42),
 )
 
@@ -222,9 +223,10 @@ grad_fn, clip_state = clipped_grad(
     normalize_by=batch_size,
 )
 strategy = band_mf_strategy(n_steps, bands)
+clip_bound = clipping_norm / batch_size
 noise_fn, noise_state = mf_noise(
     params, strategy,
-    stddev=result.param * clip_state.sensitivity,
+    stddev=result.param * clip_bound,
     key=key_noise,
 )
 sampler = CyclicPoissonSampler(

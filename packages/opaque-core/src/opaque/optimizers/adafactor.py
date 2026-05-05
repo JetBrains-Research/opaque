@@ -23,8 +23,9 @@ down before they can land.  Because the row and column factors are
 means, a homogeneous Gaussian noise contribution adds ``(1 − β₂) · σ²``
 to each factor; the remaining work is deriving the right factored
 post-processing path for non-homogeneous per-axis noise.  Until then ``adafactor``'s
-moment scaler does not accept the DP kwargs in its signature; passing
-them raises ``TypeError`` immediately.
+moment scaler does not consume the DP metadata wrappers; passing raw
+per-step metadata kwargs raises ``TypeError`` immediately, while
+``NoisyPytree`` values are unwrapped with a warning.
 
 Skipped (orthogonal knobs, can be added later):
 

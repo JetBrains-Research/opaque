@@ -6,8 +6,7 @@ DP-aware paths, plus a curated set of `torchopt` re-exports for the
 stateless primitives where vanilla behaviour is acceptable under DP
 noise.  All factories return
 [TorchOpt](https://torchopt.readthedocs.io/) `GradientTransformation`s
-and accept optional DP-aware kwargs (`noise_stddev`,
-`noisy_squared_grads`) at update time.
+and route DP metadata from `NoisyPytree` or `SecondMomentNoiseOutput` updates.
 
 ---
 
@@ -34,13 +33,16 @@ params = torchopt.apply_updates(params, updates)
 
 ### Opaque-built factories (DP-aware)
 
-All accept `noise_stddev` (constructor default + per-step
-`update()` override) to activate the optimizer's noise-aware path.
-Where applicable they also accept `noisy_squared_grads` for private
-squared-gradient substitution.
+Noise-aware factories accept `noise_bias_correction=True` to subtract the
+known Gaussian variance carried by `NoisyPytree` updates (off by default;
+flip on to ablate against vanilla). Where applicable they also route
+`SecondMomentNoiseOutput` for private squared-gradient substitution —
+an alternative answer to the same v-update bias.
 
 | Factory | DP-aware mode | When to use |
 |---|---|---|
+| **`sgd`** | No second moment; accepts `NoisyPytree` and ignores σ metadata | Canonical DP baseline |
+| **`adam`** | Original Adam/L2 variant with the same BC/private-moment paths as AdamW | Adam parity without decoupled WD |
 | **`adamw`** | φ-EMA on v̂ (DP-AdamW-BC) + private second moments | Default for DP training |
 | **`ademamix`** | φ-EMA on v̂ + private second moments | Long-horizon training (slow EMA captures long-range signal) |
 | **`adafactor`** | (deferred) | Memory-constrained large-LM fine-tuning; ship vanilla + WD only for now |
@@ -60,8 +62,6 @@ modes — slow under noise but functional.
 
 | Re-export | DP behaviour |
 |---|---|
-| `sgd` | Update is unbiased (`E[g + ξ] = g`); momentum's variance is bounded but doesn't bias direction.  Canonical DP baseline. |
-| `adam` | Has bias from the squared-noise term; bounded by EMA decay.  Slow without correction; prefer `adamw(decoupled_weight_decay=False, noise_stddev=σ)`. |
 | `adadelta` | Two EMAs whose ratio partially self-corrects under noise.  Functional, not optimal. |
 | `radam` | Same DP-BC story as Adam, just no Opaque-built variant yet. |
 
@@ -75,17 +75,16 @@ modes — slow under noise but functional.
 
 ---
 
-## DP-aware kwargs
+## DP-aware update metadata
 
-Two optional kwargs on `update()` activate the optimizer's noise-aware
-behaviour.  Both default to the constructor-time value (or absent).
+Noise-aware behaviour is selected by the update object.
 
-### `noise_stddev`
+### `NoisyPytree`
 
-Tells the optimizer the per-step noise σ.  Each optimizer activates
-whatever noise-aware machinery it has:
+`NoisyPytree` carries the realized per-step noise σ. Each optimizer activates
+whatever noise-aware machinery it has when `noise_bias_correction=True`:
 
-| Optimizer | What `noise_stddev` does |
+| Optimizer | What `NoisyPytree.noise_stddev` does |
 |---|---|
 | `adamw`, `ademamix` | β₂-EMA of σ², subtracted from v̂ before sqrt (Chooi et al., [arXiv:2511.07843](https://arxiv.org/abs/2511.07843)) |
 | `rmsprop` | α-EMA of σ², subtracted from v before sqrt (no `(1−α^t)` divide; v and φ accumulate at the same rate) |
@@ -93,22 +92,12 @@ whatever noise-aware machinery it has:
 | `lion` | (planned) sign gating when per-coordinate SNR is below threshold |
 | `schedule_free` | Forwarded transparently to the wrapped base |
 
-Constructor takes a default (scalar `float` or
-[`PerGroup`](clipping.md#per-group-allocation)); per-step override at
-`update()` time:
-
 ```python
-optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_stddev=initial_sigma)
-
-# Adaptive clipping changes the per-step σ → override per call:
-updates, state = optimizer.update(
-    noisy_grads, state, params=p,
-    noise_stddev=noise_multiplier * clip_state.sensitivity,
-)
+optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
+updates, state = optimizer.update(noisy_grads, state, params=p)
 ```
 
-`noise_stddev = 0` (the default) disables the noise-aware path; the
-optimizer reduces to its standard math.
+Raw pytree updates use standard optimizer math.
 
 ### `noisy_squared_grads`
 
@@ -122,11 +111,12 @@ from opaque.optimizers import adamw
 
 strategy = blt_strategy(n_steps=1000, ...)
 second_strategy = blt_strategy(n_steps=1000, ...)
+clip_bound = clipping_norm / batch_size
 noise_fn, noise_state = mf_noise(
   grad_template,
   strategy,
   noise_multiplier=noise_multiplier,
-  sensitivity=clip_state.sensitivity,
+  sensitivity=clip_bound,
   key=key(42),
   second_moment=True,
   second_moment_strategy=second_strategy,
@@ -144,8 +134,8 @@ updates, opt_state = optimizer.update(
 
 Reference: Kalinin et al., [arXiv:2502.06597](https://arxiv.org/abs/2502.06597).
 
-`noise_stddev` and `noisy_squared_grads` are **mutually exclusive** at
-any single `update()` call; passing both raises `ValueError`.
+`NoisyPytree` metadata and private second-moment outputs are mutually exclusive
+at any single `update()` call; passing both routes raises `ValueError`.
 
 ---
 
@@ -163,20 +153,16 @@ grad_fn, clip_state = clipped_grad(
     loss_fn, clipping_norm=1.0, batch_argnums=1,
     normalize_by=batch_size,
 )
-sigma = noise_multiplier * clip_state.sensitivity
-noise_fn, noise_state = gaussian_noise(stddev=sigma, key=key(42))
+noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
 
 # Optimizer with DP-AdamW-BC active
-optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_stddev=sigma)
+optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
 opt_state = optimizer.init(params)
 
 for step in range(num_steps):
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    updates, opt_state = optimizer.update(
-        noisy_grads, opt_state, params=params,
-        noise_stddev=noise_multiplier * clip_state.sensitivity,  # adaptive σ
-    )
+    updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
     params = torchopt.apply_updates(params, updates)
 ```
 

@@ -7,6 +7,8 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
+from opaque.bounded import noisy  # noqa: E402
+from opaque.core.noise import SecondMomentNoiseOutput  # noqa: E402
 from opaque.optimizers import AdEMAMixState, ademamix  # noqa: E402
 
 
@@ -74,16 +76,30 @@ class TestVanillaAdEMAMix:
 
 
 class TestBCMode:
-    def test_phi_advances_under_default_stddev(self, params, grads):
+    def test_phi_advances_under_noisy_metadata(self, params, grads):
         b2 = 0.999
         sigma = 0.4
-        opt = ademamix(lr=1e-3, betas=(0.9, b2, 0.9999), noise_stddev=sigma)
+        opt = ademamix(lr=1e-3, betas=(0.9, b2, 0.9999), noise_bias_correction=True)
         state = opt.init(params)
         expected_phi = 0.0
         for _ in range(8):
-            _, state = opt.update(grads, state, params=params)
+            _, state = opt.update(
+                noisy(grads, bound=1.0, noise_stddev=sigma),
+                state,
+                params=params,
+            )
             expected_phi = b2 * expected_phi + (1 - b2) * (sigma**2)
         assert _ame(state).phi == pytest.approx(expected_phi)
+
+    def test_bc_flag_disables_noisy_metadata_correction(self, params, grads):
+        opt = ademamix(lr=1e-3, noise_bias_correction=False)
+        state = opt.init(params)
+        _, state = opt.update(
+            noisy(grads, bound=1.0, noise_stddev=0.4),
+            state,
+            params=params,
+        )
+        assert _ame(state).phi == 0.0
 
 
 class TestJMEMode:
@@ -95,7 +111,11 @@ class TestJMEMode:
         b2 = 0.999
         opt = ademamix(lr=1e-3, betas=(0.9, b2, 0.9999))
         state = opt.init(params)
-        _, state = opt.update(grads, state, params=params, noisy_squared_grads=sq_grads)
+        output = SecondMomentNoiseOutput(
+            noisy(grads, bound=1.0, noise_stddev=0.1),
+            noisy(sq_grads, bound=1.0, noise_stddev=0.1),
+        )
+        _, state = opt.update(output, state, params=params)
         st = _ame(state)
         for k in params:
             torch.testing.assert_close(st.nu[k], (1 - b2) * sq_grads[k])
@@ -104,19 +124,22 @@ class TestJMEMode:
         sq = {k: -torch.ones_like(v) for k, v in grads.items()}
         opt = ademamix(lr=1e-3)
         state = opt.init(params)
-        updates, _ = opt.update(grads, state, params=params, noisy_squared_grads=sq)
+        output = SecondMomentNoiseOutput(
+            noisy(grads, bound=1.0, noise_stddev=0.1),
+            noisy(sq, bound=1.0, noise_stddev=0.1),
+        )
+        updates, _ = opt.update(output, state, params=params)
         for k in updates:
             assert torch.isfinite(updates[k]).all()
 
-    def test_both_kwargs_raises(self, params, grads, sq_grads):
+    def test_explicit_second_moment_kwarg_rejected(self, params, grads, sq_grads):
         opt = ademamix(lr=1e-3)
         state = opt.init(params)
-        with pytest.raises(ValueError, match="exactly one"):
+        with pytest.raises(TypeError, match="noisy_squared_grads"):
             opt.update(
                 grads,
                 state,
                 params=params,
-                noise_stddev=0.5,
                 noisy_squared_grads=sq_grads,
             )
 

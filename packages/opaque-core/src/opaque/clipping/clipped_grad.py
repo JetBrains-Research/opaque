@@ -9,6 +9,7 @@ from typing import Any
 import torch
 from torch.func import grad_and_value
 
+from opaque.bounded import bounded
 from opaque.clipping._helpers import (
     batch_size_from_args,
     normalize_fun_to_return_aux,
@@ -25,8 +26,8 @@ class ClippedGradAux:
     """Diagnostic outputs from clipped_grad.
 
     All fields are diagnostic — they reflect pre-noise, pre-aggregation
-    values and must not be fed back into private computation.  Use
-    ``ClipState.sensitivity`` for noise calibration.
+    values and must not be fed back into private computation.  Use the
+    returned ``BoundedPytree.bound`` metadata for noise calibration.
 
     Fields:
         loss_values: Per-example loss values before clipping.
@@ -188,9 +189,11 @@ def clipped_grad(
     batch_argnums_tuple = normalize_to_tuple(batch_argnums)
     loss_fn = normalize_fun_to_return_aux(loss_fn, has_aux)
 
+    output_bound = clipping_norm / normalize_by
+
     def _empty_batch_response(args, state):
         """Short-circuit for empty batches: zero grads + empty aux, no vmap."""
-        grads = zero_grads_like(args, argnums_tuple)
+        grads = bounded(zero_grads_like(args, argnums_tuple), bound=output_bound)
         if return_aux or _force_grad_norms:
             empty = torch.empty(0)
             grad_aux = ClippedGradAux(

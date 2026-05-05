@@ -14,9 +14,15 @@ import pytest
 import torch
 from torch.func import grad
 
+from opaque.bounded import BoundedPytree
 from opaque.clipping.clipped_fun import clipped_fun
 from opaque.clipping.pytree import clip_pytree
 from opaque.core.pytree import global_norm
+
+
+def _unwrap_bounded(value):
+    assert isinstance(value, BoundedPytree)
+    return value.pytree
 
 
 # ----------------------------------------------------------------------------
@@ -140,6 +146,7 @@ def test_clipped_fun_output_dtype_default_matches_input():
     params = torch.tensor([1.0, 2.0], dtype=torch.bfloat16)
     x = torch.randn(4, 2, dtype=torch.bfloat16)
     result, _ = clipped_fn(params, x, state=state)
+    result = _unwrap_bounded(result)
     assert result.dtype == torch.bfloat16
 
 
@@ -160,6 +167,7 @@ def test_clipped_fun_output_dtype_overridable():
     params = torch.tensor([1.0, 2.0], dtype=torch.bfloat16)
     x = torch.randn(4, 2, dtype=torch.bfloat16)
     result, _ = clipped_fn(params, x, state=state)
+    result = _unwrap_bounded(result)
     assert result.dtype == torch.float32
 
 
@@ -181,6 +189,7 @@ def test_clipped_fun_compute_dtype_independent_of_output():
     params = torch.tensor([1.0, 2.0], dtype=torch.bfloat16)
     x = torch.randn(4, 2, dtype=torch.bfloat16)
     result, _ = clipped_fn(params, x, state=state)
+    result = _unwrap_bounded(result)
     assert result.dtype == torch.bfloat16
 
 
@@ -202,6 +211,7 @@ def test_clipped_fun_microbatch_honors_compute_dtype():
     params = torch.tensor([1.0, 2.0], dtype=torch.bfloat16)
     x = torch.randn(6, 2, dtype=torch.bfloat16)
     result, _ = clipped_fn(params, x, state=state)
+    result = _unwrap_bounded(result)
     # default dtype=None → output stays bf16; the fp32 compute happens internally
     assert result.dtype == torch.bfloat16
 
@@ -224,4 +234,5 @@ def test_clipped_fun_smoke_compute_dtype_variants(compute_dtype):
     params = torch.tensor([1.0, 2.0])
     x = torch.randn(4, 2)
     result, _ = clipped_fn(params, x, state=state)
+    result = _unwrap_bounded(result)
     assert torch.isfinite(result).all()

@@ -108,7 +108,7 @@ from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.sensitivity,
+  noise_multiplier=noise_multiplier,
     key=key(42),
 )
 
@@ -179,7 +179,7 @@ import opaque.accounting as acc
 
 # Noise injection: bounded support
 noise_fn, noise_state = truncated_gaussian_noise(
-    stddev=noise_multiplier * sensitivity, radius=3.0, key=key(42),
+  noise_multiplier=noise_multiplier, radius=3.0, key=key(42),
 )
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 

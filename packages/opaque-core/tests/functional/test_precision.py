@@ -65,14 +65,14 @@ def _full_step(
     )
     grads, _ = grad_fn(params, x, y, state=clip_state)
 
-    noise_fn, ns = gaussian_noise(stddev=noise_stddev, key=key(42))
+    noise_fn, ns = gaussian_noise(noise_multiplier=noise_stddev, key=key(42))
     noisy, _ = noise_fn(grads, ns)
 
-    optimizer = adamw(lr=1e-2, noise_stddev=noise_stddev)
+    optimizer = adamw(lr=1e-2)
     opt_state = optimizer.init(params)
     updates, _ = optimizer.update(noisy, opt_state, params=params)
     new_params = torchopt.apply_updates(params, updates, inplace=False)
-    return grads, noisy, new_params
+    return grads.pytree, noisy.pytree, new_params
 
 
 # ----------------------------------------------------------------------------
@@ -169,12 +169,12 @@ def _step_simple(model: nn.Module, x: torch.Tensor, y: torch.Tensor):
     )
     grads, _ = grad_fn(params, x, y, state=clip_state)
 
-    noise_fn, ns = gaussian_noise(stddev=0.0, key=key(42))
+    noise_fn, ns = gaussian_noise(noise_multiplier=0.0, key=key(42))
     noisy, _ = noise_fn(grads, ns)
 
     optimizer = torchopt.adamw(lr=1e-2)
     opt_state = optimizer.init(params)
-    updates, _ = optimizer.update(noisy, opt_state, params=params)
+    updates, _ = optimizer.update(noisy.pytree, opt_state, params=params)
     new_params = torchopt.apply_updates(params, updates, inplace=False)
     return grads, new_params
 
@@ -353,12 +353,12 @@ def test_fp16_autocast_full_pipeline_with_optimizer():
     )
     grads, _ = grad_fn(params, x, y, state=clip_state)
 
-    noise_fn, ns = gaussian_noise(stddev=0.5, key=key(42))
+    noise_fn, ns = gaussian_noise(noise_multiplier=0.5, key=key(42))
     noisy, _ = noise_fn(grads, ns)
 
     optimizer = torchopt.adamw(lr=1e-2)
     opt_state = optimizer.init(params)
-    updates, _ = optimizer.update(noisy, opt_state, params=params)
+    updates, _ = optimizer.update(noisy.pytree, opt_state, params=params)
     new_params = torchopt.apply_updates(params, updates, inplace=False)
 
     for p in new_params:

@@ -164,7 +164,7 @@ def make_functional(
         >>> grad_fn, clip_state = clipped_grad(
         ...     loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0
         ... )
-        >>> noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
+        >>> noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
         >>> optimizer = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=1e-3)
         >>>
         >>> for x_batch, y_batch in dataloader:

@@ -4,13 +4,19 @@ import pytest
 import torch
 
 import opaque.accounting as acc
+from opaque.bounded import NoisyPytree, bounded
 from opaque.dpftrl.noise.lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
 from opaque.dpftrl.noise import mf_noise
 from opaque.random import key
 
 
 def _make_noise(template, n_steps=100, lambda_=0.9, normalized=True, seed=42):
-    """Helper: create lambda-CGD noise via the strategy + mf_noise API."""
+    """Helper: create lambda-CGD noise via the strategy + mf_noise API.
+
+    Uses ``noise_multiplier=1.0`` so realized stddev equals each call's
+    ``BoundedPytree.bound``; tests pass ``bound=1.0`` to recover the
+    historical ``stddev=1.0`` semantics.
+    """
     strategy = lambda_cgd_strategy(
         lambda_,
         n_steps=n_steps,
@@ -18,7 +24,14 @@ def _make_noise(template, n_steps=100, lambda_=0.9, normalized=True, seed=42):
         max_participations=1,
         normalized=normalized,
     )
-    return mf_noise(template, strategy, stddev=1.0, key=key(seed))
+    return mf_noise(template, strategy, noise_multiplier=1.0, key=key(seed))
+
+
+def _call(noise_fn, grad_pytree, state, *, bound=1.0):
+    """Wrap ``grad_pytree`` as bounded, run noise, return (noisy_pytree, state)."""
+    noisy_out, new_state = noise_fn(bounded(grad_pytree, bound=bound), state)
+    assert isinstance(noisy_out, NoisyPytree)
+    return noisy_out.pytree, new_state
 
 
 class TestLambdaCgdNoise:
@@ -29,7 +42,7 @@ class TestLambdaCgdNoise:
         """Noise function returns correctly shaped output."""
         template = self._make_template()
         noise_fn, state = _make_noise(template)
-        noisy, new_state = noise_fn({"w": torch.zeros(10)}, state)
+        noisy, new_state = _call(noise_fn, {"w": torch.zeros(10)}, state)
         assert noisy["w"].shape == (10,)
         assert new_state._step_counter == 1
 
@@ -39,8 +52,8 @@ class TestLambdaCgdNoise:
         results = []
         for _ in range(2):
             noise_fn, state = _make_noise(template)
-            noisy, state = noise_fn({"w": torch.zeros(10)}, state)
-            noisy2, state = noise_fn({"w": torch.zeros(10)}, state)
+            noisy, state = _call(noise_fn, {"w": torch.zeros(10)}, state)
+            noisy2, state = _call(noise_fn, {"w": torch.zeros(10)}, state)
             results.append(torch.cat([noisy["w"], noisy2["w"]]))
         torch.testing.assert_close(results[0], results[1])
 
@@ -49,8 +62,8 @@ class TestLambdaCgdNoise:
         template = self._make_template()
         noise_fn1, state1 = _make_noise(template, seed=1)
         noise_fn2, state2 = _make_noise(template, seed=2)
-        noisy1, _ = noise_fn1({"w": torch.zeros(10)}, state1)
-        noisy2, _ = noise_fn2({"w": torch.zeros(10)}, state2)
+        noisy1, _ = _call(noise_fn1, {"w": torch.zeros(10)}, state1)
+        noisy2, _ = _call(noise_fn2, {"w": torch.zeros(10)}, state2)
         assert not torch.allclose(noisy1["w"], noisy2["w"])
 
     def test_lambda_zero_is_independent(self):
@@ -58,8 +71,8 @@ class TestLambdaCgdNoise:
         template = self._make_template()
         noise_fn, state = _make_noise(template, lambda_=0.0)
 
-        noisy0, state = noise_fn({"w": torch.zeros(10)}, state)
-        noisy1, state = noise_fn({"w": torch.zeros(10)}, state)
+        noisy0, state = _call(noise_fn, {"w": torch.zeros(10)}, state)
+        noisy1, state = _call(noise_fn, {"w": torch.zeros(10)}, state)
 
         assert noisy0["w"].std().item() > 0.1
         assert noisy1["w"].std().item() > 0.1
@@ -71,8 +84,8 @@ class TestLambdaCgdNoise:
         noise_fn_corr, state_corr = _make_noise(template, lambda_=0.9, normalized=False)
         noise_fn_ind, state_ind = _make_noise(template, lambda_=0.0, normalized=False)
 
-        noisy_corr, _ = noise_fn_corr({"w": torch.zeros(10)}, state_corr)
-        noisy_ind, _ = noise_fn_ind({"w": torch.zeros(10)}, state_ind)
+        noisy_corr, _ = _call(noise_fn_corr, {"w": torch.zeros(10)}, state_corr)
+        noisy_ind, _ = _call(noise_fn_ind, {"w": torch.zeros(10)}, state_ind)
 
         torch.testing.assert_close(noisy_corr["w"], noisy_ind["w"])
 
@@ -83,11 +96,11 @@ class TestLambdaCgdNoise:
         noise_fn_corr, state_corr = _make_noise(template, lambda_=0.9)
         noise_fn_ind, state_ind = _make_noise(template, lambda_=0.0)
 
-        _, state_corr = noise_fn_corr({"w": torch.zeros(10)}, state_corr)
-        _, state_ind = noise_fn_ind({"w": torch.zeros(10)}, state_ind)
+        _, state_corr = _call(noise_fn_corr, {"w": torch.zeros(10)}, state_corr)
+        _, state_ind = _call(noise_fn_ind, {"w": torch.zeros(10)}, state_ind)
 
-        noisy_corr, _ = noise_fn_corr({"w": torch.zeros(10)}, state_corr)
-        noisy_ind, _ = noise_fn_ind({"w": torch.zeros(10)}, state_ind)
+        noisy_corr, _ = _call(noise_fn_corr, {"w": torch.zeros(10)}, state_corr)
+        noisy_ind, _ = _call(noise_fn_ind, {"w": torch.zeros(10)}, state_ind)
 
         assert not torch.allclose(noisy_corr["w"], noisy_ind["w"])
 
@@ -95,8 +108,10 @@ class TestLambdaCgdNoise:
         """Works with multiple parameter tensors."""
         template = {"w1": torch.zeros(5), "w2": torch.zeros(3, 4)}
         noise_fn, state = _make_noise(template)
-        noisy, new_state = noise_fn(
-            {"w1": torch.zeros(5), "w2": torch.zeros(3, 4)}, state
+        noisy, new_state = _call(
+            noise_fn,
+            {"w1": torch.zeros(5), "w2": torch.zeros(3, 4)},
+            state,
         )
         assert noisy["w1"].shape == (5,)
         assert noisy["w2"].shape == (3, 4)
@@ -106,9 +121,9 @@ class TestLambdaCgdNoise:
         template = self._make_template()
         noise_fn, state = _make_noise(template)
         grad = {"w": torch.ones(10) * 5.0}
-        noisy, _ = noise_fn(grad, state)
+        noisy, _ = _call(noise_fn, grad, state)
         noise_fn2, state2 = _make_noise(template)
-        noise_only, _ = noise_fn2({"w": torch.zeros(10)}, state2)
+        noise_only, _ = _call(noise_fn2, {"w": torch.zeros(10)}, state2)
         torch.testing.assert_close(noisy["w"] - 5.0, noise_only["w"])
 
     def test_step_counter_increments(self):
@@ -116,9 +131,9 @@ class TestLambdaCgdNoise:
         template = self._make_template()
         noise_fn, state = _make_noise(template)
         assert state._step_counter == 0
-        _, state = noise_fn({"w": torch.zeros(10)}, state)
+        _, state = _call(noise_fn, {"w": torch.zeros(10)}, state)
         assert state._step_counter == 1
-        _, state = noise_fn({"w": torch.zeros(10)}, state)
+        _, state = _call(noise_fn, {"w": torch.zeros(10)}, state)
         assert state._step_counter == 2
 
     def test_rejects_invalid_lambda(self):
@@ -135,15 +150,15 @@ class TestLambdaCgdNoise:
         noise_fn_ind, state_ind = _make_noise(
             template, n_steps=100, lambda_=0.0, normalized=False
         )
-        z0, state_ind = noise_fn_ind({"w": torch.zeros(20)}, state_ind)
-        z1, _ = noise_fn_ind({"w": torch.zeros(20)}, state_ind)
+        z0, state_ind = _call(noise_fn_ind, {"w": torch.zeros(20)}, state_ind)
+        z1, _ = _call(noise_fn_ind, {"w": torch.zeros(20)}, state_ind)
 
         # Run with lambda>0, normalized=False: step 1 should be z_1 - lambda*z_0
         noise_fn_corr, state_corr = _make_noise(
             template, n_steps=100, lambda_=0.5, normalized=False
         )
-        _, state_corr = noise_fn_corr({"w": torch.zeros(20)}, state_corr)
-        step1_corr, _ = noise_fn_corr({"w": torch.zeros(20)}, state_corr)
+        _, state_corr = _call(noise_fn_corr, {"w": torch.zeros(20)}, state_corr)
+        step1_corr, _ = _call(noise_fn_corr, {"w": torch.zeros(20)}, state_corr)
 
         expected = z1["w"] - 0.5 * z0["w"]
         torch.testing.assert_close(step1_corr["w"], expected, atol=1e-6, rtol=1e-6)

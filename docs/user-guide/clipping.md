@@ -46,8 +46,9 @@ grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 3. Each per-example gradient is clipped to L2 norm at most `clipping_norm`.
 4. The clipped gradients are summed across the batch.
 
-The returned `clip_state` is a `FixedClipState` containing the clip norm
-used to calibrate noise.
+The returned gradients are a `BoundedPytree`. Its `.pytree` holds the clipped
+gradient sum, and its `.bound` holds the per-step sensitivity used to calibrate
+noise.
 
 ### Parameters
 
@@ -59,7 +60,7 @@ used to calibrate noise.
 | `clipping_norm` | `float` | required | Maximum L2 norm for per-example gradients. |
 | `batch_argnums` | `int \| tuple[int, ...]` | `1` | Which arguments have a batch dimension. |
 | `microbatch_size` | `int \| None` | `None` | Process batch in chunks to reduce memory. |
-| `normalize_by` | `float` | `1.0` | Divide the clipped sum and sensitivity by this constant. Set to expected batch size to get averaged gradients with sensitivity = `clipping_norm / batch_size`. |
+| `normalize_by` | `float` | `1.0` | Divide the clipped sum and output bound by this constant. Set to expected batch size to get averaged gradients with bound = `clipping_norm / batch_size`. |
 | `pre_clipping_transform` | `Callable` | identity | Transform applied to each per-example gradient before clipping. |
 | `dtype` | `torch.dtype \| None` | `None` | Accumulation dtype (e.g., float32 for float16 inputs). |
 | `return_aux` | `bool` | `False` | Return per-example diagnostics. |
@@ -77,10 +78,9 @@ for batch in dataloader:
     # clip_state is immutable; the returned value is the same object
 ```
 
-With fixed clipping, the state never changes -- `FixedClipState` is immutable
-and the same instance is returned on every call. The state-passing convention
-exists for API consistency with `adaptive_clipped_grad`, where the state does
-change.
+With fixed clipping, `FixedClipState` is an immutable marker and the same
+instance is returned on every call. The state-passing convention exists for API
+consistency with `adaptive_clipped_grad`, where the internal state does change.
 
 ### Sensitivity
 
@@ -88,12 +88,11 @@ The sensitivity is the maximum change in the clipped gradient sum when one
 example is added, removed, or replaced. Noise is calibrated to this value.
 
 ```python
-sensitivity = clip_state.sensitivity
-# With clipping_norm=1.0, normalize_by=32: sensitivity = 1.0 / 32
+grads, clip_state = grad_fn(params, batch, state=clip_state)
+# With clipping_norm=1.0, normalize_by=32: grads.bound = 1.0 / 32
 
-noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * sensitivity, key=key(42),
-)
+noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
+noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
 ### Diagnostics
@@ -187,7 +186,7 @@ grad_fn, clip_state = adaptive_clipped_grad(
 )
 
 grads, clip_state = grad_fn(params, batch, state=clip_state)
-# clip_state.clipping_norm has been updated
+# the returned state carries the next threshold internally
 ```
 
 ### How adaptive clipping works
@@ -209,13 +208,14 @@ where eta is the `learning_rate` parameter (default 0.2).
 ### State changes
 
 Unlike `clipped_grad`, the state from `adaptive_clipped_grad` **does change**
-on each call. The returned `AdaptiveClipState` contains the updated clip norm
-and step counter. Always use the returned state for the next call.
+on each call. `AdaptiveClipState` keeps the next threshold and counters as
+internal execution state. Always use the returned state for the next call; use
+`grads.bound` when you need the current DP bound.
 
 ```python
 for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
-    # clip_state.clipping_norm updates each step
+    current_bound = grads.bound
 ```
 
 ### Privacy accounting for adaptive clipping
@@ -252,7 +252,7 @@ grads = dist_utils.sum_gradients(grads)
 
 `sync()` dispatches to `sync_adaptive_clip_state` internally, which aggregates
 counts across ranks, recomputes the global clipping rate,
-and updates `next_clipping_norm` to be identical on every device.
+and updates the internal next threshold to be identical on every device.
 
 ## Loss function requirements
 
@@ -355,27 +355,27 @@ The L2 sensitivity of the full clipped query is a **scalar**:
 
 $$\Delta_2 = \frac{\lVert C \rVert_2}{n} = \frac{\sqrt{\sum_i C_i^2}}{n}$$
 
-This is always available via `clip_state.sensitivity`:
+This is carried by the clipped output:
 
 ```python
-stddev = noise_multiplier * clip_state.sensitivity
-noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
+noisy_grads, noise_state = noise_fn(grads, noise_state)
+stddev = noisy_grads.noise_stddev
 ```
 
 Accounting is simply `gaussian(nm)` — no composition penalty, regardless of
-the number of groups. The isotropic noise (same σ everywhere) is sufficient
-for correct privacy.
+the number of groups.
 
 ### Per-group noise allocation
 
-For an MSE-optimal allocation that puts less noise on small-norm groups, use
-`per_group_noise_stddev`:
+For per-group bounds, `gaussian_noise` uses an MSE-optimal allocation that puts
+less noise on small-norm groups. Use `per_group_noise_stddev` when you need to
+inspect or pass that allocation to a mechanism that accepts stddev directly:
 
 ```python
 from opaque.dpsgd.noise import per_group_noise_stddev
 
-stddev = per_group_noise_stddev(clip_state, noise_multiplier)
-noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+stddev = per_group_noise_stddev(grads.bound, noise_multiplier)
 ```
 
 This sets $\sigma_i \propto \sqrt{C_i}$ instead of a uniform σ. Privacy
@@ -454,18 +454,18 @@ from the DP-SGD hyperparameter search.
 
 ### State and privacy accounting
 
-The returned `AutoClipState` is fixed (no adaptation) and carries
-`clipping_norm=R`, `normalize_by`, `gamma`, and the standard
-`sensitivity` property. Privacy accounting is plain Gaussian DP-SGD —
-AUTO-S introduces no extra data-dependent query:
+The returned `AutoClipState` is a fixed marker. `R`, `gamma`, and
+`normalize_by` are captured by the clipping closure, while `grads.bound`
+carries the sensitivity. Privacy accounting is plain Gaussian DP-SGD — AUTO-S
+introduces no extra data-dependent query:
 
 ```python
 import opaque.accounting as acc
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
-stddev = noise_multiplier * clip_state.sensitivity
-noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
+noisy_grads, noise_state = noise_fn(grads, noise_state)
 
 step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
 training = step * num_steps
@@ -486,7 +486,7 @@ grad_fn, clip_state = auto_clipped_grad(
     loss_fn, argnums=0, batch_argnums=(1, 2),
     R=pg, normalize_by=batch_size,
 )
-# clip_state.sensitivity = sqrt(sum R_k^2) / normalize_by
+# grads.bound.effective = sqrt(sum R_k^2) / normalize_by
 ```
 
 ### CLI usage in `train_causal_lm.py`

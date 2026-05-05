@@ -6,15 +6,13 @@ for Lion, …).  The composer decides where weight decay attaches (decoupled
 post-moment vs. L2 pre-moment), whether to clip the update by its RMS
 (StableAdamW), and applies the (negative) learning rate at the end.
 
-The composer does **not** know about DP-specific concerns (``noise_stddev``,
-``noisy_squared_grads``); those live inside the moment scaler that the caller
-passes in.
+The composer understands the public bounded/noisy metadata wrappers and routes
+their DP metadata into the moment scaler when the scaler accepts it.
 """
 
 from __future__ import annotations
 
 import inspect
-import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -30,6 +28,7 @@ except ImportError as exc:
 
 import torch
 
+from opaque.bounded import BoundedPytree, NoisyPytree
 from opaque.core.noise import SecondMomentNoiseOutput
 from opaque.core.pytree import tree_map
 
@@ -55,7 +54,6 @@ def _rms_clip_transform(threshold: float) -> GradientTransformation:
         *,
         params: Any = None,  # noqa: ARG001
         inplace: bool = False,  # noqa: ARG001
-        **kwargs: Any,  # noqa: ARG001
     ) -> tuple[Any, tuple]:
         # Global RMS across all leaves (param-count-weighted mean of squares).
         sq_sum = torch.zeros((), dtype=torch.float64)
@@ -120,38 +118,55 @@ def make_optimizer_chain(
     The clip applies only to the moment-scaled portion of the update,
     not to the weight-decay term.
 
-    The returned ``GradientTransformation`` accepts ``**kwargs`` on
-    ``update`` and forwards them to the moment scaler — so DP-aware
-    moment scalers can read ``noise_stddev`` / ``noisy_squared_grads``
-    from the caller without the chain knowing about them.
+    The returned ``GradientTransformation`` extracts DP metadata from
+    ``NoisyPytree`` / ``SecondMomentNoiseOutput`` updates and threads
+    it into the moment scaler internally — there is no public per-step
+    metadata kwarg.
     """
     moment_update_params = inspect.signature(moment_scaler.update).parameters
+    accepts_noise_stddev = "noise_stddev" in moment_update_params or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in moment_update_params.values()
+    )
     accepts_second_moment = "noisy_squared_grads" in moment_update_params or any(
         p.kind is inspect.Parameter.VAR_KEYWORD for p in moment_update_params.values()
     )
 
-    def _route_second_moment_output(
-        updates: Any,
-        kwargs: dict[str, Any],
-    ) -> tuple[Any, dict[str, Any]]:
+    def _route_noisy_pytree(updates: Any) -> tuple[Any, dict[str, Any]]:
+        if isinstance(updates, NoisyPytree):
+            if not accepts_noise_stddev:
+                return updates.pytree, {}
+            return updates.pytree, {"noise_stddev": updates.noise_stddev}
+        if isinstance(updates, BoundedPytree):
+            raise TypeError(
+                "optimizer.update() received BoundedPytree updates that have not "
+                "passed through a noise mechanism. Pass NoisyPytree outputs from "
+                "a DP mechanism, or unwrap `.pytree` explicitly for non-private use."
+            )
+        return updates, {}
+
+    def _unwrap_second_moment_value(value: Any, *, name: str) -> Any:
+        if isinstance(value, NoisyPytree):
+            return value.pytree
+        if isinstance(value, BoundedPytree):
+            raise TypeError(
+                f"SecondMomentNoiseOutput.{name} is a BoundedPytree that has not "
+                "passed through a noise mechanism."
+            )
+        return value
+
+    def _route_second_moment_output(updates: Any) -> tuple[Any, dict[str, Any]]:
         if not isinstance(updates, SecondMomentNoiseOutput):
-            return updates, kwargs
-        if "noisy_squared_grads" in kwargs:
-            raise ValueError(
-                "optimizer.update() received SecondMomentNoiseOutput and an explicit "
-                "noisy_squared_grads kwarg; pass only one second-moment source."
-            )
+            return _route_noisy_pytree(updates)
         if not accepts_second_moment:
-            warnings.warn(
-                "This optimizer does not consume private second-moment outputs; "
-                "using noisy_grads and ignoring noisy_squared_grads.",
-                RuntimeWarning,
-                stacklevel=3,
-            )
-            return updates.noisy_grads, kwargs
-        routed = dict(kwargs)
-        routed["noisy_squared_grads"] = updates.noisy_squared_grads
-        return updates.noisy_grads, routed
+            return _route_noisy_pytree(updates.noisy_grads)
+        return (
+            _unwrap_second_moment_value(updates.noisy_grads, name="noisy_grads"),
+            {
+                "noisy_squared_grads": _unwrap_second_moment_value(
+                    updates.noisy_squared_grads, name="noisy_squared_grads"
+                )
+            },
+        )
 
     wd = torchopt.transform.add_decayed_weights(weight_decay=weight_decay)
     neg_lr = scale_by_neg_lr(lr)
@@ -177,12 +192,11 @@ def make_optimizer_chain(
             *,
             params: Any = None,
             inplace: bool = False,
-            **kwargs: Any,
         ) -> tuple[Any, tuple]:
             s_mom, s_clip, s_wd, s_lr = state
-            updates, kwargs = _route_second_moment_output(updates, kwargs)
+            updates, routed = _route_second_moment_output(updates)
             updates, s_mom = moment_scaler.update(
-                updates, s_mom, params=params, inplace=inplace, **kwargs
+                updates, s_mom, params=params, inplace=inplace, **routed
             )
             if clip is not None:
                 updates, s_clip = clip.update(
@@ -208,13 +222,12 @@ def make_optimizer_chain(
             *,
             params: Any = None,
             inplace: bool = False,
-            **kwargs: Any,
         ) -> tuple[Any, tuple]:
             s_wd, s_mom, s_clip, s_lr = state
-            updates, kwargs = _route_second_moment_output(updates, kwargs)
+            updates, routed = _route_second_moment_output(updates)
             updates, s_wd = wd.update(updates, s_wd, params=params, inplace=inplace)
             updates, s_mom = moment_scaler.update(
-                updates, s_mom, params=params, inplace=inplace, **kwargs
+                updates, s_mom, params=params, inplace=inplace, **routed
             )
             if clip is not None:
                 updates, s_clip = clip.update(

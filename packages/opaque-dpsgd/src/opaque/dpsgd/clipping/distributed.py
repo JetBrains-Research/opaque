@@ -50,13 +50,11 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
         for gname, local_count in state._num_clipped.items():
             global_num_clipped[gname] = reduce_scalar(local_count, op="sum")
 
-        reduce_scalar(float(state.normalize_by), op="mean")  # validation
-
         if global_batch_size == 0:
             return replace(state, _batch_size=global_batch_size)
 
-        current_pg = state.clipping_norm
-        step_for_noise = max(0, state.step - 1)
+        current_pg = state._current_clipping_norm
+        step_for_noise = max(0, state._step - 1)
         new_values: dict[str, float] = {}
         for i, gname in enumerate(sorted(current_pg.values.keys())):
             global_rate = global_num_clipped[gname] / max(1.0, global_batch_size)
@@ -79,7 +77,7 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
         new_clipping_norm = PerGroup(groups=current_pg.groups, values=new_values)
         return replace(
             state,
-            next_clipping_norm=new_clipping_norm,
+            _next_clipping_norm=new_clipping_norm,
             _num_clipped=global_num_clipped,
             _batch_size=global_batch_size,
         )
@@ -89,7 +87,6 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
         field_ops={
             "_num_clipped": "sum",
             "_batch_size": "sum",
-            "normalize_by": "assert_equal",
         },
     )
 
@@ -98,7 +95,7 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
 
     global_rate = synced._num_clipped / max(1.0, synced._batch_size)
 
-    step_for_noise = max(0, synced.step - 1)
+    step_for_noise = max(0, synced._step - 1)
     noisy_global_rate = _sample_noisy_clipping_rate(
         global_rate,
         key=synced._rng_key,
@@ -107,7 +104,7 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
     )
 
     new_clipping_norm = _adaptive_clipping_norm_update(
-        base_clipping_norm=synced.clipping_norm,
+        base_clipping_norm=synced._current_clipping_norm,
         noisy_clipping_rate=noisy_global_rate,
         target_quantile=synced._target_quantile,
         learning_rate=synced._learning_rate,
@@ -117,7 +114,7 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
 
     return replace(
         synced,
-        next_clipping_norm=float(new_clipping_norm),
+        _next_clipping_norm=float(new_clipping_norm),
     )
 
 

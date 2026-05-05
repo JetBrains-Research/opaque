@@ -121,10 +121,11 @@ from opaque.random import key
 
 # Single participation
 strategy = blt_strategy(n_steps=10000, min_sep=1, max_buffers=10)
+clip_bound = clipping_norm / batch_size
 noise_fn, noise_state = mf_noise(
     grad_template=params,
     strategy=strategy,
-    stddev=noise_multiplier * clip_state.sensitivity,
+  stddev=noise_multiplier * clip_bound,
     key=key(42),
 )
 

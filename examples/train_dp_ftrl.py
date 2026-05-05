@@ -123,6 +123,7 @@ import torchopt
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 from opaque.clipping import clipped_grad
+from opaque.core.noise import SecondMomentNoiseOutput
 from opaque.dpftrl.noise import (
     DEFAULT_SECOND_MOMENT_OVERHEAD,
     band_mf_strategy,
@@ -328,7 +329,7 @@ def parse_args():
         default="sgd",
         help=(
             "Optimizer.  ``sgd`` is the canonical DP-FTRL baseline "
-            "(torchopt.sgd, Polyak momentum).  ``adamw`` and ``ademamix`` "
+            "(opaque.optimizers.sgd, Polyak momentum).  ``adamw`` and ``ademamix`` "
             "are Adam-family adaptive optimizers; pair with ``--second-moment`` to "
             "activate a private squared-gradient stream.  ``lion`` "
             "is sign-of-momentum; works under MF noise but has no v so "
@@ -368,7 +369,7 @@ def parse_args():
         "--weight-decay",
         type=float,
         default=0.0,
-        help="Optimizer weight decay: torchopt.sgd L2-style coefficient, or "
+        help="Optimizer weight decay: opaque.optimizers.sgd L2-style coefficient, or "
         "opaque.optimizers.adamw decoupled WD (default 0).",
     )
     train_g.add_argument(
@@ -920,6 +921,7 @@ def main():
         microbatch_size=args.microbatch_size,
         return_aux=True,
     )
+    zeta = args.clipping_norm / args.batch_size
 
     # --- Total steps & LR schedule ---
     total_steps = args.num_epochs * expected_steps_per_epoch
@@ -953,7 +955,7 @@ def main():
     #     momentum.
     #   ``use_second_moment`` (= ``args.second_moment``): switch from
     #     single-stream MF noise to private first+second moment noise.
-    #     Requires the optimizer to consume ``noisy_squared_grads``.
+    #     Requires the optimizer to consume ``SecondMomentNoiseOutput``.
     is_adam_family = args.optimizer in ("adamw", "ademamix", "lion")
     use_second_moment = args.second_moment
     second_moment_noise_arg = (
@@ -968,7 +970,7 @@ def main():
     if use_second_moment and args.optimizer not in ("adamw", "ademamix"):
         raise ValueError(
             f"--second-moment requires an Adam-family optimizer with a second moment "
-            f"to consume the paired ``noisy_squared_grads`` stream "
+            f"to consume the paired ``SecondMomentNoiseOutput`` stream "
             f"(``adamw`` or ``ademamix``); got --optimizer {args.optimizer}.  "
             f"Run without --second-moment, or switch optimizer."
         )
@@ -1038,7 +1040,7 @@ def main():
             return mechanism
         return acc.second_moment(
             mechanism,
-            sensitivity=clip_state.sensitivity,
+            sensitivity=zeta,
             max_column_norm=strategy._max_column_norm,
             first_moment_overhead=second_moment_accounting_overhead,
         )
@@ -1154,8 +1156,7 @@ def main():
         )
 
     # --- Create MF noise function + optimizer ---
-    zeta = clip_state.sensitivity
-    noise_stddev = noise_multiplier * zeta
+    base_noise_stddev = noise_multiplier * zeta
 
     if args.mechanism == "none":
         print("\nNon-DP mode: using identity noise with stddev=0...")
@@ -1177,7 +1178,6 @@ def main():
             trainable_params,
             strategy,
             noise_multiplier=noise_multiplier,
-            sensitivity=zeta,
             key=key(args.seed),
             second_moment=second_moment_noise_arg,
             second_moment_strategy=second_strategy,
@@ -1186,14 +1186,14 @@ def main():
         noise_fn, noise_state = mf_noise(
             trainable_params,
             identity_strategy(),
-            stddev=noise_stddev,
+            noise_multiplier=noise_multiplier,
             key=key(args.seed),
         )
     else:
         noise_fn, noise_state = mf_noise(
             trainable_params,
             strategy,
-            stddev=noise_stddev,
+            noise_multiplier=noise_multiplier,
             key=key(args.seed),
         )
     print(f"  Noise function created in {time.time() - t0:.1f}s")
@@ -1201,7 +1201,9 @@ def main():
     lr_callable = lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item()  # noqa: E731
 
     if args.optimizer == "sgd":
-        optimizer = torchopt.sgd(
+        from opaque.optimizers import sgd
+
+        optimizer = sgd(
             lr=lr_callable,
             momentum=args.momentum,
             weight_decay=args.weight_decay,
@@ -1210,7 +1212,7 @@ def main():
         from opaque.optimizers import adamw
 
         # ``--second-moment`` drives the noise side; the same optimizer
-        # consumes ``noisy_squared_grads`` when the noise output carries it.
+        # consumes ``SecondMomentNoiseOutput`` when the noise output carries it.
         optimizer = adamw(
             lr=lr_callable,
             betas=(args.beta1, args.beta2),
@@ -1315,7 +1317,7 @@ def main():
         print(f"  Noise stddev (1st moment): {noise_multiplier * joint_sens:.6f}")
     else:
         print(
-            f"  Noise stddev: {noise_stddev:.6f} (= {noise_multiplier:.4f} × {zeta:.6f})"
+            f"  Base noise stddev: {base_noise_stddev:.6f} (= {noise_multiplier:.4f} × {zeta:.6f})"
         )
     if identity_sigma is not None:
         ratio = noise_multiplier / identity_sigma
@@ -1396,6 +1398,10 @@ def main():
                     )
 
                 noisy_grads, noise_state = noise_fn(grads, noise_state)
+                if isinstance(noisy_grads, SecondMomentNoiseOutput):
+                    step_noise_stddev = noisy_grads.noisy_grads.noise_stddev
+                else:
+                    step_noise_stddev = noisy_grads.noise_stddev
                 updates, opt_state = optimizer.update(
                     noisy_grads,
                     opt_state,
@@ -1429,7 +1435,7 @@ def main():
                             "train/clipping_norm": args.clipping_norm,
                             "train/clip_rate": clip_rate,
                             "train/grad_norm_mean": mean_grad_norm,
-                            "train/noise_std": noise_stddev,
+                            "train/noise_std": step_noise_stddev,
                             "train/lr": lr_t,
                             "train/momentum": args.momentum,
                             "perf/step_time_sec": perf["step_time_sec"],

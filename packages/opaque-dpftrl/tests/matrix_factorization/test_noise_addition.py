@@ -17,29 +17,25 @@ class TestDenseMatrixFactorizationNoise:
         """Identity noising matrix = standard Gaussian."""
         noising = torch.eye(5, dtype=torch.float64)
         grad = torch.zeros(10, dtype=torch.float64)
-        noise_fn, state = _matrix_factorization_noise(
-            grad, noising, stddev=1.0, key=key(42)
-        )
-        noisy, state = noise_fn(grad, state)
+        noise_fn, state = _matrix_factorization_noise(grad, noising, key=key(42))
+        noisy, state = noise_fn(grad, state, stddev=1.0)
         assert noisy.shape == grad.shape
 
     def test_stepping(self):
         """State advances through matrix rows."""
         noising = torch.eye(3, dtype=torch.float64) * 2.0
         grad = torch.zeros(5, dtype=torch.float64)
-        noise_fn, state = _matrix_factorization_noise(
-            grad, noising, stddev=1.0, key=key(42)
-        )
+        noise_fn, state = _matrix_factorization_noise(grad, noising, key=key(42))
         assert state._inner_state.item() == 0
-        _, state = noise_fn(grad, state)
+        _, state = noise_fn(grad, state, stddev=1.0)
         assert state._inner_state.item() == 1
-        _, state = noise_fn(grad, state)
+        _, state = noise_fn(grad, state, stddev=1.0)
         assert state._inner_state.item() == 2
 
     def test_invalid_ndim(self):
         grad = torch.zeros(10)
         with pytest.raises(ValueError, match="2D"):
-            _matrix_factorization_noise(grad, torch.ones(5), stddev=1.0, key=key(42))
+            _matrix_factorization_noise(grad, torch.ones(5), key=key(42))
 
 
 class TestStreamingMatrixFactorizationNoise:
@@ -47,29 +43,23 @@ class TestStreamingMatrixFactorizationNoise:
         """Identity StreamingMatrix = standard Gaussian."""
         noising = identity()
         grad = torch.zeros(10, dtype=torch.float32)
-        noise_fn, state = _matrix_factorization_noise(
-            grad, noising, stddev=1.0, key=key(42)
-        )
-        noisy, state = noise_fn(grad, state)
+        noise_fn, state = _matrix_factorization_noise(grad, noising, key=key(42))
+        noisy, state = noise_fn(grad, state, stddev=1.0)
         assert noisy.shape == grad.shape
 
     def test_adds_noise(self):
         """Noise is actually added to gradients."""
         grad = torch.zeros(10, dtype=torch.float32)
-        noise_fn, state = _matrix_factorization_noise(
-            grad, identity(), stddev=1.0, key=key(42)
-        )
-        noisy, _ = noise_fn(grad, state)
+        noise_fn, state = _matrix_factorization_noise(grad, identity(), key=key(42))
+        noisy, _ = noise_fn(grad, state, stddev=1.0)
         assert not torch.allclose(noisy, grad)
 
     def test_stateful(self):
         """Successive calls produce different noise."""
         grad = torch.zeros(10, dtype=torch.float32)
-        noise_fn, state = _matrix_factorization_noise(
-            grad, identity(), stddev=1.0, key=key(42)
-        )
-        noisy1, state = noise_fn(grad, state)
-        noisy2, state = noise_fn(grad, state)
+        noise_fn, state = _matrix_factorization_noise(grad, identity(), key=key(42))
+        noisy1, state = noise_fn(grad, state, stddev=1.0)
+        noisy2, state = noise_fn(grad, state, stddev=1.0)
         assert not torch.allclose(noisy1, noisy2)
 
     def test_noise_scale(self):
@@ -77,17 +67,13 @@ class TestStreamingMatrixFactorizationNoise:
         grad = torch.zeros(1000, dtype=torch.float32)
 
         # Large stddev
-        noise_fn, state = _matrix_factorization_noise(
-            grad, identity(), stddev=100.0, key=key(0)
-        )
-        noisy, _ = noise_fn(grad, state)
+        noise_fn, state = _matrix_factorization_noise(grad, identity(), key=key(0))
+        noisy, _ = noise_fn(grad, state, stddev=100.0)
         large_std = noisy.std().item()
 
         # Small stddev
-        noise_fn, state = _matrix_factorization_noise(
-            grad, identity(), stddev=1.0, key=key(1)
-        )
-        noisy, _ = noise_fn(grad, state)
+        noise_fn, state = _matrix_factorization_noise(grad, identity(), key=key(1))
+        noisy, _ = noise_fn(grad, state, stddev=1.0)
         small_std = noisy.std().item()
 
         assert large_std > small_std * 10
@@ -97,11 +83,9 @@ class TestStreamingMatrixFactorizationNoise:
         coefs = optimal_max_error_strategy_coefs(5)
         noising = inverse_as_streaming_matrix(coefs)
         grad = torch.zeros(10, dtype=torch.float32)
-        noise_fn, state = _matrix_factorization_noise(
-            grad, noising, stddev=1.0, key=key(42)
-        )
+        noise_fn, state = _matrix_factorization_noise(grad, noising, key=key(42))
         for _ in range(5):
-            noisy, state = noise_fn(grad, state)
+            noisy, state = noise_fn(grad, state, stddev=1.0)
             assert noisy.shape == grad.shape
 
     def test_pytree_grads(self):
@@ -111,10 +95,8 @@ class TestStreamingMatrixFactorizationNoise:
             "weight": torch.zeros(5, 3, dtype=torch.float32),
             "bias": torch.zeros(3, dtype=torch.float32),
         }
-        noise_fn, state = _matrix_factorization_noise(
-            grad, noising, stddev=1.0, key=key(42)
-        )
-        noisy, state = noise_fn(grad, state)
+        noise_fn, state = _matrix_factorization_noise(grad, noising, key=key(42))
+        noisy, state = noise_fn(grad, state, stddev=1.0)
         assert isinstance(noisy, dict)
         assert noisy["weight"].shape == (5, 3)
         assert noisy["bias"].shape == (3,)
@@ -123,13 +105,11 @@ class TestStreamingMatrixFactorizationNoise:
         """With prefix sum noising, noise should accumulate."""
         noising = prefix_sum()
         grad = torch.zeros(50, dtype=torch.float64)
-        noise_fn, state = _matrix_factorization_noise(
-            grad, noising, stddev=1.0, key=key(42)
-        )
+        noise_fn, state = _matrix_factorization_noise(grad, noising, key=key(42))
 
         variances = []
         for _ in range(20):
-            noisy, state = noise_fn(grad, state)
+            noisy, state = noise_fn(grad, state, stddev=1.0)
             variances.append(noisy.var().item())
 
         # With prefix sum, variance should increase
@@ -138,7 +118,5 @@ class TestStreamingMatrixFactorizationNoise:
     def test_returns_mf_noise_state(self):
         """_matrix_factorization_noise returns MFNoiseState."""
         grad = torch.zeros(10)
-        noise_fn, state = _matrix_factorization_noise(
-            grad, identity(), stddev=1.0, key=key(42)
-        )
+        noise_fn, state = _matrix_factorization_noise(grad, identity(), key=key(42))
         assert isinstance(state, MFNoiseState)

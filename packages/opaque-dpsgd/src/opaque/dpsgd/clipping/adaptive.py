@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import torch
 
+from opaque.bounded import bounded
 from opaque.clipping._helpers import (
     batch_size_from_args,
     normalize_to_tuple,
@@ -24,8 +25,8 @@ class AdaptiveClippedGradAux(ClippedGradAux):
     """Diagnostic outputs from adaptive_clipped_grad.
 
     All fields are diagnostic — they reflect pre-noise, pre-aggregation
-    values and must not be fed back into private computation.  Use
-    ``ClipState.sensitivity`` for noise calibration.
+    values and must not be fed back into private computation.  Use the
+    returned ``BoundedPytree.bound`` metadata for noise calibration.
 
     Inherits all fields from :class:`ClippedGradAux`.
     """
@@ -38,31 +39,15 @@ class AdaptiveClipState(ClipState):
     This state is passed explicitly to the clipping function and returned
     as part of the output, enabling pure functional composition.
 
-    Public attributes (for monitoring and noise calibration):
-        clipping_norm: Raw clipping threshold used at the current step.
-        normalize_by: Divisor applied to the clipped gradient sum
-            (1.0 = no averaging).  Controls gradient sensitivity:
-            ``sensitivity = clipping_norm / normalize_by``.
-        sensitivity: ``clipping_norm / normalize_by`` (property from
-            :class:`ClipState`).
-        next_clipping_norm: Clipping threshold for the *next* step C_{t+1}.
-        step: Step counter.
-
-    Internal attributes (carry config/counts for distributed sync —
-    do not read directly):
-        _rng_key, _fraction_noise_std, _learning_rate, _target_quantile,
-        _clipping_norm_min, _clipping_norm_max: Config constants replicated so
-        that ``sync_adaptive_clip_state`` can recompute ``next_clipping_norm``
-        from globally aggregated counts.
-        _num_clipped, _batch_size: Raw local counts summed across ranks
-        during distributed aggregation.
+    The fields are internal implementation details. Adaptive clipping must
+    carry the current threshold, next-step threshold, step counter, RNG/config,
+    and local clipping counts so distributed synchronization can aggregate
+    counts and recompute the global next threshold.
     """
 
-    # -- public --
-    clipping_norm: float | PerGroup
-    normalize_by: float
-    next_clipping_norm: float | PerGroup
-    step: int
+    _current_clipping_norm: float | PerGroup
+    _next_clipping_norm: float | PerGroup
+    _step: int
 
     # -- internal (config carried for distributed sync) --
     _rng_key: RngKey
@@ -79,19 +64,17 @@ class AdaptiveClipState(ClipState):
 
     def __post_init__(self):
         """Validate state values."""
-        if isinstance(self.next_clipping_norm, PerGroup):
-            for gname, val in self.next_clipping_norm.values.items():
+        if isinstance(self._next_clipping_norm, PerGroup):
+            for gname, val in self._next_clipping_norm.values.items():
                 if val <= 0:
                     raise ValueError(
                         f"next_clipping_norm must be positive for all groups, "
                         f"got {val} for group '{gname}'"
                     )
-        elif self.next_clipping_norm <= 0:
+        elif self._next_clipping_norm <= 0:
             raise ValueError(
-                f"next_clipping_norm must be positive, got {self.next_clipping_norm}"
+                f"next_clipping_norm must be positive, got {self._next_clipping_norm}"
             )
-        if self.normalize_by <= 0:
-            raise ValueError(f"normalize_by must be positive, got {self.normalize_by}")
         if self._fraction_noise_std <= 0:
             raise ValueError(
                 f"fraction_noise_std must be > 0, got {self._fraction_noise_std}"
@@ -214,7 +197,7 @@ def adaptive_clipped_grad(
         >>> optimizer = torchopt.adamw(lr=1e-3)
         >>> opt_state = optimizer.init(params)
         >>>
-        >>> noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(1))
+        >>> noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(1))
         >>> for batch_x, batch_y in dataloader:
         ...     # Compute clipped gradients - state passed explicitly
         ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
@@ -227,8 +210,8 @@ def adaptive_clipped_grad(
         ...     params = torchopt.apply_updates(params, updates)
         ...
         ...     # Monitor adaptation
-        ...     if clip_state.step % 100 == 0:
-        ...         print(f"Step {clip_state.step}: C={clip_state.clipping_norm:.4f}")
+        ...     # The current DP bound is attached to the clipped output.
+        ...     current_bound = grad.bound
 
     Example with distributed training (DDP with Poisson sampling):
         >>> import torch.distributed as dist
@@ -260,8 +243,7 @@ def adaptive_clipped_grad(
         ...     grad = sum_gradients(grad)
         ...
         ...     # Add noise and update
-        ...     noise_fn, noise_state = gaussian_noise(
-        ...         stddev=clip_state.sensitivity * 1.1, key=key(2))
+        ...     noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(2))
         ...     noisy_grad, noise_state = noise_fn(grad, noise_state)
         ...     # ... optimizer step
 
@@ -303,6 +285,7 @@ def adaptive_clipped_grad(
 
     # Store config in closure (immutable)
     normalize_by = clipped_grad_kwargs.get("normalize_by", 1.0)
+    output_bound = lambda clipping_norm: clipping_norm / normalize_by  # noqa: E731
 
     config = {
         "target_quantile": target_quantile,
@@ -322,10 +305,9 @@ def adaptive_clipped_grad(
     def _empty_batch_state(state: AdaptiveClipState) -> AdaptiveClipState:
         """Build new state for an empty batch: clip_norm preserved, step bumped."""
         return AdaptiveClipState(
-            clipping_norm=state.next_clipping_norm,
-            normalize_by=normalize_by,
-            next_clipping_norm=state.next_clipping_norm,
-            step=state.step + 1,
+            _current_clipping_norm=state._next_clipping_norm,
+            _next_clipping_norm=state._next_clipping_norm,
+            _step=state._step + 1,
             _rng_key=state._rng_key,
             _fraction_noise_std=config["fraction_noise_std"],
             _learning_rate=config["learning_rate"],
@@ -352,8 +334,11 @@ def adaptive_clipped_grad(
         """
         # Empty batch: zero grads, no adaptation, step still incremented
         if batch_size_from_args(args, batch_argnums_tuple) == 0:
-            grads = zero_grads_like(args, argnums_tuple)
             new_state = _empty_batch_state(state)
+            grads = bounded(
+                zero_grads_like(args, argnums_tuple),
+                bound=output_bound(state._next_clipping_norm),
+            )
             if return_aux:
                 empty = torch.empty(0)
                 adaptive_aux = AdaptiveClippedGradAux(
@@ -375,7 +360,7 @@ def adaptive_clipped_grad(
                 loss_fn,
                 argnums=argnums,
                 has_aux=has_aux,
-                clipping_norm=state.next_clipping_norm,
+                clipping_norm=state._next_clipping_norm,
                 return_aux=user_wants_return_aux,
                 _force_grad_norms=not user_wants_return_aux,
                 **clipped_grad_kwargs,
@@ -398,7 +383,7 @@ def adaptive_clipped_grad(
 
         if is_per_group and grad_norms is not None:
             # --- Per-group adaptive path ---
-            current_pg = state.next_clipping_norm
+            current_pg = state._next_clipping_norm
             group_norms = aux.group_norms if aux is not None else None
 
             if group_norms is not None and batch_size > 0:
@@ -412,7 +397,7 @@ def adaptive_clipped_grad(
                     rate = nc / max(1.0, float(batch_size))
 
                     # Independent noise per group: fold in both step and group index
-                    group_key = fold_in(fold_in(state._rng_key, state.step), i)
+                    group_key = fold_in(fold_in(state._rng_key, state._step), i)
                     generator = generator_from_key(group_key)
                     noise = (
                         torch.randn(1, generator=generator).item()
@@ -434,22 +419,22 @@ def adaptive_clipped_grad(
                 )
                 num_clipped = per_group_num_clipped
             else:
-                new_clipping_norm = state.next_clipping_norm
+                new_clipping_norm = state._next_clipping_norm
                 num_clipped = _empty_num_clipped()
         elif grad_norms is not None:
             # --- Scalar adaptive path (original) ---
-            num_clipped = float((grad_norms > state.next_clipping_norm).sum().item())
+            num_clipped = float((grad_norms > state._next_clipping_norm).sum().item())
             clipping_rate = aux.clipping_rate
 
             noisy_clipping_rate = _sample_noisy_clipping_rate(
                 clipping_rate,
                 key=state._rng_key,
-                step=state.step,
+                step=state._step,
                 fraction_noise_std=config["fraction_noise_std"],
             )
 
             new_clipping_norm = _adaptive_clipping_norm_update(
-                base_clipping_norm=state.next_clipping_norm,
+                base_clipping_norm=state._next_clipping_norm,
                 noisy_clipping_rate=noisy_clipping_rate,
                 target_quantile=config["target_quantile"],
                 learning_rate=config["learning_rate"],
@@ -457,14 +442,13 @@ def adaptive_clipped_grad(
                 clipping_norm_max=config["clipping_norm_max"],
             )
         else:
-            new_clipping_norm = state.next_clipping_norm
+            new_clipping_norm = state._next_clipping_norm
             num_clipped = _empty_num_clipped()
 
         new_state = AdaptiveClipState(
-            clipping_norm=state.next_clipping_norm,
-            normalize_by=normalize_by,
-            next_clipping_norm=new_clipping_norm,
-            step=state.step + 1,
+            _current_clipping_norm=state._next_clipping_norm,
+            _next_clipping_norm=new_clipping_norm,
+            _step=state._step + 1,
             _rng_key=state._rng_key,
             _fraction_noise_std=config["fraction_noise_std"],
             _learning_rate=config["learning_rate"],
@@ -493,10 +477,9 @@ def adaptive_clipped_grad(
 
     # Create initial state
     initial_state = AdaptiveClipState(
-        clipping_norm=initial_clipping_norm,
-        normalize_by=normalize_by,
-        next_clipping_norm=initial_clipping_norm,
-        step=0,
+        _current_clipping_norm=initial_clipping_norm,
+        _next_clipping_norm=initial_clipping_norm,
+        _step=0,
         _rng_key=key,
         _fraction_noise_std=fraction_noise_std,
         _learning_rate=learning_rate,

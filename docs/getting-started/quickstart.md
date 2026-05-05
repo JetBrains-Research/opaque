@@ -58,7 +58,7 @@ grad_fn, clip_state = clipped_grad(
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.sensitivity,
+    noise_multiplier=noise_multiplier,
     key=key(42),
 )
 
@@ -69,7 +69,9 @@ step_proc = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
 accountant = Accountant(budget=acc.epsilon_budget(epsilon, delta=delta))
 
 # Training loop
-optimizer = torchopt.sgd(lr=0.01)
+from opaque.optimizers import sgd
+
+optimizer = sgd(lr=0.01)
 opt_state = optimizer.init(params)
 
 for epoch in range(10):

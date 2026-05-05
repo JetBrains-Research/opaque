@@ -16,7 +16,7 @@ details live in [Mechanisms](../mechanisms/index.md).
    - **sensitivity** (and sometimes a **Gram matrix**) for privacy accounting,
    - a streaming representation for efficient noise generation.
 
-2. `mf_noise(grad_template, strategy, stddev=..., key=...)` returns `(noise_fn, state)` that injects noise each step.
+2. `mf_noise(grad_template, strategy, noise_multiplier=..., key=...)` returns `(noise_fn, state)` that injects noise each step. The mechanism reads the per-step contribution bound from each `BoundedPytree` input (typically produced by `clipped_grad`) and uses `noise_multiplier × bound` as the realized standard deviation; the latched first-call bound must remain constant across steps.
 
 3. **Privacy accounting** uses the same sensitivity (and Gram matrix when needed) as the strategy passed to `mf_noise`. Always build the accounting mechanism from **the same** strategy object you use for noise.
 

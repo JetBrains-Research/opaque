@@ -1,17 +1,32 @@
 import pytest
 import torch
 
-from opaque.bounded import BoundedPytree, NoisyPytree
+from opaque.bounded import BoundedPytree, NoisyPytree, bounded, noisy
 from opaque.clipping.per_group import PerGroup
 
 
+def test_functional_constructors_wrap_metadata(device):
+    pytree = {"w": torch.ones(2, device=device)}
+
+    bounded_value = bounded(pytree, bound=2.0)
+    noisy_value = noisy(pytree, bound=2.0, noise_stddev=0.5)
+
+    assert isinstance(bounded_value, BoundedPytree)
+    assert bounded_value.pytree is pytree
+    assert bounded_value.bound == pytest.approx(2.0)
+    assert isinstance(noisy_value, NoisyPytree)
+    assert noisy_value.pytree is pytree
+    assert noisy_value.bound == pytest.approx(2.0)
+    assert noisy_value.noise_stddev == pytest.approx(0.5)
+
+
 def test_scalar_multiplication_scales_tensor_leaves_and_bound(device):
-    bounded = BoundedPytree(
+    bounded_value = BoundedPytree(
         {"w": torch.tensor([1.0, -2.0], device=device), "meta": None},
         bound=3.0,
     )
 
-    scaled = -2.0 * bounded
+    scaled = -2.0 * bounded_value
 
     torch.testing.assert_close(
         scaled.pytree["w"], torch.tensor([-2.0, 4.0], device=device)
@@ -26,12 +41,12 @@ def test_division_scales_per_group_bound(device):
         groups={"layer.weight": "layer", "head.weight": "head"},
         values={"layer": 2.0, "head": 4.0},
     )
-    bounded = BoundedPytree(
+    bounded_value = BoundedPytree(
         {"layer.weight": torch.ones(2, device=device)},
         bound=bound,
     )
 
-    scaled = bounded / 2.0
+    scaled = bounded_value / 2.0
 
     torch.testing.assert_close(
         scaled.pytree["layer.weight"], torch.full((2,), 0.5, device=device)
@@ -59,34 +74,34 @@ def test_noisy_pytree_scales_noise_stddev(device):
 
 def test_clone_detach_to_preserve_metadata(device):
     tensor = torch.tensor([1.0], device=device, requires_grad=True)
-    bounded = BoundedPytree({"w": tensor}, bound=1.0)
+    bounded_value = BoundedPytree({"w": tensor}, bound=1.0)
 
-    cloned = bounded.clone()
-    detached = bounded.detach()
-    moved = bounded.to(dtype=torch.float32)
+    cloned = bounded_value.clone()
+    detached = bounded_value.detach()
+    moved = bounded_value.to(dtype=torch.float32)
 
-    assert cloned.bound == bounded.bound
+    assert cloned.bound == bounded_value.bound
     assert cloned.pytree["w"] is not tensor
-    assert detached.bound == bounded.bound
+    assert detached.bound == bounded_value.bound
     assert detached.pytree["w"].requires_grad is False
-    assert moved.bound == bounded.bound
+    assert moved.bound == bounded_value.bound
     assert moved.pytree["w"].dtype == torch.float32
 
 
 def test_unsupported_operations_raise_helpful_error(device):
-    bounded = BoundedPytree({"w": torch.ones(1, device=device)}, bound=1.0)
+    bounded_value = BoundedPytree({"w": torch.ones(1, device=device)}, bound=1.0)
 
     with pytest.raises(TypeError, match="reconstruct the bounded value"):
-        _ = bounded + bounded
+        _ = bounded_value + bounded_value
     with pytest.raises(TypeError, match="reconstruct the bounded value"):
-        _ = bounded + 1.0
+        _ = bounded_value + 1.0
     with pytest.raises(TypeError, match="reconstruct the bounded value"):
-        _ = 1.0 / bounded
+        _ = 1.0 / bounded_value
     with pytest.raises(TypeError, match="public real-number scalars"):
-        _ = bounded * bounded
+        _ = bounded_value * bounded_value
     with pytest.raises(TypeError, match="public real-number scalars"):
-        _ = bounded * torch.tensor(2.0, device=device)
+        _ = bounded_value * torch.tensor(2.0, device=device)
     with pytest.raises(TypeError, match="public real-number scalars"):
-        _ = bounded * True
+        _ = bounded_value * True
     with pytest.raises(ZeroDivisionError):
-        _ = bounded / 0.0
+        _ = bounded_value / 0.0

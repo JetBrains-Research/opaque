@@ -18,6 +18,7 @@ import torch.multiprocessing as mp
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
+from opaque.bounded import bounded
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.distributed import (
@@ -240,10 +241,9 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
     _setup_ddp(rank, world_size, port)
     try:
         state = AdaptiveClipState(
-            clipping_norm=float(rank + 1),
-            normalize_by=100.0,
-            next_clipping_norm=float(rank + 1),
-            step=100,
+            _current_clipping_norm=float(rank + 1),
+            _next_clipping_norm=float(rank + 1),
+            _step=100,
             _rng_key=rng_key(42),
             _fraction_noise_std=0.05,
             _learning_rate=0.2,
@@ -256,7 +256,6 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
         synced = sync(state)
         expected_bs = sum(8 * (r + 1) for r in range(world_size))
         assert synced._batch_size == expected_bs
-        assert synced.normalize_by == 100.0
     finally:
         _cleanup_ddp()
 
@@ -271,11 +270,11 @@ def _worker_shared_noise_is_deterministic(
             "weight": torch.zeros(10, 5, device=device),
             "bias": torch.zeros(5, device=device),
         }
-        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
-        noisy, _ = noise_fn(grads, state)
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
+        noisy, _ = noise_fn(bounded(grads, bound=1.0), state)
 
-        gathered = [torch.zeros_like(noisy["weight"]) for _ in range(world_size)]
-        dist.all_gather(gathered, noisy["weight"])
+        gathered = [torch.zeros_like(noisy.pytree["weight"]) for _ in range(world_size)]
+        dist.all_gather(gathered, noisy.pytree["weight"])
         if rank == 0:
             for other in gathered[1:]:
                 assert torch.allclose(gathered[0], other)
@@ -292,13 +291,17 @@ def _worker_sync_noise_states(rank: int, world_size: int, port: int) -> None:
             "bias": torch.zeros(3, device=device),
         }
 
-        gaussian_fn, gaussian_state = gaussian_noise(stddev=1.0, key=key(42))
-        _noisy_gauss, gaussian_state = gaussian_fn(grads, gaussian_state)
+        gaussian_fn, gaussian_state = gaussian_noise(noise_multiplier=1.0, key=key(42))
+        _noisy_gauss, gaussian_state = gaussian_fn(
+            bounded(grads, bound=1.0), gaussian_state
+        )
         synced_gaussian_state = sync(gaussian_state)
         assert synced_gaussian_state._step_counter == 1
 
-        mf_fn, mf_state = mf_noise(grads, identity_strategy(), stddev=1.0, key=key(42))
-        _noisy_mf, mf_state = mf_fn(grads, mf_state)
+        mf_fn, mf_state = mf_noise(
+            grads, identity_strategy(), noise_multiplier=1.0, key=key(42)
+        )
+        _noisy_mf, mf_state = mf_fn(bounded(grads, bound=1.0), mf_state)
         synced_mf_state = sync(mf_state)
         assert synced_mf_state._step_counter == 1
     finally:
@@ -322,13 +325,13 @@ def _worker_sync_profiler(rank: int, world_size: int, port: int) -> None:
         assert synced_profiler is not profiler  # must be a new object
         assert synced_profiler.num_steps == 1
         # batch_size is summed across ranks (4 per rank × world_size)
-        assert synced_profiler.step_batch_sizes[-1] == world_size * 4
+        assert synced_profiler._step_batch_sizes[-1] == world_size * 4
         # original profiler must be unchanged
-        assert profiler.step_batch_sizes[-1] == 4
+        assert profiler._step_batch_sizes[-1] == 4
         # pending records moved to synced; nothing left to flush
         assert synced_profiler.is_fully_synced
         # step time uses max across ranks (rank 1 does more work → rank 1 ≥ rank 0)
-        assert synced_profiler.step_metrics[-1].step_time >= 0.0
+        assert synced_profiler._step_metrics[-1]._step_time >= 0.0
 
         # peak is consistent across ranks after sync
         local_peak = float(synced_profiler._observed_peak_gb)
@@ -366,7 +369,7 @@ def _worker_dp_training_step(rank: int, world_size: int, port: int) -> None:
         grad_fn, clip_state = clipped_grad(
             loss_fn, clipping_norm=1.0, batch_argnums=(1, 2)
         )
-        noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(0))
+        noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(0))
 
         batch_size = 8
         x = torch.randn(batch_size, 10, device=device)
@@ -380,7 +383,7 @@ def _worker_dp_training_step(rank: int, world_size: int, port: int) -> None:
             assert grad is not summed
         noisy_grads, noise_state = noise_fn(summed_grads, noise_state)
 
-        for grad in tree_leaves(noisy_grads):
+        for grad in tree_leaves(noisy_grads.pytree):
             assert grad.device == device
             assert not torch.isnan(grad).any()
             assert not torch.isinf(grad).any()
@@ -415,8 +418,8 @@ def _worker_adaptive_clipping(rank: int, world_size: int, port: int) -> None:
 
         new_state = sync(new_state)
 
-        assert new_state.clipping_norm > 0
-        assert new_state.step == 1
+        assert new_state._current_clipping_norm > 0
+        assert new_state._step == 1
         assert grads is not None
     finally:
         _cleanup_ddp()
@@ -452,7 +455,7 @@ def _worker_adaptive_clipping_uneven_batches(
         synced = sync(new_state)
 
         assert synced._batch_size == 11
-        assert synced.next_clipping_norm > 0
+        assert synced._next_clipping_norm > 0
     finally:
         _cleanup_ddp()
 
@@ -488,7 +491,7 @@ def _worker_sync_aux_adaptive_clipping(rank: int, world_size: int, port: int) ->
         assert synced_aux.grad_norms.shape[0] == expected_n
         assert synced_aux.clipped_grad_norms.shape[0] == expected_n
 
-        local_clipped = float((aux.grad_norms > new_state.clipping_norm).sum().item())
+        local_clipped = float((aux.grad_norms > new_state._current_clipping_norm).sum().item())
         local_total = float(aux.grad_norms.numel())
         global_clipped = reduce_scalar(local_clipped, op="sum", device=device)
         global_total = reduce_scalar(local_total, op="sum", device=device)

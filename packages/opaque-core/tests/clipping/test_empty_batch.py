@@ -8,6 +8,7 @@ tensors, preserving adaptive clipping_norm, and avoiding DDP deadlocks.
 import torch
 import pytest
 
+from opaque.bounded import BoundedPytree
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.dpsgd.clipping.adaptive import (
@@ -17,6 +18,11 @@ from opaque.dpsgd.clipping.adaptive import (
 )
 from opaque.clipping.clipped_grad import ClippedGradAux
 from opaque.random import key
+
+
+def _unwrap_bounded(value):
+    assert isinstance(value, BoundedPytree)
+    return value.pytree
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +92,7 @@ class TestClippedGradEmptyBatch:
             clipping_norm=1.0,
         )
         grads, new_state = grad_fn(params, *empty_batch, state=clip_state)
+        grads = _unwrap_bounded(grads)
         assert grads.shape == params.shape
         assert torch.all(grads == 0)
 
@@ -98,6 +105,7 @@ class TestClippedGradEmptyBatch:
             return_aux=True,
         )
         (grads, aux), _ = grad_fn(params, *empty_batch, state=clip_state)
+        grads = _unwrap_bounded(grads)
         assert grads.shape == params.shape
         assert torch.all(grads == 0)
         assert isinstance(aux, ClippedGradAux)
@@ -130,6 +138,7 @@ class TestClippedGradEmptyBatch:
             clipping_norm=1.0,
         )
         grads, _ = grad_fn(params, *empty_batch, state=clip_state)
+        grads = _unwrap_bounded(grads)
         assert isinstance(grads, dict)
         assert torch.all(grads["w"] == 0)
         assert torch.all(grads["b"] == 0)
@@ -145,6 +154,7 @@ class TestClippedGradEmptyBatch:
             return_aux=True,
         )
         (grads, aux), _ = grad_fn(params, *empty_batch, state=clip_state)
+        grads = _unwrap_bounded(grads)
         assert grads.shape == params.shape
         assert torch.all(grads == 0)
         assert aux.grad_norms.shape == (0,)
@@ -163,12 +173,13 @@ class TestAdaptiveClippedGradEmptyBatch:
             key=key(0),
             batch_argnums=(1, 2),
         )
-        initial_cn = clip_state.clipping_norm
+        initial_cn = clip_state._current_clipping_norm
         grads, new_state = grad_fn(params, *empty_batch, state=clip_state)
+        grads = _unwrap_bounded(grads)
 
         assert grads.shape == params.shape
         assert torch.all(grads == 0)
-        assert new_state.clipping_norm == initial_cn
+        assert new_state._current_clipping_norm == initial_cn
         assert new_state._batch_size == 0.0
         assert new_state._num_clipped == 0.0
 
@@ -179,9 +190,9 @@ class TestAdaptiveClippedGradEmptyBatch:
             key=key(0),
             batch_argnums=(1, 2),
         )
-        assert clip_state.step == 0
+        assert clip_state._step == 0
         _, new_state = grad_fn(params, *empty_batch, state=clip_state)
-        assert new_state.step == 1
+        assert new_state._step == 1
 
     def test_empty_then_normal_batch(self, params, empty_batch, normal_batch):
         """After an empty batch, a normal batch still adapts correctly."""
@@ -191,15 +202,15 @@ class TestAdaptiveClippedGradEmptyBatch:
             key=key(0),
             batch_argnums=(1, 2),
         )
-        initial_cn = clip_state.clipping_norm
+        initial_cn = clip_state._current_clipping_norm
 
         # Empty batch: no adaptation
         _, clip_state = grad_fn(params, *empty_batch, state=clip_state)
-        assert clip_state.clipping_norm == initial_cn
+        assert clip_state._current_clipping_norm == initial_cn
 
         # Normal batch: adaptation happens
         _, clip_state = grad_fn(params, *normal_batch, state=clip_state)
-        assert clip_state.next_clipping_norm != initial_cn
+        assert clip_state._next_clipping_norm != initial_cn
         assert clip_state._batch_size > 0
 
     def test_return_aux_empty_batch(self, params, empty_batch):
@@ -227,14 +238,14 @@ class TestAdaptiveClippedGradEmptyBatch:
             key=key(0),
             batch_argnums=(1, 2),
         )
-        initial_cn = clip_state.clipping_norm
+        initial_cn = clip_state._current_clipping_norm
 
         for _ in range(10):
             _, clip_state = grad_fn(params, *empty_batch, state=clip_state)
 
-        assert clip_state.clipping_norm == initial_cn
-        assert clip_state.next_clipping_norm == initial_cn
-        assert clip_state.step == 10
+        assert clip_state._current_clipping_norm == initial_cn
+        assert clip_state._next_clipping_norm == initial_cn
+        assert clip_state._step == 10
 
 
 # ---------------------------------------------------------------------------
@@ -249,10 +260,9 @@ class TestSyncAdaptiveClipStateAllEmpty:
         from opaque.dpsgd.clipping.distributed import sync_adaptive_clip_state
 
         state = AdaptiveClipState(
-            clipping_norm=1.5,
-            normalize_by=1.0,
-            next_clipping_norm=1.5,
-            step=5,
+            _current_clipping_norm=1.5,
+            _next_clipping_norm=1.5,
+            _step=5,
             _rng_key=key(0),
             _fraction_noise_std=0.05,
             _learning_rate=0.2,
@@ -264,8 +274,8 @@ class TestSyncAdaptiveClipStateAllEmpty:
         )
         # In non-distributed mode sync_adaptive_clip_state returns state as-is
         result = sync_adaptive_clip_state(state)
-        assert result.clipping_norm == 1.5
-        assert result.next_clipping_norm == 1.5
+        assert result._current_clipping_norm == 1.5
+        assert result._next_clipping_norm == 1.5
 
 
 # ---------------------------------------------------------------------------

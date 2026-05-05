@@ -67,7 +67,7 @@ grad_fn, clip_state = clipped_grad(
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
-    stddev=1.1 * clip_state.sensitivity, key=key(42),
+  noise_multiplier=1.1, key=key(42),
 )
 
 # Poisson sampler (shard dataset)
@@ -78,7 +78,9 @@ sampler = PoissonSampler(
 loader = torch.utils.data.DataLoader(shard, batch_sampler=sampler)
 
 # Optimizer
-optimizer = torchopt.sgd(lr=0.01)
+from opaque.optimizers import sgd
+
+optimizer = sgd(lr=0.01)
 opt_state = optimizer.init(params)
 
 # Training loop
@@ -117,10 +119,12 @@ to get independent per-rank noise streams when needed:
 from opaque.random import key, fold_in
 
 # Synchronized noise — same key on all ranks
-noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
+noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
 
 # Independent noise — different key per rank
-noise_fn, noise_state = gaussian_noise(stddev=1.1, key=fold_in(key(42), rank))
+noise_fn, noise_state = gaussian_noise(
+  noise_multiplier=1.1, key=fold_in(key(42), rank)
+)
 ```
 
 In the common centralized DP-SGD pattern, pass the same `key(seed)` on
@@ -189,13 +193,12 @@ noise_state = sync(noise_state)
 
 `sync()` auto-dispatches based on the type of the state object. For
 `AdaptiveClipState`, it aggregates `num_clipped` and `total` across ranks
-(sum), recomputes the global clipping rate, and updates `clipping_norm`. After
-the call, `clip_state.sensitivity` is identical on every device.
+(sum), recomputes the global clipping rate, and updates the internal next
+threshold. The current DP bound is carried by the clipped output's `.bound`
+metadata.
 
-For fixed clipping (`clipped_grad`), the state is deterministic and does
-not need synchronization. You can optionally validate with
-`sync(clip_state)`, which asserts that `clipping_norm` matches across
-ranks and raises `RuntimeError` if it does not.
+For fixed clipping (`clipped_grad`), the state is a deterministic marker and
+does not need synchronization. `sync(clip_state)` is a passthrough.
 
 ## Poisson sampling
 
@@ -284,8 +287,8 @@ following types are registered:
 
 | Type | Behavior |
 |------|----------|
-| `FixedClipState` | Assert `clipping_norm` matches across ranks |
-| `AdaptiveClipState` | Aggregate counts, recompute global clipping rate, update `clipping_norm` |
+| `FixedClipState` | Marker-state passthrough |
+| `AdaptiveClipState` | Aggregate counts, recompute global clipping rate, update the internal next threshold |
 | `ClippedFunAux`, `ClippedGradAux`, `AdaptiveClippedGradAux` | Gather aux tensors across ranks |
 | `GaussianNoiseState` | Assert seed and step counter match across ranks |
 | `MFNoiseState` | Assert seed and step counter match for MF noise |

@@ -3,10 +3,16 @@
 import pytest
 import torch
 
+from opaque.bounded import BoundedPytree
 from opaque.clipping import clipped_grad
 from opaque.clipping.pytree import clip_pytree
 from opaque.clipping.types import FixedClipState
 from opaque.clipping.per_group import PerGroup, per_group
+
+
+def _unwrap_bounded(value):
+    assert isinstance(value, BoundedPytree)
+    return value.pytree
 
 
 class TestClipPytreePerGroup:
@@ -107,38 +113,23 @@ class TestClipPytreePerGroup:
 
 
 class TestFixedClipStatePerGroup:
-    """Tests for FixedClipState with PerGroup clipping_norm."""
+    """Tests for fixed clipping marker state and factory validation."""
 
-    def test_sensitivity_is_scalar_for_per_group(self):
-        """Even with PerGroup clipping_norm, sensitivity is scalar ||C||_2 / n."""
+    def test_state_is_marker(self):
+        assert FixedClipState() == FixedClipState()
+
+    def test_clipped_grad_accepts_per_group_clipping_norm(self):
         pg = PerGroup(
             groups={"a": "g1", "b": "g2"},
             values={"g1": 2.0, "g2": 4.0},
         )
-        state = FixedClipState(clipping_norm=pg, normalize_by=2.0)
-        sens = state.sensitivity
-        import math
-
-        assert isinstance(sens, float)
-        assert sens == pytest.approx(math.sqrt(2.0**2 + 4.0**2) / 2.0)
-
-    def test_sensitivity_scalar_single_group(self):
-        pg = PerGroup(groups={"x": "attn"}, values={"attn": 3.0})
-        state = FixedClipState(clipping_norm=pg, normalize_by=1.0)
-        assert isinstance(state.sensitivity, float)
-        assert state.sensitivity == pytest.approx(3.0)
+        _, state = clipped_grad(lambda params, data: params["a"].sum(), clipping_norm=pg)
+        assert isinstance(state, FixedClipState)
 
     def test_validation_rejects_non_positive_group(self):
         pg = PerGroup(groups={"a": "g1"}, values={"g1": -1.0})
         with pytest.raises(ValueError, match="positive"):
-            FixedClipState(clipping_norm=pg)
-
-    def test_float_sensitivity_unchanged(self):
-        """Float clipping_norm should still return float sensitivity."""
-        state = FixedClipState(clipping_norm=2.0, normalize_by=4.0)
-        assert state.sensitivity == pytest.approx(0.5)
-        assert isinstance(state.sensitivity, float)
-
+            clipped_grad(lambda params, data: params["a"].sum(), clipping_norm=pg)
 
 class TestClippedGradPerGroup:
     """Tests for clipped_grad with PerGroup clipping_norm."""
@@ -159,12 +150,13 @@ class TestClippedGradPerGroup:
 
         data = torch.tensor([1.0, 2.0, 3.0])
         grads, _ = grad_fn(params, data, state=clip_state)
+        grads = _unwrap_bounded(grads)
 
         assert isinstance(grads, dict)
         assert "w1" in grads and "w2" in grads
 
-    def test_sensitivity_is_scalar(self):
-        """clip_state.sensitivity should be scalar (L2 norm) even with PerGroup clipping."""
+    def test_output_bound_preserves_per_group_metadata(self):
+        """The clipped output carries per-group bound metadata after normalization."""
 
         def loss(params, data):
             return (params["a"] * data).mean()
@@ -172,7 +164,7 @@ class TestClippedGradPerGroup:
         params = {"a": torch.tensor(1.0), "b": torch.tensor(1.0)}
         pg = per_group(params, a=2.0, b=4.0)
 
-        _, clip_state = clipped_grad(
+        grad_fn, clip_state = clipped_grad(
             loss,
             argnums=0,
             batch_argnums=1,
@@ -180,12 +172,10 @@ class TestClippedGradPerGroup:
             normalize_by=10.0,
         )
 
-        sens = clip_state.sensitivity
-        assert isinstance(sens, float)
-        # sensitivity = sqrt(2^2 + 4^2) / 10 = sqrt(20) / 10
-        import math
-
-        assert sens == pytest.approx(math.sqrt(20) / 10)
+        grads, _ = grad_fn(params, torch.randn(8), state=clip_state)
+        assert isinstance(grads.bound, PerGroup)
+        assert grads.bound.groups == pg.groups
+        assert grads.bound.values == {"a": pytest.approx(0.2), "b": pytest.approx(0.4)}
 
     def test_per_group_with_microbatch(self):
         """Per-group clipping should work with microbatching."""
@@ -206,6 +196,7 @@ class TestClippedGradPerGroup:
 
         data = torch.tensor([1.0, 2.0, 3.0, 4.0])
         grads, _ = grad_fn(params, data, state=clip_state)
+        grads = _unwrap_bounded(grads)
         assert isinstance(grads, dict)
 
     def test_per_group_with_return_aux(self):
@@ -227,6 +218,7 @@ class TestClippedGradPerGroup:
 
         data = torch.tensor([1.0, 2.0, 3.0])
         (grads, aux), _ = grad_fn(params, data, state=clip_state)
+        grads = _unwrap_bounded(grads)
         assert isinstance(grads, dict)
         assert aux.grad_norms is not None
 
@@ -252,11 +244,13 @@ class TestClippedGradPerGroup:
         data = torch.tensor([5.0, 10.0, -3.0])
         grads_g, _ = grad_fn_g(params, data, state=cs_g)
         grads_pg, _ = grad_fn_pg(params, data, state=cs_pg)
+        grads_g = _unwrap_bounded(grads_g)
+        grads_pg = _unwrap_bounded(grads_pg)
 
         torch.testing.assert_close(grads_g["w"], grads_pg["w"])
 
-    def test_noise_multiplier_arithmetic(self):
-        """noise_multiplier * clip_state.sensitivity should return scalar."""
+    def test_noise_multiplier_bound_arithmetic(self):
+        """noise_multiplier * grads.bound should preserve PerGroup metadata."""
 
         def loss(params, data):
             return (params["a"] * data).mean()
@@ -264,12 +258,12 @@ class TestClippedGradPerGroup:
         params = {"a": torch.tensor(1.0), "b": torch.tensor(1.0)}
         pg = per_group(params, a=1.0, b=2.0)
 
-        _, clip_state = clipped_grad(loss, argnums=0, batch_argnums=1, clipping_norm=pg)
+        grad_fn, clip_state = clipped_grad(
+            loss, argnums=0, batch_argnums=1, clipping_norm=pg
+        )
 
         noise_multiplier = 1.1
-        stddev = noise_multiplier * clip_state.sensitivity
-        assert isinstance(stddev, float)
-        # sensitivity = sqrt(1^2 + 2^2) / 1 = sqrt(5)
-        import math
-
-        assert stddev == pytest.approx(1.1 * math.sqrt(5))
+        grads, _ = grad_fn(params, torch.randn(4), state=clip_state)
+        stddev = noise_multiplier * grads.bound
+        assert isinstance(stddev, PerGroup)
+        assert stddev.values == {"a": pytest.approx(1.1), "b": pytest.approx(2.2)}

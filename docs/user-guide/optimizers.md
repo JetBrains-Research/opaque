@@ -1,18 +1,17 @@
 # Optimizers
 
 Opaque ships its own functional optimizer library at
-[`opaque.optimizers`](../api/optimizers.md): seven Opaque-built
-factories with DP-aware paths (`adamw`, `lion`, `ademamix`,
-`adafactor`, `rmsprop`, `adagrad`, `schedule_free`) plus a curated
-set of `torchopt` re-exports for stateless primitives where vanilla
-behaviour is acceptable under DP noise (`sgd`, `adam`, `adadelta`,
-`radam`).
+[`opaque.optimizers`](../api/optimizers.md): Opaque-built factories with a
+common wrapper-aware update surface (`sgd`, `adam`, `adamw`, `lion`,
+`ademamix`, `adafactor`, `rmsprop`, `adagrad`, `schedule_free`) plus a small
+set of `torchopt` re-exports for primitives where Opaque does not add behavior
+(`adadelta`, `radam`).
 
 All factories return [TorchOpt](https://torchopt.readthedocs.io/)
 `GradientTransformation`s, so they compose with TorchOpt's lower-level
-transforms and `torchopt.apply_updates`.  DP-aware paths (DP-AdamW-BC,
-private second moments, Adagrad's mandatory variance subtraction) are exposed as optional
-`update()` kwargs.
+transforms and `torchopt.apply_updates`. DP-aware paths (DP-AdamW-BC, private
+second moments, Adagrad's mandatory variance subtraction) are selected by
+passing `NoisyPytree` or `SecondMomentNoiseOutput` updates.
 
 ## Why functional optimizers
 
@@ -47,11 +46,10 @@ from opaque.random import key
 grad_fn, clip_state = clipped_grad(
     loss_fn, clipping_norm=1.0, argnums=0, batch_argnums=1,
 )
-sigma = noise_multiplier * clip_state.sensitivity
-noise_fn, noise_state = gaussian_noise(stddev=sigma, key=key(42))
+noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
 
-# DP-aware AdamW: pass `noise_stddev` to activate the φ-EMA correction.
-optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_stddev=sigma)
+# DP-aware AdamW reads realized σ from NoisyPytree updates.
+optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
 opt_state = optimizer.init(params)
 
 for batch in dataloader:
@@ -68,20 +66,22 @@ DP training.  Per-parameter adaptive learning rates compensate for
 DP noise — different parameters receive different signal-to-noise
 ratios, and Adam scales updates accordingly.  Adam typically converges
 faster and is more robust to hyperparameter choices than SGD under DP.
-Pair with `noise_stddev` for the bias-correction path:
+Pass `NoisyPytree` updates from a DP noise mechanism; enable
+`noise_bias_correction` to opt into the φ-EMA correction path
+(off by default — flip on to ablate):
 
 ```python
 from opaque.optimizers import adamw
 
-optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_stddev=sigma)
+optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
 # Plain Adam (no decoupled WD): adamw(..., decoupled_weight_decay=False).
 # StableAdamW (RMS-clipped update): adamw(..., update_rms_clip=1.0).
 ```
 
-**SGD** (`opaque.optimizers.sgd`, re-exported from torchopt) is the
-canonical DP baseline.  No second moment, so no DP-aware mode is
-needed — `E[g + ξ] = g` and momentum's variance is bounded.  Good
-debugging baseline:
+**SGD** (`opaque.optimizers.sgd`) is the canonical DP baseline. No second
+moment is corrected, but the Opaque wrapper accepts `NoisyPytree` updates so
+the training loop stays uniform. `E[g + ξ] = g` and momentum's variance is
+bounded. Good debugging baseline:
 
 ```python
 from opaque.optimizers import sgd
@@ -89,22 +89,27 @@ optimizer = sgd(lr=0.01, momentum=0.9)
 ```
 
 **RMSprop** (`opaque.optimizers.rmsprop`) is adaptive but cheaper
-than Adam (no first moment).  Pair with `noise_stddev` for the same
-flavour of bias correction as AdamW:
+than Adam (no first moment).  ``noise_bias_correction=True`` enables
+the same flavour of φ-EMA subtraction as AdamW; off by default,
+flip on to ablate:
 
 ```python
 from opaque.optimizers import rmsprop
-optimizer = rmsprop(lr=1e-2, alpha=0.99, noise_stddev=sigma)
+optimizer = rmsprop(lr=1e-2, alpha=0.99, noise_bias_correction=True)
 ```
 
 **Adagrad** (`opaque.optimizers.adagrad`) is for sparse-gradient
-settings.  **Vanilla Adagrad is unsafe for DP training** — its
-denominator runs away (see below).  Always pass `noise_stddev`:
+settings.  Its accumulator does not decay, so under DP noise ``v_acc``
+absorbs ``t·σ²`` over training; ``noise_bias_correction=True``
+subtracts a matching cumulative term:
 
 ```python
 from opaque.optimizers import adagrad
-optimizer = adagrad(lr=1e-2, noise_stddev=sigma)  # NOT adagrad(lr=1e-2)
+optimizer = adagrad(lr=1e-2, noise_bias_correction=True)
 ```
+
+Whether the correction helps in practice depends on the workload —
+ablate against ``noise_bias_correction=False``.
 
 **AdEMAMix**, **Adafactor**, **Lion**, **schedule-free** — see the
 [API reference](../api/optimizers.md#whats-in-opaqueoptimizers) for
@@ -128,7 +133,7 @@ Opaque provides two independent corrections, both selected at
 angles and **must not be combined** at the same call — using both
 would double-correct the second moment.
 
-### `noise_stddev`: bias correction by variance subtraction
+### `NoisyPytree`: bias correction by variance subtraction
 
 **Idea:** the noise variance $\Phi_t = \sigma_t^2$ is *known* (we
 chose it), so we can subtract it from the biased estimate.
@@ -153,8 +158,8 @@ For `adagrad`: cumulative $\Phi_\text{acc} = \sum_s \sigma_s^2$
 DP-Adagrad — without it, the denominator runs away with $t \cdot \sigma^2$
 of accumulated noise variance and learning halts.
 
-When `noise_stddev = 0` (default), each optimizer reduces to its
-standard math.  Use it as a drop-in replacement even without DP.
+When a raw pytree update is passed, each optimizer reduces to its standard
+math. `NoisyPytree` updates supply the realized per-step σ metadata.
 
 ```python
 from opaque.optimizers import adamw
@@ -162,19 +167,9 @@ from opaque.optimizers import adamw
 # Without correction — standard AdamW math.
 optimizer = adamw(lr=1e-3, weight_decay=0.01)
 
-# With correction — pass σ.
-sigma = noise_multiplier * clip_state.sensitivity
-optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_stddev=sigma)
-```
-
-With **adaptive clipping** (sensitivity changes each step), pass the
-σ override per step instead of relying on the constructor default:
-
-```python
-updates, opt_state = optimizer.update(
-    noisy_grads, opt_state, params=params,
-    noise_stddev=noise_multiplier * clip_state.sensitivity,
-)
+# With correction — pass NoisyPytree updates from gaussian_noise().
+optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
+updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
 ```
 
 ### `noisy_squared_grads`: privately-estimated second moments
@@ -202,14 +197,20 @@ noise.
 
 ### When to use which
 
-| Scenario | Recommended | Why |
+The bias-correction (BC) and private-second-moment paths target the same
+v-update bias by different means; they are alternatives.  Their
+empirical benefit under DP varies by workload — treat the BC column as
+something to ablate, not as a default recommendation.
+
+| Scenario | Optimizer | Notes |
 |---|---|---|
-| DP-SGD with Gaussian noise | `adamw(noise_stddev=σ)` | Independent Gaussian noise pairs with bias correction |
-| DP-FTRL without Adam | `sgd` | No second moment to correct |
-| DP-FTRL with Adam, fresh budget | `adamw(...) + noisy_squared_grads` | Better v estimate from a private squared-gradient stream |
-| DP-FTRL with Adam, no extra budget | `adamw(noise_stddev=σ)` | BC is free; private second moments add first-stream overhead |
-| Sparse gradients under DP | `adagrad(noise_stddev=σ)` | Required to prevent denominator runaway |
-| RMSprop user under DP | `rmsprop(noise_stddev=σ)` | Same flavour of correction as AdamW |
+| DP-SGD baseline | `adamw` | Plain AdamW on `NoisyPytree` updates |
+| DP-SGD with BC ablation | `adamw(noise_bias_correction=True)` | φ-EMA subtraction from `v̂` |
+| DP-FTRL without an Adam-family update | `sgd` | No second moment to correct |
+| DP-FTRL with Adam, private second moments | `adamw(...) + SecondMomentNoiseOutput` | Substitutes a privatised `g²` stream in place of squaring noised grads |
+| DP-FTRL with Adam, no extra budget | `adamw(noise_bias_correction=True)` | BC alternative when the second-moment overhead isn't acceptable |
+| Sparse gradients under DP | `adagrad` | `noise_bias_correction=True` subtracts the cumulative `Φ_acc` from the un-decaying accumulator; ablate to compare |
+| RMSprop user under DP | `rmsprop` | Same BC story as AdamW |
 
 ## AdamW With Private Second Moments
 
@@ -220,12 +221,13 @@ from opaque.optimizers import adamw
 # Strategy: momentum=beta1 (Adam's first moment workload)
 strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.9)
 second_strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.999)
+clip_bound = clipping_norm / batch_size
 
 # Noise: second_moment=True computes g² and creates two MF streams.
 noise_fn, noise_state = mf_noise(
     grad_template, strategy,
     noise_multiplier=noise_multiplier,
-    sensitivity=clip_state.sensitivity,
+    sensitivity=clip_bound,
     key=key(42),
     second_moment=True,
     second_moment_strategy=second_strategy,
@@ -254,11 +256,12 @@ for batch in dataloader:
 Wrap the base mechanism with `acc.second_moment()` to account for both moment streams:
 
 ```python
+clip_bound = clipping_norm / batch_size
 mechanism = acc.band_mf(nm, sensitivity=S, num_groups=k)
 if use_adam:
     mechanism = acc.second_moment(
         mechanism,
-        sensitivity=clip_state.sensitivity,
+        sensitivity=clip_bound,
         max_column_norm=strategy._max_column_norm,
     )
 process = acc.cyclic_poisson(mechanism, sample_rate=q)
@@ -297,8 +300,11 @@ $$E[v_t] = \sum_s g_s^2 \;+\; t \sigma^2$$
 The noise term grows linearly forever.  After enough steps the
 denominator is dominated by accumulated noise; updates become
 effectively random and the per-coordinate LR shrinks indefinitely.
-**Always use `adagrad(noise_stddev=σ, ...)` under DP** so the
-optimizer can subtract a parallel cumulative $\Phi_\text{acc}$.
+``adagrad(noise_bias_correction=True, ...)`` subtracts a parallel
+cumulative $\Phi_\text{acc}$ to counter this.  Whether the corrected
+denominator is preferable to vanilla Adagrad in practice depends on
+the workload — ablate against ``noise_bias_correction=False`` rather
+than treating BC as a default.
 
 ### Why Adamax isn't shipped
 
@@ -327,7 +333,9 @@ particularly attractive for DP training, on top of its standard
 from opaque.optimizers import adamw, schedule_free
 from opaque.optimizers.schedule_free import get_eval_params
 
-optimizer = schedule_free(adamw(lr=1e-3, noise_stddev=sigma), beta=0.9)
+optimizer = schedule_free(
+    adamw(lr=1e-3, noise_bias_correction=True), beta=0.9
+)
 opt_state = optimizer.init(params)
 
 # Train as usual: trainer treats `params` as y_t.
@@ -371,7 +379,7 @@ decay = cosine_schedule(
     transition_steps=900, transition_begin=100,
 )
 schedule = with_warmup(decay, transition_steps=100)
-optimizer = adamw(lr=schedule, weight_decay=0.01, noise_stddev=sigma)
+optimizer = adamw(lr=schedule, weight_decay=0.01, noise_bias_correction=True)
 ```
 
 A typical warmup is 5-10% of total training steps.  The warmup helps
@@ -390,7 +398,7 @@ it to a serialisable dict via `opaque.optimizers.serialization`:
 from opaque.optimizers import adamw
 from opaque.optimizers.serialization import state_dict, load_state_dict
 
-opt = adamw(lr=1e-3, weight_decay=0.01, noise_stddev=sigma)
+opt = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
 state = opt.init(params)
 # ... train ...
 
@@ -418,11 +426,10 @@ function and all ranks receive identical noisy gradients after
 `sum_gradients` and noise addition (using the same key on all ranks).
 No explicit state synchronization is needed.
 
-**`noise_stddev` is a unified contract.** Every optimizer that has a
-noise-aware path accepts the same `noise_stddev` kwarg with the same
-override semantics — pass `σ` and the optimizer activates whatever
-correction it has (φ-EMA, cumulative Φ, sign gating).  The trainer
-doesn't need per-optimizer logic.
+**`NoisyPytree` is the unified contract.** Every optimizer that has a
+noise-aware path reads realized `noise_stddev` metadata from `NoisyPytree`
+updates. The trainer does not pass per-step optimizer kwargs; it just feeds
+the output of the DP noise mechanism into `optimizer.update()`.
 
 ## API reference
 

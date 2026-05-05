@@ -150,6 +150,16 @@ class NoisyPytree(BoundedPytree):
         )
 
 
+def bounded(pytree: Any, *, bound: Bound) -> BoundedPytree:
+    """Manually wrap a pytree with public DP contribution-bound metadata."""
+    return BoundedPytree(pytree=pytree, bound=bound)
+
+
+def noisy(pytree: Any, *, bound: Bound, noise_stddev: NoiseStddev) -> NoisyPytree:
+    """Manually wrap an already privatized pytree with noise metadata."""
+    return NoisyPytree(pytree=pytree, bound=bound, noise_stddev=noise_stddev)
+
+
 def _unsupported_message(op: str) -> str:
     return (
         f"BoundedPytree {op} does not preserve DP bound semantics "
@@ -158,4 +168,4 @@ def _unsupported_message(op: str) -> str:
     )
 
 
-__all__ = ["BoundedPytree", "NoisyPytree"]
+__all__ = ["BoundedPytree", "NoisyPytree", "bounded", "noisy"]

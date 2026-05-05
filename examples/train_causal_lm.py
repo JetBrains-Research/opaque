@@ -42,7 +42,6 @@ USAGE:
 
 import argparse
 import contextlib
-import functools
 import importlib.util
 import os
 import sys
@@ -94,11 +93,11 @@ def _effective(value):
     return value.effective if isinstance(value, PerGroup) else value
 
 
-def _noise_stddev(clip_state, noise_multiplier, *, per_group=True):
+def _noise_stddev(bound, noise_multiplier, *, per_group=True):
     """Noise stddev: MSE-optimal per-group when available, isotropic otherwise."""
-    if per_group and isinstance(clip_state.clipping_norm, PerGroup):
-        return per_group_noise_stddev(clip_state, noise_multiplier)
-    return noise_multiplier * clip_state.sensitivity
+    if per_group and isinstance(bound, PerGroup):
+        return per_group_noise_stddev(bound, noise_multiplier)
+    return noise_multiplier * bound
 
 
 def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
@@ -364,21 +363,19 @@ def parse_args():
         help=(
             "Optimizer.  ``sgd`` and ``adam`` are torchopt's vanilla "
             "primitives (no DP-aware paths); the others are Opaque-built "
-            "(see opaque.optimizers).  Pair with ``--bc`` to enable "
-            "DP-aware bias correction where applicable."
+            "(see opaque.optimizers).  Pair with "
+            "``--noise-bias-correction`` to enable DP-aware bias "
+            "correction where applicable."
         ),
     )
     train_group.add_argument(
-        "--bc",
+        "--noise-bias-correction",
         action=argparse.BooleanOptionalAction,
         default=False,
         help=(
-            "Enable DP-aware bias correction by passing the per-step "
-            "noise σ to the optimizer's update().  Applies to ``adamw`` "
-            "(φ-EMA on v̂), ``ademamix`` (same), ``rmsprop`` (φ-EMA on v), "
-            "and ``adagrad`` (cumulative Φ subtraction).  No effect on "
-            "``sgd`` / ``adam`` / ``lion`` / ``adafactor`` (no BC mode "
-            "implemented).  Off by default."
+            "Enable DP noise-variance bias correction on optimizers that "
+            "support it (adam/adamw/ademamix/rmsprop/adagrad).  Silently "
+            "ignored on sgd/lion/adafactor.  Off by default."
         ),
     )
     train_group.add_argument(
@@ -1182,15 +1179,10 @@ def main():
     _num_groups = len(clip_norm.values) if isinstance(clip_norm, PerGroup) else 1
     if args.noise_multiplier == 0:
         mechanism = lambda nm: acc.nonprivate()
-        make_noise = gaussian_noise
     elif args.noise_mechanism == "truncated_gaussian":
         mechanism = acc.gaussian
-        make_noise = functools.partial(
-            truncated_gaussian_noise, radius=args.noise_radius
-        )
     else:
         mechanism = acc.gaussian
-        make_noise = gaussian_noise
 
     if args.clipping_mode == "adaptive":
         _base_mechanism = mechanism
@@ -1255,44 +1247,30 @@ def main():
             f"(iterations={calibration.iterations}, converged={calibration.converged})"
         )
 
-    # Setup optimizer.
-    #
-    # ``--bc`` activates DP-aware bias correction on optimizers that
-    # support it.  We construct with ``noise_stddev`` set to the
-    # initial value here; the per-step adaptive override is passed at
-    # ``opt.update()`` time below.  For optimizers without a BC path,
-    # ``--bc`` is a silent no-op.  Notably ``--optimizer adagrad``
-    # without ``--bc`` is *expected* to misbehave under DP noise (the
-    # cumulative ``v_acc`` denominator absorbs ``t·σ²`` with no decay)
-    # — that's the empirical observation this example exists to
-    # demonstrate.  We don't gate it.
-    BC_CAPABLE = {"adamw", "ademamix", "rmsprop", "adagrad"}
-    bc_active = args.bc and args.optimizer in BC_CAPABLE
-
-    if bc_active:
-        initial_stddev = _noise_stddev(clip_state, noise_multiplier)
-        ns: float | PerGroup = initial_stddev
-        if isinstance(initial_stddev, PerGroup):
-            print(
-                f"  BC active: per-group noise_stddev "
-                f"(effective σ={_effective(initial_stddev):.6f})"
-            )
-        else:
-            print(f"  BC active: noise_stddev={ns:.6f}")
-    else:
-        ns = 0.0
-
+    # Setup optimizer.  Noise metadata travels with ``NoisyPytree`` updates,
+    # so optimizer construction does not need a precomputed stddev;
+    # ``--noise-bias-correction`` only controls whether the optimizer's
+    # DP-aware path consumes that metadata.  For optimizers without a BC
+    # path (sgd/lion/adafactor) the flag is silently ignored.
     if args.optimizer == "adam":
-        base_opt = torchopt.adam(lr=args.learning_rate)
+        from opaque.optimizers import adam
+
+        base_opt = adam(
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
+            noise_bias_correction=args.noise_bias_correction,
+        )
     elif args.optimizer == "sgd":
-        base_opt = torchopt.sgd(lr=args.learning_rate)
+        from opaque.optimizers import sgd
+
+        base_opt = sgd(lr=args.learning_rate, weight_decay=args.weight_decay)
     elif args.optimizer == "adamw":
         from opaque.optimizers import adamw
 
         base_opt = adamw(
             lr=args.learning_rate,
             weight_decay=args.weight_decay,
-            noise_stddev=ns,
+            noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "ademamix":
         from opaque.optimizers import ademamix
@@ -1300,7 +1278,7 @@ def main():
         base_opt = ademamix(
             lr=args.learning_rate,
             weight_decay=args.weight_decay,
-            noise_stddev=ns,
+            noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "lion":
         from opaque.optimizers import lion
@@ -1322,7 +1300,7 @@ def main():
         base_opt = rmsprop(
             lr=args.learning_rate,
             weight_decay=args.weight_decay,
-            noise_stddev=ns,
+            noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "adagrad":
         from opaque.optimizers import adagrad
@@ -1330,7 +1308,7 @@ def main():
         base_opt = adagrad(
             lr=args.learning_rate,
             weight_decay=args.weight_decay,
-            noise_stddev=ns,
+            noise_bias_correction=args.noise_bias_correction,
         )
     else:
         raise ValueError(f"Unknown optimizer: {args.optimizer}")
@@ -1338,11 +1316,20 @@ def main():
     opt_state = base_opt.init(trainable_params)
     accounting = Accountant()
 
-    # Noise function — created once; per-call stddev override tracks adaptive clipping_norm.
-    noise_fn, noise_state = make_noise(
-        stddev=_noise_stddev(clip_state, noise_multiplier),
-        key=key(args.seed),
-    )
+    # Noise functions consume BoundedPytree metadata directly and return
+    # NoisyPytree updates carrying the realized per-step stddev.
+    initial_bound = clip_norm / args.batch_size
+    if args.noise_mechanism == "truncated_gaussian" and noise_multiplier != 0:
+        noise_fn, noise_state = truncated_gaussian_noise(
+            noise_multiplier=noise_multiplier,
+            radius=args.noise_radius,
+            key=key(args.seed),
+        )
+    else:
+        noise_fn, noise_state = gaussian_noise(
+            noise_multiplier=noise_multiplier,
+            key=key(args.seed),
+        )
 
     # Training loop
     print("\n" + "=" * 80)
@@ -1352,6 +1339,7 @@ def main():
     losses = []
     clip_norms_history = []
     clip_rates_history = []
+    last_clip_bound = initial_bound
     global_step = 0
 
     # Reset peak memory before training to get accurate training peak
@@ -1362,7 +1350,7 @@ def main():
     # Step-0 eval: log baseline metrics before any training
     initial_eval_loss = eval_loss(trainable_params)
     initial_epsilon = accounting.epsilon_at(args.target_delta)
-    initial_noise_std = _noise_stddev(clip_state, noise_multiplier)
+    initial_noise_std = _noise_stddev(initial_bound, noise_multiplier)
     print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
     if use_wandb:
         wandb.log(
@@ -1426,26 +1414,14 @@ def main():
                     clip_state, aux = sync(clip_state, aux)
                     sum_gradients_(grads_tuple)
 
-                noise_stddev = _noise_stddev(clip_state, noise_multiplier)
-                noisy_grads, noise_state = noise_fn(
-                    grads_tuple,
-                    noise_state,
-                    stddev=noise_stddev,
-                )
+                step_clip_norm = grads_tuple.bound
+                noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
+                noise_stddev = noisy_grads.noise_stddev
                 if is_ddp:
                     noise_state = sync(noise_state)
 
-                # When ``--bc`` is on for a BC-capable optimizer, pass
-                # the current noise stddev so the φ-EMA / cumulative Φ
-                # tracks adaptive clipping changes.  Otherwise omit the
-                # kwarg entirely — Opaque-built optimizers without a BC
-                # path (lion, adafactor) reject unknown kwargs by signature,
-                # and torchopt's primitives don't accept ``noise_stddev``.
-                opt_kwargs = {}
-                if bc_active:
-                    opt_kwargs["noise_stddev"] = noise_stddev
                 updates, opt_state = base_opt.update(
-                    noisy_grads, opt_state, params=trainable_params, **opt_kwargs
+                    noisy_grads, opt_state, params=trainable_params
                 )
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
 
@@ -1458,13 +1434,13 @@ def main():
 
             # === Step metrics ===
             avg_loss = aux.loss_values.mean().item()
-            step_clip_norm = clip_state.clipping_norm
             clip_rate = aux.clipping_rate
             mean_grad_norm = aux.grad_norms.mean().item()
 
             losses.append(avg_loss)
             clip_norms_history.append(_effective(step_clip_norm))
             clip_rates_history.append(clip_rate)
+            last_clip_bound = step_clip_norm
 
             global_step += 1
 
@@ -1567,18 +1543,17 @@ def main():
 
     if args.clipping_mode == "adaptive":
         print("\nAdaptive clipping:")
-        final_cn = clip_state.clipping_norm
-        if isinstance(final_cn, PerGroup):
-            print("  Per-group adaptive thresholds:")
-            initial_cn = clip_norm
-            for gname in sorted(final_cn.values.keys()):
+        if isinstance(last_clip_bound, PerGroup):
+            print("  Per-group output bounds:")
+            initial_cn = initial_bound
+            for gname in sorted(last_clip_bound.values.keys()):
                 print(
-                    f"    {gname}: {initial_cn.values[gname]:.3f} → {final_cn.values[gname]:.3f}"
+                    f"    {gname}: {initial_cn.values[gname]:.3f} → {last_clip_bound.values[gname]:.3f}"
                 )
-            print(f"  Effective (final): {final_cn.effective:.3f}")
+            print(f"  Effective (final): {last_clip_bound.effective:.3f}")
         else:
-            print(f"  Initial clip norm: {_effective(clip_norm):.3f}")
-            print(f"  Final clip norm: {final_cn:.3f}")
+            print(f"  Initial output bound: {_effective(initial_bound):.3f}")
+            print(f"  Final output bound: {last_clip_bound:.3f}")
         print(
             f"  Clip norm range: [{min(clip_norms_history):.3f}, {max(clip_norms_history):.3f}]"
         )

@@ -7,6 +7,8 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
+from opaque.bounded import noisy  # noqa: E402
+from opaque.core.noise import SecondMomentNoiseOutput  # noqa: E402
 from opaque.optimizers import RMSpropState, rmsprop  # noqa: E402
 
 
@@ -92,36 +94,48 @@ class TestVanilla:
 
 
 class TestBCMode:
-    def test_phi_advances_under_default_stddev(self, params, grads):
+    def test_phi_advances_under_noisy_metadata(self, params, grads):
         alpha = 0.99
         sigma = 0.5
-        opt = rmsprop(lr=1e-2, alpha=alpha, noise_stddev=sigma)
+        opt = rmsprop(lr=1e-2, alpha=alpha, noise_bias_correction=True)
         state = opt.init(params)
         expected_phi = 0.0
         for _ in range(10):
-            _, state = opt.update(grads, state, params=params)
+            _, state = opt.update(
+                noisy(grads, bound=1.0, noise_stddev=sigma),
+                state,
+                params=params,
+            )
             expected_phi = alpha * expected_phi + (1 - alpha) * (sigma**2)
         assert _rms_state(state).phi == pytest.approx(expected_phi)
 
-    def test_per_step_override(self, params, grads):
+    def test_noisy_updates_take_per_step_metadata(self, params, grads):
         alpha = 0.99
-        opt = rmsprop(lr=1e-2, alpha=alpha, noise_stddev=0.0)
+        opt = rmsprop(lr=1e-2, alpha=alpha, noise_bias_correction=True)
         state = opt.init(params)
         expected_phi = 0.0
         for sigma in [0.1, 0.2, 0.3, 0.2, 0.1]:
-            _, state = opt.update(grads, state, params=params, noise_stddev=sigma)
+            _, state = opt.update(
+                noisy(grads, bound=1.0, noise_stddev=sigma),
+                state,
+                params=params,
+            )
             expected_phi = alpha * expected_phi + (1 - alpha) * (sigma**2)
         assert _rms_state(state).phi == pytest.approx(expected_phi)
 
     def test_bc_increases_effective_lr(self, params, grads):
         big = {k: v * 10 for k, v in grads.items()}
         opt_std = rmsprop(lr=1e-2)
-        opt_bc = rmsprop(lr=1e-2, noise_stddev=0.01)
+        opt_bc = rmsprop(lr=1e-2)
         s_std = opt_std.init(params)
         s_bc = opt_bc.init(params)
         for _ in range(10):
             u_std, s_std = opt_std.update(big, s_std, params=params)
-            u_bc, s_bc = opt_bc.update(big, s_bc, params=params)
+            u_bc, s_bc = opt_bc.update(
+                noisy(big, bound=1.0, noise_stddev=0.01),
+                s_bc,
+                params=params,
+            )
         norm_std = sum(u.norm() for u in u_std.values())
         norm_bc = sum(u.norm() for u in u_bc.values())
         assert norm_bc >= norm_std
@@ -129,10 +143,24 @@ class TestBCMode:
     def test_floor_prevents_zero_denominator(self):
         params = {"w": torch.ones(3)}
         grads = {"w": torch.ones(3) * 0.01}
-        opt = rmsprop(lr=1e-3, noise_stddev=1e6)
+        opt = rmsprop(lr=1e-3)
         state = opt.init(params)
-        updates, _ = opt.update(grads, state, params=params)
+        updates, _ = opt.update(
+            noisy(grads, bound=1.0, noise_stddev=1e6),
+            state,
+            params=params,
+        )
         assert torch.isfinite(updates["w"]).all()
+
+    def test_bc_flag_disables_noisy_metadata_correction(self, params, grads):
+        opt = rmsprop(lr=1e-2, noise_bias_correction=False)
+        state = opt.init(params)
+        _, state = opt.update(
+            noisy(grads, bound=1.0, noise_stddev=0.5),
+            state,
+            params=params,
+        )
+        assert _rms_state(state).phi == 0.0
 
 
 class TestJMEMode:
@@ -144,7 +172,11 @@ class TestJMEMode:
         alpha = 0.99
         opt = rmsprop(lr=1e-2, alpha=alpha)
         state = opt.init(params)
-        _, state = opt.update(grads, state, params=params, noisy_squared_grads=sq_grads)
+        output = SecondMomentNoiseOutput(
+            noisy(grads, bound=1.0, noise_stddev=0.1),
+            noisy(sq_grads, bound=1.0, noise_stddev=0.1),
+        )
+        _, state = opt.update(output, state, params=params)
         st = _rms_state(state)
         for k in params:
             torch.testing.assert_close(st.nu[k], (1 - alpha) * sq_grads[k])
@@ -153,19 +185,22 @@ class TestJMEMode:
         sq = {k: -torch.ones_like(v) for k, v in grads.items()}
         opt = rmsprop(lr=1e-2)
         state = opt.init(params)
-        updates, _ = opt.update(grads, state, params=params, noisy_squared_grads=sq)
+        output = SecondMomentNoiseOutput(
+            noisy(grads, bound=1.0, noise_stddev=0.1),
+            noisy(sq, bound=1.0, noise_stddev=0.1),
+        )
+        updates, _ = opt.update(output, state, params=params)
         for k in updates:
             assert torch.isfinite(updates[k]).all()
 
-    def test_both_kwargs_raises(self, params, grads, sq_grads):
+    def test_explicit_second_moment_kwarg_rejected(self, params, grads, sq_grads):
         opt = rmsprop(lr=1e-2)
         state = opt.init(params)
-        with pytest.raises(ValueError, match="exactly one"):
+        with pytest.raises(TypeError, match="noisy_squared_grads"):
             opt.update(
                 grads,
                 state,
                 params=params,
-                noise_stddev=0.5,
                 noisy_squared_grads=sq_grads,
             )
 

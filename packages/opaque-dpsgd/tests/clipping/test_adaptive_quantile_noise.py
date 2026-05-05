@@ -3,8 +3,14 @@
 import pytest
 import torch
 
+from opaque.bounded import BoundedPytree
 from opaque.dpsgd.clipping.adaptive import adaptive_clipped_grad
 from opaque.random import key
+
+
+def _unwrap_bounded(value):
+    assert isinstance(value, BoundedPytree)
+    return value.pytree
 
 
 class TestQuantileNoise:
@@ -74,8 +80,8 @@ class TestQuantileNoise:
             _, state2 = grad_fn2(params, batch_x, batch_y, state=state2)
 
             # Clip norms should be identical (same noise sequence)
-            assert state1.next_clipping_norm == state2.next_clipping_norm
-            assert state1.step == state2.step
+            assert state1._next_clipping_norm == state2._next_clipping_norm
+            assert state1._step == state2._step
 
     def test_quantile_noise_different_keys_produce_different_paths(self):
         """Test that different keys can produce different adaptation paths.
@@ -164,7 +170,7 @@ class TestQuantileNoise:
 
         # Adaptation paths should diverge with high noise
         # With fraction_noise_std=0.5, this should reliably cause different decisions
-        assert state_no_noise.next_clipping_norm != state_noise.next_clipping_norm
+        assert state_no_noise._next_clipping_norm != state_noise._next_clipping_norm
 
     def test_state_preserves_key_and_step(self):
         """Test that state correctly preserves key and step counter."""
@@ -183,7 +189,7 @@ class TestQuantileNoise:
 
         # Initial state
         assert state._rng_key == key(42)
-        assert state.step == 0
+        assert state._step == 0
 
         # Run a few steps
         params = torch.randn(10, requires_grad=False)
@@ -193,7 +199,7 @@ class TestQuantileNoise:
         for i in range(1, 6):
             _, state = grad_fn(params, batch_x, batch_y, state=state)
             assert state._rng_key == key(42)  # Key unchanged
-            assert state.step == i  # Step incremented
+            assert state._step == i  # Step incremented
 
     def test_quantile_noise_with_aux_output(self):
         """Test that quantile noise works with aux output."""
@@ -216,11 +222,12 @@ class TestQuantileNoise:
         batch_y = torch.randn(8)
 
         (grads, aux), state = grad_fn(params, batch_x, batch_y, state=state)
+        grads = _unwrap_bounded(grads)
 
         # Check aux contains expected fields
         assert aux.clipping_rate is not None
         assert grads.shape == params.shape
-        assert state.step == 1
+        assert state._step == 1
 
 
 class TestQuantileNoiseClipNorm:
@@ -251,8 +258,8 @@ class TestQuantileNoiseClipNorm:
         )
 
         # clipping_norm should be identical (same initial_clipping_norm)
-        assert state_no_noise.clipping_norm == state_noise.clipping_norm
-        assert state_no_noise.clipping_norm == 1.0
+        assert state_no_noise._current_clipping_norm == state_noise._current_clipping_norm
+        assert state_no_noise._current_clipping_norm == 1.0
 
     def test_clip_norm_matches_initial(self):
         """Test clipping_norm equals initial_clipping_norm before any steps."""
@@ -269,4 +276,4 @@ class TestQuantileNoiseClipNorm:
             batch_argnums=(1, 2),
         )
 
-        assert state.clipping_norm == 5.0
+        assert state._current_clipping_norm == 5.0

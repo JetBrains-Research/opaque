@@ -7,7 +7,13 @@ For comprehensive validation against JAX-Privacy, see tests/jax_validation/test_
 import pytest
 import torch
 
+from opaque.bounded import BoundedPytree
 from opaque.clipping import clipped_grad
+
+
+def _unwrap_bounded(value):
+    assert isinstance(value, BoundedPytree)
+    return value.pytree
 
 
 def test_clipped_grad_validate_args_overlap():
@@ -57,6 +63,7 @@ def test_clipped_grad_basic():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     grad, _ = grad_fn(param, data, state=clip_state)
+    grad = _unwrap_bounded(grad)
 
     # Check grad is a tensor
     assert isinstance(grad, torch.Tensor)
@@ -85,6 +92,7 @@ def test_clipped_grad_with_pytree_params():
     data = torch.tensor([0.0, 1.0, 2.0])
 
     grads, _ = grad_fn(params, data, state=clip_state)
+    grads = _unwrap_bounded(grads)
 
     # Check grads has same structure as params
     assert isinstance(grads, dict)
@@ -111,6 +119,7 @@ def test_clipped_grad_return_grad_norms():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
+    grad = _unwrap_bounded(grad)
 
     # Check gradient
     assert isinstance(grad, torch.Tensor)
@@ -140,6 +149,7 @@ def test_clipped_grad_return_values():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
+    grad = _unwrap_bounded(grad)
 
     # Check gradient
     assert isinstance(grad, torch.Tensor)
@@ -171,6 +181,7 @@ def test_clipped_grad_has_aux():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
+    grad = _unwrap_bounded(grad)
 
     # Check gradient
     assert isinstance(grad, torch.Tensor)
@@ -201,6 +212,7 @@ def test_clipped_grad_with_normalize_by():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     grad, _ = grad_fn(param, data, state=clip_state)
+    grad = _unwrap_bounded(grad)
 
     # Check grad is normalized (smaller than without normalization)
     assert isinstance(grad, torch.Tensor)
@@ -262,6 +274,7 @@ def test_clipped_grad_preserves_direction():
 
     # Compute clipped gradient
     (grad, grad_aux), _ = grad_fn(param, data_single, state=clip_state)
+    grad = _unwrap_bounded(grad)
 
     # Check direction is preserved (signs match)
     assert torch.sign(grad) == torch.sign(unclipped_grad), (
@@ -293,6 +306,7 @@ def test_clipped_grad_no_clipping_below_threshold():
     data = torch.tensor([1.1, 0.9, 1.05])  # Small differences -> small gradients
 
     (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
+    grad = _unwrap_bounded(grad)
 
     # All norms should be below threshold
     assert (grad_aux.grad_norms < large_clip_norm).all(), (
@@ -321,6 +335,7 @@ def test_clipped_grad_zero_gradients():
     data = torch.zeros(3)
 
     (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
+    grad = _unwrap_bounded(grad)
 
     # Check all zero
     assert grad.abs() < 1e-7, "Gradient should be zero"
@@ -348,6 +363,7 @@ def test_clipped_grad_with_batch_dim():
         loss_no_batch, argnums=0, batch_argnums=1, clipping_norm=10.0
     )
     grad_no_batch, _ = grad_fn(param, data, state=clip_state)
+    grad_no_batch = _unwrap_bounded(grad_no_batch)
 
     # With with_batch_dim: loss receives (1,) per-example
     grad_fn2, clip_state2 = clipped_grad(
@@ -357,6 +373,7 @@ def test_clipped_grad_with_batch_dim():
         clipping_norm=10.0,
     )
     grad_with_batch, _ = grad_fn2(param, data, state=clip_state2)
+    grad_with_batch = _unwrap_bounded(grad_with_batch)
 
     # Both should produce non-zero gradients
     assert grad_no_batch.abs() > 1e-6, "Should have non-zero gradient"
@@ -389,6 +406,8 @@ def test_clipped_grad_microbatching_identical_results():
         loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0, microbatch_size=8
     )
     grads_mb, _ = grad_fn_mb(params, x, y, state=clip_state_mb)
+    grads_no_mb = _unwrap_bounded(grads_no_mb)
+    grads_mb = _unwrap_bounded(grads_mb)
 
     # Results should be identical
     torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
@@ -422,6 +441,7 @@ def test_clipped_grad_microbatching_with_aux():
     (grads_no_mb, grad_aux_no_mb), _ = grad_fn_no_mb(
         params, x, y, state=clip_state_no_mb
     )
+    grads_no_mb = _unwrap_bounded(grads_no_mb)
 
     # With microbatching
     grad_fn_mb, clip_state_mb = clipped_grad(
@@ -434,6 +454,7 @@ def test_clipped_grad_microbatching_with_aux():
         microbatch_size=8,
     )
     (grads_mb, grad_aux_mb), _ = grad_fn_mb(params, x, y, state=clip_state_mb)
+    grads_mb = _unwrap_bounded(grads_mb)
 
     # Gradients should be identical
     torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
@@ -480,6 +501,7 @@ def test_clipped_grad_microbatching_with_return_values_and_norms():
     (grads_no_mb, grad_aux_no_mb), _ = grad_fn_no_mb(
         params, x, y, state=clip_state_no_mb
     )
+    grads_no_mb = _unwrap_bounded(grads_no_mb)
 
     # With microbatching
     grad_fn_mb, clip_state_mb = clipped_grad(
@@ -491,6 +513,7 @@ def test_clipped_grad_microbatching_with_return_values_and_norms():
         microbatch_size=12,
     )
     (grads_mb, grad_aux_mb), _ = grad_fn_mb(params, x, y, state=clip_state_mb)
+    grads_mb = _unwrap_bounded(grads_mb)
 
     # Gradients should be identical
     torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
@@ -544,6 +567,8 @@ def test_clipped_grad_microbatching_with_pytree_params():
         loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0, microbatch_size=10
     )
     grads_mb, _ = grad_fn_mb(params, x, y, state=clip_state_mb)
+    grads_no_mb = _unwrap_bounded(grads_no_mb)
+    grads_mb = _unwrap_bounded(grads_mb)
 
     # Both gradients should be PyTrees with same structure
     assert isinstance(grads_mb, dict)

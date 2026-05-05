@@ -245,7 +245,7 @@ grad_fn, clip_state = clipped_grad(
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.sensitivity, key=key(42),
+  noise_multiplier=noise_multiplier, key=key(42),
 )
 
 # Training loop

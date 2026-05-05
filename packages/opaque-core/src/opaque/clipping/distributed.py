@@ -17,7 +17,6 @@ from opaque.distributed import (
     is_distributed,
     reduce_scalar,
     register_sync_type,
-    sync_object,
 )
 
 from .clipped_fun import ClippedFunAux
@@ -33,13 +32,13 @@ __all__ = [
 
 
 def sync_clip_state(state: FixedClipState) -> FixedClipState:
-    """Validate fixed clipping state is identical across ranks."""
+    """Synchronize fixed clipping marker state."""
     if not is_distributed():
         return state
     if not isinstance(state, FixedClipState):
         raise TypeError(f"Expected FixedClipState, got {type(state)}")
 
-    return sync_object(state, field_ops={"clipping_norm": "assert_equal"})
+    return state
 
 
 def _split_aux_fields(aux) -> tuple[dict[str, object], dict[str, object]]:

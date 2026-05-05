@@ -5,6 +5,7 @@ import math
 import pytest
 import torch
 
+from opaque.bounded import NoisyPytree, bounded
 from opaque.core.noise import (
     SecondMomentNoiseOutput,
     second_moment_joint_sensitivity,
@@ -22,6 +23,14 @@ from opaque.dpftrl.noise import (
     mf_noise,
 )
 from opaque.random import key
+
+
+_SENSITIVITY = 0.1
+
+
+def _bounded(grads):
+    """Wrap raw grad pytree as BoundedPytree at the test's standard bound."""
+    return bounded(grads, bound=_SENSITIVITY)
 
 
 class TestSecondMomentCalibration:
@@ -79,7 +88,6 @@ class TestSecondMomentMFNoise:
             grad_template,
             strategy,
             noise_multiplier=1.0,
-            sensitivity=0.1,
             key=key(42),
             second_moment=True,
             second_moment_strategy=second_strategy,
@@ -87,8 +95,10 @@ class TestSecondMomentMFNoise:
         assert isinstance(state, SecondMomentMFNoiseState)
 
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
-        output, new_state = noise_fn(grads, state)
+        output, new_state = noise_fn(_bounded(grads), state)
         assert isinstance(output, SecondMomentNoiseOutput)
+        assert isinstance(output.noisy_grads, NoisyPytree)
+        assert isinstance(output.noisy_squared_grads, NoisyPytree)
         assert isinstance(new_state, SecondMomentMFNoiseState)
 
     def test_output_shapes_match_input(self, grad_template):
@@ -98,17 +108,16 @@ class TestSecondMomentMFNoise:
             grad_template,
             strategy,
             noise_multiplier=1.0,
-            sensitivity=0.1,
             key=key(42),
             second_moment=True,
             second_moment_strategy=second_strategy,
         )
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
-        output, state = noise_fn(grads, state)
-        assert output.noisy_grads["w"].shape == (4, 3)
-        assert output.noisy_grads["b"].shape == (4,)
-        assert output.noisy_squared_grads["w"].shape == (4, 3)
-        assert output.noisy_squared_grads["b"].shape == (4,)
+        output, state = noise_fn(_bounded(grads), state)
+        assert output.noisy_grads.pytree["w"].shape == (4, 3)
+        assert output.noisy_grads.pytree["b"].shape == (4,)
+        assert output.noisy_squared_grads.pytree["w"].shape == (4, 3)
+        assert output.noisy_squared_grads.pytree["b"].shape == (4,)
 
     def test_tuple_unpacking(self, grad_template):
         strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
@@ -117,15 +126,14 @@ class TestSecondMomentMFNoise:
             grad_template,
             strategy,
             noise_multiplier=1.0,
-            sensitivity=0.1,
             key=key(42),
             second_moment=True,
             second_moment_strategy=second_strategy,
         )
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
-        noisy_g, noisy_sq = noise_fn(grads, state)[0]
-        assert isinstance(noisy_g, dict)
-        assert isinstance(noisy_sq, dict)
+        noisy_g, noisy_sq = noise_fn(_bounded(grads), state)[0]
+        assert isinstance(noisy_g, NoisyPytree)
+        assert isinstance(noisy_sq, NoisyPytree)
 
     def test_step_counter_increments(self, grad_template):
         strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
@@ -134,16 +142,15 @@ class TestSecondMomentMFNoise:
             grad_template,
             strategy,
             noise_multiplier=1.0,
-            sensitivity=0.1,
             key=key(42),
             second_moment=True,
             second_moment_strategy=second_strategy,
         )
         assert state._step_counter == 0
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
-        _, state = noise_fn(grads, state)
+        _, state = noise_fn(_bounded(grads), state)
         assert state._step_counter == 1
-        _, state = noise_fn(grads, state)
+        _, state = noise_fn(_bounded(grads), state)
         assert state._step_counter == 2
 
     def test_deterministic_with_same_key(self, grad_template):
@@ -155,28 +162,28 @@ class TestSecondMomentMFNoise:
             grad_template,
             strategy,
             noise_multiplier=1.0,
-            sensitivity=0.1,
             key=key(42),
             second_moment=True,
             second_moment_strategy=second_strategy,
         )
-        output1, _ = noise_fn1(grads, state1)
+        output1, _ = noise_fn1(_bounded(grads), state1)
 
         noise_fn2, state2 = mf_noise(
             grad_template,
             strategy,
             noise_multiplier=1.0,
-            sensitivity=0.1,
             key=key(42),
             second_moment=True,
             second_moment_strategy=second_strategy,
         )
-        output2, _ = noise_fn2(grads, state2)
+        output2, _ = noise_fn2(_bounded(grads), state2)
 
-        torch.testing.assert_close(output1.noisy_grads["w"], output2.noisy_grads["w"])
         torch.testing.assert_close(
-            output1.noisy_squared_grads["w"],
-            output2.noisy_squared_grads["w"],
+            output1.noisy_grads.pytree["w"], output2.noisy_grads.pytree["w"]
+        )
+        torch.testing.assert_close(
+            output1.noisy_squared_grads.pytree["w"],
+            output2.noisy_squared_grads.pytree["w"],
         )
 
     def test_different_keys_give_different_noise(self, grad_template):
@@ -188,25 +195,25 @@ class TestSecondMomentMFNoise:
             grad_template,
             strategy,
             noise_multiplier=1.0,
-            sensitivity=0.1,
             key=key(42),
             second_moment=True,
             second_moment_strategy=second_strategy,
         )
-        output1, _ = noise_fn1(grads, state1)
+        output1, _ = noise_fn1(_bounded(grads), state1)
 
         noise_fn2, state2 = mf_noise(
             grad_template,
             strategy,
             noise_multiplier=1.0,
-            sensitivity=0.1,
             key=key(99),
             second_moment=True,
             second_moment_strategy=second_strategy,
         )
-        output2, _ = noise_fn2(grads, state2)
+        output2, _ = noise_fn2(_bounded(grads), state2)
 
-        assert not torch.allclose(output1.noisy_grads["w"], output2.noisy_grads["w"])
+        assert not torch.allclose(
+            output1.noisy_grads.pytree["w"], output2.noisy_grads.pytree["w"]
+        )
 
     @pytest.mark.parametrize("mechanism", ["band_mf", "blt", "bisr", "bsr", "identity"])
     def test_works_with_supported_mechanisms(self, grad_template, mechanism):
@@ -244,15 +251,14 @@ class TestSecondMomentMFNoise:
             grad_template,
             strategy,
             noise_multiplier=1.0,
-            sensitivity=0.1,
             key=key(42),
             second_moment=True,
             second_moment_strategy=second_strategy,
         )
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
-        output, new_state = noise_fn(grads, state)
-        assert output.noisy_grads["w"].shape == (4, 3)
-        assert output.noisy_squared_grads["w"].shape == (4, 3)
+        output, new_state = noise_fn(_bounded(grads), state)
+        assert output.noisy_grads.pytree["w"].shape == (4, 3)
+        assert output.noisy_squared_grads.pytree["w"].shape == (4, 3)
         assert isinstance(new_state, SecondMomentMFNoiseState)
 
     def test_lambda_cgd_requires_explicit_second_strategy(self, grad_template):
@@ -262,7 +268,6 @@ class TestSecondMomentMFNoise:
                 grad_template,
                 strategy,
                 noise_multiplier=1.0,
-                sensitivity=0.1,
                 key=key(42),
                 second_moment=True,
             )
@@ -274,14 +279,13 @@ class TestSecondMomentMFNoise:
             grad_template,
             strategy,
             noise_multiplier=1.0,
-            sensitivity=0.1,
             key=key(42),
             second_moment=True,
             second_moment_strategy=second_strategy,
         )
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
-        output, _ = noise_fn(grads, state)
-        assert output.noisy_squared_grads["w"].shape == (4, 3)
+        output, _ = noise_fn(_bounded(grads), state)
+        assert output.noisy_squared_grads.pytree["w"].shape == (4, 3)
 
     def test_squared_grads_are_noised_not_raw(self, grad_template):
         strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
@@ -290,12 +294,13 @@ class TestSecondMomentMFNoise:
             grad_template,
             strategy,
             noise_multiplier=1.0,
-            sensitivity=0.1,
             key=key(42),
             second_moment=True,
             second_moment_strategy=second_strategy,
         )
         grads = {"w": torch.ones(4, 3), "b": torch.ones(4)}
-        output, _ = noise_fn(grads, state)
+        output, _ = noise_fn(_bounded(grads), state)
         raw_sq = grads["w"] ** 2
-        assert not torch.allclose(output.noisy_squared_grads["w"], raw_sq, atol=1e-6)
+        assert not torch.allclose(
+            output.noisy_squared_grads.pytree["w"], raw_sq, atol=1e-6
+        )

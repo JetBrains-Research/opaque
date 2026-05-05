@@ -15,8 +15,8 @@ hyperparameter — it is absorbed into the learning rate.
 
 Privacy accounting is standard Gaussian DP-SGD: the scaling is
 fully per-example (depends only on the sample's own gradient), so there
-is no additional privacy cost beyond ``gaussian(noise_multiplier)`` with
-``sensitivity = R / normalize_by``.
+is no additional privacy cost beyond ``gaussian(noise_multiplier)``;
+the returned ``BoundedPytree`` carries the post-normalization bound.
 """
 
 from __future__ import annotations
@@ -70,46 +70,7 @@ class AutoClippedGradAux(ClippedGradAux):
 
 @dataclass(frozen=True)
 class AutoClipState(ClipState):
-    """Clipping state for AUTO-S automatic clipping.
-
-    AUTO-S has no data-dependent threshold, so the state is fixed
-    throughout training (like :class:`FixedClipState`).  The raw L2
-    sensitivity bound is ``R`` (stored in ``clipping_norm``) and the
-    sensitivity of the aggregated query is
-    ``sensitivity = R / normalize_by``.
-
-    Attributes:
-        clipping_norm: Sensitivity bound ``R``.  When ``PerGroup``, each
-            parameter group has its own bound and the scalar
-            ``sensitivity`` property returns ``\\sqrt{\\sum_k R_k^2} /
-            normalize_by``.
-        normalize_by: Divisor applied to the scaled sum (``1.0`` = no
-            averaging).
-        gamma: Denominator stabilizer :math:`\\gamma` used during
-            training.  Does not affect sensitivity but is exposed for
-            inspection and distributed-sync consistency.
-    """
-
-    clipping_norm: float | PerGroup
-    normalize_by: float = 1.0
-    gamma: float = _DEFAULT_GAMMA
-
-    def __post_init__(self) -> None:
-        if isinstance(self.clipping_norm, PerGroup):
-            for gname, val in self.clipping_norm.values.items():
-                if val <= 0:
-                    raise ValueError(
-                        f"clipping_norm (R) must be positive for all groups, "
-                        f"got {val} for group '{gname}'"
-                    )
-        elif self.clipping_norm <= 0:
-            raise ValueError(
-                f"clipping_norm (R) must be positive, got {self.clipping_norm}"
-            )
-        if self.normalize_by <= 0:
-            raise ValueError(f"normalize_by must be positive, got {self.normalize_by}")
-        if self.gamma <= 0:
-            raise ValueError(f"gamma must be positive, got {self.gamma}")
+    """Marker state for AUTO-S automatic clipping."""
 
 
 def _make_auto_scale_fn(R: float | PerGroup, gamma: float) -> Callable:
@@ -174,9 +135,8 @@ def auto_clipped_fun(
 
     Formal guarantee:
         Under add/remove or zero-out DP, the L2 sensitivity of the first
-        output with respect to the batch arguments equals
-        ``state.sensitivity = R / normalize_by`` (scalar ``R``) or
-        ``\|R\|_2 / normalize_by`` (per-group).
+        output with respect to the batch arguments is the returned
+        ``BoundedPytree.bound`` metadata.
     """
     _validate_auto_params(R, gamma)
 
@@ -193,11 +153,7 @@ def auto_clipped_fun(
         _scale_fn=scale_fn,
     )
 
-    state = AutoClipState(
-        clipping_norm=R,
-        normalize_by=normalize_by,
-        gamma=gamma,
-    )
+    state = AutoClipState()
 
     if not return_aux:
 
@@ -277,10 +233,9 @@ def auto_clipped_grad(
 
     Formal guarantee:
         Under add/remove or zero-out DP, the L2 sensitivity of the
-        summed gradients equals ``state.sensitivity = R / normalize_by``
-        (scalar ``R``) or ``\|R\|_2 / normalize_by`` (per-group).  Privacy
-        accounting is plain ``gaussian(noise_multiplier)`` — AUTO-S
-        scaling is per-example and adds no additional privacy cost.
+        summed gradients is the returned ``BoundedPytree.bound`` metadata.
+        Privacy accounting is plain ``gaussian(noise_multiplier)`` —
+        AUTO-S scaling is per-example and adds no additional privacy cost.
 
     Example:
         >>> import torch
@@ -317,11 +272,7 @@ def auto_clipped_grad(
         _scale_fn=scale_fn,
     )
 
-    state = AutoClipState(
-        clipping_norm=R,
-        normalize_by=normalize_by,
-        gamma=gamma,
-    )
+    state = AutoClipState()
 
     if not return_aux:
 

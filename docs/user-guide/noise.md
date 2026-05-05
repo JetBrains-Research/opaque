@@ -24,59 +24,34 @@ from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.sensitivity,
+    noise_multiplier=noise_multiplier,
     key=key(42),
 )
 
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
-For private second moments, keep `stddev` as the noise scale and also pass the
-clipped-gradient `sensitivity` so the squared-gradient stream can be calibrated:
-
-```python
-noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.sensitivity,
-    sensitivity=clip_state.sensitivity,
-    key=key(42),
-    second_moment=True,
-)
-```
-
-With adaptive clipping, override both values per step:
-
-```python
-stddev = noise_multiplier * clip_state.sensitivity
-noise_output, noise_state = noise_fn(
-    grads,
-    noise_state,
-    stddev=stddev,
-    sensitivity=clip_state.sensitivity,
-)
-```
-
-`gaussian_noise(..., second_moment=True)` returns a
-`SecondMomentNoiseOutput` with `noisy_grads` and `noisy_squared_grads` for
-optimizers that consume private second moments. Accounting for the public
-`acc.second_moment(...)` transformation currently targets MF mechanisms; use
-the MF flow below when you need end-to-end private second-moment accounting.
+`grads` must be a `BoundedPytree` from a clipping transform. The noise function
+reads `grads.bound`, adds Gaussian noise with stddev
+`noise_multiplier * grads.bound`, and returns a `NoisyPytree` carrying the
+realized `noise_stddev` metadata for optimizers.
 
 ### Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `stddev` | `float` | Standard deviation of Gaussian noise. Typically `noise_multiplier * sensitivity`. |
-| `sensitivity` | `float` or `PerGroup` | Clipped-gradient sensitivity. Required for `second_moment=True`. |
-| `second_moment` | `bool` or `float` | Return private first and squared-gradient streams. `True` uses the default `sqrt(3/2)` first-stream overhead; a float supplies a custom overhead. |
+| `noise_multiplier` | `float` | Gaussian noise multiplier. The realized stddev is `noise_multiplier * grads.bound`. |
 | `key` | `RngKey` | Explicit RNG key for deterministic noise. Create with `key(seed)`. |
 
-### Calibrating stddev
+### Calibrating the noise multiplier
 
-The noise standard deviation is `noise_multiplier * sensitivity`, where:
+The accountant calibrates `noise_multiplier`; the clipped output supplies the
+per-step bound at runtime:
 
 - `noise_multiplier` is determined by the target privacy budget (use
   `acc.calibrate()` to find it)
-- `sensitivity` comes from `clip_state.sensitivity`
+- `grads.bound` comes from `clipped_grad`, `adaptive_clipped_grad`, or
+    `auto_clipped_grad`
 
 ```python
 import opaque.accounting as acc
@@ -88,7 +63,7 @@ result = acc.calibrate(
 )
 
 noise_fn, noise_state = gaussian_noise(
-    stddev=result.param * clip_state.sensitivity, key=key(42),
+    noise_multiplier=result.param, key=key(42),
 )
 ```
 
@@ -100,7 +75,7 @@ Each call to `noise_fn` returns a new state with an incremented step counter.
 Always use the returned state for the next call.
 
 ```python
-noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
+noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(42))
 
 for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
@@ -112,28 +87,28 @@ for batch in dataloader:
 Internally, noise at step t is generated from `fold_in(base_key, t)`, ensuring
 deterministic per-step noise regardless of execution order.
 
-### Zero stddev
+### Zero noise multiplier
 
-When `stddev=0`, `gaussian_noise` returns a no-op function that passes
-gradients through unchanged. This is useful for toggling DP on and off
-without changing the training loop.
+When `noise_multiplier=0`, `gaussian_noise` returns `NoisyPytree` updates with
+zero noise. This is useful for toggling DP on and off without changing the
+training loop.
 
 ### Per-group noise
 
-When using [per-group clipping](clipping.md#per-group-clipping), the
-recommended approach is MSE-optimal allocation via `per_group_noise_stddev`,
-which varies σ across groups — putting less noise on smaller-norm groups:
+When using [per-group clipping](clipping.md#per-group-clipping),
+`gaussian_noise` and `truncated_gaussian_noise` use MSE-optimal allocation
+automatically. To inspect the realized allocation, call `per_group_noise_stddev`:
 
 ```python
 from opaque.dpsgd.noise import per_group_noise_stddev
 
-stddev = per_group_noise_stddev(clip_state, noise_multiplier)
-noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+stddev = per_group_noise_stddev(grads.bound, noise_multiplier)
 ```
 
 This returns a `PerGroup` of per-group standard deviations with
-$\sigma_i \propto \sqrt{C_i}$. Privacy accounting is identical to the
-isotropic case — just `gaussian(nm)`.
+$\sigma_i \propto \sqrt{C_i}$. `gaussian_noise` applies this allocation
+automatically when `grads.bound` is a `PerGroup`. Privacy accounting is
+identical to the isotropic case — just `gaussian(nm)`.
 
 The [training script](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py) uses this by default
 when per-group clipping is active.
@@ -141,12 +116,12 @@ when per-group clipping is active.
 Alternatively, isotropic noise (same σ everywhere) also works:
 
 ```python
-stddev = noise_multiplier * clip_state.sensitivity
-noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
+noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
-`clip_state.sensitivity` returns a scalar $\lVert C \rVert_2 / n$ even with
-per-group clipping norms, so no code changes are needed.
+`noisy_grads.noise_stddev` records the realized scalar or per-group noise
+scale used for that step.
 
 ## Bounded Gaussian noise
 
@@ -169,7 +144,7 @@ from opaque.dpsgd.noise import truncated_gaussian_noise
 from opaque.random import key
 
 noise_fn, noise_state = truncated_gaussian_noise(
-    stddev=1.0,
+    noise_multiplier=noise_multiplier,
     radius=2.0,
     key=key(42),
 )
@@ -242,10 +217,11 @@ from opaque.dpftrl.noise import mf_noise, band_mf_strategy
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
+clip_bound = clipping_norm / batch_size
 noise_fn, noise_state = mf_noise(
     grad_template=params,
     strategy=strategy,
-    stddev=noise_multiplier * clip_state.sensitivity,
+    stddev=noise_multiplier * clip_bound,
     key=key(42),
 )
 
@@ -270,12 +246,13 @@ from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.9)
 second_strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.999)
+clip_bound = clipping_norm / batch_size
 
 noise_fn, noise_state = mf_noise(
     params,
     strategy,
     noise_multiplier=noise_multiplier,
-    sensitivity=clip_state.sensitivity,
+    sensitivity=clip_bound,
     key=key(42),
     second_moment=True,
     second_moment_strategy=second_strategy,
@@ -310,7 +287,7 @@ from opaque.random import key
 strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.95)
 noise_fn, noise_state = mf_noise(
     params, strategy,
-    stddev=noise_multiplier * clip_state.sensitivity,
+    stddev=noise_multiplier * clip_bound,
     key=key(42),
 )
 ```
@@ -330,7 +307,7 @@ strategy = blt_strategy(
 )
 noise_fn, noise_state = mf_noise(
     params, strategy,
-    stddev=noise_multiplier * clip_state.sensitivity,
+    stddev=noise_multiplier * clip_bound,
     key=key(42),
 )
 ```
@@ -350,7 +327,7 @@ strategy = lambda_cgd_strategy(
 )
 noise_fn, noise_state = mf_noise(
     params, strategy,
-    stddev=noise_multiplier * clip_state.sensitivity,
+    stddev=noise_multiplier * clip_bound,
     key=key(42),
 )
 ```
@@ -369,7 +346,7 @@ strategy = bisr_strategy(
 )
 noise_fn, noise_state = mf_noise(
     params, strategy,
-    stddev=noise_multiplier * clip_state.sensitivity,
+    stddev=noise_multiplier * clip_bound,
     key=key(42),
 )
 ```
@@ -386,7 +363,7 @@ from opaque.random import key
 strategy = identity_strategy()
 noise_fn, noise_state = mf_noise(
     params, strategy,
-    stddev=noise_multiplier * clip_state.sensitivity,
+    stddev=noise_multiplier * clip_bound,
     key=key(42),
 )
 ```
@@ -428,7 +405,7 @@ proc = acc.balls_in_bins(
 mechanism = acc.second_moment(
     acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
                    gram_matrix=strategy.gram_matrix),
-    sensitivity=clip_state.sensitivity,
+    sensitivity=clip_bound,
     max_column_norm=strategy._max_column_norm,
 )
 proc = acc.balls_in_bins(
@@ -508,10 +485,8 @@ In distributed training, all devices must add the same noise to maintain model
 consistency. Pass the **same key** on every rank:
 
 ```python
-# Same key on all ranks → identical noise → models stay in sync
-noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * sensitivity, key=key(42),
-)
+# Same key on all ranks -> identical noise -> models stay in sync
+noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
 ```
 
 For independent per-rank noise (not typical for centralized DP-SGD), derive
@@ -523,7 +498,7 @@ import torch.distributed as dist
 
 rank = dist.get_rank()
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * sensitivity,
+    noise_multiplier=noise_multiplier,
     key=fold_in(key(42), rank),
 )
 ```

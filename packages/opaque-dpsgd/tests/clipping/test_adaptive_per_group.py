@@ -5,9 +5,15 @@ import math
 import pytest
 import torch
 
+from opaque.bounded import BoundedPytree
+from opaque.clipping.per_group import PerGroup, per_group
 from opaque.dpsgd.clipping.adaptive import AdaptiveClipState, adaptive_clipped_grad
 from opaque.random import key
-from opaque.clipping.per_group import PerGroup, per_group
+
+
+def _unwrap_bounded(value):
+    assert isinstance(value, BoundedPytree)
+    return value.pytree
 
 
 def _make_loss_fn():
@@ -52,9 +58,9 @@ class TestAdaptivePerGroupBasic:
             batch_argnums=(1, 2),
         )
 
-        assert isinstance(clip_state.clipping_norm, PerGroup)
-        assert isinstance(clip_state.next_clipping_norm, PerGroup)
-        assert clip_state.clipping_norm.values == pg.values
+        assert isinstance(clip_state._current_clipping_norm, PerGroup)
+        assert isinstance(clip_state._next_clipping_norm, PerGroup)
+        assert clip_state._current_clipping_norm.values == pg.values
 
     def test_per_group_state_is_per_group(self):
         """Test that state fields remain PerGroup after a step."""
@@ -75,8 +81,8 @@ class TestAdaptivePerGroupBasic:
 
         (grads, aux), clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
-        assert isinstance(clip_state.clipping_norm, PerGroup)
-        assert isinstance(clip_state.next_clipping_norm, PerGroup)
+        assert isinstance(clip_state._current_clipping_norm, PerGroup)
+        assert isinstance(clip_state._next_clipping_norm, PerGroup)
         assert isinstance(clip_state._num_clipped, dict)
         assert set(clip_state._num_clipped.keys()) == {"a", "b"}
 
@@ -97,18 +103,19 @@ class TestAdaptivePerGroupBasic:
         batch_y = torch.randn(8)
 
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        grads = _unwrap_bounded(grads)
 
         assert isinstance(grads, dict)
         assert grads["a"].shape == params["a"].shape
         assert grads["b"].shape == params["b"].shape
 
-    def test_per_group_sensitivity_is_scalar(self):
-        """Test that clip_state.sensitivity returns scalar L2 norm."""
+    def test_per_group_output_bound_metadata(self):
+        """Adaptive clipping returns per-group bound metadata after normalization."""
         loss_fn = _make_per_group_loss_fn()
         params = {"a": torch.randn(10), "b": torch.randn(5)}
         pg = _make_per_group(params, a_norm=1.0, b_norm=2.0)
 
-        _, clip_state = adaptive_clipped_grad(
+        grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clipping_norm=pg,
             key=key(0),
@@ -116,12 +123,14 @@ class TestAdaptivePerGroupBasic:
             normalize_by=10.0,
         )
 
-        sensitivity = clip_state.sensitivity
-        assert isinstance(sensitivity, float)
-        # sqrt(1^2 + 2^2) / 10 = sqrt(5) / 10
+        batch_x = torch.randn(8, 10)
+        batch_y = torch.randn(8)
+        grads, _ = grad_fn(params, batch_x, batch_y, state=clip_state)
+        assert isinstance(grads.bound, PerGroup)
+        assert grads.bound.values == {"a": pytest.approx(0.1), "b": pytest.approx(0.2)}
         import math
 
-        assert abs(sensitivity - math.sqrt(5) / 10) < 1e-6
+        assert grads.bound.effective == pytest.approx(math.sqrt(5) / 10)
 
 
 class TestAdaptivePerGroupConvergence:
@@ -157,7 +166,7 @@ class TestAdaptivePerGroupConvergence:
             (_, aux), clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Group "a" should have adapted to a different threshold than "b"
-        final = clip_state.next_clipping_norm
+        final = clip_state._next_clipping_norm
         assert isinstance(final, PerGroup)
         # They started the same but should have diverged
         assert final.values["a"] != final.values["b"]
@@ -190,9 +199,9 @@ class TestAdaptivePerGroupConvergence:
         _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Group "a": all clipped → threshold should increase
-        assert clip_state.next_clipping_norm.values["a"] > initial_a
+        assert clip_state._next_clipping_norm.values["a"] > initial_a
         # Group "b": none clipped → threshold should decrease
-        assert clip_state.next_clipping_norm.values["b"] < initial_b
+        assert clip_state._next_clipping_norm.values["b"] < initial_b
 
 
 class TestAdaptivePerGroupDeterministic:
@@ -216,7 +225,7 @@ class TestAdaptivePerGroupDeterministic:
                 batch_argnums=(1, 2),
             )
             _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-            results.append(clip_state.next_clipping_norm)
+            results.append(clip_state._next_clipping_norm)
 
         assert results[0].values["a"] == results[1].values["a"]
         assert results[0].values["b"] == results[1].values["b"]
@@ -245,9 +254,9 @@ class TestAdaptivePerGroupEmptyBatch:
         _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Thresholds should be unchanged
-        assert clip_state.next_clipping_norm.values["a"] == 1.5
-        assert clip_state.next_clipping_norm.values["b"] == 3.0
-        assert clip_state.step == 1
+        assert clip_state._next_clipping_norm.values["a"] == 1.5
+        assert clip_state._next_clipping_norm.values["b"] == 3.0
+        assert clip_state._step == 1
 
     def test_empty_batch_num_clipped_is_dict(self):
         """Test that empty batch _num_clipped remains a dict."""
@@ -323,9 +332,9 @@ class TestAdaptivePerGroupAux:
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Even without return_aux, adaptation should work (state should change)
-        assert isinstance(clip_state.next_clipping_norm, PerGroup)
+        assert isinstance(clip_state._next_clipping_norm, PerGroup)
         # Thresholds should have adapted (not equal to initial)
-        assert clip_state.step == 1
+        assert clip_state._step == 1
 
 
 class TestAdaptivePerGroupValidation:
@@ -355,10 +364,9 @@ class TestAdaptivePerGroupValidation:
 
         with pytest.raises(ValueError, match="positive"):
             AdaptiveClipState(
-                clipping_norm=pg,
-                normalize_by=1.0,
-                next_clipping_norm=pg,
-                step=0,
+                _current_clipping_norm=pg,
+                _next_clipping_norm=pg,
+                _step=0,
                 _rng_key=key(0),
                 _fraction_noise_std=0.05,
                 _learning_rate=0.2,
@@ -391,10 +399,11 @@ class TestAdaptivePerGroupMicrobatch:
         batch_y = torch.randn(8)
 
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        grads = _unwrap_bounded(grads)
 
         assert isinstance(grads, dict)
         assert grads["a"].shape == params["a"].shape
-        assert isinstance(clip_state.next_clipping_norm, PerGroup)
+        assert isinstance(clip_state._next_clipping_norm, PerGroup)
 
 
 class TestAdaptivePerGroupAccounting:

@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset
 
+from opaque.bounded import bounded
 from opaque.dpftrl.noise import mf_noise
 from opaque.dpftrl.noise import (
     band_mf_strategy,
@@ -23,11 +24,13 @@ from opaque.random import key
 from opaque.dpftrl.sampling import BallsInBinsSampler
 
 
-def _train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps):
-    """Run a DP-FTRL training loop and return losses.
+def _engine_train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps, *, stddev):
+    """Run a DP-FTRL training loop with the raw engine noise function.
 
-    Uses the (noise_fn, state) API to add correlated noise to gradients
-    before each optimizer step.
+    The engine returns a noise_fn that takes the per-call ``stddev`` directly
+    on a raw gradient pytree.  Used by tests that exercise
+    :func:`_matrix_factorization_noise` directly rather than the
+    :func:`mf_noise` dispatcher.
     """
     params = list(model.parameters())
 
@@ -38,11 +41,35 @@ def _train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps):
         loss = ((pred - y_data) ** 2).mean()
         loss.backward()
 
-        # Privatize: collect grads, add correlated noise, write back
         grads = {i: p.grad.clone() for i, p in enumerate(params)}
-        noisy_grads, state = noise_fn(grads, state)
+        noisy_grads, state = noise_fn(grads, state, stddev=stddev)
         for i, p in enumerate(params):
             p.grad = noisy_grads[i].to(p.dtype)
+
+        optimizer.step()
+        losses.append(loss.item())
+    return losses
+
+
+def _mf_train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps, *, bound):
+    """Run a DP-FTRL training loop through the :func:`mf_noise` dispatcher.
+
+    Wraps gradients as :class:`BoundedPytree`, applies the dispatcher's
+    noise_fn, and unwraps the resulting :class:`NoisyPytree`.
+    """
+    params = list(model.parameters())
+
+    losses = []
+    for _ in range(steps):
+        optimizer.zero_grad()
+        pred = model(x_data)
+        loss = ((pred - y_data) ** 2).mean()
+        loss.backward()
+
+        grads = {i: p.grad.clone() for i, p in enumerate(params)}
+        noisy, state = noise_fn(bounded(grads, bound=bound), state)
+        for i, p in enumerate(params):
+            p.grad = noisy.pytree[i].to(p.dtype)
 
         optimizer.step()
         losses.append(loss.item())
@@ -63,7 +90,6 @@ class TestDPFTRLTrainingLoop:
         noise_fn, state = _matrix_factorization_noise(
             self._make_template(model),
             identity(),
-            stddev=0.1,
             key=key(42),
         )
 
@@ -71,7 +97,9 @@ class TestDPFTRLTrainingLoop:
         true_w = torch.randn(5, 1)
         y = x @ true_w
 
-        losses = _train_loop(model, optimizer, noise_fn, state, x, y, steps=50)
+        losses = _engine_train_loop(
+            model, optimizer, noise_fn, state, x, y, steps=50, stddev=0.1
+        )
         assert losses[-1] < losses[0]
 
     def test_toeplitz_noise_trains(self):
@@ -85,7 +113,6 @@ class TestDPFTRLTrainingLoop:
         noise_fn, state = _matrix_factorization_noise(
             self._make_template(model),
             noising,
-            stddev=0.1,
             key=key(42),
         )
 
@@ -93,7 +120,9 @@ class TestDPFTRLTrainingLoop:
         true_w = torch.randn(5, 1)
         y = x @ true_w
 
-        losses = _train_loop(model, optimizer, noise_fn, state, x, y, steps=steps)
+        losses = _engine_train_loop(
+            model, optimizer, noise_fn, state, x, y, steps=steps, stddev=0.1
+        )
         assert losses[-1] < losses[0]
 
     def test_dense_matrix_noise_trains(self):
@@ -106,7 +135,6 @@ class TestDPFTRLTrainingLoop:
         noise_fn, state = _matrix_factorization_noise(
             self._make_template(model),
             noising,
-            stddev=0.1,
             key=key(42),
         )
 
@@ -114,7 +142,9 @@ class TestDPFTRLTrainingLoop:
         true_w = torch.randn(5, 1)
         y = x @ true_w
 
-        losses = _train_loop(model, optimizer, noise_fn, state, x, y, steps=steps)
+        losses = _engine_train_loop(
+            model, optimizer, noise_fn, state, x, y, steps=steps, stddev=0.1
+        )
         assert losses[-1] < losses[0]
 
     def test_with_adam_optimizer(self):
@@ -125,7 +155,6 @@ class TestDPFTRLTrainingLoop:
         noise_fn, state = _matrix_factorization_noise(
             self._make_template(model),
             identity(),
-            stddev=0.1,
             key=key(42),
         )
 
@@ -133,7 +162,9 @@ class TestDPFTRLTrainingLoop:
         true_w = torch.randn(5, 1)
         y = x @ true_w
 
-        losses = _train_loop(model, optimizer, noise_fn, state, x, y, steps=30)
+        losses = _engine_train_loop(
+            model, optimizer, noise_fn, state, x, y, steps=30, stddev=0.1
+        )
         assert losses[-1] < losses[0]
 
     def test_multi_param_model(self):
@@ -148,7 +179,6 @@ class TestDPFTRLTrainingLoop:
         noise_fn, state = _matrix_factorization_noise(
             self._make_template(model),
             identity(),
-            stddev=0.1,
             key=key(42),
         )
 
@@ -156,7 +186,9 @@ class TestDPFTRLTrainingLoop:
         true_w = torch.randn(10, 1)
         y = x @ true_w
 
-        losses = _train_loop(model, optimizer, noise_fn, state, x, y, steps=30)
+        losses = _engine_train_loop(
+            model, optimizer, noise_fn, state, x, y, steps=30, stddev=0.1
+        )
         assert losses[-1] < losses[0]
 
     def test_deterministic_with_seed(self):
@@ -169,7 +201,6 @@ class TestDPFTRLTrainingLoop:
             noise_fn, state = _matrix_factorization_noise(
                 self._make_template(model),
                 identity(),
-                stddev=1.0,
                 key=key(42),
             )
 
@@ -177,7 +208,9 @@ class TestDPFTRLTrainingLoop:
             true_w = torch.randn(5, 1)
             y = x @ true_w
 
-            _train_loop(model, optimizer, noise_fn, state, x, y, steps=3)
+            _engine_train_loop(
+                model, optimizer, noise_fn, state, x, y, steps=3, stddev=1.0
+            )
             results.append(model.weight.data.clone())
 
         torch.testing.assert_close(results[0], results[1])
@@ -206,11 +239,12 @@ class TestBandMFvsDPSGD:
         noise_fn, state = _matrix_factorization_noise(
             self._make_template(model),
             noising,
-            stddev=0.1,
             key=key(42),
         )
 
-        losses = _train_loop(model, optimizer, noise_fn, state, x, y, steps)
+        losses = _engine_train_loop(
+            model, optimizer, noise_fn, state, x, y, steps, stddev=0.1
+        )
         assert losses[-1] < losses[0]
 
     def test_bandmf_vs_dpsgd_utility(self):
@@ -234,10 +268,11 @@ class TestBandMFvsDPSGD:
         noise_sgd, state_sgd = _matrix_factorization_noise(
             self._make_template(model_sgd),
             identity(),
-            stddev=stddev,
             key=key(42),
         )
-        losses_sgd = _train_loop(model_sgd, opt_sgd, noise_sgd, state_sgd, x, y, steps)
+        losses_sgd = _engine_train_loop(
+            model_sgd, opt_sgd, noise_sgd, state_sgd, x, y, steps, stddev=stddev
+        )
 
         # BandMF (correlated noise)
         torch.manual_seed(0)
@@ -248,10 +283,11 @@ class TestBandMFvsDPSGD:
         noise_mf, state_mf = _matrix_factorization_noise(
             self._make_template(model_mf),
             noising,
-            stddev=stddev,
             key=key(43),
         )
-        losses_mf = _train_loop(model_mf, opt_mf, noise_mf, state_mf, x, y, steps)
+        losses_mf = _engine_train_loop(
+            model_mf, opt_mf, noise_mf, state_mf, x, y, steps, stddev=stddev
+        )
 
         # Both should train (loss decreases)
         assert losses_sgd[-1] < losses_sgd[0]
@@ -299,7 +335,7 @@ class TestBLTWithBnB:
         noise_fn, noise_state = mf_noise(
             self._make_template(model),
             strategy,
-            stddev=0.05,
+            noise_multiplier=1.0,
             key=key(42),
         )
 
@@ -321,9 +357,9 @@ class TestBLTWithBnB:
             loss.backward()
 
             grads = {i: p.grad.clone() for i, p in enumerate(params)}
-            noisy_grads, noise_state = noise_fn(grads, noise_state)
+            noisy, noise_state = noise_fn(bounded(grads, bound=0.05), noise_state)
             for i, p in enumerate(params):
-                p.grad = noisy_grads[i].to(p.dtype)
+                p.grad = noisy.pytree[i].to(p.dtype)
 
             optimizer.step()
             losses.append(loss.item())
@@ -434,19 +470,17 @@ class TestMfNoiseStrategies:
     )
     def test_strategy_trains(self, strategy_factory):
         model, opt, tmpl, x, y = self._setup()
-        nf, ns = mf_noise(tmpl, strategy_factory(), stddev=0.1, key=key(42))
-        losses = _train_loop(model, opt, nf, ns, x, y, steps=50)
+        nf, ns = mf_noise(tmpl, strategy_factory(), noise_multiplier=1.0, key=key(42))
+        losses = _mf_train_loop(model, opt, nf, ns, x, y, steps=50, bound=0.1)
         assert losses[-1] < losses[0]
 
     def test_identity_matches_raw_engine(self):
         """identity_strategy via mf_noise gives same noise as _matrix_factorization_noise + identity()."""
         tmpl = {"w": torch.zeros(10)}
-        nf1, ns1 = mf_noise(tmpl, identity_strategy(), stddev=1.0, key=key(42))
-        nf2, ns2 = _matrix_factorization_noise(
-            tmpl, identity(), stddev=1.0, key=key(42)
-        )
+        nf1, ns1 = mf_noise(tmpl, identity_strategy(), noise_multiplier=1.0, key=key(42))
+        nf2, ns2 = _matrix_factorization_noise(tmpl, identity(), key=key(42))
 
         grad = {"w": torch.ones(10)}
-        out1, _ = nf1(grad, ns1)
-        out2, _ = nf2(grad, ns2)
-        torch.testing.assert_close(out1["w"], out2["w"])
+        out1, _ = nf1(bounded(grad, bound=1.0), ns1)
+        out2, _ = nf2(grad, ns2, stddev=1.0)
+        torch.testing.assert_close(out1.pytree["w"], out2["w"])

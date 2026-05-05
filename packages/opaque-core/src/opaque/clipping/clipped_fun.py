@@ -9,6 +9,7 @@ from typing import Any
 import torch
 from torch.func import vmap as _vmap
 
+from opaque.bounded import bounded
 from opaque.clipping._helpers import normalize_to_tuple
 from opaque.clipping.pytree import clip_pytree
 from opaque.clipping.types import FixedClipState
@@ -21,8 +22,8 @@ class ClippedFunAux:
     """Diagnostic outputs from clipped_fun.
 
     All fields are diagnostic — they reflect pre-noise, pre-aggregation
-    values and must not be fed back into private computation.  Use
-    ``ClipState.sensitivity`` for noise calibration.
+    values and must not be fed back into private computation.  Use the
+    returned ``BoundedPytree.bound`` metadata for noise calibration.
 
     Fields:
         values: Per-example function values before clipping.
@@ -87,6 +88,19 @@ def _sum_clipped_tensor(
     if summed.dtype != target:
         return summed.to(dtype=target)
     return summed
+
+
+def _validate_clipping_norm(clipping_norm: float | PerGroup) -> None:
+    if isinstance(clipping_norm, PerGroup):
+        for group_name, value in clipping_norm.values.items():
+            if value <= 0:
+                raise ValueError(
+                    "clipping_norm must be positive for all groups, "
+                    f"got {value} for group '{group_name}'"
+                )
+        return
+    if clipping_norm <= 0:
+        raise ValueError(f"clipping_norm must be positive, got {clipping_norm}")
 
 
 def _microbatch_accumulate(
@@ -316,6 +330,10 @@ def clipped_fun(
     else:
         fun_with_aux = fun
 
+    _validate_clipping_norm(clipping_norm)
+    output_bound = clipping_norm / normalize_by
+    clip_state = FixedClipState()
+
     def clipped_fn(*args, **kwargs):
         # Determine in_dims for vmap
         in_dims = tuple(0 if i in batch_argnums else None for i in range(len(args)))
@@ -427,6 +445,8 @@ def clipped_fun(
         if normalize_by != 1.0:
             result = tree_map(lambda x: x / normalize_by, result)
 
+        result = bounded(result, bound=output_bound)
+
         if not return_aux:
             return result
 
@@ -465,12 +485,6 @@ def clipped_fun(
         )
 
         return result, aux
-
-    # Create fixed clip state
-    clip_state = FixedClipState(
-        clipping_norm=clipping_norm,
-        normalize_by=normalize_by,
-    )
 
     # Wrap function to accept and return state
     def stateful_clipped_fn(*args, state, **kwargs):

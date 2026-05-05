@@ -4,8 +4,14 @@ import pytest
 import torch
 from torch.func import grad
 
+from opaque.bounded import BoundedPytree
 from opaque.clipping.clipped_fun import clipped_fun
 from opaque.clipping.pytree import clip_pytree
+
+
+def _unwrap_bounded(value):
+    assert isinstance(value, BoundedPytree)
+    return value.pytree
 
 
 @pytest.fixture(params=["cpu", "cuda", "mps"])
@@ -104,6 +110,7 @@ def test_clipped_fun_scalar_basic():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     clipped_grad, _ = clipped_grad_fn(param, data, state=clip_state)
+    clipped_grad = _unwrap_bounded(clipped_grad)
     assert isinstance(clipped_grad, torch.Tensor)
     assert clipped_grad.shape == param.shape
 
@@ -126,6 +133,7 @@ def test_clipped_fun_return_norms():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     (clipped_grad, aux), _ = clipped_grad_fn(param, data, state=clip_state)
+    clipped_grad = _unwrap_bounded(clipped_grad)
     assert isinstance(clipped_grad, torch.Tensor)
     assert aux.value_aux is None
     assert aux.norms is not None
@@ -157,6 +165,7 @@ def test_clipped_fun_with_batch_dim():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     clipped_grad, _ = clipped_grad_fn(param, data, state=clip_state)
+    clipped_grad = _unwrap_bounded(clipped_grad)
     assert isinstance(clipped_grad, torch.Tensor)
 
 
@@ -174,6 +183,7 @@ def test_clipped_fun_has_aux_false():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     clipped_grad, _ = clipped_grad_fn(param, data, state=clip_state)
+    clipped_grad = _unwrap_bounded(clipped_grad)
     assert isinstance(clipped_grad, torch.Tensor)
     # Should only return the clipped grad, no aux
 
@@ -195,6 +205,7 @@ def test_clipped_fun_has_aux_true():
     data = torch.tensor([0.0, 1.0, 2.0])
 
     (clipped_value, aux), _ = clipped_fn(x, data, state=clip_state)
+    clipped_value = _unwrap_bounded(clipped_value)
     assert isinstance(clipped_value, torch.Tensor)
     assert aux.value_aux is not None
 
@@ -215,6 +226,7 @@ def test_clipped_fun_has_aux_with_return_norms():
     data = torch.tensor([0.0, 1.0, 2.0])
 
     (clipped_value, aux), _ = clipped_fn(x, data, state=clip_state)
+    clipped_value = _unwrap_bounded(clipped_value)
     assert isinstance(clipped_value, torch.Tensor)
     assert aux.value_aux is not None
     assert aux.norms is not None
@@ -238,6 +250,7 @@ def test_clipped_fun_handles_nan():
 
     # NaN/Inf gradients are sanitized to zero inside clip_pytree
     result, _ = clipped_grad_fn(param, data, state=clip_state)
+    result = _unwrap_bounded(result)
     assert torch.isfinite(result).all()
 
 
@@ -260,6 +273,7 @@ def test_clipped_fun_dtype_controls_accumulation():
     data = torch.tensor([0.0, 7.0, -2.0])
 
     clipped_grad, _ = clipped_grad_fn(param, data, state=clip_state)
+    clipped_grad = _unwrap_bounded(clipped_grad)
     assert clipped_grad.dtype == torch.float64
 
 
@@ -273,6 +287,7 @@ def test_clipped_fun_default_uses_stable_accumulation_with_cast_back():
     data = torch.tensor([1.0, 2.0, 3.0], dtype=torch.bfloat16)
 
     result, _ = clipped_fn(data, state=clip_state)
+    result = _unwrap_bounded(result)
     expected = torch.sum(data, dim=0, dtype=torch.float32).to(torch.bfloat16)
     assert result.dtype == torch.bfloat16
     assert torch.allclose(result, expected)
@@ -296,6 +311,7 @@ def test_clipped_fun_pytree_params():
     data = torch.tensor([0.0, 1.0, 2.0])
 
     clipped_grads, _ = clipped_grad_fn(params, data, state=clip_state)
+    clipped_grads = _unwrap_bounded(clipped_grads)
     assert isinstance(clipped_grads, dict)
     assert "w" in clipped_grads and "b" in clipped_grads
     assert isinstance(clipped_grads["w"], torch.Tensor)
@@ -328,6 +344,7 @@ def test_clipped_fun_nested_pytree_params():
     data = torch.tensor([1.0, 2.0, 3.0])
 
     clipped_grads, _ = clipped_grad_fn(params, data, state=clip_state)
+    clipped_grads = _unwrap_bounded(clipped_grads)
     assert isinstance(clipped_grads, dict)
     assert "layer1" in clipped_grads and "layer2" in clipped_grads
     assert isinstance(clipped_grads["layer1"], dict)
@@ -361,12 +378,14 @@ def test_clipped_fun_microbatching_identical_results():
         square_fn, clipping_norm=1.0, microbatch_size=None
     )
     clipped_no_mb, _ = clipped_fn(data, state=clip_state)
+    clipped_no_mb = _unwrap_bounded(clipped_no_mb)
 
     # With microbatching (chunk_size=10)
     clipped_fn_mb, clip_state_mb = clipped_fun(
         square_fn, clipping_norm=1.0, microbatch_size=10
     )
     clipped_mb, _ = clipped_fn_mb(data, state=clip_state_mb)
+    clipped_mb = _unwrap_bounded(clipped_mb)
 
     # Results should be identical
     assert torch.allclose(clipped_no_mb, clipped_mb, atol=1e-6)
@@ -384,6 +403,7 @@ def test_clipped_fun_microbatching_different_sizes():
     # Reference without microbatching
     clipped_fn_ref, clip_state_ref = clipped_fun(square_fn, clipping_norm=1.0)
     clipped_ref, _ = clipped_fn_ref(data, state=clip_state_ref)
+    clipped_ref = _unwrap_bounded(clipped_ref)
 
     # Test different microbatch sizes
     for microbatch_size in [1, 4, 16, 32, 64]:
@@ -391,6 +411,7 @@ def test_clipped_fun_microbatching_different_sizes():
             square_fn, clipping_norm=1.0, microbatch_size=microbatch_size
         )
         clipped_mb, _ = clipped_fn_mb(data, state=clip_state_mb)
+        clipped_mb = _unwrap_bounded(clipped_mb)
         assert torch.allclose(clipped_ref, clipped_mb, atol=1e-6), (
             f"Failed for microbatch_size={microbatch_size}"
         )
@@ -422,6 +443,8 @@ def test_clipped_fun_microbatching_with_pytree():
     # Compute gradients
     grads_no_mb, _ = clipped_grad_fn_no_mb(params, x, state=clip_state_no_mb)
     grads_mb, _ = clipped_grad_fn_mb(params, x, state=clip_state_mb)
+    grads_no_mb = _unwrap_bounded(grads_no_mb)
+    grads_mb = _unwrap_bounded(grads_mb)
 
     # Results should be identical
     assert torch.allclose(grads_no_mb["w"], grads_mb["w"], atol=1e-6)
@@ -442,10 +465,12 @@ def test_clipped_fun_microbatching_larger_than_batch():
         square_fn, clipping_norm=1.0, microbatch_size=100
     )
     clipped_mb, _ = clipped_fn_mb(data, state=clip_state_mb)
+    clipped_mb = _unwrap_bounded(clipped_mb)
 
     # Reference without microbatching
     clipped_fn_ref, clip_state_ref = clipped_fun(square_fn, clipping_norm=1.0)
     clipped_ref, _ = clipped_fn_ref(data, state=clip_state_ref)
+    clipped_ref = _unwrap_bounded(clipped_ref)
 
     # Should still work correctly
     assert torch.allclose(clipped_ref, clipped_mb, atol=1e-6)
@@ -465,10 +490,12 @@ def test_clipped_fun_microbatching_single_example():
         square_fn, clipping_norm=1.0, microbatch_size=1
     )
     clipped_mb, _ = clipped_fn_mb(data, state=clip_state_mb)
+    clipped_mb = _unwrap_bounded(clipped_mb)
 
     # Reference without microbatching
     clipped_fn_ref, clip_state_ref = clipped_fun(square_fn, clipping_norm=1.0)
     clipped_ref, _ = clipped_fn_ref(data, state=clip_state_ref)
+    clipped_ref = _unwrap_bounded(clipped_ref)
 
     # Results should be identical
     assert torch.allclose(clipped_ref, clipped_mb, atol=1e-6)
@@ -494,12 +521,14 @@ def test_clipped_fun_microbatching_with_aux():
         return_aux=True,
     )
     (clipped_no_mb, aux_no_mb), _ = clipped_fn_no_mb(data, state=clip_state_no_mb)
+    clipped_no_mb = _unwrap_bounded(clipped_no_mb)
 
     # With microbatching
     clipped_fn_mb, clip_state_mb = clipped_fun(
         fn_with_aux, has_aux=True, clipping_norm=1.0, microbatch_size=6, return_aux=True
     )
     (clipped_mb, aux_mb), _ = clipped_fn_mb(data, state=clip_state_mb)
+    clipped_mb = _unwrap_bounded(clipped_mb)
 
     # Primary results should be identical
     assert torch.allclose(clipped_no_mb, clipped_mb, atol=1e-6)
@@ -522,12 +551,14 @@ def test_clipped_fun_microbatching_with_return_norms():
         square_fn, clipping_norm=1.0, return_aux=True, microbatch_size=None
     )
     (clipped_no_mb, aux_no_mb), _ = clipped_fn_no_mb(data, state=clip_state_no_mb)
+    clipped_no_mb = _unwrap_bounded(clipped_no_mb)
 
     # With microbatching
     clipped_fn_mb, clip_state_mb = clipped_fun(
         square_fn, clipping_norm=1.0, return_aux=True, microbatch_size=8
     )
     (clipped_mb, aux_mb), _ = clipped_fn_mb(data, state=clip_state_mb)
+    clipped_mb = _unwrap_bounded(clipped_mb)
 
     # Primary results should be identical
     assert torch.allclose(clipped_no_mb, clipped_mb, atol=1e-6)
