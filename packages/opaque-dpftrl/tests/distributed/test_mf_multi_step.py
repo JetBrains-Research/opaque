@@ -18,7 +18,9 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
+from opaque.clipping.types import clipped
 from opaque.dpftrl.noise import mf_noise, identity_strategy
+from opaque.random import key as rng_key
 
 
 def _find_free_port() -> int:
@@ -67,19 +69,26 @@ def _worker_identity_mf_three_steps(rank: int, world_size: int, port: int) -> No
         # Create template gradient
         grad_template = {"weight": torch.zeros(batch_size, param_dim, device=device)}
 
-        # Initialize identity MF (standard Gaussian noise)
+        # Initialize identity MF (standard Gaussian noise).  noise_multiplier=1
+        # with max_norm=1.0 produces unit-stddev noise.
         noise_fn, state = mf_noise(
-            grad_template, identity_strategy(), stddev=1.0, key=None
+            grad_template,
+            identity_strategy(),
+            noise_multiplier=1.0,
+            key=rng_key(0),
         )
 
         # Run 3 training steps
         step_noise_values = []
         step_stds = []
         for _step in range(3):
-            grads = {"weight": torch.zeros(batch_size, param_dim, device=device)}
+            grads = clipped(
+                {"weight": torch.zeros(batch_size, param_dim, device=device)},
+                max_norm=1.0,
+            )
             noised, state = noise_fn(grads, state)
-            step_noise_values.append(noised["weight"].clone())
-            step_stds.append(noised["weight"].std().item())
+            step_noise_values.append(noised.pytree["weight"].clone())
+            step_stds.append(noised.pytree["weight"].std().item())
 
         # Verify each step produces different noise
         assert not torch.allclose(step_noise_values[0], step_noise_values[1])
