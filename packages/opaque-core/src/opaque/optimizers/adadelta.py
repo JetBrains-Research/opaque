@@ -128,9 +128,7 @@ def _scale_by_adadelta(
         v_g = tree_map(torch.zeros_like, params)
         v_dx = tree_map(torch.zeros_like, params)
         phi_dx = tree_map(torch.zeros_like, params)
-        return AdadeltaState(
-            v_g=v_g, v_dx=v_dx, phi_g=0.0, phi_dx=phi_dx, step=0
-        )
+        return AdadeltaState(v_g=v_g, v_dx=v_dx, phi_g=0.0, phi_dx=phi_dx, step=0)
 
     def update_fn(
         updates: Any,
@@ -183,9 +181,7 @@ def _scale_by_adadelta(
                         new_phi_g_dict[path] = rho * old + (1 - rho) * nv
                     new_phi_g = new_phi_g_dict
                 else:
-                    new_phi_g = update_phi_ema(
-                        state.phi_g, float(effective) ** 2, rho
-                    )
+                    new_phi_g = update_phi_ema(state.phi_g, float(effective) ** 2, rho)
             else:
                 new_phi_g = state.phi_g
             new_phi_dx = state.phi_dx  # advanced below alongside v_dx
@@ -240,9 +236,7 @@ def _scale_by_adadelta(
             # *previous* one because we read ``v_dx_node`` and the
             # matching pre-step φ_dx_node).
             if noise_bias_correction:
-                v_dx_corrected_prev = torch.clamp(
-                    v_dx_node - phi_dx_node, min=bc_floor
-                )
+                v_dx_corrected_prev = torch.clamp(v_dx_node - phi_dx_node, min=bc_floor)
             else:
                 v_dx_corrected_prev = v_dx_node
 

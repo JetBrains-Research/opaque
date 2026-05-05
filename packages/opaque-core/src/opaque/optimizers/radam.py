@@ -193,9 +193,7 @@ def _scale_by_radam(
             # debiased v; leave φ alone.
             new_phi: Any = state.phi
         else:
-            new_nu = tree_map(
-                lambda v, g: b2 * v + (1 - b2) * g * g, state.nu, updates
-            )
+            new_nu = tree_map(lambda v, g: b2 * v + (1 - b2) * g * g, state.nu, updates)
             # Advance φ through both branches when BC is active so the
             # EMA tracks v's noise history (see comment above).  When
             # BC is off, φ stays at its initial zero.
@@ -229,9 +227,9 @@ def _scale_by_radam(
         # ---- noisy_squared_grads branch (no φ correction needed) ----
         if noisy_squared_grads is not None:
             result = tree_map(
-                lambda m, v: r_t
-                * (m / bc1)
-                / (torch.clamp(v / bc2, min=bc_floor).sqrt() + eps),
+                lambda m, v: (
+                    r_t * (m / bc1) / (torch.clamp(v / bc2, min=bc_floor).sqrt() + eps)
+                ),
                 new_mu,
                 new_nu,
             )
@@ -274,8 +272,10 @@ def _scale_by_radam(
             if phi_hat > 0:
 
                 def _compute(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-                    return r_t * (m / bc1) / (
-                        torch.clamp(v / bc2 - phi_hat, min=bc_floor).sqrt() + eps
+                    return (
+                        r_t
+                        * (m / bc1)
+                        / (torch.clamp(v / bc2 - phi_hat, min=bc_floor).sqrt() + eps)
                     )
             else:
 
