@@ -193,9 +193,6 @@ def _scale_by_adadelta(
         # ---- Per-leaf Δx, v_dx, and (optional) phi_dx ----------------
         # Walk leaves so we can resolve per-group σ and read/write the
         # per-leaf phi_dx tensor.  Single walk handles both paths.
-        new_v_dx: dict[str, Any] = {}
-        new_phi_dx_pytree: dict[str, Any] = {}
-        result: dict[str, Any] = {}
 
         def _phi_g_for(path: str) -> float:
             if isinstance(new_phi_g, dict):
