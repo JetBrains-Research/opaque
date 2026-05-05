@@ -247,9 +247,7 @@ def _scale_by_adadelta(
             # second-moment-substitution branch where σ isn't available
             # to advance the EMA.
             if noise_bias_correction and noisy_squared_grads is None:
-                v_dx_corrected_prev = torch.clamp(
-                    v_dx_node - phi_dx_node, min=bc_floor
-                )
+                v_dx_corrected_prev = torch.clamp(v_dx_node - phi_dx_node, min=bc_floor)
             else:
                 v_dx_corrected_prev = v_dx_node
 
