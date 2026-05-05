@@ -2,10 +2,9 @@
 
 Single import path for every functional optimizer used in the Opaque
 DP training pipeline — Opaque-built factories with a common wrapper-aware
-update surface, plus a few stateless ``torchopt`` primitives we don't need to
-extend.
+update surface and DP-aware modes selected by the update value type.
 
-Opaque-built (DP-aware modes selected by update value type):
+Opaque-built:
 
 - :func:`adamw` — universal Adam / AdamW; consumes ``NoisedPytree``
   and ``SecondMomentNoiseOutput`` metadata.
@@ -13,6 +12,9 @@ Opaque-built (DP-aware modes selected by update value type):
   ``noise_bias_correction``.
 - :func:`adam` — original Adam/L2 variant of ``adamw`` with the same
   wrapper-aware update surface.
+- :func:`radam` — Rectified Adam.  φ-EMA bias correction on the
+  second moment when ``ρ_t > 5``; the early ``ρ_t ≤ 5`` SGD-of-momentum
+  branch is naturally DP-robust (no v).
 - :func:`sgd` — SGD wrapper that accepts ``NoisedPytree`` updates and ignores
   noise metadata because the update is unbiased under additive DP noise.
 - :func:`lion` — Lion (sign-of-momentum); no DP-aware mode (no v).
@@ -38,20 +40,23 @@ wrappers:
 
 - ``NoisedPytree`` — carries the realized per-step noise σ with the
   privatized update; this activates whatever noise-aware path the
-  optimizer has (φ-EMA on ``v̂`` for Adam-family / RMSprop, cumulative
-  Φ subtraction for Adagrad, planned sign gating for Lion, …).
+  optimizer has (φ-EMA on ``v̂`` for Adam-family / RMSprop / RAdam,
+  cumulative Φ subtraction for Adagrad, planned sign gating for Lion,
+  …).
 - ``SecondMomentNoiseOutput`` — carries private first- and second-moment
   streams together and substitutes the private squared-gradient stream
   in place of ``g²`` (post-processing inside the optimizer).
 
-Re-exported from ``torchopt`` (no DP-aware modes; vanilla but safe
-under DP noise — slow without bias correction but converges):
+``adamax`` and ``adadelta`` are intentionally *not* exposed:
 
-- :func:`adadelta` — has two EMAs; the ratio partially self-corrects
-  under noise so it's not broken, just non-optimal.  Re-exported
-  for users who specifically want it.
-- :func:`radam` — Rectified Adam.  Has v with EMA decay; same DP-BC
-  story as Adam, just not yet implemented as an Opaque-built variant.
+- ``adamax`` — the L∞ ``u_t = max(β₂ u_{t-1}, |g_t|)`` rule rectifies
+  the gradient before the EMA, so the half-normal noise mean
+  ``σ √(2/π)`` is permanently absorbed; the standard variance-EMA BC
+  trick does not apply.  No principled fix has been published.
+- ``adadelta`` — see :func:`opaque.optimizers.adadelta` (the
+  Opaque-built version with two-EMA BC).  The torchopt re-export was
+  retired because its noise-blind ratio of EMAs converges much
+  slower under DP than the BC-corrected variant.
 
 Each factory returns a ``torchopt.base.GradientTransformation`` and is
 state-isolated; multiple optimizers can coexist in the same process
@@ -72,20 +77,13 @@ surface is functional):
   state for ``torch.save`` / ``torch.load``.
 """
 
-# Re-exports from torchopt: stateless primitives we don't extend because their
-# vanilla behaviour is acceptable (if non-optimal) under DP noise. ``adamax`` is
-# omitted because the max-norm structurally misbehaves under DP (half-normal
-# noise mean is permanently absorbed); users who want it can import it from
-# torchopt directly.
-from torchopt import adadelta as adadelta
-from torchopt import radam as radam
-
 # Functional surface — listed in ``__all__``.
 from opaque.optimizers.adafactor import adafactor
 from opaque.optimizers.adagrad import adagrad
 from opaque.optimizers.adam import adam, adamw
 from opaque.optimizers.ademamix import ademamix
 from opaque.optimizers.lion import lion
+from opaque.optimizers.radam import radam
 from opaque.optimizers.rmsprop import rmsprop
 from opaque.optimizers.schedule_free import schedule_free
 from opaque.optimizers.sgd import sgd
@@ -98,6 +96,7 @@ from opaque.optimizers.adagrad import AdagradState as AdagradState
 from opaque.optimizers.adam import AdamState as AdamState
 from opaque.optimizers.ademamix import AdEMAMixState as AdEMAMixState
 from opaque.optimizers.lion import LionState as LionState
+from opaque.optimizers.radam import RAdamState as RAdamState
 from opaque.optimizers.rmsprop import RMSpropState as RMSpropState
 from opaque.optimizers.schedule_free import ScheduleFreeState as ScheduleFreeState
 
@@ -112,8 +111,6 @@ __all__ = [
     "adafactor",
     "rmsprop",
     "adagrad",
-    "schedule_free",
-    # Re-exported torchopt primitives.
-    "adadelta",
     "radam",
+    "schedule_free",
 ]
