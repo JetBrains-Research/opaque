@@ -44,6 +44,8 @@ an alternative answer to the same v-update bias.
 | **`sgd`** | No second moment; accepts `NoisedPytree` and ignores σ metadata | Canonical DP baseline |
 | **`adam`** | Original Adam/L2 variant with the same BC/private-moment paths as AdamW | Adam parity without decoupled WD |
 | **`adamw`** | φ-EMA on v̂ (DP-AdamW-BC) + private second moments | Default for DP training |
+| **`radam`** | φ-EMA on v̂ in the rectified phase (`ρ_t > 5`); SGD-of-momentum in warmup | Long runs where you want RAdam's variance rectification with DP correction |
+| **`adadelta`** | Two-EMA BC: φ_g on `E[g²]` and per-element φ_dx on `E[Δx²]` | LR-free DP optimizer; useful when learning-rate tuning is hard |
 | **`ademamix`** | φ-EMA on v̂ + private second moments | Long-horizon training (slow EMA captures long-range signal) |
 | **`adafactor`** | (deferred) | Memory-constrained large-LM fine-tuning; ship vanilla + WD only for now |
 | **`lion`** | (planned: sign gating) | Smaller state than Adam; vanilla works under noise but the gated mode is the real DP variant |
@@ -54,18 +56,7 @@ an alternative answer to the same v-update bias.
 Constructor knobs vary per optimizer (e.g. `decoupled_weight_decay`,
 `update_rms_clip` on `adamw` and `ademamix`); see the docstrings.
 
-### Re-exported from `torchopt`
-
-For users who want a vanilla baseline or who're explicitly OK with the
-non-corrected behaviour under DP.  Same names as torchopt's, no DP-aware
-modes — slow under noise but functional.
-
-| Re-export | DP behaviour |
-|---|---|
-| `adadelta` | Two EMAs whose ratio partially self-corrects under noise.  Functional, not optimal. |
-| `radam` | Same DP-BC story as Adam, just no Opaque-built variant yet. |
-
-### Not re-exported
+### Not exposed
 
 - `torchopt.adamax` — the max-norm tracker `v_t = max(β v_{t-1}, |g_t + ξ|)`
   permanently absorbs the half-normal noise mean (`σ·√(2/π)`); per-coordinate
@@ -87,6 +78,8 @@ whatever noise-aware machinery it has when `noise_bias_correction=True`:
 | Optimizer | What `NoisedPytree.noise_stddev` does |
 |---|---|
 | `adamw`, `ademamix` | β₂-EMA of σ², subtracted from v̂ before sqrt (Chooi et al., [arXiv:2511.07843](https://arxiv.org/abs/2511.07843)) |
+| `radam` | β₂-EMA of σ² advanced every step; subtracted from v̂ only in the rectified phase (`ρ_t > 5`).  Warmup phase uses SGD-of-momentum (no v) and is naturally DP-robust. |
+| `adadelta` | Two parallel ρ-EMAs: `φ_g` of σ² (subtracted from `E[g²]`) and `φ_dx` of `coef² σ²` per element (subtracted from `E[Δx²]`).  No published prior — derived by propagating Gaussian variance through the linear scaling step. |
 | `rmsprop` | α-EMA of σ², subtracted from v before sqrt (no `(1−α^t)` divide; v and φ accumulate at the same rate) |
 | `adagrad` | Cumulative Σ σ², subtracted from v_acc before sqrt (no decay in either) |
 | `lion` | (planned) sign gating when per-coordinate SNR is below threshold |
