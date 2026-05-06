@@ -113,7 +113,6 @@ class DpProcess(ABC):
         """
         ...
 
-
     def epsilon_at(
         self,
         delta: float,
