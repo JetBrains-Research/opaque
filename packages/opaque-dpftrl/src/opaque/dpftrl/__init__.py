@@ -70,6 +70,7 @@ def __getattr__(name: str):
         return module
     raise AttributeError(f"module 'opaque.dpftrl' has no attribute {name!r}")
 
+
 __all__ = [
     "__version__",
     # Subpackages
