@@ -44,6 +44,8 @@ from opaque.dpftrl.sampling import (
     SequentialBatchSampler,
 )
 
+import opaque.dpftrl._serialization  # noqa: F401  (serialization hook)
+
 if TYPE_CHECKING:
     # Static type checkers see ``accounting`` as a real attribute; at
     # runtime it is loaded on first access via ``__getattr__`` below.

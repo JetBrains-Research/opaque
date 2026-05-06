@@ -59,8 +59,8 @@ Each factory returns a ``torchopt.base.GradientTransformation`` and is
 state-isolated; multiple optimizers can coexist in the same process
 without RNG / global state collisions.
 
-``state_dict`` / ``load_state_dict`` flatten / rebuild any chain state
-for ``torch.save`` / ``torch.load``.
+Checkpoint functional chain state with :mod:`opaque.serialization`
+(``state_dict`` / ``from_state_dict``).
 
 Per-optimizer state dataclasses (``AdamState``, ``LionState``,
 ``AdEMAMixState``, ``AdafactorState``, ``RMSpropState``,
@@ -77,7 +77,6 @@ from opaque.optimizers._lion import lion
 from opaque.optimizers._radam import radam
 from opaque.optimizers._rmsprop import rmsprop
 from opaque.optimizers._schedule_free import schedule_free
-from opaque.optimizers._serialization import load_state_dict, state_dict
 from opaque.optimizers._sgd import sgd
 
 __all__ = [
@@ -92,6 +91,4 @@ __all__ = [
     "adadelta",
     "radam",
     "schedule_free",
-    "state_dict",
-    "load_state_dict",
 ]

@@ -443,11 +443,11 @@ the wrapper's averaging is the implicit schedule.
 ## Checkpoint round-tripping
 
 The optimizer state is a `torchopt` chain tuple of dataclasses; flatten
-it to a serialisable dict via `opaque.optimizers._serialization`:
+it to a serialisable dict via :mod:`opaque.serialization`:
 
 ```python
 from opaque.optimizers import adamw
-from opaque.optimizers._serialization import state_dict, load_state_dict
+from opaque.serialization import from_state_dict, state_dict
 
 opt = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
 state = opt.init(params)
@@ -456,9 +456,9 @@ state = opt.init(params)
 # Save
 torch.save(state_dict(state), "opt.pt")
 
-# Load: re-init a template, then overwrite leaves from the saved dict.
+# Restore: re-init a template, then build a new state from the saved dict.
 template = opt.init(params)
-state = load_state_dict(template, torch.load("opt.pt"))
+state = from_state_dict(template, torch.load("opt.pt"))
 ```
 
 Forward-compatible: paths missing from a saved dict keep the template's

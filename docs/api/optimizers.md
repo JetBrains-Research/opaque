@@ -192,15 +192,14 @@ methods.
 
 ## Serialisation
 
-`state_dict` / `load_state_dict` live in
-`opaque.optimizers._serialization` (a less-common building block, not
-in the package's top-level `__all__`).  Walks the chain state,
-encoding every tensor leaf and Python primitive into a flat
-`{path: value}` dict ready for `torch.save`.
+``state_dict`` / ``from_state_dict`` live in :mod:`opaque.serialization`.  They
+walk chain state, encoding every tensor leaf and Python primitive into a flat
+``{path: value}`` dict ready for ``torch.save``.  Restore returns a **new**
+object and never mutates the template.
 
 ```python
 from opaque.optimizers import adamw
-from opaque.optimizers._serialization import state_dict, load_state_dict
+from opaque.serialization import from_state_dict, state_dict
 
 opt = adamw(lr=1e-3, weight_decay=0.01)
 state = opt.init(params)
@@ -209,9 +208,9 @@ state = opt.init(params)
 # Save
 torch.save(state_dict(state), "opt.pt")
 
-# Load — template must have the same shape (init from same params).
+# Restore — template must have the same shape (init from same params).
 template = opt.init(params)
-state = load_state_dict(template, torch.load("opt.pt"))
+state = from_state_dict(template, torch.load("opt.pt"))
 ```
 
 Forward-compatible: paths missing from the saved dict keep the

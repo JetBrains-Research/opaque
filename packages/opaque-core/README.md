@@ -16,6 +16,8 @@ Top-level (user-facing):
 
 - `opaque.functional` — `make_functional`, `with_batch_dim` (PyTorch <->
   functional API bridges)
+- `opaque.serialization` — flat ``state_dict`` / ``from_state_dict`` for
+  functional runtime state (optimizers, clipping, noise state, …).
 - `opaque.optimizers` — Opaque-built functional optimizer factories
   with a wrapper-aware update surface: `sgd`, `adam`, `adamw`, `lion`,
   `ademamix`, `adafactor`, `rmsprop`, `adagrad`, and the `schedule_free`
@@ -24,9 +26,7 @@ Top-level (user-facing):
   (DP-AdamW-BC) or private second-moment streams at `update()` time. A small
   set of vanilla TorchOpt primitives (`adadelta`, `radam`) is re-exported for
   convenience.
-  ``state_dict`` / ``load_state_dict`` round-trip optimizer state
-  through ``torch.save`` / ``torch.load``.  Schedule-free's published
-  weights are reachable as ``opt_state.x``.  See
+  Schedule-free's published weights are reachable as ``opt_state.x``.  See
   [`docs/api/optimizers.md`](../../docs/api/optimizers.md) for the
   full reference.
 - `opaque.distributed` — DDP plumbing (`is_distributed`, `get_rank`,

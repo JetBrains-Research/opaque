@@ -42,6 +42,7 @@ include = [
     "opaque.functional*",
     "opaque.distributed*",
     "opaque.scheduling*",
+    "opaque.serialization*",
     "opaque.optimizers*",
     "opaque.profiling*",
 ]

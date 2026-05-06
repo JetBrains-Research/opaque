@@ -1,8 +1,9 @@
 """Public type definitions for :mod:`opaque.optimizers`.
 
 Re-exports the per-optimizer state dataclasses for type annotations. The
-functional factories (``adam``, ``adamw``, ``lion``, …) and serialization
-helpers (``state_dict`` / ``load_state_dict``) live in the package init.
+functional factories (``adam``, ``adamw``, ``lion``, …) live in
+:mod:`opaque.optimizers`.  Checkpointing uses :mod:`opaque.serialization`
+(``state_dict`` / ``from_state_dict``).
 """
 
 from __future__ import annotations
