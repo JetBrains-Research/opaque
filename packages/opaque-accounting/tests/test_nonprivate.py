@@ -139,7 +139,9 @@ class TestNonPrivateParallelPoisson:
     """NonPrivate threads through ParallelPoisson."""
 
     def test_parallel_poisson_accepts_nonprivate(self):
-        step = dpsgd_acc.parallel_poisson(acc.nonprivate(), sample_rate=0.01, num_workers=4)
+        step = dpsgd_acc.parallel_poisson(
+            acc.nonprivate(), sample_rate=0.01, num_workers=4
+        )
         eps = step.epsilon_at(1e-5)
         assert eps == math.inf
 

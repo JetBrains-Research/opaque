@@ -71,6 +71,7 @@ class TestBandMfPld:
             sample_rate=sample_rate,
         ).epsilon_at(self.delta)
         eps_manual = (
-            dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0 / s.sensitivity), sample_rate) * s.num_groups
+            dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0 / s.sensitivity), sample_rate)
+            * s.num_groups
         ).epsilon_at(self.delta)
         assert eps_new == pytest.approx(eps_manual, abs=1e-10)

@@ -379,7 +379,9 @@ class TestAccountantCached:
         delta = 1e-5
 
         steps = [
-            dpsgd_acc.poisson(dpsgd_acc.adaclip(dpsgd_acc.gaussian(1.1), expected_batch_size=bs), 0.01)
+            dpsgd_acc.poisson(
+                dpsgd_acc.adaclip(dpsgd_acc.gaussian(1.1), expected_batch_size=bs), 0.01
+            )
             for bs in [120, 130, 125, 128, 135, 122, 131, 127, 129, 126]
         ]
 

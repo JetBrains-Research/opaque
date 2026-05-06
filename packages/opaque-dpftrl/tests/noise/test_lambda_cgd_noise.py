@@ -217,7 +217,9 @@ class TestLambdaCgdPld:
     def test_lambda_cgd_bnb(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
         eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.lambda_cgd(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
+            ftrl_acc.lambda_cgd(
+                1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix
+            ),
             num_bins=25,
             num_epochs=4,
         ).epsilon_at(self.delta)

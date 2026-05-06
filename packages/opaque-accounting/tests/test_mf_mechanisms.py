@@ -5,7 +5,6 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.dpftrl.accounting.amplification.types import CyclicPoisson
@@ -93,7 +92,9 @@ class TestCyclicPoissonDataclass:
             rate,
         )
 
-        manual = dpsgd_acc.poisson(dpsgd_acc.gaussian(nm / sensitivity), rate) * num_groups
+        manual = (
+            dpsgd_acc.poisson(dpsgd_acc.gaussian(nm / sensitivity), rate) * num_groups
+        )
 
         eps_proc = proc.epsilon_at(1e-5)
         eps_manual = manual.epsilon_at(1e-5)

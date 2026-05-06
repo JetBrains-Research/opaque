@@ -1,6 +1,5 @@
 """Tests for b_min_sep BandMF amplification."""
 
-import opaque.accounting as acc
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.dpftrl.accounting.amplification._b_min_sep import (
     _participation_p_from_per_example_rate,

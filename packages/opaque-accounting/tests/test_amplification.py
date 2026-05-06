@@ -159,7 +159,9 @@ class TestParallelPoissonConstructor:
     """dpsgd_acc.parallel_poisson() takes (Gaussian, sample_rate, num_workers)."""
 
     def test_returns_parallel_poisson(self):
-        a = dpsgd_acc.parallel_poisson(dpsgd_acc.gaussian(0.8), sample_rate=0.01, num_workers=4)
+        a = dpsgd_acc.parallel_poisson(
+            dpsgd_acc.gaussian(0.8), sample_rate=0.01, num_workers=4
+        )
         assert isinstance(a, ParallelPoisson)
         assert a.num_workers == 4
 
@@ -179,7 +181,9 @@ class TestParallelPoissonAutoTruncation:
         q = 0.0032
         m = 8
         delta = 1e-8
-        auto = dpsgd_acc.parallel_poisson(dpsgd_acc.gaussian(nm), sample_rate=q, num_workers=m)
+        auto = dpsgd_acc.parallel_poisson(
+            dpsgd_acc.gaussian(nm), sample_rate=q, num_workers=m
+        )
 
         eps_tight = auto.epsilon_at(delta, log_x_mass_truncation_bound=-50.0)
         eps_loose = auto.epsilon_at(delta, log_x_mass_truncation_bound=-15.0)

@@ -54,7 +54,9 @@ def test_truncated_poisson_state_dict_structure():
 
 
 def test_parallel_poisson_state_dict_structure():
-    proc = dpsgd_acc.parallel_poisson(dpsgd_acc.gaussian(0.8), sample_rate=0.01, num_workers=4)
+    proc = dpsgd_acc.parallel_poisson(
+        dpsgd_acc.gaussian(0.8), sample_rate=0.01, num_workers=4
+    )
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "ParallelPoisson"
     assert state["num_workers"] == 4
@@ -141,7 +143,9 @@ def test_cyclic_poisson_round_trip():
 
 def test_accountant_state_dict_roundtrip():
     acct = Accountant()
-    step = dpsgd_acc.poisson(dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.8), expected_batch_size=1000), 0.01)
+    step = dpsgd_acc.poisson(
+        dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.8), expected_batch_size=1000), 0.01
+    )
     acct = acct | step
     state = acct.state_dict()
     restored = Accountant.from_state_dict(state)

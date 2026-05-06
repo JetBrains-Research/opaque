@@ -4,7 +4,6 @@ import math
 
 import pytest
 
-import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import calibration as cal
 from opaque.accounting.calibration import (

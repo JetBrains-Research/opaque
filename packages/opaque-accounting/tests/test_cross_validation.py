@@ -121,7 +121,9 @@ class TestPoissonEpsilon:
     @pytest.mark.parametrize("q", SAMPLE_RATES)
     @pytest.mark.parametrize("steps", [10, 50, 200, 500, 1000])
     def test_epsilon(self, sigma, q, steps):
-        ours = (dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), q) * steps).epsilon_at(1e-5)
+        ours = (dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), q) * steps).epsilon_at(
+            1e-5
+        )
         ref = _ref_epsilon(sigma, 1e-5, sampling_prob=q, steps=steps)
         assert ours == pytest.approx(ref, abs=ATOL), (
             f"Poisson(G({sigma}),{q})*{steps} eps@1e-5: ours={ours}, ref={ref}"
@@ -148,7 +150,9 @@ class TestPoissonDelta:
     @pytest.mark.parametrize("q", [0.001, 0.0001])
     @pytest.mark.parametrize("steps", [100, 500])
     def test_delta(self, sigma, q, steps):
-        eps = (dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), q) * steps).epsilon_at(1e-5) * 0.8
+        eps = (dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), q) * steps).epsilon_at(
+            1e-5
+        ) * 0.8
         ours = (dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), q) * steps).delta_at(eps)
         ref = _ref_delta(sigma, eps, sampling_prob=q, steps=steps)
         assert ours == pytest.approx(ref, abs=ATOL), (
@@ -286,9 +290,13 @@ class TestTruncatedPoissonValidity:
         steps = 500
         g = dpsgd_acc.gaussian(sigma)
         # cap=50 (heavy truncation: expected_batch=100, cap < expected)
-        eps_small_cap = (dpsgd_acc.truncated_poisson(g, q, 50, n) * steps).epsilon_at(1e-5)
+        eps_small_cap = (dpsgd_acc.truncated_poisson(g, q, 50, n) * steps).epsilon_at(
+            1e-5
+        )
         # cap=500 (light truncation: expected_batch=100, cap >> expected)
-        eps_large_cap = (dpsgd_acc.truncated_poisson(g, q, 500, n) * steps).epsilon_at(1e-5)
+        eps_large_cap = (dpsgd_acc.truncated_poisson(g, q, 500, n) * steps).epsilon_at(
+            1e-5
+        )
         assert eps_large_cap <= eps_small_cap + 1e-10, (
             f"Larger cap should give ≤ epsilon: cap=500 → {eps_large_cap}, cap=50 → {eps_small_cap}"
         )
@@ -299,9 +307,9 @@ class TestTruncatedPoissonValidity:
         g = dpsgd_acc.gaussian(sigma)
         epsilons = []
         for steps in [10, 100, 500, 1000]:
-            eps = (dpsgd_acc.truncated_poisson(g, 0.005, 250, 50_000) * steps).epsilon_at(
-                1e-5
-            )
+            eps = (
+                dpsgd_acc.truncated_poisson(g, 0.005, 250, 50_000) * steps
+            ).epsilon_at(1e-5)
             epsilons.append(eps)
         for i in range(len(epsilons) - 1):
             assert epsilons[i] < epsilons[i + 1]
@@ -376,7 +384,9 @@ class TestAdaClipCrossValidation:
     def test_adaclip_effective_noise(self, sigma, batch_size):
         from opaque.accounting import _native
 
-        proc = dpsgd_acc.adaclip(dpsgd_acc.gaussian(sigma), expected_batch_size=batch_size)
+        proc = dpsgd_acc.adaclip(
+            dpsgd_acc.gaussian(sigma), expected_batch_size=batch_size
+        )
         sigma_b = batch_size * 0.05
         s = _native.adaclip_sensitivity(sigma, sigma_b)
         z_eff = 1.0 / s
@@ -399,7 +409,10 @@ class TestAdaClipCrossValidation:
     def test_adaclip_composed_with_poisson(self):
         """AdaClip result composes with poisson() normally."""
         step = (
-            dpsgd_acc.poisson(dpsgd_acc.adaclip(dpsgd_acc.gaussian(1.1), expected_batch_size=1000), 0.01)
+            dpsgd_acc.poisson(
+                dpsgd_acc.adaclip(dpsgd_acc.gaussian(1.1), expected_batch_size=1000),
+                0.01,
+            )
             * 1000
         )
         eps = step.epsilon_at(1e-5)
@@ -523,9 +536,9 @@ class TestCompositionCrossValidation:
 
     def test_compose_same_mechanism(self):
         """Compose same Poisson steps — should equal repeat."""
-        proc_compose = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.001) | dpsgd_acc.poisson(
+        proc_compose = dpsgd_acc.poisson(
             dpsgd_acc.gaussian(0.8), 0.001
-        )
+        ) | dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.001)
         proc_repeat = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.001) * 2
         eps_compose = proc_compose.epsilon_at(1e-5)
         eps_repeat = proc_repeat.epsilon_at(1e-5)

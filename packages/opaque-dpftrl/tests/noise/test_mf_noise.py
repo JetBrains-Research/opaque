@@ -206,7 +206,9 @@ class TestPldEquivalence:
 
     def test_band_mf_pld(self):
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        eps_new = ftrl_acc.band_mf(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
+        eps_new = ftrl_acc.band_mf(1.0, sensitivity=s.sensitivity).epsilon_at(
+            self.delta
+        )
         # Should be finite positive
         assert eps_new > 0
 
@@ -220,7 +222,8 @@ class TestPldEquivalence:
             sample_rate=sample_rate,
         ).epsilon_at(self.delta)
         eps_manual = (
-            dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0 / s.sensitivity), sample_rate) * s.num_groups
+            dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0 / s.sensitivity), sample_rate)
+            * s.num_groups
         ).epsilon_at(self.delta)
         assert eps_new == pytest.approx(eps_manual, abs=1e-10)
 
@@ -231,7 +234,9 @@ class TestPldEquivalence:
 
     def test_lambda_cgd_pld(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        eps_new = ftrl_acc.lambda_cgd(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
+        eps_new = ftrl_acc.lambda_cgd(1.0, sensitivity=s.sensitivity).epsilon_at(
+            self.delta
+        )
         assert eps_new > 0
 
     def test_bisr_pld(self):
@@ -251,7 +256,9 @@ class TestBnbEquivalence:
     def test_lambda_cgd_bnb(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
         bnb_new = ftrl_acc.balls_in_bins(
-            ftrl_acc.lambda_cgd(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
+            ftrl_acc.lambda_cgd(
+                1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix
+            ),
             num_bins=25,
             num_epochs=4,
         )

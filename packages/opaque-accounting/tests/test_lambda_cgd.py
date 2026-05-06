@@ -5,7 +5,6 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.accounting._base import DpProcess

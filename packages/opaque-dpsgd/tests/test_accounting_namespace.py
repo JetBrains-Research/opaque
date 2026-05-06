@@ -51,6 +51,7 @@ class TestNamespaceSurface:
             assert hasattr(dpsgd_types, name), name
         assert set(dpsgd_types.__all__) == set(_TYPES)
 
+
 class TestEndToEndCalibration:
     """Constructed mechanisms compute valid PLDs through the new namespace."""
 

@@ -76,6 +76,7 @@ class SecondMoment(DpProcess):
         joint PLD reduces to a single-Gaussian computation.
         """
         from opaque.dpsgd.accounting.mechanisms._adaclip import AdaClip
+
         match self.inner:
             case AdaClip() as ac:
                 return ac.effective_noise_multiplier
@@ -94,6 +95,7 @@ class SecondMoment(DpProcess):
         if self.max_column_norm is not None:
             return self.max_column_norm
         from opaque.dpftrl.accounting.mechanisms._mf_gaussian import MfGaussian
+
         match self.inner:
             case MfGaussian() as mf:
                 return mf.sensitivity
@@ -196,6 +198,7 @@ def second_moment(
     from opaque.dpsgd.accounting.mechanisms._gaussian import Gaussian
     from opaque.dpsgd.accounting.mechanisms._adaclip import AdaClip
     from opaque.dpftrl.accounting.mechanisms._mf_gaussian import MfGaussian
+
     match inner:
         case Gaussian() | MfGaussian() | AdaClip(inner=Gaussian()):
             pass

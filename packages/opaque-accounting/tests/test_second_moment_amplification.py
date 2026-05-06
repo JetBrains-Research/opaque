@@ -103,7 +103,9 @@ class TestParallelPoissonAcceptsSecondMoment:
 
     def test_pld_returns_valid(self):
         sm = acc.second_moment(dpsgd_acc.gaussian(0.8), sensitivity=1.0)
-        eps = dpsgd_acc.parallel_poisson(sm, sample_rate=0.01, num_workers=4).epsilon_at(1e-5)
+        eps = dpsgd_acc.parallel_poisson(
+            sm, sample_rate=0.01, num_workers=4
+        ).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_rejects_mf_inner(self):
@@ -125,7 +127,9 @@ def test_poisson_second_moment_matches_effective_gaussian(sigma, sensitivity, ra
     """``poisson(SM(G(σ), Δ), q)`` must equal ``poisson(G(effective_nm), q)``."""
     sm = acc.second_moment(dpsgd_acc.gaussian(sigma), sensitivity=sensitivity)
     p_sm = dpsgd_acc.poisson(sm, sample_rate=rate)
-    p_g = dpsgd_acc.poisson(dpsgd_acc.gaussian(_effective_nm(sigma, sensitivity)), sample_rate=rate)
+    p_g = dpsgd_acc.poisson(
+        dpsgd_acc.gaussian(_effective_nm(sigma, sensitivity)), sample_rate=rate
+    )
     assert p_sm.epsilon_at(1e-5) == pytest.approx(p_g.epsilon_at(1e-5), rel=1e-6)
 
 

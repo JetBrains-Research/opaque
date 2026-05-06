@@ -72,13 +72,20 @@ class ParallelPoisson(DpProcess):
             case (
                 Poisson(inner=SecondMoment(inner=Gaussian(noise_multiplier=0)))
                 | Poisson(inner=SecondMoment(inner=NonPrivate()))
-                | Poisson(inner=SecondMoment(inner=AdaClip(inner=Gaussian(noise_multiplier=0))))
+                | Poisson(
+                    inner=SecondMoment(
+                        inner=AdaClip(inner=Gaussian(noise_multiplier=0))
+                    )
+                )
                 | Poisson(inner=SecondMoment(inner=AdaClip(inner=NonPrivate())))
             ):
                 return _native.non_private_pld(native_cfg)
             case (
                 Poisson(inner=SecondMoment(inner=Gaussian()) as sm, sample_rate=rate)
-                | Poisson(inner=SecondMoment(inner=AdaClip(inner=Gaussian())) as sm, sample_rate=rate)
+                | Poisson(
+                    inner=SecondMoment(inner=AdaClip(inner=Gaussian())) as sm,
+                    sample_rate=rate,
+                )
             ):
                 return _native.parallel_poisson_gaussian_pld(
                     sm.noise_multiplier / sm.sensitivity,
