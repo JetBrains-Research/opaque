@@ -37,7 +37,6 @@ be reduced to cheaper operations using structural equality (``==``):
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import fields
 from typing import TypeAlias
 
 from . import _native
@@ -49,6 +48,18 @@ __all__ = ["DpProcess", "Pld"]
 # Global registry of DpProcess subclasses for polymorphic deserialization.
 # Automatically populated when each subclass is defined via __init_subclass__.
 _PROCESS_REGISTRY: dict[str, type[DpProcess]] = {}
+
+
+def _register_dp_process_with_serialization(cls) -> None:
+    """Hook each concrete process into :mod:`opaque.serialization`."""
+    from opaque.accounting._process_flat import _flat_dp_process_state, _load_dp_process
+    from opaque.serialization import register_serialization_type
+
+    register_serialization_type(
+        cls,
+        lambda obj: _flat_dp_process_state(obj, ""),
+        lambda _template, sd: _load_dp_process(dict(sd)),
+    )
 
 
 class DpProcess(ABC):
@@ -77,6 +88,7 @@ class DpProcess(ABC):
         """Auto-register subclass in the global DpProcess registry."""
         super().__init_subclass__(**kwargs)
         _PROCESS_REGISTRY[cls.__name__] = cls
+        _register_dp_process_with_serialization(cls)
 
     @abstractmethod
     def pld(
@@ -100,72 +112,6 @@ class DpProcess(ABC):
             max_grid_size: Maximum grid size before coarsening (query-time override).
         """
         ...
-
-    def state_dict(self) -> dict[str, object]:
-        """Serialize this process into a plain dict.
-
-        The returned structure should be JSON-serializable and must not
-        include cached or computed values (e.g., PLDs).
-
-        Default implementation extracts dataclass fields and recursively
-        converts nested DpProcess instances to state dicts.
-        """
-
-        def _serialize_value(value: object) -> object:
-            """Recursively serialize DpProcess fields to state dicts."""
-            if isinstance(value, DpProcess):
-                return value.state_dict()
-            elif isinstance(value, dict):
-                return {k: _serialize_value(v) for k, v in value.items()}
-            elif isinstance(value, (list, tuple)):
-                return type(value)(_serialize_value(item) for item in value)
-            else:
-                return value
-
-        # Start with type tag for readability
-        data = {"type": self.__class__.__name__}
-
-        # Extract all dataclass fields manually
-        for field in fields(self):
-            value = getattr(self, field.name)
-            data[field.name] = _serialize_value(value)
-
-        return data
-
-    @classmethod
-    def from_state_dict(cls, data: dict[str, object]) -> DpProcess:
-        """Deserialize a DpProcess from a state dict.
-
-        Recursively reconstructs the process tree using the auto-populated
-        _PROCESS_REGISTRY. Each subclass registers itself via __init_subclass__.
-
-        Args:
-            data: Dictionary produced by :meth:`state_dict`.
-
-        Returns:
-            Reconstructed DpProcess (any subclass).
-
-        Raises:
-            ValueError: If type tag is unknown.
-        """
-        # Extract type tag and make mutable copy
-        data = dict(data)
-        t = data.pop("type")
-
-        # Look up constructor
-        process_cls = _PROCESS_REGISTRY.get(t)
-        if process_cls is None:
-            raise ValueError(f"Unknown process type: {t}")
-
-        # Recursively deserialize nested processes
-        for key in ["inner", "left", "right"]:
-            if key in data and isinstance(data[key], dict):
-                data[key] = cls.from_state_dict(data[key])
-
-        # Instantiate using dataclass constructor
-        return process_cls(**data)
-
-    # -- Privacy metrics (compute PLD each time) -----------------------------
 
     def epsilon_at(
         self,

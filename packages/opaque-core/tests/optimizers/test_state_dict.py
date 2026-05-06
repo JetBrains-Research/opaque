@@ -1,4 +1,4 @@
-"""Tests for opaque.optimizers._serialization (state_dict / load_state_dict).
+"""Tests for :mod:`opaque.serialization` on optimizer chain state.
 
 Round-trip coverage for every optimizer + the schedule-free wrapper.
 The contract: after serialise → fresh init → deserialise, the next
@@ -16,7 +16,7 @@ torchopt = pytest.importorskip("torchopt")
 from opaque.types import noised  # noqa: E402
 from opaque.types import SecondMomentNoiseOutput  # noqa: E402
 from opaque.optimizers import adafactor, adamw, ademamix, lion, schedule_free  # noqa: E402
-from opaque.optimizers import load_state_dict, state_dict  # noqa: E402
+from opaque.serialization import from_state_dict, state_dict  # noqa: E402
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def _round_trip(opt, params, grads, steps: int = 5, **update_kwargs):
 
     # Fresh template — same shape, zeroed leaves.
     template = opt.init(params)
-    restored = load_state_dict(template, sd)
+    restored = from_state_dict(template, sd)
 
     # Both states should produce the same next update.
     u_orig, _ = opt.update(grads, state, params=params, **update_kwargs)
@@ -99,7 +99,7 @@ class TestAdamW:
             )
         sd = state_dict(state)
         template = opt.init(params)
-        restored = load_state_dict(template, sd)
+        restored = from_state_dict(template, sd)
         # Adam state is at chain index 0 (decoupled WD).
         assert restored[0].step == 7
         assert restored[0].phi == pytest.approx(state[0].phi)
@@ -115,7 +115,7 @@ class TestAdamW:
         sd_loaded = torch.load(path, weights_only=False)
         assert set(sd_loaded.keys()) == set(sd.keys())
         template = opt.init(params)
-        restored = load_state_dict(template, sd_loaded)
+        restored = from_state_dict(template, sd_loaded)
         u_orig, _ = opt.update(grads, state, params=params)
         u_rest, _ = opt.update(grads, restored, params=params)
         for k in u_orig:
@@ -134,7 +134,7 @@ class TestLion:
         for _ in range(4):
             _, state = opt.update(grads, state, params=params)
         sd = state_dict(state)
-        restored = load_state_dict(opt.init(params), sd)
+        restored = from_state_dict(opt.init(params), sd)
         assert restored[0].step == 4
 
 
@@ -194,7 +194,7 @@ class TestScheduleFree:
             params = torchopt.apply_updates(params, delta)
         sd = state_dict(state)
         template = opt.init(params)
-        restored = load_state_dict(template, sd)
+        restored = from_state_dict(template, sd)
         # x and z should match exactly.
         for k in state.x:
             torch.testing.assert_close(restored.x[k], state.x[k])
@@ -218,7 +218,7 @@ class TestRobustness:
         # Drop the step entry from the saved dict.
         sd_partial = {k: v for k, v in sd.items() if not k.endswith(".step")}
         template = opt.init(params)
-        restored = load_state_dict(template, sd_partial)
+        restored = from_state_dict(template, sd_partial)
         # ``step`` falls back to template's 0.
         assert restored[0].step == 0
 
@@ -235,7 +235,7 @@ class TestRobustness:
             for k, v in sd.items()
         }
         template = opt.init(params)
-        restored = load_state_dict(template, sd_bf16)
+        restored = from_state_dict(template, sd_bf16)
         # Restored tensors should match the template's dtype.
         assert restored[0].mu["weight"].dtype == template[0].mu["weight"].dtype
 
@@ -251,4 +251,4 @@ class TestRobustness:
         sd[tensor_key] = "not a tensor"
         template = opt.init(params)
         with pytest.raises(TypeError, match="torch.Tensor"):
-            load_state_dict(template, sd)
+            from_state_dict(template, sd)

@@ -4,9 +4,8 @@ Cross-cutting accounting surface — composition, calibration, generic
 mechanisms (``identity``, ``nonprivate``, ``eps_delta``), and the
 ``second_moment`` transformation that spans DP-SGD and DP-FTRL.
 
-Algorithm-specific factories live in their respective packages (not
-shipped with ``opaque-accounting`` alone — install ``opaque-dpsgd`` /
-``opaque-dpftrl`` to import these):
+Algorithm-specific factories live in their respective packages
+(``opaque-dpsgd`` / ``opaque-dpftrl``):
 
 - :mod:`opaque.dpsgd.accounting` — ``gaussian``, ``adaclip``, ``poisson``,
   ``truncated_poisson``, ``parallel_poisson``.
@@ -57,6 +56,8 @@ from . import (
 )
 
 from opaque.accounting._accountant import Accountant
+
+import opaque.accounting._serialization  # noqa: F401  (opaque.serialization hook)
 from opaque.accounting.calibration import (
     advantage_budget,
     beta_budget,

@@ -23,6 +23,7 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
+    "numpy>=1.22",
     "torch>=2.10.0",
     "optree>=0.17.0",
     "torchopt>=0.7.3",
@@ -42,6 +43,7 @@ include = [
     "opaque.functional*",
     "opaque.distributed*",
     "opaque.scheduling*",
+    "opaque.serialization*",
     "opaque.optimizers*",
     "opaque.profiling*",
 ]

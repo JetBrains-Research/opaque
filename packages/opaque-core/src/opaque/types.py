@@ -80,6 +80,11 @@ class PerGroup:
     Attributes:
         groups: Mapping from parameter key to group name (pre-resolved).
         values: Mapping from group name to the per-group value.
+
+    Checkpointing uses :func:`opaque.serialization.state_dict` /
+    :func:`opaque.serialization.from_state_dict`; the template must use
+    the same ``groups`` / ``values`` keys as at save time (flat keys such
+    as ``groups.<param_key>`` / ``values.<group_name>``).
     """
 
     groups: dict[str, str]
@@ -102,21 +107,6 @@ class PerGroup:
     def for_key(self, key: str) -> float:
         """Look up the per-group value for a parameter key."""
         return self.values[self.groups[key]]
-
-    def state_dict(self) -> dict[str, dict[str, float] | dict[str, str]]:
-        """Serialize to a JSON-compatible dict for checkpointing."""
-        return {
-            "groups": dict(self.groups),
-            "values": {k: float(v) for k, v in self.values.items()},
-        }
-
-    @classmethod
-    def from_state_dict(cls, state: dict) -> PerGroup:
-        """Reconstruct a :class:`PerGroup` from :meth:`state_dict` output."""
-        return cls(
-            groups=dict(state["groups"]),
-            values={k: float(v) for k, v in state["values"].items()},
-        )
 
 
 # ===========================================================================

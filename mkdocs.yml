@@ -121,6 +121,7 @@ nav:
     - Distributed Training: tutorials/distributed_training.ipynb
   - API Reference:
     - Overview: api/index.md
+    - Serialization: api/serialization.md
     - Clipping: api/clipping.md
     - Noise: api/noise.md
     - Accounting: api/accounting.md

@@ -1,4 +1,4 @@
-"""Sanity checks that run with only ``opaque-accounting`` (+ its native build).
+"""Sanity checks for ``opaque.accounting`` (+ native build, ``opaque-core``).
 
 Algorithm-specific PLD factories live in ``opaque.dpsgd.accounting`` /
 ``opaque.dpftrl.accounting``; their tests ship with those packages instead.

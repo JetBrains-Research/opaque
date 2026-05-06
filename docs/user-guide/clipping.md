@@ -385,7 +385,8 @@ uniform = grads.noise_stddev_for(
 )
 ```
 
-For callers holding a bare `PerGroup` (e.g. from a checkpoint), the
+For callers holding a bare `PerGroup` (for example restored via
+`opaque.serialization.from_state_dict` with a matching template), the
 equivalent free function is also available:
 
 ```python

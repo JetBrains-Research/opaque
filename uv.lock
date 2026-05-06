@@ -2270,6 +2270,12 @@ examples = [
 name = "opaque-accounting"
 version = "0.0.0.dev0"
 source = { editable = "packages/opaque-accounting" }
+dependencies = [
+    { name = "opaque-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "opaque-core", editable = "packages/opaque-core" }]
 
 [[package]]
 name = "opaque-auditing"
@@ -2291,6 +2297,7 @@ requires-dist = [
 name = "opaque-core"
 source = { editable = "packages/opaque-core" }
 dependencies = [
+    { name = "numpy" },
     { name = "optree" },
     { name = "torch" },
     { name = "torchopt" },
@@ -2298,6 +2305,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "numpy", specifier = ">=1.22" },
     { name = "optree", specifier = ">=0.17.0" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "torchopt", specifier = ">=0.7.3" },

@@ -9,8 +9,9 @@ description = "High-performance differential privacy accounting using Privacy Lo
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11,<3.13"
 authors = [{name = "Opaque Contributors"}]
-dependencies = []
-
+dependencies = [
+    "opaque-core",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -26,6 +27,9 @@ classifiers = [
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+opaque-core = { workspace = true }
 
 [tool.maturin]
 features = ["python-extension"]
