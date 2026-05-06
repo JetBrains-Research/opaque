@@ -2538,7 +2538,7 @@ full dataset.</p>
 </li>
 <li>
 <p><strong>b-min-sep</strong> (<code>BMinSepSampler</code>): Warm-start minimum-separation Poisson
-   subsampling for BandMF (arXiv:2602.09338). Use with <code>acc.b_min_sep</code>.</p>
+   subsampling for BandMF (arXiv:2602.09338). Use with <code>ftrl_acc.b_min_sep</code>.</p>
 </li>
 </ol>
 <p><strong>See also</strong>: <a href="../../user-guide/sampling/">Sampling &amp; Microbatching User Guide</a></p>
@@ -2590,7 +2590,7 @@ full dataset.</p>
 </tr>
 </tbody>
 </table>
-<p>Account with <code>acc.poisson(acc.gaussian(nm), sample_rate)</code>.</p>
+<p>Account with <code>dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate)</code>.</p>
 <h2 id="truncatedpoissonsampler">TruncatedPoissonSampler<a class="headerlink" href="#truncatedpoissonsampler" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">TruncatedPoissonSampler</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
@@ -2646,7 +2646,7 @@ full dataset.</p>
 </tr>
 </tbody>
 </table>
-<p>Account with <code>acc.truncated_poisson(acc.gaussian(nm), sample_rate,
+<p>Account with <code>dpsgd_acc.truncated_poisson(dpsgd_acc.gaussian(nm), sample_rate,
 batch_size_cap, dataset_size)</code>.</p>
 <h2 id="ballsinbinssampler">BallsInBinsSampler<a class="headerlink" href="#ballsinbinssampler" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">BallsInBinsSampler</span>
@@ -2699,9 +2699,9 @@ batch_size_cap, dataset_size)</code>.</p>
 <p>Bin sizes are variable (Binomial distribution). Assignments are <strong>fixed
 across epochs</strong> (required for BnB dominating-pair accounting). Empty bins
 are skipped.</p>
-<p>Account with <code>acc.balls_in_bins(mechanism, num_bins, num_epochs)</code> where
-<code>mechanism</code> is <code>acc.lambda_cgd(...)</code>, <code>acc.bisr(...)</code>, <code>acc.blt(...)</code>, or
-<code>acc.gaussian(...)</code>.</p>
+<p>Account with <code>ftrl_acc.balls_in_bins(mechanism, num_bins, num_epochs)</code> where
+<code>mechanism</code> is <code>ftrl_acc.lambda_cgd(...)</code>, <code>ftrl_acc.bisr(...)</code>, <code>ftrl_acc.blt(...)</code>, or
+<code>dpsgd_acc.gaussian(...)</code>.</p>
 <h2 id="cyclicpoissonsampler">CyclicPoissonSampler<a class="headerlink" href="#cyclicpoissonsampler" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">CyclicPoissonSampler</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>

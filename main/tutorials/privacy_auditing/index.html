@@ -2774,7 +2774,7 @@ theoretical bound from privacy accounting.</p>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="c1"># Theoretical bound from privacy accounting</span>
 <span class="n">sample_rate</span> <span class="o">=</span> <span class="n">batch_size</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">train_data</span><span class="p">)</span>
 <span class="n">total_steps</span> <span class="o">=</span> <span class="n">n_epochs</span> <span class="o">*</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">train_data</span><span class="p">)</span> <span class="o">//</span> <span class="n">batch_size</span><span class="p">)</span>
-<span class="n">process</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">total_steps</span>
+<span class="n">process</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">total_steps</span>
 <span class="n">theoretical_eps</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 
 <span class="n">delta</span> <span class="o">=</span> <span class="mf">1e-5</span>
@@ -2790,7 +2790,7 @@ theoretical bound from privacy accounting.</p>
 <div class="clipboard-copy-txt" id="cell-7"># Theoretical bound from privacy accounting
 sample_rate = batch_size / len(train_data)
 total_steps = n_epochs * (len(train_data) // batch_size)
-process = acc.poisson(acc.gaussian(noise_multiplier), sample_rate) * total_steps
+process = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate) * total_steps
 theoretical_eps = process.epsilon_at(1e-5)
 
 delta = 1e-5

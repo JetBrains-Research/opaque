@@ -2571,7 +2571,7 @@ training steps.</p>
 
 <span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
     <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="n">target_epsilon</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="n">target_delta</span><span class="p">),</span>
-    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">total_steps</span><span class="p">,</span>
+    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">total_steps</span><span class="p">,</span>
     <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
     <span class="n">param_max</span><span class="o">=</span><span class="mf">100.0</span><span class="p">,</span>
 <span class="p">)</span>
@@ -2588,7 +2588,7 @@ total_steps = n_epochs * steps_per_epoch
 
 result = acc.calibrate(
     acc.epsilon_budget(target_epsilon, delta=target_delta),
-    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * total_steps,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate) * total_steps,
     param_min=0.1,
     param_max=100.0,
 )
@@ -2739,7 +2739,7 @@ print(f"Noise multiplier: {noise_multiplier:.4f}")</div>
 
     <span class="n">total_steps_done</span> <span class="o">+=</span> <span class="n">steps_per_epoch</span>
     <span class="n">process</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">total_steps_done</span>
+        <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">total_steps_done</span>
     <span class="p">)</span>
     <span class="n">eps</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">target_delta</span><span class="p">)</span>
     <span class="n">avg_loss</span> <span class="o">=</span> <span class="n">epoch_loss</span> <span class="o">/</span> <span class="n">n_batches</span>
@@ -2782,7 +2782,7 @@ for epoch in range(n_epochs):
 
     total_steps_done += steps_per_epoch
     process = (
-        acc.poisson(acc.gaussian(noise_multiplier), sample_rate) * total_steps_done
+        dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate) * total_steps_done
     )
     eps = process.epsilon_at(target_delta)
     avg_loss = epoch_loss / n_batches

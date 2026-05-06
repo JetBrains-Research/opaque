@@ -2315,7 +2315,7 @@ optimisation.</p>
 <a href="sampling_and_microbatching.ipynb">Sampling &amp; Microbatching</a>.</p>
 <p><strong>Components exercised:</strong> <code>make_functional</code> with <code>partition_trainable</code>,
 <code>adaptive_clipped_grad</code>, <code>TruncatedPoissonSampler</code>, <code>torchopt.adamw</code>,
-<code>acc.truncated_poisson</code>, PEFT LoRA.</p>
+<code>dpsgd_acc.truncated_poisson</code>, PEFT LoRA.</p>
 <p><strong>Runtime:</strong> ~10--15 minutes on CPU.</p>
 </div>
 </div>
@@ -2732,8 +2732,8 @@ def per_example_loss(trainable, frozen, ids, mask, labels):
 
 <span class="c1"># Pre-compute expected final epsilon</span>
 <span class="n">expected_eps</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">acc</span><span class="o">.</span><span class="n">truncated_poisson</span><span class="p">(</span>
-        <span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">NOISE_MULTIPLIER</span><span class="p">),</span>
+    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">truncated_poisson</span><span class="p">(</span>
+        <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">NOISE_MULTIPLIER</span><span class="p">),</span>
         <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
         <span class="n">batch_size_cap</span><span class="o">=</span><span class="n">MAX_BATCH_SIZE</span><span class="p">,</span>
         <span class="n">dataset_size</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">train_dataset</span><span class="p">),</span>
@@ -2777,8 +2777,8 @@ opt_state = optimizer.init(trainable_params)
 
 # Pre-compute expected final epsilon
 expected_eps = (
-    acc.truncated_poisson(
-        acc.gaussian(NOISE_MULTIPLIER),
+    dpsgd_acc.truncated_poisson(
+        dpsgd_acc.gaussian(NOISE_MULTIPLIER),
         sample_rate=sample_rate,
         batch_size_cap=MAX_BATCH_SIZE,
         dataset_size=len(train_dataset),
@@ -2852,8 +2852,8 @@ print(f"Expected final epsilon: {expected_eps:.2f}")</div>
     <span class="n">trainable_params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">trainable_params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
 
     <span class="c1"># 4. Track privacy</span>
-    <span class="n">dp_step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">truncated_poisson</span><span class="p">(</span>
-        <span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">NOISE_MULTIPLIER</span><span class="p">),</span>
+    <span class="n">dp_step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">truncated_poisson</span><span class="p">(</span>
+        <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">NOISE_MULTIPLIER</span><span class="p">),</span>
         <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
         <span class="n">batch_size_cap</span><span class="o">=</span><span class="n">MAX_BATCH_SIZE</span><span class="p">,</span>
         <span class="n">dataset_size</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">train_dataset</span><span class="p">),</span>
@@ -2906,8 +2906,8 @@ for step, (batch_ids, batch_mask, batch_labels) in enumerate(train_loader):
     trainable_params = torchopt.apply_updates(trainable_params, updates)
 
     # 4. Track privacy
-    dp_step = acc.truncated_poisson(
-        acc.gaussian(NOISE_MULTIPLIER),
+    dp_step = dpsgd_acc.truncated_poisson(
+        dpsgd_acc.gaussian(NOISE_MULTIPLIER),
         sample_rate=sample_rate,
         batch_size_cap=MAX_BATCH_SIZE,
         dataset_size=len(train_dataset),

@@ -2313,8 +2313,8 @@ calibrate noise multipliers for a target privacy budget, and query
 multiple privacy metrics.</p>
 <p><strong>Prerequisites:</strong> Familiarity with (epsilon, delta)-DP at the level of
 the <a href="../user-guide/dp-concepts.md">DP Concepts guide</a>.</p>
-<p><strong>Components exercised:</strong> <code>DpProcess</code>, <code>acc.gaussian</code>, <code>acc.poisson</code>,
-<code>acc.truncated_poisson</code>, <code>acc.calibrate</code>, <code>acc.epsilon_budget</code>,
+<p><strong>Components exercised:</strong> <code>DpProcess</code>, <code>dpsgd_acc.gaussian</code>, <code>dpsgd_acc.poisson</code>,
+<code>dpsgd_acc.truncated_poisson</code>, <code>acc.calibrate</code>, <code>acc.epsilon_budget</code>,
 composition operators (<code>*</code>, <code>|</code>).</p>
 </div>
 </div>
@@ -2383,10 +2383,10 @@ applications. Processes compose with <code>*</code> (homogeneous repetition) and
 </clipboard-copy>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="c1"># A single Gaussian mechanism with noise multiplier 1.0</span>
-<span class="n">mechanism</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+<span class="n">mechanism</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
 
 <span class="c1"># Wrap with Poisson sampling (sample_rate = 1%)</span>
-<span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">mechanism</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+<span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">mechanism</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
 
 <span class="c1"># Compose 100 steps</span>
 <span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="mi">100</span>
@@ -2395,10 +2395,10 @@ applications. Processes compose with <code>*</code> (homogeneous repetition) and
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"delta at epsilon=1.0:  </span><span class="si">{</span><span class="n">training</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-2"># A single Gaussian mechanism with noise multiplier 1.0
-mechanism = acc.gaussian(1.0)
+mechanism = dpsgd_acc.gaussian(1.0)
 
 # Wrap with Poisson sampling (sample_rate = 1%)
-step = acc.poisson(mechanism, sample_rate=0.01)
+step = dpsgd_acc.poisson(mechanism, sample_rate=0.01)
 
 # Compose 100 steps
 training = step * 100
@@ -2452,12 +2452,12 @@ usage predictable at the cost of slightly worse privacy bounds.</p>
 <span class="n">eps_truncated</span> <span class="o">=</span> <span class="p">[]</span>
 
 <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">steps_range</span><span class="p">:</span>
-    <span class="n">p</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_mult</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">n</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_mult</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">n</span>
     <span class="n">eps_poisson</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="p">))</span>
 
     <span class="n">t</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">acc</span><span class="o">.</span><span class="n">truncated_poisson</span><span class="p">(</span>
-            <span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_mult</span><span class="p">),</span>
+        <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">truncated_poisson</span><span class="p">(</span>
+            <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_mult</span><span class="p">),</span>
             <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
             <span class="n">batch_size_cap</span><span class="o">=</span><span class="n">batch_cap</span><span class="p">,</span>
             <span class="n">dataset_size</span><span class="o">=</span><span class="n">dataset_size</span><span class="p">,</span>
@@ -2488,12 +2488,12 @@ eps_poisson = []
 eps_truncated = []
 
 for n in steps_range:
-    p = acc.poisson(acc.gaussian(noise_mult), sample_rate) * n
+    p = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_mult), sample_rate) * n
     eps_poisson.append(p.epsilon_at(delta))
 
     t = (
-        acc.truncated_poisson(
-            acc.gaussian(noise_mult),
+        dpsgd_acc.truncated_poisson(
+            dpsgd_acc.gaussian(noise_mult),
             sample_rate=sample_rate,
             batch_size_cap=batch_cap,
             dataset_size=dataset_size,
@@ -2555,7 +2555,7 @@ a target privacy budget over the full training run.</p>
 
 <span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
     <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="n">target_epsilon</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="n">target_delta</span><span class="p">),</span>
-    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">total_steps</span><span class="p">,</span>
+    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">total_steps</span><span class="p">,</span>
     <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
     <span class="n">param_max</span><span class="o">=</span><span class="mf">100.0</span><span class="p">,</span>
 <span class="p">)</span>
@@ -2563,7 +2563,7 @@ a target privacy budget over the full training run.</p>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Noise multiplier: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">param</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># Verify</span>
-<span class="n">check</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">param</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">total_steps</span>
+<span class="n">check</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">param</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">total_steps</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Achieved epsilon:  </span><span class="si">{</span><span class="n">check</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">target_delta</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-4">target_epsilon = 3.0
@@ -2573,7 +2573,7 @@ total_steps = 500
 
 result = acc.calibrate(
     acc.epsilon_budget(target_epsilon, delta=target_delta),
-    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * total_steps,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate) * total_steps,
     param_min=0.1,
     param_max=100.0,
 )
@@ -2581,7 +2581,7 @@ result = acc.calibrate(
 print(f"Noise multiplier: {result.param:.4f}")
 
 # Verify
-check = acc.poisson(acc.gaussian(result.param), sample_rate) * total_steps
+check = dpsgd_acc.poisson(dpsgd_acc.gaussian(result.param), sample_rate) * total_steps
 print(f"Achieved epsilon:  {check.epsilon_at(target_delta):.4f}")</div>
 </div>
 </div>
@@ -2625,7 +2625,7 @@ noise multiplier required for several epsilon targets.</p>
 <span class="k">for</span> <span class="n">eps_target</span> <span class="ow">in</span> <span class="n">targets</span><span class="p">:</span>
     <span class="n">r</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
         <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="n">eps_target</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
-        <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="mf">0.032</span><span class="p">)</span> <span class="o">*</span> <span class="mi">500</span><span class="p">,</span>
+        <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="mf">0.032</span><span class="p">)</span> <span class="o">*</span> <span class="mi">500</span><span class="p">,</span>
         <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
         <span class="n">param_max</span><span class="o">=</span><span class="mf">100.0</span><span class="p">,</span>
     <span class="p">)</span>
@@ -2647,7 +2647,7 @@ multipliers = []
 for eps_target in targets:
     r = acc.calibrate(
         acc.epsilon_budget(eps_target, delta=1e-5),
-        lambda nm: acc.poisson(acc.gaussian(nm), 0.032) * 500,
+        lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.032) * 500,
         param_min=0.1,
         param_max=100.0,
     )
@@ -2697,13 +2697,13 @@ plt.show()</div>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">process</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">process</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"epsilon at delta=1e-5:  </span><span class="si">{</span><span class="n">process</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"delta at epsilon=1.0:   </span><span class="si">{</span><span class="n">process</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"advantage:              </span><span class="si">{</span><span class="n">process</span><span class="o">.</span><span class="n">advantage</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-6">process = acc.poisson(acc.gaussian(1.0), sample_rate=0.01) * 1000
+<div class="clipboard-copy-txt" id="cell-6">process = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01) * 1000
 
 print(f"epsilon at delta=1e-5:  {process.epsilon_at(1e-5):.4f}")
 print(f"delta at epsilon=1.0:   {process.delta_at(1.0):.2e}")
@@ -2745,10 +2745,10 @@ with the <code>|</code> operator.</p>
 </clipboard-copy>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="c1"># Phase 1: high noise (warm-up)</span>
-<span class="n">phase1</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">2.0</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">100</span>
+<span class="n">phase1</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">2.0</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">100</span>
 
 <span class="c1"># Phase 2: lower noise (main training)</span>
-<span class="n">phase2</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">500</span>
+<span class="n">phase2</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">500</span>
 
 <span class="c1"># Total cost</span>
 <span class="n">total</span> <span class="o">=</span> <span class="n">phase1</span> <span class="o">|</span> <span class="n">phase2</span>
@@ -2758,10 +2758,10 @@ with the <code>|</code> operator.</p>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Combined:       epsilon=</span><span class="si">{</span><span class="n">total</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-7"># Phase 1: high noise (warm-up)
-phase1 = acc.poisson(acc.gaussian(2.0), sample_rate=0.01) * 100
+phase1 = dpsgd_acc.poisson(dpsgd_acc.gaussian(2.0), sample_rate=0.01) * 100
 
 # Phase 2: lower noise (main training)
-phase2 = acc.poisson(acc.gaussian(0.8), sample_rate=0.01) * 500
+phase2 = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=0.01) * 500
 
 # Total cost
 total = phase1 | phase2
@@ -2809,7 +2809,7 @@ checking, useful inside training loops.</p>
 
 <span class="n">budget</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 <span class="n">accountant</span> <span class="o">=</span> <span class="n">Accountant</span><span class="p">(</span><span class="n">budget</span><span class="o">=</span><span class="n">budget</span><span class="p">)</span>
-<span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">1.5</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+<span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">1.5</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
 
 <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">200</span><span class="p">):</span>
     <span class="n">accountant</span> <span class="o">=</span> <span class="n">accountant</span> <span class="o">|</span> <span class="n">step</span>
@@ -2825,7 +2825,7 @@ checking, useful inside training loops.</p>
 
 budget = acc.epsilon_budget(3.0, delta=1e-5)
 accountant = Accountant(budget=budget)
-step = acc.poisson(acc.gaussian(1.5), sample_rate=0.01)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.5), sample_rate=0.01)
 
 for i in range(200):
     accountant = accountant | step
@@ -2858,15 +2858,15 @@ print(f"Budget exceeded: {accountant.budget_exceeded}")</div>
 <tbody>
 <tr>
 <td>Gaussian mechanism</td>
-<td><code>acc.gaussian(noise_multiplier)</code></td>
+<td><code>dpsgd_acc.gaussian(noise_multiplier)</code></td>
 </tr>
 <tr>
 <td>Poisson sampling</td>
-<td><code>acc.poisson(mechanism, sample_rate)</code></td>
+<td><code>dpsgd_acc.poisson(mechanism, sample_rate)</code></td>
 </tr>
 <tr>
 <td>Truncated Poisson</td>
-<td><code>acc.truncated_poisson(mechanism, sample_rate, batch_size_cap, dataset_size)</code></td>
+<td><code>dpsgd_acc.truncated_poisson(mechanism, sample_rate, batch_size_cap, dataset_size)</code></td>
 </tr>
 <tr>
 <td>Repeat</td>
