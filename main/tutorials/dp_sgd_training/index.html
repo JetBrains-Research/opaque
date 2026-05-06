@@ -2731,9 +2731,7 @@ print(f"Noise multiplier: {noise_multiplier:.4f}")</div>
         <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
 
         <span class="c1"># SGD update — unwrap .pytree for the raw tensor leaves.</span>
-        <span class="n">params</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
-            <span class="n">p</span> <span class="o">-</span> <span class="p">(</span><span class="n">lr</span> <span class="o">/</span> <span class="n">bs</span><span class="p">)</span> <span class="o">*</span> <span class="n">g</span> <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">noisy_grads</span><span class="o">.</span><span class="n">pytree</span><span class="p">)</span>
-        <span class="p">)</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">p</span> <span class="o">-</span> <span class="p">(</span><span class="n">lr</span> <span class="o">/</span> <span class="n">bs</span><span class="p">)</span> <span class="o">*</span> <span class="n">g</span> <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">noisy_grads</span><span class="o">.</span><span class="n">pytree</span><span class="p">))</span>
 
         <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
             <span class="n">epoch_loss</span> <span class="o">+=</span> <span class="n">loss_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
@@ -2776,9 +2774,7 @@ for epoch in range(n_epochs):
         noisy_grads, noise_state = noise_fn(grads, noise_state)
 
         # SGD update — unwrap .pytree for the raw tensor leaves.
-        params = tuple(
-            p - (lr / bs) * g for p, g in zip(params, noisy_grads.pytree)
-        )
+        params = tuple(p - (lr / bs) * g for p, g in zip(params, noisy_grads.pytree))
 
         with torch.no_grad():
             epoch_loss += loss_fn(params, xb, yb).item()

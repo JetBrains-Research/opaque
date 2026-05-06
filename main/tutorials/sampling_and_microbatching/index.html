@@ -2804,8 +2804,7 @@ result is numerically identical.</p>
 <span class="n">grads_mb</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">grad_fn_mb</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state_mb</span><span class="p">)</span>
 
 <span class="n">max_diff</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
-    <span class="p">(</span><span class="n">a</span> <span class="o">-</span> <span class="n">b</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-    <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">grads_full</span><span class="o">.</span><span class="n">pytree</span><span class="p">,</span> <span class="n">grads_mb</span><span class="o">.</span><span class="n">pytree</span><span class="p">)</span>
+    <span class="p">(</span><span class="n">a</span> <span class="o">-</span> <span class="n">b</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">grads_full</span><span class="o">.</span><span class="n">pytree</span><span class="p">,</span> <span class="n">grads_mb</span><span class="o">.</span><span class="n">pytree</span><span class="p">)</span>
 <span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Max difference: </span><span class="si">{</span><span class="n">max_diff</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
@@ -2832,8 +2831,7 @@ grad_fn_mb, clip_state_mb = clipped_grad(
 grads_mb, _ = grad_fn_mb(params, batch, state=clip_state_mb)
 
 max_diff = max(
-    (a - b).abs().max().item()
-    for a, b in zip(grads_full.pytree, grads_mb.pytree)
+    (a - b).abs().max().item() for a, b in zip(grads_full.pytree, grads_mb.pytree)
 )
 print(f"Max difference: {max_diff:.2e}")</div>
 </div>

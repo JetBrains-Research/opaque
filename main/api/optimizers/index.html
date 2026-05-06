@@ -2186,9 +2186,8 @@ the published params), <code>y = (1-β)z + βx</code> (forward-pass weights).</p
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">)</span>
 <a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="c1"># At save / eval time, read the published x_t:</span>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers.schedule_free</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_eval_params</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="n">eval_params</span> <span class="o">=</span> <span class="n">get_eval_params</span><span class="p">(</span><span class="n">opt_state</span><span class="p">)</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="c1"># At save / eval time, read the published x_t directly off the state:</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="n">eval_params</span> <span class="o">=</span> <span class="n">opt_state</span><span class="o">.</span><span class="n">x</span>
 </code></pre></div>
 <p><strong>DP-utility note</strong>: under DP, <code>x_t = (1/n) Σ z_s</code> is a Polyak-Ruppert
 average of noised iterates.  When per-step iterate noise is approximately
@@ -2199,12 +2198,12 @@ methods.</p>
 <hr />
 <h2 id="serialisation">Serialisation<a class="headerlink" href="#serialisation" title="Permanent link">&para;</a></h2>
 <p><code>state_dict</code> / <code>load_state_dict</code> live in
-<code>opaque.optimizers.serialization</code> (a less-common building block, not
+<code>opaque.optimizers._serialization</code> (a less-common building block, not
 in the package's top-level <code>__all__</code>).  Walks the chain state,
 encoding every tensor leaf and Python primitive into a flat
 <code>{path: value}</code> dict ready for <code>torch.save</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">state_dict</span><span class="p">,</span> <span class="n">load_state_dict</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers._serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">state_dict</span><span class="p">,</span> <span class="n">load_state_dict</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">opt</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">state</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>

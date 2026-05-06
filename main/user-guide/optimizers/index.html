@@ -2241,7 +2241,7 @@ pattern:</p>
 <a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="choosing-an-optimizer">Choosing an optimizer<a class="headerlink" href="#choosing-an-optimizer" title="Permanent link">&para;</a></h2>
-<p><strong>AdamW</strong> (<code>opaque.optimizers.adamw</code>) is the recommended default for
+<p><strong>AdamW</strong> (<code>adamw</code>) is the recommended default for
 DP training.  Per-parameter adaptive learning rates compensate for
 DP noise — different parameters receive different signal-to-noise
 ratios, and Adam scales updates accordingly.  Adam typically converges
@@ -2255,21 +2255,21 @@ Pass <code>NoisedPytree</code> updates from a DP noise mechanism; enable
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Plain Adam (no decoupled WD): adamw(..., decoupled_weight_decay=False).</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># StableAdamW (RMS-clipped update): adamw(..., update_rms_clip=1.0).</span>
 </code></pre></div>
-<p><strong>SGD</strong> (<code>opaque.optimizers.sgd</code>) is the canonical DP baseline. No second
+<p><strong>SGD</strong> (<code>sgd</code>) is the canonical DP baseline. No second
 moment is corrected, but the Opaque wrapper accepts <code>NoisedPytree</code> updates so
 the training loop stays uniform. <code>E[g + ξ] = g</code> and momentum's variance is
 bounded. Good debugging baseline:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">sgd</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">sgd</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.9</span><span class="p">)</span>
 </code></pre></div>
-<p><strong>RMSprop</strong> (<code>opaque.optimizers.rmsprop</code>) is adaptive but cheaper
+<p><strong>RMSprop</strong> (<code>rmsprop</code>) is adaptive but cheaper
 than Adam (no first moment).  <code>noise_bias_correction=True</code> enables
 the same flavour of φ-EMA subtraction as AdamW; off by default,
 flip on to ablate:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">rmsprop</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">rmsprop</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.99</span><span class="p">,</span> <span class="n">noise_bias_correction</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </code></pre></div>
-<p><strong>Adagrad</strong> (<code>opaque.optimizers.adagrad</code>) is for sparse-gradient
+<p><strong>Adagrad</strong> (<code>adagrad</code>) is for sparse-gradient
 settings.  Its accumulator does not decay, so under DP noise <code>v_acc</code>
 absorbs <code>t·σ²</code> over training; <code>noise_bias_correction=True</code>
 subtracts a matching cumulative term:</p>
@@ -2470,7 +2470,7 @@ the rectification threshold (<code>ρ_t ≤ 5</code>, roughly the first
 not consumed at all.  This makes the warmup phase naturally DP-robust:
 the noise in <code>v</code> cannot affect the update because it isn't read.</p>
 <p>Once <code>ρ_t &gt; 5</code>, the standard Adam DP-BC story applies — subtract a
-β₂-EMA of <code>σ²</code> from <code>v̂</code> before the sqrt.  <code>opaque.optimizers.radam</code>
+β₂-EMA of <code>σ²</code> from <code>v̂</code> before the sqrt.  <code>radam</code>
 advances the φ-EMA every step (warmup included) so that at the first
 rectified step the correction reflects all prior noise contributions to
 <code>v</code>, not just the current step.</p>
@@ -2483,7 +2483,7 @@ Under DP both EMAs accumulate noise:</p>
 <li><code>E[Δx²]_t</code> accumulates <code>coef_t² · σ²</code> per element because
   <code>Δx_t = -coef_t · g̃_t</code> is linear in the noised gradient.</li>
 </ul>
-<p><code>opaque.optimizers.adadelta</code> maintains two parallel φ-EMAs at the
+<p><code>adadelta</code> maintains two parallel φ-EMAs at the
 same decay <code>ρ</code> and subtracts both biases.  <code>φ_g</code> is scalar (or
 per-group), <code>φ_dx</code> is per-element because the per-step update-noise
 variance varies element-wise even when <code>σ</code> is scalar.  Total state
@@ -2508,21 +2508,20 @@ final iterate at the same privacy budget.  This makes schedule-free
 particularly attractive for DP training, on top of its standard
 "no-LR-schedule" win.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span><span class="p">,</span> <span class="n">schedule_free</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers.schedule_free</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_eval_params</span>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">schedule_free</span><span class="p">(</span>
-<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">noise_bias_correction</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span> <span class="n">beta</span><span class="o">=</span><span class="mf">0.9</span>
-<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="p">)</span>
-<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>
-<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="c1"># Train as usual: trainer treats `params` as y_t.</span>
-<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
-<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>    <span class="o">...</span>
-<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>    <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
-<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>
-<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="c1"># At save / eval time, read the published x_t:</span>
-<a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a><span class="n">eval_params</span> <span class="o">=</span> <span class="n">get_eval_params</span><span class="p">(</span><span class="n">opt_state</span><span class="p">)</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">schedule_free</span><span class="p">(</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>    <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">noise_bias_correction</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span> <span class="n">beta</span><span class="o">=</span><span class="mf">0.9</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="p">)</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="c1"># Train as usual: trainer treats `params` as y_t.</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>    <span class="o">...</span>
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>    <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
+<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a>
+<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="c1"># At save / eval time, read the published x_t directly off the state:</span>
+<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="n">eval_params</span> <span class="o">=</span> <span class="n">opt_state</span><span class="o">.</span><span class="n">x</span>
 </code></pre></div>
 <h3 id="weight-decay-and-privacy">Weight decay and privacy<a class="headerlink" href="#weight-decay-and-privacy" title="Permanent link">&para;</a></h3>
 <p>Weight decay (L2 regularization) does not consume privacy budget
@@ -2557,9 +2556,9 @@ noisy gradient signal.</p>
 the wrapper's averaging is the implicit schedule.</p>
 <h2 id="checkpoint-round-tripping">Checkpoint round-tripping<a class="headerlink" href="#checkpoint-round-tripping" title="Permanent link">&para;</a></h2>
 <p>The optimizer state is a <code>torchopt</code> chain tuple of dataclasses; flatten
-it to a serialisable dict via <code>opaque.optimizers.serialization</code>:</p>
+it to a serialisable dict via <code>opaque.optimizers._serialization</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">state_dict</span><span class="p">,</span> <span class="n">load_state_dict</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers._serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">state_dict</span><span class="p">,</span> <span class="n">load_state_dict</span>
 <a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
 <a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="n">opt</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">noise_bias_correction</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="n">state</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>

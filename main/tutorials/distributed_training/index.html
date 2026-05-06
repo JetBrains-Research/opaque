@@ -2332,7 +2332,7 @@ device.</p>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSampler</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_functional</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">sum_gradients_</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed.gradients</span><span class="w"> </span><span class="kn">import</span> <span class="n">sum_gradients_</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span><span class="p">,</span> <span class="n">fold_in</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">local_shard</span>
 
@@ -2356,7 +2356,7 @@ from opaque.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.functional import make_functional
-from opaque.distributed import sum_gradients_
+from opaque.distributed.gradients import sum_gradients_
 from opaque.random import key, fold_in
 from opaque.distributed import local_shard
 
@@ -2638,9 +2638,7 @@ all ranks add the same noise (from the shared key).</p>
 
     <span class="c1"># 4. SGD update — unwrap .pytree for the raw tensor leaves</span>
     <span class="n">bs</span> <span class="o">=</span> <span class="n">xb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">world_size</span>  <span class="c1"># effective global batch size</span>
-    <span class="n">params</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
-        <span class="n">p</span> <span class="o">-</span> <span class="p">(</span><span class="n">LR</span> <span class="o">/</span> <span class="n">bs</span><span class="p">)</span> <span class="o">*</span> <span class="n">g</span> <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">noisy_grads</span><span class="o">.</span><span class="n">pytree</span><span class="p">)</span>
-    <span class="p">)</span>
+    <span class="n">params</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">p</span> <span class="o">-</span> <span class="p">(</span><span class="n">LR</span> <span class="o">/</span> <span class="n">bs</span><span class="p">)</span> <span class="o">*</span> <span class="n">g</span> <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">noisy_grads</span><span class="o">.</span><span class="n">pytree</span><span class="p">))</span>
 
     <span class="k">if</span> <span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="p">(</span><span class="n">step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="mi">100</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
@@ -2667,9 +2665,7 @@ all ranks add the same noise (from the shared key).</p>
 
     # 4. SGD update — unwrap .pytree for the raw tensor leaves
     bs = xb.shape[0] * world_size  # effective global batch size
-    params = tuple(
-        p - (LR / bs) * g for p, g in zip(params, noisy_grads.pytree)
-    )
+    params = tuple(p - (LR / bs) * g for p, g in zip(params, noisy_grads.pytree))
 
     if rank == 0 and (step + 1) % 100 == 0:
         with torch.no_grad():
