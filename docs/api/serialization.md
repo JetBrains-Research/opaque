@@ -21,17 +21,22 @@ Domain pages with examples: [Optimizers](optimizers.md), [Accounting](accounting
 
 Opaque centralises (de)serialisation in :func:`opaque.serialization.state_dict`
 and :func:`opaque.serialization.from_state_dict`.  Registered types (including
-:class:`~opaque.accounting._accountant.Accountant`) are written and restored
-**only** through these module-level functions — there are no instance methods
-named ``state_dict`` / ``from_state_dict`` on those classes.  Callers should
-always use::
+:class:`~opaque.accounting.Accountant`) are written and restored **only**
+through these module-level functions — there are no instance methods named
+``state_dict`` / ``from_state_dict`` on those classes.
 
-    from opaque.serialization import from_state_dict, state_dict
+Minimal round-trip for an :class:`~opaque.accounting.Accountant`:
 
-    flat = state_dict(acct)
-    acct2 = from_state_dict(Accountant(), flat)
+```python
+from opaque.accounting import Accountant, identity
+from opaque.serialization import from_state_dict, state_dict
 
-The same pattern applies to clip state, noise state, functional optimiser
+acct = Accountant() | identity()
+flat = state_dict(acct)
+acct2 = from_state_dict(Accountant(), flat)
+```
+
+The same pattern applies to clip state, noise state, functional optimizer
 state, and any other value that flows through the DP training loop.  Custom
 types may register handlers with :func:`opaque.serialization.register_serialization_type`.
 
