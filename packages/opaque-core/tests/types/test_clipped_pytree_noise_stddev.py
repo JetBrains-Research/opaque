@@ -29,7 +29,8 @@ class TestScalarMaxNorm:
     def test_isotropic_scalar_returns_scalar(self):
         cg = clipped(torch.zeros(8), max_norm=2.0)
         assert cg.noise_stddev(
-            noise_multiplier=0.8, allocation="isotropic",
+            noise_multiplier=0.8,
+            allocation="isotropic",
         ) == pytest.approx(1.6)
 
     def test_zero_noise_multiplier(self):
@@ -90,7 +91,8 @@ class TestPerGroupIsotropic:
         cg = clipped({"a": torch.zeros(1), "b": torch.zeros(1)}, max_norm=pg)
         # ‖(3,4)‖₂ = 5
         assert cg.noise_stddev(
-            noise_multiplier=0.8, allocation="isotropic",
+            noise_multiplier=0.8,
+            allocation="isotropic",
         ) == pytest.approx(0.8 * 5.0)
 
 
