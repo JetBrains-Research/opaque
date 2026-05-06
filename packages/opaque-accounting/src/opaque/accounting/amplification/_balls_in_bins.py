@@ -122,8 +122,9 @@ class BallsInBins(DpProcess):
                     mg.noise_multiplier,
                     native_cfg,
                 )
-            case SecondMoment(inner=Gaussian(noise_multiplier=0)) | SecondMoment(
-                inner=NonPrivate()
+            case (
+                SecondMoment(inner=Gaussian(noise_multiplier=0))
+                | SecondMoment(inner=NonPrivate())
             ):
                 return _native.non_private_pld(native_cfg)
             case SecondMoment(inner=Gaussian()) as second:

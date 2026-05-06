@@ -26,7 +26,6 @@ from opaque.accounting.amplification.types import (
     Poisson,
     TruncatedPoisson,
 )
-from opaque.accounting.mechanisms.types import Gaussian
 from opaque.accounting.transformations.types import SecondMoment
 
 
@@ -65,7 +64,8 @@ class TestPoissonAcceptsSecondMoment:
     def test_rejects_mf_inner(self):
         # SecondMoment(MfGaussian) must redirect to cyclic_poisson / b_min_sep.
         sm = acc.second_moment(
-            acc.band_mf(0.8, sensitivity=1.0, num_groups=10), sensitivity=1.0,
+            acc.band_mf(0.8, sensitivity=1.0, num_groups=10),
+            sensitivity=1.0,
         )
         with pytest.raises(TypeError, match="MfGaussian|cyclic_poisson|b_min_sep"):
             acc.poisson(sm, sample_rate=0.01)
@@ -84,7 +84,8 @@ class TestTruncatedPoissonAcceptsSecondMoment:
 
     def test_rejects_mf_inner(self):
         sm = acc.second_moment(
-            acc.band_mf(0.8, sensitivity=1.0, num_groups=10), sensitivity=1.0,
+            acc.band_mf(0.8, sensitivity=1.0, num_groups=10),
+            sensitivity=1.0,
         )
         with pytest.raises(TypeError, match="MfGaussian|cyclic_poisson|b_min_sep"):
             acc.truncated_poisson(sm, 0.01, 128, 10_000)
@@ -98,14 +99,13 @@ class TestParallelPoissonAcceptsSecondMoment:
 
     def test_pld_returns_valid(self):
         sm = acc.second_moment(acc.gaussian(0.8), sensitivity=1.0)
-        eps = acc.parallel_poisson(sm, sample_rate=0.01, num_workers=4).epsilon_at(
-            1e-5
-        )
+        eps = acc.parallel_poisson(sm, sample_rate=0.01, num_workers=4).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_rejects_mf_inner(self):
         sm = acc.second_moment(
-            acc.band_mf(0.8, sensitivity=1.0, num_groups=10), sensitivity=1.0,
+            acc.band_mf(0.8, sensitivity=1.0, num_groups=10),
+            sensitivity=1.0,
         )
         with pytest.raises(TypeError, match="MfGaussian|cyclic_poisson|b_min_sep"):
             acc.parallel_poisson(sm, sample_rate=0.01, num_workers=4)
@@ -143,7 +143,10 @@ def test_truncated_poisson_second_moment_matches_effective_gaussian(sigma, sensi
     sm = acc.second_moment(acc.gaussian(sigma), sensitivity=sensitivity)
     t_sm = acc.truncated_poisson(sm, 0.01, 128, 10_000)
     t_g = acc.truncated_poisson(
-        acc.gaussian(_effective_nm(sigma, sensitivity)), 0.01, 128, 10_000,
+        acc.gaussian(_effective_nm(sigma, sensitivity)),
+        0.01,
+        128,
+        10_000,
     )
     assert t_sm.epsilon_at(1e-5) == pytest.approx(t_g.epsilon_at(1e-5), rel=1e-6)
 
@@ -167,7 +170,9 @@ def test_balls_in_bins_second_moment_matches_effective_gaussian(sigma, sensitivi
     sm = acc.second_moment(acc.gaussian(sigma), sensitivity=sensitivity)
     b_sm = acc.balls_in_bins(sm, num_bins=100, num_epochs=10)
     b_g = acc.balls_in_bins(
-        acc.gaussian(_effective_nm(sigma, sensitivity)), num_bins=100, num_epochs=10,
+        acc.gaussian(_effective_nm(sigma, sensitivity)),
+        num_bins=100,
+        num_epochs=10,
     )
     assert b_sm.epsilon_at(1e-5) == pytest.approx(b_g.epsilon_at(1e-5), rel=1e-6)
 

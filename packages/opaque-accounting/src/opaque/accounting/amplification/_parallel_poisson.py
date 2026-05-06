@@ -77,10 +77,13 @@ class ParallelPoisson(DpProcess):
                     self.num_workers,
                     native_cfg,
                 )
-            case Poisson(
-                inner=SecondMoment(inner=Gaussian(noise_multiplier=0)),
-            ) | Poisson(
-                inner=SecondMoment(inner=NonPrivate()),
+            case (
+                Poisson(
+                    inner=SecondMoment(inner=Gaussian(noise_multiplier=0)),
+                )
+                | Poisson(
+                    inner=SecondMoment(inner=NonPrivate()),
+                )
             ):
                 return _native.non_private_pld(native_cfg)
             case Poisson(

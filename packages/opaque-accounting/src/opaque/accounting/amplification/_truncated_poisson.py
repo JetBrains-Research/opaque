@@ -69,8 +69,9 @@ class TruncatedPoisson(DpProcess):
                     self.dataset_size,
                     native_cfg,
                 )
-            case SecondMoment(inner=Gaussian(noise_multiplier=0)) | SecondMoment(
-                inner=NonPrivate()
+            case (
+                SecondMoment(inner=Gaussian(noise_multiplier=0))
+                | SecondMoment(inner=NonPrivate())
             ):
                 return _native.non_private_pld(native_cfg)
             case SecondMoment(inner=Gaussian()) as sm:
