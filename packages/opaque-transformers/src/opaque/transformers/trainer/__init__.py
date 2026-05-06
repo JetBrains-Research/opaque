@@ -4036,7 +4036,7 @@ class DPTrainer:
     def _save_accountant(self, ckpt_dir: str, ctx: "_TrainingContext") -> None:
         path = os.path.join(ckpt_dir, ckpt.DP_ACCOUNTANT_NAME)
         with open(path, "w") as f:
-            json.dump(ctx.accounting.state_dict(), f, indent=2)
+            json.dump(opaque_state_dict(ctx.accounting), f, indent=2)
 
     def _save_rng_state(self, ckpt_dir: str) -> None:
         # Single-process today; the helper writes ``rng_state.pth``.
@@ -4182,7 +4182,9 @@ class DPTrainer:
         acct_path = os.path.join(ckpt_dir, ckpt.DP_ACCOUNTANT_NAME)
         if os.path.exists(acct_path):
             with open(acct_path) as f:
-                accountant = Accountant.from_state_dict(json.load(f))
+                accountant = opaque_from_state_dict(
+                    Accountant(), json.load(f)
+                )
         else:
             log.warning(
                 "No accountant.json in %s; prepending nonprivate() mechanism — "
