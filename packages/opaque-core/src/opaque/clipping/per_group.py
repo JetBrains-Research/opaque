@@ -1,8 +1,8 @@
 """Build a :class:`opaque.types.PerGroup` from params + substring patterns::
 
-    from opaque.clipping import per_group
-    pg = per_group(params, self_attn=1.0, mlp=2.0)
-    pg = per_group(params, q_proj=1.0, fallback=0.5)  # catch-all
+from opaque.clipping import per_group
+pg = per_group(params, self_attn=1.0, mlp=2.0)
+pg = per_group(params, q_proj=1.0, fallback=0.5)  # catch-all
 """
 
 from __future__ import annotations
