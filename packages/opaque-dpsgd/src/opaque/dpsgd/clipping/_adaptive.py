@@ -8,6 +8,7 @@ import torch
 
 from opaque.types import clipped
 
+from opaque.clipping.types import _norm_from_state, _norm_state_dict
 from opaque.clipping._helpers import (
     batch_size_from_args,
     normalize_to_tuple,
@@ -81,6 +82,67 @@ class AdaptiveClipState(ClipState):
             raise ValueError(
                 f"fraction_noise_std must be > 0, got {self._fraction_noise_std}"
             )
+
+    @property
+    def clipping_norm(self) -> float | PerGroup:
+        """Clipping threshold applied on the current step."""
+        return self._current_clipping_norm
+
+    @property
+    def next_clipping_norm(self) -> float | PerGroup:
+        """Clipping threshold scheduled for the next step."""
+        return self._next_clipping_norm
+
+    def state_dict(self) -> dict[str, Any]:
+        """Serialize to a JSON-compatible dict for checkpointing."""
+        nc = self._num_clipped
+        if isinstance(nc, dict):
+            num_payload: dict[str, float] | float = {
+                str(k): float(v) for k, v in nc.items()
+            }
+        else:
+            num_payload = float(nc)
+        return {
+            "_current_clipping_norm": _norm_state_dict(self._current_clipping_norm),
+            "_next_clipping_norm": _norm_state_dict(self._next_clipping_norm),
+            "_step": int(self._step),
+            "_rng_key": {
+                "seed": int(self._rng_key.seed),
+                "impl": str(self._rng_key.impl),
+            },
+            "_fraction_noise_std": float(self._fraction_noise_std),
+            "_learning_rate": float(self._learning_rate),
+            "_target_quantile": float(self._target_quantile),
+            "_clipping_norm_min": float(self._clipping_norm_min),
+            "_clipping_norm_max": float(self._clipping_norm_max),
+            "_num_clipped": num_payload,
+            "_batch_size": float(self._batch_size),
+        }
+
+    @classmethod
+    def from_state_dict(cls, state: dict[str, Any]) -> "AdaptiveClipState":
+        """Reconstruct from :meth:`state_dict` output."""
+        rng = state["_rng_key"]
+        nc = state["_num_clipped"]
+        if isinstance(nc, dict):
+            num_clipped: float | dict[str, float] = {
+                str(k): float(v) for k, v in nc.items()
+            }
+        else:
+            num_clipped = float(nc)
+        return cls(
+            _current_clipping_norm=_norm_from_state(state["_current_clipping_norm"]),
+            _next_clipping_norm=_norm_from_state(state["_next_clipping_norm"]),
+            _step=int(state["_step"]),
+            _rng_key=RngKey(seed=int(rng["seed"]), impl=str(rng["impl"])),
+            _fraction_noise_std=float(state["_fraction_noise_std"]),
+            _learning_rate=float(state["_learning_rate"]),
+            _target_quantile=float(state["_target_quantile"]),
+            _clipping_norm_min=float(state["_clipping_norm_min"]),
+            _clipping_norm_max=float(state["_clipping_norm_max"]),
+            _num_clipped=num_clipped,
+            _batch_size=float(state["_batch_size"]),
+        )
 
 
 def _compute_clipping_stats(

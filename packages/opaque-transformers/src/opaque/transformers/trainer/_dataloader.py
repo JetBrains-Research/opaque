@@ -48,7 +48,9 @@ class _OpaqueEpochBaseBatchSampler:
             self._pending_sampler_state = None
 
     def state_dict(self) -> dict[str, Any]:
-        if self._active_sampler is not None:
+        if self._active_sampler is not None and callable(
+            getattr(self._active_sampler, "state_dict", None)
+        ):
             return self._active_sampler.state_dict()
         return self._pending_sampler_state or {
             "key": {

@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import json
 
-from opaque.clipping.per_group import PerGroup
+from opaque.types import PerGroup
 from opaque.dpsgd.clipping.adaptive import AdaptiveClipState
-from opaque.random import RngKey
+from opaque.random.types import RngKey
 
 
 def _scalar_state(**overrides) -> AdaptiveClipState:
     base = dict(
-        clipping_norm=1.5,
-        normalize_by=2.0,
-        next_clipping_norm=1.6,
-        step=7,
+        _current_clipping_norm=1.5,
+        _next_clipping_norm=1.6,
+        _step=7,
         _rng_key=RngKey(seed=42),
         _fraction_noise_std=0.05,
         _learning_rate=0.1,
@@ -42,8 +41,8 @@ class TestAdaptiveClipStateStateDict:
             values={"attn": 1.0, "mlp": 2.0},
         )
         cs = _scalar_state(
-            clipping_norm=pg,
-            next_clipping_norm=PerGroup(
+            _current_clipping_norm=pg,
+            _next_clipping_norm=PerGroup(
                 groups=pg.groups,
                 values={"attn": 1.1, "mlp": 2.1},
             ),

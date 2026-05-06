@@ -95,6 +95,20 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
+# ``torch.vmap`` strips the per-example batch axis; HF sequence models expect
+# ``(batch, seq)``.  See :meth:`DPTrainer._build_per_example_loss`.
+_VMAP_BATCH_UNSQUEEZE_KEYS: frozenset[str] = frozenset(
+    {
+        "input_ids",
+        "attention_mask",
+        "token_type_ids",
+        "position_ids",
+        "decoder_input_ids",
+        "decoder_attention_mask",
+        "labels",
+    }
+)
+
 
 def _disable_tokenizers_parallelism_before_fork() -> None:
     """Avoid HuggingFace tokenizers fork warnings from reporting integrations."""
@@ -2857,6 +2871,13 @@ class DPTrainer:
         ) -> Tensor:
             merged = {**frozen_params, **trainable}
             kwargs = dict(zip(keys, batch_args, strict=True))
+            for name, value in list(kwargs.items()):
+                if (
+                    name in _VMAP_BATCH_UNSQUEEZE_KEYS
+                    and isinstance(value, Tensor)
+                    and value.ndim == 1
+                ):
+                    kwargs[name] = value.unsqueeze(0)  # (seq,) -> (1, seq)
             if autocast_active:
                 with torch.autocast(device_type=device_type, dtype=amp_dtype):
                     output = fmodel(merged, **kwargs)
