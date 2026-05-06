@@ -34,6 +34,7 @@ from collections.abc import Mapping
 from typing import Any, Callable, NamedTuple
 
 import opaque.accounting as acc
+import opaque.dpsgd.accounting as dpsgd_acc
 import torch
 import torchopt
 from datasets import Dataset
@@ -182,7 +183,7 @@ class DPTrainer:
         compute_metrics: Callable | None = None,
         callbacks: list[Any] | None = None,
         optimizers: tuple[Any | None, Any | None] = (None, None),
-        optimizer_cls_and_kwargs: tuple[type[Any], dict[str, Any]] | None = None,
+        optimizer_cls_and_kwargs: tuple[Any, dict[str, Any]] | None = None,
         preprocess_logits_for_metrics: Callable | None = None,
         tokenizer: PreTrainedTokenizerBase | None = None,
     ) -> None:
@@ -226,6 +227,10 @@ class DPTrainer:
             raise ValueError(
                 "`DPTrainer` requires either a `model` or `model_init` argument, but not both."
             )
+        self._functional_optimizer_factory: (
+            tuple[Callable[..., Any], dict[str, Any]] | None
+        ) = None
+        self._functional_optimizer_name: str | None = None
         if any(item is not None for item in optimizers):
             raise RuntimeError(
                 "Passing `optimizers` is not supported by DPTrainer: the DP path "
@@ -233,9 +238,16 @@ class DPTrainer:
                 "gradient clipping/noising is configured."
             )
         if optimizer_cls_and_kwargs is not None:
-            raise RuntimeError(
-                "Passing `optimizer_cls_and_kwargs` is not supported by DPTrainer: "
-                "override `create_optimizer` to customize the functional optimizer."
+            from opaque.transformers.trainer._optim import (
+                validate_functional_optimizer_cls_and_kwargs,
+            )
+
+            self._functional_optimizer_factory = (
+                validate_functional_optimizer_cls_and_kwargs(optimizer_cls_and_kwargs)
+            )
+            _fn = self._functional_optimizer_factory[0]
+            self._functional_optimizer_name = getattr(
+                _fn, "__name__", type(_fn).__name__
             )
         self.model_init = model_init
         self._model = model
@@ -1367,7 +1379,11 @@ class DPTrainer:
             collate_fn=collate_fn,
             batch_keys=batch_keys,
             offload_ctx=offload_ctx,
-            opt_name=a.optim,
+            opt_name=(
+                self._functional_optimizer_name
+                if self._functional_optimizer_factory is not None
+                else a.optim
+            ),
             save_steps_resolved=save_steps_resolved,
             clip_norm=clip_norm,
         )
@@ -3148,6 +3164,13 @@ class DPTrainer:
         del clip_state, noise_multiplier  # see docstring
         a = self.args
         extra = parse_optim_args(getattr(a, "optim_args", None))
+        fac = self._functional_optimizer_factory
+        if fac is not None:
+            factory, init_kw = fac
+            merged = {**dict(init_kw), **extra}
+            merged.pop("lr", None)
+            opt = factory(lr=lr_schedule, **merged)
+            return opt, opt.init(trainable_params)
         opt = build_optimizer(a, lr_schedule, extra_kwargs=extra)
         return opt, opt.init(trainable_params)
 
@@ -3388,12 +3411,12 @@ class DPTrainer:
         """Build the privacy accounting mechanism chain."""
         num_groups = len(clip_norm.values) if hasattr(clip_norm, "values") else 1
 
-        base = acc.gaussian
+        base = dpsgd_acc.gaussian
         if a.dp_clipping_mode == "adaptive":
             _base = base
 
             def base(nm, _b=_base):
-                return acc.adaclip(
+                return dpsgd_acc.adaclip(
                     _b(nm),
                     expected_batch_size=expected_batch_size,
                     num_groups=num_groups,
@@ -3405,7 +3428,7 @@ class DPTrainer:
             max_bs = a.dp_max_batch_size or expected_batch_size
 
             def mechanism(nm, _u=_unamplified):
-                return acc.truncated_poisson(
+                return dpsgd_acc.truncated_poisson(
                     _u(nm),
                     sample_rate=sample_rate,
                     batch_size_cap=max_bs,
@@ -3414,7 +3437,7 @@ class DPTrainer:
         else:
 
             def mechanism(nm, _u=_unamplified):
-                return acc.poisson(_u(nm), sample_rate=sample_rate)
+                return dpsgd_acc.poisson(_u(nm), sample_rate=sample_rate)
 
         return mechanism
 

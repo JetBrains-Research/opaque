@@ -4,7 +4,8 @@ Two-layer surface, both routed through the same builder:
 
 1. **Canonical opaque names** — every factory in
    :mod:`opaque.optimizers` (``adam``, ``adamw``, ``sgd``, ``rmsprop``,
-   ``adagrad``, ``adafactor``, ``ademamix``, ``lion``, ``schedule_free``).
+   ``adagrad``, ``adafactor``, ``ademamix``, ``lion``, ``radam``,
+   ``adadelta``, ``schedule_free``).
    The full opaque parameter surface is reachable through HF-canonical
    ``TrainingArguments`` fields (``learning_rate``, ``weight_decay``,
    ``adam_beta1``, ``adam_beta2``, ``adam_epsilon``) plus DP-specific
@@ -22,7 +23,7 @@ Two-layer surface, both routed through the same builder:
    honoured by selecting the opaque factory whose math matches.
 
 Names that have no DP-aware mapping (8-bit, paged, GaLore, fused
-torch.optim, plain ``adadelta``) remain rejected with a redirect message.
+``torch.optim`` subclasses) remain rejected with a redirect message.
 """
 
 from __future__ import annotations
@@ -48,6 +49,7 @@ _OPAQUE_FACTORIES: dict[str, Callable[..., GradientTransformation]] = {
     "rmsprop":       opaque_opt.rmsprop,
     "adagrad":       opaque_opt.adagrad,
     "radam":         opaque_opt.radam,
+    "adadelta":      opaque_opt.adadelta,
     "schedule_free": opaque_opt.schedule_free,
 }
 
@@ -57,7 +59,7 @@ _OPAQUE_FACTORIES: dict[str, Callable[..., GradientTransformation]] = {
 # Adam's signature has no ``decoupled_weight_decay`` (the decoupled
 # variant is the separate ``adamw`` factory).
 _APPLIES_BETAS = {"adam", "adamw", "ademamix", "lion", "radam"}
-_APPLIES_EPS = {"adam", "adamw", "rmsprop", "adagrad", "radam"}
+_APPLIES_EPS = {"adam", "adamw", "rmsprop", "adagrad", "radam", "adadelta"}
 _APPLIES_WEIGHT_DECAY = {
     "adam",
     "adamw",
@@ -68,6 +70,7 @@ _APPLIES_WEIGHT_DECAY = {
     "ademamix",
     "lion",
     "radam",
+    "adadelta",
 }
 _APPLIES_DECOUPLED_WD = {
     "adamw",
@@ -77,8 +80,17 @@ _APPLIES_DECOUPLED_WD = {
     "ademamix",
     "lion",
     "radam",
+    "adadelta",
 }
-_APPLIES_UPDATE_RMS_CLIP = {"adam", "adamw", "rmsprop", "adafactor", "ademamix", "radam"}
+_APPLIES_UPDATE_RMS_CLIP = {
+    "adam",
+    "adamw",
+    "rmsprop",
+    "adafactor",
+    "ademamix",
+    "radam",
+    "adadelta",
+}
 _APPLIES_NOISE_BC = {
     "adam",
     "adamw",
@@ -87,6 +99,7 @@ _APPLIES_NOISE_BC = {
     "ademamix",
     "adafactor",
     "radam",
+    "adadelta",
 }
 
 # ---------------------------------------------------------------------------
@@ -172,13 +185,6 @@ _DP_OPTIMIZER_UNSUPPORTED: dict[str, str] = {
     "lomo": "LOMO is not supported under DP-SGD.",
     "adalomo": "AdaLOMO is not supported under DP-SGD.",
     "grokadamw": "GrokAdamW is not supported under DP-SGD.",
-    # Re-exported torchopt primitives without a DP-aware mode.
-    "adadelta": (
-        "DPTrainer does not currently support adadelta — its two-EMA "
-        "structure has no published DP bias correction.  Use "
-        "opaque.optimizers.adadelta directly through the functional "
-        "API if you accept vanilla behaviour under DP noise."
-    ),
     "adamax": (
         "Adamax structurally misbehaves under DP: the half-normal noise "
         "mean is permanently absorbed by the max-norm denominator.  "
@@ -345,10 +351,66 @@ def build_optimizer(
     return factory(lr=lr_schedule, **kwargs)
 
 
+def validate_functional_optimizer_cls_and_kwargs(
+    optimizer_cls_and_kwargs: tuple[Any, ...],
+) -> tuple[Callable[..., GradientTransformation], dict[str, Any]]:
+    """Validate ``(factory, kwargs)`` for DPTrainer's functional optimizer path.
+
+    The factory must **not** be a :class:`torch.optim.Optimizer` subclass and
+    must be callable as ``factory(lr=lr_schedule, **kwargs)`` (same
+    convention as :mod:`opaque.optimizers` and torchopt).  The returned
+    object must expose ``init`` and ``update`` callables.
+    """
+    import torch.optim as torch_optim
+
+    if not isinstance(optimizer_cls_and_kwargs, tuple) or len(optimizer_cls_and_kwargs) != 2:
+        raise TypeError(
+            "optimizer_cls_and_kwargs must be a length-2 tuple (factory, kwargs)."
+        )
+    factory, opt_kwargs = optimizer_cls_and_kwargs
+    if not isinstance(opt_kwargs, dict):
+        raise TypeError(
+            "optimizer_cls_and_kwargs[1] must be dict[str, Any]; "
+            f"got {type(opt_kwargs)!r}."
+        )
+    if isinstance(factory, type) and issubclass(factory, torch_optim.Optimizer):
+        raise RuntimeError(
+            "DPTrainer.optimizer_cls_and_kwargs rejects torch.optim.Optimizer "
+            "subclasses: use a callable that returns a torchopt "
+            "GradientTransformation (e.g. opaque.optimizers.adamw)."
+        )
+    if not callable(factory):
+        raise TypeError(
+            "optimizer_cls_and_kwargs[0] must be a callable factory; "
+            f"got {factory!r}."
+        )
+    def dummy_lr(_step: int) -> float:
+        return 1e-4
+
+    try:
+        transform = factory(lr=dummy_lr, **opt_kwargs)
+    except TypeError as exc:
+        raise RuntimeError(
+            "optimizer_cls_and_kwargs factory is not compatible with "
+            "``factory(lr=lr_schedule, **kwargs)``.  Original error: "
+            f"{exc}"
+        ) from exc
+    init_fn = getattr(transform, "init", None)
+    update_fn = getattr(transform, "update", None)
+    if not callable(init_fn) or not callable(update_fn):
+        raise RuntimeError(
+            "optimizer_cls_and_kwargs factory must return an object with "
+            "callable init and update (torchopt GradientTransformation); "
+            f"got {type(transform)!r}."
+        )
+    return factory, dict(opt_kwargs)
+
+
 __all__ = [
     "build_optimizer",
     "resolve_optimizer_name",
     "canonical_optimizer_names",
     "supported_names",
+    "validate_functional_optimizer_cls_and_kwargs",
     "_DP_OPTIMIZER_UNSUPPORTED",
 ]

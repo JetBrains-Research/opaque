@@ -258,6 +258,12 @@ class TestUnsupportedHFKnobs:
             DPTrainingArguments(**{field: value})
 
 
+class TestOptimTargetModulesRejected:
+    def test_non_default_optim_target_modules_raises(self):
+        with pytest.raises(TypeError, match="optim_target_modules"):
+            DPTrainingArguments(optim_target_modules=["linear"])
+
+
 class TestOptimizerSupportSurface:
     @pytest.mark.parametrize("optim", _DP_OPTIMIZERS)
     def test_supported_dp_optimizers_construct(self, optim):

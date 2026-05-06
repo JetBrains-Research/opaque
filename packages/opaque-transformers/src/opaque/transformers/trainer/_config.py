@@ -22,7 +22,8 @@ DP divergences from HF, all flagged at ``__post_init__`` time:
   when set to non-default values.
 - ``optim`` accepts the canonical opaque optimizer names
   (``adam``, ``adamw``, ``sgd``, ``rmsprop``, ``adagrad``, ``adafactor``,
-  ``ademamix``, ``lion``, ``schedule_free``) and a curated set of HF
+  ``ademamix``, ``lion``, ``radam``, ``adadelta``, ``schedule_free``) and a
+  curated set of HF
   aliases (``adamw_torch``, ``adamw_torch_fused``, ``adamw_hf``,
   ``adafactor``, ``lion_32bit``) that route to the same opaque
   factories.  Quantized / paged / GaLore / fused-CUDA / XLA / NPU
@@ -674,12 +675,22 @@ class DPTrainingArguments(TrainingArguments):
         # …) and a curated set of HF aliases that map cleanly onto
         # opaque factories (``adamw_torch`` → ``adamw``, ``adafactor``
         # → ``adafactor``, ``lion_32bit`` → ``lion``).  Quantized /
-        # paged / fused-CUDA / GaLore variants and the few opaque
-        # primitives without DP-aware paths (``adadelta``, ``radam``,
-        # ``adamax``) are rejected by the resolver with redirect
-        # messages.  ``OptimizerNames`` enum inputs are normalised
-        # via ``.value`` inside the resolver.
+        # paged / fused-CUDA / GaLore variants and optimizers without a
+        # functional DP mapping (e.g. ``adamax``) are rejected by the
+        # resolver with redirect messages.  ``OptimizerNames`` enum
+        # inputs are normalised via ``.value`` inside the resolver.
         _resolve_optimizer_name(self.optim)
+
+        # ``optim_target_modules`` selects low-rank / layer-wise HF optimizers;
+        # DPTrainer uses a single functional transform over the full trainable
+        # pytree — no GaLore-style targeting.
+        otm = getattr(self, "optim_target_modules", None)
+        if otm is not None:
+            raise TypeError(
+                "optim_target_modules is not supported by DPTrainer (no "
+                "per-module functional optimizer wiring).  Leave it unset "
+                "(HF default None) or subclass create_optimizer."
+            )
 
         # --- 10. DP-incompat rejection --------------------------------------
         # ``max_grad_norm``: HF clips global gradient norm; DP clips
