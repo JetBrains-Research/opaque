@@ -452,10 +452,12 @@ from opaque.accounting import Accountant
 from opaque.serialization import from_state_dict, state_dict
 
 flat = state_dict(acct)
-# ... save flat (JSON-friendly values) ...
-
-acct = from_state_dict(Accountant(), flat)
+# ... torch.save(flat, path) / flat = torch.load(path) ...
 ```
+
+The flat mapping may include ``torch.Tensor`` and NumPy arrays. Persist it with
+:func:`torch.save` / :func:`torch.load` (or another pickle-compatible format),
+not JSON, unless every leaf is JSON-serialisable.
 
 For a bare ``DpProcess``, use ``from_state_dict(identity(), flat)`` (or any
 concrete process as the template).

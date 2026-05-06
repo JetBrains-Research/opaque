@@ -40,16 +40,32 @@ def register_serialization_type(
     _REGISTRY[typ] = (state_dict_fn, from_state_dict_fn)
 
 
+def _join_path(prefix: str, rel_key: str) -> str:
+    """Join like :mod:`opaque.serialization._structural` (dot segments, ``[i]`` without a leading dot)."""
+    if not prefix:
+        return rel_key
+    if not rel_key:
+        return prefix
+    if rel_key.startswith("["):
+        return prefix + rel_key
+    return f"{prefix}.{rel_key}"
+
+
 def _subdict(sd: Mapping[str, Any], prefix: str) -> dict[str, Any]:
+    """Slice ``sd`` to keys nested under ``prefix`` (dot and bracket segments)."""
     if not prefix:
         return dict(sd)
     out: dict[str, Any] = {}
-    sep = prefix + "."
+    plen = len(prefix)
     for k, v in sd.items():
         if k == prefix:
             out[""] = v
-        elif k.startswith(sep):
-            out[k[len(sep) :]] = v
+        elif k.startswith(prefix) and len(k) > plen:
+            sep = k[plen]
+            if sep == ".":
+                out[k[plen + 1 :]] = v
+            elif sep == "[":
+                out[k[plen:]] = v
     return out
 
 
@@ -58,8 +74,7 @@ def _walk_save(obj: Any, prefix: str, out: dict[str, Any]) -> None:
     if cls in _REGISTRY:
         rel = _REGISTRY[cls][0](obj)
         for rk, rv in rel.items():
-            full = f"{prefix}.{rk}" if prefix else rk
-            out[full] = rv
+            out[_join_path(prefix, rk)] = rv
         return
     _structural.walk_save(obj, prefix, out, _walk_save)
 
