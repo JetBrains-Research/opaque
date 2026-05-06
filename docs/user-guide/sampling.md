@@ -203,7 +203,10 @@ sampler = BMinSepSampler(
 Each example is independently assigned to one of `num_bins` bins (Binomial
 bin sizes; some bins may be empty). The assignment is **fixed once at init**
 and **reused across all epochs** — this is required by the dominating-pair
-BnB privacy accounting. Used with DP-λCGD, BISR, BSR, and BLT mechanisms.
+BnB privacy accounting. Used with DP-λCGD, BISR, BSR, and BLT mechanisms,
+**and with the plain Gaussian mechanism for DP-SGD**: `acc.balls_in_bins`
+accepts both Gaussian and MF inners (see [Mechanisms — Cross-cutting
+amplification](../mechanisms/index.md)).
 
 ```python
 from opaque.dpftrl.sampling import BallsInBinsSampler
@@ -217,6 +220,16 @@ sampler = BallsInBinsSampler(
 )
 loader = data.DataLoader(dataset, batch_sampler=sampler)
 ```
+
+`acc.balls_in_bins(mechanism, num_bins, num_epochs)` returns the
+**total** multi-epoch privacy cost — do not compose further with
+`* num_epochs`.  In a training loop, book the cost once before training
+begins; the per-step accumulator does not compose for BnB.
+
+`BallsInBinsSampler` is incompatible with parallel-Poisson DDP
+(`--no-shard`): each rank must work a disjoint shard so every example
+participates exactly once per epoch globally.  Pass `--shard` (or its
+DDP equivalent) when using BnB across multiple ranks.
 
 ## Sequential batch sampling
 

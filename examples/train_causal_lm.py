@@ -67,6 +67,7 @@ from transformers import (
 
 import opaque.accounting as acc
 import opaque.auditing as auditing
+import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
@@ -516,6 +517,16 @@ def parse_args():
         type=float,
         default=3.0,
         help="Support half-width in sigma units for rectified/truncated Gaussian (ignored for standard gaussian)",
+    )
+    dp_group.add_argument(
+        "--second-moment",
+        type=str,
+        default="none",
+        help="Wrap clipping + accounting in private-second-moment: 'none' "
+        "(default; first-moment-only release), 'auto' (enable for optimizers "
+        "that consume noisy_squared_grads — adam/adamw/ademamix/rmsprop/"
+        "adafactor/radam/adagrad), or an explicit float >1.0 for the "
+        "first-moment overhead (default sqrt(3/2) when enabled).",
     )
     dp_group.add_argument(
         "--per-group-clipping",
@@ -1136,8 +1147,41 @@ def main():
     print(f"  Epochs: {args.num_epochs}")
     print(f"  Expected total steps: ~{args.num_epochs * expected_steps_per_epoch}")
 
+    # Resolve --second-moment flag to the bool/float overhead value
+    # consumed by clipped_grad / acc.second_moment.
+    _SECOND_MOMENT_OPTIMIZERS = frozenset(
+        {"adam", "adamw", "ademamix", "rmsprop", "adafactor", "radam", "adagrad"}
+    )
+    second_moment_arg: bool | float
+    if args.second_moment == "none":
+        second_moment_arg = False
+    elif args.second_moment == "auto":
+        second_moment_arg = args.optimizer in _SECOND_MOMENT_OPTIMIZERS
+    else:
+        try:
+            second_moment_arg = float(args.second_moment)
+        except ValueError as e:
+            raise ValueError(
+                f"--second-moment must be 'none', 'auto', or a float >1.0, "
+                f"got {args.second_moment!r}"
+            ) from e
+        if second_moment_arg <= 1.0:
+            raise ValueError(
+                f"--second-moment overhead must be >1.0, got {second_moment_arg}"
+            )
+    use_second_moment = bool(second_moment_arg)
+    if use_second_moment and isinstance(clip_norm, PerGroup):
+        raise ValueError(
+            "--second-moment is incompatible with --per-group-clipping: the "
+            "joint first+second-moment allocation has not been validated for "
+            "PerGroup max_norm."
+        )
+
     # Create gradient function based on clipping mode.
     if args.clipping_mode == "adaptive":
+        # ``second_moment`` flows through ``**clipped_grad_kwargs`` to the
+        # inner ``clipped_grad`` call; the adaptive threshold update reads
+        # the first-stream gradient norms regardless of paired-stream output.
         grad_fn, clip_state = adaptive_clipped_grad(
             per_example_loss_fn,
             argnums=0,
@@ -1149,6 +1193,7 @@ def main():
             return_aux=True,
             key=key(args.seed),
             normalize_by=args.batch_size,
+            second_moment=second_moment_arg,
         )
     elif args.clipping_mode == "auto":
         grad_fn, clip_state = auto_clipped_grad(
@@ -1160,6 +1205,7 @@ def main():
             normalize_by=args.batch_size,
             microbatch_size=args.microbatch_size,
             return_aux=True,
+            second_moment=second_moment_arg,
         )
     else:
         grad_fn, clip_state = clipped_grad(
@@ -1170,6 +1216,7 @@ def main():
             normalize_by=args.batch_size,
             microbatch_size=args.microbatch_size,
             return_aux=True,
+            second_moment=second_moment_arg,
         )
 
     # Calibrate noise multiplier from target privacy budget
@@ -1200,6 +1247,27 @@ def main():
         mechanism = lambda nm, ebs=args.batch_size, ng=_num_groups: dpsgd_acc.adaclip(
             _base_mechanism(nm), expected_batch_size=ebs, num_groups=ng
         )
+    if use_second_moment and args.noise_multiplier != 0:
+        # second_moment(gaussian(nm)): joint sensitivity = input_sensitivity ·
+        # c1 · overhead.  We pass input_sensitivity=1.0 because the runtime
+        # expresses noise_stddev as nm · max_norm (mechanism-relative
+        # sensitivity is 1).  The accountant scales effective_nm by 1/√(3/2)
+        # internally.  Skip the wrap when --noise-multiplier=0 because the
+        # underlying mechanism is ``acc.nonprivate()``, which
+        # ``acc.second_moment()`` rejects (a non-private mechanism has
+        # nothing to add second-moment overhead to).
+        _bare_mechanism = mechanism
+        _overhead = (
+            second_moment_arg if isinstance(second_moment_arg, float) else None
+        )
+        if _overhead is not None:
+            mechanism = lambda nm, oh=_overhead: acc.second_moment(
+                _bare_mechanism(nm), sensitivity=1.0, first_moment_overhead=oh,
+            )
+        else:
+            mechanism = lambda nm: acc.second_moment(
+                _bare_mechanism(nm), sensitivity=1.0,
+            )
 
     _unamplified = mechanism
     if use_truncated_poisson:
@@ -1231,6 +1299,11 @@ def main():
         print(f"  Noise mechanism: {args.noise_mechanism}")
         if args.noise_mechanism == "truncated_gaussian":
             print(f"  Noise radius: {args.noise_radius}σ")
+        if use_second_moment:
+            print(
+                f"  Second-moment release: enabled "
+                f"(overhead={second_moment_arg if isinstance(second_moment_arg, float) else 'sqrt(3/2)'})"
+            )
         print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
         print(f"  Total steps: {total_steps}")
         print(f"  Sample rate: {sample_rate:.6f}")
@@ -1591,6 +1664,11 @@ def main():
         )
     elif use_parallel_poisson:
         print(f"  Accounting: parallel_poisson (world_size={world_size})")
+    if use_second_moment:
+        print(
+            f"  Second-moment release: enabled "
+            f"(overhead={second_moment_arg if isinstance(second_moment_arg, float) else 'sqrt(3/2)'})"
+        )
     print(
         f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})"
     )
