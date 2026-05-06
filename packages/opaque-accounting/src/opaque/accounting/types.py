@@ -15,9 +15,13 @@ For narrower namespaces, types are also re-exported from per-subpackage
 
 DP-SGD-specific dataclasses (``Gaussian``, ``Poisson``, ``TruncatedPoisson``,
 ``ParallelPoisson``, ``AdaClip``) are also re-exported from
-:mod:`opaque.dpsgd.accounting.types`; DP-FTRL-specific dataclasses
-(``BandMf``, ``Blt``, ``LambdaCgd``, ``Bisr``, ``Bsr``, ``MfGaussian``,
-``CyclicPoisson``, ``BMinSep``) from :mod:`opaque.dpftrl.accounting.types`.
+:mod:`opaque.dpsgd.accounting.types` (requires the ``opaque-dpsgd``
+install); DP-FTRL-specific dataclasses (``BandMf``, ``Blt``, ``LambdaCgd``,
+``Bisr``, ``Bsr``, ``MfGaussian``, ``CyclicPoisson``, ``BMinSep``) from
+:mod:`opaque.dpftrl.accounting.types` (requires ``opaque-dpftrl``).
+This module re-exports both classes regardless — the per-package types
+modules just narrow the surface for callers that prefer not to import
+the entire dataclass catalog.
 """
 
 from __future__ import annotations
