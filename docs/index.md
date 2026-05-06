@@ -52,8 +52,9 @@ metrics from the same object.
 
 ```python
 import opaque.accounting as acc
+import opaque.dpsgd.accounting as dpsgd_acc
 
-step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate=0.01)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate=0.01)
 training = step * 1000
 
 eps = training.epsilon_at(delta=1e-5)
@@ -69,7 +70,7 @@ target privacy budget.
 ```python
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=0.01) * 1000,
     param_min=0.1, param_max=10.0,
 )
 noise_multiplier = result.param

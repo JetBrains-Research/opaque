@@ -153,7 +153,8 @@ The accounting constructor receives `sensitivity` and `gram_matrix` from the
 same `blt_strategy` used for noise generation:
 
 ```python
-import opaque.accounting as acc
+import opaque.accounting as acc           # cross-cutting balls_in_bins
+import opaque.dpftrl.accounting as ftrl_acc  # DP-FTRL factories
 from opaque.dpftrl.noise import blt_strategy
 
 strategy = blt_strategy(
@@ -161,13 +162,13 @@ strategy = blt_strategy(
 )
 
 # Unamplified BLT
-proc = acc.blt(1.0, sensitivity=strategy.sensitivity)
+proc = ftrl_acc.blt(1.0, sensitivity=strategy.sensitivity)
 eps = proc.epsilon_at(delta=1e-5)
 
 # With Balls-in-Bins amplification (recommended)
 proc = acc.balls_in_bins(
-    acc.blt(1.0, sensitivity=strategy.sensitivity,
-            gram_matrix=strategy.gram_matrix),
+    ftrl_acc.blt(1.0, sensitivity=strategy.sensitivity,
+                 gram_matrix=strategy.gram_matrix),
     num_bins=100, num_epochs=5,
 )
 eps = proc.epsilon_at(delta=1e-5)
