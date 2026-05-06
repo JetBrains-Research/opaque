@@ -1,6 +1,6 @@
 """Functional serialization for Opaque explicit state objects.
 
-Flattens tensor trees, dataclasses, named tuples, sequences, and
+Flattens tensor trees, NumPy arrays, dataclasses, named tuples, sequences, and
 string-keyed dicts into a flat ``dict[str, Any]`` suitable for
 ``torch.save`` / ``torch.load``.  Non-serialisable leaves (vendor specs,
 callables, …) are omitted on save and preserved from the *template*

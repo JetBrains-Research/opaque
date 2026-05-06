@@ -1,4 +1,4 @@
-"""Structural tree (de)serialisation — tensors, dataclasses, named tuples, containers."""
+"""Structural tree (de)serialisation — tensors, ndarrays, dataclasses, containers."""
 
 from __future__ import annotations
 
@@ -6,14 +6,15 @@ import dataclasses
 from collections.abc import Mapping
 from typing import Any, Callable
 
+import numpy as np
 import torch
 
 WalkSave = Callable[[Any, str, dict[str, Any]], None]
 WalkLoad = Callable[[Any, Mapping[str, Any], str], Any]
 
 # Python primitives we serialise verbatim.  Everything else that isn't a
-# tensor / dataclass / collection / named tuple is treated as opaque and
-# skipped on save.
+# tensor / ndarray / dataclass / collection / named tuple is treated as
+# opaque and skipped on save.
 _PRIMITIVES = (int, float, bool, str, type(None))
 
 
@@ -24,6 +25,9 @@ def _is_named_tuple_instance(obj: Any) -> bool:
 def walk_save(state: Any, prefix: str, out: dict[str, Any], recurse: WalkSave) -> None:
     if isinstance(state, torch.Tensor):
         out[prefix] = state.detach().clone()
+        return
+    if isinstance(state, np.ndarray):
+        out[prefix] = state.copy()
         return
     if dataclasses.is_dataclass(state) and not isinstance(state, type):
         for f in dataclasses.fields(state):
@@ -67,6 +71,19 @@ def walk_load(
                 f"got {type(saved).__name__}"
             )
         return saved.to(dtype=template.dtype, device=template.device)
+    if isinstance(template, np.ndarray):
+        saved = sd.get(prefix)
+        if saved is None:
+            return template
+        arr = np.asarray(saved)
+        if arr.shape != template.shape:
+            raise ValueError(
+                f"state_dict[{prefix!r}] has shape {arr.shape}; "
+                f"template expects {template.shape}"
+            )
+        if arr.dtype != template.dtype:
+            arr = arr.astype(template.dtype, copy=False)
+        return arr.copy()
     if dataclasses.is_dataclass(template) and not isinstance(template, type):
         replacements: dict[str, Any] = {}
         for f in dataclasses.fields(template):
