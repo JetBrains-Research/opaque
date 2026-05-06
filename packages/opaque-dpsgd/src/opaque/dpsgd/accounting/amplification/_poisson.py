@@ -5,14 +5,13 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
-from .. import _native
+from opaque.accounting import _native
 
 from opaque.accounting._base import DpProcess, Pld
-from opaque.accounting.mechanisms._gaussian import Gaussian
-from opaque.accounting.mechanisms._mf_gaussian import MfGaussian
 from opaque.accounting.mechanisms._nonprivate import NonPrivate
-from opaque.accounting.transformations._adaclip import AdaClip
 from opaque.accounting.transformations._second_moment import SecondMoment
+from opaque.dpsgd.accounting.mechanisms._adaclip import AdaClip
+from opaque.dpsgd.accounting.mechanisms._gaussian import Gaussian
 
 #: Mechanism types accepted by :func:`poisson`.
 _Inner = Gaussian | AdaClip | NonPrivate | SecondMoment
@@ -51,8 +50,6 @@ class Poisson(DpProcess):
             case Gaussian(noise_multiplier=nm):
                 return _native.poisson_gaussian_pld(nm, self.sample_rate, native_cfg)
             case AdaClip(inner=Gaussian()) as ac:
-                # Tight: Theorem 1 z_eff folds both into one
-                # Gaussian before amplification.
                 return _native.poisson_gaussian_pld(
                     ac.effective_noise_multiplier,
                     self.sample_rate,
@@ -73,9 +70,7 @@ class Poisson(DpProcess):
             ) as sm:
                 # Tight: SecondMoment changes the joint sensitivity, so
                 # amplification reduces to Poisson on a Gaussian with
-                # effective_nm = σ ÷ joint sensitivity.  For AdaClip
-                # inner, ``sm.noise_multiplier`` is already the z_eff-
-                # folded value that encodes the quantile-estimator cost.
+                # effective_nm = σ ÷ joint sensitivity.
                 return _native.poisson_gaussian_pld(
                     sm.noise_multiplier / sm.sensitivity,
                     self.sample_rate,
@@ -96,11 +91,6 @@ def poisson(
 ) -> Poisson:
     """Poisson-subsampled Gaussian mechanism (standard DP-SGD step).
 
-    Each training step selects examples independently with probability ``sample_rate``,
-    computes gradients, clips them, adds Gaussian noise, and updates the model.
-
-    This is the **standard DP-SGD mechanism** used in most deep learning privacy work.
-
     Args:
         inner: The base mechanism — :func:`gaussian`, :func:`adaclip`,
             or :func:`second_moment` (with Gaussian inner).
@@ -111,7 +101,7 @@ def poisson(
 
     Example::
 
-        step = acc.poisson(acc.gaussian(1.1), sample_rate=0.01)
+        step = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), sample_rate=0.01)
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
@@ -120,15 +110,10 @@ def poisson(
             pass
         case SecondMoment(inner=Gaussian() | NonPrivate() | AdaClip()):
             pass
-        case SecondMoment(inner=MfGaussian()):
-            raise TypeError(
-                "poisson() does not support SecondMoment(MfGaussian) — pass an "
-                "MF-aware amplification (cyclic_poisson, b_min_sep) instead."
-            )
         case _:
             raise TypeError(
                 f"poisson() requires a Gaussian, AdaClip, NonPrivate, or "
                 f"SecondMoment(Gaussian) inner mechanism, got {type(inner).__name__}. "
-                "Example: acc.poisson(acc.gaussian(nm), rate)"
+                "Example: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), rate)"
             )
     return Poisson(inner=inner, sample_rate=sample_rate)

@@ -14,11 +14,11 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
-from .. import _native
+from opaque.accounting import _native
 
 from opaque.accounting._base import DpProcess, Pld
 from opaque.accounting.discretization import get_discretization
-from opaque.accounting.mechanisms._band_mf import BandMf
+from opaque.dpftrl.accounting.mechanisms._band_mf import BandMf
 from opaque.accounting.transformations._second_moment import SecondMoment
 
 #: Mechanism types accepted by :func:`cyclic_poisson`.
@@ -91,10 +91,10 @@ def cyclic_poisson(
 
     Example::
 
-        import opaque.accounting as acc
+        import opaque.dpftrl.accounting as ftrl_acc
 
-        proc = acc.cyclic_poisson(
-            acc.band_mf(1.0, sensitivity=1.0, num_groups=100),
+        proc = ftrl_acc.cyclic_poisson(
+            ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=100),
             sample_rate=0.01,
         )
         eps = proc.epsilon_at(1e-5)
@@ -106,7 +106,7 @@ def cyclic_poisson(
             raise TypeError(
                 f"cyclic_poisson() requires a BandMf or SecondMoment(BandMf) inner mechanism, got "
                 f"{type(inner).__name__}. "
-                "Use: acc.cyclic_poisson(acc.band_mf(nm, sensitivity, num_groups), sample_rate)"
+                "Use: ftrl_acc.cyclic_poisson(ftrl_acc.band_mf(nm, sensitivity, num_groups), sample_rate)"
             )
     if not 0 < sample_rate <= 1:
         raise ValueError(f"sample_rate must be in (0, 1], got {sample_rate}")

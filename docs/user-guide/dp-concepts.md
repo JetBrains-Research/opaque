@@ -174,7 +174,7 @@ the batch size at a maximum, giving fixed memory usage while retaining the
 Poisson amplification guarantee.
 
 Opaque's `PoissonSampler` implements Poisson subsampling. The accounting module
-accounts for this amplification via `acc.poisson(mechanism, sample_rate)`.
+accounts for this amplification via `dpsgd_acc.poisson(mechanism, sample_rate)`.
 See [Sampling & Microbatching](sampling.md) and the
 [Mechanisms](../mechanisms/index.md) reference for per-mechanism amplification
 details.

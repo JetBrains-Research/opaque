@@ -6,13 +6,12 @@ constructor functions live in the package init.
 
 from __future__ import annotations
 
-from opaque.accounting.amplification.types import (
+from opaque.dpsgd.accounting.amplification.types import (
     ParallelPoisson,
     Poisson,
     TruncatedPoisson,
 )
-from opaque.accounting.mechanisms.types import Gaussian
-from opaque.accounting.transformations.types import AdaClip
+from opaque.dpsgd.accounting.mechanisms.types import AdaClip, Gaussian
 
 __all__ = [
     "Gaussian",

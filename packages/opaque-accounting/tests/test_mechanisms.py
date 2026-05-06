@@ -1,4 +1,4 @@
-"""Tests for opaque.accounting.mechanisms — Gaussian, EpsDelta, Identity."""
+"""Tests for opaque.accounting.mechanisms — EpsDelta, Identity (shared); Gaussian via dpsgd."""
 
 import math
 from dataclasses import FrozenInstanceError
@@ -6,8 +6,10 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import opaque.accounting as acc
+import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting._base import DpProcess
-from opaque.accounting.mechanisms.types import EpsDelta, Gaussian, Identity
+from opaque.accounting.mechanisms.types import EpsDelta, Identity
+from opaque.dpsgd.accounting.mechanisms.types import Gaussian
 
 # ── Mechanism dataclass tests ────────────────────────────────────────
 
@@ -78,15 +80,15 @@ class TestEpsDeltaDataclass:
 
 
 class TestGaussianConstructor:
-    """acc.gaussian() returns Gaussian with correct config."""
+    """dpsgd_acc.gaussian() returns Gaussian with correct config."""
 
     def test_returns_gaussian(self):
-        g = acc.gaussian(1.1)
+        g = dpsgd_acc.gaussian(1.1)
         assert isinstance(g, Gaussian)
         assert g.noise_multiplier == pytest.approx(1.1)
 
     def test_default_config_none(self):
-        g = acc.gaussian(1.1)
+        g = dpsgd_acc.gaussian(1.1)
         # config is None or module default, either way pld works
         eps = g.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0

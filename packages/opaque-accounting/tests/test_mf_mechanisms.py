@@ -6,9 +6,11 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import opaque.accounting as acc
-from opaque.accounting.amplification.types import CyclicPoisson
+import opaque.dpsgd.accounting as dpsgd_acc
+import opaque.dpftrl.accounting as ftrl_acc
+from opaque.dpftrl.accounting.amplification.types import CyclicPoisson
 from opaque.accounting._base import DpProcess
-from opaque.accounting.mechanisms.types import BandMf, Blt
+from opaque.dpftrl.accounting.mechanisms.types import BandMf, Blt
 
 
 # ── BandMf dataclass tests ──────────────────────────────────────────
@@ -43,14 +45,14 @@ class TestBandMfDataclass:
 
 
 class TestBandMfConstructor:
-    """acc.band_mf() returns BandMf."""
+    """ftrl_acc.band_mf() returns BandMf."""
 
     def test_returns_correct_type(self):
-        proc = acc.band_mf(1.0, sensitivity=1.0, num_groups=20)
+        proc = ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=20)
         assert isinstance(proc, BandMf)
 
     def test_num_groups_default(self):
-        proc = acc.band_mf(1.0, sensitivity=1.0)
+        proc = ftrl_acc.band_mf(1.0, sensitivity=1.0)
         assert proc.num_groups == 1
 
 
@@ -76,8 +78,8 @@ class TestCyclicPoissonDataclass:
         assert isinstance(proc, DpProcess)
 
     def test_pld_returns_valid(self):
-        proc = acc.cyclic_poisson(
-            acc.band_mf(1.0, sensitivity=1.0, num_groups=20),
+        proc = ftrl_acc.cyclic_poisson(
+            ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=20),
             0.01,
         )
         eps = proc.epsilon_at(1e-5)
@@ -86,12 +88,12 @@ class TestCyclicPoissonDataclass:
     def test_matches_manual_poisson_composition(self):
         """CyclicPoisson(BandMf) should match poisson(gaussian(nm/S)) * k."""
         nm, sensitivity, num_groups, rate = 1.0, 1.0, 20, 0.01
-        proc = acc.cyclic_poisson(
-            acc.band_mf(nm, sensitivity=sensitivity, num_groups=num_groups),
+        proc = ftrl_acc.cyclic_poisson(
+            ftrl_acc.band_mf(nm, sensitivity=sensitivity, num_groups=num_groups),
             rate,
         )
 
-        manual = acc.poisson(acc.gaussian(nm / sensitivity), rate) * num_groups
+        manual = dpsgd_acc.poisson(dpsgd_acc.gaussian(nm / sensitivity), rate) * num_groups
 
         eps_proc = proc.epsilon_at(1e-5)
         eps_manual = manual.epsilon_at(1e-5)
@@ -99,23 +101,23 @@ class TestCyclicPoissonDataclass:
 
     def test_more_groups_higher_epsilon(self):
         """More groups → more composition → higher epsilon."""
-        eps_small = acc.cyclic_poisson(
-            acc.band_mf(1.0, sensitivity=1.0, num_groups=2),
+        eps_small = ftrl_acc.cyclic_poisson(
+            ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=2),
             0.01,
         ).epsilon_at(1e-5)
-        eps_large = acc.cyclic_poisson(
-            acc.band_mf(1.0, sensitivity=1.0, num_groups=20),
+        eps_large = ftrl_acc.cyclic_poisson(
+            ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=20),
             0.01,
         ).epsilon_at(1e-5)
         assert eps_small < eps_large
 
 
 class TestCyclicPoissonConstructor:
-    """acc.cyclic_poisson() validates and returns CyclicPoisson."""
+    """ftrl_acc.cyclic_poisson() validates and returns CyclicPoisson."""
 
     def test_returns_correct_type(self):
-        proc = acc.cyclic_poisson(
-            acc.band_mf(1.0, sensitivity=1.0, num_groups=20),
+        proc = ftrl_acc.cyclic_poisson(
+            ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=20),
             0.01,
         )
         assert isinstance(proc, CyclicPoisson)
@@ -123,14 +125,14 @@ class TestCyclicPoissonConstructor:
     def test_rejects_non_band_mf(self):
         """cyclic_poisson only accepts BandMf."""
         with pytest.raises(TypeError, match="BandMf"):
-            acc.cyclic_poisson(acc.gaussian(1.0), 0.01)  # type: ignore[arg-type]
+            ftrl_acc.cyclic_poisson(dpsgd_acc.gaussian(1.0), 0.01)  # type: ignore[arg-type]
 
     def test_rejects_bad_sample_rate(self):
-        inner = acc.band_mf(1.0, sensitivity=1.0, num_groups=20)
+        inner = ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=20)
         with pytest.raises(ValueError):
-            acc.cyclic_poisson(inner, 0.0)
+            ftrl_acc.cyclic_poisson(inner, 0.0)
         with pytest.raises(ValueError):
-            acc.cyclic_poisson(inner, 1.5)
+            ftrl_acc.cyclic_poisson(inner, 1.5)
 
 
 # ── Blt tests ────────────────────────────────────────────────────────
@@ -154,20 +156,20 @@ class TestBltDataclass:
         assert isinstance(Blt(1.0, 1.0), DpProcess)
 
     def test_pld_returns_valid(self):
-        proc = acc.blt(1.0, sensitivity=1.0)
+        proc = ftrl_acc.blt(1.0, sensitivity=1.0)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
 class TestBltConstructor:
-    """acc.blt() returns Blt."""
+    """ftrl_acc.blt() returns Blt."""
 
     def test_returns_correct_type(self):
-        proc = acc.blt(1.0, sensitivity=1.0)
+        proc = ftrl_acc.blt(1.0, sensitivity=1.0)
         assert isinstance(proc, Blt)
 
     def test_gram_matrix_default_empty(self):
-        proc = acc.blt(1.0, sensitivity=1.0)
+        proc = ftrl_acc.blt(1.0, sensitivity=1.0)
         assert proc.gram_matrix == ()
 
 
@@ -179,21 +181,21 @@ class TestMfComposition:
 
     def test_band_mf_composes_with_gaussian(self):
         """BandMf | Gaussian works."""
-        proc = acc.band_mf(1.0, sensitivity=1.0) | acc.gaussian(1.0)
+        proc = ftrl_acc.band_mf(1.0, sensitivity=1.0) | dpsgd_acc.gaussian(1.0)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_cyclic_poisson_composes_with_gaussian(self):
         """CyclicPoisson | Gaussian works."""
-        inner = acc.band_mf(1.0, sensitivity=1.0, num_groups=20)
-        proc = acc.cyclic_poisson(inner, 0.01) | acc.gaussian(1.0)
+        inner = ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=20)
+        proc = ftrl_acc.cyclic_poisson(inner, 0.01) | dpsgd_acc.gaussian(1.0)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_class_tree_visible(self):
         """The composition tree preserves class types for debugging."""
-        inner = acc.band_mf(1.0, sensitivity=1.0, num_groups=20)
-        proc = acc.cyclic_poisson(inner, 0.01)
+        inner = ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=20)
+        proc = ftrl_acc.cyclic_poisson(inner, 0.01)
 
         assert isinstance(proc, CyclicPoisson)
         assert isinstance(proc.inner, BandMf)

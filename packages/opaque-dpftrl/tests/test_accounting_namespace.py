@@ -20,6 +20,7 @@ _HEADLINE = (
     "lambda_cgd",
     "cyclic_poisson",
     "b_min_sep",
+    "balls_in_bins",
 )
 
 _TYPES = (
@@ -31,6 +32,7 @@ _TYPES = (
     "MfGaussian",
     "CyclicPoisson",
     "BMinSep",
+    "BallsInBins",
 )
 
 
@@ -54,15 +56,6 @@ class TestNamespaceSurface:
         for name in _TYPES:
             assert hasattr(ftrl_types, name), name
         assert set(ftrl_types.__all__) == set(_TYPES)
-
-    def test_factories_match_root_implementations(self):
-        """The new namespace re-exports the *same* objects as ``opaque.accounting``."""
-        import opaque.accounting as acc
-        import opaque.dpftrl.accounting as ftrl_acc
-
-        for name in _HEADLINE:
-            assert getattr(ftrl_acc, name) is getattr(acc, name), name
-
 
 class TestEndToEndCalibration:
     """Constructed mechanisms compute valid PLDs through the new namespace."""

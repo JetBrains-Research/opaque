@@ -6,8 +6,10 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import opaque.accounting as acc
+import opaque.dpsgd.accounting as dpsgd_acc
+import opaque.dpftrl.accounting as ftrl_acc
 from opaque.accounting._base import DpProcess
-from opaque.accounting.mechanisms.types import LambdaCgd, Bisr
+from opaque.dpftrl.accounting.mechanisms.types import LambdaCgd, Bisr
 
 
 # ── LambdaCgd dataclass tests ──────────────────────────────────────
@@ -57,21 +59,21 @@ class TestBisrDataclass:
 
 class TestLambdaCgdConstructor:
     def test_returns_correct_type(self):
-        proc = acc.lambda_cgd(1.0, sensitivity=1.0)
+        proc = ftrl_acc.lambda_cgd(1.0, sensitivity=1.0)
         assert isinstance(proc, LambdaCgd)
 
     def test_gram_matrix_default_empty(self):
-        proc = acc.lambda_cgd(1.0, sensitivity=1.0)
+        proc = ftrl_acc.lambda_cgd(1.0, sensitivity=1.0)
         assert proc.gram_matrix == ()
 
 
 class TestBisrConstructor:
     def test_returns_correct_type(self):
-        proc = acc.bisr(1.0, sensitivity=1.0)
+        proc = ftrl_acc.bisr(1.0, sensitivity=1.0)
         assert isinstance(proc, Bisr)
 
     def test_gram_matrix_default_empty(self):
-        proc = acc.bisr(1.0, sensitivity=1.0)
+        proc = ftrl_acc.bisr(1.0, sensitivity=1.0)
         assert proc.gram_matrix == ()
 
 
@@ -81,28 +83,28 @@ class TestBisrConstructor:
 class TestMfGaussianPld:
     @pytest.mark.slow
     def test_epsilon_is_finite_positive(self):
-        proc = acc.lambda_cgd(1.0, sensitivity=1.5)
+        proc = ftrl_acc.lambda_cgd(1.0, sensitivity=1.5)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     @pytest.mark.slow
     def test_more_noise_lowers_epsilon(self):
         # Higher nm → lower ε (more noise = better privacy)
-        eps_low = acc.lambda_cgd(0.5, sensitivity=1.0).epsilon_at(1e-5)
-        eps_high = acc.lambda_cgd(2.0, sensitivity=1.0).epsilon_at(1e-5)
+        eps_low = ftrl_acc.lambda_cgd(0.5, sensitivity=1.0).epsilon_at(1e-5)
+        eps_high = ftrl_acc.lambda_cgd(2.0, sensitivity=1.0).epsilon_at(1e-5)
         assert eps_high < eps_low
 
     @pytest.mark.slow
     def test_sensitivity_one_matches_gaussian(self):
         """MfGaussian with sensitivity=1 should match plain Gaussian."""
         nm = 1.0
-        eps_mf = acc.lambda_cgd(nm, sensitivity=1.0).epsilon_at(1e-5)
-        eps_gauss = acc.gaussian(nm).epsilon_at(1e-5)
+        eps_mf = ftrl_acc.lambda_cgd(nm, sensitivity=1.0).epsilon_at(1e-5)
+        eps_gauss = dpsgd_acc.gaussian(nm).epsilon_at(1e-5)
         assert abs(eps_mf - eps_gauss) / eps_gauss < 0.01
 
     @pytest.mark.slow
     def test_bisr_pld_valid(self):
-        proc = acc.bisr(1.0, sensitivity=1.5)
+        proc = ftrl_acc.bisr(1.0, sensitivity=1.5)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
@@ -117,8 +119,8 @@ class TestBnbAmplification:
     def test_bnb_requires_gram_matrix(self):
         """BnB with empty gram_matrix raises ValueError."""
         with pytest.raises(ValueError, match="gram_matrix"):
-            acc.balls_in_bins(
-                acc.lambda_cgd(1.0, sensitivity=1.0),
+            ftrl_acc.balls_in_bins(
+                ftrl_acc.lambda_cgd(1.0, sensitivity=1.0),
                 num_bins=50,
                 num_epochs=3,
             ).epsilon_at(1e-5)
@@ -127,8 +129,8 @@ class TestBnbAmplification:
     def test_bnb_rejects_non_accepted_type(self):
         """BnB rejects BandMf (should use cyclic_poisson)."""
         with pytest.raises(TypeError):
-            acc.balls_in_bins(
-                acc.band_mf(1.0, sensitivity=1.0, num_groups=20),
+            ftrl_acc.balls_in_bins(
+                ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=20),
                 num_bins=50,
                 num_epochs=3,
             )
@@ -136,6 +138,6 @@ class TestBnbAmplification:
     @pytest.mark.slow
     def test_composition(self):
         """Can compose BnB epochs with * operator."""
-        proc = acc.lambda_cgd(1.0, sensitivity=1.0)
+        proc = ftrl_acc.lambda_cgd(1.0, sensitivity=1.0)
         eps = (proc * 3).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0

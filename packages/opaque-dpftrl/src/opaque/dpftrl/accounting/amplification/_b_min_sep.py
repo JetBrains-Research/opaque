@@ -14,11 +14,11 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
-from .. import _native
+from opaque.accounting import _native
 
 from opaque.accounting._base import DpProcess, Pld
 from opaque.accounting.discretization import get_discretization
-from opaque.accounting.mechanisms._band_mf import BandMf
+from opaque.dpftrl.accounting.mechanisms._band_mf import BandMf
 from opaque.accounting.transformations._second_moment import SecondMoment
 
 from ._b_min_sep_transcript_cache import get_handle_or_none

@@ -166,7 +166,7 @@ proc = ftrl_acc.blt(1.0, sensitivity=strategy.sensitivity)
 eps = proc.epsilon_at(delta=1e-5)
 
 # With Balls-in-Bins amplification (recommended)
-proc = acc.balls_in_bins(
+proc = ftrl_acc.balls_in_bins(
     ftrl_acc.blt(1.0, sensitivity=strategy.sensitivity,
                  gram_matrix=strategy.gram_matrix),
     num_bins=100, num_epochs=5,

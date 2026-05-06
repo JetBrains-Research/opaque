@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from opaque.accounting.mechanisms._mf_gaussian import MfGaussian
+from opaque.dpftrl.accounting.mechanisms._mf_gaussian import MfGaussian
 
 
 @dataclass(frozen=True)

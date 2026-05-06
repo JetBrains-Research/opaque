@@ -29,14 +29,11 @@ from dataclasses import dataclass
 from .. import _native
 
 from opaque.accounting._base import DpProcess, Pld
-from opaque.accounting.mechanisms._gaussian import Gaussian
-from opaque.accounting.mechanisms._mf_gaussian import MfGaussian
 from opaque.accounting.mechanisms._nonprivate import NonPrivate
-from opaque.accounting.transformations._adaclip import AdaClip
 
 
 _DEFAULT_SECOND_MOMENT_OVERHEAD = math.sqrt(3.0 / 2.0)
-_Inner = Gaussian | MfGaussian | AdaClip
+_Inner = DpProcess
 
 
 def _second_moment_joint_sensitivity(
@@ -78,6 +75,7 @@ class SecondMoment(DpProcess):
         quantile-estimator privacy cost into the gradient noise so the
         joint PLD reduces to a single-Gaussian computation.
         """
+        from opaque.dpsgd.accounting.mechanisms._adaclip import AdaClip
         match self.inner:
             case AdaClip() as ac:
                 return ac.effective_noise_multiplier
@@ -95,6 +93,7 @@ class SecondMoment(DpProcess):
         """
         if self.max_column_norm is not None:
             return self.max_column_norm
+        from opaque.dpftrl.accounting.mechanisms._mf_gaussian import MfGaussian
         match self.inner:
             case MfGaussian() as mf:
                 return mf.sensitivity
@@ -127,6 +126,9 @@ class SecondMoment(DpProcess):
         pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
+        from opaque.dpsgd.accounting.mechanisms._gaussian import Gaussian
+        from opaque.dpsgd.accounting.mechanisms._adaclip import AdaClip
+        from opaque.dpftrl.accounting.mechanisms._mf_gaussian import MfGaussian
         from opaque.accounting.discretization import get_discretization
 
         config = get_discretization(
@@ -191,6 +193,9 @@ def second_moment(
     Returns:
         A :class:`SecondMoment` process.
     """
+    from opaque.dpsgd.accounting.mechanisms._gaussian import Gaussian
+    from opaque.dpsgd.accounting.mechanisms._adaclip import AdaClip
+    from opaque.dpftrl.accounting.mechanisms._mf_gaussian import MfGaussian
     match inner:
         case Gaussian() | MfGaussian() | AdaClip(inner=Gaussian()):
             pass

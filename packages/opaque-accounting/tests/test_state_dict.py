@@ -4,15 +4,17 @@ import math
 from typing import cast
 
 import opaque.accounting as acc
+import opaque.dpsgd.accounting as dpsgd_acc
+import opaque.dpftrl.accounting as ftrl_acc
 from opaque.accounting._accountant import Accountant
 from opaque.accounting._base import DpProcess
-from opaque.accounting.amplification._b_min_sep import BMinSep
-from opaque.accounting.amplification._cyclic_poisson import CyclicPoisson
-from opaque.accounting.mechanisms._band_mf import BandMf
+from opaque.dpftrl.accounting.amplification._b_min_sep import BMinSep
+from opaque.dpftrl.accounting.amplification._cyclic_poisson import CyclicPoisson
+from opaque.dpftrl.accounting.mechanisms._band_mf import BandMf
 
 
 def test_gaussian_state_dict_structure():
-    proc = acc.gaussian(1.1)
+    proc = dpsgd_acc.gaussian(1.1)
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "Gaussian"
     assert state["noise_multiplier"] == 1.1
@@ -33,7 +35,7 @@ def test_identity_state_dict_structure():
 
 
 def test_poisson_state_dict_structure():
-    proc = acc.poisson(acc.gaussian(0.8), 0.01)
+    proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01)
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "Poisson"
     assert state["sample_rate"] == 0.01
@@ -42,7 +44,7 @@ def test_poisson_state_dict_structure():
 
 
 def test_truncated_poisson_state_dict_structure():
-    proc = acc.truncated_poisson(acc.gaussian(0.8), 0.01, 128, 10_000)
+    proc = dpsgd_acc.truncated_poisson(dpsgd_acc.gaussian(0.8), 0.01, 128, 10_000)
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "TruncatedPoisson"
     assert state["batch_size_cap"] == 128
@@ -52,7 +54,7 @@ def test_truncated_poisson_state_dict_structure():
 
 
 def test_parallel_poisson_state_dict_structure():
-    proc = acc.parallel_poisson(acc.gaussian(0.8), sample_rate=0.01, num_workers=4)
+    proc = dpsgd_acc.parallel_poisson(dpsgd_acc.gaussian(0.8), sample_rate=0.01, num_workers=4)
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "ParallelPoisson"
     assert state["num_workers"] == 4
@@ -61,7 +63,7 @@ def test_parallel_poisson_state_dict_structure():
 
 
 def test_adaclip_state_dict_structure():
-    proc = acc.adaclip(acc.gaussian(0.8), expected_batch_size=1000)
+    proc = dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.8), expected_batch_size=1000)
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "AdaClip"
     assert state["fraction_noise_std"] == 0.05
@@ -71,7 +73,7 @@ def test_adaclip_state_dict_structure():
 
 
 def test_composed_state_dict_structure():
-    left = acc.gaussian(0.8)
+    left = dpsgd_acc.gaussian(0.8)
     right = acc.eps_delta(1.0, 1e-5)
     proc = left | right
     state = cast(dict[str, object], proc.state_dict())
@@ -83,7 +85,7 @@ def test_composed_state_dict_structure():
 
 
 def test_repeated_state_dict_structure():
-    proc = acc.gaussian(0.8) * 3
+    proc = dpsgd_acc.gaussian(0.8) * 3
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "Repeated"
     assert state["count"] == 3
@@ -92,7 +94,7 @@ def test_repeated_state_dict_structure():
 
 
 def test_cached_state_dict_structure():
-    proc = acc.cached(acc.gaussian(0.8))
+    proc = acc.cached(dpsgd_acc.gaussian(0.8))
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "CachedProcess"
     inner = cast(dict[str, object], state["inner"])
@@ -100,8 +102,8 @@ def test_cached_state_dict_structure():
 
 
 def test_cyclic_poisson_state_dict_structure():
-    proc = acc.cyclic_poisson(
-        acc.band_mf(1.0, sensitivity=2.5, num_groups=200), sample_rate=0.01
+    proc = ftrl_acc.cyclic_poisson(
+        ftrl_acc.band_mf(1.0, sensitivity=2.5, num_groups=200), sample_rate=0.01
     )
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "CyclicPoisson"
@@ -114,8 +116,8 @@ def test_cyclic_poisson_state_dict_structure():
 
 
 def test_b_min_sep_round_trip():
-    proc = acc.b_min_sep(
-        acc.band_mf(1.0, sensitivity=1.2, num_groups=50),
+    proc = ftrl_acc.b_min_sep(
+        ftrl_acc.band_mf(1.0, sensitivity=1.2, num_groups=50),
         strategy_coefficients=(0.9, 0.1),
         n_steps=100,
         p0=0.02,
@@ -127,8 +129,8 @@ def test_b_min_sep_round_trip():
 
 
 def test_cyclic_poisson_round_trip():
-    proc = acc.cyclic_poisson(
-        acc.band_mf(1.0, sensitivity=2.5, num_groups=200), sample_rate=0.01
+    proc = ftrl_acc.cyclic_poisson(
+        ftrl_acc.band_mf(1.0, sensitivity=2.5, num_groups=200), sample_rate=0.01
     )
     state = proc.state_dict()
     restored = DpProcess.from_state_dict(state)
@@ -139,7 +141,7 @@ def test_cyclic_poisson_round_trip():
 
 def test_accountant_state_dict_roundtrip():
     acct = Accountant()
-    step = acc.poisson(acc.adaclip(acc.gaussian(0.8), expected_batch_size=1000), 0.01)
+    step = dpsgd_acc.poisson(dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.8), expected_batch_size=1000), 0.01)
     acct = acct | step
     state = acct.state_dict()
     restored = Accountant.from_state_dict(state)

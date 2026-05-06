@@ -11,11 +11,11 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
-from .. import _native
+from opaque.accounting import _native
 
 from opaque.accounting._base import DpProcess, Pld
-from opaque.accounting.mechanisms._gaussian import Gaussian
 from opaque.accounting.mechanisms._nonprivate import NonPrivate
+from opaque.dpsgd.accounting.mechanisms._gaussian import Gaussian
 
 #: Mechanism types accepted as AdaClip inner.
 _Inner = Gaussian | NonPrivate
@@ -79,10 +79,8 @@ class AdaClip(DpProcess):
             case NonPrivate() | Gaussian(noise_multiplier=0):
                 return _native.non_private_pld(native_cfg)
             case Gaussian():
-                # Tight: z_eff folds K quantile queries into one Gaussian.
                 return _native.gaussian_pld(self.effective_noise_multiplier, native_cfg)
             case _:
-                # Non-Gaussian: compose inner PLD with K bit PLDs.
                 inner_pld = self.inner.pld(
                     discretization=discretization,
                     log_x_mass_truncation_bound=log_x_mass_truncation_bound,
@@ -125,15 +123,8 @@ def adaclip(
 
         expected_bs = sample_rate * dataset_size
 
-        # --- Calibration ---
-        step = acc.poisson(
-            acc.adaclip(acc.gaussian(1.1), expected_batch_size=expected_bs),
-            sample_rate=0.01,
-        )
-
-        # --- Per-group adaptive (K=3 groups) ---
-        step = acc.poisson(
-            acc.adaclip(acc.gaussian(1.1), expected_batch_size=expected_bs, num_groups=3),
+        step = dpsgd_acc.poisson(
+            dpsgd_acc.adaclip(dpsgd_acc.gaussian(1.1), expected_batch_size=expected_bs),
             sample_rate=0.01,
         )
     """

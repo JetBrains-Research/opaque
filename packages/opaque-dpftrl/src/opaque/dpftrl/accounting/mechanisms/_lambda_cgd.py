@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from opaque.accounting.mechanisms._mf_gaussian import MfGaussian
+from opaque.dpftrl.accounting.mechanisms._mf_gaussian import MfGaussian
 
 
 @dataclass(frozen=True)
@@ -16,7 +16,7 @@ class LambdaCgd(MfGaussian):
     """DP-λCGD mechanism with pre-computed Gram matrix.
 
     The ``gram_matrix`` (flattened row-major) is needed by
-    :func:`~opaque.accounting.amplification._balls_in_bins.balls_in_bins`.
+    :func:`~opaque.dpftrl.accounting.amplification._balls_in_bins.balls_in_bins`.
     """
 
     gram_matrix: tuple[float, ...] = ()
@@ -39,9 +39,9 @@ def lambda_cgd(
 
     Example::
 
-        proc = acc.balls_in_bins(
-            acc.lambda_cgd(1.0, sensitivity=s.sensitivity,
-                           gram_matrix=s.gram_matrix),
+        proc = ftrl_acc.balls_in_bins(
+            ftrl_acc.lambda_cgd(1.0, sensitivity=s.sensitivity,
+                                gram_matrix=s.gram_matrix),
             num_bins=1953, num_epochs=8,
         )
     """

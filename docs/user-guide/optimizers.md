@@ -255,23 +255,23 @@ Wrap the base mechanism with `acc.second_moment()` to account for both moment st
 
 ```python
 clip_bound = clipping_norm / batch_size
-mechanism = acc.band_mf(nm, sensitivity=S, num_groups=k)
+mechanism = ftrl_acc.band_mf(nm, sensitivity=S, num_groups=k)
 if use_adam:
     mechanism = acc.second_moment(
         mechanism,
         sensitivity=clip_bound,
         max_column_norm=strategy._max_column_norm,
     )
-process = acc.cyclic_poisson(mechanism, sample_rate=q)
+process = ftrl_acc.cyclic_poisson(mechanism, sample_rate=q)
 ```
 
 `acc.second_moment` accepts three kinds of Gaussian-family inner:
 
 | Inner | Use case | Composition |
 |---|---|---|
-| `acc.gaussian(nm)` | DP-SGD with fixed clipping | `acc.second_moment(acc.gaussian(nm), sensitivity=...)` |
-| `acc.adaclip(acc.gaussian(nm), ...)` | DP-SGD with adaptive clipping | `acc.second_moment(acc.adaclip(...), sensitivity=...)` |
-| `acc.band_mf(nm, ...)` (or any other MF Gaussian) | DP-FTRL | `acc.second_moment(acc.band_mf(...), sensitivity=...)` |
+| `dpsgd_acc.gaussian(nm)` | DP-SGD with fixed clipping | `acc.second_moment(dpsgd_acc.gaussian(nm), sensitivity=...)` |
+| `dpsgd_acc.adaclip(dpsgd_acc.gaussian(nm), ...)` | DP-SGD with adaptive clipping | `acc.second_moment(dpsgd_acc.adaclip(...), sensitivity=...)` |
+| `ftrl_acc.band_mf(nm, ...)` (or any other MF Gaussian) | DP-FTRL | `acc.second_moment(ftrl_acc.band_mf(...), sensitivity=...)` |
 
 For the `AdaClip` inner the threshold-quantile noise is folded into the
 gradient noise via Theorem 1's `z_eff` first; the second-moment
@@ -280,7 +280,7 @@ composition is exact because the threshold-quantile and gradient/squared-
 gradient releases use independent randomness.
 
 For DP-SGD AUTO-S clipping (`auto_clipped_grad(..., second_moment=True)`)
-the matching accountant is just `acc.second_moment(acc.gaussian(nm), ...)`
+the matching accountant is just `acc.second_moment(dpsgd_acc.gaussian(nm), ...)`
 — AUTO-S is per-example smooth scaling and contributes no extra
 threshold-quantile cost.
 

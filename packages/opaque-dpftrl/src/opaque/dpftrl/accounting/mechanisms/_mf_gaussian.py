@@ -6,11 +6,11 @@ noise multiplier σ/S.
 
 Per-method subclasses live in their own modules:
 
-- :mod:`~opaque.accounting.mechanisms._band_mf` — :class:`BandMf`
-- :mod:`~opaque.accounting.mechanisms._blt` — :class:`Blt`
-- :mod:`~opaque.accounting.mechanisms._lambda_cgd` — :class:`LambdaCgd`
-- :mod:`~opaque.accounting.mechanisms._bisr` — :class:`Bisr`
-- :mod:`~opaque.accounting.mechanisms._bsr` — :class:`Bsr`
+- :mod:`~opaque.dpftrl.accounting.mechanisms._band_mf` — :class:`BandMf`
+- :mod:`~opaque.dpftrl.accounting.mechanisms._blt` — :class:`Blt`
+- :mod:`~opaque.dpftrl.accounting.mechanisms._lambda_cgd` — :class:`LambdaCgd`
+- :mod:`~opaque.dpftrl.accounting.mechanisms._bisr` — :class:`Bisr`
+- :mod:`~opaque.dpftrl.accounting.mechanisms._bsr` — :class:`Bsr`
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
-from .. import _native
+from opaque.accounting import _native
 
 from opaque.accounting._base import DpProcess, Pld
 from opaque.accounting.discretization import get_discretization
@@ -34,11 +34,11 @@ class MfGaussian(DpProcess):
 
     Use one of the per-method factories instead of constructing directly:
 
-    - :func:`~opaque.accounting.mechanisms._band_mf.band_mf` → :class:`~opaque.accounting.mechanisms._band_mf.BandMf`
-    - :func:`~opaque.accounting.mechanisms._blt.blt` → :class:`~opaque.accounting.mechanisms._blt.Blt`
-    - :func:`~opaque.accounting.mechanisms._lambda_cgd.lambda_cgd` → :class:`~opaque.accounting.mechanisms._lambda_cgd.LambdaCgd`
-    - :func:`~opaque.accounting.mechanisms._bisr.bisr` → :class:`~opaque.accounting.mechanisms._bisr.Bisr`
-    - :func:`~opaque.accounting.mechanisms._bsr.bsr` → :class:`~opaque.accounting.mechanisms._bsr.Bsr`
+    - :func:`~opaque.accounting.mechanisms._band_mf.band_mf` → :class:`~opaque.dpftrl.accounting.mechanisms._band_mf.BandMf`
+    - :func:`~opaque.accounting.mechanisms._blt.blt` → :class:`~opaque.dpftrl.accounting.mechanisms._blt.Blt`
+    - :func:`~opaque.accounting.mechanisms._lambda_cgd.lambda_cgd` → :class:`~opaque.dpftrl.accounting.mechanisms._lambda_cgd.LambdaCgd`
+    - :func:`~opaque.accounting.mechanisms._bisr.bisr` → :class:`~opaque.dpftrl.accounting.mechanisms._bisr.Bisr`
+    - :func:`~opaque.accounting.mechanisms._bsr.bsr` → :class:`~opaque.dpftrl.accounting.mechanisms._bsr.Bsr`
     """
 
     noise_multiplier: float

@@ -1,7 +1,8 @@
 """Tests for b_min_sep BandMF amplification."""
 
 import opaque.accounting as acc
-from opaque.accounting.amplification._b_min_sep import (
+import opaque.dpftrl.accounting as ftrl_acc
+from opaque.dpftrl.accounting.amplification._b_min_sep import (
     _participation_p_from_per_example_rate,
 )
 
@@ -15,9 +16,9 @@ def test_p_conversion():
 
 
 def test_b_min_sep_smoke_pld():
-    inner = acc.band_mf(1.0, sensitivity=0.5, num_groups=10)
+    inner = ftrl_acc.band_mf(1.0, sensitivity=0.5, num_groups=10)
     coef = (0.8**0.5, 0.2**0.5, 0.0, 0.0)
-    proc = acc.b_min_sep(
+    proc = ftrl_acc.b_min_sep(
         inner,
         strategy_coefficients=coef,
         n_steps=40,
@@ -29,7 +30,7 @@ def test_b_min_sep_smoke_pld():
 
 def test_transcript_cache_reuses_same_handle():
     """Repeated cache lookup returns the same Rust corpus handle."""
-    from opaque.accounting.amplification._b_min_sep_transcript_cache import (
+    from opaque.dpftrl.accounting.amplification._b_min_sep_transcript_cache import (
         get_handle_or_none,
     )
 
@@ -49,7 +50,7 @@ def _drain_cache(tc) -> None:
 
 def test_transcript_cache_evicts_lru(monkeypatch):
     """Cache caps entries and drops LRU native handle *before* registering new."""
-    from opaque.accounting.amplification import _b_min_sep_transcript_cache as tc
+    from opaque.dpftrl.accounting.amplification import _b_min_sep_transcript_cache as tc
 
     monkeypatch.delenv("OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES", raising=False)
     monkeypatch.setattr(tc, "_MAX_ENTRIES", 2)
@@ -102,7 +103,7 @@ def test_transcript_cache_evicts_lru(monkeypatch):
 
 def test_transcript_cache_evicts_for_byte_cap(monkeypatch):
     """Byte budget forces eviction even when entry count is below the cap."""
-    from opaque.accounting.amplification import _b_min_sep_transcript_cache as tc
+    from opaque.dpftrl.accounting.amplification import _b_min_sep_transcript_cache as tc
 
     monkeypatch.setattr(tc, "_MAX_ENTRIES", 16)
     _drain_cache(tc)
@@ -148,9 +149,9 @@ def test_b_min_sep_stricter_than_mf_only():
     from opaque.accounting import _native as native
     from opaque.accounting.discretization import get_discretization
 
-    inner = acc.band_mf(1.0, sensitivity=0.7, num_groups=5)
+    inner = ftrl_acc.band_mf(1.0, sensitivity=0.7, num_groups=5)
     coef = (1.0, 0.0, 0.0)
-    bms = acc.b_min_sep(
+    bms = ftrl_acc.b_min_sep(
         inner,
         strategy_coefficients=coef,
         n_steps=20,

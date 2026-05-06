@@ -2,7 +2,7 @@
 
 import pytest
 
-import opaque.accounting as acc
+import opaque.dpftrl.accounting as ftrl_acc
 from opaque.dpftrl.noise._bsr import BsrStrategy, bsr_strategy
 
 
@@ -112,7 +112,7 @@ class TestBsrPld:
             alpha=1.0,
             beta=0.5,
         )
-        eps = acc.bsr(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
+        eps = ftrl_acc.bsr(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
         assert eps > 0
 
     def test_bsr_bnb(self):
@@ -124,8 +124,8 @@ class TestBsrPld:
             alpha=1.0,
             beta=0.5,
         )
-        eps = acc.balls_in_bins(
-            acc.bsr(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
+        eps = ftrl_acc.balls_in_bins(
+            ftrl_acc.bsr(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
             num_bins=25,
             num_epochs=4,
         ).epsilon_at(self.delta)

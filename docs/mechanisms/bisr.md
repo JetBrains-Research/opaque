@@ -32,7 +32,7 @@ strategy = bisr_strategy(
 )
 
 # 2. Build accounting mechanism from strategy-derived quantities
-training = acc.balls_in_bins(
+training = ftrl_acc.balls_in_bins(
     ftrl_acc.bisr(noise_multiplier,
                   sensitivity=strategy.sensitivity,
                   gram_matrix=strategy.gram_matrix),

@@ -6,7 +6,7 @@ import functools
 import warnings
 from dataclasses import dataclass
 
-from .. import _native
+from opaque.accounting import _native
 
 from opaque.accounting._base import DpProcess, Pld
 from opaque.accounting.discretization import get_discretization
@@ -54,16 +54,9 @@ def gaussian(noise_multiplier: float) -> Gaussian:
 
     Example::
 
-        # Single Gaussian query
-        proc = acc.gaussian(1.1)
-        eps = proc.epsilon_at(1e-5)
-
-        # Composed 1000 times
-        training = acc.gaussian(1.1) * 1000
+        step = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), sample_rate=0.01)
+        training = step * 1000
         eps = training.epsilon_at(1e-5)
-
-        # Query-time discretization override
-        eps = proc.epsilon_at(1e-5, discretization=1e-3)
     """
     if 0 < noise_multiplier < 0.1:
         warnings.warn(

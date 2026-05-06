@@ -22,11 +22,11 @@ sample rate, the stronger the amplification:
 import opaque.accounting as acc
 
 # Without subsampling: full dataset
-full = acc.gaussian(1.0) * 1000
+full = dpsgd_acc.gaussian(1.0) * 1000
 print(full.epsilon_at(1e-5))  # large
 
 # With Poisson subsampling: sample_rate = 0.01
-subsampled = acc.poisson(acc.gaussian(1.0), sample_rate=0.01) * 1000
+subsampled = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01) * 1000
 print(subsampled.epsilon_at(1e-5))  # much smaller
 ```
 
@@ -108,11 +108,11 @@ loader = data.DataLoader(dataset, batch_sampler=sampler)
 |-----------|------|-------------|
 | `max_batch_size` | `int` | Upper bound on batch size |
 
-Privacy accounting uses `acc.truncated_poisson` to match:
+Privacy accounting uses `dpsgd_acc.truncated_poisson` to match:
 
 ```python
-step = acc.truncated_poisson(
-    acc.gaussian(noise_multiplier),
+step = dpsgd_acc.truncated_poisson(
+    dpsgd_acc.gaussian(noise_multiplier),
     sample_rate=batch_size / dataset_size,
     batch_size_cap=batch_size,
     dataset_size=dataset_size,
@@ -305,7 +305,7 @@ loader = data.DataLoader(shard, batch_sampler=sampler)
 
 ```python
 global_sample_rate = batch_size_per_device * world_size / dataset_size
-step = acc.poisson(acc.gaussian(noise_multiplier), global_sample_rate)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), global_sample_rate)
 ```
 
 ### Distributed helpers

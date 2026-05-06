@@ -6,8 +6,12 @@ constructor functions live in the package init.
 
 from __future__ import annotations
 
-from opaque.accounting.amplification.types import BMinSep, CyclicPoisson
-from opaque.accounting.mechanisms.types import (
+from opaque.dpftrl.accounting.amplification.types import (
+    BallsInBins,
+    BMinSep,
+    CyclicPoisson,
+)
+from opaque.dpftrl.accounting.mechanisms.types import (
     BandMf,
     Bisr,
     Blt,
@@ -25,4 +29,5 @@ __all__ = [
     "MfGaussian",
     "CyclicPoisson",
     "BMinSep",
+    "BallsInBins",
 ]

@@ -2,7 +2,8 @@
 
 import pytest
 
-import opaque.accounting as acc
+import opaque.accounting as acc  # noqa: F401  (used elsewhere; keep for cohesion)
+import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting.discretization import get_discretization, set_discretization
 
 
@@ -64,7 +65,7 @@ class TestDiscretizationAffectsResults:
 
     def test_coarser_grid_changes_epsilon(self):
         """Coarser discretization should produce a different (less precise) epsilon."""
-        proc = acc.gaussian(0.8)
+        proc = dpsgd_acc.gaussian(0.8)
         eps_fine = proc.epsilon_at(1e-5, discretization=1e-4)
         eps_coarse = proc.epsilon_at(1e-5, discretization=2e-1)
         # Both valid, but coarser grid = different result

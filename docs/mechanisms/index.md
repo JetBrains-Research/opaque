@@ -15,7 +15,7 @@ Simple and broadly applicable.
 | [Gaussian](gaussian.md) | $\mathcal{N}(0, \sigma^2)$ | $(-\infty, +\infty)$ |
 
 For bounded noise support, use `truncated_gaussian_noise()` for noise injection
-while accounting with `acc.gaussian()`. See [Gaussian — Bounded noise variant](gaussian.md#bounded-noise-variant).
+while accounting with `dpsgd_acc.gaussian()`. See [Gaussian — Bounded noise variant](gaussian.md#bounded-noise-variant).
 
 ## Correlated noise (DP-FTRL)
 
@@ -43,7 +43,7 @@ Need correlated noise across steps (DP-FTRL)?
 │
 ├─ No ─── Gaussian (standard DP-SGD)
 │         Use truncated_gaussian_noise() for bounded support if desired;
-│         accounting always uses acc.gaussian().
+│         accounting always uses dpsgd_acc.gaussian().
 │
 └─ Yes ── Constraints?
           ├─ Zero extra memory → DP-λCGD (PRNG replay)
@@ -109,7 +109,7 @@ band   = ftrl_acc.cyclic_poisson(
 lcgd_s = lambda_cgd_strategy(
     lambda_=0.9, n_steps=1000, min_sep=100, max_participations=5,
 )
-lcgd   = acc.balls_in_bins(
+lcgd   = ftrl_acc.balls_in_bins(
     ftrl_acc.lambda_cgd(1.0, sensitivity=lcgd_s.sensitivity,
                         gram_matrix=lcgd_s.gram_matrix),
     num_bins=100, num_epochs=5,

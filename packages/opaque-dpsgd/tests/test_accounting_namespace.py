@@ -51,15 +51,6 @@ class TestNamespaceSurface:
             assert hasattr(dpsgd_types, name), name
         assert set(dpsgd_types.__all__) == set(_TYPES)
 
-    def test_factories_match_root_implementations(self):
-        """The new namespace re-exports the *same* objects as ``opaque.accounting``."""
-        import opaque.accounting as acc
-        import opaque.dpsgd.accounting as dpsgd_acc
-
-        for name in _HEADLINE:
-            assert getattr(dpsgd_acc, name) is getattr(acc, name), name
-
-
 class TestEndToEndCalibration:
     """Constructed mechanisms compute valid PLDs through the new namespace."""
 
