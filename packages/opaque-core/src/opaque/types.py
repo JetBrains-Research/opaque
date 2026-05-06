@@ -257,13 +257,18 @@ class ClippedPytree:
             return float(effective)
         return float(self.max_norm)
 
-    def noise_stddev(
+    def noise_stddev_for(
         self,
         *,
         noise_multiplier: float,
         allocation: Literal["isotropic", "optimal"] = "optimal",
     ) -> float | PerGroup:
-        """Realised noise standard deviation for ``gaussian(noise_multiplier)``.
+        """Noise standard deviation that ``gaussian(noise_multiplier)`` would apply.
+
+        Named ``noise_stddev_for`` rather than ``noise_stddev`` to leave the
+        ``noise_stddev`` slot free for the realised-stddev *field* on the
+        :class:`NoisedPytree` subclass — a method on the parent and a field
+        on the child cannot share a name.
 
         Scalar ``max_norm``: returns ``noise_multiplier * max_norm``; the
         ``allocation`` argument is validated but does not change the result.
