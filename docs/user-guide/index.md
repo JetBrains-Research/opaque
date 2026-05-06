@@ -108,6 +108,9 @@ understanding, or jump to a specific topic.
 
 - **[Optimizers](optimizers.md)** -- Using TorchOpt functional optimizers with
   DP-SGD.
+- **[Serialization (API)](../api/serialization.md)** -- Checkpoint explicit state
+  with ``opaque.serialization.state_dict`` / ``from_state_dict`` (see also
+  optimizers and accounting guides for examples).
 - **[LR Scheduling](lr-scheduling.md)** -- Warmup, cosine and inverse-sqrt
   schedules; composing `with_warmup` with any decay curve.
 - **[Distributed Training](distributed.md)** -- DDP with synchronized noise
