@@ -197,7 +197,8 @@ def _scale_max_norm(max_norm: MaxNorm, factor: float) -> MaxNorm:
 
 
 def _per_group_optimal_stddev(
-    max_norm: PerGroup, noise_multiplier: float,
+    max_norm: PerGroup,
+    noise_multiplier: float,
 ) -> PerGroup:
     """MSE-optimal per-group noise allocation under the Mahalanobis constraint.
 
@@ -299,8 +300,7 @@ class ClippedPytree:
             )
         if allocation not in ("isotropic", "optimal"):
             raise ValueError(
-                "allocation must be 'isotropic' or 'optimal', "
-                f"got {allocation!r}."
+                f"allocation must be 'isotropic' or 'optimal', got {allocation!r}."
             )
         if isinstance(self.max_norm, PerGroup):
             if allocation == "isotropic":
