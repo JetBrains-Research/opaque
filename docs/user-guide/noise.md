@@ -97,7 +97,21 @@ training loop.
 
 When using [per-group clipping](clipping.md#per-group-clipping),
 `gaussian_noise` and `truncated_gaussian_noise` use MSE-optimal allocation
-automatically. To inspect the realized allocation, call `per_group_noise_stddev`:
+automatically.  To inspect the realized allocation, call
+`ClippedPytree.noise_stddev_for(...)` directly on the clipped output:
+
+```python
+# Default 'optimal' allocation: PerGroup with σ_i = nm · √(C_i · Σⱼ C_j)
+stddev = grads.noise_stddev_for(noise_multiplier=noise_multiplier)
+
+# Or 'isotropic' (uniform): scalar nm · ‖C‖₂
+uniform_stddev = grads.noise_stddev_for(
+    noise_multiplier=noise_multiplier, allocation="isotropic",
+)
+```
+
+For callers that already hold a bare `PerGroup` (e.g. recovered from a
+checkpoint), the equivalent free function is still available:
 
 ```python
 from opaque.dpsgd.noise import per_group_noise_stddev
@@ -105,10 +119,10 @@ from opaque.dpsgd.noise import per_group_noise_stddev
 stddev = per_group_noise_stddev(grads.max_norm, noise_multiplier)
 ```
 
-This returns a `PerGroup` of per-group standard deviations with
-$\sigma_i \propto \sqrt{C_i}$. `gaussian_noise` applies this allocation
-automatically when `grads.max_norm` is a `PerGroup`. Privacy accounting is
-identical to the isotropic case — just `gaussian(nm)`.
+Both routes return a `PerGroup` of per-group standard deviations with
+$\sigma_i \propto \sqrt{C_i}$.  `gaussian_noise` applies the optimal
+allocation automatically when `grads.max_norm` is a `PerGroup`.  Privacy
+accounting is identical under either allocation — just `gaussian(nm)`.
 
 The [training script](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py) uses this by default
 when per-group clipping is active.
