@@ -63,7 +63,7 @@ noise_fn, noise_state = gaussian_noise(
 )
 
 # Privacy tracker
-from opaque.accounting.accountant import Accountant
+from opaque.accounting import Accountant
 
 step_proc = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
 accountant = Accountant(budget=acc.epsilon_budget(epsilon, delta=delta))

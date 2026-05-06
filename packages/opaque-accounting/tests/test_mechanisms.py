@@ -6,12 +6,8 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import opaque.accounting as acc
-from opaque.accounting.base import DpProcess
-from opaque.accounting.mechanisms import (
-    EpsDelta,
-    Gaussian,
-    Identity,
-)
+from opaque.accounting._base import DpProcess
+from opaque.accounting.mechanisms.types import EpsDelta, Gaussian, Identity
 
 # ── Mechanism dataclass tests ────────────────────────────────────────
 

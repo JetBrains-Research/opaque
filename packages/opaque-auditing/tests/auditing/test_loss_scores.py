@@ -7,7 +7,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset, TensorDataset
 
 import opaque.auditing as auditing
-from opaque.auditing import OneRunEstimate, loss_scores, one_run
+from opaque.auditing import loss_scores, one_run
+from opaque.auditing.types import OneRunEstimate
 from opaque.random import key
 
 

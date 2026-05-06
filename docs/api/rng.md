@@ -19,7 +19,8 @@ The `opaque.random` module provides:
 
 ```python
 # Core primitives
-from opaque.random import RngKey, split, fold_in, key, generator_from_key
+from opaque.random import split, fold_in, key, generator_from_key
+from opaque.random.types import RngKey
 
 # Convenience helpers
 from opaque.random import random_key, set_reproducible_pytorch_seed

@@ -233,10 +233,10 @@ def _ensure_builtin_sync_types_loaded() -> None:
     Clipping registers itself synchronously; the performance profiler is
     a soft dependency — missing it must not break ``sync()``.
     """
-    import opaque.clipping.distributed  # noqa: F401
+    import opaque.clipping._distributed  # noqa: F401
 
     try:
-        import opaque.profiling.distributed  # noqa: F401
+        import opaque.profiling._distributed  # noqa: F401
     except ImportError:
         pass
 

@@ -11,11 +11,13 @@ suitable as the ``lr`` argument to a functional optimizer::
     )
     schedule = with_warmup(decay, transition_steps=100)
     # `schedule(step)` returns the scheduled value at any integer step.
+
+The :data:`Schedule` type alias is reachable via
+:mod:`opaque.scheduling.types`.
 """
 
-from opaque.scheduling._types import Schedule
-from opaque.scheduling.compose import with_restarts, with_warmup
-from opaque.scheduling.curves import (
+from opaque.scheduling._compose import with_restarts, with_warmup
+from opaque.scheduling._curves import (
     constant_schedule,
     cosine_schedule,
     exponential_decay,
@@ -26,9 +28,6 @@ from opaque.scheduling.curves import (
 )
 
 __all__ = [
-    # Type alias
-    "Schedule",
-    # Pure curves
     "constant_schedule",
     "linear_schedule",
     "polynomial_schedule",
@@ -36,7 +35,6 @@ __all__ = [
     "cosine_schedule",
     "inverse_sqrt_schedule",
     "one_minus_sqrt_schedule",
-    # Composition primitives
     "with_warmup",
     "with_restarts",
 ]

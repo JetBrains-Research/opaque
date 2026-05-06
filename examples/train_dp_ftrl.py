@@ -329,7 +329,7 @@ def parse_args():
         default="sgd",
         help=(
             "Optimizer.  ``sgd`` is the canonical DP-FTRL baseline "
-            "(opaque.optimizers.sgd, Polyak momentum).  ``adamw`` and ``ademamix`` "
+            "(sgd, Polyak momentum).  ``adamw`` and ``ademamix`` "
             "are Adam-family adaptive optimizers; pair with ``--second-moment`` to "
             "activate a private squared-gradient stream.  ``lion`` "
             "is sign-of-momentum; works under MF noise but has no v so "
@@ -369,8 +369,8 @@ def parse_args():
         "--weight-decay",
         type=float,
         default=0.0,
-        help="Optimizer weight decay: opaque.optimizers.sgd L2-style coefficient, or "
-        "opaque.optimizers.adamw decoupled WD (default 0).",
+        help="Optimizer weight decay: sgd L2-style coefficient, or "
+        "adamw decoupled WD (default 0).",
     )
     train_g.add_argument(
         "--beta1",

@@ -4,8 +4,10 @@ import numpy as np
 import pytest
 
 import opaque.auditing as auditing
-from opaque.auditing import CoinFlip, OneRunEstimate, one_run
-from opaque.random import RngKey, key
+from opaque.auditing import one_run
+from opaque.auditing.types import CoinFlip, OneRunEstimate
+from opaque.random import key
+from opaque.random.types import RngKey
 
 
 def _flip(canary_indices: np.ndarray, *, key: RngKey) -> CoinFlip:

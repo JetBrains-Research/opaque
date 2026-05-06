@@ -3,10 +3,7 @@
 import pytest
 
 import opaque.accounting as acc
-from opaque.accounting.discretization import (
-    get_discretization,
-    set_discretization,
-)
+from opaque.accounting.discretization import get_discretization, set_discretization
 
 
 @pytest.fixture(autouse=True)

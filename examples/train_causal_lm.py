@@ -54,6 +54,7 @@ from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
 
 from opaque.patches import apply_model_patches, apply_runtime_patches
+
 apply_runtime_patches()
 
 from torch.utils.data import DataLoader
@@ -69,7 +70,8 @@ import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
-from opaque.distributed import sum_gradients_, sync
+from opaque.distributed import sync
+from opaque.distributed.gradients import sum_gradients_
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.noise import per_group_noise_stddev
 from opaque.dpsgd.noise import truncated_gaussian_noise
@@ -85,7 +87,7 @@ from opaque.dpsgd.sampling import TruncatedPoissonSampler
 from opaque.distributed.shard import local_shard
 from opaque.functional import make_functional
 from opaque.types import PerGroup
-from opaque.clipping.per_group import per_group
+from opaque.clipping import per_group
 import wandb
 
 
@@ -359,8 +361,16 @@ def parse_args():
         "--optimizer",
         type=str,
         default="adam",
-        choices=["sgd", "adam", "adamw", "ademamix", "lion", "adafactor",
-                 "rmsprop", "adagrad"],
+        choices=[
+            "sgd",
+            "adam",
+            "adamw",
+            "ademamix",
+            "lion",
+            "adafactor",
+            "rmsprop",
+            "adagrad",
+        ],
         help=(
             "Optimizer.  ``sgd`` and ``adam`` are torchopt's vanilla "
             "primitives (no DP-aware paths); the others are Opaque-built "

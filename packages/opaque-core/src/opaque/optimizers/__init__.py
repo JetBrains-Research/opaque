@@ -31,9 +31,11 @@ Opaque-built:
   variance subtraction.  ``NoisedPytree`` updates with
   ``noise_bias_correction=True`` activate the ``v_acc - Φ_acc``
   correction; whether that helps in practice depends on the workload.
-- :func:`schedule_free` — wrapper around any base
+- :func:`schedule_free` — generic wrapper around any base
   ``GradientTransformation`` (Opaque-built or torchopt-imported)
-  implementing Defazio's schedule-free averaging.
+  implementing Defazio's schedule-free averaging.  Read the published
+  ``x`` weights for saving / evaluation directly from the state's
+  ``state.x`` field (see :class:`opaque.optimizers.types.ScheduleFreeState`).
 
 DP-aware behavior is selected at ``update()`` time by passing metadata
 wrappers:
@@ -60,48 +62,25 @@ without RNG / global state collisions.
 ``state_dict`` / ``load_state_dict`` flatten / rebuild any chain state
 for ``torch.save`` / ``torch.load``.
 
-Less-common building blocks are reachable via the submodules and are
-intentionally not part of ``__all__`` (mirroring the
-:mod:`opaque.clipping` / :mod:`opaque.random` convention — the public
-surface is functional):
-
-- State dataclasses — ``AdamState``, ``LionState``, ``AdEMAMixState``,
-  ``AdafactorState``, ``RMSpropState``, ``AdagradState``,
-  ``ScheduleFreeState`` — re-exported here for type annotations.
-- ``get_eval_params(state)`` from :mod:`opaque.optimizers.schedule_free`
-  — returns the published ``x`` weights from a schedule-free state.
+Per-optimizer state dataclasses (``AdamState``, ``LionState``,
+``AdEMAMixState``, ``AdafactorState``, ``RMSpropState``,
+``AdagradState``, ``RAdamState``, ``AdadeltaState``,
+``ScheduleFreeState``) live in :mod:`opaque.optimizers.types`.
 """
 
-# Functional surface — listed in ``__all__``.
-from opaque.optimizers.adadelta import adadelta
-from opaque.optimizers.adafactor import adafactor
-from opaque.optimizers.adagrad import adagrad
-from opaque.optimizers.adam import adam, adamw
-from opaque.optimizers.ademamix import ademamix
-from opaque.optimizers.lion import lion
-from opaque.optimizers.radam import radam
-from opaque.optimizers.rmsprop import rmsprop
-from opaque.optimizers.schedule_free import schedule_free
-from opaque.optimizers.sgd import sgd
-
-# State dataclasses — re-exported with ``as X`` for type annotation
-# discoverability, intentionally not part of ``__all__``.  Same
-# convention as ``opaque.clipping.ClipState`` / ``opaque.random.RngKey``.
-from opaque.optimizers.adadelta import AdadeltaState as AdadeltaState
-from opaque.optimizers.adafactor import AdafactorState as AdafactorState
-from opaque.optimizers.adagrad import AdagradState as AdagradState
-from opaque.optimizers.adam import AdamState as AdamState
-from opaque.optimizers.ademamix import AdEMAMixState as AdEMAMixState
-from opaque.optimizers.lion import LionState as LionState
-from opaque.optimizers.radam import RAdamState as RAdamState
-from opaque.optimizers.rmsprop import RMSpropState as RMSpropState
-from opaque.optimizers.schedule_free import ScheduleFreeState as ScheduleFreeState
-
-from opaque.optimizers.serialization import load_state_dict, state_dict
-
+from opaque.optimizers._adadelta import adadelta
+from opaque.optimizers._adafactor import adafactor
+from opaque.optimizers._adagrad import adagrad
+from opaque.optimizers._adam import adam, adamw
+from opaque.optimizers._ademamix import ademamix
+from opaque.optimizers._lion import lion
+from opaque.optimizers._radam import radam
+from opaque.optimizers._rmsprop import rmsprop
+from opaque.optimizers._schedule_free import schedule_free
+from opaque.optimizers._serialization import load_state_dict, state_dict
+from opaque.optimizers._sgd import sgd
 
 __all__ = [
-    # Opaque-built factories.
     "adam",
     "adamw",
     "sgd",
@@ -113,7 +92,6 @@ __all__ = [
     "adadelta",
     "radam",
     "schedule_free",
-    # Serialization.
     "state_dict",
     "load_state_dict",
 ]

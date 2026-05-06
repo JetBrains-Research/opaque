@@ -6,10 +6,10 @@ import torch
 from opaque.types import ClippedPytree
 
 from opaque.clipping import clipped_grad
-from opaque.clipping.pytree import clip_pytree
+from opaque.clipping._pytree import clip_pytree
 from opaque.clipping.types import FixedClipState
 from opaque.types import PerGroup
-from opaque.clipping.per_group import per_group
+from opaque.clipping._per_group import per_group
 
 
 def _unwrap_clipped(value):

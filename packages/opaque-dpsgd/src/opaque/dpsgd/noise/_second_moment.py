@@ -1,6 +1,6 @@
 """Joint Gaussian noise calibration for paired first + second-moment release.
 
-Used by :func:`opaque.dpsgd.noise.gaussian.gaussian_noise` when a
+Used by :func:`opaque.dpsgd.noise._gaussian.gaussian_noise` when a
 ``SecondMomentClippingOutput`` flows in.  See Kalinin, Upadhyay,
 Lampert, "Continual Release Moment Estimation with Differential
 Privacy", arXiv:2502.06597.

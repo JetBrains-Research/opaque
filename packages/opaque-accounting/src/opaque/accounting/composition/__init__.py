@@ -1,19 +1,19 @@
-"""Composition nodes and operators for combining DP processes.
-
-This module provides:
-
-- **Structural nodes**: Composed, Repeated, CachedProcess
-- **Convenience functions**: repeat(), compose(), cached()
+"""Composition operators for combining DP processes.
 
 Most users should prefer the operator syntax: ``step * 1000`` or ``a | b``.
+
+The convenience functions :func:`repeat`, :func:`compose`, and
+:func:`cached` are equivalent to those operators / a ``CachedProcess``
+wrapper.
+
+The composition-node dataclasses (``Composed``, ``Repeated``,
+``CachedProcess``) live in :mod:`opaque.accounting.composition.types`.
 """
 
 from __future__ import annotations
 
-from opaque.accounting.base import DpProcess
-from opaque.accounting.composition.cached import CachedProcess, cached
-from opaque.accounting.composition.composed import Composed
-from opaque.accounting.composition.repeated import Repeated
+from opaque.accounting._base import DpProcess
+from opaque.accounting.composition._cached import cached
 
 
 def repeat(process: DpProcess, count: int) -> DpProcess:
@@ -60,13 +60,4 @@ def compose(left: DpProcess, right: DpProcess) -> DpProcess:
     return left | right
 
 
-__all__ = [
-    # Structural nodes
-    "Composed",
-    "Repeated",
-    "CachedProcess",
-    # Convenience functions
-    "repeat",
-    "compose",
-    "cached",
-]
+__all__ = ["repeat", "compose", "cached"]

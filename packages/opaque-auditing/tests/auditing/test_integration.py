@@ -2,7 +2,8 @@
 
 import numpy as np
 
-from opaque.auditing import CoinFlip, one_run
+from opaque.auditing import one_run
+from opaque.auditing.types import CoinFlip
 from opaque.random import key
 
 

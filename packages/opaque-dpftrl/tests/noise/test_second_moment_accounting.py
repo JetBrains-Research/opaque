@@ -5,13 +5,14 @@ import math
 import pytest
 
 import opaque.accounting as acc
+from opaque.accounting.transformations.types import SecondMoment
 
 
 class TestSecondMomentAccounting:
     def test_wraps_band_mf(self):
         mech = acc.band_mf(1.0, sensitivity=1.5, num_groups=10)
         wrapped = acc.second_moment(mech, sensitivity=0.1)
-        assert isinstance(wrapped, acc.transformations.SecondMoment)
+        assert isinstance(wrapped, SecondMoment)
 
     def test_sensitivity_formula(self):
         mech = acc.band_mf(1.0, sensitivity=1.5, num_groups=10)

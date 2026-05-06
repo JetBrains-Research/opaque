@@ -1,4 +1,4 @@
-"""Tests for opaque.optimizers.rmsprop."""
+"""Tests for opaque.optimizers._rmsprop."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ torchopt = pytest.importorskip("torchopt")
 
 from opaque.types import noised  # noqa: E402
 from opaque.types import SecondMomentNoiseOutput  # noqa: E402
-from opaque.optimizers import RMSpropState, rmsprop  # noqa: E402
+from opaque.optimizers import rmsprop  # noqa: E402
+from opaque.optimizers.types import RMSpropState  # noqa: E402
 
 
 @pytest.fixture

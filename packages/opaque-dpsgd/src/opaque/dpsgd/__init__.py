@@ -7,33 +7,22 @@ Fixed-clipping primitives used by this package live in
 ``adamw`` with DP bias-correction and private second-moment paths) live in
 :mod:`opaque.optimizers`.
 
-Data classes (``AdaptiveClipState``, ``AdaptiveClippedGradAux``,
-``AutoClipState``, ``AutoClippedGradAux``) are importable from this module
-for type annotations but are not part of ``__all__`` — the public surface
-is functional.
+State / aux dataclasses (``AdaptiveClipState``, ``AdaptiveClippedGradAux``,
+``AutoClipState``, ``AutoClippedFunAux``, ``AutoClippedGradAux``) live in
+:mod:`opaque.dpsgd.clipping.types`.  ``GaussianNoiseState`` lives in
+:mod:`opaque.dpsgd.noise.types`.
 """
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from opaque.dpsgd import clipping, noise, sampling
-from opaque.dpsgd.clipping.adaptive import (
-    AdaptiveClippedGradAux as AdaptiveClippedGradAux,
+from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
+from opaque.dpsgd.noise import (
+    gaussian_noise,
+    per_group_noise_stddev,
+    truncated_gaussian_noise,
 )
-from opaque.dpsgd.clipping.adaptive import AdaptiveClipState as AdaptiveClipState
-from opaque.dpsgd.clipping.adaptive import adaptive_clipped_grad
-from opaque.dpsgd.clipping.auto import AutoClippedGradAux as AutoClippedGradAux
-from opaque.dpsgd.clipping.auto import AutoClipState as AutoClipState
-from opaque.dpsgd.clipping.auto import auto_clipped_grad
-
-# Side-effect import: registers DP-SGD-specific sync handlers (AdaptiveClipState /
-# AdaptiveClippedGradAux) with opaque.distributed.sync(). Reach the helpers
-# directly via opaque.dpsgd.clipping.distributed if needed.
-from opaque.dpsgd.clipping import distributed as _clipping_distributed  # noqa: F401
-from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.noise import per_group_noise_stddev
-from opaque.dpsgd.noise import truncated_gaussian_noise
-from opaque.dpsgd.sampling.poisson import PoissonSampler
-from opaque.dpsgd.sampling.truncated_poisson import TruncatedPoissonSampler
+from opaque.dpsgd.sampling import PoissonSampler, TruncatedPoissonSampler
 
 try:
     __version__ = _pkg_version("opaque-dpsgd")

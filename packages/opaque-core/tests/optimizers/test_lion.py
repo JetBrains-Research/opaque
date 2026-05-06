@@ -1,4 +1,4 @@
-"""Tests for opaque.optimizers.lion."""
+"""Tests for opaque.optimizers._lion."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ torchopt = pytest.importorskip("torchopt")
 
 from opaque.types import clipped  # noqa: E402
 from opaque.types import noised  # noqa: E402
-from opaque.optimizers import LionState, lion  # noqa: E402
+from opaque.optimizers import lion  # noqa: E402
+from opaque.optimizers.types import LionState  # noqa: E402
 
 
 @pytest.fixture

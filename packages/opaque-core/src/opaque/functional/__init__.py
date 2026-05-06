@@ -392,6 +392,6 @@ def with_batch_dim(
     return wrapper
 
 
-from opaque.functional.collate import empty_collate  # noqa: E402
+from opaque.functional._collate import empty_collate  # noqa: E402
 
 __all__ = ["make_functional", "with_batch_dim", "empty_collate"]

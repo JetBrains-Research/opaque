@@ -27,5 +27,5 @@ estimate = auditing.one_run(scores, coin_flip=cf)
 ## Layout
 
 - `opaque.auditing.one_run` — one-run estimator (Steinke et al. 2023)
-- `opaque.auditing.coin_flip` — coin-flip canary injection
-- `opaque.auditing.attacks.loss` — loss-based membership inference via `vmap`
+- `opaque.auditing.coin_flip()` — coin-flip canary injection
+- `opaque.auditing.loss_scores()` — loss-based membership inference via `vmap`

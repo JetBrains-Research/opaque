@@ -31,17 +31,17 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.all_reduce
+::: opaque.distributed.collectives.all_reduce
     options:
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.all_reduce_
+::: opaque.distributed.collectives.all_reduce_
     options:
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.barrier
+::: opaque.distributed.collectives.barrier
     options:
         show_source: true
         heading_level: 3
@@ -53,24 +53,24 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.sum_gradients_
+::: opaque.distributed.gradients.sum_gradients_
     options:
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.reduce_pytree
+::: opaque.distributed.gradients.reduce_pytree
     options:
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.reduce_pytree_
+::: opaque.distributed.gradients.reduce_pytree_
     options:
         show_source: true
         heading_level: 3
 
 ## State Synchronization
 
-::: opaque.distributed.reduce_scalar
+::: opaque.distributed.state.reduce_scalar
     options:
         show_source: true
         heading_level: 3
@@ -80,24 +80,24 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.sync_object
+::: opaque.distributed.state.sync_object
     options:
         show_source: true
         heading_level: 3
 
 ## Tensor Gathering
 
-::: opaque.distributed.gather_tensors
+::: opaque.distributed.state.gather_tensors
     options:
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.gather_pytree
+::: opaque.distributed.state.gather_pytree
     options:
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.assert_scalar_equal
+::: opaque.distributed.state.assert_scalar_equal
     options:
         show_source: true
         heading_level: 3

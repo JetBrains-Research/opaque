@@ -409,7 +409,7 @@ Merge optimization is automatic. Composing the same `step` repeatedly in a loop
 produces a single `Repeated` node internally.
 
 ```python
-from opaque.accounting.accountant import Accountant
+from opaque.accounting import Accountant
 
 acct = Accountant()
 step = acc.poisson(acc.gaussian(0.5), 0.01)
@@ -428,7 +428,7 @@ Pass an optional `Budget` from the calibration module to enable budget checking:
 
 ```python
 from opaque.accounting import calibration as cal
-from opaque.accounting.accountant import Accountant
+from opaque.accounting import Accountant
 
 budget = cal.epsilon_budget(3.0, delta=1e-5)
 acct = Accountant(budget=budget)

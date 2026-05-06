@@ -1,6 +1,6 @@
 """Joint Gaussian noise calibration for paired first + second-moment release.
 
-Used by :func:`opaque.dpftrl.noise.dispatcher.mf_noise` when a
+Used by :func:`opaque.dpftrl.noise._dispatcher.mf_noise` when a
 ``SecondMomentClippingOutput`` flows in.  See Kalinin, Upadhyay,
 Lampert, "Continual Release Moment Estimation with Differential
 Privacy", arXiv:2502.06597.
@@ -8,7 +8,13 @@ Privacy", arXiv:2502.06597.
 
 from __future__ import annotations
 
+import dataclasses
 import math
+
+from opaque.random.types import RngKey
+from opaque.types import NoiseState
+
+from ._engine import MFNoiseState
 
 
 DEFAULT_SECOND_MOMENT_OVERHEAD = math.sqrt(3.0 / 2.0)
@@ -147,3 +153,19 @@ def second_moment_stddevs(
         first_moment_overhead=first_moment_overhead,
     )
     return first_stddev, second_stddev
+
+
+@dataclasses.dataclass(frozen=True)
+class SecondMomentMFNoiseState(NoiseState):
+    """Internal state for MF noise with private second moments."""
+
+    _first_state: MFNoiseState
+    _second_state: MFNoiseState
+
+    @property
+    def _step_counter(self) -> int:  # type: ignore[override]
+        return self._first_state._step_counter
+
+    @property
+    def _rng_key(self) -> RngKey:  # type: ignore[override]
+        return self._first_state._rng_key

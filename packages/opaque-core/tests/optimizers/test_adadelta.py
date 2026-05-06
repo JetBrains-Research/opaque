@@ -1,4 +1,4 @@
-"""Tests for opaque.optimizers.adadelta — Adadelta with two-EMA DP BC.
+"""Tests for opaque.optimizers._adadelta — Adadelta with two-EMA DP BC.
 
 Adadelta's two EMAs both pick up DP noise:
 
@@ -26,7 +26,8 @@ from opaque.types import clipped  # noqa: E402, F401
 from opaque.types import noised  # noqa: E402
 from opaque.types import PerGroup  # noqa: E402
 from opaque.types import SecondMomentNoiseOutput  # noqa: E402
-from opaque.optimizers import AdadeltaState, adadelta  # noqa: E402
+from opaque.optimizers import adadelta  # noqa: E402
+from opaque.optimizers.types import AdadeltaState  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

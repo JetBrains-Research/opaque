@@ -2,7 +2,7 @@
 
 This module provides a generic binary search framework.  Privacy budget
 *budgets* (epsilon, delta, advantage, beta, risk) live in
-:mod:`opaque.accounting.budgets` and are re-exported here for convenience.
+:mod:`opaque.accounting._budgets` and are re-exported here for convenience.
 
 Example::
 
@@ -26,12 +26,12 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from opaque.accounting.base import DpProcess
+from opaque.accounting._base import DpProcess
 
 # Re-export budgets so ``from opaque.accounting.calibration import Budget``
 # and ``from opaque.accounting import calibration as cal; cal.epsilon_budget(...)``
 # work as convenience imports.
-from opaque.accounting.budgets import (  # noqa: F401
+from opaque.accounting._budgets import (  # noqa: F401
     AdvantageBudget,
     BetaBudget,
     Budget,

@@ -5,13 +5,11 @@ Immutable, JAX-style key semantics via :func:`key`, :func:`split`, and
 like :func:`random_key` for prototyping and
 :func:`set_reproducible_pytorch_seed` for PyTorch/CUDNN reproducibility.
 
-The :class:`RngKey` data class is importable from this module (for type
-annotations) but not part of ``__all__`` — the public surface is functional.
+The :class:`RngKey` data class is reachable via :mod:`opaque.random.types`.
 """
 
-from .engine import RngKey as RngKey
-from .engine import fold_in, generator_from_key, key, split
-from .helpers import random_key, set_reproducible_pytorch_seed
+from opaque.random._engine import fold_in, generator_from_key, key, split
+from opaque.random._helpers import random_key, set_reproducible_pytorch_seed
 
 __all__ = [
     "key",

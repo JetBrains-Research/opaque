@@ -10,7 +10,8 @@ from opaque.types import clipped
 from opaque.types import NoisedPytree
 
 from opaque.types import PerGroup
-from opaque.dpsgd.noise import GaussianNoiseState, gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.dpsgd.noise.types import GaussianNoiseState
 from opaque.random import key
 
 
@@ -124,7 +125,7 @@ class TestEndToEndPerGroup:
 
     def test_full_pipeline_per_group_bound(self):
         from opaque.clipping import clipped_grad
-        from opaque.clipping.per_group import per_group
+        from opaque.clipping._per_group import per_group
 
         def loss(params, data):
             pred = params["attn_w"] * data + params["mlp_w"] * data

@@ -2,7 +2,8 @@
 
 import torch
 
-from opaque.random import RngKey, key, random_key
+from opaque.random import key, random_key
+from opaque.random.types import RngKey
 
 
 class TestRandomKey:

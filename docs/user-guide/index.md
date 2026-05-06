@@ -61,7 +61,7 @@ sampler = PoissonSampler(dataset, sample_rate=sample_rate, key=key_sampling)
 dataloader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
 
 # --- Training loop ---
-from opaque.accounting.accountant import Accountant
+from opaque.accounting import Accountant
 
 step_proc = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
 acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))

@@ -1,4 +1,4 @@
-"""Tests for opaque.optimizers.serialization (state_dict / load_state_dict).
+"""Tests for opaque.optimizers._serialization (state_dict / load_state_dict).
 
 Round-trip coverage for every optimizer + the schedule-free wrapper.
 The contract: after serialise → fresh init → deserialise, the next
@@ -15,14 +15,7 @@ torchopt = pytest.importorskip("torchopt")
 
 from opaque.types import noised  # noqa: E402
 from opaque.types import SecondMomentNoiseOutput  # noqa: E402
-from opaque.optimizers import (  # noqa: E402
-    adafactor,
-    adamw,
-    ademamix,
-    lion,
-    schedule_free,
-)
-from opaque.optimizers.schedule_free import get_eval_params  # noqa: E402
+from opaque.optimizers import adafactor, adamw, ademamix, lion, schedule_free  # noqa: E402
 from opaque.optimizers import load_state_dict, state_dict  # noqa: E402
 
 
@@ -209,7 +202,7 @@ class TestScheduleFree:
         assert restored.step == state.step
         assert restored.beta == state.beta
         # get_eval_params still returns x.
-        ep = get_eval_params(restored)
+        ep = restored.x
         for k in ep:
             torch.testing.assert_close(ep[k], state.x[k])
 
