@@ -44,6 +44,10 @@ from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise, truncated_gaussian_noise
 from opaque.functional import make_functional
+from opaque.serialization import (
+    from_state_dict as opaque_from_state_dict,
+    state_dict as opaque_state_dict,
+)
 from opaque.transformers.trainer import _checkpoint as ckpt
 from opaque.transformers.trainer import _hpo
 from opaque.transformers.trainer import _hub
@@ -3936,7 +3940,10 @@ class DPTrainer:
             self._processing_class.save_pretrained(output_dir)
 
     def _save_optimizer(self, ckpt_dir: str, ctx: "_TrainingContext") -> None:
-        torch.save(ctx.opt_state, os.path.join(ckpt_dir, ckpt.DP_OPTIMIZER_NAME))
+        torch.save(
+            opaque_state_dict(ctx.opt_state),
+            os.path.join(ckpt_dir, ckpt.DP_OPTIMIZER_NAME),
+        )
 
     def _save_dp_runtime(self, ckpt_dir: str, ctx: "_TrainingContext") -> None:
         sampler_state = (
@@ -4096,13 +4103,12 @@ class DPTrainer:
         """Pre-load ``dp_runtime_state.pt`` and ``accountant.json`` for resume.
 
         Returns ``(runtime_payload, accountant)``.  ``runtime_payload`` is
-        ``None`` when the checkpoint was written with ``save_only_model=True``
-        (DP runtime is skipped under that mode); ``accountant.json`` is
-        written unconditionally so a missing file means the user supplied a
-        non-DP checkpoint or hand-edited one out — in that case the
-        accountant is loaded with the prefix ``nonprivate()`` mechanism so
-        all future ε computations are ∞ rather than silently restarting
-        privacy accounting from zero.
+        ``None`` when the checkpoint was written with ``save_only_model=True``.
+        The runtime file stores flat ``opaque.serialization`` dicts for clip
+        and noise state; they are merged in :meth:`_apply_runtime_state`.
+
+        When ``accountant.json`` is missing, prefix with ``nonprivate()`` so
+        ε stays infinite instead of silently restarting from zero.
         """
         runtime_path = os.path.join(ckpt_dir, ckpt.DP_RUNTIME_STATE_NAME)
         runtime_payload = (
@@ -4141,24 +4147,18 @@ class DPTrainer:
         ckpt_dir: str,
     ) -> None:
         """Overwrite ctx fields with values restored from a checkpoint."""
-        ctx.clip_state = payload["clip_state"]
-        ctx.noise_state = payload["noise_state"]
+        ctx.clip_state = opaque_from_state_dict(ctx.clip_state, payload["clip_state"])
+        ctx.noise_state = opaque_from_state_dict(ctx.noise_state, payload["noise_state"])
 
         opt_path = os.path.join(ckpt_dir, ckpt.DP_OPTIMIZER_NAME)
         if os.path.exists(opt_path):
-            # HF parity: load optimizer state on CPU first, then let
-            # ``opt.update`` migrate tensors to the bound device on the
-            # next step.  Direct-to-GPU loading peaks memory at
-            # 2 × optimizer-state-size for large models (saved tensors
-            # sit on GPU alongside the freshly-allocated functional
-            # params); CPU-first defers that pressure.  ``weights_only``
-            # must remain ``False`` because torchopt persists pytrees
-            # rather than plain tensor maps.
-            ctx.opt_state = torch.load(
+            # Load flat serialisation on CPU; tensors move with ``opt.update``.
+            opt_sd = torch.load(
                 opt_path,
                 map_location="cpu",
                 weights_only=False,
             )
+            ctx.opt_state = opaque_from_state_dict(ctx.opt_state, opt_sd)
 
         if accountant is not None:
             ctx.accounting = accountant

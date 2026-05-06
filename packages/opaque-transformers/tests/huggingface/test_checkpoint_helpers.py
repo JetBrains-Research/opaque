@@ -9,8 +9,9 @@ import torch
 
 from opaque.clipping.types import FixedClipState
 from opaque.dpsgd.noise.gaussian import gaussian_noise
-from opaque.transformers.trainer import _checkpoint as ckpt
 from opaque.random import key
+from opaque.serialization import from_state_dict as opaque_from_state_dict
+from opaque.transformers.trainer import _checkpoint as ckpt
 
 
 class TestParseCheckpointStep:
@@ -145,9 +146,6 @@ class TestRngSnapshot:
 
 class TestDpRuntimeBundle:
     def test_roundtrip(self, tmp_path):
-        # ``FixedClipState`` is a marker on origin/main; the configured
-        # clip threshold lives on ``DPTrainingArguments`` and flows
-        # through the ``ClippedPytree.max_norm`` wrapper at every step.
         clip = FixedClipState()
         _, noise = gaussian_noise(noise_multiplier=1.0, key=key(11))
 
@@ -171,8 +169,9 @@ class TestDpRuntimeBundle:
         )
         loaded = ckpt.load_dp_runtime_state(path)
 
-        assert loaded["clip_state"] == clip
-        assert loaded["noise_state"] == noise
+        assert opaque_from_state_dict(clip, loaded["clip_state"]) == clip
+        assert opaque_from_state_dict(noise, loaded["noise_state"]) == noise
+        assert loaded["version"] == ckpt.DP_RUNTIME_BUNDLE_VERSION
         assert loaded["sampler_state"]["iter_count"] == 2
         assert loaded["sample_rate"] == pytest.approx(0.1)
         assert loaded["target_delta"] == pytest.approx(1e-5)
@@ -183,7 +182,7 @@ class TestDpRuntimeBundle:
     def test_unsupported_clip_state_type_raises(self, tmp_path):
         path = str(tmp_path / "dp.pt")
         _, noise = gaussian_noise(noise_multiplier=1.0, key=key(0))
-        with pytest.raises(TypeError, match="Unsupported clip_state"):
+        with pytest.raises(TypeError, match="clip_state must be a ClipState"):
             ckpt.save_dp_runtime_state(
                 path,
                 clip_state="not_a_clip_state",
@@ -196,3 +195,26 @@ class TestDpRuntimeBundle:
                 expected_batch_size=32,
                 total_steps=1,
             )
+
+    def test_unsupported_noise_state_type_raises(self, tmp_path):
+        path = str(tmp_path / "dp.pt")
+        clip = FixedClipState()
+        with pytest.raises(TypeError, match="noise_state must be a NoiseState"):
+            ckpt.save_dp_runtime_state(
+                path,
+                clip_state=clip,
+                noise_state="not_noise",
+                sampler_state=None,
+                sample_rate=0.1,
+                target_delta=1e-5,
+                noise_multiplier=1.0,
+                expected_steps_per_epoch=1,
+                expected_batch_size=32,
+                total_steps=1,
+            )
+
+    def test_rejects_unknown_bundle_version(self, tmp_path):
+        path = str(tmp_path / "dp.pt")
+        torch.save({"version": 1, "clip_state": {}, "noise_state": {}}, path)
+        with pytest.raises(ValueError, match="unsupported dp_runtime_state"):
+            ckpt.load_dp_runtime_state(path)

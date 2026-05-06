@@ -12,6 +12,7 @@ identical steps are collapsed using structural equality (``==``), so
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Mapping
 from typing import Any
 
 from opaque.accounting._base import DpProcess
@@ -191,6 +192,19 @@ class Accountant:
 
         achieved = self._budget.evaluate(self._process)
         return achieved > self._budget.value
+
+    def state_dict(self) -> dict[str, Any]:
+        """Serialise via :mod:`opaque.serialization` (flat, JSON-safe keys)."""
+        from opaque.serialization import state_dict as opaque_state_dict
+
+        return opaque_state_dict(self)
+
+    @classmethod
+    def from_state_dict(cls, state: Mapping[str, Any]) -> Accountant:
+        """Restore from :meth:`state_dict` output."""
+        from opaque.serialization import from_state_dict as opaque_from_state_dict
+
+        return opaque_from_state_dict(cls(), dict(state))
 
 
 def _accountant_state_dict(acct: Accountant) -> dict[str, Any]:
