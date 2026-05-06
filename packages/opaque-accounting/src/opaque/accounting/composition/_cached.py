@@ -99,10 +99,12 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
     """
     from opaque.accounting._accountant import Accountant
 
-    if isinstance(process, Accountant):
-        new_acct = Accountant(budget=process._budget)
-        new_acct._process = cached(process._process)
-        return new_acct
-    if isinstance(process, CachedProcess):
-        return process
-    return CachedProcess(process)
+    match process:
+        case Accountant():
+            new_acct = Accountant(budget=process._budget)
+            new_acct._process = cached(process._process)
+            return new_acct
+        case CachedProcess():
+            return process
+        case _:
+            return CachedProcess(process)

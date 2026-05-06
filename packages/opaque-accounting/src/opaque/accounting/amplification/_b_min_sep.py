@@ -129,12 +129,15 @@ def b_min_sep(
     Returns:
         A :class:`BMinSep` process (asymmetric PLD from Monte Carlo).
     """
-    if not isinstance(inner, (BandMf, SecondMoment)):
-        raise TypeError(
-            f"b_min_sep() requires BandMf or SecondMoment(BandMf), got {type(inner).__name__}."
-        )
-    if isinstance(inner, SecondMoment) and not isinstance(inner.inner, BandMf):
-        raise TypeError("SecondMoment inner must be BandMf for b_min_sep.")
+    match inner:
+        case BandMf() | SecondMoment(inner=BandMf()):
+            pass
+        case SecondMoment():
+            raise TypeError("SecondMoment inner must be BandMf for b_min_sep.")
+        case _:
+            raise TypeError(
+                f"b_min_sep() requires BandMf or SecondMoment(BandMf), got {type(inner).__name__}."
+            )
     coef = tuple(float(x) for x in strategy_coefficients)
     if len(coef) < 1:
         raise ValueError("strategy_coefficients must be non-empty")

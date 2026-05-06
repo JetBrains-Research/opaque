@@ -10,8 +10,10 @@ from .. import _native
 from opaque.accounting.amplification._poisson import Poisson
 from opaque.accounting._base import DpProcess, Pld
 from opaque.accounting.mechanisms._gaussian import Gaussian
+from opaque.accounting.mechanisms._mf_gaussian import MfGaussian
 from opaque.accounting.mechanisms._nonprivate import NonPrivate
 from opaque.accounting.transformations._adaclip import AdaClip
+from opaque.accounting.transformations._second_moment import SecondMoment
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +77,44 @@ class ParallelPoisson(DpProcess):
                     self.num_workers,
                     native_cfg,
                 )
+            case (
+                Poisson(
+                    inner=SecondMoment(inner=Gaussian(noise_multiplier=0)),
+                )
+                | Poisson(
+                    inner=SecondMoment(inner=NonPrivate()),
+                )
+                | Poisson(
+                    inner=SecondMoment(
+                        inner=AdaClip(inner=Gaussian(noise_multiplier=0)),
+                    ),
+                )
+                | Poisson(
+                    inner=SecondMoment(inner=AdaClip(inner=NonPrivate())),
+                )
+            ):
+                return _native.non_private_pld(native_cfg)
+            case (
+                Poisson(
+                    inner=SecondMoment(inner=Gaussian()) as sm,
+                    sample_rate=rate,
+                )
+                | Poisson(
+                    inner=SecondMoment(inner=AdaClip(inner=Gaussian())) as sm,
+                    sample_rate=rate,
+                )
+            ):
+                # Tight: SecondMoment changes the joint sensitivity, so
+                # parallel-Poisson amplification reduces to a Gaussian with
+                # effective_nm = σ ÷ joint sensitivity.  AdaClip inner
+                # contributes via ``sm.noise_multiplier`` returning the
+                # z_eff-folded effective_noise_multiplier.
+                return _native.parallel_poisson_gaussian_pld(
+                    sm.noise_multiplier / sm.sensitivity,
+                    rate,
+                    self.num_workers,
+                    native_cfg,
+                )
             case _:
                 raise TypeError(
                     "ParallelPoisson requires a Poisson inner mechanism, got "
@@ -83,7 +123,7 @@ class ParallelPoisson(DpProcess):
 
 
 def parallel_poisson(
-    inner: Gaussian | AdaClip,
+    inner: Gaussian | AdaClip | NonPrivate | SecondMoment,
     sample_rate: float,
     num_workers: int,
 ) -> ParallelPoisson:
@@ -105,8 +145,13 @@ def parallel_poisson(
     pass the inner Gaussian mechanism and sample rate directly.
 
     Args:
-        inner: A Gaussian or AdaClip mechanism (from :func:`gaussian` or
-            :func:`adaclip`).
+        inner: A :class:`Gaussian`, :class:`AdaClip` (with Gaussian inner),
+            :class:`NonPrivate`, or :class:`SecondMoment` (with Gaussian
+            inner) mechanism — produced by the corresponding ``acc.gaussian``,
+            ``acc.adaclip``, ``acc.nonprivate``, or ``acc.second_moment``
+            factory.  ``SecondMoment`` with an ``MfGaussian`` inner is
+            rejected — pass the matching MF amplification (``cyclic_poisson``,
+            ``b_min_sep``) instead.
         sample_rate: Probability of including each example, in (0, 1).
         num_workers: Number of parallel workers running Poisson sampling
             independently.
@@ -127,11 +172,21 @@ def parallel_poisson(
         training = step * 500
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, AdaClip, NonPrivate)):
-        raise TypeError(
-            f"parallel_poisson() requires a Gaussian, AdaClip, or NonPrivate "
-            f"inner mechanism, got {type(inner).__name__}. "
-            "Use: acc.parallel_poisson(acc.gaussian(nm), sample_rate=q, num_workers=k)"
-        )
+    match inner:
+        case Gaussian() | AdaClip() | NonPrivate():
+            pass
+        case SecondMoment(inner=Gaussian() | NonPrivate() | AdaClip()):
+            pass
+        case SecondMoment(inner=MfGaussian()):
+            raise TypeError(
+                "parallel_poisson() does not support SecondMoment(MfGaussian) — pass "
+                "an MF-aware amplification (cyclic_poisson, b_min_sep) instead."
+            )
+        case _:
+            raise TypeError(
+                f"parallel_poisson() requires a Gaussian, AdaClip, NonPrivate, or "
+                f"SecondMoment(Gaussian) inner mechanism, got {type(inner).__name__}. "
+                "Use: acc.parallel_poisson(acc.gaussian(nm), sample_rate=q, num_workers=k)"
+            )
     poisson_inner = Poisson(inner=inner, sample_rate=sample_rate)
     return ParallelPoisson(inner=poisson_inner, num_workers=num_workers)

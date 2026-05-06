@@ -122,6 +122,28 @@ class BallsInBins(DpProcess):
                     mg.noise_multiplier,
                     native_cfg,
                 )
+            case (
+                SecondMoment(inner=Gaussian(noise_multiplier=0))
+                | SecondMoment(inner=NonPrivate())
+                | SecondMoment(inner=AdaClip(inner=Gaussian(noise_multiplier=0)))
+                | SecondMoment(inner=AdaClip(inner=NonPrivate()))
+            ):
+                return _native.non_private_pld(native_cfg)
+            case (
+                SecondMoment(inner=Gaussian())
+                | SecondMoment(inner=AdaClip(inner=Gaussian()))
+            ) as second:
+                # Tight: SecondMoment changes the joint sensitivity, so
+                # BnB amplification reduces to BnB on a Gaussian with
+                # effective_nm = σ ÷ joint sensitivity.  AdaClip inner
+                # contributes via ``second.noise_multiplier`` returning
+                # the z_eff-folded effective_noise_multiplier.
+                return _native.balls_in_bins_gaussian_pld_epochs(
+                    second.noise_multiplier / second.sensitivity,
+                    self.num_bins,
+                    self.num_epochs,
+                    native_cfg,
+                )
             case SecondMoment(inner=Blt() | LambdaCgd() | Bisr() | Bsr()) as second:
                 if not second.gram_matrix:
                     raise ValueError(
@@ -175,15 +197,24 @@ def balls_in_bins(
         training = acc.balls_in_bins(acc.gaussian(1.1), num_bins=100, num_epochs=10)
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(
-        inner,
-        (Gaussian, Blt, LambdaCgd, Bisr, Bsr, AdaClip, SecondMoment, NonPrivate),
-    ):
-        raise TypeError(
-            f"balls_in_bins() requires a Gaussian, Blt, LambdaCgd, Bisr, Bsr, "
-            f"AdaClip, SecondMoment, or NonPrivate inner mechanism, got {type(inner).__name__}. "
-            "Example: acc.balls_in_bins(acc.gaussian(nm), num_bins=k, num_epochs=E)"
-        )
+    match inner:
+        case (
+            Gaussian()
+            | Blt()
+            | LambdaCgd()
+            | Bisr()
+            | Bsr()
+            | AdaClip()
+            | SecondMoment()
+            | NonPrivate()
+        ):
+            pass
+        case _:
+            raise TypeError(
+                f"balls_in_bins() requires a Gaussian, Blt, LambdaCgd, Bisr, Bsr, "
+                f"AdaClip, SecondMoment, or NonPrivate inner mechanism, got {type(inner).__name__}. "
+                "Example: acc.balls_in_bins(acc.gaussian(nm), num_bins=k, num_epochs=E)"
+            )
     if num_bins < 2:
         raise ValueError(f"num_bins must be >= 2 for BnB amplification, got {num_bins}")
     if num_epochs < 1:
