@@ -4,7 +4,9 @@ Cross-cutting accounting surface — composition, calibration, generic
 mechanisms (``identity``, ``nonprivate``, ``eps_delta``), and the
 ``second_moment`` transformation that spans DP-SGD and DP-FTRL.
 
-Algorithm-specific factories live in their respective packages:
+Algorithm-specific factories live in their respective packages (not
+shipped with ``opaque-accounting`` alone — install ``opaque-dpsgd`` /
+``opaque-dpftrl`` to import these):
 
 - :mod:`opaque.dpsgd.accounting` — ``gaussian``, ``adaclip``, ``poisson``,
   ``truncated_poisson``, ``parallel_poisson``.
@@ -15,7 +17,7 @@ Algorithm-specific factories live in their respective packages:
 Implementation uses Google's PLD accounting via the ``opaque-accounting``
 Rust crate (PyO3 bindings).
 
-Example::
+Example (requires ``opaque-dpsgd`` in the environment)::
 
     import opaque.accounting as acc
     import opaque.dpsgd.accounting as dpsgd_acc
