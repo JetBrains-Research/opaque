@@ -234,10 +234,12 @@ class TestSecondMomentOverAdaClip:
         sm_over_adaclip = acc.second_moment(ac, sensitivity=1.0)
         # The equivalent direct-Gaussian construction at the AdaClip-folded σ.
         g_eff = acc.second_moment(
-            acc.gaussian(ac.effective_noise_multiplier), sensitivity=1.0,
+            acc.gaussian(ac.effective_noise_multiplier),
+            sensitivity=1.0,
         )
         assert sm_over_adaclip.epsilon_at(1e-5) == pytest.approx(
-            g_eff.epsilon_at(1e-5), rel=1e-6,
+            g_eff.epsilon_at(1e-5),
+            rel=1e-6,
         )
 
     def test_rejects_non_gaussian_adaclip_inner(self):
@@ -254,9 +256,7 @@ class TestSecondMomentOverAdaClip:
             acc.second_moment(ac_np, sensitivity=1.0)
 
 
-@pytest.mark.parametrize(
-    "amplifier", ["poisson", "truncated_poisson", "balls_in_bins"]
-)
+@pytest.mark.parametrize("amplifier", ["poisson", "truncated_poisson", "balls_in_bins"])
 def test_amplification_accepts_second_moment_over_adaclip(amplifier):
     """Each Poisson-family amplification accepts ``second_moment(adaclip(gaussian))``."""
     sm = acc.second_moment(

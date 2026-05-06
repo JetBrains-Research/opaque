@@ -148,11 +148,14 @@ class SecondMoment(DpProcess):
                 # z_eff-folded value that already encodes the quantile-
                 # estimator privacy cost.
                 return _native.gaussian_pld(
-                    self.noise_multiplier / self.sensitivity, native_cfg,
+                    self.noise_multiplier / self.sensitivity,
+                    native_cfg,
                 )
             case MfGaussian():
                 return _native.mf_gaussian_pld(
-                    self.noise_multiplier, self.sensitivity, native_cfg,
+                    self.noise_multiplier,
+                    self.sensitivity,
+                    native_cfg,
                 )
             case _:
                 raise TypeError(
