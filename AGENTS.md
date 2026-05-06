@@ -322,7 +322,14 @@ the canonical lint / test / Rust-test commands.
 
 ### PR workflow
 
-1. Push changes and create/update the PR.
+The PR title **must** follow Conventional Commits: `<type>(scope): <imperative subject>`.
+The PR-gate workflow (`action-semantic-pull-request`) rejects titles that don't
+parse. Accepted types: `feat`/`add`, `fix`, `refactor`/`change`/`perf`, `docs`,
+`test`, `ci`/`build`, `delete`, `chore`/`style`. Append `!` for breaking changes.
+Subject starts lowercase and reads as an imperative (`add`, `fix`, `remove`).
+See the **Pull requests** section above for full details.
+
+1. Push changes and create/update the PR (with a valid Conventional Commits title).
 2. Wait ~5 minutes for GitHub Copilot review comments to appear.
 3. Read the Copilot comments — address the ones that make sense (fix the
    code or docs), ignore the ones that don't.
