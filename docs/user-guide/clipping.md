@@ -369,9 +369,24 @@ the number of groups.
 
 ### Per-group noise allocation
 
-For per-group bounds, `gaussian_noise` uses an MSE-optimal allocation that puts
-less noise on small-norm groups. Use `per_group_noise_stddev` when you need to
-inspect or pass that allocation to a mechanism that accepts stddev directly:
+For per-group bounds, `gaussian_noise` uses an MSE-optimal allocation that
+puts less noise on small-norm groups.  To inspect or pass that allocation
+to a mechanism that accepts stddev directly, call
+`ClippedPytree.noise_stddev_for(...)`:
+
+```python
+# Default 'optimal' allocation — same MSE-optimal Mahalanobis assignment
+# that gaussian_noise applies internally.
+stddev = grads.noise_stddev_for(noise_multiplier=noise_multiplier)
+
+# Or 'isotropic' for a uniform σ across leaves
+uniform = grads.noise_stddev_for(
+    noise_multiplier=noise_multiplier, allocation="isotropic",
+)
+```
+
+For callers holding a bare `PerGroup` (e.g. from a checkpoint), the
+equivalent free function is also available:
 
 ```python
 from opaque.dpsgd.noise import per_group_noise_stddev
@@ -379,9 +394,9 @@ from opaque.dpsgd.noise import per_group_noise_stddev
 stddev = per_group_noise_stddev(grads.max_norm, noise_multiplier)
 ```
 
-This sets $\sigma_i \propto \sqrt{C_i}$ instead of a uniform σ. Privacy
-accounting remains `gaussian(nm)` — the allocation satisfies the same
-Mahalanobis constraint, just with better MSE.
+The optimal allocation sets $\sigma_i \propto \sqrt{C_i}$ instead of a
+uniform σ.  Privacy accounting remains `gaussian(nm)` — the allocation
+satisfies the same Mahalanobis constraint, just with better MSE.
 
 ### Diagnostics
 
