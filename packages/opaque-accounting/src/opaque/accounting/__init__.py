@@ -5,17 +5,20 @@ mechanisms (``identity``, ``nonprivate``, ``eps_delta``), and the two
 amplification / transformation primitives that span DP-SGD and DP-FTRL
 (``balls_in_bins``, ``second_moment``).
 
-Algorithm-specific factories live in dedicated namespaces:
+Algorithm-specific factories live in dedicated namespaces (each ships
+in the corresponding ``opaque-dpsgd`` / ``opaque-dpftrl`` package; both
+depend on ``opaque-accounting`` and re-export from this root):
 
 - :mod:`opaque.dpsgd.accounting` — ``gaussian``, ``adaclip``, ``poisson``,
-  ``truncated_poisson``, ``parallel_poisson``.
+  ``truncated_poisson``, ``parallel_poisson``.  Requires the
+  ``opaque-dpsgd`` install.
 - :mod:`opaque.dpftrl.accounting` — ``band_mf``, ``blt``, ``bisr``,
-  ``bsr``, ``lambda_cgd``, ``cyclic_poisson``, ``b_min_sep``.
+  ``bsr``, ``lambda_cgd``, ``cyclic_poisson``, ``b_min_sep``.  Requires
+  the ``opaque-dpftrl`` install.
 
-Both algorithm-specific namespaces re-export from the same shared
-implementation underneath; the split is purely organisational and
-algorithm-specific factories remain accessible from this root module
-for legacy code (the names below are imported but not in ``__all__``).
+The split is purely organisational; algorithm-specific factories
+remain accessible from this root module for legacy code (the names
+below are imported but not in ``__all__``).
 
 Implementation uses Google's PLD accounting via the ``opaque-accounting``
 Rust crate (PyO3 bindings).
