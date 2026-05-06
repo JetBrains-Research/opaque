@@ -2360,6 +2360,14 @@ sampled from a Gaussian centered on that element and truncated to the bounds.</p
 <p>For high-dimensional tasks like model training, the truncated Gaussian
 converges to the standard Gaussian, so use <code>acc.gaussian(noise_multiplier)</code>
 for accounting.</p>
+<p><code>truncated_gaussian_noise</code> accepts the same paired-stream input as
+<code>gaussian_noise</code>: when a <code>SecondMomentClippingOutput</code> (from
+<code>clipped_grad(..., second_moment=True)</code>) flows in, the function returns
+a <code>SecondMomentNoiseOutput</code> with both the first-moment and squared-moment
+streams noised under the joint sensitivity allocation
+(<code>sqrt(3/2)</code> overhead on the first stream by default).  Each stream is
+sampled from its own truncated Gaussian with bounds scaled to its own
+<code>radius * stddev</code>.</p>
 <h3 id="which-variant-to-use">Which variant to use<a class="headerlink" href="#which-variant-to-use" title="Permanent link">&para;</a></h3>
 <p>The truncated Gaussian provides bounded support, which can be useful when
 gradient bounds are important for downstream optimization. For privacy

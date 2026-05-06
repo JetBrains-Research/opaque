@@ -2920,13 +2920,19 @@ noisy_grads, state = noise_fn(clipped(grads, max_norm=1.0), state)</p>
     </div>
 
 </div><h2 id="bounded-gaussian-truncated-renormalized">Bounded Gaussian — Truncated (renormalized)<a class="headerlink" href="#bounded-gaussian-truncated-renormalized" title="Permanent link">&para;</a></h2>
+<p><code>truncated_gaussian_noise</code> accepts the same <code>SecondMomentClippingOutput</code>
+input as <code>gaussian_noise</code>: when gradients and squared-gradients are passed
+together, it allocates the noise budget optimally between the two streams
+(splitting noise proportionally to sensitivity). The <code>first_moment_overhead</code>
+parameter (default <code>sqrt(3/2)</code>) controls the sensitivity ratio between the
+two streams and must match the value used in <code>acc.second_moment()</code>.</p>
 
 
 <div class="doc doc-object doc-function">
 
 
 <h2 id="opaque.dpsgd.noise.truncated_gaussian_noise" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">truncated_gaussian_noise</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">3.0</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">truncated_gaussian_noise</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">first_moment_overhead</span><span class="o">=</span><span class="n">DEFAULT_SECOND_MOMENT_OVERHEAD</span><span class="p">)</span></code>
 
 <a href="#opaque.dpsgd.noise.truncated_gaussian_noise" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -3008,6 +3014,29 @@ Same key on all ranks → same noise (synchronized).
             </td>
             <td>
                 <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>first_moment_overhead</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>First-moment sensitivity overhead used when
+a :class:<code>~opaque.types.SecondMomentClippingOutput</code> flows in
+(paired-stream private first + second moment estimation).
+Must be strictly greater than 1.0.  Defaults to <code>sqrt(3/2)</code>
+(the d ≥ 2 add/remove-DP value); pass-through to
+:func:<code>opaque.dpsgd.noise._second_moment.second_moment_stddevs</code>.
+Ignored for single-stream :class:<code>~opaque.types.ClippedPytree</code>
+inputs.</p>
+              </div>
+            </td>
+            <td>
+                  <code><span title="opaque.dpsgd.noise._second_moment.DEFAULT_SECOND_MOMENT_OVERHEAD">DEFAULT_SECOND_MOMENT_OVERHEAD</span></code>
             </td>
           </tr>
       </tbody>
@@ -3097,7 +3126,8 @@ Same key on all ranks → same noise (synchronized).
             <td>
               <div class="doc-md-description">
                 <p>If <code>noise_multiplier</code> or the realized max_norm-derived
-standard deviation is negative, or <code>radius</code> is not positive.</p>
+standard deviation is negative, <code>radius</code> is not positive, or
+<code>first_moment_overhead</code> is not strictly greater than 1.0.</p>
               </div>
             </td>
           </tr>
@@ -3134,14 +3164,7 @@ https://arxiv.org/abs/2211.17230</p>
 
             <details class="quote">
               <summary>Source code in <code>packages/opaque-dpsgd/src/opaque/dpsgd/noise/_truncated_gaussian.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-134">134</a></span>
-<span class="normal"><a href="#__codelineno-0-135">135</a></span>
-<span class="normal"><a href="#__codelineno-0-136">136</a></span>
-<span class="normal"><a href="#__codelineno-0-137">137</a></span>
-<span class="normal"><a href="#__codelineno-0-138">138</a></span>
-<span class="normal"><a href="#__codelineno-0-139">139</a></span>
-<span class="normal"><a href="#__codelineno-0-140">140</a></span>
-<span class="normal"><a href="#__codelineno-0-141">141</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-141">141</a></span>
 <span class="normal"><a href="#__codelineno-0-142">142</a></span>
 <span class="normal"><a href="#__codelineno-0-143">143</a></span>
 <span class="normal"><a href="#__codelineno-0-144">144</a></span>
@@ -3300,173 +3323,360 @@ https://arxiv.org/abs/2211.17230</p>
 <span class="normal"><a href="#__codelineno-0-297">297</a></span>
 <span class="normal"><a href="#__codelineno-0-298">298</a></span>
 <span class="normal"><a href="#__codelineno-0-299">299</a></span>
-<span class="normal"><a href="#__codelineno-0-300">300</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-134" name="__codelineno-0-134"></a><span class="k">def</span><span class="w"> </span><span class="nf">truncated_gaussian_noise</span><span class="p">(</span>
-<a id="__codelineno-0-135" name="__codelineno-0-135"></a>    <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-0-136" name="__codelineno-0-136"></a>    <span class="n">noise_multiplier</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
-<a id="__codelineno-0-137" name="__codelineno-0-137"></a>    <span class="n">key</span><span class="p">:</span> <span class="n">RngKey</span><span class="p">,</span>
-<a id="__codelineno-0-138" name="__codelineno-0-138"></a>    <span class="n">radius</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span>
-<a id="__codelineno-0-139" name="__codelineno-0-139"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span>
-<a id="__codelineno-0-140" name="__codelineno-0-140"></a>    <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">GaussianNoiseState</span><span class="p">]],</span>
-<a id="__codelineno-0-141" name="__codelineno-0-141"></a>    <span class="n">GaussianNoiseState</span><span class="p">,</span>
-<a id="__codelineno-0-142" name="__codelineno-0-142"></a><span class="p">]:</span>
-<a id="__codelineno-0-143" name="__codelineno-0-143"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Create a truncated Gaussian noise function with immutable state.</span>
-<a id="__codelineno-0-144" name="__codelineno-0-144"></a>
-<a id="__codelineno-0-145" name="__codelineno-0-145"></a><span class="sd">    Returns ``(noise_fn, state)`` where ``noise_fn`` adds noise from a</span>
-<a id="__codelineno-0-146" name="__codelineno-0-146"></a><span class="sd">    truncated normal distribution centred at each clipped input value. The</span>
-<a id="__codelineno-0-147" name="__codelineno-0-147"></a><span class="sd">    realized standard deviation is derived from the input</span>
-<a id="__codelineno-0-148" name="__codelineno-0-148"></a><span class="sd">    :class:`opaque.types.ClippedPytree` metadata and carried by the returned</span>
-<a id="__codelineno-0-149" name="__codelineno-0-149"></a><span class="sd">    :class:`opaque.types.NoisedPytree`.</span>
-<a id="__codelineno-0-150" name="__codelineno-0-150"></a>
-<a id="__codelineno-0-151" name="__codelineno-0-151"></a><span class="sd">    The noise function uses exactly the ``key`` you provide — no auto-detection</span>
-<a id="__codelineno-0-152" name="__codelineno-0-152"></a><span class="sd">    of distributed state. For synchronized noise in DDP, pass the same key on</span>
-<a id="__codelineno-0-153" name="__codelineno-0-153"></a><span class="sd">    every rank.</span>
-<a id="__codelineno-0-154" name="__codelineno-0-154"></a>
-<a id="__codelineno-0-155" name="__codelineno-0-155"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-156" name="__codelineno-0-156"></a><span class="sd">        noise_multiplier: Gaussian noise multiplier. The realized standard</span>
-<a id="__codelineno-0-157" name="__codelineno-0-157"></a><span class="sd">            deviation is derived from ``noise_multiplier`` and the input max_norm.</span>
-<a id="__codelineno-0-158" name="__codelineno-0-158"></a><span class="sd">            For ``PerGroup`` bounds, the same MSE-optimal allocation used by</span>
-<a id="__codelineno-0-159" name="__codelineno-0-159"></a><span class="sd">            :func:`gaussian_noise` is applied.</span>
-<a id="__codelineno-0-160" name="__codelineno-0-160"></a><span class="sd">        radius: Truncation radius in units of standard deviations.</span>
-<a id="__codelineno-0-161" name="__codelineno-0-161"></a><span class="sd">            Noise is truncated to [−radius·stddev, radius·stddev].</span>
-<a id="__codelineno-0-162" name="__codelineno-0-162"></a><span class="sd">            Must be positive. Typical values: 3–10.</span>
-<a id="__codelineno-0-163" name="__codelineno-0-163"></a><span class="sd">        key: Explicit RNG key for deterministic, functional randomness.</span>
-<a id="__codelineno-0-164" name="__codelineno-0-164"></a><span class="sd">            Same key on all ranks → same noise (synchronized).</span>
-<a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">            ``fold_in(key, rank)`` → independent noise per rank.</span>
-<a id="__codelineno-0-166" name="__codelineno-0-166"></a>
-<a id="__codelineno-0-167" name="__codelineno-0-167"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-168" name="__codelineno-0-168"></a><span class="sd">        A tuple ``(noise_fn, state)`` where:</span>
-<a id="__codelineno-0-169" name="__codelineno-0-169"></a>
-<a id="__codelineno-0-170" name="__codelineno-0-170"></a><span class="sd">        - ``noise_fn(clipped_grads, state) -&gt; (noisy_grads, new_state)``</span>
-<a id="__codelineno-0-171" name="__codelineno-0-171"></a><span class="sd">        - ``state`` is a :class:`~opaque.dpsgd.noise._gaussian.GaussianNoiseState`</span>
-<a id="__codelineno-0-172" name="__codelineno-0-172"></a>
-<a id="__codelineno-0-173" name="__codelineno-0-173"></a><span class="sd">    Raises:</span>
-<a id="__codelineno-0-174" name="__codelineno-0-174"></a><span class="sd">        ValueError: If ``noise_multiplier`` or the realized max_norm-derived</span>
-<a id="__codelineno-0-175" name="__codelineno-0-175"></a><span class="sd">            standard deviation is negative, or ``radius`` is not positive.</span>
-<a id="__codelineno-0-176" name="__codelineno-0-176"></a>
-<a id="__codelineno-0-177" name="__codelineno-0-177"></a><span class="sd">    Example:</span>
-<a id="__codelineno-0-178" name="__codelineno-0-178"></a><span class="sd">        &gt;&gt;&gt; import torch</span>
-<a id="__codelineno-0-179" name="__codelineno-0-179"></a><span class="sd">        &gt;&gt;&gt; from opaque.clipping.types import clipped</span>
-<a id="__codelineno-0-180" name="__codelineno-0-180"></a><span class="sd">        &gt;&gt;&gt; from opaque.dpsgd.noise import truncated_gaussian_noise</span>
-<a id="__codelineno-0-181" name="__codelineno-0-181"></a><span class="sd">        &gt;&gt;&gt; from opaque.random import key</span>
-<a id="__codelineno-0-182" name="__codelineno-0-182"></a><span class="sd">        &gt;&gt;&gt;</span>
-<a id="__codelineno-0-183" name="__codelineno-0-183"></a><span class="sd">        &gt;&gt;&gt; noise_fn, state = truncated_gaussian_noise(</span>
-<a id="__codelineno-0-184" name="__codelineno-0-184"></a><span class="sd">        ...     noise_multiplier=1.0, radius=3.0, key=key(42),</span>
-<a id="__codelineno-0-185" name="__codelineno-0-185"></a><span class="sd">        ... )</span>
-<a id="__codelineno-0-186" name="__codelineno-0-186"></a><span class="sd">        &gt;&gt;&gt; grads = torch.zeros(100)</span>
-<a id="__codelineno-0-187" name="__codelineno-0-187"></a><span class="sd">        &gt;&gt;&gt; noised, state = noise_fn(clipped(grads, max_norm=1.0), state)</span>
-<a id="__codelineno-0-188" name="__codelineno-0-188"></a><span class="sd">        &gt;&gt;&gt; assert noised.pytree.min() &gt;= -3.0 and noised.pytree.max() &lt;= 3.0</span>
-<a id="__codelineno-0-189" name="__codelineno-0-189"></a>
-<a id="__codelineno-0-190" name="__codelineno-0-190"></a><span class="sd">    References:</span>
-<a id="__codelineno-0-191" name="__codelineno-0-191"></a><span class="sd">        Bo Chen and Matthew Hale, &quot;The Bounded Gaussian Mechanism for</span>
-<a id="__codelineno-0-192" name="__codelineno-0-192"></a><span class="sd">        Differential Privacy,&quot; J. Privacy and Confidentiality, 14(1), 2024.</span>
-<a id="__codelineno-0-193" name="__codelineno-0-193"></a><span class="sd">        https://arxiv.org/abs/2211.17230</span>
-<a id="__codelineno-0-194" name="__codelineno-0-194"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-195" name="__codelineno-0-195"></a>    <span class="n">resolved_noise_multiplier</span> <span class="o">=</span> <span class="n">_resolve_noise_multiplier</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">)</span>
-<a id="__codelineno-0-196" name="__codelineno-0-196"></a>
-<a id="__codelineno-0-197" name="__codelineno-0-197"></a>    <span class="k">if</span> <span class="n">radius</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-198" name="__codelineno-0-198"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;radius must be positive, got </span><span class="si">{</span><span class="n">radius</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-199" name="__codelineno-0-199"></a>
-<a id="__codelineno-0-200" name="__codelineno-0-200"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">RngKey</span><span class="p">):</span>
-<a id="__codelineno-0-201" name="__codelineno-0-201"></a>        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;key must be RngKey, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">key</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-202" name="__codelineno-0-202"></a>
-<a id="__codelineno-0-203" name="__codelineno-0-203"></a>    <span class="n">state</span> <span class="o">=</span> <span class="n">GaussianNoiseState</span><span class="p">(</span>
-<a id="__codelineno-0-204" name="__codelineno-0-204"></a>        <span class="n">_step_counter</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
-<a id="__codelineno-0-205" name="__codelineno-0-205"></a>        <span class="n">_rng_key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
-<a id="__codelineno-0-206" name="__codelineno-0-206"></a>    <span class="p">)</span>
-<a id="__codelineno-0-207" name="__codelineno-0-207"></a>
-<a id="__codelineno-0-208" name="__codelineno-0-208"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_clipped_stddev</span><span class="p">(</span><span class="n">clipped</span><span class="p">:</span> <span class="n">ClippedPytree</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">PerGroup</span><span class="p">:</span>
-<a id="__codelineno-0-209" name="__codelineno-0-209"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">clipped</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span> <span class="n">PerGroup</span><span class="p">):</span>
-<a id="__codelineno-0-210" name="__codelineno-0-210"></a>            <span class="k">return</span> <span class="n">per_group_noise_stddev</span><span class="p">(</span><span class="n">clipped</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span> <span class="n">resolved_noise_multiplier</span><span class="p">)</span>
-<a id="__codelineno-0-211" name="__codelineno-0-211"></a>        <span class="n">effective</span> <span class="o">=</span> <span class="n">resolved_noise_multiplier</span> <span class="o">*</span> <span class="n">clipped</span><span class="o">.</span><span class="n">max_norm</span>
-<a id="__codelineno-0-212" name="__codelineno-0-212"></a>        <span class="n">_validate_truncated_stddev</span><span class="p">(</span><span class="n">effective</span><span class="p">)</span>
-<a id="__codelineno-0-213" name="__codelineno-0-213"></a>        <span class="k">return</span> <span class="n">effective</span>
-<a id="__codelineno-0-214" name="__codelineno-0-214"></a>
-<a id="__codelineno-0-215" name="__codelineno-0-215"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">st</span><span class="p">):</span>
-<a id="__codelineno-0-216" name="__codelineno-0-216"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Add truncated Gaussian noise to a clipped pytree.&quot;&quot;&quot;</span>
-<a id="__codelineno-0-217" name="__codelineno-0-217"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">NoisedPytree</span><span class="p">):</span>
-<a id="__codelineno-0-218" name="__codelineno-0-218"></a>            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-<a id="__codelineno-0-219" name="__codelineno-0-219"></a>                <span class="s2">&quot;truncated_gaussian_noise expects ClippedPytree inputs, not &quot;</span>
-<a id="__codelineno-0-220" name="__codelineno-0-220"></a>                <span class="s2">&quot;NoisedPytree values that have already passed through a noise &quot;</span>
-<a id="__codelineno-0-221" name="__codelineno-0-221"></a>                <span class="s2">&quot;mechanism.&quot;</span>
-<a id="__codelineno-0-222" name="__codelineno-0-222"></a>            <span class="p">)</span>
-<a id="__codelineno-0-223" name="__codelineno-0-223"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">ClippedPytree</span><span class="p">):</span>
-<a id="__codelineno-0-224" name="__codelineno-0-224"></a>            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-<a id="__codelineno-0-225" name="__codelineno-0-225"></a>                <span class="s2">&quot;truncated_gaussian_noise expects ClippedPytree inputs. Wrap &quot;</span>
-<a id="__codelineno-0-226" name="__codelineno-0-226"></a>                <span class="s2">&quot;manual values with opaque.types.clipped(...).&quot;</span>
-<a id="__codelineno-0-227" name="__codelineno-0-227"></a>            <span class="p">)</span>
-<a id="__codelineno-0-228" name="__codelineno-0-228"></a>
-<a id="__codelineno-0-229" name="__codelineno-0-229"></a>        <span class="n">effective_stddev</span> <span class="o">=</span> <span class="n">_clipped_stddev</span><span class="p">(</span><span class="n">grads</span><span class="p">)</span>
-<a id="__codelineno-0-230" name="__codelineno-0-230"></a>        <span class="n">_validate_truncated_stddev</span><span class="p">(</span><span class="n">effective_stddev</span><span class="p">)</span>
+<span class="normal"><a href="#__codelineno-0-300">300</a></span>
+<span class="normal"><a href="#__codelineno-0-301">301</a></span>
+<span class="normal"><a href="#__codelineno-0-302">302</a></span>
+<span class="normal"><a href="#__codelineno-0-303">303</a></span>
+<span class="normal"><a href="#__codelineno-0-304">304</a></span>
+<span class="normal"><a href="#__codelineno-0-305">305</a></span>
+<span class="normal"><a href="#__codelineno-0-306">306</a></span>
+<span class="normal"><a href="#__codelineno-0-307">307</a></span>
+<span class="normal"><a href="#__codelineno-0-308">308</a></span>
+<span class="normal"><a href="#__codelineno-0-309">309</a></span>
+<span class="normal"><a href="#__codelineno-0-310">310</a></span>
+<span class="normal"><a href="#__codelineno-0-311">311</a></span>
+<span class="normal"><a href="#__codelineno-0-312">312</a></span>
+<span class="normal"><a href="#__codelineno-0-313">313</a></span>
+<span class="normal"><a href="#__codelineno-0-314">314</a></span>
+<span class="normal"><a href="#__codelineno-0-315">315</a></span>
+<span class="normal"><a href="#__codelineno-0-316">316</a></span>
+<span class="normal"><a href="#__codelineno-0-317">317</a></span>
+<span class="normal"><a href="#__codelineno-0-318">318</a></span>
+<span class="normal"><a href="#__codelineno-0-319">319</a></span>
+<span class="normal"><a href="#__codelineno-0-320">320</a></span>
+<span class="normal"><a href="#__codelineno-0-321">321</a></span>
+<span class="normal"><a href="#__codelineno-0-322">322</a></span>
+<span class="normal"><a href="#__codelineno-0-323">323</a></span>
+<span class="normal"><a href="#__codelineno-0-324">324</a></span>
+<span class="normal"><a href="#__codelineno-0-325">325</a></span>
+<span class="normal"><a href="#__codelineno-0-326">326</a></span>
+<span class="normal"><a href="#__codelineno-0-327">327</a></span>
+<span class="normal"><a href="#__codelineno-0-328">328</a></span>
+<span class="normal"><a href="#__codelineno-0-329">329</a></span>
+<span class="normal"><a href="#__codelineno-0-330">330</a></span>
+<span class="normal"><a href="#__codelineno-0-331">331</a></span>
+<span class="normal"><a href="#__codelineno-0-332">332</a></span>
+<span class="normal"><a href="#__codelineno-0-333">333</a></span>
+<span class="normal"><a href="#__codelineno-0-334">334</a></span>
+<span class="normal"><a href="#__codelineno-0-335">335</a></span>
+<span class="normal"><a href="#__codelineno-0-336">336</a></span>
+<span class="normal"><a href="#__codelineno-0-337">337</a></span>
+<span class="normal"><a href="#__codelineno-0-338">338</a></span>
+<span class="normal"><a href="#__codelineno-0-339">339</a></span>
+<span class="normal"><a href="#__codelineno-0-340">340</a></span>
+<span class="normal"><a href="#__codelineno-0-341">341</a></span>
+<span class="normal"><a href="#__codelineno-0-342">342</a></span>
+<span class="normal"><a href="#__codelineno-0-343">343</a></span>
+<span class="normal"><a href="#__codelineno-0-344">344</a></span>
+<span class="normal"><a href="#__codelineno-0-345">345</a></span>
+<span class="normal"><a href="#__codelineno-0-346">346</a></span>
+<span class="normal"><a href="#__codelineno-0-347">347</a></span>
+<span class="normal"><a href="#__codelineno-0-348">348</a></span>
+<span class="normal"><a href="#__codelineno-0-349">349</a></span>
+<span class="normal"><a href="#__codelineno-0-350">350</a></span>
+<span class="normal"><a href="#__codelineno-0-351">351</a></span>
+<span class="normal"><a href="#__codelineno-0-352">352</a></span>
+<span class="normal"><a href="#__codelineno-0-353">353</a></span>
+<span class="normal"><a href="#__codelineno-0-354">354</a></span>
+<span class="normal"><a href="#__codelineno-0-355">355</a></span>
+<span class="normal"><a href="#__codelineno-0-356">356</a></span>
+<span class="normal"><a href="#__codelineno-0-357">357</a></span>
+<span class="normal"><a href="#__codelineno-0-358">358</a></span>
+<span class="normal"><a href="#__codelineno-0-359">359</a></span>
+<span class="normal"><a href="#__codelineno-0-360">360</a></span>
+<span class="normal"><a href="#__codelineno-0-361">361</a></span>
+<span class="normal"><a href="#__codelineno-0-362">362</a></span>
+<span class="normal"><a href="#__codelineno-0-363">363</a></span>
+<span class="normal"><a href="#__codelineno-0-364">364</a></span>
+<span class="normal"><a href="#__codelineno-0-365">365</a></span>
+<span class="normal"><a href="#__codelineno-0-366">366</a></span>
+<span class="normal"><a href="#__codelineno-0-367">367</a></span>
+<span class="normal"><a href="#__codelineno-0-368">368</a></span>
+<span class="normal"><a href="#__codelineno-0-369">369</a></span>
+<span class="normal"><a href="#__codelineno-0-370">370</a></span>
+<span class="normal"><a href="#__codelineno-0-371">371</a></span>
+<span class="normal"><a href="#__codelineno-0-372">372</a></span>
+<span class="normal"><a href="#__codelineno-0-373">373</a></span>
+<span class="normal"><a href="#__codelineno-0-374">374</a></span>
+<span class="normal"><a href="#__codelineno-0-375">375</a></span>
+<span class="normal"><a href="#__codelineno-0-376">376</a></span>
+<span class="normal"><a href="#__codelineno-0-377">377</a></span>
+<span class="normal"><a href="#__codelineno-0-378">378</a></span>
+<span class="normal"><a href="#__codelineno-0-379">379</a></span>
+<span class="normal"><a href="#__codelineno-0-380">380</a></span>
+<span class="normal"><a href="#__codelineno-0-381">381</a></span>
+<span class="normal"><a href="#__codelineno-0-382">382</a></span>
+<span class="normal"><a href="#__codelineno-0-383">383</a></span>
+<span class="normal"><a href="#__codelineno-0-384">384</a></span>
+<span class="normal"><a href="#__codelineno-0-385">385</a></span>
+<span class="normal"><a href="#__codelineno-0-386">386</a></span>
+<span class="normal"><a href="#__codelineno-0-387">387</a></span>
+<span class="normal"><a href="#__codelineno-0-388">388</a></span>
+<span class="normal"><a href="#__codelineno-0-389">389</a></span>
+<span class="normal"><a href="#__codelineno-0-390">390</a></span>
+<span class="normal"><a href="#__codelineno-0-391">391</a></span>
+<span class="normal"><a href="#__codelineno-0-392">392</a></span>
+<span class="normal"><a href="#__codelineno-0-393">393</a></span>
+<span class="normal"><a href="#__codelineno-0-394">394</a></span>
+<span class="normal"><a href="#__codelineno-0-395">395</a></span>
+<span class="normal"><a href="#__codelineno-0-396">396</a></span>
+<span class="normal"><a href="#__codelineno-0-397">397</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-141" name="__codelineno-0-141"></a><span class="k">def</span><span class="w"> </span><span class="nf">truncated_gaussian_noise</span><span class="p">(</span>
+<a id="__codelineno-0-142" name="__codelineno-0-142"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-143" name="__codelineno-0-143"></a>    <span class="n">noise_multiplier</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<a id="__codelineno-0-144" name="__codelineno-0-144"></a>    <span class="n">key</span><span class="p">:</span> <span class="n">RngKey</span><span class="p">,</span>
+<a id="__codelineno-0-145" name="__codelineno-0-145"></a>    <span class="n">radius</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span>
+<a id="__codelineno-0-146" name="__codelineno-0-146"></a>    <span class="n">first_moment_overhead</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">DEFAULT_SECOND_MOMENT_OVERHEAD</span><span class="p">,</span>
+<a id="__codelineno-0-147" name="__codelineno-0-147"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span>
+<a id="__codelineno-0-148" name="__codelineno-0-148"></a>    <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">GaussianNoiseState</span><span class="p">]],</span>
+<a id="__codelineno-0-149" name="__codelineno-0-149"></a>    <span class="n">GaussianNoiseState</span><span class="p">,</span>
+<a id="__codelineno-0-150" name="__codelineno-0-150"></a><span class="p">]:</span>
+<a id="__codelineno-0-151" name="__codelineno-0-151"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Create a truncated Gaussian noise function with immutable state.</span>
+<a id="__codelineno-0-152" name="__codelineno-0-152"></a>
+<a id="__codelineno-0-153" name="__codelineno-0-153"></a><span class="sd">    Returns ``(noise_fn, state)`` where ``noise_fn`` adds noise from a</span>
+<a id="__codelineno-0-154" name="__codelineno-0-154"></a><span class="sd">    truncated normal distribution centred at each clipped input value. The</span>
+<a id="__codelineno-0-155" name="__codelineno-0-155"></a><span class="sd">    realized standard deviation is derived from the input</span>
+<a id="__codelineno-0-156" name="__codelineno-0-156"></a><span class="sd">    :class:`opaque.types.ClippedPytree` metadata and carried by the returned</span>
+<a id="__codelineno-0-157" name="__codelineno-0-157"></a><span class="sd">    :class:`opaque.types.NoisedPytree`.</span>
+<a id="__codelineno-0-158" name="__codelineno-0-158"></a>
+<a id="__codelineno-0-159" name="__codelineno-0-159"></a><span class="sd">    The noise function uses exactly the ``key`` you provide — no auto-detection</span>
+<a id="__codelineno-0-160" name="__codelineno-0-160"></a><span class="sd">    of distributed state. For synchronized noise in DDP, pass the same key on</span>
+<a id="__codelineno-0-161" name="__codelineno-0-161"></a><span class="sd">    every rank.</span>
+<a id="__codelineno-0-162" name="__codelineno-0-162"></a>
+<a id="__codelineno-0-163" name="__codelineno-0-163"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-164" name="__codelineno-0-164"></a><span class="sd">        noise_multiplier: Gaussian noise multiplier. The realized standard</span>
+<a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">            deviation is derived from ``noise_multiplier`` and the input max_norm.</span>
+<a id="__codelineno-0-166" name="__codelineno-0-166"></a><span class="sd">            For ``PerGroup`` bounds, the same MSE-optimal allocation used by</span>
+<a id="__codelineno-0-167" name="__codelineno-0-167"></a><span class="sd">            :func:`gaussian_noise` is applied.</span>
+<a id="__codelineno-0-168" name="__codelineno-0-168"></a><span class="sd">        radius: Truncation radius in units of standard deviations.</span>
+<a id="__codelineno-0-169" name="__codelineno-0-169"></a><span class="sd">            Noise is truncated to [−radius·stddev, radius·stddev].</span>
+<a id="__codelineno-0-170" name="__codelineno-0-170"></a><span class="sd">            Must be positive. Typical values: 3–10.</span>
+<a id="__codelineno-0-171" name="__codelineno-0-171"></a><span class="sd">        key: Explicit RNG key for deterministic, functional randomness.</span>
+<a id="__codelineno-0-172" name="__codelineno-0-172"></a><span class="sd">            Same key on all ranks → same noise (synchronized).</span>
+<a id="__codelineno-0-173" name="__codelineno-0-173"></a><span class="sd">            ``fold_in(key, rank)`` → independent noise per rank.</span>
+<a id="__codelineno-0-174" name="__codelineno-0-174"></a><span class="sd">        first_moment_overhead: First-moment sensitivity overhead used when</span>
+<a id="__codelineno-0-175" name="__codelineno-0-175"></a><span class="sd">            a :class:`~opaque.types.SecondMomentClippingOutput` flows in</span>
+<a id="__codelineno-0-176" name="__codelineno-0-176"></a><span class="sd">            (paired-stream private first + second moment estimation).</span>
+<a id="__codelineno-0-177" name="__codelineno-0-177"></a><span class="sd">            Must be strictly greater than 1.0.  Defaults to ``sqrt(3/2)``</span>
+<a id="__codelineno-0-178" name="__codelineno-0-178"></a><span class="sd">            (the d ≥ 2 add/remove-DP value); pass-through to</span>
+<a id="__codelineno-0-179" name="__codelineno-0-179"></a><span class="sd">            :func:`opaque.dpsgd.noise._second_moment.second_moment_stddevs`.</span>
+<a id="__codelineno-0-180" name="__codelineno-0-180"></a><span class="sd">            Ignored for single-stream :class:`~opaque.types.ClippedPytree`</span>
+<a id="__codelineno-0-181" name="__codelineno-0-181"></a><span class="sd">            inputs.</span>
+<a id="__codelineno-0-182" name="__codelineno-0-182"></a>
+<a id="__codelineno-0-183" name="__codelineno-0-183"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-184" name="__codelineno-0-184"></a><span class="sd">        A tuple ``(noise_fn, state)`` where:</span>
+<a id="__codelineno-0-185" name="__codelineno-0-185"></a>
+<a id="__codelineno-0-186" name="__codelineno-0-186"></a><span class="sd">        - ``noise_fn(clipped_grads, state) -&gt; (noisy_grads, new_state)``</span>
+<a id="__codelineno-0-187" name="__codelineno-0-187"></a><span class="sd">        - ``state`` is a :class:`~opaque.dpsgd.noise._gaussian.GaussianNoiseState`</span>
+<a id="__codelineno-0-188" name="__codelineno-0-188"></a>
+<a id="__codelineno-0-189" name="__codelineno-0-189"></a><span class="sd">    Raises:</span>
+<a id="__codelineno-0-190" name="__codelineno-0-190"></a><span class="sd">        ValueError: If ``noise_multiplier`` or the realized max_norm-derived</span>
+<a id="__codelineno-0-191" name="__codelineno-0-191"></a><span class="sd">            standard deviation is negative, ``radius`` is not positive, or</span>
+<a id="__codelineno-0-192" name="__codelineno-0-192"></a><span class="sd">            ``first_moment_overhead`` is not strictly greater than 1.0.</span>
+<a id="__codelineno-0-193" name="__codelineno-0-193"></a>
+<a id="__codelineno-0-194" name="__codelineno-0-194"></a><span class="sd">    Example:</span>
+<a id="__codelineno-0-195" name="__codelineno-0-195"></a><span class="sd">        &gt;&gt;&gt; import torch</span>
+<a id="__codelineno-0-196" name="__codelineno-0-196"></a><span class="sd">        &gt;&gt;&gt; from opaque.clipping.types import clipped</span>
+<a id="__codelineno-0-197" name="__codelineno-0-197"></a><span class="sd">        &gt;&gt;&gt; from opaque.dpsgd.noise import truncated_gaussian_noise</span>
+<a id="__codelineno-0-198" name="__codelineno-0-198"></a><span class="sd">        &gt;&gt;&gt; from opaque.random import key</span>
+<a id="__codelineno-0-199" name="__codelineno-0-199"></a><span class="sd">        &gt;&gt;&gt;</span>
+<a id="__codelineno-0-200" name="__codelineno-0-200"></a><span class="sd">        &gt;&gt;&gt; noise_fn, state = truncated_gaussian_noise(</span>
+<a id="__codelineno-0-201" name="__codelineno-0-201"></a><span class="sd">        ...     noise_multiplier=1.0, radius=3.0, key=key(42),</span>
+<a id="__codelineno-0-202" name="__codelineno-0-202"></a><span class="sd">        ... )</span>
+<a id="__codelineno-0-203" name="__codelineno-0-203"></a><span class="sd">        &gt;&gt;&gt; grads = torch.zeros(100)</span>
+<a id="__codelineno-0-204" name="__codelineno-0-204"></a><span class="sd">        &gt;&gt;&gt; noised, state = noise_fn(clipped(grads, max_norm=1.0), state)</span>
+<a id="__codelineno-0-205" name="__codelineno-0-205"></a><span class="sd">        &gt;&gt;&gt; assert noised.pytree.min() &gt;= -3.0 and noised.pytree.max() &lt;= 3.0</span>
+<a id="__codelineno-0-206" name="__codelineno-0-206"></a>
+<a id="__codelineno-0-207" name="__codelineno-0-207"></a><span class="sd">    References:</span>
+<a id="__codelineno-0-208" name="__codelineno-0-208"></a><span class="sd">        Bo Chen and Matthew Hale, &quot;The Bounded Gaussian Mechanism for</span>
+<a id="__codelineno-0-209" name="__codelineno-0-209"></a><span class="sd">        Differential Privacy,&quot; J. Privacy and Confidentiality, 14(1), 2024.</span>
+<a id="__codelineno-0-210" name="__codelineno-0-210"></a><span class="sd">        https://arxiv.org/abs/2211.17230</span>
+<a id="__codelineno-0-211" name="__codelineno-0-211"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-212" name="__codelineno-0-212"></a>    <span class="n">resolved_noise_multiplier</span> <span class="o">=</span> <span class="n">_resolve_noise_multiplier</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">)</span>
+<a id="__codelineno-0-213" name="__codelineno-0-213"></a>
+<a id="__codelineno-0-214" name="__codelineno-0-214"></a>    <span class="k">if</span> <span class="n">radius</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-215" name="__codelineno-0-215"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;radius must be positive, got </span><span class="si">{</span><span class="n">radius</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-216" name="__codelineno-0-216"></a>
+<a id="__codelineno-0-217" name="__codelineno-0-217"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">RngKey</span><span class="p">):</span>
+<a id="__codelineno-0-218" name="__codelineno-0-218"></a>        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;key must be RngKey, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">key</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-219" name="__codelineno-0-219"></a>
+<a id="__codelineno-0-220" name="__codelineno-0-220"></a>    <span class="n">state</span> <span class="o">=</span> <span class="n">GaussianNoiseState</span><span class="p">(</span>
+<a id="__codelineno-0-221" name="__codelineno-0-221"></a>        <span class="n">_step_counter</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-0-222" name="__codelineno-0-222"></a>        <span class="n">_rng_key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
+<a id="__codelineno-0-223" name="__codelineno-0-223"></a>    <span class="p">)</span>
+<a id="__codelineno-0-224" name="__codelineno-0-224"></a>
+<a id="__codelineno-0-225" name="__codelineno-0-225"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_clipped_stddev</span><span class="p">(</span><span class="n">clipped</span><span class="p">:</span> <span class="n">ClippedPytree</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">PerGroup</span><span class="p">:</span>
+<a id="__codelineno-0-226" name="__codelineno-0-226"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">clipped</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span> <span class="n">PerGroup</span><span class="p">):</span>
+<a id="__codelineno-0-227" name="__codelineno-0-227"></a>            <span class="k">return</span> <span class="n">per_group_noise_stddev</span><span class="p">(</span><span class="n">clipped</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span> <span class="n">resolved_noise_multiplier</span><span class="p">)</span>
+<a id="__codelineno-0-228" name="__codelineno-0-228"></a>        <span class="n">effective</span> <span class="o">=</span> <span class="n">resolved_noise_multiplier</span> <span class="o">*</span> <span class="n">clipped</span><span class="o">.</span><span class="n">max_norm</span>
+<a id="__codelineno-0-229" name="__codelineno-0-229"></a>        <span class="n">_validate_truncated_stddev</span><span class="p">(</span><span class="n">effective</span><span class="p">)</span>
+<a id="__codelineno-0-230" name="__codelineno-0-230"></a>        <span class="k">return</span> <span class="n">effective</span>
 <a id="__codelineno-0-231" name="__codelineno-0-231"></a>
-<a id="__codelineno-0-232" name="__codelineno-0-232"></a>        <span class="n">next_state</span> <span class="o">=</span> <span class="n">GaussianNoiseState</span><span class="p">(</span>
-<a id="__codelineno-0-233" name="__codelineno-0-233"></a>            <span class="n">_step_counter</span><span class="o">=</span><span class="n">st</span><span class="o">.</span><span class="n">_step_counter</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
-<a id="__codelineno-0-234" name="__codelineno-0-234"></a>            <span class="n">_rng_key</span><span class="o">=</span><span class="n">st</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span>
-<a id="__codelineno-0-235" name="__codelineno-0-235"></a>        <span class="p">)</span>
-<a id="__codelineno-0-236" name="__codelineno-0-236"></a>
-<a id="__codelineno-0-237" name="__codelineno-0-237"></a>        <span class="c1"># Per-group noise path</span>
-<a id="__codelineno-0-238" name="__codelineno-0-238"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">effective_stddev</span><span class="p">,</span> <span class="n">PerGroup</span><span class="p">):</span>
-<a id="__codelineno-0-239" name="__codelineno-0-239"></a>            <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">v</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">effective_stddev</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
-<a id="__codelineno-0-240" name="__codelineno-0-240"></a>                <span class="k">return</span> <span class="n">NoisedPytree</span><span class="p">(</span>
-<a id="__codelineno-0-241" name="__codelineno-0-241"></a>                    <span class="n">pytree</span><span class="o">=</span><span class="n">grads</span><span class="o">.</span><span class="n">pytree</span><span class="p">,</span>
-<a id="__codelineno-0-242" name="__codelineno-0-242"></a>                    <span class="n">max_norm</span><span class="o">=</span><span class="n">grads</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span>
-<a id="__codelineno-0-243" name="__codelineno-0-243"></a>                    <span class="n">noise_stddev</span><span class="o">=</span><span class="n">effective_stddev</span><span class="p">,</span>
-<a id="__codelineno-0-244" name="__codelineno-0-244"></a>                <span class="p">),</span> <span class="n">next_state</span>
-<a id="__codelineno-0-245" name="__codelineno-0-245"></a>
-<a id="__codelineno-0-246" name="__codelineno-0-246"></a>            <span class="n">step_key</span> <span class="o">=</span> <span class="n">rng_fold_in</span><span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span> <span class="n">st</span><span class="o">.</span><span class="n">_step_counter</span><span class="p">)</span>
-<a id="__codelineno-0-247" name="__codelineno-0-247"></a>            <span class="n">g</span> <span class="o">=</span> <span class="n">generator_from_key</span><span class="p">(</span><span class="n">step_key</span><span class="p">)</span>
-<a id="__codelineno-0-248" name="__codelineno-0-248"></a>
-<a id="__codelineno-0-249" name="__codelineno-0-249"></a>            <span class="n">noised</span> <span class="o">=</span> <span class="p">{}</span>
-<a id="__codelineno-0-250" name="__codelineno-0-250"></a>            <span class="k">for</span> <span class="n">param_key</span><span class="p">,</span> <span class="n">tensor</span> <span class="ow">in</span> <span class="n">grads</span><span class="o">.</span><span class="n">pytree</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-<a id="__codelineno-0-251" name="__codelineno-0-251"></a>                <span class="n">group_std</span> <span class="o">=</span> <span class="n">effective_stddev</span><span class="o">.</span><span class="n">for_key</span><span class="p">(</span><span class="n">param_key</span><span class="p">)</span>
-<a id="__codelineno-0-252" name="__codelineno-0-252"></a>                <span class="n">max_norm</span> <span class="o">=</span> <span class="n">group_std</span> <span class="o">*</span> <span class="n">radius</span>
-<a id="__codelineno-0-253" name="__codelineno-0-253"></a>                <span class="n">noised</span><span class="p">[</span><span class="n">param_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">_truncated_normal_around</span><span class="p">(</span>
-<a id="__codelineno-0-254" name="__codelineno-0-254"></a>                    <span class="n">tensor</span><span class="p">,</span>
-<a id="__codelineno-0-255" name="__codelineno-0-255"></a>                    <span class="n">stddev</span><span class="o">=</span><span class="n">group_std</span><span class="p">,</span>
-<a id="__codelineno-0-256" name="__codelineno-0-256"></a>                    <span class="n">lower</span><span class="o">=-</span><span class="n">max_norm</span><span class="p">,</span>
-<a id="__codelineno-0-257" name="__codelineno-0-257"></a>                    <span class="n">upper</span><span class="o">=</span><span class="n">max_norm</span><span class="p">,</span>
-<a id="__codelineno-0-258" name="__codelineno-0-258"></a>                    <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">,</span>
-<a id="__codelineno-0-259" name="__codelineno-0-259"></a>                <span class="p">)</span>
-<a id="__codelineno-0-260" name="__codelineno-0-260"></a>
-<a id="__codelineno-0-261" name="__codelineno-0-261"></a>            <span class="k">return</span> <span class="n">NoisedPytree</span><span class="p">(</span>
-<a id="__codelineno-0-262" name="__codelineno-0-262"></a>                <span class="n">pytree</span><span class="o">=</span><span class="n">noised</span><span class="p">,</span>
-<a id="__codelineno-0-263" name="__codelineno-0-263"></a>                <span class="n">max_norm</span><span class="o">=</span><span class="n">grads</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span>
-<a id="__codelineno-0-264" name="__codelineno-0-264"></a>                <span class="n">noise_stddev</span><span class="o">=</span><span class="n">effective_stddev</span><span class="p">,</span>
-<a id="__codelineno-0-265" name="__codelineno-0-265"></a>            <span class="p">),</span> <span class="n">next_state</span>
-<a id="__codelineno-0-266" name="__codelineno-0-266"></a>
-<a id="__codelineno-0-267" name="__codelineno-0-267"></a>        <span class="c1"># Global (scalar) noise path</span>
-<a id="__codelineno-0-268" name="__codelineno-0-268"></a>        <span class="n">max_norm</span> <span class="o">=</span> <span class="n">effective_stddev</span> <span class="o">*</span> <span class="n">radius</span>
-<a id="__codelineno-0-269" name="__codelineno-0-269"></a>
-<a id="__codelineno-0-270" name="__codelineno-0-270"></a>        <span class="k">if</span> <span class="n">effective_stddev</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-271" name="__codelineno-0-271"></a>            <span class="n">noised</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span>
-<a id="__codelineno-0-272" name="__codelineno-0-272"></a>                <span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="nb">min</span><span class="o">=-</span><span class="n">max_norm</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="n">max_norm</span><span class="p">),</span> <span class="n">grads</span><span class="o">.</span><span class="n">pytree</span>
-<a id="__codelineno-0-273" name="__codelineno-0-273"></a>            <span class="p">)</span>
-<a id="__codelineno-0-274" name="__codelineno-0-274"></a>            <span class="k">return</span> <span class="n">NoisedPytree</span><span class="p">(</span>
-<a id="__codelineno-0-275" name="__codelineno-0-275"></a>                <span class="n">pytree</span><span class="o">=</span><span class="n">noised</span><span class="p">,</span>
-<a id="__codelineno-0-276" name="__codelineno-0-276"></a>                <span class="n">max_norm</span><span class="o">=</span><span class="n">grads</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span>
-<a id="__codelineno-0-277" name="__codelineno-0-277"></a>                <span class="n">noise_stddev</span><span class="o">=</span><span class="n">effective_stddev</span><span class="p">,</span>
-<a id="__codelineno-0-278" name="__codelineno-0-278"></a>            <span class="p">),</span> <span class="n">next_state</span>
-<a id="__codelineno-0-279" name="__codelineno-0-279"></a>
-<a id="__codelineno-0-280" name="__codelineno-0-280"></a>        <span class="n">step_key</span> <span class="o">=</span> <span class="n">rng_fold_in</span><span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span> <span class="n">st</span><span class="o">.</span><span class="n">_step_counter</span><span class="p">)</span>
-<a id="__codelineno-0-281" name="__codelineno-0-281"></a>        <span class="n">g</span> <span class="o">=</span> <span class="n">generator_from_key</span><span class="p">(</span><span class="n">step_key</span><span class="p">)</span>
-<a id="__codelineno-0-282" name="__codelineno-0-282"></a>
-<a id="__codelineno-0-283" name="__codelineno-0-283"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">add_clipped_noise</span><span class="p">(</span><span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<a id="__codelineno-0-284" name="__codelineno-0-284"></a>            <span class="k">return</span> <span class="n">_truncated_normal_around</span><span class="p">(</span>
-<a id="__codelineno-0-285" name="__codelineno-0-285"></a>                <span class="n">tensor</span><span class="p">,</span>
-<a id="__codelineno-0-286" name="__codelineno-0-286"></a>                <span class="n">stddev</span><span class="o">=</span><span class="n">effective_stddev</span><span class="p">,</span>
-<a id="__codelineno-0-287" name="__codelineno-0-287"></a>                <span class="n">lower</span><span class="o">=-</span><span class="n">max_norm</span><span class="p">,</span>
-<a id="__codelineno-0-288" name="__codelineno-0-288"></a>                <span class="n">upper</span><span class="o">=</span><span class="n">max_norm</span><span class="p">,</span>
-<a id="__codelineno-0-289" name="__codelineno-0-289"></a>                <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">,</span>
-<a id="__codelineno-0-290" name="__codelineno-0-290"></a>            <span class="p">)</span>
-<a id="__codelineno-0-291" name="__codelineno-0-291"></a>
-<a id="__codelineno-0-292" name="__codelineno-0-292"></a>        <span class="n">noised</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span><span class="n">add_clipped_noise</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">pytree</span><span class="p">)</span>
-<a id="__codelineno-0-293" name="__codelineno-0-293"></a>
-<a id="__codelineno-0-294" name="__codelineno-0-294"></a>        <span class="k">return</span> <span class="n">NoisedPytree</span><span class="p">(</span>
-<a id="__codelineno-0-295" name="__codelineno-0-295"></a>            <span class="n">pytree</span><span class="o">=</span><span class="n">noised</span><span class="p">,</span>
-<a id="__codelineno-0-296" name="__codelineno-0-296"></a>            <span class="n">max_norm</span><span class="o">=</span><span class="n">grads</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span>
-<a id="__codelineno-0-297" name="__codelineno-0-297"></a>            <span class="n">noise_stddev</span><span class="o">=</span><span class="n">effective_stddev</span><span class="p">,</span>
-<a id="__codelineno-0-298" name="__codelineno-0-298"></a>        <span class="p">),</span> <span class="n">next_state</span>
-<a id="__codelineno-0-299" name="__codelineno-0-299"></a>
-<a id="__codelineno-0-300" name="__codelineno-0-300"></a>    <span class="k">return</span> <span class="n">noise_fn</span><span class="p">,</span> <span class="n">state</span>
+<a id="__codelineno-0-232" name="__codelineno-0-232"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_add_truncated</span><span class="p">(</span>
+<a id="__codelineno-0-233" name="__codelineno-0-233"></a>        <span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">std</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">generator</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span>
+<a id="__codelineno-0-234" name="__codelineno-0-234"></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<a id="__codelineno-0-235" name="__codelineno-0-235"></a>        <span class="k">if</span> <span class="n">std</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-236" name="__codelineno-0-236"></a>            <span class="n">bound</span> <span class="o">=</span> <span class="mf">0.0</span>
+<a id="__codelineno-0-237" name="__codelineno-0-237"></a>            <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="nb">min</span><span class="o">=-</span><span class="n">bound</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="n">bound</span><span class="p">)</span>
+<a id="__codelineno-0-238" name="__codelineno-0-238"></a>        <span class="n">bound</span> <span class="o">=</span> <span class="n">std</span> <span class="o">*</span> <span class="n">radius</span>
+<a id="__codelineno-0-239" name="__codelineno-0-239"></a>        <span class="k">return</span> <span class="n">_truncated_normal_around</span><span class="p">(</span>
+<a id="__codelineno-0-240" name="__codelineno-0-240"></a>            <span class="n">tensor</span><span class="p">,</span>
+<a id="__codelineno-0-241" name="__codelineno-0-241"></a>            <span class="n">stddev</span><span class="o">=</span><span class="n">std</span><span class="p">,</span>
+<a id="__codelineno-0-242" name="__codelineno-0-242"></a>            <span class="n">lower</span><span class="o">=-</span><span class="n">bound</span><span class="p">,</span>
+<a id="__codelineno-0-243" name="__codelineno-0-243"></a>            <span class="n">upper</span><span class="o">=</span><span class="n">bound</span><span class="p">,</span>
+<a id="__codelineno-0-244" name="__codelineno-0-244"></a>            <span class="n">generator</span><span class="o">=</span><span class="n">generator</span><span class="p">,</span>
+<a id="__codelineno-0-245" name="__codelineno-0-245"></a>        <span class="p">)</span>
+<a id="__codelineno-0-246" name="__codelineno-0-246"></a>
+<a id="__codelineno-0-247" name="__codelineno-0-247"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_add_paired</span><span class="p">(</span>
+<a id="__codelineno-0-248" name="__codelineno-0-248"></a>        <span class="n">clipped_input</span><span class="p">:</span> <span class="n">SecondMomentClippingOutput</span><span class="p">,</span> <span class="n">st</span><span class="p">:</span> <span class="n">GaussianNoiseState</span>
+<a id="__codelineno-0-249" name="__codelineno-0-249"></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SecondMomentNoiseOutput</span><span class="p">,</span> <span class="n">GaussianNoiseState</span><span class="p">]:</span>
+<a id="__codelineno-0-250" name="__codelineno-0-250"></a>        <span class="n">first_clipped</span> <span class="o">=</span> <span class="n">clipped_input</span><span class="o">.</span><span class="n">grads</span>
+<a id="__codelineno-0-251" name="__codelineno-0-251"></a>        <span class="n">second_clipped</span> <span class="o">=</span> <span class="n">clipped_input</span><span class="o">.</span><span class="n">squared_grads</span>
+<a id="__codelineno-0-252" name="__codelineno-0-252"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">first_clipped</span><span class="p">,</span> <span class="n">ClippedPytree</span><span class="p">):</span>
+<a id="__codelineno-0-253" name="__codelineno-0-253"></a>            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;SecondMomentClippingOutput.grads must be a ClippedPytree.&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-254" name="__codelineno-0-254"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">second_clipped</span><span class="p">,</span> <span class="n">ClippedPytree</span><span class="p">):</span>
+<a id="__codelineno-0-255" name="__codelineno-0-255"></a>            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+<a id="__codelineno-0-256" name="__codelineno-0-256"></a>                <span class="s2">&quot;SecondMomentClippingOutput.squared_grads must be a ClippedPytree.&quot;</span>
+<a id="__codelineno-0-257" name="__codelineno-0-257"></a>            <span class="p">)</span>
+<a id="__codelineno-0-258" name="__codelineno-0-258"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">first_clipped</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span> <span class="n">PerGroup</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span>
+<a id="__codelineno-0-259" name="__codelineno-0-259"></a>            <span class="n">second_clipped</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span> <span class="n">PerGroup</span>
+<a id="__codelineno-0-260" name="__codelineno-0-260"></a>        <span class="p">):</span>
+<a id="__codelineno-0-261" name="__codelineno-0-261"></a>            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+<a id="__codelineno-0-262" name="__codelineno-0-262"></a>                <span class="s2">&quot;truncated_gaussian_noise paired-stream output &quot;</span>
+<a id="__codelineno-0-263" name="__codelineno-0-263"></a>                <span class="s2">&quot;(SecondMomentNoiseOutput) does not support PerGroup max_norm. &quot;</span>
+<a id="__codelineno-0-264" name="__codelineno-0-264"></a>                <span class="s2">&quot;Per-group second-moment allocation has not been validated. &quot;</span>
+<a id="__codelineno-0-265" name="__codelineno-0-265"></a>                <span class="s2">&quot;Use a scalar max_norm or pass a single-stream ClippedPytree input.&quot;</span>
+<a id="__codelineno-0-266" name="__codelineno-0-266"></a>            <span class="p">)</span>
+<a id="__codelineno-0-267" name="__codelineno-0-267"></a>        <span class="c1"># Identity strategy → c1 = c2 = 1.0; per-record bounds for</span>
+<a id="__codelineno-0-268" name="__codelineno-0-268"></a>        <span class="c1"># both streams so the joint allocation is correct.</span>
+<a id="__codelineno-0-269" name="__codelineno-0-269"></a>        <span class="n">first_stddev</span><span class="p">,</span> <span class="n">second_stddev</span> <span class="o">=</span> <span class="n">second_moment_stddevs</span><span class="p">(</span>
+<a id="__codelineno-0-270" name="__codelineno-0-270"></a>            <span class="n">resolved_noise_multiplier</span><span class="p">,</span>
+<a id="__codelineno-0-271" name="__codelineno-0-271"></a>            <span class="n">first_max_norm</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">first_clipped</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">),</span>
+<a id="__codelineno-0-272" name="__codelineno-0-272"></a>            <span class="n">squared_max_norm</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">second_clipped</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">),</span>
+<a id="__codelineno-0-273" name="__codelineno-0-273"></a>            <span class="n">first_moment_overhead</span><span class="o">=</span><span class="n">first_moment_overhead</span><span class="p">,</span>
+<a id="__codelineno-0-274" name="__codelineno-0-274"></a>        <span class="p">)</span>
+<a id="__codelineno-0-275" name="__codelineno-0-275"></a>        <span class="c1"># Two independent noise streams; fold-in 1 / 2 namespaces them so</span>
+<a id="__codelineno-0-276" name="__codelineno-0-276"></a>        <span class="c1"># they don&#39;t collide with the single-stream key derivation.</span>
+<a id="__codelineno-0-277" name="__codelineno-0-277"></a>        <span class="n">first_step_key</span> <span class="o">=</span> <span class="n">rng_fold_in</span><span class="p">(</span><span class="n">rng_fold_in</span><span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">st</span><span class="o">.</span><span class="n">_step_counter</span><span class="p">)</span>
+<a id="__codelineno-0-278" name="__codelineno-0-278"></a>        <span class="n">second_step_key</span> <span class="o">=</span> <span class="n">rng_fold_in</span><span class="p">(</span><span class="n">rng_fold_in</span><span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">st</span><span class="o">.</span><span class="n">_step_counter</span><span class="p">)</span>
+<a id="__codelineno-0-279" name="__codelineno-0-279"></a>        <span class="n">first_gen</span> <span class="o">=</span> <span class="n">generator_from_key</span><span class="p">(</span><span class="n">first_step_key</span><span class="p">)</span>
+<a id="__codelineno-0-280" name="__codelineno-0-280"></a>        <span class="n">second_gen</span> <span class="o">=</span> <span class="n">generator_from_key</span><span class="p">(</span><span class="n">second_step_key</span><span class="p">)</span>
+<a id="__codelineno-0-281" name="__codelineno-0-281"></a>        <span class="n">noisy_grads</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span>
+<a id="__codelineno-0-282" name="__codelineno-0-282"></a>            <span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="n">_add_truncated</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">first_stddev</span><span class="p">,</span> <span class="n">first_gen</span><span class="p">),</span>
+<a id="__codelineno-0-283" name="__codelineno-0-283"></a>            <span class="n">first_clipped</span><span class="o">.</span><span class="n">pytree</span><span class="p">,</span>
+<a id="__codelineno-0-284" name="__codelineno-0-284"></a>        <span class="p">)</span>
+<a id="__codelineno-0-285" name="__codelineno-0-285"></a>        <span class="n">noisy_squared</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span>
+<a id="__codelineno-0-286" name="__codelineno-0-286"></a>            <span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="n">_add_truncated</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">second_stddev</span><span class="p">,</span> <span class="n">second_gen</span><span class="p">),</span>
+<a id="__codelineno-0-287" name="__codelineno-0-287"></a>            <span class="n">second_clipped</span><span class="o">.</span><span class="n">pytree</span><span class="p">,</span>
+<a id="__codelineno-0-288" name="__codelineno-0-288"></a>        <span class="p">)</span>
+<a id="__codelineno-0-289" name="__codelineno-0-289"></a>        <span class="n">next_state</span> <span class="o">=</span> <span class="n">GaussianNoiseState</span><span class="p">(</span>
+<a id="__codelineno-0-290" name="__codelineno-0-290"></a>            <span class="n">_step_counter</span><span class="o">=</span><span class="n">st</span><span class="o">.</span><span class="n">_step_counter</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-0-291" name="__codelineno-0-291"></a>            <span class="n">_rng_key</span><span class="o">=</span><span class="n">st</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span>
+<a id="__codelineno-0-292" name="__codelineno-0-292"></a>        <span class="p">)</span>
+<a id="__codelineno-0-293" name="__codelineno-0-293"></a>        <span class="k">return</span> <span class="p">(</span>
+<a id="__codelineno-0-294" name="__codelineno-0-294"></a>            <span class="n">SecondMomentNoiseOutput</span><span class="p">(</span>
+<a id="__codelineno-0-295" name="__codelineno-0-295"></a>                <span class="n">NoisedPytree</span><span class="p">(</span>
+<a id="__codelineno-0-296" name="__codelineno-0-296"></a>                    <span class="n">pytree</span><span class="o">=</span><span class="n">noisy_grads</span><span class="p">,</span>
+<a id="__codelineno-0-297" name="__codelineno-0-297"></a>                    <span class="n">max_norm</span><span class="o">=</span><span class="n">first_clipped</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span>
+<a id="__codelineno-0-298" name="__codelineno-0-298"></a>                    <span class="n">noise_stddev</span><span class="o">=</span><span class="n">first_stddev</span><span class="p">,</span>
+<a id="__codelineno-0-299" name="__codelineno-0-299"></a>                <span class="p">),</span>
+<a id="__codelineno-0-300" name="__codelineno-0-300"></a>                <span class="n">NoisedPytree</span><span class="p">(</span>
+<a id="__codelineno-0-301" name="__codelineno-0-301"></a>                    <span class="n">pytree</span><span class="o">=</span><span class="n">noisy_squared</span><span class="p">,</span>
+<a id="__codelineno-0-302" name="__codelineno-0-302"></a>                    <span class="n">max_norm</span><span class="o">=</span><span class="n">second_clipped</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span>
+<a id="__codelineno-0-303" name="__codelineno-0-303"></a>                    <span class="n">noise_stddev</span><span class="o">=</span><span class="n">second_stddev</span><span class="p">,</span>
+<a id="__codelineno-0-304" name="__codelineno-0-304"></a>                <span class="p">),</span>
+<a id="__codelineno-0-305" name="__codelineno-0-305"></a>            <span class="p">),</span>
+<a id="__codelineno-0-306" name="__codelineno-0-306"></a>            <span class="n">next_state</span><span class="p">,</span>
+<a id="__codelineno-0-307" name="__codelineno-0-307"></a>        <span class="p">)</span>
+<a id="__codelineno-0-308" name="__codelineno-0-308"></a>
+<a id="__codelineno-0-309" name="__codelineno-0-309"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">st</span><span class="p">):</span>
+<a id="__codelineno-0-310" name="__codelineno-0-310"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Add truncated Gaussian noise to a clipped pytree (or paired stream).&quot;&quot;&quot;</span>
+<a id="__codelineno-0-311" name="__codelineno-0-311"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">SecondMomentClippingOutput</span><span class="p">):</span>
+<a id="__codelineno-0-312" name="__codelineno-0-312"></a>            <span class="k">return</span> <span class="n">_add_paired</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">st</span><span class="p">)</span>
+<a id="__codelineno-0-313" name="__codelineno-0-313"></a>
+<a id="__codelineno-0-314" name="__codelineno-0-314"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">NoisedPytree</span><span class="p">):</span>
+<a id="__codelineno-0-315" name="__codelineno-0-315"></a>            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+<a id="__codelineno-0-316" name="__codelineno-0-316"></a>                <span class="s2">&quot;truncated_gaussian_noise expects ClippedPytree inputs, not &quot;</span>
+<a id="__codelineno-0-317" name="__codelineno-0-317"></a>                <span class="s2">&quot;NoisedPytree values that have already passed through a noise &quot;</span>
+<a id="__codelineno-0-318" name="__codelineno-0-318"></a>                <span class="s2">&quot;mechanism.&quot;</span>
+<a id="__codelineno-0-319" name="__codelineno-0-319"></a>            <span class="p">)</span>
+<a id="__codelineno-0-320" name="__codelineno-0-320"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">ClippedPytree</span><span class="p">):</span>
+<a id="__codelineno-0-321" name="__codelineno-0-321"></a>            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+<a id="__codelineno-0-322" name="__codelineno-0-322"></a>                <span class="s2">&quot;truncated_gaussian_noise expects ClippedPytree inputs. Wrap &quot;</span>
+<a id="__codelineno-0-323" name="__codelineno-0-323"></a>                <span class="s2">&quot;manual values with opaque.types.clipped(...).&quot;</span>
+<a id="__codelineno-0-324" name="__codelineno-0-324"></a>            <span class="p">)</span>
+<a id="__codelineno-0-325" name="__codelineno-0-325"></a>
+<a id="__codelineno-0-326" name="__codelineno-0-326"></a>        <span class="n">effective_stddev</span> <span class="o">=</span> <span class="n">_clipped_stddev</span><span class="p">(</span><span class="n">grads</span><span class="p">)</span>
+<a id="__codelineno-0-327" name="__codelineno-0-327"></a>        <span class="n">_validate_truncated_stddev</span><span class="p">(</span><span class="n">effective_stddev</span><span class="p">)</span>
+<a id="__codelineno-0-328" name="__codelineno-0-328"></a>
+<a id="__codelineno-0-329" name="__codelineno-0-329"></a>        <span class="n">next_state</span> <span class="o">=</span> <span class="n">GaussianNoiseState</span><span class="p">(</span>
+<a id="__codelineno-0-330" name="__codelineno-0-330"></a>            <span class="n">_step_counter</span><span class="o">=</span><span class="n">st</span><span class="o">.</span><span class="n">_step_counter</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-0-331" name="__codelineno-0-331"></a>            <span class="n">_rng_key</span><span class="o">=</span><span class="n">st</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span>
+<a id="__codelineno-0-332" name="__codelineno-0-332"></a>        <span class="p">)</span>
+<a id="__codelineno-0-333" name="__codelineno-0-333"></a>
+<a id="__codelineno-0-334" name="__codelineno-0-334"></a>        <span class="c1"># Per-group noise path</span>
+<a id="__codelineno-0-335" name="__codelineno-0-335"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">effective_stddev</span><span class="p">,</span> <span class="n">PerGroup</span><span class="p">):</span>
+<a id="__codelineno-0-336" name="__codelineno-0-336"></a>            <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">v</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">effective_stddev</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
+<a id="__codelineno-0-337" name="__codelineno-0-337"></a>                <span class="k">return</span> <span class="n">NoisedPytree</span><span class="p">(</span>
+<a id="__codelineno-0-338" name="__codelineno-0-338"></a>                    <span class="n">pytree</span><span class="o">=</span><span class="n">grads</span><span class="o">.</span><span class="n">pytree</span><span class="p">,</span>
+<a id="__codelineno-0-339" name="__codelineno-0-339"></a>                    <span class="n">max_norm</span><span class="o">=</span><span class="n">grads</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span>
+<a id="__codelineno-0-340" name="__codelineno-0-340"></a>                    <span class="n">noise_stddev</span><span class="o">=</span><span class="n">effective_stddev</span><span class="p">,</span>
+<a id="__codelineno-0-341" name="__codelineno-0-341"></a>                <span class="p">),</span> <span class="n">next_state</span>
+<a id="__codelineno-0-342" name="__codelineno-0-342"></a>
+<a id="__codelineno-0-343" name="__codelineno-0-343"></a>            <span class="n">step_key</span> <span class="o">=</span> <span class="n">rng_fold_in</span><span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span> <span class="n">st</span><span class="o">.</span><span class="n">_step_counter</span><span class="p">)</span>
+<a id="__codelineno-0-344" name="__codelineno-0-344"></a>            <span class="n">g</span> <span class="o">=</span> <span class="n">generator_from_key</span><span class="p">(</span><span class="n">step_key</span><span class="p">)</span>
+<a id="__codelineno-0-345" name="__codelineno-0-345"></a>
+<a id="__codelineno-0-346" name="__codelineno-0-346"></a>            <span class="n">noised</span> <span class="o">=</span> <span class="p">{}</span>
+<a id="__codelineno-0-347" name="__codelineno-0-347"></a>            <span class="k">for</span> <span class="n">param_key</span><span class="p">,</span> <span class="n">tensor</span> <span class="ow">in</span> <span class="n">grads</span><span class="o">.</span><span class="n">pytree</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<a id="__codelineno-0-348" name="__codelineno-0-348"></a>                <span class="n">group_std</span> <span class="o">=</span> <span class="n">effective_stddev</span><span class="o">.</span><span class="n">for_key</span><span class="p">(</span><span class="n">param_key</span><span class="p">)</span>
+<a id="__codelineno-0-349" name="__codelineno-0-349"></a>                <span class="n">max_norm</span> <span class="o">=</span> <span class="n">group_std</span> <span class="o">*</span> <span class="n">radius</span>
+<a id="__codelineno-0-350" name="__codelineno-0-350"></a>                <span class="n">noised</span><span class="p">[</span><span class="n">param_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">_truncated_normal_around</span><span class="p">(</span>
+<a id="__codelineno-0-351" name="__codelineno-0-351"></a>                    <span class="n">tensor</span><span class="p">,</span>
+<a id="__codelineno-0-352" name="__codelineno-0-352"></a>                    <span class="n">stddev</span><span class="o">=</span><span class="n">group_std</span><span class="p">,</span>
+<a id="__codelineno-0-353" name="__codelineno-0-353"></a>                    <span class="n">lower</span><span class="o">=-</span><span class="n">max_norm</span><span class="p">,</span>
+<a id="__codelineno-0-354" name="__codelineno-0-354"></a>                    <span class="n">upper</span><span class="o">=</span><span class="n">max_norm</span><span class="p">,</span>
+<a id="__codelineno-0-355" name="__codelineno-0-355"></a>                    <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">,</span>
+<a id="__codelineno-0-356" name="__codelineno-0-356"></a>                <span class="p">)</span>
+<a id="__codelineno-0-357" name="__codelineno-0-357"></a>
+<a id="__codelineno-0-358" name="__codelineno-0-358"></a>            <span class="k">return</span> <span class="n">NoisedPytree</span><span class="p">(</span>
+<a id="__codelineno-0-359" name="__codelineno-0-359"></a>                <span class="n">pytree</span><span class="o">=</span><span class="n">noised</span><span class="p">,</span>
+<a id="__codelineno-0-360" name="__codelineno-0-360"></a>                <span class="n">max_norm</span><span class="o">=</span><span class="n">grads</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span>
+<a id="__codelineno-0-361" name="__codelineno-0-361"></a>                <span class="n">noise_stddev</span><span class="o">=</span><span class="n">effective_stddev</span><span class="p">,</span>
+<a id="__codelineno-0-362" name="__codelineno-0-362"></a>            <span class="p">),</span> <span class="n">next_state</span>
+<a id="__codelineno-0-363" name="__codelineno-0-363"></a>
+<a id="__codelineno-0-364" name="__codelineno-0-364"></a>        <span class="c1"># Global (scalar) noise path</span>
+<a id="__codelineno-0-365" name="__codelineno-0-365"></a>        <span class="n">max_norm</span> <span class="o">=</span> <span class="n">effective_stddev</span> <span class="o">*</span> <span class="n">radius</span>
+<a id="__codelineno-0-366" name="__codelineno-0-366"></a>
+<a id="__codelineno-0-367" name="__codelineno-0-367"></a>        <span class="k">if</span> <span class="n">effective_stddev</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-368" name="__codelineno-0-368"></a>            <span class="n">noised</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span>
+<a id="__codelineno-0-369" name="__codelineno-0-369"></a>                <span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="nb">min</span><span class="o">=-</span><span class="n">max_norm</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="n">max_norm</span><span class="p">),</span> <span class="n">grads</span><span class="o">.</span><span class="n">pytree</span>
+<a id="__codelineno-0-370" name="__codelineno-0-370"></a>            <span class="p">)</span>
+<a id="__codelineno-0-371" name="__codelineno-0-371"></a>            <span class="k">return</span> <span class="n">NoisedPytree</span><span class="p">(</span>
+<a id="__codelineno-0-372" name="__codelineno-0-372"></a>                <span class="n">pytree</span><span class="o">=</span><span class="n">noised</span><span class="p">,</span>
+<a id="__codelineno-0-373" name="__codelineno-0-373"></a>                <span class="n">max_norm</span><span class="o">=</span><span class="n">grads</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span>
+<a id="__codelineno-0-374" name="__codelineno-0-374"></a>                <span class="n">noise_stddev</span><span class="o">=</span><span class="n">effective_stddev</span><span class="p">,</span>
+<a id="__codelineno-0-375" name="__codelineno-0-375"></a>            <span class="p">),</span> <span class="n">next_state</span>
+<a id="__codelineno-0-376" name="__codelineno-0-376"></a>
+<a id="__codelineno-0-377" name="__codelineno-0-377"></a>        <span class="n">step_key</span> <span class="o">=</span> <span class="n">rng_fold_in</span><span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span> <span class="n">st</span><span class="o">.</span><span class="n">_step_counter</span><span class="p">)</span>
+<a id="__codelineno-0-378" name="__codelineno-0-378"></a>        <span class="n">g</span> <span class="o">=</span> <span class="n">generator_from_key</span><span class="p">(</span><span class="n">step_key</span><span class="p">)</span>
+<a id="__codelineno-0-379" name="__codelineno-0-379"></a>
+<a id="__codelineno-0-380" name="__codelineno-0-380"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">add_clipped_noise</span><span class="p">(</span><span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<a id="__codelineno-0-381" name="__codelineno-0-381"></a>            <span class="k">return</span> <span class="n">_truncated_normal_around</span><span class="p">(</span>
+<a id="__codelineno-0-382" name="__codelineno-0-382"></a>                <span class="n">tensor</span><span class="p">,</span>
+<a id="__codelineno-0-383" name="__codelineno-0-383"></a>                <span class="n">stddev</span><span class="o">=</span><span class="n">effective_stddev</span><span class="p">,</span>
+<a id="__codelineno-0-384" name="__codelineno-0-384"></a>                <span class="n">lower</span><span class="o">=-</span><span class="n">max_norm</span><span class="p">,</span>
+<a id="__codelineno-0-385" name="__codelineno-0-385"></a>                <span class="n">upper</span><span class="o">=</span><span class="n">max_norm</span><span class="p">,</span>
+<a id="__codelineno-0-386" name="__codelineno-0-386"></a>                <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">,</span>
+<a id="__codelineno-0-387" name="__codelineno-0-387"></a>            <span class="p">)</span>
+<a id="__codelineno-0-388" name="__codelineno-0-388"></a>
+<a id="__codelineno-0-389" name="__codelineno-0-389"></a>        <span class="n">noised</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span><span class="n">add_clipped_noise</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">pytree</span><span class="p">)</span>
+<a id="__codelineno-0-390" name="__codelineno-0-390"></a>
+<a id="__codelineno-0-391" name="__codelineno-0-391"></a>        <span class="k">return</span> <span class="n">NoisedPytree</span><span class="p">(</span>
+<a id="__codelineno-0-392" name="__codelineno-0-392"></a>            <span class="n">pytree</span><span class="o">=</span><span class="n">noised</span><span class="p">,</span>
+<a id="__codelineno-0-393" name="__codelineno-0-393"></a>            <span class="n">max_norm</span><span class="o">=</span><span class="n">grads</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span>
+<a id="__codelineno-0-394" name="__codelineno-0-394"></a>            <span class="n">noise_stddev</span><span class="o">=</span><span class="n">effective_stddev</span><span class="p">,</span>
+<a id="__codelineno-0-395" name="__codelineno-0-395"></a>        <span class="p">),</span> <span class="n">next_state</span>
+<a id="__codelineno-0-396" name="__codelineno-0-396"></a>
+<a id="__codelineno-0-397" name="__codelineno-0-397"></a>    <span class="k">return</span> <span class="n">noise_fn</span><span class="p">,</span> <span class="n">state</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
