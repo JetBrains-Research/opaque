@@ -29,24 +29,17 @@ from typing import Any
 
 import torch
 
-from opaque.types import PerGroup
-from opaque.types import ClippedPytree
-from opaque.core.noise import (
-    DEFAULT_SECOND_MOMENT_OVERHEAD,
-    NOISE_STATE_FIELD_OPS,
-    assert_rng_key_equal,
-    second_moment_stddevs,
-)
 from opaque.types import (
+    ClippedPytree,
     NoiseState,
     NoisedPytree,
+    PerGroup,
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
 )
-from opaque.distributed import (
-    is_distributed,
-    register_sync_type,
-    sync_object,
+from opaque.dpsgd.noise._second_moment import (
+    DEFAULT_SECOND_MOMENT_OVERHEAD,
+    second_moment_stddevs,
 )
 from opaque.random import RngKey, generator_from_key
 from opaque.random import (
@@ -115,7 +108,7 @@ def gaussian_noise(
     noise to :class:`opaque.clipping.types.ClippedPytree` inputs and returns updated
     state.  The realized standard deviation is
     ``noise_multiplier * clipped.max_norm``.  The output is a
-    :class:`opaque.core.noise.NoisedPytree` carrying that realized
+    :class:`opaque.types.NoisedPytree` carrying that realized
     ``noise_stddev`` metadata.
 
     The noise function uses exactly the ``key`` you provide — no auto-detection
@@ -321,23 +314,4 @@ def gaussian_noise(
     return noise_fn, state
 
 
-# ---- Distributed state validation ----
-
-
-def sync_gaussian_noise_state(state: GaussianNoiseState) -> GaussianNoiseState:
-    """Validate Gaussian noise state consistency across ranks.
-
-    Asserts that all ranks share the same seed and step counter.  No-op
-    outside ``torch.distributed``.  Registered automatically with
-    :func:`opaque.distributed.sync`.
-    """
-    if not is_distributed():
-        return state
-    assert_rng_key_equal(state, "GaussianNoiseState")
-    return sync_object(state, field_ops=NOISE_STATE_FIELD_OPS)
-
-
-register_sync_type(GaussianNoiseState, sync_gaussian_noise_state)
-
-
-__all__ = ["gaussian_noise", "GaussianNoiseState", "sync_gaussian_noise_state"]
+__all__ = ["gaussian_noise", "GaussianNoiseState"]

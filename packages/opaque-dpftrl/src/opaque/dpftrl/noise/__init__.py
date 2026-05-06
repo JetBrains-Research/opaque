@@ -11,8 +11,6 @@ Strategy factories:
 - :func:`band_mf_strategy`, :func:`blt_strategy`, :func:`bisr_strategy`, :func:`bsr_strategy`
 - :func:`lambda_cgd_strategy`, :func:`identity_strategy`
 
-Second-moment calibration helpers are re-exported from :mod:`opaque.core.noise`.
-
 References:
     - BandMF: https://arxiv.org/abs/2306.08153
     - BLT: https://arxiv.org/abs/2404.16706
@@ -20,7 +18,7 @@ References:
     - Private second moments: https://arxiv.org/abs/2502.06597
 """
 
-from opaque.core.noise import (
+from opaque.dpftrl.noise._second_moment import (
     DEFAULT_SECOND_MOMENT_OVERHEAD,
     second_moment_joint_sensitivity,
     second_moment_noise_scale,
@@ -37,6 +35,10 @@ from .identity import IdentityStrategy, identity_strategy
 from .lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
 from .second_moment import SecondMomentMFNoiseState
 from ._engine import MFNoiseState
+
+# Side-effect import: registers the MFNoiseState sync handler with
+# opaque.distributed.sync().
+from opaque.dpftrl.noise import distributed as _distributed  # noqa: F401
 
 __all__ = [
     # Dispatchers

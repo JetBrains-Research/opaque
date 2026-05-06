@@ -23,12 +23,6 @@ from typing import Any
 
 import torch
 
-from opaque.distributed import (
-    is_distributed,
-    register_sync_type,
-    sync_object,
-)
-from opaque.core.noise import NOISE_STATE_FIELD_OPS, assert_rng_key_equal
 from opaque.types import NoiseState
 from opaque.random import RngKey, generator_from_key
 from opaque.random import fold_in as rng_fold_in
@@ -274,24 +268,3 @@ def _streaming_mf_noise(
 # ---- Distributed state validation ----
 
 
-_MF_NOISE_STATE_FIELD_OPS: dict[str, str] = {
-    **NOISE_STATE_FIELD_OPS,
-    "_first_max_norm": "assert_equal",
-}
-
-
-def sync_mf_noise_state(state: MFNoiseState) -> MFNoiseState:
-    """Validate MF noise state consistency across ranks.
-
-    Asserts that all ranks share the same seed, step counter, and (once
-    latched) first-call sensitivity bound.  No-op outside
-    ``torch.distributed``.  Registered automatically with
-    :func:`opaque.distributed.sync`.
-    """
-    if not is_distributed():
-        return state
-    assert_rng_key_equal(state, "MFNoiseState")
-    return sync_object(state, field_ops=_MF_NOISE_STATE_FIELD_OPS)
-
-
-register_sync_type(MFNoiseState, sync_mf_noise_state)

@@ -19,7 +19,7 @@ from typing import Any
 import torch
 import torch.distributed as dist
 
-from opaque.types import ClippedPytree
+from opaque.types import ClippedPytree, NoisedPytree
 from opaque.core.pytree import tree_map
 
 from .collectives import all_reduce_, get_world_size, is_distributed
@@ -27,17 +27,6 @@ from .state import assert_scalar_equal
 
 
 def _is_noised(pytree: Any) -> bool:
-    """Type-check via lazy ``NoisedPytree`` import.
-
-    ``opaque.core.noise`` (where ``NoisedPytree`` lives) imports
-    ``opaque.clipping.types``, whose parent package side-effect-imports
-    ``opaque.clipping.distributed`` → ``opaque.distributed`` → this
-    module.  A module-level
-    ``from opaque.core.noise import NoisedPytree`` here would observe
-    the partially-initialised module mid-cycle.
-    """
-    from opaque.types import NoisedPytree
-
     return isinstance(pytree, NoisedPytree)
 
 
