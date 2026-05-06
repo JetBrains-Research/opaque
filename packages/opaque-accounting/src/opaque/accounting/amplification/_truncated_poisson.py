@@ -87,8 +87,8 @@ class TruncatedPoisson(DpProcess):
                 )
             case _:
                 raise TypeError(
-                    "TruncatedPoisson requires a Gaussian, AdaClip(Gaussian), or "
-                    "SecondMoment(Gaussian) inner mechanism, got "
+                    "TruncatedPoisson requires a Gaussian, AdaClip(Gaussian), "
+                    "SecondMoment(Gaussian), or NonPrivate inner mechanism, got "
                     f"{type(self.inner).__name__}."
                 )
 

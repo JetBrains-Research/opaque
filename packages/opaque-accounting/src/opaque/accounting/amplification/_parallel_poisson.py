@@ -129,8 +129,13 @@ def parallel_poisson(
     pass the inner Gaussian mechanism and sample rate directly.
 
     Args:
-        inner: A Gaussian or AdaClip mechanism (from :func:`gaussian` or
-            :func:`adaclip`).
+        inner: A :class:`Gaussian`, :class:`AdaClip` (with Gaussian inner),
+            :class:`NonPrivate`, or :class:`SecondMoment` (with Gaussian
+            inner) mechanism — produced by the corresponding ``acc.gaussian``,
+            ``acc.adaclip``, ``acc.nonprivate``, or ``acc.second_moment``
+            factory.  ``SecondMoment`` with an ``MfGaussian`` inner is
+            rejected — pass the matching MF amplification (``cyclic_poisson``,
+            ``b_min_sep``) instead.
         sample_rate: Probability of including each example, in (0, 1).
         num_workers: Number of parallel workers running Poisson sampling
             independently.

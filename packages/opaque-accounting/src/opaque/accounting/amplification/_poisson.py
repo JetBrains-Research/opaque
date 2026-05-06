@@ -76,8 +76,8 @@ class Poisson(DpProcess):
                 )
             case _:
                 raise TypeError(
-                    "Poisson requires a Gaussian, AdaClip(Gaussian), or "
-                    "SecondMoment(Gaussian) inner mechanism, got "
+                    "Poisson requires a Gaussian, AdaClip(Gaussian), "
+                    "SecondMoment(Gaussian), or NonPrivate inner mechanism, got "
                     f"{type(self.inner).__name__}."
                 )
 
