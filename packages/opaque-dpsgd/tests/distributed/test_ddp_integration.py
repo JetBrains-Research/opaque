@@ -24,7 +24,7 @@ from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.distributed import get_rank, get_world_size, sum_gradients, sync
 from opaque.distributed.gradients import sum_gradients_
-from opaque.distributed.state import reduce_scalar
+from opaque.distributed._state import reduce_scalar
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpftrl.noise import mf_noise, identity_strategy
 from opaque.profiling import StepTimer, TrainingProfiler

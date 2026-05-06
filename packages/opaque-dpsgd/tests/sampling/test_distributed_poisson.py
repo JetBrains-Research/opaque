@@ -13,7 +13,8 @@ from torch.utils.data import TensorDataset
 from opaque.random import fold_in, key
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.dpsgd.sampling import TruncatedPoissonSampler
-from opaque.distributed.shard import _local_shard_bounds, local_shard
+from opaque.distributed import local_shard
+from opaque.distributed._shard import _local_shard_bounds
 
 
 class TestLocalShard:

@@ -19,7 +19,7 @@ from opaque.distributed.gradients import (  # noqa: F401
     reduce_pytree_,
     sum_gradients_,
 )
-from opaque.distributed.state import (  # noqa: F401  (used in TestModuleExports)
+from opaque.distributed._state import (  # noqa: F401  (used in TestModuleExports)
     assert_pytree_equal,
     assert_scalar_equal,
     gather_pytree,
@@ -199,27 +199,31 @@ class TestModuleExports:
     """Tests for module exports.
 
     Headline names live at the package root; lower-level primitives are
-    grouped into power-user submodules (collectives, gradients, state,
-    shard).
+    grouped into the two documented power-user submodules (collectives,
+    gradients).  Sharding and state-sync plumbing live in underscore
+    modules and are reachable through the headline (``local_shard``,
+    ``sync``) or the registered DP-runtime sync-type machinery.
     """
 
     def test_root_headline_exports(self):
-        """The package root surfaces only the headline DP-DDP flow."""
+        """The package root surfaces the headline DP-DDP flow."""
         import opaque.distributed as root
 
         for name in [
             "is_distributed",
             "get_rank",
             "get_world_size",
+            "all_reduce",
             "sum_gradients",
+            "sum_gradients_",
             "sync",
             "local_shard",
         ]:
             assert hasattr(root, name) and callable(getattr(root, name)), name
 
     def test_submodule_exports(self):
-        """Lower-level primitives live in documented submodules."""
-        from opaque.distributed import collectives, gradients, shard, state
+        """Lower-level primitives live in the two power-user submodules."""
+        from opaque.distributed import collectives, gradients
 
         for name in [
             "is_distributed",
@@ -237,15 +241,3 @@ class TestModuleExports:
             "sum_gradients_",
         ]:
             assert callable(getattr(gradients, name)), f"gradients.{name}"
-        assert callable(shard.local_shard)
-        for name in [
-            "assert_pytree_equal",
-            "assert_scalar_equal",
-            "gather_pytree",
-            "gather_tensors",
-            "reduce_scalar",
-            "sync_object",
-            "register_sync_type",
-            "sync",
-        ]:
-            assert callable(getattr(state, name)), f"state.{name}"

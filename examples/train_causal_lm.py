@@ -84,7 +84,7 @@ from opaque.profiling import (
 from opaque.random import key, fold_in
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.dpsgd.sampling import TruncatedPoissonSampler
-from opaque.distributed.shard import local_shard
+from opaque.distributed import local_shard
 from opaque.functional import make_functional
 from opaque.types import PerGroup
 from opaque.clipping import per_group

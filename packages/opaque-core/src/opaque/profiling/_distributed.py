@@ -7,7 +7,7 @@ from dataclasses import replace
 import torch
 
 from opaque.distributed import is_distributed
-from opaque.distributed.state import (
+from opaque.distributed._state import (
     assert_scalar_equal,
     reduce_scalar,
     register_sync_type,

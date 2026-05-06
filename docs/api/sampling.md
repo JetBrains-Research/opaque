@@ -3,7 +3,7 @@
 Sampling primitives are split across `opaque.dpsgd.sampling` (Poisson and
 truncated Poisson) and `opaque.dpftrl.sampling` (cyclic Poisson, b-min-sep,
 balls-in-bins, sequential). Distributed shard helpers live in
-`opaque.distributed.shard`. They provide privacy-amplifying sampling
+`opaque.distributed`. They provide privacy-amplifying sampling
 mechanisms for DP-SGD and DP-FTRL.
 
 ## Overview
@@ -162,7 +162,7 @@ Partition a dataset for DDP training. Returns a `Subset` containing the
 contiguous shard for the given rank.
 
 ```python
-from opaque.distributed.shard import local_shard
+from opaque.distributed import local_shard
 import torch.distributed as dist
 
 shard = local_shard(
@@ -182,7 +182,7 @@ loader = DataLoader(shard, batch_sampler=sampler)
 
 **Returns:** `torch.utils.data.Subset` containing the local shard.
 
-::: opaque.distributed.shard.local_shard
+::: opaque.distributed.local_shard
     options:
       show_source: true
       heading_level: 3
