@@ -2163,12 +2163,13 @@ user-facing installation target.</p>
 <li>
 <p><strong><a href="accounting/">Accounting</a></strong>: Privacy budget tracking</p>
 </li>
-<li><code>gaussian()</code>, <code>poisson()</code>, <code>truncated_poisson()</code>, <code>parallel_poisson()</code> - Standard mechanisms</li>
-<li><code>band_mf()</code>, <code>blt()</code>, <code>lambda_cgd()</code>, <code>bisr()</code>, <code>cyclic_poisson()</code>, <code>balls_in_bins()</code> - MF mechanisms</li>
+<li><code>gaussian()</code>, <code>adaclip()</code>, <code>second_moment()</code> — DP-SGD mechanisms (also via <code>opaque.dpsgd.accounting</code>)</li>
+<li><code>poisson()</code>, <code>truncated_poisson()</code>, <code>parallel_poisson()</code> — Poisson-family amplification</li>
+<li><code>band_mf()</code>, <code>blt()</code>, <code>lambda_cgd()</code>, <code>bisr()</code>, <code>cyclic_poisson()</code>, <code>balls_in_bins()</code> — MF mechanisms (also via <code>opaque.dpftrl.accounting</code>)</li>
 <li><code>DpProcess</code> operators: <code>*</code> (repeat), <code>|</code> (compose)</li>
-<li><code>.epsilon_at()</code>, <code>.delta_at()</code>, <code>.advantage()</code>, <code>.beta_at()</code>, <code>.risk_at()</code> - Privacy metrics</li>
+<li><code>.epsilon_at()</code>, <code>.delta_at()</code>, <code>.advantage()</code>, <code>.beta_at()</code>, <code>.risk_at()</code> — Privacy metrics</li>
 <li>
-<p><code>calibrate()</code> - Binary-search noise multiplier for target privacy</p>
+<p><code>calibrate()</code> — Binary-search noise multiplier for target privacy</p>
 </li>
 <li>
 <p><strong><a href="sampling/">Sampling</a></strong>: Privacy-amplifying sampling</p>
@@ -2354,6 +2355,11 @@ user-facing installation target.</p>
 <td><a href="../user-guide/accounting/#mechanisms">Guide</a></td>
 </tr>
 <tr>
+<td><code>second_moment()</code></td>
+<td>Joint first+squared gradient accounting</td>
+<td><a href="../user-guide/accounting/#mechanisms">Guide</a></td>
+</tr>
+<tr>
 <td><code>eps_delta()</code></td>
 <td>Fixed (ε, δ) guarantee</td>
 <td><a href="../user-guide/accounting/#mechanisms">Guide</a></td>
@@ -2361,6 +2367,11 @@ user-facing installation target.</p>
 <tr>
 <td><code>identity()</code></td>
 <td>Zero privacy loss</td>
+<td><a href="../user-guide/accounting/#mechanisms">Guide</a></td>
+</tr>
+<tr>
+<td><code>nonprivate()</code></td>
+<td>Infinite-ε non-private baseline</td>
 <td><a href="../user-guide/accounting/#mechanisms">Guide</a></td>
 </tr>
 </tbody>

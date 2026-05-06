@@ -2433,6 +2433,42 @@ something to ablate, not as a default recommendation.</p>
 <a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>    <span class="p">)</span>
 <a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="n">process</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span><span class="n">mechanism</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="n">q</span><span class="p">)</span>
 </code></pre></div>
+<p><code>acc.second_moment</code> accepts three kinds of Gaussian-family inner:</p>
+<table>
+<thead>
+<tr>
+<th>Inner</th>
+<th>Use case</th>
+<th>Composition</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>acc.gaussian(nm)</code></td>
+<td>DP-SGD with fixed clipping</td>
+<td><code>acc.second_moment(acc.gaussian(nm), sensitivity=...)</code></td>
+</tr>
+<tr>
+<td><code>acc.adaclip(acc.gaussian(nm), ...)</code></td>
+<td>DP-SGD with adaptive clipping</td>
+<td><code>acc.second_moment(acc.adaclip(...), sensitivity=...)</code></td>
+</tr>
+<tr>
+<td><code>acc.band_mf(nm, ...)</code> (or any other MF Gaussian)</td>
+<td>DP-FTRL</td>
+<td><code>acc.second_moment(acc.band_mf(...), sensitivity=...)</code></td>
+</tr>
+</tbody>
+</table>
+<p>For the <code>AdaClip</code> inner the threshold-quantile noise is folded into the
+gradient noise via Theorem 1's <code>z_eff</code> first; the second-moment
+overhead then applies on the resulting effective Gaussian.  The
+composition is exact because the threshold-quantile and gradient/squared-
+gradient releases use independent randomness.</p>
+<p>For DP-SGD AUTO-S clipping (<code>auto_clipped_grad(..., second_moment=True)</code>)
+the matching accountant is just <code>acc.second_moment(acc.gaussian(nm), ...)</code>
+— AUTO-S is per-example smooth scaling and contributes no extra
+threshold-quantile cost.</p>
 <h3 id="cli">CLI<a class="headerlink" href="#cli" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>python<span class="w"> </span>examples/train_dp_ftrl.py<span class="w"> </span>--preset<span class="w"> </span>smoke<span class="w"> </span>--optimizer<span class="w"> </span>adamw<span class="w"> </span>--mechanism<span class="w"> </span>blt<span class="w"> </span>--second-moment
 </code></pre></div>
