@@ -110,8 +110,9 @@ uniform_stddev = grads.noise_stddev_for(
 )
 ```
 
-For callers that already hold a bare `PerGroup` (e.g. recovered from a
-checkpoint), the equivalent free function is still available:
+For callers that already hold a bare `PerGroup` (for example restored
+via `opaque.serialization.from_state_dict` with a template that matches
+the saved keys), the equivalent free function is still available:
 
 ```python
 from opaque.dpsgd.noise import per_group_noise_stddev

@@ -70,6 +70,11 @@ def per_group(
         :class:`~opaque.types.PerGroup` with pre-resolved
         parameter-to-group assignments.
 
+    See also:
+        :mod:`opaque.serialization` — persist or restore a ``PerGroup`` with
+        ``state_dict`` / ``from_state_dict``.  Call :func:`per_group` again
+        when parameter keys or grouping patterns change.
+
     Raises:
         ValueError: If no patterns are provided, if a parameter matches zero
             patterns (and no ``fallback`` is given), if a parameter

@@ -82,11 +82,9 @@ class PerGroup:
         values: Mapping from group name to the per-group value.
 
     Checkpointing uses :func:`opaque.serialization.state_dict` /
-    :func:`opaque.serialization.from_state_dict` with a template
-    :class:`PerGroup` whose ``groups`` / ``values`` dicts list the same
-    keys as at save time (flat path keys such as ``groups.<param_key>`` /
-    ``values.<group_name>`` — not a legacy nested
-    ``{"groups": {...}, "values": {...}}`` blob).
+    :func:`opaque.serialization.from_state_dict`; the template must use
+    the same ``groups`` / ``values`` keys as at save time (flat keys such
+    as ``groups.<param_key>`` / ``values.<group_name>``).
     """
 
     groups: dict[str, str]

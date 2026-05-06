@@ -25,7 +25,8 @@ constraint with equality.
 
 Equivalent to ``ClippedPytree.noise_stddev_for(noise_multiplier=nm,
 allocation='optimal')``; kept as a free function for callers that already
-hold a bare :class:`PerGroup` rather than a clipped pytree.
+hold a bare :class:`PerGroup` (for example one restored with
+:mod:`opaque.serialization`) rather than a clipped pytree.
 """
 
 from __future__ import annotations
