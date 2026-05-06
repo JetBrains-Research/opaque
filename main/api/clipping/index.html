@@ -1491,6 +1491,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#pytree-wrappers" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pytree Wrappers
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#distributed-sync-helpers" class="md-nav__link">
     <span class="md-ellipsis">
       Distributed Sync Helpers
@@ -1866,6 +1875,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#pytree-wrappers" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pytree Wrappers
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#distributed-sync-helpers" class="md-nav__link">
     <span class="md-ellipsis">
       Distributed Sync Helpers
@@ -2004,6 +2022,28 @@ differential privacy.</p>
 <li><strong><code>AdaptiveClippedGradAux</code></strong> — Inherits all fields from <code>ClippedGradAux</code> (from <code>adaptive_clipped_grad</code>).</li>
 <li><strong><code>AutoClippedGradAux</code></strong> — Inherits <code>ClippedGradAux</code> fields with AUTO-S semantics: <code>grad_norms</code> (pre-scale), <code>clipped_grad_norms</code> (post-scale, bounded by R), <code>clipping_rate</code> (fraction with ‖g‖ &gt; R), <code>loss_values</code>, <code>loss_aux</code>, <code>group_norms</code>, <code>batch_size</code>.</li>
 <li><strong><code>AutoClippedFunAux</code></strong> — Inherits <code>ClippedFunAux</code> fields with AUTO-S semantics: <code>norms</code> (pre-scale), <code>clipped_norms</code> (post-scale, bounded by R), <code>clipping_rate</code> (fraction with ‖v‖ &gt; R), <code>values</code>, <code>value_aux</code>, <code>group_norms</code>, <code>batch_size</code>.</li>
+</ul>
+<h3 id="pytree-wrappers">Pytree Wrappers<a class="headerlink" href="#pytree-wrappers" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>ClippedPytree</code></strong> — Wraps a pytree of clipped gradients with calibration metadata (<code>max_norm</code>). Carries a <code>max_norm</code> which is either a scalar <code>float</code> or a <code>PerGroup</code> for per-parameter-group clipping.</li>
+</ul>
+<p><strong><code>noise_stddev_for(*, noise_multiplier, allocation="optimal") -&gt; float | PerGroup</code></strong>
+  Returns the noise standard deviation that <code>gaussian_noise(noise_multiplier)</code> would apply to this
+  clipped pytree.</p>
+<ul>
+<li>For scalar <code>max_norm</code>: returns <code>noise_multiplier * max_norm</code>.</li>
+<li>For <code>PerGroup</code> <code>max_norm</code> with <code>allocation="optimal"</code> (default): returns <code>PerGroup</code> of per-group
+    standard deviations <code>σᵢ = noise_multiplier · √(Cᵢ · ΣⱼCⱼ)</code> (MSE-optimal Mahalanobis allocation).</li>
+<li>For <code>PerGroup</code> with <code>allocation="isotropic"</code>: returns scalar <code>noise_multiplier * max_norm.effective</code>.</li>
+</ul>
+<p>Privacy accounting is <code>gaussian(noise_multiplier)</code> regardless of <code>allocation</code> — per-group allocation
+  costs nothing in the accountant because the Mahalanobis constraint is satisfied with equality.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">grads</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">stddev</span> <span class="o">=</span> <span class="n">grads</span><span class="o">.</span><span class="n">noise_stddev_for</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">0.8</span><span class="p">)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+</code></pre></div>
+<ul>
+<li><strong><code>NoisedPytree</code></strong> — Subclass of <code>ClippedPytree</code> that also carries a <code>noise_stddev</code> field (scalar or <code>PerGroup</code>). Returned by all noise functions.</li>
 </ul>
 <h3 id="distributed-sync-helpers">Distributed Sync Helpers<a class="headerlink" href="#distributed-sync-helpers" title="Permanent link">&para;</a></h3>
 <p>Use <code>sync()</code> from <code>opaque.distributed</code> to synchronize any clipping state or aux
