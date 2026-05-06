@@ -2201,10 +2201,11 @@ user-facing installation target.</p>
 <li>
 <p><strong><a href="distributed/">Distributed</a></strong>: Multi-GPU training with DDP</p>
 </li>
-<li><code>sum_gradients()</code> / <code>sum_gradients_()</code> - Copy/default and in-place DP gradient summation</li>
-<li><code>reduce_pytree()</code> / <code>reduce_pytree_()</code> - Copy/default and in-place generic PyTree reduction</li>
+<li><code>sum_gradients()</code> / <code>sum_gradients_()</code> - Copy-returning and in-place DP gradient summation</li>
+<li><code>all_reduce()</code> - Generic tensor all-reduce (sum, mean, max, min)</li>
+<li><code>reduce_pytree()</code> / <code>reduce_pytree_()</code> - Copy-returning and in-place generic PyTree reduction</li>
 <li><code>sync()</code> - Auto-dispatch sync for any state/aux type</li>
-<li><code>sync_object()</code> - Synchronize scalar fields of a dataclass</li>
+<li><code>local_shard()</code> - Partition dataset for DDP training</li>
 <li><code>is_distributed()</code>, <code>get_rank()</code>, <code>get_world_size()</code> - Distributed utilities</li>
 </ul>
 <h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link">&para;</a></h2>
@@ -2628,32 +2629,27 @@ user-facing installation target.</p>
 <tbody>
 <tr>
 <td><code>sum_gradients()</code> / <code>sum_gradients_()</code></td>
-<td>DP gradient summation (copy / in-place)</td>
+<td>DP gradient summation (copy-returning / in-place)</td>
+<td><a href="../user-guide/distributed/">Guide</a></td>
+</tr>
+<tr>
+<td><code>all_reduce()</code></td>
+<td>Generic tensor all-reduce (sum, mean, max, min)</td>
 <td><a href="../user-guide/distributed/">Guide</a></td>
 </tr>
 <tr>
 <td><code>reduce_pytree()</code> / <code>reduce_pytree_()</code></td>
-<td>Generic PyTree reduction (copy / in-place)</td>
-<td><a href="../user-guide/distributed/">Guide</a></td>
-</tr>
-<tr>
-<td><code>reduce_scalar()</code></td>
-<td>Reduce scalar across devices</td>
-<td><a href="../user-guide/distributed/">Guide</a></td>
-</tr>
-<tr>
-<td><code>gather_tensors()</code></td>
-<td>Gather tensors from all ranks</td>
+<td>Generic PyTree reduction (copy-returning / in-place)</td>
 <td><a href="../user-guide/distributed/">Guide</a></td>
 </tr>
 <tr>
 <td><code>sync()</code></td>
-<td>Auto-dispatch sync for any state/aux</td>
+<td>Auto-dispatch sync for any state/aux type</td>
 <td><a href="../user-guide/distributed/">Guide</a></td>
 </tr>
 <tr>
-<td><code>sync_object()</code></td>
-<td>Sync scalar fields of a dataclass</td>
+<td><code>local_shard()</code></td>
+<td>Partition dataset for DDP training</td>
 <td><a href="../user-guide/distributed/">Guide</a></td>
 </tr>
 <tr>
