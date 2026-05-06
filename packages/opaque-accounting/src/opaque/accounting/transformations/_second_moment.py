@@ -175,10 +175,16 @@ class SecondMoment(DpProcess):
         inner = self.inner
 
         match inner:
-            case g if Gaussian is not None and isinstance(inner, Gaussian) and g.noise_multiplier == 0:
+            case g if (
+                Gaussian is not None
+                and isinstance(inner, Gaussian)
+                and g.noise_multiplier == 0
+            ):
                 return _native.non_private_pld(native_cfg)
-            case ac if AdaClip is not None and isinstance(inner, AdaClip) and isinstance(
-                ac.inner, NonPrivate
+            case ac if (
+                AdaClip is not None
+                and isinstance(inner, AdaClip)
+                and isinstance(ac.inner, NonPrivate)
             ):
                 return _native.non_private_pld(native_cfg)
             case ac if (
@@ -199,8 +205,10 @@ class SecondMoment(DpProcess):
                     self.noise_multiplier / self.sensitivity,
                     native_cfg,
                 )
-            case ac if AdaClip is not None and isinstance(inner, AdaClip) and (
-                Gaussian is not None and isinstance(ac.inner, Gaussian)
+            case ac if (
+                AdaClip is not None
+                and isinstance(inner, AdaClip)
+                and (Gaussian is not None and isinstance(ac.inner, Gaussian))
             ):
                 return _native.gaussian_pld(
                     self.noise_multiplier / self.sensitivity,
@@ -252,8 +260,10 @@ def second_moment(
             pass
         case _mf if MfGaussian is not None and isinstance(inner, MfGaussian):
             pass
-        case ac if AdaClip is not None and isinstance(inner, AdaClip) and (
-            Gaussian is not None and isinstance(ac.inner, Gaussian)
+        case ac if (
+            AdaClip is not None
+            and isinstance(inner, AdaClip)
+            and (Gaussian is not None and isinstance(ac.inner, Gaussian))
         ):
             pass
         case ac if AdaClip is not None and isinstance(inner, AdaClip):
