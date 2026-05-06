@@ -101,13 +101,8 @@ def from_state_dict(template: Any, sd: Mapping[str, Any]) -> Any:
     return _walk_load(template, sd, "")
 
 
-structural_state_dict = _structural.structural_state_dict
-structural_from_state_dict = _structural.structural_from_state_dict
-
 __all__: Final[list[str]] = [
     "from_state_dict",
     "register_serialization_type",
     "state_dict",
-    "structural_from_state_dict",
-    "structural_state_dict",
 ]

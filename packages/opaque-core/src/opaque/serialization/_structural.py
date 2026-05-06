@@ -93,23 +93,3 @@ def walk_load(
         return sd.get(prefix, template)
     # Opaque — pass through.
     return template
-
-
-def structural_state_dict(obj: Any) -> dict[str, Any]:
-    """Flat structural serialisation without the type registry."""
-    out: dict[str, Any] = {}
-
-    def _recurse(o: Any, p: str, oout: dict[str, Any]) -> None:
-        walk_save(o, p, oout, _recurse)
-
-    _recurse(obj, "", out)
-    return out
-
-
-def structural_from_state_dict(template: Any, sd: Mapping[str, Any]) -> Any:
-    """Structural restore without the type registry."""
-
-    def _recurse(t: Any, mapping: Mapping[str, Any], p: str) -> Any:
-        return walk_load(t, mapping, p, _recurse)
-
-    return _recurse(template, sd, "")

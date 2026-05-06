@@ -13,10 +13,6 @@ preserved from the template on load.
 
 Domain pages with examples: [Optimizers](optimizers.md), [Accounting](accounting.md).
 
-The module also re-exports :func:`opaque.serialization.structural_state_dict` and
-:func:`opaque.serialization.structural_from_state_dict` (same tree logic without the
-type registry).
-
 ::: opaque.serialization
     options:
       show_source: true
