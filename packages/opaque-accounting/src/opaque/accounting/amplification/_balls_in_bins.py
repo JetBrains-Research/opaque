@@ -122,6 +122,20 @@ class BallsInBins(DpProcess):
                     mg.noise_multiplier,
                     native_cfg,
                 )
+            case SecondMoment(inner=Gaussian(noise_multiplier=0)) | SecondMoment(
+                inner=NonPrivate()
+            ):
+                return _native.non_private_pld(native_cfg)
+            case SecondMoment(inner=Gaussian()) as second:
+                # Tight: SecondMoment changes the joint sensitivity, so
+                # BnB amplification reduces to BnB on a Gaussian with
+                # effective_nm = σ ÷ joint sensitivity.
+                return _native.balls_in_bins_gaussian_pld_epochs(
+                    second.noise_multiplier / second.sensitivity,
+                    self.num_bins,
+                    self.num_epochs,
+                    native_cfg,
+                )
             case SecondMoment(inner=Blt() | LambdaCgd() | Bisr() | Bsr()) as second:
                 if not second.gram_matrix:
                     raise ValueError(

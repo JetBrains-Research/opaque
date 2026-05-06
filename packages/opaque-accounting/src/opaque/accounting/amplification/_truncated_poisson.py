@@ -9,11 +9,13 @@ from .. import _native
 
 from opaque.accounting._base import DpProcess, Pld
 from opaque.accounting.mechanisms._gaussian import Gaussian
+from opaque.accounting.mechanisms._mf_gaussian import MfGaussian
 from opaque.accounting.mechanisms._nonprivate import NonPrivate
 from opaque.accounting.transformations._adaclip import AdaClip
+from opaque.accounting.transformations._second_moment import SecondMoment
 
 #: Mechanism types accepted by :func:`truncated_poisson`.
-_Inner = Gaussian | AdaClip | NonPrivate
+_Inner = Gaussian | AdaClip | NonPrivate | SecondMoment
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,10 +69,26 @@ class TruncatedPoisson(DpProcess):
                     self.dataset_size,
                     native_cfg,
                 )
+            case SecondMoment(inner=Gaussian(noise_multiplier=0)) | SecondMoment(
+                inner=NonPrivate()
+            ):
+                return _native.non_private_pld(native_cfg)
+            case SecondMoment(inner=Gaussian()) as sm:
+                # Tight: SecondMoment changes the joint sensitivity, so
+                # amplification reduces to truncated Poisson on a Gaussian
+                # with effective_nm = σ ÷ joint sensitivity.
+                return _native.truncated_poisson_gaussian_pld(
+                    sm.noise_multiplier / sm.sensitivity,
+                    self.sample_rate,
+                    self.batch_size_cap,
+                    self.dataset_size,
+                    native_cfg,
+                )
             case _:
                 raise TypeError(
-                    "TruncatedPoisson requires a Gaussian or AdaClip(Gaussian) "
-                    f"inner mechanism, got {type(self.inner).__name__}."
+                    "TruncatedPoisson requires a Gaussian, AdaClip(Gaussian), or "
+                    "SecondMoment(Gaussian) inner mechanism, got "
+                    f"{type(self.inner).__name__}."
                 )
 
 
@@ -89,8 +107,9 @@ def truncated_poisson(
     **Use this for production DP-SGD** when you have a fixed batch size limit.
 
     Args:
-        inner: The base Gaussian mechanism (from :func:`gaussian`) or
-            an :func:`adaclip` transform applied to a Gaussian.
+        inner: The base Gaussian mechanism (from :func:`gaussian`),
+            an :func:`adaclip` transform applied to a Gaussian, or a
+            :func:`second_moment` transform applied to a Gaussian.
         sample_rate: Probability of including each example (batch_size / dataset_size).
         batch_size_cap: Maximum batch size (actual batches are capped at this value).
         dataset_size: Total number of examples in the dataset.
@@ -108,10 +127,15 @@ def truncated_poisson(
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, AdaClip, NonPrivate)):
+    if not isinstance(inner, (Gaussian, AdaClip, NonPrivate, SecondMoment)):
         raise TypeError(
-            f"truncated_poisson() requires a Gaussian, AdaClip, or NonPrivate "
-            f"inner mechanism, got {type(inner).__name__}."
+            f"truncated_poisson() requires a Gaussian, AdaClip, NonPrivate, or "
+            f"SecondMoment(Gaussian) inner mechanism, got {type(inner).__name__}."
+        )
+    if isinstance(inner, SecondMoment) and isinstance(inner.inner, MfGaussian):
+        raise TypeError(
+            "truncated_poisson() does not support SecondMoment(MfGaussian) — pass "
+            "an MF-aware amplification (cyclic_poisson, b_min_sep) instead."
         )
     return TruncatedPoisson(
         inner=inner,
