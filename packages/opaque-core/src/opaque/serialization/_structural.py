@@ -81,9 +81,7 @@ def walk_load(
             )
         )
     if isinstance(template, tuple):
-        return tuple(
-            recurse(v, sd, f"{prefix}[{i}]") for i, v in enumerate(template)
-        )
+        return tuple(recurse(v, sd, f"{prefix}[{i}]") for i, v in enumerate(template))
     if isinstance(template, list):
         return [recurse(v, sd, f"{prefix}[{i}]") for i, v in enumerate(template)]
     if isinstance(template, dict):
