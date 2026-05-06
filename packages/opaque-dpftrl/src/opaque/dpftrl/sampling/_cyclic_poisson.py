@@ -47,7 +47,7 @@ class CyclicPoissonSampler(Sampler):
 
     .. code-block:: python
 
-        from opaque.distributed._shard import local_shard
+        from opaque.distributed import local_shard
 
         shard = local_shard(dataset, rank=rank, world_size=world_size)
         sampler = CyclicPoissonSampler(shard, sampling_prob=0.5, key=fold_in(key(42), rank))
