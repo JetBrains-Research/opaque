@@ -1,14 +1,11 @@
-"""Transformations that modify existing DP processes.
+"""Cross-cutting transformations shared across DP-SGD and DP-FTRL.
 
-Transformations take an existing mechanism (e.g. Gaussian) and return a new
-mechanism with adjusted parameters. Unlike amplification (which wraps a
-mechanism with subsampling), transformations change the mechanism itself.
+- :func:`second_moment` — convert a first-moment mechanism to second-moment
 
-The transformation dataclasses (``AdaClip``, ``SecondMoment``) live in
-:mod:`opaque.accounting.transformations.types`.
+``adaclip`` lives in :mod:`opaque.dpsgd.accounting.mechanisms` (it is a
+DP-SGD-specific transformation).
 """
 
-from opaque.accounting.transformations._adaclip import adaclip
 from opaque.accounting.transformations._second_moment import second_moment
 
-__all__ = ["adaclip", "second_moment"]
+__all__ = ["second_moment"]

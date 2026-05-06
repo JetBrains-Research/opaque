@@ -5,8 +5,9 @@
 //! - [`poisson_gaussian_pld`] — Poisson-subsampled Gaussian
 //! - [`truncated_poisson_gaussian_pld`] — Truncated Poisson-subsampled Gaussian
 //! - [`parallel_poisson_gaussian_pld`] — Parallel Poisson Gaussian (gradient accumulation or parallel workers)
-//! - [`balls_in_bins_gaussian_pld`] — Balls-in-Bins Gaussian (epoch-level composition)
-//! - [`bnb_mc_pld`] — Balls-in-Bins Monte Carlo for matrix mechanisms
+//! - [`bnb_mc_pld`] — Balls-in-Bins Monte Carlo for correlated-noise matrix
+//!   mechanisms (BLT/λCGD/BISR/BSR).  Independent-noise BnB collapses to
+//!   `poisson_gaussian_pld` composed; use that directly for Gaussian/AdaClip.
 
 mod b_min_sep_mc;
 mod b_min_sep_registry;
@@ -22,9 +23,7 @@ pub use b_min_sep_mc::{
 pub use b_min_sep_registry::{
     drop_b_min_sep_transcript_handle, pld_from_transcript_handle, register_b_min_sep_transcripts,
 };
-pub use balls_in_bins::{
-    balls_in_bins_gaussian_pld, balls_in_bins_gaussian_pld_epochs, bnb_mc_pld,
-};
+pub use balls_in_bins::bnb_mc_pld;
 pub use parallel_poisson::parallel_poisson_gaussian_pld;
 pub use poisson::poisson_gaussian_pld;
 pub use truncated_poisson::truncated_poisson_gaussian_pld;

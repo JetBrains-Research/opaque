@@ -26,6 +26,7 @@ dependencies = [
     "torch>=2.10.0",
     "torchopt>=0.7.3",
     "opaque-core",
+    "opaque-accounting",
 ]
 
 [tool.setuptools.packages.find]
@@ -43,3 +44,4 @@ package = true
 
 [tool.uv.sources]
 opaque-core = { workspace = true }
+opaque-accounting = { workspace = true }

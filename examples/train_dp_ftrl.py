@@ -121,6 +121,8 @@ apply_runtime_patches()
 import torchopt
 
 import opaque.accounting as acc
+import opaque.dpftrl.accounting as ftrl_acc
+import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import calibration as cal
 from opaque.clipping import clipped_grad
 from opaque.types import SecondMomentNoiseOutput
@@ -1048,13 +1050,13 @@ def main():
     if args.mechanism == "band_mf" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = acc.band_mf(
+            mechanism = ftrl_acc.band_mf(
                 nm, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups
             )
             mechanism = _wrap_second_moment(mechanism)
             if args.band_mf_sampling == "cyclic_poisson":
-                return acc.cyclic_poisson(mechanism, sample_rate=sampling_prob)
-            return acc.b_min_sep(
+                return ftrl_acc.cyclic_poisson(mechanism, sample_rate=sampling_prob)
+            return ftrl_acc.b_min_sep(
                 mechanism,
                 strategy_coefficients=strategy.coefficients,
                 n_steps=total_steps,
@@ -1063,19 +1065,19 @@ def main():
     elif args.mechanism == "blt" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = acc.blt(nm, sensitivity=strategy.sensitivity)
+            mechanism = ftrl_acc.blt(nm, sensitivity=strategy.sensitivity)
             mechanism = _wrap_second_moment(mechanism)
             return mechanism
     elif args.mechanism == "lambda_cgd" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = acc.lambda_cgd(
+            mechanism = ftrl_acc.lambda_cgd(
                 nm,
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
             mechanism = _wrap_second_moment(mechanism)
-            return acc.balls_in_bins(
+            return ftrl_acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
@@ -1083,13 +1085,13 @@ def main():
     elif args.mechanism == "bisr" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = acc.bisr(
+            mechanism = ftrl_acc.bisr(
                 nm,
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
             mechanism = _wrap_second_moment(mechanism)
-            return acc.balls_in_bins(
+            return ftrl_acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
@@ -1097,13 +1099,13 @@ def main():
     elif args.mechanism == "bsr" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = acc.bsr(
+            mechanism = ftrl_acc.bsr(
                 nm,
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
             mechanism = _wrap_second_moment(mechanism)
-            return acc.balls_in_bins(
+            return ftrl_acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
@@ -1111,7 +1113,7 @@ def main():
     elif args.mechanism == "identity":
 
         def acct_mechanism(nm):
-            return acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
+            return dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=sample_rate) * total_steps
     elif args.mechanism == "none":
 
         def acct_mechanism(nm):
@@ -1248,7 +1250,7 @@ def main():
 
             def identity_acct(nm):
                 return (
-                    acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
+                    dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=sample_rate) * total_steps
                 )
 
             identity_cal = cal.calibrate(

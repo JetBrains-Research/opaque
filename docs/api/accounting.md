@@ -10,7 +10,7 @@ resulting process.
 ```python
 import opaque.accounting as acc
 
-step = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=0.01)
 training = step * 1000
 epsilon = training.epsilon_at(1e-5)
 ```
@@ -19,6 +19,45 @@ The underlying implementation uses Google's PLD accounting via the
 `opaque-accounting` Rust crate (PyO3 bindings).
 
 **See also**: [Privacy Accounting User Guide](../user-guide/accounting.md)
+
+---
+
+## Namespace Organization
+
+The accounting API is split into three namespaces:
+
+| Namespace | Contents | Import |
+|-----------|----------|--------|
+| `opaque.accounting` | Cross-cutting: calibration, composition, `second_moment`, `balls_in_bins`, `Accountant`, `repeat`, `compose` | `import opaque.accounting as acc` |
+| `opaque.dpsgd.accounting` | DP-SGD mechanisms: `gaussian`, `adaclip`, `poisson`, `truncated_poisson`, `parallel_poisson` | `from opaque.dpsgd import accounting as dpsgd_acc` |
+| `opaque.dpftrl.accounting` | DP-FTRL mechanisms: `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `cyclic_poisson`, `b_min_sep` | `from opaque.dpftrl import accounting as dpftrl_acc` |
+
+The legacy paths (`dpsgd_acc.gaussian`, `dpsgd_acc.poisson`, etc.) remain available on
+`opaque.accounting` for backwards compatibility, but new code should prefer
+the algorithm-scoped namespaces.
+
+```python
+# DP-SGD
+from opaque.dpsgd import accounting as dpsgd_acc
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=0.01)
+
+# DP-FTRL
+from opaque.dpftrl import accounting as dpftrl_acc
+from opaque.dpftrl.noise import band_mf_strategy
+strategy = band_mf_strategy(n_steps=1000, bands=10)
+proc = dpftrl_acc.cyclic_poisson(
+    dpftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups),
+    sample_rate=0.01,
+)
+
+# Cross-cutting composition and calibration always go via opaque.accounting
+import opaque.accounting as acc
+total = step * 1000
+eps = total.epsilon_at(1e-5)
+```
+
+`opaque.dpsgd.accounting` and `opaque.dpftrl.accounting` are lazily imported:
+the Rust PLD extension is not loaded until you access these submodules.
 
 ---
 
@@ -55,14 +94,14 @@ are elided. Composing the same step in a loop produces a single `Repeated` node
 with one `self_compose` call (2 FFTs), not `n` heterogeneous composes.
 
 ```python
-step = acc.poisson(acc.gaussian(0.5), 0.01)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), 0.01)
 
 # Homogeneous composition
 training = step * 1000
 
 # Heterogeneous composition (multi-phase)
-phase1 = acc.poisson(acc.gaussian(0.5), 0.01) * 500
-phase2 = acc.poisson(acc.gaussian(0.3), 0.01) * 500
+phase1 = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), 0.01) * 500
+phase2 = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.3), 0.01) * 500
 total = phase1 | phase2
 
 eps = total.epsilon_at(1e-5)
@@ -84,7 +123,7 @@ when computing privacy metrics via `pld()`, not stored in process structure.
 
 ```python
 # Create processes without config
-proc = acc.poisson(acc.gaussian(0.8), 0.01)
+proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01)
 
 # Apply config at query time
 eps_coarse = proc.epsilon_at(1e-5, discretization=1e-3)  # faster, less accurate
@@ -97,7 +136,7 @@ Set default config for all queries when not overridden:
 
 ```python
 acc.set_discretization(discretization=1e-4)  # Apply to all queries
-proc = acc.poisson(acc.gaussian(0.8), 0.01)
+proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01)
 eps = proc.epsilon_at(1e-5)  # Uses 1e-4 default
 ```
 
@@ -128,7 +167,7 @@ Poisson-subsampled mechanism (standard DP-SGD step). `sample_rate` is
 - `sample_rate` (float): Probability of including each example, in (0, 1]
 
 ```python
-step = acc.poisson(acc.gaussian(0.5), sample_rate=256 / 50_000)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), sample_rate=256 / 50_000)
 ```
 
 ### `truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size) -> DpProcess`
@@ -145,7 +184,7 @@ batch size limit.
 ```python
 n = 50_000
 batch = 256
-step = acc.truncated_poisson(acc.gaussian(0.8), batch / n, batch, n)
+step = dpsgd_acc.truncated_poisson(dpsgd_acc.gaussian(0.8), batch / n, batch, n)
 ```
 
 ### `parallel_poisson(inner, sample_rate, num_workers) -> DpProcess`
@@ -159,8 +198,8 @@ Like `poisson()` and `truncated_poisson()`, this is a full wrapper.
 - `num_workers` (int): Number of parallel workers sampling independently
 
 ```python
-step = acc.parallel_poisson(
-    acc.gaussian(0.5), sample_rate=0.01, num_workers=4,
+step = dpsgd_acc.parallel_poisson(
+    dpsgd_acc.gaussian(0.5), sample_rate=0.01, num_workers=4,
 )
 ```
 
@@ -175,7 +214,7 @@ fraction query. Returns an `AdaClip` process composable with
 - `expected_batch_size` (float): Expected batch size (``sample_rate × dataset_size``), used to compute the absolute noise std for the quantile query.
 
 ```python
-step = acc.poisson(acc.adaclip(acc.gaussian(0.5), fraction_noise_std=0.05, expected_batch_size=256), 0.01)
+step = dpsgd_acc.poisson(dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.5), fraction_noise_std=0.05, expected_batch_size=256), 0.01)
 ```
 
 ### `second_moment(inner, *, sensitivity, max_column_norm=None, first_moment_overhead=sqrt(3/2)) -> DpProcess`
@@ -202,15 +241,15 @@ Accepted inners:
 import opaque.accounting as acc
 
 # DP-SGD with fixed clipping
-step = acc.poisson(
-    acc.second_moment(acc.gaussian(0.8), sensitivity=1.0 / batch_size),
+step = dpsgd_acc.poisson(
+    acc.second_moment(dpsgd_acc.gaussian(0.8), sensitivity=1.0 / batch_size),
     sample_rate=batch_size / dataset_size,
 )
 
 # DP-SGD with adaptive clipping (quantile noise folded in)
-step = acc.poisson(
+step = dpsgd_acc.poisson(
     acc.second_moment(
-        acc.adaclip(acc.gaussian(0.8), fraction_noise_std=0.05, expected_batch_size=256),
+        dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.8), fraction_noise_std=0.05, expected_batch_size=256),
         sensitivity=1.0 / batch_size,
     ),
     sample_rate=batch_size / dataset_size,
@@ -219,9 +258,9 @@ step = acc.poisson(
 # DP-FTRL with BandMF
 from opaque.dpftrl.noise import band_mf_strategy
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = acc.cyclic_poisson(
+proc = ftrl_acc.cyclic_poisson(
     acc.second_moment(
-        acc.band_mf(1.0, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups),
+        ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups),
         sensitivity=1.0 / batch_size,
     ),
     sample_rate=batch_size / dataset_size,
@@ -238,7 +277,7 @@ with known privacy parameters into tracked processes.
 
 ```python
 external = acc.eps_delta(3.0, 1e-5)
-total = external | (acc.poisson(acc.gaussian(0.5), 0.01) * 1000)
+total = external | (dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), 0.01) * 1000)
 ```
 
 ### `identity() -> DpProcess`
@@ -253,7 +292,7 @@ a privacy guarantee. `second_moment(inner)` and all Poisson-family amplification
 handle `nonprivate()` inner transparently (zero privacy cost).
 
 ```python
-step = acc.poisson(acc.nonprivate(), sample_rate=0.01)
+step = dpsgd_acc.poisson(acc.nonprivate(), sample_rate=0.01)
 training = step * 1000
 # training.epsilon_at(1e-5) == inf
 ```
@@ -281,7 +320,7 @@ BandMF mechanism for cyclic Poisson amplification. Takes `sensitivity` and
 ```python
 from opaque.dpftrl.noise import band_mf_strategy
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+proc = ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
                    num_groups=strategy.num_groups)
 eps = proc.epsilon_at(1e-5)
 ```
@@ -300,11 +339,11 @@ from opaque.dpftrl.noise import blt_strategy
 strategy = blt_strategy(n_steps=10000, min_sep=1000, max_participations=5)
 
 # Unamplified
-proc = acc.blt(1.0, sensitivity=strategy.sensitivity)
+proc = ftrl_acc.blt(1.0, sensitivity=strategy.sensitivity)
 
 # With Balls-in-Bins amplification
-proc = acc.balls_in_bins(
-    acc.blt(1.0, sensitivity=strategy.sensitivity,
+proc = ftrl_acc.balls_in_bins(
+    ftrl_acc.blt(1.0, sensitivity=strategy.sensitivity,
             gram_matrix=strategy.gram_matrix),
     num_bins=1000, num_epochs=5,
 )
@@ -325,8 +364,8 @@ strategy = lambda_cgd_strategy(
     lambda_=0.9, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-proc = acc.balls_in_bins(
-    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+proc = ftrl_acc.balls_in_bins(
+    ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
                    gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
@@ -348,8 +387,8 @@ strategy = bisr_strategy(
     bandwidth=4, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-proc = acc.balls_in_bins(
-    acc.bisr(1.0, sensitivity=strategy.sensitivity,
+proc = ftrl_acc.balls_in_bins(
+    ftrl_acc.bisr(1.0, sensitivity=strategy.sensitivity,
              gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
@@ -366,8 +405,8 @@ Poisson-subsampled Gaussian. Only accepts `BandMf` inner processes.
 
 ```python
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = acc.cyclic_poisson(
-    acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+proc = ftrl_acc.cyclic_poisson(
+    ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
                 num_groups=strategy.num_groups),
     sample_rate=0.01,
 )
@@ -402,14 +441,14 @@ strategy = lambda_cgd_strategy(
     lambda_=0.9, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-proc = acc.balls_in_bins(
-    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+proc = ftrl_acc.balls_in_bins(
+    ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
                    gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
 
 # With Gaussian (conservative Poisson approximation)
-proc = acc.balls_in_bins(acc.gaussian(1.1), num_bins=100, num_epochs=10)
+proc = ftrl_acc.balls_in_bins(dpsgd_acc.gaussian(1.1), num_bins=100, num_epochs=10)
 ```
 
 ---
@@ -439,7 +478,7 @@ barrier: the composition optimizer will not look through a cached node.
 
 ```python
 # All queries automatically cached (maxsize=8)
-step = acc.poisson(acc.gaussian(0.5), 0.01)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), 0.01)
 eps = step.epsilon_at(1e-5)   # Cached automatically
 adv = step.advantage()         # Cache hit
 
@@ -455,7 +494,7 @@ eps = training.epsilon_at(1e-5)   # Cached with maxsize=16
 All processes implement `state_dict()` for JSON-friendly serialization.
 
 ```python
-step = acc.poisson(acc.gaussian(0.5), 0.01)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), 0.01)
 state = step.state_dict()
 ```
 
@@ -474,7 +513,7 @@ produces a single `Repeated` node internally.
 from opaque.accounting import Accountant
 
 acct = Accountant()
-step = acc.poisson(acc.gaussian(0.5), 0.01)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), 0.01)
 
 for i in range(num_steps):
     acct = acct | step
@@ -494,7 +533,7 @@ from opaque.accounting import Accountant
 
 budget = cal.epsilon_budget(3.0, delta=1e-5)
 acct = Accountant(budget=budget)
-step = acc.poisson(acc.gaussian(0.5), 0.01)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), 0.01)
 
 for i in range(num_steps):
     acct = acct | step
@@ -558,7 +597,7 @@ from opaque.accounting import calibration as cal
 budget = cal.epsilon_budget(3.0, delta=1e-5)
 result = cal.calibrate(
     budget,
-    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=0.01) * 1000,
     param_min=0.1,
     param_max=5.0,
 )
@@ -570,7 +609,7 @@ Calibrating a different parameter (e.g., sample rate):
 ```python
 result = cal.calibrate(
     cal.epsilon_budget(3.0, delta=1e-5),
-    lambda q: acc.poisson(acc.gaussian(0.5), sample_rate=q) * 1000,
+    lambda q: dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), sample_rate=q) * 1000,
     param_min=1e-4,
     param_max=0.1,
 )
@@ -582,9 +621,9 @@ Multi-phase training:
 result = cal.calibrate(
     cal.epsilon_budget(5.0, delta=1e-5),
     lambda nm: (
-        acc.poisson(acc.gaussian(nm), 0.01) * 500
-        | acc.poisson(acc.gaussian(nm * 0.8), 0.01) * 500
-        | acc.poisson(acc.gaussian(nm * 0.5), 0.01) * 500
+        dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 500
+        | dpsgd_acc.poisson(dpsgd_acc.gaussian(nm * 0.8), 0.01) * 500
+        | dpsgd_acc.poisson(dpsgd_acc.gaussian(nm * 0.5), 0.01) * 500
     ),
     param_min=0.2,
     param_max=3.0,
@@ -625,28 +664,28 @@ adapts direction automatically based on the budget's `decreasing` property.
 # (epsilon, delta)-DP
 result = cal.calibrate(
     cal.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 1000,
     0.1, 5.0,
 )
 
 # f-DP advantage
 result = cal.calibrate(
     cal.advantage_budget(0.1),
-    lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 1000,
     0.2, 3.0,
 )
 
 # (alpha, beta) error rates
 result = cal.calibrate(
     cal.beta_budget(0.05, alpha=0.01),
-    lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 1000,
     0.2, 3.0,
 )
 
 # Bayes risk
 result = cal.calibrate(
     cal.risk_budget(0.1, prior=0.5),
-    lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 1000,
     0.2, 3.0,
 )
 ```

@@ -1,0 +1,42 @@
+"""DP-SGD-specific accounting factories.
+
+Mechanism and amplification primitives scoped to DP-SGD (independent-noise
+per-step Gaussian + subsampling):
+
+Mechanisms (in :mod:`opaque.dpsgd.accounting.mechanisms`):
+
+- :func:`gaussian` — base Gaussian mechanism.
+- :func:`adaclip` — adaptive-clipping transformation.
+
+Amplification (in :mod:`opaque.dpsgd.accounting.amplification`):
+
+- :func:`poisson`, :func:`truncated_poisson`, :func:`parallel_poisson` —
+  per-step Poisson subsampling amplifications.
+
+Cross-cutting primitives (``balls_in_bins``, ``second_moment``,
+composition, calibration) live at :mod:`opaque.accounting`.
+
+Example::
+
+    import opaque.accounting as acc
+    import opaque.dpsgd.accounting as dpsgd_acc
+
+    step = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), sample_rate=0.01)
+    training = step * 1000
+    eps = training.epsilon_at(1e-5)
+"""
+
+from opaque.dpsgd.accounting.amplification import (
+    parallel_poisson,
+    poisson,
+    truncated_poisson,
+)
+from opaque.dpsgd.accounting.mechanisms import adaclip, gaussian
+
+__all__ = [
+    "gaussian",
+    "adaclip",
+    "poisson",
+    "truncated_poisson",
+    "parallel_poisson",
+]

@@ -94,10 +94,12 @@ $$\text{PLD}_{\text{total}} = \text{PLD}_{\text{group}}^{\otimes k}$$
 This is computed efficiently with 2 FFTs (self-composition).
 
 ```python
+import opaque.dpftrl.accounting as ftrl_acc
+
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = acc.cyclic_poisson(
-    acc.band_mf(1.0, sensitivity=strategy.sensitivity,
-                num_groups=strategy.num_groups),
+proc = ftrl_acc.cyclic_poisson(
+    ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+                     num_groups=strategy.num_groups),
     sample_rate=0.01,
 )
 eps = proc.epsilon_at(delta=1e-5)
@@ -141,7 +143,7 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
     subsampling is not applicable.
 
 !!! note
-    The `acc.band_mf()` API takes pre-computed sensitivity and group count
+    The `ftrl_acc.band_mf()` API takes pre-computed sensitivity and group count
     from the noise strategy. For end-to-end usage, `mf_noise()` +
     `band_mf_strategy()` computes these automatically.
 
@@ -180,15 +182,15 @@ the same `band_mf_strategy` used for noise generation. This keeps both
 components in sync:
 
 ```python
-import opaque.accounting as acc
+import opaque.dpftrl.accounting as ftrl_acc
 from opaque.dpftrl.noise import band_mf_strategy
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 
 # BandMF with cyclic Poisson amplification (recommended)
-proc = acc.cyclic_poisson(
-    acc.band_mf(1.0, sensitivity=strategy.sensitivity,
-                num_groups=strategy.num_groups),
+proc = ftrl_acc.cyclic_poisson(
+    ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+                     num_groups=strategy.num_groups),
     sample_rate=0.01,
 )
 eps = proc.epsilon_at(delta=1e-5)
@@ -210,7 +212,6 @@ from opaque.clipping import clipped_grad
 from opaque.dpftrl.noise import mf_noise, band_mf_strategy
 from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.random import key, split
-import opaque.accounting as acc
 
 n_steps, bands = 1000, 10
 sample_rate = 0.01

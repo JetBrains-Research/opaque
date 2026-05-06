@@ -106,7 +106,8 @@ dev = [
   "ruff>=0.1.0",
   "scipy>=1.11.0",         # Statistical tests
   # Cross-validation against reference DP accounting libraries. Imported by
-  # packages/opaque-accounting/tests/* — not a runtime dependency of opaque.
+  # packages/opaque-dpsgd/tests/accounting/test_cross_validation.py — not a
+  # runtime dependency of opaque.
   "dp-accounting>=0.4.4",
   "riskcal>=1.2.0",
 ]

@@ -3,7 +3,8 @@
 import pytest
 import torch
 
-import opaque.accounting as acc
+import opaque.dpftrl.accounting as ftrl_acc
+import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.dpftrl.noise._band_mf import BandMfStrategy, band_mf_strategy
 
 
@@ -31,7 +32,7 @@ class TestBandMfStrategy:
         assert s._streaming_matrix is not None
 
     def test_matches_old_sensitivity(self):
-        acc.band_mf(1.0, sensitivity=1.0, num_groups=10)
+        ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=10)
         new = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
         assert new.sensitivity == pytest.approx(1.0, abs=1e-6)
 
@@ -57,7 +58,7 @@ class TestBandMfPld:
 
     def test_band_mf_pld(self):
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        eps = acc.band_mf(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
+        eps = ftrl_acc.band_mf(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
         assert eps > 0
 
     def test_cyclic_poisson_matches_manual(self):
@@ -65,11 +66,12 @@ class TestBandMfPld:
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
         sample_rate = 0.05
 
-        eps_new = acc.cyclic_poisson(
-            acc.band_mf(1.0, sensitivity=s.sensitivity, num_groups=s.num_groups),
+        eps_new = ftrl_acc.cyclic_poisson(
+            ftrl_acc.band_mf(1.0, sensitivity=s.sensitivity, num_groups=s.num_groups),
             sample_rate=sample_rate,
         ).epsilon_at(self.delta)
         eps_manual = (
-            acc.poisson(acc.gaussian(1.0 / s.sensitivity), sample_rate) * s.num_groups
+            dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0 / s.sensitivity), sample_rate)
+            * s.num_groups
         ).epsilon_at(self.delta)
         assert eps_new == pytest.approx(eps_manual, abs=1e-10)

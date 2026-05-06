@@ -20,7 +20,8 @@ parameters and keeps the accounting API uniform across all MF mechanisms.
 
 ```python
 from opaque.dpftrl.noise import bisr_strategy
-import opaque.accounting as acc
+import opaque.accounting as acc           # cross-cutting balls_in_bins
+import opaque.dpftrl.accounting as ftrl_acc  # DP-FTRL factories
 
 # 1. Create strategy — computes sensitivity and Gram matrix internally
 strategy = bisr_strategy(
@@ -31,10 +32,10 @@ strategy = bisr_strategy(
 )
 
 # 2. Build accounting mechanism from strategy-derived quantities
-training = acc.balls_in_bins(
-    acc.bisr(noise_multiplier,
-             sensitivity=strategy.sensitivity,
-             gram_matrix=strategy.gram_matrix),
+training = ftrl_acc.balls_in_bins(
+    ftrl_acc.bisr(noise_multiplier,
+                  sensitivity=strategy.sensitivity,
+                  gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch,
     num_epochs=num_epochs,
 )

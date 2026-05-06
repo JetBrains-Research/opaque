@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-import opaque.accounting as acc
+import opaque.dpftrl.accounting as ftrl_acc
 from opaque.types import clipped
 
 from opaque.types import NoisedPytree
@@ -211,13 +211,15 @@ class TestLambdaCgdPld:
 
     def test_lambda_cgd_pld(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        eps = acc.lambda_cgd(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
+        eps = ftrl_acc.lambda_cgd(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
         assert eps > 0
 
     def test_lambda_cgd_bnb(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        eps = acc.balls_in_bins(
-            acc.lambda_cgd(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
+        eps = ftrl_acc.balls_in_bins(
+            ftrl_acc.lambda_cgd(
+                1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix
+            ),
             num_bins=25,
             num_epochs=4,
         ).epsilon_at(self.delta)

@@ -111,7 +111,7 @@ uv run pytest packages/opaque-dpftrl/tests/
 uv run pytest packages/opaque-auditing/tests/
 uv run pytest packages/opaque-performance/tests/
 uv run pytest packages/opaque-transformers/tests/
-uv run pytest packages/opaque-accounting/tests/
+uv run pytest packages/opaque-accounting/tests/  # smoke; PLD factory tests live under dpsgd/dpftrl
 ```
 
 ## Installation matrix

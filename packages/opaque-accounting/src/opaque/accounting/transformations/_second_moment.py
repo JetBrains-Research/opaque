@@ -18,6 +18,13 @@ quantile-estimator noise into the gradient noise via Theorem 1's
 the second-moment overhead is then applied on that effective Gaussian.
 This composition is valid because the threshold-quantile and
 gradient/squared-gradient releases use independent randomness.
+
+**Optional runtime imports:** ``opaque-accounting`` does not declare a
+packaging dependency on ``opaque-dpsgd`` / ``opaque-dpftrl``.  At import
+time this module stays free of those packages; on first use of
+``second_moment`` / :meth:`SecondMoment.pld` it tries to import concrete
+mechanism classes for ``match`` / ``isinstance`` guards.  Install
+the relevant algorithm package when using that family's inners.
 """
 
 from __future__ import annotations
@@ -29,14 +36,38 @@ from dataclasses import dataclass
 from .. import _native
 
 from opaque.accounting._base import DpProcess, Pld
-from opaque.accounting.mechanisms._gaussian import Gaussian
-from opaque.accounting.mechanisms._mf_gaussian import MfGaussian
 from opaque.accounting.mechanisms._nonprivate import NonPrivate
-from opaque.accounting.transformations._adaclip import AdaClip
 
 
 _DEFAULT_SECOND_MOMENT_OVERHEAD = math.sqrt(3.0 / 2.0)
-_Inner = Gaussian | MfGaussian | AdaClip
+_Inner = DpProcess
+
+
+@functools.lru_cache(maxsize=1)
+def _second_moment_runtime_classes() -> tuple[type | None, type | None, type | None]:
+    """Load (Gaussian, AdaClip, MfGaussian) if optional algorithm packages exist."""
+    gaussian_cls: type | None = None
+    adaclip_cls: type | None = None
+    mf_gaussian_cls: type | None = None
+    try:
+        from opaque.dpsgd.accounting.mechanisms._gaussian import Gaussian
+
+        gaussian_cls = Gaussian
+    except ImportError:
+        pass
+    try:
+        from opaque.dpsgd.accounting.mechanisms._adaclip import AdaClip
+
+        adaclip_cls = AdaClip
+    except ImportError:
+        pass
+    try:
+        from opaque.dpftrl.accounting.mechanisms._mf_gaussian import MfGaussian
+
+        mf_gaussian_cls = MfGaussian
+    except ImportError:
+        pass
+    return gaussian_cls, adaclip_cls, mf_gaussian_cls
 
 
 def _second_moment_joint_sensitivity(
@@ -78,11 +109,13 @@ class SecondMoment(DpProcess):
         quantile-estimator privacy cost into the gradient noise so the
         joint PLD reduces to a single-Gaussian computation.
         """
-        match self.inner:
-            case AdaClip() as ac:
-                return ac.effective_noise_multiplier
+        Gaussian, AdaClip, _MfGaussian = _second_moment_runtime_classes()
+        inner = self.inner
+        match inner:
+            case _ac if AdaClip is not None and isinstance(inner, AdaClip):
+                return _ac.effective_noise_multiplier
             case _:
-                return self.inner.noise_multiplier
+                return inner.noise_multiplier
 
     @property
     def _c1_norm(self) -> float:
@@ -95,9 +128,11 @@ class SecondMoment(DpProcess):
         """
         if self.max_column_norm is not None:
             return self.max_column_norm
-        match self.inner:
-            case MfGaussian() as mf:
-                return mf.sensitivity
+        _Gaussian, _AdaClip, MfGaussian = _second_moment_runtime_classes()
+        inner = self.inner
+        match inner:
+            case _mf if MfGaussian is not None and isinstance(inner, MfGaussian):
+                return _mf.sensitivity
             case _:
                 return 1.0
 
@@ -136,12 +171,31 @@ class SecondMoment(DpProcess):
             max_grid_size=max_grid_size,
         )
         native_cfg = config.to_native()
-        match self.inner:
-            case Gaussian(noise_multiplier=0) | AdaClip(inner=NonPrivate()):
+        Gaussian, AdaClip, MfGaussian = _second_moment_runtime_classes()
+        inner = self.inner
+
+        match inner:
+            case g if (
+                Gaussian is not None
+                and isinstance(inner, Gaussian)
+                and g.noise_multiplier == 0
+            ):
                 return _native.non_private_pld(native_cfg)
-            case AdaClip(inner=Gaussian(noise_multiplier=0)):
+            case ac if (
+                AdaClip is not None
+                and isinstance(inner, AdaClip)
+                and isinstance(ac.inner, NonPrivate)
+            ):
                 return _native.non_private_pld(native_cfg)
-            case Gaussian() | AdaClip(inner=Gaussian()):
+            case ac if (
+                AdaClip is not None
+                and isinstance(inner, AdaClip)
+                and Gaussian is not None
+                and isinstance(ac.inner, Gaussian)
+                and ac.inner.noise_multiplier == 0
+            ):
+                return _native.non_private_pld(native_cfg)
+            case _g if Gaussian is not None and isinstance(inner, Gaussian):
                 # Effective noise multiplier for the first stream: σ ÷ joint
                 # sensitivity = σ ÷ (input_sensitivity · c1 · overhead).  For
                 # AdaClip inner, ``self.noise_multiplier`` returns the
@@ -151,7 +205,16 @@ class SecondMoment(DpProcess):
                     self.noise_multiplier / self.sensitivity,
                     native_cfg,
                 )
-            case MfGaussian():
+            case ac if (
+                AdaClip is not None
+                and isinstance(inner, AdaClip)
+                and (Gaussian is not None and isinstance(ac.inner, Gaussian))
+            ):
+                return _native.gaussian_pld(
+                    self.noise_multiplier / self.sensitivity,
+                    native_cfg,
+                )
+            case _mf if MfGaussian is not None and isinstance(inner, MfGaussian):
                 return _native.mf_gaussian_pld(
                     self.noise_multiplier,
                     self.sensitivity,
@@ -160,8 +223,7 @@ class SecondMoment(DpProcess):
             case _:
                 raise TypeError(
                     "SecondMoment.pld requires a Gaussian, AdaClip(Gaussian), "
-                    f"or MfGaussian inner mechanism, got "
-                    f"{type(self.inner).__name__}."
+                    f"or MfGaussian inner mechanism, got {type(inner).__name__}."
                 )
 
 
@@ -191,13 +253,23 @@ def second_moment(
     Returns:
         A :class:`SecondMoment` process.
     """
+    Gaussian, AdaClip, MfGaussian = _second_moment_runtime_classes()
+
     match inner:
-        case Gaussian() | MfGaussian() | AdaClip(inner=Gaussian()):
+        case _g if Gaussian is not None and isinstance(inner, Gaussian):
             pass
-        case AdaClip():
+        case _mf if MfGaussian is not None and isinstance(inner, MfGaussian):
+            pass
+        case ac if (
+            AdaClip is not None
+            and isinstance(inner, AdaClip)
+            and (Gaussian is not None and isinstance(ac.inner, Gaussian))
+        ):
+            pass
+        case ac if AdaClip is not None and isinstance(inner, AdaClip):
             raise TypeError(
                 "second_moment() over AdaClip requires a Gaussian inside the "
-                f"AdaClip wrapper, got AdaClip({type(inner.inner).__name__})."
+                f"AdaClip wrapper, got AdaClip({type(ac.inner).__name__})."
             )
         case _:
             raise TypeError(

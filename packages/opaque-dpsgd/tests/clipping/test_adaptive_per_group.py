@@ -416,7 +416,7 @@ class TestAdaptivePerGroupAccounting:
 
     def test_adaclip_num_groups_1_matches_original(self):
         """Test that num_groups=1 gives same result as before."""
-        from opaque.accounting import adaclip, gaussian
+        from opaque.dpsgd.accounting import adaclip, gaussian
 
         ac1 = adaclip(gaussian(1.0), expected_batch_size=100, num_groups=1)
         ac_orig = adaclip(gaussian(1.0), expected_batch_size=100)
@@ -425,7 +425,7 @@ class TestAdaptivePerGroupAccounting:
 
     def test_adaclip_num_groups_lowers_effective_nm(self):
         """Test that more groups means lower effective noise multiplier."""
-        from opaque.accounting import adaclip, gaussian
+        from opaque.dpsgd.accounting import adaclip, gaussian
 
         ac1 = adaclip(gaussian(1.0), expected_batch_size=256, num_groups=1)
         ac3 = adaclip(gaussian(1.0), expected_batch_size=256, num_groups=3)
@@ -437,7 +437,7 @@ class TestAdaptivePerGroupAccounting:
 
     def test_adaclip_num_groups_negligible_cost(self):
         """Test that K groups has negligible extra cost with typical hyperparams."""
-        from opaque.accounting import adaclip, gaussian
+        from opaque.dpsgd.accounting import adaclip, gaussian
 
         nm = 1.1
         ebs = 256
@@ -454,7 +454,7 @@ class TestAdaptivePerGroupAccounting:
 
     def test_adaclip_num_groups_formula(self):
         """Test the exact formula: z̃ = sqrt(1/z² + K/(4·σ_b²))."""
-        from opaque.accounting import adaclip, gaussian
+        from opaque.dpsgd.accounting import adaclip, gaussian
 
         nm = 1.0
         ebs = 100.0
@@ -476,7 +476,7 @@ class TestAdaptivePerGroupAccounting:
 
     def test_adaclip_num_groups_pld(self):
         """Test that PLD computation works with num_groups > 1."""
-        from opaque.accounting import adaclip, gaussian, poisson
+        from opaque.dpsgd.accounting import adaclip, gaussian, poisson
 
         step = poisson(
             adaclip(gaussian(1.0), expected_batch_size=256, num_groups=3),
@@ -489,7 +489,7 @@ class TestAdaptivePerGroupAccounting:
 
     def test_adaclip_gaussian_num_groups(self):
         """Test that Gaussian path handles num_groups > 1."""
-        from opaque.accounting import adaclip, gaussian, poisson
+        from opaque.dpsgd.accounting import adaclip, gaussian, poisson
 
         step = poisson(
             adaclip(
@@ -526,7 +526,7 @@ class TestAdaptivePerGroupAccounting:
 
     def test_adaclip_num_groups_validation(self):
         """Test that num_groups < 1 is rejected."""
-        from opaque.accounting import adaclip, gaussian
+        from opaque.dpsgd.accounting import adaclip, gaussian
 
         with pytest.raises(ValueError, match="num_groups"):
             adaclip(gaussian(1.0), expected_batch_size=100, num_groups=0)

@@ -58,7 +58,7 @@ import opaque.accounting as acc
 
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate) * num_steps,
     param_min=0.1, param_max=10.0,
 )
 
@@ -169,7 +169,7 @@ The truncation uses an inverse-CDF method: for each gradient element, noise is
 sampled from a Gaussian centered on that element and truncated to the bounds.
 
 For high-dimensional tasks like model training, the truncated Gaussian
-converges to the standard Gaussian, so use `acc.gaussian(noise_multiplier)`
+converges to the standard Gaussian, so use `dpsgd_acc.gaussian(noise_multiplier)`
 for accounting.
 
 `truncated_gaussian_noise` accepts the same paired-stream input as
@@ -185,7 +185,7 @@ sampled from its own truncated Gaussian with bounds scaled to its own
 
 The truncated Gaussian provides bounded support, which can be useful when
 gradient bounds are important for downstream optimization. For privacy
-accounting, use `acc.gaussian()` regardless of the noise variant.
+accounting, use `dpsgd_acc.gaussian()` regardless of the noise variant.
 
 ## Matrix-factorization noise (DP-FTRL)
 
@@ -399,14 +399,15 @@ receives these values rather than recomputing them. This ensures that
 noise generation and privacy accounting always agree on the mechanism.
 
 ```python
-import opaque.accounting as acc
+import opaque.accounting as acc           # cross-cutting balls_in_bins, second_moment
+import opaque.dpftrl.accounting as ftrl_acc  # DP-FTRL factories
 from opaque.dpftrl.noise import band_mf_strategy, lambda_cgd_strategy
 
 # BandMF — strategy provides sensitivity and num_groups
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = acc.cyclic_poisson(
-    acc.band_mf(1.0, sensitivity=strategy.sensitivity,
-                num_groups=strategy.num_groups),
+proc = ftrl_acc.cyclic_poisson(
+    ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+                     num_groups=strategy.num_groups),
     sample_rate=0.01,
 )
 eps = proc.epsilon_at(1e-5)
@@ -416,20 +417,20 @@ strategy = lambda_cgd_strategy(
     lambda_=0.9, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-proc = acc.balls_in_bins(
-    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
-                   gram_matrix=strategy.gram_matrix),
+proc = ftrl_acc.balls_in_bins(
+    ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+                        gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
 
 # Private second moments — wrap the MF mechanism before amplification
 mechanism = acc.second_moment(
-    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
-                   gram_matrix=strategy.gram_matrix),
+    ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+                        gram_matrix=strategy.gram_matrix),
     sensitivity=clip_bound,
     max_column_norm=strategy._max_column_norm,
 )
-proc = acc.balls_in_bins(
+proc = ftrl_acc.balls_in_bins(
     mechanism,
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )

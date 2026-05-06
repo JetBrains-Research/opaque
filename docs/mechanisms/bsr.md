@@ -15,7 +15,8 @@ Opaque exposes **closed-form coefficients** (Theorem 1 in the paper): no L-BFGS 
 
 ```python
 from opaque.dpftrl.noise import bsr_strategy
-import opaque.accounting as acc
+import opaque.accounting as acc           # cross-cutting balls_in_bins
+import opaque.dpftrl.accounting as ftrl_acc  # DP-FTRL factories
 
 strategy = bsr_strategy(
     bandwidth=8,
@@ -26,8 +27,8 @@ strategy = bsr_strategy(
     beta=0.95,
 )
 
-training = acc.balls_in_bins(
-    acc.bsr(
+training = ftrl_acc.balls_in_bins(
+    ftrl_acc.bsr(
         noise_multiplier,
         sensitivity=strategy.sensitivity,
         gram_matrix=strategy.gram_matrix,
