@@ -8,8 +8,11 @@ The `opaque.distributed` module provides composable primitives for multi-GPU
 DP training:
 
 - **Core**: `is_distributed()`, `get_rank()`, `get_world_size()`
+- **Collectives**: `all_reduce()` (+ in-place variant in the `collectives` submodule)
 - **Gradient aggregation**: `sum_gradients()` (copy-returning) and `sum_gradients_()` (in-place)
-- **State sync**: `sync()`, `sync_object()`, `reduce_scalar()`, `gather_tensors()`
+- **State sync**: `sync()` (type-dispatched; handles clipping + noise
+  states and registered DP runtime objects)
+- **Sharding**: `local_shard()`
 
 DDP is the only supported parallelism strategy.
 See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
@@ -70,37 +73,17 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
 
 ## State Synchronization
 
-::: opaque.distributed.state.reduce_scalar
-    options:
-        show_source: true
-        heading_level: 3
-
 ::: opaque.distributed.sync
     options:
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.state.sync_object
-    options:
-        show_source: true
-        heading_level: 3
-
-## Tensor Gathering
-
-::: opaque.distributed.state.gather_tensors
-    options:
-        show_source: true
-        heading_level: 3
-
-::: opaque.distributed.state.gather_pytree
-    options:
-        show_source: true
-        heading_level: 3
-
-::: opaque.distributed.state.assert_scalar_equal
-    options:
-        show_source: true
-        heading_level: 3
+The ``sync()`` machinery is type-dispatched: clipping and noise states
+register themselves with ``opaque.distributed._state.register_sync_type``
+and ship the right per-state aggregation rule.  Lower-level scalar
+reductions, tensor gathers, and object syncs live in ``_state.py``;
+they're internal plumbing for the registered DP runtime objects rather
+than headline API.
 
 ## Privacy Ordering
 

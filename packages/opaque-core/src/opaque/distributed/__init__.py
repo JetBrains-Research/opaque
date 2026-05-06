@@ -3,33 +3,38 @@
 Headline DP-DDP flow:
 
 - **detection**: :func:`is_distributed`, :func:`get_rank`, :func:`get_world_size`
-- **gradient aggregation**: :func:`sum_gradients`
-- **state sync**: :func:`sync` (type-dispatched; handles clipping + noise states)
-- **dataset sharding**: :func:`local_shard`
+- **collectives**: :func:`all_reduce`
+- **gradient aggregation**: :func:`sum_gradients` (out-of-place) and
+  :func:`sum_gradients_` (in-place; mutates the clipped pytree leaves).
+- **state sync**: :func:`sync` (type-dispatched; handles clipping + noise
+  states, registered DP runtime objects).
+- **dataset sharding**: :func:`local_shard`.
 
-Lower-level primitives — in-place reductions, raw all-reduce, scalar /
-tensor gather, assertion helpers, object-level sync, custom-type
-registration — are reachable through the documented power-user submodules:
+The two documented power-user submodules collect lower-level primitives:
 
 - :mod:`opaque.distributed.collectives` — ``all_reduce`` (+ in-place),
   ``barrier``, and the detection helpers.
 - :mod:`opaque.distributed.gradients` — ``reduce_pytree`` (+ in-place) and
-  ``sum_gradients_`` (in-place variant).
-- :mod:`opaque.distributed.state` — scalar / pytree reductions, gathers,
-  assertions, ``sync_object``, ``register_sync_type`` (extension hook).
-- :mod:`opaque.distributed.shard` — ``local_shard``.
+  ``sum_gradients`` (+ in-place).
 """
 
-from opaque.distributed.collectives import get_rank, get_world_size, is_distributed
-from opaque.distributed.gradients import sum_gradients
-from opaque.distributed.shard import local_shard
-from opaque.distributed.state import sync
+from opaque.distributed.collectives import (
+    all_reduce,
+    get_rank,
+    get_world_size,
+    is_distributed,
+)
+from opaque.distributed.gradients import sum_gradients, sum_gradients_
+from opaque.distributed._shard import local_shard
+from opaque.distributed._state import sync
 
 __all__ = [
     "is_distributed",
     "get_rank",
     "get_world_size",
+    "all_reduce",
     "sum_gradients",
+    "sum_gradients_",
     "sync",
     "local_shard",
 ]

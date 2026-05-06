@@ -29,7 +29,7 @@ class PoissonSampler(Sampler):
 
     .. code-block:: python
 
-        from opaque.distributed.shard import local_shard
+        from opaque.distributed._shard import local_shard
 
         shard = local_shard(dataset, rank=rank, world_size=world_size)
         sampler = PoissonSampler(shard, sample_rate=0.01, key=fold_in(key(42), rank))

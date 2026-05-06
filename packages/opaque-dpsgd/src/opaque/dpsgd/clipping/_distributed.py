@@ -15,7 +15,7 @@ import torch
 
 from opaque.clipping._distributed import sync_clipped_grad_aux
 from opaque.distributed import is_distributed
-from opaque.distributed.state import (
+from opaque.distributed._state import (
     reduce_scalar,
     register_sync_type,
     sync_object,

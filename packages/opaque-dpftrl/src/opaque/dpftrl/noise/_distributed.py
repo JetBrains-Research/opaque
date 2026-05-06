@@ -8,7 +8,7 @@ for its side effects from :mod:`opaque.dpftrl.noise`; not re-exported.
 from __future__ import annotations
 
 from opaque.distributed import is_distributed
-from opaque.distributed.state import (
+from opaque.distributed._state import (
     assert_scalar_equal,
     register_sync_type,
     sync_object,

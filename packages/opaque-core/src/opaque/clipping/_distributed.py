@@ -13,7 +13,7 @@ import dataclasses
 import torch
 
 from opaque.distributed import is_distributed
-from opaque.distributed.state import (
+from opaque.distributed._state import (
     gather_pytree,
     reduce_scalar,
     register_sync_type,

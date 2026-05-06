@@ -361,7 +361,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
 
     def test_external_sharding(self):
         """External sharding produces sampler on a subset."""
-        from opaque.distributed.shard import _local_shard_bounds
+        from opaque.distributed._shard import _local_shard_bounds
 
         dataset = list(range(100))
         start, end = _local_shard_bounds(len(dataset), rank=0, world_size=4)
@@ -379,7 +379,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
 
     def test_sharding_rank_0(self):
         """Rank 0 gets correct shard via external subsetting."""
-        from opaque.distributed.shard import _local_shard_bounds
+        from opaque.distributed._shard import _local_shard_bounds
 
         dataset = list(range(100))
         start, end = _local_shard_bounds(len(dataset), rank=0, world_size=4)
@@ -402,7 +402,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
 
     def test_sharding_rank_last(self):
         """Last rank gets remainder via external subsetting."""
-        from opaque.distributed.shard import _local_shard_bounds
+        from opaque.distributed._shard import _local_shard_bounds
 
         dataset = list(range(100))
         start, end = _local_shard_bounds(len(dataset), rank=3, world_size=4)
@@ -426,7 +426,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
     def test_different_keys_per_rank(self):
         """Different keys per rank produce different sampling."""
         from opaque.random import fold_in
-        from opaque.distributed.shard import _local_shard_bounds
+        from opaque.distributed._shard import _local_shard_bounds
 
         dataset = list(range(100))
         world_size = 4
@@ -459,7 +459,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
     def test_cyclic_independence(self):
         """Each rank cycles through its shard independently."""
         from opaque.random import fold_in
-        from opaque.distributed.shard import _local_shard_bounds
+        from opaque.distributed._shard import _local_shard_bounds
 
         dataset = list(range(100))
         start, end = _local_shard_bounds(len(dataset), rank=0, world_size=2)

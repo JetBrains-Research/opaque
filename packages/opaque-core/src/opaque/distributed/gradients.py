@@ -23,7 +23,7 @@ from opaque.types import ClippedPytree, NoisedPytree
 from opaque.pytree import tree_map
 
 from .collectives import all_reduce_, get_world_size, is_distributed
-from .state import assert_scalar_equal
+from ._state import assert_scalar_equal
 
 
 def _is_noised(pytree: Any) -> bool:
