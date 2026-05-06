@@ -492,17 +492,19 @@ eps = training.epsilon_at(1e-5)   # Cached with maxsize=16
 ## Serialization
 
 Processes checkpoint as a **flat** ``dict[str, Any]`` (string keys with dotted
-prefixes for nested composition), via :func:`opaque.serialization.state_dict`
-and :func:`opaque.accounting.dp_process_from_state_dict` (or
-:class:`opaque.serialization.from_state_dict` with any registered process as
-template — the per-type handler ignores template content).
+prefixes for nested composition). Use :func:`opaque.serialization.state_dict`
+and :func:`opaque.serialization.from_state_dict` — pass any concrete
+``DpProcess`` instance as the template (for example ``identity()``); the
+registered handler rebuilds from the dict's root ``type`` field.
 
 ```python
-from opaque.serialization import state_dict
+import opaque.accounting as acc
+from opaque.serialization import from_state_dict, state_dict
 import opaque.dpsgd.accounting as dpsgd_acc
 
 step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), 0.01)
 flat = state_dict(step)
+step2 = from_state_dict(acc.identity(), flat)
 ```
 
 ---
@@ -555,11 +557,11 @@ for i in range(num_steps):
 ### Serialization
 
 ```python
-from opaque.accounting import Accountant, accountant_from_state_dict
-from opaque.serialization import state_dict
+from opaque.accounting import Accountant
+from opaque.serialization import from_state_dict, state_dict
 
 flat = state_dict(acct)
-acct = accountant_from_state_dict(dict(flat))
+acct2 = from_state_dict(Accountant(), flat)
 ```
 
 ``process.*`` keys hold the composed tree; ``budget.*`` keys are present when

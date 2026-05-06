@@ -52,13 +52,13 @@ _PROCESS_REGISTRY: dict[str, type[DpProcess]] = {}
 
 def _register_dp_process_with_serialization(cls) -> None:
     """Hook each concrete process into :mod:`opaque.serialization`."""
-    from opaque.accounting._process_flat import flat_dp_process_state, load_dp_process
+    from opaque.accounting._process_flat import _flat_dp_process_state, _load_dp_process
     from opaque.serialization import register_serialization_type
 
     register_serialization_type(
         cls,
-        lambda obj: flat_dp_process_state(obj, ""),
-        lambda _template, sd: load_dp_process(dict(sd)),
+        lambda obj: _flat_dp_process_state(obj, ""),
+        lambda _template, sd: _load_dp_process(dict(sd)),
     )
 
 

@@ -55,15 +55,7 @@ from . import (
     transformations,
 )
 
-from opaque.accounting._accountant import (
-    Accountant,
-    accountant_from_state_dict,
-    accountant_state_dict,
-)
-from opaque.accounting._process_flat import (
-    dp_process_from_state_dict,
-    dp_process_state_dict,
-)
+from opaque.accounting._accountant import Accountant
 from opaque.accounting.calibration import (
     advantage_budget,
     beta_budget,
@@ -88,10 +80,6 @@ __all__ = [
     "transformations",
     # Accountant
     "Accountant",
-    "accountant_from_state_dict",
-    "accountant_state_dict",
-    "dp_process_from_state_dict",
-    "dp_process_state_dict",
     # Discretization
     "set_discretization",
     "get_discretization",

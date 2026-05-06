@@ -91,7 +91,12 @@ def state_dict(obj: Any) -> dict[str, Any]:
 
 
 def from_state_dict(template: Any, sd: Mapping[str, Any]) -> Any:
-    """Rebuild from ``sd`` using ``template`` for shape and omitted leaves."""
+    """Rebuild from ``sd`` using ``template`` for shape and omitted leaves.
+
+    For types registered with :func:`register_serialization_type`, the
+    ``template`` argument selects the handler; handlers may ignore it when
+    the dict is self-describing (as with :class:`~opaque.accounting._base.DpProcess`).
+    """
     _ensure_registration_hooks_imported()
     return _walk_load(template, sd, "")
 

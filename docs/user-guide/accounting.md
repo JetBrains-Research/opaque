@@ -448,14 +448,17 @@ accumulated process exceeds the budget.
 ### Serialization
 
 ```python
-from opaque.accounting import Accountant, accountant_from_state_dict
-from opaque.serialization import state_dict
+from opaque.accounting import Accountant
+from opaque.serialization import from_state_dict, state_dict
 
 flat = state_dict(acct)
 # ... save flat (JSON-friendly values) ...
 
-acct = accountant_from_state_dict(dict(flat))
+acct = from_state_dict(Accountant(), flat)
 ```
+
+For a bare ``DpProcess``, use ``from_state_dict(identity(), flat)`` (or any
+concrete process as the template).
 
 ## Discretization
 

@@ -6,8 +6,16 @@ from typing import cast
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 import opaque.dpftrl.accounting as ftrl_acc
-from opaque.accounting import Accountant, accountant_from_state_dict, dp_process_from_state_dict
-from opaque.serialization import state_dict
+from opaque.accounting import Accountant
+from opaque.dpftrl.accounting.amplification._b_min_sep import BMinSep
+from opaque.dpftrl.accounting.amplification._cyclic_poisson import CyclicPoisson
+from opaque.dpftrl.accounting.mechanisms._band_mf import BandMf
+from opaque.serialization import from_state_dict, state_dict
+
+# Template type selects the registered handler; PLD decode uses the flat dict's
+# root ``type`` field, so any concrete :class:`~opaque.accounting._base.DpProcess`
+# instance is sufficient (``identity()`` is a stable choice).
+_PROCESS_TEMPLATE = acc.identity()
 
 
 def test_gaussian_state_dict_structure():
@@ -114,7 +122,7 @@ def test_b_min_sep_round_trip():
         p0=0.02,
     )
     state = state_dict(proc)
-    restored = dp_process_from_state_dict(dict(state))
+    restored = from_state_dict(_PROCESS_TEMPLATE, state)
     assert isinstance(restored, BMinSep)
     assert restored == proc
 
@@ -124,7 +132,7 @@ def test_cyclic_poisson_round_trip():
         ftrl_acc.band_mf(1.0, sensitivity=2.5, num_groups=200), sample_rate=0.01
     )
     state = state_dict(proc)
-    restored = dp_process_from_state_dict(dict(state))
+    restored = from_state_dict(_PROCESS_TEMPLATE, state)
     assert isinstance(restored, CyclicPoisson)
     assert isinstance(restored.inner, BandMf)
     assert restored == proc
@@ -137,6 +145,6 @@ def test_accountant_state_dict_roundtrip():
     )
     acct = acct | step
     state = state_dict(acct)
-    restored = accountant_from_state_dict(dict(state))
+    restored = from_state_dict(Accountant(), state)
     eps = restored.epsilon_at(1e-5)
     assert math.isfinite(eps) and eps > 0

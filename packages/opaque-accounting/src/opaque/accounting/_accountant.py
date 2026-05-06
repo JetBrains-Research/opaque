@@ -23,10 +23,10 @@ from opaque.accounting._budgets import (
     EpsilonBudget,
     RiskBudget,
 )
-from opaque.accounting._process_flat import load_dp_process
+from opaque.accounting._process_flat import _load_dp_process
 from opaque.accounting.mechanisms.types import Identity
 
-__all__ = ["Accountant", "accountant_from_state_dict", "accountant_state_dict"]
+__all__ = ["Accountant"]
 
 
 class Accountant:
@@ -193,11 +193,7 @@ class Accountant:
         return achieved > self._budget.value
 
 
-def accountant_state_dict(acct: Accountant) -> dict[str, Any]:
-    """Flat checkpoint dict for *acct* (``process.*`` and optional ``budget.*`` keys).
-
-    Prefer :func:`opaque.serialization.state_dict` on *acct* (same wire format).
-    """
+def _accountant_state_dict(acct: Accountant) -> dict[str, Any]:
     from opaque.serialization import state_dict as opaque_state_dict
 
     out: dict[str, Any] = {}
@@ -212,15 +208,14 @@ def accountant_state_dict(acct: Accountant) -> dict[str, Any]:
     return out
 
 
-def accountant_from_state_dict(state: dict[str, Any]) -> Accountant:
-    """Restore :class:`Accountant` from :func:`accountant_state_dict` / :func:`opaque.serialization.state_dict` output."""
+def _accountant_from_state_dict(state: dict[str, Any]) -> Accountant:
     budget = None
     if any(k.startswith("budget.") for k in state):
         bflat = {k[7:]: v for k, v in state.items() if k.startswith("budget.")}
         budget = _deserialize_budget(bflat)
     acct = Accountant(budget=budget)
     proc_flat = {k[8:]: v for k, v in state.items() if k.startswith("process.")}
-    acct._process = load_dp_process(dict(proc_flat))
+    acct._process = _load_dp_process(dict(proc_flat))
     return acct
 
 
@@ -247,8 +242,8 @@ def _register_accountant_serialization() -> None:
 
     register_serialization_type(
         Accountant,
-        accountant_state_dict,
-        lambda _template, sd: accountant_from_state_dict(dict(sd)),
+        _accountant_state_dict,
+        lambda _template, sd: _accountant_from_state_dict(dict(sd)),
     )
 
 
