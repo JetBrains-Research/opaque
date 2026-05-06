@@ -69,10 +69,11 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `auc()`, `beta_at()` - Attack metrics
 
 - **[Distributed](distributed.md)**: Multi-GPU training with DDP
-  - `sum_gradients()` / `sum_gradients_()` - Copy/default and in-place DP gradient summation
-  - `reduce_pytree()` / `reduce_pytree_()` - Copy/default and in-place generic PyTree reduction
+  - `sum_gradients()` / `sum_gradients_()` - Copy-returning and in-place DP gradient summation
+  - `all_reduce()` - Generic tensor all-reduce (sum, mean, max, min)
+  - `reduce_pytree()` / `reduce_pytree_()` - Copy-returning and in-place generic PyTree reduction
   - `sync()` - Auto-dispatch sync for any state/aux type
-  - `sync_object()` - Synchronize scalar fields of a dataclass
+  - `local_shard()` - Partition dataset for DDP training
   - `is_distributed()`, `get_rank()`, `get_world_size()` - Distributed utilities
 
 ## Quick Reference
@@ -215,12 +216,11 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 
 | Function               | Purpose                     | User Guide                                 |
 |------------------------|-----------------------------|--------------------------------------------|
-| `sum_gradients()` / `sum_gradients_()` | DP gradient summation (copy / in-place) | [Guide](../user-guide/distributed.md) |
-| `reduce_pytree()` / `reduce_pytree_()` | Generic PyTree reduction (copy / in-place) | [Guide](../user-guide/distributed.md) |
-| `reduce_scalar()`      | Reduce scalar across devices | [Guide](../user-guide/distributed.md)      |
-| `gather_tensors()`     | Gather tensors from all ranks | [Guide](../user-guide/distributed.md)      |
-| `sync()`               | Auto-dispatch sync for any state/aux | [Guide](../user-guide/distributed.md) |
-| `sync_object()`        | Sync scalar fields of a dataclass | [Guide](../user-guide/distributed.md) |
+| `sum_gradients()` / `sum_gradients_()` | DP gradient summation (copy-returning / in-place) | [Guide](../user-guide/distributed.md) |
+| `all_reduce()`         | Generic tensor all-reduce (sum, mean, max, min) | [Guide](../user-guide/distributed.md) |
+| `reduce_pytree()` / `reduce_pytree_()` | Generic PyTree reduction (copy-returning / in-place) | [Guide](../user-guide/distributed.md) |
+| `sync()`               | Auto-dispatch sync for any state/aux type | [Guide](../user-guide/distributed.md) |
+| `local_shard()`        | Partition dataset for DDP training | [Guide](../user-guide/distributed.md) |
 | `is_distributed()`     | Check if DDP is active      | [Guide](../user-guide/distributed.md)      |
 | `get_rank()`           | Get current GPU index       | [Guide](../user-guide/distributed.md)      |
 | `get_world_size()`     | Get total number of GPUs    | [Guide](../user-guide/distributed.md)      |
