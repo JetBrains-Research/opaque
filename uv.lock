@@ -2327,6 +2327,7 @@ requires-dist = [
 name = "opaque-dpsgd"
 source = { editable = "packages/opaque-dpsgd" }
 dependencies = [
+    { name = "opaque-accounting" },
     { name = "opaque-core" },
     { name = "torch" },
     { name = "torchopt" },
@@ -2334,6 +2335,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "opaque-accounting", editable = "packages/opaque-accounting" },
     { name = "opaque-core", editable = "packages/opaque-core" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "torchopt", specifier = ">=0.7.3" },

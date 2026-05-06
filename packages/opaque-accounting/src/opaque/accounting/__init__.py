@@ -1,40 +1,38 @@
 """Differential privacy accounting using Privacy Loss Distributions (PLD).
 
-Compositional API for tracking privacy guarantees:
+Cross-cutting accounting surface — composition, calibration, generic
+mechanisms (``identity``, ``nonprivate``, ``eps_delta``), and the two
+amplification / transformation primitives that span DP-SGD and DP-FTRL
+(``balls_in_bins``, ``second_moment``).
 
-- **Mechanisms**: ``gaussian()``, ``lambda_cgd()``, ``bisr()``, ``bsr()``,
-  ``band_mf()``, ``blt()``, …
-- **Amplification**: ``balls_in_bins()``, ``poisson()``, ``cyclic_poisson()``, …
-- **Composition**: combine processes with ``*`` (repeat) or ``|`` (compose)
-- **Metrics**: query privacy with ``epsilon_at()``, ``delta_at()``,
-  ``advantage()``, …
+Algorithm-specific factories live in dedicated namespaces:
+
+- :mod:`opaque.dpsgd.accounting` — ``gaussian``, ``adaclip``, ``poisson``,
+  ``truncated_poisson``, ``parallel_poisson``.
+- :mod:`opaque.dpftrl.accounting` — ``band_mf``, ``blt``, ``bisr``,
+  ``bsr``, ``lambda_cgd``, ``cyclic_poisson``, ``b_min_sep``.
+
+Both algorithm-specific namespaces re-export from the same shared
+implementation underneath; the split is purely organisational and
+algorithm-specific factories remain accessible from this root module
+for legacy code (the names below are imported but not in ``__all__``).
 
 Implementation uses Google's PLD accounting via the ``opaque-accounting``
 Rust crate (PyO3 bindings).
 
 Example::
 
-    import opaque.accounting as acc
+    import opaque.dpsgd.accounting as dpsgd_acc
 
-    # Standard DP-SGD step
-    step = acc.poisson(acc.gaussian(1.1), sample_rate=0.01)
+    step = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), sample_rate=0.01)
     training = step * 1000
     epsilon = training.epsilon_at(1e-5)
 
-    # DP-λCGD with Balls-in-Bins amplification
-    training = acc.balls_in_bins(
-        acc.lambda_cgd(1.0, sensitivity=s.sensitivity,
-                       gram_matrix=s.gram_matrix),
-        num_bins=1875, num_epochs=8,
-    )
-    eps = training.epsilon_at(1e-5)
-
 For calibration (finding noise for target privacy budget), use the
 :mod:`opaque.accounting.calibration` submodule. All public dataclasses
-(``DpProcess``, ``Budget``, mechanism / amplification / transformation /
-composition node types, ``CalibrateResult``, ``DiscretizationConfig``)
-live in :mod:`opaque.accounting.types`, with narrower per-subpackage
-``types`` modules also available.
+— including the interactive :class:`Accountant` — live in
+:mod:`opaque.accounting.types`, with narrower per-subpackage ``types``
+modules also available.
 """
 
 # Native PyO3 extension. Compiled artifact lives at
@@ -67,15 +65,10 @@ from . import (
     transformations,
 )
 
-from opaque.accounting._accountant import Accountant
-from opaque.accounting.amplification import (
-    b_min_sep,
-    balls_in_bins,
-    cyclic_poisson,
-    parallel_poisson,
-    poisson,
-    truncated_poisson,
-)
+# ──────────────────────────────────────────────────────────────────────
+# Headline (in __all__): cross-cutting + composition + calibration only.
+# ──────────────────────────────────────────────────────────────────────
+from opaque.accounting.amplification import balls_in_bins
 from opaque.accounting.calibration import (
     advantage_budget,
     beta_budget,
@@ -86,18 +79,31 @@ from opaque.accounting.calibration import (
 )
 from opaque.accounting.composition import cached, compose, repeat
 from opaque.accounting.discretization import get_discretization, set_discretization
-from opaque.accounting.mechanisms import (
+from opaque.accounting.mechanisms import eps_delta, identity, nonprivate
+from opaque.accounting.transformations import second_moment
+
+# ──────────────────────────────────────────────────────────────────────
+# Legacy access (NOT in __all__): algorithm-specific factories accessible
+# from this root for backward compatibility.  New code should import
+# from opaque.dpsgd.accounting / opaque.dpftrl.accounting.
+# ──────────────────────────────────────────────────────────────────────
+from opaque.accounting._accountant import Accountant  # noqa: F401
+from opaque.accounting.amplification import (  # noqa: F401
+    b_min_sep,
+    cyclic_poisson,
+    parallel_poisson,
+    poisson,
+    truncated_poisson,
+)
+from opaque.accounting.mechanisms import (  # noqa: F401
     band_mf,
     bisr,
     blt,
     bsr,
-    eps_delta,
     gaussian,
-    identity,
     lambda_cgd,
-    nonprivate,
 )
-from opaque.accounting.transformations import adaclip, second_moment
+from opaque.accounting.transformations import adaclip  # noqa: F401
 
 __all__ = [
     "__version__",
@@ -108,30 +114,15 @@ __all__ = [
     "discretization",
     "mechanisms",
     "transformations",
-    # Accountant
-    "Accountant",
     # Discretization
     "set_discretization",
     "get_discretization",
-    # Mechanisms
-    "gaussian",
+    # Generic mechanisms
     "eps_delta",
     "identity",
     "nonprivate",
-    "band_mf",
-    "blt",
-    "lambda_cgd",
-    "bisr",
-    "bsr",
-    # Amplification
+    # Cross-cutting amplification / transformation
     "balls_in_bins",
-    "poisson",
-    "truncated_poisson",
-    "parallel_poisson",
-    "b_min_sep",
-    "cyclic_poisson",
-    # Transformations
-    "adaclip",
     "second_moment",
     # Composition
     "repeat",
