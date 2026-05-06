@@ -24,11 +24,9 @@ Top-level (user-facing):
   (DP-AdamW-BC) or private second-moment streams at `update()` time. A small
   set of vanilla TorchOpt primitives (`adadelta`, `radam`) is re-exported for
   convenience.
-  Less-common building blocks live in submodules:
-  `opaque.optimizers._serialization` (`state_dict` / `load_state_dict`
-  for checkpoint round-tripping) and
-  `opaque.optimizers._schedule_free` (`get_eval_params` for the
-  published `x` weights).  See
+  ``state_dict`` / ``load_state_dict`` round-trip optimizer state
+  through ``torch.save`` / ``torch.load``.  Schedule-free's published
+  weights are reachable as ``opt_state.x``.  See
   [`docs/api/optimizers.md`](../../docs/api/optimizers.md) for the
   full reference.
 - `opaque.distributed` — DDP plumbing (`is_distributed`, `get_rank`,

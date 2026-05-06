@@ -135,8 +135,12 @@ from opaque.dpftrl.noise import (
     mf_noise,
     second_moment_joint_sensitivity,
 )
-from opaque.profiling import print_memory, reset_peak_memory
-from opaque.profiling.types import StepTimer, TrainingProfiler
+from opaque.profiling import (
+    StepTimer,
+    TrainingProfiler,
+    print_memory,
+    reset_peak_memory,
+)
 from opaque.random import key, fold_in
 from opaque.functional import empty_collate
 from opaque.dpsgd.sampling import PoissonSampler

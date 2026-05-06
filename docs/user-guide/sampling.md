@@ -353,7 +353,7 @@ the largest stable value for your device:
 
 ```python
 from opaque.profiling import reset_peak_memory
-from opaque.profiling.types import StepTimer, TrainingProfiler
+from opaque.profiling import StepTimer, TrainingProfiler
 
 profiler = TrainingProfiler(device)
 for optimal in [64, 32, 16, 8, 4, 2, 1]:

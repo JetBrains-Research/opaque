@@ -64,7 +64,7 @@ Use a short manual sweep with `TrainingProfiler`:
 ```python
 from opaque.clipping import clipped_grad
 from opaque.profiling import reset_peak_memory
-from opaque.profiling.types import StepTimer, TrainingProfiler
+from opaque.profiling import StepTimer, TrainingProfiler
 
 def try_microbatch(candidate_mb: int) -> float:
     grad_fn, clip_state = clipped_grad(
@@ -213,7 +213,7 @@ Use `TrainingProfiler` to track checkpoints and step-level metrics in your
 training loop.
 
 ```python
-from opaque.profiling.types import StepTimer, TrainingProfiler
+from opaque.profiling import StepTimer, TrainingProfiler
 
 profiler = TrainingProfiler(device)
 profiler, _ = profiler.mark("start")

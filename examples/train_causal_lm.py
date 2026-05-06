@@ -70,12 +70,17 @@ import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
-from opaque.distributed import sum_gradients_, sync
+from opaque.distributed import sync
+from opaque.distributed.gradients import sum_gradients_
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.noise import per_group_noise_stddev
 from opaque.dpsgd.noise import truncated_gaussian_noise
-from opaque.profiling import print_memory, reset_peak_memory
-from opaque.profiling.types import StepTimer, TrainingProfiler
+from opaque.profiling import (
+    StepTimer,
+    TrainingProfiler,
+    print_memory,
+    reset_peak_memory,
+)
 from opaque.random import key, fold_in
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.dpsgd.sampling import TruncatedPoissonSampler

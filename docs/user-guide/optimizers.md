@@ -364,7 +364,6 @@ particularly attractive for DP training, on top of its standard
 
 ```python
 from opaque.optimizers import adamw, schedule_free
-from opaque.optimizers._schedule_free import get_eval_params
 
 optimizer = schedule_free(
     adamw(lr=1e-3, noise_bias_correction=True), beta=0.9
@@ -377,8 +376,8 @@ for batch in dataloader:
     updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
     params = torchopt.apply_updates(params, updates)
 
-# At save / eval time, read the published x_t:
-eval_params = get_eval_params(opt_state)
+# At save / eval time, read the published x_t directly off the state:
+eval_params = opt_state.x
 ```
 
 ### Weight decay and privacy

@@ -177,9 +177,8 @@ for step in range(num_steps):
     updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
     params = torchopt.apply_updates(params, updates)
 
-# At save / eval time, read the published x_t:
-from opaque.optimizers._schedule_free import get_eval_params
-eval_params = get_eval_params(opt_state)
+# At save / eval time, read the published x_t directly off the state:
+eval_params = opt_state.x
 ```
 
 **DP-utility note**: under DP, `x_t = (1/n) Σ z_s` is a Polyak-Ruppert

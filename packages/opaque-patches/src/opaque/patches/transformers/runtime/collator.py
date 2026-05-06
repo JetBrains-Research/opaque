@@ -14,7 +14,7 @@ Controlled by:
 
 import functools
 
-from opaque.functional._collate import empty_collate
+from opaque.functional import empty_collate
 
 _WRAPPER_ATTR = "_opaque_collate"
 
