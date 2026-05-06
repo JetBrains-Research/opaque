@@ -67,6 +67,8 @@ from transformers import (
 
 import opaque.accounting as acc
 import opaque.auditing as auditing
+import opaque.dpftrl.accounting as ftrl_acc
+import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
@@ -1257,18 +1259,18 @@ def main():
     # Noise injection — bind mechanism-specific parameters once.
     # Chain: base mechanism → adaclip (optional) → amplification.
     # Truncated Gaussian noise provides clipped support but converges to
-    # Gaussian for high-dimensional tasks, so we use acc.gaussian() for accounting.
+    # Gaussian for high-dimensional tasks, so we use dpsgd_acc.gaussian() for accounting.
     _num_groups = len(clip_norm.values) if isinstance(clip_norm, PerGroup) else 1
     if args.noise_multiplier == 0:
         mechanism = lambda nm: acc.nonprivate()
     elif args.noise_mechanism == "truncated_gaussian":
-        mechanism = acc.gaussian
+        mechanism = dpsgd_acc.gaussian
     else:
-        mechanism = acc.gaussian
+        mechanism = dpsgd_acc.gaussian
 
     if args.clipping_mode == "adaptive":
         _base_mechanism = mechanism
-        mechanism = lambda nm, ebs=args.batch_size, ng=_num_groups: acc.adaclip(
+        mechanism = lambda nm, ebs=args.batch_size, ng=_num_groups: dpsgd_acc.adaclip(
             _base_mechanism(nm), expected_batch_size=ebs, num_groups=ng
         )
     if use_second_moment and args.noise_multiplier != 0:
@@ -1300,26 +1302,26 @@ def main():
     per_step_amplification = True
     if use_balls_in_bins:
         per_step_amplification = False
-        mechanism = lambda nm: acc.balls_in_bins(
+        mechanism = lambda nm: ftrl_acc.balls_in_bins(
             _unamplified(nm),
             num_bins=expected_steps_per_epoch,
             num_epochs=args.num_epochs,
         )
     elif use_truncated_poisson:
-        mechanism = lambda nm: acc.truncated_poisson(
+        mechanism = lambda nm: dpsgd_acc.truncated_poisson(
             _unamplified(nm),
             sample_rate=sample_rate,
             batch_size_cap=max_batch_size,
             dataset_size=global_train_size,
         )
     elif use_parallel_poisson:
-        mechanism = lambda nm: acc.parallel_poisson(
+        mechanism = lambda nm: dpsgd_acc.parallel_poisson(
             _unamplified(nm),
             sample_rate=sample_rate,
             num_workers=world_size,
         )
     else:
-        mechanism = lambda nm: acc.poisson(_unamplified(nm), sample_rate=sample_rate)
+        mechanism = lambda nm: dpsgd_acc.poisson(_unamplified(nm), sample_rate=sample_rate)
 
     # Calibrate noise multiplier from target privacy budget.
     if args.noise_multiplier is not None:

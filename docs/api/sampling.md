@@ -39,7 +39,7 @@ Opaque provides these sampling strategies:
    Used with the BLT mechanism.
 
 6. **b-min-sep** (`BMinSepSampler`): Warm-start minimum-separation Poisson
-   subsampling for BandMF (arXiv:2602.09338). Use with `acc.b_min_sep`.
+   subsampling for BandMF (arXiv:2602.09338). Use with `ftrl_acc.b_min_sep`.
 
 **See also**: [Sampling & Microbatching User Guide](../user-guide/sampling.md)
 
@@ -65,7 +65,7 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 | `num_iterations` | `int` or `None` | `None` | Number of batches to yield. `None` = infinite |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
-Account with `acc.poisson(acc.gaussian(nm), sample_rate)`.
+Account with `dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate)`.
 
 ## TruncatedPoissonSampler
 
@@ -91,7 +91,7 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 | `num_iterations` | `int` or `None` | `None` | Number of batches to yield. `None` = infinite |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
-Account with `acc.truncated_poisson(acc.gaussian(nm), sample_rate,
+Account with `dpsgd_acc.truncated_poisson(dpsgd_acc.gaussian(nm), sample_rate,
 batch_size_cap, dataset_size)`.
 
 ## BallsInBinsSampler
@@ -120,26 +120,9 @@ Bin sizes are variable (Binomial distribution). Assignments are **fixed
 across epochs** (required for BnB dominating-pair accounting). Empty bins
 are skipped.
 
-`acc.balls_in_bins` returns the **total** privacy cost across all epochs.
-Do **not** compose further with `* num_epochs`. Account with:
-
-```python
-import opaque.accounting as acc
-
-proc = acc.balls_in_bins(
-    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity, gram_matrix=strategy.gram_matrix),
-    num_bins=steps_per_epoch,
-    num_epochs=num_epochs,
-)
-# With Gaussian (DP-SGD)
-proc = acc.balls_in_bins(acc.gaussian(1.1), num_bins=steps_per_epoch, num_epochs=num_epochs)
-```
-
-**Distributed training (DDP)**: `BallsInBinsSampler` is incompatible with
-parallel-Poisson DDP. Each rank samples from its local shard independently,
-but the BnB dominating-pair accounting assumes all examples see the same
-bin assignment across all steps. Use single-GPU training or the shard
-accounting correction instead.
+Account with `ftrl_acc.balls_in_bins(mechanism, num_bins, num_epochs)` where
+`mechanism` is `ftrl_acc.lambda_cgd(...)`, `ftrl_acc.bisr(...)`, `ftrl_acc.blt(...)`, or
+`dpsgd_acc.gaussian(...)`.
 
 ## CyclicPoissonSampler
 

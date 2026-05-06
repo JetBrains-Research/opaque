@@ -1,16 +1,12 @@
 //! Balls-in-Bins privacy amplification.
 //!
-//! Two algorithms for the same BnB sampling scheme (dataset partitioned into
-//! `num_bins` bins each epoch, each bin processed once):
+//! Monte Carlo sampling of the dominating pair for correlated-noise matrix
+//! mechanisms (DP-λCGD, BISR, BLT).  Uses banded Cholesky on the Gram matrix.
 //!
-//! - [`gaussian`] — Conservative Poisson per-step approximation for independent
-//!   (Gaussian) noise.  Closed-form, fast.
-//! - [`monte_carlo`] — Monte Carlo sampling of the dominating pair for
-//!   correlated-noise matrix mechanisms (DP-λCGD, BISR, BLT).  Uses banded
-//!   Cholesky on the Gram matrix.
+//! For independent (Gaussian / AdaClip) noise, BnB amplification reduces
+//! exactly to Poisson-subsampled Gaussian composed `num_bins * num_epochs`
+//! times — use `poisson_gaussian_pld(...).self_compose(...)` directly.
 
-mod gaussian;
 pub mod monte_carlo;
 
-pub use gaussian::{balls_in_bins_gaussian_pld, balls_in_bins_gaussian_pld_epochs};
 pub use monte_carlo::bnb_mc_pld;

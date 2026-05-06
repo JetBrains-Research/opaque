@@ -1,11 +1,9 @@
 """DP-FTRL-specific accounting factories.
 
-Re-exports the mechanism / amplification primitives that are scoped to
-DP-FTRL (matrix-factorisation correlated-noise mechanisms with
-band-aware subsampling) from the underlying :mod:`opaque.accounting`
-implementation:
+Mechanism and amplification primitives scoped to DP-FTRL (matrix-
+factorisation correlated-noise mechanisms with band-aware subsampling):
 
-Mechanisms:
+Mechanisms (in :mod:`opaque.dpftrl.accounting.mechanisms`):
 
 - :func:`band_mf` — banded matrix-factorisation Gaussian.
 - :func:`blt` — buffered-linear-toeplitz Gaussian.
@@ -13,13 +11,15 @@ Mechanisms:
 - :func:`bsr` — banded square root Gaussian.
 - :func:`lambda_cgd` — DP-λCGD Gaussian.
 
-Amplification:
+Amplification (in :mod:`opaque.dpftrl.accounting.amplification`):
 
 - :func:`cyclic_poisson` — cyclic Poisson subsampling for BandMF.
 - :func:`b_min_sep` — warm-start b-min-sep Monte Carlo PLD for BandMF.
+- :func:`balls_in_bins` — total multi-epoch cost under fixed-bin sampling
+  for correlated-noise mechanisms (BLT/λCGD/BISR/BSR).
 
-Cross-cutting primitives (``balls_in_bins``, ``second_moment``,
-composition, calibration) live at :mod:`opaque.accounting`.
+Cross-cutting primitives (``second_moment``, composition, calibration)
+live at :mod:`opaque.accounting`.
 
 Example::
 
@@ -33,8 +33,12 @@ Example::
     eps = step.epsilon_at(1e-5)
 """
 
-from opaque.accounting.amplification import b_min_sep, cyclic_poisson
-from opaque.accounting.mechanisms import band_mf, bisr, blt, bsr, lambda_cgd
+from opaque.dpftrl.accounting.amplification import (
+    b_min_sep,
+    balls_in_bins,
+    cyclic_poisson,
+)
+from opaque.dpftrl.accounting.mechanisms import band_mf, bisr, blt, bsr, lambda_cgd
 
 __all__ = [
     "band_mf",
@@ -44,4 +48,5 @@ __all__ = [
     "lambda_cgd",
     "cyclic_poisson",
     "b_min_sep",
+    "balls_in_bins",
 ]

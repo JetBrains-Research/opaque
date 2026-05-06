@@ -1,6 +1,6 @@
 """Tests for BltStrategy factory and accounting equivalence."""
 
-import opaque.accounting as acc
+import opaque.dpftrl.accounting as ftrl_acc
 from opaque.dpftrl.noise._blt import BltStrategy, blt_strategy
 
 
@@ -40,13 +40,13 @@ class TestBltPld:
 
     def test_blt_pld(self):
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        eps = acc.blt(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
+        eps = ftrl_acc.blt(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
         assert eps > 0
 
     def test_blt_bnb(self):
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        eps = acc.balls_in_bins(
-            acc.blt(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
+        eps = ftrl_acc.balls_in_bins(
+            ftrl_acc.blt(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
             num_bins=25,
             num_epochs=4,
         ).epsilon_at(self.delta)

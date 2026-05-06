@@ -14,7 +14,7 @@ Install standalone:
 
 ```bash
 pip install opaque-accounting
-python -c "from opaque.accounting import gaussian, poisson; print(poisson(gaussian(0.5), 0.01).epsilon_at(1e-5))"
+python -c "from opaque.dpsgd.accounting import gaussian, poisson; print(poisson(gaussian(0.5), 0.01).epsilon_at(1e-5))"
 ```
 
 The engine uses the Privacy Loss Distribution (PLD) framework with

@@ -232,7 +232,7 @@ sample rate is the global sample rate across all devices:
 import opaque.accounting as acc
 
 global_sample_rate = batch_size_per_device * world_size / dataset_size
-step = acc.poisson(acc.gaussian(noise_multiplier), global_sample_rate)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), global_sample_rate)
 training = step * num_steps
 epsilon = training.epsilon_at(delta=1e-5)
 ```

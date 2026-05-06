@@ -143,7 +143,7 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
     subsampling is not applicable.
 
 !!! note
-    The `acc.band_mf()` API takes pre-computed sensitivity and group count
+    The `ftrl_acc.band_mf()` API takes pre-computed sensitivity and group count
     from the noise strategy. For end-to-end usage, `mf_noise()` +
     `band_mf_strategy()` computes these automatically.
 

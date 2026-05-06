@@ -27,7 +27,7 @@ strategy = bsr_strategy(
     beta=0.95,
 )
 
-training = acc.balls_in_bins(
+training = ftrl_acc.balls_in_bins(
     ftrl_acc.bsr(
         noise_multiplier,
         sensitivity=strategy.sensitivity,

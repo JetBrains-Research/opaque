@@ -222,14 +222,14 @@ for batch in dataloader:
 ### Privacy accounting for adaptive clipping
 
 Adaptive clipping introduces an additional privacy cost (the noisy clipping
-rate query). Account for it using `acc.adaclip()`:
+rate query). Account for it using `dpsgd_acc.adaclip()`:
 
 ```python
 import opaque.accounting as acc
 
 expected_batch_size = sample_rate * dataset_size
-step = acc.poisson(
-    acc.adaclip(acc.gaussian(noise_multiplier),
+step = dpsgd_acc.poisson(
+    dpsgd_acc.adaclip(dpsgd_acc.gaussian(noise_multiplier),
                 fraction_noise_std=0.05,
                 expected_batch_size=expected_batch_size),
     sample_rate,
@@ -483,7 +483,7 @@ from opaque.random import key
 noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 
-step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate)
 training = step * num_steps
 eps = training.epsilon_at(1e-5)
 ```

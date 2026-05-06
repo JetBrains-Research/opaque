@@ -37,7 +37,7 @@ strategy = lambda_cgd_strategy(
 )
 
 # 2. Build accounting mechanism from strategy-derived quantities
-training = acc.balls_in_bins(
+training = ftrl_acc.balls_in_bins(
     ftrl_acc.lambda_cgd(noise_multiplier,
                         sensitivity=strategy.sensitivity,
                         gram_matrix=strategy.gram_matrix),
@@ -107,4 +107,4 @@ At each step t, the noise function:
 ## Relationship to BISR
 
 DP-λCGD is the bandwidth-2 special case of [BISR](bisr.md). For bandwidth > 2,
-use `acc.bisr()` which generalises the correlation structure.
+use `ftrl_acc.bisr()` which generalises the correlation structure.

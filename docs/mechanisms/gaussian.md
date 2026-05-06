@@ -65,7 +65,7 @@ For small $q$, this gives roughly $1/q$ amplification — a sample rate of 1%
 makes the mechanism behave as if noise were 100$\times$ larger.
 
 ```python
-step = acc.poisson(acc.gaussian(1.0), sample_rate=0.01)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01)
 training = step * 1000
 eps = training.epsilon_at(delta=1e-5)
 ```
@@ -80,8 +80,8 @@ standard Poisson but gives predictable memory usage.
 ```python
 n = 50_000
 batch = 256
-step = acc.truncated_poisson(
-    acc.gaussian(1.0), sample_rate=batch / n,
+step = dpsgd_acc.truncated_poisson(
+    dpsgd_acc.gaussian(1.0), sample_rate=batch / n,
     batch_size_cap=batch, dataset_size=n,
 )
 training = step * 1000
@@ -94,8 +94,8 @@ For multi-worker training where each worker independently draws a Poisson
 sample. A given example may appear on multiple workers.
 
 ```python
-step = acc.parallel_poisson(
-    acc.gaussian(1.0), sample_rate=0.01, num_workers=4,
+step = dpsgd_acc.parallel_poisson(
+    dpsgd_acc.gaussian(1.0), sample_rate=0.01, num_workers=4,
 )
 ```
 
@@ -124,7 +124,7 @@ for batch in dataloader:
 import opaque.accounting as acc
 
 # Single step
-step = acc.poisson(acc.gaussian(1.0), sample_rate=0.01)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01)
 
 # Composed over training
 training = step * 1000
@@ -141,7 +141,7 @@ beta  = training.beta_at(alpha=0.01)
 ```python
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=0.01) * 1000,
     param_min=0.1,
     param_max=10.0,
 )
@@ -170,7 +170,7 @@ Gaussian truncated to $[-R\sigma, R\sigma]$ with renormalized density. This
 gives bounded support while adding negligibly more noise than the standard
 Gaussian for typical radius values ($R \geq 3$). For high-dimensional
 tasks like model training, the truncated Gaussian converges to the standard
-Gaussian, so use `acc.gaussian()` for accounting.
+Gaussian, so use `dpsgd_acc.gaussian()` for accounting.
 
 ```python
 from opaque.dpsgd.noise import truncated_gaussian_noise
@@ -184,7 +184,7 @@ noise_fn, noise_state = truncated_gaussian_noise(
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 
 # Accounting
-step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate=0.01)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate=0.01)
 training = step * 1000
 eps = training.epsilon_at(delta=1e-5)
 ```

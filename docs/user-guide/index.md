@@ -36,7 +36,7 @@ num_steps = 1000
 # --- Calibrate noise multiplier ---
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate) * num_steps,
     param_min=0.1, param_max=5.0,
 )
 noise_multiplier = result.param
@@ -63,7 +63,7 @@ dataloader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
 # --- Training loop ---
 from opaque.accounting import Accountant
 
-step_proc = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+step_proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate)
 acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
 
 for batch in dataloader:

@@ -90,7 +90,7 @@ from opaque.random import key
 # Calibrate noise multiplier
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=0.01) * 1000,
     param_min=0.1, param_max=5.0,
 )
 
@@ -239,7 +239,7 @@ import opaque.accounting as acc
 PyTree = dict[str, torch.Tensor] | tuple[torch.Tensor, ...]
 
 # DpProcess: Composable privacy process (from Rust PLD engine)
-process: DpProcess = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
+process: DpProcess = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), 0.01) * 1000
 
 # Generator for reproducible noise
 Generator = torch.Generator | None

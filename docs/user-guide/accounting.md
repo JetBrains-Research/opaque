@@ -72,12 +72,12 @@ warmup phase with different noise followed by a main phase).
 
 ```python
 # Homogeneous: same step repeated
-step = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=0.01)
 training = step * 1000
 
 # Heterogeneous: different phases
-warmup = acc.poisson(acc.gaussian(0.3), sample_rate=0.01) * 100
-main = acc.poisson(acc.gaussian(0.5), sample_rate=0.01) * 900
+warmup = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.3), sample_rate=0.01) * 100
+main = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), sample_rate=0.01) * 900
 total = warmup | main
 
 eps = total.epsilon_at(delta=1e-5)
@@ -88,29 +88,29 @@ repeated nodes (2 FFTs instead of N), and identity processes are elided.
 
 ## Mechanisms
 
-### `acc.gaussian(noise_multiplier)`
+### `dpsgd_acc.gaussian(noise_multiplier)`
 
 Gaussian mechanism without subsampling. Rarely used directly since DP-SGD
 typically uses Poisson sampling.
 
 ```python
-g = acc.gaussian(0.8)
+g = dpsgd_acc.gaussian(0.8)
 eps = g.epsilon_at(delta=1e-5)
 ```
 
-### `acc.poisson(inner, sample_rate)`
+### `dpsgd_acc.poisson(inner, sample_rate)`
 
 Standard Poisson-subsampled mechanism. Each example is included independently
 with probability `sample_rate`. This provides privacy amplification through
 subsampling. Accepts `gaussian()` or `adaclip()` as the inner mechanism.
 
 ```python
-step = acc.poisson(acc.gaussian(0.8), sample_rate=256 / 50_000)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=256 / 50_000)
 training = step * 1000
 eps = training.epsilon_at(delta=1e-5)
 ```
 
-### `acc.truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size)`
+### `dpsgd_acc.truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size)`
 
 Caps the maximum batch size to limit memory consumption, at the cost of
 slightly worse privacy bounds compared to standard Poisson (the truncation
@@ -119,33 +119,33 @@ introduces additional privacy cost).
 ```python
 n = 50_000
 batch = 256
-step = acc.truncated_poisson(
-    acc.gaussian(0.8), batch / n,
+step = dpsgd_acc.truncated_poisson(
+    dpsgd_acc.gaussian(0.8), batch / n,
     batch_size_cap=batch, dataset_size=n,
 )
 ```
 
-### `acc.parallel_poisson(inner, sample_rate, num_workers)`
+### `dpsgd_acc.parallel_poisson(inner, sample_rate, num_workers)`
 
 Accounts for Poisson sampling under parallel worker execution. Like
 `poisson()` and `truncated_poisson()`, this is a full wrapper: pass the
 inner Gaussian mechanism and sample rate directly.
 
 ```python
-step = acc.parallel_poisson(
-    acc.gaussian(0.8), sample_rate=0.01, num_workers=4,
+step = dpsgd_acc.parallel_poisson(
+    dpsgd_acc.gaussian(0.8), sample_rate=0.01, num_workers=4,
 )
 ```
 
-### `acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)`
+### `dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)`
 
 Accounts for the additional privacy cost of adaptive clipping (the noisy
 quantile query). Use this when using `adaptive_clipped_grad`.
 
 ```python
 expected_batch_size = sample_rate * dataset_size
-step = acc.poisson(
-    acc.adaclip(acc.gaussian(0.8),
+step = dpsgd_acc.poisson(
+    dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.8),
                 fraction_noise_std=0.05,
                 expected_batch_size=expected_batch_size),
     sample_rate=0.01,
@@ -180,7 +180,7 @@ MF noise introduces correlations between training steps, reducing
 effective noise on cumulative updates. The accounting must handle the
 modified sensitivity of the strategy matrix. These mechanisms optimize
 the strategy internally and compute the correct sensitivity — do not use
-`acc.gaussian()` for MF noise.
+`dpsgd_acc.gaussian()` for MF noise.
 
 ### Strategy-driven accounting
 
@@ -217,21 +217,21 @@ proc = ftrl_acc.cyclic_poisson(
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-### `acc.band_mf(noise_multiplier, sensitivity, num_groups=1)`
+### `ftrl_acc.band_mf(noise_multiplier, sensitivity, num_groups=1)`
 
 BandMF mechanism for cyclic Poisson amplification. Takes `sensitivity` and
 `num_groups` from a `band_mf_strategy()`.
 
 ```python
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+proc = ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
                    num_groups=strategy.num_groups)
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
 For subsampling amplification, wrap with `cyclic_poisson` (see below).
 
-### `acc.blt(noise_multiplier, sensitivity, gram_matrix=())`
+### `ftrl_acc.blt(noise_multiplier, sensitivity, gram_matrix=())`
 
 BLT mechanism. Takes `sensitivity` and optional `gram_matrix` from a
 `blt_strategy()`.
@@ -242,18 +242,18 @@ strategy = blt_strategy(
 )
 
 # Unamplified
-proc = acc.blt(1.0, sensitivity=strategy.sensitivity)
+proc = ftrl_acc.blt(1.0, sensitivity=strategy.sensitivity)
 eps = proc.epsilon_at(delta=1e-5)
 
 # With Balls-in-Bins amplification
-proc = acc.balls_in_bins(
-    acc.blt(1.0, sensitivity=strategy.sensitivity,
+proc = ftrl_acc.balls_in_bins(
+    ftrl_acc.blt(1.0, sensitivity=strategy.sensitivity,
             gram_matrix=strategy.gram_matrix),
     num_bins=1000, num_epochs=5,
 )
 ```
 
-### `acc.lambda_cgd(noise_multiplier, sensitivity, gram_matrix=())`
+### `ftrl_acc.lambda_cgd(noise_multiplier, sensitivity, gram_matrix=())`
 
 DP-λCGD mechanism (Kalinin et al., 2026). Takes `sensitivity` and
 `gram_matrix` from a `lambda_cgd_strategy()`.
@@ -263,15 +263,15 @@ strategy = lambda_cgd_strategy(
     lambda_=0.9, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-proc = acc.balls_in_bins(
-    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+proc = ftrl_acc.balls_in_bins(
+    ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
                    gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-### `acc.bisr(noise_multiplier, sensitivity, gram_matrix=())`
+### `ftrl_acc.bisr(noise_multiplier, sensitivity, gram_matrix=())`
 
 BISR mechanism (Kalinin et al., ICLR 2026). Generalises λCGD to
 arbitrary bandwidth. Takes `sensitivity` and `gram_matrix` from a
@@ -282,14 +282,14 @@ strategy = bisr_strategy(
     bandwidth=4, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-proc = acc.balls_in_bins(
-    acc.bisr(1.0, sensitivity=strategy.sensitivity,
+proc = ftrl_acc.balls_in_bins(
+    ftrl_acc.bisr(1.0, sensitivity=strategy.sensitivity,
              gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
 ```
 
-### `acc.cyclic_poisson(inner, sample_rate)`
+### `ftrl_acc.cyclic_poisson(inner, sample_rate)`
 
 Cyclic Poisson amplification for BandMF. Decomposes the training run
 into `ceil(n_steps / bands)` independent groups, each analyzed as a
@@ -297,15 +297,15 @@ Poisson-subsampled Gaussian mechanism. Only accepts `band_mf` processes.
 
 ```python
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = acc.cyclic_poisson(
-    acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+proc = ftrl_acc.cyclic_poisson(
+    ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
                 num_groups=strategy.num_groups),
     sample_rate=0.01,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-### `acc.balls_in_bins(inner, num_bins, num_epochs)`
+### `ftrl_acc.balls_in_bins(inner, num_bins, num_epochs)`
 
 Balls-in-Bins (random-partition) amplification. Returns the **total** privacy
 cost across all epochs — do NOT compose further with `* num_epochs`.
@@ -317,8 +317,8 @@ strategy = lambda_cgd_strategy(
     lambda_=0.9, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-proc = acc.balls_in_bins(
-    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+proc = ftrl_acc.balls_in_bins(
+    ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
                    gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
@@ -336,8 +336,8 @@ strategy = band_mf_strategy(n_steps=1000, bands=10)
 
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.cyclic_poisson(
-        acc.band_mf(nm, sensitivity=strategy.sensitivity,
+    lambda nm: ftrl_acc.cyclic_poisson(
+        ftrl_acc.band_mf(nm, sensitivity=strategy.sensitivity,
                     num_groups=strategy.num_groups),
         sample_rate=0.01,
     ),
@@ -361,7 +361,7 @@ demand and cache the result.
 | `.risk_at(prior)` | float | Bayes risk under optimal adversary (higher = more private) |
 
 ```python
-training = acc.poisson(acc.gaussian(1.1), sample_rate=0.01) * 1000
+training = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), sample_rate=0.01) * 1000
 
 eps = training.epsilon_at(delta=1e-5)
 delta = training.delta_at(epsilon=3.0)
@@ -384,7 +384,7 @@ space.
 ```python
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=0.01) * 1000,
     param_min=0.1,
     param_max=10.0,
 )
@@ -413,7 +413,7 @@ example, calibrating the sample rate:
 ```python
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
-    lambda sr: acc.poisson(acc.gaussian(1.0), sample_rate=sr) * 1000,
+    lambda sr: dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=sr) * 1000,
     param_min=0.001,
     param_max=0.1,
 )
@@ -429,7 +429,7 @@ It wraps a `DpProcess` and provides budget checking.
 from opaque.accounting import Accountant
 
 acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
-step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate)
 
 for batch in dataloader:
     # ... train ...
