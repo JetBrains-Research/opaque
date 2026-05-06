@@ -1404,6 +1404,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../serialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Serialization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../clipping/" class="md-nav__link">
         
   
@@ -2901,9 +2924,18 @@ barrier: the composition optimizer will not look through a cached node.</p>
 </code></pre></div>
 <hr />
 <h2 id="serialization">Serialization<a class="headerlink" href="#serialization" title="Permanent link">&para;</a></h2>
-<p>All processes implement <code>state_dict()</code> for JSON-friendly serialization.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
-<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="n">state</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
+<p>Processes checkpoint as a <strong>flat</strong> <code>dict[str, Any]</code> (string keys with dotted
+prefixes for nested composition). Use :func:<code>opaque.serialization.state_dict</code>
+and :func:<code>opaque.serialization.from_state_dict</code> — pass any concrete
+<code>DpProcess</code> instance as the template (for example <code>identity()</code>); the
+registered handler rebuilds from the dict's root <code>type</code> field.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">from_state_dict</span><span class="p">,</span> <span class="n">state_dict</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpsgd.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpsgd_acc</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="n">flat</span> <span class="o">=</span> <span class="n">state_dict</span><span class="p">(</span><span class="n">step</span><span class="p">)</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="n">step2</span> <span class="o">=</span> <span class="n">from_state_dict</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">identity</span><span class="p">(),</span> <span class="n">flat</span><span class="p">)</span>
 </code></pre></div>
 <hr />
 <h2 id="accountant">Accountant<a class="headerlink" href="#accountant" title="Permanent link">&para;</a></h2>
@@ -2942,15 +2974,14 @@ produces a single <code>Repeated</code> node internally.</p>
 <p><strong>Methods:</strong> <code>epsilon_at(delta)</code>, <code>delta_at(epsilon)</code>, <code>advantage()</code>,
 <code>beta_at(alpha)</code>, <code>risk_at(prior)</code>, <code>budget_exceeded</code> (property).</p>
 <h3 id="serialization_1">Serialization<a class="headerlink" href="#serialization_1" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="n">state</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
-<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="c1"># Save state to disk (JSON-serializable dict)...</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">Accountant</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">from_state_dict</span><span class="p">,</span> <span class="n">state_dict</span>
 <a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>
-<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="o">.</span><span class="n">from_state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
-<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="c1"># Or equivalently (torch-style alias):</span>
-<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="n">flat</span> <span class="o">=</span> <span class="n">state_dict</span><span class="p">(</span><span class="n">acct</span><span class="p">)</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="n">acct2</span> <span class="o">=</span> <span class="n">from_state_dict</span><span class="p">(</span><span class="n">Accountant</span><span class="p">(),</span> <span class="n">flat</span><span class="p">)</span>
 </code></pre></div>
-<p><code>from_state_dict</code> restores the accumulated process tree but not the budget.
-Reattach a budget after loading if needed.</p>
+<p><code>process.*</code> keys hold the composed tree; <code>budget.*</code> keys are present when
+the accountant was constructed with a budget.</p>
 <hr />
 <h2 id="calibration">Calibration<a class="headerlink" href="#calibration" title="Permanent link">&para;</a></h2>
 <p>Submodule: <code>opaque.accounting.calibration</code></p>

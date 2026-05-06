@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/api/clipping/">
       
       
-        <link rel="prev" href="../">
+        <link rel="prev" href="../serialization/">
       
       
         <link rel="next" href="../noise/">
@@ -1387,6 +1387,29 @@
   
   <span class="md-ellipsis">
     Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../serialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Serialization
     
   </span>
   
@@ -3025,6 +3048,13 @@ pattern and the value is the per-group value (e.g. clipping norm).</p>
     </table>
 
 
+<details class="see-also" open>
+  <summary>See also</summary>
+  <p>:mod:<code>opaque.serialization</code> — persist or restore a <code>PerGroup</code> with
+<code>state_dict</code> / <code>from_state_dict</code>.  Call :func:<code>per_group</code> again
+when parameter keys or grouping patterns change.</p>
+</details>
+
 <p><span class="doc-section-title">Raises:</span></p>
     <table>
       <thead>
@@ -3158,7 +3188,12 @@ matches multiple patterns, or if any value is not positive.</p>
 <span class="normal"><a href="#__codelineno-0-127">127</a></span>
 <span class="normal"><a href="#__codelineno-0-128">128</a></span>
 <span class="normal"><a href="#__codelineno-0-129">129</a></span>
-<span class="normal"><a href="#__codelineno-0-130">130</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-33" name="__codelineno-0-33"></a><span class="k">def</span><span class="w"> </span><span class="nf">per_group</span><span class="p">(</span>
+<span class="normal"><a href="#__codelineno-0-130">130</a></span>
+<span class="normal"><a href="#__codelineno-0-131">131</a></span>
+<span class="normal"><a href="#__codelineno-0-132">132</a></span>
+<span class="normal"><a href="#__codelineno-0-133">133</a></span>
+<span class="normal"><a href="#__codelineno-0-134">134</a></span>
+<span class="normal"><a href="#__codelineno-0-135">135</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-33" name="__codelineno-0-33"></a><span class="k">def</span><span class="w"> </span><span class="nf">per_group</span><span class="p">(</span>
 <a id="__codelineno-0-34" name="__codelineno-0-34"></a>    <span class="n">params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
 <a id="__codelineno-0-35" name="__codelineno-0-35"></a>    <span class="o">/</span><span class="p">,</span>
 <a id="__codelineno-0-36" name="__codelineno-0-36"></a>    <span class="n">patterns</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -3198,64 +3233,69 @@ matches multiple patterns, or if any value is not positive.</p>
 <a id="__codelineno-0-70" name="__codelineno-0-70"></a><span class="sd">        :class:`~opaque.types.PerGroup` with pre-resolved</span>
 <a id="__codelineno-0-71" name="__codelineno-0-71"></a><span class="sd">        parameter-to-group assignments.</span>
 <a id="__codelineno-0-72" name="__codelineno-0-72"></a>
-<a id="__codelineno-0-73" name="__codelineno-0-73"></a><span class="sd">    Raises:</span>
-<a id="__codelineno-0-74" name="__codelineno-0-74"></a><span class="sd">        ValueError: If no patterns are provided, if a parameter matches zero</span>
-<a id="__codelineno-0-75" name="__codelineno-0-75"></a><span class="sd">            patterns (and no ``fallback`` is given), if a parameter</span>
-<a id="__codelineno-0-76" name="__codelineno-0-76"></a><span class="sd">            matches multiple patterns, or if any value is not positive.</span>
+<a id="__codelineno-0-73" name="__codelineno-0-73"></a><span class="sd">    See also:</span>
+<a id="__codelineno-0-74" name="__codelineno-0-74"></a><span class="sd">        :mod:`opaque.serialization` — persist or restore a ``PerGroup`` with</span>
+<a id="__codelineno-0-75" name="__codelineno-0-75"></a><span class="sd">        ``state_dict`` / ``from_state_dict``.  Call :func:`per_group` again</span>
+<a id="__codelineno-0-76" name="__codelineno-0-76"></a><span class="sd">        when parameter keys or grouping patterns change.</span>
 <a id="__codelineno-0-77" name="__codelineno-0-77"></a>
-<a id="__codelineno-0-78" name="__codelineno-0-78"></a><span class="sd">    Examples:</span>
-<a id="__codelineno-0-79" name="__codelineno-0-79"></a><span class="sd">        &gt;&gt;&gt; per_group(params, self_attn=1.0, mlp=2.0)</span>
-<a id="__codelineno-0-80" name="__codelineno-0-80"></a><span class="sd">        &gt;&gt;&gt; per_group(params, self_attn=1.0, fallback=0.5)  # catch-all</span>
-<a id="__codelineno-0-81" name="__codelineno-0-81"></a><span class="sd">        &gt;&gt;&gt; per_group(params, q_proj=0.5, k_proj=0.5, v_proj=0.5, o_proj=0.8,</span>
-<a id="__codelineno-0-82" name="__codelineno-0-82"></a><span class="sd">        ...           gate_proj=1.0, up_proj=1.0, down_proj=1.0)</span>
-<a id="__codelineno-0-83" name="__codelineno-0-83"></a><span class="sd">        &gt;&gt;&gt; per_group(params, **{f&#39;layers.{i}&#39;: norms[i] for i in range(32)})</span>
-<a id="__codelineno-0-84" name="__codelineno-0-84"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-85" name="__codelineno-0-85"></a>    <span class="n">all_patterns</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-<a id="__codelineno-0-86" name="__codelineno-0-86"></a>    <span class="k">if</span> <span class="n">patterns</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-87" name="__codelineno-0-87"></a>        <span class="n">all_patterns</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">patterns</span><span class="p">)</span>
-<a id="__codelineno-0-88" name="__codelineno-0-88"></a>    <span class="n">all_patterns</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span>
-<a id="__codelineno-0-89" name="__codelineno-0-89"></a>
-<a id="__codelineno-0-90" name="__codelineno-0-90"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">all_patterns</span> <span class="ow">and</span> <span class="n">fallback</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-91" name="__codelineno-0-91"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;At least one pattern must be provided.&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-92" name="__codelineno-0-92"></a>
-<a id="__codelineno-0-93" name="__codelineno-0-93"></a>    <span class="k">for</span> <span class="n">pat</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">all_patterns</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-<a id="__codelineno-0-94" name="__codelineno-0-94"></a>        <span class="k">if</span> <span class="n">val</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-95" name="__codelineno-0-95"></a>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-<a id="__codelineno-0-96" name="__codelineno-0-96"></a>                <span class="sa">f</span><span class="s2">&quot;Per-group value must be positive, got </span><span class="si">{</span><span class="n">val</span><span class="si">}</span><span class="s2"> for pattern &#39;</span><span class="si">{</span><span class="n">pat</span><span class="si">}</span><span class="s2">&#39;.&quot;</span>
-<a id="__codelineno-0-97" name="__codelineno-0-97"></a>            <span class="p">)</span>
-<a id="__codelineno-0-98" name="__codelineno-0-98"></a>
-<a id="__codelineno-0-99" name="__codelineno-0-99"></a>    <span class="k">if</span> <span class="n">fallback</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-100" name="__codelineno-0-100"></a>        <span class="k">if</span> <span class="n">fallback</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-101" name="__codelineno-0-101"></a>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Fallback value must be positive, got </span><span class="si">{</span><span class="n">fallback</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-102" name="__codelineno-0-102"></a>
-<a id="__codelineno-0-103" name="__codelineno-0-103"></a>    <span class="n">param_keys</span> <span class="o">=</span> <span class="n">_extract_keys</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-0-104" name="__codelineno-0-104"></a>
-<a id="__codelineno-0-105" name="__codelineno-0-105"></a>    <span class="n">groups</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-<a id="__codelineno-0-106" name="__codelineno-0-106"></a>    <span class="k">for</span> <span class="n">param_key</span> <span class="ow">in</span> <span class="n">param_keys</span><span class="p">:</span>
-<a id="__codelineno-0-107" name="__codelineno-0-107"></a>        <span class="n">matches</span> <span class="o">=</span> <span class="p">[</span><span class="n">pat</span> <span class="k">for</span> <span class="n">pat</span> <span class="ow">in</span> <span class="n">all_patterns</span> <span class="k">if</span> <span class="n">pat</span> <span class="ow">in</span> <span class="n">param_key</span><span class="p">]</span>
-<a id="__codelineno-0-108" name="__codelineno-0-108"></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">matches</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-109" name="__codelineno-0-109"></a>            <span class="k">if</span> <span class="n">fallback</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-110" name="__codelineno-0-110"></a>                <span class="n">groups</span><span class="p">[</span><span class="n">param_key</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;fallback&quot;</span>
-<a id="__codelineno-0-111" name="__codelineno-0-111"></a>                <span class="k">continue</span>
-<a id="__codelineno-0-112" name="__codelineno-0-112"></a>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-<a id="__codelineno-0-113" name="__codelineno-0-113"></a>                <span class="sa">f</span><span class="s2">&quot;Parameter &#39;</span><span class="si">{</span><span class="n">param_key</span><span class="si">}</span><span class="s2">&#39; did not match any pattern. &quot;</span>
-<a id="__codelineno-0-114" name="__codelineno-0-114"></a>                <span class="sa">f</span><span class="s2">&quot;Available patterns: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">all_patterns</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">. &quot;</span>
-<a id="__codelineno-0-115" name="__codelineno-0-115"></a>                <span class="sa">f</span><span class="s2">&quot;Use fallback=&lt;value&gt; to catch unmatched parameters.&quot;</span>
-<a id="__codelineno-0-116" name="__codelineno-0-116"></a>            <span class="p">)</span>
-<a id="__codelineno-0-117" name="__codelineno-0-117"></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">matches</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-118" name="__codelineno-0-118"></a>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-<a id="__codelineno-0-119" name="__codelineno-0-119"></a>                <span class="sa">f</span><span class="s2">&quot;Parameter &#39;</span><span class="si">{</span><span class="n">param_key</span><span class="si">}</span><span class="s2">&#39; matched multiple patterns: </span><span class="si">{</span><span class="n">matches</span><span class="si">}</span><span class="s2">. &quot;</span>
-<a id="__codelineno-0-120" name="__codelineno-0-120"></a>                <span class="sa">f</span><span class="s2">&quot;Each parameter must match exactly one pattern.&quot;</span>
+<a id="__codelineno-0-78" name="__codelineno-0-78"></a><span class="sd">    Raises:</span>
+<a id="__codelineno-0-79" name="__codelineno-0-79"></a><span class="sd">        ValueError: If no patterns are provided, if a parameter matches zero</span>
+<a id="__codelineno-0-80" name="__codelineno-0-80"></a><span class="sd">            patterns (and no ``fallback`` is given), if a parameter</span>
+<a id="__codelineno-0-81" name="__codelineno-0-81"></a><span class="sd">            matches multiple patterns, or if any value is not positive.</span>
+<a id="__codelineno-0-82" name="__codelineno-0-82"></a>
+<a id="__codelineno-0-83" name="__codelineno-0-83"></a><span class="sd">    Examples:</span>
+<a id="__codelineno-0-84" name="__codelineno-0-84"></a><span class="sd">        &gt;&gt;&gt; per_group(params, self_attn=1.0, mlp=2.0)</span>
+<a id="__codelineno-0-85" name="__codelineno-0-85"></a><span class="sd">        &gt;&gt;&gt; per_group(params, self_attn=1.0, fallback=0.5)  # catch-all</span>
+<a id="__codelineno-0-86" name="__codelineno-0-86"></a><span class="sd">        &gt;&gt;&gt; per_group(params, q_proj=0.5, k_proj=0.5, v_proj=0.5, o_proj=0.8,</span>
+<a id="__codelineno-0-87" name="__codelineno-0-87"></a><span class="sd">        ...           gate_proj=1.0, up_proj=1.0, down_proj=1.0)</span>
+<a id="__codelineno-0-88" name="__codelineno-0-88"></a><span class="sd">        &gt;&gt;&gt; per_group(params, **{f&#39;layers.{i}&#39;: norms[i] for i in range(32)})</span>
+<a id="__codelineno-0-89" name="__codelineno-0-89"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-90" name="__codelineno-0-90"></a>    <span class="n">all_patterns</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+<a id="__codelineno-0-91" name="__codelineno-0-91"></a>    <span class="k">if</span> <span class="n">patterns</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-92" name="__codelineno-0-92"></a>        <span class="n">all_patterns</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">patterns</span><span class="p">)</span>
+<a id="__codelineno-0-93" name="__codelineno-0-93"></a>    <span class="n">all_patterns</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span>
+<a id="__codelineno-0-94" name="__codelineno-0-94"></a>
+<a id="__codelineno-0-95" name="__codelineno-0-95"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">all_patterns</span> <span class="ow">and</span> <span class="n">fallback</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-96" name="__codelineno-0-96"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;At least one pattern must be provided.&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-97" name="__codelineno-0-97"></a>
+<a id="__codelineno-0-98" name="__codelineno-0-98"></a>    <span class="k">for</span> <span class="n">pat</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">all_patterns</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<a id="__codelineno-0-99" name="__codelineno-0-99"></a>        <span class="k">if</span> <span class="n">val</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-100" name="__codelineno-0-100"></a>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+<a id="__codelineno-0-101" name="__codelineno-0-101"></a>                <span class="sa">f</span><span class="s2">&quot;Per-group value must be positive, got </span><span class="si">{</span><span class="n">val</span><span class="si">}</span><span class="s2"> for pattern &#39;</span><span class="si">{</span><span class="n">pat</span><span class="si">}</span><span class="s2">&#39;.&quot;</span>
+<a id="__codelineno-0-102" name="__codelineno-0-102"></a>            <span class="p">)</span>
+<a id="__codelineno-0-103" name="__codelineno-0-103"></a>
+<a id="__codelineno-0-104" name="__codelineno-0-104"></a>    <span class="k">if</span> <span class="n">fallback</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-105" name="__codelineno-0-105"></a>        <span class="k">if</span> <span class="n">fallback</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-106" name="__codelineno-0-106"></a>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Fallback value must be positive, got </span><span class="si">{</span><span class="n">fallback</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-107" name="__codelineno-0-107"></a>
+<a id="__codelineno-0-108" name="__codelineno-0-108"></a>    <span class="n">param_keys</span> <span class="o">=</span> <span class="n">_extract_keys</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-0-109" name="__codelineno-0-109"></a>
+<a id="__codelineno-0-110" name="__codelineno-0-110"></a>    <span class="n">groups</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+<a id="__codelineno-0-111" name="__codelineno-0-111"></a>    <span class="k">for</span> <span class="n">param_key</span> <span class="ow">in</span> <span class="n">param_keys</span><span class="p">:</span>
+<a id="__codelineno-0-112" name="__codelineno-0-112"></a>        <span class="n">matches</span> <span class="o">=</span> <span class="p">[</span><span class="n">pat</span> <span class="k">for</span> <span class="n">pat</span> <span class="ow">in</span> <span class="n">all_patterns</span> <span class="k">if</span> <span class="n">pat</span> <span class="ow">in</span> <span class="n">param_key</span><span class="p">]</span>
+<a id="__codelineno-0-113" name="__codelineno-0-113"></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">matches</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-114" name="__codelineno-0-114"></a>            <span class="k">if</span> <span class="n">fallback</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-115" name="__codelineno-0-115"></a>                <span class="n">groups</span><span class="p">[</span><span class="n">param_key</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;fallback&quot;</span>
+<a id="__codelineno-0-116" name="__codelineno-0-116"></a>                <span class="k">continue</span>
+<a id="__codelineno-0-117" name="__codelineno-0-117"></a>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+<a id="__codelineno-0-118" name="__codelineno-0-118"></a>                <span class="sa">f</span><span class="s2">&quot;Parameter &#39;</span><span class="si">{</span><span class="n">param_key</span><span class="si">}</span><span class="s2">&#39; did not match any pattern. &quot;</span>
+<a id="__codelineno-0-119" name="__codelineno-0-119"></a>                <span class="sa">f</span><span class="s2">&quot;Available patterns: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">all_patterns</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">. &quot;</span>
+<a id="__codelineno-0-120" name="__codelineno-0-120"></a>                <span class="sa">f</span><span class="s2">&quot;Use fallback=&lt;value&gt; to catch unmatched parameters.&quot;</span>
 <a id="__codelineno-0-121" name="__codelineno-0-121"></a>            <span class="p">)</span>
-<a id="__codelineno-0-122" name="__codelineno-0-122"></a>        <span class="n">groups</span><span class="p">[</span><span class="n">param_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">matches</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-<a id="__codelineno-0-123" name="__codelineno-0-123"></a>
-<a id="__codelineno-0-124" name="__codelineno-0-124"></a>    <span class="n">used_groups</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">groups</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
-<a id="__codelineno-0-125" name="__codelineno-0-125"></a>    <span class="n">values</span> <span class="o">=</span> <span class="p">{</span>
-<a id="__codelineno-0-126" name="__codelineno-0-126"></a>        <span class="n">pat</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">val</span><span class="p">)</span> <span class="k">for</span> <span class="n">pat</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">all_patterns</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">pat</span> <span class="ow">in</span> <span class="n">used_groups</span>
-<a id="__codelineno-0-127" name="__codelineno-0-127"></a>    <span class="p">}</span>
-<a id="__codelineno-0-128" name="__codelineno-0-128"></a>    <span class="k">if</span> <span class="n">fallback</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="s2">&quot;fallback&quot;</span> <span class="ow">in</span> <span class="n">used_groups</span><span class="p">:</span>
-<a id="__codelineno-0-129" name="__codelineno-0-129"></a>        <span class="n">values</span><span class="p">[</span><span class="s2">&quot;fallback&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">fallback</span><span class="p">)</span>
-<a id="__codelineno-0-130" name="__codelineno-0-130"></a>    <span class="k">return</span> <span class="n">_PerGroup</span><span class="p">(</span><span class="n">groups</span><span class="o">=</span><span class="n">groups</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="n">values</span><span class="p">)</span>
+<a id="__codelineno-0-122" name="__codelineno-0-122"></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">matches</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-123" name="__codelineno-0-123"></a>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+<a id="__codelineno-0-124" name="__codelineno-0-124"></a>                <span class="sa">f</span><span class="s2">&quot;Parameter &#39;</span><span class="si">{</span><span class="n">param_key</span><span class="si">}</span><span class="s2">&#39; matched multiple patterns: </span><span class="si">{</span><span class="n">matches</span><span class="si">}</span><span class="s2">. &quot;</span>
+<a id="__codelineno-0-125" name="__codelineno-0-125"></a>                <span class="sa">f</span><span class="s2">&quot;Each parameter must match exactly one pattern.&quot;</span>
+<a id="__codelineno-0-126" name="__codelineno-0-126"></a>            <span class="p">)</span>
+<a id="__codelineno-0-127" name="__codelineno-0-127"></a>        <span class="n">groups</span><span class="p">[</span><span class="n">param_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">matches</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<a id="__codelineno-0-128" name="__codelineno-0-128"></a>
+<a id="__codelineno-0-129" name="__codelineno-0-129"></a>    <span class="n">used_groups</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">groups</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+<a id="__codelineno-0-130" name="__codelineno-0-130"></a>    <span class="n">values</span> <span class="o">=</span> <span class="p">{</span>
+<a id="__codelineno-0-131" name="__codelineno-0-131"></a>        <span class="n">pat</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">val</span><span class="p">)</span> <span class="k">for</span> <span class="n">pat</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">all_patterns</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">pat</span> <span class="ow">in</span> <span class="n">used_groups</span>
+<a id="__codelineno-0-132" name="__codelineno-0-132"></a>    <span class="p">}</span>
+<a id="__codelineno-0-133" name="__codelineno-0-133"></a>    <span class="k">if</span> <span class="n">fallback</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="s2">&quot;fallback&quot;</span> <span class="ow">in</span> <span class="n">used_groups</span><span class="p">:</span>
+<a id="__codelineno-0-134" name="__codelineno-0-134"></a>        <span class="n">values</span><span class="p">[</span><span class="s2">&quot;fallback&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">fallback</span><span class="p">)</span>
+<a id="__codelineno-0-135" name="__codelineno-0-135"></a>    <span class="k">return</span> <span class="n">_PerGroup</span><span class="p">(</span><span class="n">groups</span><span class="o">=</span><span class="n">groups</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="n">values</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>

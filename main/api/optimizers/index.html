@@ -1404,6 +1404,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../serialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Serialization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../clipping/" class="md-nav__link">
         
   
@@ -2197,13 +2220,12 @@ budget.  This is a real DP-utility win specific to averaging-based
 methods.</p>
 <hr />
 <h2 id="serialisation">Serialisation<a class="headerlink" href="#serialisation" title="Permanent link">&para;</a></h2>
-<p><code>state_dict</code> / <code>load_state_dict</code> live in
-<code>opaque.optimizers._serialization</code> (a less-common building block, not
-in the package's top-level <code>__all__</code>).  Walks the chain state,
-encoding every tensor leaf and Python primitive into a flat
-<code>{path: value}</code> dict ready for <code>torch.save</code>.</p>
+<p><code>state_dict</code> / <code>from_state_dict</code> live in :mod:<code>opaque.serialization</code>.  They
+walk chain state, encoding every tensor leaf and Python primitive into a flat
+<code>{path: value}</code> dict ready for <code>torch.save</code>.  Restore returns a <strong>new</strong>
+object and never mutates the template.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers._serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">state_dict</span><span class="p">,</span> <span class="n">load_state_dict</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">from_state_dict</span><span class="p">,</span> <span class="n">state_dict</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">opt</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">state</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
@@ -2212,9 +2234,9 @@ encoding every tensor leaf and Python primitive into a flat
 <a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="c1"># Save</span>
 <a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">),</span> <span class="s2">&quot;opt.pt&quot;</span><span class="p">)</span>
 <a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="c1"># Load — template must have the same shape (init from same params).</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="c1"># Restore — template must have the same shape (init from same params).</span>
 <a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="n">template</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="n">state</span> <span class="o">=</span> <span class="n">load_state_dict</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;opt.pt&quot;</span><span class="p">))</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="n">state</span> <span class="o">=</span> <span class="n">from_state_dict</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;opt.pt&quot;</span><span class="p">))</span>
 </code></pre></div>
 <p>Forward-compatible: paths missing from the saved dict keep the
 template's value, so optimizers that gain new state fields between

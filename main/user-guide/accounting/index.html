@@ -1746,6 +1746,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../api/serialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Serialization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../api/clipping/" class="md-nav__link">
         
   
@@ -2757,11 +2780,17 @@ It wraps a <code>DpProcess</code> and provides budget checking.</p>
 mutating the original. The <code>budget_exceeded</code> property checks whether the
 accumulated process exceeds the budget.</p>
 <h3 id="serialization">Serialization<a class="headerlink" href="#serialization" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="n">state</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
-<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="c1"># Save state to disk...</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">Accountant</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">from_state_dict</span><span class="p">,</span> <span class="n">state_dict</span>
 <a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>
-<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="o">.</span><span class="n">from_state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="n">flat</span> <span class="o">=</span> <span class="n">state_dict</span><span class="p">(</span><span class="n">acct</span><span class="p">)</span>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="c1"># ... torch.save(flat, path) / flat = torch.load(path) ...</span>
 </code></pre></div>
+<p>The flat mapping may include <code>torch.Tensor</code> and NumPy arrays. Persist it with
+:func:<code>torch.save</code> / :func:<code>torch.load</code> (or another pickle-compatible format),
+not JSON, unless every leaf is JSON-serialisable.</p>
+<p>For a bare <code>DpProcess</code>, use <code>from_state_dict(identity(), flat)</code> (or any
+concrete process as the template).</p>
 <h2 id="discretization">Discretization<a class="headerlink" href="#discretization" title="Permanent link">&para;</a></h2>
 <p>PLD computation uses a discretized grid. The default parameters are suitable
 for most use cases. For tighter bounds at the cost of computation, adjust the

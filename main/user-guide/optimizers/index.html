@@ -1680,6 +1680,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../api/serialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Serialization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../api/clipping/" class="md-nav__link">
         
   
@@ -2592,9 +2615,9 @@ noisy gradient signal.</p>
 the wrapper's averaging is the implicit schedule.</p>
 <h2 id="checkpoint-round-tripping">Checkpoint round-tripping<a class="headerlink" href="#checkpoint-round-tripping" title="Permanent link">&para;</a></h2>
 <p>The optimizer state is a <code>torchopt</code> chain tuple of dataclasses; flatten
-it to a serialisable dict via <code>opaque.optimizers._serialization</code>:</p>
+it to a serialisable dict via :mod:<code>opaque.serialization</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers._serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">state_dict</span><span class="p">,</span> <span class="n">load_state_dict</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">from_state_dict</span><span class="p">,</span> <span class="n">state_dict</span>
 <a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
 <a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="n">opt</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">noise_bias_correction</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="n">state</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
@@ -2603,9 +2626,9 @@ it to a serialisable dict via <code>opaque.optimizers._serialization</code>:</p>
 <a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="c1"># Save</span>
 <a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">),</span> <span class="s2">&quot;opt.pt&quot;</span><span class="p">)</span>
 <a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>
-<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="c1"># Load: re-init a template, then overwrite leaves from the saved dict.</span>
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="c1"># Restore: re-init a template, then build a new state from the saved dict.</span>
 <a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="n">template</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="n">state</span> <span class="o">=</span> <span class="n">load_state_dict</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;opt.pt&quot;</span><span class="p">))</span>
+<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="n">state</span> <span class="o">=</span> <span class="n">from_state_dict</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;opt.pt&quot;</span><span class="p">))</span>
 </code></pre></div>
 <p>Forward-compatible: paths missing from a saved dict keep the template's
 value, so optimizers that gain new state fields between releases load

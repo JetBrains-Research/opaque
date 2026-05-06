@@ -12,28 +12,28 @@
         <meta name="author" content="Opaque Contributors">
       
       
-        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/tutorials/">
+        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/api/serialization/">
       
       
-        <link rel="prev" href="../mechanisms/bisr/">
+        <link rel="prev" href="../">
       
       
-        <link rel="next" href="dp_sgd_training/">
+        <link rel="next" href="../clipping/">
       
       
-      <link rel="icon" href="../assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.23">
     
     
       
-        <title>Overview - Opaque</title>
+        <title>Serialization - Opaque</title>
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.84d31ad4.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.84d31ad4.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
       
       
 
@@ -52,9 +52,9 @@
       
     
     
-      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
     
-    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#tutorials" class="md-skip">
+        <a href="#serialization" class="md-skip">
           Skip to content
         </a>
       
@@ -98,7 +98,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href=".." title="Opaque" class="md-header__button md-logo" aria-label="Opaque" data-md-component="logo">
+    <a href="../.." title="Opaque" class="md-header__button md-logo" aria-label="Opaque" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Overview
+              Serialization
             
           </span>
         </div>
@@ -231,7 +231,7 @@
   
   
     <li class="md-tabs__item">
-      <a href=".." class="md-tabs__link">
+      <a href="../.." class="md-tabs__link">
         
   
   
@@ -252,7 +252,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../getting-started/installation/" class="md-tabs__link">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
           
   
   
@@ -272,7 +272,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../user-guide/" class="md-tabs__link">
+        <a href="../../user-guide/" class="md-tabs__link">
           
   
   
@@ -292,11 +292,31 @@
     
     
       <li class="md-tabs__item">
-        <a href="../mechanisms/" class="md-tabs__link">
+        <a href="../../mechanisms/" class="md-tabs__link">
           
   
   
   Mechanisms
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tutorials/" class="md-tabs__link">
+          
+  
+  
+  Tutorials
 
         </a>
       </li>
@@ -314,27 +334,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
-          
-  
-  
-  Tutorials
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../api/" class="md-tabs__link">
+        <a href="../" class="md-tabs__link">
           
   
   
@@ -368,7 +368,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href=".." title="Opaque" class="md-nav__button md-logo" aria-label="Opaque" data-md-component="logo">
+    <a href="../.." title="Opaque" class="md-nav__button md-logo" aria-label="Opaque" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -398,7 +398,7 @@
   
   
     <li class="md-nav__item">
-      <a href=".." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -463,7 +463,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../getting-started/installation/" class="md-nav__link">
+      <a href="../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -486,7 +486,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../getting-started/quickstart/" class="md-nav__link">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -559,7 +559,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/" class="md-nav__link">
+      <a href="../../user-guide/" class="md-nav__link">
         
   
   
@@ -582,7 +582,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/dp-concepts/" class="md-nav__link">
+      <a href="../../user-guide/dp-concepts/" class="md-nav__link">
         
   
   
@@ -605,7 +605,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/rng-key/" class="md-nav__link">
+      <a href="../../user-guide/rng-key/" class="md-nav__link">
         
   
   
@@ -628,7 +628,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/clipping/" class="md-nav__link">
+      <a href="../../user-guide/clipping/" class="md-nav__link">
         
   
   
@@ -651,7 +651,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/noise/" class="md-nav__link">
+      <a href="../../user-guide/noise/" class="md-nav__link">
         
   
   
@@ -674,7 +674,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/dp-ftrl/" class="md-nav__link">
+      <a href="../../user-guide/dp-ftrl/" class="md-nav__link">
         
   
   
@@ -697,7 +697,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/accounting/" class="md-nav__link">
+      <a href="../../user-guide/accounting/" class="md-nav__link">
         
   
   
@@ -720,7 +720,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/sampling/" class="md-nav__link">
+      <a href="../../user-guide/sampling/" class="md-nav__link">
         
   
   
@@ -743,7 +743,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/optimizers/" class="md-nav__link">
+      <a href="../../user-guide/optimizers/" class="md-nav__link">
         
   
   
@@ -766,7 +766,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/lr-scheduling/" class="md-nav__link">
+      <a href="../../user-guide/lr-scheduling/" class="md-nav__link">
         
   
   
@@ -789,7 +789,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/distributed/" class="md-nav__link">
+      <a href="../../user-guide/distributed/" class="md-nav__link">
         
   
   
@@ -812,7 +812,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/huggingface/" class="md-nav__link">
+      <a href="../../user-guide/huggingface/" class="md-nav__link">
         
   
   
@@ -835,7 +835,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/memory-optimizations/" class="md-nav__link">
+      <a href="../../user-guide/memory-optimizations/" class="md-nav__link">
         
   
   
@@ -858,7 +858,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/auditing/" class="md-nav__link">
+      <a href="../../user-guide/auditing/" class="md-nav__link">
         
   
   
@@ -881,7 +881,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../limitations/" class="md-nav__link">
+      <a href="../../limitations/" class="md-nav__link">
         
   
   
@@ -954,7 +954,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/" class="md-nav__link">
+      <a href="../../mechanisms/" class="md-nav__link">
         
   
   
@@ -977,7 +977,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/gaussian/" class="md-nav__link">
+      <a href="../../mechanisms/gaussian/" class="md-nav__link">
         
   
   
@@ -1000,7 +1000,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/bsr/" class="md-nav__link">
+      <a href="../../mechanisms/bsr/" class="md-nav__link">
         
   
   
@@ -1023,7 +1023,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/band-mf/" class="md-nav__link">
+      <a href="../../mechanisms/band-mf/" class="md-nav__link">
         
   
   
@@ -1046,7 +1046,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/blt/" class="md-nav__link">
+      <a href="../../mechanisms/blt/" class="md-nav__link">
         
   
   
@@ -1069,7 +1069,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/lambda-cgd/" class="md-nav__link">
+      <a href="../../mechanisms/lambda-cgd/" class="md-nav__link">
         
   
   
@@ -1092,12 +1092,223 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/bisr/" class="md-nav__link">
+      <a href="../../mechanisms/bisr/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     BISR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Tutorials
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Tutorials
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/dp_sgd_training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Train a Model with DP-SGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/accounting_and_calibration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Privacy Accounting and Calibration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/llm_finetuning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Fine-tune an LLM with Differential Privacy
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/sampling_and_microbatching/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Sampling Strategies and Microbatching
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/privacy_auditing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Privacy Auditing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/distributed_training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DP-SGD Training
     
   </span>
   
@@ -1140,15 +1351,15 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
             
   
   
   <span class="md-ellipsis">
-    Tutorials
+    API Reference
     
   </span>
   
@@ -1156,12 +1367,35 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_5">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
-            Tutorials
+            API Reference
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
             
               
                 
@@ -1184,7 +1418,7 @@
   
   
   <span class="md-ellipsis">
-    Overview
+    Serialization
     
   </span>
   
@@ -1197,7 +1431,7 @@
   
   
   <span class="md-ellipsis">
-    Overview
+    Serialization
     
   </span>
   
@@ -1220,20 +1454,44 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#notebooks" class="md-nav__link">
+  <a href="#opaque.serialization" class="md-nav__link">
     <span class="md-ellipsis">
-      Notebooks
+      serialization
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="serialization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#opaque.serialization.register_serialization_type" class="md-nav__link">
+    <span class="md-ellipsis">
+      register_serialization_type
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#running-the-tutorials" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#opaque.serialization.state_dict" class="md-nav__link">
     <span class="md-ellipsis">
-      Running the tutorials
+      state_dict
     </span>
   </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#opaque.serialization.from_state_dict" class="md-nav__link">
+    <span class="md-ellipsis">
+      from_state_dict
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1253,241 +1511,7 @@
   
   
     <li class="md-nav__item">
-      <a href="dp_sgd_training/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Train a Model with DP-SGD
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="accounting_and_calibration/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Privacy Accounting and Calibration
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="llm_finetuning/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Fine-tune an LLM with Differential Privacy
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="sampling_and_microbatching/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Sampling Strategies and Microbatching
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="privacy_auditing/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Privacy Auditing
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="distributed_training/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Distributed DP-SGD Training
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
-        
-          
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    API Reference
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
-            <span class="md-nav__icon md-icon"></span>
-            API Reference
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../api/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Overview
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../api/serialization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Serialization
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../api/clipping/" class="md-nav__link">
+      <a href="../clipping/" class="md-nav__link">
         
   
   
@@ -1510,7 +1534,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/noise/" class="md-nav__link">
+      <a href="../noise/" class="md-nav__link">
         
   
   
@@ -1533,7 +1557,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/accounting/" class="md-nav__link">
+      <a href="../accounting/" class="md-nav__link">
         
   
   
@@ -1556,7 +1580,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/sampling/" class="md-nav__link">
+      <a href="../sampling/" class="md-nav__link">
         
   
   
@@ -1579,7 +1603,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/rng/" class="md-nav__link">
+      <a href="../rng/" class="md-nav__link">
         
   
   
@@ -1602,7 +1626,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/distributed/" class="md-nav__link">
+      <a href="../distributed/" class="md-nav__link">
         
   
   
@@ -1625,7 +1649,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/auditing/" class="md-nav__link">
+      <a href="../auditing/" class="md-nav__link">
         
   
   
@@ -1648,7 +1672,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/utilities/" class="md-nav__link">
+      <a href="../utilities/" class="md-nav__link">
         
   
   
@@ -1671,7 +1695,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/optimizers/" class="md-nav__link">
+      <a href="../optimizers/" class="md-nav__link">
         
   
   
@@ -1694,7 +1718,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/schedules/" class="md-nav__link">
+      <a href="../schedules/" class="md-nav__link">
         
   
   
@@ -1744,20 +1768,44 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#notebooks" class="md-nav__link">
+  <a href="#opaque.serialization" class="md-nav__link">
     <span class="md-ellipsis">
-      Notebooks
+      serialization
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="serialization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#opaque.serialization.register_serialization_type" class="md-nav__link">
+    <span class="md-ellipsis">
+      register_serialization_type
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#running-the-tutorials" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#opaque.serialization.state_dict" class="md-nav__link">
     <span class="md-ellipsis">
-      Running the tutorials
+      state_dict
     </span>
   </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#opaque.serialization.from_state_dict" class="md-nav__link">
+    <span class="md-ellipsis">
+      from_state_dict
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1780,67 +1828,181 @@
   
 
 
-<h1 id="tutorials">Tutorials<a class="headerlink" href="#tutorials" title="Permanent link">&para;</a></h1>
-<p>These Jupyter notebooks provide hands-on practice with Opaque's DP-SGD
-components. Each tutorial is self-contained and task-oriented: you will
-build something concrete and see it work.</p>
-<p>For conceptual explanations, see the <a href="../user-guide/">User Guide</a>.
-For complete function signatures, see the
-<a href="../api/">API Reference</a>.</p>
-<h2 id="notebooks">Notebooks<a class="headerlink" href="#notebooks" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Tutorial</th>
-<th>Task</th>
-<th>Components exercised</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="dp_sgd_training/">DP-SGD Training</a></td>
-<td>Train a model with differential privacy from scratch</td>
-<td><code>clipped_grad</code>, <code>gaussian_noise</code>, <code>make_functional</code>, accounting, calibration</td>
-</tr>
-<tr>
-<td><a href="accounting_and_calibration/">Privacy Accounting &amp; Calibration</a></td>
-<td>Explore the accounting API, compare mechanisms, calibrate noise</td>
-<td><code>DpProcess</code>, composition, <code>calibrate</code>, privacy metrics</td>
-</tr>
-<tr>
-<td><a href="llm_finetuning/">Fine-tuning an LLM</a></td>
-<td>Fine-tune a HuggingFace model with DP and LoRA</td>
-<td><code>make_functional</code>, <code>partition_trainable</code>, PEFT, adaptive clipping</td>
-</tr>
-<tr>
-<td><a href="sampling_and_microbatching/">Sampling &amp; Microbatching</a></td>
-<td>Compare sampling strategies and tune microbatch size</td>
-<td><code>PoissonSampler</code>, <code>TruncatedPoissonSampler</code>, <code>microbatch_size</code></td>
-</tr>
-<tr>
-<td><a href="privacy_auditing/">Privacy Auditing</a></td>
-<td>Validate privacy guarantees empirically</td>
-<td><code>auditing.coin_flip</code>, <code>auditing.one_run</code>, <code>OneRunEstimate</code>, bootstrap</td>
-</tr>
-<tr>
-<td><a href="distributed_training/">Distributed Training</a></td>
-<td>Run DP-SGD across multiple GPUs</td>
-<td><code>sum_gradients</code>, <code>local_shard</code>, <code>PoissonSampler</code>, shared RNG key</td>
-</tr>
-</tbody>
-</table>
-<p>Most tutorials run on CPU in reasonable time using small datasets.
-The distributed training tutorial requires multiple GPUs and <code>torchrun</code>.</p>
-<h2 id="running-the-tutorials">Running the tutorials<a class="headerlink" href="#running-the-tutorials" title="Permanent link">&para;</a></h2>
-<p>Install Opaque and its tutorial dependencies from a repository checkout:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/JetBrains-Research/opaque.git
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>opaque
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>uv<span class="w"> </span>sync<span class="w"> </span>--group<span class="w"> </span>examples<span class="w"> </span>--all-packages<span class="w"> </span>--extra<span class="w"> </span>transformers
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>jupyter<span class="w"> </span>lab<span class="w"> </span>docs/tutorials/
-</code></pre></div>
-<p>The <code>examples</code> group ships Jupyter, matplotlib, torchvision, torchopt,
-datasets, and wandb; HuggingFace integration is enabled via
-<code>--extra transformers</code>. There is no separate <code>tutorials</code> group.</p>
+<h1 id="serialization">Serialization<a class="headerlink" href="#serialization" title="Permanent link">&para;</a></h1>
+<p>Opaque keeps training state in explicit values (clip state, noise state,
+optimizer state, schedules, <a href="../accounting/"><code>Accountant</code></a> / <a href="../accounting/"><code>DpProcess</code></a>,
+…). Use :mod:<code>opaque.serialization</code> for a single <strong>flat</strong>
+<code>dict[str, Any]</code> suitable for :func:<code>torch.save</code> / :func:<code>torch.load</code>.</p>
+<p>Restore is <strong>template-driven</strong>: pass a freshly constructed object of the same
+shape as at save time; keys present in the checkpoint overwrite leaves, and
+missing keys keep template values (forward compatibility when new fields appear).
+Non-serialisable leaves (vendor specs, callables, …) are skipped on save and
+preserved from the template on load.</p>
+<p>:class:<code>~opaque.types.PerGroup</code> checkpoints through the same API (flat keys such
+as <code>groups.&lt;param_key&gt;</code> / <code>values.&lt;group_name&gt;</code>).  NumPy <code>ndarray</code> leaves
+are supported alongside <code>torch.Tensor</code>.</p>
+<p>Domain pages with examples: <a href="../optimizers/">Optimizers</a>, <a href="../accounting/">Accounting</a>.</p>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<h2 id="opaque.serialization" class="doc doc-heading">
+            <code>serialization</code>
+
+
+<a href="#opaque.serialization" class="headerlink" title="Permanent link">&para;</a></h2>
+
+    <div class="doc doc-contents first">
+
+        <p>Functional serialization for Opaque explicit state objects.</p>
+<p>Flattens tensor trees, NumPy arrays, dataclasses, named tuples, sequences, and
+string-keyed dicts into a flat <code>dict[str, Any]</code> suitable for
+<code>torch.save</code> / <code>torch.load</code>.  Non-serialisable leaves (vendor specs,
+callables, …) are omitted on save and preserved from the <em>template</em>
+passed to :func:<code>from_state_dict</code>.</p>
+<p>Restore is template-driven: supply a freshly-initialised object of the
+same shape as at save time; each path present in the dict overwrites
+the corresponding leaf.  Missing paths keep the template (forward
+compatibility when new fields appear).</p>
+<p>Sub-packages may register custom serializers with
+:func:<code>register_serialization_type</code>; the default is a structural
+walk for every other type.</p>
+
+
+
+
+
+
+
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="opaque.serialization.register_serialization_type" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">register_serialization_type</span><span class="p">(</span><span class="n">typ</span><span class="p">,</span> <span class="n">state_dict_fn</span><span class="p">,</span> <span class="n">from_state_dict_fn</span><span class="p">)</span></code>
+
+<a href="#opaque.serialization.register_serialization_type" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Register custom (de)serialisation for <code>typ</code> (also used at nested nodes).</p>
+
+
+            <details class="quote">
+              <summary>Source code in <code>packages/opaque-core/src/opaque/serialization/__init__.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-34">34</a></span>
+<span class="normal"><a href="#__codelineno-0-35">35</a></span>
+<span class="normal"><a href="#__codelineno-0-36">36</a></span>
+<span class="normal"><a href="#__codelineno-0-37">37</a></span>
+<span class="normal"><a href="#__codelineno-0-38">38</a></span>
+<span class="normal"><a href="#__codelineno-0-39">39</a></span>
+<span class="normal"><a href="#__codelineno-0-40">40</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-34" name="__codelineno-0-34"></a><span class="k">def</span><span class="w"> </span><span class="nf">register_serialization_type</span><span class="p">(</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35"></a>    <span class="n">typ</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36"></a>    <span class="n">state_dict_fn</span><span class="p">:</span> <span class="n">_StateDictFn</span><span class="p">,</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37"></a>    <span class="n">from_state_dict_fn</span><span class="p">:</span> <span class="n">_FromStateDictFn</span><span class="p">,</span>
+<a id="__codelineno-0-38" name="__codelineno-0-38"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-39" name="__codelineno-0-39"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Register custom (de)serialisation for ``typ`` (also used at nested nodes).&quot;&quot;&quot;</span>
+<a id="__codelineno-0-40" name="__codelineno-0-40"></a>    <span class="n">_REGISTRY</span><span class="p">[</span><span class="n">typ</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">state_dict_fn</span><span class="p">,</span> <span class="n">from_state_dict_fn</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="opaque.serialization.state_dict" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">state_dict</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span></code>
+
+<a href="#opaque.serialization.state_dict" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Serialise <code>obj</code> to a flat <code>dict[str, Any]</code>.</p>
+
+
+            <details class="quote">
+              <summary>Source code in <code>packages/opaque-core/src/opaque/serialization/__init__.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-89">89</a></span>
+<span class="normal"><a href="#__codelineno-0-90">90</a></span>
+<span class="normal"><a href="#__codelineno-0-91">91</a></span>
+<span class="normal"><a href="#__codelineno-0-92">92</a></span>
+<span class="normal"><a href="#__codelineno-0-93">93</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-89" name="__codelineno-0-89"></a><span class="k">def</span><span class="w"> </span><span class="nf">state_dict</span><span class="p">(</span><span class="n">obj</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<a id="__codelineno-0-90" name="__codelineno-0-90"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Serialise ``obj`` to a flat ``dict[str, Any]``.&quot;&quot;&quot;</span>
+<a id="__codelineno-0-91" name="__codelineno-0-91"></a>    <span class="n">out</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+<a id="__codelineno-0-92" name="__codelineno-0-92"></a>    <span class="n">_walk_save</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
+<a id="__codelineno-0-93" name="__codelineno-0-93"></a>    <span class="k">return</span> <span class="n">out</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="opaque.serialization.from_state_dict" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">from_state_dict</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">sd</span><span class="p">)</span></code>
+
+<a href="#opaque.serialization.from_state_dict" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Rebuild from <code>sd</code> using <code>template</code> for shape and omitted leaves.</p>
+<p>For types registered with :func:<code>register_serialization_type</code>, the
+<code>template</code> argument selects the handler; handlers may ignore it when
+the dict is self-describing (as with :class:<code>~opaque.accounting._base.DpProcess</code>).</p>
+
+
+            <details class="quote">
+              <summary>Source code in <code>packages/opaque-core/src/opaque/serialization/__init__.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-96"> 96</a></span>
+<span class="normal"><a href="#__codelineno-0-97"> 97</a></span>
+<span class="normal"><a href="#__codelineno-0-98"> 98</a></span>
+<span class="normal"><a href="#__codelineno-0-99"> 99</a></span>
+<span class="normal"><a href="#__codelineno-0-100">100</a></span>
+<span class="normal"><a href="#__codelineno-0-101">101</a></span>
+<span class="normal"><a href="#__codelineno-0-102">102</a></span>
+<span class="normal"><a href="#__codelineno-0-103">103</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-96" name="__codelineno-0-96"></a><span class="k">def</span><span class="w"> </span><span class="nf">from_state_dict</span><span class="p">(</span><span class="n">template</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">sd</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<a id="__codelineno-0-97" name="__codelineno-0-97"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Rebuild from ``sd`` using ``template`` for shape and omitted leaves.</span>
+<a id="__codelineno-0-98" name="__codelineno-0-98"></a>
+<a id="__codelineno-0-99" name="__codelineno-0-99"></a><span class="sd">    For types registered with :func:`register_serialization_type`, the</span>
+<a id="__codelineno-0-100" name="__codelineno-0-100"></a><span class="sd">    ``template`` argument selects the handler; handlers may ignore it when</span>
+<a id="__codelineno-0-101" name="__codelineno-0-101"></a><span class="sd">    the dict is self-describing (as with :class:`~opaque.accounting._base.DpProcess`).</span>
+<a id="__codelineno-0-102" name="__codelineno-0-102"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-103" name="__codelineno-0-103"></a>    <span class="k">return</span> <span class="n">_walk_load</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">sd</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
 
 
 
@@ -1911,10 +2073,10 @@ datasets, and wandb; HuggingFace integration is enabled via
     
     
       
-      <script id="__config" type="application/json">{"base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
-      <script src="../assets/javascripts/bundle.f55a23d4.min.js"></script>
+      <script src="../../assets/javascripts/bundle.f55a23d4.min.js"></script>
       
         <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
       

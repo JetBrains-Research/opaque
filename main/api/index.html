@@ -18,7 +18,7 @@
         <link rel="prev" href="../tutorials/distributed_training/">
       
       
-        <link rel="next" href="clipping/">
+        <link rel="next" href="serialization/">
       
       
       <link rel="icon" href="../assets/images/favicon.png">
@@ -1644,6 +1644,29 @@
   
   
     <li class="md-nav__item">
+      <a href="serialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Serialization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="clipping/" class="md-nav__link">
         
   
@@ -2127,7 +2150,14 @@ user-facing installation target.</p>
 <p>Opaque is organized into several modules, each focused on a specific aspect of DP training:</p>
 <h3 id="core-utilities">Core Utilities<a class="headerlink" href="#core-utilities" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong><a href="rng/">Random Number Generation</a></strong>: Immutable RNG keys for deterministic DP</li>
+<li>
+<p><strong><a href="serialization/">Serialization</a></strong>: Flat <code>state_dict</code> / <code>from_state_dict</code> for
+  explicit state trees (optimizers, accounting, clip/noise state, …);
+  template-driven restore; optional <code>register_serialization_type</code> for custom types</p>
+</li>
+<li>
+<p><strong><a href="rng/">Random Number Generation</a></strong>: Immutable RNG keys for deterministic DP</p>
+</li>
 <li><code>RngKey</code> - Immutable key type</li>
 <li><code>key()</code>, <code>random_key()</code> - Create keys</li>
 <li><code>split()</code>, <code>fold_in()</code> - Manipulate keys</li>
