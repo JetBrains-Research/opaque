@@ -120,9 +120,26 @@ Bin sizes are variable (Binomial distribution). Assignments are **fixed
 across epochs** (required for BnB dominating-pair accounting). Empty bins
 are skipped.
 
-Account with `acc.balls_in_bins(mechanism, num_bins, num_epochs)` where
-`mechanism` is `acc.lambda_cgd(...)`, `acc.bisr(...)`, `acc.blt(...)`, or
-`acc.gaussian(...)`.
+`acc.balls_in_bins` returns the **total** privacy cost across all epochs.
+Do **not** compose further with `* num_epochs`. Account with:
+
+```python
+import opaque.accounting as acc
+
+proc = acc.balls_in_bins(
+    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity, gram_matrix=strategy.gram_matrix),
+    num_bins=steps_per_epoch,
+    num_epochs=num_epochs,
+)
+# With Gaussian (DP-SGD)
+proc = acc.balls_in_bins(acc.gaussian(1.1), num_bins=steps_per_epoch, num_epochs=num_epochs)
+```
+
+**Distributed training (DDP)**: `BallsInBinsSampler` is incompatible with
+parallel-Poisson DDP. Each rank samples from its local shard independently,
+but the BnB dominating-pair accounting assumes all examples see the same
+bin assignment across all steps. Use single-GPU training or the shard
+accounting correction instead.
 
 ## CyclicPoissonSampler
 
