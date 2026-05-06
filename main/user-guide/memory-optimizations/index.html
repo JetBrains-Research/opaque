@@ -2141,7 +2141,7 @@ GPU utilization. Below that, the overhead of launching kernels dominates.</p>
 <h3 id="tuning-workflow">Tuning workflow<a class="headerlink" href="#tuning-workflow" title="Permanent link">&para;</a></h3>
 <p>Use a short manual sweep with <code>TrainingProfiler</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.core.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">StepTimer</span><span class="p">,</span> <span class="n">TrainingProfiler</span><span class="p">,</span> <span class="n">reset_peak_memory</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">StepTimer</span><span class="p">,</span> <span class="n">TrainingProfiler</span><span class="p">,</span> <span class="n">reset_peak_memory</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">try_microbatch</span><span class="p">(</span><span class="n">candidate_mb</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
@@ -2380,7 +2380,7 @@ from hidden states, never materializing the full logits tensor.</p>
 <h3 id="trainingprofiler">TrainingProfiler<a class="headerlink" href="#trainingprofiler" title="Permanent link">&para;</a></h3>
 <p>Use <code>TrainingProfiler</code> to track checkpoints and step-level metrics in your
 training loop.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.core.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">StepTimer</span><span class="p">,</span> <span class="n">TrainingProfiler</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">StepTimer</span><span class="p">,</span> <span class="n">TrainingProfiler</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">profiler</span> <span class="o">=</span> <span class="n">TrainingProfiler</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">profiler</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">profiler</span><span class="o">.</span><span class="n">mark</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">)</span>
@@ -2452,7 +2452,7 @@ the training loop (e.g., appending to a list without detaching).</p>
 <code>(batch*seq, vocab)</code> logits tensor is materialized. For 128K vocab models,
 this uses ~2 GB per sample. Re-enable fused CE or reduce batch size.</p>
 <h2 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
-<p>See the <code>opaque.core.profiling</code> module for complete function signatures.</p>
+<p>See the <code>opaque.profiling</code> module for complete function signatures.</p>
 
 
 

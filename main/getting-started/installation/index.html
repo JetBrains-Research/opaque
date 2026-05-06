@@ -1933,12 +1933,13 @@
 </code></pre></div>
 <p>Visit <a href="http://localhost:8000">http://localhost:8000</a> to view the docs.</p>
 <h2 id="verify-installation">Verify Installation<a class="headerlink" href="#verify-installation" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.core</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpsgd</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;opaque.core version:&quot;</span><span class="p">,</span> <span class="n">opaque</span><span class="o">.</span><span class="n">core</span><span class="o">.</span><span class="n">__version__</span><span class="p">)</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;opaque.dpsgd version:&quot;</span><span class="p">,</span> <span class="n">opaque</span><span class="o">.</span><span class="n">dpsgd</span><span class="o">.</span><span class="n">__version__</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">importlib.metadata</span><span class="w"> </span><span class="kn">import</span> <span class="n">version</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;opaque-core version:&quot;</span><span class="p">,</span> <span class="n">version</span><span class="p">(</span><span class="s2">&quot;opaque-core&quot;</span><span class="p">))</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;opaque-dpsgd version:&quot;</span><span class="p">,</span> <span class="n">version</span><span class="p">(</span><span class="s2">&quot;opaque-dpsgd&quot;</span><span class="p">))</span>
 </code></pre></div>
+<p><code>opaque</code> itself is a <a href="https://peps.python.org/pep-0420/">PEP 420</a> namespace with no top-level Python code, so
+query the installed distributions individually.</p>
 
 
 
