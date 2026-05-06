@@ -81,12 +81,14 @@ class TestPoissonSamplerResume:
             num_iterations=5,
             key=key(0),
         )
-        sampler.load_state_dict({
-            "key": {"seed": 999, "impl": "opaque_threefry_like"},
-            "iter_count": 3,
-            "sample_rate": 0.2,
-            "num_iterations": 10,
-        })
+        sampler.load_state_dict(
+            {
+                "key": {"seed": 999, "impl": "opaque_threefry_like"},
+                "iter_count": 3,
+                "sample_rate": 0.2,
+                "num_iterations": 10,
+            }
+        )
         assert sampler.sample_rate == 0.2
         assert sampler.num_iterations == 10
         assert sampler._iter_count == 3

@@ -109,9 +109,7 @@ def _train_two_steps(model, tokenizer, dataset, args) -> dict[str, torch.Tensor]
     )
     trainer.train()
     return {
-        n: p.data.clone().cpu()
-        for n, p in model.named_parameters()
-        if p.requires_grad
+        n: p.data.clone().cpu() for n, p in model.named_parameters() if p.requires_grad
     }
 
 
@@ -130,7 +128,9 @@ class TestBitIdenticalRuns:
     """
 
     def test_bit_identical_with_zero_noise(
-        self, gpt2_model_and_tokenizer, tmp_path,
+        self,
+        gpt2_model_and_tokenizer,
+        tmp_path,
     ):
         base_model_a, tokenizer = gpt2_model_and_tokenizer
         lora_a = _build_lora_model(base_model_a)
@@ -141,7 +141,10 @@ class TestBitIdenticalRuns:
         )
 
         run_a = _train_two_steps(
-            lora_a, tokenizer, ds, _args(tmp_path / "run_a"),
+            lora_a,
+            tokenizer,
+            ds,
+            _args(tmp_path / "run_a"),
         )
 
         # Fresh model / fresh trainer with the same seed.
@@ -149,7 +152,10 @@ class TestBitIdenticalRuns:
         base_model_b.config.pad_token_id = tokenizer.pad_token_id
         lora_b = _build_lora_model(base_model_b)
         run_b = _train_two_steps(
-            lora_b, tokenizer, ds, _args(tmp_path / "run_b"),
+            lora_b,
+            tokenizer,
+            ds,
+            _args(tmp_path / "run_b"),
         )
 
         assert run_a.keys() == run_b.keys()
@@ -159,7 +165,9 @@ class TestBitIdenticalRuns:
             )
 
     def test_different_seeds_diverge(
-        self, gpt2_model_and_tokenizer, tmp_path,
+        self,
+        gpt2_model_and_tokenizer,
+        tmp_path,
     ):
         """Same data + different ``args.seed`` ⇒ different params (at σ=0).
 
@@ -170,23 +178,29 @@ class TestBitIdenticalRuns:
         base_a, tokenizer = gpt2_model_and_tokenizer
         lora_a = _build_lora_model(base_a)
         ds = build_lm_dataset(
-            ["foo", "bar", "baz", "qux"], tokenizer, max_length=8,
+            ["foo", "bar", "baz", "qux"],
+            tokenizer,
+            max_length=8,
         )
 
         run_a = _train_two_steps(
-            lora_a, tokenizer, ds, _args(tmp_path / "a", seed=42),
+            lora_a,
+            tokenizer,
+            ds,
+            _args(tmp_path / "a", seed=42),
         )
 
         base_b = AutoModelForCausalLM.from_pretrained("gpt2")
         base_b.config.pad_token_id = tokenizer.pad_token_id
         lora_b = _build_lora_model(base_b)
         run_b = _train_two_steps(
-            lora_b, tokenizer, ds, _args(tmp_path / "b", seed=123),
+            lora_b,
+            tokenizer,
+            ds,
+            _args(tmp_path / "b", seed=123),
         )
 
-        diverged = any(
-            not torch.equal(run_a[n], run_b[n]) for n in run_a
-        )
+        diverged = any(not torch.equal(run_a[n], run_b[n]) for n in run_a)
         assert diverged, (
             "different seeds must yield different params at σ=0; "
             "got bit-identical tensors which suggests args.seed is "
@@ -194,7 +208,9 @@ class TestBitIdenticalRuns:
         )
 
     def test_data_seed_changes_sampling_with_same_model_seed(
-        self, gpt2_model_and_tokenizer, tmp_path,
+        self,
+        gpt2_model_and_tokenizer,
+        tmp_path,
     ):
         """Same ``seed`` but different ``data_seed`` should diverge at σ=0.
 
@@ -273,7 +289,9 @@ class TestDeviceFlagEffect:
             assert p.device.type == "cpu"
 
     def test_args_device_is_source_of_truth(
-        self, gpt2_model_and_tokenizer, tmp_path,
+        self,
+        gpt2_model_and_tokenizer,
+        tmp_path,
     ):
         """``trainer._device`` follows ``args.device``, not the model's
         original placement.
@@ -315,18 +333,21 @@ class TestPostInitIdempotency:
             logging_steps=2,
         )
         # Snapshot post-first-init state.
-        before = {k: getattr(a, k) for k in (
-            "output_dir",
-            "logging_dir",
-            "eval_strategy",
-            "logging_strategy",
-            "save_strategy",
-            "lr_scheduler_type",
-            "logging_steps",
-            "use_cpu",
-            "include_for_metrics",
-            "local_rank",
-        )}
+        before = {
+            k: getattr(a, k)
+            for k in (
+                "output_dir",
+                "logging_dir",
+                "eval_strategy",
+                "logging_strategy",
+                "save_strategy",
+                "lr_scheduler_type",
+                "logging_steps",
+                "use_cpu",
+                "include_for_metrics",
+                "local_rank",
+            )
+        }
 
         # Second call: must not re-trigger mutations / FutureWarnings.
         a.__post_init__()
@@ -338,7 +359,9 @@ class TestPostInitIdempotency:
         )
 
     def test_reuse_args_across_two_trainers(
-        self, gpt2_model_and_tokenizer, tmp_path,
+        self,
+        gpt2_model_and_tokenizer,
+        tmp_path,
     ):
         """The same ``DPTrainingArguments`` instance constructs two trainers."""
         model_a, tokenizer = gpt2_model_and_tokenizer

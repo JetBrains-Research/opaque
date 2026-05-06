@@ -164,7 +164,9 @@ def _run_wandb_search(
     if isinstance(direction, list):
         raise NotImplementedError("W&B sweeps support a single objective direction.")
     if direction not in {"minimize", "maximize"}:
-        raise ValueError("W&B sweeps require direction='minimize' or direction='maximize'.")
+        raise ValueError(
+            "W&B sweeps require direction='minimize' or direction='maximize'."
+        )
     try:
         wandb = importlib.import_module("wandb")
     except ImportError as exc:  # pragma: no cover - exercised only without wandb

@@ -67,7 +67,10 @@ class GaussianNoiseState(NoiseState):
         """Serialize to a JSON-compatible dict for checkpointing."""
         return {
             "_step_counter": int(self._step_counter),
-            "_rng_key": {"seed": int(self._rng_key.seed), "impl": str(self._rng_key.impl)},
+            "_rng_key": {
+                "seed": int(self._rng_key.seed),
+                "impl": str(self._rng_key.impl),
+            },
         }
 
     @classmethod

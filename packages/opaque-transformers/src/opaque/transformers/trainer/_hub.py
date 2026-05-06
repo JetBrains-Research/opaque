@@ -47,6 +47,7 @@ log = logging.getLogger(__name__)
 # ``push_to_hub=True``, not at import time.
 # ---------------------------------------------------------------------------
 
+
 def _require_hub() -> None:
     try:
         import huggingface_hub  # noqa: F401
@@ -59,27 +60,32 @@ def _require_hub() -> None:
 
 def _upload_folder(**kwargs: Any) -> Any:
     from huggingface_hub import upload_folder
+
     return upload_folder(**kwargs)
 
 
 def _create_repo(repo_name: str, *, token: str | None, private: bool | None) -> Any:
     from huggingface_hub import create_repo
+
     return create_repo(repo_name, token=token, private=private, exist_ok=True)
 
 
 def _PushInProgress(jobs: list[Any] | None = None) -> Any:  # factory, not a class
     from transformers.utils.hub import PushInProgress
+
     return PushInProgress(jobs)
 
 
 def _hf_hub_utils() -> Any:
     import huggingface_hub.utils as u
+
     return u
 
 
 # ---------------------------------------------------------------------------
 # init_hf_repo
 # ---------------------------------------------------------------------------
+
 
 def init_hf_repo(trainer: "DPTrainer", token: str | None = None) -> None:
     """Create (or validate) the Hub repo and set ``trainer.hub_model_id``.
@@ -96,7 +102,9 @@ def init_hf_repo(trainer: "DPTrainer", token: str | None = None) -> None:
         repo_name = a.hub_model_id
 
     effective_token = token if token is not None else a.hub_token
-    repo_url = _create_repo(repo_name, token=effective_token, private=a.hub_private_repo)
+    repo_url = _create_repo(
+        repo_name, token=effective_token, private=a.hub_private_repo
+    )
     trainer.hub_model_id = repo_url.repo_id
     trainer.push_in_progress = None
 
@@ -104,6 +112,7 @@ def init_hf_repo(trainer: "DPTrainer", token: str | None = None) -> None:
 # ---------------------------------------------------------------------------
 # _push_from_checkpoint
 # ---------------------------------------------------------------------------
+
 
 def _push_from_checkpoint(trainer: "DPTrainer", checkpoint_folder: str) -> None:
     """Async upload triggered after each checkpoint save.
@@ -121,12 +130,18 @@ def _push_from_checkpoint(trainer: "DPTrainer", checkpoint_folder: str) -> None:
     # Single-process guard — always process-zero for now (Phase 9 will add rank check).
     if a.hub_strategy == HubStrategy.END:
         return
-    if not a.hub_always_push and trainer.push_in_progress is not None and not trainer.push_in_progress.is_done():
+    if (
+        not a.hub_always_push
+        and trainer.push_in_progress is not None
+        and not trainer.push_in_progress.is_done()
+    ):
         return
 
     # Fire on_push_begin callback if available (HF parity).
     if hasattr(trainer._callback_handler, "on_push_begin"):
-        trainer._callback_handler.on_push_begin(trainer.args, trainer.state, trainer._control)
+        trainer._callback_handler.on_push_begin(
+            trainer.args, trainer.state, trainer._control
+        )
 
     output_dir = a.output_dir
     # Copy model files from checkpoint into output_dir so
@@ -136,6 +151,7 @@ def _push_from_checkpoint(trainer: "DPTrainer", checkpoint_folder: str) -> None:
         trainer._processing_class.save_pretrained(output_dir)
     import torch
     from transformers.trainer import TRAINING_ARGS_NAME
+
     torch.save(trainer.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
 
     if a.save_strategy == "steps":
@@ -144,6 +160,7 @@ def _push_from_checkpoint(trainer: "DPTrainer", checkpoint_folder: str) -> None:
         commit_message = f"Training in progress, epoch {int(trainer.state.epoch or 0)}"
 
     from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
+
     model_push_job = _upload_folder(
         repo_id=trainer.hub_model_id,
         folder_path=output_dir,
@@ -203,13 +220,18 @@ def _copy_model_files(checkpoint_folder: str, output_dir: str) -> None:
         if os.path.isfile(index_path):
             files_to_copy.append(index_file)
             import json
+
             with open(index_path) as fh:
                 index = json.loads(fh.read())
             shard_files = list(set(index["weight_map"].values()))
             files_to_copy.extend(shard_files)
 
     # PEFT adapter files
-    _PEFT_FILES = ["adapter_config.json", "adapter_model.bin", "adapter_model.safetensors"]
+    _PEFT_FILES = [
+        "adapter_config.json",
+        "adapter_model.bin",
+        "adapter_model.safetensors",
+    ]
     files_to_copy.extend(_PEFT_FILES)
 
     os.makedirs(output_dir, exist_ok=True)
@@ -222,6 +244,7 @@ def _copy_model_files(checkpoint_folder: str, output_dir: str) -> None:
 # ---------------------------------------------------------------------------
 # _finish_current_push
 # ---------------------------------------------------------------------------
+
 
 def _finish_current_push(trainer: "DPTrainer") -> None:
     """Block until the in-flight async push completes.
@@ -241,6 +264,7 @@ def _finish_current_push(trainer: "DPTrainer") -> None:
 # ---------------------------------------------------------------------------
 # push_to_hub
 # ---------------------------------------------------------------------------
+
 
 def push_to_hub(
     trainer: "DPTrainer",
@@ -271,7 +295,9 @@ def push_to_hub(
 
     # Fire on_push_begin callback if available.
     if hasattr(trainer._callback_handler, "on_push_begin"):
-        trainer._callback_handler.on_push_begin(trainer.args, trainer.state, trainer._control)
+        trainer._callback_handler.on_push_begin(
+            trainer.args, trainer.state, trainer._control
+        )
 
     a = trainer.args
 
@@ -311,6 +337,7 @@ def push_to_hub(
     _finish_current_push(trainer)
 
     from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
+
     return _upload_folder(
         repo_id=trainer.hub_model_id,
         folder_path=a.output_dir,
@@ -333,6 +360,7 @@ _DP_SECTION_MARKER_END = "<!-- opaque-dp:end -->"
 def _opaque_version() -> str:
     try:
         from importlib.metadata import version
+
         return version("opaque-transformers")
     except Exception:
         return "unknown"

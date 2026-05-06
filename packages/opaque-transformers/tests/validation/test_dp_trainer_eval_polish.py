@@ -131,7 +131,9 @@ class _TupleEvalModel(torch.nn.Module):
 
 class TestPredictionStepUnlabeledAndTupleOutputs:
     def test_auto_find_batch_size_retry_restores_model_state_and_rng(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ):
         dataset = [
             {"features": torch.zeros(3), "labels": 0},
@@ -151,14 +153,15 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
             eval_dataset=dataset,
         )
         initial_state = {
-            k: v.detach().clone()
-            for k, v in trainer.model.state_dict().items()
+            k: v.detach().clone() for k, v in trainer.model.state_dict().items()
         }
         torch.manual_seed(1234)
         initial_rng = torch.get_rng_state().clone()
         calls = []
 
-        def fake_train_once(*, resume_from_checkpoint, microbatch_size_override, ignore_keys_for_eval):
+        def fake_train_once(
+            *, resume_from_checkpoint, microbatch_size_override, ignore_keys_for_eval
+        ):
             assert ignore_keys_for_eval is None
             calls.append((resume_from_checkpoint, microbatch_size_override))
             if len(calls) == 1:
@@ -206,7 +209,9 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
         assert output.global_step == 1
 
     def test_eval_on_start_does_not_feed_plateau_schedule(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ):
         dataset = [
             {"features": torch.zeros(3), "labels": 0},
@@ -265,7 +270,9 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
             trainer.train()
 
     def test_evaluate_without_metrics_uses_prediction_loss_only(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ):
         dataset = [
             {"features": torch.zeros(3), "labels": 0},
@@ -281,7 +288,10 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
         original = trainer.prediction_step
 
         def wrapped_prediction_step(
-            model, inputs, prediction_loss_only, ignore_keys=None,
+            model,
+            inputs,
+            prediction_loss_only,
+            ignore_keys=None,
         ):
             seen.append(prediction_loss_only)
             return original(model, inputs, prediction_loss_only, ignore_keys)
@@ -356,7 +366,10 @@ class TestPredictionStepLogitsCollapse:
     """
 
     def test_single_output_collapses_to_bare_tensor(
-        self, gpt2_lora_and_tokenizer, tiny_dataset, tmp_path,
+        self,
+        gpt2_lora_and_tokenizer,
+        tiny_dataset,
+        tmp_path,
     ):
         """A model returning only ``loss`` + ``logits`` exposes a bare ``Tensor``.
 
@@ -382,7 +395,9 @@ class TestPredictionStepLogitsCollapse:
         # the underlying ``nn.Module``).  Both paths share the same
         # tuple-collapse logic so this is sufficient.
         loss, logits, labels = trainer.prediction_step(
-            trainer._model, batch, prediction_loss_only=False,
+            trainer._model,
+            batch,
+            prediction_loss_only=False,
         )
         assert isinstance(logits, Tensor), (
             f"single-output model should expose a bare Tensor, got "
@@ -394,7 +409,10 @@ class TestPredictionStepLogitsCollapse:
         assert isinstance(labels, Tensor)
 
     def test_prediction_loss_only_short_circuits(
-        self, gpt2_lora_and_tokenizer, tiny_dataset, tmp_path,
+        self,
+        gpt2_lora_and_tokenizer,
+        tiny_dataset,
+        tmp_path,
     ):
         """``prediction_loss_only=True`` skips logits/labels materialization."""
         model, tokenizer = gpt2_lora_and_tokenizer
@@ -409,7 +427,9 @@ class TestPredictionStepLogitsCollapse:
         loader = trainer.get_eval_dataloader(tiny_dataset)
         batch = next(iter(loader))
         loss, logits, labels = trainer.prediction_step(
-            trainer._model, batch, prediction_loss_only=True,
+            trainer._model,
+            batch,
+            prediction_loss_only=True,
         )
         assert isinstance(loss, Tensor)
         assert logits is None
@@ -436,7 +456,10 @@ class TestPredictionStepTupleCollapsePure:
         )
 
     def test_multi_output_returns_tuple(
-        self, gpt2_lora_and_tokenizer, tiny_dataset, tmp_path,
+        self,
+        gpt2_lora_and_tokenizer,
+        tiny_dataset,
+        tmp_path,
     ):
         """A model returning ``loss + logits + hidden_states`` exposes a tuple.
 
@@ -445,7 +468,9 @@ class TestPredictionStepTupleCollapsePure:
         ``tuple[Tensor, ...]``.
         """
         trainer = self._make_trainer(
-            gpt2_lora_and_tokenizer, tiny_dataset, tmp_path,
+            gpt2_lora_and_tokenizer,
+            tiny_dataset,
+            tmp_path,
         )
 
         @dataclass
@@ -459,7 +484,9 @@ class TestPredictionStepTupleCollapsePure:
         hidden = torch.zeros(2, 3, 8)
         fake_out = FakeOutput(loss=loss, logits=logits, hidden_states=hidden)
 
-        def fake_compute_loss(model, inputs, return_outputs=False, num_items_in_batch=None):  # noqa: ARG001
+        def fake_compute_loss(
+            model, inputs, return_outputs=False, num_items_in_batch=None
+        ):  # noqa: ARG001
             if return_outputs:
                 return loss, fake_out
             return loss
@@ -469,24 +496,32 @@ class TestPredictionStepTupleCollapsePure:
         # Minimal batch — only labels matter for the
         # ``compute_loss``-returns-no-loss check; everything else is
         # forwarded through our stub.
-        batch = {"input_ids": torch.zeros(2, 3, dtype=torch.long), "labels": torch.zeros(2, 3, dtype=torch.long)}
+        batch = {
+            "input_ids": torch.zeros(2, 3, dtype=torch.long),
+            "labels": torch.zeros(2, 3, dtype=torch.long),
+        }
         # Pass empty ``ignore_keys`` to avoid the model-config sniff —
         # GPT-2's ``keys_to_ignore_at_inference`` is
         # ``["past_key_values"]`` which doesn't intersect our fake
         # output's fields, but explicitness keeps the test readable.
         _, out_logits, _ = trainer.prediction_step(
-            trainer._model, batch, prediction_loss_only=False, ignore_keys=[],
+            trainer._model,
+            batch,
+            prediction_loss_only=False,
+            ignore_keys=[],
         )
         assert isinstance(out_logits, tuple), (
-            f"multi-output model should expose a tuple, got "
-            f"{type(out_logits).__name__}"
+            f"multi-output model should expose a tuple, got {type(out_logits).__name__}"
         )
         assert len(out_logits) == 2
         assert torch.equal(out_logits[0], logits)
         assert torch.equal(out_logits[1], hidden)
 
     def test_ignore_keys_drops_auxiliary_outputs(
-        self, gpt2_lora_and_tokenizer, tiny_dataset, tmp_path,
+        self,
+        gpt2_lora_and_tokenizer,
+        tiny_dataset,
+        tmp_path,
     ):
         """``ignore_keys=["hidden_states"]`` collapses to a bare tensor.
 
@@ -495,7 +530,9 @@ class TestPredictionStepTupleCollapsePure:
         length 1 and must collapse back to a bare ``logits`` tensor.
         """
         trainer = self._make_trainer(
-            gpt2_lora_and_tokenizer, tiny_dataset, tmp_path,
+            gpt2_lora_and_tokenizer,
+            tiny_dataset,
+            tmp_path,
         )
 
         @dataclass
@@ -509,14 +546,19 @@ class TestPredictionStepTupleCollapsePure:
         hidden = torch.zeros(2, 3, 8)
         fake_out = FakeOutput(loss=loss, logits=logits, hidden_states=hidden)
 
-        def fake_compute_loss(model, inputs, return_outputs=False, num_items_in_batch=None):  # noqa: ARG001
+        def fake_compute_loss(
+            model, inputs, return_outputs=False, num_items_in_batch=None
+        ):  # noqa: ARG001
             if return_outputs:
                 return loss, fake_out
             return loss
 
         trainer.compute_loss = fake_compute_loss
 
-        batch = {"input_ids": torch.zeros(2, 3, dtype=torch.long), "labels": torch.zeros(2, 3, dtype=torch.long)}
+        batch = {
+            "input_ids": torch.zeros(2, 3, dtype=torch.long),
+            "labels": torch.zeros(2, 3, dtype=torch.long),
+        }
         _, out_logits, _ = trainer.prediction_step(
             trainer._model,
             batch,
@@ -530,7 +572,10 @@ class TestPredictionStepTupleCollapsePure:
         assert torch.equal(out_logits, logits)
 
     def test_ignore_keys_default_reads_model_config(
-        self, gpt2_lora_and_tokenizer, tiny_dataset, tmp_path,
+        self,
+        gpt2_lora_and_tokenizer,
+        tiny_dataset,
+        tmp_path,
     ):
         """``ignore_keys=None`` honors ``model.config.keys_to_ignore_at_inference``.
 
@@ -541,7 +586,9 @@ class TestPredictionStepTupleCollapsePure:
         the model config.
         """
         trainer = self._make_trainer(
-            gpt2_lora_and_tokenizer, tiny_dataset, tmp_path,
+            gpt2_lora_and_tokenizer,
+            tiny_dataset,
+            tmp_path,
         )
         # PEFT models expose the base model's config.  Drill through
         # to set the flag (or set it on the wrapper if exposed).
@@ -560,17 +607,25 @@ class TestPredictionStepTupleCollapsePure:
         hidden = torch.zeros(2, 3, 8)
         fake_out = FakeOutput(loss=loss, logits=logits, hidden_states=hidden)
 
-        def fake_compute_loss(model, inputs, return_outputs=False, num_items_in_batch=None):  # noqa: ARG001
+        def fake_compute_loss(
+            model, inputs, return_outputs=False, num_items_in_batch=None
+        ):  # noqa: ARG001
             if return_outputs:
                 return loss, fake_out
             return loss
 
         trainer.compute_loss = fake_compute_loss
 
-        batch = {"input_ids": torch.zeros(2, 3, dtype=torch.long), "labels": torch.zeros(2, 3, dtype=torch.long)}
+        batch = {
+            "input_ids": torch.zeros(2, 3, dtype=torch.long),
+            "labels": torch.zeros(2, 3, dtype=torch.long),
+        }
         # ``ignore_keys=None`` triggers the model-config fallback.
         _, out_logits, _ = trainer.prediction_step(
-            trainer._model, batch, prediction_loss_only=False, ignore_keys=None,
+            trainer._model,
+            batch,
+            prediction_loss_only=False,
+            ignore_keys=None,
         )
         assert isinstance(out_logits, Tensor), (
             "model config's keys_to_ignore_at_inference should have "
@@ -595,7 +650,10 @@ class TestEvalPredictionInputsMainInputName:
     """
 
     def test_default_main_input_name_is_input_ids(
-        self, gpt2_lora_and_tokenizer, tiny_dataset, tmp_path,
+        self,
+        gpt2_lora_and_tokenizer,
+        tiny_dataset,
+        tmp_path,
     ):
         """For causal-LM models, ``EvalPrediction.inputs`` is the ``input_ids`` tensor.
 
@@ -637,7 +695,10 @@ class TestEvalPredictionInputsMainInputName:
         )
 
     def test_main_input_name_override_propagates(
-        self, gpt2_lora_and_tokenizer, tiny_dataset, tmp_path,
+        self,
+        gpt2_lora_and_tokenizer,
+        tiny_dataset,
+        tmp_path,
     ):
         """Vision-style models (``main_input_name='pixel_values'``) deliver pixel_values.
 
@@ -693,7 +754,10 @@ class TestEvalPredictionInputsMainInputName:
         )
 
     def test_inputs_unset_when_include_for_metrics_omits_inputs(
-        self, gpt2_lora_and_tokenizer, tiny_dataset, tmp_path,
+        self,
+        gpt2_lora_and_tokenizer,
+        tiny_dataset,
+        tmp_path,
     ):
         """Without ``include_for_metrics=["inputs"]``, ``EvalPrediction.inputs`` is None."""
         captured: dict[str, Any] = {}

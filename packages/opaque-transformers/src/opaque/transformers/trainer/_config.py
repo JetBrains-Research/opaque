@@ -155,6 +155,7 @@ from opaque.transformers.trainer._optim import (  # noqa: E402
 
 _DP_OPTIMIZERS: tuple[str, ...] = _supported_optimizer_names()
 
+
 @dataclasses.dataclass
 class DPTrainingArguments(TrainingArguments):
     """Training arguments for DP-SGD training.

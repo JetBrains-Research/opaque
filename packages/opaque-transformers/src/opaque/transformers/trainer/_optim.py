@@ -40,16 +40,16 @@ GradientTransformation = Any  # torchopt.base.GradientTransformation, lazy
 # ---------------------------------------------------------------------------
 
 _OPAQUE_FACTORIES: dict[str, Callable[..., GradientTransformation]] = {
-    "adam":          opaque_opt.adam,
-    "adamw":         opaque_opt.adamw,
-    "sgd":           opaque_opt.sgd,
-    "lion":          opaque_opt.lion,
-    "ademamix":      opaque_opt.ademamix,
-    "adafactor":     opaque_opt.adafactor,
-    "rmsprop":       opaque_opt.rmsprop,
-    "adagrad":       opaque_opt.adagrad,
-    "radam":         opaque_opt.radam,
-    "adadelta":      opaque_opt.adadelta,
+    "adam": opaque_opt.adam,
+    "adamw": opaque_opt.adamw,
+    "sgd": opaque_opt.sgd,
+    "lion": opaque_opt.lion,
+    "ademamix": opaque_opt.ademamix,
+    "adafactor": opaque_opt.adafactor,
+    "rmsprop": opaque_opt.rmsprop,
+    "adagrad": opaque_opt.adagrad,
+    "radam": opaque_opt.radam,
+    "adadelta": opaque_opt.adadelta,
     "schedule_free": opaque_opt.schedule_free,
 }
 
@@ -110,12 +110,12 @@ _APPLIES_NOISE_BC = {
 # only when the corresponding ``_APPLIES_*`` set contains the canonical
 # name.  Use the empty dict for plain rewrites.
 _HF_ALIASES: dict[str, tuple[str, dict[str, Any]]] = {
-    "adamw_torch":       ("adamw", {}),
+    "adamw_torch": ("adamw", {}),
     "adamw_torch_fused": ("adamw", {}),  # fused kernel ↦ functional path
-    "adamw_hf":          ("adamw", {}),
-    "adafactor":         ("adafactor", {}),
-    "ademamix":          ("ademamix", {}),
-    "lion_32bit":        ("lion", {}),
+    "adamw_hf": ("adamw", {}),
+    "adafactor": ("adafactor", {}),
+    "ademamix": ("ademamix", {}),
+    "lion_32bit": ("lion", {}),
     # ``lion`` itself is a canonical opaque name; HF's enum still
     # surfaces it, route through the canonical entry above.
     "schedule_free_radam": ("schedule_free", {"base": "radam"}),
@@ -319,10 +319,22 @@ def _build_schedule_free(
         # Base-factory-only knobs we know about.  Everything else
         # passes to schedule_free; if either factory doesn't recognise
         # a key, the TypeError surfaces the typo.
-        if key in {"betas", "eps", "weight_decay", "decoupled_weight_decay",
-                   "update_rms_clip", "noise_bias_correction",
-                   "alpha", "momentum", "dampening", "nesterov",
-                   "beta1", "decay_rate", "eps_grad", "eps_root"}:
+        if key in {
+            "betas",
+            "eps",
+            "weight_decay",
+            "decoupled_weight_decay",
+            "update_rms_clip",
+            "noise_bias_correction",
+            "alpha",
+            "momentum",
+            "dampening",
+            "nesterov",
+            "beta1",
+            "decay_rate",
+            "eps_grad",
+            "eps_root",
+        }:
             base_only[key] = pooled.pop(key)
     # Apply HF / dp_ fields to the base factory.
     _apply_top_level_fields(base_name, args, base_only)
@@ -363,7 +375,10 @@ def validate_functional_optimizer_cls_and_kwargs(
     """
     import torch.optim as torch_optim
 
-    if not isinstance(optimizer_cls_and_kwargs, tuple) or len(optimizer_cls_and_kwargs) != 2:
+    if (
+        not isinstance(optimizer_cls_and_kwargs, tuple)
+        or len(optimizer_cls_and_kwargs) != 2
+    ):
         raise TypeError(
             "optimizer_cls_and_kwargs must be a length-2 tuple (factory, kwargs)."
         )
@@ -381,9 +396,9 @@ def validate_functional_optimizer_cls_and_kwargs(
         )
     if not callable(factory):
         raise TypeError(
-            "optimizer_cls_and_kwargs[0] must be a callable factory; "
-            f"got {factory!r}."
+            f"optimizer_cls_and_kwargs[0] must be a callable factory; got {factory!r}."
         )
+
     def dummy_lr(_step: int) -> float:
         return 1e-4
 

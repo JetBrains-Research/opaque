@@ -199,7 +199,7 @@ class TestHookSurface:
         assert names.index("on_epoch_begin") < names.index("on_step_begin")
         # Per step: pre_optimizer comes before optimizer comes before step_end.
         for i in range(len(names) - 2):
-            triple = names[i:i + 3]
+            triple = names[i : i + 3]
             if triple == ["on_pre_optimizer_step", "on_optimizer_step", "on_step_end"]:
                 # Standard ordering observed.
                 break
@@ -260,7 +260,9 @@ class TestControlFlags:
             "Callback set should_training_stop=True at step 2 but loop continued"
         )
 
-    def test_should_save_force_outside_cadence(self, lora_model, tiny_dataset, tmp_path):
+    def test_should_save_force_outside_cadence(
+        self, lora_model, tiny_dataset, tmp_path
+    ):
         """Callback can force a save outside the trainer's internal cadence."""
         model, tokenizer = lora_model
         forcer = _ForceSaveCallback(force_at=2)
@@ -304,7 +306,9 @@ class _GradCaptureCallback(TrainerCallback):
         for v in grads.values():
             assert isinstance(v, torch.Tensor)
 
-    def on_optimizer_step(self, args, state, control, *, trainable_params=None, **kwargs):
+    def on_optimizer_step(
+        self, args, state, control, *, trainable_params=None, **kwargs
+    ):
         assert trainable_params is not None
         self.last_param_keys = set(trainable_params.keys())
         self.observed_params += 1
@@ -352,6 +356,7 @@ class TestArgsMutationHygiene:
             save_strategy="steps",
             save_steps=2,
         )
+
         # ``_n_gpu`` is an HF-internal counter populated by
         # ``TrainingArguments._setup_devices`` the first time
         # ``args.device`` is read.  It transitions from sentinel ``-1``

@@ -32,9 +32,7 @@ def _parse_skip_transformers_patches() -> frozenset[str]:
     raw = os.environ.get("OPAQUE_SKIP_TRANSFORMERS_PATCHES", "").strip()
     if not raw:
         return frozenset()
-    tokens = frozenset(
-        part.strip() for part in raw.split(",") if part.strip()
-    )
+    tokens = frozenset(part.strip() for part in raw.split(",") if part.strip())
     unknown = sorted(tokens - _VALID_SKIP_TOKENS)
     if unknown:
         raise ValueError(

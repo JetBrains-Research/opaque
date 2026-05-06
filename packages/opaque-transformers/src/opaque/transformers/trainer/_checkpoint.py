@@ -152,7 +152,11 @@ def rotate_checkpoints(
             break
         if path in protected:
             continue
-        log.info("Deleting older checkpoint %s due to save_total_limit=%d", path, save_total_limit)
+        log.info(
+            "Deleting older checkpoint %s due to save_total_limit=%d",
+            path,
+            save_total_limit,
+        )
         shutil.rmtree(path, ignore_errors=True)
         deleted += 1
 

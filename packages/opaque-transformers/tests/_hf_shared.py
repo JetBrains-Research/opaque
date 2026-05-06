@@ -122,11 +122,13 @@ def build_lm_dataset(
         input_ids = ids + [pad_id] * (max_length - n)
         attention_mask = [1] * n + [0] * (max_length - n)
         labels = list(ids) + [-100] * (max_length - n)
-        rows.append({
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "labels": labels,
-        })
+        rows.append(
+            {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "labels": labels,
+            }
+        )
     return Dataset.from_list(rows)
 
 

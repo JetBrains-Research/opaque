@@ -43,7 +43,9 @@ class TestSpeedMetrics:
 
     def test_samples_per_second_when_provided(self):
         out = speed_metrics(
-            "test", start_time=time_at_t_minus(0.5), num_samples=100,
+            "test",
+            start_time=time_at_t_minus(0.5),
+            num_samples=100,
         )
         assert "test_samples_per_second" in out
         # ~100 / 0.5 = 200; allow generous slack for clock jitter.
@@ -51,7 +53,9 @@ class TestSpeedMetrics:
 
     def test_steps_per_second_when_provided(self):
         out = speed_metrics(
-            "eval", start_time=time_at_t_minus(0.5), num_steps=10,
+            "eval",
+            start_time=time_at_t_minus(0.5),
+            num_steps=10,
         )
         assert "eval_steps_per_second" in out
 

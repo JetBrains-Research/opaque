@@ -111,10 +111,12 @@ class TestStateRoundTrip:
 
     def test_unknown_keys_dropped(self):
         # Forward-compat: a future field is ignored without raising.
-        s = DPTrainerState.from_json({
-            "global_step": 5,
-            "future_field_not_yet_invented": "anything",
-        })
+        s = DPTrainerState.from_json(
+            {
+                "global_step": 5,
+                "future_field_not_yet_invented": "anything",
+            }
+        )
         assert s.global_step == 5
 
 
@@ -127,7 +129,10 @@ class TestLoadBestModelMutates:
     """``_load_best_model`` writes the loaded weights into ``self._model``."""
 
     def test_save_model_after_load_best_sees_best_weights(
-        self, lora_model, tiny_dataset, tmp_path,
+        self,
+        lora_model,
+        tiny_dataset,
+        tmp_path,
     ):
         """``save_model()`` after ``train()`` reflects the loaded best weights.
 
@@ -273,7 +278,10 @@ class TestSaveOnlyModelStillWritesTrainerState:
     """Stage-1 fix: ``save_only_model=True`` no longer drops trainer_state.json."""
 
     def test_trainer_state_present_under_save_only_model(
-        self, lora_model, tiny_dataset, tmp_path,
+        self,
+        lora_model,
+        tiny_dataset,
+        tmp_path,
     ):
         model, tokenizer = lora_model
         trainer = DPTrainer(
@@ -323,7 +331,10 @@ class TestEarlyStoppingExportableState:
     """
 
     def test_state_dict_schema_matches_hf(
-        self, lora_model, tiny_dataset, tmp_path,
+        self,
+        lora_model,
+        tiny_dataset,
+        tmp_path,
     ):
         from transformers.trainer_callback import EarlyStoppingCallback
 
@@ -385,7 +396,11 @@ class TestArgDriftWarnings:
     """
 
     def test_expected_batch_size_drift_warns(
-        self, lora_model, tiny_dataset, tmp_path, caplog,
+        self,
+        lora_model,
+        tiny_dataset,
+        tmp_path,
+        caplog,
     ):
         """A synthetic payload whose ``expected_batch_size`` differs warns."""
         model, tokenizer = lora_model
@@ -417,7 +432,8 @@ class TestArgDriftWarnings:
             trainer._warn_on_arg_drift(payload)
 
         drift_msgs = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if "expected_batch_size" in r.getMessage()
             and "drift" in r.getMessage().lower()
         ]

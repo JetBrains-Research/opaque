@@ -37,25 +37,29 @@ __all__ = [
 
 _DEFERRED: set[str] = set()
 
-_WSD_KWARGS = frozenset({
-    "num_decay_steps",
-    "num_stable_steps",
-    "warmup_type",
-    "decay_type",
-    "min_lr_ratio",
-    "num_cycles",
-})
+_WSD_KWARGS = frozenset(
+    {
+        "num_decay_steps",
+        "num_stable_steps",
+        "warmup_type",
+        "decay_type",
+        "min_lr_ratio",
+        "num_cycles",
+    }
+)
 
-_PLATEAU_KWARGS = frozenset({
-    "factor",
-    "patience",
-    "mode",
-    "threshold",
-    "threshold_mode",
-    "cooldown",
-    "min_lr",
-    "eps",
-})
+_PLATEAU_KWARGS = frozenset(
+    {
+        "factor",
+        "patience",
+        "mode",
+        "threshold",
+        "threshold_mode",
+        "cooldown",
+        "min_lr",
+        "eps",
+    }
+)
 
 _ALLOWED_KWARGS: dict[str, frozenset[str]] = {
     "constant": frozenset(),
@@ -66,7 +70,9 @@ _ALLOWED_KWARGS: dict[str, frozenset[str]] = {
     "inverse_sqrt": frozenset({"timescale"}),
     "cosine_with_restarts": frozenset({"num_cycles"}),
     "cosine_with_min_lr": frozenset({"num_cycles", "min_lr", "min_lr_rate"}),
-    "cosine_warmup_with_min_lr": frozenset({"num_cycles", "min_lr", "min_lr_rate", "warmup_lr_rate"}),
+    "cosine_warmup_with_min_lr": frozenset(
+        {"num_cycles", "min_lr", "min_lr_rate", "warmup_lr_rate"}
+    ),
     "warmup_stable_decay": _WSD_KWARGS,
     "reduce_lr_on_plateau": _PLATEAU_KWARGS,
 }
@@ -129,8 +135,7 @@ def build_lr_schedule(
         )
     if name not in _ALLOWED_KWARGS:
         raise ValueError(
-            f"Unknown lr_scheduler_type={name!r}. "
-            f"Supported: {sorted(_ALLOWED_KWARGS)}."
+            f"Unknown lr_scheduler_type={name!r}. Supported: {sorted(_ALLOWED_KWARGS)}."
         )
 
     _validate_kwargs(name, kwargs)
@@ -141,7 +146,11 @@ def build_lr_schedule(
     if name == "constant":
         return constant_schedule(base_lr)
     if name == "constant_with_warmup":
-        return with_warmup(base_lr, transition_steps=W) if W > 0 else constant_schedule(base_lr)
+        return (
+            with_warmup(base_lr, transition_steps=W)
+            if W > 0
+            else constant_schedule(base_lr)
+        )
     if name == "warmup_stable_decay":
         return _build_wsd(base_lr, W, num_training_steps, kwargs)
     if name == "reduce_lr_on_plateau":
@@ -153,8 +162,11 @@ def build_lr_schedule(
         decay = linear_schedule(base_lr, 0.0, decay_steps, transition_begin=W)
     elif name == "cosine":
         decay = cosine_schedule(
-            base_lr, 0.0, decay_steps,
-            transition_begin=W, num_cycles=kwargs.get("num_cycles", 0.5),
+            base_lr,
+            0.0,
+            decay_steps,
+            transition_begin=W,
+            num_cycles=kwargs.get("num_cycles", 0.5),
         )
     elif name == "polynomial":
         lr_end = float(kwargs.get("lr_end", 1e-7))
@@ -171,17 +183,24 @@ def build_lr_schedule(
         )
     elif name == "inverse_sqrt":
         timescale = kwargs.get("timescale") or W or 10_000
-        decay = inverse_sqrt_schedule(base_lr, transition_steps=timescale, transition_begin=W)
+        decay = inverse_sqrt_schedule(
+            base_lr, transition_steps=timescale, transition_begin=W
+        )
     elif name == "cosine_with_restarts":
         cycles = int(kwargs.get("num_cycles", 1))
         cycle_length = decay_steps / cycles
         inner = cosine_schedule(base_lr, 0.0, transition_steps=cycle_length)
-        decay = with_restarts(inner, transition_steps=decay_steps, num_cycles=cycles, transition_begin=W)
+        decay = with_restarts(
+            inner, transition_steps=decay_steps, num_cycles=cycles, transition_begin=W
+        )
     elif name == "cosine_with_min_lr":
         end_value = _resolve_min_lr(base_lr, kwargs)
         decay = cosine_schedule(
-            base_lr, end_value, decay_steps,
-            transition_begin=W, num_cycles=kwargs.get("num_cycles", 0.5),
+            base_lr,
+            end_value,
+            decay_steps,
+            transition_begin=W,
+            num_cycles=kwargs.get("num_cycles", 0.5),
         )
     elif name == "cosine_warmup_with_min_lr":
         # Warmup-ramp divergence vs HF.  HF's
@@ -200,8 +219,11 @@ def build_lr_schedule(
         # accepted as a documented divergence.
         end_value = _resolve_min_lr(base_lr, kwargs)
         decay = cosine_schedule(
-            base_lr, end_value, decay_steps,
-            transition_begin=W, num_cycles=kwargs.get("num_cycles", 0.5),
+            base_lr,
+            end_value,
+            decay_steps,
+            transition_begin=W,
+            num_cycles=kwargs.get("num_cycles", 0.5),
         )
         warmup_init = float(kwargs.get("warmup_lr_rate") or 0.0)
     else:  # pragma: no cover — guarded above.
@@ -279,15 +301,23 @@ def _build_wsd(
 
     # Decay curve: base_lr at step (W+S), floor at step (W+S+D), held at floor after.
     if decay_type == "linear":
-        decay = linear_schedule(base_lr, floor, transition_steps=D, transition_begin=W + S)
+        decay = linear_schedule(
+            base_lr, floor, transition_steps=D, transition_begin=W + S
+        )
     elif decay_type == "cosine":
         decay = cosine_schedule(
-            base_lr, floor, transition_steps=D,
-            transition_begin=W + S, num_cycles=num_cycles,
+            base_lr,
+            floor,
+            transition_steps=D,
+            transition_begin=W + S,
+            num_cycles=num_cycles,
         )
     else:  # "1-sqrt"
         decay = one_minus_sqrt_schedule(
-            base_lr, floor, transition_steps=D, transition_begin=W + S,
+            base_lr,
+            floor,
+            transition_steps=D,
+            transition_begin=W + S,
         )
 
     # Cosine post-decay continues oscillating; linear/1-sqrt clip naturally.
@@ -303,7 +333,10 @@ def _build_wsd(
         return core
 
     return with_warmup(
-        core, transition_steps=W, ramp=warmup_type, init_value=min_lr_ratio,
+        core,
+        transition_steps=W,
+        ramp=warmup_type,
+        init_value=min_lr_ratio,
     )
 
 
@@ -528,9 +561,7 @@ def parse_optim_args(spec: str | None) -> dict[str, Any]:
         if not entry.strip():
             continue
         if "=" not in entry:
-            raise ValueError(
-                f"optim_args entry {entry!r} is not in 'key=value' form"
-            )
+            raise ValueError(f"optim_args entry {entry!r} is not in 'key=value' form")
         key, _, value = entry.partition("=")
         key = key.strip()
         if not key:

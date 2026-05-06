@@ -61,8 +61,7 @@ def translate_liger_config(cfg: dict[str, Any] | None) -> dict[str, bool]:
         opaque_key = _LIGER_KEY_TO_OPAQUE.get(key)
         if opaque_key is None:
             log.info(
-                "liger_kernel_config: %r has no opaque-patches equivalent; "
-                "ignored.",
+                "liger_kernel_config: %r has no opaque-patches equivalent; ignored.",
                 key,
             )
             continue

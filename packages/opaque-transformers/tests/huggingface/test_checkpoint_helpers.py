@@ -44,7 +44,10 @@ class TestListAndLastCheckpoint:
             "checkpoint-50",
             "checkpoint-100",
         ]
-        assert os.path.basename(ckpt.get_last_checkpoint(str(tmp_path))) == "checkpoint-100"
+        assert (
+            os.path.basename(ckpt.get_last_checkpoint(str(tmp_path)))
+            == "checkpoint-100"
+        )
 
     def test_files_with_checkpoint_prefix_ignored(self, tmp_path):
         (tmp_path / "checkpoint-99").touch()  # file, not dir
@@ -80,8 +83,12 @@ class TestRotateCheckpoints:
         for s in (1, 2, 3, 4, 5):
             self._make(tmp_path, s)
         best = str(tmp_path / "checkpoint-1")
-        ckpt.rotate_checkpoints(str(tmp_path), save_total_limit=2, best_model_checkpoint=best)
-        names = sorted(os.path.basename(p) for p in ckpt.list_checkpoints(str(tmp_path)))
+        ckpt.rotate_checkpoints(
+            str(tmp_path), save_total_limit=2, best_model_checkpoint=best
+        )
+        names = sorted(
+            os.path.basename(p) for p in ckpt.list_checkpoints(str(tmp_path))
+        )
         # Both most-recent (5) and best (1) survive; total kept = max(2, 2) = 2
         assert "checkpoint-1" in names
         assert "checkpoint-5" in names
@@ -91,8 +98,12 @@ class TestRotateCheckpoints:
         for s in (1, 2, 3):
             self._make(tmp_path, s)
         best = str(tmp_path / "checkpoint-2")
-        ckpt.rotate_checkpoints(str(tmp_path), save_total_limit=1, best_model_checkpoint=best)
-        names = sorted(os.path.basename(p) for p in ckpt.list_checkpoints(str(tmp_path)))
+        ckpt.rotate_checkpoints(
+            str(tmp_path), save_total_limit=1, best_model_checkpoint=best
+        )
+        names = sorted(
+            os.path.basename(p) for p in ckpt.list_checkpoints(str(tmp_path))
+        )
         assert names == ["checkpoint-2", "checkpoint-3"]
 
 
@@ -145,8 +156,12 @@ class TestDpRuntimeBundle:
             path,
             clip_state=clip,
             noise_state=noise,
-            sampler_state={"key": {"seed": 5, "impl": "x"}, "iter_count": 2,
-                           "sample_rate": 0.1, "num_iterations": 10},
+            sampler_state={
+                "key": {"seed": 5, "impl": "x"},
+                "iter_count": 2,
+                "sample_rate": 0.1,
+                "num_iterations": 10,
+            },
             sample_rate=0.1,
             target_delta=1e-5,
             noise_multiplier=1.1,

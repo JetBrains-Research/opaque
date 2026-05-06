@@ -40,7 +40,9 @@ class TestLegacyAliases:
         from transformers.training_args import TrainingArguments
 
         if "no_cuda" not in {f.name for f in dataclasses.fields(TrainingArguments)}:
-            pytest.skip("no_cuda was removed from HF TrainingArguments in this version.")
+            pytest.skip(
+                "no_cuda was removed from HF TrainingArguments in this version."
+            )
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             args = DPTrainingArguments(no_cuda=True)

@@ -57,9 +57,7 @@ def test_default_resolves_to_cuda_when_available(mock_cuda):
 
 @patch("torch.cuda.is_available", return_value=False)
 def test_default_resolves_to_mps_when_no_cuda(mock_cuda):
-    if not (
-        hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
-    ):
+    if not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
         pytest.skip("MPS not available")
     args = _args()
     assert args.device.type == "mps"
@@ -90,9 +88,7 @@ def test_use_cpu_overrides_cuda(mock_cuda):
 
 @patch("torch.cuda.is_available", return_value=False)
 def test_use_mps_device_picks_mps(mock_cuda):
-    if not (
-        hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
-    ):
+    if not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
         pytest.skip("MPS not available")
     args = _args(use_mps_device=True)
     assert args.device.type == "mps"
@@ -117,8 +113,7 @@ def test_no_cuda_forwards_to_use_cpu_with_warning():
         args = _args(no_cuda=True)
     assert args.use_cpu is True
     assert any(
-        issubclass(w.category, FutureWarning)
-        and "no_cuda" in str(w.message).lower()
+        issubclass(w.category, FutureWarning) and "no_cuda" in str(w.message).lower()
         for w in caught
     )
 

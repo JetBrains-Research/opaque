@@ -97,7 +97,9 @@ class TestGetWarmupSteps:
 
 class TestPointwiseParity:
     def test_constant(self):
-        ours = build_lr_schedule(_Args(lr_scheduler_type="constant"), num_training_steps=500)
+        ours = build_lr_schedule(
+            _Args(lr_scheduler_type="constant"), num_training_steps=500
+        )
         hf = _hf_lambda(get_constant_schedule)
         _assert_pointwise(ours, hf, 500)
 
@@ -106,7 +108,9 @@ class TestPointwiseParity:
             _Args(lr_scheduler_type="constant_with_warmup", warmup_steps=50),
             num_training_steps=500,
         )
-        hf = _hf_lambda(lambda o: get_constant_schedule_with_warmup(o, num_warmup_steps=50))
+        hf = _hf_lambda(
+            lambda o: get_constant_schedule_with_warmup(o, num_warmup_steps=50)
+        )
         _assert_pointwise(ours, hf, 500)
 
     def test_linear(self):
@@ -144,7 +148,9 @@ class TestPointwiseParity:
             _Args(lr_scheduler_type="polynomial", warmup_steps=100),
             num_training_steps=1000,
         )
-        hf = _hf_lambda(lambda o: get_polynomial_decay_schedule_with_warmup(o, 100, 1000))
+        hf = _hf_lambda(
+            lambda o: get_polynomial_decay_schedule_with_warmup(o, 100, 1000)
+        )
         _assert_pointwise(ours, hf, 1000)
 
     def test_polynomial_custom_power(self):
@@ -182,7 +188,9 @@ class TestPointwiseParity:
             num_training_steps=1000,
         )
         hf = _hf_lambda(
-            lambda o: get_cosine_with_hard_restarts_schedule_with_warmup(o, 100, 1000, num_cycles=k)
+            lambda o: get_cosine_with_hard_restarts_schedule_with_warmup(
+                o, 100, 1000, num_cycles=k
+            )
         )
         _assert_pointwise(ours, hf, 1000)
 
@@ -196,7 +204,9 @@ class TestPointwiseParity:
             num_training_steps=1000,
         )
         hf = _hf_lambda(
-            lambda o: get_cosine_with_min_lr_schedule_with_warmup(o, 100, 1000, min_lr=1e-4)
+            lambda o: get_cosine_with_min_lr_schedule_with_warmup(
+                o, 100, 1000, min_lr=1e-4
+            )
         )
         _assert_pointwise(ours, hf, 1000)
 
@@ -210,7 +220,9 @@ class TestPointwiseParity:
             num_training_steps=1000,
         )
         hf = _hf_lambda(
-            lambda o: get_cosine_with_min_lr_schedule_with_warmup(o, 100, 1000, min_lr_rate=0.1)
+            lambda o: get_cosine_with_min_lr_schedule_with_warmup(
+                o, 100, 1000, min_lr_rate=0.1
+            )
         )
         _assert_pointwise(ours, hf, 1000)
 
@@ -298,8 +310,11 @@ class TestPointwiseParity:
         )
         hf = _hf_lambda(
             lambda o: get_wsd_schedule(
-                o, num_warmup_steps=50, num_decay_steps=200,
-                num_training_steps=1000, min_lr_ratio=0.1,
+                o,
+                num_warmup_steps=50,
+                num_decay_steps=200,
+                num_training_steps=1000,
+                min_lr_ratio=0.1,
             )
         )
         _assert_pointwise(ours, hf, 1000)
@@ -315,8 +330,11 @@ class TestPointwiseParity:
         )
         hf = _hf_lambda(
             lambda o: get_wsd_schedule(
-                o, num_warmup_steps=50, num_decay_steps=200,
-                num_training_steps=1000, decay_type="linear",
+                o,
+                num_warmup_steps=50,
+                num_decay_steps=200,
+                num_training_steps=1000,
+                decay_type="linear",
             )
         )
         _assert_pointwise(ours, hf, 1000)
@@ -332,7 +350,10 @@ class TestPointwiseParity:
         )
         hf = _hf_lambda(
             lambda o: get_wsd_schedule(
-                o, num_warmup_steps=50, num_decay_steps=200, num_stable_steps=500,
+                o,
+                num_warmup_steps=50,
+                num_decay_steps=200,
+                num_stable_steps=500,
             )
         )
         _assert_pointwise(ours, hf, 50 + 500 + 200)
@@ -357,8 +378,13 @@ class TestPointwiseParity:
         )
         hf = _hf_lambda(
             lambda o: get_wsd_schedule(
-                o, num_warmup_steps=W, num_decay_steps=D, num_training_steps=N,
-                warmup_type=warmup_type, decay_type=decay_type, min_lr_ratio=0.1,
+                o,
+                num_warmup_steps=W,
+                num_decay_steps=D,
+                num_training_steps=N,
+                warmup_type=warmup_type,
+                decay_type=decay_type,
+                min_lr_ratio=0.1,
             )
         )
         _assert_pointwise(ours, hf, N)
@@ -517,7 +543,11 @@ class TestReduceLROnPlateau:
 
     def test_drops_lr_after_patience(self):
         sched = ReduceLROnPlateauSchedule(
-            base_lr=1.0, factor=0.5, patience=1, threshold=0.0, mode="min",
+            base_lr=1.0,
+            factor=0.5,
+            patience=1,
+            threshold=0.0,
+            mode="min",
         )
         # First update: best.
         sched.update(1.0)
@@ -530,12 +560,16 @@ class TestReduceLROnPlateau:
         assert sched(0) == pytest.approx(0.5)
 
     def test_state_dict_round_trip(self):
-        a = ReduceLROnPlateauSchedule(base_lr=1.0, factor=0.5, patience=0, threshold=0.0)
+        a = ReduceLROnPlateauSchedule(
+            base_lr=1.0, factor=0.5, patience=0, threshold=0.0
+        )
         a.update(1.0)
         a.update(1.0)  # → drop
         sd = a.state_dict()
 
-        b = ReduceLROnPlateauSchedule(base_lr=1.0, factor=0.5, patience=0, threshold=0.0)
+        b = ReduceLROnPlateauSchedule(
+            base_lr=1.0, factor=0.5, patience=0, threshold=0.0
+        )
         b.load_state_dict(sd)
         assert b(0) == a(0)
 

@@ -61,13 +61,13 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
 # opaque factory.  Construction must succeed; the underlying update
 # math is the matching opaque factory, *not* the HF-named impl.
 ACCEPTED_HF_ALIASES = (
-    "adamw_torch",           # ↦ opaque.optimizers.adamw
-    "adamw_torch_fused",     # ↦ opaque.optimizers.adamw
-    "adamw_hf",              # ↦ opaque.optimizers.adamw
-    "adafactor",             # ↦ opaque.optimizers.adafactor
-    "ademamix",              # ↦ opaque.optimizers.ademamix
-    "lion_32bit",            # ↦ opaque.optimizers.lion
-    "schedule_free_radam",   # ↦ schedule_free(radam(...))
+    "adamw_torch",  # ↦ opaque.optimizers.adamw
+    "adamw_torch_fused",  # ↦ opaque.optimizers.adamw
+    "adamw_hf",  # ↦ opaque.optimizers.adamw
+    "adafactor",  # ↦ opaque.optimizers.adafactor
+    "ademamix",  # ↦ opaque.optimizers.ademamix
+    "lion_32bit",  # ↦ opaque.optimizers.lion
+    "schedule_free_radam",  # ↦ schedule_free(radam(...))
 )
 
 
@@ -162,6 +162,7 @@ SUPPORTED_OPTIMIZERS = (
     "radam",
     "adadelta",
 )
+
 
 class TestSupportedOptimizersConstruct:
     """All torchopt-backed names accepted by ``DPTrainingArguments``."""

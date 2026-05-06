@@ -80,6 +80,7 @@ def with_warmup(
     inner: Schedule = schedule if callable(schedule) else constant_schedule(schedule)
 
     if init_value == 0.0:
+
         def wrapped(step: int) -> float:
             if step < transition_steps:
                 return ramp_fn(step / transition_steps) * inner(step)

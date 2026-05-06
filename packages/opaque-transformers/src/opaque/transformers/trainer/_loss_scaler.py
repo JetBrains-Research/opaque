@@ -69,17 +69,13 @@ class OpaqueLossScaler:
 
     def __post_init__(self) -> None:
         if self.growth_factor <= 1.0:
-            raise ValueError(
-                f"growth_factor must be > 1.0, got {self.growth_factor}"
-            )
+            raise ValueError(f"growth_factor must be > 1.0, got {self.growth_factor}")
         if not (0.0 < self.backoff_factor < 1.0):
             raise ValueError(
                 f"backoff_factor must be in (0, 1), got {self.backoff_factor}"
             )
         if self.growth_interval <= 0:
-            raise ValueError(
-                f"growth_interval must be > 0, got {self.growth_interval}"
-            )
+            raise ValueError(f"growth_interval must be > 0, got {self.growth_interval}")
         self._scale = float(self.init_scale)
         self._growth_tracker = 0
 

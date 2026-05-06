@@ -83,7 +83,9 @@ def test_unscale_grads_preserves_pytree_structure():
 def test_unscale_recovers_original_magnitude():
     scaler = OpaqueLossScaler(init_scale=128.0)
     original = _grads_pytree(magnitude=1.0)
-    scaled = {k: (v * 128.0 if v.is_floating_point() else v) for k, v in original.items()}
+    scaled = {
+        k: (v * 128.0 if v.is_floating_point() else v) for k, v in original.items()
+    }
     unscaled = scaler.unscale_grads(scaled)
     torch.testing.assert_close(unscaled["fp32"], original["fp32"])
     torch.testing.assert_close(unscaled["bf16"], original["bf16"])

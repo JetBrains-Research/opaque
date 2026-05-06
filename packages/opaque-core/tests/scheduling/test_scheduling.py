@@ -369,7 +369,9 @@ class TestWithWarmup:
 
     def test_init_value_starts_above_zero(self):
         # init_value=0.25: ramp goes from 0.25 to 1 over [0, 10).
-        sched = with_warmup(constant_schedule(1.0), transition_steps=10, init_value=0.25)
+        sched = with_warmup(
+            constant_schedule(1.0), transition_steps=10, init_value=0.25
+        )
         assert sched(0) == pytest.approx(0.25)
         # Linear ramp: factor = 0.25 + 0.75 * (step/10).
         assert sched(5) == pytest.approx(0.25 + 0.75 * 0.5)
@@ -378,8 +380,10 @@ class TestWithWarmup:
     def test_init_value_with_cosine_ramp(self):
         # With init_value, the named ramp is rescaled into [init_value, 1].
         sched = with_warmup(
-            constant_schedule(1.0), transition_steps=10,
-            ramp="cosine", init_value=0.2,
+            constant_schedule(1.0),
+            transition_steps=10,
+            ramp="cosine",
+            init_value=0.2,
         )
         # cosine ramp at p=0.5 is 0.5, rescaled: 0.2 + 0.8 * 0.5 = 0.6.
         assert sched(0) == pytest.approx(0.2)
@@ -389,8 +393,10 @@ class TestWithWarmup:
     def test_init_value_with_callable_ramp(self):
         # Callable ramp also gets rescaled into [init_value, 1].
         sched = with_warmup(
-            constant_schedule(1.0), transition_steps=10,
-            ramp=lambda p: p * p, init_value=0.5,
+            constant_schedule(1.0),
+            transition_steps=10,
+            ramp=lambda p: p * p,
+            init_value=0.5,
         )
         # At step 5: ramp(0.5) = 0.25; factor = 0.5 + 0.5 * 0.25 = 0.625.
         assert sched(0) == pytest.approx(0.5)
