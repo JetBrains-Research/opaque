@@ -22,6 +22,45 @@ The underlying implementation uses Google's PLD accounting via the
 
 ---
 
+## Namespace Organization
+
+The accounting API is split into three namespaces:
+
+| Namespace | Contents | Import |
+|-----------|----------|--------|
+| `opaque.accounting` | Cross-cutting: calibration, composition, `second_moment`, `balls_in_bins`, `Accountant`, `repeat`, `compose` | `import opaque.accounting as acc` |
+| `opaque.dpsgd.accounting` | DP-SGD mechanisms: `gaussian`, `adaclip`, `poisson`, `truncated_poisson`, `parallel_poisson` | `from opaque.dpsgd import accounting as dpsgd_acc` |
+| `opaque.dpftrl.accounting` | DP-FTRL mechanisms: `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `cyclic_poisson`, `b_min_sep` | `from opaque.dpftrl import accounting as dpftrl_acc` |
+
+The legacy paths (`acc.gaussian`, `acc.poisson`, etc.) remain available on
+`opaque.accounting` for backwards compatibility, but new code should prefer
+the algorithm-scoped namespaces.
+
+```python
+# DP-SGD
+from opaque.dpsgd import accounting as dpsgd_acc
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=0.01)
+
+# DP-FTRL
+from opaque.dpftrl import accounting as dpftrl_acc
+from opaque.dpftrl.noise import band_mf_strategy
+strategy = band_mf_strategy(n_steps=1000, bands=10)
+proc = dpftrl_acc.cyclic_poisson(
+    dpftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups),
+    sample_rate=0.01,
+)
+
+# Cross-cutting composition and calibration always go via opaque.accounting
+import opaque.accounting as acc
+total = step * 1000
+eps = total.epsilon_at(1e-5)
+```
+
+`opaque.dpsgd.accounting` and `opaque.dpftrl.accounting` are lazily imported:
+the Rust PLD extension is not loaded until you access these submodules.
+
+---
+
 ## Classes
 
 ### `DpProcess`
