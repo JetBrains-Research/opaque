@@ -82,7 +82,6 @@ from opaque.profiling import (
     reset_peak_memory,
 )
 from opaque.random import key, fold_in
-from opaque.dpftrl.sampling import BallsInBinsSampler
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.dpsgd.sampling import TruncatedPoissonSampler
 from opaque.distributed import local_shard
@@ -1017,6 +1016,22 @@ def main():
 
     expected_steps_per_epoch = int(global_train_size / args.batch_size)
 
+    if use_balls_in_bins:
+        if expected_steps_per_epoch < 2:
+            raise ValueError(
+                f"--sampler=balls_in_bins requires expected_steps_per_epoch >= 2 "
+                f"(num_bins must be >= 2), got "
+                f"{expected_steps_per_epoch} from global_train_size="
+                f"{global_train_size} / batch_size={args.batch_size}.  "
+                "Reduce --batch-size or use a larger dataset."
+            )
+        if use_parallel_poisson:
+            raise ValueError(
+                "--sampler=balls_in_bins is incompatible with the parallel-Poisson "
+                "DDP mode (--no-shard).  Pass --shard so each rank works a disjoint "
+                "shard of the dataset."
+            )
+
     print("\nSampling setup:")
     if use_parallel_poisson and not use_balls_in_bins:
         print(f"  Mode: parallel_poisson (no shard, world_size={world_size})")
@@ -1256,12 +1271,15 @@ def main():
         mechanism = lambda nm, ebs=args.batch_size, ng=_num_groups: acc.adaclip(
             _base_mechanism(nm), expected_batch_size=ebs, num_groups=ng
         )
-    if use_second_moment:
+    if use_second_moment and args.noise_multiplier != 0:
         # second_moment(gaussian(nm)): joint sensitivity = input_sensitivity ·
         # c1 · overhead.  We pass input_sensitivity=1.0 because the runtime
         # expresses noise_stddev as nm · max_norm (mechanism-relative
         # sensitivity is 1).  The accountant scales effective_nm by 1/√(3/2)
-        # internally.
+        # internally.  Skip the wrap when --noise-multiplier=0 because the
+        # underlying mechanism is ``acc.nonprivate()``, which
+        # ``acc.second_moment()`` rejects (a non-private mechanism has
+        # nothing to add second-moment overhead to).
         _bare_mechanism = mechanism
         _overhead = (
             second_moment_arg if isinstance(second_moment_arg, float) else None
@@ -1491,12 +1509,15 @@ def main():
         if use_balls_in_bins:
             # BnB requires the same per-example bin assignment across all
             # epochs (Lemma 3.2 of Choquette-Choo et al. 2024) — fold in
-            # only the rank, not the epoch.  num_epochs=None: yield
-            # indefinitely; the outer loop bounds the epoch count.
+            # only the rank, not the epoch.  Use ``num_epochs=1`` so the
+            # sampler yields exactly one epoch's worth of bins; the outer
+            # epoch loop calls this once per epoch with the same key.
+            from opaque.dpftrl.sampling import BallsInBinsSampler
+
             epoch_sampler = BallsInBinsSampler(
                 train_dataset,
                 num_bins=expected_steps_per_epoch,
-                num_epochs=None,
+                num_epochs=1,
                 key=fold_in(key(args.seed), rank),
             )
         elif use_truncated_poisson:
