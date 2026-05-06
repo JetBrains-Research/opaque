@@ -265,6 +265,25 @@ if use_adam:
 process = acc.cyclic_poisson(mechanism, sample_rate=q)
 ```
 
+`acc.second_moment` accepts three kinds of Gaussian-family inner:
+
+| Inner | Use case | Composition |
+|---|---|---|
+| `acc.gaussian(nm)` | DP-SGD with fixed clipping | `acc.second_moment(acc.gaussian(nm), sensitivity=...)` |
+| `acc.adaclip(acc.gaussian(nm), ...)` | DP-SGD with adaptive clipping | `acc.second_moment(acc.adaclip(...), sensitivity=...)` |
+| `acc.band_mf(nm, ...)` (or any other MF Gaussian) | DP-FTRL | `acc.second_moment(acc.band_mf(...), sensitivity=...)` |
+
+For the `AdaClip` inner the threshold-quantile noise is folded into the
+gradient noise via Theorem 1's `z_eff` first; the second-moment
+overhead then applies on the resulting effective Gaussian.  The
+composition is exact because the threshold-quantile and gradient/squared-
+gradient releases use independent randomness.
+
+For DP-SGD AUTO-S clipping (`auto_clipped_grad(..., second_moment=True)`)
+the matching accountant is just `acc.second_moment(acc.gaussian(nm), ...)`
+— AUTO-S is per-example smooth scaling and contributes no extra
+threshold-quantile cost.
+
 ### CLI
 
 ```bash
