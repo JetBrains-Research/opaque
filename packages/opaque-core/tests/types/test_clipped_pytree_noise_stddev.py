@@ -1,4 +1,4 @@
-"""Tests for ``ClippedPytree.noise_stddev(noise_multiplier=, allocation=)``.
+"""Tests for ``ClippedPytree.noise_stddev_for(noise_multiplier=, allocation=)``.
 
 Centralises the noise-stddev computation that used to live only in
 :func:`opaque.dpsgd.noise.per_group_noise_stddev`.  The method handles both
@@ -24,18 +24,18 @@ class TestScalarMaxNorm:
 
     def test_optimal_scalar_returns_scalar(self):
         cg = clipped(torch.zeros(8), max_norm=2.0)
-        assert cg.noise_stddev(noise_multiplier=0.8) == pytest.approx(1.6)
+        assert cg.noise_stddev_for(noise_multiplier=0.8) == pytest.approx(1.6)
 
     def test_isotropic_scalar_returns_scalar(self):
         cg = clipped(torch.zeros(8), max_norm=2.0)
-        assert cg.noise_stddev(
+        assert cg.noise_stddev_for(
             noise_multiplier=0.8,
             allocation="isotropic",
         ) == pytest.approx(1.6)
 
     def test_zero_noise_multiplier(self):
         cg = clipped(torch.zeros(8), max_norm=2.0)
-        assert cg.noise_stddev(noise_multiplier=0.0) == 0.0
+        assert cg.noise_stddev_for(noise_multiplier=0.0) == 0.0
 
 
 # ── PerGroup max_norm ────────────────────────────────────────────────
@@ -55,14 +55,14 @@ class TestPerGroupOptimal:
     def test_returns_per_group(self):
         pg = _per_group({"a": 1.0, "b": 2.0})
         cg = clipped({"a": torch.zeros(2), "b": torch.zeros(2)}, max_norm=pg)
-        out = cg.noise_stddev(noise_multiplier=0.8)
+        out = cg.noise_stddev_for(noise_multiplier=0.8)
         assert isinstance(out, PerGroup)
 
     def test_mahalanobis_formula(self):
         """σᵢ = nm · √(Cᵢ · ΣⱼCⱼ)."""
         pg = _per_group({"a": 1.0, "b": 4.0})
         cg = clipped({"a": torch.zeros(2), "b": torch.zeros(2)}, max_norm=pg)
-        out = cg.noise_stddev(noise_multiplier=0.5)
+        out = cg.noise_stddev_for(noise_multiplier=0.5)
         sum_c = 5.0
         assert isinstance(out, PerGroup)
         assert out.values["a"] == pytest.approx(0.5 * math.sqrt(1.0 * sum_c))
@@ -71,7 +71,7 @@ class TestPerGroupOptimal:
     def test_groups_preserved(self):
         pg = _per_group({"a": 1.0, "b": 2.0})
         cg = clipped({"a": torch.zeros(1), "b": torch.zeros(1)}, max_norm=pg)
-        out = cg.noise_stddev(noise_multiplier=1.0)
+        out = cg.noise_stddev_for(noise_multiplier=1.0)
         assert isinstance(out, PerGroup)
         assert out.groups == pg.groups
 
@@ -82,7 +82,7 @@ class TestPerGroupIsotropic:
     def test_returns_scalar(self):
         pg = _per_group({"a": 3.0, "b": 4.0})
         cg = clipped({"a": torch.zeros(1), "b": torch.zeros(1)}, max_norm=pg)
-        out = cg.noise_stddev(noise_multiplier=1.0, allocation="isotropic")
+        out = cg.noise_stddev_for(noise_multiplier=1.0, allocation="isotropic")
         assert isinstance(out, float)
 
     def test_isotropic_matches_effective(self):
@@ -90,7 +90,7 @@ class TestPerGroupIsotropic:
         pg = _per_group({"a": 3.0, "b": 4.0})
         cg = clipped({"a": torch.zeros(1), "b": torch.zeros(1)}, max_norm=pg)
         # ‖(3,4)‖₂ = 5
-        assert cg.noise_stddev(
+        assert cg.noise_stddev_for(
             noise_multiplier=0.8,
             allocation="isotropic",
         ) == pytest.approx(0.8 * 5.0)
@@ -105,18 +105,18 @@ class TestValidation:
     def test_negative_noise_multiplier_raises(self):
         cg = clipped(torch.zeros(4), max_norm=1.0)
         with pytest.raises(ValueError, match="non-negative"):
-            cg.noise_stddev(noise_multiplier=-0.1)
+            cg.noise_stddev_for(noise_multiplier=-0.1)
 
     def test_unknown_allocation_raises(self):
         cg = clipped(torch.zeros(4), max_norm=1.0)
         with pytest.raises(ValueError, match="isotropic.*optimal"):
-            cg.noise_stddev(noise_multiplier=0.5, allocation="bogus")  # type: ignore[arg-type]
+            cg.noise_stddev_for(noise_multiplier=0.5, allocation="bogus")  # type: ignore[arg-type]
 
     def test_negative_per_group_bound_raises(self):
         pg = _per_group({"a": -0.1, "b": 1.0})
         cg = clipped({"a": torch.zeros(1), "b": torch.zeros(1)}, max_norm=pg)
         with pytest.raises(ValueError, match="non-negative"):
-            cg.noise_stddev(noise_multiplier=0.5)
+            cg.noise_stddev_for(noise_multiplier=0.5)
 
 
 # ── Equivalence with the existing per_group_noise_stddev free function ──
@@ -133,7 +133,7 @@ class TestPerGroupNoiseStddevEquivalence:
             {"a": torch.zeros(1), "b": torch.zeros(1), "c": torch.zeros(1)},
             max_norm=pg,
         )
-        method_out = cg.noise_stddev(noise_multiplier=0.9)
+        method_out = cg.noise_stddev_for(noise_multiplier=0.9)
         free_out = per_group_noise_stddev(pg, noise_multiplier=0.9)
         assert isinstance(method_out, PerGroup)
         for key in pg.values:
