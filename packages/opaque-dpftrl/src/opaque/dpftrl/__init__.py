@@ -18,7 +18,7 @@ The cross-cutting ``SecondMomentNoiseOutput`` lives in :mod:`opaque.types`.
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-from opaque.dpftrl import noise, sampling
+from opaque.dpftrl import accounting, noise, sampling
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
@@ -43,6 +43,7 @@ except PackageNotFoundError:
 __all__ = [
     "__version__",
     # Subpackages
+    "accounting",
     "noise",
     "sampling",
     # Dispatchers

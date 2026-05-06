@@ -15,7 +15,7 @@ State / aux dataclasses (``AdaptiveClipState``, ``AdaptiveClippedGradAux``,
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-from opaque.dpsgd import clipping, noise, sampling
+from opaque.dpsgd import accounting, clipping, noise, sampling
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.dpsgd.noise import (
     gaussian_noise,
@@ -32,6 +32,7 @@ except PackageNotFoundError:
 __all__ = [
     "__version__",
     # Subpackages
+    "accounting",
     "clipping",
     "noise",
     "sampling",
