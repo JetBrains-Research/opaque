@@ -2366,7 +2366,10 @@ Pair with <code>opaque.accounting.b_min_sep</code> for privacy accounting.</p>
 <p>Each example is independently assigned to one of <code>num_bins</code> bins (Binomial
 bin sizes; some bins may be empty). The assignment is <strong>fixed once at init</strong>
 and <strong>reused across all epochs</strong> — this is required by the dominating-pair
-BnB privacy accounting. Used with DP-λCGD, BISR, BSR, and BLT mechanisms.</p>
+BnB privacy accounting. Used with DP-λCGD, BISR, BSR, and BLT mechanisms,
+<strong>and with the plain Gaussian mechanism for DP-SGD</strong>: <code>acc.balls_in_bins</code>
+accepts both Gaussian and MF inners (see <a href="../../mechanisms/">Mechanisms — Cross-cutting
+amplification</a>).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">BallsInBinsSampler</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
@@ -2378,6 +2381,14 @@ BnB privacy accounting. Used with DP-λCGD, BISR, BSR, and BLT mechanisms.</p>
 <a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="p">)</span>
 <a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="n">loader</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
 </code></pre></div>
+<p><code>acc.balls_in_bins(mechanism, num_bins, num_epochs)</code> returns the
+<strong>total</strong> multi-epoch privacy cost — do not compose further with
+<code>* num_epochs</code>.  In a training loop, book the cost once before training
+begins; the per-step accumulator does not compose for BnB.</p>
+<p><code>BallsInBinsSampler</code> is incompatible with parallel-Poisson DDP
+(<code>--no-shard</code>): each rank must work a disjoint shard so every example
+participates exactly once per epoch globally.  Pass <code>--shard</code> (or its
+DDP equivalent) when using BnB across multiple ranks.</p>
 <h2 id="sequential-batch-sampling">Sequential batch sampling<a class="headerlink" href="#sequential-batch-sampling" title="Permanent link">&para;</a></h2>
 <h3 id="sequentialbatchsampler"><code>SequentialBatchSampler</code><a class="headerlink" href="#sequentialbatchsampler" title="Permanent link">&para;</a></h3>
 <p>Iterates through the dataset in fixed-size contiguous batches with no
