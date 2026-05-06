@@ -4148,7 +4148,9 @@ class DPTrainer:
     ) -> None:
         """Overwrite ctx fields with values restored from a checkpoint."""
         ctx.clip_state = opaque_from_state_dict(ctx.clip_state, payload["clip_state"])
-        ctx.noise_state = opaque_from_state_dict(ctx.noise_state, payload["noise_state"])
+        ctx.noise_state = opaque_from_state_dict(
+            ctx.noise_state, payload["noise_state"]
+        )
 
         opt_path = os.path.join(ckpt_dir, ckpt.DP_OPTIMIZER_NAME)
         if os.path.exists(opt_path):
