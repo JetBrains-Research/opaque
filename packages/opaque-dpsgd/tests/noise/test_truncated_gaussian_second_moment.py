@@ -8,7 +8,6 @@ truncated Gaussian noise to each.
 
 from __future__ import annotations
 
-
 import pytest
 import torch
 
