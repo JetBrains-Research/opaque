@@ -1,30 +1,22 @@
-"""Noise math + distributed-sync helpers shared across DP mechanisms.
+"""Joint Gaussian noise calibration for paired first + second-moment release.
 
-Public DP wrapper types (``NoisedPytree``, ``SecondMoment*Output``,
-``NoiseState`` base, ``noised()`` factory) live in
-:mod:`opaque.types`.  This module is internal: it hosts the
-second-moment joint-Gaussian math used by both
-:mod:`opaque.dpsgd.noise.gaussian` and
-:mod:`opaque.dpftrl.noise.dispatcher`, plus the distributed-sync
-glue that all noise mechanisms share.
+Used by :func:`opaque.dpsgd.noise.gaussian.gaussian_noise` when a
+``SecondMomentClippingOutput`` flows in.  See Kalinin, Upadhyay,
+Lampert, "Continual Release Moment Estimation with Differential
+Privacy", arXiv:2502.06597.
 """
 
 from __future__ import annotations
 
 import math
 
-# Imported privately so ``from opaque.core.noise import NoiseState``
-# does not work — :mod:`opaque.types` is the single canonical home.
-from opaque.types import NoiseState as _NoiseState
-
 
 DEFAULT_SECOND_MOMENT_OVERHEAD = math.sqrt(3.0 / 2.0)
 """Default first-stream noise overhead for private second moments.
 
-This is the add/remove-DP d >= 2 value from the joint first+second
-moment analysis.  It multiplies the first-moment sensitivity when the
-noise mechanism also releases a private element-wise squared-gradient
-stream.
+The add/remove-DP d >= 2 value from the joint first+second moment
+analysis.  Multiplies the first-moment sensitivity when the noise
+mechanism also releases a private element-wise squared-gradient stream.
 """
 
 
@@ -155,35 +147,3 @@ def second_moment_stddevs(
         first_moment_overhead=first_moment_overhead,
     )
     return first_stddev, second_stddev
-
-
-# ---- Distributed sync helpers (shared across mechanisms) ----
-
-# Field-level ops for ``opaque.distributed.sync_object`` applied to any
-# ``NoiseState`` subclass.  All concrete noise mechanisms use the same
-# step-counter convention, so this is centralized here.
-NOISE_STATE_FIELD_OPS: dict[str, str] = {
-    "_step_counter": "assert_equal",
-}
-
-
-def assert_rng_key_equal(state: _NoiseState, state_name: str) -> None:
-    """Assert that a ``NoiseState``'s RNG key seed matches across ranks.
-
-    Shared across ``sync_gaussian_noise_state`` (opaque-dpsgd) and
-    ``sync_mf_noise_state`` (opaque-dpftrl).
-    """
-    from opaque.distributed.state import assert_scalar_equal
-
-    assert_scalar_equal(int(state._rng_key.seed), name=f"{state_name}.seed")
-
-
-__all__ = [
-    "DEFAULT_SECOND_MOMENT_OVERHEAD",
-    "NOISE_STATE_FIELD_OPS",
-    "assert_rng_key_equal",
-    "resolve_second_moment_overhead",
-    "second_moment_joint_sensitivity",
-    "second_moment_noise_scale",
-    "second_moment_stddevs",
-]

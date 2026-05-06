@@ -6,7 +6,7 @@ import torch
 
 from opaque.types import clipped
 
-from opaque.dpsgd.noise.gaussian import gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
 

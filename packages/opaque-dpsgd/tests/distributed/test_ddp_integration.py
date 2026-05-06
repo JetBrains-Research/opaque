@@ -30,7 +30,7 @@ from opaque.distributed import (
     sum_gradients_,
     sync,
 )
-from opaque.dpsgd.noise.gaussian import gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpftrl.noise import mf_noise, identity_strategy
 from opaque.core.profiling import StepTimer, TrainingProfiler
 from opaque.random import key

@@ -15,16 +15,11 @@ noise → optimizer:
 - **Factories**: ``clipped()`` and ``noised()`` — manual wrapper
   constructors for callers that already produced privatised values.
 
-The placement criterion is **cross-family bases and contracts up,
-concrete states stay with their factories**.  ``FixedClipState``
-remains in :mod:`opaque.clipping.types` (concrete clipping marker);
-``AdaptiveClipState`` in :mod:`opaque.dpsgd.clipping.adaptive`;
-``GaussianNoiseState`` in :mod:`opaque.dpsgd.noise.gaussian`;
+Concrete state classes live with the factories that produce them:
+``FixedClipState`` in :mod:`opaque.clipping.types`,
+``AdaptiveClipState`` in :mod:`opaque.dpsgd.clipping.adaptive`,
+``GaussianNoiseState`` in :mod:`opaque.dpsgd.noise.gaussian`,
 ``MFNoiseState`` in :mod:`opaque.dpftrl.noise._engine`.
-
-Import graph rule: this module is a leaf — nothing under
-``opaque.types`` imports any other ``opaque.*`` symbol, so cycles
-involving these types are structurally impossible.
 """
 
 from __future__ import annotations

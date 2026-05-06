@@ -23,10 +23,7 @@ from opaque.optimizers import (  # noqa: E402
     schedule_free,
 )
 from opaque.optimizers.schedule_free import get_eval_params  # noqa: E402
-from opaque.optimizers.serialization import (  # noqa: E402
-    load_state_dict,
-    state_dict,
-)
+from opaque.optimizers import load_state_dict, state_dict  # noqa: E402
 
 
 @pytest.fixture

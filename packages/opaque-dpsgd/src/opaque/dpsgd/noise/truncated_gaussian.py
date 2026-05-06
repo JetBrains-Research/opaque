@@ -145,7 +145,7 @@ def truncated_gaussian_noise(
     truncated normal distribution centred at each clipped input value. The
     realized standard deviation is derived from the input
     :class:`opaque.clipping.types.ClippedPytree` metadata and carried by the returned
-    :class:`opaque.core.noise.NoisedPytree`.
+    :class:`opaque.types.NoisedPytree`.
 
     The noise function uses exactly the ``key`` you provide — no auto-detection
     of distributed state. For synchronized noise in DDP, pass the same key on
@@ -176,7 +176,7 @@ def truncated_gaussian_noise(
     Example:
         >>> import torch
         >>> from opaque.clipping.types import clipped
-        >>> from opaque.dpsgd.noise.truncated_gaussian import truncated_gaussian_noise
+        >>> from opaque.dpsgd.noise import truncated_gaussian_noise
         >>> from opaque.random import key
         >>>
         >>> noise_fn, state = truncated_gaussian_noise(

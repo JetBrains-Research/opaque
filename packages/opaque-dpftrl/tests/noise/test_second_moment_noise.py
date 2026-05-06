@@ -11,11 +11,6 @@ from opaque.types import (
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
 )
-from opaque.core.noise import (
-    second_moment_joint_sensitivity,
-    second_moment_noise_scale,
-    second_moment_stddevs,
-)
 from opaque.dpftrl.noise import (
     SecondMomentMFNoiseState,
     band_mf_strategy,
@@ -25,6 +20,9 @@ from opaque.dpftrl.noise import (
     identity_strategy,
     lambda_cgd_strategy,
     mf_noise,
+    second_moment_joint_sensitivity,
+    second_moment_noise_scale,
+    second_moment_stddevs,
 )
 from opaque.random import key
 

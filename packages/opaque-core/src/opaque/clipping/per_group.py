@@ -1,20 +1,12 @@
-"""Constructor for :class:`opaque.types.PerGroup` from params + patterns.
+"""Build a :class:`opaque.types.PerGroup` from params + substring patterns::
 
-The ``PerGroup`` data type lives in :mod:`opaque.types` (it's a
-cross-cutting container used by clipping, noise, and optimizer
-factories).  This module keeps the parameter-key-pattern matching
-helper that builds a :class:`~opaque.types.PerGroup` from a
-parameter dict::
-
-    from opaque.clipping import per_group
-    pg = per_group(params, self_attn=1.0, mlp=2.0)
-    pg = per_group(params, q_proj=1.0, fallback=0.5)  # catch-all
+from opaque.clipping import per_group
+pg = per_group(params, self_attn=1.0, mlp=2.0)
+pg = per_group(params, q_proj=1.0, fallback=0.5)  # catch-all
 """
 
 from __future__ import annotations
 
-# Imported privately so ``from opaque.clipping.per_group import PerGroup``
-# does not work — :mod:`opaque.types` is the single canonical home.
 from opaque.types import PerGroup as _PerGroup
 
 

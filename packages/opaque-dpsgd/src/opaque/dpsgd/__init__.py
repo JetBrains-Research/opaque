@@ -29,9 +29,9 @@ from opaque.dpsgd.clipping.auto import auto_clipped_grad
 # AdaptiveClippedGradAux) with opaque.distributed.sync(). Reach the helpers
 # directly via opaque.dpsgd.clipping.distributed if needed.
 from opaque.dpsgd.clipping import distributed as _clipping_distributed  # noqa: F401
-from opaque.dpsgd.noise.gaussian import gaussian_noise
-from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
-from opaque.dpsgd.noise.truncated_gaussian import truncated_gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.dpsgd.noise import per_group_noise_stddev
+from opaque.dpsgd.noise import truncated_gaussian_noise
 from opaque.dpsgd.sampling.poisson import PoissonSampler
 from opaque.dpsgd.sampling.truncated_poisson import TruncatedPoissonSampler
 

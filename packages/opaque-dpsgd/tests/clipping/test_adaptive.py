@@ -389,7 +389,7 @@ class TestAdaptiveClippedGrad:
 
     def test_composition_with_noise(self):
         """Test that adaptive clipping composes naturally with noise."""
-        from opaque.dpsgd.noise.gaussian import gaussian_noise
+        from opaque.dpsgd.noise import gaussian_noise
 
         def loss_fn(params, x, y):
             pred = x @ params

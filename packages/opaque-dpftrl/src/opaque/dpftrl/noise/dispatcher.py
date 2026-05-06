@@ -22,7 +22,7 @@ import torch
 
 from opaque.types import PerGroup
 from opaque.types import ClippedPytree
-from opaque.core.noise import (
+from opaque.dpftrl.noise._second_moment import (
     DEFAULT_SECOND_MOMENT_OVERHEAD,
     second_moment_joint_sensitivity,
     second_moment_noise_scale,

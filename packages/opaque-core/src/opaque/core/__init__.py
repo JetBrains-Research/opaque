@@ -7,8 +7,6 @@ the public packages (``opaque.clipping``, ``opaque.random``,
 
 Contents:
 
-- :mod:`opaque.core.noise` — the ``NoiseState`` base class shared by DP-SGD
-  and DP-FTRL mechanisms.
 - :mod:`opaque.core.pytree` — pytree helpers (``tree_map``, ``global_norm``,
   ``partition``, ``merge``, …). Used internally by clipping and
   distributed; users should not need this directly.

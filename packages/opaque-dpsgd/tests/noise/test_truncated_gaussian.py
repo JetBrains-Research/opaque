@@ -11,8 +11,8 @@ from opaque.types import clipped
 from opaque.types import NoisedPytree, noised
 
 from opaque.types import PerGroup
-from opaque.dpsgd.noise.gaussian import GaussianNoiseState
-from opaque.dpsgd.noise.truncated_gaussian import truncated_gaussian_noise
+from opaque.dpsgd.noise import GaussianNoiseState
+from opaque.dpsgd.noise import truncated_gaussian_noise
 from opaque.random import key
 
 
