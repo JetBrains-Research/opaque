@@ -12,7 +12,7 @@ correctly with ``gaussian(nm)``.
 
 :func:`per_group_noise_stddev` provides an **alternative** that reduces total
 noise MSE by allocating less noise to groups with smaller clipping norms.
-It returns a :class:`~opaque.utils.per_group.PerGroup` of per-group standard
+It returns a :class:`~opaque.types.PerGroup` of per-group standard
 deviations satisfying the Mahalanobis privacy constraint:
 
 .. math::
@@ -22,6 +22,10 @@ deviations satisfying the Mahalanobis privacy constraint:
 Privacy accounting is identical to the isotropic case — just
 ``gaussian(nm)`` — because the allocation satisfies the Mahalanobis
 constraint with equality.
+
+Equivalent to ``ClippedPytree.noise_stddev_for(noise_multiplier=nm,
+allocation='optimal')``; kept as a free function for callers that already
+hold a bare :class:`PerGroup` rather than a clipped pytree.
 """
 
 from __future__ import annotations
@@ -57,11 +61,13 @@ def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGr
             accounting via ``gaussian(nm)``.
 
     Returns:
-        :class:`~opaque.utils.per_group.PerGroup` with per-group noise
-        standard deviations.
+        :class:`~opaque.types.PerGroup` with per-group noise standard
+        deviations.
 
     Raises:
         TypeError: If ``max_norm`` is not ``PerGroup``.
+        ValueError: If ``noise_multiplier`` is negative or any group bound
+            is negative.
 
     Example::
 
@@ -71,15 +77,16 @@ def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGr
         grad_fn, clip_state = clipped_grad(loss_fn, clipping_norm=pg, ...)
         grads, clip_state = grad_fn(params, batch, state=clip_state)
         stddev = per_group_noise_stddev(grads.max_norm, nm)
-        # stddev is a PerGroup allocation for mechanisms that accept
-        # per-group standard deviations directly.
-
-        # Accounting: just gaussian(nm), same as isotropic.
+        # Equivalent: stddev = grads.noise_stddev_for(noise_multiplier=nm)
     """
     if not isinstance(max_norm, PerGroup):
         raise TypeError(
             "per_group_noise_stddev requires a PerGroup max_norm, "
             f"got {type(max_norm).__name__}."
+        )
+    if noise_multiplier < 0:
+        raise ValueError(
+            f"noise_multiplier must be non-negative, got {noise_multiplier}"
         )
     for group_name, value in max_norm.values.items():
         if value < 0:

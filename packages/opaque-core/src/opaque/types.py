@@ -28,7 +28,7 @@ import math
 from abc import ABC
 from dataclasses import dataclass, replace
 from numbers import Real
-from typing import Any, NamedTuple, Union
+from typing import Any, Literal, NamedTuple, Union
 
 import torch
 
@@ -196,6 +196,32 @@ def _scale_max_norm(max_norm: MaxNorm, factor: float) -> MaxNorm:
     return abs(factor) * max_norm
 
 
+def _per_group_optimal_stddev(
+    max_norm: PerGroup,
+    noise_multiplier: float,
+) -> PerGroup:
+    """MSE-optimal per-group noise allocation under the Mahalanobis constraint.
+
+    For per-group contribution bounds B₁,…,B_K, returns σᵢ = nm · √(Bᵢ · ΣⱼBⱼ).
+    Privacy accounting is ``gaussian(nm)`` — the Mahalanobis constraint is
+    satisfied with equality, so amplification math is identical to isotropic.
+    """
+    for group_name, value in max_norm.values.items():
+        if value < 0:
+            raise ValueError(
+                "per-group bounds must be non-negative, "
+                f"got {value} for group '{group_name}'."
+            )
+    sum_c = sum(max_norm.values.values())
+    return PerGroup(
+        max_norm.groups,
+        {
+            k: noise_multiplier * math.sqrt(c * sum_c)
+            for k, c in max_norm.values.items()
+        },
+    )
+
+
 def _scale_stddev(stddev: NoiseStddev, factor: float) -> NoiseStddev:
     if stddev is None:
         return None
@@ -230,6 +256,62 @@ class ClippedPytree:
         if effective is not None:
             return float(effective)
         return float(self.max_norm)
+
+    def noise_stddev_for(
+        self,
+        *,
+        noise_multiplier: float,
+        allocation: Literal["isotropic", "optimal"] = "optimal",
+    ) -> float | PerGroup:
+        """Noise standard deviation that ``gaussian(noise_multiplier)`` would apply.
+
+        Named ``noise_stddev_for`` rather than ``noise_stddev`` to leave the
+        ``noise_stddev`` slot free for the realised-stddev *field* on the
+        :class:`NoisedPytree` subclass — a method on the parent and a field
+        on the child cannot share a name.
+
+        Scalar ``max_norm``: returns ``noise_multiplier * max_norm``; the
+        ``allocation`` argument is validated but does not change the result.
+
+        ``PerGroup`` ``max_norm``:
+
+        - ``allocation="optimal"`` (default): MSE-optimal Mahalanobis allocation
+          ``σᵢ = noise_multiplier · √(Cᵢ · ΣⱼCⱼ)``.  Returns a :class:`PerGroup`
+          of per-group standard deviations.
+        - ``allocation="isotropic"``: returns the scalar
+          ``noise_multiplier * max_norm.effective`` — uniform stddev applied
+          to all leaves.
+
+        Privacy accounting under either allocation is ``gaussian(noise_multiplier)``;
+        per-group allocation costs nothing in the privacy accountant because the
+        Mahalanobis constraint is satisfied with equality.
+
+        Args:
+            noise_multiplier: Gaussian noise multiplier.  Must be non-negative.
+            allocation: How to spread noise across groups when ``max_norm``
+                is :class:`PerGroup`.  Ignored for scalar ``max_norm``.
+
+        Returns:
+            Scalar (``float``) or :class:`PerGroup` of standard deviations,
+            ready to feed to a Gaussian noise mechanism.
+
+        Raises:
+            ValueError: ``noise_multiplier`` negative, ``allocation`` unknown,
+                or any per-group bound negative.
+        """
+        if noise_multiplier < 0:
+            raise ValueError(
+                f"noise_multiplier must be non-negative, got {noise_multiplier}"
+            )
+        if allocation not in ("isotropic", "optimal"):
+            raise ValueError(
+                f"allocation must be 'isotropic' or 'optimal', got {allocation!r}."
+            )
+        if isinstance(self.max_norm, PerGroup):
+            if allocation == "isotropic":
+                return noise_multiplier * self.max_norm.effective
+            return _per_group_optimal_stddev(self.max_norm, noise_multiplier)
+        return noise_multiplier * float(self.max_norm)
 
     def _scaled(self, scalar: float) -> ClippedPytree:
         return replace(
