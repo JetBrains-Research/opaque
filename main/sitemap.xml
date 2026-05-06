@@ -2,178 +2,178 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/limitations/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/api/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/api/accounting/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/api/auditing/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/api/clipping/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/api/distributed/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/api/noise/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/api/optimizers/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/api/rng/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/api/sampling/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/api/schedules/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/api/utilities/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/development/liger-kernel-porting-plan/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/getting-started/installation/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/getting-started/quickstart/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/band-mf/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/bisr/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/blt/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/bsr/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/gaussian/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/lambda-cgd/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/tutorials/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/tutorials/accounting_and_calibration/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/tutorials/distributed_training/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/tutorials/dp_sgd_training/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/tutorials/llm_finetuning/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/tutorials/privacy_auditing/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/tutorials/sampling_and_microbatching/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/accounting/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/auditing/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/clipping/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/distributed/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/dp-concepts/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/dp-ftrl/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/huggingface/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/lr-scheduling/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/memory-optimizations/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/noise/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/optimizers/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/rng-key/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/sampling/</loc>
-         <lastmod>2026-05-05</lastmod>
+         <lastmod>2026-05-06</lastmod>
     </url>
 </urlset>

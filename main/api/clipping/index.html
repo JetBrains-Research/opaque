@@ -2159,7 +2159,7 @@ object. It auto-dispatches to the right function based on type:</p>
 <p>Exports the fixed-clipping entry points shared by DP-SGD and DP-FTRL:</p>
 <ul>
 <li>:func:<code>clipped_grad</code> — differentiate + clip + sum the gradients</li>
-<li>:func:<code>per_group</code> — factory for :class:<code>PerGroup</code> groupings</li>
+<li>:func:<code>per_group</code> — factory for :class:<code>opaque.types.PerGroup</code> groupings</li>
 </ul>
 <p>DP-SGD-specific variants (<code>adaptive_clipped_grad</code>, <code>auto_clipped_grad</code>)
 live in :mod:<code>opaque.dpsgd.clipping</code>.</p>
@@ -2168,9 +2168,10 @@ live in :mod:<code>opaque.dpsgd.clipping</code>.</p>
 <li>:mod:<code>opaque.clipping.clipped_fun</code> — clip + sum arbitrary functions</li>
 <li>:mod:<code>opaque.clipping.pytree</code> — <code>clip_pytree</code>, <code>auto_scale_pytree</code></li>
 </ul>
-<p>Data classes (<code>ClipState</code>, <code>FixedClipState</code>, <code>ClippedGradAux</code>,
-<code>PerGroup</code>) are importable from this module for type annotations but are
-intentionally not part of <code>__all__</code> — the public surface is functional.</p>
+<p>The clipping marker state <code>FixedClipState</code> is importable from
+:mod:<code>opaque.clipping.types</code> for type annotations.  The cross-cutting
+DP types (<code>ClipState</code> base, <code>ClippedPytree</code>, <code>PerGroup</code>,
+<code>MaxNorm</code>, <code>clipped()</code> factory) live in :mod:<code>opaque.types</code>.</p>
 <p>To synchronize clipping state across distributed ranks, use
 :func:<code>opaque.distributed.sync</code>; it auto-dispatches by type to the right
 handler without you having to import it by name.</p>
@@ -2331,7 +2332,7 @@ returned <code>ClippedPytree.max_norm</code> metadata for noise calibration.</p>
 
     <div class="doc doc-contents ">
             <p class="doc doc-class-bases">
-              Bases: <code><span title="opaque.clipping.types.ClipState">ClipState</span></code></p>
+              Bases: <code><span title="opaque.types.ClipState">ClipState</span></code></p>
 
 
         <p>Immutable state for adaptive gradient clipping.</p>
@@ -2730,7 +2731,7 @@ semantics:</p>
 
     <div class="doc doc-contents ">
             <p class="doc doc-class-bases">
-              Bases: <code><span title="opaque.clipping.types.ClipState">ClipState</span></code></p>
+              Bases: <code><span title="opaque.types.ClipState">ClipState</span></code></p>
 
 
         <p>Marker state for AUTO-S automatic clipping.</p>
@@ -2856,7 +2857,7 @@ takes <code>state</code> as an explicit parameter and returns
                 <code>initial_clipping_norm</code>
             </td>
             <td>
-                  <code><span title="float">float</span> | <span title="opaque.clipping.per_group.PerGroup">PerGroup</span></code>
+                  <code><span title="float">float</span> | <span title="opaque.types.PerGroup">PerGroup</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -3938,7 +3939,7 @@ is scaled and aggregated.</p>
                 <code>R</code>
             </td>
             <td>
-                  <code><span title="float">float</span> | <span title="opaque.clipping.per_group.PerGroup">PerGroup</span></code>
+                  <code><span title="float">float</span> | <span title="opaque.types.PerGroup">PerGroup</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -4369,7 +4370,7 @@ is absorbed into the optimizer learning rate.</p>
                 <code>R</code>
             </td>
             <td>
-                  <code><span title="float">float</span> | <span title="opaque.clipping.per_group.PerGroup">PerGroup</span></code>
+                  <code><span title="float">float</span> | <span title="opaque.types.PerGroup">PerGroup</span></code>
             </td>
             <td>
               <div class="doc-md-description">
