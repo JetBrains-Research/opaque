@@ -178,6 +178,56 @@ fraction query. Returns an `AdaClip` process composable with
 step = acc.poisson(acc.adaclip(acc.gaussian(0.5), fraction_noise_std=0.05, expected_batch_size=256), 0.01)
 ```
 
+### `second_moment(inner, *, sensitivity, max_column_norm=None, first_moment_overhead=sqrt(3/2)) -> DpProcess`
+
+Accounts for the additional privacy cost of releasing **both** gradients and
+squared gradients in the same step (used with private adaptive optimizers such
+as Adam and RMSProp). The shared noise budget is split optimally between the
+two streams.
+
+Accepted inners:
+
+| `inner` | Use case |
+|---------|----------|
+| `gaussian(nm)` | DP-SGD with fixed or AUTO-S clipping |
+| `adaclip(gaussian(nm))` | DP-SGD with adaptive clipping (quantile overhead included) |
+| `band_mf(nm)`, `blt(nm)`, `lambda_cgd(nm)`, `bisr(nm)` | DP-FTRL (MF noise) |
+
+- `inner`: Base mechanism.
+- `sensitivity` (float): Clipped-gradient sensitivity (`clipping_norm / batch_size` for mean reduction).
+- `max_column_norm` (float | None): Max column norm of the first-moment strategy matrix. Defaults to `inner.sensitivity` for MF inners, `1.0` for Gaussian / AdaClip.
+- `first_moment_overhead` (float): Overhead multiplied onto the first-stream sensitivity. Default `sqrt(3/2)` (tight for d ≥ 2 add/remove DP).
+
+```python
+import opaque.accounting as acc
+
+# DP-SGD with fixed clipping
+step = acc.poisson(
+    acc.second_moment(acc.gaussian(0.8), sensitivity=1.0 / batch_size),
+    sample_rate=batch_size / dataset_size,
+)
+
+# DP-SGD with adaptive clipping (quantile noise folded in)
+step = acc.poisson(
+    acc.second_moment(
+        acc.adaclip(acc.gaussian(0.8), fraction_noise_std=0.05, expected_batch_size=256),
+        sensitivity=1.0 / batch_size,
+    ),
+    sample_rate=batch_size / dataset_size,
+)
+
+# DP-FTRL with BandMF
+from opaque.dpftrl.noise import band_mf_strategy
+strategy = band_mf_strategy(n_steps=1000, bands=10)
+proc = acc.cyclic_poisson(
+    acc.second_moment(
+        acc.band_mf(1.0, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups),
+        sensitivity=1.0 / batch_size,
+    ),
+    sample_rate=batch_size / dataset_size,
+)
+```
+
 ### `eps_delta(epsilon, delta=0.0) -> DpProcess`
 
 Fixed (epsilon, delta)-DP guarantee. Useful for composing an external mechanism
@@ -195,6 +245,18 @@ total = external | (acc.poisson(acc.gaussian(0.5), 0.01) * 1000)
 
 Identity mechanism (zero privacy loss). Acts as the identity element in
 composition: `identity() | a` returns `a`.
+
+### `nonprivate() -> DpProcess`
+
+Non-private mechanism (ε=∞, δ=0). Useful as a baseline or for training without
+a privacy guarantee. `second_moment(inner)` and all Poisson-family amplifications
+handle `nonprivate()` inner transparently (zero privacy cost).
+
+```python
+step = acc.poisson(acc.nonprivate(), sample_rate=0.01)
+training = step * 1000
+# training.epsilon_at(1e-5) == inf
+```
 
 ---
 
