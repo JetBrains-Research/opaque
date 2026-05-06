@@ -67,9 +67,13 @@ Visit <http://localhost:8000> to view the docs.
 ## Verify Installation
 
 ```python
-import opaque.core
-import opaque.dpsgd
+from importlib.metadata import version
 
-print("opaque.core version:", opaque.core.__version__)
-print("opaque.dpsgd version:", opaque.dpsgd.__version__)
+print("opaque-core version:", version("opaque-core"))
+print("opaque-dpsgd version:", version("opaque-dpsgd"))
 ```
+
+`opaque` itself is a [PEP 420] namespace with no top-level Python code, so
+query the installed distributions individually.
+
+[PEP 420]: https://peps.python.org/pep-0420/

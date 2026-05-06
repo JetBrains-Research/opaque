@@ -7,7 +7,7 @@ across different devices (CUDA, MPS, CPU).
 import pytest
 import torch
 
-from opaque.core.profiling import (
+from opaque.profiling import (
     MemoryStats,
     StepMetrics,
     StepTimer,
@@ -201,7 +201,7 @@ class TestTrainingProfiler:
             peak = next(peaks)
             return MemoryStats(peak_gb=peak)
 
-        monkeypatch.setattr("opaque.core.profiling.memory.get_memory_stats", fake_stats)
+        monkeypatch.setattr("opaque.profiling.memory.get_memory_stats", fake_stats)
 
         profiler, _ = profiler.mark("a")
         profiler, _ = profiler.mark("b")

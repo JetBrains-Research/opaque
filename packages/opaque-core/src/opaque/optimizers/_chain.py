@@ -33,7 +33,7 @@ from opaque.types import ClippedPytree
 from opaque.types import NoisedPytree
 
 from opaque.types import SecondMomentNoiseOutput
-from opaque.core.pytree import tree_map
+from opaque.pytree import tree_map
 
 
 _LR = float | Callable[[int], float]
@@ -89,7 +89,7 @@ def _iter_leaves(tree: Any):
             yield from _iter_leaves(v)
         return
     # Non-tensor leaves are silently ignored — same convention as
-    # ``opaque.core.pytree.tree_leaves``.
+    # ``opaque.pytree.tree_leaves``.
 
 
 def make_optimizer_chain(

@@ -33,4 +33,4 @@ from opaque.dpsgd.sampling import TruncatedPoissonSampler
 
 All algorithm-agnostic primitives (fixed clipping, Poisson sampling,
 RNG keys, pytree / distributed / profiling helpers) live in
-[`opaque.core`](../opaque-core/README.md).
+[`opaque-core`](../opaque-core/README.md).

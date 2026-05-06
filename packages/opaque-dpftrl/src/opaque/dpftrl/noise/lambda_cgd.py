@@ -29,7 +29,7 @@ from typing import Any
 
 import torch
 
-from opaque.core.pytree import tree_map
+from opaque.pytree import tree_map
 from opaque.random import RngKey, generator_from_key
 from opaque.random import fold_in as rng_fold_in
 

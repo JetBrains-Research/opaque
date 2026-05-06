@@ -32,7 +32,7 @@ from typing import Any, NamedTuple, Union
 
 import torch
 
-from opaque.core.pytree import tree_map
+from opaque.pytree import tree_map
 from opaque.random import RngKey
 
 

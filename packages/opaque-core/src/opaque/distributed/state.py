@@ -21,7 +21,7 @@ from typing import Any
 import torch
 import torch.distributed as dist
 
-from opaque.core.pytree import tree_map
+from opaque.pytree import tree_map
 
 from .collectives import all_reduce_, get_world_size, is_distributed
 
@@ -230,14 +230,13 @@ def register_sync_type(state_type: type, sync_fn: Callable[[Any], Any]) -> None:
 def _ensure_builtin_sync_types_loaded() -> None:
     """Import internal registrations the first time a dispatch misses.
 
-    Core clipping registers itself synchronously; the performance profiler
-    registers itself only when :mod:`opaque.core` is installed, which
-    is a soft dependency — missing it must not break ``sync()``.
+    Clipping registers itself synchronously; the performance profiler is
+    a soft dependency — missing it must not break ``sync()``.
     """
     import opaque.clipping.distributed  # noqa: F401
 
     try:
-        import opaque.core.profiling.distributed  # noqa: F401
+        import opaque.profiling.distributed  # noqa: F401
     except ImportError:
         pass
 
