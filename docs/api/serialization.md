@@ -17,6 +17,24 @@ are supported alongside ``torch.Tensor``.
 
 Domain pages with examples: [Optimizers](optimizers.md), [Accounting](accounting.md).
 
+## API surface (no per-type `state_dict()`)
+
+Opaque centralises (de)serialisation in :func:`opaque.serialization.state_dict`
+and :func:`opaque.serialization.from_state_dict`.  Registered types (including
+:class:`~opaque.accounting._accountant.Accountant`) are written and restored
+**only** through these module-level functions — there are no instance methods
+named ``state_dict`` / ``from_state_dict`` on those classes.  Callers should
+always use::
+
+    from opaque.serialization import from_state_dict, state_dict
+
+    flat = state_dict(acct)
+    acct2 = from_state_dict(Accountant(), flat)
+
+The same pattern applies to clip state, noise state, functional optimiser
+state, and any other value that flows through the DP training loop.  Custom
+types may register handlers with :func:`opaque.serialization.register_serialization_type`.
+
 ::: opaque.serialization
     options:
       show_source: true
