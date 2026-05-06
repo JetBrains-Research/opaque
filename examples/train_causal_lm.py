@@ -82,6 +82,7 @@ from opaque.profiling import (
     reset_peak_memory,
 )
 from opaque.random import key, fold_in
+from opaque.dpftrl.sampling import BallsInBinsSampler
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.dpsgd.sampling import TruncatedPoissonSampler
 from opaque.distributed import local_shard
@@ -491,10 +492,12 @@ def parse_args():
     dp_group.add_argument(
         "--sampler",
         type=str,
-        choices=["poisson", "truncated_poisson"],
+        choices=["poisson", "truncated_poisson", "balls_in_bins"],
         default="poisson",
-        help="Sampling strategy: poisson (standard, variable batch size) "
-        "or truncated_poisson (batch capped at --max-batch-size for clipped memory)",
+        help="Sampling strategy: poisson (standard, variable batch size), "
+        "truncated_poisson (batch capped at --max-batch-size), or "
+        "balls_in_bins (exact once-per-epoch — partitions the dataset into "
+        "num_bins=expected_steps_per_epoch bins).",
     )
     dp_group.add_argument(
         "--max-batch-size",
@@ -516,6 +519,16 @@ def parse_args():
         type=float,
         default=3.0,
         help="Support half-width in sigma units for rectified/truncated Gaussian (ignored for standard gaussian)",
+    )
+    dp_group.add_argument(
+        "--second-moment",
+        type=str,
+        default="none",
+        help="Wrap clipping + accounting in private-second-moment: 'none' "
+        "(default; first-moment-only release), 'auto' (enable for optimizers "
+        "that consume noisy_squared_grads — adam/adamw/ademamix/rmsprop/"
+        "adafactor/radam/adagrad), or an explicit float >1.0 for the "
+        "first-moment overhead (default sqrt(3/2) when enabled).",
     )
     dp_group.add_argument(
         "--per-group-clipping",
@@ -993,20 +1006,27 @@ def main():
     # In parallel Poisson mode each rank samples independently from the full dataset,
     # so we divide by world_size to keep the global expected batch size = args.batch_size.
     use_truncated_poisson = args.sampler == "truncated_poisson"
+    use_balls_in_bins = args.sampler == "balls_in_bins"
     max_batch_size = args.max_batch_size or args.batch_size
     sample_rate = args.batch_size / global_train_size
-    if use_parallel_poisson:
+    if use_parallel_poisson and not use_balls_in_bins:
+        # BallsInBins partitions the dataset deterministically per epoch;
+        # each rank works the same shard, so the parallel-Poisson
+        # rate-scaling does not apply.
         sample_rate /= world_size
 
     expected_steps_per_epoch = int(global_train_size / args.batch_size)
 
-    print("\nPoisson sampling setup:")
-    if use_parallel_poisson:
+    print("\nSampling setup:")
+    if use_parallel_poisson and not use_balls_in_bins:
         print(f"  Mode: parallel_poisson (no shard, world_size={world_size})")
     print(f"  Sampler: {args.sampler}")
     if use_truncated_poisson:
         print(f"  Max batch size (cap): {max_batch_size}")
-    print(f"  Sample rate (per rank): {sample_rate:.6f}")
+    if use_balls_in_bins:
+        print(f"  Bins per epoch: {expected_steps_per_epoch}")
+    else:
+        print(f"  Sample rate (per rank): {sample_rate:.6f}")
     print(f"  Expected global batch size: {args.batch_size}")
     print(f"  Expected steps per epoch: ~{expected_steps_per_epoch}")
     print(f"Eval batches: {len(eval_loader)}")
@@ -1136,8 +1156,41 @@ def main():
     print(f"  Epochs: {args.num_epochs}")
     print(f"  Expected total steps: ~{args.num_epochs * expected_steps_per_epoch}")
 
+    # Resolve --second-moment flag to the bool/float overhead value
+    # consumed by clipped_grad / acc.second_moment.
+    _SECOND_MOMENT_OPTIMIZERS = frozenset(
+        {"adam", "adamw", "ademamix", "rmsprop", "adafactor", "radam", "adagrad"}
+    )
+    second_moment_arg: bool | float
+    if args.second_moment == "none":
+        second_moment_arg = False
+    elif args.second_moment == "auto":
+        second_moment_arg = args.optimizer in _SECOND_MOMENT_OPTIMIZERS
+    else:
+        try:
+            second_moment_arg = float(args.second_moment)
+        except ValueError as e:
+            raise ValueError(
+                f"--second-moment must be 'none', 'auto', or a float >1.0, "
+                f"got {args.second_moment!r}"
+            ) from e
+        if second_moment_arg <= 1.0:
+            raise ValueError(
+                f"--second-moment overhead must be >1.0, got {second_moment_arg}"
+            )
+    use_second_moment = bool(second_moment_arg)
+    if use_second_moment and isinstance(clip_norm, PerGroup):
+        raise ValueError(
+            "--second-moment is incompatible with --per-group-clipping: the "
+            "joint first+second-moment allocation has not been validated for "
+            "PerGroup max_norm."
+        )
+
     # Create gradient function based on clipping mode.
     if args.clipping_mode == "adaptive":
+        # ``second_moment`` flows through ``**clipped_grad_kwargs`` to the
+        # inner ``clipped_grad`` call; the adaptive threshold update reads
+        # the first-stream gradient norms regardless of paired-stream output.
         grad_fn, clip_state = adaptive_clipped_grad(
             per_example_loss_fn,
             argnums=0,
@@ -1149,6 +1202,7 @@ def main():
             return_aux=True,
             key=key(args.seed),
             normalize_by=args.batch_size,
+            second_moment=second_moment_arg,
         )
     elif args.clipping_mode == "auto":
         grad_fn, clip_state = auto_clipped_grad(
@@ -1160,6 +1214,7 @@ def main():
             normalize_by=args.batch_size,
             microbatch_size=args.microbatch_size,
             return_aux=True,
+            second_moment=second_moment_arg,
         )
     else:
         grad_fn, clip_state = clipped_grad(
@@ -1170,6 +1225,7 @@ def main():
             normalize_by=args.batch_size,
             microbatch_size=args.microbatch_size,
             return_aux=True,
+            second_moment=second_moment_arg,
         )
 
     # Calibrate noise multiplier from target privacy budget
@@ -1200,9 +1256,38 @@ def main():
         mechanism = lambda nm, ebs=args.batch_size, ng=_num_groups: acc.adaclip(
             _base_mechanism(nm), expected_batch_size=ebs, num_groups=ng
         )
+    if use_second_moment:
+        # second_moment(gaussian(nm)): joint sensitivity = input_sensitivity ·
+        # c1 · overhead.  We pass input_sensitivity=1.0 because the runtime
+        # expresses noise_stddev as nm · max_norm (mechanism-relative
+        # sensitivity is 1).  The accountant scales effective_nm by 1/√(3/2)
+        # internally.
+        _bare_mechanism = mechanism
+        _overhead = (
+            second_moment_arg if isinstance(second_moment_arg, float) else None
+        )
+        if _overhead is not None:
+            mechanism = lambda nm, oh=_overhead: acc.second_moment(
+                _bare_mechanism(nm), sensitivity=1.0, first_moment_overhead=oh,
+            )
+        else:
+            mechanism = lambda nm: acc.second_moment(
+                _bare_mechanism(nm), sensitivity=1.0,
+            )
 
     _unamplified = mechanism
-    if use_truncated_poisson:
+    # BallsInBins returns total multi-epoch cost; the other amplifications
+    # are per-step.  We track per_step_amplification=False for BnB so the
+    # calibration loop does not multiply by total_steps below.
+    per_step_amplification = True
+    if use_balls_in_bins:
+        per_step_amplification = False
+        mechanism = lambda nm: acc.balls_in_bins(
+            _unamplified(nm),
+            num_bins=expected_steps_per_epoch,
+            num_epochs=args.num_epochs,
+        )
+    elif use_truncated_poisson:
         mechanism = lambda nm: acc.truncated_poisson(
             _unamplified(nm),
             sample_rate=sample_rate,
@@ -1226,21 +1311,39 @@ def main():
         )
     else:
         print("\nCalibrating privacy parameters...")
-        if use_parallel_poisson:
+        if use_balls_in_bins:
+            print(
+                f"  Accounting: balls_in_bins "
+                f"(num_bins={expected_steps_per_epoch}, num_epochs={args.num_epochs}; "
+                "returns total cost)"
+            )
+        elif use_parallel_poisson:
             print(f"  Accounting: parallel_poisson (world_size={world_size})")
         print(f"  Noise mechanism: {args.noise_mechanism}")
         if args.noise_mechanism == "truncated_gaussian":
             print(f"  Noise radius: {args.noise_radius}σ")
+        if use_second_moment:
+            print(
+                f"  Second-moment release: enabled "
+                f"(overhead={second_moment_arg if isinstance(second_moment_arg, float) else 'sqrt(3/2)'})"
+            )
         print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
         print(f"  Total steps: {total_steps}")
-        print(f"  Sample rate: {sample_rate:.6f}")
+        if not use_balls_in_bins:
+            print(f"  Sample rate: {sample_rate:.6f}")
         print(f"  Target: ε={args.target_epsilon}, δ={args.target_delta:.2e}")
         print("  (This may take 1-3 minutes...)")
 
         start_time = time.time()
+        # BallsInBins returns total multi-epoch cost; do not compose further.
+        calibration_target = (
+            (lambda nm: mechanism(nm))
+            if not per_step_amplification
+            else (lambda nm: mechanism(nm) * total_steps)
+        )
         calibration = cal.calibrate(
             cal.epsilon_budget(args.target_epsilon, delta=args.target_delta),
-            lambda nm: mechanism(nm) * total_steps,
+            calibration_target,
             param_min=args.calibration_min,
             param_max=args.calibration_max,
             tolerance=args.calibration_tolerance,
@@ -1358,6 +1461,11 @@ def main():
     profiler, _ = profiler.mark("training_start")
     print_memory(device, "Before training")
 
+    # BallsInBins: the mechanism encodes the *total* multi-epoch cost; book
+    # it once up front, then never compose per step (it would double-count).
+    if not per_step_amplification:
+        accounting |= mechanism(noise_multiplier)
+
     # Step-0 eval: log baseline metrics before any training
     initial_eval_loss = eval_loss(trainable_params)
     initial_epsilon = accounting.epsilon_at(args.target_delta)
@@ -1380,7 +1488,18 @@ def main():
         print(f"Creating {args.sampler} sampler...")
 
         # Create sampler for this epoch
-        if use_truncated_poisson:
+        if use_balls_in_bins:
+            # BnB requires the same per-example bin assignment across all
+            # epochs (Lemma 3.2 of Choquette-Choo et al. 2024) — fold in
+            # only the rank, not the epoch.  num_epochs=None: yield
+            # indefinitely; the outer loop bounds the epoch count.
+            epoch_sampler = BallsInBinsSampler(
+                train_dataset,
+                num_bins=expected_steps_per_epoch,
+                num_epochs=None,
+                key=fold_in(key(args.seed), rank),
+            )
+        elif use_truncated_poisson:
             epoch_sampler = TruncatedPoissonSampler(
                 train_dataset,
                 sample_rate=sample_rate,
@@ -1409,7 +1528,10 @@ def main():
             (input_ids,) = batch
 
             # === Accounting (data-independent, before execution) ===
-            accounting |= mechanism(noise_multiplier)
+            # BallsInBins: total cost is booked once up front, no per-step
+            # composition.  All other amplifications compose per step.
+            if per_step_amplification:
+                accounting |= mechanism(noise_multiplier)
 
             batch_size = len(input_ids)
 
@@ -1585,12 +1707,22 @@ def main():
 
     final_epsilon = accounting.epsilon_at(args.target_delta)
     print("\nPrivacy:")
-    if use_truncated_poisson:
+    if use_balls_in_bins:
+        print(
+            f"  Accounting: balls_in_bins (num_bins={expected_steps_per_epoch}, "
+            f"num_epochs={args.num_epochs})"
+        )
+    elif use_truncated_poisson:
         print(
             f"  Accounting: truncated_poisson (cap={max_batch_size}, n={global_train_size})"
         )
     elif use_parallel_poisson:
         print(f"  Accounting: parallel_poisson (world_size={world_size})")
+    if use_second_moment:
+        print(
+            f"  Second-moment release: enabled "
+            f"(overhead={second_moment_arg if isinstance(second_moment_arg, float) else 'sqrt(3/2)'})"
+        )
     print(
         f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})"
     )
