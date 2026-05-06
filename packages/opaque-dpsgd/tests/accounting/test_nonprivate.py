@@ -6,9 +6,11 @@ import pytest
 
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
+from opaque.accounting import dp_process_from_state_dict
 from opaque.accounting._base import DpProcess
 from opaque.accounting.mechanisms.types import Identity, NonPrivate
 from opaque.dpsgd.accounting.mechanisms._gaussian import Gaussian
+from opaque.serialization import state_dict
 
 # ── NonPrivate dataclass tests ──────────────────────────────────────
 
@@ -233,12 +235,12 @@ class TestNonPrivateSerialization:
 
     def test_state_dict(self):
         n = acc.nonprivate()
-        d = n.state_dict()
+        d = state_dict(n)
         assert d["type"] == "NonPrivate"
 
     def test_round_trip(self):
         n = acc.nonprivate()
-        d = n.state_dict()
-        restored = DpProcess.from_state_dict(d)
+        d = state_dict(n)
+        restored = dp_process_from_state_dict(dict(d))
         assert isinstance(restored, NonPrivate)
         assert restored.epsilon_at(1e-5) == math.inf

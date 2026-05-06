@@ -491,11 +491,18 @@ eps = training.epsilon_at(1e-5)   # Cached with maxsize=16
 
 ## Serialization
 
-All processes implement `state_dict()` for JSON-friendly serialization.
+Processes checkpoint as a **flat** ``dict[str, Any]`` (string keys with dotted
+prefixes for nested composition), via :func:`opaque.serialization.state_dict`
+and :func:`opaque.accounting.dp_process_from_state_dict` (or
+:class:`opaque.serialization.from_state_dict` with any registered process as
+template — the per-type handler ignores template content).
 
 ```python
+from opaque.serialization import state_dict
+import opaque.dpsgd.accounting as dpsgd_acc
+
 step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), 0.01)
-state = step.state_dict()
+flat = state_dict(step)
 ```
 
 ---
@@ -548,16 +555,15 @@ for i in range(num_steps):
 ### Serialization
 
 ```python
-state = acct.state_dict()
-# Save state to disk (JSON-serializable dict)...
+from opaque.accounting import Accountant, accountant_from_state_dict
+from opaque.serialization import state_dict
 
-acct = Accountant.from_state_dict(state)
-# Or equivalently (torch-style alias):
-acct = Accountant.load_state_dict(state)
+flat = state_dict(acct)
+acct = accountant_from_state_dict(dict(flat))
 ```
 
-`from_state_dict` restores the accumulated process tree but not the budget.
-Reattach a budget after loading if needed.
+``process.*`` keys hold the composed tree; ``budget.*`` keys are present when
+the accountant was constructed with a budget.
 
 ---
 

@@ -19,12 +19,10 @@ the second-moment overhead is then applied on that effective Gaussian.
 This composition is valid because the threshold-quantile and
 gradient/squared-gradient releases use independent randomness.
 
-**Optional runtime imports:** ``opaque-accounting`` does not declare a
-packaging dependency on ``opaque-dpsgd`` / ``opaque-dpftrl``.  At import
-time this module stays free of those packages; on first use of
-``second_moment`` / :meth:`SecondMoment.pld` it tries to import concrete
-mechanism classes for ``match`` / ``isinstance`` guards.  Install
-the relevant algorithm package when using that family's inners.
+**Packaging:** ``opaque-accounting`` depends on ``opaque-core`` for checkpoint
+serialization. Runtime imports of concrete mechanism classes inside
+``match`` / ``isinstance`` may still use optional ``opaque-dpsgd`` /
+``opaque-dpftrl`` when installed.
 """
 
 from __future__ import annotations

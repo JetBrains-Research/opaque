@@ -48,12 +48,14 @@ Three rules (rule 1 enforced in CI; rules 2 and 3 are design invariants):
    (`opaque.dpsgd.noise.gaussian`, `opaque.dpftrl.sampling.b_min_sep`, …)
    and that's intentional. This matches the convention of `zope.*`,
    `google.cloud.*`, `azure.*`, `sphinxcontrib.*`.
-3. **`opaque.accounting` stays a standalone package.** It is not split into
+3. **`opaque.accounting` is its own distribution.** It is not split into
    `opaque.dpsgd.accounting` / `opaque.dpftrl.accounting`: the PLD library is a
-   general-purpose primitive consumed by (but not exclusive to) MF. The
-   Rust/PyO3 extension is mounted at `opaque.accounting.opaque_accounting`
-   (the `.so` filename matches the Rust crate) and aliased as `_native` in
-   the package's `__init__.py` so internal code can keep using the short name.
+   general-purpose primitive consumed by (but not exclusive to) MF. It depends
+   on `opaque-core` so checkpoints can use the same flat :mod:`opaque.serialization`
+   format as training state. The Rust/PyO3 extension is mounted at
+   `opaque.accounting.opaque_accounting` (the `.so` filename matches the Rust
+   crate) and aliased as `_native` in the package's `__init__.py` so internal
+   code can keep using the short name.
 
 ## Pull requests
 

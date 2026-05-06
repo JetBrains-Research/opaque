@@ -23,9 +23,10 @@ from opaque.accounting._budgets import (
     EpsilonBudget,
     RiskBudget,
 )
+from opaque.accounting._process_flat import load_dp_process
 from opaque.accounting.mechanisms.types import Identity
 
-__all__ = ["Accountant"]
+__all__ = ["Accountant", "accountant_from_state_dict", "accountant_state_dict"]
 
 
 class Accountant:
@@ -191,44 +192,36 @@ class Accountant:
         achieved = self._budget.evaluate(self._process)
         return achieved > self._budget.value
 
-    # -- Serialization -------------------------------------------------------
 
-    def state_dict(self) -> dict[str, Any]:
-        """Serialize accountant state to a plain dict.
+def accountant_state_dict(acct: Accountant) -> dict[str, Any]:
+    """Flat checkpoint dict for *acct* (``process.*`` and optional ``budget.*`` keys).
 
-        Returns a JSON-compatible dictionary that captures the full process
-        tree.  Restore with :meth:`from_state_dict`.
+    Prefer :func:`opaque.serialization.state_dict` on *acct* (same wire format).
+    """
+    from opaque.serialization import state_dict as opaque_state_dict
 
-        Example::
+    out: dict[str, Any] = {}
+    proc_flat = opaque_state_dict(acct._process)
+    for k, v in proc_flat.items():
+        out[f"process.{k}"] = v
+    if acct._budget is not None:
+        b = acct._budget
+        out["budget.type"] = type(b).__name__
+        for f in dataclasses.fields(b):
+            out[f"budget.{f.name}"] = getattr(b, f.name)
+    return out
 
-            state = acct.state_dict()
-            # ... save to disk, send over network, etc.
-            acct2 = Accountant.from_state_dict(state)
-            assert acct2.epsilon_at(1e-5) == acct.epsilon_at(1e-5)
-        """
-        state: dict[str, Any] = {"process": self._process.state_dict()}
-        if self._budget is not None:
-            budget_data = dataclasses.asdict(self._budget)
-            budget_data["type"] = type(self._budget).__name__
-            state["budget"] = budget_data
-        return state
 
-    @classmethod
-    def from_state_dict(cls, state: dict[str, Any]) -> Accountant:
-        """Restore an Accountant from a serialized state dict.
-
-        Args:
-            state: Dictionary produced by :meth:`state_dict`.
-
-        Returns:
-            Reconstructed Accountant with process and budget restored.
-        """
-        budget = None
-        if "budget" in state:
-            budget = _deserialize_budget(state["budget"])
-        acct = cls(budget=budget)
-        acct._process = DpProcess.from_state_dict(state["process"])
-        return acct
+def accountant_from_state_dict(state: dict[str, Any]) -> Accountant:
+    """Restore :class:`Accountant` from :func:`accountant_state_dict` / :func:`opaque.serialization.state_dict` output."""
+    budget = None
+    if any(k.startswith("budget.") for k in state):
+        bflat = {k[7:]: v for k, v in state.items() if k.startswith("budget.")}
+        budget = _deserialize_budget(bflat)
+    acct = Accountant(budget=budget)
+    proc_flat = {k[8:]: v for k, v in state.items() if k.startswith("process.")}
+    acct._process = load_dp_process(dict(proc_flat))
+    return acct
 
 
 _BUDGET_REGISTRY: dict[str, type] = {
@@ -247,3 +240,16 @@ def _deserialize_budget(data: dict[str, Any]) -> Budget:
     if budget_cls is None:
         raise ValueError(f"Unknown budget type: {type_name}")
     return budget_cls(**data)
+
+
+def _register_accountant_serialization() -> None:
+    from opaque.serialization import register_serialization_type
+
+    register_serialization_type(
+        Accountant,
+        accountant_state_dict,
+        lambda _template, sd: accountant_from_state_dict(dict(sd)),
+    )
+
+
+_register_accountant_serialization()

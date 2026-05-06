@@ -448,10 +448,13 @@ accumulated process exceeds the budget.
 ### Serialization
 
 ```python
-state = acct.state_dict()
-# Save state to disk...
+from opaque.accounting import Accountant, accountant_from_state_dict
+from opaque.serialization import state_dict
 
-acct = Accountant.from_state_dict(state)
+flat = state_dict(acct)
+# ... save flat (JSON-friendly values) ...
+
+acct = accountant_from_state_dict(dict(flat))
 ```
 
 ## Discretization
