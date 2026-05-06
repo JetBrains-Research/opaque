@@ -34,6 +34,30 @@ differential privacy.
 - **`AutoClippedGradAux`** — Inherits `ClippedGradAux` fields with AUTO-S semantics: `grad_norms` (pre-scale), `clipped_grad_norms` (post-scale, bounded by R), `clipping_rate` (fraction with ‖g‖ > R), `loss_values`, `loss_aux`, `group_norms`, `batch_size`.
 - **`AutoClippedFunAux`** — Inherits `ClippedFunAux` fields with AUTO-S semantics: `norms` (pre-scale), `clipped_norms` (post-scale, bounded by R), `clipping_rate` (fraction with ‖v‖ > R), `values`, `value_aux`, `group_norms`, `batch_size`.
 
+### Pytree Wrappers
+
+- **`ClippedPytree`** — Wraps a pytree of clipped gradients with calibration metadata (`max_norm`). Carries a `max_norm` which is either a scalar `float` or a `PerGroup` for per-parameter-group clipping.
+
+  **`noise_stddev_for(*, noise_multiplier, allocation="optimal") -> float | PerGroup`**
+  Returns the noise standard deviation that `gaussian_noise(noise_multiplier)` would apply to this
+  clipped pytree.
+
+  - For scalar `max_norm`: returns `noise_multiplier * max_norm`.
+  - For `PerGroup` `max_norm` with `allocation="optimal"` (default): returns `PerGroup` of per-group
+    standard deviations `σᵢ = noise_multiplier · √(Cᵢ · ΣⱼCⱼ)` (MSE-optimal Mahalanobis allocation).
+  - For `PerGroup` with `allocation="isotropic"`: returns scalar `noise_multiplier * max_norm.effective`.
+
+  Privacy accounting is `gaussian(noise_multiplier)` regardless of `allocation` — per-group allocation
+  costs nothing in the accountant because the Mahalanobis constraint is satisfied with equality.
+
+  ```python
+  grads, state = grad_fn(params, x, state=clip_state)
+  stddev = grads.noise_stddev_for(noise_multiplier=0.8)
+  noise_fn, noise_state = gaussian_noise(noise_multiplier=0.8, ...)
+  ```
+
+- **`NoisedPytree`** — Subclass of `ClippedPytree` that also carries a `noise_stddev` field (scalar or `PerGroup`). Returned by all noise functions.
+
 ### Distributed Sync Helpers
 
 Use `sync()` from `opaque.distributed` to synchronize any clipping state or aux
