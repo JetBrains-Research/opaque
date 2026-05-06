@@ -18,7 +18,7 @@ import torch.multiprocessing as mp
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
-from opaque.clipping.types import clipped
+from opaque.types import clipped
 
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad

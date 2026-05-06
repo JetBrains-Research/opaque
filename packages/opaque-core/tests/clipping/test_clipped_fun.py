@@ -4,7 +4,7 @@ import pytest
 import torch
 from torch.func import grad
 
-from opaque.clipping.types import ClippedPytree
+from opaque.types import ClippedPytree
 
 from opaque.clipping.clipped_fun import clipped_fun
 from opaque.clipping.pytree import clip_pytree

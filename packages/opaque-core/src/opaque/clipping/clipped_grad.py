@@ -9,7 +9,7 @@ from typing import Any
 import torch
 from torch.func import grad_and_value
 
-from opaque.clipping.types import clipped
+from opaque.types import clipped
 
 from opaque.clipping._helpers import (
     batch_size_from_args,
@@ -19,7 +19,7 @@ from opaque.clipping._helpers import (
 )
 from opaque.clipping.clipped_fun import clipped_fun
 from opaque.clipping.types import FixedClipState
-from opaque.clipping.per_group import PerGroup
+from opaque.types import PerGroup
 
 
 @dataclass(frozen=True)
@@ -205,7 +205,7 @@ def clipped_grad(
         """Short-circuit for empty batches: zero grads + empty aux, no vmap."""
         zeros = zero_grads_like(args, argnums_tuple)
         if second_moment:
-            from opaque.core.noise import SecondMomentClippingOutput
+            from opaque.types import SecondMomentClippingOutput
 
             grads = SecondMomentClippingOutput(
                 grads=clipped(zeros, max_norm=output_max_norm),

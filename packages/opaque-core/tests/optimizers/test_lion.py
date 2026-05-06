@@ -7,8 +7,8 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.clipping.types import clipped  # noqa: E402
-from opaque.core.noise import noised  # noqa: E402
+from opaque.types import clipped  # noqa: E402
+from opaque.types import noised  # noqa: E402
 from opaque.optimizers import LionState, lion  # noqa: E402
 
 

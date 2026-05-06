@@ -1,26 +1,21 @@
-"""Generic noise-mechanism base type and the ``NoisedPytree`` wrapper.
+"""Noise math + distributed-sync helpers shared across DP mechanisms.
 
-The ``NoiseState`` abstract base, the ``NoisedPytree`` post-noise wrapper,
-and shared math helpers for joint first+second moment release live here.
-Concrete DP-SGD mechanisms (Gaussian, truncated Gaussian, per-group) live in
-:mod:`opaque.dpsgd.noise`; DP-FTRL matrix-factorization mechanisms in
-:mod:`opaque.dpftrl.noise`.
+Public DP wrapper types (``NoisedPytree``, ``SecondMoment*Output``,
+``NoiseState`` base, ``noised()`` factory) live in
+:mod:`opaque.types`.  This module is internal: it hosts the
+second-moment joint-Gaussian math used by both
+:mod:`opaque.dpsgd.noise.gaussian` and
+:mod:`opaque.dpftrl.noise.dispatcher`, plus the distributed-sync
+glue that all noise mechanisms share.
 """
 
 from __future__ import annotations
 
 import math
-from abc import ABC
-from dataclasses import dataclass, replace
-from typing import Any, NamedTuple
 
-from opaque.clipping.types import (
-    ClippedPytree,
-    MaxNorm,
-    _scale_max_norm,
-    _scale_tensor_leaves,
-)
-from opaque.random import RngKey
+# Imported privately so ``from opaque.core.noise import NoiseState``
+# does not work — :mod:`opaque.types` is the single canonical home.
+from opaque.types import NoiseState as _NoiseState
 
 
 DEFAULT_SECOND_MOMENT_OVERHEAD = math.sqrt(3.0 / 2.0)
@@ -31,114 +26,6 @@ moment analysis.  It multiplies the first-moment sensitivity when the
 noise mechanism also releases a private element-wise squared-gradient
 stream.
 """
-
-
-class NoiseState(ABC):
-    """Base class for noise state.
-
-    All noise functions (Gaussian and matrix factorization) return a state
-    object that inherits from this class, providing a unified interface for
-    step tracking and RNG key management.
-
-    Attributes:
-        _step_counter: Number of noise_fn calls made.
-        _rng_key: Immutable RNG key for deterministic per-step derivation.
-    """
-
-    _step_counter: int
-    """Number of noise_fn calls made."""
-
-    _rng_key: RngKey
-    """Immutable RNG key for deterministic per-step derivation."""
-
-
-# ---------------------------------------------------------------------------
-# NoisedPytree — the post-mechanism counterpart of ClippedPytree
-# ---------------------------------------------------------------------------
-
-
-NoiseStddev = Any
-
-
-def _scale_stddev(stddev: NoiseStddev, factor: float) -> NoiseStddev:
-    if stddev is None:
-        return None
-    return abs(factor) * stddev
-
-
-@dataclass(frozen=True)
-class NoisedPytree(ClippedPytree):
-    """A privatised pytree carrying max-norm and realised noise metadata.
-
-    Extends :class:`opaque.clipping.types.ClippedPytree` with the per-step
-    ``noise_stddev`` recorded by the noise mechanism.  ``max_norm`` still
-    describes the original record-impact max_norm, not a max_norm on the noised
-    output values.
-    """
-
-    noise_stddev: NoiseStddev = None
-
-    def _scaled(self, scalar: float) -> NoisedPytree:
-        return replace(
-            self,
-            pytree=_scale_tensor_leaves(self.pytree, scalar),
-            max_norm=_scale_max_norm(self.max_norm, scalar),
-            noise_stddev=_scale_stddev(self.noise_stddev, scalar),
-        )
-
-
-def noised(
-    pytree: Any,
-    *,
-    max_norm: MaxNorm,
-    noise_stddev: NoiseStddev,
-) -> NoisedPytree:
-    """Manually wrap an already-privatised pytree with noise metadata."""
-    return NoisedPytree(pytree=pytree, max_norm=max_norm, noise_stddev=noise_stddev)
-
-
-# ---------------------------------------------------------------------------
-# SecondMomentNoiseOutput — paired post-noise streams
-# ---------------------------------------------------------------------------
-
-
-class SecondMomentClippingOutput(NamedTuple):
-    """Pre-noise paired-stream input to a noise mechanism.
-
-    Symmetric with :class:`SecondMomentNoiseOutput` but on the
-    *pre-noise* side: where the output pairs two ``NoisedPytree``s
-    (post-noise), this pairs two ``ClippedPytree``s (pre-noise).
-    Each carries its own ``max_norm``.
-
-    Constructed by clipping when the user requests paired-stream
-    output (per-example squaring inside the vmap loop).  The presence
-    of this type at a noise mechanism's input switches the mechanism
-    into paired-stream mode without an explicit constructor flag.
-
-    Attributes:
-        grads: Clipped per-example summed gradients (``Σᵢ gᵢ``).
-        squared_grads: Clipped per-example summed squared gradients
-            (``Σᵢ gᵢ²``).  The squaring happens per-example inside the
-            clipping loop so the second-stream sensitivity is ``C²``
-            (per record) and the streams are jointly DP-accountable.
-    """
-
-    grads: ClippedPytree
-    squared_grads: ClippedPytree
-
-
-class SecondMomentNoiseOutput(NamedTuple):
-    """Noise output with private first and second moment streams.
-
-    Attributes:
-        noisy_grads: Noised clipped gradients for the optimizer's first
-            moment / update direction.
-        noisy_squared_grads: Noised element-wise squared clipped gradients
-            for optimizers with a second moment accumulator.
-    """
-
-    noisy_grads: NoisedPytree
-    noisy_squared_grads: NoisedPytree
 
 
 def resolve_second_moment_overhead(second_moment: bool | float) -> float:
@@ -280,7 +167,7 @@ NOISE_STATE_FIELD_OPS: dict[str, str] = {
 }
 
 
-def assert_rng_key_equal(state: NoiseState, state_name: str) -> None:
+def assert_rng_key_equal(state: _NoiseState, state_name: str) -> None:
     """Assert that a ``NoiseState``'s RNG key seed matches across ranks.
 
     Shared across ``sync_gaussian_noise_state`` (opaque-dpsgd) and
@@ -294,13 +181,7 @@ def assert_rng_key_equal(state: NoiseState, state_name: str) -> None:
 __all__ = [
     "DEFAULT_SECOND_MOMENT_OVERHEAD",
     "NOISE_STATE_FIELD_OPS",
-    "NoiseState",
-    "NoiseStddev",
-    "NoisedPytree",
-    "SecondMomentClippingOutput",
-    "SecondMomentNoiseOutput",
     "assert_rng_key_equal",
-    "noised",
     "resolve_second_moment_overhead",
     "second_moment_joint_sensitivity",
     "second_moment_noise_scale",

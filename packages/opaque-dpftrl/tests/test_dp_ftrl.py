@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset
 
-from opaque.clipping.types import clipped
+from opaque.types import clipped
 
 from opaque.dpftrl.noise import mf_noise
 from opaque.dpftrl.noise import (

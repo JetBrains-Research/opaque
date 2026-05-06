@@ -28,11 +28,11 @@ except ImportError as exc:
 
 import torch
 
-from opaque.clipping.types import ClippedPytree
+from opaque.types import ClippedPytree
 
-from opaque.core.noise import NoisedPytree
+from opaque.types import NoisedPytree
 
-from opaque.core.noise import SecondMomentNoiseOutput
+from opaque.types import SecondMomentNoiseOutput
 from opaque.core.pytree import tree_map
 
 

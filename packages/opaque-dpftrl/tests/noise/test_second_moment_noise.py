@@ -5,11 +5,13 @@ import math
 import pytest
 import torch
 
-from opaque.clipping.types import clipped
-from opaque.core.noise import (
+from opaque.types import clipped
+from opaque.types import (
     NoisedPytree,
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
+)
+from opaque.core.noise import (
     second_moment_joint_sensitivity,
     second_moment_noise_scale,
     second_moment_stddevs,

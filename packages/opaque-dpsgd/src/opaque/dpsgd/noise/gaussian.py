@@ -29,17 +29,19 @@ from typing import Any
 
 import torch
 
-from opaque.clipping.per_group import PerGroup
-from opaque.clipping.types import ClippedPytree
+from opaque.types import PerGroup
+from opaque.types import ClippedPytree
 from opaque.core.noise import (
     DEFAULT_SECOND_MOMENT_OVERHEAD,
     NOISE_STATE_FIELD_OPS,
+    assert_rng_key_equal,
+    second_moment_stddevs,
+)
+from opaque.types import (
     NoiseState,
     NoisedPytree,
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
-    assert_rng_key_equal,
-    second_moment_stddevs,
 )
 from opaque.distributed import (
     is_distributed,

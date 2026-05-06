@@ -7,9 +7,9 @@ For actual multi-device distributed tests, see test_ddp_integration.py.
 import pytest
 import torch
 
-from opaque.clipping.types import ClippedPytree
+from opaque.types import ClippedPytree
 
-from opaque.core.noise import NoisedPytree
+from opaque.types import NoisedPytree
 
 from opaque.distributed import gradients as gradients_module
 

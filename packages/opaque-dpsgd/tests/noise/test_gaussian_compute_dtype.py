@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from opaque.clipping.types import clipped
+from opaque.types import clipped
 
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.random import key

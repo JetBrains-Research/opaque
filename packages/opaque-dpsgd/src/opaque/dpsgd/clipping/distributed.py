@@ -21,7 +21,7 @@ from opaque.distributed import (
     sync_object,
 )
 from opaque.random import fold_in, generator_from_key
-from opaque.clipping.per_group import PerGroup
+from opaque.types import PerGroup
 
 from .adaptive import (
     AdaptiveClippedGradAux,

@@ -62,8 +62,7 @@ except ImportError as exc:
 
 import optree
 
-from opaque.clipping.per_group import PerGroup
-from opaque.core.pytree import TensorPytree
+from opaque.types import PerGroup, TensorPytree
 from opaque.optimizers._bias_correction import resolve_noise_variance
 from opaque.optimizers._chain import make_optimizer_chain
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from opaque.core.noise import NoiseState
+from opaque.types import NoiseState
 from opaque.random import RngKey
 
 from ._engine import MFNoiseState

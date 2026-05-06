@@ -4,9 +4,9 @@ import pytest
 import torch
 
 import opaque.accounting as acc
-from opaque.clipping.types import clipped
+from opaque.types import clipped
 
-from opaque.core.noise import NoisedPytree
+from opaque.types import NoisedPytree
 
 from opaque.dpftrl.noise import (
     BandMfStrategy,

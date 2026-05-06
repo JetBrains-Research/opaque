@@ -5,7 +5,7 @@ import math
 import pytest
 
 from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
-from opaque.clipping.per_group import PerGroup
+from opaque.types import PerGroup
 
 
 def _make_bound(values, normalize_by=1.0):

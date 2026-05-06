@@ -4,11 +4,11 @@ import pytest
 import scipy.stats
 import torch
 
-from opaque.clipping.types import ClippedPytree, clipped
+from opaque.types import ClippedPytree, clipped
 
-from opaque.core.noise import NoisedPytree, noised
+from opaque.types import NoisedPytree, noised
 
-from opaque.clipping.per_group import PerGroup
+from opaque.types import PerGroup
 from opaque.dpsgd.noise.gaussian import GaussianNoiseState, gaussian_noise
 from opaque.random import key
 

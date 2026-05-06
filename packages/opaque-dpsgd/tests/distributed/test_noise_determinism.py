@@ -12,7 +12,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from opaque.clipping.types import clipped
+from opaque.types import clipped
 
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.dpftrl.noise import mf_noise, identity_strategy
