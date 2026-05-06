@@ -148,7 +148,6 @@ _MAX_GRAD_NORM_HF_DEFAULT: float = 1.0
 # of names that ``args.optim`` may take; ``resolve_optimizer_name``
 # is the only validator.
 from opaque.transformers.trainer._optim import (  # noqa: E402
-    canonical_optimizer_names as _canonical_optimizer_names,
     resolve_optimizer_name as _resolve_optimizer_name,
     supported_names as _supported_optimizer_names,
 )

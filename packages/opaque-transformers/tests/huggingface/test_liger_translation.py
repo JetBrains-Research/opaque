@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import logging
 
-import pytest
 
 from opaque.transformers.trainer._liger import translate_liger_config
 
