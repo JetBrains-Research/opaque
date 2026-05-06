@@ -86,28 +86,32 @@ support all amplification types:
 ## Quick comparison
 
 ```python
-import opaque.accounting as acc
+import opaque.accounting as acc            # cross-cutting (balls_in_bins)
+import opaque.dpsgd.accounting as dpsgd_acc # DP-SGD factories
+import opaque.dpftrl.accounting as ftrl_acc # DP-FTRL factories
 from opaque.dpftrl.noise import band_mf_strategy, lambda_cgd_strategy
 
 # --- Independent noise ---
-gauss     = acc.poisson(acc.gaussian(1.0), sample_rate=0.01) * 1000
+gauss     = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01) * 1000
 
 # --- Correlated noise ---
 # BandMF: strategy computes sensitivity and num_groups
 band_s = band_mf_strategy(n_steps=1000, bands=10)
-band   = acc.cyclic_poisson(
-    acc.band_mf(1.0, sensitivity=band_s.sensitivity,
-                num_groups=band_s.num_groups),
+band   = ftrl_acc.cyclic_poisson(
+    ftrl_acc.band_mf(1.0, sensitivity=band_s.sensitivity,
+                     num_groups=band_s.num_groups),
     sample_rate=0.01,
 )
 
-# DP-λCGD: strategy computes sensitivity and gram_matrix
+# DP-λCGD: strategy computes sensitivity and gram_matrix.  ``balls_in_bins``
+# is cross-cutting and lives at ``opaque.accounting`` (it accepts both
+# Gaussian and MF inners).
 lcgd_s = lambda_cgd_strategy(
     lambda_=0.9, n_steps=1000, min_sep=100, max_participations=5,
 )
 lcgd   = acc.balls_in_bins(
-    acc.lambda_cgd(1.0, sensitivity=lcgd_s.sensitivity,
-                   gram_matrix=lcgd_s.gram_matrix),
+    ftrl_acc.lambda_cgd(1.0, sensitivity=lcgd_s.sensitivity,
+                        gram_matrix=lcgd_s.gram_matrix),
     num_bins=100, num_epochs=5,
 )
 

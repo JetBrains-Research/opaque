@@ -8,6 +8,29 @@ numerically tight composition bounds. The API is built around composable
 For mathematical details, supported amplifications, and parameter guidance
 for each mechanism, see the [Mechanisms](../mechanisms/index.md) reference.
 
+## Namespace organization
+
+The accounting surface is split across three modules so each algorithm's
+factories live next to its runtime:
+
+| Module | Provides | Ships with |
+|--------|----------|------------|
+| `opaque.accounting` | Cross-cutting primitives — composition (`compose`, `repeat`, `cached`), `calibrate`, generic mechanisms (`identity`, `nonprivate`, `eps_delta`), and the two cross-algorithm primitives `balls_in_bins` and `second_moment`. | `opaque-accounting` |
+| `opaque.dpsgd.accounting` | DP-SGD factories — `gaussian`, `adaclip`, `poisson`, `truncated_poisson`, `parallel_poisson`. | `opaque-dpsgd` |
+| `opaque.dpftrl.accounting` | DP-FTRL factories — `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `cyclic_poisson`, `b_min_sep`. | `opaque-dpftrl` |
+
+Both algorithm-specific namespaces re-export from the shared `opaque-accounting`
+implementation; the split is purely organisational. The `Accountant` interactive
+container and all dataclasses live in `opaque.accounting.types`.
+
+For backward compatibility every algorithm-specific factory is still
+importable from `opaque.accounting` directly (e.g. `opaque.accounting.gaussian`),
+but the canonical / documented path is the namespace your training run uses
+(`opaque.dpsgd.accounting` or `opaque.dpftrl.accounting`). The
+algorithm-specific subpackages are *lazy-imported* from `opaque.dpsgd` /
+`opaque.dpftrl`, so the Rust PLD extension only loads when accounting is
+actually used.
+
 ## Core concepts
 
 ### DpProcess
@@ -18,10 +41,13 @@ the underlying PLD.
 
 ```python
 import opaque.accounting as acc
+import opaque.dpsgd.accounting as dpsgd_acc
 
-# Mechanism constructors return DpProcess instances
-g = acc.gaussian(0.8)
-p = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
+# Mechanism constructors return DpProcess instances.  Cross-cutting
+# primitives (composition, calibration) live at acc; algorithm-specific
+# factories live in the per-algorithm namespace.
+g = dpsgd_acc.gaussian(0.8)
+p = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=0.01)
 
 # Composition produces new DpProcess instances
 training = p * 1000
@@ -178,14 +204,14 @@ truth.
 
 ```python
 from opaque.dpftrl.noise import band_mf_strategy
-import opaque.accounting as acc
+import opaque.dpftrl.accounting as ftrl_acc
 
 # Strategy computes sensitivity and num_groups internally
 strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.95)
 
-proc = acc.cyclic_poisson(
-    acc.band_mf(1.0, sensitivity=strategy.sensitivity,
-                num_groups=strategy.num_groups),
+proc = ftrl_acc.cyclic_poisson(
+    ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+                     num_groups=strategy.num_groups),
     sample_rate=0.01,
 )
 eps = proc.epsilon_at(delta=1e-5)

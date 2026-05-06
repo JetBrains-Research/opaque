@@ -399,14 +399,15 @@ receives these values rather than recomputing them. This ensures that
 noise generation and privacy accounting always agree on the mechanism.
 
 ```python
-import opaque.accounting as acc
+import opaque.accounting as acc           # cross-cutting balls_in_bins, second_moment
+import opaque.dpftrl.accounting as ftrl_acc  # DP-FTRL factories
 from opaque.dpftrl.noise import band_mf_strategy, lambda_cgd_strategy
 
 # BandMF — strategy provides sensitivity and num_groups
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = acc.cyclic_poisson(
-    acc.band_mf(1.0, sensitivity=strategy.sensitivity,
-                num_groups=strategy.num_groups),
+proc = ftrl_acc.cyclic_poisson(
+    ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+                     num_groups=strategy.num_groups),
     sample_rate=0.01,
 )
 eps = proc.epsilon_at(1e-5)
@@ -417,15 +418,15 @@ strategy = lambda_cgd_strategy(
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
 proc = acc.balls_in_bins(
-    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
-                   gram_matrix=strategy.gram_matrix),
+    ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+                        gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
 
 # Private second moments — wrap the MF mechanism before amplification
 mechanism = acc.second_moment(
-    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
-                   gram_matrix=strategy.gram_matrix),
+    ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+                        gram_matrix=strategy.gram_matrix),
     sensitivity=clip_bound,
     max_column_norm=strategy._max_column_norm,
 )

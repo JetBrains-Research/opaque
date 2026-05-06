@@ -13,6 +13,8 @@ import torch
 import torch.nn as nn
 import torchopt
 import opaque.accounting as acc
+import opaque.dpsgd.accounting as dpsgd_acc
+from opaque.accounting.types import Accountant
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.functional import make_functional
@@ -43,7 +45,9 @@ num_steps = 10 * (n_samples // batch_size)
 # Calibrate noise multiplier for target epsilon
 result = acc.calibrate(
     budget=acc.epsilon_budget(epsilon, delta=delta),
-    process=lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
+    process=lambda nm: dpsgd_acc.poisson(
+        dpsgd_acc.gaussian(nm), sample_rate
+    ) * num_steps,
     param_min=0.1,
     param_max=100.0,
 )
@@ -63,9 +67,7 @@ noise_fn, noise_state = gaussian_noise(
 )
 
 # Privacy tracker
-from opaque.accounting import Accountant
-
-step_proc = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+step_proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate)
 accountant = Accountant(budget=acc.epsilon_budget(epsilon, delta=delta))
 
 # Training loop
