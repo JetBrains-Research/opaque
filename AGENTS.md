@@ -319,3 +319,14 @@ the canonical lint / test / Rust-test commands.
   MF-specific ones (`band_mf`, `blt`, `bisr`, etc.) live in
   `opaque.dpftrl.accounting`.
 - CUDA/MPS tests auto-skip; no special handling needed on CPU-only VMs.
+
+### PR workflow
+
+1. Push changes and create/update the PR.
+2. Wait ~5 minutes for GitHub Copilot review comments to appear.
+3. Read the Copilot comments — address the ones that make sense (fix the
+   code or docs), ignore the ones that don't.
+4. Reply inline to each comment explaining what you did (or why you
+   disagree). Leave comments **unresolved** — the author resolves them.
+5. Wait for CI/CD checks to complete. If any fail, read the logs
+   (`gh run view --log`), fix the issue, push again, and repeat from step 2.
