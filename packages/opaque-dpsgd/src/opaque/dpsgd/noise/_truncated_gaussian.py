@@ -171,6 +171,14 @@ def truncated_gaussian_noise(
         key: Explicit RNG key for deterministic, functional randomness.
             Same key on all ranks → same noise (synchronized).
             ``fold_in(key, rank)`` → independent noise per rank.
+        first_moment_overhead: First-moment sensitivity overhead used when
+            a :class:`~opaque.types.SecondMomentClippingOutput` flows in
+            (paired-stream private first + second moment estimation).
+            Must be strictly greater than 1.0.  Defaults to ``sqrt(3/2)``
+            (the d ≥ 2 add/remove-DP value); pass-through to
+            :func:`opaque.dpsgd.noise._second_moment.second_moment_stddevs`.
+            Ignored for single-stream :class:`~opaque.types.ClippedPytree`
+            inputs.
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -180,7 +188,8 @@ def truncated_gaussian_noise(
 
     Raises:
         ValueError: If ``noise_multiplier`` or the realized max_norm-derived
-            standard deviation is negative, or ``radius`` is not positive.
+            standard deviation is negative, ``radius`` is not positive, or
+            ``first_moment_overhead`` is not strictly greater than 1.0.
 
     Example:
         >>> import torch

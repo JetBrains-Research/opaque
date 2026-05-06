@@ -283,7 +283,13 @@ class TestPairedStreamStateAdvances:
 
 
 class TestZeroNoiseMultiplier:
-    """noise_multiplier=0 → zero-stddev streams; output is the (clipped) input."""
+    """``noise_multiplier=0`` collapses both streams to a zero-width support.
+
+    Both the noise stddev *and* the truncation bound (= radius·stddev) go to
+    zero, so every leaf is clamped to ±0.  The original input values are not
+    preserved — this is the documented "no-noise" path mirroring how
+    ``gaussian_noise`` returns the centred deterministic output.
+    """
 
     def test_zero_noise_paired(self):
         noise_fn, state = truncated_gaussian_noise(
