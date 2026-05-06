@@ -12,12 +12,12 @@ from opaque.types import ClippedPytree
 
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
-from opaque.dpsgd.clipping.adaptive import (
+from opaque.dpsgd.clipping._adaptive import (
     AdaptiveClipState,
     AdaptiveClippedGradAux,
     _compute_clipping_stats,
 )
-from opaque.clipping.clipped_grad import ClippedGradAux
+from opaque.clipping._clipped_grad import ClippedGradAux
 from opaque.random import key
 
 
@@ -258,7 +258,7 @@ class TestSyncAdaptiveClipStateAllEmpty:
     """Unit-test the all-empty-ranks guard without spawning processes."""
 
     def test_total_zero_preserves_clipping_norm(self):
-        from opaque.dpsgd.clipping.distributed import sync_adaptive_clip_state
+        from opaque.dpsgd.clipping._distributed import sync_adaptive_clip_state
 
         state = AdaptiveClipState(
             _current_clipping_norm=1.5,
@@ -286,7 +286,7 @@ class TestSyncAdaptiveClipStateAllEmpty:
 
 class TestSyncAdaptiveClippedGradAux:
     def test_empty_grad_norms_passthrough(self):
-        from opaque.dpsgd.clipping.distributed import sync_adaptive_clipped_grad_aux
+        from opaque.dpsgd.clipping._distributed import sync_adaptive_clipped_grad_aux
 
         aux = AdaptiveClippedGradAux(
             loss_values=torch.empty(0),

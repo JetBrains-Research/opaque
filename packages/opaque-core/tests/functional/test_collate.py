@@ -5,7 +5,7 @@
 import pytest
 import torch
 
-from opaque.functional.collate import _empty_like, empty_collate
+from opaque.functional._collate import _empty_like, empty_collate
 
 
 class TestEmptyLike:

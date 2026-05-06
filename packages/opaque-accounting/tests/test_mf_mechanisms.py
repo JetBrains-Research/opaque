@@ -6,14 +6,9 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import opaque.accounting as acc
-from opaque.accounting.amplification import (
-    CyclicPoisson,
-)
-from opaque.accounting.base import DpProcess
-from opaque.accounting.mechanisms import (
-    BandMf,
-    Blt,
-)
+from opaque.accounting.amplification.types import CyclicPoisson
+from opaque.accounting._base import DpProcess
+from opaque.accounting.mechanisms.types import BandMf, Blt
 
 
 # ── BandMf dataclass tests ──────────────────────────────────────────

@@ -1,4 +1,4 @@
-"""Tests for opaque.optimizers.sgd."""
+"""Tests for opaque.optimizers._sgd."""
 
 from __future__ import annotations
 

@@ -22,14 +22,9 @@ from opaque.types import clipped
 
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
-from opaque.distributed import (
-    get_rank,
-    get_world_size,
-    reduce_scalar,
-    sum_gradients,
-    sum_gradients_,
-    sync,
-)
+from opaque.distributed import get_rank, get_world_size, sum_gradients, sync
+from opaque.distributed.gradients import sum_gradients_
+from opaque.distributed.state import reduce_scalar
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpftrl.noise import mf_noise, identity_strategy
 from opaque.profiling import StepTimer, TrainingProfiler
@@ -134,7 +129,7 @@ def _worker_reduce_scalar(rank: int, world_size: int, port: int) -> None:
 
 
 def _worker_all_reduce_values(rank: int, world_size: int, port: int) -> None:
-    from opaque.distributed import all_reduce, all_reduce_
+    from opaque.distributed.collectives import all_reduce, all_reduce_
 
     _setup_ddp(rank, world_size, port)
     try:
@@ -165,7 +160,7 @@ def _worker_all_reduce_values(rank: int, world_size: int, port: int) -> None:
 
 
 def _worker_reduce_pytree(rank: int, world_size: int, port: int) -> None:
-    from opaque.distributed import reduce_pytree, reduce_pytree_
+    from opaque.distributed.gradients import reduce_pytree, reduce_pytree_
 
     _setup_ddp(rank, world_size, port)
     try:
@@ -195,7 +190,7 @@ def _worker_reduce_pytree(rank: int, world_size: int, port: int) -> None:
 
 
 def _worker_reduce_pytree_nested(rank: int, world_size: int, port: int) -> None:
-    from opaque.distributed import reduce_pytree
+    from opaque.distributed.gradients import reduce_pytree
 
     _setup_ddp(rank, world_size, port)
     try:
@@ -235,7 +230,7 @@ def _worker_reduce_pytree_nested(rank: int, world_size: int, port: int) -> None:
 
 
 def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> None:
-    from opaque.dpsgd.clipping.adaptive import AdaptiveClipState
+    from opaque.dpsgd.clipping._adaptive import AdaptiveClipState
     from opaque.distributed import sync
     from opaque.random import key as rng_key
 

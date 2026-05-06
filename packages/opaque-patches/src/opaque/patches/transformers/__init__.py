@@ -5,11 +5,7 @@
 The factories here let downstream users register their own model
 families::
 
-    from opaque.patches.transformers import (
-        make_apply_family_patches,
-        make_apply_model_patches,
-        register_activation_kind,
-    )
+    from opaque.patches.transformers import (make_apply_family_patches, make_apply_model_patches, register_activation_kind)
 
     # 1) (Optional) Register a custom kernel variant under a name.
     register_activation_kind("my_glu", my_factory)
@@ -53,14 +49,8 @@ from opaque.patches.transformers._factory import (
     register_fused_add_rms_kind,
     register_rms_norm_kind,
 )
-from opaque.patches.transformers._family import (
-    family_name,
-    make_apply_family_patches,
-)
-from opaque.patches.transformers._registry import (
-    register_family,
-    supported_families,
-)
+from opaque.patches.transformers._family import family_name, make_apply_family_patches
+from opaque.patches.transformers._registry import register_family, supported_families
 
 # Eagerly import built-in family modules so each one's import-time
 # ``register_family(...)`` call lands in the registry.  Each file is

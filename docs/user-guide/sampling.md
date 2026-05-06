@@ -129,7 +129,7 @@ is required for matrix-factorization correlated noise mechanisms
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
-from opaque.dpftrl.sampling._partitions import PartitionType
+from opaque.dpftrl.sampling.types import PartitionType
 from opaque.random import key
 
 sampler = CyclicPoissonSampler(
@@ -352,7 +352,8 @@ Use `TrainingProfiler` to compare a few candidate microbatch sizes and select
 the largest stable value for your device:
 
 ```python
-from opaque.profiling import StepTimer, TrainingProfiler, reset_peak_memory
+from opaque.profiling import reset_peak_memory
+from opaque.profiling.types import StepTimer, TrainingProfiler
 
 profiler = TrainingProfiler(device)
 for optimal in [64, 32, 16, 8, 4, 2, 1]:

@@ -178,7 +178,7 @@ for step in range(num_steps):
     params = torchopt.apply_updates(params, updates)
 
 # At save / eval time, read the published x_t:
-from opaque.optimizers.schedule_free import get_eval_params
+from opaque.optimizers._schedule_free import get_eval_params
 eval_params = get_eval_params(opt_state)
 ```
 
@@ -194,14 +194,14 @@ methods.
 ## Serialisation
 
 `state_dict` / `load_state_dict` live in
-`opaque.optimizers.serialization` (a less-common building block, not
+`opaque.optimizers._serialization` (a less-common building block, not
 in the package's top-level `__all__`).  Walks the chain state,
 encoding every tensor leaf and Python primitive into a flat
 `{path: value}` dict ready for `torch.save`.
 
 ```python
 from opaque.optimizers import adamw
-from opaque.optimizers.serialization import state_dict, load_state_dict
+from opaque.optimizers._serialization import state_dict, load_state_dict
 
 opt = adamw(lr=1e-3, weight_decay=0.01)
 state = opt.init(params)

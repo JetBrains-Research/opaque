@@ -17,8 +17,8 @@ noise → optimizer:
 
 Concrete state classes live with the factories that produce them:
 ``FixedClipState`` in :mod:`opaque.clipping.types`,
-``AdaptiveClipState`` in :mod:`opaque.dpsgd.clipping.adaptive`,
-``GaussianNoiseState`` in :mod:`opaque.dpsgd.noise.gaussian`,
+``AdaptiveClipState`` in :mod:`opaque.dpsgd.clipping._adaptive`,
+``GaussianNoiseState`` in :mod:`opaque.dpsgd.noise._gaussian`,
 ``MFNoiseState`` in :mod:`opaque.dpftrl.noise._engine`.
 """
 
@@ -33,7 +33,7 @@ from typing import Any, NamedTuple, Union
 import torch
 
 from opaque.pytree import tree_map
-from opaque.random import RngKey
+from opaque.random.types import RngKey
 
 
 # ===========================================================================

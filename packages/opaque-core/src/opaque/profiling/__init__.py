@@ -1,13 +1,15 @@
 """Memory profiling and performance diagnostics for DP training.
 
-This module provides tools for tracking memory usage and timing during
-differentially private training with explicit profiler state.
+Provides stateful profiler classes plus convenience helpers for tracking
+memory usage and timing during differentially private training.
 
-Main Components:
-    - TrainingProfiler: Immutable profiler state for training loops
-    - StepTimer: Context manager for timing an individual step
-    - MemoryStats: Dataclass for memory statistics
-    - Utility functions: get_memory_stats, print_memory, reset_peak_memory
+- :class:`TrainingProfiler` — immutable profiler state for training loops
+- :class:`StepTimer` — context manager for timing an individual step
+- :func:`get_memory_stats`, :func:`print_memory`,
+  :func:`reset_peak_memory`, :func:`empty_cache` — point-in-time helpers
+
+Pure data records (``MemoryStats``, ``StepMetrics``, ``Checkpoint``) live
+in :mod:`opaque.profiling.types`.
 
 Example:
     >>> from opaque.profiling import StepTimer, TrainingProfiler, print_memory
@@ -23,10 +25,7 @@ Example:
     >>> print(profiler.final_summary())
 """
 
-from opaque.profiling.memory import (
-    Checkpoint,
-    MemoryStats,
-    StepMetrics,
+from opaque.profiling._memory import (
     StepTimer,
     TrainingProfiler,
     empty_cache,
@@ -36,13 +35,8 @@ from opaque.profiling.memory import (
 )
 
 __all__ = [
-    # Main classes
     "TrainingProfiler",
     "StepTimer",
-    "MemoryStats",
-    "StepMetrics",
-    "Checkpoint",
-    # Utility functions
     "get_memory_stats",
     "print_memory",
     "reset_peak_memory",

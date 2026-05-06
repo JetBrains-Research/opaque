@@ -400,7 +400,7 @@ The `Accountant` class provides step-by-step privacy tracking during training.
 It wraps a `DpProcess` and provides budget checking.
 
 ```python
-from opaque.accounting.accountant import Accountant
+from opaque.accounting import Accountant
 
 acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
 step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)

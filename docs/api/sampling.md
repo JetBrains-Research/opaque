@@ -189,27 +189,27 @@ loader = DataLoader(shard, batch_sampler=sampler)
 
 ## API Documentation
 
-::: opaque.dpsgd.sampling.poisson.PoissonSampler
+::: opaque.dpsgd.sampling.PoissonSampler
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.dpsgd.sampling.truncated_poisson.TruncatedPoissonSampler
+::: opaque.dpsgd.sampling.TruncatedPoissonSampler
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.dpftrl.sampling.cyclic_poisson.CyclicPoissonSampler
+::: opaque.dpftrl.sampling.CyclicPoissonSampler
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.dpftrl.sampling.b_min_sep.BMinSepSampler
+::: opaque.dpftrl.sampling.BMinSepSampler
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.dpftrl.sampling.balls_in_bins.BallsInBinsSampler
+::: opaque.dpftrl.sampling.BallsInBinsSampler
     options:
       show_source: true
       heading_level: 3
@@ -239,7 +239,7 @@ sampler.
 Used with the BLT mechanism, which requires deterministic batch order
 with fixed separation between participations.
 
-::: opaque.dpftrl.sampling.sequential.SequentialBatchSampler
+::: opaque.dpftrl.sampling.SequentialBatchSampler
     options:
       show_source: true
       heading_level: 3

@@ -5,7 +5,7 @@ PLD computation engine for differential privacy accounting, implemented in Rust 
 ## Overview
 
 `opaque-accounting` ships a PyO3 extension mounted at
-`opaque.accounting._native` plus a Python facade at `opaque.accounting`.
+Python facade at `opaque.accounting`.
 The native module exposes flat functions that take scalar parameters
 and return opaque `Pld` handles; the Python side owns composition,
 repetition, caching, and calibration.

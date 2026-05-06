@@ -6,8 +6,8 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import opaque.accounting as acc
-from opaque.accounting.base import DpProcess
-from opaque.accounting.composition import CachedProcess, Composed, Repeated
+from opaque.accounting._base import DpProcess
+from opaque.accounting.composition.types import CachedProcess, Composed, Repeated
 
 # ── Node dataclass tests ─────────────────────────────────────────────
 

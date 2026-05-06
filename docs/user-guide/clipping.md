@@ -143,7 +143,8 @@ Use `TrainingProfiler` from `opaque.profiling` to run a short sweep and
 select the largest stable microbatch that does not OOM:
 
 ```python
-from opaque.profiling import StepTimer, TrainingProfiler, reset_peak_memory
+from opaque.profiling import reset_peak_memory
+from opaque.profiling.types import StepTimer, TrainingProfiler
 
 profiler = TrainingProfiler(device)
 for candidate_mb in [64, 32, 16, 8, 4, 2, 1]:

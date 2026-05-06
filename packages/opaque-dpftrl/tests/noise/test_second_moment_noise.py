@@ -12,7 +12,6 @@ from opaque.types import (
     SecondMomentNoiseOutput,
 )
 from opaque.dpftrl.noise import (
-    SecondMomentMFNoiseState,
     band_mf_strategy,
     bisr_strategy,
     bsr_strategy,
@@ -24,6 +23,7 @@ from opaque.dpftrl.noise import (
     second_moment_noise_scale,
     second_moment_stddevs,
 )
+from opaque.dpftrl.noise.types import SecondMomentMFNoiseState
 from opaque.random import key
 
 

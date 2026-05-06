@@ -104,17 +104,17 @@ across ranks. It auto-dispatches based on type:
       show_source: true
       heading_level: 3
 
-::: opaque.dpsgd.noise.gaussian.GaussianNoiseState
+::: opaque.dpsgd.noise.types.GaussianNoiseState
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.dpftrl.noise.MFNoiseState
+::: opaque.dpftrl.noise.types.MFNoiseState
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.dpftrl.noise.SecondMomentMFNoiseState
+::: opaque.dpftrl.noise.types.SecondMomentMFNoiseState
     options:
       show_source: true
       heading_level: 3

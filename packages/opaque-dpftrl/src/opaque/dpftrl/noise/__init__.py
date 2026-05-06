@@ -8,8 +8,13 @@ Public API:
 
 Strategy factories:
 
-- :func:`band_mf_strategy`, :func:`blt_strategy`, :func:`bisr_strategy`, :func:`bsr_strategy`
-- :func:`lambda_cgd_strategy`, :func:`identity_strategy`
+- :func:`band_mf_strategy`, :func:`blt_strategy`, :func:`bisr_strategy`,
+  :func:`bsr_strategy`, :func:`lambda_cgd_strategy`, :func:`identity_strategy`
+
+Strategy types and noise state classes (``BandMfStrategy``, ``BltStrategy``,
+``BisrStrategy``, ``BsrStrategy``, ``IdentityStrategy``,
+``LambdaCgdStrategy``, ``MfStrategy``, ``MFNoiseState``,
+``SecondMomentMFNoiseState``) live in :mod:`opaque.dpftrl.noise.types`.
 
 References:
     - BandMF: https://arxiv.org/abs/2306.08153
@@ -24,46 +29,27 @@ from opaque.dpftrl.noise._second_moment import (
     second_moment_noise_scale,
     second_moment_stddevs,
 )
-from opaque.types import SecondMomentNoiseOutput
 
-from .band_mf import BandMfStrategy, band_mf_strategy
-from .bisr import BisrStrategy, bisr_strategy
-from .bsr import BsrStrategy, bsr_strategy
-from .blt import BltStrategy, blt_strategy
-from .dispatcher import MfStrategy, mf_noise
-from .identity import IdentityStrategy, identity_strategy
-from .lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
-from .second_moment import SecondMomentMFNoiseState
-from ._engine import MFNoiseState
+from ._band_mf import band_mf_strategy
+from ._bisr import bisr_strategy
+from ._blt import blt_strategy
+from ._bsr import bsr_strategy
+from ._dispatcher import mf_noise
+from ._identity import identity_strategy
+from ._lambda_cgd import lambda_cgd_strategy
 
-# Side-effect import: registers the MFNoiseState sync handler with
-# opaque.distributed.sync().
-from opaque.dpftrl.noise import distributed as _distributed  # noqa: F401
+import opaque.dpftrl.noise._distributed  # noqa: F401  (registers sync handlers)
 
 __all__ = [
-    # Dispatchers
     "mf_noise",
-    "MfStrategy",
-    # Strategy types & factories
-    "BandMfStrategy",
     "band_mf_strategy",
-    "BisrStrategy",
     "bisr_strategy",
-    "BsrStrategy",
     "bsr_strategy",
-    "BltStrategy",
     "blt_strategy",
-    "IdentityStrategy",
     "identity_strategy",
-    "LambdaCgdStrategy",
     "lambda_cgd_strategy",
-    # Second-moment helpers
     "DEFAULT_SECOND_MOMENT_OVERHEAD",
     "second_moment_joint_sensitivity",
     "second_moment_noise_scale",
     "second_moment_stddevs",
-    # State / output
-    "MFNoiseState",
-    "SecondMomentMFNoiseState",
-    "SecondMomentNoiseOutput",
 ]

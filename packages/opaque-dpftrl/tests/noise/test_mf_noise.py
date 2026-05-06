@@ -9,15 +9,17 @@ from opaque.types import clipped
 from opaque.types import NoisedPytree
 
 from opaque.dpftrl.noise import (
-    BandMfStrategy,
-    BisrStrategy,
-    BltStrategy,
-    LambdaCgdStrategy,
     band_mf_strategy,
     bisr_strategy,
     blt_strategy,
     lambda_cgd_strategy,
     mf_noise,
+)
+from opaque.dpftrl.noise.types import (
+    BandMfStrategy,
+    BisrStrategy,
+    BltStrategy,
+    LambdaCgdStrategy,
 )
 from opaque.random import key
 

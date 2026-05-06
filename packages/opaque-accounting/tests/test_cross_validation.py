@@ -385,7 +385,7 @@ class TestAdaClipCrossValidation:
         ref = _native.gaussian_pld(z_eff, config.to_native())
         assert proc.epsilon_at(1e-5) == pytest.approx(ref.epsilon_at(1e-5), rel=1e-12)
 
-        from opaque.accounting.transformations import AdaClip
+        from opaque.accounting.transformations.types import AdaClip
 
         assert isinstance(proc, AdaClip)
 

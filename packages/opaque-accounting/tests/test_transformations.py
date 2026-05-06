@@ -5,7 +5,7 @@ import math
 import pytest
 
 import opaque.accounting as acc
-from opaque.accounting.transformations import AdaClip
+from opaque.accounting.transformations.types import AdaClip
 
 # ── Constructor function tests ───────────────────────────────────────
 

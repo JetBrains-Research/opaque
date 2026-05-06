@@ -1,4 +1,4 @@
-"""Tests for opaque.optimizers.schedule_free wrapper."""
+"""Tests for opaque.optimizers._schedule_free wrapper."""
 
 from __future__ import annotations
 
@@ -7,12 +7,8 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.optimizers import (  # noqa: E402
-    ScheduleFreeState,
-    adamw,
-    schedule_free,
-)
-from opaque.optimizers.schedule_free import get_eval_params  # noqa: E402
+from opaque.optimizers import adamw, schedule_free  # noqa: E402
+from opaque.optimizers.types import ScheduleFreeState  # noqa: E402
 
 
 @pytest.fixture
@@ -40,7 +36,7 @@ class TestScheduleFreeWrapper:
     def test_eval_params_helper(self, params):
         opt = schedule_free(adamw(lr=1e-3))
         state = opt.init(params)
-        ep = get_eval_params(state)
+        ep = state.x
         for k in params:
             torch.testing.assert_close(ep[k], state.x[k])
 

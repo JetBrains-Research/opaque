@@ -5,9 +5,9 @@ import math
 import pytest
 
 import opaque.accounting as acc
-from opaque.accounting.base import DpProcess
-from opaque.accounting.mechanisms import Identity, NonPrivate
-from opaque.accounting.mechanisms.gaussian import Gaussian
+from opaque.accounting._base import DpProcess
+from opaque.accounting.mechanisms.types import Identity, NonPrivate
+from opaque.accounting.mechanisms._gaussian import Gaussian
 
 # ── NonPrivate dataclass tests ──────────────────────────────────────
 

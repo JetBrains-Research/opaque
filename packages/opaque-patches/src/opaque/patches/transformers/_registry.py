@@ -20,11 +20,7 @@ their own families the same way (typically right after building
 
 User registration:
 
-    from opaque.patches.transformers import (
-        make_apply_family_patches,
-        make_apply_model_patches,
-        register_family,
-    )
+    from opaque.patches.transformers import (make_apply_family_patches, make_apply_model_patches, register_family)
 
     apply_my_fam_family_patches = make_apply_family_patches(
         family="my_fam", module_path="my_pkg.modeling_my_fam",

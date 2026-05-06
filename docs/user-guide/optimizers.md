@@ -62,7 +62,7 @@ for batch in dataloader:
 
 ## Choosing an optimizer
 
-**AdamW** (`opaque.optimizers.adamw`) is the recommended default for
+**AdamW** (`adamw`) is the recommended default for
 DP training.  Per-parameter adaptive learning rates compensate for
 DP noise — different parameters receive different signal-to-noise
 ratios, and Adam scales updates accordingly.  Adam typically converges
@@ -79,7 +79,7 @@ optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
 # StableAdamW (RMS-clipped update): adamw(..., update_rms_clip=1.0).
 ```
 
-**SGD** (`opaque.optimizers.sgd`) is the canonical DP baseline. No second
+**SGD** (`sgd`) is the canonical DP baseline. No second
 moment is corrected, but the Opaque wrapper accepts `NoisedPytree` updates so
 the training loop stays uniform. `E[g + ξ] = g` and momentum's variance is
 bounded. Good debugging baseline:
@@ -89,7 +89,7 @@ from opaque.optimizers import sgd
 optimizer = sgd(lr=0.01, momentum=0.9)
 ```
 
-**RMSprop** (`opaque.optimizers.rmsprop`) is adaptive but cheaper
+**RMSprop** (`rmsprop`) is adaptive but cheaper
 than Adam (no first moment).  ``noise_bias_correction=True`` enables
 the same flavour of φ-EMA subtraction as AdamW; off by default,
 flip on to ablate:
@@ -99,7 +99,7 @@ from opaque.optimizers import rmsprop
 optimizer = rmsprop(lr=1e-2, alpha=0.99, noise_bias_correction=True)
 ```
 
-**Adagrad** (`opaque.optimizers.adagrad`) is for sparse-gradient
+**Adagrad** (`adagrad`) is for sparse-gradient
 settings.  Its accumulator does not decay, so under DP noise ``v_acc``
 absorbs ``t·σ²`` over training; ``noise_bias_correction=True``
 subtracts a matching cumulative term:
@@ -315,7 +315,7 @@ not consumed at all.  This makes the warmup phase naturally DP-robust:
 the noise in `v` cannot affect the update because it isn't read.
 
 Once `ρ_t > 5`, the standard Adam DP-BC story applies — subtract a
-β₂-EMA of `σ²` from `v̂` before the sqrt.  ``opaque.optimizers.radam``
+β₂-EMA of `σ²` from `v̂` before the sqrt.  ``radam``
 advances the φ-EMA every step (warmup included) so that at the first
 rectified step the correction reflects all prior noise contributions to
 `v`, not just the current step.
@@ -330,7 +330,7 @@ Under DP both EMAs accumulate noise:
 - `E[Δx²]_t` accumulates `coef_t² · σ²` per element because
   `Δx_t = -coef_t · g̃_t` is linear in the noised gradient.
 
-``opaque.optimizers.adadelta`` maintains two parallel φ-EMAs at the
+``adadelta`` maintains two parallel φ-EMAs at the
 same decay `ρ` and subtracts both biases.  `φ_g` is scalar (or
 per-group), `φ_dx` is per-element because the per-step update-noise
 variance varies element-wise even when `σ` is scalar.  Total state
@@ -364,7 +364,7 @@ particularly attractive for DP training, on top of its standard
 
 ```python
 from opaque.optimizers import adamw, schedule_free
-from opaque.optimizers.schedule_free import get_eval_params
+from opaque.optimizers._schedule_free import get_eval_params
 
 optimizer = schedule_free(
     adamw(lr=1e-3, noise_bias_correction=True), beta=0.9
@@ -425,11 +425,11 @@ the wrapper's averaging is the implicit schedule.
 ## Checkpoint round-tripping
 
 The optimizer state is a `torchopt` chain tuple of dataclasses; flatten
-it to a serialisable dict via `opaque.optimizers.serialization`:
+it to a serialisable dict via `opaque.optimizers._serialization`:
 
 ```python
 from opaque.optimizers import adamw
-from opaque.optimizers.serialization import state_dict, load_state_dict
+from opaque.optimizers._serialization import state_dict, load_state_dict
 
 opt = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
 state = opt.init(params)

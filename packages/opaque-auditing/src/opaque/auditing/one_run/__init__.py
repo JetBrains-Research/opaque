@@ -1,5 +1,8 @@
-"""One-run privacy auditing (Steinke et al. 2023)."""
+"""One-run privacy auditing (Steinke et al. 2023).
 
-from opaque.auditing.one_run.estimate import OneRunEstimate, one_run
+The ``OneRunEstimate`` data class lives in :mod:`opaque.auditing.types`.
+"""
 
-__all__ = ["OneRunEstimate", "one_run"]
+from opaque.auditing.one_run._estimate import one_run
+
+__all__ = ["one_run"]

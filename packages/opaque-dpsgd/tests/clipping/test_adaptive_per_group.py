@@ -8,8 +8,8 @@ import torch
 from opaque.types import ClippedPytree
 
 from opaque.types import PerGroup
-from opaque.clipping.per_group import per_group
-from opaque.dpsgd.clipping.adaptive import AdaptiveClipState, adaptive_clipped_grad
+from opaque.clipping._per_group import per_group
+from opaque.dpsgd.clipping._adaptive import AdaptiveClipState, adaptive_clipped_grad
 from opaque.random import key
 
 
@@ -537,7 +537,7 @@ class TestGroupNormsInAux:
 
     def test_group_norms_in_clipped_grad_aux(self):
         """Test that group_norms appear in ClippedGradAux when PerGroup is used."""
-        from opaque.clipping.clipped_grad import clipped_grad
+        from opaque.clipping._clipped_grad import clipped_grad
 
         loss_fn = _make_per_group_loss_fn()
         params = {"a": torch.randn(10), "b": torch.randn(5)}
@@ -563,7 +563,7 @@ class TestGroupNormsInAux:
 
     def test_group_norms_none_for_scalar_clipping(self):
         """Test that group_norms is None when scalar clipping is used."""
-        from opaque.clipping.clipped_grad import clipped_grad
+        from opaque.clipping._clipped_grad import clipped_grad
 
         loss_fn = _make_loss_fn()
 

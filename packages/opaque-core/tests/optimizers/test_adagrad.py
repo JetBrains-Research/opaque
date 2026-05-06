@@ -1,4 +1,4 @@
-"""Tests for opaque.optimizers.adagrad with DP-aware Φ subtraction."""
+"""Tests for opaque.optimizers._adagrad with DP-aware Φ subtraction."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ import torch
 torchopt = pytest.importorskip("torchopt")
 
 from opaque.types import noised  # noqa: E402
-from opaque.optimizers import AdagradState, adagrad  # noqa: E402
+from opaque.optimizers import adagrad  # noqa: E402
+from opaque.optimizers.types import AdagradState  # noqa: E402
 
 
 @pytest.fixture

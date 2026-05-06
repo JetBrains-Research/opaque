@@ -6,8 +6,8 @@ from torch.func import grad
 
 from opaque.types import ClippedPytree
 
-from opaque.clipping.clipped_fun import clipped_fun
-from opaque.clipping.pytree import clip_pytree
+from opaque.clipping._clipped_fun import clipped_fun
+from opaque.clipping._pytree import clip_pytree
 
 
 def _unwrap_clipped(value):

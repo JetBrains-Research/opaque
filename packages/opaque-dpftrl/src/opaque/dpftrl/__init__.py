@@ -9,25 +9,16 @@ adaptive / AUTO-S clipping).  Functional optimizers (including the
 universal ``adamw`` that consumes private ``noisy_squared_grads`` streams)
 live in :mod:`opaque.optimizers`.
 
-Strategy data classes (``BandMfStrategy``, ``BltStrategy``, …) are importable
-from this module for type annotations but are not part of ``__all__`` — the
-public surface is functional (strategy factory functions + ``mf_noise`` /
-``mf_noise(..., second_moment=True)`` dispatchers).
+Strategy and noise-state dataclasses (``BandMfStrategy``, ``BltStrategy``,
+``BisrStrategy``, ``BsrStrategy``, ``IdentityStrategy``,
+``LambdaCgdStrategy``, ``MfStrategy``, ``MFNoiseState``,
+``SecondMomentMFNoiseState``) live in :mod:`opaque.dpftrl.noise.types`.
+The cross-cutting ``SecondMomentNoiseOutput`` lives in :mod:`opaque.types`.
 """
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from opaque.dpftrl import noise, sampling
-from opaque.dpftrl.noise import BandMfStrategy as BandMfStrategy
-from opaque.dpftrl.noise import BisrStrategy as BisrStrategy
-from opaque.dpftrl.noise import BltStrategy as BltStrategy
-from opaque.dpftrl.noise import BsrStrategy as BsrStrategy
-from opaque.dpftrl.noise import IdentityStrategy as IdentityStrategy
-from opaque.dpftrl.noise import LambdaCgdStrategy as LambdaCgdStrategy
-from opaque.dpftrl.noise import MFNoiseState as MFNoiseState
-from opaque.dpftrl.noise import MfStrategy as MfStrategy
-from opaque.dpftrl.noise import SecondMomentMFNoiseState as SecondMomentMFNoiseState
-from opaque.dpftrl.noise import SecondMomentNoiseOutput as SecondMomentNoiseOutput
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
@@ -68,8 +59,4 @@ __all__ = [
     "BMinSepSampler",
     "CyclicPoissonSampler",
     "SequentialBatchSampler",
-    # State / output
-    "MFNoiseState",
-    "SecondMomentMFNoiseState",
-    "SecondMomentNoiseOutput",
 ]

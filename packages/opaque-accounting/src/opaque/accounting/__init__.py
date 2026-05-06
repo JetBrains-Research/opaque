@@ -1,14 +1,16 @@
 """Differential privacy accounting using Privacy Loss Distributions (PLD).
 
-This module provides a compositional API for tracking privacy guarantees:
+Compositional API for tracking privacy guarantees:
 
-- **Mechanisms**: gaussian(), lambda_cgd(), bisr(), bsr(), band_mf(), blt(), etc.
-- **Amplification**: balls_in_bins(), poisson(), cyclic_poisson(), etc.
-- **Composition**: Combine processes using ``*`` (repeat) or ``|`` (compose)
-- **Metrics**: Query privacy with epsilon_at(), delta_at(), advantage(), etc.
+- **Mechanisms**: ``gaussian()``, ``lambda_cgd()``, ``bisr()``, ``bsr()``,
+  ``band_mf()``, ``blt()``, …
+- **Amplification**: ``balls_in_bins()``, ``poisson()``, ``cyclic_poisson()``, …
+- **Composition**: combine processes with ``*`` (repeat) or ``|`` (compose)
+- **Metrics**: query privacy with ``epsilon_at()``, ``delta_at()``,
+  ``advantage()``, …
 
-The underlying implementation uses Google's PLD accounting via the
-``opaque-accounting`` Rust crate (PyO3 bindings).
+Implementation uses Google's PLD accounting via the ``opaque-accounting``
+Rust crate (PyO3 bindings).
 
 Example::
 
@@ -27,19 +29,18 @@ Example::
     )
     eps = training.epsilon_at(1e-5)
 
-    # BandMF with cyclic Poisson amplification
-    proc = acc.cyclic_poisson(acc.band_mf(1.0, sensitivity=1.0, num_groups=100), sample_rate=0.01)
-    eps = proc.epsilon_at(1e-5)
-
 For calibration (finding noise for target privacy budget), use the
-:mod:`opaque.accounting.calibration` submodule.
+:mod:`opaque.accounting.calibration` submodule. All public dataclasses
+(``DpProcess``, ``Budget``, mechanism / amplification / transformation /
+composition node types, ``CalibrateResult``, ``DiscretizationConfig``)
+live in :mod:`opaque.accounting.types`, with narrower per-subpackage
+``types`` modules also available.
 """
 
-# Import native module (PyO3 extension).
-# The compiled artifact lives at `opaque/accounting/opaque_accounting.abi3.so`
-# (the file name matches the Rust crate for a sensible-looking .so), but inside
-# Python we alias it to ``_native`` so submodules can keep a short, conventional
-# private-impl name.
+# Native PyO3 extension. Compiled artifact lives at
+# ``opaque/accounting/opaque_accounting.abi3.so`` (named after the Rust
+# crate); aliased to ``_native`` so submodules can use a short private
+# name.
 try:
     from . import opaque_accounting as _native  # noqa: F401
 except ImportError as e:
@@ -56,32 +57,25 @@ try:
 except PackageNotFoundError:
     __version__ = "0.0.0"
 
-# Base
-
-# Import submodules for re-export
+# Submodules re-exported as documented power-user surface.
 from . import (
-    accountant,
     amplification,
     calibration,
     composition,
+    discretization,
     mechanisms,
     transformations,
 )
 
-# Accountant
-from opaque.accounting.accountant import Accountant
-
-# Amplification
+from opaque.accounting._accountant import Accountant
 from opaque.accounting.amplification import (
-    balls_in_bins,
     b_min_sep,
+    balls_in_bins,
     cyclic_poisson,
     parallel_poisson,
     poisson,
     truncated_poisson,
 )
-
-# Calibration
 from opaque.accounting.calibration import (
     advantage_budget,
     beta_budget,
@@ -90,20 +84,8 @@ from opaque.accounting.calibration import (
     epsilon_budget,
     risk_budget,
 )
-
-# Composition
-from opaque.accounting.composition import (
-    cached,
-    compose,
-    repeat,
-)
-from opaque.accounting.discretization import (
-    DiscretizationConfig,
-    get_discretization,
-    set_discretization,
-)
-
-# Mechanisms
+from opaque.accounting.composition import cached, compose, repeat
+from opaque.accounting.discretization import get_discretization, set_discretization
 from opaque.accounting.mechanisms import (
     band_mf,
     bisr,
@@ -115,25 +97,23 @@ from opaque.accounting.mechanisms import (
     lambda_cgd,
     nonprivate,
 )
-
-# Transformations
 from opaque.accounting.transformations import adaclip, second_moment
 
 __all__ = [
+    "__version__",
     # Submodules
-    "accountant",
     "amplification",
     "calibration",
     "composition",
+    "discretization",
     "mechanisms",
     "transformations",
     # Accountant
     "Accountant",
     # Discretization
-    "DiscretizationConfig",
     "set_discretization",
     "get_discretization",
-    # Mechanisms (factories only; classes via subpackage import)
+    # Mechanisms
     "gaussian",
     "eps_delta",
     "identity",
@@ -157,7 +137,7 @@ __all__ = [
     "repeat",
     "compose",
     "cached",
-    # Calibration
+    # Calibration / budgets
     "epsilon_budget",
     "delta_budget",
     "advantage_budget",

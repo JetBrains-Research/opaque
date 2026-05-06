@@ -4,11 +4,11 @@ import math
 from typing import cast
 
 import opaque.accounting as acc
-from opaque.accounting.accountant import Accountant
-from opaque.accounting.base import DpProcess
-from opaque.accounting.amplification.b_min_sep import BMinSep
-from opaque.accounting.amplification.cyclic_poisson import CyclicPoisson
-from opaque.accounting.mechanisms.band_mf import BandMf
+from opaque.accounting._accountant import Accountant
+from opaque.accounting._base import DpProcess
+from opaque.accounting.amplification._b_min_sep import BMinSep
+from opaque.accounting.amplification._cyclic_poisson import CyclicPoisson
+from opaque.accounting.mechanisms._band_mf import BandMf
 
 
 def test_gaussian_state_dict_structure():

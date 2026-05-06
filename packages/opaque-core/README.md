@@ -25,9 +25,9 @@ Top-level (user-facing):
   set of vanilla TorchOpt primitives (`adadelta`, `radam`) is re-exported for
   convenience.
   Less-common building blocks live in submodules:
-  `opaque.optimizers.serialization` (`state_dict` / `load_state_dict`
+  `opaque.optimizers._serialization` (`state_dict` / `load_state_dict`
   for checkpoint round-tripping) and
-  `opaque.optimizers.schedule_free` (`get_eval_params` for the
+  `opaque.optimizers._schedule_free` (`get_eval_params` for the
   published `x` weights).  See
   [`docs/api/optimizers.md`](../../docs/api/optimizers.md) for the
   full reference.

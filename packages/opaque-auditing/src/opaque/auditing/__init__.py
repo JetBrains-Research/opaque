@@ -23,9 +23,8 @@ Quick start (one-run auditing, Steinke et al. 2023)::
     estimate = auditing.one_run(scores, coin_flip=cf)
     print(f"ε (empirical): {estimate.epsilon_at(delta=1e-5):.4f}")
 
-Result data classes (``CoinFlip``, ``OneRunEstimate``) are importable from
-this module for type annotations but are not part of ``__all__`` — the
-public surface is functional.
+Result data classes (``CoinFlip``, ``OneRunEstimate``) live in
+:mod:`opaque.auditing.types`.
 
 References:
     - Steinke, Nasr, Jagielski (2023), https://arxiv.org/abs/2305.08846
@@ -34,10 +33,8 @@ References:
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
+from opaque.auditing._coin_flip import coin_flip
 from opaque.auditing.attacks import loss_scores
-from opaque.auditing.coin_flip import CoinFlip as CoinFlip
-from opaque.auditing.coin_flip import coin_flip
-from opaque.auditing.one_run import OneRunEstimate as OneRunEstimate
 from opaque.auditing.one_run import one_run
 
 try:

@@ -1,4 +1,4 @@
-"""Tests for opaque.optimizers.adamw — universal Adam / AdamW.
+"""Tests for opaque.optimizers._adamw — universal Adam / AdamW.
 
 Covers all four orthogonal modes:
 
@@ -21,7 +21,8 @@ from opaque.types import clipped  # noqa: E402
 from opaque.types import noised  # noqa: E402
 from opaque.types import PerGroup  # noqa: E402
 from opaque.types import SecondMomentNoiseOutput  # noqa: E402
-from opaque.optimizers import AdamState, adam, adamw  # noqa: E402
+from opaque.optimizers import adam, adamw  # noqa: E402
+from opaque.optimizers.types import AdamState  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -361,7 +362,7 @@ class TestPerGroupBC:
             "layer2": {"weight": torch.randn_like(nested_params["layer2"]["weight"])},
         }
         # PerGroup keyed by dotted leaf paths (exactly what
-        # opaque.clipping.per_group._extract_keys produces for nested dicts).
+        # opaque.clipping._per_group._extract_keys produces for nested dicts).
         pg = PerGroup(
             groups={
                 "layer1.weight": "g_a",
