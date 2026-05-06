@@ -62,6 +62,13 @@ across ranks. It auto-dispatches based on type:
 
 ## Bounded Gaussian — Truncated (renormalized)
 
+`truncated_gaussian_noise` accepts the same `SecondMomentClippingOutput`
+input as `gaussian_noise`: when gradients and squared-gradients are passed
+together, it allocates the noise budget optimally between the two streams
+(splitting noise proportionally to sensitivity). The `first_moment_overhead`
+parameter (default `sqrt(3/2)`) controls the sensitivity ratio between the
+two streams and must match the value used in `acc.second_moment()`.
+
 ::: opaque.dpsgd.noise.truncated_gaussian_noise
 
 ## Matrix Factorization Noise

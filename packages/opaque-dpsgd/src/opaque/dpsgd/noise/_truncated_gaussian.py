@@ -34,16 +34,23 @@ from typing import Any
 
 import torch
 
-from opaque.types import ClippedPytree
-
-from opaque.types import NoisedPytree
+from opaque.types import (
+    ClippedPytree,
+    NoisedPytree,
+    PerGroup,
+    SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
+)
 
 from opaque.dpsgd.noise._gaussian import GaussianNoiseState
 from opaque.dpsgd.noise._per_group_noise import per_group_noise_stddev
+from opaque.dpsgd.noise._second_moment import (
+    DEFAULT_SECOND_MOMENT_OVERHEAD,
+    second_moment_stddevs,
+)
 from opaque.random import generator_from_key
 from opaque.random.types import RngKey
 from opaque.random import fold_in as rng_fold_in
-from opaque.types import PerGroup
 from opaque.pytree import tree_map
 
 _SQRT2 = math.sqrt(2.0)
@@ -136,6 +143,7 @@ def truncated_gaussian_noise(
     noise_multiplier: float,
     key: RngKey,
     radius: float = 3.0,
+    first_moment_overhead: float = DEFAULT_SECOND_MOMENT_OVERHEAD,
 ) -> tuple[
     Callable[..., tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
@@ -163,6 +171,14 @@ def truncated_gaussian_noise(
         key: Explicit RNG key for deterministic, functional randomness.
             Same key on all ranks → same noise (synchronized).
             ``fold_in(key, rank)`` → independent noise per rank.
+        first_moment_overhead: First-moment sensitivity overhead used when
+            a :class:`~opaque.types.SecondMomentClippingOutput` flows in
+            (paired-stream private first + second moment estimation).
+            Must be strictly greater than 1.0.  Defaults to ``sqrt(3/2)``
+            (the d ≥ 2 add/remove-DP value); pass-through to
+            :func:`opaque.dpsgd.noise._second_moment.second_moment_stddevs`.
+            Ignored for single-stream :class:`~opaque.types.ClippedPytree`
+            inputs.
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -172,7 +188,8 @@ def truncated_gaussian_noise(
 
     Raises:
         ValueError: If ``noise_multiplier`` or the realized max_norm-derived
-            standard deviation is negative, or ``radius`` is not positive.
+            standard deviation is negative, ``radius`` is not positive, or
+            ``first_moment_overhead`` is not strictly greater than 1.0.
 
     Example:
         >>> import torch
@@ -212,8 +229,88 @@ def truncated_gaussian_noise(
         _validate_truncated_stddev(effective)
         return effective
 
+    def _add_truncated(
+        tensor: torch.Tensor, std: float, generator: torch.Generator
+    ) -> torch.Tensor:
+        if std == 0:
+            bound = 0.0
+            return torch.clamp(tensor, min=-bound, max=bound)
+        bound = std * radius
+        return _truncated_normal_around(
+            tensor,
+            stddev=std,
+            lower=-bound,
+            upper=bound,
+            generator=generator,
+        )
+
+    def _add_paired(
+        clipped_input: SecondMomentClippingOutput, st: GaussianNoiseState
+    ) -> tuple[SecondMomentNoiseOutput, GaussianNoiseState]:
+        first_clipped = clipped_input.grads
+        second_clipped = clipped_input.squared_grads
+        if not isinstance(first_clipped, ClippedPytree):
+            raise TypeError("SecondMomentClippingOutput.grads must be a ClippedPytree.")
+        if not isinstance(second_clipped, ClippedPytree):
+            raise TypeError(
+                "SecondMomentClippingOutput.squared_grads must be a ClippedPytree."
+            )
+        if isinstance(first_clipped.max_norm, PerGroup) or isinstance(
+            second_clipped.max_norm, PerGroup
+        ):
+            raise TypeError(
+                "truncated_gaussian_noise paired-stream output "
+                "(SecondMomentNoiseOutput) does not support PerGroup max_norm. "
+                "Per-group second-moment allocation has not been validated. "
+                "Use a scalar max_norm or pass a single-stream ClippedPytree input."
+            )
+        # Identity strategy → c1 = c2 = 1.0; per-record bounds for
+        # both streams so the joint allocation is correct.
+        first_stddev, second_stddev = second_moment_stddevs(
+            resolved_noise_multiplier,
+            first_max_norm=float(first_clipped.sensitivity),
+            squared_max_norm=float(second_clipped.sensitivity),
+            first_moment_overhead=first_moment_overhead,
+        )
+        # Two independent noise streams; fold-in 1 / 2 namespaces them so
+        # they don't collide with the single-stream key derivation.
+        first_step_key = rng_fold_in(rng_fold_in(st._rng_key, 1), st._step_counter)
+        second_step_key = rng_fold_in(rng_fold_in(st._rng_key, 2), st._step_counter)
+        first_gen = generator_from_key(first_step_key)
+        second_gen = generator_from_key(second_step_key)
+        noisy_grads = tree_map(
+            lambda t: _add_truncated(t, first_stddev, first_gen),
+            first_clipped.pytree,
+        )
+        noisy_squared = tree_map(
+            lambda t: _add_truncated(t, second_stddev, second_gen),
+            second_clipped.pytree,
+        )
+        next_state = GaussianNoiseState(
+            _step_counter=st._step_counter + 1,
+            _rng_key=st._rng_key,
+        )
+        return (
+            SecondMomentNoiseOutput(
+                NoisedPytree(
+                    pytree=noisy_grads,
+                    max_norm=first_clipped.max_norm,
+                    noise_stddev=first_stddev,
+                ),
+                NoisedPytree(
+                    pytree=noisy_squared,
+                    max_norm=second_clipped.max_norm,
+                    noise_stddev=second_stddev,
+                ),
+            ),
+            next_state,
+        )
+
     def noise_fn(grads, st):
-        """Add truncated Gaussian noise to a clipped pytree."""
+        """Add truncated Gaussian noise to a clipped pytree (or paired stream)."""
+        if isinstance(grads, SecondMomentClippingOutput):
+            return _add_paired(grads, st)
+
         if isinstance(grads, NoisedPytree):
             raise TypeError(
                 "truncated_gaussian_noise expects ClippedPytree inputs, not "

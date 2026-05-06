@@ -158,6 +158,15 @@ For high-dimensional tasks like model training, the truncated Gaussian
 converges to the standard Gaussian, so use `acc.gaussian(noise_multiplier)`
 for accounting.
 
+`truncated_gaussian_noise` accepts the same paired-stream input as
+`gaussian_noise`: when a `SecondMomentClippingOutput` (from
+``clipped_grad(..., second_moment=True)``) flows in, the function returns
+a `SecondMomentNoiseOutput` with both the first-moment and squared-moment
+streams noised under the joint sensitivity allocation
+(``sqrt(3/2)`` overhead on the first stream by default).  Each stream is
+sampled from its own truncated Gaussian with bounds scaled to its own
+``radius * stddev``.
+
 ### Which variant to use
 
 The truncated Gaussian provides bounded support, which can be useful when
