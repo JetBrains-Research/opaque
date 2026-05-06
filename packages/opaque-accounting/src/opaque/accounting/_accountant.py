@@ -245,6 +245,3 @@ def _register_accountant_serialization() -> None:
         _accountant_state_dict,
         lambda _template, sd: _accountant_from_state_dict(dict(sd)),
     )
-
-
-_register_accountant_serialization()

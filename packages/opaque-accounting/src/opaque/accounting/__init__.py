@@ -56,6 +56,8 @@ from . import (
 )
 
 from opaque.accounting._accountant import Accountant
+
+import opaque.accounting._serialization  # noqa: F401  (opaque.serialization hook)
 from opaque.accounting.calibration import (
     advantage_budget,
     beta_budget,
