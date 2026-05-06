@@ -228,7 +228,11 @@ def truncated_gaussian_noise(
             return torch.clamp(tensor, min=-bound, max=bound)
         bound = std * radius
         return _truncated_normal_around(
-            tensor, stddev=std, lower=-bound, upper=bound, generator=generator,
+            tensor,
+            stddev=std,
+            lower=-bound,
+            upper=bound,
+            generator=generator,
         )
 
     def _add_paired(
@@ -237,9 +241,7 @@ def truncated_gaussian_noise(
         first_clipped = clipped_input.grads
         second_clipped = clipped_input.squared_grads
         if not isinstance(first_clipped, ClippedPytree):
-            raise TypeError(
-                "SecondMomentClippingOutput.grads must be a ClippedPytree."
-            )
+            raise TypeError("SecondMomentClippingOutput.grads must be a ClippedPytree.")
         if not isinstance(second_clipped, ClippedPytree):
             raise TypeError(
                 "SecondMomentClippingOutput.squared_grads must be a ClippedPytree."

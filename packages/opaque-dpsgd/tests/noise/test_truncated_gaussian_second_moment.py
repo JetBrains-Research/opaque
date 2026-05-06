@@ -8,7 +8,6 @@ truncated Gaussian noise to each.
 
 from __future__ import annotations
 
-import math
 
 import pytest
 import torch
@@ -28,7 +27,11 @@ from opaque.random import key
 
 
 def _paired_input(
-    grads: torch.Tensor, squared: torch.Tensor, *, max_norm: float, squared_max_norm: float,
+    grads: torch.Tensor,
+    squared: torch.Tensor,
+    *,
+    max_norm: float,
+    squared_max_norm: float,
 ) -> SecondMomentClippingOutput:
     return SecondMomentClippingOutput(
         grads=clipped(grads, max_norm=max_norm),
@@ -41,11 +44,16 @@ class TestPairedStreamShape:
 
     def test_returns_second_moment_noise_output(self):
         noise_fn, state = truncated_gaussian_noise(
-            noise_multiplier=1.0, radius=5.0, key=key(0),
+            noise_multiplier=1.0,
+            radius=5.0,
+            key=key(0),
         )
         out, _ = noise_fn(
             _paired_input(
-                torch.zeros(10), torch.zeros(10), max_norm=1.0, squared_max_norm=1.0,
+                torch.zeros(10),
+                torch.zeros(10),
+                max_norm=1.0,
+                squared_max_norm=1.0,
             ),
             state,
         )
@@ -56,11 +64,16 @@ class TestPairedStreamShape:
     def test_streams_carry_distinct_stddevs(self):
         """First-stream stddev (with √(3/2) overhead) ≠ second-stream stddev."""
         noise_fn, state = truncated_gaussian_noise(
-            noise_multiplier=1.0, radius=5.0, key=key(0),
+            noise_multiplier=1.0,
+            radius=5.0,
+            key=key(0),
         )
         out, _ = noise_fn(
             _paired_input(
-                torch.zeros(10), torch.zeros(10), max_norm=1.0, squared_max_norm=1.0,
+                torch.zeros(10),
+                torch.zeros(10),
+                max_norm=1.0,
+                squared_max_norm=1.0,
             ),
             state,
         )
@@ -83,7 +96,9 @@ class TestPairedStreamNoiseBounded:
     def test_first_stream_within_radius(self):
         radius = 4.0
         noise_fn, state = truncated_gaussian_noise(
-            noise_multiplier=1.0, radius=radius, key=key(123),
+            noise_multiplier=1.0,
+            radius=radius,
+            key=key(123),
         )
         out, _ = noise_fn(
             _paired_input(
@@ -100,7 +115,9 @@ class TestPairedStreamNoiseBounded:
     def test_second_stream_within_radius(self):
         radius = 4.0
         noise_fn, state = truncated_gaussian_noise(
-            noise_multiplier=1.0, radius=radius, key=key(123),
+            noise_multiplier=1.0,
+            radius=radius,
+            key=key(123),
         )
         out, _ = noise_fn(
             _paired_input(
@@ -123,20 +140,30 @@ class TestPairedStreamIndependence:
     def test_squared_max_norm_changes_second_stream_only(self):
         """Doubling `squared_max_norm` doubles the second-stream stddev."""
         noise_fn_a, state_a = truncated_gaussian_noise(
-            noise_multiplier=1.0, radius=5.0, key=key(0),
+            noise_multiplier=1.0,
+            radius=5.0,
+            key=key(0),
         )
         out_a, _ = noise_fn_a(
             _paired_input(
-                torch.zeros(10), torch.zeros(10), max_norm=1.0, squared_max_norm=1.0,
+                torch.zeros(10),
+                torch.zeros(10),
+                max_norm=1.0,
+                squared_max_norm=1.0,
             ),
             state_a,
         )
         noise_fn_b, state_b = truncated_gaussian_noise(
-            noise_multiplier=1.0, radius=5.0, key=key(0),
+            noise_multiplier=1.0,
+            radius=5.0,
+            key=key(0),
         )
         out_b, _ = noise_fn_b(
             _paired_input(
-                torch.zeros(10), torch.zeros(10), max_norm=1.0, squared_max_norm=2.0,
+                torch.zeros(10),
+                torch.zeros(10),
+                max_norm=1.0,
+                squared_max_norm=2.0,
             ),
             state_b,
         )
@@ -157,10 +184,13 @@ class TestPairedStreamPerGroupRejected:
         from opaque.types import PerGroup
 
         noise_fn, state = truncated_gaussian_noise(
-            noise_multiplier=1.0, radius=5.0, key=key(0),
+            noise_multiplier=1.0,
+            radius=5.0,
+            key=key(0),
         )
         per_group_norm = PerGroup(
-            groups={"weight": "g"}, values={"g": 1.0},
+            groups={"weight": "g"},
+            values={"g": 1.0},
         )
         paired = SecondMomentClippingOutput(
             grads=clipped({"weight": torch.zeros(4)}, max_norm=per_group_norm),
@@ -175,20 +205,30 @@ class TestPairedStreamReproducibility:
 
     def test_seeded_runs_match(self):
         noise_fn_a, state_a = truncated_gaussian_noise(
-            noise_multiplier=1.0, radius=5.0, key=key(42),
+            noise_multiplier=1.0,
+            radius=5.0,
+            key=key(42),
         )
         noise_fn_b, state_b = truncated_gaussian_noise(
-            noise_multiplier=1.0, radius=5.0, key=key(42),
+            noise_multiplier=1.0,
+            radius=5.0,
+            key=key(42),
         )
         out_a, _ = noise_fn_a(
             _paired_input(
-                torch.zeros(20), torch.zeros(20), max_norm=1.0, squared_max_norm=1.0,
+                torch.zeros(20),
+                torch.zeros(20),
+                max_norm=1.0,
+                squared_max_norm=1.0,
             ),
             state_a,
         )
         out_b, _ = noise_fn_b(
             _paired_input(
-                torch.zeros(20), torch.zeros(20), max_norm=1.0, squared_max_norm=1.0,
+                torch.zeros(20),
+                torch.zeros(20),
+                max_norm=1.0,
+                squared_max_norm=1.0,
             ),
             state_b,
         )
@@ -200,21 +240,24 @@ class TestPairedStreamReproducibility:
     def test_first_and_second_streams_have_different_noise(self):
         """fold_in(key, 1) vs fold_in(key, 2) namespacing gives independent streams."""
         noise_fn, state = truncated_gaussian_noise(
-            noise_multiplier=1.0, radius=5.0, key=key(42),
+            noise_multiplier=1.0,
+            radius=5.0,
+            key=key(42),
         )
         # Identical inputs and stddevs would only produce identical outputs
         # if the two streams used the same RNG.  Pick equal max_norms so any
         # stddev mismatch is small and the test still distinguishes streams.
         out, _ = noise_fn(
             _paired_input(
-                torch.zeros(50), torch.zeros(50), max_norm=1.0, squared_max_norm=1.0,
+                torch.zeros(50),
+                torch.zeros(50),
+                max_norm=1.0,
+                squared_max_norm=1.0,
             ),
             state,
         )
         # Streams cover the same domain but with different noise.
-        assert not torch.equal(
-            out.noisy_grads.pytree, out.noisy_squared_grads.pytree
-        )
+        assert not torch.equal(out.noisy_grads.pytree, out.noisy_squared_grads.pytree)
 
 
 class TestPairedStreamStateAdvances:
@@ -222,12 +265,17 @@ class TestPairedStreamStateAdvances:
 
     def test_state_advances(self):
         noise_fn, state = truncated_gaussian_noise(
-            noise_multiplier=1.0, radius=5.0, key=key(0),
+            noise_multiplier=1.0,
+            radius=5.0,
+            key=key(0),
         )
         for expected in (1, 2, 3):
             _, state = noise_fn(
                 _paired_input(
-                    torch.zeros(4), torch.zeros(4), max_norm=1.0, squared_max_norm=1.0,
+                    torch.zeros(4),
+                    torch.zeros(4),
+                    max_norm=1.0,
+                    squared_max_norm=1.0,
                 ),
                 state,
             )
@@ -239,11 +287,16 @@ class TestZeroNoiseMultiplier:
 
     def test_zero_noise_paired(self):
         noise_fn, state = truncated_gaussian_noise(
-            noise_multiplier=0.0, radius=5.0, key=key(0),
+            noise_multiplier=0.0,
+            radius=5.0,
+            key=key(0),
         )
         out, _ = noise_fn(
             _paired_input(
-                torch.ones(8), torch.ones(8) * 4, max_norm=1.0, squared_max_norm=1.0,
+                torch.ones(8),
+                torch.ones(8) * 4,
+                max_norm=1.0,
+                squared_max_norm=1.0,
             ),
             state,
         )
