@@ -13,7 +13,7 @@ The ``pytest.importorskip`` calls below gate the entire module automatically.
 
 Run selectively with::
 
-    uv run --group cross-validation pytest tests/test_cross_validation.py -v
+    uv run --group cross-validation pytest packages/opaque-dpsgd/tests/accounting/test_cross_validation.py -v
 """
 
 from __future__ import annotations
