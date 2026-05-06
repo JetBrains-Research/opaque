@@ -29,6 +29,7 @@ import logging
 import math
 import os
 import time
+import tempfile
 import warnings
 from collections.abc import Mapping
 from typing import Any, Callable, NamedTuple
@@ -759,6 +760,9 @@ class DPTrainer:
                 params = dict(getattr(trial, "params", {}))
             else:
                 params = dict(self.hp_space(trial))
+        elif self.hp_search_backend == HPSearchBackend.RAY:
+            params = dict(trial)
+            params.pop("wandb", None)
         elif isinstance(trial, Mapping):
             params = dict(trial)
         elif hasattr(trial, "assignments"):
@@ -791,6 +795,8 @@ class DPTrainer:
         )
         if self.hp_search_backend == HPSearchBackend.OPTUNA:
             log.info("Trial: %s", getattr(trial, "params", params))
+        elif self.hp_search_backend == HPSearchBackend.RAY:
+            log.info("RAY trial: %s", params)
 
     def _report_to_hp_search(
         self,
@@ -817,6 +823,15 @@ class DPTrainer:
                         self._control,
                     )
                     raise optuna.TrialPruned()
+        elif self.hp_search_backend == HPSearchBackend.RAY:
+            ray_train = importlib.import_module("ray.train")
+            with tempfile.TemporaryDirectory() as temp_dir:
+                checkpoint = None
+                if self._control.should_save:
+                    self._tune_save_checkpoint(checkpoint_dir=temp_dir)
+                    checkpoint = ray_train.Checkpoint.from_directory(temp_dir)
+                metrics_copy["objective"] = self.objective
+                ray_train.report(metrics_copy, checkpoint=checkpoint)
 
     def _get_output_dir(self, trial: Any | None = None) -> str | None:
         if trial is None:
@@ -825,6 +840,9 @@ class DPTrainer:
             return None
         if self.hp_search_backend == HPSearchBackend.OPTUNA:
             run_id = getattr(trial, "number", self._trial_run_counter)
+        elif self.hp_search_backend == HPSearchBackend.RAY:
+            ray_train = importlib.import_module("ray.train")
+            run_id = ray_train.get_context().get_trial_id()
         elif isinstance(trial, Mapping):
             run_id = trial.get("run_id", self._trial_run_counter)
         else:
@@ -3912,6 +3930,50 @@ class DPTrainer:
         if self.args.push_to_hub:
             _hub._push_from_checkpoint(self, ckpt_dir)
 
+        return ckpt_dir
+
+    def _tune_save_checkpoint(self, checkpoint_dir: str) -> str:
+        """Write a Ray-Tune-bound DP checkpoint into ``checkpoint_dir``.
+
+        DP analogue of ``transformers.Trainer._tune_save_checkpoint``.  Ray
+        passes a temp directory and expects the trainer to deposit a
+        complete, self-resumable snapshot under
+        ``checkpoint_dir/checkpoint-<global_step>/``.  Unlike
+        :meth:`_save_checkpoint`, this path bypasses
+        ``save_strategy``-driven rotation: Ray manages retention via
+        ``keep_checkpoints_num`` / ``checkpoint_score_attr``.
+
+        Always writes the full resumability set (model + accountant +
+        trainer state + DP runtime + RNG + optimizer); ``save_only_model``
+        is intentionally ignored here because Ray expects checkpoints to
+        be complete enough to resume a trial after eviction.
+        """
+        ctx = self._ctx
+        if ctx is None:
+            raise RuntimeError(
+                "_tune_save_checkpoint must be called from inside the training loop "
+                "(self._ctx is None — no live training context)."
+            )
+
+        step = self.state.global_step
+        ckpt_dir = os.path.join(checkpoint_dir, f"{ckpt.PREFIX_CHECKPOINT_DIR}-{step}")
+        os.makedirs(ckpt_dir, exist_ok=True)
+
+        self._restore_params(ctx.trainable_params)
+        self._save_model_artifacts(ckpt_dir)
+
+        # HF parity: refresh ``TrainerControl`` callback state before
+        # serializing, so a Ray-restored trainer sees the same control
+        # flags as the original one.
+        self.state.stateful_callbacks = dict(self.state.stateful_callbacks or {})
+        self.state.stateful_callbacks["TrainerControl"] = self._control.state()
+
+        self._save_trainer_state(ckpt_dir)
+        self._save_training_args(ckpt_dir)
+        self._save_accountant(ckpt_dir, ctx)
+        self._save_optimizer(ckpt_dir, ctx)
+        self._save_dp_runtime(ckpt_dir, ctx)
+        self._save_rng_state(ckpt_dir)
         return ckpt_dir
 
     def _save_model_artifacts(self, output_dir: str) -> None:
