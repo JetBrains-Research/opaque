@@ -315,7 +315,7 @@ def with_batch_dim(
 
     import inspect
 
-    from opaque.core.pytree import tree_map
+    from opaque.pytree import tree_map
 
     if isinstance(batch_argnums, int):
         batch_argnums = (batch_argnums,)

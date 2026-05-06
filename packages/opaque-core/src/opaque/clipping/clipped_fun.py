@@ -15,7 +15,7 @@ from opaque.clipping.pytree import clip_pytree
 from opaque.types import ClippedPytree, clipped
 from opaque.clipping.types import FixedClipState
 from opaque.types import SecondMomentClippingOutput
-from opaque.core.pytree import global_norm, tree_map
+from opaque.pytree import global_norm, tree_map
 
 
 @dataclass(frozen=True)

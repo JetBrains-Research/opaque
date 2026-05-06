@@ -34,10 +34,8 @@ functional API usage.
 
 ## PyTree Utilities
 
-The `opaque.core.pytree` module provides helpers for working with PyTrees —
-nested structures of tensors used throughout Opaque. For convenience the
-most common entry points (`tree_map`, `tree_leaves`, `global_norm`,
-`partition`, `merge`) are also re-exported from `opaque.core`.
+The `opaque.pytree` module provides helpers for working with PyTrees —
+nested structures of tensors used throughout Opaque.
 
 **PyTrees** are nested dictionaries or tuples of tensors, commonly used to
 represent model parameters:
@@ -61,7 +59,7 @@ This module provides:
 **See also**: [Gradient Clipping Guide](../user-guide/clipping.md) for PyTree
 usage in DP-SGD.
 
-::: opaque.core.pytree
+::: opaque.pytree
     options:
       show_source: true
       heading_level: 3

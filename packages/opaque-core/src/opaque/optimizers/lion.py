@@ -33,7 +33,7 @@ except ImportError as exc:
     ) from exc
 
 from opaque.types import TensorPytree
-from opaque.core.pytree import tree_map
+from opaque.pytree import tree_map
 from opaque.optimizers._chain import make_optimizer_chain
 
 

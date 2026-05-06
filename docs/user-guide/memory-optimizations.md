@@ -63,7 +63,7 @@ Use a short manual sweep with `TrainingProfiler`:
 
 ```python
 from opaque.clipping import clipped_grad
-from opaque.core.profiling import StepTimer, TrainingProfiler, reset_peak_memory
+from opaque.profiling import StepTimer, TrainingProfiler, reset_peak_memory
 
 def try_microbatch(candidate_mb: int) -> float:
     grad_fn, clip_state = clipped_grad(
@@ -212,7 +212,7 @@ Use `TrainingProfiler` to track checkpoints and step-level metrics in your
 training loop.
 
 ```python
-from opaque.core.profiling import StepTimer, TrainingProfiler
+from opaque.profiling import StepTimer, TrainingProfiler
 
 profiler = TrainingProfiler(device)
 profiler, _ = profiler.mark("start")
@@ -272,4 +272,4 @@ this uses ~2 GB per sample. Re-enable fused CE or reduce batch size.
 
 ## API reference
 
-See the `opaque.core.profiling` module for complete function signatures.
+See the `opaque.profiling` module for complete function signatures.

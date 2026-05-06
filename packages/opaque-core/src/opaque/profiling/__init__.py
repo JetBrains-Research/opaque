@@ -10,7 +10,7 @@ Main Components:
     - Utility functions: get_memory_stats, print_memory, reset_peak_memory
 
 Example:
-    >>> from opaque.core.profiling import StepTimer, TrainingProfiler, print_memory
+    >>> from opaque.profiling import StepTimer, TrainingProfiler, print_memory
     >>>
     >>> print_memory(device, "After model load")
     >>> profiler = TrainingProfiler(device)
@@ -23,7 +23,7 @@ Example:
     >>> print(profiler.final_summary())
 """
 
-from opaque.core.profiling.memory import (
+from opaque.profiling.memory import (
     Checkpoint,
     MemoryStats,
     StepMetrics,

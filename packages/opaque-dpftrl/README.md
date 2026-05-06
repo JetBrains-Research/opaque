@@ -32,4 +32,4 @@ from opaque.dpftrl.sampling import BMinSepSampler
 
 All algorithm-agnostic primitives (Poisson sampling, fixed clipping,
 RNG keys, pytree / distributed / profiling helpers) live in
-[`opaque.core`](../opaque-core/README.md).
+[`opaque-core`](../opaque-core/README.md).

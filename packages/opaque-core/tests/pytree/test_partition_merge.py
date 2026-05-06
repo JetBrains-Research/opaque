@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from opaque.core.pytree import merge, partition, tree_map_with_path
+from opaque.pytree import merge, partition, tree_map_with_path
 
 
 class TestTreeMapWithPath:

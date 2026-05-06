@@ -67,9 +67,9 @@ Visit <http://localhost:8000> to view the docs.
 ## Verify Installation
 
 ```python
-import opaque.core
+import opaque
 import opaque.dpsgd
 
-print("opaque.core version:", opaque.core.__version__)
+print("opaque version:", opaque.__version__)
 print("opaque.dpsgd version:", opaque.dpsgd.__version__)
 ```

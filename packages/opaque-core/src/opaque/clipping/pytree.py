@@ -7,7 +7,7 @@ from collections import namedtuple
 import torch
 
 from opaque.types import PerGroup
-from opaque.core.pytree import global_norm, tree_map
+from opaque.pytree import global_norm, tree_map
 
 ClipPytreeAux = namedtuple("ClipPytreeAux", ["norm", "group_norms"])
 """Auxiliary outputs from clip_pytree.
@@ -30,7 +30,7 @@ def _resolve_compute_dtype_for_reduction(
     accumulate at fp64, not silently downcast).  Explicit dtype ⇒ use
     as-is (DP callers force fp32 here for sensitivity-bound stability).
 
-    Mirrors :func:`opaque.core.pytree.global_norm`'s dtype resolution so
+    Mirrors :func:`opaque.pytree.global_norm`'s dtype resolution so
     the per-group reduction agrees with the global-flat path.
     """
     if compute_dtype is not None:

@@ -61,7 +61,7 @@ except ImportError as exc:
     ) from exc
 
 from opaque.types import TensorPytree
-from opaque.core.pytree import tree_map
+from opaque.pytree import tree_map
 
 
 @dataclasses.dataclass(frozen=True)

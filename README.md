@@ -21,7 +21,7 @@ Install and depend on `opaque` only. The repository is implemented as
 | Distribution | Import roots | Purpose |
 |---|---|---|
 | `opaque` | — | Convenience installer; pulls in a curated bundle of sub-packages |
-| `opaque-core` | `opaque.core`, `opaque.functional`, `opaque.distributed` | RNG, pytree, clipping, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing |
+| `opaque-core` | `opaque.{clipping,random,pytree,functional,distributed,optimizers,scheduling,profiling,types}` | RNG, pytree, clipping, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing, optimizers |
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, AdamW-BC, Poisson samplers, adaptive + auto clipping |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers |
 | `opaque-auditing` | `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) |
@@ -34,17 +34,18 @@ Install and depend on `opaque` only. The repository is implemented as
 ### Import layout
 
 ```
-opaque.core.{clipping,sampling,noise,random,pytree}        <- opaque-core
+opaque.{clipping,random,pytree,types}                      <- opaque-core
 opaque.distributed.{collectives,gradients,state,shard}     <- opaque-core
 opaque.functional                                          <- opaque-core
+opaque.optimizers                                          <- opaque-core
 opaque.scheduling                                          <- opaque-core
+opaque.profiling                                           <- opaque-core
 opaque.dpsgd.{noise,clipping,sampling,optimizers}          <- opaque-dpsgd
 opaque.dpftrl.{noise,sampling,optimizers}                  <- opaque-dpftrl
 opaque.auditing                                            <- opaque-auditing
 opaque.patches.{kernels,torch,transformers,peft}           <- opaque-patches
 opaque.transformers                                        <- opaque-transformers
 opaque.accounting (._native)                               <- opaque-accounting
-opaque.core.profiling                                      <- opaque-core
 ```
 
 ## Installation
@@ -94,8 +95,8 @@ A minimal DP-SGD training loop:
 ```python
 import torch
 import opaque.accounting as acc
-from opaque.core.clipping import clipped_grad
-from opaque.core.random import key
+from opaque.clipping import clipped_grad
+from opaque.random import key
 from opaque.dpsgd.noise import gaussian_noise
 
 def loss_fn(params, x, y):

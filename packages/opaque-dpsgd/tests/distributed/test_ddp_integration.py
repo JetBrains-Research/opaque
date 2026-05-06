@@ -32,10 +32,10 @@ from opaque.distributed import (
 )
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpftrl.noise import mf_noise, identity_strategy
-from opaque.core.profiling import StepTimer, TrainingProfiler
+from opaque.profiling import StepTimer, TrainingProfiler
 from opaque.random import key
 from opaque.functional import make_functional
-from opaque.core.pytree import tree_leaves
+from opaque.pytree import tree_leaves
 
 # Mark all tests in this file as requiring GPU
 pytestmark = pytest.mark.cuda

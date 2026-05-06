@@ -135,7 +135,7 @@ from opaque.dpftrl.noise import (
     mf_noise,
     second_moment_joint_sensitivity,
 )
-from opaque.core.profiling import (
+from opaque.profiling import (
     StepTimer,
     TrainingProfiler,
     print_memory,

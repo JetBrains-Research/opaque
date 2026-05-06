@@ -49,7 +49,7 @@ except ImportError as exc:
     ) from exc
 
 from opaque.types import PerGroup, TensorPytree
-from opaque.core.pytree import tree_map
+from opaque.pytree import tree_map
 from opaque.optimizers._bias_correction import (
     is_per_group,
     resolve_noise_variance,

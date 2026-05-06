@@ -20,7 +20,7 @@ import torch
 import torch.distributed as dist
 
 from opaque.types import ClippedPytree, NoisedPytree
-from opaque.core.pytree import tree_map
+from opaque.pytree import tree_map
 
 from .collectives import all_reduce_, get_world_size, is_distributed
 from .state import assert_scalar_equal

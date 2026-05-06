@@ -12,7 +12,7 @@ Key Components:
     - Utility functions: get_memory_stats, print_memory, reset_peak_memory
 
 Example - Basic usage in training loop:
-    >>> from opaque.core.profiling import StepTimer, TrainingProfiler
+    >>> from opaque.profiling import StepTimer, TrainingProfiler
     >>>
     >>> profiler = TrainingProfiler(device)
     >>> profiler, _ = profiler.mark("model_loaded")
@@ -29,7 +29,7 @@ Example - Basic usage in training loop:
     ...         wandb.log(profiler.current_metrics())
 
 Example - Simple memory tracking:
-    >>> from opaque.core.profiling import get_memory_stats, print_memory
+    >>> from opaque.profiling import get_memory_stats, print_memory
     >>>
     >>> print_memory(device, "After model load")
     >>> # ... do work ...

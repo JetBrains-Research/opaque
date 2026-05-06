@@ -1,8 +1,8 @@
 # opaque-core
 
 Core primitives for the Opaque differential-privacy ecosystem. Ships
-algorithm-agnostic modules in both `opaque.core.*` (internal primitives) and
-the user-facing top-level `opaque.*` (hoisted conveniences).
+algorithm-agnostic modules under the user-facing top-level `opaque.*`
+namespace.
 
 ## Install
 
@@ -36,18 +36,18 @@ Top-level (user-facing):
   `reduce_scalar`, `sync_object`, `sync`, `local_shard`). Submodules:
   `collectives`, `gradients`, `state`, `shard`.
 
-Internal primitives (`opaque.core.*`):
+Additional primitives:
 
 - `opaque.random` — JAX-style RNG keys, PyTorch generator bridge
-- `opaque.core.pytree` — `tree_map`, `tree_leaves`, `partition`, `merge`,
+- `opaque.pytree` — `tree_map`, `tree_leaves`, `partition`, `merge`,
   `global_norm`
 - `opaque.clipping` — per-example / per-group clipping primitives
   (`clipped_grad`, `clipped_fun`, `clip_pytree`, `ClipState`,
   `FixedClipState`, `PerGroup`, `per_group`). Distributed sync available
   via `opaque.clipping.distributed`.
-- `opaque.functional` — `empty_collate` wrapper for variable-size /
-  empty batches (shared by all Poisson-style samplers)
-- `opaque.core.noise` — `NoiseState` base class
+- `opaque.profiling` — `TrainingProfiler`, `StepTimer`, memory diagnostics
+- `opaque.types` — wrapper-pytree types (`ClippedPytree`, `NoisedPytree`,
+  `PerGroup`, `ClipState`, `NoiseState`, …)
 
 ## Usage
 

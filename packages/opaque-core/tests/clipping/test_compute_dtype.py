@@ -18,7 +18,7 @@ from opaque.types import ClippedPytree
 
 from opaque.clipping.clipped_fun import clipped_fun
 from opaque.clipping.pytree import clip_pytree
-from opaque.core.pytree import global_norm
+from opaque.pytree import global_norm
 
 
 def _unwrap_clipped(value):
