@@ -29,7 +29,6 @@ _StateDictFn = Callable[[Any], dict[str, Any]]
 _FromStateDictFn = Callable[[Any, dict[str, Any]], Any]
 
 _REGISTRY: dict[type[Any], tuple[_StateDictFn, _FromStateDictFn]] = {}
-_REGISTRATIONS_IMPORTED: bool = False
 
 
 def register_serialization_type(
@@ -39,16 +38,6 @@ def register_serialization_type(
 ) -> None:
     """Register custom (de)serialisation for ``typ`` (also used at nested nodes)."""
     _REGISTRY[typ] = (state_dict_fn, from_state_dict_fn)
-
-
-def _ensure_registration_hooks_imported() -> None:
-    """Import registration side-effect modules (no-op hooks today)."""
-    global _REGISTRATIONS_IMPORTED
-    if _REGISTRATIONS_IMPORTED:
-        return
-    _REGISTRATIONS_IMPORTED = True
-    import opaque.clipping._serialization  # noqa: F401
-    import opaque.optimizers._serialization  # noqa: F401
 
 
 def _subdict(sd: Mapping[str, Any], prefix: str) -> dict[str, Any]:
@@ -84,7 +73,6 @@ def _walk_load(template: Any, sd: Mapping[str, Any], prefix: str) -> Any:
 
 def state_dict(obj: Any) -> dict[str, Any]:
     """Serialise ``obj`` to a flat ``dict[str, Any]``."""
-    _ensure_registration_hooks_imported()
     out: dict[str, Any] = {}
     _walk_save(obj, "", out)
     return out
@@ -97,7 +85,6 @@ def from_state_dict(template: Any, sd: Mapping[str, Any]) -> Any:
     ``template`` argument selects the handler; handlers may ignore it when
     the dict is self-describing (as with :class:`~opaque.accounting._base.DpProcess`).
     """
-    _ensure_registration_hooks_imported()
     return _walk_load(template, sd, "")
 
 

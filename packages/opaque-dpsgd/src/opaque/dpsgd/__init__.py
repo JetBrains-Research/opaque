@@ -33,8 +33,6 @@ from opaque.dpsgd.noise import (
 )
 from opaque.dpsgd.sampling import PoissonSampler, TruncatedPoissonSampler
 
-import opaque.dpsgd._serialization  # noqa: F401  (serialization hook)
-
 if TYPE_CHECKING:
     # Static type checkers see ``accounting`` as a real attribute; at
     # runtime it is loaded on first access via ``__getattr__`` below.
