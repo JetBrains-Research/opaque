@@ -41,8 +41,7 @@ from opaque.accounting import Accountant
 from opaque.accounting import calibration as cal
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
-from opaque.dpsgd.noise.gaussian import gaussian_noise
-from opaque.dpsgd.noise.truncated_gaussian import truncated_gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise, truncated_gaussian_noise
 from opaque.functional import make_functional
 from opaque.transformers.trainer import _checkpoint as ckpt
 from opaque.transformers.trainer import _hpo
@@ -1254,7 +1253,7 @@ class DPTrainer:
         # --- Per-group clipping norm ---
         clip_norm: Any = a.dp_clipping_norm
         if a.dp_per_group_clipping is not None:
-            from opaque.clipping.per_group import per_group
+            from opaque.clipping import per_group
 
             clip_norm = per_group(
                 trainable_params,

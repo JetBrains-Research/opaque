@@ -21,8 +21,8 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME
 
 from opaque.clipping.types import FixedClipState
-from opaque.dpsgd.clipping.adaptive import AdaptiveClipState
-from opaque.dpsgd.noise.gaussian import GaussianNoiseState
+from opaque.dpsgd.clipping.types import AdaptiveClipState
+from opaque.dpsgd.noise.types import GaussianNoiseState
 
 log = logging.getLogger(__name__)
 

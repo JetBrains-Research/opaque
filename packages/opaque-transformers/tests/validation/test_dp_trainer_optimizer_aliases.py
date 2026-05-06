@@ -3,17 +3,17 @@
 DPTrainer's optimizer surface has two layers:
 
 1. Canonical opaque names (``adam``, ``adamw``, ``sgd``, ``rmsprop``,
-   ``adagrad``, ``adafactor``, ``ademamix``, ``lion``, ``schedule_free``)
-   route directly to ``opaque.optimizers.*`` factories with HF-canonical
-   ``TrainingArguments`` fields forwarded.
+   ``adagrad``, ``adafactor``, ``ademamix``, ``lion``, ``radam``,
+   ``schedule_free``) route directly to ``opaque.optimizers.*`` factories
+   with HF-canonical ``TrainingArguments`` fields forwarded.
 2. HF compat aliases (``adamw_torch``, ``adamw_torch_fused``,
-   ``adamw_hf``, ``adafactor``, ``ademamix``, ``lion_32bit``) route to
-   the same opaque factories — DPTrainer honours the HF name by
-   selecting the matching DP-aware update math, not by substituting
-   a different one.
+   ``adamw_hf``, ``adafactor``, ``ademamix``, ``lion_32bit``,
+   ``schedule_free_radam``) route to the same opaque factories — DPTrainer
+   honours the HF name by selecting the matching DP-aware update math,
+   not by substituting a different one.
 
 Names with no DP-aware mapping (8-bit, paged, GaLore, fused-CUDA, XLA,
-NPU, ``adadelta``, ``radam``, ``adamax``) reject with redirect messages.
+NPU, ``adadelta``, ``adamax``) reject with redirect messages.
 """
 
 from __future__ import annotations
@@ -93,12 +93,13 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
 # opaque factory.  Construction must succeed; the underlying update
 # math is the matching opaque factory, *not* the HF-named impl.
 ACCEPTED_HF_ALIASES = (
-    "adamw_torch",         # ↦ opaque.optimizers.adamw
-    "adamw_torch_fused",   # ↦ opaque.optimizers.adamw
-    "adamw_hf",            # ↦ opaque.optimizers.adamw
-    "adafactor",           # ↦ opaque.optimizers.adafactor
-    "ademamix",            # ↦ opaque.optimizers.ademamix
-    "lion_32bit",          # ↦ opaque.optimizers.lion
+    "adamw_torch",           # ↦ opaque.optimizers.adamw
+    "adamw_torch_fused",     # ↦ opaque.optimizers.adamw
+    "adamw_hf",              # ↦ opaque.optimizers.adamw
+    "adafactor",             # ↦ opaque.optimizers.adafactor
+    "ademamix",              # ↦ opaque.optimizers.ademamix
+    "lion_32bit",            # ↦ opaque.optimizers.lion
+    "schedule_free_radam",   # ↦ schedule_free(radam(...))
 )
 
 
@@ -129,15 +130,12 @@ REJECTED_OPTIMIZER_NAMES = (
     "adalomo",
     "grokadamw",
     "apollo_adamw",
-    # Schedule-free with no opaque-built RAdam yet.
-    "schedule_free_radam",
     # Schedule-free over adamw / sgd has a redirect to optim='schedule_free'.
     "schedule_free_adamw",
     "schedule_free_sgd",
     "stable_adamw",
     # Re-exported torchopt primitives without DP-aware modes.
     "adadelta",
-    "radam",
     "adamax",
 )
 
@@ -194,6 +192,7 @@ SUPPORTED_OPTIMIZERS = (
     "adafactor",
     "ademamix",
     "lion",
+    "radam",
 )
 
 SMOKE_OPTIMIZERS = SUPPORTED_OPTIMIZERS

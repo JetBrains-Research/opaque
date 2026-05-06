@@ -22,8 +22,7 @@ Two-layer surface, both routed through the same builder:
    honoured by selecting the opaque factory whose math matches.
 
 Names that have no DP-aware mapping (8-bit, paged, GaLore, fused
-torch.optim, schedule-free RAdam, plain ``adadelta`` / ``radam``)
-remain rejected with a redirect message.
+torch.optim, plain ``adadelta``) remain rejected with a redirect message.
 """
 
 from __future__ import annotations
@@ -48,6 +47,7 @@ _OPAQUE_FACTORIES: dict[str, Callable[..., GradientTransformation]] = {
     "adafactor":     opaque_opt.adafactor,
     "rmsprop":       opaque_opt.rmsprop,
     "adagrad":       opaque_opt.adagrad,
+    "radam":         opaque_opt.radam,
     "schedule_free": opaque_opt.schedule_free,
 }
 
@@ -56,8 +56,8 @@ _OPAQUE_FACTORIES: dict[str, Callable[..., GradientTransformation]] = {
 # pair rather than HF's ``adam_epsilon`` so it's omitted from EPS;
 # Adam's signature has no ``decoupled_weight_decay`` (the decoupled
 # variant is the separate ``adamw`` factory).
-_APPLIES_BETAS = {"adam", "adamw", "ademamix", "lion"}
-_APPLIES_EPS = {"adam", "adamw", "rmsprop", "adagrad"}
+_APPLIES_BETAS = {"adam", "adamw", "ademamix", "lion", "radam"}
+_APPLIES_EPS = {"adam", "adamw", "rmsprop", "adagrad", "radam"}
 _APPLIES_WEIGHT_DECAY = {
     "adam",
     "adamw",
@@ -67,6 +67,7 @@ _APPLIES_WEIGHT_DECAY = {
     "adafactor",
     "ademamix",
     "lion",
+    "radam",
 }
 _APPLIES_DECOUPLED_WD = {
     "adamw",
@@ -75,8 +76,9 @@ _APPLIES_DECOUPLED_WD = {
     "adafactor",
     "ademamix",
     "lion",
+    "radam",
 }
-_APPLIES_UPDATE_RMS_CLIP = {"adam", "adamw", "rmsprop", "adafactor", "ademamix"}
+_APPLIES_UPDATE_RMS_CLIP = {"adam", "adamw", "rmsprop", "adafactor", "ademamix", "radam"}
 _APPLIES_NOISE_BC = {
     "adam",
     "adamw",
@@ -84,6 +86,7 @@ _APPLIES_NOISE_BC = {
     "adagrad",
     "ademamix",
     "adafactor",
+    "radam",
 }
 
 # ---------------------------------------------------------------------------
@@ -102,6 +105,7 @@ _HF_ALIASES: dict[str, tuple[str, dict[str, Any]]] = {
     "lion_32bit":        ("lion", {}),
     # ``lion`` itself is a canonical opaque name; HF's enum still
     # surfaces it, route through the canonical entry above.
+    "schedule_free_radam": ("schedule_free", {"base": "radam"}),
 }
 
 # ---------------------------------------------------------------------------
@@ -168,23 +172,12 @@ _DP_OPTIMIZER_UNSUPPORTED: dict[str, str] = {
     "lomo": "LOMO is not supported under DP-SGD.",
     "adalomo": "AdaLOMO is not supported under DP-SGD.",
     "grokadamw": "GrokAdamW is not supported under DP-SGD.",
-    # Schedule-free over RAdam needs an opaque-built RAdam first.
-    "schedule_free_radam": (
-        "Schedule-free RAdam awaits an opaque-built RAdam with DP "
-        "noise bias correction; use optim='schedule_free' with "
-        "optim_args='base=adamw,...' for a DP-aware equivalent."
-    ),
     # Re-exported torchopt primitives without a DP-aware mode.
     "adadelta": (
         "DPTrainer does not currently support adadelta — its two-EMA "
         "structure has no published DP bias correction.  Use "
         "opaque.optimizers.adadelta directly through the functional "
         "API if you accept vanilla behaviour under DP noise."
-    ),
-    "radam": (
-        "DPTrainer's RAdam path is being rewritten with DP noise bias "
-        "correction; use optim='adamw' with dp_noise_bias_correction=True "
-        "for a working DP-aware Adam variant."
     ),
     "adamax": (
         "Adamax structurally misbehaves under DP: the half-normal noise "
