@@ -1587,7 +1587,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#opaque.distributed.shard.local_shard" class="md-nav__link">
+  <a href="#opaque.distributed.local_shard" class="md-nav__link">
     <span class="md-ellipsis">
       local_shard
     </span>
@@ -2154,7 +2154,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#opaque.distributed.shard.local_shard" class="md-nav__link">
+  <a href="#opaque.distributed.local_shard" class="md-nav__link">
     <span class="md-ellipsis">
       local_shard
     </span>
@@ -2499,7 +2499,7 @@
 <p>Sampling primitives are split across <code>opaque.dpsgd.sampling</code> (Poisson and
 truncated Poisson) and <code>opaque.dpftrl.sampling</code> (cyclic Poisson, b-min-sep,
 balls-in-bins, sequential). Distributed shard helpers live in
-<code>opaque.distributed.shard</code>. They provide privacy-amplifying sampling
+<code>opaque.distributed</code>. They provide privacy-amplifying sampling
 mechanisms for DP-SGD and DP-FTRL.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>Privacy amplification through sampling is a key technique in DP-SGD: training
@@ -2776,7 +2776,7 @@ for correlated noise (DP-FTRL).</p>
 <h3 id="local_shard"><code>local_shard</code><a class="headerlink" href="#local_shard" title="Permanent link">&para;</a></h3>
 <p>Partition a dataset for DDP training. Returns a <code>Subset</code> containing the
 contiguous shard for the given rank.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed.shard</span><span class="w"> </span><span class="kn">import</span> <span class="n">local_shard</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">local_shard</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch.distributed</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dist</span>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">shard</span> <span class="o">=</span> <span class="n">local_shard</span><span class="p">(</span>
@@ -2823,10 +2823,10 @@ contiguous shard for the given rank.</p>
 <div class="doc doc-object doc-function">
 
 
-<h3 id="opaque.distributed.shard.local_shard" class="doc doc-heading">
+<h3 id="opaque.distributed.local_shard" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">local_shard</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">rank</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">world_size</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span></code>
 
-<a href="#opaque.distributed.shard.local_shard" class="headerlink" title="Permanent link">&para;</a></h3>
+<a href="#opaque.distributed.local_shard" class="headerlink" title="Permanent link">&para;</a></h3>
 
 
     <div class="doc doc-contents first">
@@ -2923,7 +2923,7 @@ any remainder examples.</p>
 
 
             <details class="quote">
-              <summary>Source code in <code>packages/opaque-core/src/opaque/distributed/shard.py</code></summary>
+              <summary>Source code in <code>packages/opaque-core/src/opaque/distributed/_shard.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-15">15</a></span>
 <span class="normal"><a href="#__codelineno-0-16">16</a></span>
 <span class="normal"><a href="#__codelineno-0-17">17</a></span>
@@ -2986,7 +2986,7 @@ amplification: the effective privacy cost is reduced by approximately
 <p>For distributed training, shard the dataset externally and pass a per-rank
 key via <code>fold_in(key, rank)</code>:</p>
 <p>.. code-block:: python</p>
-<div class="codehilite"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed.shard</span><span class="w"> </span><span class="kn">import</span> <span class="n">local_shard</span>
+<div class="codehilite"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">local_shard</span>
 
 <span class="n">shard</span> <span class="o">=</span> <span class="n">local_shard</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">rank</span><span class="o">=</span><span class="n">rank</span><span class="p">,</span> <span class="n">world_size</span><span class="o">=</span><span class="n">world_size</span><span class="p">)</span>
 <span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span><span class="n">shard</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span> <span class="n">rank</span><span class="p">))</span>
@@ -3226,7 +3226,7 @@ loader = DataLoader(dataset, batch_sampler=sampler)</p>
 <a id="__codelineno-0-29" name="__codelineno-0-29"></a>
 <a id="__codelineno-0-30" name="__codelineno-0-30"></a><span class="sd">    .. code-block:: python</span>
 <a id="__codelineno-0-31" name="__codelineno-0-31"></a>
-<a id="__codelineno-0-32" name="__codelineno-0-32"></a><span class="sd">        from opaque.distributed.shard import local_shard</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32"></a><span class="sd">        from opaque.distributed import local_shard</span>
 <a id="__codelineno-0-33" name="__codelineno-0-33"></a>
 <a id="__codelineno-0-34" name="__codelineno-0-34"></a><span class="sd">        shard = local_shard(dataset, rank=rank, world_size=world_size)</span>
 <a id="__codelineno-0-35" name="__codelineno-0-35"></a><span class="sd">        sampler = PoissonSampler(shard, sample_rate=0.01, key=fold_in(key(42), rank))</span>
@@ -3991,7 +3991,7 @@ predictable structure for matrix factorization noise mechanisms.</p>
 <p>For distributed training, shard the dataset externally and pass a per-rank
 key via <code>fold_in(key, rank)</code>:</p>
 <p>.. code-block:: python</p>
-<div class="codehilite"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed.shard</span><span class="w"> </span><span class="kn">import</span> <span class="n">local_shard</span>
+<div class="codehilite"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">local_shard</span>
 
 <span class="n">shard</span> <span class="o">=</span> <span class="n">local_shard</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">rank</span><span class="o">=</span><span class="n">rank</span><span class="p">,</span> <span class="n">world_size</span><span class="o">=</span><span class="n">world_size</span><span class="p">)</span>
 <span class="n">sampler</span> <span class="o">=</span> <span class="n">CyclicPoissonSampler</span><span class="p">(</span><span class="n">shard</span><span class="p">,</span> <span class="n">sampling_prob</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span> <span class="n">rank</span><span class="p">))</span>
@@ -4356,7 +4356,7 @@ loader = DataLoader(dataset, batch_sampler=sampler)</p>
 <a id="__codelineno-0-47" name="__codelineno-0-47"></a>
 <a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">    .. code-block:: python</span>
 <a id="__codelineno-0-49" name="__codelineno-0-49"></a>
-<a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="sd">        from opaque.distributed.shard import local_shard</span>
+<a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="sd">        from opaque.distributed import local_shard</span>
 <a id="__codelineno-0-51" name="__codelineno-0-51"></a>
 <a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">        shard = local_shard(dataset, rank=rank, world_size=world_size)</span>
 <a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">        sampler = CyclicPoissonSampler(shard, sampling_prob=0.5, key=fold_in(key(42), rank))</span>
