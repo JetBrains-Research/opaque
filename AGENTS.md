@@ -283,3 +283,41 @@ OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all \
   features). Migration narrative belongs in PR bodies, the changelog,
   or `docs/development/`. Forward-references to features that don't
   yet exist in the codebase don't belong anywhere.
+
+## Cursor Cloud specific instructions
+
+This is a pure library — no application server, database, or external service
+is needed. The development loop is entirely `uv sync` + `pytest` + `cargo test`.
+
+### Environment prerequisites
+
+- **Python 3.12** (system default on the VM) satisfies the `>=3.11,<3.13` constraint.
+- **Rust stable** (≥ 1.70) is pre-installed for the `opaque-accounting` PyO3 build.
+- **uv** must be on `PATH` (`$HOME/.local/bin`). The update script installs it
+  idempotently if missing.
+
+### Running services
+
+There are no long-running services. All verification is via:
+
+```bash
+uv run ruff check packages/                          # lint
+uv run ruff format --check packages/                 # format
+uv run pytest -m "not cuda and not mps and not slow" # PR-equivalent test suite
+cargo test --workspace                               # Rust tests
+```
+
+### Non-obvious gotchas
+
+- The first `uv sync` triggers a full Rust/maturin build of `opaque-accounting`
+  (~2–3 min cold, cached afterwards). Subsequent syncs are fast (~seconds).
+- The namespace is PEP 420 — there is **no** `opaque.core` import path. Instead,
+  `opaque-core` installs `opaque.clipping`, `opaque.functional`, `opaque.random`,
+  `opaque.scheduling`, `opaque.distributed`, `opaque.optimizers`, `opaque.profiling`.
+- `gaussian_noise` returns `(noise_fn, state)` and the inner `noise_fn` signature
+  is `noise_fn(clipped_pytree, state) -> (noised_pytree, new_state)` (positional args).
+- `clipped_grad` returns `(clip_fn, clip_state)` and `clip_fn` is called as
+  `clip_fn(params, batch, state=clip_state) -> (ClippedPytree, new_state)`.
+- Privacy accounting factories live in `opaque.dpsgd.accounting` and
+  `opaque.dpftrl.accounting`, **not** in `opaque.accounting` directly.
+- CUDA/MPS tests auto-skip; no special handling needed on CPU-only VMs.
