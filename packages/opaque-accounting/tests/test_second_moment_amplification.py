@@ -186,3 +186,99 @@ def test_poisson_second_moment_composes_over_steps():
     training = step * 1000
     eps = training.epsilon_at(1e-5)
     assert math.isfinite(eps) and eps > 0
+
+
+# ── SecondMoment over AdaClip (adaptive clipping + private 2nd moments) ─
+
+# When per-step adaptive clipping releases its quantile estimate alongside
+# the joint first+second moment streams, the right composition is
+# ``second_moment(adaclip(gaussian))``: AdaClip's z_eff folds the
+# threshold-quantile noise into the gradient noise as a single effective
+# Gaussian, and SecondMoment's joint-sensitivity overhead is then applied.
+# The two releases use independent randomness, so the composition is exact.
+
+
+class TestSecondMomentOverAdaClip:
+    """``second_moment(adaclip(gaussian))`` is a valid Gaussian-family inner."""
+
+    def test_constructs(self):
+        from opaque.accounting.mechanisms.types import Gaussian as GaussianT
+        from opaque.accounting.transformations.types import AdaClip as AdaClipT
+
+        sm = acc.second_moment(
+            acc.adaclip(acc.gaussian(1.1), expected_batch_size=128),
+            sensitivity=1.0,
+        )
+        assert isinstance(sm.inner, AdaClipT)
+        assert isinstance(sm.inner.inner, GaussianT)
+
+    def test_pld_returns_valid(self):
+        sm = acc.second_moment(
+            acc.adaclip(acc.gaussian(1.1), expected_batch_size=128),
+            sensitivity=1.0,
+        )
+        eps = sm.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_uses_adaclip_effective_nm(self):
+        """SecondMoment over AdaClip uses AdaClip's z_eff, not the raw inner σ.
+
+        For AdaClip(Gaussian(σ)), ``effective_noise_multiplier`` < σ (the
+        threshold-quantile cost reduces the effective noise budget).  The
+        SecondMoment-wrapped PLD must reflect that smaller effective σ.
+        """
+        ac = acc.adaclip(acc.gaussian(1.1), expected_batch_size=128)
+        # Sanity: AdaClip's z_eff is strictly less than the raw inner σ.
+        assert ac.effective_noise_multiplier < 1.1
+
+        sm_over_adaclip = acc.second_moment(ac, sensitivity=1.0)
+        # The equivalent direct-Gaussian construction at the AdaClip-folded σ.
+        g_eff = acc.second_moment(
+            acc.gaussian(ac.effective_noise_multiplier), sensitivity=1.0,
+        )
+        assert sm_over_adaclip.epsilon_at(1e-5) == pytest.approx(
+            g_eff.epsilon_at(1e-5), rel=1e-6,
+        )
+
+    def test_rejects_non_gaussian_adaclip_inner(self):
+        from opaque.accounting.transformations.types import AdaClip
+        from opaque.accounting.mechanisms.types import NonPrivate
+
+        # Build a non-Gaussian AdaClip directly (the factory accepts NonPrivate).
+        ac_np = AdaClip(
+            inner=NonPrivate(),
+            fraction_noise_std=0.05,
+            expected_batch_size=128.0,
+        )
+        with pytest.raises(TypeError, match="Gaussian inside the AdaClip"):
+            acc.second_moment(ac_np, sensitivity=1.0)
+
+
+@pytest.mark.parametrize(
+    "amplifier", ["poisson", "truncated_poisson", "balls_in_bins"]
+)
+def test_amplification_accepts_second_moment_over_adaclip(amplifier):
+    """Each Poisson-family amplification accepts ``second_moment(adaclip(gaussian))``."""
+    sm = acc.second_moment(
+        acc.adaclip(acc.gaussian(1.1), expected_batch_size=128),
+        sensitivity=1.0,
+    )
+    if amplifier == "poisson":
+        proc = acc.poisson(sm, sample_rate=0.01)
+    elif amplifier == "truncated_poisson":
+        proc = acc.truncated_poisson(sm, 0.01, 128, 10_000)
+    else:
+        proc = acc.balls_in_bins(sm, num_bins=100, num_epochs=10)
+    eps = proc.epsilon_at(1e-5)
+    assert math.isfinite(eps) and eps > 0
+
+
+def test_parallel_poisson_accepts_second_moment_over_adaclip():
+    """Parallel Poisson dispatches through ``Poisson(SecondMoment(AdaClip(Gaussian)))``."""
+    sm = acc.second_moment(
+        acc.adaclip(acc.gaussian(1.1), expected_batch_size=128),
+        sensitivity=1.0,
+    )
+    proc = acc.parallel_poisson(sm, sample_rate=0.01, num_workers=4)
+    eps = proc.epsilon_at(1e-5)
+    assert math.isfinite(eps) and eps > 0

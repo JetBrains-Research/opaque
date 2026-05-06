@@ -337,10 +337,11 @@ class DpProcess(ABC):
         from opaque.accounting.mechanisms.types import Identity
 
         # Identity elision
-        if isinstance(self, Identity):
-            return other
-        if isinstance(other, Identity):
-            return self
+        match (self, other):
+            case (Identity(), _):
+                return other
+            case (_, Identity()):
+                return self
 
         # Direct merge: both sides share the same leaf
         left_leaf, left_count = self._leaf_and_count()
@@ -349,10 +350,11 @@ class DpProcess(ABC):
             return Repeated(left_leaf, left_count + right_count)
 
         # Right-spine merge: (X | a*n) | a*m  →  X | a*(n+m)
-        if isinstance(self, Composed):
-            r_leaf, r_count = self.right._leaf_and_count()
-            if r_leaf == right_leaf:
-                merged = Repeated(r_leaf, r_count + right_count)
-                return Composed(self.left, merged)
+        match self:
+            case Composed():
+                r_leaf, r_count = self.right._leaf_and_count()
+                if r_leaf == right_leaf:
+                    merged = Repeated(r_leaf, r_count + right_count)
+                    return Composed(self.left, merged)
 
         return Composed(self, other)

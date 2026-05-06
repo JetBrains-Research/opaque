@@ -99,12 +99,15 @@ def cyclic_poisson(
         )
         eps = proc.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (BandMf, SecondMoment)):
-        raise TypeError(
-            f"cyclic_poisson() requires a BandMf or SecondMoment(BandMf) inner mechanism, got "
-            f"{type(inner).__name__}. "
-            "Use: acc.cyclic_poisson(acc.band_mf(nm, sensitivity, num_groups), sample_rate)"
-        )
+    match inner:
+        case BandMf() | SecondMoment(inner=BandMf()):
+            pass
+        case _:
+            raise TypeError(
+                f"cyclic_poisson() requires a BandMf or SecondMoment(BandMf) inner mechanism, got "
+                f"{type(inner).__name__}. "
+                "Use: acc.cyclic_poisson(acc.band_mf(nm, sensitivity, num_groups), sample_rate)"
+            )
     if not 0 < sample_rate <= 1:
         raise ValueError(f"sample_rate must be in (0, 1], got {sample_rate}")
     if inner.num_groups < 1:

@@ -72,12 +72,18 @@ class TruncatedPoisson(DpProcess):
             case (
                 SecondMoment(inner=Gaussian(noise_multiplier=0))
                 | SecondMoment(inner=NonPrivate())
+                | SecondMoment(inner=AdaClip(inner=Gaussian(noise_multiplier=0)))
+                | SecondMoment(inner=AdaClip(inner=NonPrivate()))
             ):
                 return _native.non_private_pld(native_cfg)
-            case SecondMoment(inner=Gaussian()) as sm:
+            case (
+                SecondMoment(inner=Gaussian())
+                | SecondMoment(inner=AdaClip(inner=Gaussian()))
+            ) as sm:
                 # Tight: SecondMoment changes the joint sensitivity, so
                 # amplification reduces to truncated Poisson on a Gaussian
-                # with effective_nm = σ ÷ joint sensitivity.
+                # with effective_nm = σ ÷ joint sensitivity.  For AdaClip
+                # inner, ``sm.noise_multiplier`` is the z_eff-folded value.
                 return _native.truncated_poisson_gaussian_pld(
                     sm.noise_multiplier / sm.sensitivity,
                     self.sample_rate,
@@ -88,7 +94,8 @@ class TruncatedPoisson(DpProcess):
             case _:
                 raise TypeError(
                     "TruncatedPoisson requires a Gaussian, AdaClip(Gaussian), "
-                    "SecondMoment(Gaussian), or NonPrivate inner mechanism, got "
+                    "SecondMoment(Gaussian), SecondMoment(AdaClip(Gaussian)), "
+                    "or NonPrivate inner mechanism, got "
                     f"{type(self.inner).__name__}."
                 )
 
@@ -128,16 +135,21 @@ def truncated_poisson(
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, AdaClip, NonPrivate, SecondMoment)):
-        raise TypeError(
-            f"truncated_poisson() requires a Gaussian, AdaClip, NonPrivate, or "
-            f"SecondMoment(Gaussian) inner mechanism, got {type(inner).__name__}."
-        )
-    if isinstance(inner, SecondMoment) and isinstance(inner.inner, MfGaussian):
-        raise TypeError(
-            "truncated_poisson() does not support SecondMoment(MfGaussian) — pass "
-            "an MF-aware amplification (cyclic_poisson, b_min_sep) instead."
-        )
+    match inner:
+        case Gaussian() | AdaClip() | NonPrivate():
+            pass
+        case SecondMoment(inner=Gaussian() | NonPrivate() | AdaClip()):
+            pass
+        case SecondMoment(inner=MfGaussian()):
+            raise TypeError(
+                "truncated_poisson() does not support SecondMoment(MfGaussian) — pass "
+                "an MF-aware amplification (cyclic_poisson, b_min_sep) instead."
+            )
+        case _:
+            raise TypeError(
+                f"truncated_poisson() requires a Gaussian, AdaClip, NonPrivate, or "
+                f"SecondMoment(Gaussian) inner mechanism, got {type(inner).__name__}."
+            )
     return TruncatedPoisson(
         inner=inner,
         sample_rate=sample_rate,

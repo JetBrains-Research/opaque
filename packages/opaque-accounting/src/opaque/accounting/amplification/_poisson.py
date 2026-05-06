@@ -63,12 +63,19 @@ class Poisson(DpProcess):
             case (
                 SecondMoment(inner=Gaussian(noise_multiplier=0))
                 | SecondMoment(inner=NonPrivate())
+                | SecondMoment(inner=AdaClip(inner=Gaussian(noise_multiplier=0)))
+                | SecondMoment(inner=AdaClip(inner=NonPrivate()))
             ):
                 return _native.non_private_pld(native_cfg)
-            case SecondMoment(inner=Gaussian()) as sm:
+            case (
+                SecondMoment(inner=Gaussian())
+                | SecondMoment(inner=AdaClip(inner=Gaussian()))
+            ) as sm:
                 # Tight: SecondMoment changes the joint sensitivity, so
                 # amplification reduces to Poisson on a Gaussian with
-                # effective_nm = σ ÷ joint sensitivity.
+                # effective_nm = σ ÷ joint sensitivity.  For AdaClip
+                # inner, ``sm.noise_multiplier`` is already the z_eff-
+                # folded value that encodes the quantile-estimator cost.
                 return _native.poisson_gaussian_pld(
                     sm.noise_multiplier / sm.sensitivity,
                     self.sample_rate,
@@ -77,7 +84,8 @@ class Poisson(DpProcess):
             case _:
                 raise TypeError(
                     "Poisson requires a Gaussian, AdaClip(Gaussian), "
-                    "SecondMoment(Gaussian), or NonPrivate inner mechanism, got "
+                    "SecondMoment(Gaussian), SecondMoment(AdaClip(Gaussian)), "
+                    "or NonPrivate inner mechanism, got "
                     f"{type(self.inner).__name__}."
                 )
 
@@ -107,15 +115,20 @@ def poisson(
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, AdaClip, NonPrivate, SecondMoment)):
-        raise TypeError(
-            f"poisson() requires a Gaussian, AdaClip, NonPrivate, or "
-            f"SecondMoment(Gaussian) inner mechanism, got {type(inner).__name__}. "
-            "Example: acc.poisson(acc.gaussian(nm), rate)"
-        )
-    if isinstance(inner, SecondMoment) and isinstance(inner.inner, MfGaussian):
-        raise TypeError(
-            "poisson() does not support SecondMoment(MfGaussian) — pass an "
-            "MF-aware amplification (cyclic_poisson, b_min_sep) instead."
-        )
+    match inner:
+        case Gaussian() | AdaClip() | NonPrivate():
+            pass
+        case SecondMoment(inner=Gaussian() | NonPrivate() | AdaClip()):
+            pass
+        case SecondMoment(inner=MfGaussian()):
+            raise TypeError(
+                "poisson() does not support SecondMoment(MfGaussian) — pass an "
+                "MF-aware amplification (cyclic_poisson, b_min_sep) instead."
+            )
+        case _:
+            raise TypeError(
+                f"poisson() requires a Gaussian, AdaClip, NonPrivate, or "
+                f"SecondMoment(Gaussian) inner mechanism, got {type(inner).__name__}. "
+                "Example: acc.poisson(acc.gaussian(nm), rate)"
+            )
     return Poisson(inner=inner, sample_rate=sample_rate)

@@ -192,6 +192,7 @@ def auto_clipped_grad(
     pre_clipping_transform: Callable = lambda x: x,
     microbatch_size: int | None = None,
     dtype: Any = None,
+    second_moment: bool | float = False,
 ) -> tuple[Callable, AutoClipState]:
     r"""Create a function that computes the sum of AUTO-S scaled per-example gradients.
 
@@ -224,6 +225,13 @@ def auto_clipped_grad(
             applied before AUTO-S scaling.
         microbatch_size: Process the batch in chunks of this size.
         dtype: Optional accumulation dtype for the summed gradient.
+        second_moment: If truthy, also accumulate the per-example sum of
+            element-wise squared scaled gradients and return a
+            :class:`~opaque.types.SecondMomentClippingOutput` carrying
+            both streams.  AUTO-S contributes no extra threshold-noise
+            cost, so the matching accountant wrapper is just
+            ``acc.second_moment(acc.gaussian(nm), sensitivity=1.0)`` —
+            no ``adaclip`` wrap is needed (unlike adaptive clipping).
 
     Returns:
         ``(grad_fn, state)``.  ``grad_fn`` has the signature
@@ -269,6 +277,7 @@ def auto_clipped_grad(
         pre_clipping_transform=pre_clipping_transform,
         microbatch_size=microbatch_size,
         dtype=dtype,
+        second_moment=second_moment,
         _scale_fn=scale_fn,
     )
 

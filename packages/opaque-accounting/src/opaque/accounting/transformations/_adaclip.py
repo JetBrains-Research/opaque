@@ -47,15 +47,13 @@ class AdaClip(DpProcess):
         When ``num_groups > 1``, the effective noise multiplier is lower
         (more privacy consumed) due to ``K`` independent quantile queries.
         """
-        if isinstance(self.inner, NonPrivate):
-            return 0.0
-        if self.inner.noise_multiplier == 0:
-            return 0.0
-        sigma_b = self.expected_batch_size * self.fraction_noise_std
-        s = _native.adaclip_sensitivity(
-            self.inner.noise_multiplier, sigma_b, self.num_groups
-        )
-        return 1.0 / s
+        match self.inner:
+            case NonPrivate() | Gaussian(noise_multiplier=0):
+                return 0.0
+            case Gaussian(noise_multiplier=nm):
+                sigma_b = self.expected_batch_size * self.fraction_noise_std
+                s = _native.adaclip_sensitivity(nm, sigma_b, self.num_groups)
+                return 1.0 / s
 
     @functools.lru_cache(maxsize=8)
     def pld(
@@ -139,11 +137,14 @@ def adaclip(
             sample_rate=0.01,
         )
     """
-    if not isinstance(inner, (Gaussian, NonPrivate)):
-        raise TypeError(
-            f"adaclip() requires a Gaussian or NonPrivate inner mechanism, "
-            f"got {type(inner).__name__}."
-        )
+    match inner:
+        case Gaussian() | NonPrivate():
+            pass
+        case _:
+            raise TypeError(
+                f"adaclip() requires a Gaussian or NonPrivate inner mechanism, "
+                f"got {type(inner).__name__}."
+            )
     if fraction_noise_std <= 0:
         raise ValueError(
             f"fraction_noise_std must be positive, got {fraction_noise_std}"
