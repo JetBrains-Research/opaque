@@ -285,3 +285,57 @@ OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all \
   features). Migration narrative belongs in PR bodies, the changelog,
   or `docs/development/`. Forward-references to features that don't
   yet exist in the codebase don't belong anywhere.
+
+## Cursor Cloud specific instructions
+
+This is a pure library — no application server, database, or external service
+is needed. The development loop is entirely `uv sync` + `pytest` + `cargo test`.
+
+### Environment prerequisites
+
+- **Python 3.12** (system default on the VM) satisfies the `>=3.11,<3.13` constraint.
+- **Rust stable** (≥ 1.70) is pre-installed for the `opaque-accounting` PyO3 build.
+- **uv** must be on `PATH` (`$HOME/.local/bin`). Install via
+  `curl -LsSf https://astral.sh/uv/install.sh | sh` if missing.
+
+### Running services
+
+There are no long-running services. See the **Key commands** section above for
+the canonical lint / test / Rust-test commands.
+
+### Non-obvious gotchas
+
+- The first `uv sync` triggers a full Rust/maturin build of `opaque-accounting`
+  (~30 s cold, cached afterwards). Subsequent syncs are fast (~seconds).
+- The namespace is PEP 420 — there is **no** `opaque.core` import path. Instead,
+  `opaque-core` installs `opaque.clipping`, `opaque.functional`, `opaque.random`,
+  `opaque.scheduling`, `opaque.distributed`, `opaque.optimizers`, `opaque.profiling`,
+  `opaque.types`, and `opaque.pytree`.
+- `gaussian_noise` returns `(noise_fn, state)` and the inner `noise_fn` signature
+  is `noise_fn(clipped_pytree, state) -> (noised_pytree, new_state)` (positional args).
+- `clipped_grad` returns `(clip_fn, clip_state)` and `clip_fn` is called as
+  `clip_fn(params, batch, state=clip_state) -> (ClippedPytree, new_state)`.
+- `opaque.accounting` is the cross-cutting surface (composition, calibration,
+  generic mechanisms, native Rust extension). Algorithm-specific factories
+  (`gaussian`, `poisson`, `adaclip`, etc.) live in `opaque.dpsgd.accounting`;
+  MF-specific ones (`band_mf`, `blt`, `bisr`, etc.) live in
+  `opaque.dpftrl.accounting`.
+- CUDA/MPS tests auto-skip; no special handling needed on CPU-only VMs.
+
+### PR workflow
+
+The PR title **must** follow Conventional Commits: `<type>(scope): <imperative subject>`.
+The PR-gate workflow (`action-semantic-pull-request`) rejects titles that don't
+parse. Accepted types: `feat`/`add`, `fix`, `refactor`/`change`/`perf`, `docs`,
+`test`, `ci`/`build`, `delete`, `chore`/`style`. Append `!` for breaking changes.
+Subject starts lowercase and reads as an imperative (`add`, `fix`, `remove`).
+See the **Pull requests** section above for full details.
+
+1. Push changes and create/update the PR (with a valid Conventional Commits title).
+2. Wait ~5 minutes for GitHub Copilot review comments to appear.
+3. Read the Copilot comments — address the ones that make sense (fix the
+   code or docs), ignore the ones that don't.
+4. Reply inline to each comment explaining what you did (or why you
+   disagree). Leave comments **unresolved** — the author resolves them.
+5. Wait for CI/CD checks to complete. If any fail, read the logs
+   (`gh run view --log`), fix the issue, push again, and repeat from step 2.
