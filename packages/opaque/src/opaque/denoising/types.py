@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 from abc import ABC
+from typing import Any
 
 
 class DenoiserState(ABC):
@@ -18,3 +20,12 @@ class DenoiserState(ABC):
 
     _step_counter: int
     """Number of denoise_fn calls completed."""
+
+
+@dataclasses.dataclass(frozen=True)
+class DiskDenoiserState(DenoiserState):
+    """Immutable state for :func:`~opaque.denoising.disk_denoiser` (DiSK)."""
+
+    _estimate: Any
+    _error_var: Any
+    _step_counter: int

@@ -9,7 +9,7 @@ from opaque.distributed import (
     register_sync_type,
 )
 
-from opaque.denoising._kalman import DiskDenoiserState
+from opaque.denoising.types import DiskDenoiserState
 
 
 def sync_disk_denoiser_state(state: DiskDenoiserState) -> DiskDenoiserState:

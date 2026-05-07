@@ -1,11 +1,12 @@
-"""Tests for opaque.denoising.disk (DiSK)."""
+"""Tests for opaque.denoising DiSK implementation."""
 
 import dataclasses
 
 import pytest
 import torch
 
-from opaque.denoising import DenoiserState, DiskDenoiserState, disk_denoiser
+from opaque.denoising import disk_denoiser
+from opaque.denoising.types import DenoiserState, DiskDenoiserState
 from opaque.utils.per_group import PerGroup
 
 

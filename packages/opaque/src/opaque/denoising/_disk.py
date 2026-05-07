@@ -1,14 +1,13 @@
-"""Internal Kalman / DiSK implementation (random-walk filter per tensor element)."""
+"""Internal DiSK implementation (random-walk filter per tensor element)."""
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Callable
 from typing import Any
 
 import torch
 
-from opaque.denoising.types import DenoiserState
+from opaque.denoising.types import DiskDenoiserState
 from opaque.utils.per_group import PerGroup
 from opaque.utils.pytree import tree_map_with_path
 
@@ -64,15 +63,6 @@ def _leaf_kalman_step(
     new_estimate = estimate_f + gain * innovation
     new_error_var = (1.0 - gain) * prior_var
     return new_estimate.to(noisy.dtype), new_error_var
-
-
-@dataclasses.dataclass(frozen=True)
-class DiskDenoiserState(DenoiserState):
-    """Immutable state for :func:`~opaque.denoising.disk_denoiser` (DiSK)."""
-
-    _estimate: Any
-    _error_var: Any
-    _step_counter: int
 
 
 def _validate_noise_stddev(noise_stddev: float | PerGroup) -> None:
