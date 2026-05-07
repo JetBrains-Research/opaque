@@ -159,7 +159,8 @@ def _scale_by_rmsprop(
                 new_phi_k = alpha * old_phi_k + (1 - alpha) * nv
                 new_phi[path] = new_phi_k
                 if new_phi_k > 0:
-                    v_corrected = torch.clamp(v_node - new_phi_k, min=bc_floor)
+                    corrected = v_node - new_phi_k
+                    v_corrected = torch.where(corrected > 0, corrected, v_node)
                 else:
                     v_corrected = v_node
                 return g_node / (v_corrected.sqrt() + eps)
@@ -172,7 +173,8 @@ def _scale_by_rmsprop(
             if new_phi > 0:
 
                 def _compute(g: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-                    v_corrected = torch.clamp(v - new_phi, min=bc_floor)
+                    corrected = v - new_phi
+                    v_corrected = torch.where(corrected > 0, corrected, v)
                     return g / (v_corrected.sqrt() + eps)
             else:
 

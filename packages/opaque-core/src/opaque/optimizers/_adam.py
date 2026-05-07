@@ -225,10 +225,12 @@ def _scale_by_adam(
                 new_phi[path] = new_phi_k
                 m_hat = mu_node / bc1
                 phi_hat = new_phi_k / bc2
+                v_raw = nu_node / bc2
                 if phi_hat > 0:
-                    v_hat = torch.clamp(nu_node / bc2 - phi_hat, min=bc_floor)
+                    corrected = v_raw - phi_hat
+                    v_hat = torch.where(corrected > 0, corrected, v_raw)
                 else:
-                    v_hat = nu_node / bc2
+                    v_hat = v_raw
                 return m_hat / (v_hat.sqrt() + eps)
 
             result = _bc_walk(new_mu, new_nu, "")
@@ -240,9 +242,10 @@ def _scale_by_adam(
             if phi_hat > 0:
 
                 def _compute(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-                    return (m / bc1) / (
-                        torch.clamp(v / bc2 - phi_hat, min=bc_floor).sqrt() + eps
-                    )
+                    v_hat = v / bc2
+                    corrected = v_hat - phi_hat
+                    denom = torch.where(corrected > 0, corrected.sqrt(), v_hat.sqrt()) + eps
+                    return (m / bc1) / denom
             else:
 
                 def _compute(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
