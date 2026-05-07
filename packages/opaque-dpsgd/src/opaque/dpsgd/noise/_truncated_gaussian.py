@@ -325,9 +325,7 @@ def truncated_gaussian_noise(
         second_step_key = rng_fold_in(rng_fold_in(st._rng_key, 2), st._step_counter)
         first_gen = generator_from_key(first_step_key)
         second_gen = generator_from_key(second_step_key)
-        noisy_grads = _add_truncated_tree(
-            first_clipped.pytree, first_stddev, first_gen
-        )
+        noisy_grads = _add_truncated_tree(first_clipped.pytree, first_stddev, first_gen)
         noisy_squared = _add_truncated_tree(
             second_clipped.pytree, second_stddev, second_gen
         )

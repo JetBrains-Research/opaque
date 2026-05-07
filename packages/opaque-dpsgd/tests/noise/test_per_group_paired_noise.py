@@ -88,9 +88,7 @@ class TestPerGroupPairedNoiseStddevs:
             for nm in [0.3, 1.0, 2.5]:
                 for normalize_by in [1.0, 16.0, 128.0]:
                     first = _make_bound(first_vals, normalize_by=normalize_by)
-                    squared = _make_bound(
-                        squared_vals, normalize_by=normalize_by
-                    )
+                    squared = _make_bound(squared_vals, normalize_by=normalize_by)
                     s_first, s_second = per_group_paired_noise_stddevs(
                         first, squared, nm
                     )
@@ -200,9 +198,9 @@ class TestGaussianNoisePerGroupPairedIntegration:
             assert out.noisy_grads.noise_stddev.values[g] == pytest.approx(
                 math.sqrt(first_norm.values[g] * s)
             )
-            assert out.noisy_squared_grads.noise_stddev.values[
-                g
-            ] == pytest.approx(math.sqrt(squared_norm.values[g] * s))
+            assert out.noisy_squared_grads.noise_stddev.values[g] == pytest.approx(
+                math.sqrt(squared_norm.values[g] * s)
+            )
 
     def test_per_group_paired_mismatched_kinds_rejected(self):
         import torch
@@ -211,9 +209,7 @@ class TestGaussianNoisePerGroupPairedIntegration:
         from opaque.random import key
         from opaque.types import SecondMomentClippingOutput, clipped
 
-        per_group_norm = PerGroup(
-            groups={"weight": "g"}, values={"g": 1.0}
-        )
+        per_group_norm = PerGroup(groups={"weight": "g"}, values={"g": 1.0})
         paired = SecondMomentClippingOutput(
             grads=clipped({"weight": torch.zeros(4)}, max_norm=per_group_norm),
             squared_grads=clipped({"weight": torch.zeros(4)}, max_norm=1.0),
