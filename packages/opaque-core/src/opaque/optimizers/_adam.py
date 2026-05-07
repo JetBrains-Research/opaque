@@ -172,13 +172,18 @@ def _scale_by_adam(
             new_phi = state.phi  # unchanged
             bc1 = 1 - b1**t
             bc2 = 1 - b2**t
-            result = tree_map(
-                lambda m, v: (
-                    (m / bc1) / (torch.clamp(v / bc2, min=bc_floor).sqrt() + eps)
-                ),
-                new_mu,
-                new_nu,
-            )
+
+            def _compute_sm(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+                m_hat = m / bc1
+                v_hat = v / bc2
+                # Noisy g² can be negative when second-stream noise dominates the
+                # signal (g² ≪ σ_second).  Falling back to the squared first moment
+                # keeps the update magnitude ≈ 1 (sign-gradient-like) for those
+                # elements instead of collapsing the denominator to bc_floor → ∞ update.
+                v_eff = torch.where(v_hat > 0, v_hat, m_hat * m_hat).clamp(min=bc_floor)
+                return m_hat / (v_eff.sqrt() + eps)
+
+            result = tree_map(_compute_sm, new_mu, new_nu)
             return result, AdamState(mu=new_mu, nu=new_nu, phi=new_phi, step=t)
 
         # Standard / BC branch: square the (possibly noised) gradient.

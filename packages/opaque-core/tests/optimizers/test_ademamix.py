@@ -121,7 +121,7 @@ class TestSecondMomentMode:
         for k in params:
             torch.testing.assert_close(st.nu[k], (1 - b2) * sq_grads[k])
 
-    def test_negative_squared_stream_is_floored(self, params, grads):
+    def test_negative_squared_stream_bounded(self, params, grads):
         sq = {k: -torch.ones_like(v) for k, v in grads.items()}
         opt = ademamix(lr=1e-3)
         state = opt.init(params)
@@ -132,6 +132,7 @@ class TestSecondMomentMode:
         updates, _ = opt.update(output, state, params=params)
         for k in updates:
             assert torch.isfinite(updates[k]).all()
+            assert updates[k].abs().max().item() < 10.0
 
     def test_explicit_second_moment_kwarg_rejected(self, params, grads, sq_grads):
         opt = ademamix(lr=1e-3)

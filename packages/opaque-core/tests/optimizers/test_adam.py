@@ -467,9 +467,10 @@ class TestSecondMomentMode:
             _, state = opt.update(output, state, params=params)
         assert _adam_state(state).phi == 0.0
 
-    def test_second_moment_negative_squared_stream_is_floored(self, params, grads):
-        """Private g² streams are noised and can be negative;
-        the denominator must floor before sqrt instead of producing NaNs."""
+    def test_second_moment_negative_squared_stream_bounded(self, params, grads):
+        """Private g² streams are noised and can be negative.
+        Updates must be finite AND bounded — the denominator must not collapse
+        to bc_floor (eps²), which would cause ~1e6× explosion."""
         sq = {k: -torch.ones_like(v) for k, v in grads.items()}
         opt = adamw(lr=1e-3)
         state = opt.init(params)
@@ -480,6 +481,9 @@ class TestSecondMomentMode:
         updates, _ = opt.update(output, state, params=params)
         for k in updates:
             assert torch.isfinite(updates[k]).all()
+            # Fallback to m_hat² keeps update magnitude ≈ 1; the old bc_floor clamp
+            # would collapse the denominator to ~2e-8, giving magnitudes > 1e5.
+            assert updates[k].abs().max().item() < 10.0
 
     def test_explicit_second_moment_kwarg_rejected(self, params, grads, sq_grads):
         """The optimizer surface no longer takes a per-step

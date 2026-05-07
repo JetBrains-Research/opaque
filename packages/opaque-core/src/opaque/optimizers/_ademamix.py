@@ -121,15 +121,18 @@ def _scale_by_ademamix(
                 noisy_squared_grads,
             )
             new_phi = state.phi
-            result = tree_map(
-                lambda mf, ms, v: (
-                    ((mf / bc1) + alpha * ms)
-                    / (torch.clamp(v / bc2, min=bc_floor).sqrt() + eps)
-                ),
-                new_mf,
-                new_ms,
-                new_nu,
-            )
+
+            def _compute_sm(
+                mf: torch.Tensor, ms: torch.Tensor, v: torch.Tensor
+            ) -> torch.Tensor:
+                combined = (mf / bc1) + alpha * ms
+                v_hat = v / bc2
+                v_eff = torch.where(
+                    v_hat > 0, v_hat, combined * combined
+                ).clamp(min=bc_floor)
+                return combined / (v_eff.sqrt() + eps)
+
+            result = tree_map(_compute_sm, new_mf, new_ms, new_nu)
             return result, AdEMAMixState(
                 m_fast=new_mf, m_slow=new_ms, nu=new_nu, phi=new_phi, step=t
             )

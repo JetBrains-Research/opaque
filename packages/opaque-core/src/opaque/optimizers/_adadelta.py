@@ -240,6 +240,10 @@ def _scale_by_adadelta(
                 v_g_corrected = torch.where(corrected_g > 0, corrected_g, v_g_t)
             else:
                 v_g_corrected = v_g_t
+            # In the SM branch, noisy g² can be negative when noise dominates;
+            # clamp to 0 so _rms (which adds eps before sqrt) stays well-defined.
+            if noisy_squared_grads is not None:
+                v_g_corrected = torch.clamp(v_g_corrected, min=0.0)
 
             # Corrected E[Δx²] from previous step (the φ_dx is the
             # *previous* one because we read ``v_dx_node`` and the
