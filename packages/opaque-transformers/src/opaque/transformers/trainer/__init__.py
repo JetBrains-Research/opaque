@@ -91,11 +91,14 @@ from transformers.trainer_utils import PredictionOutput, seed_worker
 from transformers.trainer_utils import HPSearchBackend
 from transformers.utils import can_return_loss, find_labels
 
+default_dp_hp_backend = _hpo.default_dp_hp_backend
+
 __all__ = [
     "DPTrainer",
     "DPTrainingArguments",
     "PredictionOutput",
     "TrainOutput",
+    "default_dp_hp_backend",
 ]
 
 log = logging.getLogger(__name__)
@@ -621,7 +624,7 @@ class DPTrainer:
 
     def hyperparameter_search(
         self,
-        hp_space: Callable[[Any], dict[str, float]] | None = None,
+        hp_space: Callable[[Any], dict[str, Any]] | None = None,
         compute_objective: Callable[[dict[str, float]], float] | None = None,
         n_trials: int = 20,
         direction: str | list[str] = "minimize",
@@ -631,9 +634,16 @@ class DPTrainer:
     ) -> Any:
         """Run HF-compatible hyperparameter search.
 
-        Phase 9 supports local Optuna execution.  Other HF backends are
-        rejected explicitly because their runners assume execution layers
-        (Ray/Accelerate/SigOpt/W&B sweep agents) DPTrainer does not own yet.
+        Supports ``backend="optuna"``, ``"wandb"``, and ``"ray"`` (SigOpt is
+        not implemented).  When ``backend`` is ``None``, the first installed
+        backend is chosen in HuggingFace order among those three: Optuna,
+        Ray Tune, then W&B — mirroring ``transformers``'s
+        ``default_hp_search_backend`` with SigOpt skipped.
+
+        Ray Tune forwards extra ``kwargs`` to ``ray.tune.run``; default
+        ``resources_per_trial`` and ``progress_reporter`` match HF's
+        ``run_hp_search_ray``.  ``trainer.args._n_gpu`` is updated from
+        ``resources_per_trial['gpu']`` for per-trial device visibility.
         """
         return _hpo.hyperparameter_search(
             self,
@@ -4182,9 +4192,7 @@ class DPTrainer:
         acct_path = os.path.join(ckpt_dir, ckpt.DP_ACCOUNTANT_NAME)
         if os.path.exists(acct_path):
             with open(acct_path) as f:
-                accountant = opaque_from_state_dict(
-                    Accountant(), json.load(f)
-                )
+                accountant = opaque_from_state_dict(Accountant(), json.load(f))
         else:
             log.warning(
                 "No accountant.json in %s; prepending nonprivate() mechanism — "

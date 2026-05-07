@@ -38,14 +38,52 @@ from transformers.trainer_utils import (
 
 from opaque.transformers.trainer import _checkpoint as ckpt
 
-__all__ = ["hyperparameter_search", "is_multi_objective_study"]
+__all__ = ["hyperparameter_search", "is_multi_objective_study", "default_dp_hp_backend"]
 
 log = logging.getLogger(__name__)
+
+# Same priority order as ``transformers.hyperparameter_search``'s
+# ``ALL_HYPERPARAMETER_SEARCH_BACKENDS`` iteration (Optuna → Ray → …),
+# but **SigOpt is excluded** — DPTrainer does not implement that backend.
+_DP_HP_BACKEND_ORDER: tuple[HPSearchBackend, ...] = (
+    HPSearchBackend.OPTUNA,
+    HPSearchBackend.RAY,
+    HPSearchBackend.WANDB,
+)
+
+
+def default_dp_hp_backend() -> HPSearchBackend:
+    """Return the first installed HPO backend among Optuna, Ray, W&B.
+
+    Mirrors HuggingFace's ``default_hp_search_backend`` ordering for the
+    backends DPTrainer implements.  SigOpt is skipped entirely.
+
+    Raises:
+        RuntimeError: If none of the three backends can be imported.
+    """
+    for candidate in _DP_HP_BACKEND_ORDER:
+        if candidate == HPSearchBackend.OPTUNA:
+            if importlib.util.find_spec("optuna") is not None:
+                return candidate
+        elif candidate == HPSearchBackend.RAY:
+            if importlib.util.find_spec("ray") and importlib.util.find_spec("ray.tune"):
+                return candidate
+        elif candidate == HPSearchBackend.WANDB:
+            if importlib.util.find_spec("wandb") is not None:
+                return candidate
+    raise RuntimeError(
+        "No hyperparameter search backend available for DPTrainer.\n"
+        "Install at least one of:\n"
+        "  - pip install opaque-transformers[optuna-hpo]\n"
+        "  - pip install opaque-transformers[ray-hpo]\n"
+        "  - pip install opaque-transformers[wandb-hpo]\n"
+        "  - pip install opaque-transformers[hpo]  # all three\n"
+    )
 
 
 def hyperparameter_search(
     trainer: Any,
-    hp_space: Callable[[Any], dict[str, float]] | None = None,
+    hp_space: Callable[[Any], dict[str, Any]] | None = None,
     compute_objective: Callable[[dict[str, float]], float] | None = None,
     n_trials: int = 20,
     direction: str | list[str] = "minimize",
@@ -53,8 +91,15 @@ def hyperparameter_search(
     hp_name: Callable[[Any], str] | None = None,
     **kwargs: Any,
 ) -> BestRun | list[BestRun]:
-    """Run HPO and return HF-compatible ``BestRun`` objects."""
-    selected = HPSearchBackend(backend or HPSearchBackend.OPTUNA)
+    """Run HPO and return HF-compatible ``BestRun`` objects.
+
+    When ``backend`` is ``None``, the backend is chosen like HuggingFace's
+    ``default_hp_search_backend`` among Optuna, Ray Tune, and W&B (SigOpt
+    is not supported here — install one of the three).
+    """
+    selected = (
+        HPSearchBackend(backend) if backend is not None else default_dp_hp_backend()
+    )
     if selected not in {
         HPSearchBackend.OPTUNA,
         HPSearchBackend.WANDB,
@@ -342,6 +387,29 @@ def _release_memory(trainer: Any) -> None:
         torch.mps.empty_cache()
 
 
+def _pick_latest_ray_resume_checkpoint(checkpoint_dir: Path) -> str:
+    """Pick the highest-step ``checkpoint-*`` under a Ray unpack directory."""
+    matches = list(checkpoint_dir.glob(f"{ckpt.PREFIX_CHECKPOINT_DIR}-*"))
+    if not matches:
+        raise FileNotFoundError(
+            f"No {ckpt.PREFIX_CHECKPOINT_DIR}-* directory under {checkpoint_dir}"
+        )
+
+    def _step(p: Path) -> int:
+        s = ckpt.parse_checkpoint_step(p.name)
+        if s is None:
+            return -1
+        return int(s)
+
+    best = max(matches, key=_step)
+    if _step(best) < 0:
+        raise FileNotFoundError(
+            f"No valid checkpoint step directory under {checkpoint_dir}; "
+            f"found {matches!r}"
+        )
+    return best.as_posix()
+
+
 # ---------------------------------------------------------------------
 # Ray Tune backend
 # ---------------------------------------------------------------------
@@ -411,9 +479,7 @@ def _run_ray_search(
             # ``train`` is a no-op.
             local_trainer.objective = "objective"
             with checkpoint.as_directory() as checkpoint_dir:
-                resume_path = next(
-                    Path(checkpoint_dir).glob(f"{ckpt.PREFIX_CHECKPOINT_DIR}-*")
-                ).as_posix()
+                resume_path = _pick_latest_ray_resume_checkpoint(Path(checkpoint_dir))
                 local_trainer.train(resume_from_checkpoint=resume_path, trial=trial)
         else:
             local_trainer.train(trial=trial)
@@ -430,6 +496,7 @@ def _run_ray_search(
 
     _tb_writer = _pop_tensorboard_callback(trainer)
     _set_default_resources(trainer, kwargs)
+    _sync_ray_trial_gpu_to_args(trainer, kwargs)
     _set_default_progress_reporter(kwargs)
     _validate_scheduler_requires_eval(trainer, kwargs)
 
@@ -499,6 +566,10 @@ def _scrub_for_pickling(trainer: Any) -> None:
     and clear cached dataloader handles.  Also asserts ``output_dir`` is
     absolute — Ray Tune chdirs each actor and a relative path would
     silently land checkpoints under Tune's per-trial working directory.
+
+    Other reporting callbacks (W&B, MLflow, …) are **not** stripped the way
+    TensorBoard is; if pickling fails, disable ``report_to`` or remove
+    those callbacks before ``hyperparameter_search(backend='ray')``.
     """
     args = getattr(trainer, "args", None)
     output_dir = getattr(args, "output_dir", None) if args is not None else None
@@ -506,6 +577,14 @@ def _scrub_for_pickling(trainer: Any) -> None:
         raise ValueError(
             "Ray Tune actors run with their own working directory; "
             f"args.output_dir={output_dir!r} must be an absolute path."
+        )
+
+    tracker = getattr(trainer, "_memory_tracker", None)
+    if tracker is not None and not bool(getattr(tracker, "skip_memory_metrics", True)):
+        log.warning(
+            "Memory tracking for your Trainer is currently enabled. "
+            "Automatically disabling the memory tracker since the memory "
+            "tracker is not serializable."
         )
 
     skip = (
@@ -536,16 +615,14 @@ def _pop_tensorboard_callback(trainer: Any) -> Any | None:
 
 
 def _set_default_resources(trainer: Any, kwargs: dict[str, Any]) -> None:
-    """HF parity: default to {'cpu': 1, 'gpu': 1 if cuda else 0}."""
+    """HF parity: default to ``{'cpu': 1, 'gpu': 1}`` when ``args.n_gpu > 0``."""
     if "resources_per_trial" in kwargs:
         return
     resources: dict[str, int] = {"cpu": 1}
-    has_cuda = (
-        hasattr(torch, "cuda")
-        and torch.cuda.is_available()
-        and torch.cuda.device_count() > 0
-    )
-    if has_cuda:
+    # HF ``run_hp_search_ray`` keys off ``trainer.args.n_gpu`` (Accelerate
+    # populates it).  DPTrainer sets ``_n_gpu`` from device resolution in
+    # ``DPTrainingArguments._setup_devices`` — ``args.n_gpu`` reads that.
+    if int(getattr(trainer.args, "n_gpu", 0) or 0) > 0:
         resources["gpu"] = 1
     kwargs["resources_per_trial"] = resources
     log.info(
@@ -553,6 +630,21 @@ def _set_default_resources(trainer: Any, kwargs: dict[str, Any]) -> None:
         "`hyperparameter_search`. Setting it to a default value of %s.",
         resources,
     )
+
+
+def _sync_ray_trial_gpu_to_args(trainer: Any, kwargs: dict[str, Any]) -> None:
+    """HF parity: ``trainer.args._n_gpu = resources_per_trial['gpu']``."""
+    rpt = kwargs.get("resources_per_trial")
+    if not isinstance(rpt, Mapping):
+        return
+    raw = rpt.get("gpu", 0)
+    if raw is None:
+        return
+    try:
+        gpus = int(float(raw))
+    except (TypeError, ValueError):
+        gpus = 0
+    setattr(trainer.args, "_n_gpu", max(0, gpus))
 
 
 def _set_default_progress_reporter(kwargs: dict[str, Any]) -> None:

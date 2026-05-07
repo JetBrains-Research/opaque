@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 import types
+from unittest.mock import PropertyMock, patch
 
 import pytest
 import torch
 from transformers.trainer_callback import TrainerCallback
+from transformers.trainer_utils import BestRun, HPSearchBackend
 
 from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
 
@@ -331,10 +334,14 @@ def test_ray_hpo_rejects_multirank_world_size(tmp_path):
         train_dataset=_dataset(),
         eval_dataset=_dataset(),
     )
-    trainer.args.world_size = 2
-
-    with pytest.raises(ValueError, match="Phase 10"):
-        trainer.hyperparameter_search(backend="ray", n_trials=1)
+    with patch.object(
+        type(trainer.args),
+        "world_size",
+        new_callable=PropertyMock,
+        return_value=2,
+    ):
+        with pytest.raises(ValueError, match="Phase 10"):
+            trainer.hyperparameter_search(backend="ray", n_trials=1)
 
 
 def test_ray_hpo_rejects_multirank_per_trial_gpu(tmp_path):
@@ -629,3 +636,120 @@ def test_tune_save_checkpoint_outside_loop_raises(tmp_path):
     )
     with pytest.raises(RuntimeError, match="self._ctx is None"):
         trainer._tune_save_checkpoint(checkpoint_dir=str(tmp_path / "x"))
+
+
+def test_pick_latest_ray_resume_checkpoint_prefers_highest_step(tmp_path):
+    from opaque.transformers.trainer import _checkpoint as ckpt_mod
+    from opaque.transformers.trainer._hpo import _pick_latest_ray_resume_checkpoint
+
+    root = tmp_path / "ray_unpack"
+    root.mkdir()
+    (root / f"{ckpt_mod.PREFIX_CHECKPOINT_DIR}-1").mkdir()
+    (root / f"{ckpt_mod.PREFIX_CHECKPOINT_DIR}-9").mkdir()
+    chosen = _pick_latest_ray_resume_checkpoint(root)
+    assert chosen.endswith(f"{ckpt_mod.PREFIX_CHECKPOINT_DIR}-9")
+
+
+def test_pick_latest_ray_resume_checkpoint_empty_raises(tmp_path):
+    from opaque.transformers.trainer._hpo import _pick_latest_ray_resume_checkpoint
+
+    root = tmp_path / "empty"
+    root.mkdir()
+    with pytest.raises(FileNotFoundError):
+        _pick_latest_ray_resume_checkpoint(root)
+
+
+def test_default_dp_hp_backend_requires_any_install(monkeypatch):
+    from opaque.transformers.trainer._hpo import default_dp_hp_backend
+
+    def _no_backends(name):
+        if name in ("optuna", "ray", "ray.tune", "wandb"):
+            return None
+        return importlib.util.find_spec(name)
+
+    monkeypatch.setattr(importlib.util, "find_spec", _no_backends)
+    with pytest.raises(RuntimeError, match="No hyperparameter search backend"):
+        default_dp_hp_backend()
+
+
+def test_default_dp_hp_backend_returns_installed():
+    """Smoke when any HPO backend is importable (slim envs skip)."""
+    from opaque.transformers.trainer._hpo import default_dp_hp_backend
+
+    try:
+        b = default_dp_hp_backend()
+    except RuntimeError:
+        pytest.skip("no optuna / ray / wandb installed in this environment")
+    assert b in {
+        HPSearchBackend.OPTUNA,
+        HPSearchBackend.RAY,
+        HPSearchBackend.WANDB,
+    }
+
+
+def test_scrub_for_pickling_warns_when_memory_tracker_enabled(tmp_path, caplog):
+    import logging
+
+    from transformers.trainer_utils import TrainerMemoryTracker
+
+    from opaque.transformers.trainer._hpo import _scrub_for_pickling
+
+    trainer = DPTrainer(
+        model_init=_LossModel,
+        args=_args(tmp_path, save_strategy="no", skip_memory_metrics=False),
+        train_dataset=_dataset(),
+        eval_dataset=_dataset(),
+    )
+    trainer._memory_tracker = TrainerMemoryTracker(skip_memory_metrics=False)
+
+    with caplog.at_level(logging.WARNING):
+        _scrub_for_pickling(trainer)
+    assert "Automatically disabling the memory tracker" in caplog.text
+
+
+def test_sync_ray_trial_gpu_to_args_sets_private_n_gpu(tmp_path):
+    from opaque.transformers.trainer import _hpo
+
+    trainer = DPTrainer(
+        model_init=_LossModel,
+        args=_args(tmp_path, save_strategy="no"),
+        train_dataset=_dataset(),
+        eval_dataset=_dataset(),
+    )
+    _hpo._sync_ray_trial_gpu_to_args(
+        trainer, {"resources_per_trial": {"cpu": 1, "gpu": 2.0}}
+    )
+    assert trainer.args._n_gpu == 2
+
+
+def test_hyperparameter_search_none_backend_routes_via_default(monkeypatch, tmp_path):
+    """``backend=None`` must dispatch using ``default_dp_hp_backend`` order."""
+    from opaque.transformers.trainer import _hpo
+
+    wandb_hits: list[bool] = []
+
+    def fake_wandb(*_a, **_k):
+        wandb_hits.append(True)
+        return BestRun("wandb-0", 0.0, {"lr": 0.01}, None)
+
+    monkeypatch.setattr(_hpo, "default_dp_hp_backend", lambda: HPSearchBackend.WANDB)
+    monkeypatch.setattr(_hpo, "_run_wandb_search", fake_wandb)
+    monkeypatch.setattr(
+        _hpo,
+        "_run_optuna_search",
+        lambda *_a, **_k: pytest.fail("optuna should not run when default is W&B"),
+    )
+    monkeypatch.setattr(
+        _hpo,
+        "_run_ray_search",
+        lambda *_a, **_k: pytest.fail("ray should not run when default is W&B"),
+    )
+
+    trainer = DPTrainer(
+        model_init=_LossModel,
+        args=_args(tmp_path, save_strategy="no"),
+        train_dataset=_dataset(),
+        eval_dataset=_dataset(),
+    )
+    trainer.hyperparameter_search(n_trials=1)
+    assert wandb_hits == [True]

@@ -848,16 +848,23 @@ kwargs (`resources_per_trial`, `progress_reporter`, `scheduler`, …).
   The trainer reuses its existing dict-trial path (model_init reinvocation,
   trial-scoped output dir, callback handler rebuild).
 - HF parity defaults applied identically:
-  - `resources_per_trial` defaults to `{"cpu": 1, "gpu": 1 if cuda else 0}`.
+  - `resources_per_trial` defaults to `{"cpu": 1, "gpu": 1}` when
+    `trainer.args.n_gpu > 0` (same gate as HF's `run_hp_search_ray`, driven
+    by `DPTrainingArguments._setup_devices` rather than a raw CUDA probe).
+  - After defaults merge, `trainer.args._n_gpu` is set from
+    `resources_per_trial["gpu"]` so per-trial allocation matches HF.
   - `progress_reporter` defaults to `CLIReporter(metric_columns=["objective"])`.
   - ASHA / Hyperband / Median / PBT schedulers raise the parity error if
     `do_eval=False` or `eval_strategy=NO`.
   - `dynamic_modules_import_trainable` wrapper preloads `datasets` dynamic
     modules inside each actor (HF's fix for issue #11565).
-- `_scrub_for_pickling` swaps the memory tracker to skip-only, drops
+- `_scrub_for_pickling` swaps the memory tracker to skip-only (with the
+  same warning HF emits when forcing skip for serialisation), drops
   `trainer.model` (rebuilt per actor via `call_model_init(trial)`), clears
   cached dataloader handles, and asserts `args.output_dir` is absolute
-  (Tune chdirs each trial).
+  (Tune chdirs each trial).  Only TensorBoard is popped from callbacks;
+  other integrations may still break pickling — mirror HF or disable
+  `report_to` for Ray sweeps.
 - TensorBoard callback is popped before launch and re-attached after
   `tune.run` returns.
 - Trainer hooks added for `HPSearchBackend.RAY` parity:
@@ -884,6 +891,14 @@ until Phase 10 (DDP) lands. `_reject_multirank_for_ray` raises if
 `args.world_size > 1` or `resources_per_trial["gpu"] > 1`. The common
 HPO use case (one GPU per trial across many trials) is fully supported.
 
+- `hyperparameter_search(backend=None)` calls `default_dp_hp_backend()`,
+  which walks **Optuna → Ray → W&B** (SigOpt skipped) — the same relative
+  order as HuggingFace's `default_hp_search_backend` for the backends
+  DPTrainer implements.
+
+- Ray trial resume picks the **highest-step** `checkpoint-*` directory
+  under the Ray unpack path (deterministic; avoids `next(glob)`).
+
 **Optional dependency**: `pip install opaque-transformers[ray-hpo]` pulls
 in `ray[tune]>=2.7,<3`. The lazy-import `ImportError` redirects users at
 that extra. Symmetric extras `[optuna-hpo]`, `[wandb-hpo]`, and the
@@ -902,8 +917,12 @@ that extra. Symmetric extras `[optuna-hpo]`, `[wandb-hpo]`, and the
   rejection (`world_size>1`, `gpu>1`), absolute-path scrub assertion,
   end-to-end dispatch through a fake Ray stack with `BestRun` shape,
   scheduler-requires-eval parity, `_get_output_dir(trial)` reading the
-  Ray trial id, `_tune_save_checkpoint` snapshot completeness, and the
-  guard rejecting calls outside the training loop.
+  Ray trial id, `_tune_save_checkpoint` snapshot completeness, the
+  guard rejecting calls outside the training loop, **default backend**
+  resolution (`default_dp_hp_backend` + `backend=None` routing),
+  **`_pick_latest_ray_resume_checkpoint`**, **`_sync_ray_trial_gpu_to_args`**
+  / `args.n_gpu`-driven default `resources_per_trial`, and the memory-tracker
+  warning on Ray scrub.
 
 **Files**: [`trainer/_hpo.py`](../../src/opaque/transformers/trainer/_hpo.py)
 (adapter + helpers), [`trainer/__init__.py`](../../src/opaque/transformers/trainer/__init__.py)
