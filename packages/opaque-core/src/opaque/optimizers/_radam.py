@@ -259,10 +259,12 @@ def _scale_by_radam(
                 path = prefix
                 phi_hat = new_phi[path] / bc2
                 m_hat = mu_node / bc1
+                v_raw = nu_node / bc2
                 if phi_hat > 0:
-                    v_hat = torch.clamp(nu_node / bc2 - phi_hat, min=bc_floor)
+                    corrected = v_raw - phi_hat
+                    v_hat = torch.where(corrected > 0, corrected, v_raw)
                 else:
-                    v_hat = nu_node / bc2
+                    v_hat = v_raw
                 return r_t * m_hat / (v_hat.sqrt() + eps)
 
             result = _bc_walk(new_mu, new_nu, "")
@@ -272,11 +274,10 @@ def _scale_by_radam(
             if phi_hat > 0:
 
                 def _compute(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-                    return (
-                        r_t
-                        * (m / bc1)
-                        / (torch.clamp(v / bc2 - phi_hat, min=bc_floor).sqrt() + eps)
-                    )
+                    v_raw = v / bc2
+                    corrected = v_raw - phi_hat
+                    v_hat = torch.where(corrected > 0, corrected, v_raw)
+                    return r_t * (m / bc1) / (v_hat.sqrt() + eps)
             else:
 
                 def _compute(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
@@ -302,7 +303,7 @@ def radam(
     *,
     decoupled_weight_decay: bool = False,
     update_rms_clip: float | None = None,
-    noise_bias_correction: bool = False,
+    noise_bias_correction: bool = True,
 ) -> GradientTransformation:
     """Create a Rectified Adam optimizer with the wrapper-aware update API.
 

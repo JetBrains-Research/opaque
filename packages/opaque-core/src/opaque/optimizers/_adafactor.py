@@ -28,7 +28,7 @@ A single scalar φ-EMA tracking ``β₂_t`` matches the v_row/v_col EMAs;
 subtracting it (with a positive floor) from each factor before the
 ``v̂`` approximation recovers the clean second-moment estimate.
 ``noise_bias_correction=True`` activates this path; defaults to
-``False`` so vanilla Adafactor parity is the baseline.
+``True`` so BC is on by default.
 
 The private second-moment substitution path (``noisy_squared_grads``)
 is **not** offered for Adafactor.  Substituting a privately-estimated
@@ -216,8 +216,10 @@ def _scale_by_adafactor(
                 new_v_row = beta2_t * v_row + (1.0 - beta2_t) * g_sq.mean(dim=-1)
                 new_v_col = beta2_t * v_col + (1.0 - beta2_t) * g_sq.mean(dim=-2)
                 if bc_active and new_phi > 0.0:
-                    v_row_eff = (new_v_row - new_phi).clamp(min=eps_root)
-                    v_col_eff = (new_v_col - new_phi).clamp(min=eps_root)
+                    corr_row = new_v_row - new_phi
+                    corr_col = new_v_col - new_phi
+                    v_row_eff = torch.where(corr_row > 0, corr_row, new_v_row)
+                    v_col_eff = torch.where(corr_col > 0, corr_col, new_v_col)
                 else:
                     v_row_eff = new_v_row
                     v_col_eff = new_v_col
@@ -228,7 +230,8 @@ def _scale_by_adafactor(
                 (v,) = v_state
                 new_v = beta2_t * v + (1.0 - beta2_t) * g_sq
                 if bc_active and new_phi > 0.0:
-                    v_eff = (new_v - new_phi).clamp(min=eps_root)
+                    corr = new_v - new_phi
+                    v_eff = torch.where(corr > 0, corr, new_v)
                 else:
                     v_eff = new_v
                 update = g / v_eff.sqrt().clamp(min=eps_root)
@@ -274,7 +277,7 @@ def adafactor(
     update_rms_clip: float = 1.0,
     *,
     decoupled_weight_decay: bool = True,
-    noise_bias_correction: bool = False,
+    noise_bias_correction: bool = True,
 ) -> GradientTransformation:
     """Create an Adafactor optimizer.
 
@@ -300,7 +303,7 @@ def adafactor(
         noise_bias_correction: If ``True``, subtract a β₂_t-EMA of the
             realized noise variance from each factor (``v_row``,
             ``v_col``, or scalar ``v``) when ``NoisedPytree`` updates are
-            passed.  Defaults to ``False``; flip on to ablate.  No
+            passed.  Defaults to ``True``; flip off to ablate.  No
             effect when ``SecondMomentNoiseOutput`` is passed —
             Adafactor does not consume the privatised ``g²`` stream
             (deriving a sound factored variant is future work).

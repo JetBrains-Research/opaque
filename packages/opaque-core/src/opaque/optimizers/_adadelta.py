@@ -236,7 +236,8 @@ def _scale_by_adadelta(
 
             # Corrected E[g²] at this step.
             if phi_g_path > 0:
-                v_g_corrected = torch.clamp(v_g_t - phi_g_path, min=bc_floor)
+                corrected_g = v_g_t - phi_g_path
+                v_g_corrected = torch.where(corrected_g > 0, corrected_g, v_g_t)
             else:
                 v_g_corrected = v_g_t
 
@@ -247,7 +248,10 @@ def _scale_by_adadelta(
             # second-moment-substitution branch where σ isn't available
             # to advance the EMA.
             if noise_bias_correction and noisy_squared_grads is None:
-                v_dx_corrected_prev = torch.clamp(v_dx_node - phi_dx_node, min=bc_floor)
+                corrected_dx = v_dx_node - phi_dx_node
+                v_dx_corrected_prev = torch.where(
+                    corrected_dx > 0, corrected_dx, v_dx_node
+                )
             else:
                 v_dx_corrected_prev = v_dx_node
 
@@ -315,7 +319,7 @@ def adadelta(
     *,
     decoupled_weight_decay: bool = True,
     update_rms_clip: float | None = None,
-    noise_bias_correction: bool = False,
+    noise_bias_correction: bool = True,
 ) -> GradientTransformation:
     """Create an Adadelta optimizer with two-EMA DP bias correction.
 
@@ -340,7 +344,7 @@ def adadelta(
 
             Both EMAs decay at the same rate ρ as their respective
             second moments, so subtraction is consistent with the EMA
-            history.  Defaults to ``False``; flip on to ablate against
+            history.  Defaults to ``True``; flip off to ablate against
             vanilla Adadelta under noise.
 
     Returns:

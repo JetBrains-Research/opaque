@@ -2,7 +2,7 @@
 
 This example is designed as a production-style script (not a tutorial):
 - clipping + noise + accounting always enabled
-- adaptive clipping by default (--clipping-mode fixed|adaptive|auto)
+- auto clipping by default (--clipping-mode fixed|adaptive|auto)
 - noise multiplier calibrated from target privacy budget
 - privacy and grad-norm telemetry reported every eval_steps
 - optional empirical privacy auditing with W&B integration
@@ -383,11 +383,11 @@ def parse_args():
     train_group.add_argument(
         "--noise-bias-correction",
         action=argparse.BooleanOptionalAction,
-        default=False,
+        default=True,
         help=(
             "Enable DP noise-variance bias correction on optimizers that "
-            "support it (adam/adamw/ademamix/rmsprop/adagrad).  Silently "
-            "ignored on sgd/lion/adafactor.  Off by default."
+            "support it (adam/adamw/ademamix/rmsprop/adagrad/adafactor).  Silently "
+            "ignored on sgd/lion.  On by default."
         ),
     )
     train_group.add_argument(
@@ -452,7 +452,7 @@ def parse_args():
         "--clipping-mode",
         type=str,
         choices=["fixed", "adaptive", "auto"],
-        default="adaptive",
+        default="auto",
         help="Clipping strategy: fixed (constant threshold), adaptive (Andrew "
         "et al. quantile tracking), or auto (AUTO-S automatic scaling, Bu et "
         "al. NeurIPS 2023).",
@@ -1377,6 +1377,7 @@ def main():
         base_opt = adafactor(
             lr=args.learning_rate,
             weight_decay=args.weight_decay,
+            noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "rmsprop":
         from opaque.optimizers import rmsprop

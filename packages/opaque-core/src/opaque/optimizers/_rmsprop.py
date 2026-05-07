@@ -159,7 +159,8 @@ def _scale_by_rmsprop(
                 new_phi_k = alpha * old_phi_k + (1 - alpha) * nv
                 new_phi[path] = new_phi_k
                 if new_phi_k > 0:
-                    v_corrected = torch.clamp(v_node - new_phi_k, min=bc_floor)
+                    corrected = v_node - new_phi_k
+                    v_corrected = torch.where(corrected > 0, corrected, v_node)
                 else:
                     v_corrected = v_node
                 return g_node / (v_corrected.sqrt() + eps)
@@ -172,7 +173,8 @@ def _scale_by_rmsprop(
             if new_phi > 0:
 
                 def _compute(g: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-                    v_corrected = torch.clamp(v - new_phi, min=bc_floor)
+                    corrected = v - new_phi
+                    v_corrected = torch.where(corrected > 0, corrected, v)
                     return g / (v_corrected.sqrt() + eps)
             else:
 
@@ -194,7 +196,7 @@ def rmsprop(
     *,
     decoupled_weight_decay: bool = True,
     update_rms_clip: float | None = None,
-    noise_bias_correction: bool = False,
+    noise_bias_correction: bool = True,
 ) -> GradientTransformation:
     """Create an RMSprop optimizer with optional DP-aware bias correction.
 
@@ -210,8 +212,8 @@ def rmsprop(
             moment-scaled update.
         noise_bias_correction: If ``True``, subtract an ``alpha``-EMA of
             the realized noise variance from the second moment when
-            ``NoisedPytree`` updates are passed.  Defaults to ``False``;
-            flip on to ablate.
+            ``NoisedPytree`` updates are passed.  Defaults to ``True``;
+            flip off to ablate.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.

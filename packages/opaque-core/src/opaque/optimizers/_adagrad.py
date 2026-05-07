@@ -140,7 +140,8 @@ def _scale_by_adagrad(
                 new_phi_k = old_phi_k + nv
                 new_phi[path] = new_phi_k
                 if new_phi_k > 0:
-                    v_corrected = torch.clamp(v_node - new_phi_k, min=bc_floor)
+                    corrected = v_node - new_phi_k
+                    v_corrected = torch.where(corrected > 0, corrected, v_node)
                 else:
                     v_corrected = v_node
                 return g_node / (v_corrected.sqrt() + eps)
@@ -153,7 +154,8 @@ def _scale_by_adagrad(
             if new_phi > 0:
 
                 def _compute(g: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-                    v_corrected = torch.clamp(v - new_phi, min=bc_floor)
+                    corrected = v - new_phi
+                    v_corrected = torch.where(corrected > 0, corrected, v)
                     return g / (v_corrected.sqrt() + eps)
             else:
 
@@ -174,7 +176,7 @@ def adagrad(
     initial_accumulator_value: float = 0.0,
     *,
     decoupled_weight_decay: bool = True,
-    noise_bias_correction: bool = False,
+    noise_bias_correction: bool = True,
 ) -> GradientTransformation:
     """Create an Adagrad optimizer with optional DP-aware correction.
 
@@ -191,7 +193,7 @@ def adagrad(
             ``Φ_acc`` of the realized noise variance from ``v_acc`` when
             ``NoisedPytree`` updates are passed (Adagrad does not decay
             its accumulator, so unmitigated noise compounds linearly).
-            Defaults to ``False``; flip on to ablate.
+            Defaults to ``True``; flip off to ablate.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.
