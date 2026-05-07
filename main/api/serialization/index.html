@@ -1454,6 +1454,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#api-surface-no-per-type-state_dict" class="md-nav__link">
+    <span class="md-ellipsis">
+      API surface (no per-type state_dict())
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#opaque.serialization" class="md-nav__link">
     <span class="md-ellipsis">
       serialization
@@ -1768,6 +1777,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#api-surface-no-per-type-state_dict" class="md-nav__link">
+    <span class="md-ellipsis">
+      API surface (no per-type state_dict())
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#opaque.serialization" class="md-nav__link">
     <span class="md-ellipsis">
       serialization
@@ -1842,6 +1860,23 @@ preserved from the template on load.</p>
 as <code>groups.&lt;param_key&gt;</code> / <code>values.&lt;group_name&gt;</code>).  NumPy <code>ndarray</code> leaves
 are supported alongside <code>torch.Tensor</code>.</p>
 <p>Domain pages with examples: <a href="../optimizers/">Optimizers</a>, <a href="../accounting/">Accounting</a>.</p>
+<h2 id="api-surface-no-per-type-state_dict">API surface (no per-type <code>state_dict()</code>)<a class="headerlink" href="#api-surface-no-per-type-state_dict" title="Permanent link">&para;</a></h2>
+<p>Opaque centralises (de)serialisation in :func:<code>opaque.serialization.state_dict</code>
+and :func:<code>opaque.serialization.from_state_dict</code>.  Registered types (including
+:class:<code>~opaque.accounting.Accountant</code>) are written and restored <strong>only</strong>
+through these module-level functions — there are no instance methods named
+<code>state_dict</code> / <code>from_state_dict</code> on those classes.</p>
+<p>Minimal round-trip for an :class:<code>~opaque.accounting.Accountant</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">Accountant</span><span class="p">,</span> <span class="n">identity</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">from_state_dict</span><span class="p">,</span> <span class="n">state_dict</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="p">()</span> <span class="o">|</span> <span class="n">identity</span><span class="p">()</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">flat</span> <span class="o">=</span> <span class="n">state_dict</span><span class="p">(</span><span class="n">acct</span><span class="p">)</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">acct2</span> <span class="o">=</span> <span class="n">from_state_dict</span><span class="p">(</span><span class="n">Accountant</span><span class="p">(),</span> <span class="n">flat</span><span class="p">)</span>
+</code></pre></div>
+<p>The same pattern applies to clip state, noise state, functional optimizer
+state, and any other value that flows through the DP training loop.  Custom
+types may register handlers with :func:<code>opaque.serialization.register_serialization_type</code>.</p>
 
 
 <div class="doc doc-object doc-module">
