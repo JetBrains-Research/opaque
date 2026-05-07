@@ -344,7 +344,7 @@ def adadelta(
 
             Both EMAs decay at the same rate ρ as their respective
             second moments, so subtraction is consistent with the EMA
-            history.  Defaults to ``False``; flip on to ablate against
+            history.  Defaults to ``True``; flip off to ablate against
             vanilla Adadelta under noise.
 
     Returns:

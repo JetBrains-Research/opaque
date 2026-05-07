@@ -385,8 +385,8 @@ def parse_args():
         default=True,
         help=(
             "Enable DP noise-variance bias correction on optimizers that "
-            "support it (adam/adamw/ademamix/rmsprop/adagrad).  Silently "
-            "ignored on sgd/lion/adafactor.  On by default."
+            "support it (adam/adamw/ademamix/rmsprop/adagrad/adafactor).  Silently "
+            "ignored on sgd/lion.  On by default."
         ),
     )
     train_group.add_argument(
@@ -1304,6 +1304,7 @@ def main():
         base_opt = adafactor(
             lr=args.learning_rate,
             weight_decay=args.weight_decay,
+            noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "rmsprop":
         from opaque.optimizers import rmsprop

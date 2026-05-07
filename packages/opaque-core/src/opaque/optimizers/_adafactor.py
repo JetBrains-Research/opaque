@@ -28,7 +28,7 @@ A single scalar φ-EMA tracking ``β₂_t`` matches the v_row/v_col EMAs;
 subtracting it (with a positive floor) from each factor before the
 ``v̂`` approximation recovers the clean second-moment estimate.
 ``noise_bias_correction=True`` activates this path; defaults to
-``False`` so vanilla Adafactor parity is the baseline.
+``True`` so BC is on by default.
 
 The private second-moment substitution path (``noisy_squared_grads``)
 is **not** offered for Adafactor.  Substituting a privately-estimated
