@@ -104,6 +104,20 @@ def _noise_stddev(max_norm, noise_multiplier, *, per_group=True):
     return noise_multiplier * max_norm
 
 
+def _step_clip_norm(grads_tuple):
+    """``.max_norm`` from a clipped pytree, unwrapping the paired SM output."""
+    if isinstance(grads_tuple, SecondMomentClippingOutput):
+        return grads_tuple.grads.max_norm
+    return grads_tuple.max_norm
+
+
+def _step_noise_stddev(noisy_grads):
+    """``.noise_stddev`` from a noised pytree, unwrapping the paired SM output."""
+    if isinstance(noisy_grads, SecondMomentNoiseOutput):
+        return noisy_grads.noisy_grads.noise_stddev
+    return noisy_grads.noise_stddev
+
+
 def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
     """Select best available device with user-facing label."""
     if torch.cuda.is_available():
@@ -527,8 +541,9 @@ def parse_args():
         "standard single-stream release), 'auto' (enable for optimizers with "
         "a noisy_squared_grads branch — adam/adamw/ademamix/rmsprop/radam/"
         "adadelta), or an explicit float >1.0 for the first-moment overhead "
-        "(default sqrt(3/2) ≈ 1.225 when enabled).  Incompatible with "
-        "--per-group-clipping.",
+        "(default sqrt(3/2) ≈ 1.225 when enabled).  Not yet supported with "
+        "--per-group-clipping (joint first+second-moment privacy allocation "
+        "has not been validated for per-group sensitivities).",
     )
     dp_group.add_argument(
         "--per-group-clipping",
@@ -718,6 +733,19 @@ def parse_args():
     # Needed because argparse type=int can't accept None on CLI to override presets.
     if args.microbatch_size == 0:
         args.microbatch_size = None
+
+    # --second-moment + --per-group-clipping is not yet supported: the
+    # joint first+second-moment privacy allocation has not been validated
+    # for PerGroup sensitivities (mirrors the TypeError raised by
+    # ``opaque.clipping._clipped_fun``).  Reject early so users see the
+    # clear message before either flag is resolved further.
+    if args.second_moment != "none" and args.per_group_clipping:
+        parser.error(
+            "--second-moment is not supported together with "
+            "--per-group-clipping: the joint first+second-moment privacy "
+            "allocation has not been validated for per-group sensitivities. "
+            "Pick one."
+        )
 
     # Parse --per-group-clipping PATTERN=NORM pairs
     if args.per_group_clipping:
@@ -1501,17 +1529,9 @@ def main():
                     clip_state, aux = sync(clip_state, aux)
                     sum_gradients_(grads_tuple)
 
-                step_clip_norm = (
-                    grads_tuple.grads.max_norm
-                    if isinstance(grads_tuple, SecondMomentClippingOutput)
-                    else grads_tuple.max_norm
-                )
+                step_clip_norm = _step_clip_norm(grads_tuple)
                 noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
-                noise_stddev = (
-                    noisy_grads.noisy_grads.noise_stddev
-                    if isinstance(noisy_grads, SecondMomentNoiseOutput)
-                    else noisy_grads.noise_stddev
-                )
+                noise_stddev = _step_noise_stddev(noisy_grads)
                 if is_ddp:
                     noise_state = sync(noise_state)
 
