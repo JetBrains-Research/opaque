@@ -108,3 +108,82 @@ def test_unsupported_operations_raise_helpful_error(device):
         _ = clipped_value * True
     with pytest.raises(ZeroDivisionError):
         _ = clipped_value / 0.0
+
+
+# ----- PerGroup × PerGroup elementwise multiplication ---------------------
+
+
+def test_per_group_elementwise_product():
+    """``PerGroup * PerGroup`` multiplies per-group values element-wise.
+
+    This is what enables ``clipping_norm * clipping_norm`` to produce
+    the squared per-group sensitivities consumed by the paired second-
+    moment release.
+    """
+    a = PerGroup(
+        groups={"p1": "g1", "p2": "g2"},
+        values={"g1": 2.0, "g2": 3.0},
+    )
+    b = PerGroup(
+        groups={"p1": "g1", "p2": "g2"},
+        values={"g1": 4.0, "g2": 5.0},
+    )
+
+    result = a * b
+
+    assert isinstance(result, PerGroup)
+    assert result.groups == a.groups
+    assert result.values == {"g1": 8.0, "g2": 15.0}
+
+
+def test_per_group_self_squared_for_second_moment_sensitivity():
+    """``pg * pg`` yields per-group squared values — used to derive
+    second-stream sensitivities from per-group clipping norms.
+    """
+    pg = PerGroup(
+        groups={"layer.weight": "layer", "head.weight": "head"},
+        values={"layer": 2.0, "head": 0.5},
+    )
+
+    squared = pg * pg
+
+    assert squared.values == {"layer": 4.0, "head": 0.25}
+
+
+def test_per_group_product_rejects_mismatched_groups_mapping():
+    a = PerGroup(
+        groups={"p1": "g1", "p2": "g2"},
+        values={"g1": 2.0, "g2": 3.0},
+    )
+    b = PerGroup(
+        groups={"q1": "g1", "q2": "g2"},  # different parameter names
+        values={"g1": 4.0, "g2": 5.0},
+    )
+    with pytest.raises(ValueError, match="identical group mappings"):
+        _ = a * b
+
+
+def test_per_group_product_rejects_mismatched_group_sets():
+    a = PerGroup(
+        groups={"p1": "g1", "p2": "g2"},
+        values={"g1": 2.0, "g2": 3.0},
+    )
+    b = PerGroup(
+        groups={"p1": "g1", "p2": "g2"},
+        values={"g1": 4.0, "g99": 5.0},  # different group key
+    )
+    with pytest.raises(ValueError, match="identical group sets"):
+        _ = a * b
+
+
+def test_per_group_scalar_multiplication_still_works():
+    """Scalar multiplication continues to broadcast to every group."""
+    pg = PerGroup(
+        groups={"p1": "g1", "p2": "g2"},
+        values={"g1": 2.0, "g2": 3.0},
+    )
+
+    scaled = pg * 0.5
+
+    assert isinstance(scaled, PerGroup)
+    assert scaled.values == {"g1": 1.0, "g2": 1.5}

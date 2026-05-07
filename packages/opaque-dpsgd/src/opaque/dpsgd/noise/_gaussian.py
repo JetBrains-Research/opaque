@@ -45,7 +45,10 @@ from opaque.random import generator_from_key
 from opaque.random.types import RngKey
 from opaque.random import fold_in as rng_fold_in
 from opaque.pytree import tree_map
-from opaque.dpsgd.noise._per_group_noise import per_group_noise_stddev
+from opaque.dpsgd.noise._per_group_noise import (
+    per_group_noise_stddev,
+    per_group_paired_noise_stddevs,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -206,14 +209,49 @@ def gaussian_noise(
         _validate_noise_stddev(effective)
         return effective
 
-    def _reject_per_group_for_paired(clipped_grads: ClippedPytree) -> None:
-        if isinstance(clipped_grads.max_norm, PerGroup):
+    def _paired_stddevs(
+        first_clipped: ClippedPytree,
+        second_clipped: ClippedPytree,
+    ) -> tuple[float | PerGroup, float | PerGroup]:
+        """Resolve (σ_first, σ_second) for the paired Gaussian release.
+
+        Three branches by ``max_norm`` type:
+        - both ``PerGroup``: MSE-optimal joint per-group allocation
+          (see :func:`per_group_paired_noise_stddevs`).  Privacy is
+          ``gaussian(nm)`` — same as single-stream.
+        - both scalar: paper-style overhead allocation
+          (:func:`second_moment_stddevs`) parametrised by
+          ``first_moment_overhead``.
+        - one of each: rejected as misconfigured.
+        """
+        first_pg = isinstance(first_clipped.max_norm, PerGroup)
+        second_pg = isinstance(second_clipped.max_norm, PerGroup)
+        if first_pg != second_pg:
             raise TypeError(
-                "gaussian_noise paired-stream output (SecondMomentNoiseOutput) "
-                "does not support PerGroup max_norm.  Per-group second-moment "
-                "allocation has not been validated.  Use a scalar max_norm or "
-                "pass a single-stream ClippedPytree input."
+                "Paired second-moment release requires matching max_norm "
+                "kinds on both streams (both scalar or both PerGroup); "
+                f"got first={type(first_clipped.max_norm).__name__}, "
+                f"second={type(second_clipped.max_norm).__name__}."
             )
+        if first_pg:
+            # Per-group MSE-optimal joint allocation.  No
+            # ``first_moment_overhead`` knob: the per-group form is
+            # data-driven.  See per_group_paired_noise_stddevs for the
+            # Mahalanobis derivation.
+            return per_group_paired_noise_stddevs(
+                first_clipped.max_norm,
+                second_clipped.max_norm,
+                resolved_noise_multiplier,
+            )
+        # Identity strategy → c1 = c2 = 1.0; pass per-record bounds for
+        # both streams so the joint allocation is correct (per-example
+        # squared, not (Σg)²).
+        return second_moment_stddevs(
+            resolved_noise_multiplier,
+            first_max_norm=float(first_clipped.sensitivity),
+            squared_max_norm=float(second_clipped.sensitivity),
+            first_moment_overhead=first_moment_overhead,
+        )
 
     def _add_paired(
         clipped_input: SecondMomentClippingOutput, st: GaussianNoiseState
@@ -226,17 +264,7 @@ def gaussian_noise(
             raise TypeError(
                 "SecondMomentClippingOutput.squared_grads must be a ClippedPytree."
             )
-        _reject_per_group_for_paired(first_clipped)
-        _reject_per_group_for_paired(second_clipped)
-        # Identity strategy → c1 = c2 = 1.0; pass per-record bounds for
-        # both streams so the joint allocation is correct (per-example
-        # squared, not (Σg)²).
-        first_stddev, second_stddev = second_moment_stddevs(
-            resolved_noise_multiplier,
-            first_max_norm=float(first_clipped.sensitivity),
-            squared_max_norm=float(second_clipped.sensitivity),
-            first_moment_overhead=first_moment_overhead,
-        )
+        first_stddev, second_stddev = _paired_stddevs(first_clipped, second_clipped)
         # Two independent noise streams; fold-in 1 / 2 namespaces them so
         # they don't collide with the single-stream key derivation
         # (``fold_in(_rng_key, _step_counter)``).
