@@ -87,6 +87,13 @@ from opaque.dpsgd.sampling import PoissonSampler
 from opaque.dpsgd.sampling import TruncatedPoissonSampler
 from opaque.distributed import local_shard
 from opaque.functional import make_functional
+from opaque.scheduling import (
+    cosine_schedule,
+    inverse_sqrt_schedule,
+    linear_schedule,
+    with_warmup,
+)
+from opaque.scheduling.types import Schedule
 from opaque.types import PerGroup, SecondMomentClippingOutput, SecondMomentNoiseOutput
 from opaque.clipping import per_group
 import wandb
@@ -373,9 +380,34 @@ def parse_args():
         "--learning-rate", type=float, default=1.0e-5, help="Learning rate"
     )
     train_group.add_argument(
+        "--lr-schedule",
+        type=str,
+        default="none",
+        choices=["none", "cosine", "linear", "sqrt"],
+        help=(
+            "LR schedule applied to ``--learning-rate``.  ``cosine`` decays "
+            "from peak to ``lr * lr_min_ratio`` over the full training run; "
+            "``linear`` decays linearly to the same floor; ``sqrt`` decays "
+            "as 1/sqrt(1 + step/warmup) (Adagrad-mimic).  Default ``none`` "
+            "keeps the constant LR."
+        ),
+    )
+    train_group.add_argument(
+        "--lr-min-ratio",
+        type=float,
+        default=0.0,
+        help="Floor LR as a fraction of peak (cosine/linear).  Default 0 (decay to zero).",
+    )
+    train_group.add_argument(
+        "--lr-warmup-steps",
+        type=int,
+        default=0,
+        help="Linear warmup from 0 to peak LR over this many steps (any schedule).",
+    )
+    train_group.add_argument(
         "--optimizer",
         type=str,
-        default="adam",
+        default="adafactor",
         choices=[
             "sgd",
             "adam",
@@ -725,6 +757,7 @@ def parse_args():
         )
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
+        _set("lr_schedule", "cosine")
     elif args.preset == "custom":
         # Keep all user-provided/default CLI arguments unchanged.
         pass
@@ -1361,28 +1394,86 @@ def main():
             f"(iterations={calibration.iterations}, converged={calibration.converged})"
         )
 
+    # Build LR schedule using opaque.scheduling primitives.  Each curve
+    # returns a ``Callable[[int], float]`` and ``with_warmup`` composes a
+    # 0→1 linear ramp during the warmup window; torchopt's
+    # ``scale_by_neg_lr`` accepts either a callable or a scalar.  We
+    # share ``total_steps`` with the privacy calibration above so the
+    # schedule and accounting agree on the run length.  ``--max-steps``
+    # (when set) only truncates training — the schedule is laid out over
+    # the full planned epoch count, same as accounting.
+    if not 0.0 <= args.lr_min_ratio <= 1.0:
+        raise ValueError(
+            f"--lr-min-ratio must be in [0, 1], got {args.lr_min_ratio}"
+        )
+    peak_lr = args.learning_rate
+    warmup = max(0, int(args.lr_warmup_steps))
+    lr_min = peak_lr * args.lr_min_ratio
+    decay_span = max(1, total_steps - warmup)
+
+    base: float | Schedule
+    if args.lr_schedule == "cosine":
+        base = cosine_schedule(
+            init_value=peak_lr,
+            end_value=lr_min,
+            transition_steps=decay_span,
+            transition_begin=warmup,
+        )
+    elif args.lr_schedule == "linear":
+        base = linear_schedule(
+            init_value=peak_lr,
+            end_value=lr_min,
+            transition_steps=decay_span,
+            transition_begin=warmup,
+        )
+    elif args.lr_schedule == "sqrt":
+        # Inverse-sqrt timescale defaults to warmup when set, otherwise
+        # to the full training run (gives a gentle ~1/sqrt(2) decay over
+        # the run rather than the very aggressive 1/sqrt(t) that would
+        # come from a tiny timescale).
+        base = inverse_sqrt_schedule(
+            init_value=peak_lr,
+            transition_steps=warmup if warmup > 0 else max(1, total_steps),
+            transition_begin=warmup,
+        )
+    elif args.lr_schedule == "none":
+        base = peak_lr
+    else:
+        raise ValueError(f"Unknown --lr-schedule: {args.lr_schedule}")
+
+    if warmup > 0:
+        lr_for_opt: float | Schedule = with_warmup(base, transition_steps=warmup)
+    else:
+        lr_for_opt = base
+
+    if args.lr_schedule != "none" or warmup > 0:
+        print(
+            f"  LR schedule: {args.lr_schedule} "
+            f"(peak={peak_lr:g}, min={lr_min:g}, warmup={warmup}, total={total_steps})"
+        )
+
     # Setup optimizer.  Noise metadata travels with ``NoisedPytree`` updates,
     # so optimizer construction does not need a precomputed stddev;
     # ``--noise-bias-correction`` only controls whether the optimizer's
     # DP-aware path consumes that metadata.  For optimizers without a BC
-    # path (sgd/lion/adafactor) the flag is silently ignored.
+    # path (sgd/lion) the flag is silently ignored.
     if args.optimizer == "adam":
         from opaque.optimizers import adam
 
         base_opt = adam(
-            lr=args.learning_rate,
+            lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "sgd":
         from opaque.optimizers import sgd
 
-        base_opt = sgd(lr=args.learning_rate, weight_decay=args.weight_decay)
+        base_opt = sgd(lr=lr_for_opt, weight_decay=args.weight_decay)
     elif args.optimizer == "adamw":
         from opaque.optimizers import adamw
 
         base_opt = adamw(
-            lr=args.learning_rate,
+            lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
         )
@@ -1390,7 +1481,7 @@ def main():
         from opaque.optimizers import ademamix
 
         base_opt = ademamix(
-            lr=args.learning_rate,
+            lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
         )
@@ -1398,14 +1489,14 @@ def main():
         from opaque.optimizers import lion
 
         base_opt = lion(
-            lr=args.learning_rate,
+            lr=lr_for_opt,
             weight_decay=args.weight_decay,
         )
     elif args.optimizer == "adafactor":
         from opaque.optimizers import adafactor
 
         base_opt = adafactor(
-            lr=args.learning_rate,
+            lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
         )
@@ -1413,7 +1504,7 @@ def main():
         from opaque.optimizers import rmsprop
 
         base_opt = rmsprop(
-            lr=args.learning_rate,
+            lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
         )
@@ -1421,7 +1512,7 @@ def main():
         from opaque.optimizers import adagrad
 
         base_opt = adagrad(
-            lr=args.learning_rate,
+            lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
         )
