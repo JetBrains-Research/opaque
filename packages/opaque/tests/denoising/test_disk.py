@@ -7,7 +7,7 @@ import torch
 
 from opaque.denoising import disk_denoiser
 from opaque.denoising.types import DenoiserState, DiskDenoiserState
-from opaque.utils.per_group import PerGroup
+from opaque.types import PerGroup
 
 
 def _scalar_kalman_step(

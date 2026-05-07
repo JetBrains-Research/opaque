@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from opaque.distributed import (
+from opaque.distributed._state import (
     assert_pytree_equal,
     assert_scalar_equal,
-    is_distributed,
     register_sync_type,
 )
+from opaque.distributed.collectives import is_distributed
 
 from opaque.denoising.types import DiskDenoiserState
 

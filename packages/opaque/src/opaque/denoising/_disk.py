@@ -8,8 +8,8 @@ from typing import Any
 import torch
 
 from opaque.denoising.types import DiskDenoiserState
-from opaque.utils.per_group import PerGroup
-from opaque.utils.pytree import tree_map_with_path
+from opaque.pytree import tree_map_with_path
+from opaque.types import PerGroup
 
 
 def _param_key_from_path(path: tuple[Any, ...]) -> str:
@@ -96,7 +96,7 @@ def disk_denoiser(
         grad_template: PyTree with the same structure as noisy gradients; leaves
             must be tensors (shapes and devices define filtering).
         noise_stddev: Same units as :func:`~opaque.noise.gaussian_noise` (σ), scalar
-            or :class:`~opaque.utils.per_group.PerGroup` when noise scales per group.
+            or :class:`~opaque.types.PerGroup` when noise scales per group.
         process_stddev: Process noise scale (same units as ``noise_stddev``); the
             filter uses process variance ``Q = process_stddev ** 2``.
         dtype: Optional dtype for internal Kalman math (defaults to float32 minimum).
