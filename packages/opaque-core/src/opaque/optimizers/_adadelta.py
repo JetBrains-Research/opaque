@@ -249,7 +249,9 @@ def _scale_by_adadelta(
             # to advance the EMA.
             if noise_bias_correction and noisy_squared_grads is None:
                 corrected_dx = v_dx_node - phi_dx_node
-                v_dx_corrected_prev = torch.where(corrected_dx > 0, corrected_dx, v_dx_node)
+                v_dx_corrected_prev = torch.where(
+                    corrected_dx > 0, corrected_dx, v_dx_node
+                )
             else:
                 v_dx_corrected_prev = v_dx_node
 
