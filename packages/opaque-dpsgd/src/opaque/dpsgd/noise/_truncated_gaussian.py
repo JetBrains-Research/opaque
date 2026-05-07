@@ -43,7 +43,10 @@ from opaque.types import (
 )
 
 from opaque.dpsgd.noise._gaussian import GaussianNoiseState
-from opaque.dpsgd.noise._per_group_noise import per_group_noise_stddev
+from opaque.dpsgd.noise._per_group_noise import (
+    per_group_noise_stddev,
+    per_group_paired_noise_stddevs,
+)
 from opaque.dpsgd.noise._second_moment import (
     DEFAULT_SECOND_MOMENT_OVERHEAD,
     second_moment_stddevs,
@@ -244,6 +247,66 @@ def truncated_gaussian_noise(
             generator=generator,
         )
 
+    def _add_truncated_tree(
+        grads: Any,
+        stddev: float | PerGroup,
+        generator: torch.Generator,
+    ) -> Any:
+        """Apply truncated Gaussian noise; dispatch on scalar vs PerGroup."""
+        if isinstance(stddev, PerGroup):
+            if all(v == 0 for v in stddev.values.values()):
+                return grads
+            noised: dict[str, torch.Tensor] = {}
+            for param_key, tensor in grads.items():
+                group_std = stddev.for_key(param_key)
+                bound = group_std * radius
+                noised[param_key] = _truncated_normal_around(
+                    tensor,
+                    stddev=group_std,
+                    lower=-bound,
+                    upper=bound,
+                    generator=generator,
+                )
+            return noised
+        return tree_map(lambda t: _add_truncated(t, stddev, generator), grads)
+
+    def _paired_stddevs(
+        first_clipped: ClippedPytree,
+        second_clipped: ClippedPytree,
+    ) -> tuple[float | PerGroup, float | PerGroup]:
+        """Resolve (σ_first, σ_second) for the paired truncated-Gaussian release.
+
+        Three branches by ``max_norm`` type:
+        - both ``PerGroup``: MSE-optimal joint per-group allocation
+          (:func:`per_group_paired_noise_stddevs`).  Privacy is
+          ``gaussian(nm)`` — same as single-stream.
+        - both scalar: paper-style overhead allocation
+          (:func:`second_moment_stddevs`) parametrised by
+          ``first_moment_overhead``.
+        - one of each: rejected as misconfigured.
+        """
+        first_pg = isinstance(first_clipped.max_norm, PerGroup)
+        second_pg = isinstance(second_clipped.max_norm, PerGroup)
+        if first_pg != second_pg:
+            raise TypeError(
+                "Paired second-moment release requires matching max_norm "
+                "kinds on both streams (both scalar or both PerGroup); "
+                f"got first={type(first_clipped.max_norm).__name__}, "
+                f"second={type(second_clipped.max_norm).__name__}."
+            )
+        if first_pg:
+            return per_group_paired_noise_stddevs(
+                first_clipped.max_norm,
+                second_clipped.max_norm,
+                resolved_noise_multiplier,
+            )
+        return second_moment_stddevs(
+            resolved_noise_multiplier,
+            first_max_norm=float(first_clipped.sensitivity),
+            squared_max_norm=float(second_clipped.sensitivity),
+            first_moment_overhead=first_moment_overhead,
+        )
+
     def _add_paired(
         clipped_input: SecondMomentClippingOutput, st: GaussianNoiseState
     ) -> tuple[SecondMomentNoiseOutput, GaussianNoiseState]:
@@ -255,36 +318,18 @@ def truncated_gaussian_noise(
             raise TypeError(
                 "SecondMomentClippingOutput.squared_grads must be a ClippedPytree."
             )
-        if isinstance(first_clipped.max_norm, PerGroup) or isinstance(
-            second_clipped.max_norm, PerGroup
-        ):
-            raise TypeError(
-                "truncated_gaussian_noise paired-stream output "
-                "(SecondMomentNoiseOutput) does not support PerGroup max_norm. "
-                "Per-group second-moment allocation has not been validated. "
-                "Use a scalar max_norm or pass a single-stream ClippedPytree input."
-            )
-        # Identity strategy → c1 = c2 = 1.0; per-record bounds for
-        # both streams so the joint allocation is correct.
-        first_stddev, second_stddev = second_moment_stddevs(
-            resolved_noise_multiplier,
-            first_max_norm=float(first_clipped.sensitivity),
-            squared_max_norm=float(second_clipped.sensitivity),
-            first_moment_overhead=first_moment_overhead,
-        )
+        first_stddev, second_stddev = _paired_stddevs(first_clipped, second_clipped)
         # Two independent noise streams; fold-in 1 / 2 namespaces them so
         # they don't collide with the single-stream key derivation.
         first_step_key = rng_fold_in(rng_fold_in(st._rng_key, 1), st._step_counter)
         second_step_key = rng_fold_in(rng_fold_in(st._rng_key, 2), st._step_counter)
         first_gen = generator_from_key(first_step_key)
         second_gen = generator_from_key(second_step_key)
-        noisy_grads = tree_map(
-            lambda t: _add_truncated(t, first_stddev, first_gen),
-            first_clipped.pytree,
+        noisy_grads = _add_truncated_tree(
+            first_clipped.pytree, first_stddev, first_gen
         )
-        noisy_squared = tree_map(
-            lambda t: _add_truncated(t, second_stddev, second_gen),
-            second_clipped.pytree,
+        noisy_squared = _add_truncated_tree(
+            second_clipped.pytree, second_stddev, second_gen
         )
         next_state = GaussianNoiseState(
             _step_counter=st._step_counter + 1,

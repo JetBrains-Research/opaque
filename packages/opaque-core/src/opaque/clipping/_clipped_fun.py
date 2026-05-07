@@ -355,7 +355,9 @@ def clipped_fun(
             second-stream sensitivity is the per-record squared bound
             ``C²`` (averaged: ``C² / normalize_by``).  The wrapped
             output becomes :class:`SecondMomentClippingOutput` with both
-            streams.  Not supported with ``PerGroup`` ``clipping_norm``.
+            streams.  Per-group ``clipping_norm`` is supported and yields
+            ``SecondMomentClippingOutput`` with per-group ``max_norm``
+            on both streams.
         microbatch_size: If set, the batch is split up into microbatches of this
             size for memory-efficient processing. Processes each microbatch separately
             and accumulates results without materializing the full batch of gradients.
@@ -392,11 +394,6 @@ def clipped_fun(
         fun_with_aux = fun
 
     _validate_clipping_norm(clipping_norm)
-    if second_moment and isinstance(clipping_norm, PerGroup):
-        raise TypeError(
-            "second_moment=True is not supported with PerGroup clipping_norm. "
-            "Per-group second-moment allocation has not been validated."
-        )
     output_max_norm = clipping_norm / normalize_by
     output_squared_max_norm = (
         (clipping_norm * clipping_norm) / normalize_by if second_moment else None
