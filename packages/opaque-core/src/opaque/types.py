@@ -98,8 +98,33 @@ class PerGroup:
     def __rmul__(self, scalar: float) -> PerGroup:
         return PerGroup(self.groups, {k: scalar * v for k, v in self.values.items()})
 
-    def __mul__(self, scalar: float) -> PerGroup:
-        return PerGroup(self.groups, {k: v * scalar for k, v in self.values.items()})
+    def __mul__(self, other: float | PerGroup) -> PerGroup:
+        """Multiply by a scalar (broadcast to every group) or by another
+        :class:`PerGroup` element-wise.
+
+        Element-wise multiplication requires the same ``groups`` mapping
+        and the same set of group names; the result has each group's
+        value multiplied with its peer.  This is what makes
+        ``clipping_norm * clipping_norm`` produce per-group squared
+        sensitivities for the paired second-moment release.
+        """
+        if isinstance(other, PerGroup):
+            if other.groups != self.groups:
+                raise ValueError(
+                    "PerGroup × PerGroup requires identical group mappings; "
+                    f"got groups with {len(self.groups)} vs "
+                    f"{len(other.groups)} parameter assignments."
+                )
+            if set(other.values) != set(self.values):
+                raise ValueError(
+                    "PerGroup × PerGroup requires identical group sets; "
+                    f"got {sorted(self.values)} vs {sorted(other.values)}."
+                )
+            return PerGroup(
+                self.groups,
+                {k: v * other.values[k] for k, v in self.values.items()},
+            )
+        return PerGroup(self.groups, {k: v * other for k, v in self.values.items()})
 
     def __truediv__(self, scalar: float) -> PerGroup:
         return PerGroup(self.groups, {k: v / scalar for k, v in self.values.items()})

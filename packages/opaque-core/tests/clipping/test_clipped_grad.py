@@ -669,19 +669,35 @@ class TestSecondMoment:
         squared_of_mean = expected_first.pow(2)
         assert not torch.allclose(expected_squared, squared_of_mean, atol=1e-3)
 
-    def test_per_group_rejected(self, setup):
-        from opaque.types import PerGroup
+    def test_per_group_paired_emits_per_group_max_norm(self, setup):
+        """PerGroup clipping with second_moment=True should produce a
+        SecondMomentClippingOutput whose first stream carries the
+        original per-group bounds and whose second stream carries the
+        element-wise squared per-group bounds.
+        """
+        from opaque.types import PerGroup, SecondMomentClippingOutput
 
-        params, x, y, loss_fn, _ = setup
-        pg = PerGroup(groups={"w": "g1"}, values={"g1": 1.0})
-        with pytest.raises(TypeError, match="PerGroup"):
-            clipped_grad(
-                loss_fn,
-                argnums=0,
-                batch_argnums=(1, 2),
-                clipping_norm=pg,
-                second_moment=True,
-            )
+        params, x, y, loss_fn, batch_size = setup
+        pg = PerGroup(groups={"w": "g1"}, values={"g1": 2.0})
+        gf, state = clipped_grad(
+            loss_fn,
+            argnums=0,
+            batch_argnums=(1, 2),
+            clipping_norm=pg,
+            normalize_by=batch_size,
+            second_moment=True,
+        )
+        out, _ = gf(params, x, y, state=state)
+        assert isinstance(out, SecondMomentClippingOutput)
+        first_max = out.grads.max_norm
+        second_max = out.squared_grads.max_norm
+        assert isinstance(first_max, PerGroup)
+        assert isinstance(second_max, PerGroup)
+        # First stream: per-group bound divided by ``normalize_by``.
+        assert first_max.values == {"g1": 2.0 / batch_size}
+        # Second stream: element-wise squared bound divided by ``normalize_by``.
+        assert second_max.values == {"g1": 2.0 * 2.0 / batch_size}
+        assert first_max.groups == second_max.groups == pg.groups
 
     def test_microbatch_matches_full_batch(self, setup):
         params, x, y, loss_fn, batch_size = setup

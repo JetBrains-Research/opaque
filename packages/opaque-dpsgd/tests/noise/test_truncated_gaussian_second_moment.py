@@ -176,10 +176,44 @@ class TestPairedStreamIndependence:
         )
 
 
-class TestPairedStreamPerGroupRejected:
-    """Per-group max_norm + paired stream is not supported."""
+class TestPairedStreamPerGroup:
+    """Per-group max_norm on paired streams uses the joint MSE-optimal allocation."""
 
-    def test_first_stream_per_group_rejected(self):
+    def test_per_group_on_both_streams_returns_per_group_stddevs(self):
+        from opaque.types import PerGroup
+
+        noise_fn, state = truncated_gaussian_noise(
+            noise_multiplier=1.0,
+            radius=5.0,
+            key=key(0),
+        )
+        first_norm = PerGroup(
+            groups={"a": "g1", "b": "g2"},
+            values={"g1": 1.0, "g2": 2.0},
+        )
+        squared_norm = first_norm * first_norm  # per-group squared bounds
+        paired = SecondMomentClippingOutput(
+            grads=clipped(
+                {"a": torch.zeros(4), "b": torch.zeros(4)}, max_norm=first_norm
+            ),
+            squared_grads=clipped(
+                {"a": torch.zeros(4), "b": torch.zeros(4)},
+                max_norm=squared_norm,
+            ),
+        )
+        out, _ = noise_fn(paired, state)
+        assert isinstance(out, SecondMomentNoiseOutput)
+        assert isinstance(out.noisy_grads.noise_stddev, PerGroup)
+        assert isinstance(out.noisy_squared_grads.noise_stddev, PerGroup)
+        # Per-group bound, per-group stddev keys match the input groups.
+        assert (
+            out.noisy_grads.noise_stddev.groups == first_norm.groups
+        )
+        assert (
+            out.noisy_squared_grads.noise_stddev.groups == squared_norm.groups
+        )
+
+    def test_mismatched_kinds_rejected(self):
         from opaque.types import PerGroup
 
         noise_fn, state = truncated_gaussian_noise(
@@ -195,7 +229,7 @@ class TestPairedStreamPerGroupRejected:
             grads=clipped({"weight": torch.zeros(4)}, max_norm=per_group_norm),
             squared_grads=clipped({"weight": torch.zeros(4)}, max_norm=1.0),
         )
-        with pytest.raises(TypeError, match="PerGroup"):
+        with pytest.raises(TypeError, match="matching max_norm kinds"):
             noise_fn(paired, state)
 
 
