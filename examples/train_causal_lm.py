@@ -540,6 +540,20 @@ def parse_args():
         "Compatible with all --clipping-mode values (adaptive adapts each group "
         "independently; auto uses per-group R_k).",
     )
+    dp_group.add_argument(
+        "--denoiser",
+        type=str,
+        choices=["none", "disk"],
+        default="none",
+        help="Optional post-processing on noisy gradients after the DP mechanism (default: none). "
+        "disk = DiSK denoising (ICLR 2025).",
+    )
+    dp_group.add_argument(
+        "--denoiser-process-std",
+        type=float,
+        default=1e-3,
+        help="DiSK process noise scale (same units as noise stddev); only used with --denoiser disk.",
+    )
 
     # Model precision
     model_group = parser.add_argument_group("Model Configuration")
@@ -1139,6 +1153,8 @@ def main():
     print(f"  Noise mechanism: {args.noise_mechanism}")
     if args.noise_mechanism != "gaussian":
         print(f"  Noise radius: {args.noise_radius}σ")
+    if args.denoiser != "none":
+        print(f"  Denoiser: {args.denoiser} (process_std={args.denoiser_process_std})")
     print(f"  Microbatch size: {args.microbatch_size}")
     print(f"  Clipping mode: {args.clipping_mode}")
     if args.clipping_mode == "auto":
@@ -1416,6 +1432,18 @@ def main():
             key=key(args.seed),
         )
 
+    denoise = None
+    denoiser_state = None
+    if args.denoiser == "disk":
+        from opaque.denoising import disk_denoiser
+
+        init_std = _noise_stddev(clip_state, noise_multiplier)
+        denoise, denoiser_state = disk_denoiser(
+            trainable_params,
+            noise_stddev=init_std,
+            process_stddev=args.denoiser_process_std,
+        )
+
     # Training loop
     print("\n" + "=" * 80)
     print("Starting training...")
@@ -1502,8 +1530,14 @@ def main():
                 step_clip_norm = grads_tuple.max_norm
                 noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
                 noise_stddev = noisy_grads.noise_stddev
+                if denoise is not None:
+                    noisy_grads, denoiser_state = denoise(
+                        noisy_grads,
+                        denoiser_state,
+                        noise_stddev=noise_stddev,
+                    )
                 if is_ddp:
-                    noise_state = sync(noise_state)
+                    noise_state, denoiser_state = sync(noise_state, denoiser_state)
 
                 updates, opt_state = base_opt.update(
                     noisy_grads, opt_state, params=trainable_params

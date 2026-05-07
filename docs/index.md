@@ -44,6 +44,10 @@ bounded support at the same noise level, and **matrix factorization**
 reduces effective noise on cumulative updates (DP-FTRL). See the
 [Mechanisms](mechanisms/index.md) reference for details.
 
+**Gradient denoising** (`opaque.denoising`): optional DiSK
+post-processing on noisy gradients. See the
+[user guide](user-guide/denoising.md).
+
 ## Privacy accounting
 
 Composable `DpProcess` objects built on a Rust PLD engine. Mechanisms compose

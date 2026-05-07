@@ -241,3 +241,17 @@ class TestModuleExports:
             "sum_gradients_",
         ]:
             assert callable(getattr(gradients, name)), f"gradients.{name}"
+
+
+class TestSyncNonePassthrough:
+    """Tests for sync(None) passthrough support."""
+
+    def test_sync_single_none(self):
+        import opaque.distributed as dist_utils
+
+        assert dist_utils.sync(None) is None
+
+    def test_sync_multiple_with_none(self):
+        import opaque.distributed as dist_utils
+
+        assert dist_utils.sync(None, None) == (None, None)

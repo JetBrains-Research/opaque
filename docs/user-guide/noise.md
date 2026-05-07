@@ -540,6 +540,11 @@ noise state type. See [Distributed Training](distributed.md) for details.
 - [McMahan et al., 2025](https://arxiv.org/abs/2504.21413) -- Inversion theorem
 - [Kairouz et al., 2021](https://arxiv.org/abs/2103.00039) -- DP-FTRL
 
+## Optional denoising
+
+After `noise_fn`, you can apply **post-processing** denoisers (e.g. DiSK) on the
+noisy gradients. See [Gradient denoising](denoising.md).
+
 ## API reference
 
 See [Noise API Reference](../api/noise.md) for complete function signatures
