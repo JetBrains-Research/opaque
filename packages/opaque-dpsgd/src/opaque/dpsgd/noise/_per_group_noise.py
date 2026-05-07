@@ -105,4 +105,110 @@ def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGr
     )
 
 
-__all__ = ["per_group_noise_stddev"]
+def per_group_paired_noise_stddevs(
+    first_max_norm: PerGroup,
+    squared_max_norm: PerGroup,
+    noise_multiplier: float,
+) -> tuple[PerGroup, PerGroup]:
+    r"""MSE-optimal joint Gaussian allocation for paired per-group release.
+
+    Extends :func:`per_group_noise_stddev` to the joint first +
+    second-moment paired release.  Given per-group sensitivities
+    :math:`\Delta^{(1)}_g` (first-moment) and :math:`\Delta^{(2)}_g`
+    (second-moment) for each group :math:`g`, returns a pair of
+    :class:`~opaque.types.PerGroup` standard deviations satisfying::
+
+        S = Σ_h (Δ¹_h + Δ²_h)
+        σ¹_g = nm · sqrt(Δ¹_g · S)
+        σ²_g = nm · sqrt(Δ²_g · S)
+
+    This satisfies the Mahalanobis privacy constraint with equality
+    over the joint 2K-stream release::
+
+        Σ_g [(Δ¹_g/σ¹_g)² + (Δ²_g/σ²_g)²] = 1/nm²
+
+    so privacy accounting is identical to :func:`gaussian` with the same
+    ``noise_multiplier`` — no composition penalty across groups or
+    streams.  Compared to the scalar overhead-based allocation in
+    :func:`opaque.dpsgd.noise._second_moment.second_moment_stddevs`,
+    this is data-driven (no ``ρ`` parameter) and always MSE-optimal
+    for equal per-coordinate dimensions within each group.
+
+    Args:
+        first_max_norm: Per-group first-stream sensitivities (typically
+            ``C_g / batch_size`` where ``C_g`` is the per-group clipping
+            norm).
+        squared_max_norm: Per-group second-stream sensitivities
+            (typically ``C_g² / batch_size``).  Must share group
+            membership with ``first_max_norm``.
+        noise_multiplier: Privacy parameter; the same value used in
+            ``gaussian(nm)`` accounting.
+
+    Returns:
+        ``(σ_first, σ_second)`` — two :class:`~opaque.types.PerGroup`
+        objects with the same group keys as the inputs.
+
+    Raises:
+        TypeError: if either argument is not :class:`PerGroup`.
+        ValueError: if the group mappings differ, the group sets
+            differ, ``noise_multiplier`` is negative, or any
+            sensitivity is negative.
+    """
+    if not isinstance(first_max_norm, PerGroup):
+        raise TypeError(
+            "per_group_paired_noise_stddevs requires a PerGroup "
+            f"first_max_norm, got {type(first_max_norm).__name__}."
+        )
+    if not isinstance(squared_max_norm, PerGroup):
+        raise TypeError(
+            "per_group_paired_noise_stddevs requires a PerGroup "
+            f"squared_max_norm, got {type(squared_max_norm).__name__}."
+        )
+    if first_max_norm.groups != squared_max_norm.groups:
+        raise ValueError(
+            "first_max_norm and squared_max_norm must share the same "
+            "groups mapping."
+        )
+    if set(first_max_norm.values) != set(squared_max_norm.values):
+        raise ValueError(
+            "first_max_norm and squared_max_norm must have identical "
+            f"group sets; got {sorted(first_max_norm.values)} vs "
+            f"{sorted(squared_max_norm.values)}."
+        )
+    if noise_multiplier < 0:
+        raise ValueError(
+            f"noise_multiplier must be non-negative, got {noise_multiplier}"
+        )
+    for name, value in first_max_norm.values.items():
+        if value < 0:
+            raise ValueError(
+                "first-stream per-group bounds must be non-negative, "
+                f"got {value} for group '{name}'."
+            )
+    for name, value in squared_max_norm.values.items():
+        if value < 0:
+            raise ValueError(
+                "second-stream per-group bounds must be non-negative, "
+                f"got {value} for group '{name}'."
+            )
+    s = sum(first_max_norm.values.values()) + sum(
+        squared_max_norm.values.values()
+    )
+    sigma_first = PerGroup(
+        first_max_norm.groups,
+        {
+            k: noise_multiplier * math.sqrt(v * s)
+            for k, v in first_max_norm.values.items()
+        },
+    )
+    sigma_second = PerGroup(
+        squared_max_norm.groups,
+        {
+            k: noise_multiplier * math.sqrt(v * s)
+            for k, v in squared_max_norm.values.items()
+        },
+    )
+    return sigma_first, sigma_second
+
+
+__all__ = ["per_group_noise_stddev", "per_group_paired_noise_stddevs"]
