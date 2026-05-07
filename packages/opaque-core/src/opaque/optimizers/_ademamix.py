@@ -127,9 +127,9 @@ def _scale_by_ademamix(
             ) -> torch.Tensor:
                 combined = (mf / bc1) + alpha * ms
                 v_hat = v / bc2
-                v_eff = torch.where(
-                    v_hat > 0, v_hat, combined * combined
-                ).clamp(min=bc_floor)
+                v_eff = torch.where(v_hat > 0, v_hat, combined * combined).clamp(
+                    min=bc_floor
+                )
                 return combined / (v_eff.sqrt() + eps)
 
             result = tree_map(_compute_sm, new_mf, new_ms, new_nu)
