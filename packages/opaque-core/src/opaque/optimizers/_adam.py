@@ -244,7 +244,9 @@ def _scale_by_adam(
                 def _compute(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
                     v_hat = v / bc2
                     corrected = v_hat - phi_hat
-                    denom = torch.where(corrected > 0, corrected.sqrt(), v_hat.sqrt()) + eps
+                    denom = (
+                        torch.where(corrected > 0, corrected.sqrt(), v_hat.sqrt()) + eps
+                    )
                     return (m / bc1) / denom
             else:
 
