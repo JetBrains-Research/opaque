@@ -7,7 +7,7 @@ project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
-    uv sync --group dev --group examples --all-packages --extra all
+    uv sync --group dev --group examples --all-packages --extra all  # "all" is a real extra in pyproject.toml
     uv run python examples/train_causal_lm.py --preset mellum-kstack $EXTRA_ARGS
 provisioning:
   gpu_type: h200
@@ -45,8 +45,8 @@ project_sync:
       - ".git/*"
       - "**/.git/*"
       - ".github/*"
-      - "trainer_output/*"
-      - "**/trainer_output/*"
+      - "trainer_output/**"
+      - "**/trainer_output/**"
       - ".venv/*"
       - "**/.venv/*"
       - "venv/*"
