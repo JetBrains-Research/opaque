@@ -8,6 +8,11 @@ is **`disk_denoiser`** in **`opaque.denoising`**.
 - **`disk_denoiser()`** — Build a DiSK-style Kalman denoiser for a gradient-shaped PyTree.
 - **`DenoiserState`** — Abstract base class for denoiser state.
 - **`DiskDenoiserState`** — Immutable state for `disk_denoiser`.
+- **`opaque.distributed.sync(...)`** — Distributed consistency check for denoiser state.
+
+Public API is exposed from `opaque.denoising` and `opaque.denoising.disk`.
+Underscore-prefixed modules (for example `opaque.denoising._kalman`) are internal
+implementation details and may change without notice.
 
 **See also**: [Gradient denoising user guide](../user-guide/denoising.md)
 

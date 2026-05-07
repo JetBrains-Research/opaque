@@ -234,7 +234,7 @@ def _ensure_builtin_sync_types_loaded() -> None:
     a soft dependency — missing it must not break ``sync()``.
     """
     import opaque.clipping._distributed  # noqa: F401
-    import opaque.denoising.distributed  # noqa: F401
+    import opaque.denoising._distributed  # noqa: F401
 
     try:
         import opaque.profiling._distributed  # noqa: F401

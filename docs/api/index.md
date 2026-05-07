@@ -46,6 +46,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 - **[Denoising](denoising.md)**: Optional post-processing on noisy gradients
   - `disk_denoiser()` - DiSK-style Kalman denoising (ICLR 2025)
   - `DenoiserState`, `DiskDenoiserState` - State types
+  - `sync(...)` from `opaque.distributed` - Distributed state consistency checks
 
 - **[Accounting](accounting.md)**: Privacy budget tracking
   - `gaussian()`, `adaclip()`, `second_moment()` — DP-SGD mechanisms (also via `opaque.dpsgd.accounting`)

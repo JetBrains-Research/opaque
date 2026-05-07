@@ -81,6 +81,10 @@ The causal LM example (`examples/train_causal_lm.py` in the repository) supports
   `NoiseState` / `ClipState`.
 - **`DiskDenoiserState`** — concrete immutable state for DiSK.
 
+For distributed runs, synchronize denoiser state via the public dispatcher
+`opaque.distributed.sync(...)`. Internal underscore modules are implementation
+details and are not part of the stable user-facing API.
+
 ## See also
 
 - [Noise Addition](noise.md) — mechanism and `stddev` calibration
