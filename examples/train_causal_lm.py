@@ -125,6 +125,212 @@ def _step_noise_stddev(noisy_grads):
     return noisy_grads.noise_stddev
 
 
+# ---------------------------------------------------------------------------
+# Optimizer-state telemetry (optstate/* metrics)
+# ---------------------------------------------------------------------------
+
+
+def _iter_tensor_leaves(tree):
+    """Yield torch.Tensor leaves from a (possibly nested) pytree."""
+    if isinstance(tree, torch.Tensor):
+        yield tree
+        return
+    if isinstance(tree, dict):
+        for v in tree.values():
+            yield from _iter_tensor_leaves(v)
+        return
+    if isinstance(tree, (list, tuple)):
+        for v in tree:
+            yield from _iter_tensor_leaves(v)
+
+
+def _tree_l2_norm(tree):
+    s = 0.0
+    for t in _iter_tensor_leaves(tree):
+        s += float(t.detach().to(torch.float32).pow(2).sum().item())
+    return s ** 0.5
+
+
+def _tree_rms(tree):
+    s, n = 0.0, 0
+    for t in _iter_tensor_leaves(tree):
+        s += float(t.detach().to(torch.float32).pow(2).sum().item())
+        n += t.numel()
+    return (s / max(n, 1)) ** 0.5
+
+
+def _tree_mean(tree):
+    s, n = 0.0, 0
+    for t in _iter_tensor_leaves(tree):
+        s += float(t.detach().to(torch.float32).sum().item())
+        n += t.numel()
+    return s / max(n, 1)
+
+
+def _scalar_or_dict_mean(value):
+    if isinstance(value, dict):
+        if not value:
+            return 0.0
+        return sum(float(v) for v in value.values()) / len(value)
+    return float(value)
+
+
+def _find_moment_state(opt_state):
+    """Walk the torchopt ChainState tuple to find a recognized opaque inner state."""
+    try:
+        from opaque.optimizers.types import (
+            AdadeltaState,
+            AdafactorState,
+            AdagradState,
+            AdamState,
+            AdEMAMixState,
+            LionState,
+            RAdamState,
+            RMSpropState,
+        )
+    except ImportError:
+        return None
+    known = (
+        AdadeltaState,
+        AdafactorState,
+        AdagradState,
+        AdamState,
+        AdEMAMixState,
+        LionState,
+        RAdamState,
+        RMSpropState,
+    )
+    if isinstance(opt_state, known):
+        return opt_state
+    if isinstance(opt_state, (list, tuple)):
+        for x in opt_state:
+            found = _find_moment_state(x)
+            if found is not None:
+                return found
+    return None
+
+
+@torch.no_grad()
+def _log_optstate(opt_state, optimizer_name, updates, trainable_params, lr_value, noisy_grads=None):
+    """Emit optstate/* scalars for the morning analysis.
+
+    Universal scalars (every optimizer):
+      - update_rms, weight_norm_l2, step_to_weight_ratio.
+
+    Per-optimizer scalars dispatched on the inner moment-scaling state class:
+      - Adam/RAdam: mu_norm_l2, nu_mean, phi, v_minus_phi_neg_fraction.
+      - AdEMAMix: m_fast/m_slow norms, nu_mean, phi, v_minus_phi_neg_fraction.
+      - Adafactor: v_row_mean, v_col_mean (and v_scalar_mean if any), phi_flat_mean.
+      - Adagrad: v_acc_mean, phi_acc.
+      - RMSprop: nu_mean, phi.
+      - Lion: m_norm_l2, sign_agreement_with_grad (when noisy_grads provided).
+      - Adadelta: v_g_mean, v_dx_mean, phi_g, phi_dx_mean.
+
+    SGD has no recognized inner state — only universal scalars are emitted.
+    """
+    metrics = {}
+    if updates is not None:
+        metrics["optstate/update_rms"] = _tree_rms(updates)
+    if trainable_params is not None:
+        metrics["optstate/weight_norm_l2"] = _tree_l2_norm(trainable_params)
+    wn = metrics.get("optstate/weight_norm_l2")
+    ur = metrics.get("optstate/update_rms")
+    if wn is not None and ur is not None:
+        metrics["optstate/step_to_weight_ratio"] = (
+            ur * float(lr_value) / max(wn, 1e-12)
+        )
+
+    inner = _find_moment_state(opt_state)
+    if inner is None:
+        return metrics
+
+    from opaque.optimizers.types import (
+        AdadeltaState,
+        AdafactorState,
+        AdagradState,
+        AdamState,
+        AdEMAMixState,
+        LionState,
+        RAdamState,
+        RMSpropState,
+    )
+
+    def _v_minus_phi_neg_fraction(nu, phi):
+        phi_val = _scalar_or_dict_mean(phi)
+        neg, total = 0, 0
+        for t in _iter_tensor_leaves(nu):
+            tf = t.detach().to(torch.float32)
+            neg += int((tf - phi_val <= 0).sum().item())
+            total += t.numel()
+        return neg / max(total, 1)
+
+    if isinstance(inner, (AdamState, RAdamState)):
+        metrics["optstate/mu_norm_l2"] = _tree_l2_norm(inner.mu)
+        metrics["optstate/nu_mean"] = _tree_mean(inner.nu)
+        metrics["optstate/phi"] = _scalar_or_dict_mean(inner.phi)
+        metrics["optstate/v_minus_phi_neg_fraction"] = _v_minus_phi_neg_fraction(
+            inner.nu, inner.phi
+        )
+    elif isinstance(inner, AdEMAMixState):
+        metrics["optstate/m_fast_norm_l2"] = _tree_l2_norm(inner.m_fast)
+        metrics["optstate/m_slow_norm_l2"] = _tree_l2_norm(inner.m_slow)
+        metrics["optstate/nu_mean"] = _tree_mean(inner.nu)
+        metrics["optstate/phi"] = _scalar_or_dict_mean(inner.phi)
+        metrics["optstate/v_minus_phi_neg_fraction"] = _v_minus_phi_neg_fraction(
+            inner.nu, inner.phi
+        )
+    elif isinstance(inner, AdafactorState):
+        v_row_s, v_row_n = 0.0, 0
+        v_col_s, v_col_n = 0.0, 0
+        v_sc_s, v_sc_n = 0.0, 0
+        for entry in inner.v_flat:
+            if len(entry) == 2:
+                vr, vc = entry
+                vrf = vr.detach().to(torch.float32)
+                vcf = vc.detach().to(torch.float32)
+                v_row_s += float(vrf.sum().item())
+                v_row_n += vrf.numel()
+                v_col_s += float(vcf.sum().item())
+                v_col_n += vcf.numel()
+            else:
+                (v,) = entry
+                vf = v.detach().to(torch.float32)
+                v_sc_s += float(vf.sum().item())
+                v_sc_n += vf.numel()
+        if v_row_n > 0:
+            metrics["optstate/v_row_mean"] = v_row_s / v_row_n
+            metrics["optstate/v_col_mean"] = v_col_s / v_col_n
+        if v_sc_n > 0:
+            metrics["optstate/v_scalar_mean"] = v_sc_s / v_sc_n
+        metrics["optstate/phi_flat_mean"] = _tree_mean(inner.phi_flat)
+    elif isinstance(inner, AdagradState):
+        metrics["optstate/v_acc_mean"] = _tree_mean(inner.v_acc)
+        metrics["optstate/phi_acc"] = _scalar_or_dict_mean(inner.phi_acc)
+    elif isinstance(inner, RMSpropState):
+        metrics["optstate/nu_mean"] = _tree_mean(inner.nu)
+        metrics["optstate/phi"] = _scalar_or_dict_mean(inner.phi)
+    elif isinstance(inner, LionState):
+        metrics["optstate/m_norm_l2"] = _tree_l2_norm(inner.m)
+        if noisy_grads is not None:
+            grads_tree = noisy_grads.pytree if hasattr(noisy_grads, "pytree") else noisy_grads
+            agree, total = 0, 0
+            m_leaves = list(_iter_tensor_leaves(inner.m))
+            g_leaves = list(_iter_tensor_leaves(grads_tree))
+            for m, g in zip(m_leaves, g_leaves):
+                mf = m.detach().to(torch.float32)
+                gf = g.detach().to(torch.float32)
+                agree += int(((torch.sign(mf) * torch.sign(gf)) > 0).sum().item())
+                total += m.numel()
+            metrics["optstate/sign_agreement_with_grad"] = agree / max(total, 1)
+    elif isinstance(inner, AdadeltaState):
+        metrics["optstate/v_g_mean"] = _tree_mean(inner.v_g)
+        metrics["optstate/v_dx_mean"] = _tree_mean(inner.v_dx)
+        metrics["optstate/phi_g"] = _scalar_or_dict_mean(inner.phi_g)
+        metrics["optstate/phi_dx_mean"] = _tree_mean(inner.phi_dx)
+
+    return metrics
+
+
 def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
     """Select best available device with user-facing label."""
     if torch.cuda.is_available():
@@ -294,9 +500,9 @@ def parse_args():
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["custom", "smoke", "mellum-kstack"],
+        choices=["custom", "smoke", "mellum-kstack", "qwen-7b-kstack"],
         default="smoke",
-        help="Apply preset configuration (custom=keep explicit args, smoke=quick test ~2min, mellum-kstack=full production).",
+        help="Apply preset configuration (custom=keep explicit args, smoke=quick test ~2min, mellum-kstack=full production, qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at ε=3 with tuned SGD-mom anchor).",
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
@@ -417,6 +623,8 @@ def parse_args():
             "adafactor",
             "rmsprop",
             "adagrad",
+            "radam",
+            "adadelta",
         ],
         help=(
             "Optimizer.  ``sgd`` and ``adam`` are torchopt's vanilla "
@@ -441,6 +649,12 @@ def parse_args():
         type=float,
         default=0.01,
         help="Weight decay for optimizers that support it (default: 0.01)",
+    )
+    train_group.add_argument(
+        "--sgd-momentum",
+        type=float,
+        default=0.9,
+        help="Momentum for --optimizer sgd. Default 0.9 (matches the tuned LoRA + SGD-mom config in qwen-7b-kstack).",
     )
     train_group.add_argument(
         "--log-steps",
@@ -758,6 +972,43 @@ def parse_args():
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
         _set("lr_schedule", "cosine")
+    elif args.preset == "qwen-7b-kstack":
+        # Qwen2.5-Coder-7B + KStack night-anchor for the optimizer / schedule
+        # bake-off.  ε=3 puts the noise multiplier where optimizer differences
+        # surface.  SGD + momentum 0.9 @ lr=5e-2 is the tuned LoRA baseline.
+        _set("model_name", "Qwen/Qwen2.5-Coder-7B")
+        _set("dataset", "JetBrains/KStack")
+        _set("dataset_text_field", "content")
+        _set("num_train_samples", 50000)
+        _set("num_eval_samples", 1000)
+        _set("num_epochs", 2)
+        _set("batch_size", 192)
+        _set("microbatch_size", 16)
+        _set("log_steps", 2)
+        _set("eval_steps", 10)
+        _set("target_epsilon", 3.0)
+        _set("learning_rate", 5e-2)
+        _set("lora_r", 16)
+        _set("lora_alpha", 16)
+        _set("max_seq_len", 1024)
+        _set(
+            "lora_modules",
+            [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+        )
+        _set("dtype", "bfloat16")
+        _set("optimizer", "sgd")
+        _set("sgd_momentum", 0.9)
+        # No lr_schedule override (argparse default "none" — schedule
+        # sensitivity is a Phase 3 question, not a baked-in default).
+        # No weight_decay override (argparse default 0.01).
     elif args.preset == "custom":
         # Keep all user-provided/default CLI arguments unchanged.
         pass
@@ -1468,7 +1719,11 @@ def main():
     elif args.optimizer == "sgd":
         from opaque.optimizers import sgd
 
-        base_opt = sgd(lr=lr_for_opt, weight_decay=args.weight_decay)
+        base_opt = sgd(
+            lr=lr_for_opt,
+            momentum=args.sgd_momentum,
+            weight_decay=args.weight_decay,
+        )
     elif args.optimizer == "adamw":
         from opaque.optimizers import adamw
 
@@ -1512,6 +1767,22 @@ def main():
         from opaque.optimizers import adagrad
 
         base_opt = adagrad(
+            lr=lr_for_opt,
+            weight_decay=args.weight_decay,
+            noise_bias_correction=args.noise_bias_correction,
+        )
+    elif args.optimizer == "radam":
+        from opaque.optimizers import radam
+
+        base_opt = radam(
+            lr=lr_for_opt,
+            weight_decay=args.weight_decay,
+            noise_bias_correction=args.noise_bias_correction,
+        )
+    elif args.optimizer == "adadelta":
+        from opaque.optimizers import adadelta
+
+        base_opt = adadelta(
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -1689,6 +1960,24 @@ def main():
                             wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(
                                 1.0, float(batch_size)
                             )
+                    # Optimizer-state telemetry (universal + per-optimizer scalars).
+                    # ``args.learning_rate`` is the peak; we use it for the
+                    # step_to_weight_ratio sanity check rather than the
+                    # instantaneous schedule value (close enough as a "are we
+                    # making meaningful progress" diagnostic).
+                    try:
+                        wb_metrics.update(
+                            _log_optstate(
+                                opt_state,
+                                args.optimizer,
+                                updates,
+                                trainable_params,
+                                args.learning_rate,
+                                noisy_grads=noisy_grads,
+                            )
+                        )
+                    except Exception as exc:  # noqa: BLE001 — telemetry must not crash training
+                        print(f"[optstate] skipped this step: {exc}")
                     wandb.log(wb_metrics, step=global_step)
 
                 print(
