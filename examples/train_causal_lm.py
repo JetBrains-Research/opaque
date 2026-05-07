@@ -87,7 +87,7 @@ from opaque.dpsgd.sampling import PoissonSampler
 from opaque.dpsgd.sampling import TruncatedPoissonSampler
 from opaque.distributed import local_shard
 from opaque.functional import make_functional
-from opaque.types import PerGroup
+from opaque.types import PerGroup, SecondMomentClippingOutput, SecondMomentNoiseOutput
 from opaque.clipping import per_group
 import wandb
 
@@ -522,11 +522,13 @@ def parse_args():
         "--second-moment",
         type=str,
         default="none",
-        help="Wrap clipping + accounting in private-second-moment: 'none' "
-        "(default; first-moment-only release), 'auto' (enable for optimizers "
-        "that consume noisy_squared_grads — adam/adamw/ademamix/rmsprop/"
-        "adafactor/radam/adagrad), or an explicit float >1.0 for the "
-        "first-moment overhead (default sqrt(3/2) when enabled).",
+        help="[experimental] Release a private squared-gradient stream alongside "
+        "gradients (Kalinin et al., arXiv:2502.06597).  'none' (default; "
+        "standard single-stream release), 'auto' (enable for optimizers with "
+        "a noisy_squared_grads branch — adam/adamw/ademamix/rmsprop/radam/"
+        "adadelta), or an explicit float >1.0 for the first-moment overhead "
+        "(default sqrt(3/2) ≈ 1.225 when enabled).  Incompatible with "
+        "--per-group-clipping.",
     )
     dp_group.add_argument(
         "--per-group-clipping",
@@ -1150,7 +1152,7 @@ def main():
     # Resolve --second-moment flag to the bool/float overhead value
     # consumed by clipped_grad / acc.second_moment.
     _SECOND_MOMENT_OPTIMIZERS = frozenset(
-        {"adam", "adamw", "ademamix", "rmsprop", "adafactor", "radam", "adagrad"}
+        {"adam", "adamw", "ademamix", "rmsprop", "radam", "adadelta"}
     )
     second_moment_arg: bool | float
     if args.second_moment == "none":
@@ -1499,9 +1501,17 @@ def main():
                     clip_state, aux = sync(clip_state, aux)
                     sum_gradients_(grads_tuple)
 
-                step_clip_norm = grads_tuple.max_norm
+                step_clip_norm = (
+                    grads_tuple.grads.max_norm
+                    if isinstance(grads_tuple, SecondMomentClippingOutput)
+                    else grads_tuple.max_norm
+                )
                 noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
-                noise_stddev = noisy_grads.noise_stddev
+                noise_stddev = (
+                    noisy_grads.noisy_grads.noise_stddev
+                    if isinstance(noisy_grads, SecondMomentNoiseOutput)
+                    else noisy_grads.noise_stddev
+                )
                 if is_ddp:
                     noise_state = sync(noise_state)
 
