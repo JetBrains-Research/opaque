@@ -225,7 +225,7 @@ def ademamix(
     *,
     decoupled_weight_decay: bool = True,
     update_rms_clip: float | None = None,
-    noise_bias_correction: bool = False,
+    noise_bias_correction: bool = True,
 ) -> GradientTransformation:
     """Create an AdEMAMix optimizer.
 
@@ -243,7 +243,7 @@ def ademamix(
         noise_bias_correction: If ``True``, subtract a β₂-EMA of the
             realized noise variance from the second moment when
             ``NoisedPytree`` updates are passed.  Defaults to ``False``;
-            flip on to ablate.
+            flip off to ablate.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.

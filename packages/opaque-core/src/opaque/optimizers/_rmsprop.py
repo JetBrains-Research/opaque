@@ -196,7 +196,7 @@ def rmsprop(
     *,
     decoupled_weight_decay: bool = True,
     update_rms_clip: float | None = None,
-    noise_bias_correction: bool = False,
+    noise_bias_correction: bool = True,
 ) -> GradientTransformation:
     """Create an RMSprop optimizer with optional DP-aware bias correction.
 

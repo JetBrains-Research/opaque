@@ -382,11 +382,11 @@ def parse_args():
     train_group.add_argument(
         "--noise-bias-correction",
         action=argparse.BooleanOptionalAction,
-        default=False,
+        default=True,
         help=(
             "Enable DP noise-variance bias correction on optimizers that "
             "support it (adam/adamw/ademamix/rmsprop/adagrad).  Silently "
-            "ignored on sgd/lion/adafactor.  Off by default."
+            "ignored on sgd/lion/adafactor.  On by default."
         ),
     )
     train_group.add_argument(

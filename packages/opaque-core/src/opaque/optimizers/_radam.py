@@ -303,7 +303,7 @@ def radam(
     *,
     decoupled_weight_decay: bool = False,
     update_rms_clip: float | None = None,
-    noise_bias_correction: bool = False,
+    noise_bias_correction: bool = True,
 ) -> GradientTransformation:
     """Create a Rectified Adam optimizer with the wrapper-aware update API.
 
