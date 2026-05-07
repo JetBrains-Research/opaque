@@ -18,7 +18,7 @@ __all__ = [
     "constant_schedule",
     "linear_schedule",
     "polynomial_schedule",
-    "exponential_decay",
+    "exponential_schedule",
     "cosine_schedule",
     "inverse_sqrt_schedule",
     "one_minus_sqrt_schedule",
@@ -77,7 +77,7 @@ def polynomial_schedule(
     return schedule
 
 
-def exponential_decay(
+def exponential_schedule(
     init_value: float,
     decay_rate: float,
     transition_begin: int = 0,
@@ -85,12 +85,15 @@ def exponential_decay(
     staircase: bool = False,
     end_value: float | None = None,
 ) -> Schedule:
-    """Exponential decay: ``init * decay_rate^((step - transition_begin) / transition_steps)``.
+    """Exponential schedule: ``init * decay_rate^((step - transition_begin) / transition_steps)``.
 
-    Steps before ``transition_begin`` hold at ``init_value``.  When
-    ``staircase`` is ``True``, the exponent is floored to integer so
-    the schedule decays in discrete jumps.  ``end_value`` clamps the
-    final value (max for ``decay_rate < 1``, min for ``decay_rate > 1``).
+    The shape is exponential; the direction is set by ``decay_rate``:
+    ``decay_rate < 1`` produces decay, ``decay_rate > 1`` produces
+    growth, ``decay_rate == 1`` produces a constant.  Steps before
+    ``transition_begin`` hold at ``init_value``.  When ``staircase`` is
+    ``True``, the exponent is floored to integer so the schedule moves
+    in discrete jumps.  ``end_value`` clamps the result (lower bound
+    for ``decay_rate < 1``, upper bound for ``decay_rate > 1``).
     """
     if transition_steps <= 0 or decay_rate == 0:
         return lambda _step: init_value
