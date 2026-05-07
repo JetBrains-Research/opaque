@@ -464,6 +464,11 @@ def _install_fake_ray(monkeypatch):
     fake_ray.train.Checkpoint = _FakeCheckpoint
     fake_ray.train.report = report
 
+    # Ray 2.5x path uses ``ray.tune`` checkpoint/report APIs inside trainables.
+    fake_ray.tune.get_checkpoint = get_checkpoint
+    fake_ray.tune.Checkpoint = _FakeCheckpoint
+    fake_ray.tune.report = report
+
     monkeypatch.setitem(sys.modules, "ray", fake_ray)
     monkeypatch.setitem(sys.modules, "ray.train", fake_ray.train)
     monkeypatch.setitem(sys.modules, "ray.tune", fake_ray.tune)
@@ -564,12 +569,13 @@ def test_ray_hpo_get_output_dir_uses_trial_id(tmp_path, monkeypatch):
     # Pretend we're in the middle of a Ray sweep.
     trainer.hp_search_backend = HPSearchBackend.RAY
 
-    # Stub ray.train.get_context().get_trial_id().
-    fake_ray_train = types.ModuleType("ray.train")
-    fake_ray_train.get_context = lambda: types.SimpleNamespace(
-        get_trial_id=lambda: "trial-abc123"
+    import ray
+
+    monkeypatch.setattr(
+        ray.tune,
+        "get_context",
+        lambda: types.SimpleNamespace(get_trial_id=lambda: "trial-abc123"),
     )
-    monkeypatch.setitem(sys.modules, "ray.train", fake_ray_train)
 
     out = trainer._get_output_dir(trial={"learning_rate": 0.01})
     assert out == os.path.join(str(tmp_path), "run-trial-abc123")
@@ -634,7 +640,7 @@ def test_tune_save_checkpoint_outside_loop_raises(tmp_path):
         train_dataset=_dataset(),
         eval_dataset=_dataset(),
     )
-    with pytest.raises(RuntimeError, match="self._ctx is None"):
+    with pytest.raises(RuntimeError, match="both unset"):
         trainer._tune_save_checkpoint(checkpoint_dir=str(tmp_path / "x"))
 
 

@@ -42,6 +42,31 @@ __all__ = ["hyperparameter_search", "is_multi_objective_study", "default_dp_hp_b
 
 log = logging.getLogger(__name__)
 
+
+def _ray_hp_checkpoint_api(
+    ray: Any,
+) -> tuple[Callable[[], Any], Any, Callable[..., None]]:
+    """Return ``(get_checkpoint, Checkpoint, report)`` for Tune trainables.
+
+    Ray 2.5x deprecates ``ray.train.get_checkpoint`` / ``ray.train.report`` inside
+    ``tune.run`` trainables in favor of the ``ray.tune`` equivalents.  Prefer
+    ``ray.tune`` when present, and fall back to ``ray.train`` for older Ray.
+    """
+    tune = ray.tune
+    if hasattr(tune, "get_checkpoint"):
+        return tune.get_checkpoint, tune.Checkpoint, tune.report
+    train = ray.train
+    return train.get_checkpoint, train.Checkpoint, train.report
+
+
+def _ray_hp_trial_id(ray: Any) -> str:
+    """Trial id inside a Ray Tune trainable (prefers ``ray.tune.get_context``)."""
+    tune = ray.tune
+    if hasattr(tune, "get_context"):
+        return tune.get_context().get_trial_id()
+    return ray.train.get_context().get_trial_id()
+
+
 # Same priority order as ``transformers.hyperparameter_search``'s
 # ``ALL_HYPERPARAMETER_SEARCH_BACKENDS`` iteration (Optuna → Ray → …),
 # but **SigOpt is excluded** — DPTrainer does not implement that backend.
@@ -246,6 +271,12 @@ def _run_wandb_search(
     trainer.hp_space = hp_space or default_hp_space_wandb
     trainer.hp_name = hp_name
     trainer.compute_objective = compute_objective or default_compute_objective
+    # HF ``run_hp_search_wandb`` sets ``report_to=['wandb']`` so vanilla Trainer
+    # picks up ``WandbCallback`` via ``get_reporting_integration_callbacks``.
+    # DPTrainer instead registers a wrapped callback through
+    # ``_maybe_add_wandb_callback`` — forcing ``report_to`` here would rebuild a
+    # second raw ``WandbCallback`` that imports ``wandb.sdk`` (breaks minimal
+    # stubs in tests and headless sweep runners).
     _maybe_add_wandb_callback(trainer)
 
     best_trial: dict[str, Any] = {
@@ -258,11 +289,9 @@ def _run_wandb_search(
     name = kwargs.pop("name", None)
     entity = kwargs.pop("entity", None)
     metric = kwargs.pop("metric", "eval/loss")
-    if kwargs:
-        raise TypeError(
-            "Unsupported W&B hyperparameter_search kwargs: "
-            f"{', '.join(sorted(kwargs))}."
-        )
+    # HuggingFace's ``run_hp_search_wandb`` forwards no remaining kwargs to
+    # wandb APIs — ignore extras for contract parity (callers may pass
+    # scheduler-only keys meant for other backends).
 
     sweep_config = dict(trainer.hp_space(None))
     sweep_metric = dict(sweep_config.get("metric", {}))
@@ -279,7 +308,12 @@ def _run_wandb_search(
         if hasattr(run_config, "update"):
             run_config.update({"assignments": {}, "metric": metric})
         config = getattr(wandb, "config", run_config)
-        trial_params = _wandb_config_items(config)
+        # Match HF ``run_hp_search_wandb``: trial dict is ``wandb.config``'s
+        # internal ``_items`` mapping when present.
+        try:
+            trial_params = dict(vars(config)["_items"])
+        except (KeyError, TypeError):
+            trial_params = _wandb_config_items(config)
         run_id = getattr(run, "id", None) or getattr(run, "name", None)
         if run_id is not None:
             trial_params.setdefault("run_id", run_id)
@@ -290,6 +324,21 @@ def _run_wandb_search(
         if getattr(trainer, "objective", None) is None:
             metrics = trainer.evaluate()
             trainer.objective = trainer.compute_objective(metrics)
+            try:
+                from transformers.integrations.integration_utils import (
+                    rewrite_logs,
+                )
+            except ImportError:  # pragma: no cover - transformers layout guard
+                rewrite_logs = None
+            if rewrite_logs is not None:
+                format_metrics = rewrite_logs(metrics)
+                if metric not in format_metrics:
+                    log.warning(
+                        "Provided metric %s not found. This might result in unexpected "
+                        "sweeps charts. The available metrics are %s",
+                        metric,
+                        list(format_metrics.keys()),
+                    )
 
         current_objective = trainer.objective
         is_better = best_trial["run_id"] is None or (
@@ -422,7 +471,7 @@ def _pick_latest_ray_resume_checkpoint(checkpoint_dir: Path) -> str:
 # trial-scoped output dir, callback handler rebuild).  Ray's per-trial
 # checkpoint is written to a temp dir via
 # ``DPTrainer._tune_save_checkpoint`` and reported via
-# ``ray.train.report(metrics, checkpoint=...)``.
+# ``ray.tune.report`` (or ``ray.train.report`` on older Ray).
 
 
 def _run_ray_search(
@@ -472,7 +521,8 @@ def _run_ray_search(
             pass
 
         local_trainer.objective = None
-        checkpoint = ray.train.get_checkpoint()
+        _get_checkpoint, _Checkpoint, _report = _ray_hp_checkpoint_api(ray)
+        checkpoint = _get_checkpoint()
         if checkpoint:
             # HF parity workaround: reset of ``objective`` to None on
             # resume can drive an unnecessary final checkpoint when
@@ -491,8 +541,8 @@ def _run_ray_search(
             metrics["done"] = True
             with tempfile.TemporaryDirectory() as temp_dir:
                 local_trainer._tune_save_checkpoint(checkpoint_dir=temp_dir)
-                report_checkpoint = ray.train.Checkpoint.from_directory(temp_dir)
-                ray.train.report(metrics, checkpoint=report_checkpoint)
+                report_checkpoint = _Checkpoint.from_directory(temp_dir)
+                _report(metrics, checkpoint=report_checkpoint)
 
     _tb_writer = _pop_tensorboard_callback(trainer)
     _set_default_resources(trainer, kwargs)

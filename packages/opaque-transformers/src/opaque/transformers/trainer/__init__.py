@@ -384,6 +384,10 @@ class DPTrainer:
 
         # Functional state (populated by _setup_training, used by evaluate)
         self._ctx: _TrainingContext | None = None
+        # Populated in ``_train_once``'s ``finally`` after each run so
+        # ``_tune_save_checkpoint`` can serialize DP state after ``train()``
+        # returns (``self._ctx`` is cleared before Ray's objective continues).
+        self._last_train_ctx_for_tune: _TrainingContext | None = None
         self._train_dataloader: DataLoader | None = None
         self._eval_dataloader: DataLoader | None = None
         self._signature_columns: list[str] | None = None
@@ -677,6 +681,7 @@ class DPTrainer:
         self._globalstep_last_logged = 0
         self._train_start_time = None
         self._ctx = None
+        self._last_train_ctx_for_tune = None
         self._train_dataloader = None
         self._eval_dataloader = None
 
@@ -834,14 +839,16 @@ class DPTrainer:
                     )
                     raise optuna.TrialPruned()
         elif self.hp_search_backend == HPSearchBackend.RAY:
-            ray_train = importlib.import_module("ray.train")
+            import ray
+
+            _, _Checkpoint, _report = _hpo._ray_hp_checkpoint_api(ray)
             with tempfile.TemporaryDirectory() as temp_dir:
                 checkpoint = None
                 if self._control.should_save:
                     self._tune_save_checkpoint(checkpoint_dir=temp_dir)
-                    checkpoint = ray_train.Checkpoint.from_directory(temp_dir)
+                    checkpoint = _Checkpoint.from_directory(temp_dir)
                 metrics_copy["objective"] = self.objective
-                ray_train.report(metrics_copy, checkpoint=checkpoint)
+                _report(metrics_copy, checkpoint=checkpoint)
 
     def _get_output_dir(self, trial: Any | None = None) -> str | None:
         if trial is None:
@@ -851,8 +858,9 @@ class DPTrainer:
         if self.hp_search_backend == HPSearchBackend.OPTUNA:
             run_id = getattr(trial, "number", self._trial_run_counter)
         elif self.hp_search_backend == HPSearchBackend.RAY:
-            ray_train = importlib.import_module("ray.train")
-            run_id = ray_train.get_context().get_trial_id()
+            import ray
+
+            run_id = _hpo._ray_hp_trial_id(ray)
         elif isinstance(trial, Mapping):
             run_id = trial.get("run_id", self._trial_run_counter)
         else:
@@ -1156,6 +1164,7 @@ class DPTrainer:
             )
         finally:
             self._restore_params(ctx.trainable_params)
+            self._last_train_ctx_for_tune = ctx
             self._ctx = None
             self._train_dataloader = None
             self._eval_dataloader = None
@@ -1173,6 +1182,7 @@ class DPTrainer:
         self._callback_handler.state = self.state
         self._control = TrainerControl()
         self._ctx = None
+        self._last_train_ctx_for_tune = None
         self._train_dataloader = None
         self._eval_dataloader = None
         self._tr_loss = torch.tensor(0.0, device=self._device)
@@ -3958,12 +3968,14 @@ class DPTrainer:
         is intentionally ignored here because Ray expects checkpoints to
         be complete enough to resume a trial after eviction.
         """
-        ctx = self._ctx
+        legacy = self._last_train_ctx_for_tune
+        ctx = self._ctx if self._ctx is not None else legacy
         if ctx is None:
             raise RuntimeError(
-                "_tune_save_checkpoint must be called from inside the training loop "
-                "(self._ctx is None — no live training context)."
+                "_tune_save_checkpoint requires a completed training context "
+                "(self._ctx and self._last_train_ctx_for_tune are both unset)."
             )
+        used_legacy = self._ctx is None and legacy is not None
 
         step = self.state.global_step
         ckpt_dir = os.path.join(checkpoint_dir, f"{ckpt.PREFIX_CHECKPOINT_DIR}-{step}")
@@ -3984,6 +3996,8 @@ class DPTrainer:
         self._save_optimizer(ckpt_dir, ctx)
         self._save_dp_runtime(ckpt_dir, ctx)
         self._save_rng_state(ckpt_dir)
+        if used_legacy:
+            self._last_train_ctx_for_tune = None
         return ckpt_dir
 
     def _save_model_artifacts(self, output_dir: str) -> None:

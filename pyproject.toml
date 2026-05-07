@@ -104,6 +104,10 @@ dev = [
   "pytest-cov>=4.0.0",
   "ruff>=0.1.0",
   "scipy>=1.11.0",         # Statistical tests
+  # Ray Tune is optional at runtime but installed in CI/dev so the real
+  # ``hyperparameter_search(backend='ray')`` smoke test can run locally
+  # and in ``uv sync --group dev`` environments.
+  "opaque-transformers[ray-hpo]",
   # Cross-validation against reference DP accounting libraries. Imported by
   # packages/opaque-dpsgd/tests/accounting/test_cross_validation.py — not a
   # runtime dependency of opaque.

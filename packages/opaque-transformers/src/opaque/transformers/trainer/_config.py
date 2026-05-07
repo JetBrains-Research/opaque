@@ -722,19 +722,6 @@ class DPTrainingArguments(TrainingArguments):
                     f"{default!r}).\n  {reason}"
                 )
 
-        # Validate ray_scope against the strings Ray's ExperimentAnalysis
-        # accepts.  Defaults to HF's "last".  The value is consumed by
-        # ``_run_ray_search`` (Phase 12) when ``backend="ray"``; HF's
-        # ``analysis.get_best_trial(metric, mode, scope=...)`` rejects
-        # anything outside this set with an opaque error, so we surface
-        # the validation here.
-        if self.ray_scope not in {"last", "all", "avg", "last-5-avg", "last-10-avg"}:
-            raise ValueError(
-                f"ray_scope={self.ray_scope!r} is not a recognized Ray Tune "
-                "ExperimentAnalysis scope; use one of last, all, avg, "
-                "last-5-avg, last-10-avg."
-            )
-
         # --- 11. B1: ``metric_for_best_model`` must be eval-side ------------
         # Best-model decisions on training-set metrics would leak per-example
         # information through which checkpoints survive rotation.  Require
