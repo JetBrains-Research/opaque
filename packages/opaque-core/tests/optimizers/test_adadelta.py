@@ -262,6 +262,19 @@ class TestSecondMomentSubstitution:
         for k in params:
             assert torch.all(s.phi_dx[k] == 0)
 
+    def test_negative_squared_stream_bounded(self, params, grads):
+        sq = {k: -torch.ones_like(v) for k, v in grads.items()}
+        opt = adadelta(rho=0.9)
+        state = opt.init(params)
+        output = SecondMomentNoiseOutput(
+            noised(grads, max_norm=1.0, noise_stddev=0.1),
+            noised(sq, max_norm=1.0, noise_stddev=0.1),
+        )
+        updates, _ = opt.update(output, state, params=params)
+        for k in updates:
+            assert torch.isfinite(updates[k]).all()
+            assert updates[k].abs().max().item() < 10.0
+
     def test_mode_switch_does_not_double_correct(self, params, grads):
         """``NoisedPytree`` → ``SecondMomentNoiseOutput`` mid-run must not
         subtract a stale φ_g/φ_dx from the already-debiased v_g/v_dx.

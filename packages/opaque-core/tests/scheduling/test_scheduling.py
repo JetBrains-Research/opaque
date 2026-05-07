@@ -28,7 +28,7 @@ from transformers.optimization import (  # noqa: E402
 from opaque.scheduling import (  # noqa: E402
     constant_schedule,
     cosine_schedule,
-    exponential_decay,
+    exponential_schedule,
     inverse_sqrt_schedule,
     linear_schedule,
     one_minus_sqrt_schedule,
@@ -125,24 +125,24 @@ class TestPolynomialSchedule:
 
 
 # ---------------------------------------------------------------------------
-# exponential_decay
+# exponential_schedule
 # ---------------------------------------------------------------------------
 
 
-class TestExponentialDecay:
+class TestExponentialSchedule:
     def test_starts_at_init_value(self):
-        s = exponential_decay(1.0, decay_rate=0.5, transition_steps=100)
+        s = exponential_schedule(1.0, decay_rate=0.5, transition_steps=100)
         assert s(0) == pytest.approx(1.0)
 
     def test_decays_geometrically(self):
         # decayed = init * decay_rate^(step / transition_steps)
-        s = exponential_decay(1.0, decay_rate=0.5, transition_steps=100)
+        s = exponential_schedule(1.0, decay_rate=0.5, transition_steps=100)
         assert s(100) == pytest.approx(0.5)
         assert s(200) == pytest.approx(0.25)
         assert s(300) == pytest.approx(0.125)
 
     def test_transition_begin_holds_init(self):
-        s = exponential_decay(
+        s = exponential_schedule(
             1.0,
             decay_rate=0.5,
             transition_begin=50,
@@ -154,7 +154,7 @@ class TestExponentialDecay:
 
     def test_staircase(self):
         # With staircase=True, exponent is floored.
-        s = exponential_decay(
+        s = exponential_schedule(
             1.0,
             decay_rate=0.5,
             transition_steps=100,
@@ -171,7 +171,7 @@ class TestExponentialDecay:
 
     def test_end_value_clamps(self):
         # decay_rate < 1 -> clamp at max(decayed, end_value).
-        s = exponential_decay(
+        s = exponential_schedule(
             1.0,
             decay_rate=0.5,
             transition_steps=100,

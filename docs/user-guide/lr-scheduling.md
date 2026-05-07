@@ -51,7 +51,7 @@ opt = torchopt.adamw(lr=schedule)
 `opaque.scheduling` ships the common decay curves directly:
 [`linear_schedule`](../api/schedules.md#linear_schedule),
 [`polynomial_schedule`](../api/schedules.md#polynomial_schedule),
-[`exponential_decay`](../api/schedules.md#exponential_decay),
+[`exponential_schedule`](../api/schedules.md#exponential_schedule),
 [`cosine_schedule`](../api/schedules.md#cosine_schedule),
 [`inverse_sqrt_schedule`](../api/schedules.md#inverse_sqrt_schedule),
 and [`one_minus_sqrt_schedule`](../api/schedules.md#one_minus_sqrt_schedule).

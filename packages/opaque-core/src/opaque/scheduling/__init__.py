@@ -20,7 +20,7 @@ from opaque.scheduling._compose import with_restarts, with_warmup
 from opaque.scheduling._curves import (
     constant_schedule,
     cosine_schedule,
-    exponential_decay,
+    exponential_schedule,
     inverse_sqrt_schedule,
     linear_schedule,
     one_minus_sqrt_schedule,
@@ -31,7 +31,7 @@ __all__ = [
     "constant_schedule",
     "linear_schedule",
     "polynomial_schedule",
-    "exponential_decay",
+    "exponential_schedule",
     "cosine_schedule",
     "inverse_sqrt_schedule",
     "one_minus_sqrt_schedule",

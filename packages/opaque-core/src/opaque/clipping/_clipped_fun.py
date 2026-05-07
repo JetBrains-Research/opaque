@@ -210,7 +210,7 @@ def _microbatch_accumulate(
         #   (True,  False) → (clipped_values, squared_values)
         #   (False, True ) → (clipped_values, aux)
         #   (True,  True ) → (clipped_values, squared_values, aux)
-        n_outputs = 1 + int(second_moment) + int(return_aux)
+        n_outputs = 1 + int(bool(second_moment)) + int(return_aux)
         out_dims = 0 if n_outputs == 1 else (0,) * n_outputs
         vmapped = _vmap(
             per_example_fn,
@@ -494,7 +494,7 @@ def clipped_fun(
             # pytree (which may itself be a tuple of tensors for tuple
             # params); when n_outputs > 1 the per_example_fn returns a
             # tuple of n_outputs pytrees.
-            n_outputs = 1 + int(second_moment) + int(return_aux)
+            n_outputs = 1 + int(bool(second_moment)) + int(return_aux)
             out_dims = 0 if n_outputs == 1 else (0,) * n_outputs
             vmapped = _vmap(
                 per_example_fn,

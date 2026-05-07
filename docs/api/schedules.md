@@ -11,7 +11,7 @@ optimizer-state step counter — no manual `.step()` call.
 Public surface:
 
 - pure curves: `constant_schedule`, `linear_schedule`,
-  `polynomial_schedule`, `exponential_decay`, `cosine_schedule`,
+  `polynomial_schedule`, `exponential_schedule`, `cosine_schedule`,
   `inverse_sqrt_schedule`, `one_minus_sqrt_schedule`;
 - composition primitives: `with_warmup`, `with_restarts`.
 
@@ -118,10 +118,11 @@ sched = polynomial_schedule(1e-3, 1e-7, power=2.0, transition_steps=1000)
 
 ---
 
-## `exponential_decay`
+<a id="exponential_decay"></a>
+## `exponential_schedule`
 
 ```python
-exponential_decay(
+exponential_schedule(
     init_value: float,
     decay_rate: float,
     transition_begin: int = 0,
@@ -131,17 +132,28 @@ exponential_decay(
 ) -> Callable[[int], float]
 ```
 
-Geometric decay: `init * decay_rate^((step - transition_begin) / transition_steps)`.
-With `staircase=True`, the exponent is floored, so the schedule
-drops in discrete jumps every `transition_steps`.  `end_value`, when
-set, clamps the result (max for `decay_rate < 1`, min otherwise).
+Geometric schedule: `init * decay_rate^((step - transition_begin) / transition_steps)`.
+The shape is exponential; the direction depends on `decay_rate` —
+`< 1` decays, `> 1` grows, `== 1` stays constant.  With
+`staircase=True` the exponent is floored, so the value moves in
+discrete jumps every `transition_steps`.  `end_value`, when set,
+clamps the result (lower bound for `decay_rate < 1`, upper bound for
+`decay_rate > 1`).
 
 ```python
-from opaque.scheduling import exponential_decay
+from opaque.scheduling import exponential_schedule
 
 # Halve LR every 1000 steps, but never below 1e-5.
-sched = exponential_decay(1e-3, decay_rate=0.5, transition_steps=1000, end_value=1e-5)
+sched = exponential_schedule(1e-3, decay_rate=0.5, transition_steps=1000, end_value=1e-5)
+
+# Or grow a knob from 0.1 to (eventually) 1.0.
+warm = exponential_schedule(0.1, decay_rate=1.5, transition_steps=500, end_value=1.0)
 ```
+
+> **Renamed from `exponential_decay`.**  The old name implied decay, but
+> the function also produces growth when `decay_rate > 1`, so it was
+> renamed to match the `<shape>_schedule` pattern of the rest of this
+> module.  The previous name is no longer exported.
 
 ---
 

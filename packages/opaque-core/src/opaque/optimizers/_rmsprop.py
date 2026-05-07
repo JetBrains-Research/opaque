@@ -109,11 +109,14 @@ def _scale_by_rmsprop(
                 noisy_squared_grads,
             )
             new_phi = state.phi
-            result = tree_map(
-                lambda g, v: g / (torch.clamp(v, min=bc_floor).sqrt() + eps),
-                updates,
-                new_nu,
-            )
+
+            def _compute_sm(g: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+                # Noisy g² can be negative when second-stream noise dominates the
+                # signal; fall back to g² so the update magnitude stays ≈ 1.
+                v_eff = torch.where(v > 0, v, g * g).clamp(min=bc_floor)
+                return g / (v_eff.sqrt() + eps)
+
+            result = tree_map(_compute_sm, updates, new_nu)
             return result, RMSpropState(nu=new_nu, phi=new_phi, step=t)
 
         new_nu = tree_map(
