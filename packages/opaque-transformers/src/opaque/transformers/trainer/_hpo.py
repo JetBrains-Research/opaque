@@ -1,36 +1,114 @@
 """Hyperparameter-search helpers for DPTrainer.
 
-The public surface mirrors HuggingFace's ``Trainer.hyperparameter_search`` but
-keeps execution local to this trainer.  HF's Optuna runner assumes Accelerate
-objects (``accelerator``, ``model_wrapped``) that DPTrainer deliberately does
-not own, so the supported path is implemented here instead of delegated.
+The public surface mirrors HuggingFace's ``Trainer.hyperparameter_search``.
+Optuna and W&B sweep agents run locally with one stateful trainer reused
+across trials.  Ray Tune is dispatched out-of-process via Ray's actor
+model: a single trainer instance is pickled by ``tune.with_parameters``
+and shipped to each trial actor, which then calls
+``trainer.train(trial=config_dict)``.  Multi-rank Ray trials (per-trial
+DDP) are gated until Phase 10 lands.
 """
 
 from __future__ import annotations
 
+import functools
 import gc
 import importlib
+import importlib.util
 import logging
+import os
+import sys
+import tempfile
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Callable
 
 import torch
+from transformers.trainer_callback import ProgressCallback
 from transformers.trainer_utils import (
     BestRun,
     HPSearchBackend,
+    IntervalStrategy,
+    TrainerMemoryTracker,
     default_compute_objective,
     default_hp_space_optuna,
+    default_hp_space_ray,
     default_hp_space_wandb,
 )
 
-__all__ = ["hyperparameter_search", "is_multi_objective_study"]
+from opaque.transformers.trainer import _checkpoint as ckpt
+
+__all__ = ["hyperparameter_search", "is_multi_objective_study", "default_dp_hp_backend"]
 
 log = logging.getLogger(__name__)
 
 
+def _ray_hp_checkpoint_api(
+    ray: Any,
+) -> tuple[Callable[[], Any], Any, Callable[..., None]]:
+    """Return ``(get_checkpoint, Checkpoint, report)`` for Tune trainables.
+
+    Ray 2.5x deprecates ``ray.train.get_checkpoint`` / ``ray.train.report`` inside
+    ``tune.run`` trainables in favor of the ``ray.tune`` equivalents.  Prefer
+    ``ray.tune`` when present, and fall back to ``ray.train`` for older Ray.
+    """
+    tune = ray.tune
+    if hasattr(tune, "get_checkpoint"):
+        return tune.get_checkpoint, tune.Checkpoint, tune.report
+    train = ray.train
+    return train.get_checkpoint, train.Checkpoint, train.report
+
+
+def _ray_hp_trial_id(ray: Any) -> str:
+    """Trial id inside a Ray Tune trainable (prefers ``ray.tune.get_context``)."""
+    tune = ray.tune
+    if hasattr(tune, "get_context"):
+        return tune.get_context().get_trial_id()
+    return ray.train.get_context().get_trial_id()
+
+
+# Same priority order as ``transformers.hyperparameter_search``'s
+# ``ALL_HYPERPARAMETER_SEARCH_BACKENDS`` iteration (Optuna → Ray → …),
+# but **SigOpt is excluded** — DPTrainer does not implement that backend.
+_DP_HP_BACKEND_ORDER: tuple[HPSearchBackend, ...] = (
+    HPSearchBackend.OPTUNA,
+    HPSearchBackend.RAY,
+    HPSearchBackend.WANDB,
+)
+
+
+def default_dp_hp_backend() -> HPSearchBackend:
+    """Return the first installed HPO backend among Optuna, Ray, W&B.
+
+    Mirrors HuggingFace's ``default_hp_search_backend`` ordering for the
+    backends DPTrainer implements.  SigOpt is skipped entirely.
+
+    Raises:
+        RuntimeError: If none of the three backends can be imported.
+    """
+    for candidate in _DP_HP_BACKEND_ORDER:
+        if candidate == HPSearchBackend.OPTUNA:
+            if importlib.util.find_spec("optuna") is not None:
+                return candidate
+        elif candidate == HPSearchBackend.RAY:
+            if importlib.util.find_spec("ray") and importlib.util.find_spec("ray.tune"):
+                return candidate
+        elif candidate == HPSearchBackend.WANDB:
+            if importlib.util.find_spec("wandb") is not None:
+                return candidate
+    raise RuntimeError(
+        "No hyperparameter search backend available for DPTrainer.\n"
+        "Install at least one of:\n"
+        "  - pip install opaque-transformers[optuna-hpo]\n"
+        "  - pip install opaque-transformers[ray-hpo]\n"
+        "  - pip install opaque-transformers[wandb-hpo]\n"
+        "  - pip install opaque-transformers[hpo]  # all three\n"
+    )
+
+
 def hyperparameter_search(
     trainer: Any,
-    hp_space: Callable[[Any], dict[str, float]] | None = None,
+    hp_space: Callable[[Any], dict[str, Any]] | None = None,
     compute_objective: Callable[[dict[str, float]], float] | None = None,
     n_trials: int = 20,
     direction: str | list[str] = "minimize",
@@ -38,22 +116,24 @@ def hyperparameter_search(
     hp_name: Callable[[Any], str] | None = None,
     **kwargs: Any,
 ) -> BestRun | list[BestRun]:
-    """Run local HPO and return HF-compatible ``BestRun`` objects."""
-    selected = HPSearchBackend(backend or HPSearchBackend.OPTUNA)
-    if selected not in {HPSearchBackend.OPTUNA, HPSearchBackend.WANDB}:
-        backend_name = selected.value
-        if selected == HPSearchBackend.RAY:
-            raise ValueError(
-                "DPTrainer.hyperparameter_search(backend='ray') is not a local "
-                "trial backend. Ray Tune owns process/actor execution, checkpoint "
-                "marshalling, and distributed trial resources; DPTrainer only "
-                "supports local backend='optuna' and backend='wandb' sweeps until "
-                "a DP-aware external execution layer is implemented."
-            )
+    """Run HPO and return HF-compatible ``BestRun`` objects.
+
+    When ``backend`` is ``None``, the backend is chosen like HuggingFace's
+    ``default_hp_search_backend`` among Optuna, Ray Tune, and W&B (SigOpt
+    is not supported here — install one of the three).
+    """
+    selected = (
+        HPSearchBackend(backend) if backend is not None else default_dp_hp_backend()
+    )
+    if selected not in {
+        HPSearchBackend.OPTUNA,
+        HPSearchBackend.WANDB,
+        HPSearchBackend.RAY,
+    }:
         raise ValueError(
-            "DPTrainer.hyperparameter_search currently supports local "
-            "backend='optuna' and backend='wandb' sweeps only; "
-            f"got backend={backend_name!r}."
+            "DPTrainer.hyperparameter_search supports backend in "
+            "{'optuna', 'wandb', 'ray'}; "
+            f"got backend={selected.value!r}."
         )
     if trainer.model_init is None:
         raise RuntimeError(
@@ -63,6 +143,16 @@ def hyperparameter_search(
 
     if selected == HPSearchBackend.WANDB:
         return _run_wandb_search(
+            trainer,
+            hp_space=hp_space,
+            compute_objective=compute_objective,
+            n_trials=n_trials,
+            direction=direction,
+            hp_name=hp_name,
+            **kwargs,
+        )
+    if selected == HPSearchBackend.RAY:
+        return _run_ray_search(
             trainer,
             hp_space=hp_space,
             compute_objective=compute_objective,
@@ -98,7 +188,8 @@ def _run_optuna_search(
     except ImportError as exc:  # pragma: no cover - exercised only without optuna
         raise ImportError(
             "DPTrainer.hyperparameter_search(backend='optuna') requires optuna; "
-            "install it with `pip install optuna`."
+            "install it with `pip install opaque-transformers[optuna-hpo]` "
+            "(or `pip install optuna`)."
         ) from exc
 
     trainer.hp_search_backend = HPSearchBackend.OPTUNA
@@ -172,13 +263,20 @@ def _run_wandb_search(
     except ImportError as exc:  # pragma: no cover - exercised only without wandb
         raise ImportError(
             "DPTrainer.hyperparameter_search(backend='wandb') requires wandb; "
-            "install it with `pip install wandb`."
+            "install it with `pip install opaque-transformers[wandb-hpo]` "
+            "(or `pip install wandb`)."
         ) from exc
 
     trainer.hp_search_backend = HPSearchBackend.WANDB
     trainer.hp_space = hp_space or default_hp_space_wandb
     trainer.hp_name = hp_name
     trainer.compute_objective = compute_objective or default_compute_objective
+    # HF ``run_hp_search_wandb`` sets ``report_to=['wandb']`` so vanilla Trainer
+    # picks up ``WandbCallback`` via ``get_reporting_integration_callbacks``.
+    # DPTrainer instead registers a wrapped callback through
+    # ``_maybe_add_wandb_callback`` — forcing ``report_to`` here would rebuild a
+    # second raw ``WandbCallback`` that imports ``wandb.sdk`` (breaks minimal
+    # stubs in tests and headless sweep runners).
     _maybe_add_wandb_callback(trainer)
 
     best_trial: dict[str, Any] = {
@@ -191,11 +289,9 @@ def _run_wandb_search(
     name = kwargs.pop("name", None)
     entity = kwargs.pop("entity", None)
     metric = kwargs.pop("metric", "eval/loss")
-    if kwargs:
-        raise TypeError(
-            "Unsupported W&B hyperparameter_search kwargs: "
-            f"{', '.join(sorted(kwargs))}."
-        )
+    # HuggingFace's ``run_hp_search_wandb`` forwards no remaining kwargs to
+    # wandb APIs — ignore extras for contract parity (callers may pass
+    # scheduler-only keys meant for other backends).
 
     sweep_config = dict(trainer.hp_space(None))
     sweep_metric = dict(sweep_config.get("metric", {}))
@@ -212,7 +308,12 @@ def _run_wandb_search(
         if hasattr(run_config, "update"):
             run_config.update({"assignments": {}, "metric": metric})
         config = getattr(wandb, "config", run_config)
-        trial_params = _wandb_config_items(config)
+        # Match HF ``run_hp_search_wandb``: trial dict is ``wandb.config``'s
+        # internal ``_items`` mapping when present.
+        try:
+            trial_params = dict(vars(config)["_items"])
+        except (KeyError, TypeError):
+            trial_params = _wandb_config_items(config)
         run_id = getattr(run, "id", None) or getattr(run, "name", None)
         if run_id is not None:
             trial_params.setdefault("run_id", run_id)
@@ -223,6 +324,21 @@ def _run_wandb_search(
         if getattr(trainer, "objective", None) is None:
             metrics = trainer.evaluate()
             trainer.objective = trainer.compute_objective(metrics)
+            try:
+                from transformers.integrations.integration_utils import (
+                    rewrite_logs,
+                )
+            except ImportError:  # pragma: no cover - transformers layout guard
+                rewrite_logs = None
+            if rewrite_logs is not None:
+                format_metrics = rewrite_logs(metrics)
+                if metric not in format_metrics:
+                    log.warning(
+                        "Provided metric %s not found. This might result in unexpected "
+                        "sweeps charts. The available metrics are %s",
+                        metric,
+                        list(format_metrics.keys()),
+                    )
 
         current_objective = trainer.objective
         is_better = best_trial["run_id"] is None or (
@@ -318,3 +434,353 @@ def _release_memory(trainer: Any) -> None:
         torch.cuda.empty_cache()
     elif getattr(device, "type", None) == "mps":
         torch.mps.empty_cache()
+
+
+def _pick_latest_ray_resume_checkpoint(checkpoint_dir: Path) -> str:
+    """Pick the highest-step ``checkpoint-*`` under a Ray unpack directory."""
+    matches = list(checkpoint_dir.glob(f"{ckpt.PREFIX_CHECKPOINT_DIR}-*"))
+    if not matches:
+        raise FileNotFoundError(
+            f"No {ckpt.PREFIX_CHECKPOINT_DIR}-* directory under {checkpoint_dir}"
+        )
+
+    def _step(p: Path) -> int:
+        s = ckpt.parse_checkpoint_step(p.name)
+        if s is None:
+            return -1
+        return int(s)
+
+    best = max(matches, key=_step)
+    if _step(best) < 0:
+        raise FileNotFoundError(
+            f"No valid checkpoint step directory under {checkpoint_dir}; "
+            f"found {matches!r}"
+        )
+    return best.as_posix()
+
+
+# ---------------------------------------------------------------------
+# Ray Tune backend
+# ---------------------------------------------------------------------
+#
+# Layout mirrors HF's ``transformers.integrations.run_hp_search_ray``
+# (transformers 4.57): one trainer is pickled by
+# ``ray.tune.with_parameters`` and shipped to each Tune actor.  The
+# actor calls ``trainer.train(trial=config_dict)``, which lets the
+# trainer reuse its existing dict-trial path (model_init reinvocation,
+# trial-scoped output dir, callback handler rebuild).  Ray's per-trial
+# checkpoint is written to a temp dir via
+# ``DPTrainer._tune_save_checkpoint`` and reported via
+# ``ray.tune.report`` (or ``ray.train.report`` on older Ray).
+
+
+def _run_ray_search(
+    trainer: Any,
+    hp_space: Callable[[Any], dict[str, Any]] | None,
+    compute_objective: Callable[[dict[str, float]], float] | None,
+    n_trials: int,
+    direction: str | list[str],
+    hp_name: Callable[[Any], str] | None,
+    **kwargs: Any,
+) -> BestRun:
+    """Run a Ray Tune sweep and return an HF-compatible ``BestRun``."""
+    try:
+        ray = importlib.import_module("ray")
+        importlib.import_module("ray.train")
+        importlib.import_module("ray.tune")
+    except ImportError as exc:  # pragma: no cover - exercised only without ray
+        raise ImportError(
+            "DPTrainer.hyperparameter_search(backend='ray') requires Ray Tune; "
+            "install it with `pip install opaque-transformers[ray-hpo]` "
+            "(or `pip install 'ray[tune]'`)."
+        ) from exc
+
+    if isinstance(direction, list):
+        raise NotImplementedError("Ray Tune supports a single objective direction.")
+    if direction not in {"minimize", "maximize"}:
+        raise ValueError(
+            "Ray HPO requires direction='minimize' or direction='maximize'; "
+            f"got {direction!r}."
+        )
+
+    trainer.hp_search_backend = HPSearchBackend.RAY
+    trainer.hp_space = hp_space or default_hp_space_ray
+    trainer.hp_name = hp_name
+    trainer.compute_objective = compute_objective or default_compute_objective
+
+    _reject_multirank_for_ray(trainer, kwargs)
+    _scrub_for_pickling(trainer)
+
+    def _objective(trial: dict[str, Any], local_trainer: Any) -> None:
+        try:
+            from transformers.utils.notebook import NotebookProgressCallback
+
+            if local_trainer.pop_callback(NotebookProgressCallback):
+                local_trainer.add_callback(ProgressCallback)
+        except ModuleNotFoundError:  # pragma: no cover - notebook absent
+            pass
+
+        local_trainer.objective = None
+        _get_checkpoint, _Checkpoint, _report = _ray_hp_checkpoint_api(ray)
+        checkpoint = _get_checkpoint()
+        if checkpoint:
+            # HF parity workaround: reset of ``objective`` to None on
+            # resume can drive an unnecessary final checkpoint when
+            # ``train`` is a no-op.
+            local_trainer.objective = "objective"
+            with checkpoint.as_directory() as checkpoint_dir:
+                resume_path = _pick_latest_ray_resume_checkpoint(Path(checkpoint_dir))
+                local_trainer.train(resume_from_checkpoint=resume_path, trial=trial)
+        else:
+            local_trainer.train(trial=trial)
+
+        if getattr(local_trainer, "objective", None) is None:
+            metrics = local_trainer.evaluate()
+            local_trainer.objective = local_trainer.compute_objective(metrics)
+            metrics["objective"] = local_trainer.objective
+            metrics["done"] = True
+            with tempfile.TemporaryDirectory() as temp_dir:
+                local_trainer._tune_save_checkpoint(checkpoint_dir=temp_dir)
+                report_checkpoint = _Checkpoint.from_directory(temp_dir)
+                _report(metrics, checkpoint=report_checkpoint)
+
+    _tb_writer = _pop_tensorboard_callback(trainer)
+    _set_default_resources(trainer, kwargs)
+    _sync_ray_trial_gpu_to_args(trainer, kwargs)
+    _set_default_progress_reporter(kwargs)
+    _validate_scheduler_requires_eval(trainer, kwargs)
+
+    trainable = ray.tune.with_parameters(_objective, local_trainer=trainer)
+    trainable = _wrap_dynamic_modules(trainable)
+
+    try:
+        analysis = ray.tune.run(
+            trainable,
+            config=trainer.hp_space(None),
+            num_samples=n_trials,
+            **kwargs,
+        )
+        best_trial = analysis.get_best_trial(
+            metric="objective",
+            mode=direction[:3],
+            scope=trainer.args.ray_scope,
+        )
+        best_run = BestRun(
+            best_trial.trial_id,
+            best_trial.last_result["objective"],
+            best_trial.config,
+            analysis,
+        )
+        return best_run
+    finally:
+        if _tb_writer is not None:
+            try:
+                trainer.add_callback(_tb_writer)
+            except Exception as exc:  # pragma: no cover - defensive
+                log.debug("Could not restore TensorBoardCallback: %s", exc)
+        _clear_hpo_state(trainer)
+
+
+def _reject_multirank_for_ray(trainer: Any, kwargs: dict[str, Any]) -> None:
+    """Block multi-rank trainer and per-trial DDP — Phase 10 prerequisite.
+
+    DPTrainer's distributed semantics (``parallel_poisson`` accounting,
+    ``local_shard`` rank policy, gradient synchronization) land in Phase
+    10.  Until then, refuse Ray sweeps where any trial would run more
+    than one rank.
+    """
+    world_size = getattr(getattr(trainer, "args", None), "world_size", 1) or 1
+    if world_size > 1:
+        raise ValueError(
+            "DPTrainer.hyperparameter_search(backend='ray') does not yet support "
+            "multi-rank trainer processes (args.world_size > 1).  This requires "
+            "Phase 10 (DDP — local_shard / parallel_poisson sampling, "
+            "rank-aware accountants, gradient gather) to land first."
+        )
+    resources = kwargs.get("resources_per_trial") or {}
+    gpus_per_trial = resources.get("gpu", 0) if isinstance(resources, Mapping) else 0
+    if gpus_per_trial and gpus_per_trial > 1:
+        raise ValueError(
+            "DPTrainer.hyperparameter_search(backend='ray') does not yet support "
+            "per-trial DDP (resources_per_trial['gpu'] > 1).  Phase 10 is the "
+            "prerequisite (local_shard + parallel_poisson + distributed eval)."
+        )
+
+
+def _scrub_for_pickling(trainer: Any) -> None:
+    """Make a DPTrainer picklable for ``tune.with_parameters``.
+
+    Mirrors HF's pre-launch scrubs: drop the live model (the actor
+    rebuilds it via ``call_model_init(trial)``), swap the memory tracker
+    to a skip-only instance (its ``psutil`` thread is not picklable),
+    and clear cached dataloader handles.  Also asserts ``output_dir`` is
+    absolute — Ray Tune chdirs each actor and a relative path would
+    silently land checkpoints under Tune's per-trial working directory.
+
+    Other reporting callbacks (W&B, MLflow, …) are **not** stripped the way
+    TensorBoard is; if pickling fails, disable ``report_to`` or remove
+    those callbacks before ``hyperparameter_search(backend='ray')``.
+    """
+    args = getattr(trainer, "args", None)
+    output_dir = getattr(args, "output_dir", None) if args is not None else None
+    if output_dir is not None and not os.path.isabs(output_dir):
+        raise ValueError(
+            "Ray Tune actors run with their own working directory; "
+            f"args.output_dir={output_dir!r} must be an absolute path."
+        )
+
+    tracker = getattr(trainer, "_memory_tracker", None)
+    if tracker is not None and not bool(getattr(tracker, "skip_memory_metrics", True)):
+        log.warning(
+            "Memory tracking for your Trainer is currently enabled. "
+            "Automatically disabling the memory tracker since the memory "
+            "tracker is not serializable."
+        )
+
+    skip = (
+        bool(getattr(args, "skip_memory_metrics", True)) if args is not None else True
+    )
+    trainer._memory_tracker = TrainerMemoryTracker(skip_memory_metrics=skip or True)
+    # Drop the live model — each actor rebuilds it via call_model_init(trial).
+    trainer.model = None
+    # Cached dataloaders hold worker handles that don't pickle.
+    if hasattr(trainer, "_train_dataloader"):
+        trainer._train_dataloader = None
+    if hasattr(trainer, "_eval_dataloader"):
+        trainer._eval_dataloader = None
+
+
+def _pop_tensorboard_callback(trainer: Any) -> Any | None:
+    """Pop the TensorBoard callback before launching Ray (HF parity).
+
+    Tensorboard's ``SummaryWriter`` holds a thread + open file and does
+    not pickle.  HF strips it before ``tune.with_parameters`` and re-
+    attaches after ``tune.run`` returns.
+    """
+    try:
+        from transformers.integrations import TensorBoardCallback
+    except ImportError:  # pragma: no cover - tensorboard missing
+        return None
+    return trainer.pop_callback(TensorBoardCallback)
+
+
+def _set_default_resources(trainer: Any, kwargs: dict[str, Any]) -> None:
+    """HF parity: default to ``{'cpu': 1, 'gpu': 1}`` when ``args.n_gpu > 0``."""
+    if "resources_per_trial" in kwargs:
+        return
+    resources: dict[str, int] = {"cpu": 1}
+    # HF ``run_hp_search_ray`` keys off ``trainer.args.n_gpu`` (Accelerate
+    # populates it).  DPTrainer sets ``_n_gpu`` from device resolution in
+    # ``DPTrainingArguments._setup_devices`` — ``args.n_gpu`` reads that.
+    if int(getattr(trainer.args, "n_gpu", 0) or 0) > 0:
+        resources["gpu"] = 1
+    kwargs["resources_per_trial"] = resources
+    log.info(
+        "No `resources_per_trial` arg was passed into "
+        "`hyperparameter_search`. Setting it to a default value of %s.",
+        resources,
+    )
+
+
+def _sync_ray_trial_gpu_to_args(trainer: Any, kwargs: dict[str, Any]) -> None:
+    """HF parity: ``trainer.args._n_gpu = resources_per_trial['gpu']``."""
+    rpt = kwargs.get("resources_per_trial")
+    if not isinstance(rpt, Mapping):
+        return
+    raw = rpt.get("gpu", 0)
+    if raw is None:
+        return
+    try:
+        gpus = int(float(raw))
+    except (TypeError, ValueError):
+        gpus = 0
+    setattr(trainer.args, "_n_gpu", max(0, gpus))
+
+
+def _set_default_progress_reporter(kwargs: dict[str, Any]) -> None:
+    """HF parity: default to ``CLIReporter(metric_columns=['objective'])``."""
+    if "progress_reporter" in kwargs:
+        return
+    try:
+        from ray.tune import CLIReporter
+    except ImportError:  # pragma: no cover - ray.tune absent
+        return
+    kwargs["progress_reporter"] = CLIReporter(metric_columns=["objective"])
+
+
+def _validate_scheduler_requires_eval(trainer: Any, kwargs: dict[str, Any]) -> None:
+    """HF parity: ASHA / Hyperband / Median / PBT schedulers need eval steps.
+
+    Schedulers that prune trials early need intermediate metric reports;
+    those reports come from ``_report_to_hp_search`` which fires only
+    when ``eval_strategy != NO``.  Mirror HF's pre-flight check.
+    """
+    scheduler = kwargs.get("scheduler")
+    if scheduler is None:
+        return
+    try:
+        from ray.tune.schedulers import (
+            ASHAScheduler,
+            HyperBandForBOHB,
+            MedianStoppingRule,
+            PopulationBasedTraining,
+        )
+    except ImportError:  # pragma: no cover - ray.tune absent
+        return
+    intermediate_classes = (
+        ASHAScheduler,
+        MedianStoppingRule,
+        HyperBandForBOHB,
+        PopulationBasedTraining,
+    )
+    if not isinstance(scheduler, intermediate_classes):
+        return
+    args = trainer.args
+    eval_off = (
+        not getattr(args, "do_eval", False) or args.eval_strategy == IntervalStrategy.NO
+    )
+    if eval_off:
+        cls_name = type(scheduler).__name__
+        raise RuntimeError(
+            f"You are using {cls_name} as a scheduler but you haven't enabled "
+            "evaluation during training. This means your trials will not "
+            "report intermediate results to Ray Tune, and can thus not be "
+            "stopped early or used to exploit other trials parameters. "
+            f"If this is what you want, do not use {cls_name}. If you would "
+            f"like to use {cls_name}, make sure you pass `do_eval=True` and "
+            "`eval_strategy='steps'` in the Trainer `args`."
+        )
+
+
+def _wrap_dynamic_modules(trainable: Any) -> Any:
+    """Ensure ``datasets_modules`` is loaded inside each Tune actor.
+
+    HF parity: see https://github.com/huggingface/transformers/issues/11565.
+    Without this wrapper, actors that need ``datasets`` dynamic modules
+    (custom dataset loaders) raise ``ImportError`` because Tune's worker
+    process does not inherit ``sys.modules`` from the driver.
+    """
+
+    @functools.wraps(trainable)
+    def dynamic_modules_import_trainable(*args: Any, **kwargs: Any) -> Any:
+        try:
+            datasets_load = importlib.import_module("datasets.load")
+        except ImportError:  # pragma: no cover - datasets absent
+            return trainable(*args, **kwargs)
+        try:
+            dynamic_modules_path = os.path.join(
+                datasets_load.init_dynamic_modules(), "__init__.py"
+            )
+            spec = importlib.util.spec_from_file_location(
+                "datasets_modules", dynamic_modules_path
+            )
+            datasets_modules = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = datasets_modules
+            spec.loader.exec_module(datasets_modules)
+        except Exception as exc:  # pragma: no cover - best-effort
+            log.debug("Skipping datasets dynamic-modules preload in Ray actor: %s", exc)
+        return trainable(*args, **kwargs)
+
+    if hasattr(trainable, "__mixins__"):
+        dynamic_modules_import_trainable.__mixins__ = trainable.__mixins__
+    return dynamic_modules_import_trainable

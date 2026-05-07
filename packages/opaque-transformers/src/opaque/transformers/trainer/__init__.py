@@ -29,6 +29,7 @@ import logging
 import math
 import os
 import time
+import tempfile
 import warnings
 from collections.abc import Mapping
 from typing import Any, Callable, NamedTuple
@@ -90,11 +91,14 @@ from transformers.trainer_utils import PredictionOutput, seed_worker
 from transformers.trainer_utils import HPSearchBackend
 from transformers.utils import can_return_loss, find_labels
 
+default_dp_hp_backend = _hpo.default_dp_hp_backend
+
 __all__ = [
     "DPTrainer",
     "DPTrainingArguments",
     "PredictionOutput",
     "TrainOutput",
+    "default_dp_hp_backend",
 ]
 
 log = logging.getLogger(__name__)
@@ -380,6 +384,10 @@ class DPTrainer:
 
         # Functional state (populated by _setup_training, used by evaluate)
         self._ctx: _TrainingContext | None = None
+        # Populated in ``_train_once``'s ``finally`` after each run so
+        # ``_tune_save_checkpoint`` can serialize DP state after ``train()``
+        # returns (``self._ctx`` is cleared before Ray's objective continues).
+        self._last_train_ctx_for_tune: _TrainingContext | None = None
         self._train_dataloader: DataLoader | None = None
         self._eval_dataloader: DataLoader | None = None
         self._signature_columns: list[str] | None = None
@@ -620,7 +628,7 @@ class DPTrainer:
 
     def hyperparameter_search(
         self,
-        hp_space: Callable[[Any], dict[str, float]] | None = None,
+        hp_space: Callable[[Any], dict[str, Any]] | None = None,
         compute_objective: Callable[[dict[str, float]], float] | None = None,
         n_trials: int = 20,
         direction: str | list[str] = "minimize",
@@ -630,9 +638,16 @@ class DPTrainer:
     ) -> Any:
         """Run HF-compatible hyperparameter search.
 
-        Phase 9 supports local Optuna execution.  Other HF backends are
-        rejected explicitly because their runners assume execution layers
-        (Ray/Accelerate/SigOpt/W&B sweep agents) DPTrainer does not own yet.
+        Supports ``backend="optuna"``, ``"wandb"``, and ``"ray"`` (SigOpt is
+        not implemented).  When ``backend`` is ``None``, the first installed
+        backend is chosen in HuggingFace order among those three: Optuna,
+        Ray Tune, then W&B — mirroring ``transformers``'s
+        ``default_hp_search_backend`` with SigOpt skipped.
+
+        Ray Tune forwards extra ``kwargs`` to ``ray.tune.run``; default
+        ``resources_per_trial`` and ``progress_reporter`` match HF's
+        ``run_hp_search_ray``.  ``trainer.args._n_gpu`` is updated from
+        ``resources_per_trial['gpu']`` for per-trial device visibility.
         """
         return _hpo.hyperparameter_search(
             self,
@@ -666,6 +681,7 @@ class DPTrainer:
         self._globalstep_last_logged = 0
         self._train_start_time = None
         self._ctx = None
+        self._last_train_ctx_for_tune = None
         self._train_dataloader = None
         self._eval_dataloader = None
 
@@ -759,6 +775,9 @@ class DPTrainer:
                 params = dict(getattr(trial, "params", {}))
             else:
                 params = dict(self.hp_space(trial))
+        elif self.hp_search_backend == HPSearchBackend.RAY:
+            params = dict(trial)
+            params.pop("wandb", None)
         elif isinstance(trial, Mapping):
             params = dict(trial)
         elif hasattr(trial, "assignments"):
@@ -791,6 +810,8 @@ class DPTrainer:
         )
         if self.hp_search_backend == HPSearchBackend.OPTUNA:
             log.info("Trial: %s", getattr(trial, "params", params))
+        elif self.hp_search_backend == HPSearchBackend.RAY:
+            log.info("RAY trial: %s", params)
 
     def _report_to_hp_search(
         self,
@@ -817,6 +838,17 @@ class DPTrainer:
                         self._control,
                     )
                     raise optuna.TrialPruned()
+        elif self.hp_search_backend == HPSearchBackend.RAY:
+            import ray
+
+            _, _Checkpoint, _report = _hpo._ray_hp_checkpoint_api(ray)
+            with tempfile.TemporaryDirectory() as temp_dir:
+                checkpoint = None
+                if self._control.should_save:
+                    self._tune_save_checkpoint(checkpoint_dir=temp_dir)
+                    checkpoint = _Checkpoint.from_directory(temp_dir)
+                metrics_copy["objective"] = self.objective
+                _report(metrics_copy, checkpoint=checkpoint)
 
     def _get_output_dir(self, trial: Any | None = None) -> str | None:
         if trial is None:
@@ -825,6 +857,10 @@ class DPTrainer:
             return None
         if self.hp_search_backend == HPSearchBackend.OPTUNA:
             run_id = getattr(trial, "number", self._trial_run_counter)
+        elif self.hp_search_backend == HPSearchBackend.RAY:
+            import ray
+
+            run_id = _hpo._ray_hp_trial_id(ray)
         elif isinstance(trial, Mapping):
             run_id = trial.get("run_id", self._trial_run_counter)
         else:
@@ -1128,6 +1164,7 @@ class DPTrainer:
             )
         finally:
             self._restore_params(ctx.trainable_params)
+            self._last_train_ctx_for_tune = ctx
             self._ctx = None
             self._train_dataloader = None
             self._eval_dataloader = None
@@ -1145,6 +1182,7 @@ class DPTrainer:
         self._callback_handler.state = self.state
         self._control = TrainerControl()
         self._ctx = None
+        self._last_train_ctx_for_tune = None
         self._train_dataloader = None
         self._eval_dataloader = None
         self._tr_loss = torch.tensor(0.0, device=self._device)
@@ -3914,6 +3952,54 @@ class DPTrainer:
 
         return ckpt_dir
 
+    def _tune_save_checkpoint(self, checkpoint_dir: str) -> str:
+        """Write a Ray-Tune-bound DP checkpoint into ``checkpoint_dir``.
+
+        DP analogue of ``transformers.Trainer._tune_save_checkpoint``.  Ray
+        passes a temp directory and expects the trainer to deposit a
+        complete, self-resumable snapshot under
+        ``checkpoint_dir/checkpoint-<global_step>/``.  Unlike
+        :meth:`_save_checkpoint`, this path bypasses
+        ``save_strategy``-driven rotation: Ray manages retention via
+        ``keep_checkpoints_num`` / ``checkpoint_score_attr``.
+
+        Always writes the full resumability set (model + accountant +
+        trainer state + DP runtime + RNG + optimizer); ``save_only_model``
+        is intentionally ignored here because Ray expects checkpoints to
+        be complete enough to resume a trial after eviction.
+        """
+        legacy = self._last_train_ctx_for_tune
+        ctx = self._ctx if self._ctx is not None else legacy
+        if ctx is None:
+            raise RuntimeError(
+                "_tune_save_checkpoint requires a completed training context "
+                "(self._ctx and self._last_train_ctx_for_tune are both unset)."
+            )
+        used_legacy = self._ctx is None and legacy is not None
+
+        step = self.state.global_step
+        ckpt_dir = os.path.join(checkpoint_dir, f"{ckpt.PREFIX_CHECKPOINT_DIR}-{step}")
+        os.makedirs(ckpt_dir, exist_ok=True)
+
+        self._restore_params(ctx.trainable_params)
+        self._save_model_artifacts(ckpt_dir)
+
+        # HF parity: refresh ``TrainerControl`` callback state before
+        # serializing, so a Ray-restored trainer sees the same control
+        # flags as the original one.
+        self.state.stateful_callbacks = dict(self.state.stateful_callbacks or {})
+        self.state.stateful_callbacks["TrainerControl"] = self._control.state()
+
+        self._save_trainer_state(ckpt_dir)
+        self._save_training_args(ckpt_dir)
+        self._save_accountant(ckpt_dir, ctx)
+        self._save_optimizer(ckpt_dir, ctx)
+        self._save_dp_runtime(ckpt_dir, ctx)
+        self._save_rng_state(ckpt_dir)
+        if used_legacy:
+            self._last_train_ctx_for_tune = None
+        return ckpt_dir
+
     def _save_model_artifacts(self, output_dir: str) -> None:
         """Save model weights/config plus processing class using HF-compatible names."""
         if hasattr(self._model, "save_pretrained"):
@@ -3974,7 +4060,7 @@ class DPTrainer:
     def _save_accountant(self, ckpt_dir: str, ctx: "_TrainingContext") -> None:
         path = os.path.join(ckpt_dir, ckpt.DP_ACCOUNTANT_NAME)
         with open(path, "w") as f:
-            json.dump(ctx.accounting.state_dict(), f, indent=2)
+            json.dump(opaque_state_dict(ctx.accounting), f, indent=2)
 
     def _save_rng_state(self, ckpt_dir: str) -> None:
         # Single-process today; the helper writes ``rng_state.pth``.
@@ -4120,7 +4206,7 @@ class DPTrainer:
         acct_path = os.path.join(ckpt_dir, ckpt.DP_ACCOUNTANT_NAME)
         if os.path.exists(acct_path):
             with open(acct_path) as f:
-                accountant = Accountant.from_state_dict(json.load(f))
+                accountant = opaque_from_state_dict(Accountant(), json.load(f))
         else:
             log.warning(
                 "No accountant.json in %s; prepending nonprivate() mechanism — "

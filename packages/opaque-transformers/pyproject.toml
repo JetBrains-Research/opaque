@@ -36,6 +36,24 @@ dependencies = [
 [project.optional-dependencies]
 trainer = [
 ]
+# Per-backend HPO extras.  Each lazy-imports its library inside
+# ``DPTrainer.hyperparameter_search``; opaque-transformers itself does
+# not depend on any of them, mirroring upstream ``transformers``.
+optuna-hpo = [
+    "optuna>=3.0",
+]
+wandb-hpo = [
+    "wandb>=0.16.0",
+]
+ray-hpo = [
+    "ray[tune]>=2.7,<3",
+]
+# One install for all HPO backends (Optuna + W&B + Ray Tune).
+hpo = [
+    "optuna>=3.0",
+    "wandb>=0.16.0",
+    "ray[tune]>=2.7,<3",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

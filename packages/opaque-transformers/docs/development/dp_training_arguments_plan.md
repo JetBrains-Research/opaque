@@ -562,9 +562,10 @@ trial objects.
 output directories, public trainer helper methods,
 `hyperparameter_search(..., backend="optuna")` via a DPTrainer-owned local
 Optuna runner, and `hyperparameter_search(..., backend="wandb")` via a local
-W&B sweep agent. Ray Tune execution remains explicitly unsupported;
-controller-provided dict trials are supported as direct `train(trial={...})`
-invocations.
+W&B sweep agent. Phase 12 layers `hyperparameter_search(..., backend="ray")`
+on top via the Ray Tune adapter, with multi-rank trials still gated on
+Phase 10. Controller-provided dict trials remain supported as direct
+`train(trial={...})` invocations.
 
 **API surface**:
 
@@ -575,8 +576,8 @@ invocations.
 - `hyperparameter_search(hp_space=None, compute_objective=None, n_trials=20,
   direction="minimize", backend=None, hp_name=None, **kwargs)`: implement the
   public HF method and return a `BestRun`-compatible result. Implemented for
-  local Optuna and W&B sweeps; Ray fails loudly as an external execution
-  backend that needs separate DP-aware process/trial isolation.
+  local Optuna and W&B sweeps and (Phase 12) Ray Tune via
+  `tune.with_parameters` actors.
 - `model_init`: make each trial instantiate a fresh model through
   `model_init(trial)` or `model_init()` depending on the callable signature.
   A model passed directly to the constructor is valid for normal training but
@@ -587,13 +588,12 @@ invocations.
 
 **Backend scope**:
 
-- Implemented target: Optuna-style local search (`optuna.Trial`), W&B sweeps
-  through `wandb.agent`, and the lightweight "dict trial" path used by external
-  controllers. This covers the common local/offline sweep use case without
-  taking a distributed execution dependency.
-- Deferred: Ray Tune execution. `ray_scope` remains unsupported unless/until we
-  decide to support Ray as an execution backend; this is separate from local HPO
-  parity.
+- Implemented targets: Optuna-style local search (`optuna.Trial`), W&B sweeps
+  through `wandb.agent`, the lightweight "dict trial" path used by external
+  controllers, and (Phase 12) Ray Tune via the
+  `tune.with_parameters(_objective, local_trainer=trainer)` actor pattern.
+- Multi-rank Ray trials remain gated on Phase 10 (DDP); single-rank-per-trial
+  sweeps (the common HPO case) work today.
 - W&B sweeps are supported as reporting/config plumbing; the actual training
   loop still runs as independent DPTrainer invocations.
 
@@ -829,30 +829,108 @@ accounting, and torchopt updates.
 
 ---
 
-## Phase 12: External HPO Execution Backends
+## Phase 12: External HPO Execution Backends — implemented
 
 Ray Tune is an external execution controller, not a local trial backend like
-Optuna or a W&B sweep agent. Supporting it safely means constructing independent
-DPTrainer instances in independent Ray trials/processes with DP-aware
-checkpoint, output-dir, and reporting isolation.
+Optuna or a W&B sweep agent. The Phase 12 adapter mirrors HF's
+`transformers.integrations.run_hp_search_ray` bullet-for-bullet so users get
+HF-parity behavior with DP-correct checkpoint contents.
 
-**Parameters / surfaces**: `backend="ray"`, `ray_scope`, external-controller
-dict trials, optional distributed trial execution.
+**Parameters / surfaces**: `backend="ray"`, `ray_scope`, all `tune.run`
+kwargs (`resources_per_trial`, `progress_reporter`, `scheduler`, …).
 
-**What to implement**:
-- Keep Ray rejected in local `hyperparameter_search` until a DP-aware execution
-  adapter exists.
-- Design a Ray adapter that launches fresh trainer instances per trial rather
-  than reusing HF's Accelerate-oriented runner.
-- Marshal checkpoints, trainer state, RNG state, callback state, and accountant
-  artifacts per Ray trial without cross-trial collisions.
-- Decide whether Ray distributed trials require Phase 10 first.
-- Do not add SigOpt unless compatibility with older Transformers versions is
-  explicitly in scope; the inspected local HF source exposes Optuna, Ray, and
-  W&B.
+**Implementation**:
 
-**Files**: `trainer/_hpo.py`, potential `_ray.py`, tests in `test_hpo.py` plus
-optional integration tests gated on Ray availability.
+- `_run_ray_search` in [`_hpo.py`](../../src/opaque/transformers/trainer/_hpo.py)
+  packages the trainer for Ray's actor model: a single instance is pickled
+  via `tune.with_parameters(_objective, local_trainer=trainer)` and shipped
+  to each Tune actor, which then calls `trainer.train(trial=config_dict)`.
+  The trainer reuses its existing dict-trial path (model_init reinvocation,
+  trial-scoped output dir, callback handler rebuild).
+- HF parity defaults applied identically:
+  - `resources_per_trial` defaults to `{"cpu": 1, "gpu": 1}` when
+    `trainer.args.n_gpu > 0` (same gate as HF's `run_hp_search_ray`, driven
+    by `DPTrainingArguments._setup_devices` rather than a raw CUDA probe).
+  - After defaults merge, `trainer.args._n_gpu` is set from
+    `resources_per_trial["gpu"]` so per-trial allocation matches HF.
+  - `progress_reporter` defaults to `CLIReporter(metric_columns=["objective"])`.
+  - ASHA / Hyperband / Median / PBT schedulers raise the parity error if
+    `do_eval=False` or `eval_strategy=NO`.
+  - `dynamic_modules_import_trainable` wrapper preloads `datasets` dynamic
+    modules inside each actor (HF's fix for issue #11565).
+- `_scrub_for_pickling` swaps the memory tracker to skip-only (with the
+  same warning HF emits when forcing skip for serialisation), drops
+  `trainer.model` (rebuilt per actor via `call_model_init(trial)`), clears
+  cached dataloader handles, and asserts `args.output_dir` is absolute
+  (Tune chdirs each trial).  Only TensorBoard is popped from callbacks;
+  other integrations may still break pickling — mirror HF or disable
+  `report_to` for Ray sweeps.
+- TensorBoard callback is popped before launch and re-attached after
+  `tune.run` returns.
+- Trainer hooks added for `HPSearchBackend.RAY` parity:
+  - `_hp_search_setup` — `params = dict(trial); params.pop("wandb", None)`.
+  - `_get_output_dir` — uses `ray.train.get_context().get_trial_id()`.
+  - `_report_to_hp_search` — calls `ray.train.report(metrics, checkpoint=...)`
+    with the optional checkpoint built via `_tune_save_checkpoint`.
+  - `_tune_save_checkpoint(checkpoint_dir)` — DP analogue of HF's; writes a
+    self-contained `checkpoint-<global_step>/` inside Ray's temp dir
+    containing the model, `accountant.json`, `trainer_state.json`,
+    `dp_runtime_state.pt`, `dp_optimizer.pt`, `rng_state.pth`, and
+    `training_args.bin`. `save_only_model` is intentionally ignored —
+    Ray expects checkpoints to be complete enough to resume after eviction.
+- `BestRun` assembled from
+  `analysis.get_best_trial(metric="objective", mode=direction[:3], scope=args.ray_scope)`
+  with the `analysis` object exposed via `BestRun.run_summary` (HF parity).
+- `ray_scope` is dropped from `DP_INCOMPATIBLE_PARAMETERS`; values are
+  validated against Ray's accepted set
+  (`{"last", "all", "avg", "last-5-avg", "last-10-avg"}`) at
+  `__post_init__` time.
+
+**Multi-rank gate**: Phase 12 explicitly rejects multi-rank Ray sweeps
+until Phase 10 (DDP) lands. `_reject_multirank_for_ray` raises if
+`args.world_size > 1` or `resources_per_trial["gpu"] > 1`. The common
+HPO use case (one GPU per trial across many trials) is fully supported.
+
+- `hyperparameter_search(backend=None)` calls `default_dp_hp_backend()`,
+  which walks **Optuna → Ray → W&B** (SigOpt skipped) — the same relative
+  order as HuggingFace's `default_hp_search_backend` for the backends
+  DPTrainer implements.
+
+- Ray trial resume picks the **highest-step** `checkpoint-*` directory
+  under the Ray unpack path (deterministic; avoids `next(glob)`).
+
+**Optional dependency**: `pip install opaque-transformers[ray-hpo]` pulls
+in `ray[tune]>=2.7,<3`. The lazy-import `ImportError` redirects users at
+that extra. Symmetric extras `[optuna-hpo]`, `[wandb-hpo]`, and the
+`[hpo]` umbrella mirror the pattern.
+
+**Out of scope** (deferred):
+- SigOpt — no DP-specific blocker, but HF's SigOpt path also assumes
+  Accelerate state, and there is no demand surface yet.
+- Sweep-level DP composition across trials — explicit non-goal; each
+  trial's accountant is independent (matches Optuna / W&B today).
+- Ray Train (separate from Ray Tune) — unrelated; Phase 12 is HPO only.
+
+**Validation**:
+- `tests/huggingface/test_hpo.py` covers: SigOpt rejection,
+  `_scrub_for_pickling` round-trips through `pickle.dumps`, multi-rank
+  rejection (`world_size>1`, `gpu>1`), absolute-path scrub assertion,
+  end-to-end dispatch through a fake Ray stack with `BestRun` shape,
+  scheduler-requires-eval parity, `_get_output_dir(trial)` reading the
+  Ray trial id, `_tune_save_checkpoint` snapshot completeness, the
+  guard rejecting calls outside the training loop, **default backend**
+  resolution (`default_dp_hp_backend` + `backend=None` routing),
+  **`_pick_latest_ray_resume_checkpoint`**, **`_sync_ray_trial_gpu_to_args`**
+  / `args.n_gpu`-driven default `resources_per_trial`, and the memory-tracker
+  warning on Ray scrub.
+
+**Files**: [`trainer/_hpo.py`](../../src/opaque/transformers/trainer/_hpo.py)
+(adapter + helpers), [`trainer/__init__.py`](../../src/opaque/transformers/trainer/__init__.py)
+(four trainer-side hooks + `_tune_save_checkpoint`),
+[`trainer/_config.py`](../../src/opaque/transformers/trainer/_config.py)
+(drop `ray_scope` rejection, add value validation),
+[`pyproject.toml`](../../pyproject.toml) (per-backend HPO extras),
+[`tests/huggingface/test_hpo.py`](../../tests/huggingface/test_hpo.py).
 
 ---
 
@@ -942,7 +1020,7 @@ available.
 | **10c: Distributed step/eval** | ddp_find_unused_parameters, ddp_bucket_cap_mb, ddp_broadcast_buffers, eval_use_gather_object, average_tokens_across_devices | 5 | `__init__.py`, `_distributed.py`, distributed tests — **planned** |
 | **11a: Compile/kernels** | torch_compile, torch_compile_backend, torch_compile_mode, use_liger_kernel, liger_kernel_config, jit_mode_eval | 6 | `__init__.py`, optional `_compile.py` — **planned** |
 | **11b: Mixed precision** | fp16, fp16_full_eval, bf16/bf16_full_eval validation, tf32, half_precision_backend, fp16_opt_level | Precision surface | `__init__.py`, optional `_precision.py` — **planned** |
-| **12: External HPO execution** | backend="ray", ray_scope, external-controller trial execution | Backend surface | `_hpo.py`, optional `_ray.py` — **planned** |
+| **12: External HPO execution** | backend="ray", ray_scope, external-controller trial execution | Backend surface | `_hpo.py`, `__init__.py`, `_config.py` — **implemented** |
 | **13: Optimizer expansion** | optim, optim_args, optim_target_modules, optimizer_cls_and_kwargs, optimizers | Optimizer surface | `__init__.py`, `_config.py`, optional `_optim.py` — **planned** |
 | **14: Quantization/wrappers** | quantization, PEFT edge cases, device_map, tensor/context/sequence parallelism, parallelism_config | Model wrapper surface | `_config.py`, `__init__.py`, model-inspection helpers — **planned** |
 | **Total implemented** | | **~82** | |
@@ -976,7 +1054,7 @@ available.
 | `optim_target_modules` | None | **Deferred to Phase 13**: per-layer optimizer configuration; complex interaction with functional optimizer state |
 | `trackio_space_id` | "trackio" | **Deferred to Phase 5d**: reporting integrations need callback-by-callback compatibility validation |
 | `mp_parameters` | "" | **Not supported**: SageMaker model parallel — not a supported execution environment |
-| `ray_scope` | "last" | **Deferred to Phase 12**: Ray Tune is an external execution controller, not a local trial backend |
+| `ray_scope` | "last" | **Implemented in Phase 12**: validated against Ray's accepted scope set in `__post_init__`; consumed by `_run_ray_search`. |
 | `push_to_hub_model_id` | None | **Deprecated** alias; use `hub_model_id` |
 | `push_to_hub_organization` | None | **Deprecated** alias |
 | `push_to_hub_token` | None | **Deprecated** alias; use `hub_token` |

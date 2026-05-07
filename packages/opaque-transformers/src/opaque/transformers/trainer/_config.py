@@ -108,7 +108,6 @@ DP_INCOMPATIBLE_PARAMETERS: dict[str, str] = {
         "targets CUDA and CPU only."
     ),
     "mp_parameters": ("SageMaker model-parallel is not supported."),
-    "ray_scope": ("Ray Tune hyperparameter search is not wired into DPTrainer."),
     "past_index": (
         "Transformer-XL style cache reuse via past_index is not supported in DPTrainer: "
         "per-step cache plumbing conflicts with vmapped per-example gradient computation."
