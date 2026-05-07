@@ -166,8 +166,7 @@ def per_group_paired_noise_stddevs(
         )
     if first_max_norm.groups != squared_max_norm.groups:
         raise ValueError(
-            "first_max_norm and squared_max_norm must share the same "
-            "groups mapping."
+            "first_max_norm and squared_max_norm must share the same groups mapping."
         )
     if set(first_max_norm.values) != set(squared_max_norm.values):
         raise ValueError(
@@ -191,9 +190,7 @@ def per_group_paired_noise_stddevs(
                 "second-stream per-group bounds must be non-negative, "
                 f"got {value} for group '{name}'."
             )
-    s = sum(first_max_norm.values.values()) + sum(
-        squared_max_norm.values.values()
-    )
+    s = sum(first_max_norm.values.values()) + sum(squared_max_norm.values.values())
     sigma_first = PerGroup(
         first_max_norm.groups,
         {
