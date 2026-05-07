@@ -1718,9 +1718,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#exponential_decay" class="md-nav__link">
+  <a href="#exponential_schedule" class="md-nav__link">
     <span class="md-ellipsis">
-      exponential_decay
+      exponential_schedule
     </span>
   </a>
   
@@ -1859,9 +1859,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#exponential_decay" class="md-nav__link">
+  <a href="#exponential_schedule" class="md-nav__link">
     <span class="md-ellipsis">
-      exponential_decay
+      exponential_schedule
     </span>
   </a>
   
@@ -1951,7 +1951,7 @@ optimizer-state step counter — no manual <code>.step()</code> call.</p>
 <p>Public surface:</p>
 <ul>
 <li>pure curves: <code>constant_schedule</code>, <code>linear_schedule</code>,
-  <code>polynomial_schedule</code>, <code>exponential_decay</code>, <code>cosine_schedule</code>,
+  <code>polynomial_schedule</code>, <code>exponential_schedule</code>, <code>cosine_schedule</code>,
   <code>inverse_sqrt_schedule</code>, <code>one_minus_sqrt_schedule</code>;</li>
 <li>composition primitives: <code>with_warmup</code>, <code>with_restarts</code>.</li>
 </ul>
@@ -2031,8 +2031,9 @@ flatter early phase and steeper late drop.</p>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">sched</span> <span class="o">=</span> <span class="n">polynomial_schedule</span><span class="p">(</span><span class="mf">1e-3</span><span class="p">,</span> <span class="mf">1e-7</span><span class="p">,</span> <span class="n">power</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
 </code></pre></div>
 <hr />
-<h2 id="exponential_decay"><code>exponential_decay</code><a class="headerlink" href="#exponential_decay" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">exponential_decay</span><span class="p">(</span>
+<p><a id="exponential_decay"></a></p>
+<h2 id="exponential_schedule"><code>exponential_schedule</code><a class="headerlink" href="#exponential_schedule" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">exponential_schedule</span><span class="p">(</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">init_value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="n">decay_rate</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
 <a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="n">transition_begin</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
@@ -2041,15 +2042,27 @@ flatter early phase and steeper late drop.</p>
 <a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>    <span class="n">end_value</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span>
 </code></pre></div>
-<p>Geometric decay: <code>init * decay_rate^((step - transition_begin) / transition_steps)</code>.
-With <code>staircase=True</code>, the exponent is floored, so the schedule
-drops in discrete jumps every <code>transition_steps</code>.  <code>end_value</code>, when
-set, clamps the result (max for <code>decay_rate &lt; 1</code>, min otherwise).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">exponential_decay</span>
+<p>Geometric schedule: <code>init * decay_rate^((step - transition_begin) / transition_steps)</code>.
+The shape is exponential; the direction depends on <code>decay_rate</code> —
+<code>&lt; 1</code> decays, <code>&gt; 1</code> grows, <code>== 1</code> stays constant.  With
+<code>staircase=True</code> the exponent is floored, so the value moves in
+discrete jumps every <code>transition_steps</code>.  <code>end_value</code>, when set,
+clamps the result (lower bound for <code>decay_rate &lt; 1</code>, upper bound for
+<code>decay_rate &gt; 1</code>).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">exponential_schedule</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="c1"># Halve LR every 1000 steps, but never below 1e-5.</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">sched</span> <span class="o">=</span> <span class="n">exponential_decay</span><span class="p">(</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">decay_rate</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">end_value</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">sched</span> <span class="o">=</span> <span class="n">exponential_schedule</span><span class="p">(</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">decay_rate</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">end_value</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="c1"># Or grow a knob from 0.1 to (eventually) 1.0.</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="n">warm</span> <span class="o">=</span> <span class="n">exponential_schedule</span><span class="p">(</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">decay_rate</span><span class="o">=</span><span class="mf">1.5</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">end_value</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
 </code></pre></div>
+<blockquote>
+<p><strong>Renamed from <code>exponential_decay</code>.</strong>  The old name implied decay, but
+the function also produces growth when <code>decay_rate &gt; 1</code>, so it was
+renamed to match the <code>&lt;shape&gt;_schedule</code> pattern of the rest of this
+module.  The previous name is no longer exported.</p>
+</blockquote>
 <hr />
 <h2 id="cosine_schedule"><code>cosine_schedule</code><a class="headerlink" href="#cosine_schedule" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">cosine_schedule</span><span class="p">(</span>
