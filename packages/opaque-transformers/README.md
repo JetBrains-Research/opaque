@@ -10,7 +10,10 @@ Gemma(2), Granite, Cohere(2), and GPT-2.
 pip install opaque-transformers                 # patches only
 pip install "opaque-transformers[kernels]"      # + Triton fused kernels
 pip install "opaque-transformers[peft]"         # + PEFT / LoRA support
+pip install "opaque-transformers[hpo]"          # + Optuna, W&B, Ray Tune (DPTrainer HPO)
 ```
+
+For Ray Tune only, `opaque-transformers[ray-hpo]` is enough.
 
 Depends on `opaque-core`, `opaque-performance`, and `transformers>=4.57`.
 

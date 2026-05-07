@@ -2282,7 +2282,7 @@ transformers = [
 [package.dev-dependencies]
 dev = [
     { name = "dp-accounting" },
-    { name = "opaque-transformers", extra = ["ray-hpo"] },
+    { name = "opaque-transformers", extra = ["hpo"] },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "riskcal" },
@@ -2328,7 +2328,7 @@ provides-extras = ["auditing", "dpftrl", "transformers", "all"]
 [package.metadata.requires-dev]
 dev = [
     { name = "dp-accounting", specifier = ">=0.4.4" },
-    { name = "opaque-transformers", extras = ["ray-hpo"], editable = "packages/opaque-transformers" },
+    { name = "opaque-transformers", extras = ["hpo"], editable = "packages/opaque-transformers" },
     { name = "pytest", specifier = ">=7.0.0" },
     { name = "pytest-cov", specifier = ">=4.0.0" },
     { name = "riskcal", specifier = ">=1.2.0" },
@@ -2499,15 +2499,15 @@ requires-dist = [
     { name = "opaque-core", editable = "packages/opaque-core" },
     { name = "opaque-dpsgd", editable = "packages/opaque-dpsgd" },
     { name = "opaque-patches", editable = "packages/opaque-patches" },
-    { name = "opaque-transformers", extras = ["optuna-hpo"], marker = "extra == 'hpo'", editable = "packages/opaque-transformers" },
-    { name = "opaque-transformers", extras = ["ray-hpo"], marker = "extra == 'hpo'", editable = "packages/opaque-transformers" },
-    { name = "opaque-transformers", extras = ["wandb-hpo"], marker = "extra == 'hpo'", editable = "packages/opaque-transformers" },
+    { name = "optuna", marker = "extra == 'hpo'", specifier = ">=3.0" },
     { name = "optuna", marker = "extra == 'optuna-hpo'", specifier = ">=3.0" },
     { name = "peft", specifier = ">=0.18.0" },
+    { name = "ray", extras = ["tune"], marker = "extra == 'hpo'", specifier = ">=2.7,<3" },
     { name = "ray", extras = ["tune"], marker = "extra == 'ray-hpo'", specifier = ">=2.7,<3" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "torchopt", specifier = ">=0.7.0" },
     { name = "transformers", specifier = ">=4.57.0,<5" },
+    { name = "wandb", marker = "extra == 'hpo'", specifier = ">=0.16.0" },
     { name = "wandb", marker = "extra == 'wandb-hpo'", specifier = ">=0.16.0" },
 ]
 provides-extras = ["trainer", "optuna-hpo", "wandb-hpo", "ray-hpo", "hpo"]
