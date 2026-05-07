@@ -20,6 +20,7 @@ from .gemma import apply_gemma_patches as apply_gemma_patches
 from .gemma2 import apply_gemma2_patches as apply_gemma2_patches
 from .gemma3 import apply_gemma3_patches as apply_gemma3_patches
 from .glm4 import apply_glm4_patches as apply_glm4_patches
+from .gpt2 import apply_gpt2_patches as apply_gpt2_patches
 from .granite import apply_granite_patches as apply_granite_patches
 from .llama import apply_llama_patches as apply_llama_patches
 from .ministral import apply_ministral_patches as apply_ministral_patches
