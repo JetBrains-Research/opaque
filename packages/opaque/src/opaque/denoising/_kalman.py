@@ -68,7 +68,7 @@ def _leaf_kalman_step(
 
 @dataclasses.dataclass(frozen=True)
 class DiskDenoiserState(DenoiserState):
-    """Immutable state for :func:`~opaque.denoising.disk_denoiser` (DiSK / Kalman)."""
+    """Immutable state for :func:`~opaque.denoising.disk_denoiser` (DiSK)."""
 
     _estimate: Any
     _error_var: Any
@@ -96,7 +96,7 @@ def disk_denoiser(
     Callable[..., tuple[Any, DiskDenoiserState]],
     DiskDenoiserState,
 ]:
-    """Build a DiSK-style Kalman denoiser for a gradient-shaped PyTree.
+    """Build a DiSK denoiser for a gradient-shaped PyTree.
 
     Uses a random-walk state model and Gaussian measurement noise at the same
     scale as the DP mechanism (``noise_stddev``).  Each tensor element is filtered

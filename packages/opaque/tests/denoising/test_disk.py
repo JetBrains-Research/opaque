@@ -1,4 +1,4 @@
-"""Tests for opaque.denoising.disk (DiSK / Kalman)."""
+"""Tests for opaque.denoising.disk (DiSK)."""
 
 import dataclasses
 

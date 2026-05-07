@@ -4,8 +4,8 @@ Optional **post-processing** on **already noisy** gradients: a separate step
 after the DP noise mechanism, using the same functional pattern as noise
 addition: `(denoise_fn, state)` with immutable state.
 
-Opaque currently ships **DiSK** (Zhang et al., ICLR 2025): a simple Kalman
-filter per tensor element that exploits temporal structure in the gradient
+Opaque currently ships **DiSK** (Zhang et al., ICLR 2025): a per-tensor-element
+state-space denoiser that exploits temporal structure in the gradient
 sequence. It is complementary to DP noise (Gaussian, MF, etc.): you still run
 your usual `noise_fn`; denoising runs on the **released** noisy gradients.
 

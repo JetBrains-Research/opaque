@@ -546,7 +546,7 @@ def parse_args():
         choices=["none", "disk"],
         default="none",
         help="Optional post-processing on noisy gradients after the DP mechanism (default: none). "
-        "disk = DiSK-style Kalman denoising (ICLR 2025).",
+        "disk = DiSK denoising (ICLR 2025).",
     )
     dp_group.add_argument(
         "--denoiser-process-std",

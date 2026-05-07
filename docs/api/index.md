@@ -44,9 +44,8 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - Strategy factories: `band_mf_strategy()`, `blt_strategy()`, `lambda_cgd_strategy()`, `bisr_strategy()`, `identity_strategy()`
 
 - **[Denoising](denoising.md)**: Optional post-processing on noisy gradients
-  - `disk_denoiser()` - DiSK-style Kalman denoising (ICLR 2025)
+  - `disk_denoiser()` - DiSK denoising (ICLR 2025)
   - `DenoiserState`, `DiskDenoiserState` - State types
-  - `sync(...)` from `opaque.distributed` - Distributed state consistency checks
 
 - **[Accounting](accounting.md)**: Privacy budget tracking
   - `gaussian()`, `adaclip()`, `second_moment()` — DP-SGD mechanisms (also via `opaque.dpsgd.accounting`)
@@ -148,7 +147,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 
 | Function / type        | Purpose                                      | User Guide                          |
 |------------------------|----------------------------------------------|-------------------------------------|
-| `disk_denoiser()`      | DiSK / Kalman post-processing on noisy grads | [Guide](../user-guide/denoising.md) |
+| `disk_denoiser()`      | DiSK post-processing on noisy grads | [Guide](../user-guide/denoising.md) |
 | `DiskDenoiserState`    | Immutable state for `disk_denoiser`          | [Guide](../user-guide/denoising.md) |
 | `DenoiserState`        | Abstract base for denoiser state             | [Guide](../user-guide/denoising.md) |
 

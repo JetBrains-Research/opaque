@@ -1,4 +1,4 @@
-"""Post-processing denoisers for noisy gradients (e.g. DiSK / Kalman)."""
+"""Post-processing denoisers for noisy gradients (e.g. DiSK)."""
 
 from opaque.denoising.disk import DiskDenoiserState, disk_denoiser
 from opaque.denoising.types import DenoiserState

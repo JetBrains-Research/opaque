@@ -1,4 +1,4 @@
-"""DiSK (Kalman) gradient denoising — Zhang et al., ICLR 2025.
+"""DiSK gradient denoising — Zhang et al., ICLR 2025.
 
 Public entry point; implementation lives in :mod:`opaque.denoising._kalman`.
 """
