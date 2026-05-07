@@ -7,7 +7,7 @@ project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
-    uv sync --group examples
+    uv sync --group dev --group examples --all-packages --extra all
     uv run python examples/train_dp_ftrl.py --preset mellum-kstack $EXTRA_ARGS
 provisioning:
   gpu_type: h200
@@ -45,6 +45,8 @@ project_sync:
       - ".git/*"
       - "**/.git/*"
       - ".github/*"
+      - "trainer_output/*"
+      - "**/trainer_output/*"
       - ".venv/*"
       - "**/.venv/*"
       - "venv/*"
