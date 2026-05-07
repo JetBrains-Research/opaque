@@ -206,12 +206,8 @@ class TestPairedStreamPerGroup:
         assert isinstance(out.noisy_grads.noise_stddev, PerGroup)
         assert isinstance(out.noisy_squared_grads.noise_stddev, PerGroup)
         # Per-group bound, per-group stddev keys match the input groups.
-        assert (
-            out.noisy_grads.noise_stddev.groups == first_norm.groups
-        )
-        assert (
-            out.noisy_squared_grads.noise_stddev.groups == squared_norm.groups
-        )
+        assert out.noisy_grads.noise_stddev.groups == first_norm.groups
+        assert out.noisy_squared_grads.noise_stddev.groups == squared_norm.groups
 
     def test_mismatched_kinds_rejected(self):
         from opaque.types import PerGroup
