@@ -560,6 +560,17 @@ def parse_args():
         default=False,
         help="LoRA-XS: use A=U^T without singular values (eliminates gradient amplification under DP-SGD)",
     )
+    lora_group.add_argument(
+        "--lora-xs-manifold-mode",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "LoRA-XS: parametrize R as Cayley(S)·diag(sigma) instead of dense r×r. "
+            "Reduces trainable params per layer from r^2 to r(r+1)/2 (~half), giving "
+            "sqrt(2)x DP-SNR boost. Combine with --per-group-clipping to apply "
+            "different clipping norms to S (direction) vs sigma (magnitude)."
+        ),
+    )
     # LoRA-XSe: exploration via momentum SVD rotation
     lora_group.add_argument(
         "--lora-xse-p-e",
@@ -1109,6 +1120,7 @@ def main():
             lora_dropout=0.0,
             sigma=args.lora_xs_sigma,
             orthonormal_a=args.lora_xs_orthonormal_a,
+            manifold_mode=args.lora_xs_manifold_mode,
             task_type="CAUSAL_LM",
         )
     else:
