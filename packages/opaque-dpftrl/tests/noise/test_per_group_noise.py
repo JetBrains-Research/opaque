@@ -7,6 +7,7 @@ import math
 import pytest
 import torch
 
+from opaque.clipping import clipped_grad
 from opaque.noise_allocation import per_group_noise_stddev
 from opaque.types import PerGroup, clipped
 from opaque.types import NoisedPytree, SecondMomentClippingOutput
@@ -30,29 +31,37 @@ def _make_pg_two_groups() -> PerGroup:
     )
 
 
+def _assert_per_group_stddev_matches_expected(grad_template, *, key_seed: int) -> None:
+    strategy = band_mf_strategy(n_steps=20, bands=4, momentum=0.9)
+    nm = 1.5
+    noise_fn, state = mf_noise(
+        grad_template,
+        strategy,
+        noise_multiplier=nm,
+        key=key(key_seed),
+    )
+    pg = _make_pg_two_groups()
+    grads = clipped({"w": torch.randn(4, 3), "b": torch.randn(4)}, max_norm=pg)
+    out, _ = noise_fn(grads, state)
+    assert isinstance(out, NoisedPytree)
+    assert isinstance(out.noise_stddev, PerGroup)
+    expected = per_group_noise_stddev(pg, nm)
+    assert out.noise_stddev.groups == expected.groups
+    for g in expected.values:
+        assert out.noise_stddev.values[g] == pytest.approx(expected.values[g])
+
+
 class TestMfNoisePerGroupSingleStream:
     @pytest.fixture
     def grad_template(self):
         return {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
 
     def test_returns_per_group_noise_stddev(self, grad_template):
-        strategy = band_mf_strategy(n_steps=20, bands=4, momentum=0.9)
-        nm = 1.5
-        noise_fn, state = mf_noise(
-            grad_template,
-            strategy,
-            noise_multiplier=nm,
-            key=key(7),
-        )
-        pg = _make_pg_two_groups()
-        grads = clipped({"w": torch.randn(4, 3), "b": torch.randn(4)}, max_norm=pg)
-        out, st = noise_fn(grads, state)
-        assert isinstance(out, NoisedPytree)
-        assert isinstance(out.noise_stddev, PerGroup)
-        expected = per_group_noise_stddev(pg, nm)
-        assert out.noise_stddev.groups == expected.groups
-        for g in expected.values:
-            assert out.noise_stddev.values[g] == pytest.approx(expected.values[g])
+        _assert_per_group_stddev_matches_expected(grad_template, key_seed=7)
+
+    def test_single_stream_per_group_returns_per_group_stddev(self, grad_template):
+        """Plan checklist name — same assertions as ``test_returns_per_group_noise_stddev``."""
+        _assert_per_group_stddev_matches_expected(grad_template, key_seed=701)
 
     def test_mlp_group_has_larger_noise_stddev_than_attn(self, grad_template):
         strategy = identity_strategy()
@@ -162,6 +171,78 @@ class TestMfNoisePerGroupSingleStream:
         assert isinstance(out.noise_stddev, PerGroup)
         assert not torch.allclose(out.pytree["w"], grads.pytree["w"])
 
+    def test_constant_max_norm_latch_pergroup(self, grad_template):
+        """Identical ``PerGroup`` across calls keeps the latch happy."""
+        strategy = band_mf_strategy(n_steps=10, bands=3, momentum=0.9)
+        noise_fn, state = mf_noise(
+            grad_template,
+            strategy,
+            noise_multiplier=1.0,
+            key=key(3),
+        )
+        pg = PerGroup(
+            groups={"w": "g", "b": "g"},
+            values={"g": 1.0},
+        )
+        tree = {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
+        _, state = noise_fn(clipped(tree, max_norm=pg), state)
+        _, state = noise_fn(clipped(tree, max_norm=pg), state)
+        assert state._first_max_norm == pg
+
+    def test_per_group_matches_isotropic_when_uniform(self, grad_template):
+        """Uniform ``B_g = B``: optimal per-group total leaf variance matches
+        isotropic noise at scalar ``max_norm = PerGroup(...).effective``."""
+        nm = 1.0
+        B = 0.7
+        pg = PerGroup(
+            groups={"w": "g1", "b": "g2"},
+            values={"g1": B, "g2": B},
+        )
+        eff = pg.effective
+        zeros = {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
+        n_trials = 400
+        vars_pg: list[float] = []
+        vars_iso: list[float] = []
+        for t in range(n_trials):
+            fn_pg, st_pg = mf_noise(
+                grad_template,
+                identity_strategy(),
+                noise_multiplier=nm,
+                key=key(t),
+            )
+            out_pg, _ = fn_pg(clipped(zeros, max_norm=pg), st_pg)
+            vars_pg.append(out_pg.pytree["w"].var().item())
+
+            fn_i, st_i = mf_noise(
+                grad_template,
+                identity_strategy(),
+                noise_multiplier=nm,
+                key=key(10_000 + t),
+            )
+            out_i, _ = fn_i(clipped(zeros, max_norm=eff), st_i)
+            vars_iso.append(out_i.pytree["w"].var().item())
+
+        mean_pg = sum(vars_pg) / n_trials
+        mean_iso = sum(vars_iso) / n_trials
+        assert mean_pg == pytest.approx(mean_iso, rel=0.15)
+
+    def test_per_group_unequal_bounds_strict_utility_win(self, grad_template):
+        """Asymmetric group bounds: summed leaf variance under optimal per-group
+        allocation is strictly below isotropic noise at ``max_norm.effective``."""
+        nm = 1.0
+        pg = PerGroup(
+            groups={"w": "a", "b": "b"},
+            values={"a": 1.0, "b": 4.0},
+        )
+        sig = per_group_noise_stddev(pg, nm)
+        v_opt = sig.for_key("w") ** 2 * grad_template["w"].numel()
+        v_opt += sig.for_key("b") ** 2 * grad_template["b"].numel()
+        sigma_iso = nm * pg.effective
+        n_w = grad_template["w"].numel()
+        n_b = grad_template["b"].numel()
+        v_iso = sigma_iso**2 * (n_w + n_b)
+        assert v_opt < v_iso * 0.99
+
 
 class TestMfNoisePerGroupPairedStream:
     @pytest.fixture
@@ -242,3 +323,68 @@ class TestMfNoisePerGroupMahalanobisSingleStream:
             sens = b_g * c1
             acc += (sens / sigma.for_key(param_key)) ** 2
         assert acc == pytest.approx((c1 / nm) ** 2, rel=1e-9)
+
+    def test_pld_match_per_group_single_stream(self, grad_template):
+        """Plan checklist name — same Mahalanobis check as
+        ``test_mahalanobis_equals_c1_over_nm_squared``."""
+        self.test_mahalanobis_equals_c1_over_nm_squared(grad_template)
+
+
+class TestPerGroupPairedWithClippedGradAndMf:
+    """End-to-end: ``clipped_grad(..., second_moment=True, PerGroup)`` → ``mf_noise``."""
+
+    def test_per_group_paired_with_mf(self):
+        torch.manual_seed(0)
+        params = {"w": torch.randn(3), "b": torch.randn(())}
+        batch_size = 6
+        x = torch.randn(batch_size, 3)
+        y = torch.randn(batch_size)
+
+        def loss_fn(p, x_, y_):
+            return ((x_ @ p["w"] + p["b"] - y_) ** 2).mean()
+
+        pg = PerGroup(
+            groups={"w": "ga", "b": "gb"},
+            values={"ga": 2.0, "gb": 2.0},
+        )
+        grad_fn, clip_state = clipped_grad(
+            loss_fn,
+            argnums=0,
+            batch_argnums=(1, 2),
+            clipping_norm=pg,
+            normalize_by=batch_size,
+            second_moment=True,
+        )
+        paired, clip_state = grad_fn(params, x, y, state=clip_state)
+        assert isinstance(paired, SecondMomentClippingOutput)
+
+        grad_template = {"w": torch.zeros(3), "b": torch.zeros(())}
+        strategy = band_mf_strategy(n_steps=40, bands=4, momentum=0.9)
+        second = band_mf_strategy(n_steps=40, bands=4, momentum=0.99)
+        nm = 1.0
+        c1 = float(strategy._max_column_norm)
+        c2 = float(second._max_column_norm)
+        noise_fn, noise_state = mf_noise(
+            grad_template,
+            strategy,
+            noise_multiplier=nm,
+            key=key(2026),
+            second_moment_strategy=second,
+        )
+        out, _ = noise_fn(paired, noise_state)
+        assert isinstance(out.noisy_grads.noise_stddev, PerGroup)
+        assert isinstance(out.noisy_squared_grads.noise_stddev, PerGroup)
+        s1 = out.noisy_grads.noise_stddev
+        s2 = out.noisy_squared_grads.noise_stddev
+        pg1 = paired.grads.max_norm
+        assert isinstance(pg1, PerGroup)
+        sq1 = paired.squared_grads.max_norm
+        assert isinstance(sq1, PerGroup)
+        mahal = 0.0
+        for param_key in ("w", "b"):
+            d1 = pg1.for_key(param_key) * c1
+            d2 = sq1.for_key(param_key) * c2
+            mahal += (d1 / s1.for_key(param_key)) ** 2 + (
+                d2 / s2.for_key(param_key)
+            ) ** 2
+        assert mahal == pytest.approx((c1 / nm) ** 2, rel=1e-8)
