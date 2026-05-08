@@ -1,31 +1,20 @@
-r"""MSE-optimal noise allocation for paired and per-group Gaussian releases.
+r"""MSE-optimal noise allocation helpers shared across DP-SGD and DP-FTRL.
 
-When using per-group clipping, the simplest approach is isotropic noise:
+These are pure mathematical utilities: given clipping-derived sensitivities
+(scalar or :class:`~opaque.types.PerGroup`) they return the noise standard
+deviations that satisfy the joint Mahalanobis Gaussian privacy budget with
+equality, so the joint release has the same PLD as a single sensitivity-1
+Gaussian at the chosen ``noise_multiplier``.
 
-.. math::
+Two helpers live here:
 
-        \sigma = \text{nm} \cdot \Delta_2
-            = \text{nm} \cdot \lVert B \rVert_2
+- :func:`per_group_noise_stddev` — single-stream MSE-optimal allocation.
+- :func:`paired_noise_stddevs` — paired first + element-wise-squared
+  release; polymorphic in each stream (``float`` or ``PerGroup``).
 
-This uses the same noise standard deviation for every parameter and accounts
-correctly with ``gaussian(nm)``.
-
-:func:`per_group_noise_stddev` provides an **alternative** that reduces total
-noise MSE by allocating less noise to groups with smaller clipping norms.
-It returns a :class:`~opaque.types.PerGroup` of per-group standard
-deviations satisfying the Mahalanobis privacy constraint:
-
-.. math::
-
-    \sigma_i = \text{nm} \cdot \sqrt{B_i \cdot \textstyle\sum_j B_j}
-
-Privacy accounting is identical to the isotropic case — just
-``gaussian(nm)`` — because the allocation satisfies the Mahalanobis
-constraint with equality.
-
-:func:`paired_noise_stddevs` extends the same idea to the joint first +
-second-moment paired release, accepting either scalar (``float``) or
-:class:`~opaque.types.PerGroup` sensitivities on each stream.
+Both are consumed from :mod:`opaque.dpsgd.noise` and
+:mod:`opaque.dpftrl.noise`; they live in :mod:`opaque-core` to avoid an
+``opaque-dpftrl → opaque-dpsgd`` package dependency.
 """
 
 from __future__ import annotations
@@ -68,16 +57,6 @@ def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGr
         TypeError: If ``max_norm`` is not ``PerGroup``.
         ValueError: If ``noise_multiplier`` is negative or any group bound
             is negative.
-
-    Example::
-
-        from opaque.clipping import clipped_grad
-        from opaque.dpsgd.noise import per_group_noise_stddev
-
-        grad_fn, clip_state = clipped_grad(loss_fn, clipping_norm=pg, ...)
-        grads, clip_state = grad_fn(params, batch, state=clip_state)
-        stddev = per_group_noise_stddev(grads.max_norm, nm)
-        # Equivalent: stddev = grads.noise_stddev_for(noise_multiplier=nm)
     """
     if not isinstance(max_norm, PerGroup):
         raise TypeError(

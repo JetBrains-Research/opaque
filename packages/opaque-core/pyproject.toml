@@ -33,7 +33,7 @@ dependencies = [
 # Single-file modules at the namespace root — ``find_packages`` only
 # discovers sub-packages (directories with ``__init__``), so listing
 # them here keeps the wheel correct.
-py-modules = ["opaque.types", "opaque.pytree"]
+py-modules = ["opaque.types", "opaque.pytree", "opaque.noise_allocation"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

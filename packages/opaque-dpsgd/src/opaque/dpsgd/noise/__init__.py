@@ -5,11 +5,8 @@ The Gaussian noise state (``GaussianNoiseState``) lives in
 """
 
 from opaque.dpsgd.noise._gaussian import gaussian_noise
-from opaque.dpsgd.noise._per_group_noise import (
-    paired_noise_stddevs,
-    per_group_noise_stddev,
-)
 from opaque.dpsgd.noise._truncated_gaussian import truncated_gaussian_noise
+from opaque.noise_allocation import paired_noise_stddevs, per_group_noise_stddev
 
 import opaque.dpsgd.noise._distributed  # noqa: F401  (registers sync handlers)
 
