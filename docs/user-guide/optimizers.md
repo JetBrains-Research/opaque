@@ -208,46 +208,50 @@ noise.
 
 ### Empirical evidence
 
-A 30+ run sweep on **Qwen2.5-Coder-7B + KStack at ε=3, batch 192, LoRA
-r=16** (May 2026, 2 epochs, single seed) cross-tested optimizer choice,
-LR, and BC on/off. Trajectories at
-[federated-compute/opaque on W&B](https://wandb.ai/federated-compute/opaque).
-Headline findings:
+We cross-tested optimizer choice, learning rate, and BC on/off on a
+LoRA fine-tuning workload at ε=3 (full BC ablation matrix plus an LR
+sweep around each optimizer's published default). The findings drove
+this guide's defaults:
 
-1. **All shipped optimizers are DP-grade at this anchor.** With a
-   sensible LR, every factory landed within ~0.5% of a tuned SGD-mom
-   baseline (`min_eval_loss` 0.3453). Optimizer choice mattered less
-   than LR + schedule fit.
+1. **All shipped optimizers are DP-grade.** With a sensible LR,
+   every Adam-family factory and Adafactor landed within ~0.5% of a
+   tuned SGD-with-momentum baseline. Optimizer choice mattered less
+   than LR and schedule fit.
 
-2. **Adafactor's normalization replaces BC.** `adafactor` BC-on vs
-   BC-off was a perfect tie at every threshold and at min — the
-   relative-step `v_row × v_col` factorization already plays BC's
-   role. This is why we recommend it as the default.
+2. **Adafactor's relative-step normalization replaces BC.** Adafactor
+   BC-on vs BC-off produced indistinguishable trajectories at every
+   threshold we measured and identical minima — the per-tensor
+   `v_row × v_col` factorization already plays the role BC plays for
+   plain Adam. This is the main reason Adafactor is the recommended
+   default.
 
-3. **BC is "honest LR", BC-off is "implicit shrinkage".** At a
-   well-tuned LR, BC reaches early thresholds faster and lands a
-   slightly better minimum (Adam @ 1.5e-4: BC −0.27% vs BC-off
-   +0.13%). At an LR-too-high (Adam-family @ 5e-4) BC actively
-   amplifies overshoot — BC-off ran cleanly and beat BC-on by 0.5–0.9%.
-   With BC off, the effective LR auto-shrinks proportionally to
-   $\sigma^2/g^2$, which acts like an implicit annealing schedule
-   keyed to noise/signal ratio.
+3. **BC is "honest LR"; BC-off is "implicit shrinkage".** With a
+   well-tuned LR, BC reaches early-loss thresholds faster and lands
+   a slightly better minimum than BC-off. With an LR set too high,
+   BC actively amplifies the resulting schedule overshoot — the same
+   configuration with BC off ran cleanly to a better minimum. Without
+   BC, the effective LR auto-shrinks proportionally to $\sigma^2/g^2$,
+   acting like an implicit annealing schedule keyed to the
+   noise/signal ratio.
 
-4. **LR sensitivity varies wildly across families.** Across ±3× lr:
-   RAdam ±0.11% (very flat), Adafactor flat below 5e-4, Adam/AdamW
-   ±2%, Lion +0.27%/+1.27% (sharp), RMSprop up to +9.5%, Adagrad
-   diverges at ×5. Adafactor and RAdam are the genuinely
-   "set-and-forget" choices.
+4. **LR sensitivity varies sharply across families.** Across a 10× LR
+   window around each optimizer's tuned setting, RAdam moved by less
+   than 0.2% and Adafactor by less than 0.5%; AdamW moved by ~2%;
+   Lion was sharper still and degenerate at one end of the bracket;
+   Adagrad diverged at the high end. Adafactor and RAdam are the
+   genuinely "set-and-forget" choices; Lion, RMSprop, and Adagrad
+   need careful LR tuning under DP.
 
-5. **Argmin-at-last-step ⇒ budget-limited, not converged.** Lion and
-   most BC-off runs hit their min at the final step, meaning the
-   training budget cut them off before convergence. If your run
-   shows this signature, train longer.
+5. **Argmin at the last step ⇒ budget-limited.** Several
+   well-behaved configurations hit their minimum at the final
+   evaluation step, meaning the training budget cut them off before
+   convergence. If your run shows this signature, train for more
+   steps rather than reaching for a different optimizer.
 
-The May 2026 sweep is what motivates `noise_bias_correction=False` as
-the default: BC-off is more forgiving across the LR range, and
-Adafactor (the recommended default) is unaffected by the choice
-either way. Turn BC on once you've tuned LR to the workload.
+This is what motivates `noise_bias_correction=False` as the default:
+BC-off is more forgiving across the LR range, and Adafactor (the
+recommended default) is unaffected by the choice either way. Turn BC
+on once you've tuned LR to the workload.
 
 ### When to use which
 
