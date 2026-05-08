@@ -542,6 +542,25 @@ noise-aware path reads realized `noise_stddev` metadata from `NoisedPytree`
 updates. The trainer does not pass per-step optimizer kwargs; it just feeds
 the output of the DP noise mechanism into `optimizer.update()`.
 
+## Example script (`train_causal_lm.py`)
+
+The causal-LM example wires the same defaults as the factories:
+`noise_bias_correction` is **off** unless you pass
+`--noise-bias-correction` (or set the flag in a preset-driven wrapper).
+Use `--no-noise-bias-correction` to force off when a shell alias enables it.
+
+**`--preset`** bundles model, dataset, batching, and privacy targets:
+
+| Preset | Role |
+|--------|------|
+| `custom` | Keep all explicit CLI values (no overrides). |
+| `smoke` | Small GPT-2 + tiny split; quick sanity run (~minutes). |
+| `mellum-kstack` | `JetBrains/Mellum-4b-base` on `JetBrains/KStack`, ε=10, Adafactor-friendly LR (5e-5), LoRA on full MLP + attention linears. |
+| `qwen-7b-kstack` | `Qwen/Qwen2.5-Coder-7B` on `JetBrains/KStack`, ε=3, LR 5e-4, microbatch 16 — same optimizer/BC defaults as other presets (Adafactor, BC off). |
+
+Presets set hyperparameters only; they do not enable bias correction. See
+[`examples/train_causal_lm.py`](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py) `--help` for the full flag surface.
+
 ## API reference
 
 See [Optimizers API Reference](../api/optimizers.md) for full factory
