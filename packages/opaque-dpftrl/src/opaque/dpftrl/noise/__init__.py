@@ -3,8 +3,10 @@
 Public API:
 
 - :func:`mf_noise` — strategy-based dispatcher (SGD + Polyak momentum)
-- ``mf_noise(..., second_moment=True, second_moment_strategy=...)`` — private
-    second-moment stream for Adam-style optimizers
+- ``mf_noise(..., second_moment_strategy=...)`` — optional paired stream for
+  private second moments (Adam-style optimizers); requires
+  ``second_moment_strategy`` at construction and
+  ``SecondMomentClippingOutput`` at runtime
 
 Strategy factories:
 

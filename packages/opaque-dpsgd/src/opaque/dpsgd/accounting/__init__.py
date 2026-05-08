@@ -13,8 +13,9 @@ Amplification (in :mod:`opaque.dpsgd.accounting.amplification`):
 - :func:`poisson`, :func:`truncated_poisson`, :func:`parallel_poisson` —
   per-step Poisson subsampling amplifications.
 
-Cross-cutting primitives (``balls_in_bins``, ``second_moment``,
-composition, calibration) live at :mod:`opaque.accounting`.
+Cross-cutting primitives (composition, calibration) live at
+:mod:`opaque.accounting`. DP-FTRL helpers such as :func:`balls_in_bins`
+live in :mod:`opaque.dpftrl.accounting`.
 
 Example::
 
