@@ -2,7 +2,7 @@
 
 This example is designed as a production-style script (not a tutorial):
 - clipping + noise + accounting always enabled
-- auto clipping by default (--clipping-mode fixed|adaptive|auto)
+- adaptive clipping by default (--clipping-mode fixed|adaptive|auto)
 - noise multiplier calibrated from target privacy budget
 - privacy and grad-norm telemetry reported every eval_steps
 - optional empirical privacy auditing with W&B integration
@@ -499,7 +499,7 @@ def parse_args():
         "--clipping-mode",
         type=str,
         choices=["fixed", "adaptive", "auto"],
-        default="auto",
+        default="adaptive",
         help="Clipping strategy: fixed (constant threshold), adaptive (Andrew "
         "et al. quantile tracking), or auto (AUTO-S automatic scaling, Bu et "
         "al. NeurIPS 2023).",
