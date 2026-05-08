@@ -56,37 +56,44 @@ across ranks. It auto-dispatches based on type:
 
 **See also**: [Noise Addition User Guide](../user-guide/noise.md)
 
-## Per-group paired second moments (DP-SGD)
+## Paired second-moment release
 
-When `clipped_grad(..., second_moment=True)` uses a `PerGroup`
-`clipping_norm`, the paired output carries per-group contribution bounds on
-**both** the gradient stream and the squared-gradient stream. For group \(g\),
-write \(\Delta^{(1)}_g\) and \(\Delta^{(2)}_g\) for those per-record bounds
-(after the same normalization as scalar clipping—typically \(\Delta^{(2)}_g\)
-tracks \(C_g^2 / n\) when \(\Delta^{(1)}_g\) tracks \(C_g / n\)).
+When `clipped_grad(..., second_moment=True)` produces a
+`SecondMomentClippingOutput`, both `gaussian_noise` /
+`truncated_gaussian_noise` (DP-SGD) and `mf_noise(..., second_moment_strategy=...)`
+(DP-FTRL) consume it and emit a `SecondMomentNoiseOutput` with paired noise
+on both streams.
 
-`gaussian_noise` and `truncated_gaussian_noise` then draw **independent**
-Gaussian noise in each coordinate, with standard deviations
-\((\sigma^{(1)}_g,\sigma^{(2)}_g)\) constant within group \(g\), chosen
-**MSE-optimally** subject to one joint analytic Gaussian privacy constraint.
-With noise multiplier \(\text{nm}\), defining
+The runtime σ allocation is **sensitivity-proportional** and works
+identically for scalar `max_norm` and per-group `PerGroup` `max_norm`. For
+each group \(g\) (single-group `K=1` for scalar clipping), let
+\(\Delta^{(1)}_g\) be the first-stream per-record bound (`C_g / n` for
+averaged clipping, or `ζ · ‖C₁‖` strategy-amplified for DP-FTRL) and
+\(\Delta^{(2)}_g\) the second-stream per-record bound (`C_g² / n` derived
+from the same clip; `ζ² · ‖C₂‖` for DP-FTRL). Then with noise multiplier
+\(\text{nm}\), set
 
 \[
   S := \sum_h \bigl(\Delta^{(1)}_h + \Delta^{(2)}_h\bigr),\qquad
-  \sigma^{(1)}_g := \text{nm}\sqrt{\Delta^{(1)}_g \, S},\qquad
-  \sigma^{(2)}_g := \text{nm}\sqrt{\Delta^{(2)}_g \, S}
+  \sigma^{(1)}_g := \text{nm}\sqrt{\Delta^{(1)}_g\,S},\qquad
+  \sigma^{(2)}_g := \text{nm}\sqrt{\Delta^{(2)}_g\,S}.
 \]
 
-gives \(\sum_g \bigl[(\Delta^{(1)}_g/\sigma^{(1)}_g)^2 +
-(\Delta^{(2)}_g/\sigma^{(2)}_g)^2\bigr] = 1/\text{nm}^2\) — the same
-Mahalanobis-style budget as \(K\)-group single-stream `per_group_noise_stddev`,
-extended to \(2K\) privacy streams (first + second per group). **Privacy
-accounting remains `gaussian(nm)`** at the same multiplier: no extra penalty
-across groups or streams, and no scalar `first_moment_overhead` \(\rho\) on
-this path (\(\rho\) applies only when both streams use a scalar `max_norm`).
+This satisfies the joint Mahalanobis budget with equality:
 
-`mf_noise` does **not** support `PerGroup` bounds; use DP-SGD Gaussian-family
-mechanisms for per-group paired second moments.
+\[
+  \sum_{g,i} \Bigl(\frac{\Delta^{(i)}_g}{\sigma^{(i)}_g}\Bigr)^2
+  = \frac{1}{\text{nm}^2}.
+\]
+
+So the paired release has **the same PLD as a single sensitivity-1
+Gaussian release at multiplier `nm`** — i.e. **the same first-moment-only
+mechanism at the same noise multiplier**. Accounting is plain `gaussian(nm)`
+for DP-SGD and the underlying `mf_gaussian(nm, …)` for DP-FTRL; there is
+no separate transformation wrapper and no `ρ` knob.
+
+`mf_noise` accepts scalar `max_norm` only; per-group + DP-FTRL is not
+implemented.
 
 ## Standard Gaussian
 
@@ -94,16 +101,16 @@ mechanisms for per-group paired second moments.
 
 ## Bounded Gaussian — Truncated (renormalized)
 
-`truncated_gaussian_noise` accepts the same `SecondMomentClippingOutput`
-input as `gaussian_noise`: when gradients and squared-gradients are passed
-together, it allocates the noise budget between the two streams. For **scalar**
-`max_norm`, allocation follows `second_moment_stddevs`; the `first_moment_overhead`
-parameter (default `sqrt(3/2)`) must match the value used in `acc.second_moment()`.
-For **per-group** `max_norm` on both streams, allocation is the joint
-Mahalanobis form above and `first_moment_overhead` is unused; accounting stays
-`gaussian(nm)` without `acc.second_moment`.
+`truncated_gaussian_noise` consumes the same `SecondMomentClippingOutput`
+inputs as `gaussian_noise` and uses the same sensitivity-proportional joint
+allocation; the only difference is that the per-coordinate noise sample is
+drawn from a truncated normal of half-width `radius·σ`.
 
 ::: opaque.dpsgd.noise.truncated_gaussian_noise
+
+## Joint-allocation helper
+
+::: opaque.dpsgd.noise.paired_noise_stddevs
 
 ## Matrix Factorization Noise
 

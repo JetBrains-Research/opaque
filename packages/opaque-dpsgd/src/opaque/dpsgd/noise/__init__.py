@@ -6,8 +6,8 @@ The Gaussian noise state (``GaussianNoiseState``) lives in
 
 from opaque.dpsgd.noise._gaussian import gaussian_noise
 from opaque.dpsgd.noise._per_group_noise import (
+    paired_noise_stddevs,
     per_group_noise_stddev,
-    per_group_paired_noise_stddevs,
 )
 from opaque.dpsgd.noise._truncated_gaussian import truncated_gaussian_noise
 
@@ -17,5 +17,5 @@ __all__ = [
     "gaussian_noise",
     "truncated_gaussian_noise",
     "per_group_noise_stddev",
-    "per_group_paired_noise_stddevs",
+    "paired_noise_stddevs",
 ]

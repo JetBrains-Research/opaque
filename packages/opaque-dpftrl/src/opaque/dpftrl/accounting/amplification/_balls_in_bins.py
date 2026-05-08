@@ -7,9 +7,8 @@ epochs, so each example stays in its bin — required for the
 dominating-pair analysis.
 
 This module covers the **correlated-noise** (matrix-factorisation)
-case: ``Blt``, ``LambdaCgd``, ``Bisr``, ``Bsr``, and the
-``SecondMoment`` wrapper over any of those.  The PLD is computed by
-Monte Carlo sampling of the dominating pair from
+case: ``Blt``, ``LambdaCgd``, ``Bisr``, ``Bsr``.  The PLD is computed
+by Monte Carlo sampling of the dominating pair from
 Choquette-Choo et al. (2024) arxiv:2410.06266.
 
 For independent-noise mechanisms (Gaussian / AdaClip), BnB collapses
@@ -33,7 +32,6 @@ from dataclasses import dataclass
 
 from opaque.accounting import _native
 from opaque.accounting._base import DpProcess, Pld
-from opaque.accounting.transformations._second_moment import SecondMoment
 
 #: Mechanism types accepted by :func:`balls_in_bins`.
 _Inner = DpProcess
@@ -102,22 +100,10 @@ class BallsInBins(DpProcess):
                     mg.noise_multiplier,
                     native_cfg,
                 )
-            case SecondMoment(inner=Blt() | LambdaCgd() | Bisr() | Bsr()) as second:
-                if not second.gram_matrix:
-                    raise ValueError(
-                        f"SecondMoment({type(second.inner).__name__}) requires a non-empty "
-                        "gram_matrix for BnB amplification."
-                    )
-                return _native.bnb_mc_pld(
-                    list(second.gram_matrix),
-                    self.num_bins,
-                    second.noise_multiplier,
-                    native_cfg,
-                )
             case _:
                 raise TypeError(
-                    "BallsInBins requires a Blt, LambdaCgd, Bisr, Bsr, or "
-                    "SecondMoment(MF) inner mechanism, got "
+                    "BallsInBins requires a Blt, LambdaCgd, Bisr, or Bsr "
+                    "inner mechanism, got "
                     f"{type(self.inner).__name__}.  For Gaussian/AdaClip use "
                     "dpsgd_acc.poisson(inner, sample_rate=1/num_bins) * "
                     "(num_bins * num_epochs)."
@@ -137,16 +123,15 @@ def balls_in_bins(
     ``num_epochs`` epochs — do NOT compose further with ``* num_epochs``.
 
     Only correlated-noise (matrix-factorisation) inner mechanisms are
-    accepted: :func:`blt`, :func:`lambda_cgd`, :func:`bisr`, :func:`bsr`,
-    or :func:`second_moment` wrapping any of those.  For Gaussian / AdaClip
-    the BnB analysis collapses to plain Poisson-subsampling per step — use
+    accepted: :func:`blt`, :func:`lambda_cgd`, :func:`bisr`, :func:`bsr`.
+    For Gaussian / AdaClip the BnB analysis collapses to plain
+    Poisson-subsampling per step — use
     ``dpsgd_acc.poisson(inner, sample_rate=1/num_bins) * (num_bins * num_epochs)``
     directly.
 
     Args:
         inner: An MF mechanism — :func:`blt`, :func:`lambda_cgd`,
-            :func:`bisr`, :func:`bsr`, or :func:`second_moment` over one
-            of those.
+            :func:`bisr`, or :func:`bsr`.
         num_bins: Bins per epoch (k ≥ 2).  Typically ``dataset_size / batch_size``.
         num_epochs: Number of training epochs (default 1).  For correlated-
             noise mechanisms the epoch count is already encoded in the inner
@@ -172,15 +157,14 @@ def balls_in_bins(
     from opaque.dpftrl.accounting.mechanisms._lambda_cgd import LambdaCgd
 
     match inner:
-        case Blt() | LambdaCgd() | Bisr() | Bsr() | SecondMoment():
+        case Blt() | LambdaCgd() | Bisr() | Bsr():
             pass
         case _:
             raise TypeError(
-                "balls_in_bins() requires a Blt, LambdaCgd, Bisr, Bsr, or "
-                "SecondMoment(MF) inner mechanism, got "
-                f"{type(inner).__name__}.  For Gaussian/AdaClip use "
-                "dpsgd_acc.poisson(inner, sample_rate=1/num_bins) * "
-                "(num_bins * num_epochs)."
+                "balls_in_bins() requires a Blt, LambdaCgd, Bisr, or Bsr "
+                f"inner mechanism, got {type(inner).__name__}.  For "
+                "Gaussian/AdaClip use dpsgd_acc.poisson(inner, "
+                "sample_rate=1/num_bins) * (num_bins * num_epochs)."
             )
     if num_bins < 2:
         raise ValueError(f"num_bins must be >= 2 for BnB amplification, got {num_bins}")

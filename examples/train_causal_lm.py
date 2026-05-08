@@ -43,7 +43,6 @@ USAGE:
 import argparse
 import contextlib
 import importlib.util
-import math
 import os
 import sys
 import time
@@ -126,20 +125,15 @@ def _step_noise_stddev(noisy_grads):
     return noisy_grads.noise_stddev
 
 
-def _log_private_second_moment(
-    clip_norm: float | PerGroup,
-    second_moment_arg: bool | float,
-) -> None:
-    """Log second-moment knobs (ρ) and accountant path independently of scalar vs PerGroup clip."""
-    print("  Second moments: on")
-    if isinstance(second_moment_arg, float):
-        print(f"  ρ: {second_moment_arg:g}")
-    elif second_moment_arg is True:
-        print(f"  ρ: {math.sqrt(3 / 2):.4g} (default)")
-    if isinstance(clip_norm, PerGroup):
-        print("  ε from second moments: gaussian(nm)")
-    else:
-        print("  ε from second moments: second_moment(...)")
+def _log_private_second_moment() -> None:
+    """Log paired-stream second-moment release.
+
+    Privacy accounting is unchanged from the first-moment-only release —
+    sensitivity-proportional Mahalanobis allocation makes the joint
+    paired PLD identical to ``gaussian(nm)`` (or ``mf_gaussian(nm)``) at
+    the same multiplier.
+    """
+    print("  Second moments: on (sensitivity-proportional allocation)")
 
 
 def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
@@ -585,10 +579,11 @@ def parse_args():
         "--second-moment",
         type=str,
         default="none",
-        help="Private squared-gradient stream (Kalinin et al.). none | "
-        "auto — on for adam/adamw/ademamix/rmsprop/radam/adadelta with "
-        "default ρ≈sqrt(3/2) | float>1 sets ρ. Scalar clip: paired release "
-        "uses acc.second_moment. Per-group clip: joint noise, still gaussian(nm).",
+        choices=["none", "auto", "on"],
+        help="Private squared-gradient stream alongside gradients. "
+        "none (default) | auto (on for adam/adamw/ademamix/rmsprop/radam/"
+        "adadelta) | on. Joint noise allocation is sensitivity-proportional; "
+        "privacy accounting is gaussian(nm) — same as first-moment-only.",
     )
     dp_group.add_argument(
         "--per-group-clipping",
@@ -1210,28 +1205,21 @@ def main():
     print(f"  Epochs: {args.num_epochs}")
     print(f"  Expected total steps: ~{args.num_epochs * expected_steps_per_epoch}")
 
-    # Parse --second-moment → clipped_grad (and ρ for scalar accounting).
+    # Resolve --second-moment to a bool consumed by clipped_grad.
     _SECOND_MOMENT_OPTIMIZERS = frozenset(
         {"adam", "adamw", "ademamix", "rmsprop", "radam", "adadelta"}
     )
-    second_moment_arg: bool | float
     if args.second_moment == "none":
-        second_moment_arg = False
+        use_second_moment = False
     elif args.second_moment == "auto":
-        second_moment_arg = args.optimizer in _SECOND_MOMENT_OPTIMIZERS
-    else:
-        try:
-            second_moment_arg = float(args.second_moment)
-        except ValueError as e:
-            raise ValueError(
-                f"--second-moment must be 'none', 'auto', or a float >1.0, "
-                f"got {args.second_moment!r}"
-            ) from e
-        if second_moment_arg <= 1.0:
-            raise ValueError(
-                f"--second-moment overhead must be >1.0, got {second_moment_arg}"
-            )
-    use_second_moment = bool(second_moment_arg)
+        use_second_moment = args.optimizer in _SECOND_MOMENT_OPTIMIZERS
+    elif args.second_moment == "on":
+        use_second_moment = True
+    else:  # argparse choices guard, but keep an explicit branch for clarity
+        raise ValueError(
+            f"--second-moment must be 'none', 'auto', or 'on', "
+            f"got {args.second_moment!r}"
+        )
 
     # Create gradient function based on clipping mode.
     if args.clipping_mode == "adaptive":
@@ -1249,7 +1237,7 @@ def main():
             return_aux=True,
             key=key(args.seed),
             normalize_by=args.batch_size,
-            second_moment=second_moment_arg,
+            second_moment=use_second_moment,
         )
     elif args.clipping_mode == "auto":
         grad_fn, clip_state = auto_clipped_grad(
@@ -1261,7 +1249,7 @@ def main():
             normalize_by=args.batch_size,
             microbatch_size=args.microbatch_size,
             return_aux=True,
-            second_moment=second_moment_arg,
+            second_moment=use_second_moment,
         )
     else:
         grad_fn, clip_state = clipped_grad(
@@ -1272,7 +1260,7 @@ def main():
             normalize_by=args.batch_size,
             microbatch_size=args.microbatch_size,
             return_aux=True,
-            second_moment=second_moment_arg,
+            second_moment=use_second_moment,
         )
 
     # Calibrate noise multiplier from target privacy budget
@@ -1303,26 +1291,10 @@ def main():
         mechanism = lambda nm, ebs=args.batch_size, ng=_num_groups: dpsgd_acc.adaclip(
             _base_mechanism(nm), expected_batch_size=ebs, num_groups=ng
         )
-    if use_second_moment and args.noise_multiplier != 0:
-        _bare_mechanism = mechanism
-        if isinstance(clip_norm, PerGroup):
-            # Per-group: noise already matches gaussian(nm); skip acc.second_moment.
-            pass
-        else:
-            # Scalar: PLD wraps second_moment(..., sensitivity=1); matches runtime ρ.
-            _overhead = (
-                second_moment_arg if isinstance(second_moment_arg, float) else None
-            )
-            if _overhead is not None:
-                mechanism = lambda nm, oh=_overhead: acc.second_moment(
-                    _bare_mechanism(nm),
-                    sensitivity=1.0,
-                    first_moment_overhead=oh,
-                )
-            else:
-                mechanism = lambda nm: acc.second_moment(
-                    _bare_mechanism(nm), sensitivity=1.0,
-                )
+    # No paired-stream wrap: joint Mahalanobis allocation makes
+    # the second moment release "free" at the runtime σ allocation
+    # level; calibration uses the same gaussian(nm) PLD as the
+    # first-moment-only release.
 
     _unamplified = mechanism
     if use_truncated_poisson:
@@ -1348,7 +1320,7 @@ def main():
             f"\nUsing fixed noise multiplier: {noise_multiplier:.4f} (skipping calibration)"
         )
         if use_second_moment:
-            _log_private_second_moment(clip_norm, second_moment_arg)
+            _log_private_second_moment()
     else:
         print("\nCalibrating privacy parameters...")
         if use_parallel_poisson:
@@ -1357,7 +1329,7 @@ def main():
         if args.noise_mechanism == "truncated_gaussian":
             print(f"  Noise radius: {args.noise_radius}σ")
         if use_second_moment:
-            _log_private_second_moment(clip_norm, second_moment_arg)
+            _log_private_second_moment()
         print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
         print(f"  Total steps: {total_steps}")
         print(f"  Sample rate: {sample_rate:.6f}")
@@ -1778,7 +1750,7 @@ def main():
     elif use_parallel_poisson:
         print(f"  Accounting: parallel_poisson (world_size={world_size})")
     if use_second_moment:
-        _log_private_second_moment(clip_norm, second_moment_arg)
+        _log_private_second_moment()
     print(
         f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})"
     )

@@ -1,8 +1,8 @@
 """Differential privacy accounting using Privacy Loss Distributions (PLD).
 
 Cross-cutting accounting surface — composition, calibration, generic
-mechanisms (``identity``, ``nonprivate``, ``eps_delta``), and the
-``second_moment`` transformation that spans DP-SGD and DP-FTRL.
+mechanisms (``identity``, ``nonprivate``, ``eps_delta``), and shared
+transformations.
 
 Algorithm-specific factories live in their respective packages
 (``opaque-dpsgd`` / ``opaque-dpftrl``):
@@ -69,7 +69,6 @@ from opaque.accounting.calibration import (
 from opaque.accounting.composition import cached, compose, repeat
 from opaque.accounting.discretization import get_discretization, set_discretization
 from opaque.accounting.mechanisms import eps_delta, identity, nonprivate
-from opaque.accounting.transformations import second_moment
 
 __all__ = [
     "__version__",
@@ -89,8 +88,6 @@ __all__ = [
     "eps_delta",
     "identity",
     "nonprivate",
-    # Cross-cutting transformation
-    "second_moment",
     # Composition
     "repeat",
     "compose",

@@ -12,4 +12,4 @@ def test_import_root_accounting_surface():
 
     assert hasattr(acc, "nonprivate")
     assert hasattr(acc, "compose")
-    assert hasattr(acc, "second_moment")
+    assert hasattr(acc, "calibrate")

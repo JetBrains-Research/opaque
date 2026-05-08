@@ -37,17 +37,13 @@ from opaque.types import (
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
 )
-from opaque.dpsgd.noise._second_moment import (
-    DEFAULT_SECOND_MOMENT_OVERHEAD,
-    second_moment_stddevs,
-)
 from opaque.random import generator_from_key
 from opaque.random.types import RngKey
 from opaque.random import fold_in as rng_fold_in
 from opaque.pytree import tree_map
 from opaque.dpsgd.noise._per_group_noise import (
+    paired_noise_stddevs,
     per_group_noise_stddev,
-    per_group_paired_noise_stddevs,
 )
 
 
@@ -99,7 +95,6 @@ def gaussian_noise(
     noise_multiplier: float,
     key: RngKey,
     compute_dtype: torch.dtype = torch.float32,
-    first_moment_overhead: float = DEFAULT_SECOND_MOMENT_OVERHEAD,
 ) -> tuple[
     Callable[..., tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
@@ -215,42 +210,17 @@ def gaussian_noise(
     ) -> tuple[float | PerGroup, float | PerGroup]:
         """Resolve (σ_first, σ_second) for the paired Gaussian release.
 
-        Three branches by ``max_norm`` type:
-        - both ``PerGroup``: MSE-optimal joint per-group allocation
-          (see :func:`per_group_paired_noise_stddevs`).  Privacy is
-          ``gaussian(nm)`` — same as single-stream.
-        - both scalar: paper-style overhead allocation
-          (:func:`second_moment_stddevs`) parametrised by
-          ``first_moment_overhead``.
-        - one of each: rejected as misconfigured.
+        Routes through :func:`paired_noise_stddevs`, which implements the
+        sensitivity-proportional Mahalanobis allocation that satisfies the
+        joint privacy budget with equality (joint PLD = single Gaussian
+        release at ``noise_multiplier``).  Both streams must carry the
+        same kind of ``max_norm`` (both scalar or both PerGroup); mixed
+        kinds are a configuration error.
         """
-        first_pg = isinstance(first_clipped.max_norm, PerGroup)
-        second_pg = isinstance(second_clipped.max_norm, PerGroup)
-        if first_pg != second_pg:
-            raise TypeError(
-                "Paired second-moment release requires matching max_norm "
-                "kinds on both streams (both scalar or both PerGroup); "
-                f"got first={type(first_clipped.max_norm).__name__}, "
-                f"second={type(second_clipped.max_norm).__name__}."
-            )
-        if first_pg:
-            # Per-group MSE-optimal joint allocation.  No
-            # ``first_moment_overhead`` knob: the per-group form is
-            # data-driven.  See per_group_paired_noise_stddevs for the
-            # Mahalanobis derivation.
-            return per_group_paired_noise_stddevs(
-                first_clipped.max_norm,
-                second_clipped.max_norm,
-                resolved_noise_multiplier,
-            )
-        # Identity strategy → c1 = c2 = 1.0; pass per-record bounds for
-        # both streams so the joint allocation is correct (per-example
-        # squared, not (Σg)²).
-        return second_moment_stddevs(
+        return paired_noise_stddevs(
             resolved_noise_multiplier,
-            first_max_norm=float(first_clipped.sensitivity),
-            squared_max_norm=float(second_clipped.sensitivity),
-            first_moment_overhead=first_moment_overhead,
+            first=first_clipped.max_norm,
+            second=second_clipped.max_norm,
         )
 
     def _add_paired(
