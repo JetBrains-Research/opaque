@@ -22,7 +22,7 @@ import torch
 
 from opaque.types import PerGroup
 from opaque.types import ClippedPytree
-from opaque._noise_allocation import paired_noise_stddevs
+from opaque._noise_allocation import paired_noise_stddevs, per_group_noise_stddev
 from opaque.types import (
     NoisedPytree,
     SecondMomentClippingOutput,
@@ -80,10 +80,13 @@ def mf_noise(
       ``second_moment_strategy`` was supplied at construction).
 
     The paired-stream release uses the sensitivity-proportional joint
-    Mahalanobis allocation (``opaque._noise_allocation.paired_noise_stddevs``):
-    the joint privacy
-    budget collapses to the same first-moment-only mechanism at the
-    given ``noise_multiplier``, so calibration is identical to a
+    Mahalanobis allocation (``opaque._noise_allocation.paired_noise_stddevs``),
+    with the MF translation ``nm / ‖C₁‖`` as the joint effective multiplier so the
+    joint PLD matches the single-stream MF Gaussian accountant at
+    ``(noise_multiplier, ‖C₁‖)``.  ``PerGroup`` ``max_norm`` is supported on
+    both streams (same joint allocation as DP-SGD Gaussian, then MF correlation).
+    The joint privacy budget collapses to the same first-moment-only mechanism
+    at the given ``noise_multiplier``, so calibration is identical to a
     first-moment-only release.
 
     Args:
@@ -139,7 +142,10 @@ def mf_noise(
         max_norm = _validate_constant_max_norm(
             clipped_grads, st._first_max_norm, op="mf_noise"
         )
-        base_stddev = resolved_noise_multiplier * max_norm
+        if isinstance(max_norm, PerGroup):
+            base_stddev = per_group_noise_stddev(max_norm, resolved_noise_multiplier)
+        else:
+            base_stddev = resolved_noise_multiplier * max_norm
         noisy_tree, new_state = raw_noise_fn(
             clipped_grads.pytree,
             st,
@@ -214,22 +220,15 @@ def _expect_clipped(value: Any, *, op: str) -> ClippedPytree:
             f"{op} expects ClippedPytree inputs. Wrap manual values with "
             "opaque.types.clipped(...)."
         )
-    if isinstance(value.max_norm, PerGroup):
-        raise TypeError(
-            f"{op} does not support PerGroup bounds. Per-group paired second "
-            "moments are implemented for DP-SGD Gaussian / truncated-Gaussian "
-            "noise only; MF strategies use correlated noise with scalar "
-            "latched sensitivities. Use a scalar clipping_norm with mf_noise."
-        )
     return value
 
 
 def _validate_constant_max_norm(
     grads: ClippedPytree,
-    first_max_norm: float | None,
+    first_max_norm: float | PerGroup | None,
     *,
     op: str,
-) -> float:
+) -> float | PerGroup:
     """Latch the per-step max_norm and reject changes across calls.
 
     MF privacy analyses calibrate noise from a sensitivity that is constant
@@ -238,12 +237,19 @@ def _validate_constant_max_norm(
     first-call max_norm in the state and rejects any subsequent call whose
     max_norm differs.
     """
-    sensitivity = grads.sensitivity
-    if sensitivity < 0:
-        raise ValueError(
-            f"ClippedPytree max_norm must be non-negative, got {grads.max_norm}"
-        )
-    max_norm = float(sensitivity)
+    max_norm = grads.max_norm
+    if isinstance(max_norm, PerGroup):
+        for group_name, value in max_norm.values.items():
+            if value < 0:
+                raise ValueError(
+                    f"ClippedPytree max_norm must be non-negative for all groups, "
+                    f"got {value} for group '{group_name}'."
+                )
+    else:
+        if float(max_norm) < 0:
+            raise ValueError(
+                f"ClippedPytree max_norm must be non-negative, got {grads.max_norm}"
+            )
     if first_max_norm is not None and max_norm != first_max_norm:
         raise ValueError(
             f"{op} saw a varying ClippedPytree.max_norm across calls "

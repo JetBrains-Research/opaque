@@ -7,6 +7,11 @@ for its side effects from :mod:`opaque.dpftrl.noise`; not re-exported.
 
 from __future__ import annotations
 
+import hashlib
+import json
+from collections.abc import Callable
+from typing import Any
+
 from opaque.distributed import is_distributed
 from opaque.distributed._state import (
     assert_scalar_equal,
@@ -14,11 +19,40 @@ from opaque.distributed._state import (
     sync_object,
 )
 from opaque.dpftrl.noise._engine import MFNoiseState
+from opaque.types import PerGroup
 
 
-_MF_NOISE_STATE_FIELD_OPS: dict[str, str] = {
+def _fingerprint_per_group(pg: PerGroup) -> float:
+    """Deterministic float fingerprint for cross-rank equality of ``PerGroup``."""
+    payload = {
+        "groups": sorted(pg.groups.items()),
+        "values": sorted(pg.values.items()),
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).digest()
+    return int.from_bytes(digest[:8], "big") / float(2**53)
+
+
+def _sync_mf_first_max_norm(value: Any, device: Any = None) -> None:
+    """Assert ``_first_max_norm`` matches across ranks (scalar or ``PerGroup``)."""
+    if value is None:
+        return
+    if isinstance(value, PerGroup):
+        assert_scalar_equal(
+            _fingerprint_per_group(value),
+            name="MFNoiseState._first_max_norm(PerGroup fingerprint)",
+            device=device,
+        )
+        return
+    assert_scalar_equal(
+        float(value), name="MFNoiseState._first_max_norm", device=device
+    )
+
+
+_MF_NOISE_STATE_FIELD_OPS: dict[str, str | Callable[..., Any]] = {
     "_step_counter": "assert_equal",
-    "_first_max_norm": "assert_equal",
+    "_first_max_norm": _sync_mf_first_max_norm,
 }
 
 

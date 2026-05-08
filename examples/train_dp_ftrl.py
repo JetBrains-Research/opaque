@@ -15,8 +15,9 @@ KEY DIFFERENCES FROM DP-SGD (train_causal_lm.py):
     ``lion`` is also exposed but has no v, so ``--second-moment`` is
     rejected for it.
 
-  2. Clipping: Fixed norm ONLY (adaptive clipping changes sensitivity
-     mid-training which invalidates the single-shot MF privacy proof).
+  2. Clipping: Fixed scalar norm or fixed per-group norms (``--per-group-clipping``).
+     Adaptive clipping is not supported (sensitivity must stay constant across
+     the MF run for the single-shot privacy proof).
 
   3. LR schedule: Constant by default (--warmup-frac 0); optional linear warmup
      → constant, fully predetermined before training (fixed linear map).
@@ -124,8 +125,8 @@ import opaque.accounting as acc
 import opaque.dpftrl.accounting as ftrl_acc
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import calibration as cal
-from opaque.clipping import clipped_grad
-from opaque.types import SecondMomentNoiseOutput
+from opaque.clipping import clipped_grad, per_group
+from opaque.types import PerGroup, SecondMomentNoiseOutput
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
@@ -419,6 +420,17 @@ def parse_args():
     dp_g.add_argument(
         "--clipping-norm", type=float, default=0.9, help="Fixed clipping norm"
     )
+    dp_g.add_argument(
+        "--per-group-clipping",
+        type=str,
+        nargs="+",
+        default=None,
+        metavar="PATTERN=NORM",
+        help="Per-group clipping norms as PATTERN=NORM pairs (e.g. c_attn=0.9 c_proj=0.5). "
+        "Each trainable param must match exactly one pattern substring. "
+        "Use 'fallback=NORM' as catch-all.  Incompatible with adaptive clipping; "
+        "MF ``mf_noise`` uses the same Mahalanobis allocation as DP-SGD Gaussian.",
+    )
     dp_g.add_argument("--microbatch-size", type=int, default=None)
     dp_g.add_argument(
         "--bands",
@@ -572,6 +584,22 @@ def parse_args():
         args.microbatch_size = None
     if args.eval_batch_size is None:
         args.eval_batch_size = args.microbatch_size or args.batch_size
+
+    if args.per_group_clipping:
+        parsed: dict[str, float] = {}
+        fallback_value = None
+        for item in args.per_group_clipping:
+            if "=" not in item:
+                parser.error(
+                    f"--per-group-clipping values must be PATTERN=NORM, got '{item}'"
+                )
+            pattern, value = item.split("=", 1)
+            if pattern == "fallback":
+                fallback_value = float(value)
+            else:
+                parsed[pattern] = float(value)
+        args.per_group_clipping = parsed
+        args.per_group_clipping_fallback = fallback_value
 
     return args
 
@@ -904,17 +932,35 @@ def main():
                 total_count += len(input_ids)
             return total_loss / total_count
 
+    if args.per_group_clipping:
+        clip_norm = per_group(
+            trainable_params,
+            fallback=args.per_group_clipping_fallback,
+            **args.per_group_clipping,
+        )
+        print("\nPer-group clipping norms:")
+        for gname, val in clip_norm.values.items():
+            count = sum(1 for g in clip_norm.groups.values() if g == gname)
+            print(f"  {gname}: {val:.3f} ({count} params)")
+        print(f"  Effective (L2 of group bounds): {clip_norm.effective:.3f}")
+    else:
+        clip_norm = args.clipping_norm
+
     grad_fn, clip_state = clipped_grad(
         per_example_loss_fn,
         argnums=0,
         batch_argnums=(1,),
-        clipping_norm=args.clipping_norm,
+        clipping_norm=clip_norm,
         normalize_by=args.batch_size,
         microbatch_size=args.microbatch_size,
         return_aux=True,
         second_moment=args.second_moment,
     )
-    zeta = args.clipping_norm / args.batch_size
+    zeta = (
+        clip_norm.effective / args.batch_size
+        if isinstance(clip_norm, PerGroup)
+        else float(clip_norm) / args.batch_size
+    )
 
     # --- Total steps & LR schedule ---
     total_steps = args.num_epochs * expected_steps_per_epoch
@@ -1281,8 +1327,14 @@ def main():
                 "  Note: BSR coefficients assume constant LR in the paper; "
                 "this script still uses the LR schedule only in the optimizer."
             )
-    print(f"  Clipping norm: {args.clipping_norm} (fixed)")
-    print(f"  Sensitivity: {zeta:.6f} (= {args.clipping_norm} / {args.batch_size})")
+    if isinstance(clip_norm, PerGroup):
+        print("  Clipping norm: per-group (fixed patterns)")
+        print(
+            f"  Sensitivity (effective ζ): {zeta:.6f} (= {clip_norm.effective:.3f} / batch)"
+        )
+    else:
+        print(f"  Clipping norm: {clip_norm} (fixed)")
+        print(f"  Sensitivity: {zeta:.6f} (= {clip_norm} / {args.batch_size})")
     print(f"  Noise multiplier (σ): {noise_multiplier:.4f}")
     if use_second_moment and args.mechanism not in ("identity", "none"):
         # Per-stream σ is allocated by the dispatcher
@@ -1410,7 +1462,11 @@ def main():
                         {
                             "train/loss": avg_loss,
                             "train/batch_size": batch_size,
-                            "train/clipping_norm": args.clipping_norm,
+                            "train/clipping_norm": (
+                                clip_norm.effective
+                                if isinstance(clip_norm, PerGroup)
+                                else clip_norm
+                            ),
                             "train/clip_rate": clip_rate,
                             "train/grad_norm_mean": mean_grad_norm,
                             "train/noise_std": step_noise_stddev,
@@ -1469,7 +1525,10 @@ def main():
         print(f"  Loss reduction: {((losses[0] - losses[-1]) / losses[0] * 100):.1f}%")
     if clip_rates:
         print("\nClipping:")
-        print(f"  Fixed norm: {args.clipping_norm}")
+        if isinstance(clip_norm, PerGroup):
+            print(f"  Per-group clip (effective): {clip_norm.effective:.3f}")
+        else:
+            print(f"  Fixed norm: {clip_norm}")
         print(f"  Average clip rate: {sum(clip_rates) / len(clip_rates):.2%}")
 
     # Single-shot accounting

@@ -153,8 +153,10 @@ def sync_object(
 
     ``field_ops`` maps field name to a reduction op string
     (``"sum" | "mean" | "max" | "min" | "product" | "assert_equal"``) or to a
-    callable ``fn(value[, device]) -> float``. Defaults to averaging all
-    numeric fields when ``field_ops`` is None.
+    callable ``fn(value[, device]) -> float``.  **Callables run first** on the
+    raw field value (any type) and typically perform cross-rank assertions
+    without returning an update.  Defaults to averaging all numeric fields when
+    ``field_ops`` is None.
     """
     if not is_distributed():
         return state
@@ -181,6 +183,12 @@ def sync_object(
     updates: dict[str, Any] = {}
     for field_name, field_op in field_ops.items():
         value = getattr(state, field_name)
+        if callable(field_op):
+            try:
+                field_op(value, device)
+            except TypeError:
+                field_op(value)
+            continue
         if not isinstance(value, (float, int)):
             continue
         if field_op == "assert_equal":

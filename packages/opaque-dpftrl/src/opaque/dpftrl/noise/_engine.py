@@ -23,7 +23,7 @@ from typing import Any
 
 import torch
 
-from opaque.types import NoiseState
+from opaque.types import NoiseState, PerGroup
 from opaque.random import generator_from_key
 from opaque.random.types import RngKey
 from opaque.random import fold_in as rng_fold_in
@@ -40,18 +40,19 @@ class MFNoiseState(NoiseState):
         _inner_state: Internal state (streaming matrix state or step counter).
         _step_counter: Number of noise_fn calls made.
         _rng_key: Immutable RNG key for deterministic per-step derivation.
-        _first_max_norm: ``ClippedPytree.max_norm`` from the first call, latched by
-            the dispatcher to enforce constant per-step sensitivity.  ``None``
-            until the first call.  MF privacy analyses assume the per-step
-            sensitivity is constant across the sequence; varying it (e.g.
-            via adaptive clipping) breaks the standard proof, so the
-            dispatcher rejects subsequent calls whose ``max_norm`` differs.
+        _first_max_norm: ``ClippedPytree.max_norm`` from the first call (scalar
+            or :class:`~opaque.types.PerGroup`), latched by the dispatcher to
+            enforce constant per-step sensitivity.  ``None`` until the first
+            call.  MF privacy analyses assume the per-step sensitivity is
+            constant across the sequence; varying it (e.g. via adaptive
+            clipping) breaks the standard proof, so the dispatcher rejects
+            subsequent calls whose ``max_norm`` differs.
     """
 
     _inner_state: Any
     _step_counter: int
     _rng_key: RngKey
-    _first_max_norm: float | None = None
+    _first_max_norm: float | PerGroup | None = None
 
 
 def _internal_compute_dtype(dtype: torch.dtype) -> torch.dtype:
@@ -63,7 +64,7 @@ def _internal_compute_dtype(dtype: torch.dtype) -> torch.dtype:
 
 def _iid_normal_noise(
     target_tree: Any,
-    stddev: float,
+    stddev: float | PerGroup,
     generator: torch.Generator | None = None,
     dtype: torch.dtype | None = None,
 ) -> Any:
@@ -86,6 +87,31 @@ def _iid_normal_noise(
                     device=device
                 )
             raise
+
+    if isinstance(stddev, PerGroup):
+        if not isinstance(target_tree, dict):
+            raise TypeError(
+                "PerGroup stddev for MF noise requires a flat dict of tensors "
+                "(matching make_functional trainable params), got "
+                f"{type(target_tree).__name__}."
+            )
+        out: dict[str, Any] = {}
+        for param_key, tensor in target_tree.items():
+            if not isinstance(tensor, torch.Tensor):
+                raise TypeError(
+                    "PerGroup MF noise expects dict[str, Tensor] leaves; "
+                    f"got {type(tensor).__name__} for key {param_key!r}."
+                )
+            leaf_std = stddev.for_key(param_key)
+            noise_dtype = _internal_compute_dtype(dtype or tensor.dtype)
+            noise = _randn_on_device(
+                tensor.shape,
+                noise_dtype=noise_dtype,
+                device=tensor.device,
+                generator=generator,
+            )
+            out[param_key] = noise * leaf_std
+        return out
 
     def make_noise(t):
         noise_dtype = _internal_compute_dtype(dtype or t.dtype)
@@ -160,8 +186,10 @@ def _matrix_factorization_noise(
     Returns:
         ``(noise_fn, state)`` where
         ``noise_fn(grads, state, *, stddev) -> (noised, state)``.  ``stddev``
-        is the per-step standard deviation for the base IID noise; the
-        dispatcher derives it from ``noise_multiplier * ClippedPytree.max_norm``.
+        is the per-step standard deviation for the base IID noise (scalar or
+        :class:`~opaque.types.PerGroup` for per-parameter-group allocation);
+        the dispatcher derives it from ``noise_multiplier`` and
+        ``ClippedPytree.max_norm``.
     """
     if isinstance(noising, torch.Tensor):
         return _tensor_mf_noise(grad_template, noising, key=key, dtype=dtype)
@@ -188,8 +216,7 @@ def _tensor_mf_noise(
         _rng_key=key,
     )
 
-    def noise_fn(clipped_grads, st, *, stddev: float):
-        effective_stddev = float(stddev)
+    def noise_fn(clipped_grads, st, *, stddev: float | PerGroup):
         index = st._inner_state
         step_key = rng_fold_in(st._rng_key, st._step_counter)
         g = generator_from_key(step_key)
@@ -199,20 +226,52 @@ def _tensor_mf_noise(
                 f"Step {index} exceeds noising matrix size {max_steps}. "
                 f"The noising matrix must have at least as many rows as steps."
             )
-        matrix_row = noising[index] * effective_stddev
+        matrix_row_base = noising[index]
 
-        def add_noise(grad_tensor):
-            compute_dtype = _internal_compute_dtype(dtype or grad_tensor.dtype)
-            noise = _gaussian_linear_combination(
-                matrix_row,
-                grad_tensor.shape,
-                compute_dtype,
-                grad_tensor.device,
-                generator=g,
-            )
-            return (grad_tensor + noise).to(grad_tensor.dtype)
+        if isinstance(stddev, PerGroup):
+            if not isinstance(clipped_grads, dict):
+                raise TypeError(
+                    "PerGroup stddev for dense MF noise requires a flat dict of "
+                    "tensors (matching make_functional trainable params), got "
+                    f"{type(clipped_grads).__name__}."
+                )
 
-        noisy_grads = tree_map(add_noise, clipped_grads)
+            def add_noise_keyed(param_key: str, grad_tensor: torch.Tensor):
+                eff = stddev.for_key(param_key)
+                matrix_row = matrix_row_base * eff
+                compute_dtype = _internal_compute_dtype(dtype or grad_tensor.dtype)
+                noise = _gaussian_linear_combination(
+                    matrix_row,
+                    grad_tensor.shape,
+                    compute_dtype,
+                    grad_tensor.device,
+                    generator=g,
+                )
+                return (grad_tensor + noise).to(grad_tensor.dtype)
+
+            noisy_grads = {}
+            for k, v in clipped_grads.items():
+                if not isinstance(v, torch.Tensor):
+                    raise TypeError(
+                        "PerGroup dense MF noise expects dict[str, Tensor] leaves; "
+                        f"got {type(v).__name__} for key {k!r}."
+                    )
+                noisy_grads[k] = add_noise_keyed(k, v)
+        else:
+            matrix_row = matrix_row_base * float(stddev)
+
+            def add_noise(grad_tensor):
+                compute_dtype = _internal_compute_dtype(dtype or grad_tensor.dtype)
+                noise = _gaussian_linear_combination(
+                    matrix_row,
+                    grad_tensor.shape,
+                    compute_dtype,
+                    grad_tensor.device,
+                    generator=g,
+                )
+                return (grad_tensor + noise).to(grad_tensor.dtype)
+
+            noisy_grads = tree_map(add_noise, clipped_grads)
         new_state = MFNoiseState(
             _inner_state=index + 1,
             _step_counter=st._step_counter + 1,
@@ -238,15 +297,14 @@ def _streaming_mf_noise(
         _rng_key=key,
     )
 
-    def noise_fn(clipped_grads, st, *, stddev: float):
-        effective_stddev = float(stddev)
+    def noise_fn(clipped_grads, st, *, stddev: float | PerGroup):
         step_key = rng_fold_in(st._rng_key, st._step_counter)
         g = generator_from_key(step_key)
         s_state = st._inner_state
 
         iid_noise = _iid_normal_noise(
             clipped_grads,
-            effective_stddev,
+            stddev,
             generator=g,
             dtype=dtype,
         )
