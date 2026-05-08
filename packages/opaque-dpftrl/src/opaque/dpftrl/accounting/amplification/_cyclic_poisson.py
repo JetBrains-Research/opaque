@@ -19,10 +19,9 @@ from opaque.accounting import _native
 from opaque.accounting._base import DpProcess, Pld
 from opaque.accounting.discretization import get_discretization
 from opaque.dpftrl.accounting.mechanisms._band_mf import BandMf
-from opaque.accounting.transformations._second_moment import SecondMoment
 
 #: Mechanism types accepted by :func:`cyclic_poisson`.
-_Inner = BandMf | SecondMoment
+_Inner = BandMf
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,16 +52,13 @@ class CyclicPoisson(DpProcess):
         )
 
         match self.inner:
-            case SecondMoment(inner=BandMf()) as second:
-                effective_nm = second.noise_multiplier / second.sensitivity
-                num_groups = second.num_groups
             case BandMf():
                 effective_nm = self.inner.noise_multiplier / self.inner.sensitivity
                 num_groups = self.inner.num_groups
             case _:
                 raise TypeError(
-                    f"CyclicPoisson requires BandMf or SecondMoment(BandMf) inner, "
-                    f"got {type(self.inner).__name__}."
+                    "CyclicPoisson requires a BandMf inner, got "
+                    f"{type(self.inner).__name__}."
                 )
 
         per_group_pld = _native.poisson_gaussian_pld(
@@ -100,11 +96,11 @@ def cyclic_poisson(
         eps = proc.epsilon_at(1e-5)
     """
     match inner:
-        case BandMf() | SecondMoment(inner=BandMf()):
+        case BandMf():
             pass
         case _:
             raise TypeError(
-                f"cyclic_poisson() requires a BandMf or SecondMoment(BandMf) inner mechanism, got "
+                "cyclic_poisson() requires a BandMf inner mechanism, got "
                 f"{type(inner).__name__}. "
                 "Use: ftrl_acc.cyclic_poisson(ftrl_acc.band_mf(nm, sensitivity, num_groups), sample_rate)"
             )

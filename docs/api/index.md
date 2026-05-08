@@ -44,7 +44,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - Strategy factories: `band_mf_strategy()`, `blt_strategy()`, `lambda_cgd_strategy()`, `bisr_strategy()`, `identity_strategy()`
 
 - **[Accounting](accounting.md)**: Privacy budget tracking
-  - `gaussian()`, `adaclip()`, `second_moment()` — DP-SGD mechanisms (also via `opaque.dpsgd.accounting`)
+  - `gaussian()`, `adaclip()` — DP-SGD mechanisms (also via `opaque.dpsgd.accounting`)
   - `poisson()`, `truncated_poisson()`, `parallel_poisson()` — Poisson-family amplification
   - `band_mf()`, `blt()`, `lambda_cgd()`, `bisr()`, `cyclic_poisson()`, `balls_in_bins()` — MF mechanisms (also via `opaque.dpftrl.accounting`)
   - `DpProcess` operators: `*` (repeat), `|` (compose)
@@ -148,7 +148,6 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `truncated_poisson()`     | Truncated Poisson subsampling     | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `parallel_poisson()`      | Parallel Poisson subsampling      | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `adaclip()`               | Adaptive clipping mechanism       | [Guide](../user-guide/accounting.md#mechanisms)                         |
-| `second_moment()`         | Joint first+squared gradient accounting | [Guide](../user-guide/accounting.md#mechanisms)                   |
 | `eps_delta()`             | Fixed (ε, δ) guarantee            | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `identity()`              | Zero privacy loss                 | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `nonprivate()`            | Infinite-ε non-private baseline   | [Guide](../user-guide/accounting.md#mechanisms)                         |

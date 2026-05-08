@@ -1,4 +1,4 @@
-r"""MSE-optimal per-group noise allocation for per-group clipping.
+r"""MSE-optimal noise allocation for paired and per-group Gaussian releases.
 
 When using per-group clipping, the simplest approach is isotropic noise:
 
@@ -23,10 +23,9 @@ Privacy accounting is identical to the isotropic case — just
 ``gaussian(nm)`` — because the allocation satisfies the Mahalanobis
 constraint with equality.
 
-Equivalent to ``ClippedPytree.noise_stddev_for(noise_multiplier=nm,
-allocation='optimal')``; kept as a free function for callers that already
-hold a bare :class:`PerGroup` (for example one restored with
-:mod:`opaque.serialization`) rather than a clipped pytree.
+:func:`paired_noise_stddevs` extends the same idea to the joint first +
+second-moment paired release, accepting either scalar (``float``) or
+:class:`~opaque.types.PerGroup` sensitivities on each stream.
 """
 
 from __future__ import annotations
@@ -105,107 +104,131 @@ def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGr
     )
 
 
-def per_group_paired_noise_stddevs(
-    first_max_norm: PerGroup,
-    squared_max_norm: PerGroup,
-    noise_multiplier: float,
-) -> tuple[PerGroup, PerGroup]:
-    r"""MSE-optimal joint Gaussian allocation for paired per-group release.
+def _validate_paired_sensitivity(value: float | PerGroup, *, label: str) -> None:
+    if isinstance(value, PerGroup):
+        for name, v in value.values.items():
+            if v < 0:
+                raise ValueError(
+                    f"{label} per-group bounds must be non-negative, "
+                    f"got {v} for group '{name}'."
+                )
+    else:
+        if not isinstance(value, (int, float)):
+            raise TypeError(
+                f"{label} must be float or PerGroup, got {type(value).__name__}."
+            )
+        if value < 0:
+            raise ValueError(f"{label} must be non-negative, got {value}.")
 
-    Extends :func:`per_group_noise_stddev` to the joint first +
-    second-moment paired release.  Given per-group sensitivities
-    :math:`\Delta^{(1)}_g` (first-moment) and :math:`\Delta^{(2)}_g`
-    (second-moment) for each group :math:`g`, returns a pair of
-    :class:`~opaque.types.PerGroup` standard deviations satisfying::
+
+def _sum_sensitivity(value: float | PerGroup) -> float:
+    if isinstance(value, PerGroup):
+        return float(sum(value.values.values()))
+    return float(value)
+
+
+def _scale_sensitivity(
+    value: float | PerGroup, sum_total: float, noise_multiplier: float
+) -> float | PerGroup:
+    """``σ = nm · sqrt(Δ · S)`` for a single stream (scalar or per-group)."""
+    if isinstance(value, PerGroup):
+        return PerGroup(
+            value.groups,
+            {
+                k: noise_multiplier * math.sqrt(v * sum_total)
+                for k, v in value.values.items()
+            },
+        )
+    return noise_multiplier * math.sqrt(float(value) * sum_total)
+
+
+def paired_noise_stddevs(
+    noise_multiplier: float,
+    *,
+    first: float | PerGroup,
+    second: float | PerGroup,
+) -> tuple[float | PerGroup, float | PerGroup]:
+    r"""MSE-optimal joint Gaussian allocation for the paired release.
+
+    Given per-record sensitivities :math:`\Delta^{(1)}_g` (first-moment)
+    and :math:`\Delta^{(2)}_g` (second-moment) for each group :math:`g`,
+    returns standard deviations satisfying::
 
         S = Σ_h (Δ¹_h + Δ²_h)
         σ¹_g = nm · sqrt(Δ¹_g · S)
         σ²_g = nm · sqrt(Δ²_g · S)
 
-    This satisfies the Mahalanobis privacy constraint with equality
-    over the joint 2K-stream release::
+    The 2K-stream Mahalanobis budget evaluates to ``1/nm²`` with equality::
 
         Σ_g [(Δ¹_g/σ¹_g)² + (Δ²_g/σ²_g)²] = 1/nm²
 
-    so privacy accounting is identical to :func:`gaussian` with the same
-    ``noise_multiplier`` — no composition penalty across groups or
-    streams.  Compared to the scalar overhead-based allocation in
-    :func:`opaque.dpsgd.noise._second_moment.second_moment_stddevs`,
-    this is data-driven (no ``ρ`` parameter) and always MSE-optimal
-    for equal per-coordinate dimensions within each group.
+    so privacy of the joint paired release equals the privacy of a single
+    sensitivity-1 Gaussian release at noise multiplier ``nm`` — the same
+    PLD as the first-moment-only release.  Accounting is therefore the
+    underlying first-moment mechanism (``gaussian(nm)`` for DP-SGD,
+    ``mf_gaussian(nm)`` for DP-FTRL) at the same multiplier; no extra
+    transformation wrap is needed and there is no ``ρ`` knob.
+
+    The function is polymorphic in each stream independently:
+
+    - ``first`` and ``second`` ``float`` → returns ``(float, float)``.  This
+      is the scalar collapse (``K=1``) of the per-group form.
+    - ``first`` and ``second`` :class:`~opaque.types.PerGroup` with matching
+      groups → returns ``(PerGroup, PerGroup)``.
+    - mixed kinds (one ``float`` and one ``PerGroup``) → ``TypeError``.
 
     Args:
-        first_max_norm: Per-group first-stream sensitivities (typically
-            ``C_g / batch_size`` where ``C_g`` is the per-group clipping
-            norm).
-        squared_max_norm: Per-group second-stream sensitivities
-            (typically ``C_g² / batch_size``).  Must share group
-            membership with ``first_max_norm``.
-        noise_multiplier: Privacy parameter; the same value used in
-            ``gaussian(nm)`` accounting.
+        noise_multiplier: Privacy parameter; same value the underlying
+            first-moment mechanism is calibrated against.
+        first: First-stream per-record sensitivity ``Δ¹``.  For DP-SGD
+            averaged clipping that is ``C / n`` (or ``PerGroup`` with
+            ``C_g / n``).  For DP-FTRL it is the strategy-amplified
+            ``ζ · ‖C₁‖``.
+        second: Second-stream per-record sensitivity ``Δ²``.  Typically
+            obtained as ``first * first`` element-wise; for DP-FTRL it is
+            ``ζ² · ‖C₂‖``.
 
     Returns:
-        ``(σ_first, σ_second)`` — two :class:`~opaque.types.PerGroup`
-        objects with the same group keys as the inputs.
+        ``(σ_first, σ_second)`` matching the input kind on each stream.
 
     Raises:
-        TypeError: if either argument is not :class:`PerGroup`.
-        ValueError: if the group mappings differ, the group sets
-            differ, ``noise_multiplier`` is negative, or any
-            sensitivity is negative.
+        TypeError: if the two streams have different kinds (one scalar
+            and one ``PerGroup``).
+        ValueError: if ``noise_multiplier`` is negative, the two
+            ``PerGroup`` arguments have different group mappings or sets,
+            or any sensitivity is negative.
     """
-    if not isinstance(first_max_norm, PerGroup):
+    if isinstance(first, PerGroup) != isinstance(second, PerGroup):
         raise TypeError(
-            "per_group_paired_noise_stddevs requires a PerGroup "
-            f"first_max_norm, got {type(first_max_norm).__name__}."
-        )
-    if not isinstance(squared_max_norm, PerGroup):
-        raise TypeError(
-            "per_group_paired_noise_stddevs requires a PerGroup "
-            f"squared_max_norm, got {type(squared_max_norm).__name__}."
-        )
-    if first_max_norm.groups != squared_max_norm.groups:
-        raise ValueError(
-            "first_max_norm and squared_max_norm must share the same groups mapping."
-        )
-    if set(first_max_norm.values) != set(squared_max_norm.values):
-        raise ValueError(
-            "first_max_norm and squared_max_norm must have identical "
-            f"group sets; got {sorted(first_max_norm.values)} vs "
-            f"{sorted(squared_max_norm.values)}."
+            "paired_noise_stddevs requires both streams to have the same "
+            f"kind; got first={type(first).__name__}, "
+            f"second={type(second).__name__}."
         )
     if noise_multiplier < 0:
         raise ValueError(
             f"noise_multiplier must be non-negative, got {noise_multiplier}"
         )
-    for name, value in first_max_norm.values.items():
-        if value < 0:
+    _validate_paired_sensitivity(first, label="first")
+    _validate_paired_sensitivity(second, label="second")
+    if isinstance(first, PerGroup):
+        assert isinstance(second, PerGroup)
+        if first.groups != second.groups:
             raise ValueError(
-                "first-stream per-group bounds must be non-negative, "
-                f"got {value} for group '{name}'."
+                "paired_noise_stddevs requires identical group mappings on "
+                "both streams; got "
+                f"{len(first.groups)} vs {len(second.groups)} parameter "
+                "assignments."
             )
-    for name, value in squared_max_norm.values.items():
-        if value < 0:
+        if set(first.values) != set(second.values):
             raise ValueError(
-                "second-stream per-group bounds must be non-negative, "
-                f"got {value} for group '{name}'."
+                "paired_noise_stddevs requires identical group sets on both "
+                f"streams; got {sorted(first.values)} vs "
+                f"{sorted(second.values)}."
             )
-    s = sum(first_max_norm.values.values()) + sum(squared_max_norm.values.values())
-    sigma_first = PerGroup(
-        first_max_norm.groups,
-        {
-            k: noise_multiplier * math.sqrt(v * s)
-            for k, v in first_max_norm.values.items()
-        },
-    )
-    sigma_second = PerGroup(
-        squared_max_norm.groups,
-        {
-            k: noise_multiplier * math.sqrt(v * s)
-            for k, v in squared_max_norm.values.items()
-        },
-    )
+    sum_total = _sum_sensitivity(first) + _sum_sensitivity(second)
+    sigma_first = _scale_sensitivity(first, sum_total, noise_multiplier)
+    sigma_second = _scale_sensitivity(second, sum_total, noise_multiplier)
     return sigma_first, sigma_second
 
 
-__all__ = ["per_group_noise_stddev", "per_group_paired_noise_stddevs"]
+__all__ = ["per_group_noise_stddev", "paired_noise_stddevs"]

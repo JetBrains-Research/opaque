@@ -19,11 +19,10 @@ from opaque.accounting import _native
 from opaque.accounting._base import DpProcess, Pld
 from opaque.accounting.discretization import get_discretization
 from opaque.dpftrl.accounting.mechanisms._band_mf import BandMf
-from opaque.accounting.transformations._second_moment import SecondMoment
 
 from ._b_min_sep_transcript_cache import get_handle_or_none
 
-_Inner = BandMf | SecondMoment
+_Inner = BandMf
 
 
 def _participation_p_from_per_example_rate(p0: float, bands: int) -> float:
@@ -75,13 +74,12 @@ class BMinSep(DpProcess):
         p = _participation_p_from_per_example_rate(self.p0, bands)
 
         match self.inner:
-            case SecondMoment(inner=BandMf()) as second:
-                effective_nm = second.noise_multiplier / second.sensitivity
             case BandMf():
                 effective_nm = self.inner.noise_multiplier / self.inner.sensitivity
             case _:
                 raise TypeError(
-                    f"b_min_sep requires BandMf or SecondMoment(BandMf), got {type(self.inner).__name__}."
+                    "b_min_sep requires a BandMf inner, got "
+                    f"{type(self.inner).__name__}."
                 )
 
         hid = get_handle_or_none(
@@ -118,7 +116,7 @@ def b_min_sep(
     """BandMF privacy accounting under warm-start b-min-sep subsampling.
 
     Args:
-        inner: ``BandMf`` or ``SecondMoment(BandMf)`` (same as cyclic Poisson).
+        inner: ``BandMf`` (same as cyclic Poisson).
         strategy_coefficients: First column of the BandMF strategy matrix ``C``
             (length equals ``bands``). Must match the training strategy.
         n_steps: Total number of training iterations ``n``.
@@ -130,13 +128,11 @@ def b_min_sep(
         A :class:`BMinSep` process (asymmetric PLD from Monte Carlo).
     """
     match inner:
-        case BandMf() | SecondMoment(inner=BandMf()):
+        case BandMf():
             pass
-        case SecondMoment():
-            raise TypeError("SecondMoment inner must be BandMf for b_min_sep.")
         case _:
             raise TypeError(
-                f"b_min_sep() requires BandMf or SecondMoment(BandMf), got {type(inner).__name__}."
+                f"b_min_sep() requires a BandMf inner, got {type(inner).__name__}."
             )
     coef = tuple(float(x) for x in strategy_coefficients)
     if len(coef) < 1:

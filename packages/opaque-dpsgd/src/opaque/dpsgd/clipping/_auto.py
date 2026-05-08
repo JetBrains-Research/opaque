@@ -192,7 +192,7 @@ def auto_clipped_grad(
     pre_clipping_transform: Callable = lambda x: x,
     microbatch_size: int | None = None,
     dtype: Any = None,
-    second_moment: bool | float = False,
+    second_moment: bool = False,
 ) -> tuple[Callable, AutoClipState]:
     r"""Create a function that computes the sum of AUTO-S scaled per-example gradients.
 
@@ -225,13 +225,14 @@ def auto_clipped_grad(
             applied before AUTO-S scaling.
         microbatch_size: Process the batch in chunks of this size.
         dtype: Optional accumulation dtype for the summed gradient.
-        second_moment: If truthy, also accumulate the per-example sum of
+        second_moment: If True, also accumulate the per-example sum of
             element-wise squared scaled gradients and return a
             :class:`~opaque.types.SecondMomentClippingOutput` carrying
-            both streams.  AUTO-S contributes no extra threshold-noise
-            cost, so the matching accountant wrapper is just
-            ``acc.second_moment(acc.gaussian(nm), sensitivity=1.0)`` —
-            no ``adaclip`` wrap is needed (unlike adaptive clipping).
+            both streams.  Privacy accounting is unchanged
+            (``gaussian(noise_multiplier)``); the noise mechanism's
+            sensitivity-proportional Mahalanobis allocation gives the
+            joint paired release the same PLD as a single first-moment
+            release.
 
     Returns:
         ``(grad_fn, state)``.  ``grad_fn`` has the signature
