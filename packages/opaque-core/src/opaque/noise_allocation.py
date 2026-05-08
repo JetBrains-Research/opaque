@@ -141,12 +141,20 @@ def paired_noise_stddevs(
 
         Σ_g [(Δ¹_g/σ¹_g)² + (Δ²_g/σ²_g)²] = 1/nm²
 
-    so privacy of the joint paired release equals the privacy of a single
-    sensitivity-1 Gaussian release at noise multiplier ``nm`` — the same
-    PLD as the first-moment-only release.  Accounting is therefore the
-    underlying first-moment mechanism (``gaussian(nm)`` for DP-SGD,
-    ``mf_gaussian(nm)`` for DP-FTRL) at the same multiplier; no extra
-    transformation wrap is needed and there is no ``ρ`` knob.
+    so the joint mechanism has the **same PLD as a single sensitivity-1
+    Gaussian release at noise multiplier ``nm``**.
+
+    Note that ``noise_multiplier`` here is the **effective Gaussian noise
+    multiplier of the joint release**, which is *not always* the same as
+    the calibrated parameter of the underlying first-moment mechanism:
+
+    - **DP-SGD with identity strategy** (``‖C‖ = 1``): pass the
+      calibrated ``gaussian(nm)`` parameter directly.  The joint paired
+      release has the same PLD as ``gaussian(nm)``.
+    - **DP-FTRL with strategy ``‖C₁‖``**: ``MfGaussian(nm, ‖C₁‖)`` has
+      PLD ``gaussian_pld(nm / ‖C₁‖)``.  The dispatcher therefore passes
+      ``nm / ‖C₁‖`` here so the joint Mahalanobis budget evaluates to
+      ``(‖C₁‖ / nm)²`` and the joint PLD matches.
 
     The function is polymorphic in each stream independently:
 
@@ -157,8 +165,10 @@ def paired_noise_stddevs(
     - mixed kinds (one ``float`` and one ``PerGroup``) → ``TypeError``.
 
     Args:
-        noise_multiplier: Privacy parameter; same value the underlying
-            first-moment mechanism is calibrated against.
+        noise_multiplier: Effective Gaussian noise multiplier of the
+            joint paired release.  See note above on translating from the
+            underlying mechanism's calibrated parameter (no-op for
+            DP-SGD identity strategy; divide by ``‖C₁‖`` for DP-FTRL).
         first: First-stream per-record sensitivity ``Δ¹``.  For DP-SGD
             averaged clipping that is ``C / n`` (or ``PerGroup`` with
             ``C_g / n``).  For DP-FTRL it is the strategy-amplified
