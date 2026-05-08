@@ -139,8 +139,7 @@ class TestSecondMomentMFNoiseMatchesMfGaussianPld:
         # joint Mahalanobis = (c1 / nm)².
         expected = (c1 / nm) ** 2
         assert mahal == pytest.approx(expected, rel=1e-10), (
-            f"joint Mahalanobis {mahal} != (c1/nm)² = {expected} "
-            f"(c1={c1}, nm={nm})"
+            f"joint Mahalanobis {mahal} != (c1/nm)² = {expected} (c1={c1}, nm={nm})"
         )
 
     def test_first_stream_recovers_single_stream_in_small_squared_limit(
@@ -171,9 +170,7 @@ class TestSecondMomentMFNoiseMatchesMfGaussianPld:
         # Single-stream MF runtime σ on the noise tensor for ζ=small_zeta is
         # nm·ζ; the paired σ_first should converge to that as Δ²/Δ¹ → 0.
         single_sigma = nm * small_zeta
-        assert out.noisy_grads.noise_stddev == pytest.approx(
-            single_sigma, rel=1e-3
-        )
+        assert out.noisy_grads.noise_stddev == pytest.approx(single_sigma, rel=1e-3)
 
 
 class TestSecondMomentMFNoise:
