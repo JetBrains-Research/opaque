@@ -312,7 +312,7 @@ class TestZeroNoiseMultiplier:
     """``noise_multiplier=0`` collapses both streams to a zero-width support.
 
     Both the noise stddev *and* the truncation bound (= radius·stddev) go to
-    zero, so every leaf is clamped to ±0.  The original input values are not
+    zero, so every leaf becomes an exact zero tensor.  The original input values are not
     preserved — this is the documented "no-noise" path mirroring how
     ``gaussian_noise`` returns the centred deterministic output.
     """
@@ -332,7 +332,7 @@ class TestZeroNoiseMultiplier:
             ),
             state,
         )
-        # σ=0 → the truncated-noise sample is 0, but the truncation bound
-        # also collapses to 0 so values are clamped to ±0.
+        # σ=0 → the truncated-noise sample is 0, and the truncation bound
+        # collapses to 0 so leaves are replaced with exact zeros.
         assert torch.all(out.noisy_grads.pytree == 0.0)
         assert torch.all(out.noisy_squared_grads.pytree == 0.0)

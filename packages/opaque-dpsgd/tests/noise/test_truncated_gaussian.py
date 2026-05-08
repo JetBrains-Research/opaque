@@ -295,9 +295,17 @@ class TestTruncatedGaussianPerGroup:
         assert output.pytree["large"].min().item() >= -large_std * radius
         assert output.pytree["large"].max().item() <= large_std * radius
 
+    def test_per_group_stddev_requires_dict_pytree(self):
+        max_norm = PerGroup(groups={"w": "g"}, values={"g": 1.0})
+        noise_fn, state = truncated_gaussian_noise(
+            noise_multiplier=1.0, radius=3.0, key=key(0)
+        )
+        with pytest.raises(TypeError, match="dict\\[str"):
+            noise_fn(clipped([torch.zeros(3)], max_norm=max_norm), state)
+
     def test_all_zero_bound_clamps_to_zero(self):
         """``σ=0`` collapses the truncated support to ``{0}`` per coord;
-        per-group zero σ matches the scalar zero-σ branch and clamps to 0
+        per-group zero σ matches the scalar zero-σ branch and zeros leaves
         rather than returning the input unchanged.
         """
         max_norm = PerGroup(
