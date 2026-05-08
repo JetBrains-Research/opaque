@@ -1,7 +1,7 @@
 """Tests for ``ClippedPytree.noise_stddev_for(noise_multiplier=, allocation=)``.
 
 Centralises the noise-stddev computation that used to live only in
-:func:`opaque.dpsgd.noise.per_group_noise_stddev`.  The method handles both
+``opaque._noise_allocation.per_group_noise_stddev``.  The method handles both
 scalar and :class:`PerGroup` ``max_norm`` and selects between the
 MSE-optimal Mahalanobis allocation and a uniform isotropic allocation.
 """
@@ -126,7 +126,7 @@ class TestPerGroupNoiseStddevEquivalence:
     """``ClippedPytree(...).noise_stddev`` matches the free function."""
 
     def test_same_output_as_free_function(self):
-        from opaque.dpsgd.noise import per_group_noise_stddev
+        from opaque._noise_allocation import per_group_noise_stddev
 
         pg = _per_group({"a": 0.7, "b": 1.3, "c": 2.1})
         cg = clipped(

@@ -222,7 +222,8 @@ step = dpsgd_acc.poisson(dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.5), fraction_noi
 When the noise mechanism produces both gradients **and** squared gradients
 (via `clipped_grad(..., second_moment=True)`), the joint paired release uses
 sensitivity-proportional Mahalanobis allocation in the runtime σ split (see
-[`paired_noise_stddevs`](noise.md#joint-allocation-helper)). The Mahalanobis
+the [paired second-moment release](noise.md#paired-second-moment-release)
+section). The Mahalanobis
 budget collapses to a single sensitivity-1 Gaussian release at the same
 noise multiplier, so **privacy accounting is exactly the underlying
 first-moment mechanism**:
