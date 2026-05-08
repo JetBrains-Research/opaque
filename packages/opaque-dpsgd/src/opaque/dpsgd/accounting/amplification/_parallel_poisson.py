@@ -9,7 +9,6 @@ from opaque.accounting import _native
 
 from opaque.accounting._base import DpProcess, Pld
 from opaque.accounting.mechanisms._nonprivate import NonPrivate
-from opaque.accounting.transformations._second_moment import SecondMoment
 from opaque.dpsgd.accounting.amplification._poisson import Poisson
 from opaque.dpsgd.accounting.mechanisms._adaclip import AdaClip
 from opaque.dpsgd.accounting.mechanisms._gaussian import Gaussian
@@ -69,30 +68,6 @@ class ParallelPoisson(DpProcess):
                     self.num_workers,
                     native_cfg,
                 )
-            case (
-                Poisson(inner=SecondMoment(inner=Gaussian(noise_multiplier=0)))
-                | Poisson(inner=SecondMoment(inner=NonPrivate()))
-                | Poisson(
-                    inner=SecondMoment(
-                        inner=AdaClip(inner=Gaussian(noise_multiplier=0))
-                    )
-                )
-                | Poisson(inner=SecondMoment(inner=AdaClip(inner=NonPrivate())))
-            ):
-                return _native.non_private_pld(native_cfg)
-            case (
-                Poisson(inner=SecondMoment(inner=Gaussian()) as sm, sample_rate=rate)
-                | Poisson(
-                    inner=SecondMoment(inner=AdaClip(inner=Gaussian())) as sm,
-                    sample_rate=rate,
-                )
-            ):
-                return _native.parallel_poisson_gaussian_pld(
-                    sm.noise_multiplier / sm.sensitivity,
-                    rate,
-                    self.num_workers,
-                    native_cfg,
-                )
             case _:
                 raise TypeError(
                     "ParallelPoisson requires a Poisson inner mechanism, got "
@@ -101,15 +76,14 @@ class ParallelPoisson(DpProcess):
 
 
 def parallel_poisson(
-    inner: Gaussian | AdaClip | NonPrivate | SecondMoment,
+    inner: Gaussian | AdaClip | NonPrivate,
     sample_rate: float,
     num_workers: int,
 ) -> ParallelPoisson:
     """Poisson sampling under parallel worker execution.
 
     Args:
-        inner: A :class:`Gaussian`, :class:`AdaClip`, :class:`NonPrivate`,
-            or :class:`SecondMoment` (with Gaussian inner) mechanism.
+        inner: A :class:`Gaussian`, :class:`AdaClip`, or :class:`NonPrivate` mechanism.
         sample_rate: Probability of including each example, in (0, 1).
         num_workers: Number of parallel workers running Poisson sampling
             independently.
@@ -127,12 +101,10 @@ def parallel_poisson(
     match inner:
         case Gaussian() | AdaClip() | NonPrivate():
             pass
-        case SecondMoment(inner=Gaussian() | NonPrivate() | AdaClip()):
-            pass
         case _:
             raise TypeError(
-                f"parallel_poisson() requires a Gaussian, AdaClip, NonPrivate, or "
-                f"SecondMoment(Gaussian) inner mechanism, got {type(inner).__name__}."
+                "parallel_poisson() requires a Gaussian, AdaClip, or NonPrivate "
+                f"inner mechanism, got {type(inner).__name__}."
             )
     poisson_inner = Poisson(inner=inner, sample_rate=sample_rate)
     return ParallelPoisson(inner=poisson_inner, num_workers=num_workers)

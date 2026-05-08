@@ -9,12 +9,11 @@ from opaque.accounting import _native
 
 from opaque.accounting._base import DpProcess, Pld
 from opaque.accounting.mechanisms._nonprivate import NonPrivate
-from opaque.accounting.transformations._second_moment import SecondMoment
 from opaque.dpsgd.accounting.mechanisms._adaclip import AdaClip
 from opaque.dpsgd.accounting.mechanisms._gaussian import Gaussian
 
 #: Mechanism types accepted by :func:`poisson`.
-_Inner = Gaussian | AdaClip | NonPrivate | SecondMoment
+_Inner = Gaussian | AdaClip | NonPrivate
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,30 +56,10 @@ class Poisson(DpProcess):
                 )
             case AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0)):
                 return _native.non_private_pld(native_cfg)
-            case (
-                SecondMoment(inner=Gaussian(noise_multiplier=0))
-                | SecondMoment(inner=NonPrivate())
-                | SecondMoment(inner=AdaClip(inner=Gaussian(noise_multiplier=0)))
-                | SecondMoment(inner=AdaClip(inner=NonPrivate()))
-            ):
-                return _native.non_private_pld(native_cfg)
-            case (
-                SecondMoment(inner=Gaussian())
-                | SecondMoment(inner=AdaClip(inner=Gaussian()))
-            ) as sm:
-                # Tight: SecondMoment changes the joint sensitivity, so
-                # amplification reduces to Poisson on a Gaussian with
-                # effective_nm = σ ÷ joint sensitivity.
-                return _native.poisson_gaussian_pld(
-                    sm.noise_multiplier / sm.sensitivity,
-                    self.sample_rate,
-                    native_cfg,
-                )
             case _:
                 raise TypeError(
-                    "Poisson requires a Gaussian, AdaClip(Gaussian), "
-                    "SecondMoment(Gaussian), SecondMoment(AdaClip(Gaussian)), "
-                    "or NonPrivate inner mechanism, got "
+                    "Poisson requires a Gaussian, AdaClip(Gaussian), or "
+                    "NonPrivate inner mechanism, got "
                     f"{type(self.inner).__name__}."
                 )
 
@@ -92,8 +71,7 @@ def poisson(
     """Poisson-subsampled Gaussian mechanism (standard DP-SGD step).
 
     Args:
-        inner: The base mechanism — :func:`gaussian`, :func:`adaclip`,
-            or :func:`second_moment` (with Gaussian inner).
+        inner: The base mechanism — :func:`gaussian` or :func:`adaclip`.
         sample_rate: Probability of including each example (batch_size / dataset_size).
 
     Returns:
@@ -108,12 +86,10 @@ def poisson(
     match inner:
         case Gaussian() | AdaClip() | NonPrivate():
             pass
-        case SecondMoment(inner=Gaussian() | NonPrivate() | AdaClip()):
-            pass
         case _:
             raise TypeError(
-                f"poisson() requires a Gaussian, AdaClip, NonPrivate, or "
-                f"SecondMoment(Gaussian) inner mechanism, got {type(inner).__name__}. "
+                "poisson() requires a Gaussian, AdaClip, or NonPrivate inner "
+                f"mechanism, got {type(inner).__name__}. "
                 "Example: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), rate)"
             )
     return Poisson(inner=inner, sample_rate=sample_rate)

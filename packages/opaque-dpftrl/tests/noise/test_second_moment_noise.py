@@ -5,6 +5,7 @@ import math
 import pytest
 import torch
 
+from opaque.dpsgd.noise import paired_noise_stddevs
 from opaque.types import clipped
 from opaque.types import (
     NoisedPytree,
@@ -19,9 +20,6 @@ from opaque.dpftrl.noise import (
     identity_strategy,
     lambda_cgd_strategy,
     mf_noise,
-    second_moment_joint_sensitivity,
-    second_moment_noise_scale,
-    second_moment_stddevs,
 )
 from opaque.dpftrl.noise.types import SecondMomentMFNoiseState
 from opaque.random import key
@@ -51,76 +49,46 @@ def _clipped(grads):
 
 
 class TestSecondMomentCalibration:
-    def test_joint_sensitivity_default_overhead(self):
-        sensitivity = second_moment_joint_sensitivity(1.5, 0.1)
-        expected = 0.1 * 1.5 * math.sqrt(1.5)
-        assert sensitivity == pytest.approx(expected, rel=1e-10)
+    """``mf_noise`` consumes :func:`paired_noise_stddevs` for σ allocation.
 
-    def test_noise_scale_default_overhead(self):
-        # Δ_first=0.5, Δ_second=0.25, c1=2, c2=1
-        # → scale = Δ_second · c2 / (Δ_first · c1 · √(ρ²−1))
-        # = 0.25 / (2 · 0.5 · √0.5).
-        scale = second_moment_noise_scale(
-            c1_max_column_norm=2.0,
-            c2_max_column_norm=1.0,
-            first_max_norm=0.5,
-            squared_max_norm=0.25,
-        )
-        expected = 0.25 / (2.0 * 0.5 * math.sqrt(0.5))
-        assert scale == pytest.approx(expected, rel=1e-10)
+    The strategy norms enter as multipliers on the per-record bounds:
+    ``Δ¹ = ζ · ‖C₁‖``, ``Δ² = ζ² · ‖C₂‖``.  These tests pin the closed
+    form on representative inputs.
+    """
 
-    def test_stddevs(self):
-        first, second = second_moment_stddevs(
-            3.0,
-            first_max_norm=0.2,
-            squared_max_norm=0.04,
-            c1_max_column_norm=2.0,
-            c2_max_column_norm=1.5,
-        )
-        expected_first = 3.0 * 0.2 * 2.0 * math.sqrt(1.5)
-        expected_second = expected_first * (0.04 * 1.5 / (0.2 * 2.0 * math.sqrt(0.5)))
-        assert first == pytest.approx(expected_first, rel=1e-10)
-        assert second == pytest.approx(expected_second, rel=1e-10)
+    def test_paired_stddevs_with_strategy_norms(self):
+        # Δ¹ = ζ · c1, Δ² = ζ² · c2.
+        zeta, c1, c2 = 0.2, 2.0, 1.5
+        nm = 3.0
+        delta1 = zeta * c1
+        delta2 = (zeta**2) * c2
+        s_first, s_second = paired_noise_stddevs(nm, first=delta1, second=delta2)
+        s_total = delta1 + delta2
+        assert s_first == pytest.approx(nm * math.sqrt(delta1 * s_total))
+        assert s_second == pytest.approx(nm * math.sqrt(delta2 * s_total))
 
-    def test_custom_overhead(self):
-        first, second = second_moment_stddevs(
-            1.0,
-            first_max_norm=0.5,
-            squared_max_norm=0.25,
-            c1_max_column_norm=2.0,
-            c2_max_column_norm=1.0,
-            first_moment_overhead=1.25,
-        )
-        assert first == pytest.approx(1.25)
-        assert second == pytest.approx(
-            1.25 * 0.25 / (0.5 * 2.0 * math.sqrt(1.25**2 - 1.0))
-        )
+    def test_mahalanobis_equality(self):
+        zeta, c1, c2, nm = 0.5, 2.0, 1.0, 1.0
+        delta1 = zeta * c1
+        delta2 = (zeta**2) * c2
+        s_first, s_second = paired_noise_stddevs(nm, first=delta1, second=delta2)
+        mahal = (delta1 / s_first) ** 2 + (delta2 / s_second) ** 2
+        assert mahal == pytest.approx(1.0 / nm**2, rel=1e-12)
 
-    def test_squared_max_norm_scales_second_stream_linearly(self):
-        """second_stddev is proportional to ``squared_max_norm`` (linearly):
-        scaling Δ_y by ``n`` scales σ_second by ``n`` for fixed Δ_first."""
-        n = 16
-        C = 1.0
-        _, σ2_a = second_moment_stddevs(
-            1.0, first_max_norm=C / n, squared_max_norm=C**2 / n
-        )
-        _, σ2_b = second_moment_stddevs(
-            1.0, first_max_norm=C / n, squared_max_norm=(C / n) ** 2
-        )
-        assert σ2_a == pytest.approx(σ2_b * n, rel=1e-10)
+    def test_squared_max_norm_couples_both_streams(self):
+        """Increasing ``squared_max_norm`` shifts both σ's via S = Δ¹+Δ²."""
+        a_first, a_second = paired_noise_stddevs(1.0, first=0.1, second=0.01)
+        b_first, b_second = paired_noise_stddevs(1.0, first=0.1, second=0.04)
+        assert b_first > a_first
+        assert b_second > a_second
 
     def test_rejects_invalid(self):
         with pytest.raises(ValueError):
-            second_moment_joint_sensitivity(0.0, 1.0)
+            paired_noise_stddevs(-1.0, first=0.1, second=0.01)
         with pytest.raises(ValueError):
-            second_moment_noise_scale(
-                c1_max_column_norm=1.0,
-                c2_max_column_norm=1.0,
-                first_max_norm=0.0,
-                squared_max_norm=1.0,
-            )
+            paired_noise_stddevs(1.0, first=-0.1, second=0.01)
         with pytest.raises(ValueError):
-            second_moment_stddevs(-1.0, first_max_norm=1.0, squared_max_norm=1.0)
+            paired_noise_stddevs(1.0, first=0.1, second=-0.01)
 
 
 class TestSecondMomentMFNoise:

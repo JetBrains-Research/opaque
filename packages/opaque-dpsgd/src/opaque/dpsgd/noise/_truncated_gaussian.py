@@ -44,12 +44,8 @@ from opaque.types import (
 
 from opaque.dpsgd.noise._gaussian import GaussianNoiseState
 from opaque.dpsgd.noise._per_group_noise import (
+    paired_noise_stddevs,
     per_group_noise_stddev,
-    per_group_paired_noise_stddevs,
-)
-from opaque.dpsgd.noise._second_moment import (
-    DEFAULT_SECOND_MOMENT_OVERHEAD,
-    second_moment_stddevs,
 )
 from opaque.random import generator_from_key
 from opaque.random.types import RngKey
@@ -146,7 +142,6 @@ def truncated_gaussian_noise(
     noise_multiplier: float,
     key: RngKey,
     radius: float = 3.0,
-    first_moment_overhead: float = DEFAULT_SECOND_MOMENT_OVERHEAD,
 ) -> tuple[
     Callable[..., tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
@@ -174,14 +169,6 @@ def truncated_gaussian_noise(
         key: Explicit RNG key for deterministic, functional randomness.
             Same key on all ranks → same noise (synchronized).
             ``fold_in(key, rank)`` → independent noise per rank.
-        first_moment_overhead: First-moment sensitivity overhead used when
-            a :class:`~opaque.types.SecondMomentClippingOutput` flows in
-            (paired-stream private first + second moment estimation).
-            Must be strictly greater than 1.0.  Defaults to ``sqrt(3/2)``
-            (the d ≥ 2 add/remove-DP value); pass-through to
-            :func:`opaque.dpsgd.noise._second_moment.second_moment_stddevs`.
-            Ignored for single-stream :class:`~opaque.types.ClippedPytree`
-            inputs.
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -191,8 +178,7 @@ def truncated_gaussian_noise(
 
     Raises:
         ValueError: If ``noise_multiplier`` or the realized max_norm-derived
-            standard deviation is negative, ``radius`` is not positive, or
-            ``first_moment_overhead`` is not strictly greater than 1.0.
+            standard deviation is negative, or ``radius`` is not positive.
 
     Example:
         >>> import torch
@@ -276,35 +262,17 @@ def truncated_gaussian_noise(
     ) -> tuple[float | PerGroup, float | PerGroup]:
         """Resolve (σ_first, σ_second) for the paired truncated-Gaussian release.
 
-        Three branches by ``max_norm`` type:
-        - both ``PerGroup``: MSE-optimal joint per-group allocation
-          (:func:`per_group_paired_noise_stddevs`).  Privacy is
-          ``gaussian(nm)`` — same as single-stream.
-        - both scalar: paper-style overhead allocation
-          (:func:`second_moment_stddevs`) parametrised by
-          ``first_moment_overhead``.
-        - one of each: rejected as misconfigured.
+        Routes through :func:`paired_noise_stddevs`, which implements the
+        sensitivity-proportional Mahalanobis allocation that satisfies the
+        joint privacy budget with equality (joint PLD = single Gaussian
+        release at ``noise_multiplier``).  Both streams must carry the
+        same kind of ``max_norm`` (both scalar or both PerGroup); mixed
+        kinds are a configuration error.
         """
-        first_pg = isinstance(first_clipped.max_norm, PerGroup)
-        second_pg = isinstance(second_clipped.max_norm, PerGroup)
-        if first_pg != second_pg:
-            raise TypeError(
-                "Paired second-moment release requires matching max_norm "
-                "kinds on both streams (both scalar or both PerGroup); "
-                f"got first={type(first_clipped.max_norm).__name__}, "
-                f"second={type(second_clipped.max_norm).__name__}."
-            )
-        if first_pg:
-            return per_group_paired_noise_stddevs(
-                first_clipped.max_norm,
-                second_clipped.max_norm,
-                resolved_noise_multiplier,
-            )
-        return second_moment_stddevs(
+        return paired_noise_stddevs(
             resolved_noise_multiplier,
-            first_max_norm=float(first_clipped.sensitivity),
-            squared_max_norm=float(second_clipped.sensitivity),
-            first_moment_overhead=first_moment_overhead,
+            first=first_clipped.max_norm,
+            second=second_clipped.max_norm,
         )
 
     def _add_paired(

@@ -311,38 +311,21 @@ for batch in dataloader:
 
 ### Accounting
 
-Wrap the base mechanism with `acc.second_moment()` to account for both moment streams:
+Privacy accounting for the paired release uses the same underlying
+mechanism PLD as the first-moment-only release: the runtime σ allocation
+is sensitivity-proportional, so the joint Mahalanobis budget collapses to
+a single sensitivity-1 Gaussian release at the same noise multiplier.
 
 ```python
-clip_bound = clipping_norm / batch_size
 mechanism = ftrl_acc.band_mf(nm, sensitivity=S, num_groups=k)
-if use_adam:
-    mechanism = acc.second_moment(
-        mechanism,
-        sensitivity=clip_bound,
-        max_column_norm=strategy._max_column_norm,
-    )
 process = ftrl_acc.cyclic_poisson(mechanism, sample_rate=q)
 ```
 
-`acc.second_moment` accepts three kinds of Gaussian-family inner:
-
-| Inner | Use case | Composition |
-|---|---|---|
-| `dpsgd_acc.gaussian(nm)` | DP-SGD with fixed clipping | `acc.second_moment(dpsgd_acc.gaussian(nm), sensitivity=...)` |
-| `dpsgd_acc.adaclip(dpsgd_acc.gaussian(nm), ...)` | DP-SGD with adaptive clipping | `acc.second_moment(dpsgd_acc.adaclip(...), sensitivity=...)` |
-| `ftrl_acc.band_mf(nm, ...)` (or any other MF Gaussian) | DP-FTRL | `acc.second_moment(ftrl_acc.band_mf(...), sensitivity=...)` |
-
-For the `AdaClip` inner the threshold-quantile noise is folded into the
-gradient noise via Theorem 1's `z_eff` first; the second-moment
-overhead then applies on the resulting effective Gaussian.  The
-composition is exact because the threshold-quantile and gradient/squared-
-gradient releases use independent randomness.
-
-For DP-SGD AUTO-S clipping (`auto_clipped_grad(..., second_moment=True)`)
-the matching accountant is just `acc.second_moment(dpsgd_acc.gaussian(nm), ...)`
-— AUTO-S is per-example smooth scaling and contributes no extra
-threshold-quantile cost.
+Same pattern for DP-SGD: just `dpsgd_acc.gaussian(nm)` (or
+`dpsgd_acc.adaclip(dpsgd_acc.gaussian(nm), ...)`) — no transformation
+wrapper. AUTO-S clipping (`auto_clipped_grad(..., second_moment=True)`)
+calibrates against the same plain `dpsgd_acc.gaussian(nm)` because AUTO-S
+contributes no extra threshold-quantile cost.
 
 ### CLI
 
