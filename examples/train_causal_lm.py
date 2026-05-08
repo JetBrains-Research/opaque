@@ -2042,7 +2042,13 @@ def main():
                                 _prev_r_explore_norm[_rk] = _r_explore_norm_f
 
                             # Gradient-based metrics (from noisy DP gradient)
-                            _g = noisy_grads.get(_li["r_key"])
+                            # noisy_grads is a NoisedPytree wrapper; the actual
+                            # dict of named tensors lives in .pytree.
+                            _grads_dict = (
+                                noisy_grads.pytree if hasattr(noisy_grads, "pytree")
+                                else noisy_grads
+                            )
+                            _g = _grads_dict.get(_li["r_key"])
                             if _g is not None:
                                 _g_f = _g.detach().to(torch.float32)
                                 _g_norm = float(torch.linalg.norm(_g_f).item())
