@@ -18,8 +18,8 @@ Amplification (in :mod:`opaque.dpftrl.accounting.amplification`):
 - :func:`balls_in_bins` — total multi-epoch cost under fixed-bin sampling
   for correlated-noise mechanisms (BLT/λCGD/BISR/BSR).
 
-Cross-cutting primitives (``second_moment``, composition, calibration)
-live at :mod:`opaque.accounting`.
+Cross-cutting primitives (composition, calibration) live at
+:mod:`opaque.accounting`.
 
 Example::
 
