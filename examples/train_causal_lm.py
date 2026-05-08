@@ -417,8 +417,6 @@ def parse_args():
             "adafactor",
             "rmsprop",
             "adagrad",
-            "radam",
-            "adadelta",
             "schedule_free_adamw",
         ],
         help=(
@@ -435,11 +433,11 @@ def parse_args():
         default=False,
         help=(
             "Enable DP noise-variance bias correction on optimizers that "
-            "support it (adam/adamw/ademamix/rmsprop/adagrad/adafactor/radam/"
-            "adadelta).  Silently ignored on sgd/lion.  Off by default: BC "
-            "yields the configured 'honest' learning rate, which only helps "
-            "when the LR is well-tuned; with BC off the effective LR auto-"
-            "shrinks proportionally to the noise/signal ratio, which is more "
+            "support it (adam/adamw/ademamix/rmsprop/adagrad/adafactor).  "
+            "Silently ignored on sgd/lion.  Off by default: BC yields the "
+            "configured 'honest' learning rate, which only helps when the "
+            "LR is well-tuned; with BC off the effective LR auto-shrinks "
+            "proportionally to the noise/signal ratio, which is more "
             "forgiving for un-tuned LRs.  See docs/user-guide/optimizers.md."
         ),
     )
@@ -448,12 +446,6 @@ def parse_args():
         type=float,
         default=0.01,
         help="Weight decay for optimizers that support it (default: 0.01)",
-    )
-    train_group.add_argument(
-        "--sgd-momentum",
-        type=float,
-        default=0.9,
-        help="Momentum for --optimizer sgd (default 0.9).",
     )
     train_group.add_argument(
         "--log-steps",
@@ -1520,11 +1512,7 @@ def main():
     elif args.optimizer == "sgd":
         from opaque.optimizers import sgd
 
-        base_opt = sgd(
-            lr=lr_for_opt,
-            momentum=args.sgd_momentum,
-            weight_decay=args.weight_decay,
-        )
+        base_opt = sgd(lr=lr_for_opt, weight_decay=args.weight_decay)
     elif args.optimizer == "adamw":
         from opaque.optimizers import adamw
 
@@ -1578,22 +1566,6 @@ def main():
         from opaque.optimizers import adagrad
 
         base_opt = adagrad(
-            lr=lr_for_opt,
-            weight_decay=args.weight_decay,
-            noise_bias_correction=args.noise_bias_correction,
-        )
-    elif args.optimizer == "radam":
-        from opaque.optimizers import radam
-
-        base_opt = radam(
-            lr=lr_for_opt,
-            weight_decay=args.weight_decay,
-            noise_bias_correction=args.noise_bias_correction,
-        )
-    elif args.optimizer == "adadelta":
-        from opaque.optimizers import adadelta
-
-        base_opt = adadelta(
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
