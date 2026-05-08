@@ -1,5 +1,5 @@
 # Run example:
-# RUN_NAME="qwen-7b-lora-r16-lr5e-2-bs192" uv run cadence execution start \
+# RUN_NAME="qwen-7b-lora-r16-adafactor-lr5e-4" uv run cadence execution start \
 #   --preset ".cadence/configs/train_causal_lm (qwen_7b_kstack).yaml" \
 #   -e EXTRA_ARGS=""
 

@@ -326,7 +326,9 @@ def radam(
             before the sqrt only on rectified-branch steps
             (``ρ_t > 5``).  The early branch advances ``φ`` to keep
             it consistent with ``v``'s noise history but does not
-            apply it (``v`` is not consumed there).
+            apply it (``v`` is not consumed there).  Defaults to
+            ``False``; RAdam is unusually LR-robust under DP, so the
+            BC choice typically moves the loss less than for Adam.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.

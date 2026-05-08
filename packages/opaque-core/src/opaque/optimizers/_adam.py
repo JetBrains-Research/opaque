@@ -321,7 +321,11 @@ def adamw(
         noise_bias_correction: If ``True``, subtract a β₂-EMA of the
             realized noise variance from the second moment when
             ``NoisedPytree`` updates are passed (DP-AdamW-BC, Chooi et al.).
-            Defaults to ``True``; flip off to ablate.  Has no effect on
+            Defaults to ``False`` — BC enables the configured "honest" LR,
+            which only helps once the LR is tuned for the workload; with
+            BC off the effective LR auto-shrinks proportionally to the
+            noise/signal ratio, which is more forgiving for un-tuned LRs.
+            See ``docs/user-guide/optimizers.md``.  Has no effect on
             steps where the update is a ``SecondMomentNoiseOutput``,
             since the privatised ``g²`` stream is an alternative answer
             to the same v-update bias.

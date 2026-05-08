@@ -193,7 +193,11 @@ def adagrad(
             ``Φ_acc`` of the realized noise variance from ``v_acc`` when
             ``NoisedPytree`` updates are passed (Adagrad does not decay
             its accumulator, so unmitigated noise compounds linearly).
-            Defaults to ``True``; flip off to ablate.
+            Defaults to ``False`` for consistency with the rest of the
+            package, but for Adagrad specifically, BC is the single
+            optimizer where flipping it on is recommended under DP —
+            without it the un-decaying accumulator absorbs ``t·σ²`` of
+            noise variance and learning halts.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.

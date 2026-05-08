@@ -252,7 +252,7 @@ class TestBCMode:
         """Subtracting φ̂ from v̂ shrinks the denom → larger updates."""
         big = {k: v * 10 for k, v in grads.items()}
         opt_std = adamw(lr=1e-3)
-        opt_bc = adamw(lr=1e-3)
+        opt_bc = adamw(lr=1e-3, noise_bias_correction=True)
         s_std = opt_std.init(params)
         s_bc = opt_bc.init(params)
         for _ in range(10):
@@ -270,7 +270,7 @@ class TestBCMode:
         """Huge σ pushes v̂ − φ̂ < 0; the floor saves us."""
         params = {"w": torch.ones(3)}
         grads = {"w": torch.ones(3) * 0.01}
-        opt = adamw(lr=1e-3)
+        opt = adamw(lr=1e-3, noise_bias_correction=True)
         state = opt.init(params)
         updates, _ = opt.update(
             noised(grads, max_norm=1.0, noise_stddev=1e6),
@@ -555,7 +555,7 @@ class TestConvergence:
     def test_bc_minimises_quadratic(self):
         target = torch.tensor([1.0, 2.0, 3.0])
         params = {"x": torch.zeros(3)}
-        opt = adamw(lr=0.05, weight_decay=0.0)
+        opt = adamw(lr=0.05, weight_decay=0.0, noise_bias_correction=True)
         state = opt.init(params)
         for _ in range(200):
             grads = {"x": 2.0 * (params["x"] - target)}

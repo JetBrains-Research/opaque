@@ -303,10 +303,14 @@ def adafactor(
         noise_bias_correction: If ``True``, subtract a β₂_t-EMA of the
             realized noise variance from each factor (``v_row``,
             ``v_col``, or scalar ``v``) when ``NoisedPytree`` updates are
-            passed.  Defaults to ``True``; flip off to ablate.  No
-            effect when ``SecondMomentNoiseOutput`` is passed —
-            Adafactor does not consume the privatised ``g²`` stream
-            (deriving a sound factored variant is future work).
+            passed.  Defaults to ``False``; in practice the relative-step
+            normalization that Adafactor applies per-tensor already plays
+            BC's role for this optimizer, so flipping the flag rarely
+            moves the loss either way (verified empirically on a LoRA
+            fine-tuning sweep at ε=3).  No effect when
+            ``SecondMomentNoiseOutput`` is passed — Adafactor does not
+            consume the privatised ``g²`` stream (deriving a sound
+            factored variant is future work).
 
     Returns:
         A ``torchopt.base.GradientTransformation``.
