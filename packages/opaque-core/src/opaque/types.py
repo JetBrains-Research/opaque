@@ -211,32 +211,6 @@ def _scale_max_norm(max_norm: MaxNorm, factor: float) -> MaxNorm:
     return abs(factor) * max_norm
 
 
-def _per_group_optimal_stddev(
-    max_norm: PerGroup,
-    noise_multiplier: float,
-) -> PerGroup:
-    """MSE-optimal per-group noise allocation under the Mahalanobis constraint.
-
-    For per-group contribution bounds B₁,…,B_K, returns σᵢ = nm · √(Bᵢ · ΣⱼBⱼ).
-    Privacy accounting is ``gaussian(nm)`` — the Mahalanobis constraint is
-    satisfied with equality, so amplification math is identical to isotropic.
-    """
-    for group_name, value in max_norm.values.items():
-        if value < 0:
-            raise ValueError(
-                "per-group bounds must be non-negative, "
-                f"got {value} for group '{group_name}'."
-            )
-    sum_c = sum(max_norm.values.values())
-    return PerGroup(
-        max_norm.groups,
-        {
-            k: noise_multiplier * math.sqrt(c * sum_c)
-            for k, c in max_norm.values.items()
-        },
-    )
-
-
 def _scale_stddev(stddev: NoiseStddev, factor: float) -> NoiseStddev:
     if stddev is None:
         return None
@@ -325,7 +299,11 @@ class ClippedPytree:
         if isinstance(self.max_norm, PerGroup):
             if allocation == "isotropic":
                 return noise_multiplier * self.max_norm.effective
-            return _per_group_optimal_stddev(self.max_norm, noise_multiplier)
+            # Local import: ``opaque._noise_allocation`` imports these types at
+            # module load; importing it at ``types`` import time would cycle.
+            from opaque._noise_allocation import per_group_noise_stddev
+
+            return per_group_noise_stddev(self.max_norm, noise_multiplier)
         return noise_multiplier * float(self.max_norm)
 
     def _scaled(self, scalar: float) -> ClippedPytree:
