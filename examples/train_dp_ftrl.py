@@ -1281,15 +1281,17 @@ def main():
     print(f"  Sensitivity: {zeta:.6f} (= {args.clipping_norm} / {args.batch_size})")
     print(f"  Noise multiplier (σ): {noise_multiplier:.4f}")
     if use_second_moment and args.mechanism not in ("identity", "none"):
-        # Sensitivity-proportional joint allocation: σ¹ = nm · sqrt(Δ¹·S),
-        # where Δ¹ = ζ·‖C₁‖, Δ² = ζ²·‖C₂‖, S = Δ¹+Δ².
+        # Sensitivity-proportional joint allocation calibrated against the
+        # MfGaussian PLD ``gaussian_pld(nm/c1)`` of the underlying
+        # first-moment mechanism: pass effective multiplier ``nm/c1`` to the
+        # allocator so the joint Mahalanobis budget hits ``(c1/nm)²``.
         c1 = float(strategy._max_column_norm)
-        delta1 = zeta * c1
         # Second strategy uses --beta2 momentum; for printing use c1 as a
         # close-enough proxy (workloads are typically the same shape).
+        delta1 = zeta * c1
         delta2 = zeta * zeta * c1
         s_total = delta1 + delta2
-        sigma_first = noise_multiplier * (delta1 * s_total) ** 0.5
+        sigma_first = (noise_multiplier / c1) * (delta1 * s_total) ** 0.5
         print(
             f"  Joint Mahalanobis budget: Δ¹={delta1:.6f}, Δ²={delta2:.6f}, "
             f"S={s_total:.6f}"

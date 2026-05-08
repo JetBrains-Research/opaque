@@ -91,6 +91,91 @@ class TestSecondMomentCalibration:
             paired_noise_stddevs(1.0, first=0.1, second=-0.01)
 
 
+class TestSecondMomentMFNoiseMatchesMfGaussianPld:
+    """Joint paired Mahalanobis on encoded streams equals ``(‖C₁‖ / nm)²``.
+
+    The dispatcher must translate the calibrated ``MfGaussian(nm, ‖C₁‖)``
+    parameter into the appropriate ``paired_noise_stddevs`` effective
+    multiplier (``nm / ‖C₁‖``) so the joint paired release has the same
+    PLD ``gaussian_pld(nm / ‖C₁‖)`` as the single-stream MF release.
+
+    Without the translation the runtime over-noises by a factor of
+    ``‖C₁‖`` per stream — privacy is strictly stricter than the
+    calibration target but utility suffers.
+    """
+
+    @pytest.fixture
+    def grad_template(self):
+        return {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
+
+    @pytest.mark.parametrize("nm", [0.5, 1.0, 2.0])
+    def test_joint_mahalanobis_matches_mf_gaussian_pld(self, grad_template, nm):
+        # BandMF strategy with non-trivial ‖C₁‖ ≠ 1.
+        strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
+        second_strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.99)
+        c1 = float(strategy._max_column_norm)
+        c2 = float(second_strategy._max_column_norm)
+        assert c1 != 1.0  # otherwise the test is trivial
+
+        noise_fn, state = mf_noise(
+            grad_template,
+            strategy,
+            noise_multiplier=nm,
+            key=key(42),
+            second_moment_strategy=second_strategy,
+        )
+        grads = {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
+        out, _ = noise_fn(_paired(grads), state)
+
+        sigma_first = out.noisy_grads.noise_stddev
+        sigma_second = out.noisy_squared_grads.noise_stddev
+        # Encoded per-record sensitivities.
+        delta1 = _SENSITIVITY * c1
+        delta2 = (_SENSITIVITY**2) * c2
+        mahal = (delta1 / sigma_first) ** 2 + (delta2 / sigma_second) ** 2
+
+        # Target: the joint PLD must equal MfGaussian(nm, c1) PLD =
+        # gaussian_pld(nm / c1), i.e. effective multiplier nm / c1, i.e.
+        # joint Mahalanobis = (c1 / nm)².
+        expected = (c1 / nm) ** 2
+        assert mahal == pytest.approx(expected, rel=1e-10), (
+            f"joint Mahalanobis {mahal} != (c1/nm)² = {expected} "
+            f"(c1={c1}, nm={nm})"
+        )
+
+    def test_first_stream_recovers_single_stream_in_small_squared_limit(
+        self, grad_template
+    ):
+        """As Δ² / Δ¹ → 0, σ_first → single-stream MF σ = nm·ζ."""
+        strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
+        second_strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.99)
+        nm = 1.0
+        # Build a paired input where the squared-stream sensitivity is
+        # effectively negligible relative to the first.
+        grads = {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
+        small_zeta = 1e-6
+        first_clipped = clipped(grads, max_norm=small_zeta)
+        sq_pytree = {k: v * v for k, v in grads.items()}
+        sq_clipped = clipped(sq_pytree, max_norm=small_zeta * small_zeta)
+        paired = SecondMomentClippingOutput(
+            grads=first_clipped, squared_grads=sq_clipped
+        )
+        noise_fn, state = mf_noise(
+            grad_template,
+            strategy,
+            noise_multiplier=nm,
+            key=key(42),
+            second_moment_strategy=second_strategy,
+        )
+        out, _ = noise_fn(paired, state)
+        # Single-stream MF runtime σ on the noise tensor for ζ=small_zeta is
+        # nm·ζ; the paired σ_first should converge to that as Δ²/Δ¹ → 0.
+        single_sigma = nm * small_zeta
+        assert out.noisy_grads.noise_stddev == pytest.approx(
+            single_sigma, rel=1e-3
+        )
+
+
 class TestSecondMomentMFNoise:
     @pytest.fixture
     def grad_template(self):
