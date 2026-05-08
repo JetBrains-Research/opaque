@@ -127,7 +127,7 @@ class TestBCMode:
     def test_bc_increases_effective_lr(self, params, grads):
         big = {k: v * 10 for k, v in grads.items()}
         opt_std = rmsprop(lr=1e-2)
-        opt_bc = rmsprop(lr=1e-2)
+        opt_bc = rmsprop(lr=1e-2, noise_bias_correction=True)
         s_std = opt_std.init(params)
         s_bc = opt_bc.init(params)
         for _ in range(10):
@@ -144,7 +144,7 @@ class TestBCMode:
     def test_floor_prevents_zero_denominator(self):
         params = {"w": torch.ones(3)}
         grads = {"w": torch.ones(3) * 0.01}
-        opt = rmsprop(lr=1e-3)
+        opt = rmsprop(lr=1e-3, noise_bias_correction=True)
         state = opt.init(params)
         updates, _ = opt.update(
             noised(grads, max_norm=1.0, noise_stddev=1e6),

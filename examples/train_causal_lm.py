@@ -305,9 +305,9 @@ def parse_args():
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["custom", "smoke", "mellum-kstack"],
+        choices=["custom", "smoke", "mellum-kstack", "qwen-7b-kstack"],
         default="smoke",
-        help="Apply preset configuration (custom=keep explicit args, smoke=quick test ~2min, mellum-kstack=full production).",
+        help="Apply preset configuration (custom=keep explicit args, smoke=quick test ~2min, mellum-kstack=Mellum-4b + KStack at ε=10 with adafactor @ 5e-5, qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at ε=3 with adafactor @ 5e-4).",
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
@@ -440,11 +440,12 @@ def parse_args():
     train_group.add_argument(
         "--noise-bias-correction",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help=(
             "Enable DP noise-variance bias correction on optimizers that "
-            "support it (adam/adamw/ademamix/rmsprop/adagrad/adafactor).  Silently "
-            "ignored on sgd/lion.  On by default."
+            "support it (adam/adamw/ademamix/rmsprop/adagrad/adafactor).  "
+            "Silently ignored on sgd/lion.  Off by default; see "
+            "docs/user-guide/optimizers.md for when to flip it on."
         ),
     )
     train_group.add_argument(
@@ -765,7 +766,37 @@ def parse_args():
         )
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
-        _set("lr_schedule", "cosine")
+    elif args.preset == "qwen-7b-kstack":
+        # Qwen2.5-Coder-7B + KStack LoRA fine-tuning at ε=3.  Inherits
+        # the trainer's adafactor + BC-off defaults.
+        _set("model_name", "Qwen/Qwen2.5-Coder-7B")
+        _set("dataset", "JetBrains/KStack")
+        _set("dataset_text_field", "content")
+        _set("num_train_samples", 50000)
+        _set("num_eval_samples", 1000)
+        _set("num_epochs", 2)
+        _set("batch_size", 192)
+        _set("microbatch_size", 16)
+        _set("log_steps", 2)
+        _set("eval_steps", 10)
+        _set("target_epsilon", 3.0)
+        _set("learning_rate", 5e-4)
+        _set("lora_r", 16)
+        _set("lora_alpha", 16)
+        _set("max_seq_len", 1024)
+        _set(
+            "lora_modules",
+            [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+        )
+        _set("dtype", "bfloat16")
     elif args.preset == "custom":
         # Keep all user-provided/default CLI arguments unchanged.
         pass

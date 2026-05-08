@@ -277,7 +277,7 @@ def adafactor(
     update_rms_clip: float = 1.0,
     *,
     decoupled_weight_decay: bool = True,
-    noise_bias_correction: bool = True,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
     """Create an Adafactor optimizer.
 
@@ -302,11 +302,12 @@ def adafactor(
             :func:`opaque.optimizers._adamw`.
         noise_bias_correction: If ``True``, subtract a β₂_t-EMA of the
             realized noise variance from each factor (``v_row``,
-            ``v_col``, or scalar ``v``) when ``NoisedPytree`` updates are
-            passed.  Defaults to ``True``; flip off to ablate.  No
-            effect when ``SecondMomentNoiseOutput`` is passed —
-            Adafactor does not consume the privatised ``g²`` stream
-            (deriving a sound factored variant is future work).
+            ``v_col``, or scalar ``v``) when ``NoisedPytree`` updates
+            are passed.  Defaults to ``False``; Adafactor's relative-step
+            per-tensor normalization already plays BC's role for this
+            optimizer.  No effect when ``SecondMomentNoiseOutput`` is
+            passed — Adafactor does not consume the privatised ``g²``
+            stream (deriving a sound factored variant is future work).
 
     Returns:
         A ``torchopt.base.GradientTransformation``.

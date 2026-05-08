@@ -199,7 +199,7 @@ def rmsprop(
     *,
     decoupled_weight_decay: bool = True,
     update_rms_clip: float | None = None,
-    noise_bias_correction: bool = True,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
     """Create an RMSprop optimizer with optional DP-aware bias correction.
 
@@ -215,8 +215,8 @@ def rmsprop(
             moment-scaled update.
         noise_bias_correction: If ``True``, subtract an ``alpha``-EMA of
             the realized noise variance from the second moment when
-            ``NoisedPytree`` updates are passed.  Defaults to ``True``;
-            flip off to ablate.
+            ``NoisedPytree`` updates are passed.  Defaults to ``False``;
+            see ``docs/user-guide/optimizers.md`` for when to flip it on.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.

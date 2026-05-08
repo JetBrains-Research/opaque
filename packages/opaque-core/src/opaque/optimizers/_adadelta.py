@@ -323,7 +323,7 @@ def adadelta(
     *,
     decoupled_weight_decay: bool = True,
     update_rms_clip: float | None = None,
-    noise_bias_correction: bool = True,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
     """Create an Adadelta optimizer with two-EMA DP bias correction.
 
@@ -348,7 +348,7 @@ def adadelta(
 
             Both EMAs decay at the same rate ρ as their respective
             second moments, so subtraction is consistent with the EMA
-            history.  Defaults to ``True``; flip off to ablate against
+            history.  Defaults to ``False``; flip on to ablate against
             vanilla Adadelta under noise.
 
     Returns:
