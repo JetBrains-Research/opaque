@@ -502,7 +502,7 @@ def parse_args():
         type=str,
         choices=["custom", "smoke", "mellum-kstack", "qwen-7b-kstack"],
         default="smoke",
-        help="Apply preset configuration (custom=keep explicit args, smoke=quick test ~2min, mellum-kstack=full production, qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at ε=3 with tuned SGD-mom anchor).",
+        help="Apply preset configuration (custom=keep explicit args, smoke=quick test ~2min, mellum-kstack=Mellum-4b + KStack at ε=10 with adafactor @ 5e-5, qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at ε=3 with adafactor @ 5e-4).",
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
@@ -638,11 +638,15 @@ def parse_args():
     train_group.add_argument(
         "--noise-bias-correction",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help=(
             "Enable DP noise-variance bias correction on optimizers that "
-            "support it (adam/adamw/ademamix/rmsprop/adagrad/adafactor).  Silently "
-            "ignored on sgd/lion.  On by default."
+            "support it (adam/adamw/ademamix/rmsprop/adagrad/adafactor/radam/"
+            "adadelta).  Silently ignored on sgd/lion.  Off by default: BC "
+            "yields the configured 'honest' learning rate, which only helps "
+            "when the LR is well-tuned; with BC off the effective LR auto-"
+            "shrinks proportionally to the noise/signal ratio, which is more "
+            "forgiving for un-tuned LRs.  See docs/user-guide/optimizers.md."
         ),
     )
     train_group.add_argument(
@@ -655,7 +659,7 @@ def parse_args():
         "--sgd-momentum",
         type=float,
         default=0.9,
-        help="Momentum for --optimizer sgd. Default 0.9 (matches the tuned LoRA + SGD-mom config in qwen-7b-kstack).",
+        help="Momentum for --optimizer sgd (default 0.9).",
     )
     train_group.add_argument(
         "--log-steps",
@@ -972,11 +976,16 @@ def parse_args():
         )
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
-        _set("lr_schedule", "cosine")
+        # No lr_schedule override: cosine was tested (8-adafactor-auto-bc-
+        # cosine vs 3-adafactor-auto-bc) and was marginally slower than the
+        # default constant LR.
     elif args.preset == "qwen-7b-kstack":
-        # Qwen2.5-Coder-7B + KStack night-anchor for the optimizer / schedule
-        # bake-off.  ε=3 puts the noise multiplier where optimizer differences
-        # surface.  SGD + momentum 0.9 @ lr=5e-2 is the tuned LoRA baseline.
+        # Qwen2.5-Coder-7B + KStack at ε=3.  Adafactor @ lr=5e-4 (BC off) is
+        # the best LoRA config from the May 8 sweep — beats tuned SGD-mom
+        # (5e-2) by ~0.4% on min eval/loss with stable, late-converging
+        # trajectory (argmin ~step 440 of 520).  Adam/AdamW work at lr=1.5e-4
+        # if you prefer; SGD-mom 0.9 @ 5e-2 also works.  Inherits
+        # `--optimizer adafactor` and `--no-noise-bias-correction` defaults.
         _set("model_name", "Qwen/Qwen2.5-Coder-7B")
         _set("dataset", "JetBrains/KStack")
         _set("dataset_text_field", "content")
@@ -988,7 +997,7 @@ def parse_args():
         _set("log_steps", 2)
         _set("eval_steps", 10)
         _set("target_epsilon", 3.0)
-        _set("learning_rate", 5e-2)
+        _set("learning_rate", 5e-4)
         _set("lora_r", 16)
         _set("lora_alpha", 16)
         _set("max_seq_len", 1024)
@@ -1005,11 +1014,10 @@ def parse_args():
             ],
         )
         _set("dtype", "bfloat16")
-        _set("optimizer", "sgd")
-        _set("sgd_momentum", 0.9)
+        # Optimizer + BC inherit argparse defaults (adafactor, BC off).
         # No lr_schedule override (argparse default "none" — schedule
-        # sensitivity is a Phase 3 question, not a baked-in default).
-        # No weight_decay override (argparse default 0.01).
+        # sensitivity is workload-specific; no schedule was the best config
+        # in the May 8 sweep on this anchor).
     elif args.preset == "custom":
         # Keep all user-provided/default CLI arguments unchanged.
         pass

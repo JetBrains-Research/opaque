@@ -228,7 +228,7 @@ def ademamix(
     *,
     decoupled_weight_decay: bool = True,
     update_rms_clip: float | None = None,
-    noise_bias_correction: bool = True,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
     """Create an AdEMAMix optimizer.
 

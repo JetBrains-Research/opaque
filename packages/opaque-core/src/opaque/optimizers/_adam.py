@@ -275,7 +275,7 @@ def adam(
     weight_decay: float = 0.0,
     *,
     update_rms_clip: float | None = None,
-    noise_bias_correction: bool = True,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
     """Create an Adam optimizer with Opaque's wrapper-aware update API.
 
@@ -302,7 +302,7 @@ def adamw(
     *,
     decoupled_weight_decay: bool = True,
     update_rms_clip: float | None = None,
-    noise_bias_correction: bool = True,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
     """Universal Adam / AdamW factory.
 

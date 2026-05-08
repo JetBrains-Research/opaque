@@ -49,8 +49,9 @@ grad_fn, clip_state = clipped_grad(
 )
 noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
 
-# DP-aware AdamW reads realized σ from NoisedPytree updates.
-optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
+# DP-aware AdamW; pass `noise_bias_correction=True` to enable the
+# φ-EMA subtraction once the LR is tuned for the workload.
+optimizer = adamw(lr=1e-3, weight_decay=0.01)
 opt_state = optimizer.init(params)
 
 for batch in dataloader:
@@ -62,19 +63,28 @@ for batch in dataloader:
 
 ## Choosing an optimizer
 
-**AdamW** (`adamw`) is the recommended default for
-DP training.  Per-parameter adaptive learning rates compensate for
-DP noise — different parameters receive different signal-to-noise
-ratios, and Adam scales updates accordingly.  Adam typically converges
-faster and is more robust to hyperparameter choices than SGD under DP.
-Pass `NoisedPytree` updates from a DP noise mechanism; enable
-`noise_bias_correction` to opt into the φ-EMA correction path
-(off by default — flip on to ablate):
+**Adafactor** (`adafactor`) is the recommended default for DP training.
+Its per-tensor relative-step normalization (factored
+`v_row × v_col`) auto-scales effective learning rates per parameter
+group, which makes it both LR-robust and naturally resistant to
+DP noise inflation of the second moment (see [Empirical evidence](#empirical-evidence)
+below). Pass `NoisedPytree` updates from a DP noise mechanism:
+
+```python
+from opaque.optimizers import adafactor
+
+optimizer = adafactor(lr=5e-4, weight_decay=0.01)
+```
+
+**AdamW** (`adamw`) is a good alternative when you want first-moment
+momentum, but is more LR-sensitive than Adafactor: tuning matters.
+Use `noise_bias_correction=True` only when the LR has been tuned for
+the workload (see [the BC story](#empirical-evidence)):
 
 ```python
 from opaque.optimizers import adamw
 
-optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
+optimizer = adamw(lr=1.5e-4, weight_decay=0.01)
 # Plain Adam (no decoupled WD): adamw(..., decoupled_weight_decay=False).
 # StableAdamW (RMS-clipped update): adamw(..., update_rms_clip=1.0).
 ```
@@ -196,22 +206,68 @@ This mode requires an MF noise mechanism with
 applies to **DP-FTRL** training, not standard DP-SGD with i.i.d. Gaussian
 noise.
 
+### Empirical evidence
+
+A 30+ run sweep on **Qwen2.5-Coder-7B + KStack at ε=3, batch 192, LoRA
+r=16** (May 2026, 2 epochs, single seed) cross-tested optimizer choice,
+LR, and BC on/off. Trajectories at
+[federated-compute/opaque on W&B](https://wandb.ai/federated-compute/opaque).
+Headline findings:
+
+1. **All shipped optimizers are DP-grade at this anchor.** With a
+   sensible LR, every factory landed within ~0.5% of a tuned SGD-mom
+   baseline (`min_eval_loss` 0.3453). Optimizer choice mattered less
+   than LR + schedule fit.
+
+2. **Adafactor's normalization replaces BC.** `adafactor` BC-on vs
+   BC-off was a perfect tie at every threshold and at min — the
+   relative-step `v_row × v_col` factorization already plays BC's
+   role. This is why we recommend it as the default.
+
+3. **BC is "honest LR", BC-off is "implicit shrinkage".** At a
+   well-tuned LR, BC reaches early thresholds faster and lands a
+   slightly better minimum (Adam @ 1.5e-4: BC −0.27% vs BC-off
+   +0.13%). At an LR-too-high (Adam-family @ 5e-4) BC actively
+   amplifies overshoot — BC-off ran cleanly and beat BC-on by 0.5–0.9%.
+   With BC off, the effective LR auto-shrinks proportionally to
+   $\sigma^2/g^2$, which acts like an implicit annealing schedule
+   keyed to noise/signal ratio.
+
+4. **LR sensitivity varies wildly across families.** Across ±3× lr:
+   RAdam ±0.11% (very flat), Adafactor flat below 5e-4, Adam/AdamW
+   ±2%, Lion +0.27%/+1.27% (sharp), RMSprop up to +9.5%, Adagrad
+   diverges at ×5. Adafactor and RAdam are the genuinely
+   "set-and-forget" choices.
+
+5. **Argmin-at-last-step ⇒ budget-limited, not converged.** Lion and
+   most BC-off runs hit their min at the final step, meaning the
+   training budget cut them off before convergence. If your run
+   shows this signature, train longer.
+
+The May 2026 sweep is what motivates `noise_bias_correction=False` as
+the default: BC-off is more forgiving across the LR range, and
+Adafactor (the recommended default) is unaffected by the choice
+either way. Turn BC on once you've tuned LR to the workload.
+
 ### When to use which
 
 The bias-correction (BC) and private-second-moment paths target the same
-v-update bias by different means; they are alternatives.  Their
-empirical benefit under DP varies by workload — treat the BC column as
-something to ablate, not as a default recommendation.
+v-update bias by different means; they are alternatives.  BC default is
+**off** — turn it on once you've tuned LR; see [Empirical evidence](#empirical-evidence)
+above.
 
 | Scenario | Optimizer | Notes |
 |---|---|---|
-| DP-SGD baseline | `adamw` | Plain AdamW on `NoisedPytree` updates |
-| DP-SGD with BC ablation | `adamw(noise_bias_correction=True)` | φ-EMA subtraction from `v̂` |
+| DP-SGD default (LM fine-tuning) | `adafactor` | Recommended default — relative-step normalization makes BC a no-op |
+| Adam-family without LR tuning | `adamw` (BC off) | BC-off auto-shrinks effective LR; forgiving |
+| Adam-family with tuned LR | `adamw(noise_bias_correction=True)` | BC reaches min faster at the right LR |
+| LR-robust alternative to AdamW | `radam` | Rectification gate flattens LR sensitivity to ±0.1% across ±3× |
+| Sign-based, lowest memory | `lion` | No second moment; sharp LR optimum (~AdamW LR / 10) |
 | DP-FTRL without an Adam-family update | `sgd` | No second moment to correct |
 | DP-FTRL with Adam, private second moments | `adamw(...) + SecondMomentNoiseOutput` | Substitutes a privatised `g²` stream in place of squaring noised grads |
 | DP-FTRL with Adam, no extra budget | `adamw(noise_bias_correction=True)` | BC alternative when the second-moment overhead isn't acceptable |
-| Sparse gradients under DP | `adagrad` | `noise_bias_correction=True` subtracts the cumulative `Φ_acc` from the un-decaying accumulator; ablate to compare |
-| RMSprop user under DP | `rmsprop` | Same BC story as AdamW |
+| Sparse gradients under DP | `adagrad` | `noise_bias_correction=True` is essentially mandatory — without it the un-decaying accumulator absorbs `t·σ²` |
+| RMSprop user under DP | `rmsprop` | LR-sensitive; tune carefully (lr=1e-4 worked in our sweep, 5e-4 diverged) |
 
 ## AdamW With Private Second Moments
 

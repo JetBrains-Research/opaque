@@ -277,7 +277,7 @@ def adafactor(
     update_rms_clip: float = 1.0,
     *,
     decoupled_weight_decay: bool = True,
-    noise_bias_correction: bool = True,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
     """Create an Adafactor optimizer.
 
