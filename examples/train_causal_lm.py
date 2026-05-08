@@ -43,6 +43,7 @@ USAGE:
 import argparse
 import contextlib
 import importlib.util
+import math
 import os
 import sys
 import time
@@ -123,6 +124,22 @@ def _step_noise_stddev(noisy_grads):
     if isinstance(noisy_grads, SecondMomentNoiseOutput):
         return noisy_grads.noisy_grads.noise_stddev
     return noisy_grads.noise_stddev
+
+
+def _log_private_second_moment(
+    clip_norm: float | PerGroup,
+    second_moment_arg: bool | float,
+) -> None:
+    """Log second-moment knobs (ρ) and accountant path independently of scalar vs PerGroup clip."""
+    print("  Second moments: on")
+    if isinstance(second_moment_arg, float):
+        print(f"  ρ: {second_moment_arg:g}")
+    elif second_moment_arg is True:
+        print(f"  ρ: {math.sqrt(3 / 2):.4g} (default)")
+    if isinstance(clip_norm, PerGroup):
+        print("  ε from second moments: gaussian(nm)")
+    else:
+        print("  ε from second moments: second_moment(...)")
 
 
 def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
@@ -1330,6 +1347,8 @@ def main():
         print(
             f"\nUsing fixed noise multiplier: {noise_multiplier:.4f} (skipping calibration)"
         )
+        if use_second_moment:
+            _log_private_second_moment(clip_norm, second_moment_arg)
     else:
         print("\nCalibrating privacy parameters...")
         if use_parallel_poisson:
@@ -1338,12 +1357,7 @@ def main():
         if args.noise_mechanism == "truncated_gaussian":
             print(f"  Noise radius: {args.noise_radius}σ")
         if use_second_moment:
-            sm_note = (
-                "per-group, gaussian(nm)"
-                if isinstance(clip_norm, PerGroup)
-                else f"ρ={second_moment_arg if isinstance(second_moment_arg, float) else 'sqrt(3/2)'}"
-            )
-            print(f"  Second moment: {sm_note}")
+            _log_private_second_moment(clip_norm, second_moment_arg)
         print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
         print(f"  Total steps: {total_steps}")
         print(f"  Sample rate: {sample_rate:.6f}")
@@ -1764,12 +1778,7 @@ def main():
     elif use_parallel_poisson:
         print(f"  Accounting: parallel_poisson (world_size={world_size})")
     if use_second_moment:
-        sm_note = (
-            "per-group, gaussian(nm)"
-            if isinstance(clip_norm, PerGroup)
-            else f"ρ={second_moment_arg if isinstance(second_moment_arg, float) else 'sqrt(3/2)'}"
-        )
-        print(f"  Second moment: {sm_note}")
+        _log_private_second_moment(clip_norm, second_moment_arg)
     print(
         f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})"
     )
