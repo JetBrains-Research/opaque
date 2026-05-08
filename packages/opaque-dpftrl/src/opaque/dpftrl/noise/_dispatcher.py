@@ -314,12 +314,18 @@ def _make_second_moment_mf_noise(
         )
         # Strategy norms enter the per-record sensitivity on each stream
         # before the joint Mahalanobis allocation: Δ¹ = ζ·‖C₁‖, Δ² = ζ²·‖C₂‖.
-        # The sensitivity-proportional allocator then preserves
-        # gaussian(nm) accounting for the joint paired release.
+        # The single-stream MF release has effective Gaussian noise
+        # multiplier ``nm / ‖C₁‖`` on the encoded stream (`MfGaussian` PLD
+        # is ``gaussian_pld(nm / sensitivity)``).  To match that calibration
+        # the joint paired Mahalanobis budget must equal ``(‖C₁‖ / nm)²``
+        # — pass ``nm / ‖C₁‖`` as the joint effective multiplier so the
+        # allocator's ``1 / nm²`` budget identity hits the right value.
+        c1 = first_strategy._max_column_norm
+        c2 = second_strategy._max_column_norm
         first_stddev, second_stddev = paired_noise_stddevs(
-            noise_multiplier,
-            first=max_norm * first_strategy._max_column_norm,
-            second=squared_max_norm * second_strategy._max_column_norm,
+            noise_multiplier / c1,
+            first=max_norm * c1,
+            second=squared_max_norm * c2,
         )
         noisy_grads, new_first = first_fn(
             first_clipped.pytree,
