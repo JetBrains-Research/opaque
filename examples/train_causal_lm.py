@@ -735,8 +735,6 @@ def parse_args():
         # Golden configuration for Mellum-4b + KStack training on H200
         # Memory: Model=7.5 GiB. Throughput saturates at mb=16 (~20 samples/s, 58 GB peak).
         # mb=32 gives same speed but 108 GB. With --gradient-checkpointing, mb=32+ fits easily.
-        # Constant peak LR for this recipe (matches script default ``none``).
-        _set("lr_schedule", "none")
         _set("model_name", "JetBrains/Mellum-4b-base")
         _set("dataset", "JetBrains/KStack")
         _set("dataset_text_field", "content")
@@ -768,7 +766,6 @@ def parse_args():
     elif args.preset == "qwen-7b-kstack":
         # Qwen2.5-Coder-7B + KStack LoRA fine-tuning at ε=3.  Inherits
         # the trainer's adafactor + BC-off defaults.
-        _set("lr_schedule", "none")
         _set("model_name", "Qwen/Qwen2.5-Coder-7B")
         _set("dataset", "JetBrains/KStack")
         _set("dataset_text_field", "content")
