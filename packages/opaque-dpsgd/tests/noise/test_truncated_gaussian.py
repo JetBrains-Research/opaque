@@ -295,7 +295,11 @@ class TestTruncatedGaussianPerGroup:
         assert output.pytree["large"].min().item() >= -large_std * radius
         assert output.pytree["large"].max().item() <= large_std * radius
 
-    def test_all_zero_bound_returns_original(self):
+    def test_all_zero_bound_clamps_to_zero(self):
+        """``σ=0`` collapses the truncated support to ``{0}`` per coord;
+        per-group zero σ matches the scalar zero-σ branch and clamps to 0
+        rather than returning the input unchanged.
+        """
         max_norm = PerGroup(
             groups={"a": "g1", "b": "g2"},
             values={"g1": 0.0, "g2": 0.0},
@@ -305,8 +309,8 @@ class TestTruncatedGaussianPerGroup:
         )
         grads = {"a": torch.randn(3), "b": torch.randn(3)}
         output, state = noise_fn(clipped(grads, max_norm=max_norm), state)
-        torch.testing.assert_close(output.pytree["a"], grads["a"])
-        torch.testing.assert_close(output.pytree["b"], grads["b"])
+        torch.testing.assert_close(output.pytree["a"], torch.zeros_like(grads["a"]))
+        torch.testing.assert_close(output.pytree["b"], torch.zeros_like(grads["b"]))
 
     def test_negative_group_bound_raises(self):
         max_norm = PerGroup(groups={"w": "g"}, values={"g": -1.0})
