@@ -108,10 +108,6 @@ drawn from a truncated normal of half-width `radius·σ`.
 
 ::: opaque.dpsgd.noise.truncated_gaussian_noise
 
-## Joint-allocation helper
-
-::: opaque.dpsgd.noise.paired_noise_stddevs
-
 ## Matrix Factorization Noise
 
 ### Dispatcher

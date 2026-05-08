@@ -74,7 +74,7 @@ from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.distributed import sync
 from opaque.distributed.gradients import sum_gradients_
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.noise import per_group_noise_stddev
+from opaque._noise_allocation import per_group_noise_stddev
 from opaque.dpsgd.noise import truncated_gaussian_noise
 from opaque.profiling import (
     StepTimer,

@@ -5,7 +5,7 @@ import math
 import pytest
 import torch
 
-from opaque.dpsgd.noise import paired_noise_stddevs
+from opaque._noise_allocation import paired_noise_stddevs
 from opaque.types import clipped
 from opaque.types import (
     NoisedPytree,
@@ -49,7 +49,7 @@ def _clipped(grads):
 
 
 class TestSecondMomentCalibration:
-    """``mf_noise`` consumes :func:`paired_noise_stddevs` for σ allocation.
+    """``mf_noise`` consumes ``paired_noise_stddevs`` for σ allocation.
 
     The strategy norms enter as multipliers on the per-record bounds:
     ``Δ¹ = ζ · ‖C₁‖``, ``Δ² = ζ² · ‖C₂‖``.  These tests pin the closed
