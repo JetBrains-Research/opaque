@@ -22,7 +22,7 @@ import torch
 
 from opaque.types import PerGroup
 from opaque.types import ClippedPytree
-from opaque.noise_allocation import paired_noise_stddevs
+from opaque._noise_allocation import paired_noise_stddevs
 from opaque.types import (
     NoisedPytree,
     SecondMomentClippingOutput,
@@ -80,8 +80,8 @@ def mf_noise(
       ``second_moment_strategy`` was supplied at construction).
 
     The paired-stream release uses the sensitivity-proportional joint
-    Mahalanobis allocation from
-    :func:`opaque.dpsgd.noise.paired_noise_stddevs`: the joint privacy
+    Mahalanobis allocation (``opaque._noise_allocation.paired_noise_stddevs``):
+    the joint privacy
     budget collapses to the same first-moment-only mechanism at the
     given ``noise_multiplier``, so calibration is identical to a
     first-moment-only release.

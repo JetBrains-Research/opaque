@@ -2,7 +2,7 @@
 
 Mirrors ``gaussian_noise`` second-moment handling: when a
 :class:`SecondMomentClippingOutput` flows in, allocates the joint noise
-budget across the two streams via :func:`paired_noise_stddevs` and adds
+budget across the two streams via ``paired_noise_stddevs`` and adds
 truncated Gaussian noise to each.
 """
 
@@ -19,7 +19,8 @@ from opaque.types import (
     SecondMomentNoiseOutput,
     clipped,
 )
-from opaque.dpsgd.noise import paired_noise_stddevs, truncated_gaussian_noise
+from opaque._noise_allocation import paired_noise_stddevs
+from opaque.dpsgd.noise import truncated_gaussian_noise
 from opaque.random import key
 
 
@@ -59,7 +60,7 @@ class TestPairedStreamShape:
         assert isinstance(out.noisy_squared_grads, NoisedPytree)
 
     def test_streams_match_paired_noise_stddevs(self):
-        """Output stddevs match :func:`paired_noise_stddevs` on the same inputs."""
+        """Output stddevs match ``paired_noise_stddevs`` on the same inputs."""
         noise_fn, state = truncated_gaussian_noise(
             noise_multiplier=1.0,
             radius=5.0,

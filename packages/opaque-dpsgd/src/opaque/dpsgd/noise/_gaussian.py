@@ -41,7 +41,12 @@ from opaque.random import generator_from_key
 from opaque.random.types import RngKey
 from opaque.random import fold_in as rng_fold_in
 from opaque.pytree import tree_map
-from opaque.noise_allocation import paired_noise_stddevs, per_group_noise_stddev
+from opaque._noise_allocation import (
+    PAIRED_FIRST_STREAM_FOLD,
+    PAIRED_SECOND_STREAM_FOLD,
+    per_group_noise_stddev,
+    resolve_paired_clipped,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -201,42 +206,24 @@ def gaussian_noise(
         _validate_noise_stddev(effective)
         return effective
 
-    def _paired_stddevs(
-        first_clipped: ClippedPytree,
-        second_clipped: ClippedPytree,
-    ) -> tuple[float | PerGroup, float | PerGroup]:
-        """Resolve (σ_first, σ_second) for the paired Gaussian release.
-
-        Routes through :func:`paired_noise_stddevs`, which implements the
-        sensitivity-proportional Mahalanobis allocation that satisfies the
-        joint privacy budget with equality (joint PLD = single Gaussian
-        release at ``noise_multiplier``).  Both streams must carry the
-        same kind of ``max_norm`` (both scalar or both PerGroup); mixed
-        kinds are a configuration error.
-        """
-        return paired_noise_stddevs(
-            resolved_noise_multiplier,
-            first=first_clipped.max_norm,
-            second=second_clipped.max_norm,
-        )
-
     def _add_paired(
         clipped_input: SecondMomentClippingOutput, st: GaussianNoiseState
     ) -> tuple[SecondMomentNoiseOutput, GaussianNoiseState]:
-        first_clipped = clipped_input.grads
-        second_clipped = clipped_input.squared_grads
-        if not isinstance(first_clipped, ClippedPytree):
-            raise TypeError("SecondMomentClippingOutput.grads must be a ClippedPytree.")
-        if not isinstance(second_clipped, ClippedPytree):
-            raise TypeError(
-                "SecondMomentClippingOutput.squared_grads must be a ClippedPytree."
+        first_clipped, second_clipped, first_stddev, second_stddev = (
+            resolve_paired_clipped(
+                clipped_input,
+                noise_multiplier=resolved_noise_multiplier,
             )
-        first_stddev, second_stddev = _paired_stddevs(first_clipped, second_clipped)
-        # Two independent noise streams; fold-in 1 / 2 namespaces them so
-        # they don't collide with the single-stream key derivation
+        )
+        # Two independent noise streams; fold-in tags namespace them so they
+        # don't collide with the single-stream key derivation
         # (``fold_in(_rng_key, _step_counter)``).
-        first_step_key = rng_fold_in(rng_fold_in(st._rng_key, 1), st._step_counter)
-        second_step_key = rng_fold_in(rng_fold_in(st._rng_key, 2), st._step_counter)
+        first_step_key = rng_fold_in(
+            rng_fold_in(st._rng_key, PAIRED_FIRST_STREAM_FOLD), st._step_counter
+        )
+        second_step_key = rng_fold_in(
+            rng_fold_in(st._rng_key, PAIRED_SECOND_STREAM_FOLD), st._step_counter
+        )
         noisy_grads = _add_noise_tree(
             first_clipped.pytree,
             first_stddev,

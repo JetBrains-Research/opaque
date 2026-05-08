@@ -73,9 +73,9 @@ class PerGroup:
 
         noise_multiplier * clipping_norm  # PerGroup when clipping_norm is PerGroup
 
-    For MSE-optimal per-group noise allocation, use
-    :func:`opaque.dpsgd.noise.per_group_noise_stddev` instead of
-    a plain product.
+    For MSE-optimal per-group noise allocation, prefer
+    :meth:`ClippedPytree.noise_stddev_for` (``allocation="optimal"``) instead
+    of a plain product.
 
     Attributes:
         groups: Mapping from parameter key to group name (pre-resolved).

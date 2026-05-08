@@ -14,7 +14,7 @@ import math
 
 import pytest
 
-from opaque.dpsgd.noise import paired_noise_stddevs
+from opaque._noise_allocation import paired_noise_stddevs
 from opaque.types import PerGroup
 
 

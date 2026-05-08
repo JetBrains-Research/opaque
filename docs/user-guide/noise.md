@@ -110,15 +110,10 @@ uniform_stddev = grads.noise_stddev_for(
 )
 ```
 
-For callers that already hold a bare `PerGroup` (for example restored
-via `opaque.serialization.from_state_dict` with a template that matches
-the saved keys), the equivalent free function is still available:
-
-```python
-from opaque.dpsgd.noise import per_group_noise_stddev
-
-stddev = per_group_noise_stddev(grads.max_norm, noise_multiplier)
-```
+For a bare `PerGroup` bound (for example restored via
+`opaque.serialization.from_state_dict` with a matching template), wrap it
+in a `ClippedPytree` with placeholder tensors that share the same parameter
+keys, then call `noise_stddev_for` as above.
 
 Both routes return a `PerGroup` of per-group standard deviations with
 $\sigma_i \propto \sqrt{C_i}$.  `gaussian_noise` applies the optimal
@@ -180,7 +175,7 @@ a `SecondMomentNoiseOutput` with both streams noised under the joint
 sensitivity-proportional Mahalanobis allocation (scalar case:
 ``σ¹ = nm·sqrt(Δ¹·S)``, ``σ² = nm·sqrt(Δ²·S)``, ``S = Δ¹+Δ²``; with
 :class:`~opaque.types.PerGroup` bounds, ``S`` sums ``Δ¹_g+Δ²_g`` over
-groups — see :func:`~opaque.dpsgd.noise.paired_noise_stddevs`).  Each
+groups).  Each
 stream is sampled from its own truncated Gaussian with bounds scaled to
 its own ``radius * stddev``.
 

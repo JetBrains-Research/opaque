@@ -1,27 +1,33 @@
-r"""MSE-optimal noise allocation helpers shared across DP-SGD and DP-FTRL.
+r"""Internal MSE-optimal noise allocation for DP-SGD / DP-FTRL.
 
-These are pure mathematical utilities: given clipping-derived sensitivities
-(scalar or :class:`~opaque.types.PerGroup`) they return the noise standard
-deviations that satisfy the joint Mahalanobis Gaussian privacy budget with
-equality, so the joint release has the same PLD as a single sensitivity-1
-Gaussian at the chosen ``noise_multiplier``.
+This module is **not** a supported public API (leading underscore).  Callers
+inside the monorepo use it to share paired-stream σ math and RNG fold-in tags
+without creating package dependency cycles.
 
-Two helpers live here:
+Exposed helpers:
 
 - :func:`per_group_noise_stddev` — single-stream MSE-optimal allocation.
-- :func:`paired_noise_stddevs` — paired first + element-wise-squared
-  release; polymorphic in each stream (``float`` or ``PerGroup``).
+- :func:`paired_noise_stddevs` — paired first + element-wise-squared release;
+  polymorphic in each stream (``float`` or :class:`~opaque.types.PerGroup`).
+- :func:`resolve_paired_clipped` — validate ``SecondMomentClippingOutput`` and
+  return ``(first, second, σ_first, σ_second)`` for DP-SGD Gaussian-family
+  mechanisms.
 
-Both are consumed from :mod:`opaque.dpsgd.noise` and
-:mod:`opaque.dpftrl.noise`; they live in :mod:`opaque-core` to avoid an
-``opaque-dpftrl → opaque-dpsgd`` package dependency.
+Constants :data:`PAIRED_FIRST_STREAM_FOLD` and :data:`PAIRED_SECOND_STREAM_FOLD`
+namespace RNG ``fold_in`` tags for the two streams relative to the single-stream
+derivation (``fold_in(key, step)``).
 """
 
 from __future__ import annotations
 
 import math
 
-from opaque.types import PerGroup
+from opaque.types import ClippedPytree, PerGroup, SecondMomentClippingOutput
+
+# Tags for `fold_in(base_key, tag)` before `fold_in(..., step_counter)` so
+# paired streams do not collide with single-stream key derivation.
+PAIRED_FIRST_STREAM_FOLD = 1
+PAIRED_SECOND_STREAM_FOLD = 2
 
 
 def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGroup:
@@ -220,4 +226,40 @@ def paired_noise_stddevs(
     return sigma_first, sigma_second
 
 
-__all__ = ["per_group_noise_stddev", "paired_noise_stddevs"]
+def resolve_paired_clipped(
+    clipped_input: SecondMomentClippingOutput,
+    *,
+    noise_multiplier: float,
+) -> tuple[ClippedPytree, ClippedPytree, float | PerGroup, float | PerGroup]:
+    """Validate paired second-moment clipping output and compute stream stddevs.
+
+    ``noise_multiplier`` is the effective joint Gaussian multiplier (for
+    DP-SGD, the same value passed to :func:`gaussian_noise`; see
+    :func:`paired_noise_stddevs` for DP-FTRL translation).
+
+    Returns:
+        ``(first_clipped, second_clipped, σ_first, σ_second)``.
+    """
+    first_clipped = clipped_input.grads
+    second_clipped = clipped_input.squared_grads
+    if not isinstance(first_clipped, ClippedPytree):
+        raise TypeError("SecondMomentClippingOutput.grads must be a ClippedPytree.")
+    if not isinstance(second_clipped, ClippedPytree):
+        raise TypeError(
+            "SecondMomentClippingOutput.squared_grads must be a ClippedPytree."
+        )
+    std_first, std_second = paired_noise_stddevs(
+        noise_multiplier,
+        first=first_clipped.max_norm,
+        second=second_clipped.max_norm,
+    )
+    return first_clipped, second_clipped, std_first, std_second
+
+
+__all__ = [
+    "PAIRED_FIRST_STREAM_FOLD",
+    "PAIRED_SECOND_STREAM_FOLD",
+    "paired_noise_stddevs",
+    "per_group_noise_stddev",
+    "resolve_paired_clipped",
+]
