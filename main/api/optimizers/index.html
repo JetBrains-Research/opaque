@@ -2035,8 +2035,8 @@ an alternative answer to the same v-update bias.</p>
 </tr>
 <tr>
 <td><strong><code>adamw</code></strong></td>
-<td>φ-EMA on v̂ (DP-AdamW-BC) + private second moments</td>
-<td>Default for DP training</td>
+<td>Optional φ-EMA on v̂ when <code>noise_bias_correction=True</code>; private second moments via <code>SecondMomentNoiseOutput</code></td>
+<td>Adam-family fine-tuning when first-momentum and decoupled WD matter</td>
 </tr>
 <tr>
 <td><strong><code>radam</code></strong></td>
@@ -2055,8 +2055,8 @@ an alternative answer to the same v-update bias.</p>
 </tr>
 <tr>
 <td><strong><code>adafactor</code></strong></td>
-<td>(deferred)</td>
-<td>Memory-constrained large-LM fine-tuning; ship vanilla + WD only for now</td>
+<td>Factored second moment; optional per-factor φ-EMA when <code>noise_bias_correction=True</code></td>
+<td>Recommended default for DP LM fine-tuning (relative step scaling); see <a href="../../user-guide/optimizers/">user guide</a></td>
 </tr>
 <tr>
 <td><strong><code>lion</code></strong></td>
