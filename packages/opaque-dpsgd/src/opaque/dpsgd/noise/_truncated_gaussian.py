@@ -224,8 +224,7 @@ def truncated_gaussian_noise(
         tensor: torch.Tensor, std: float, generator: torch.Generator
     ) -> torch.Tensor:
         if std == 0:
-            bound = 0.0
-            return torch.clamp(tensor, min=-bound, max=bound)
+            return torch.zeros_like(tensor)
         bound = std * radius
         return _truncated_normal_around(
             tensor,
@@ -243,16 +242,23 @@ def truncated_gaussian_noise(
         """Apply truncated Gaussian noise; dispatch on scalar vs PerGroup.
 
         For ``σ_g = 0`` the truncated support collapses to ``{0}``; we
-        match the scalar zero-σ path and clamp the per-group tensor to 0
-        rather than returning it unchanged (which would violate the
-        bounded-support guarantee).
+        return a zero tensor (same dtype/device) rather than leaving
+        non-finite values untouched (``clamp`` would preserve NaNs).
+
+        ``PerGroup`` stddev requires a flat ``dict[str, Tensor]`` pytree so
+        each parameter key maps to a leaf tensor.
         """
         if isinstance(stddev, PerGroup):
+            if not isinstance(grads, dict):
+                raise TypeError(
+                    "truncated_gaussian_noise with PerGroup stddev requires "
+                    "ClippedPytree.pytree to be a dict[str, torch.Tensor]."
+                )
             noised: dict[str, torch.Tensor] = {}
             for param_key, tensor in grads.items():
                 group_std = stddev.for_key(param_key)
                 if group_std == 0:
-                    noised[param_key] = torch.clamp(tensor, min=-0.0, max=0.0)
+                    noised[param_key] = torch.zeros_like(tensor)
                     continue
                 bound = group_std * radius
                 noised[param_key] = _truncated_normal_around(
@@ -331,10 +337,14 @@ def truncated_gaussian_noise(
             _rng_key=st._rng_key,
         )
 
-        # Per-group noise path: per-key zero-σ short-circuits to ±0 to
-        # match the scalar zero-σ branch (truncated support collapses to
-        # ``{0}`` when σ=0).
+        # Per-group noise path: per-key zero-σ returns an exact zero tensor
+        # (truncated support collapses to ``{0}`` when σ=0).
         if isinstance(effective_stddev, PerGroup):
+            if not isinstance(grads.pytree, dict):
+                raise TypeError(
+                    "truncated_gaussian_noise with PerGroup stddev requires "
+                    "ClippedPytree.pytree to be a dict[str, torch.Tensor]."
+                )
             step_key = rng_fold_in(st._rng_key, st._step_counter)
             g = generator_from_key(step_key)
 
@@ -342,7 +352,7 @@ def truncated_gaussian_noise(
             for param_key, tensor in grads.pytree.items():
                 group_std = effective_stddev.for_key(param_key)
                 if group_std == 0:
-                    noised[param_key] = torch.clamp(tensor, min=-0.0, max=0.0)
+                    noised[param_key] = torch.zeros_like(tensor)
                     continue
                 max_norm = group_std * radius
                 noised[param_key] = _truncated_normal_around(
@@ -363,9 +373,7 @@ def truncated_gaussian_noise(
         max_norm = effective_stddev * radius
 
         if effective_stddev == 0:
-            noised = tree_map(
-                lambda t: torch.clamp(t, min=-max_norm, max=max_norm), grads.pytree
-            )
+            noised = tree_map(lambda t: torch.zeros_like(t), grads.pytree)
             return NoisedPytree(
                 pytree=noised,
                 max_norm=grads.max_norm,
