@@ -87,6 +87,7 @@ from opaque.dpsgd.sampling import PoissonSampler
 from opaque.dpsgd.sampling import TruncatedPoissonSampler
 from opaque.distributed import local_shard
 from opaque.functional import make_functional
+from opaque.optimizers.types import ScheduleFreeState
 from opaque.scheduling import (
     cosine_schedule,
     inverse_sqrt_schedule,
@@ -424,7 +425,10 @@ def parse_args():
             "primitives (no DP-aware paths); the others are Opaque-built "
             "(see opaque.optimizers).  Pair with "
             "``--noise-bias-correction`` to enable DP-aware bias "
-            "correction where applicable."
+            "correction where applicable.  "
+            "``schedule_free_adamw`` evaluates and audits on the published "
+            "average weights (``ScheduleFreeState.x``), not the forward "
+            "iterate ``y`` held in ``trainable_params``."
         ),
     )
     train_group.add_argument(
@@ -1562,6 +1566,15 @@ def main():
         raise ValueError(f"Unknown optimizer: {args.optimizer}")
 
     opt_state = base_opt.init(trainable_params)
+
+    def params_for_eval_audit():
+        """Weights used for eval/audit: schedule-free published ``x``, else train."""
+        if args.optimizer == "schedule_free_adamw" and isinstance(
+            opt_state, ScheduleFreeState
+        ):
+            return opt_state.x
+        return trainable_params
+
     accounting = Accountant()
 
     # Noise functions consume ClippedPytree metadata directly and return
@@ -1596,7 +1609,7 @@ def main():
     print_memory(device, "Before training")
 
     # Step-0 eval: log baseline metrics before any training
-    initial_eval_loss = eval_loss(trainable_params)
+    initial_eval_loss = eval_loss(params_for_eval_audit())
     initial_epsilon = accounting.epsilon_at(args.target_delta)
     initial_noise_std = _noise_stddev(initial_bound, noise_multiplier)
     print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
@@ -1745,7 +1758,7 @@ def main():
 
             # Expensive operations (eval + privacy + audit) every eval_steps
             if global_step % args.eval_steps == 0:
-                current_eval_loss = eval_loss(trainable_params)
+                current_eval_loss = eval_loss(params_for_eval_audit())
                 # Cache PLD before eval so it serves as opaque boundary
                 accounting = acc.cached(accounting)
                 epsilon = accounting.epsilon_at(args.target_delta)
@@ -1757,7 +1770,7 @@ def main():
                 eval_msg = f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
 
                 if args.audit:
-                    audit_estimate = run_audit(trainable_params)
+                    audit_estimate = run_audit(params_for_eval_audit())
                     audit_eps = audit_estimate.epsilon_at(delta=args.target_delta)
                     audit_auc = audit_estimate.auc()
                     metrics["privacy/epsilon_empirical"] = audit_eps
@@ -1839,7 +1852,7 @@ def main():
     print(f"  Noise multiplier: {noise_multiplier:.4f}")
     print(f"  Final ε (theoretical): {final_epsilon:.4f}")
     if args.audit:
-        audit_result = run_audit(trainable_params)
+        audit_result = run_audit(params_for_eval_audit())
         audit_eps = audit_result.epsilon_at(delta=args.target_delta)
         audit_auc = audit_result.auc()
         print(
