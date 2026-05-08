@@ -177,8 +177,10 @@ for accounting.
 `gaussian_noise`: when a `SecondMomentClippingOutput` (from
 ``clipped_grad(..., second_moment=True)``) flows in, the function returns
 a `SecondMomentNoiseOutput` with both streams noised under the joint
-sensitivity-proportional Mahalanobis allocation
-(``σ¹ = nm·sqrt(Δ¹·S)``, ``σ² = nm·sqrt(Δ²·S)``, ``S = Δ¹+Δ²``).  Each
+sensitivity-proportional Mahalanobis allocation (scalar case:
+``σ¹ = nm·sqrt(Δ¹·S)``, ``σ² = nm·sqrt(Δ²·S)``, ``S = Δ¹+Δ²``; with
+:class:`~opaque.types.PerGroup` bounds, ``S`` sums ``Δ¹_g+Δ²_g`` over
+groups — see :func:`~opaque.dpsgd.noise.paired_noise_stddevs`).  Each
 stream is sampled from its own truncated Gaussian with bounds scaled to
 its own ``radius * stddev``.
 

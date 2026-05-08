@@ -15,9 +15,11 @@ factories live next to its runtime:
 
 | Module | Provides | Ships with |
 |--------|----------|------------|
-| `opaque.accounting` | Cross-cutting primitives — composition (`compose`, `repeat`, `cached`), `calibrate`, generic mechanisms (`identity`, `nonprivate`, `eps_delta`), and the two cross-algorithm primitives `balls_in_bins` and `second_moment`. | `opaque-accounting` |
+| `opaque.accounting` | Cross-cutting primitives — composition (`compose`, `repeat`, `cached`), `calibrate`, generic mechanisms (`identity`, `nonprivate`, `eps_delta`), `Accountant`, and the shared PLD / discretization stack. | `opaque-accounting` |
 | `opaque.dpsgd.accounting` | DP-SGD factories — `gaussian`, `adaclip`, `poisson`, `truncated_poisson`, `parallel_poisson`. | `opaque-dpsgd` |
-| `opaque.dpftrl.accounting` | DP-FTRL factories — `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `cyclic_poisson`, `b_min_sep`. | `opaque-dpftrl` |
+| `opaque.dpftrl.accounting` | DP-FTRL factories — `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `cyclic_poisson`, `b_min_sep`, `balls_in_bins`. | `opaque-dpftrl` |
+
+Private second moments do **not** use a separate accounting wrapper: the joint gradient + squared-gradient release is handled in the runtime σ split (sensitivity-proportional Mahalanobis allocation), so calibration stays on the same underlying mechanism PLD as first-moment-only training. See [Noise API](../api/noise.md#paired-second-moment-release).
 
 Both algorithm-specific namespaces re-export from the shared `opaque-accounting`
 implementation; the split is purely organisational. The `Accountant` interactive
