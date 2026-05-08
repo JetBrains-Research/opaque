@@ -44,9 +44,14 @@ class MFNoiseState(NoiseState):
             or :class:`~opaque.types.PerGroup`), latched by the dispatcher to
             enforce constant per-step sensitivity.  ``None`` until the first
             call.  MF privacy analyses assume the per-step sensitivity is
-            constant across the sequence; varying it (e.g. via adaptive
-            clipping) breaks the standard proof, so the dispatcher rejects
-            subsequent calls whose ``max_norm`` differs.
+            constant across the sequence.  Both fixed clipping
+            (:func:`opaque.clipping.clipped_grad`) and AUTO-S clipping
+            (:func:`opaque.clipping.auto_clipped_grad`) satisfy this
+            assumption — the per-record bound is fixed at construction and
+            does not depend on data.  Adaptive clipping
+            (:func:`opaque.dpsgd.clipping.adaptive_clipped_grad`) breaks it,
+            so the dispatcher rejects subsequent calls whose ``max_norm``
+            differs.
         _first_max_norm_sync_fingerprint: When ``_first_max_norm`` is a
             ``PerGroup``, stores a deterministic scalar fingerprint (computed
             once at latch time) for cheap cross-rank checks in

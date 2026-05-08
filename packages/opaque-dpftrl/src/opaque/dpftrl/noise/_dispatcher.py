@@ -251,10 +251,13 @@ def _validate_constant_max_norm(
     """Latch the per-step max_norm and reject changes across calls.
 
     MF privacy analyses calibrate noise from a sensitivity that is constant
-    across the sequence; varying ``ClippedPytree.max_norm`` per call (e.g. from
-    adaptive clipping) breaks the proof.  The dispatcher latches the
-    first-call max_norm in the state and rejects any subsequent call whose
-    max_norm differs.
+    across the sequence.  Fixed clipping (:func:`opaque.clipping.clipped_grad`)
+    and AUTO-S clipping (:func:`opaque.clipping.auto_clipped_grad`) both
+    produce a constant ``ClippedPytree.max_norm`` and pass this latch.
+    Adaptive clipping (:func:`opaque.dpsgd.clipping.adaptive_clipped_grad`)
+    varies its threshold across steps, which breaks the proof; the
+    dispatcher latches the first-call max_norm in the state and rejects any
+    subsequent call whose max_norm differs.
     """
     max_norm = grads.max_norm
     if isinstance(max_norm, PerGroup):
@@ -272,9 +275,10 @@ def _validate_constant_max_norm(
     if first_max_norm is not None and max_norm != first_max_norm:
         raise ValueError(
             f"{op} saw a varying ClippedPytree.max_norm across calls "
-            f"(first={first_max_norm}, now={max_norm}). MF privacy proofs assume a "
-            "constant per-step sensitivity; adaptive clipping with MF noise "
-            "is not supported."
+            f"(first={first_max_norm}, now={max_norm}). MF privacy proofs "
+            "assume a constant per-step sensitivity; this is satisfied by "
+            "fixed and AUTO-S clipping but not by adaptive clipping, which "
+            "is therefore unsupported with MF noise."
         )
     return max_norm
 
