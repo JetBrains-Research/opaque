@@ -13,7 +13,7 @@ project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
-    uv sync --group examples
+    uv sync --group examples --all-packages
     uv run python examples/train_causal_lm.py --preset mellum-kstack --lora-method lora-xs $EXTRA_ARGS
 provisioning:
   gpu_type: h200
