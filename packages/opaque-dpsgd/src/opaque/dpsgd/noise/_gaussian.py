@@ -41,10 +41,7 @@ from opaque.random import generator_from_key
 from opaque.random.types import RngKey
 from opaque.random import fold_in as rng_fold_in
 from opaque.pytree import tree_map
-from opaque.dpsgd.noise._per_group_noise import (
-    paired_noise_stddevs,
-    per_group_noise_stddev,
-)
+from opaque.noise_allocation import paired_noise_stddevs, per_group_noise_stddev
 
 
 @dataclasses.dataclass(frozen=True)

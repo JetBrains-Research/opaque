@@ -43,10 +43,7 @@ from opaque.types import (
 )
 
 from opaque.dpsgd.noise._gaussian import GaussianNoiseState
-from opaque.dpsgd.noise._per_group_noise import (
-    paired_noise_stddevs,
-    per_group_noise_stddev,
-)
+from opaque.noise_allocation import paired_noise_stddevs, per_group_noise_stddev
 from opaque.random import generator_from_key
 from opaque.random.types import RngKey
 from opaque.random import fold_in as rng_fold_in
@@ -238,13 +235,20 @@ def truncated_gaussian_noise(
         stddev: float | PerGroup,
         generator: torch.Generator,
     ) -> Any:
-        """Apply truncated Gaussian noise; dispatch on scalar vs PerGroup."""
+        """Apply truncated Gaussian noise; dispatch on scalar vs PerGroup.
+
+        For ``σ_g = 0`` the truncated support collapses to ``{0}``; we
+        match the scalar zero-σ path and clamp the per-group tensor to 0
+        rather than returning it unchanged (which would violate the
+        bounded-support guarantee).
+        """
         if isinstance(stddev, PerGroup):
-            if all(v == 0 for v in stddev.values.values()):
-                return grads
             noised: dict[str, torch.Tensor] = {}
             for param_key, tensor in grads.items():
                 group_std = stddev.for_key(param_key)
+                if group_std == 0:
+                    noised[param_key] = torch.clamp(tensor, min=-0.0, max=0.0)
+                    continue
                 bound = group_std * radius
                 noised[param_key] = _truncated_normal_around(
                     tensor,
@@ -342,21 +346,19 @@ def truncated_gaussian_noise(
             _rng_key=st._rng_key,
         )
 
-        # Per-group noise path
+        # Per-group noise path: per-key zero-σ short-circuits to ±0 to
+        # match the scalar zero-σ branch (truncated support collapses to
+        # ``{0}`` when σ=0).
         if isinstance(effective_stddev, PerGroup):
-            if all(v == 0 for v in effective_stddev.values.values()):
-                return NoisedPytree(
-                    pytree=grads.pytree,
-                    max_norm=grads.max_norm,
-                    noise_stddev=effective_stddev,
-                ), next_state
-
             step_key = rng_fold_in(st._rng_key, st._step_counter)
             g = generator_from_key(step_key)
 
             noised = {}
             for param_key, tensor in grads.pytree.items():
                 group_std = effective_stddev.for_key(param_key)
+                if group_std == 0:
+                    noised[param_key] = torch.clamp(tensor, min=-0.0, max=0.0)
+                    continue
                 max_norm = group_std * radius
                 noised[param_key] = _truncated_normal_around(
                     tensor,

@@ -22,7 +22,7 @@ import torch
 
 from opaque.types import PerGroup
 from opaque.types import ClippedPytree
-from opaque.dpsgd.noise import paired_noise_stddevs
+from opaque.noise_allocation import paired_noise_stddevs
 from opaque.types import (
     NoisedPytree,
     SecondMomentClippingOutput,
