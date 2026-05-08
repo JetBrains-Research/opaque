@@ -625,6 +625,7 @@ def parse_args():
             "adagrad",
             "radam",
             "adadelta",
+            "schedule_free_adamw",
         ],
         help=(
             "Optimizer.  ``sgd`` and ``adam`` are torchopt's vanilla "
@@ -1731,6 +1732,16 @@ def main():
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
+        )
+    elif args.optimizer == "schedule_free_adamw":
+        from opaque.optimizers import adamw, schedule_free
+
+        base_opt = schedule_free(
+            adamw(
+                lr=lr_for_opt,
+                weight_decay=args.weight_decay,
+                noise_bias_correction=args.noise_bias_correction,
+            ),
         )
     elif args.optimizer == "ademamix":
         from opaque.optimizers import ademamix
