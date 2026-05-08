@@ -14,27 +14,18 @@ For narrower namespaces, types are also re-exported from per-subpackage
 - :mod:`opaque.accounting.transformations.types` — transformation types
 
 DP-SGD-specific dataclasses (``Gaussian``, ``Poisson``, ``TruncatedPoisson``,
-``ParallelPoisson``, ``AdaClip``) are also re-exported from
+``ParallelPoisson``, ``AdaClip``) are re-exported from
 :mod:`opaque.dpsgd.accounting.types` (requires the ``opaque-dpsgd``
 install); DP-FTRL-specific dataclasses (``BandMf``, ``Blt``, ``LambdaCgd``,
 ``Bisr``, ``Bsr``, ``MfGaussian``, ``CyclicPoisson``, ``BMinSep``) from
-:mod:`opaque.dpftrl.accounting.types` (requires ``opaque-dpftrl``).
-This module re-exports both classes regardless — the per-package types
-modules just narrow the surface for callers that prefer not to import
-the entire dataclass catalog.
+:mod:`opaque.dpftrl.accounting.types` (requires ``opaque-dpftrl``).  This
+module only re-exports the cross-cutting types that live in
+``opaque-accounting`` itself.
 """
 
 from __future__ import annotations
 
 from opaque.accounting._accountant import Accountant
-from opaque.accounting.amplification.types import (
-    BallsInBins,
-    BMinSep,
-    CyclicPoisson,
-    ParallelPoisson,
-    Poisson,
-    TruncatedPoisson,
-)
 from opaque.accounting._base import DpProcess
 from opaque.accounting._budgets import (
     AdvantageBudget,
@@ -48,18 +39,10 @@ from opaque.accounting.calibration import CalibrateResult
 from opaque.accounting.composition.types import CachedProcess, Composed, Repeated
 from opaque.accounting.discretization import DiscretizationConfig
 from opaque.accounting.mechanisms.types import (
-    BandMf,
-    Bisr,
-    Blt,
-    Bsr,
     EpsDelta,
-    Gaussian,
     Identity,
-    LambdaCgd,
-    MfGaussian,
     NonPrivate,
 )
-from opaque.accounting.transformations.types import AdaClip, SecondMoment
 
 __all__ = [
     # Interactive container
@@ -76,29 +59,12 @@ __all__ = [
     # Calibration / discretization
     "CalibrateResult",
     "DiscretizationConfig",
-    # Mechanisms
-    "Gaussian",
+    # Generic mechanisms
     "EpsDelta",
     "Identity",
     "NonPrivate",
-    "MfGaussian",
-    "BandMf",
-    "Blt",
-    "LambdaCgd",
-    "Bisr",
-    "Bsr",
-    # Amplification
-    "BallsInBins",
-    "Poisson",
-    "TruncatedPoisson",
-    "ParallelPoisson",
-    "BMinSep",
-    "CyclicPoisson",
     # Composition
     "Composed",
     "Repeated",
     "CachedProcess",
-    # Transformations
-    "AdaClip",
-    "SecondMoment",
 ]

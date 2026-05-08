@@ -23,13 +23,6 @@ References:
     - Private second moments: https://arxiv.org/abs/2502.06597
 """
 
-from opaque.dpftrl.noise._second_moment import (
-    DEFAULT_SECOND_MOMENT_OVERHEAD,
-    second_moment_joint_sensitivity,
-    second_moment_noise_scale,
-    second_moment_stddevs,
-)
-
 from ._band_mf import band_mf_strategy
 from ._bisr import bisr_strategy
 from ._blt import blt_strategy
@@ -48,8 +41,4 @@ __all__ = [
     "blt_strategy",
     "identity_strategy",
     "lambda_cgd_strategy",
-    "DEFAULT_SECOND_MOMENT_OVERHEAD",
-    "second_moment_joint_sensitivity",
-    "second_moment_noise_scale",
-    "second_moment_stddevs",
 ]
