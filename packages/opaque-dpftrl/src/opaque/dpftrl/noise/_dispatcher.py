@@ -220,11 +220,10 @@ def _expect_clipped(value: Any, *, op: str) -> ClippedPytree:
         )
     if isinstance(value.max_norm, PerGroup):
         raise TypeError(
-            f"{op} does not support PerGroup bounds. Per-group noise allocation "
-            "for matrix-factorization mechanisms has not been validated; the "
-            "interaction of per-group clipping with correlated noise across "
-            "time is an open question. Use a scalar clipping_norm with "
-            "MF mechanisms."
+            f"{op} does not support PerGroup bounds. Per-group paired second "
+            "moments are implemented for DP-SGD Gaussian / truncated-Gaussian "
+            "noise only; MF strategies use correlated noise with scalar "
+            "latched sensitivities. Use a scalar clipping_norm with mf_noise."
         )
     return value
 
