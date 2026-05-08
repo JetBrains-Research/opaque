@@ -574,9 +574,11 @@ def parse_args():
         "standard single-stream release), 'auto' (enable for optimizers with "
         "a noisy_squared_grads branch — adam/adamw/ademamix/rmsprop/radam/"
         "adadelta), or an explicit float >1.0 for the first-moment overhead "
-        "(default sqrt(3/2) ≈ 1.225 when enabled).  Not yet supported with "
-        "--per-group-clipping (joint first+second-moment privacy allocation "
-        "has not been validated for per-group sensitivities).",
+        "(default sqrt(3/2) ≈ 1.225 when enabled).  With --per-group-clipping "
+        "(DP-SGD Gaussian or truncated Gaussian only), paired noise uses a "
+        "joint Mahalanobis-optimal allocation; privacy accounting stays "
+        "Gaussian at the same noise multiplier—the float overhead applies "
+        "only to the scalar clipping_norm paired path.",
     )
     dp_group.add_argument(
         "--per-group-clipping",
@@ -797,19 +799,6 @@ def parse_args():
     # Needed because argparse type=int can't accept None on CLI to override presets.
     if args.microbatch_size == 0:
         args.microbatch_size = None
-
-    # --second-moment + --per-group-clipping is not yet supported: the
-    # joint first+second-moment privacy allocation has not been validated
-    # for PerGroup sensitivities (mirrors the TypeError raised by
-    # ``opaque.clipping._clipped_fun``).  Reject early so users see the
-    # clear message before either flag is resolved further.
-    if args.second_moment != "none" and args.per_group_clipping:
-        parser.error(
-            "--second-moment is not supported together with "
-            "--per-group-clipping: the joint first+second-moment privacy "
-            "allocation has not been validated for per-group sensitivities. "
-            "Pick one."
-        )
 
     # Parse --per-group-clipping PATTERN=NORM pairs
     if args.per_group_clipping:
@@ -1264,12 +1253,6 @@ def main():
                 f"--second-moment overhead must be >1.0, got {second_moment_arg}"
             )
     use_second_moment = bool(second_moment_arg)
-    if use_second_moment and isinstance(clip_norm, PerGroup):
-        raise ValueError(
-            "--second-moment is incompatible with --per-group-clipping: the "
-            "joint first+second-moment allocation has not been validated for "
-            "PerGroup max_norm."
-        )
 
     # Create gradient function based on clipping mode.
     if args.clipping_mode == "adaptive":
@@ -1342,26 +1325,35 @@ def main():
             _base_mechanism(nm), expected_batch_size=ebs, num_groups=ng
         )
     if use_second_moment and args.noise_multiplier != 0:
-        # second_moment(gaussian(nm)): joint sensitivity = input_sensitivity ·
-        # c1 · overhead.  We pass input_sensitivity=1.0 because the runtime
-        # expresses noise_stddev as nm · max_norm (mechanism-relative
-        # sensitivity is 1).  The accountant scales effective_nm by 1/√(3/2)
-        # internally.  Skip the wrap when --noise-multiplier=0 because the
-        # underlying mechanism is ``acc.nonprivate()``, which
-        # ``acc.second_moment()`` rejects (a non-private mechanism has
-        # nothing to add second-moment overhead to).
         _bare_mechanism = mechanism
-        _overhead = (
-            second_moment_arg if isinstance(second_moment_arg, float) else None
-        )
-        if _overhead is not None:
-            mechanism = lambda nm, oh=_overhead: acc.second_moment(
-                _bare_mechanism(nm), sensitivity=1.0, first_moment_overhead=oh,
-            )
+        if isinstance(clip_norm, PerGroup):
+            # Per-group paired release: gaussian_noise / truncated_gaussian_noise
+            # use ``per_group_paired_noise_stddevs`` — Mahalanobis constraint holds
+            # with equality so privacy equals ``gaussian(nm)`` at the same
+            # multiplier (no ρ-based first-stream inflation).  Wrapping with
+            # ``acc.second_moment`` would wrongly assume scalar overhead semantics.
+            pass
         else:
-            mechanism = lambda nm: acc.second_moment(
-                _bare_mechanism(nm), sensitivity=1.0,
+            # second_moment(gaussian(nm)): joint sensitivity =
+            # input_sensitivity · c1 · overhead.  We pass
+            # input_sensitivity=1.0 because the runtime expresses
+            # noise_stddev as nm · max_norm (mechanism-relative sensitivity
+            # is 1).  Skip the wrap when --noise-multiplier=0 because the
+            # underlying mechanism is ``acc.nonprivate()``, which
+            # ``acc.second_moment()`` rejects.
+            _overhead = (
+                second_moment_arg if isinstance(second_moment_arg, float) else None
             )
+            if _overhead is not None:
+                mechanism = lambda nm, oh=_overhead: acc.second_moment(
+                    _bare_mechanism(nm),
+                    sensitivity=1.0,
+                    first_moment_overhead=oh,
+                )
+            else:
+                mechanism = lambda nm: acc.second_moment(
+                    _bare_mechanism(nm), sensitivity=1.0,
+                )
 
     _unamplified = mechanism
     if use_truncated_poisson:
@@ -1394,10 +1386,16 @@ def main():
         if args.noise_mechanism == "truncated_gaussian":
             print(f"  Noise radius: {args.noise_radius}σ")
         if use_second_moment:
-            print(
-                f"  Second-moment release: enabled "
-                f"(overhead={second_moment_arg if isinstance(second_moment_arg, float) else 'sqrt(3/2)'})"
-            )
+            if isinstance(clip_norm, PerGroup):
+                print(
+                    "  Second-moment release: enabled (per-group joint allocation; "
+                    "Gaussian(nm) accounting)"
+                )
+            else:
+                print(
+                    f"  Second-moment release: enabled "
+                    f"(overhead={second_moment_arg if isinstance(second_moment_arg, float) else 'sqrt(3/2)'})"
+                )
         print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
         print(f"  Total steps: {total_steps}")
         print(f"  Sample rate: {sample_rate:.6f}")
@@ -1818,10 +1816,16 @@ def main():
     elif use_parallel_poisson:
         print(f"  Accounting: parallel_poisson (world_size={world_size})")
     if use_second_moment:
-        print(
-            f"  Second-moment release: enabled "
-            f"(overhead={second_moment_arg if isinstance(second_moment_arg, float) else 'sqrt(3/2)'})"
-        )
+        if isinstance(clip_norm, PerGroup):
+            print(
+                "  Second-moment release: enabled (per-group joint allocation; "
+                "Gaussian(nm) accounting)"
+            )
+        else:
+            print(
+                f"  Second-moment release: enabled "
+                f"(overhead={second_moment_arg if isinstance(second_moment_arg, float) else 'sqrt(3/2)'})"
+            )
     print(
         f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})"
     )
