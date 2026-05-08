@@ -303,7 +303,7 @@ def radam(
     *,
     decoupled_weight_decay: bool = False,
     update_rms_clip: float | None = None,
-    noise_bias_correction: bool = True,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
     """Create a Rectified Adam optimizer with the wrapper-aware update API.
 
@@ -326,7 +326,9 @@ def radam(
             before the sqrt only on rectified-branch steps
             (``ρ_t > 5``).  The early branch advances ``φ`` to keep
             it consistent with ``v``'s noise history but does not
-            apply it (``v`` is not consumed there).
+            apply it (``v`` is not consumed there).  Defaults to
+            ``False``; see ``docs/user-guide/optimizers.md`` for when
+            to flip it on.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.

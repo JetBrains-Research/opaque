@@ -22,7 +22,7 @@ Install and depend on `opaque` only. The repository is implemented as
 |---|---|---|
 | `opaque` | — | Convenience installer; pulls in a curated bundle of sub-packages |
 | `opaque-core` | `opaque.{clipping,random,pytree,functional,distributed,optimizers,scheduling,profiling,types}` | RNG, pytree, clipping, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing, optimizers |
-| `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, AdamW-BC, Poisson samplers, adaptive + auto clipping |
+| `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, Poisson samplers, adaptive + auto clipping |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers |
 | `opaque-auditing` | `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) |
 | `opaque-patches` | `opaque.patches` | Unified patching entrypoint for PyTorch checkpointing, Hugging Face compat wrappers, Triton kernels, and PEFT/LoRA fusion |

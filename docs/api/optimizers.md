@@ -43,11 +43,11 @@ an alternative answer to the same v-update bias.
 |---|---|---|
 | **`sgd`** | No second moment; accepts `NoisedPytree` and ignores σ metadata | Canonical DP baseline |
 | **`adam`** | Original Adam/L2 variant with the same BC/private-moment paths as AdamW | Adam parity without decoupled WD |
-| **`adamw`** | φ-EMA on v̂ (DP-AdamW-BC) + private second moments | Default for DP training |
+| **`adamw`** | Optional φ-EMA on v̂ when `noise_bias_correction=True`; private second moments via `SecondMomentNoiseOutput` | Adam-family fine-tuning when first-momentum and decoupled WD matter |
 | **`radam`** | φ-EMA on v̂ in the rectified phase (`ρ_t > 5`); SGD-of-momentum in warmup | Long runs where you want RAdam's variance rectification with DP correction |
 | **`adadelta`** | Two-EMA BC: φ_g on `E[g²]` and per-element φ_dx on `E[Δx²]` | LR-free DP optimizer; useful when learning-rate tuning is hard |
 | **`ademamix`** | φ-EMA on v̂ + private second moments | Long-horizon training (slow EMA captures long-range signal) |
-| **`adafactor`** | (deferred) | Memory-constrained large-LM fine-tuning; ship vanilla + WD only for now |
+| **`adafactor`** | Factored second moment; optional per-factor φ-EMA when `noise_bias_correction=True` | Recommended default for DP LM fine-tuning (relative step scaling); see [user guide](../user-guide/optimizers.md) |
 | **`lion`** | (planned: sign gating) | Smaller state than Adam; vanilla works under noise but the gated mode is the real DP variant |
 | **`rmsprop`** | φ-EMA on v + private second moments | Adaptive without first moment; cheaper than Adam |
 | **`adagrad`** | cumulative `Φ_acc` subtraction | Sparse-gradient settings; **the correction is mandatory** — vanilla Adagrad's denominator runs away under DP noise |

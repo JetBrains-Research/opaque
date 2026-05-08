@@ -275,7 +275,7 @@ def adam(
     weight_decay: float = 0.0,
     *,
     update_rms_clip: float | None = None,
-    noise_bias_correction: bool = True,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
     """Create an Adam optimizer with Opaque's wrapper-aware update API.
 
@@ -302,7 +302,7 @@ def adamw(
     *,
     decoupled_weight_decay: bool = True,
     update_rms_clip: float | None = None,
-    noise_bias_correction: bool = True,
+    noise_bias_correction: bool = False,
 ) -> GradientTransformation:
     """Universal Adam / AdamW factory.
 
@@ -321,10 +321,11 @@ def adamw(
         noise_bias_correction: If ``True``, subtract a β₂-EMA of the
             realized noise variance from the second moment when
             ``NoisedPytree`` updates are passed (DP-AdamW-BC, Chooi et al.).
-            Defaults to ``True``; flip off to ablate.  Has no effect on
-            steps where the update is a ``SecondMomentNoiseOutput``,
-            since the privatised ``g²`` stream is an alternative answer
-            to the same v-update bias.
+            Defaults to ``False``; see ``docs/user-guide/optimizers.md``
+            for when to flip it on.  Has no effect on steps where the
+            update is a ``SecondMomentNoiseOutput``, since the privatised
+            ``g²`` stream is an alternative answer to the same v-update
+            bias.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.

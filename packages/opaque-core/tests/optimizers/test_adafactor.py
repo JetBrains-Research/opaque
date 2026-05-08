@@ -119,9 +119,21 @@ class TestExplicitKwargsRejected:
 class TestBCMode:
     """DP noise-variance bias correction on the row/col factors."""
 
-    def test_default_advances_phi(self, matrix_params, matrix_grads):
-        """Default ``noise_bias_correction=True``: φ advances under NoisedPytree updates."""
+    def test_default_keeps_phi_zero(self, matrix_params, matrix_grads):
+        """Default ``noise_bias_correction=False``: φ stays at 0."""
         opt = adafactor(lr=1e-3)
+        state = opt.init(matrix_params)
+        for _ in range(5):
+            _, state = opt.update(
+                noised(matrix_grads, max_norm=1.0, noise_stddev=0.5),
+                state,
+                params=matrix_params,
+            )
+        assert all(v == 0.0 for v in _af_state(state).phi_flat)
+
+    def test_explicit_true_advances_phi(self, matrix_params, matrix_grads):
+        """Explicit ``noise_bias_correction=True``: φ advances under NoisedPytree updates."""
+        opt = adafactor(lr=1e-3, noise_bias_correction=True)
         state = opt.init(matrix_params)
         for _ in range(5):
             _, state = opt.update(
@@ -132,7 +144,7 @@ class TestBCMode:
         assert all(v > 0.0 for v in _af_state(state).phi_flat)
 
     def test_explicit_false_keeps_phi_zero(self, matrix_params, matrix_grads):
-        """Explicit ``noise_bias_correction=False``: φ stays at 0."""
+        """Explicit ``noise_bias_correction=False``: φ stays at 0 (same as default)."""
         opt = adafactor(lr=1e-3, noise_bias_correction=False)
         state = opt.init(matrix_params)
         for _ in range(5):
