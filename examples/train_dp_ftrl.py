@@ -426,7 +426,8 @@ def parse_args():
         nargs="+",
         default=None,
         metavar="PATTERN=NORM",
-        help="Per-group clipping norms as PATTERN=NORM pairs (e.g. c_attn=0.9 c_proj=0.5). "
+        help="Per-group clipping norms as PATTERN=NORM pairs (e.g. c_attn=0.9 c_proj=0.5 "
+        "for --preset smoke GPT-2 LoRA, or q_proj=0.5 fallback=1.0 for Mellum presets). "
         "Each trainable param must match exactly one pattern substring. "
         "Use 'fallback=NORM' as catch-all.  Incompatible with adaptive clipping; "
         "MF ``mf_noise`` uses the same Mahalanobis allocation as DP-SGD Gaussian.",
