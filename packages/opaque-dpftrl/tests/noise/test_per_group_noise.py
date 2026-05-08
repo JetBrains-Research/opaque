@@ -20,6 +20,7 @@ from opaque.dpftrl.noise import (
     lambda_cgd_strategy,
     mf_noise,
 )
+from opaque.dpftrl.noise._distributed import fingerprint_per_group_max_norm
 from opaque.random import key
 
 
@@ -188,10 +189,12 @@ class TestMfNoisePerGroupSingleStream:
         _, state = noise_fn(clipped(tree, max_norm=pg), state)
         _, state = noise_fn(clipped(tree, max_norm=pg), state)
         assert state._first_max_norm == pg
+        assert state._first_max_norm_sync_fingerprint == pytest.approx(
+            fingerprint_per_group_max_norm(pg)
+        )
 
-    def test_per_group_matches_isotropic_when_uniform(self, grad_template):
-        """Uniform ``B_g = B``: optimal per-group total leaf variance matches
-        isotropic noise at scalar ``max_norm = PerGroup(...).effective``."""
+    def test_per_group_matches_isotropic_when_uniform(self):
+        """Uniform ``B_g = B``: per-leaf stddevs match isotropic at ``effective``."""
         nm = 1.0
         B = 0.7
         pg = PerGroup(
@@ -199,32 +202,10 @@ class TestMfNoisePerGroupSingleStream:
             values={"g1": B, "g2": B},
         )
         eff = pg.effective
-        zeros = {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
-        n_trials = 400
-        vars_pg: list[float] = []
-        vars_iso: list[float] = []
-        for t in range(n_trials):
-            fn_pg, st_pg = mf_noise(
-                grad_template,
-                identity_strategy(),
-                noise_multiplier=nm,
-                key=key(t),
-            )
-            out_pg, _ = fn_pg(clipped(zeros, max_norm=pg), st_pg)
-            vars_pg.append(out_pg.pytree["w"].var().item())
-
-            fn_i, st_i = mf_noise(
-                grad_template,
-                identity_strategy(),
-                noise_multiplier=nm,
-                key=key(10_000 + t),
-            )
-            out_i, _ = fn_i(clipped(zeros, max_norm=eff), st_i)
-            vars_iso.append(out_i.pytree["w"].var().item())
-
-        mean_pg = sum(vars_pg) / n_trials
-        mean_iso = sum(vars_iso) / n_trials
-        assert mean_pg == pytest.approx(mean_iso, rel=0.15)
+        sig_pg = per_group_noise_stddev(pg, nm)
+        sigma_iso = nm * eff
+        assert sig_pg.for_key("w") == pytest.approx(sigma_iso)
+        assert sig_pg.for_key("b") == pytest.approx(sigma_iso)
 
     def test_per_group_unequal_bounds_strict_utility_win(self, grad_template):
         """Asymmetric group bounds: summed leaf variance under optimal per-group

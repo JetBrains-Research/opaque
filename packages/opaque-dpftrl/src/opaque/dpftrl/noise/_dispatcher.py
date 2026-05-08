@@ -37,9 +37,23 @@ from ._bsr import BsrStrategy, bsr_strategy
 from ._blt import BltStrategy, blt_strategy
 from ._identity import IdentityStrategy, identity_strategy
 from ._lambda_cgd import LambdaCgdStrategy, _make_lambda_cgd_noise, lambda_cgd_strategy
+from ._distributed import fingerprint_per_group_max_norm
 from ._engine import MFNoiseState, _matrix_factorization_noise
 from ._streaming_matrix import identity
 from ._second_moment import SecondMomentMFNoiseState
+
+
+def _mf_per_group_sync_fingerprint_for_latch(
+    prior: MFNoiseState,
+    max_norm: float | PerGroup,
+) -> float | None:
+    """Scalar fingerprint for distributed sync; computed once per ``PerGroup`` latch."""
+    if not isinstance(max_norm, PerGroup):
+        return None
+    if prior._first_max_norm is None:
+        return fingerprint_per_group_max_norm(max_norm)
+    return prior._first_max_norm_sync_fingerprint
+
 
 MfStrategy = (
     BandMfStrategy
@@ -151,13 +165,18 @@ def mf_noise(
             st,
             stddev=base_stddev,
         )
+        sync_fp = _mf_per_group_sync_fingerprint_for_latch(st, max_norm)
         return (
             NoisedPytree(
                 pytree=noisy_tree,
                 max_norm=clipped_grads.max_norm,
                 noise_stddev=base_stddev,
             ),
-            replace(new_state, _first_max_norm=max_norm),
+            replace(
+                new_state,
+                _first_max_norm=max_norm,
+                _first_max_norm_sync_fingerprint=sync_fp,
+            ),
         )
 
     return noise_fn, raw_state
@@ -343,6 +362,12 @@ def _make_second_moment_mf_noise(
             st._second_state,
             stddev=second_stddev,
         )
+        sync_fp_first = _mf_per_group_sync_fingerprint_for_latch(
+            st._first_state, max_norm
+        )
+        sync_fp_second = _mf_per_group_sync_fingerprint_for_latch(
+            st._second_state, squared_max_norm
+        )
         return (
             SecondMomentNoiseOutput(
                 NoisedPytree(
@@ -357,8 +382,16 @@ def _make_second_moment_mf_noise(
                 ),
             ),
             SecondMomentMFNoiseState(
-                _first_state=replace(new_first, _first_max_norm=max_norm),
-                _second_state=replace(new_second, _first_max_norm=squared_max_norm),
+                _first_state=replace(
+                    new_first,
+                    _first_max_norm=max_norm,
+                    _first_max_norm_sync_fingerprint=sync_fp_first,
+                ),
+                _second_state=replace(
+                    new_second,
+                    _first_max_norm=squared_max_norm,
+                    _first_max_norm_sync_fingerprint=sync_fp_second,
+                ),
             ),
         )
 

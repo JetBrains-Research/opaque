@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
-from typing import Any
 
 from opaque.distributed import is_distributed
 from opaque.distributed._state import (
@@ -22,8 +20,14 @@ from opaque.dpftrl.noise._engine import MFNoiseState
 from opaque.types import PerGroup
 
 
-def _fingerprint_per_group(pg: PerGroup) -> float:
-    """Deterministic float fingerprint for cross-rank equality of ``PerGroup``."""
+def fingerprint_per_group_max_norm(pg: PerGroup) -> float:
+    """Deterministic float fingerprint for cross-rank equality of ``PerGroup``.
+
+    Called once when ``mf_noise`` latches a ``PerGroup`` ``max_norm``; the
+    result is stored on :class:`MFNoiseState` and only scalar equality is
+    checked on each :func:`sync` (avoids re-hashing the full param→group map
+    on the hot path).
+    """
     payload = {
         "groups": sorted(pg.groups.items()),
         "values": sorted(pg.values.items()),
@@ -34,25 +38,10 @@ def _fingerprint_per_group(pg: PerGroup) -> float:
     return int.from_bytes(digest[:8], "big") / float(2**53)
 
 
-def _sync_mf_first_max_norm(value: Any, device: Any = None) -> None:
-    """Assert ``_first_max_norm`` matches across ranks (scalar or ``PerGroup``)."""
-    if value is None:
-        return
-    if isinstance(value, PerGroup):
-        assert_scalar_equal(
-            _fingerprint_per_group(value),
-            name="MFNoiseState._first_max_norm(PerGroup fingerprint)",
-            device=device,
-        )
-        return
-    assert_scalar_equal(
-        float(value), name="MFNoiseState._first_max_norm", device=device
-    )
-
-
-_MF_NOISE_STATE_FIELD_OPS: dict[str, str | Callable[..., Any]] = {
+_MF_NOISE_STATE_FIELD_OPS: dict[str, str] = {
     "_step_counter": "assert_equal",
-    "_first_max_norm": _sync_mf_first_max_norm,
+    "_first_max_norm_sync_fingerprint": "assert_equal",
+    "_first_max_norm": "assert_equal",
 }
 
 
@@ -77,4 +66,4 @@ def sync_mf_noise_state(state: MFNoiseState) -> MFNoiseState:
 register_sync_type(MFNoiseState, sync_mf_noise_state)
 
 
-__all__ = ["sync_mf_noise_state"]
+__all__ = ["fingerprint_per_group_max_norm", "sync_mf_noise_state"]

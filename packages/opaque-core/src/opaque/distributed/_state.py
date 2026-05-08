@@ -146,17 +146,22 @@ def gather_pytree(pytree: Any) -> Any:
 
 def sync_object(
     state: Any,
-    field_ops: Mapping[str, str | Callable[..., float]] | None = None,
+    field_ops: Mapping[str, str | Callable[..., float | int | None]] | None = None,
     device: torch.device | None = None,
 ) -> Any:
     """All-reduce scalar fields of a dataclass, returning a new instance.
 
     ``field_ops`` maps field name to a reduction op string
     (``"sum" | "mean" | "max" | "min" | "product" | "assert_equal"``) or to a
-    callable ``fn(value[, device]) -> float``.  **Callables run first** on the
-    raw field value (any type) and typically perform cross-rank assertions
-    without returning an update.  Defaults to averaging all numeric fields when
-    ``field_ops`` is None.
+    callable ``fn(value[, device]) -> float | int | None``.
+
+    **Callable semantics:** invoked on the raw field value (any type).  If the
+    return value is a real ``float`` or ``int`` (not ``bool``), it replaces the
+    field in the returned dataclass (same as the legacy numeric-reduction path).
+    If the return value is ``None``, the callable is treated as **assertion
+    only** — no field update.
+
+    Defaults to averaging all numeric fields when ``field_ops`` is None.
     """
     if not is_distributed():
         return state
@@ -185,9 +190,13 @@ def sync_object(
         value = getattr(state, field_name)
         if callable(field_op):
             try:
-                field_op(value, device)
+                result = field_op(value, device)
             except TypeError:
-                field_op(value)
+                result = field_op(value)
+            if isinstance(result, bool) or not isinstance(result, (float, int)):
+                continue
+            synced = int(result) if isinstance(value, int) else float(result)
+            updates[field_name] = synced
             continue
         if not isinstance(value, (float, int)):
             continue
@@ -198,12 +207,6 @@ def sync_object(
             continue
         if isinstance(field_op, str):
             synced = reduce_scalar(value, op=field_op, device=device)
-        elif callable(field_op):
-            numeric_value = float(value)
-            try:
-                synced = field_op(numeric_value, device)
-            except TypeError:
-                synced = field_op(numeric_value)
         else:
             raise TypeError(
                 f"field_ops[{field_name}] must be str or callable, got {type(field_op)}"

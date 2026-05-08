@@ -47,12 +47,18 @@ class MFNoiseState(NoiseState):
             constant across the sequence; varying it (e.g. via adaptive
             clipping) breaks the standard proof, so the dispatcher rejects
             subsequent calls whose ``max_norm`` differs.
+        _first_max_norm_sync_fingerprint: When ``_first_max_norm`` is a
+            ``PerGroup``, stores a deterministic scalar fingerprint (computed
+            once at latch time) for cheap cross-rank checks in
+            :func:`sync_mf_noise_state`.  ``None`` for scalar norms or before the
+            first call.
     """
 
     _inner_state: Any
     _step_counter: int
     _rng_key: RngKey
     _first_max_norm: float | PerGroup | None = None
+    _first_max_norm_sync_fingerprint: float | None = None
 
 
 def _internal_compute_dtype(dtype: torch.dtype) -> torch.dtype:

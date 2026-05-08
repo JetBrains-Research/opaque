@@ -595,10 +595,17 @@ def parse_args():
                     f"--per-group-clipping values must be PATTERN=NORM, got '{item}'"
                 )
             pattern, value = item.split("=", 1)
+            try:
+                norm = float(value)
+            except ValueError:
+                parser.error(
+                    f"--per-group-clipping norm must be a number, got '{value}' "
+                    f"in '{item}'"
+                )
             if pattern == "fallback":
-                fallback_value = float(value)
+                fallback_value = norm
             else:
-                parsed[pattern] = float(value)
+                parsed[pattern] = norm
         args.per_group_clipping = parsed
         args.per_group_clipping_fallback = fallback_value
 
