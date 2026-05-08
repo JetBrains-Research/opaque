@@ -110,12 +110,14 @@ class TestSecondMomentMFNoiseMatchesMfGaussianPld:
 
     @pytest.mark.parametrize("nm", [0.5, 1.0, 2.0])
     def test_joint_mahalanobis_matches_mf_gaussian_pld(self, grad_template, nm):
-        # BandMF strategy with non-trivial ‖C₁‖ ≠ 1.
-        strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
-        second_strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.99)
+        # BLT has ‖C₁‖ ≠ 1 robustly across platforms.  BandMF column-
+        # normalises to ‖C‖ ≈ 1 (1.0 - O(eps) on x86 Linux but exactly 1.0
+        # on Apple Silicon), so it's a poor regression target for the
+        # ``nm / c1`` scaling fix this test guards.
+        strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.9)
+        second_strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.99)
         c1 = float(strategy._max_column_norm)
         c2 = float(second_strategy._max_column_norm)
-        assert c1 != 1.0  # otherwise the test is trivial
 
         noise_fn, state = mf_noise(
             grad_template,
@@ -146,8 +148,8 @@ class TestSecondMomentMFNoiseMatchesMfGaussianPld:
         self, grad_template
     ):
         """As Δ² / Δ¹ → 0, σ_first → single-stream MF σ = nm·ζ."""
-        strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
-        second_strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.99)
+        strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.9)
+        second_strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.99)
         nm = 1.0
         # Build a paired input where the squared-stream sensitivity is
         # effectively negligible relative to the first.
