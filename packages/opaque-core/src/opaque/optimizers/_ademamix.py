@@ -246,7 +246,7 @@ def ademamix(
         noise_bias_correction: If ``True``, subtract a β₂-EMA of the
             realized noise variance from the second moment when
             ``NoisedPytree`` updates are passed.  Defaults to ``False``;
-            flip on once the LR is tuned for the workload.
+            see ``docs/user-guide/optimizers.md`` for when to flip it on.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.

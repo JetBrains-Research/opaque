@@ -191,13 +191,11 @@ def adagrad(
             ``False`` folds ``wd·params`` into the gradient.
         noise_bias_correction: If ``True``, subtract a cumulative
             ``Φ_acc`` of the realized noise variance from ``v_acc`` when
-            ``NoisedPytree`` updates are passed (Adagrad does not decay
-            its accumulator, so unmitigated noise compounds linearly).
-            Defaults to ``False`` for consistency with the rest of the
-            package, but for Adagrad specifically, BC is the single
-            optimizer where flipping it on is recommended under DP —
-            without it the un-decaying accumulator absorbs ``t·σ²`` of
-            noise variance and learning halts.
+            ``NoisedPytree`` updates are passed.  Adagrad does not decay
+            its accumulator, so without correction the un-decaying
+            ``v_acc`` absorbs ``t·σ²`` of noise variance and learning
+            halts; turn this on for any DP run.  Defaults to ``False``
+            for consistency with the rest of the package.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.

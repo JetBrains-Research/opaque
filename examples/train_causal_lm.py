@@ -434,11 +434,8 @@ def parse_args():
         help=(
             "Enable DP noise-variance bias correction on optimizers that "
             "support it (adam/adamw/ademamix/rmsprop/adagrad/adafactor).  "
-            "Silently ignored on sgd/lion.  Off by default: BC yields the "
-            "configured 'honest' learning rate, which only helps when the "
-            "LR is well-tuned; with BC off the effective LR auto-shrinks "
-            "proportionally to the noise/signal ratio, which is more "
-            "forgiving for un-tuned LRs.  See docs/user-guide/optimizers.md."
+            "Silently ignored on sgd/lion.  Off by default; see "
+            "docs/user-guide/optimizers.md for when to flip it on."
         ),
     )
     train_group.add_argument(
@@ -762,15 +759,9 @@ def parse_args():
         )
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
-        # No lr_schedule override: cosine was tested and was marginally
-        # slower than the default constant LR on this workload.
     elif args.preset == "qwen-7b-kstack":
-        # Qwen2.5-Coder-7B + KStack at ε=3.  Adafactor @ lr=5e-4 (BC off)
-        # was the best LoRA config in our optimizer sweep — beats tuned
-        # SGD-with-momentum by ~0.4% on min eval/loss with a stable,
-        # late-converging trajectory.  Adam/AdamW work at lr=1.5e-4 if
-        # you prefer; SGD with momentum 0.9 @ lr=5e-2 also works.
-        # Inherits the trainer's adafactor + BC-off defaults.
+        # Qwen2.5-Coder-7B + KStack LoRA fine-tuning at ε=3.  Inherits
+        # the trainer's adafactor + BC-off defaults.
         _set("model_name", "Qwen/Qwen2.5-Coder-7B")
         _set("dataset", "JetBrains/KStack")
         _set("dataset_text_field", "content")
@@ -799,9 +790,6 @@ def parse_args():
             ],
         )
         _set("dtype", "bfloat16")
-        # Optimizer + BC inherit argparse defaults (adafactor, BC off).
-        # No lr_schedule override: schedule sensitivity is workload-specific,
-        # and constant LR was the best configuration on this anchor.
     elif args.preset == "custom":
         # Keep all user-provided/default CLI arguments unchanged.
         pass

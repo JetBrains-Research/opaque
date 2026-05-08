@@ -327,8 +327,8 @@ def radam(
             (``ρ_t > 5``).  The early branch advances ``φ`` to keep
             it consistent with ``v``'s noise history but does not
             apply it (``v`` is not consumed there).  Defaults to
-            ``False``; RAdam is unusually LR-robust under DP, so the
-            BC choice typically moves the loss less than for Adam.
+            ``False``; see ``docs/user-guide/optimizers.md`` for when
+            to flip it on.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.

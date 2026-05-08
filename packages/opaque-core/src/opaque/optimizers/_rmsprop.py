@@ -216,9 +216,7 @@ def rmsprop(
         noise_bias_correction: If ``True``, subtract an ``alpha``-EMA of
             the realized noise variance from the second moment when
             ``NoisedPytree`` updates are passed.  Defaults to ``False``;
-            see ``docs/user-guide/optimizers.md`` for when to enable BC
-            (RMSprop is more LR-sensitive under DP than Adafactor or
-            RAdam — tune LR before flipping BC on).
+            see ``docs/user-guide/optimizers.md`` for when to flip it on.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.
