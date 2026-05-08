@@ -13,16 +13,19 @@ denominator stabilizer. The output has L2 norm at most ``R`` by
 construction, so the clipping threshold is no longer a tunable
 hyperparameter — it is absorbed into the learning rate.
 
-AUTO-S is algorithm-agnostic: the per-record sensitivity bound ``R`` is
-fixed at construction and data-independent (``\\sup_g \\lVert\\tilde g\\rVert
-\\le R`` holds uniformly), so it satisfies the constant per-step sensitivity
-assumption that all DP mechanisms in the library share.  The same
-``ClippedPytree`` output therefore flows unchanged into both DP-SGD's
-``gaussian_noise`` and DP-FTRL's correlated ``mf_noise`` (identity /
-band-MF / BLT / BiSR / BSR / λ-CGD).  Privacy accounting is the standard
-Gaussian PLD parameterized by ``noise_multiplier``; AUTO-S contributes no
-additional privacy cost because the scaling is fully per-example
-(depends only on the sample's own gradient).
+AUTO-S is algorithm-agnostic: the per-record bound ``R`` is fixed at
+construction and data-independent (``\\sup_g \\lVert\\tilde g\\rVert \\le R``
+holds uniformly), so each ``ClippedPytree`` carries a ``max_norm`` that
+does not depend on the batch — the correct per-step sensitivity for
+``gaussian_noise`` and other per-step Gaussian mechanisms.  DP-FTRL's
+``mf_noise`` additionally requires that ``max_norm`` stay *unchanged
+across training steps* (the dispatcher latches the first call for the
+matrix-factorization privacy proof); AUTO-S satisfies that latch because
+``R`` and ``normalize_by`` are fixed, unlike adaptive clipping.  Privacy
+accounting is the standard Gaussian PLD parameterized by
+``noise_multiplier``; AUTO-S contributes no additional privacy cost
+because the scaling is fully per-example (depends only on the sample's
+own gradient).
 """
 
 from __future__ import annotations
@@ -142,10 +145,11 @@ def auto_clipped_fun(
     Formal guarantee:
         Under add/remove or zero-out DP, the L2 sensitivity of the first
         output with respect to the batch arguments is the returned
-        ``ClippedPytree.max_norm`` metadata.  The bound is constant —
-        independent of input data — so it satisfies the constant per-step
-        sensitivity assumption shared by DP-SGD's Gaussian mechanism and
-        DP-FTRL's matrix-factorization mechanisms.
+        ``ClippedPytree.max_norm`` metadata.  The bound is constant and
+        data-independent, so per-step Gaussian calibration is correct.
+        ``mf_noise`` additionally requires that ``max_norm`` not drift across
+        steps; AUTO-S satisfies that latch because ``R`` and ``normalize_by``
+        are fixed.
     """
     _validate_auto_params(R, gamma)
 
@@ -252,12 +256,17 @@ def auto_clipped_grad(
     Formal guarantee:
         Under add/remove or zero-out DP, the L2 sensitivity of the
         summed gradients is the returned ``ClippedPytree.max_norm`` metadata —
-        a constant independent of the input data.  Privacy accounting is
-        plain ``gaussian(noise_multiplier)`` (DP-SGD) or any standard MF
-        mechanism (DP-FTRL): AUTO-S scaling is per-example and adds no
-        additional privacy cost, and the constant sensitivity satisfies
-        the assumption underlying both Gaussian PLD composition and
-        matrix-factorization correlated-noise analyses.
+        a constant independent of the input data.  Per-step Gaussian noise
+        (``gaussian_noise``, ``truncated_gaussian_noise``, …) reads that value
+        each step; PLD composition does not require ``max_norm`` to be
+        identical across steps when the accountant models step-varying
+        sensitivity (for example adaptive clipping with ``adaclip``).
+        ``mf_noise``'s matrix-factorization correlated noise *does* require
+        ``max_norm`` to stay fixed for the whole run — the dispatcher latches
+        the first-call bound — and AUTO-S satisfies that because ``R`` and
+        ``normalize_by`` do not drift.  AUTO-S scaling is per-example and adds
+        no privacy cost beyond ``gaussian(noise_multiplier)`` for the
+        gradient release.
 
     Example:
         >>> import torch
@@ -273,9 +282,10 @@ def auto_clipped_grad(
         >>> batch_y = torch.randn(32)
         >>> grads, state = grad_fn(params, batch_x, batch_y, state=state)
 
-    The returned ``ClippedPytree`` carries a constant ``max_norm = R /
-    normalize_by`` and therefore composes with ``mf_noise`` (DP-FTRL) and
-    ``gaussian_noise`` (DP-SGD) interchangeably with ``clipped_grad``.
+    The returned ``ClippedPytree`` carries ``max_norm = R / normalize_by``
+    (constant across steps), so it composes with ``mf_noise`` (DP-FTRL)
+    and ``gaussian_noise`` (DP-SGD) the same way ``clipped_grad`` does at
+    the same bound.
 
     References:
         Bu, Wang, Zha, Karypis.  "Automatic Clipping: Differentially
