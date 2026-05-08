@@ -1087,7 +1087,10 @@ def main():
     elif args.mechanism == "identity":
 
         def acct_mechanism(nm):
-            return dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=sample_rate) * total_steps
+            return (
+                dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=sample_rate)
+                * total_steps
+            )
     elif args.mechanism == "none":
 
         def acct_mechanism(nm):
@@ -1223,7 +1226,8 @@ def main():
 
             def identity_acct(nm):
                 return (
-                    dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=sample_rate) * total_steps
+                    dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=sample_rate)
+                    * total_steps
                 )
 
             identity_cal = cal.calibrate(
@@ -1281,22 +1285,10 @@ def main():
     print(f"  Sensitivity: {zeta:.6f} (= {args.clipping_norm} / {args.batch_size})")
     print(f"  Noise multiplier (σ): {noise_multiplier:.4f}")
     if use_second_moment and args.mechanism not in ("identity", "none"):
-        # Sensitivity-proportional joint allocation calibrated against the
-        # MfGaussian PLD ``gaussian_pld(nm/c1)`` of the underlying
-        # first-moment mechanism: pass effective multiplier ``nm/c1`` to the
-        # allocator so the joint Mahalanobis budget hits ``(c1/nm)²``.
-        c1 = float(strategy._max_column_norm)
-        # Second strategy uses --beta2 momentum; for printing use c1 as a
-        # close-enough proxy (workloads are typically the same shape).
-        delta1 = zeta * c1
-        delta2 = zeta * zeta * c1
-        s_total = delta1 + delta2
-        sigma_first = (noise_multiplier / c1) * (delta1 * s_total) ** 0.5
-        print(
-            f"  Joint Mahalanobis budget: Δ¹={delta1:.6f}, Δ²={delta2:.6f}, "
-            f"S={s_total:.6f}"
-        )
-        print(f"  Noise stddev (1st moment): {sigma_first:.6f}")
+        # Per-stream σ is allocated by the dispatcher
+        # (sensitivity-proportional Mahalanobis on the encoded streams) and
+        # surfaces at runtime via ``noise_output.{noisy_grads,noisy_squared_grads}.noise_stddev``.
+        print("  Paired-stream allocation: sensitivity-proportional Mahalanobis")
     else:
         print(
             f"  Base noise stddev: {base_noise_stddev:.6f} (= {noise_multiplier:.4f} × {zeta:.6f})"
