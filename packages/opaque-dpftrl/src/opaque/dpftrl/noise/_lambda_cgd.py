@@ -30,6 +30,7 @@ from typing import Any
 import torch
 
 from opaque.pytree import tree_map
+from opaque.types import PerGroup
 from opaque.random import generator_from_key
 from opaque.random.types import RngKey
 from opaque.random import fold_in as rng_fold_in
@@ -187,16 +188,15 @@ def _make_lambda_cgd_noise(
         clipped_grads: Any,
         st: MFNoiseState,
         *,
-        stddev: float,
+        stddev: float | PerGroup,
     ) -> tuple[Any, MFNoiseState]:
-        effective_stddev = float(stddev)
         step = st._step_counter
 
         current_key = rng_fold_in(st._rng_key, step)
         g_current = generator_from_key(current_key)
         z_t = _iid_normal_noise(
             clipped_grads,
-            effective_stddev,
+            stddev,
             generator=g_current,
             dtype=dtype,
         )
@@ -208,7 +208,7 @@ def _make_lambda_cgd_noise(
             g_prev = generator_from_key(prev_key)
             z_prev = _iid_normal_noise(
                 clipped_grads,
-                effective_stddev,
+                stddev,
                 generator=g_prev,
                 dtype=dtype,
             )

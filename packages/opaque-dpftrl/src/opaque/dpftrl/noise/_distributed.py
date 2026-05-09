@@ -7,6 +7,9 @@ for its side effects from :mod:`opaque.dpftrl.noise`; not re-exported.
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 from opaque.distributed import is_distributed
 from opaque.distributed._state import (
     assert_scalar_equal,
@@ -14,10 +17,30 @@ from opaque.distributed._state import (
     sync_object,
 )
 from opaque.dpftrl.noise._engine import MFNoiseState
+from opaque.types import PerGroup
+
+
+def fingerprint_per_group_max_norm(pg: PerGroup) -> float:
+    """Deterministic float fingerprint for cross-rank equality of ``PerGroup``.
+
+    Called once when ``mf_noise`` latches a ``PerGroup`` ``max_norm``; the
+    result is stored on :class:`MFNoiseState` and only scalar equality is
+    checked on each :func:`sync` (avoids re-hashing the full param→group map
+    on the hot path).
+    """
+    payload = {
+        "groups": sorted(pg.groups.items()),
+        "values": sorted(pg.values.items()),
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).digest()
+    return int.from_bytes(digest[:8], "big") / float(2**53)
 
 
 _MF_NOISE_STATE_FIELD_OPS: dict[str, str] = {
     "_step_counter": "assert_equal",
+    "_first_max_norm_sync_fingerprint": "assert_equal",
     "_first_max_norm": "assert_equal",
 }
 
@@ -43,4 +66,4 @@ def sync_mf_noise_state(state: MFNoiseState) -> MFNoiseState:
 register_sync_type(MFNoiseState, sync_mf_noise_state)
 
 
-__all__ = ["sync_mf_noise_state"]
+__all__ = ["fingerprint_per_group_max_norm", "sync_mf_noise_state"]
