@@ -114,18 +114,33 @@ class TestCyclicPoissonIdentity:
 
 
 class TestBallsInBinsIdentity:
-    def test_pld_matches_per_step_poisson_reduction(self):
+    def test_pld_matches_lemma_3_2_dominating_pair(self):
+        """For identity C=I, Lemma 3.2 of CC2024 gives Gram = E * I_b."""
         nm, k, E = 1.5, 32, 4
         proc = ftrl_acc.balls_in_bins(
             ftrl_acc.mf_identity(nm), num_bins=k, num_epochs=E
         )
         cfg = get_discretization()
-        ref = _native.poisson_gaussian_pld(
-            nm, 1.0 / k, cfg.to_native()
-        ).self_compose(k * E)
+        gram = [E if i == j else 0.0 for i in range(k) for j in range(k)]
+        ref = _native.bnb_mc_pld(gram, k, nm, cfg.to_native())
         assert math.isclose(
             proc.epsilon_at(_DELTA), ref.epsilon_at(_DELTA), rel_tol=1e-9
         )
+
+    def test_strictly_tighter_than_unamplified_composition(self):
+        """Lemma 3.2 amplification (factor ~1/num_bins) must beat the unamplified
+        Gaussian composition over all k*E rounds."""
+        nm, k, E = 1.5, 32, 4
+        amplified = ftrl_acc.balls_in_bins(
+            ftrl_acc.mf_identity(nm), num_bins=k, num_epochs=E
+        ).epsilon_at(_DELTA)
+        cfg = get_discretization()
+        unamplified = (
+            _native.gaussian_pld(nm, cfg.to_native())
+            .self_compose(k * E)
+            .epsilon_at(_DELTA)
+        )
+        assert amplified < unamplified
 
     def test_zero_noise_non_private(self):
         proc = ftrl_acc.balls_in_bins(
