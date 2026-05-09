@@ -69,8 +69,8 @@ import opaque.accounting as acc
 import opaque.auditing as auditing
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import calibration as cal, Accountant
-from opaque.clipping import clipped_grad
-from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
+from opaque.clipping import auto_clipped_grad, clipped_grad
+from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.distributed import sync
 from opaque.distributed.gradients import sum_gradients_
 from opaque.dpsgd.noise import gaussian_noise

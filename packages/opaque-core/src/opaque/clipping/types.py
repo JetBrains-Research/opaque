@@ -8,14 +8,22 @@ live in :mod:`opaque.types`.
 
 from __future__ import annotations
 
+from opaque.clipping._auto import (
+    AutoClippedFunAux,
+    AutoClippedGradAux,
+    AutoClipState,
+)
 from opaque.clipping._clipped_fun import ClippedFunAux
 from opaque.clipping._clipped_fun import FixedClipState
 from opaque.clipping._clipped_grad import ClippedGradAux
 from opaque.clipping._pytree import ClipPytreeAux
 
 __all__ = [
-    "FixedClipState",
-    "ClippedGradAux",
-    "ClippedFunAux",
+    "AutoClipState",
+    "AutoClippedFunAux",
+    "AutoClippedGradAux",
     "ClipPytreeAux",
+    "ClippedFunAux",
+    "ClippedGradAux",
+    "FixedClipState",
 ]

@@ -219,6 +219,38 @@ Use MF noise when:
 MF noise has higher per-step overhead (maintaining correlation buffers) and
 requires knowing the total number of steps in advance.
 
+### Compatible clipping
+
+`mf_noise` requires a constant per-step record sensitivity (the strategy
+matrix is optimized offline against a fixed `Δ`). Both `clipped_grad`
+(fixed threshold) and `auto_clipped_grad` (AUTO-S smooth scaling) satisfy
+this — their per-record bound is set at construction and does not depend
+on data — so either can be wired into the loop interchangeably:
+
+```python
+from opaque.clipping import auto_clipped_grad
+from opaque.dpftrl.noise import mf_noise, band_mf_strategy
+from opaque.random import key
+
+grad_fn, clip_state = auto_clipped_grad(
+    loss_fn, argnums=0, batch_argnums=(1, 2),
+    R=1.0, normalize_by=batch_size,
+)
+noise_fn, noise_state = mf_noise(
+    params,
+    band_mf_strategy(n_steps=num_steps, bands=4),
+    noise_multiplier=noise_multiplier, key=key(0),
+)
+
+for batch_x, batch_y in dataloader:
+    grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
+```
+
+`adaptive_clipped_grad` is *not* compatible: its threshold drifts across
+steps, the dispatcher's `_validate_constant_max_norm` latch rejects the
+varying `max_norm`, and the standard MF privacy proof would not apply.
+
 ### Variants
 
 Opaque provides five MF strategies, all used through the unified `mf_noise()` dispatcher:

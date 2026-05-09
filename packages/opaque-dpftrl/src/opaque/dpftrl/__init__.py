@@ -3,11 +3,16 @@
 Strategies (BLT, BSR, BiSR, band-MF, λ-CGD, identity) + DP-FTRL-specific
 participation samplers (b-min-sep, cyclic Poisson, balls-in-bins, sequential).
 
-Fixed clipping lives in :mod:`opaque.clipping`; DP-FTRL requires fixed
-sensitivity across steps (the single-shot MF privacy proof breaks under
-adaptive / AUTO-S clipping).  Functional optimizers (including the
-universal ``adamw`` that consumes private ``noisy_squared_grads`` streams)
-live in :mod:`opaque.optimizers`.
+Compatible clipping rules live in :mod:`opaque.clipping` — the MF privacy
+proof requires a constant per-step record sensitivity, which both
+:func:`~opaque.clipping.clipped_grad` (fixed threshold) and
+:func:`~opaque.clipping.auto_clipped_grad` (AUTO-S smooth scaling, Bu
+et al. NeurIPS 2023) provide by construction.  The DP-SGD-specific
+:func:`~opaque.dpsgd.clipping.adaptive_clipped_grad` is *not* compatible:
+its threshold drifts across steps based on the noisy clipping rate, so
+the per-step sensitivity varies and the standard MF analysis breaks.
+Functional optimizers (including the universal ``adamw`` that consumes
+private ``noisy_squared_grads`` streams) live in :mod:`opaque.optimizers`.
 
 Strategy and noise-state dataclasses (``BandMfStrategy``, ``BltStrategy``,
 ``BisrStrategy``, ``BsrStrategy``, ``IdentityStrategy``,
