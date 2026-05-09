@@ -23,6 +23,17 @@ class BandMf(MfGaussian):
 
     coefficients: tuple[float, ...] = ()
 
+    def __post_init__(self):
+        # Empty ``coefficients`` would set ``bands == 0`` and silently zero
+        # out downstream amplification (``MfPoisson`` derives
+        # ``num_groups = ceil(n_steps / bands)``), so guard direct construction
+        # and deserialization the same way the factory does.
+        if not self.coefficients:
+            raise ValueError(
+                "BandMf: coefficients must be a non-empty tuple "
+                "(length equals the BandMF band width)."
+            )
+
     @property
     def bands(self) -> int:
         """Band width — convenience alias for ``len(coefficients)``."""
@@ -41,11 +52,15 @@ def band_mf(
         sensitivity: L2 sensitivity of the BandMF strategy under its
             participation pattern.
         coefficients: First-column entries of the BandMF strategy matrix
-            ``C`` (length equals the band width).  Same tuple as
+            ``C`` (length equals the band width, must be non-empty).  Same
+            tuple as
             :attr:`opaque.dpftrl.noise.BandMfStrategy.coefficients`.
 
     Returns:
         A :class:`BandMf` process.
+
+    Raises:
+        ValueError: If ``coefficients`` is empty.
 
     Example::
 
