@@ -35,6 +35,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(amplification::py_bnb_mc_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(amplification::py_bnb_mc_pld_identity, m)?)?;
     m.add_function(wrap_pyfunction!(
         amplification::py_bandmf_b_min_sep_warm_mc_pld,
         m

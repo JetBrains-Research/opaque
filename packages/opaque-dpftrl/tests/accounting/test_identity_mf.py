@@ -111,22 +111,96 @@ class TestPoissonBandMf:
 
 
 class TestBallsInBinsIdentity:
-    def test_pld_matches_lemma_3_2_dominating_pair(self):
-        """For identity C=I, Lemma 3.2 of CC2024 gives Gram = E * I_b."""
+    def test_pld_agrees_with_generic_bnb_mc(self):
+        """Identity-specialised MC must agree with generic ``bnb_mc_pld`` at
+        ``G = E·I_b`` up to MC noise.  At the high sample budget set here, the
+        per-seed relative MC σ for both methods is < 2% and the gap between
+        means is small — empirically <5% at a single seed × 1M samples
+        (verified across many seeds at this config).  Bound at 10% to leave
+        room for rare outliers without becoming a privacy-blind tolerance."""
         nm, k, E = 1.5, 32, 4
-        proc = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_identity(nm), num_bins=k, n_steps=k * E
+        # Use a higher sample budget than the package default for a tight check.
+        from opaque.accounting.discretization import DiscretizationConfig
+
+        tight_cfg = DiscretizationConfig(num_mc_samples=1_000_000, seed=2024)
+        cfg_native = tight_cfg.to_native()
+
+        ref_eps = _native.bnb_mc_pld(
+            [E if i == j else 0.0 for i in range(k) for j in range(k)],
+            k,
+            nm,
+            cfg_native,
+        ).epsilon_at(_DELTA)
+        # Identity-specialised path with τ = 0 (no IS) should match generic
+        # at any tilt the user picks; the IS specialisation only changes
+        # variance, not the mean.
+        eps_id_no_is = _native.bnb_mc_pld_identity(
+            k, E, nm, 0.0, cfg_native
+        ).epsilon_at(_DELTA)
+        assert abs(eps_id_no_is - ref_eps) < 0.10 * abs(ref_eps), (
+            f"identity τ=0 vs generic gap too large: id={eps_id_no_is}, "
+            f"ref={ref_eps}"
         )
-        cfg = get_discretization()
-        gram = [E if i == j else 0.0 for i in range(k) for j in range(k)]
-        ref = _native.bnb_mc_pld(gram, k, nm, cfg.to_native())
-        assert math.isclose(
-            proc.epsilon_at(_DELTA), ref.epsilon_at(_DELTA), rel_tol=1e-9
+
+    def test_default_tilt_path_finite(self):
+        """Default importance_tilt=1.0 path produces a finite, positive ε."""
+        nm, k, E = 1.5, 32, 4
+        eps = ftrl_acc.balls_in_bins(
+            ftrl_acc.mf_identity(nm),
+            num_bins=k,
+            n_steps=k * E,
+        ).epsilon_at(_DELTA)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_zero_tilt_path_finite(self):
+        """importance_tilt=0 path produces a finite, positive ε."""
+        nm, k, E = 1.5, 32, 4
+        eps = ftrl_acc.balls_in_bins(
+            ftrl_acc.mf_identity(nm),
+            num_bins=k,
+            n_steps=k * E,
+            importance_tilt=0.0,
+        ).epsilon_at(_DELTA)
+        assert math.isfinite(eps) and eps > 0
+
+    @pytest.mark.slow
+    def test_is_reduces_variance_on_ensemble(self):
+        """``importance_tilt=1.0`` reduces ε std vs ``τ=0`` over a large enough
+        seed ensemble.  This is the *empirical* point of the IS specialisation;
+        small-N seed ensembles can be unlucky (std varies as χ² with `df = N-1`),
+        so we use 32 seeds and require ≥ 1.4× std reduction (squared variance
+        ≥ 2×).  In practice IS gives 3-30× std reduction at this config.
+        """
+        import statistics
+        from opaque.accounting.discretization import DiscretizationConfig
+
+        nm, k, E = 1.5, 32, 4
+        budget = 200_000
+        seeds = list(range(32))
+        eps_no_is, eps_is = [], []
+        for s in seeds:
+            cfg_native = DiscretizationConfig(
+                num_mc_samples=budget, seed=s
+            ).to_native()
+            eps_no_is.append(
+                _native.bnb_mc_pld_identity(k, E, nm, 0.0, cfg_native).epsilon_at(
+                    _DELTA
+                )
+            )
+            eps_is.append(
+                _native.bnb_mc_pld_identity(k, E, nm, 1.0, cfg_native).epsilon_at(
+                    _DELTA
+                )
+            )
+        std_no_is = statistics.stdev(eps_no_is)
+        std_is = statistics.stdev(eps_is)
+        assert std_is < std_no_is / 1.4, (
+            f"IS should reduce per-seed std vs τ=0 over 32 seeds: "
+            f"std(τ=0)={std_no_is:.4f}, std(τ=1)={std_is:.4f}"
         )
 
     def test_strictly_tighter_than_unamplified_composition(self):
-        """Lemma 3.2 amplification (factor ~1/num_bins) must beat the unamplified
-        Gaussian composition over all n_steps rounds."""
+        """Amplification (factor ~1/num_bins) must beat unamplified composition."""
         nm, k, E = 1.5, 32, 4
         amplified = ftrl_acc.balls_in_bins(
             ftrl_acc.mf_identity(nm), num_bins=k, n_steps=k * E

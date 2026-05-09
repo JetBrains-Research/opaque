@@ -45,12 +45,28 @@ from opaque.accounting._base import DpProcess, Pld
 _Inner = DpProcess
 
 
+#: Default importance-sampling tilt for ``IdentityMf`` BnB Monte Carlo.
+#:
+#: ``0`` reproduces plain MC of the Lemma 3.2 dominating pair.  Positive values
+#: concentrate the proposal on the large-``Y`` tail (variance reduction for
+#: typical privacy regimes).  Empirically, ``τ ≈ 1`` works well for ``ε ≈ 1–4``
+#: at standard δ; the value can be overridden by passing
+#: ``importance_tilt`` to :func:`balls_in_bins`.
+_DEFAULT_IDENTITY_IS_TILT: float = 1.0
+
+
 @dataclass(frozen=True, slots=True)
 class BallsInBins(DpProcess):
     """Balls-in-Bins amplified MF mechanism — **total** privacy cost.
 
     The returned PLD covers all ``n_steps`` training rounds (= ``num_bins``
     bins × ``n_steps // num_bins`` epochs).  Do NOT compose externally.
+
+    For ``IdentityMf`` inner, the dispatch uses
+    :func:`opaque.accounting._native.bnb_mc_pld_identity` — a specialised
+    importance-sampled MC that exploits the diagonal Gram structure
+    (`G = num_epochs · I_b`).  The ``importance_tilt`` field (default
+    ``1.0``) controls the IS proposal; ``0.0`` reduces to plain MC.
 
     Example (DP-λCGD)::
 
@@ -66,6 +82,7 @@ class BallsInBins(DpProcess):
     inner: _Inner
     num_bins: int
     n_steps: int
+    importance_tilt: float = _DEFAULT_IDENTITY_IS_TILT
 
     @property
     def num_epochs(self) -> int:
@@ -117,17 +134,16 @@ class BallsInBins(DpProcess):
             case IdentityMf() as mf_id:
                 # Identity (C = I) ⇒ Lemma 3.2 m_i are orthogonal with
                 # ‖m_i‖² = num_epochs ⇒ Gram = num_epochs · I_b.
+                # Specialised primitive skips Cholesky, fixes shifted bin
+                # to index 0 by symmetry, and applies importance sampling
+                # on the shifted-bin coordinate.
                 if mf_id.noise_multiplier == 0:
                     return _native.non_private_pld(native_cfg)
-                b = self.num_bins
-                gram_diag = float(self.num_epochs)
-                gram_flat = [
-                    gram_diag if i == j else 0.0 for i in range(b) for j in range(b)
-                ]
-                return _native.bnb_mc_pld(
-                    gram_flat,
-                    b,
+                return _native.bnb_mc_pld_identity(
+                    self.num_bins,
+                    self.num_epochs,
                     float(mf_id.noise_multiplier),
+                    float(self.importance_tilt),
                     native_cfg,
                 )
             case _:
@@ -143,6 +159,7 @@ def balls_in_bins(
     *,
     num_bins: int,
     n_steps: int,
+    importance_tilt: float = _DEFAULT_IDENTITY_IS_TILT,
 ) -> BallsInBins:
     """Balls-in-Bins amplified MF mechanism — **total** privacy cost.
 
@@ -159,8 +176,9 @@ def balls_in_bins(
       analysis (Choquette-Choo et al. 2024).
     - **MF identity** (:func:`mf_identity`) — Lemma 3.2 dominating pair with
       diagonal Gram ``(n_steps // num_bins) · I`` (orthogonal ``m_i`` for
-      ``C = I``), evaluated with the same Monte Carlo ``bnb_mc_pld`` path as
-      the correlated MF strategies (see :meth:`BallsInBins.pld`).
+      ``C = I``), via the identity-specialised importance-sampled MC primitive
+      (same dominating-pair family as ``bnb_mc_pld`` for correlated MF; see
+      :meth:`BallsInBins.pld`).
 
     Args:
         inner: An MF mechanism — :func:`blt`, :func:`lambda_cgd`, :func:`bisr`,
@@ -168,6 +186,10 @@ def balls_in_bins(
         num_bins: Bins per epoch (k ≥ 2).
         n_steps: Total training rounds.  Must be a positive multiple of
             ``num_bins`` (per-bin participation = ``n_steps // num_bins``).
+        importance_tilt: IS tilt parameter for ``IdentityMf`` inner only;
+            ignored for correlated MF mechanisms (no IS support there).
+            ``0`` reduces to plain MC.  Default ``1.0`` works well in
+            standard privacy regimes.
 
     Returns:
         A :class:`BallsInBins` process (total cost).
@@ -211,4 +233,9 @@ def balls_in_bins(
             f"num_bins ({num_bins}); BnB analysis assumes integer epochs."
         )
 
-    return BallsInBins(inner=inner, num_bins=num_bins, n_steps=n_steps)
+    return BallsInBins(
+        inner=inner,
+        num_bins=num_bins,
+        n_steps=n_steps,
+        importance_tilt=float(importance_tilt),
+    )
