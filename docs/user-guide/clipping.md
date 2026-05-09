@@ -562,6 +562,37 @@ starting threshold for adaptive, sensitivity bound `R` for auto.
   track a target quantile of gradient norms, at a small additional
   privacy cost for the quantile query.
 
+## Empirical evidence
+
+How `--second-moment` and `--per-group-clipping` interact with the
+choice of clip norm `C`, distilled from end-to-end DP fine-tuning runs
+at ε=3:
+
+1. **`--second-moment` redistributes σ in proportion to `C`.** Joint
+   Mahalanobis allocation between the first- and second-moment streams
+   keeps privacy accounting at `gaussian(nm)`, but the first-moment σ
+   picks up a $\sqrt{1+C}$ factor relative to running without
+   `--second-moment` at the same noise multiplier — roughly +5% at
+   `C=0.1`, +40% at `C=1`. Use the smallest `C` your optimizer
+   tolerates when `--second-moment` is on.
+
+2. **`--per-group-clipping` pays off when groups have heterogeneous
+   gradient norms.** PG noise is allocated non-uniformly,
+   `σᵢ ∝ √Cᵢ`, against a joint per-example sensitivity of
+   `√(ΣCᵢ²)`. A tight `Cᵢ` on a naturally-small-gradient group cuts
+   σ on that group's coordinates; setting all `Cᵢ = c` uniformly
+   leaves you with `√K` more per-group noise than scalar clipping at
+   `c` and gains nothing. Reach for PG when one group sits an order
+   of magnitude away from the rest on gradient norm — for example a
+   freshly initialised classifier head over frozen layers, or a
+   single LoRA target whose gradients are much smaller than its
+   siblings.
+
+3. **`--second-moment` and `--per-group-clipping` compose.** Stacked,
+   the two carry the same `C`-dependent σ cost as `--second-moment`
+   alone and the same per-group thresholding as `--per-group-clipping`
+   alone — no additional accounting cost from the combination.
+
 ## API reference
 
 See [Clipping API Reference](../api/clipping.md) for complete function
