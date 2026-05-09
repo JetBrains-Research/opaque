@@ -1498,28 +1498,49 @@ def main():
                 perf = profiler.current_metrics()
 
                 if use_wandb:
-                    wandb.log(
-                        {
-                            "train/loss": avg_loss,
-                            "train/batch_size": batch_size,
-                            "train/clipping_norm": (
-                                clip_norm.effective
-                                if isinstance(clip_norm, PerGroup)
-                                else clip_norm
-                            ),
-                            "train/clip_rate": clip_rate,
-                            "train/grad_norm_mean": mean_grad_norm,
-                            "train/noise_std": step_noise_stddev,
-                            "train/lr": lr_t,
-                            "train/momentum": args.momentum,
-                            "perf/step_time_sec": perf["step_time_sec"],
-                            "perf/throughput_samples_per_sec": perf[
-                                "throughput_samples_sec"
-                            ],
-                            "perf/peak_gb": perf["memory_peak_gb"],
-                        },
-                        step=global_step,
-                    )
+                    wb_metrics = {
+                        "train/loss": avg_loss,
+                        "train/batch_size": batch_size,
+                        "train/clipping_norm": (
+                            clip_norm.effective
+                            if isinstance(clip_norm, PerGroup)
+                            else clip_norm
+                        ),
+                        "train/clip_rate": clip_rate,
+                        "train/grad_norm_mean": mean_grad_norm,
+                        "train/noise_std": (
+                            step_noise_stddev.effective
+                            if isinstance(step_noise_stddev, PerGroup)
+                            else step_noise_stddev
+                        ),
+                        "train/lr": lr_t,
+                        "train/momentum": args.momentum,
+                        "perf/step_time_sec": perf["step_time_sec"],
+                        "perf/throughput_samples_per_sec": perf[
+                            "throughput_samples_sec"
+                        ],
+                        "perf/peak_gb": perf["memory_peak_gb"],
+                    }
+                    if (
+                        isinstance(clip_norm, PerGroup)
+                        and getattr(aux, "group_norms", None) is not None
+                    ):
+                        for gname in clip_norm.values:
+                            gn_bound = clip_norm.values[gname]
+                            wb_metrics[f"group/clipping_norm/{gname}"] = gn_bound
+                            gnorms = aux.group_norms[gname]
+                            wb_metrics[f"group/grad_norm/{gname}"] = (
+                                gnorms.mean().item()
+                            )
+                            gn_clipped = float((gnorms > gn_bound).sum().item())
+                            wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(
+                                1.0, float(batch_size)
+                            )
+                            if isinstance(step_noise_stddev, PerGroup):
+                                wb_metrics[f"group/noise_std/{gname}"] = (
+                                    step_noise_stddev.values[gname]
+                                )
+                    wandb.log(wb_metrics, step=global_step)
 
                 print(
                     f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
