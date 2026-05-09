@@ -170,14 +170,14 @@ def adaptive_clipped_grad(
         **clipped_grad_kwargs: Passed to ``clipped_grad()``
             (``batch_argnums``, ``normalize_by``, etc).
 
-        Note:
-            **Empty-batch parity (``second_moment``):** the empty-batch
-            short-circuit mirrors :func:`~opaque.clipping.clipped_grad` and
-            :func:`~opaque.clipping.auto_clipped_grad` — when ``second_moment=True``
-            it returns a :class:`~opaque.types.SecondMomentClippingOutput` of zeros
-            (squared-stream sensitivity ``C²/normalize_by``), so paired-stream
-            noise and optimizer dispatch are stable across empty and non-empty
-            steps under Poisson sampling.
+    Note:
+        **Empty-batch parity (``second_moment``):** the empty-batch
+        short-circuit mirrors :func:`~opaque.clipping.clipped_grad` and
+        :func:`~opaque.clipping.auto_clipped_grad` — when ``second_moment=True``
+        it returns a :class:`~opaque.types.SecondMomentClippingOutput` of zeros
+        (squared-stream sensitivity ``C²/normalize_by``), so paired-stream
+        noise and optimizer dispatch are stable across empty and non-empty
+        steps under Poisson sampling.
 
     Returns:
         A tuple of (clipped_grad_fn, initial_state) where:

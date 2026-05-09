@@ -61,7 +61,7 @@ fn sample_remove_identity(
     beta: f64,
     tilt: f64,
     rng: &mut impl Rng,
-    t_buf: &mut Vec<f64>,
+    t_buf: &mut [f64],
 ) -> (f64, f64) {
     debug_assert_eq!(t_buf.len(), k);
 
@@ -78,10 +78,10 @@ fn sample_remove_identity(
     t_buf[0] = t_0;
     let mut max_val = t_0;
 
-    for j in 1..k {
+    for slot in t_buf.iter_mut().skip(1) {
         let zj: f64 = rng.sample::<f64, _>(StandardNormal);
         let tj = -alpha + beta * zj;
-        t_buf[j] = tj;
+        *slot = tj;
         if tj > max_val {
             max_val = tj;
         }
@@ -101,15 +101,15 @@ fn sample_add_identity(
     alpha: f64,
     beta: f64,
     rng: &mut impl Rng,
-    t_buf: &mut Vec<f64>,
+    t_buf: &mut [f64],
 ) -> f64 {
     debug_assert_eq!(t_buf.len(), k);
 
     let mut max_val = f64::NEG_INFINITY;
-    for j in 0..k {
+    for slot in t_buf.iter_mut() {
         let zj: f64 = rng.sample::<f64, _>(StandardNormal);
         let tj = -alpha + beta * zj;
-        t_buf[j] = tj;
+        *slot = tj;
         if tj > max_val {
             max_val = tj;
         }
@@ -147,14 +147,20 @@ fn weighted_samples_to_pmf(
     let inv_n = 1.0 / n;
 
     // Grid bounds from finite samples (use a wide-enough envelope).
-    let (min_sample, max_sample) = samples.iter().filter(|(y, _)| y.is_finite()).fold(
-        (f64::INFINITY, f64::NEG_INFINITY),
-        |(lo, hi), (y, _)| (lo.min(*y), hi.max(*y)),
-    );
+    let (min_sample, max_sample) = samples
+        .iter()
+        .filter(|(y, _)| y.is_finite())
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), (y, _)| {
+            (lo.min(*y), hi.max(*y))
+        });
 
     if !min_sample.is_finite() || !max_sample.is_finite() {
         // All samples non-finite (edge case).
-        let inf_mass: f64 = samples.iter().filter(|(y, _)| *y > 0.0).map(|(_, w)| *w).sum::<f64>()
+        let inf_mass: f64 = samples
+            .iter()
+            .filter(|(y, _)| *y > 0.0)
+            .map(|(_, w)| *w)
+            .sum::<f64>()
             * inv_n;
         return Pmf::new(
             discretization,
@@ -384,7 +390,12 @@ mod tests {
         let eps_hi = bnb_mc_pld_identity(16, 4, 2.0, 0.0, &cfg)
             .unwrap()
             .epsilon_at(1e-5);
-        assert!(eps_hi < eps_lo, "more noise should lower ε: lo={}, hi={}", eps_lo, eps_hi);
+        assert!(
+            eps_hi < eps_lo,
+            "more noise should lower ε: lo={}, hi={}",
+            eps_lo,
+            eps_hi
+        );
     }
 
     #[test]
