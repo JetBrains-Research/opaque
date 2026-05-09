@@ -33,7 +33,7 @@ KEY DIFFERENCES FROM DP-SGD (train_causal_lm.py):
 MECHANISMS:
 
   band_mf   — Banded Toeplitz (Choquette-Choo et al., 2023)
-               O(bands × d) memory, uses cyclic_poisson sampling.
+               O(bands × d) memory, uses Poisson (cyclic) sampling.
   blt       — Buffered Linear Toeplitz (Choquette-Choo et al., 2024)
                O(buffers × d) memory, near-optimal, handles multi-epoch.
   lambda_cgd — DP-λCGD (Kalinin et al., 2026), bandwidth-2 correlated noise
@@ -143,11 +143,10 @@ from opaque.profiling import (
 )
 from opaque.random import key, fold_in
 from opaque.functional import empty_collate
-from opaque.dpsgd.sampling import PoissonSampler
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
     BMinSepSampler,
-    CyclicPoissonSampler,
+    PoissonSampler,
     SequentialBatchSampler,
 )
 from opaque.functional import make_functional
@@ -441,9 +440,9 @@ def parse_args():
     dp_g.add_argument(
         "--band-mf-sampling",
         type=str,
-        choices=["cyclic_poisson", "b_min_sep"],
-        default="cyclic_poisson",
-        help="BandMF data subsampling: cyclic_poisson (default) or b_min_sep (Dong & Ganesh 2026).",
+        choices=["poisson", "b_min_sep"],
+        default="poisson",
+        help="BandMF data subsampling: poisson (default) or b_min_sep (Dong & Ganesh 2026).",
     )
     dp_g.add_argument(
         "--mc-samples",
@@ -787,25 +786,25 @@ def main():
 
     # Create sampler (or per-epoch sampler factory).
     # Static samplers (BnB, sequential) are created once and reused.
-    # Dynamic samplers (CyclicPoisson, Poisson) get a fresh key each epoch.
+    # Dynamic samplers (Poisson) get a fresh key each epoch.
     if args.mechanism == "band_mf":
         p0 = sample_rate  # E[batch]/|D| per iteration (same as cyclic Poisson regime)
         sampling_prob = 0.0
         p_bms = 0.0
-        if args.band_mf_sampling == "cyclic_poisson":
+        if args.band_mf_sampling == "poisson":
             sampling_prob = args.batch_size * args.bands / global_train_size
             if sampling_prob > 1.0:
                 raise ValueError(
-                    f"cyclic_poisson sampling_prob = {sampling_prob:.4f} > 1.0. "
+                    f"poisson sampling_prob = {sampling_prob:.4f} > 1.0. "
                     f"Reduce --bands ({args.bands}) or --batch-size ({args.batch_size})."
                 )
 
             def make_epoch_sampler(epoch):
-                return CyclicPoissonSampler(
+                return PoissonSampler(
                     train_dataset,
                     sampling_prob=sampling_prob,
-                    cycle_length=args.bands,
-                    iterations=expected_steps_per_epoch,
+                    bands=args.bands,
+                    n_steps=expected_steps_per_epoch,
                     key=fold_in(key(args.seed), epoch),
                 )
         else:
@@ -825,7 +824,7 @@ def main():
                     train_dataset,
                     bands=args.bands,
                     sampling_prob=p_bms,
-                    iterations=expected_steps_per_epoch,
+                    n_steps=expected_steps_per_epoch,
                     key=fold_in(key(args.seed), epoch),
                 )
 
@@ -845,7 +844,7 @@ def main():
         _bnb_sampler = BallsInBinsSampler(
             train_dataset,
             num_bins=expected_steps_per_epoch,
-            num_epochs=1,
+            n_steps=expected_steps_per_epoch,
             key=key(args.seed),
         )
 
@@ -857,17 +856,17 @@ def main():
         def make_epoch_sampler(epoch):
             return PoissonSampler(
                 train_dataset,
-                sample_rate=sample_rate,
-                num_iterations=expected_steps_per_epoch,
+                sampling_prob=sample_rate,
+                n_steps=expected_steps_per_epoch,
                 key=fold_in(key(args.seed), epoch),
             )
 
     print("\nSampling:")
     print(f"  Mechanism: {args.mechanism}")
     if args.mechanism == "band_mf":
-        if args.band_mf_sampling == "cyclic_poisson":
+        if args.band_mf_sampling == "poisson":
             print(
-                f"  Sampler: cyclic_poisson (cycle={args.bands}, q={sampling_prob:.6f})"
+                f"  Sampler: poisson (bands={args.bands}, q={sampling_prob:.6f})"
             )
         else:
             print(
@@ -1084,13 +1083,16 @@ def main():
 
         def acct_mechanism(nm):
             mechanism = ftrl_acc.band_mf(
-                nm, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups
+                nm,
+                sensitivity=strategy.sensitivity,
+                coefficients=strategy.coefficients,
             )
-            if args.band_mf_sampling == "cyclic_poisson":
-                return ftrl_acc.cyclic_poisson(mechanism, sample_rate=sampling_prob)
+            if args.band_mf_sampling == "poisson":
+                return ftrl_acc.poisson(
+                    mechanism, sample_rate=sampling_prob, n_steps=total_steps
+                )
             return ftrl_acc.b_min_sep(
                 mechanism,
-                strategy_coefficients=strategy.coefficients,
                 n_steps=total_steps,
                 p0=p0,
             )
@@ -1109,7 +1111,7 @@ def main():
             return ftrl_acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
-                num_epochs=args.num_epochs,
+                n_steps=expected_steps_per_epoch * args.num_epochs,
             )
     elif args.mechanism == "bisr" and strategy is not None:
 
@@ -1122,7 +1124,7 @@ def main():
             return ftrl_acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
-                num_epochs=args.num_epochs,
+                n_steps=expected_steps_per_epoch * args.num_epochs,
             )
     elif args.mechanism == "bsr" and strategy is not None:
 
@@ -1135,15 +1137,15 @@ def main():
             return ftrl_acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
-                num_epochs=args.num_epochs,
+                n_steps=expected_steps_per_epoch * args.num_epochs,
             )
     elif args.mechanism == "identity":
 
         def acct_mechanism(nm):
-            return ftrl_acc.cyclic_poisson(
+            return ftrl_acc.poisson(
                 ftrl_acc.mf_identity(nm),
                 sample_rate=sample_rate,
-                num_steps=total_steps,
+                n_steps=total_steps,
             )
     elif args.mechanism == "none":
 
@@ -1279,10 +1281,10 @@ def main():
         try:
 
             def identity_acct(nm):
-                return ftrl_acc.cyclic_poisson(
+                return ftrl_acc.poisson(
                     ftrl_acc.mf_identity(nm),
                     sample_rate=sample_rate,
-                    num_steps=total_steps,
+                    n_steps=total_steps,
                 )
 
             identity_cal = cal.calibrate(

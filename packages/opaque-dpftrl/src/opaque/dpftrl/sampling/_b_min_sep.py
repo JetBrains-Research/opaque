@@ -32,13 +32,13 @@ class BMinSepSampler(Sampler):
         bands: Minimum-separation parameter ``b`` (same as BandMF bandwidth).
         sampling_prob: Paper's ``p`` in ``(0, 1]`` (per-iteration inclusion
             probability for each eligible example).
-        iterations: Number of batches to yield.
+        n_steps: Number of batches to yield.
         truncated_batch_size: Optional cap on batch size.
         key: RNG key for reproducibility.
 
     Note:
         Use ``batch_sampler=...`` in ``DataLoader``. Batch sizes are random
-        (Poisson). For the same expected batch size as cyclic Poisson with
+        (Poisson). For the same expected batch size as Poisson with
         per-example rate ``p_0`` and ``b`` bands, set
         ``sampling_prob = p_0 / (1 - p_0 * (bands - 1))`` (``bands==1`` → ``p_0``).
     """
@@ -48,7 +48,7 @@ class BMinSepSampler(Sampler):
         data_source: object,
         bands: int,
         sampling_prob: float,
-        iterations: int,
+        n_steps: int,
         truncated_batch_size: int | None = None,
         *,
         key: RngKey,
@@ -60,8 +60,8 @@ class BMinSepSampler(Sampler):
             raise ValueError(f"bands must be >= 1, got {bands}")
         if not 0 < sampling_prob <= 1:
             raise ValueError(f"sampling_prob must be in (0, 1], got {sampling_prob}")
-        if iterations < 1:
-            raise ValueError(f"iterations must be >= 1, got {iterations}")
+        if n_steps < 1:
+            raise ValueError(f"n_steps must be >= 1, got {n_steps}")
         if truncated_batch_size is not None and truncated_batch_size < 1:
             raise ValueError(
                 f"truncated_batch_size must be >= 1, got {truncated_batch_size}"
@@ -71,7 +71,7 @@ class BMinSepSampler(Sampler):
         self.data_source = data_source
         self.bands = bands
         self.sampling_prob = sampling_prob
-        self.iterations = iterations
+        self.n_steps = n_steps
         self.truncated_batch_size = truncated_batch_size
         self.generator = np.random.default_rng(key.seed)
 
@@ -90,7 +90,7 @@ class BMinSepSampler(Sampler):
         self._recent: deque[set[int]] = deque(maxlen=max(0, bands - 1))
 
     def __iter__(self) -> Iterator[list[int]]:
-        for _ in range(self.iterations):
+        for _ in range(self.n_steps):
             exclude: set[int] = set()
             for batch in self._recent:
                 exclude.update(batch)
@@ -129,7 +129,7 @@ class BMinSepSampler(Sampler):
             yield batch_indices
 
     def __len__(self) -> int:
-        return self.iterations
+        return self.n_steps
 
     @property
     def expected_batch_size(self) -> float:

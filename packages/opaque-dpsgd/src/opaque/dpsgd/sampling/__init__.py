@@ -1,11 +1,10 @@
 """DP-SGD-specific samplers.
 
-Exposes the generic :class:`PoissonSampler` (variable-size batches, the
-default for DP-SGD training) and :class:`TruncatedPoissonSampler` (fixed-size
-truncation variant).
+Exposes :class:`PoissonSampler`, which covers both plain Poisson
+subsampling (default) and the truncated-Poisson variant via the
+``truncated_batch_size`` keyword argument.
 """
 
 from opaque.dpsgd.sampling._poisson import PoissonSampler
-from opaque.dpsgd.sampling._truncated_poisson import TruncatedPoissonSampler
 
-__all__ = ["PoissonSampler", "TruncatedPoissonSampler"]
+__all__ = ["PoissonSampler"]

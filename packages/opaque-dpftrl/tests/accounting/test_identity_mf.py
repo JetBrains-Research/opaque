@@ -1,5 +1,5 @@
 """Tests for :class:`~opaque.dpftrl.accounting.types.IdentityMf` and the FTRL
-amplifications dispatching on it (``cyclic_poisson``, ``balls_in_bins``)."""
+amplifications dispatching on it (``poisson``, ``balls_in_bins``)."""
 
 import math
 
@@ -52,15 +52,15 @@ class TestMfIdentityMechanism:
 
 
 # ---------------------------------------------------------------------------
-# cyclic_poisson(IdentityMf(...), sample_rate, num_steps)
+# poisson(IdentityMf(...), sample_rate, n_steps)
 # ---------------------------------------------------------------------------
 
 
-class TestCyclicPoissonIdentity:
+class TestPoissonIdentity:
     def test_pld_matches_self_composed_poisson_gaussian(self):
         nm, p, T = 1.1, 0.01, 500
-        proc = ftrl_acc.cyclic_poisson(
-            ftrl_acc.mf_identity(nm), sample_rate=p, num_steps=T
+        proc = ftrl_acc.poisson(
+            ftrl_acc.mf_identity(nm), sample_rate=p, n_steps=T
         )
         cfg = get_discretization()
         ref = _native.poisson_gaussian_pld(nm, p, cfg.to_native()).self_compose(T)
@@ -68,48 +68,47 @@ class TestCyclicPoissonIdentity:
             proc.epsilon_at(_DELTA), ref.epsilon_at(_DELTA), rel_tol=1e-9
         )
 
-    def test_requires_num_steps(self):
-        with pytest.raises(ValueError, match="num_steps"):
-            ftrl_acc.cyclic_poisson(ftrl_acc.mf_identity(1.0), sample_rate=0.1)
+    def test_requires_n_steps(self):
+        with pytest.raises(TypeError):
+            ftrl_acc.poisson(ftrl_acc.mf_identity(1.0), sample_rate=0.1)
 
-    def test_rejects_invalid_num_steps(self):
-        with pytest.raises(ValueError, match="num_steps"):
-            ftrl_acc.cyclic_poisson(
-                ftrl_acc.mf_identity(1.0), sample_rate=0.1, num_steps=0
+    def test_rejects_invalid_n_steps(self):
+        with pytest.raises(ValueError, match="n_steps"):
+            ftrl_acc.poisson(
+                ftrl_acc.mf_identity(1.0), sample_rate=0.1, n_steps=0
             )
 
     def test_rejects_invalid_sample_rate(self):
         with pytest.raises(ValueError, match="sample_rate"):
-            ftrl_acc.cyclic_poisson(
-                ftrl_acc.mf_identity(1.0), sample_rate=1.5, num_steps=10
+            ftrl_acc.poisson(
+                ftrl_acc.mf_identity(1.0), sample_rate=1.5, n_steps=10
             )
 
-    def test_band_mf_unaffected_by_num_steps_passthrough(self):
-        # Existing BandMF behaviour: num_steps None reads from inner.num_groups.
-        T = 100
-        proc = ftrl_acc.cyclic_poisson(
-            ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=T), sample_rate=0.01
+
+class TestPoissonBandMf:
+    def test_pld_matches_self_composed_with_bands(self):
+        """For BandMf: num_groups = ceil(n_steps / bands)."""
+        nm, p = 1.1, 0.01
+        coefs = (1.0, 0.5)  # bands = 2
+        bands = len(coefs)
+        n_steps = 100
+        proc = ftrl_acc.poisson(
+            ftrl_acc.band_mf(nm, sensitivity=1.0, coefficients=coefs),
+            sample_rate=p,
+            n_steps=n_steps,
         )
-        explicit = ftrl_acc.cyclic_poisson(
-            ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=T),
-            sample_rate=0.01,
-            num_steps=T,
+        cfg = get_discretization()
+        num_groups = math.ceil(n_steps / bands)
+        ref = _native.poisson_gaussian_pld(nm, p, cfg.to_native()).self_compose(
+            num_groups
         )
         assert math.isclose(
-            proc.epsilon_at(_DELTA), explicit.epsilon_at(_DELTA), rel_tol=1e-12
+            proc.epsilon_at(_DELTA), ref.epsilon_at(_DELTA), rel_tol=1e-9
         )
-
-    def test_band_mf_num_steps_mismatch_raises(self):
-        with pytest.raises(ValueError, match="num_groups"):
-            ftrl_acc.cyclic_poisson(
-                ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=100),
-                sample_rate=0.01,
-                num_steps=200,
-            )
 
 
 # ---------------------------------------------------------------------------
-# balls_in_bins(IdentityMf(...), num_bins, num_epochs)  — tight reduction
+# balls_in_bins(IdentityMf(...), num_bins, n_steps)  — tight reduction
 # ---------------------------------------------------------------------------
 
 
@@ -118,7 +117,7 @@ class TestBallsInBinsIdentity:
         """For identity C=I, Lemma 3.2 of CC2024 gives Gram = E * I_b."""
         nm, k, E = 1.5, 32, 4
         proc = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_identity(nm), num_bins=k, num_epochs=E
+            ftrl_acc.mf_identity(nm), num_bins=k, n_steps=k * E
         )
         cfg = get_discretization()
         gram = [E if i == j else 0.0 for i in range(k) for j in range(k)]
@@ -129,10 +128,10 @@ class TestBallsInBinsIdentity:
 
     def test_strictly_tighter_than_unamplified_composition(self):
         """Lemma 3.2 amplification (factor ~1/num_bins) must beat the unamplified
-        Gaussian composition over all k*E rounds."""
+        Gaussian composition over all n_steps rounds."""
         nm, k, E = 1.5, 32, 4
         amplified = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_identity(nm), num_bins=k, num_epochs=E
+            ftrl_acc.mf_identity(nm), num_bins=k, n_steps=k * E
         ).epsilon_at(_DELTA)
         cfg = get_discretization()
         unamplified = (
@@ -144,20 +143,26 @@ class TestBallsInBinsIdentity:
 
     def test_zero_noise_non_private(self):
         proc = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_identity(0.0), num_bins=10, num_epochs=2
+            ftrl_acc.mf_identity(0.0), num_bins=10, n_steps=20
         )
         assert math.isinf(proc.epsilon_at(_DELTA))
 
     def test_rejects_invalid_num_bins(self):
         with pytest.raises(ValueError, match="num_bins"):
             ftrl_acc.balls_in_bins(
-                ftrl_acc.mf_identity(1.0), num_bins=1, num_epochs=2
+                ftrl_acc.mf_identity(1.0), num_bins=1, n_steps=20
             )
 
-    def test_rejects_invalid_num_epochs(self):
-        with pytest.raises(ValueError, match="num_epochs"):
+    def test_rejects_invalid_n_steps(self):
+        with pytest.raises(ValueError, match="n_steps"):
             ftrl_acc.balls_in_bins(
-                ftrl_acc.mf_identity(1.0), num_bins=10, num_epochs=0
+                ftrl_acc.mf_identity(1.0), num_bins=10, n_steps=0
+            )
+
+    def test_rejects_n_steps_not_multiple_of_num_bins(self):
+        with pytest.raises(ValueError, match="multiple of"):
+            ftrl_acc.balls_in_bins(
+                ftrl_acc.mf_identity(1.0), num_bins=10, n_steps=15
             )
 
 
@@ -166,11 +171,11 @@ class TestBallsInBinsIdentity:
 # ---------------------------------------------------------------------------
 
 
-def test_mf_identity_calibrates_through_cyclic_poisson():
+def test_mf_identity_calibrates_through_poisson():
     cal = acc.calibrate(
         acc.epsilon_budget(3.0, delta=_DELTA),
-        lambda nm: ftrl_acc.cyclic_poisson(
-            ftrl_acc.mf_identity(nm), sample_rate=0.01, num_steps=500
+        lambda nm: ftrl_acc.poisson(
+            ftrl_acc.mf_identity(nm), sample_rate=0.01, n_steps=500
         ),
         param_min=0.1,
         param_max=10.0,

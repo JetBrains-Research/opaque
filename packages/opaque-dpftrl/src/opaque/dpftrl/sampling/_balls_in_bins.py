@@ -43,16 +43,17 @@ class BallsInBinsSampler(Sampler):
 
     Args:
         data_source: Dataset to sample from (any object with ``__len__``).
-        num_bins: Number of bins per epoch (b ≥ 2). Typically
+        num_bins: Number of bins per epoch (b ≥ 2).  Typically
             ``dataset_size / desired_batch_size``.
-        num_epochs: Number of epochs to yield. If None, yields indefinitely.
+        n_steps: Total number of batches to yield.  Must be a positive
+            multiple of ``num_bins`` (per-bin participation count is
+            ``n_steps // num_bins``).  ``None`` yields indefinitely.
         key: RNG key for reproducibility.
 
     Example:
         >>> from opaque.random import key
-        >>> dataset = MyDataset(...)
         >>> sampler = BallsInBinsSampler(
-        ...     dataset, num_bins=100, num_epochs=10, key=key(42)
+        ...     dataset, num_bins=100, n_steps=1000, key=key(42)
         ... )
         >>> loader = DataLoader(dataset, batch_sampler=sampler)
     """
@@ -61,7 +62,7 @@ class BallsInBinsSampler(Sampler):
         self,
         data_source: object,
         num_bins: int,
-        num_epochs: int | None = None,
+        n_steps: int | None = None,
         *,
         key: RngKey,
     ):
@@ -71,39 +72,50 @@ class BallsInBinsSampler(Sampler):
             raise ValueError("data_source must not be empty")
         if num_bins < 2:
             raise ValueError(f"num_bins must be >= 2, got {num_bins}")
-        if num_epochs is not None and num_epochs < 1:
-            raise ValueError(f"num_epochs must be >= 1 or None, got {num_epochs}")
+        if n_steps is not None:
+            if n_steps < 1:
+                raise ValueError(f"n_steps must be >= 1 or None, got {n_steps}")
+            if n_steps % num_bins != 0:
+                raise ValueError(
+                    f"n_steps ({n_steps}) must be a positive multiple of "
+                    f"num_bins ({num_bins}); BnB analysis assumes integer epochs."
+                )
 
         self.data_source = data_source
         self.num_bins = num_bins
-        self.num_epochs = num_epochs
+        self.n_steps = n_steps
 
         self._num_samples = len(data_source)
 
         generator = np.random.default_rng(key.seed)
         # True BnB: each example independently picks a bin.
         assignments = generator.integers(0, num_bins, size=self._num_samples)
-        # Group indices by bin — bins have variable sizes.
         self._bins: list[list[int]] = [[] for _ in range(num_bins)]
         for idx, b in enumerate(assignments):
             self._bins[b].append(idx)
 
+    @property
+    def num_epochs(self) -> int | None:
+        """Per-bin participation count: ``n_steps // num_bins``."""
+        return None if self.n_steps is None else self.n_steps // self.num_bins
+
     def __iter__(self) -> Iterator[list[int]]:
-        """Yield batches: all bins from each epoch in order (round-robin).
+        """Yield batches: round-robin over bins, repeated for ``num_epochs``.
 
         The same bin assignment is yielded every epoch.  Empty bins are
         skipped.
 
         Yields:
-            Lists of indices, one per non-empty bin.
+            Lists of indices, one per non-empty bin per epoch.
         """
-        if self.num_epochs is None:
+        if self.n_steps is None:
             while True:
                 for batch in self._bins:
                     if batch:
                         yield batch
         else:
-            for _ in range(self.num_epochs):
+            epochs = self.n_steps // self.num_bins
+            for _ in range(epochs):
                 for batch in self._bins:
                     if batch:
                         yield batch
@@ -112,12 +124,13 @@ class BallsInBinsSampler(Sampler):
         """Total number of non-empty batches across all epochs.
 
         Raises:
-            TypeError: If num_epochs is None (infinite iteration).
+            TypeError: If n_steps is None (infinite iteration).
         """
-        if self.num_epochs is None:
-            raise TypeError("len() of unsized object (num_epochs=None)")
+        if self.n_steps is None:
+            raise TypeError("len() of unsized object (n_steps=None)")
         non_empty = sum(1 for b in self._bins if b)
-        return non_empty * self.num_epochs
+        epochs = self.n_steps // self.num_bins
+        return non_empty * epochs
 
     @property
     def expected_batch_size(self) -> float:

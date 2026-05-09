@@ -8,7 +8,7 @@ import opaque.dpsgd.accounting as dpsgd_acc
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.accounting import Accountant
 from opaque.dpftrl.accounting.amplification._b_min_sep import BMinSep
-from opaque.dpftrl.accounting.amplification._cyclic_poisson import CyclicPoisson
+from opaque.dpftrl.accounting.amplification._poisson import MfPoisson
 from opaque.dpftrl.accounting.mechanisms._band_mf import BandMf
 from opaque.serialization import from_state_dict, state_dict
 
@@ -48,10 +48,15 @@ def test_poisson_state_dict_structure():
 
 
 def test_truncated_poisson_state_dict_structure():
-    proc = dpsgd_acc.truncated_poisson(dpsgd_acc.gaussian(0.8), 0.01, 128, 10_000)
+    proc = dpsgd_acc.poisson(
+        dpsgd_acc.gaussian(0.8),
+        0.01,
+        truncated_batch_size=128,
+        dataset_size=10_000,
+    )
     state = cast(dict[str, object], state_dict(proc))
-    assert state["type"] == "TruncatedPoisson"
-    assert state["batch_size_cap"] == 128
+    assert state["type"] == "Poisson"
+    assert state["truncated_batch_size"] == 128
     assert state["dataset_size"] == 10_000
     assert state["inner.type"] == "Gaussian"
 
@@ -101,23 +106,24 @@ def test_cached_state_dict_structure():
     assert state["inner.type"] == "Gaussian"
 
 
-def test_cyclic_poisson_state_dict_structure():
-    proc = ftrl_acc.cyclic_poisson(
-        ftrl_acc.band_mf(1.0, sensitivity=2.5, num_groups=200), sample_rate=0.01
+def test_ftrl_poisson_state_dict_structure():
+    proc = ftrl_acc.poisson(
+        ftrl_acc.band_mf(1.0, sensitivity=2.5, coefficients=(0.9, 0.1)),
+        sample_rate=0.01,
+        n_steps=200,
     )
     state = cast(dict[str, object], state_dict(proc))
-    assert state["type"] == "CyclicPoisson"
+    assert state["type"] == "MfPoisson"
     assert state["sample_rate"] == 0.01
+    assert state["n_steps"] == 200
     assert state["inner.type"] == "BandMf"
     assert state["inner.noise_multiplier"] == 1.0
     assert state["inner.sensitivity"] == 2.5
-    assert state["inner.num_groups"] == 200
 
 
 def test_b_min_sep_round_trip():
     proc = ftrl_acc.b_min_sep(
-        ftrl_acc.band_mf(1.0, sensitivity=1.2, num_groups=50),
-        strategy_coefficients=(0.9, 0.1),
+        ftrl_acc.band_mf(1.0, sensitivity=1.2, coefficients=(0.9, 0.1)),
         n_steps=100,
         p0=0.02,
     )
@@ -127,13 +133,15 @@ def test_b_min_sep_round_trip():
     assert restored == proc
 
 
-def test_cyclic_poisson_round_trip():
-    proc = ftrl_acc.cyclic_poisson(
-        ftrl_acc.band_mf(1.0, sensitivity=2.5, num_groups=200), sample_rate=0.01
+def test_ftrl_poisson_round_trip():
+    proc = ftrl_acc.poisson(
+        ftrl_acc.band_mf(1.0, sensitivity=2.5, coefficients=(0.9, 0.1)),
+        sample_rate=0.01,
+        n_steps=200,
     )
     state = state_dict(proc)
     restored = from_state_dict(_PROCESS_TEMPLATE, state)
-    assert isinstance(restored, CyclicPoisson)
+    assert isinstance(restored, MfPoisson)
     assert isinstance(restored.inner, BandMf)
     assert restored == proc
 

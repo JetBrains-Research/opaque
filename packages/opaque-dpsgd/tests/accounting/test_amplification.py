@@ -1,4 +1,4 @@
-"""Tests for DP-SGD amplification — Poisson, TruncatedPoisson, ParallelPoisson."""
+"""Tests for DP-SGD amplification — Poisson (with optional truncation), ParallelPoisson."""
 
 import math
 from dataclasses import FrozenInstanceError
@@ -11,7 +11,6 @@ from opaque.accounting._base import DpProcess
 from opaque.dpsgd.accounting.amplification.types import (
     ParallelPoisson,
     Poisson,
-    TruncatedPoisson,
 )
 from opaque.dpsgd.accounting.mechanisms.types import Gaussian
 
@@ -19,13 +18,15 @@ from opaque.dpsgd.accounting.mechanisms.types import Gaussian
 
 
 class TestPoissonDataclass:
-    """Poisson frozen dataclass."""
+    """Poisson frozen dataclass (plain Poisson)."""
 
     def test_fields(self):
         g = Gaussian(0.8)
         p = Poisson(g, 0.01)
         assert p.inner is g
         assert p.sample_rate == pytest.approx(0.01)
+        assert p.truncated_batch_size is None
+        assert p.dataset_size is None
 
     def test_frozen(self):
         p = Poisson(Gaussian(0.8), 0.01)
@@ -45,27 +46,21 @@ class TestPoissonDataclass:
         assert math.isfinite(eps) and eps > 0
 
 
-class TestTruncatedPoissonDataclass:
-    """TruncatedPoisson frozen dataclass."""
+class TestPoissonTruncatedDataclass:
+    """Poisson with truncation switched on."""
 
     def test_fields(self):
         g = Gaussian(0.8)
-        t = TruncatedPoisson(g, 0.01, 128, 10_000)
+        t = Poisson(g, 0.01, truncated_batch_size=128, dataset_size=10_000)
         assert t.inner is g
         assert t.sample_rate == pytest.approx(0.01)
-        assert t.batch_size_cap == 128
+        assert t.truncated_batch_size == 128
         assert t.dataset_size == 10_000
 
-    def test_frozen(self):
-        t = TruncatedPoisson(Gaussian(0.8), 0.01, 128, 10_000)
-        with pytest.raises(FrozenInstanceError):
-            t.batch_size_cap = 256  # type: ignore[misc]
-
-    def test_is_dp_process(self):
-        assert isinstance(TruncatedPoisson(Gaussian(0.8), 0.01, 128, 10_000), DpProcess)
-
     def test_pld_returns_valid(self):
-        pld = TruncatedPoisson(Gaussian(0.8), 0.01, 128, 10_000).pld()
+        pld = Poisson(
+            Gaussian(0.8), 0.01, truncated_batch_size=128, dataset_size=10_000
+        ).pld()
         eps = pld.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
@@ -105,6 +100,8 @@ class TestPoissonConstructor:
         assert isinstance(p.inner, Gaussian)
         assert p.inner.noise_multiplier == pytest.approx(0.8)
         assert p.sample_rate == pytest.approx(0.01)
+        assert p.truncated_batch_size is None
+        assert p.dataset_size is None
 
     def test_rejects_non_gaussian(self):
         with pytest.raises(TypeError, match="Gaussian|AdaClip"):
@@ -121,38 +118,52 @@ class TestPoissonConstructor:
         """Config is now query-time, so this test verifies pld() accepts discretization."""
         g = dpsgd_acc.gaussian(0.8)
         p = dpsgd_acc.poisson(g, 0.01)
-        # Config is query-time - verify pld() accepts discretization parameter
         pld1 = p.pld(discretization=1e-3)
         pld2 = p.pld(discretization=1e-4)
-        # Both should compute successfully (different discretizations)
         eps1 = pld1.epsilon_at(1e-5)
         eps2 = pld2.epsilon_at(1e-5)
         assert math.isfinite(eps1) and eps1 > 0
         assert math.isfinite(eps2) and eps2 > 0
 
 
-class TestTruncatedPoissonConstructor:
-    """dpsgd_acc.truncated_poisson() validates inner type."""
+class TestPoissonTruncatedConstructor:
+    """dpsgd_acc.poisson(..., truncated_batch_size=..., dataset_size=...)."""
 
     def test_returns_truncated_poisson(self):
-        t = dpsgd_acc.truncated_poisson(dpsgd_acc.gaussian(0.8), 0.01, 128, 10_000)
-        assert isinstance(t, TruncatedPoisson)
-        assert t.batch_size_cap == 128
+        t = dpsgd_acc.poisson(
+            dpsgd_acc.gaussian(0.8),
+            0.01,
+            truncated_batch_size=128,
+            dataset_size=10_000,
+        )
+        assert isinstance(t, Poisson)
+        assert t.truncated_batch_size == 128
         assert t.dataset_size == 10_000
 
     def test_rejects_non_gaussian(self):
         with pytest.raises(TypeError, match="Gaussian|AdaClip"):
-            dpsgd_acc.truncated_poisson(acc.eps_delta(1.0), 0.01, 128, 10_000)  # type: ignore[arg-type]
+            dpsgd_acc.poisson(
+                acc.eps_delta(1.0),
+                0.01,
+                truncated_batch_size=128,
+                dataset_size=10_000,
+            )  # type: ignore[arg-type]
 
     def test_accepts_adaclip(self):
-        step = dpsgd_acc.truncated_poisson(
+        step = dpsgd_acc.poisson(
             dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.8), expected_batch_size=1000),
             0.01,
-            128,
-            10_000,
+            truncated_batch_size=128,
+            dataset_size=10_000,
         )
         eps = step.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
+
+    def test_requires_both_truncation_args(self):
+        with pytest.raises(ValueError, match="truncated_batch_size and dataset_size"):
+            dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01, truncated_batch_size=128)
+        with pytest.raises(ValueError, match="truncated_batch_size and dataset_size"):
+            dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01, dataset_size=10_000)
 
 
 class TestParallelPoissonConstructor:
@@ -188,6 +199,4 @@ class TestParallelPoissonAutoTruncation:
         eps_tight = auto.epsilon_at(delta, log_x_mass_truncation_bound=-50.0)
         eps_loose = auto.epsilon_at(delta, log_x_mass_truncation_bound=-15.0)
 
-        # Looser truncation bound allows more aggressive k truncation, producing
-        # a conservative (not tighter) epsilon.
         assert eps_loose >= eps_tight - 1e-10
