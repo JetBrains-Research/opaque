@@ -565,29 +565,30 @@ starting threshold for adaptive, sensitivity bound `R` for auto.
 ## Empirical evidence
 
 How `--second-moment` and `--per-group-clipping` interact with the
-choice of clip norm `R`, distilled from end-to-end DP fine-tuning runs
+choice of clip norm `C`, distilled from end-to-end DP fine-tuning runs
 at ε=3:
 
-1. **`--second-moment` redistributes σ in proportion to `R`.** Joint
+1. **`--second-moment` redistributes σ in proportion to `C`.** Joint
    Mahalanobis allocation between the first- and second-moment streams
    keeps privacy accounting at `gaussian(nm)`, but the first-moment σ
-   picks up a $\sqrt{1+R}$ factor relative to running without
+   picks up a $\sqrt{1+C}$ factor relative to running without
    `--second-moment` at the same noise multiplier — roughly +5% at
-   `R=0.1`, +40% at `R=1`. Use the smallest `R` your optimizer
+   `C=0.1`, +40% at `C=1`. Use the smallest `C` your optimizer
    tolerates when `--second-moment` is on.
 
-2. **`--per-group-clipping` pays off when one group's gradients sit
-   apart from the rest; otherwise it converges to scalar.** With
-   adaptive per-group clipping each group's threshold tracks its own
-   gradient distribution. Homogeneous groups produce homogeneous
-   thresholds and eval-loss matches scalar clipping at the same `R`.
-   The gain materialises with structurally different groups — for
-   example a freshly initialised classifier head over frozen layers,
-   or a single LoRA target whose gradients are an order of magnitude
-   smaller than its siblings.
+2. **`--per-group-clipping` pays off when groups have heterogeneous
+   gradient norms.** Per-group thresholds `Cᵢ` give a per-example
+   sensitivity of `√(ΣCᵢ²)`, so setting all `Cᵢ = c` for K groups
+   carries `√K` more noise than scalar clipping at `c`. The benefit
+   comes from setting tight `Cᵢ` on naturally-small-gradient groups
+   so the joint `√(ΣCᵢ²)` stays smaller than the scalar `C` that would
+   need to dominate the worst group — for example a freshly
+   initialised classifier head over frozen layers, or a single LoRA
+   target whose gradients are an order of magnitude smaller than its
+   siblings.
 
 3. **`--second-moment` and `--per-group-clipping` compose.** Stacked,
-   the two carry the same `R`-dependent σ cost as `--second-moment`
+   the two carry the same `C`-dependent σ cost as `--second-moment`
    alone and the same per-group thresholding as `--per-group-clipping`
    alone — no additional accounting cost from the combination.
 
