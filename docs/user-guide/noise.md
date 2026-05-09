@@ -255,6 +255,17 @@ The `grad_template` argument provides shape and dtype information for
 pre-allocating noise buffers. Pass any pytree with the same structure as
 the gradients (e.g., the model parameters).
 
+### Per-group clipping
+
+`mf_noise` accepts `ClippedPytree` metadata where `max_norm` is a
+`PerGroup` (from `opaque.clipping.per_group`), not only a scalar. The
+per-leaf IID noise scale follows the same MSE-optimal Mahalanobis allocation
+as `gaussian_noise` / `truncated_gaussian_noise` on DP-SGD: no extra privacy
+cost versus scalar clipping at the same `noise_multiplier`, and the MF
+Gaussian accountant is unchanged. Trainable parameters must be a **flat**
+`dict[str, torch.Tensor]` (as with `make_functional(..., partition_trainable=True)`)
+so each key maps to a clipping group.
+
 ### Private second moments
 
 MF noise can release both noisy gradients and a private squared-gradient stream
