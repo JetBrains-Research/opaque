@@ -13,7 +13,7 @@ Per-method subclasses live in their own modules:
 - :mod:`~opaque.dpftrl.accounting.mechanisms._bsr` — :class:`Bsr`
 
 The MF **identity** (uncorrelated) baseline lives in :mod:`~opaque.dpftrl.accounting.mechanisms._identity`
-as :class:`~opaque.dpftrl.accounting.mechanisms._identity.IdentityMf` — it does not subclass
+as :class:`~opaque.dpftrl.accounting.types.IdentityMf` — it does not subclass
 :class:`MfGaussian`.
 """
 

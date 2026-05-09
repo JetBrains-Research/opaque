@@ -19,7 +19,6 @@ _HEADLINE = (
     "bsr",
     "lambda_cgd",
     "mf_identity",
-    "IdentityMf",
     "cyclic_poisson",
     "b_min_sep",
     "balls_in_bins",
