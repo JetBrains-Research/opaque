@@ -6,19 +6,27 @@ is fixed once at sampler init and reused across all ``num_epochs``
 epochs, so each example stays in its bin — required for the
 dominating-pair analysis.
 
-Two dispatch paths:
+The Choquette-Choo et al. (2024) dominating pair (Lemma 3.2) is::
+
+    P = (1/b) Σ_{i=1}^{b} N(m_i, σ²I)        m_i = Σ_{j=0}^{E-1} |C|[:, b·j + i]
+    Q = N(0, σ²I)
+
+After Gram-matrix reduction (``G[i,j] = m_i · m_j``) the privacy loss only
+depends on ``G``, ``num_bins`` and ``σ``.  Both dispatch paths feed this
+construction:
 
 - **Correlated-noise** (matrix-factorisation): ``Blt``, ``LambdaCgd``,
-  ``Bisr``, ``Bsr`` — PLD computed by Monte Carlo sampling of the
-  dominating pair from Choquette-Choo et al. (2024) arxiv:2410.06266.
-- **MF identity** (uncorrelated noise — :class:`IdentityMf`): standard
-  reduction to per-step Poisson-Gaussian composed across all
-  ``num_bins * num_epochs`` rounds — i.e.
-  ``poisson_gaussian_pld(σ, 1/num_bins).self_compose(num_bins * num_epochs)``.
-  This is the conservative bound the FTRL literature defaults to for
-  independent-noise BnB; the tight shuffle-DP analysis (uniform-of-k
-  Gaussian dominating pair) is strictly tighter but requires a dedicated
-  PLD primitive that is not (yet) part of ``opaque-accounting``.
+  ``Bisr``, ``Bsr`` — pass the strategy's pre-computed Gram matrix.
+- **MF identity** (uncorrelated noise — :class:`IdentityMf`): ``C = I``
+  gives orthogonal ``m_i`` with ``‖m_i‖² = num_epochs``, i.e.
+  ``G = num_epochs · I_b`` (diagonal).  This feeds the same Lemma 3.2
+  dominating pair through Monte Carlo — a valid bound on the BnB
+  mechanism's privacy.  In standard regimes the heuristic per-step
+  Poisson approximation
+  ``poisson(gaussian(σ), 1/num_bins) * (num_bins * num_epochs)`` happens
+  to be numerically tighter, but it is not a strict upper bound on
+  shuffle-style BnB sampling (Chua et al. 2024).  Lemma 3.2 is the
+  rigorous bound and is used here.
 
 The returned process represents the **total** privacy cost across
 all ``num_epochs`` epochs.  Do NOT compose further with ``* num_epochs``.
@@ -106,19 +114,23 @@ class BallsInBins(DpProcess):
                     native_cfg,
                 )
             case IdentityMf() as mf_id:
-                # Standard conservative reduction documented in the module
-                # docstring: per-step Poisson(σ, 1/k) composed over all
-                # ``k*E`` rounds.  Tighter shuffle-DP analyses exist for
-                # independent noise but are not yet supported by the
-                # native PLD library.
+                # Identity (C = I) ⇒ Lemma 3.2 m_i are orthogonal with
+                # ‖m_i‖² = num_epochs ⇒ Gram = num_epochs · I_b.
                 if mf_id.noise_multiplier == 0:
                     return _native.non_private_pld(native_cfg)
-                step_pld = _native.poisson_gaussian_pld(
+                b = self.num_bins
+                gram_diag = float(self.num_epochs)
+                gram_flat = [
+                    gram_diag if i == j else 0.0
+                    for i in range(b)
+                    for j in range(b)
+                ]
+                return _native.bnb_mc_pld(
+                    gram_flat,
+                    b,
                     float(mf_id.noise_multiplier),
-                    1.0 / self.num_bins,
                     native_cfg,
                 )
-                return step_pld.self_compose(self.num_bins * self.num_epochs)
             case _:
                 raise TypeError(
                     "BallsInBins requires Blt, LambdaCgd, Bisr, Bsr, or "
