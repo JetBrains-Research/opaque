@@ -20,13 +20,18 @@ from opaque.dpftrl.noise._engine import MFNoiseState
 from opaque.types import PerGroup
 
 
-def fingerprint_per_group_max_norm(pg: PerGroup) -> float:
-    """Deterministic float fingerprint for cross-rank equality of ``PerGroup``.
+def fingerprint_per_group_max_norm(pg: PerGroup) -> int:
+    """Deterministic 64-bit integer fingerprint for cross-rank equality of
+    ``PerGroup``.
 
     Called once when ``mf_noise`` latches a ``PerGroup`` ``max_norm``; the
     result is stored on :class:`MFNoiseState` and only scalar equality is
     checked on each :func:`sync` (avoids re-hashing the full param→group map
     on the hot path).
+
+    Returns the leading 64 bits of the SHA-256 digest as an int (never
+    coerced through float) so that cross-rank ``PerGroup`` mismatches can't
+    slip past the equality check by colliding under float-precision loss.
     """
     payload = {
         "groups": sorted(pg.groups.items()),
@@ -35,7 +40,7 @@ def fingerprint_per_group_max_norm(pg: PerGroup) -> float:
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     ).digest()
-    return int.from_bytes(digest[:8], "big") / float(2**53)
+    return int.from_bytes(digest[:8], "big")
 
 
 _MF_NOISE_STATE_FIELD_OPS: dict[str, str] = {
