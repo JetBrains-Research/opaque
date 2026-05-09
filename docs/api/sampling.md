@@ -1,10 +1,9 @@
 # Sampling
 
-Sampling primitives are split across `opaque.dpsgd.sampling` (Poisson and
-truncated Poisson) and `opaque.dpftrl.sampling` (cyclic Poisson, b-min-sep,
-balls-in-bins, sequential). Distributed shard helpers live in
-`opaque.distributed`. They provide privacy-amplifying sampling
-mechanisms for DP-SGD and DP-FTRL.
+Sampling primitives live in `opaque.dpsgd.sampling` (Poisson) and
+`opaque.dpftrl.sampling` (Poisson, b-min-sep, balls-in-bins, sequential).
+Distributed shard helpers live in `opaque.distributed`. They provide
+privacy-amplifying sampling mechanisms for DP-SGD and DP-FTRL.
 
 ## Overview
 
@@ -14,36 +13,34 @@ full dataset.
 
 Opaque provides these sampling strategies:
 
-1. **Poisson Sampling** (`PoissonSampler`): Each example sampled independently
-   with probability `sample_rate`. Variable batch sizes, strong privacy
-   amplification.
+1. **Poisson Sampling — DP-SGD** (`opaque.dpsgd.sampling.PoissonSampler`):
+   each example is sampled independently with probability `sample_rate`.
+   Optional `truncated_batch_size` caps per-step batch size for predictable
+   memory usage and a tighter (truncated-Poisson) accounting bound.
 
-2. **Truncated Poisson Sampling** (`TruncatedPoissonSampler`): Poisson
-   sampling with a maximum batch size cap. Predictable memory usage, tighter
-   privacy bounds than fixed-batch sampling.
+2. **Poisson Sampling — DP-FTRL** (`opaque.dpftrl.sampling.PoissonSampler`):
+   examples are partitioned into `bands` groups; iteration `i` yields a
+   Poisson batch from group `i % bands`. `bands=1` collapses to plain
+   Poisson. Designed for matrix-factorization mechanisms (BandMF) where
+   predictable sampling structure enables correlated noise.
 
-3. **Cyclic Poisson Sampling** (`CyclicPoissonSampler`): Partitions the
-   dataset into groups and cycles through them. Designed for matrix-
-   factorization noise mechanisms (BandMF) where predictable sampling
-   structure enables correlated noise.
-
-4. **Balls-in-Bins Sampling** (`BallsInBinsSampler`): Each example is
+3. **Balls-in-Bins Sampling** (`BallsInBinsSampler`): each example is
    independently assigned to a bin once at init; the assignment is **fixed
    across epochs** (required for BnB accounting). Bin sizes are variable
    (Binomial); some bins may be empty. Used with DP-λCGD, BISR, BSR, and
    BLT mechanisms.
 
-5. **Sequential Batch Sampling** (`SequentialBatchSampler`): Iterates
+4. **Sequential Batch Sampling** (`SequentialBatchSampler`): iterates
    through the dataset in fixed-size contiguous batches with no randomness.
    The dataset should be pre-shuffled once before constructing the sampler.
    Used with the BLT mechanism.
 
-6. **b-min-sep** (`BMinSepSampler`): Warm-start minimum-separation Poisson
+5. **b-min-sep** (`BMinSepSampler`): warm-start minimum-separation Poisson
    subsampling for BandMF (arXiv:2602.09338). Use with `ftrl_acc.b_min_sep`.
 
 **See also**: [Sampling & Microbatching User Guide](../user-guide/sampling.md)
 
-## PoissonSampler
+## PoissonSampler (DP-SGD)
 
 ```python
 from opaque.dpsgd.sampling import PoissonSampler
@@ -52,7 +49,8 @@ from opaque.random import key
 sampler = PoissonSampler(
     data_source,
     sample_rate=batch_size / len(data_source),
-    num_iterations=None,
+    n_steps=None,
+    truncated_batch_size=None,
     key=key(42),
 )
 loader = DataLoader(dataset, batch_sampler=sampler)
@@ -62,37 +60,17 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 |-----------|------|---------|-------------|
 | `data_source` | dataset with `len()` | required | The training dataset |
 | `sample_rate` | `float` | required | Probability of including each example, in (0, 1] |
-| `num_iterations` | `int` or `None` | `None` | Number of batches to yield. `None` = infinite |
+| `n_steps` | `int` or `None` | `None` | Number of batches to yield. `None` = infinite |
+| `truncated_batch_size` | `int` or `None` | `None` | Optional per-step batch-size cap. When set, the sampler emits batches truncated to this many examples (uniform random subset of the Poisson draw). |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
-Account with `dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate)`.
+Plain Poisson — account with
+`dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate)`.
 
-## TruncatedPoissonSampler
-
-```python
-from opaque.dpsgd.sampling import TruncatedPoissonSampler
-from opaque.random import key
-
-sampler = TruncatedPoissonSampler(
-    data_source,
-    sample_rate=batch_size / len(data_source),
-    max_batch_size=max_batch,
-    num_iterations=None,
-    key=key(42),
-)
-loader = DataLoader(dataset, batch_sampler=sampler)
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `data_source` | dataset with `len()` | required | The training dataset |
-| `sample_rate` | `float` | required | Expected sampling rate, in (0, 1] |
-| `max_batch_size` | `int` | required | Maximum batch size cap |
-| `num_iterations` | `int` or `None` | `None` | Number of batches to yield. `None` = infinite |
-| `key` | `RngKey` | required | RNG key for reproducible sampling |
-
-Account with `dpsgd_acc.truncated_poisson(dpsgd_acc.gaussian(nm), sample_rate,
-batch_size_cap, dataset_size)`.
+Truncated Poisson (when `truncated_batch_size` is set) — account with
+`dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate,
+truncated_batch_size=batch, dataset_size=n)` to use the matching
+truncated-Poisson PLD.
 
 ## BallsInBinsSampler
 
@@ -103,7 +81,7 @@ from opaque.random import key
 sampler = BallsInBinsSampler(
     data_source,
     num_bins=dataset_size // batch_size,
-    num_epochs=8,
+    n_steps=8 * (dataset_size // batch_size),
     key=key(42),
 )
 loader = DataLoader(dataset, batch_sampler=sampler)
@@ -113,28 +91,28 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 |-----------|------|---------|-------------|
 | `data_source` | dataset with `len()` | required | The training dataset |
 | `num_bins` | `int` | required | Number of bins per epoch (≥ 2). Typically `dataset_size / batch_size` |
-| `num_epochs` | `int` or `None` | `None` | Number of epochs. `None` = infinite |
+| `n_steps` | `int` or `None` | `None` | Total number of batches to yield. Must be a positive multiple of `num_bins` (per-bin participation count is `n_steps // num_bins`). `None` = infinite |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
 Bin sizes are variable (Binomial distribution). Assignments are **fixed
 across epochs** (required for BnB dominating-pair accounting). Empty bins
 are skipped.
 
-Account with `ftrl_acc.balls_in_bins(mechanism, num_bins, num_epochs)` where
-`mechanism` is `ftrl_acc.lambda_cgd(...)`, `ftrl_acc.bisr(...)`, `ftrl_acc.blt(...)`, or
-`dpsgd_acc.gaussian(...)`.
+Account with `ftrl_acc.balls_in_bins(mechanism, num_bins, n_steps)` where
+`mechanism` is `ftrl_acc.lambda_cgd(...)`, `ftrl_acc.bisr(...)`,
+`ftrl_acc.blt(...)`, or `ftrl_acc.mf_identity(...)`.
 
-## CyclicPoissonSampler
+## PoissonSampler (DP-FTRL)
 
 ```python
-from opaque.dpftrl.sampling import CyclicPoissonSampler
+from opaque.dpftrl.sampling import PoissonSampler
 from opaque.random import key
 
-sampler = CyclicPoissonSampler(
+sampler = PoissonSampler(
     data_source,
     sampling_prob=0.5,
-    cycle_length=4,
-    iterations=1000,
+    bands=4,
+    n_steps=1000,
     key=key(42),
 )
 loader = DataLoader(dataset, batch_sampler=sampler)
@@ -144,15 +122,16 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 |-----------|------|---------|-------------|
 | `data_source` | dataset with `len()` | required | The training dataset |
 | `sampling_prob` | `float` | required | Probability of including each eligible example, in (0, 1] |
-| `cycle_length` | `int` | `1` | Number of groups to partition into. 1 = standard Poisson |
-| `iterations` | `int \| None` | `None` | Total batches to yield. None = 1 epoch |
-| `truncated_batch_size` | `int \| None` | `None` | Maximum batch size cap |
-| `partition_type` | `PartitionType` | `EQUAL_SPLIT` | How to partition: `EQUAL_SPLIT` or `INDEPENDENT` |
+| `bands` | `int` | `1` | Number of cyclic groups (band width). `1` collapses to plain Poisson |
+| `n_steps` | `int` | `1` | Total batches to yield |
+| `truncated_batch_size` | `int \| None` | `None` | Optional per-step batch size cap |
+| `partition_type` | `PartitionType` | `EQUAL_SPLIT` | How to partition: `EQUAL_SPLIT` (only used when `bands > 1`) or `INDEPENDENT` |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
 In distributed training, shard the dataset with `local_shard()` and pass
 a per-rank key via `fold_in(key, rank)`. Best used with `mf_noise`
-for correlated noise (DP-FTRL).
+for correlated noise (DP-FTRL); account with
+`ftrl_acc.poisson(mechanism, sampling_prob, n_steps=...)`.
 
 ## Distributed Helpers
 
@@ -194,12 +173,7 @@ loader = DataLoader(shard, batch_sampler=sampler)
       show_source: true
       heading_level: 3
 
-::: opaque.dpsgd.sampling.TruncatedPoissonSampler
-    options:
-      show_source: true
-      heading_level: 3
-
-::: opaque.dpftrl.sampling.CyclicPoissonSampler
+::: opaque.dpftrl.sampling.PoissonSampler
     options:
       show_source: true
       heading_level: 3

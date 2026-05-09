@@ -575,4 +575,3 @@ pub fn py_toeplitz_gram_matrix(
 pub fn py_bisr_strategy_coefficients(coefficients: Vec<f64>, n: usize) -> Vec<f64> {
     crate::matrix_factorization::bisr::bisr_column_zero_pub(&coefficients, n)
 }
-
