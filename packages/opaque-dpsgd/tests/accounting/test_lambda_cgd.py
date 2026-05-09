@@ -121,17 +121,17 @@ class TestBnbAmplification:
             ftrl_acc.balls_in_bins(
                 ftrl_acc.lambda_cgd(1.0, sensitivity=1.0),
                 num_bins=50,
-                num_epochs=3,
+                n_steps=150,
             ).epsilon_at(1e-5)
 
     @pytest.mark.slow
     def test_bnb_rejects_non_accepted_type(self):
-        """BnB rejects BandMf (should use cyclic_poisson)."""
+        """BnB rejects BandMf (should use poisson)."""
         with pytest.raises(TypeError):
             ftrl_acc.balls_in_bins(
-                ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=20),
+                ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0,)),
                 num_bins=50,
-                num_epochs=3,
+                n_steps=150,
             )
 
     @pytest.mark.slow

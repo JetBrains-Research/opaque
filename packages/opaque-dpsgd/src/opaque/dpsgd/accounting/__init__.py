@@ -10,8 +10,12 @@ Mechanisms (in :mod:`opaque.dpsgd.accounting.mechanisms`):
 
 Amplification (in :mod:`opaque.dpsgd.accounting.amplification`):
 
-- :func:`poisson`, :func:`truncated_poisson`, :func:`parallel_poisson` —
-  per-step Poisson subsampling amplifications.
+- :func:`poisson` — Poisson subsampling.  Set ``truncated_batch_size``
+  and ``dataset_size`` together for the truncated-Poisson production form.
+- :func:`parallel_poisson` — Poisson subsampling under parallel workers.
+
+Each amplification factory returns a **per-step** :class:`DpProcess`;
+compose externally with ``* num_steps`` for full-training privacy.
 
 Cross-cutting primitives (composition, calibration) live at
 :mod:`opaque.accounting`. DP-FTRL helpers such as :func:`balls_in_bins`
@@ -30,7 +34,6 @@ Example::
 from opaque.dpsgd.accounting.amplification import (
     parallel_poisson,
     poisson,
-    truncated_poisson,
 )
 from opaque.dpsgd.accounting.mechanisms import adaclip, gaussian
 
@@ -38,6 +41,5 @@ __all__ = [
     "gaussian",
     "adaclip",
     "poisson",
-    "truncated_poisson",
     "parallel_poisson",
 ]

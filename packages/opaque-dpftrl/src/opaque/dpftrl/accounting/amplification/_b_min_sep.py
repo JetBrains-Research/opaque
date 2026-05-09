@@ -4,9 +4,10 @@ Dong & Ganesh, "Privacy Amplification for BandMF via b-Min-Sep Subsampling"
 (arXiv:2602.09338). Uses Monte Carlo accounting with the paper's dynamic
 program for the likelihood ratio (Section 5).
 
-The runtime sampler should use :class:`opaque.sampling.BMinSepSampler` with
-the same ``bands`` and ``p`` derived from the target per-example participation
-rate ``p_0`` via ``p = p_0 / (1 - p_0 * (bands - 1))`` for ``bands > 1``.
+The runtime sampler should use :class:`opaque.dpftrl.sampling.BMinSepSampler`
+with the same ``bands`` and ``p`` derived from the target per-example
+participation rate ``p_0`` via ``p = p_0 / (1 - p_0 * (bands - 1))`` for
+``bands > 1``.
 """
 
 from __future__ import annotations
@@ -46,7 +47,6 @@ class BMinSep(DpProcess):
     """Monte Carlo PLD for BandMF + warm-start b-min-sep subsampling."""
 
     inner: _Inner
-    strategy_coefficients: tuple[float, ...]
     n_steps: int
     p0: float
 
@@ -70,11 +70,11 @@ class BMinSep(DpProcess):
             seed=seed,
         )
         native_cfg = config.to_native()
-        bands = len(self.strategy_coefficients)
-        p = _participation_p_from_per_example_rate(self.p0, bands)
 
         match self.inner:
             case BandMf():
+                strategy_coefficients = self.inner.coefficients
+                bands = self.inner.bands
                 effective_nm = self.inner.noise_multiplier / self.inner.sensitivity
             case _:
                 raise TypeError(
@@ -82,8 +82,15 @@ class BMinSep(DpProcess):
                     f"{type(self.inner).__name__}."
                 )
 
+        if bands < 1:
+            raise ValueError(
+                "BandMf inner must have non-empty coefficients (bands >= 1)."
+            )
+
+        p = _participation_p_from_per_example_rate(self.p0, bands)
+
         hid = get_handle_or_none(
-            self.strategy_coefficients,
+            strategy_coefficients,
             self.n_steps,
             p,
             config.num_mc_samples,
@@ -91,7 +98,7 @@ class BMinSep(DpProcess):
         )
         if hid is None:
             return _native.bandmf_b_min_sep_warm_mc_pld(
-                list(self.strategy_coefficients),
+                list(strategy_coefficients),
                 self.n_steps,
                 p,
                 effective_nm,
@@ -99,7 +106,7 @@ class BMinSep(DpProcess):
             )
         return _native.bandmf_b_min_sep_pld_from_transcript_handle(
             hid,
-            list(self.strategy_coefficients),
+            list(strategy_coefficients),
             self.n_steps,
             p,
             effective_nm,
@@ -109,16 +116,15 @@ class BMinSep(DpProcess):
 
 def b_min_sep(
     inner: _Inner,
-    strategy_coefficients: tuple[float, ...] | list[float],
+    *,
     n_steps: int,
     p0: float,
 ) -> BMinSep:
     """BandMF privacy accounting under warm-start b-min-sep subsampling.
 
     Args:
-        inner: ``BandMf`` (same as cyclic Poisson).
-        strategy_coefficients: First column of the BandMF strategy matrix ``C``
-            (length equals ``bands``). Must match the training strategy.
+        inner: ``BandMf`` mechanism — strategy coefficients (and band width)
+            are read from ``inner.coefficients``.
         n_steps: Total number of training iterations ``n``.
         p0: Per-example participation rate per iteration
             (``E[batch] / |D|``). Same ``p_0`` as cyclic Poisson /
@@ -134,15 +140,15 @@ def b_min_sep(
             raise TypeError(
                 f"b_min_sep() requires a BandMf inner, got {type(inner).__name__}."
             )
-    coef = tuple(float(x) for x in strategy_coefficients)
-    if len(coef) < 1:
-        raise ValueError("strategy_coefficients must be non-empty")
+    if inner.bands < 1:
+        raise ValueError(
+            "BandMf inner must have non-empty coefficients (bands >= 1)."
+        )
     if n_steps < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
 
     return BMinSep(
         inner=inner,
-        strategy_coefficients=coef,
         n_steps=n_steps,
         p0=float(p0),
     )

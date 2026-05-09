@@ -51,7 +51,7 @@ def blt(
         proc = ftrl_acc.balls_in_bins(
             ftrl_acc.blt(1.0, sensitivity=s.sensitivity,
                          gram_matrix=s.gram_matrix),
-            num_bins=1953, num_epochs=8,
+            num_bins=1953, n_steps=15624,
         )
     """
     return Blt(noise_multiplier, sensitivity, gram_matrix)

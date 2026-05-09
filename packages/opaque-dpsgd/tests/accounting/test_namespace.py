@@ -17,7 +17,6 @@ _HEADLINE = (
     "gaussian",
     "adaclip",
     "poisson",
-    "truncated_poisson",
     "parallel_poisson",
 )
 
@@ -25,7 +24,6 @@ _TYPES = (
     "Gaussian",
     "AdaClip",
     "Poisson",
-    "TruncatedPoisson",
     "ParallelPoisson",
 )
 
@@ -67,7 +65,12 @@ class TestEndToEndCalibration:
         import math
         import opaque.dpsgd.accounting as dpsgd_acc
 
-        proc = dpsgd_acc.truncated_poisson(dpsgd_acc.gaussian(0.8), 0.01, 128, 10_000)
+        proc = dpsgd_acc.poisson(
+            dpsgd_acc.gaussian(0.8),
+            0.01,
+            truncated_batch_size=128,
+            dataset_size=10_000,
+        )
         eps = (proc * 100).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 

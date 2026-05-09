@@ -1,7 +1,7 @@
 """Opaque DP-FTRL: correlated (matrix-factorization) noise mechanisms.
 
 Strategies (BLT, BSR, BiSR, band-MF, λ-CGD, identity) + DP-FTRL-specific
-participation samplers (b-min-sep, cyclic Poisson, balls-in-bins, sequential).
+participation samplers (b-min-sep, Poisson, balls-in-bins, sequential).
 
 Compatible clipping rules live in :mod:`opaque.clipping` — the MF privacy
 proof requires a constant per-step record sensitivity, which both
@@ -45,7 +45,7 @@ from opaque.dpftrl.noise import (
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
     BMinSepSampler,
-    CyclicPoissonSampler,
+    PoissonSampler,
     SequentialBatchSampler,
 )
 
@@ -94,6 +94,6 @@ __all__ = [
     # Samplers
     "BallsInBinsSampler",
     "BMinSepSampler",
-    "CyclicPoissonSampler",
+    "PoissonSampler",
     "SequentialBatchSampler",
 ]

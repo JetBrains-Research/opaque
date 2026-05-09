@@ -26,14 +26,14 @@ from opaque.clipping import auto_clipped_grad, clipped_grad
 from opaque.random import key
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.sampling import TruncatedPoissonSampler
+from opaque.dpsgd.sampling import PoissonSampler
 ```
 
 ## Layout
 
 - `opaque.dpsgd.noise` — `gaussian_noise`, `truncated_gaussian_noise`
 - `opaque.dpsgd.clipping` — `adaptive_clipped_grad` (re-exports `auto_clipped_grad` / `auto_clipped_fun` for backward compatibility; canonical home is `opaque.clipping`)
-- `opaque.dpsgd.sampling` — `TruncatedPoissonSampler`
+- `opaque.dpsgd.sampling` — `PoissonSampler` (with optional ``truncated_batch_size``)
 
 All algorithm-agnostic primitives (fixed and AUTO-S clipping, Poisson
 sampling, RNG keys, pytree / distributed / profiling helpers) live in

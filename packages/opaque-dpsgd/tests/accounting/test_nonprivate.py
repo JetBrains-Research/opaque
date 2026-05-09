@@ -50,11 +50,11 @@ class TestNonPrivateConstructor:
         assert step.epsilon_at(1e-5) == math.inf
 
     def test_truncated_poisson_gaussian_zero(self):
-        """truncated_poisson(gaussian(0)) should produce non-private PLD."""
-        step = dpsgd_acc.truncated_poisson(
+        """poisson(gaussian(0), truncated=…) should produce non-private PLD."""
+        step = dpsgd_acc.poisson(
             dpsgd_acc.gaussian(0),
             sample_rate=0.01,
-            batch_size_cap=128,
+            truncated_batch_size=128,
             dataset_size=10_000,
         )
         assert step.epsilon_at(1e-5) == math.inf
@@ -115,21 +115,24 @@ class TestNonPrivatePoisson:
 
 
 class TestNonPrivateTruncatedPoisson:
-    """NonPrivate threads through TruncatedPoisson."""
+    """NonPrivate threads through truncated Poisson."""
 
     def test_truncated_poisson_accepts_nonprivate(self):
-        step = dpsgd_acc.truncated_poisson(
-            acc.nonprivate(), sample_rate=0.01, batch_size_cap=128, dataset_size=10_000
+        step = dpsgd_acc.poisson(
+            acc.nonprivate(),
+            sample_rate=0.01,
+            truncated_batch_size=128,
+            dataset_size=10_000,
         )
         eps = step.epsilon_at(1e-5)
         assert eps == math.inf
 
     def test_truncated_poisson_adaclip_nonprivate(self):
-        """Full chain: truncated_poisson(adaclip(nonprivate()))."""
-        step = dpsgd_acc.truncated_poisson(
+        """Full chain: poisson(adaclip(nonprivate()), truncated=…)."""
+        step = dpsgd_acc.poisson(
             dpsgd_acc.adaclip(acc.nonprivate(), expected_batch_size=100),
             sample_rate=0.01,
-            batch_size_cap=128,
+            truncated_batch_size=128,
             dataset_size=10_000,
         )
         eps = step.epsilon_at(1e-5)

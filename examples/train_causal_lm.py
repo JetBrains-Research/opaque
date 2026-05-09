@@ -83,7 +83,6 @@ from opaque.profiling import (
 )
 from opaque.random import key, fold_in
 from opaque.dpsgd.sampling import PoissonSampler
-from opaque.dpsgd.sampling import TruncatedPoissonSampler
 from opaque.distributed import local_shard
 from opaque.functional import make_functional
 from opaque.scheduling import (
@@ -1335,10 +1334,10 @@ def main():
 
     _unamplified = mechanism
     if use_truncated_poisson:
-        mechanism = lambda nm: dpsgd_acc.truncated_poisson(
+        mechanism = lambda nm: dpsgd_acc.poisson(
             _unamplified(nm),
             sample_rate=sample_rate,
-            batch_size_cap=max_batch_size,
+            truncated_batch_size=max_batch_size,
             dataset_size=global_train_size,
         )
     elif use_parallel_poisson:
@@ -1576,18 +1575,18 @@ def main():
 
         # Create sampler for this epoch
         if use_truncated_poisson:
-            epoch_sampler = TruncatedPoissonSampler(
+            epoch_sampler = PoissonSampler(
                 train_dataset,
                 sample_rate=sample_rate,
-                max_batch_size=max_batch_size,
-                num_iterations=expected_steps_per_epoch,
+                truncated_batch_size=max_batch_size,
+                n_steps=expected_steps_per_epoch,
                 key=fold_in(key(args.seed), rank, epoch),
             )
         else:
             epoch_sampler = PoissonSampler(
                 train_dataset,
                 sample_rate=sample_rate,
-                num_iterations=expected_steps_per_epoch,
+                n_steps=expected_steps_per_epoch,
                 key=fold_in(key(args.seed), rank, epoch),
             )
         print("Creating DataLoader...")

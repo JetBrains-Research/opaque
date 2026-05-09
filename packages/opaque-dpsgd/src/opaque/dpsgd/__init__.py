@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 from opaque.dpsgd import clipping, noise, sampling
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise, truncated_gaussian_noise
-from opaque.dpsgd.sampling import PoissonSampler, TruncatedPoissonSampler
+from opaque.dpsgd.sampling import PoissonSampler
 
 if TYPE_CHECKING:
     # Static type checkers see ``accounting`` as a real attribute; at
@@ -75,5 +75,4 @@ __all__ = [
     "truncated_gaussian_noise",
     # Sampling
     "PoissonSampler",
-    "TruncatedPoissonSampler",
 ]

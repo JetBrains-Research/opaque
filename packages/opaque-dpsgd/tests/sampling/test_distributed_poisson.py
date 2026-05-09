@@ -12,7 +12,6 @@ from torch.utils.data import TensorDataset
 
 from opaque.random import fold_in, key
 from opaque.dpsgd.sampling import PoissonSampler
-from opaque.dpsgd.sampling import TruncatedPoissonSampler
 from opaque.distributed import local_shard
 from opaque.distributed._shard import _local_shard_bounds
 
@@ -92,7 +91,7 @@ class TestShardedSampling:
         for rank in range(world_size):
             shard = local_shard(dataset, rank=rank, world_size=world_size)
             sampler = PoissonSampler(
-                shard, sample_rate=0.5, num_iterations=1, key=fold_in(key(42), rank)
+                shard, sample_rate=0.5, n_steps=1, key=fold_in(key(42), rank)
             )
             batch = list(sampler)[0]
             shard_size = len(shard)
@@ -109,7 +108,7 @@ class TestShardedSampling:
             sampler = PoissonSampler(
                 shard,
                 sample_rate=sample_rate,
-                num_iterations=100,
+                n_steps=100,
                 key=fold_in(key(100), rank),
             )
             batch_sizes = [len(b) for b in sampler]
@@ -128,13 +127,13 @@ class TestShardedSampling:
         sizes0 = [
             len(b)
             for b in PoissonSampler(
-                shard0, sample_rate=0.5, num_iterations=20, key=fold_in(key(42), 0)
+                shard0, sample_rate=0.5, n_steps=20, key=fold_in(key(42), 0)
             )
         ]
         sizes1 = [
             len(b)
             for b in PoissonSampler(
-                shard1, sample_rate=0.5, num_iterations=20, key=fold_in(key(42), 1)
+                shard1, sample_rate=0.5, n_steps=20, key=fold_in(key(42), 1)
             )
         ]
         assert sizes0 != sizes1, "Different ranks should sample independently"
@@ -146,52 +145,50 @@ class TestSingleDeviceMode:
     def test_single_device_full_dataset(self):
         """Default: sampler operates on full dataset."""
         dataset = TensorDataset(torch.randn(100, 10))
-        sampler = PoissonSampler(dataset, sample_rate=0.1, num_iterations=1, key=key(0))
+        sampler = PoissonSampler(dataset, sample_rate=0.1, n_steps=1, key=key(0))
         batches = list(sampler)
         assert len(batches) == 1
 
     def test_different_keys_produce_different_batches(self):
         dataset = TensorDataset(torch.randn(1000, 10))
-        s0 = PoissonSampler(dataset, sample_rate=0.1, num_iterations=10, key=key(42))
-        s1 = PoissonSampler(dataset, sample_rate=0.1, num_iterations=10, key=key(43))
+        s0 = PoissonSampler(dataset, sample_rate=0.1, n_steps=10, key=key(42))
+        s1 = PoissonSampler(dataset, sample_rate=0.1, n_steps=10, key=key(43))
         assert list(s0) != list(s1)
 
     def test_same_key_reproduces_batches(self):
         dataset = TensorDataset(torch.randn(500, 10))
-        s1 = PoissonSampler(dataset, sample_rate=0.2, num_iterations=5, key=key(12345))
-        s2 = PoissonSampler(dataset, sample_rate=0.2, num_iterations=5, key=key(12345))
+        s1 = PoissonSampler(dataset, sample_rate=0.2, n_steps=5, key=key(12345))
+        s2 = PoissonSampler(dataset, sample_rate=0.2, n_steps=5, key=key(12345))
         assert list(s1) == list(s2)
 
 
-class TestTruncatedPoissonDistributed:
-    """Tests for TruncatedPoissonSampler with external sharding."""
+class TestPoissonTruncatedDistributed:
+    """Tests for PoissonSampler truncation under external sharding."""
 
     def test_truncated_sharded_respects_max_batch_size(self):
-        """TruncatedPoissonSampler respects max_batch_size on each shard."""
         dataset = TensorDataset(torch.randn(1000, 10))
         max_batch_size = 50
         world_size = 4
 
         for rank in range(world_size):
             shard = local_shard(dataset, rank=rank, world_size=world_size)
-            sampler = TruncatedPoissonSampler(
+            sampler = PoissonSampler(
                 shard,
                 sample_rate=0.5,
-                max_batch_size=max_batch_size,
-                num_iterations=1,
+                truncated_batch_size=max_batch_size,
+                n_steps=1,
                 key=fold_in(key(100), rank),
             )
             batch = list(sampler)[0]
             assert len(batch) <= max_batch_size
 
     def test_truncated_single_device(self):
-        """Default (no sharding) uses full dataset."""
         dataset = TensorDataset(torch.randn(500, 10))
-        sampler = TruncatedPoissonSampler(
+        sampler = PoissonSampler(
             dataset,
             sample_rate=0.2,
-            max_batch_size=60,
-            num_iterations=5,
+            truncated_batch_size=60,
+            n_steps=5,
             key=key(999),
         )
         batches = list(sampler)
@@ -219,7 +216,7 @@ class TestEdgeCases:
             sampler = PoissonSampler(
                 shard,
                 sample_rate=0.5,
-                num_iterations=10,
+                n_steps=10,
                 key=fold_in(key(0), rank),
             )
             batches = list(sampler)

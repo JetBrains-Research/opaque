@@ -13,11 +13,11 @@ For narrower namespaces, types are also re-exported from per-subpackage
 - :mod:`opaque.accounting.composition.types` — composition-node types
 - :mod:`opaque.accounting.transformations.types` — transformation types
 
-DP-SGD-specific dataclasses (``Gaussian``, ``Poisson``, ``TruncatedPoisson``,
-``ParallelPoisson``, ``AdaClip``) are re-exported from
-:mod:`opaque.dpsgd.accounting.types` (requires the ``opaque-dpsgd``
-install); DP-FTRL-specific dataclasses (``BandMf``, ``Blt``, ``LambdaCgd``,
-``Bisr``, ``Bsr``, ``MfGaussian``, ``CyclicPoisson``, ``BMinSep``) from
+DP-SGD-specific dataclasses (``Gaussian``, ``Poisson``, ``ParallelPoisson``,
+``AdaClip``) are re-exported from :mod:`opaque.dpsgd.accounting.types`
+(requires the ``opaque-dpsgd`` install); DP-FTRL-specific dataclasses
+(``BandMf``, ``Blt``, ``LambdaCgd``, ``Bisr``, ``Bsr``, ``MfGaussian``,
+``IdentityMf``, ``MfPoisson``, ``BMinSep``, ``BallsInBins``) from
 :mod:`opaque.dpftrl.accounting.types` (requires ``opaque-dpftrl``).  This
 module only re-exports the cross-cutting types that live in
 ``opaque-accounting`` itself.
