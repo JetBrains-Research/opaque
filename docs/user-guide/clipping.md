@@ -562,6 +562,73 @@ starting threshold for adaptive, sensitivity bound `R` for auto.
   track a target quantile of gradient norms, at a small additional
   privacy cost for the quantile query.
 
+## Empirical evidence
+
+We validated the second-moment release and per-group clipping releases
+(individually and jointly) on a Qwen2.5-Coder-7B + KStack LoRA workload
+at ε=3 with Adafactor and BC off, sweeping clip norm `R` across
+AUTO-S R∈{0.1, 1.0} and adaptive (default). The findings:
+
+1. **The second-moment release is "free in PLD" but redistributes σ;
+   the cost scales with `R`.** Joint Mahalanobis allocation matches
+   `gaussian(nm)` exactly in privacy accounting, but the first-moment
+   stream picks up a $\sqrt{1+R}$ factor of σ relative to the no-SM
+   baseline. We measured a +5.0% σ inflation at AUTO-S R=0.1
+   (3.34e-4 vs 3.18e-4), +41.5% at AUTO-S R=1.0 (4.50e-3 vs the
+   3.18e-3 implied baseline), and +4.7% at adaptive (which settled R
+   near the median grad-norm, ~0.1 here). The "free" claim about
+   private second moments is correct in PLD, but the σ
+   redistribution it implies is real and `R`-dependent — pick `R` as
+   small as the optimizer tolerates.
+
+2. **Adafactor is approximately scale-invariant in gradient
+   magnitude.** With Adafactor's relative-step LR, gradient updates
+   do not scale with `R` the way SGD-momentum or Adam updates do.
+   The same `lr=5e-4` produced final eval losses 0.3446–0.3455 across
+   `R∈{0.1, 1.0, adaptive}` — a sub-noise spread of 0.26%. The
+   SGD-style "lr·R = const" compensation does not apply: the
+   `lr=5e-3` paired with `R=0.1` run diverged. Retune LR for
+   non-Adafactor optimizers when changing `R` substantially; do not
+   retune for Adafactor.
+
+3. **`--second-moment on` at adaptive default: sound, no win on this
+   workload.** SM-only on adaptive landed at 0.3455 vs 0.3454 baseline
+   (Δ = +0.0001, sub-noise). The empirical σ inflation matched the
+   predicted +5% at this `R`. The release is mathematically and
+   engineeringly correct; whether it pays for itself depends on
+   workload-level second-moment-update bias, not on clipping mode.
+
+4. **`--per-group-clipping`: real splits, but no value-add when
+   gradient heterogeneity is mild.** The per-group adapted `R` values
+   tracked gradient-norm differences faithfully — at this anchor
+   q_proj's median grad norm was 0.0154 (6.7× smaller than fallback's
+   0.1037) and PG's adapted thresholds settled at q_proj_R = 6.9e-5
+   vs fallback_R = 4.9e-4 (a 7.1× ratio). The split is non-degenerate
+   but does not translate into eval-loss improvement: PG-only landed
+   at 0.3453 vs 0.3454 baseline (Δ = −0.0001, sub-noise). PG is most
+   useful when one group has substantially larger or noisier
+   gradients than the rest (e.g., a fresh classifier head over
+   frozen pretrained layers).
+
+5. **The merged `--second-moment on --per-group-clipping ...` path
+   is correct.** This codepath had not previously been exercised
+   end-to-end. It produced logical results: the joint cell converged
+   to 0.3453 (identical to PG-only), per-group adapted `R` values
+   matched PG-only within 2% (q_proj: 7.06e-5 vs 6.90e-5; fallback:
+   4.87e-4 vs 4.88e-4), and first-moment σ inflation came in at
+   +4.1% versus the predicted +5%. The only artifact was a transient
+   ~+70% eval-loss spike during the first ~10 training steps while
+   the per-group adaptive `R` converged from its init — this clears
+   within ~50 steps and does not persist.
+
+This validates the SM and PG releases at adaptive default. We do not
+change defaults (`--second-moment off`, no `--per-group-clipping`).
+Operational recommendations: turn `--second-moment on` when there is
+evidence that second-moment-update bias is hurting the run (e.g.,
+Adam/AdamW with vanilla v-update at small batches); turn
+`--per-group-clipping` on when one group has substantially larger or
+noisier gradients than the rest.
+
 ## API reference
 
 See [Clipping API Reference](../api/clipping.md) for complete function
