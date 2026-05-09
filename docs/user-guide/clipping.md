@@ -566,7 +566,9 @@ starting threshold for adaptive, sensitivity bound `R` for auto.
 
 We validated the second-moment release and per-group clipping releases
 (individually and jointly) on a Qwen2.5-Coder-7B + KStack LoRA workload
-at ε=3 with Adafactor and BC off, sweeping clip norm `R` across
+at ε=3 with Adafactor and bias correction (BC, see
+[Optimizers](optimizers.md#noisedpytree-bias-correction-by-variance-subtraction))
+off, sweeping clip norm `R` across
 AUTO-S R∈{0.1, 1.0} and adaptive (default). The findings:
 
 1. **The second-moment release is "free in PLD" but redistributes σ;
@@ -594,8 +596,8 @@ AUTO-S R∈{0.1, 1.0} and adaptive (default). The findings:
 3. **`--second-moment on` at adaptive default: sound, no win on this
    workload.** SM-only on adaptive landed at 0.3455 vs 0.3454 baseline
    (Δ = +0.0001, sub-noise). The empirical σ inflation matched the
-   predicted +5% at this `R`. The release is mathematically and
-   engineeringly correct; whether it pays for itself depends on
+   predicted +5% at this `R`. The release is correct in math and in
+   implementation; whether it pays for itself depends on
    workload-level second-moment-update bias, not on clipping mode.
 
 4. **`--per-group-clipping`: real splits, but no value-add when
