@@ -571,6 +571,19 @@ def parse_args():
             "different clipping norms to S (direction) vs sigma (magnitude)."
         ),
     )
+    lora_group.add_argument(
+        "--lora-xs-oft-mode",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "LoRA-XS: parametrize R as Cayley(X)·diag(s) − I (Spectral-OFT-XS). "
+            "Same param count as --lora-xs-manifold-mode (r(r+1)/2) but with "
+            "s initialised near 1 instead of 0, which fixes the cold-start "
+            "vanishing-gradient problem that hurt vanilla manifold mode. "
+            "Mutually exclusive with --lora-xs-manifold-mode. See "
+            "vendor/lora-privacy/docs/beyond-lora-research-program.md."
+        ),
+    )
     # LoRA-XSe: exploration via momentum SVD rotation
     lora_group.add_argument(
         "--lora-xse-p-e",
@@ -1113,6 +1126,11 @@ def main():
     # Apply LoRA
     print(f"Applying {args.lora_method}...")
     if args.lora_method == "lora-xs":
+        if args.lora_xs_manifold_mode and args.lora_xs_oft_mode:
+            raise ValueError(
+                "--lora-xs-manifold-mode and --lora-xs-oft-mode are mutually "
+                "exclusive — pick one."
+            )
         lora_config = LoraXSConfig(
             r=args.lora_r,
             lora_alpha=args.lora_alpha,
@@ -1121,6 +1139,7 @@ def main():
             sigma=args.lora_xs_sigma,
             orthonormal_a=args.lora_xs_orthonormal_a,
             manifold_mode=args.lora_xs_manifold_mode,
+            oft_mode=args.lora_xs_oft_mode,
             task_type="CAUSAL_LM",
         )
     else:
