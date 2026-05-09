@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import torch
 
-from opaque.types import clipped
+from opaque.types import SecondMomentClippingOutput, clipped
 
 from opaque.clipping._helpers import (
     batch_size_from_args,
@@ -167,13 +167,13 @@ def adaptive_clipped_grad(
             (``batch_argnums``, ``normalize_by``, etc).
 
         Note:
-            **Empty-batch parity (``second_moment``):** this wrapper short-circuits
-            zero-sized batches with a single :class:`~opaque.types.ClippedPytree`, while
-            :func:`~opaque.clipping.clipped_grad` emits
-            :class:`~opaque.types.SecondMomentClippingOutput` when ``second_moment=True``.
-            Trainer scripts assuming a paired stream throughout can mis-match between
-            empty and non-empty steps; reconcile library + ``examples/train_*.py`` and
-            add regression tests before changing behaviour here.
+            **Empty-batch parity (``second_moment``):** the empty-batch
+            short-circuit mirrors :func:`~opaque.clipping.clipped_grad` and
+            :func:`~opaque.clipping.auto_clipped_grad` — when ``second_moment=True``
+            it returns a :class:`~opaque.types.SecondMomentClippingOutput` of zeros
+            (squared-stream sensitivity ``C²/normalize_by``), so paired-stream
+            noise and optimizer dispatch are stable across empty and non-empty
+            steps under Poisson sampling.
 
     Returns:
         A tuple of (clipped_grad_fn, initial_state) where:
@@ -296,7 +296,11 @@ def adaptive_clipped_grad(
 
     # Store config in closure (immutable)
     normalize_by = clipped_grad_kwargs.get("normalize_by", 1.0)
+    second_moment = bool(clipped_grad_kwargs.get("second_moment", False))
     output_bound = lambda clipping_norm: clipping_norm / normalize_by  # noqa: E731
+
+    def _output_squared_bound(clipping_norm):
+        return (clipping_norm * clipping_norm) / normalize_by
 
     config = {
         "target_quantile": target_quantile,
@@ -343,13 +347,26 @@ def adaptive_clipped_grad(
             Else:
                 (grad, new_state)
         """
-        # Empty batch: zero grads, no adaptation, step still incremented
+        # Empty batch: zero grads, no adaptation, step still incremented.
+        # When ``second_moment=True`` was forwarded to the inner ``clipped_grad``,
+        # mirror its empty-batch shape (paired ``SecondMomentClippingOutput``) so
+        # downstream noise + optimizer dispatch stays paired across empty and
+        # non-empty steps. The squared-stream sensitivity is C^2/normalize_by, the
+        # same bound ``clipped_grad`` would attach on a non-empty step.
         if batch_size_from_args(args, batch_argnums_tuple) == 0:
             new_state = _empty_batch_state(state)
             grads = clipped(
                 zero_grads_like(args, argnums_tuple),
                 max_norm=output_bound(state._next_clipping_norm),
             )
+            if second_moment:
+                grads = SecondMomentClippingOutput(
+                    grads=grads,
+                    squared_grads=clipped(
+                        zero_grads_like(args, argnums_tuple),
+                        max_norm=_output_squared_bound(state._next_clipping_norm),
+                    ),
+                )
             if return_aux:
                 empty = torch.empty(0)
                 adaptive_aux = AdaptiveClippedGradAux(
