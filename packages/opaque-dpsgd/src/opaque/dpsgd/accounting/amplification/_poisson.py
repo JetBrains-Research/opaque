@@ -35,6 +35,27 @@ class Poisson(DpProcess):
     truncated_batch_size: int | None = None
     dataset_size: int | None = None
 
+    def __post_init__(self):
+        # Validate truncation pairing here (not only in the factory) so direct
+        # construction and deserialization can't pass an unpaired
+        # ``(truncated_batch_size, dataset_size)`` into
+        # ``_native.truncated_poisson_gaussian_pld`` and fail at PLD time.
+        if (self.truncated_batch_size is None) != (self.dataset_size is None):
+            raise ValueError(
+                "Poisson: truncated_batch_size and dataset_size must be set "
+                "together (both None for plain Poisson, both set for truncated)."
+            )
+        if self.truncated_batch_size is not None:
+            if int(self.truncated_batch_size) < 1:
+                raise ValueError(
+                    "Poisson: truncated_batch_size must be >= 1, got "
+                    f"{self.truncated_batch_size}"
+                )
+            if int(self.dataset_size) < 1:
+                raise ValueError(
+                    f"Poisson: dataset_size must be >= 1, got {self.dataset_size}"
+                )
+
     @functools.lru_cache(maxsize=8)
     def pld(
         self,
@@ -147,18 +168,8 @@ def poisson(
             )
     if not 0 < float(sample_rate) <= 1:
         raise ValueError(f"sample_rate must be in (0, 1], got {sample_rate}")
-    if (truncated_batch_size is None) != (dataset_size is None):
-        raise ValueError(
-            "truncated_batch_size and dataset_size must be set together "
-            "(both None for plain Poisson, both set for truncated)."
-        )
-    if truncated_batch_size is not None:
-        if int(truncated_batch_size) < 1:
-            raise ValueError(
-                f"truncated_batch_size must be >= 1, got {truncated_batch_size}"
-            )
-        if int(dataset_size) < 1:
-            raise ValueError(f"dataset_size must be >= 1, got {dataset_size}")
+    # Pairing + per-field bounds on truncated_batch_size / dataset_size are
+    # validated in ``Poisson.__post_init__`` so direct construction stays safe.
     return Poisson(
         inner=inner,
         sample_rate=float(sample_rate),

@@ -63,7 +63,7 @@ class MFNoiseState(NoiseState):
     _step_counter: int
     _rng_key: RngKey
     _first_max_norm: float | PerGroup | None = None
-    _first_max_norm_sync_fingerprint: float | None = None
+    _first_max_norm_sync_fingerprint: int | None = None
 
 
 def _internal_compute_dtype(dtype: torch.dtype) -> torch.dtype:

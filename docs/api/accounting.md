@@ -29,8 +29,8 @@ The accounting API is split into three namespaces:
 | Namespace | Contents | Import |
 |-----------|----------|--------|
 | `opaque.accounting` | Cross-cutting: calibration, composition, `Accountant`, `repeat`, `compose` | `import opaque.accounting as acc` |
-| `opaque.dpsgd.accounting` | DP-SGD mechanisms: `gaussian`, `adaclip`, `poisson`, `truncated_poisson`, `parallel_poisson` | `from opaque.dpsgd import accounting as dpsgd_acc` |
-| `opaque.dpftrl.accounting` | DP-FTRL mechanisms: `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `cyclic_poisson`, `b_min_sep` | `from opaque.dpftrl import accounting as dpftrl_acc` |
+| `opaque.dpsgd.accounting` | DP-SGD mechanisms: `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson` | `from opaque.dpsgd import accounting as dpsgd_acc` |
+| `opaque.dpftrl.accounting` | DP-FTRL mechanisms: `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `mf_identity`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins` | `from opaque.dpftrl import accounting as dpftrl_acc` |
 
 The legacy paths (`dpsgd_acc.gaussian`, `dpsgd_acc.poisson`, etc.) remain available on
 `opaque.accounting` for backwards compatibility, but new code should prefer
@@ -45,9 +45,14 @@ step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=0.01)
 from opaque.dpftrl import accounting as dpftrl_acc
 from opaque.dpftrl.noise import band_mf_strategy
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = dpftrl_acc.cyclic_poisson(
-    dpftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups),
+proc = dpftrl_acc.poisson(
+    dpftrl_acc.band_mf(
+        1.0,
+        sensitivity=strategy.sensitivity,
+        coefficients=strategy.coefficients,
+    ),
     sample_rate=0.01,
+    n_steps=1000,
 )
 
 # Cross-cutting composition and calibration always go via opaque.accounting
@@ -170,28 +175,34 @@ Poisson-subsampled mechanism (standard DP-SGD step). `sample_rate` is
 step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), sample_rate=256 / 50_000)
 ```
 
-### `truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size) -> DpProcess`
+### `poisson(inner, sample_rate, *, truncated_batch_size=None, dataset_size=None) -> DpProcess` (truncated form)
 
-Truncated Poisson sampling with capped batch size. Gives tighter privacy bounds
-than standard Poisson subsampling. Use this for production DP-SGD with a fixed
-batch size limit.
+`poisson()` switches to a truncated Poisson PLD when both
+`truncated_batch_size` and `dataset_size` are set together (must be both
+or neither). This gives tighter privacy bounds than plain Poisson
+subsampling and matches production DP-SGD with a capped batch size.
 
-- `inner` (Gaussian | AdaClip): Base mechanism (from `gaussian()` or `adaclip()`)
-- `sample_rate` (float): Expected sampling rate
-- `batch_size_cap` (int): Maximum batch size
-- `dataset_size` (int): Total dataset size
+- `inner` (Gaussian | AdaClip): Base mechanism
+- `sample_rate` (float): Expected sampling rate, in (0, 1]
+- `truncated_batch_size` (int | None): Optional max batch-size cap
+- `dataset_size` (int | None): Required when `truncated_batch_size` is set
 
 ```python
 n = 50_000
 batch = 256
-step = dpsgd_acc.truncated_poisson(dpsgd_acc.gaussian(0.8), batch / n, batch, n)
+step = dpsgd_acc.poisson(
+    dpsgd_acc.gaussian(0.8),
+    sample_rate=batch / n,
+    truncated_batch_size=batch,
+    dataset_size=n,
+)
 ```
 
 ### `parallel_poisson(inner, sample_rate, num_workers) -> DpProcess`
 
 Parallel Poisson subsampling. Models independent Poisson sampling on
 multiple workers, where the same example can appear on multiple devices.
-Like `poisson()` and `truncated_poisson()`, this is a full wrapper.
+Like `poisson()` (plain or truncated), this is a full wrapper.
 
 - `inner` (Gaussian | AdaClip): Base mechanism (from `gaussian()` or `adaclip()`)
 - `sample_rate` (float): Probability of including each example, in (0, 1]
@@ -206,8 +217,8 @@ step = dpsgd_acc.parallel_poisson(
 ### `adaclip(inner, *, fraction_noise_std, expected_batch_size) -> DpProcess`
 
 Accounts for the extra privacy cost of adaptive clipping's noisy
-fraction query. Returns an `AdaClip` process composable with
-`poisson()` or `truncated_poisson()`.
+fraction query. Returns an `AdaClip` process composable with `poisson()`
+(plain or truncated).
 
 - `inner` (Gaussian): Base mechanism (from `gaussian()`)
 - `fraction_noise_std` (float): Noise std on the clipping fraction. Default: 0.05.
@@ -236,9 +247,14 @@ step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=batch_size / datas
 training = step * num_steps
 
 # DP-FTRL with BandMF: same chain as first-moment-only
-proc = ftrl_acc.cyclic_poisson(
-    ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups),
+proc = ftrl_acc.poisson(
+    ftrl_acc.band_mf(
+        1.0,
+        sensitivity=strategy.sensitivity,
+        coefficients=strategy.coefficients,
+    ),
     sample_rate=batch_size / dataset_size,
+    n_steps=num_steps,
 )
 ```
 
@@ -288,20 +304,24 @@ them. This keeps noise generation and accounting in sync.
 
 All MF constructors return a `DpProcess` that composes with standard operators.
 
-### `band_mf(noise_multiplier, sensitivity, num_groups=1) -> DpProcess`
+### `band_mf(noise_multiplier, sensitivity, coefficients) -> DpProcess`
 
-BandMF mechanism for cyclic Poisson amplification. Takes `sensitivity` and
-`num_groups` from a `band_mf_strategy()`.
+BandMF mechanism for cyclic Poisson / b-min-sep amplification. Takes
+`sensitivity` and `coefficients` from a `band_mf_strategy()`. The
+band-width is `len(coefficients)`; `coefficients` must be non-empty.
 
 - `noise_multiplier` (float): Raw noise standard deviation sigma.
 - `sensitivity` (float): From `strategy.sensitivity`.
-- `num_groups` (int): From `strategy.num_groups`.
+- `coefficients` (tuple[float, ...]): From `strategy.coefficients`.
 
 ```python
 from opaque.dpftrl.noise import band_mf_strategy
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
-                   num_groups=strategy.num_groups)
+proc = ftrl_acc.band_mf(
+    1.0,
+    sensitivity=strategy.sensitivity,
+    coefficients=strategy.coefficients,
+)
 eps = proc.epsilon_at(1e-5)
 ```
 
@@ -374,21 +394,28 @@ proc = ftrl_acc.balls_in_bins(
 )
 ```
 
-### `cyclic_poisson(inner, sample_rate) -> DpProcess`
+### `poisson(inner, sample_rate, *, n_steps) -> DpProcess`
 
-Cyclic Poisson amplification for BandMF. Decomposes the training run into
-`ceil(n_steps / bands)` independent groups, each analyzed as a
-Poisson-subsampled Gaussian. Only accepts `BandMf` inner processes.
+Poisson amplification for DP-FTRL. Whole-process accountant covering all
+`n_steps` training rounds (do **not** compose with `* num_steps`
+externally). Cyclic when the inner is `BandMf` with `bands > 1` (decomposes
+into `ceil(n_steps / bands)` independent groups); plain Poisson per round
+when the inner is `IdentityMf` or `BandMf` with `bands == 1`.
 
-- `inner` (BandMf): A BandMf process (from `band_mf()`).
-- `sample_rate` (float): Poisson sampling probability per group.
+- `inner` (BandMf | IdentityMf): MF mechanism.
+- `sample_rate` (float): Poisson sampling probability per round.
+- `n_steps` (int, keyword-only): Total number of training rounds.
 
 ```python
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = ftrl_acc.cyclic_poisson(
-    ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
-                num_groups=strategy.num_groups),
+proc = ftrl_acc.poisson(
+    ftrl_acc.band_mf(
+        1.0,
+        sensitivity=strategy.sensitivity,
+        coefficients=strategy.coefficients,
+    ),
     sample_rate=0.01,
+    n_steps=1000,
 )
 eps = proc.epsilon_at(1e-5)
 ```
