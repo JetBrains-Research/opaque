@@ -7,9 +7,9 @@ needed for a given privacy guarantee.
 
 Opaque provides three high-level clipping functions:
 
-- **`clipped_grad`** — Fixed-threshold clipping (recommended default).
-- **`adaptive_clipped_grad`** — Auto-tuned threshold via quantile tracking (Andrew et al. 2021).
-- **`auto_clipped_grad`** — AUTO-S automatic scaling, no threshold to tune (Bu et al. NeurIPS 2023).
+- **`clipped_grad`** ([`opaque.clipping`](../api/clipping.md)) — Fixed-threshold clipping (recommended default).
+- **`auto_clipped_grad`** ([`opaque.clipping`](../api/clipping.md)) — AUTO-S automatic scaling, no threshold to tune (Bu et al. NeurIPS 2023). Algorithm-agnostic: composes with both DP-SGD's Gaussian mechanism and DP-FTRL's matrix-factorization mechanisms.
+- **`adaptive_clipped_grad`** ([`opaque.dpsgd.clipping`](../api/clipping.md)) — Auto-tuned threshold via quantile tracking (Andrew et al. 2021); DP-SGD-only because the threshold drifts across steps.
 
 Lower-level building blocks (`clipped_fun`, `clip_pytree`, `auto_scale_pytree`)
 are documented in the [Clipping API Reference](../api/clipping.md).
@@ -441,7 +441,7 @@ threshold to tune; the effective step size is absorbed into the learning
 rate.
 
 ```python
-from opaque.dpsgd.clipping import auto_clipped_grad
+from opaque.clipping import auto_clipped_grad
 
 grad_fn, clip_state = auto_clipped_grad(
     loss_fn,
@@ -461,6 +461,42 @@ The scaling `R / (||g|| + gamma)` depends only on the example's own
 gradient, so the sensitivity `R / normalize_by` is guaranteed without any
 adaptation or tuning. AUTO-S removes the clip-threshold hyperparameter
 from the DP-SGD hyperparameter search.
+
+### Compatibility with DP-FTRL / matrix-factorization noise
+
+Because the per-record sensitivity bound `R` is constant and
+data-independent, AUTO-S satisfies the constant per-step sensitivity
+assumption that matrix-factorization privacy proofs rely on. The
+returned `ClippedPytree.max_norm` is the same value (`R / normalize_by`)
+on every step, so it flows through `mf_noise` exactly like fixed clipping
+does:
+
+```python
+from opaque.clipping import auto_clipped_grad
+from opaque.dpftrl import band_mf_strategy, mf_noise
+from opaque.random import key
+
+grad_fn, clip_state = auto_clipped_grad(
+    loss_fn, argnums=0, batch_argnums=(1, 2),
+    R=1.0, normalize_by=batch_size,
+)
+noise_fn, noise_state = mf_noise(
+    params,
+    band_mf_strategy(n_steps=num_steps, bands=4),
+    noise_multiplier=noise_multiplier,
+    key=key(0),
+)
+
+for batch_x, batch_y in dataloader:
+    grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
+    # ... optimizer step
+```
+
+`adaptive_clipped_grad`, by contrast, *cannot* be used with `mf_noise`:
+its threshold drifts across steps and the dispatcher's
+`_validate_constant_max_norm` latch (rightly) rejects the resulting
+varying `max_norm`.
 
 ### State and privacy accounting
 
@@ -487,8 +523,7 @@ eps = training.epsilon_at(1e-5)
 Pass a `PerGroup` as `R` to scale each group independently:
 
 ```python
-from opaque.clipping import per_group
-from opaque.dpsgd.clipping import auto_clipped_grad
+from opaque.clipping import auto_clipped_grad, per_group
 
 pg = per_group(params, self_attn=1.0, mlp=2.0)
 

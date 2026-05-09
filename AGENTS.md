@@ -24,8 +24,8 @@ nested under `opaque.core.*`.
 | Distribution | Import roots | Purpose | Build |
 | --- | --- | --- | --- |
 | `opaque` | — | pins the curated sub-package bundle; extras add the rest | setuptools |
-| `opaque-core` | `opaque.core`, `opaque.functional`, `opaque.distributed`, `opaque.clipping`, `opaque.scheduling` | RNG, pytree, clipping, step-indexed schedules + warmup composition, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing | setuptools |
-| `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated-Gaussian / per-group noise, AdamW-BC, Poisson + truncated-Poisson samplers, adaptive + auto clipping | setuptools |
+| `opaque-core` | `opaque.core`, `opaque.functional`, `opaque.distributed`, `opaque.clipping`, `opaque.scheduling` | RNG, pytree, fixed + AUTO-S clipping, step-indexed schedules + warmup composition, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing | setuptools |
+| `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated-Gaussian / per-group noise, AdamW-BC, Poisson + truncated-Poisson samplers, adaptive clipping | setuptools |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, cyclic Poisson + b-min-sep + balls-in-bins + sequential samplers | setuptools |
 | `opaque-auditing` | `opaque.auditing` | empirical privacy auditing (one-run, coin-flip, loss attacks) | setuptools |
 | `opaque-performance` | `opaque.performance`, `opaque.performance.huggingface`, `opaque.performance.profiling` | fused Triton kernels, PyTorch checkpoint patches, HF model kernel patches, memory/step profiler | setuptools |
@@ -201,9 +201,19 @@ under caller's autocast, backward has autocast OFF.
 ### Partition policy
 
 `opaque.core` holds algorithm-agnostic primitives. Anything that only one
-algorithm would construct (DP-SGD adaptive/auto clipping, truncated
+algorithm would construct (DP-SGD adaptive clipping, truncated
 Poisson; MF b-min-sep / cyclic / balls-in-bins / sequential sampling,
-BLT/BSR/BiSR/band-MF/λ-CGD noise, private second-moment streams) lives with that algorithm.
+BLT/BSR/BiSR/band-MF/λ-CGD noise, private second-moment streams) lives
+with that algorithm.
+
+AUTO-S clipping (`auto_clipped_grad`) lives in `opaque-core` because its
+per-record sensitivity bound is constant and data-independent
+(`sup_g ‖R · g / (‖g‖ + γ)‖ ≤ R`), making it compatible with both
+DP-SGD's Gaussian mechanism and DP-FTRL's matrix-factorization
+mechanisms — exactly like fixed clipping. Adaptive clipping is the only
+clipping rule whose threshold drifts across steps, so it is the only one
+that violates the constant per-step sensitivity assumption MF privacy
+proofs require, and it correctly stays in `opaque.dpsgd.clipping`.
 
 ### Test markers
 
