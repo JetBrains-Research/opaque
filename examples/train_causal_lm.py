@@ -584,6 +584,18 @@ def parse_args():
             "vendor/lora-privacy/docs/beyond-lora-research-program.md."
         ),
     )
+    lora_group.add_argument(
+        "--lora-xs-manifold-init-sigma-w",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Manifold-mode only: initialise sigma at W₀'s top-r singular "
+            "values instead of small Gaussian. Fixes vanishing-gradient-on-"
+            "skew at init by giving σ a unit-scale magnitude, so ∂R/∂S = "
+            "2X·diag(σ)|_{X=0} = O(σ_W) is well-scaled. See "
+            "vendor/lora-privacy/docs/oft-postmortem.md §N3."
+        ),
+    )
     # LoRA-XSe: exploration via momentum SVD rotation
     lora_group.add_argument(
         "--lora-xse-p-e",
@@ -1131,6 +1143,10 @@ def main():
                 "--lora-xs-manifold-mode and --lora-xs-oft-mode are mutually "
                 "exclusive — pick one."
             )
+        if args.lora_xs_manifold_init_sigma_w and not args.lora_xs_manifold_mode:
+            raise ValueError(
+                "--lora-xs-manifold-init-sigma-w requires --lora-xs-manifold-mode."
+            )
         lora_config = LoraXSConfig(
             r=args.lora_r,
             lora_alpha=args.lora_alpha,
@@ -1140,6 +1156,7 @@ def main():
             orthonormal_a=args.lora_xs_orthonormal_a,
             manifold_mode=args.lora_xs_manifold_mode,
             oft_mode=args.lora_xs_oft_mode,
+            manifold_init_sigma_w=args.lora_xs_manifold_init_sigma_w,
             task_type="CAUSAL_LM",
         )
     else:
