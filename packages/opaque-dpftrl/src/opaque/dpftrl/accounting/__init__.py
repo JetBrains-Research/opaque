@@ -21,6 +21,18 @@ Amplification (in :mod:`opaque.dpftrl.accounting.amplification`):
 Cross-cutting primitives (composition, calibration) live at
 :mod:`opaque.accounting`.
 
+**MF identity baseline** (noise: :func:`~opaque.dpftrl.noise.identity_strategy`)
+implements DP-SGD–style uncorrelated Gaussian noise through the MF API. Its
+privacy analysis uses **Gaussian + Poisson subsampling per step**, composed for
+the full run—the same accountant pattern as ``examples/train_dp_ftrl.py``
+(``opaque.dpsgd.accounting``: ``poisson(gaussian(nm), …) * total_steps``). The
+**correlated** MF mechanism factories listed above cover BLT/BandMF/λ-CGD/etc.;
+they are not interchangeable with that baseline.
+
+**Do not confuse** with :func:`~opaque.accounting.identity` — that object is the
+**composition algebra** identity (approximately ε=0), not MF
+``identity_strategy``.
+
 Example::
 
     import opaque.accounting as acc

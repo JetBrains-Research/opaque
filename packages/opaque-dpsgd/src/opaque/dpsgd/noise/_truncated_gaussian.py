@@ -246,8 +246,10 @@ def truncated_gaussian_noise(
         non-finite values untouched (``clamp`` would preserve NaNs).
 
         ``PerGroup`` stddev requires a flat ``dict[str, Tensor]`` pytree so
-        each parameter key maps to a leaf tensor.
+        each parameter key maps to a leaf tensor (path keys align with
+        :class:`~opaque.types.PerGroup`).
         """
+        # Flat dict[path_key, Tensor] only; nested pytrees are not supported here.
         if isinstance(stddev, PerGroup):
             if not isinstance(grads, dict):
                 raise TypeError(

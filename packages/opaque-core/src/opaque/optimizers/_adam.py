@@ -119,19 +119,21 @@ def _scale_by_adam(
 ) -> GradientTransformation:
     """Adam moment scaling with optional DP bias correction or private second moments.
 
-    Update modes selected by the kwargs passed to ``update()``:
+    This is an **internal** moment primitive: :func:`make_optimizer_chain` calls
+    ``update()`` and injects DP routing only from ``NoisedPytree`` /
+    ``SecondMomentNoiseOutput`` wrappers on ``updates`` — not from public
+    per-step kwargs on the returned optimizer.
 
-    - ``noisy_squared_grads`` not None: v-update consumes the externally
-            privatised second-moment stream directly.  ``noise_stddev`` is
-            ignored for this step (the second-moment post-processing argument
-            means no φ-EMA correction is needed).
+    Branches (selected by injected ``noise_stddev`` / ``noisy_squared_grads``):
 
-        - ``noise_stddev`` non-zero: v-update squares the noised gradient,
-            then subtracts the bias-corrected φ-EMA::
+    - Injected privatised second moment: v-update consumes that stream;
+      no φ-EMA (post-processed stream).  Injected ``noise_stddev`` ignored.
+    - Injected non-zero ``noise_stddev``: square the (possibly noised) gradient
+      and apply BC::
 
           v̂_corrected = max(v̂ − φ̂, floor)
 
-    - both absent: standard Adam.
+    - Neither: vanilla Adam.
     """
 
     def init_fn(params: Any) -> AdamState:
@@ -332,13 +334,13 @@ def adamw(
 
     DP usage notes:
 
-        - At ``update()`` time, pass ``NoisedPytree`` updates from the DP noise
-            mechanism; the realized σ overrides the constructor default.
-        - Alternatively pass ``SecondMomentNoiseOutput`` to consume an
-            externally privatised second-moment stream — same purpose as
-            BC, different mechanism; cannot be combined per step.
-        - Explicit per-step ``noise_stddev`` / ``noisy_squared_grads`` kwargs
-            are rejected by the optimizer chain.
+        - Call ``update(updates, state, ...)`` with ``updates`` as ``NoisedPytree``
+          (first-moment noise metadata) or ``SecondMomentNoiseOutput`` (paired
+          streams). Do not pass ``noise_stddev=`` / ``noisy_squared_grads=`` —
+          those are internal to the composer chain only.
+        - ``NoisedPytree``: realized σ feeds bias correction when enabled.
+        - ``SecondMomentNoiseOutput``: privatised ``g²`` stream substitutes the
+          usual v-update; mutually exclusive per step with the BC-from-σ path.
     """
     _validate(eps, betas, weight_decay, update_rms_clip)
     bc_floor = eps * eps  # see module docstring on the rationale.

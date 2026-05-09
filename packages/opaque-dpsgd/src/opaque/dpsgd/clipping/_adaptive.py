@@ -166,6 +166,15 @@ def adaptive_clipped_grad(
         **clipped_grad_kwargs: Passed to ``clipped_grad()``
             (``batch_argnums``, ``normalize_by``, etc).
 
+        Note:
+            **Empty-batch parity (``second_moment``):** this wrapper short-circuits
+            zero-sized batches with a single :class:`~opaque.types.ClippedPytree`, while
+            :func:`~opaque.clipping.clipped_grad` emits
+            :class:`~opaque.types.SecondMomentClippingOutput` when ``second_moment=True``.
+            Trainer scripts assuming a paired stream throughout can mis-match between
+            empty and non-empty steps; reconcile library + ``examples/train_*.py`` and
+            add regression tests before changing behaviour here.
+
     Returns:
         A tuple of (clipped_grad_fn, initial_state) where:
             - clipped_grad_fn: Function with signature
