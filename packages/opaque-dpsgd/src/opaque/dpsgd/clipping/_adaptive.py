@@ -13,7 +13,11 @@ from opaque.clipping._helpers import (
     normalize_to_tuple,
     zero_grads_like,
 )
-from opaque.clipping._clipped_grad import ClippedGradAux, clipped_grad
+from opaque.clipping._clipped_grad import (
+    ClippedGradAux,
+    _validate_static_args,
+    clipped_grad,
+)
 from opaque.types import ClipState
 from opaque.random import fold_in, generator_from_key
 from opaque.random.types import RngKey
@@ -289,14 +293,22 @@ def adaptive_clipped_grad(
             f"fraction_noise_std must be positive, got {fraction_noise_std}"
         )
 
-    # Normalize argnums/batch_argnums for empty-batch detection
+    # Normalize argnums/batch_argnums for empty-batch detection.
     argnums_tuple = normalize_to_tuple(argnums)
     batch_argnums_raw = clipped_grad_kwargs.get("batch_argnums", 1)
     batch_argnums_tuple = normalize_to_tuple(batch_argnums_raw)
 
-    # Store config in closure (immutable)
+    # Read static config that the empty-batch path needs to compute max_norms
+    # without going through ``clipped_grad`` itself.
     normalize_by = clipped_grad_kwargs.get("normalize_by", 1.0)
     second_moment = bool(clipped_grad_kwargs.get("second_moment", False))
+
+    # Validate the same static args ``clipped_grad`` validates at factory time,
+    # so misconfigurations (e.g. ``normalize_by <= 0`` or argnums/batch_argnums
+    # collisions) fail at construction here rather than first surfacing on the
+    # next non-empty step — keeping empty- and non-empty-batch failure modes
+    # consistent.
+    _validate_static_args(argnums, batch_argnums_raw, normalize_by)
     output_bound = lambda clipping_norm: clipping_norm / normalize_by  # noqa: E731
 
     def _output_squared_bound(clipping_norm):

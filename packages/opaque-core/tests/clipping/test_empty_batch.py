@@ -398,6 +398,30 @@ class TestAdaptiveClippedGradEmptyBatchSecondMoment:
         assert squared_mn.values["weights"] == pytest.approx(1.0 * 1.0 / 2.0)
         assert squared_mn.values["biases"] == pytest.approx(0.5 * 0.5 / 2.0)
 
+    def test_invalid_normalize_by_fails_at_construction(self):
+        """``normalize_by <= 0`` must fail at ``adaptive_clipped_grad`` factory
+        time so empty-batch and non-empty-batch failure modes stay consistent
+        (the empty-batch short-circuit uses ``normalize_by`` to compute the
+        squared-stream ``max_norm`` without going through ``clipped_grad``,
+        which is where the inner validation otherwise fires)."""
+        with pytest.raises(ValueError, match="normalize_by must be > 0"):
+            adaptive_clipped_grad(
+                _simple_loss_fn,
+                initial_clipping_norm=1.0,
+                key=key(0),
+                batch_argnums=(1, 2),
+                second_moment=True,
+                normalize_by=0.0,
+            )
+        with pytest.raises(ValueError, match="normalize_by must be > 0"):
+            adaptive_clipped_grad(
+                _simple_loss_fn,
+                initial_clipping_norm=1.0,
+                key=key(0),
+                batch_argnums=(1, 2),
+                normalize_by=-1.0,
+            )
+
     def test_return_aux_with_second_moment_empty_batch(self, params, empty_batch):
         """Combining ``return_aux=True`` and ``second_moment=True`` on an
         empty batch must still return the paired stream alongside the aux."""
