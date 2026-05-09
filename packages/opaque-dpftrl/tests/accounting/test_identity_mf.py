@@ -63,9 +63,7 @@ class TestMfIdentityMechanism:
 class TestPoissonIdentity:
     def test_pld_matches_self_composed_poisson_gaussian(self):
         nm, p, T = 1.1, 0.01, 500
-        proc = ftrl_acc.poisson(
-            ftrl_acc.mf_identity(nm), sample_rate=p, n_steps=T
-        )
+        proc = ftrl_acc.poisson(ftrl_acc.mf_identity(nm), sample_rate=p, n_steps=T)
         cfg = get_discretization()
         ref = _native.poisson_gaussian_pld(nm, p, cfg.to_native()).self_compose(T)
         assert math.isclose(
@@ -78,15 +76,11 @@ class TestPoissonIdentity:
 
     def test_rejects_invalid_n_steps(self):
         with pytest.raises(ValueError, match="n_steps"):
-            ftrl_acc.poisson(
-                ftrl_acc.mf_identity(1.0), sample_rate=0.1, n_steps=0
-            )
+            ftrl_acc.poisson(ftrl_acc.mf_identity(1.0), sample_rate=0.1, n_steps=0)
 
     def test_rejects_invalid_sample_rate(self):
         with pytest.raises(ValueError, match="sample_rate"):
-            ftrl_acc.poisson(
-                ftrl_acc.mf_identity(1.0), sample_rate=1.5, n_steps=10
-            )
+            ftrl_acc.poisson(ftrl_acc.mf_identity(1.0), sample_rate=1.5, n_steps=10)
 
 
 class TestPoissonBandMf:
@@ -153,21 +147,15 @@ class TestBallsInBinsIdentity:
 
     def test_rejects_invalid_num_bins(self):
         with pytest.raises(ValueError, match="num_bins"):
-            ftrl_acc.balls_in_bins(
-                ftrl_acc.mf_identity(1.0), num_bins=1, n_steps=20
-            )
+            ftrl_acc.balls_in_bins(ftrl_acc.mf_identity(1.0), num_bins=1, n_steps=20)
 
     def test_rejects_invalid_n_steps(self):
         with pytest.raises(ValueError, match="n_steps"):
-            ftrl_acc.balls_in_bins(
-                ftrl_acc.mf_identity(1.0), num_bins=10, n_steps=0
-            )
+            ftrl_acc.balls_in_bins(ftrl_acc.mf_identity(1.0), num_bins=10, n_steps=0)
 
     def test_rejects_n_steps_not_multiple_of_num_bins(self):
         with pytest.raises(ValueError, match="multiple of"):
-            ftrl_acc.balls_in_bins(
-                ftrl_acc.mf_identity(1.0), num_bins=10, n_steps=15
-            )
+            ftrl_acc.balls_in_bins(ftrl_acc.mf_identity(1.0), num_bins=10, n_steps=15)
 
 
 # ---------------------------------------------------------------------------

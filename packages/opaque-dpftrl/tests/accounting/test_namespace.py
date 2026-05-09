@@ -68,9 +68,7 @@ class TestEndToEndCalibration:
         import opaque.dpftrl.accounting as ftrl_acc
 
         proc = ftrl_acc.poisson(
-            ftrl_acc.band_mf(
-                1.0, sensitivity=1.0, coefficients=(1.0, 0.5)
-            ),
+            ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0, 0.5)),
             sample_rate=0.01,
             n_steps=20,
         )

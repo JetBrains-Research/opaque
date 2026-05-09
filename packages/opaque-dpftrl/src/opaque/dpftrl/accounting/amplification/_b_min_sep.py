@@ -141,9 +141,7 @@ def b_min_sep(
                 f"b_min_sep() requires a BandMf inner, got {type(inner).__name__}."
             )
     if inner.bands < 1:
-        raise ValueError(
-            "BandMf inner must have non-empty coefficients (bands >= 1)."
-        )
+        raise ValueError("BandMf inner must have non-empty coefficients (bands >= 1).")
     if n_steps < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
 

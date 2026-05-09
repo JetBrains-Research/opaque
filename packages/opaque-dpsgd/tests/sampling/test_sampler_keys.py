@@ -22,14 +22,10 @@ class TestPoissonSamplerKeys:
     def test_reproducibility_with_same_key(self):
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler1 = PoissonSampler(
-            dataset, sample_rate=0.1, n_steps=5, key=key(42)
-        )
+        sampler1 = PoissonSampler(dataset, sample_rate=0.1, n_steps=5, key=key(42))
         batches1 = list(sampler1)
 
-        sampler2 = PoissonSampler(
-            dataset, sample_rate=0.1, n_steps=5, key=key(42)
-        )
+        sampler2 = PoissonSampler(dataset, sample_rate=0.1, n_steps=5, key=key(42))
         batches2 = list(sampler2)
 
         assert len(batches1) == len(batches2)
@@ -39,14 +35,10 @@ class TestPoissonSamplerKeys:
     def test_different_keys_produce_different_samples(self):
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler1 = PoissonSampler(
-            dataset, sample_rate=0.1, n_steps=5, key=key(42)
-        )
+        sampler1 = PoissonSampler(dataset, sample_rate=0.1, n_steps=5, key=key(42))
         batches1 = list(sampler1)
 
-        sampler2 = PoissonSampler(
-            dataset, sample_rate=0.1, n_steps=5, key=key(43)
-        )
+        sampler2 = PoissonSampler(dataset, sample_rate=0.1, n_steps=5, key=key(43))
         batches2 = list(sampler2)
 
         assert batches1 != batches2
@@ -100,9 +92,7 @@ class TestPoissonSamplerTruncatedKeys:
         dataset = TensorDataset(torch.randn(1000, 10))
 
         with pytest.raises(TypeError, match="key"):
-            PoissonSampler(
-                dataset, sample_rate=0.1, truncated_batch_size=50, n_steps=5
-            )
+            PoissonSampler(dataset, sample_rate=0.1, truncated_batch_size=50, n_steps=5)
 
     def test_reproducibility_with_same_key(self):
         dataset = TensorDataset(torch.randn(1000, 10))
@@ -150,9 +140,7 @@ class TestCrossValidationWithNumpy:
     def test_poisson_matches_numpy_generator(self):
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler_key = PoissonSampler(
-            dataset, sample_rate=0.1, n_steps=1, key=key(42)
-        )
+        sampler_key = PoissonSampler(dataset, sample_rate=0.1, n_steps=1, key=key(42))
         batches_key = list(sampler_key)
 
         rng = np.random.default_rng(42)

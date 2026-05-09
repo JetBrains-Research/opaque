@@ -143,6 +143,4 @@ def poisson(
     if int(n_steps) < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
 
-    return MfPoisson(
-        inner=inner, sample_rate=float(sample_rate), n_steps=int(n_steps)
-    )
+    return MfPoisson(inner=inner, sample_rate=float(sample_rate), n_steps=int(n_steps))
