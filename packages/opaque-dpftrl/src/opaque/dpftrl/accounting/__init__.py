@@ -10,6 +10,7 @@ Mechanisms (in :mod:`opaque.dpftrl.accounting.mechanisms`):
 - :func:`bisr` — banded inverse square root Gaussian.
 - :func:`bsr` — banded square root Gaussian.
 - :func:`lambda_cgd` — DP-λCGD Gaussian.
+- :func:`mf_identity` — uncorrelated (identity-encoder / DP-SGD–style baseline).
 
 Amplification (in :mod:`opaque.dpftrl.accounting.amplification`):
 
@@ -21,13 +22,12 @@ Amplification (in :mod:`opaque.dpftrl.accounting.amplification`):
 Cross-cutting primitives (composition, calibration) live at
 :mod:`opaque.accounting`.
 
-**MF identity baseline** (noise: :func:`~opaque.dpftrl.noise.identity_strategy`)
-implements DP-SGD–style uncorrelated Gaussian noise through the MF API. Its
-privacy analysis uses **Gaussian + Poisson subsampling per step**, composed for
-the full run—the same accountant pattern as ``examples/train_dp_ftrl.py``
-(``opaque.dpsgd.accounting``: ``poisson(gaussian(nm), …) * total_steps``). The
-**correlated** MF mechanism factories listed above cover BLT/BandMF/λ-CGD/etc.;
-they are not interchangeable with that baseline.
+**MF identity baseline** pairs :func:`~opaque.dpftrl.noise.identity_strategy`
+with :func:`~opaque.dpftrl.accounting.mechanisms.mf_identity` for the whole-run
+privacy cost (subsampling probability + step count as in ``train_dp_ftrl.py``).
+Native PLDs implement that analysis; DP-FTRL does **not** expose DP-SGD’s Poisson
+mechanism as a separate public abstraction. Other factories above model
+**correlated** MF releases and are not drop-in substitutes for ``mf_identity``.
 
 **Do not confuse** with :func:`~opaque.accounting.identity` — that object is the
 **composition algebra** identity (approximately ε=0), not MF
@@ -50,14 +50,24 @@ from opaque.dpftrl.accounting.amplification import (
     balls_in_bins,
     cyclic_poisson,
 )
-from opaque.dpftrl.accounting.mechanisms import band_mf, bisr, blt, bsr, lambda_cgd
+from opaque.dpftrl.accounting.mechanisms import (
+    IdentityMf,
+    band_mf,
+    bisr,
+    blt,
+    bsr,
+    lambda_cgd,
+    mf_identity,
+)
 
 __all__ = [
+    "IdentityMf",
     "band_mf",
     "blt",
     "bisr",
     "bsr",
     "lambda_cgd",
+    "mf_identity",
     "cyclic_poisson",
     "b_min_sep",
     "balls_in_bins",

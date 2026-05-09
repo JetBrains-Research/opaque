@@ -16,6 +16,7 @@ from opaque.dpftrl.accounting.mechanisms.types import (
     Bisr,
     Blt,
     Bsr,
+    IdentityMf,
     LambdaCgd,
     MfGaussian,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "Bisr",
     "Bsr",
     "LambdaCgd",
+    "IdentityMf",
     "MfGaussian",
     "CyclicPoisson",
     "BMinSep",

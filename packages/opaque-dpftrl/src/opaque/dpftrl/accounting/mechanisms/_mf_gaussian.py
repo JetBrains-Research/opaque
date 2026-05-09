@@ -11,6 +11,10 @@ Per-method subclasses live in their own modules:
 - :mod:`~opaque.dpftrl.accounting.mechanisms._lambda_cgd` — :class:`LambdaCgd`
 - :mod:`~opaque.dpftrl.accounting.mechanisms._bisr` — :class:`Bisr`
 - :mod:`~opaque.dpftrl.accounting.mechanisms._bsr` — :class:`Bsr`
+
+The MF **identity** (uncorrelated) baseline lives in :mod:`~opaque.dpftrl.accounting.mechanisms._identity`
+as :class:`~opaque.dpftrl.accounting.mechanisms._identity.IdentityMf` — it does not subclass
+:class:`MfGaussian`.
 """
 
 from __future__ import annotations
