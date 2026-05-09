@@ -93,9 +93,7 @@ class TestFtrlPoissonDataclass:
             n_steps=n_steps,
         )
 
-        manual = (
-            dpsgd_acc.poisson(dpsgd_acc.gaussian(nm / sensitivity), rate) * n_steps
-        )
+        manual = dpsgd_acc.poisson(dpsgd_acc.gaussian(nm / sensitivity), rate) * n_steps
 
         eps_proc = proc.epsilon_at(1e-5)
         eps_manual = manual.epsilon_at(1e-5)

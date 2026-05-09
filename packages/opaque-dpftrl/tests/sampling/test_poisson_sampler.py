@@ -336,9 +336,7 @@ class TestPoissonSamplerEdgeCases:
     def test_invalid_bands_raises(self):
         """Invalid bands raises ValueError."""
         with pytest.raises(ValueError):
-            PoissonSampler(
-                range(10), sampling_prob=0.5, bands=0, key=key(0)
-            )
+            PoissonSampler(range(10), sampling_prob=0.5, bands=0, key=key(0))
 
     def test_invalid_truncated_batch_size_raises(self):
         """Invalid truncated_batch_size raises ValueError."""

@@ -27,9 +27,7 @@ def test_same_index_respects_min_separation():
     ds = TensorDataset(torch.randn(300, 2))
     bands = 4
     batches = list(
-        BMinSepSampler(
-            ds, bands=bands, sampling_prob=0.35, n_steps=120, key=key(101)
-        )
+        BMinSepSampler(ds, bands=bands, sampling_prob=0.35, n_steps=120, key=key(101))
     )
     last_seen: dict[int, int] = {}
     for t, batch in enumerate(batches):
