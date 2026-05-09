@@ -34,8 +34,9 @@ DP / privacy notes.
   ``y_t`` exactly as in vanilla DP-SGD; the published average ``x_t``
   is a deterministic function of the (already-private) ``z`` trajectory,
   so by post-processing the privacy guarantee is unchanged.
-- ``noise_stddev`` and ``noisy_squared_grads`` (when accepted by the
-  wrapped optimizer) are forwarded transparently through ``update``.
+- Wrapped optimizers consume ``NoisedPytree`` / ``SecondMomentNoiseOutput`` on
+  ``updates`` as usual (same as without this wrapper); the public ``update``
+  surface does not add DP metadata kwargs.
 
 Trainer-integration caveat (Phase B).  The wrapper's published params
 are ``x_t``, not the ``params`` argument the trainer passes in
