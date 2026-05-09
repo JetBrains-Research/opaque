@@ -138,8 +138,7 @@ class TestBallsInBinsIdentity:
             k, E, nm, 0.0, cfg_native
         ).epsilon_at(_DELTA)
         assert abs(eps_id_no_is - ref_eps) < 0.10 * abs(ref_eps), (
-            f"identity τ=0 vs generic gap too large: id={eps_id_no_is}, "
-            f"ref={ref_eps}"
+            f"identity τ=0 vs generic gap too large: id={eps_id_no_is}, ref={ref_eps}"
         )
 
     def test_default_tilt_path_finite(self):
@@ -179,9 +178,7 @@ class TestBallsInBinsIdentity:
         seeds = list(range(32))
         eps_no_is, eps_is = [], []
         for s in seeds:
-            cfg_native = DiscretizationConfig(
-                num_mc_samples=budget, seed=s
-            ).to_native()
+            cfg_native = DiscretizationConfig(num_mc_samples=budget, seed=s).to_native()
             eps_no_is.append(
                 _native.bnb_mc_pld_identity(k, E, nm, 0.0, cfg_native).epsilon_at(
                     _DELTA
