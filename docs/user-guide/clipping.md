@@ -577,14 +577,15 @@ at ε=3:
    tolerates when `--second-moment` is on.
 
 2. **`--per-group-clipping` pays off when groups have heterogeneous
-   gradient norms.** Per-group thresholds `Cᵢ` give a per-example
-   sensitivity of `√(ΣCᵢ²)`, so setting all `Cᵢ = c` for K groups
-   carries `√K` more noise than scalar clipping at `c`. The benefit
-   comes from setting tight `Cᵢ` on naturally-small-gradient groups
-   so the joint `√(ΣCᵢ²)` stays smaller than the scalar `C` that would
-   need to dominate the worst group — for example a freshly
-   initialised classifier head over frozen layers, or a single LoRA
-   target whose gradients are an order of magnitude smaller than its
+   gradient norms.** PG noise is allocated non-uniformly,
+   `σᵢ ∝ √Cᵢ`, against a joint per-example sensitivity of
+   `√(ΣCᵢ²)`. A tight `Cᵢ` on a naturally-small-gradient group cuts
+   σ on that group's coordinates; setting all `Cᵢ = c` uniformly
+   leaves you with `√K` more per-group noise than scalar clipping at
+   `c` and gains nothing. Reach for PG when one group sits an order
+   of magnitude away from the rest on gradient norm — for example a
+   freshly initialised classifier head over frozen layers, or a
+   single LoRA target whose gradients are much smaller than its
    siblings.
 
 3. **`--second-moment` and `--per-group-clipping` compose.** Stacked,
