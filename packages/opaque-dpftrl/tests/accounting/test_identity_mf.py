@@ -1,4 +1,4 @@
-"""Tests for :class:`~opaque.dpftrl.accounting.mechanisms.IdentityMf`."""
+"""Tests for :class:`~opaque.dpftrl.accounting.types.IdentityMf`."""
 
 import math
 

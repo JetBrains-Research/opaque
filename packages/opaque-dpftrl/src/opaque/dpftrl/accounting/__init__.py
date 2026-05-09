@@ -22,6 +22,10 @@ Amplification (in :mod:`opaque.dpftrl.accounting.amplification`):
 Cross-cutting primitives (composition, calibration) live at
 :mod:`opaque.accounting`.
 
+Mechanism **dataclasses** (e.g. :class:`~opaque.dpftrl.accounting.types.IdentityMf`,
+:class:`~opaque.dpftrl.accounting.types.BandMf`) are exported from
+:mod:`opaque.dpftrl.accounting.types`, not re-imported at this package root.
+
 **MF identity baseline** pairs :func:`~opaque.dpftrl.noise.identity_strategy`
 with :func:`~opaque.dpftrl.accounting.mechanisms.mf_identity` for the whole-run
 privacy cost (subsampling probability + step count as in ``train_dp_ftrl.py``).
@@ -51,7 +55,6 @@ from opaque.dpftrl.accounting.amplification import (
     cyclic_poisson,
 )
 from opaque.dpftrl.accounting.mechanisms import (
-    IdentityMf,
     band_mf,
     bisr,
     blt,
@@ -61,7 +64,6 @@ from opaque.dpftrl.accounting.mechanisms import (
 )
 
 __all__ = [
-    "IdentityMf",
     "band_mf",
     "blt",
     "bisr",
