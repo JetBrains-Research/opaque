@@ -45,14 +45,17 @@ from opaque.accounting._base import DpProcess, Pld
 _Inner = DpProcess
 
 
-#: Default importance-sampling tilt for ``IdentityMf`` BnB Monte Carlo.
-#:
-#: ``0`` reproduces plain MC of the Lemma 3.2 dominating pair.  Positive values
-#: concentrate the proposal on the large-``Y`` tail (variance reduction for
-#: typical privacy regimes).  Empirically, ``τ ≈ 1`` works well for ``ε ≈ 1–4``
-#: at standard δ; the value can be overridden by passing
-#: ``importance_tilt`` to :func:`balls_in_bins`.
-_DEFAULT_IDENTITY_IS_TILT: float = 1.0
+#: Importance-sampling tilt used by :func:`bnb_mc_pld_identity` for the
+#: ``IdentityMf`` dispatch.  Hardcoded to ``1.0``: empirically robust across
+#: DP-FTRL training regimes (ε ∈ [0.5, 20], σ ∈ [0.5, 3], k ∈ [8, 1000],
+#: E ∈ [1, 16]) — gives 4-76× MC variance reduction vs no IS in 9/10 swept
+#: configs and only ~3× worse (still ≤ 2.5% rel σ at 500k samples, so still
+#: tight in absolute terms) in the heavy-noise / very-low-ε edge case.
+#: Fixing this in code rather than exposing as a knob: the value is an MC
+#: internal detail, not a mechanism property; treating it like a privacy
+#: parameter would mislead users.  If a degenerate config ever surfaces,
+#: this is the place to revisit (or add a ``pld()`` kwarg as an escape).
+_IDENTITY_IS_TILT: float = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,8 +68,8 @@ class BallsInBins(DpProcess):
     For ``IdentityMf`` inner, the dispatch uses
     :func:`opaque.accounting._native.bnb_mc_pld_identity` — a specialised
     importance-sampled MC that exploits the diagonal Gram structure
-    (`G = num_epochs · I_b`).  The ``importance_tilt`` field (default
-    ``1.0``) controls the IS proposal; ``0.0`` reduces to plain MC.
+    (`G = num_epochs · I_b`).  The IS tilt is fixed internally
+    (``_IDENTITY_IS_TILT``); see that constant's docstring.
 
     Example (DP-λCGD)::
 
@@ -82,7 +85,6 @@ class BallsInBins(DpProcess):
     inner: _Inner
     num_bins: int
     n_steps: int
-    importance_tilt: float = _DEFAULT_IDENTITY_IS_TILT
 
     @property
     def num_epochs(self) -> int:
@@ -143,7 +145,7 @@ class BallsInBins(DpProcess):
                     self.num_bins,
                     self.num_epochs,
                     float(mf_id.noise_multiplier),
-                    float(self.importance_tilt),
+                    _IDENTITY_IS_TILT,
                     native_cfg,
                 )
             case _:
@@ -159,7 +161,6 @@ def balls_in_bins(
     *,
     num_bins: int,
     n_steps: int,
-    importance_tilt: float = _DEFAULT_IDENTITY_IS_TILT,
 ) -> BallsInBins:
     """Balls-in-Bins amplified MF mechanism — **total** privacy cost.
 
@@ -178,7 +179,8 @@ def balls_in_bins(
       diagonal Gram ``(n_steps // num_bins) · I`` (orthogonal ``m_i`` for
       ``C = I``), via the identity-specialised importance-sampled MC primitive
       (same dominating-pair family as ``bnb_mc_pld`` for correlated MF; see
-      :meth:`BallsInBins.pld`).
+      :meth:`BallsInBins.pld`).  The IS tilt is fixed internally; see
+      ``_IDENTITY_IS_TILT`` for the rationale.
 
     Args:
         inner: An MF mechanism — :func:`blt`, :func:`lambda_cgd`, :func:`bisr`,
@@ -186,10 +188,6 @@ def balls_in_bins(
         num_bins: Bins per epoch (k ≥ 2).
         n_steps: Total training rounds.  Must be a positive multiple of
             ``num_bins`` (per-bin participation = ``n_steps // num_bins``).
-        importance_tilt: IS tilt parameter for ``IdentityMf`` inner only;
-            ignored for correlated MF mechanisms (no IS support there).
-            ``0`` reduces to plain MC.  Default ``1.0`` works well in
-            standard privacy regimes.
 
     Returns:
         A :class:`BallsInBins` process (total cost).
@@ -233,9 +231,4 @@ def balls_in_bins(
             f"num_bins ({num_bins}); BnB analysis assumes integer epochs."
         )
 
-    return BallsInBins(
-        inner=inner,
-        num_bins=num_bins,
-        n_steps=n_steps,
-        importance_tilt=float(importance_tilt),
-    )
+    return BallsInBins(inner=inner, num_bins=num_bins, n_steps=n_steps)

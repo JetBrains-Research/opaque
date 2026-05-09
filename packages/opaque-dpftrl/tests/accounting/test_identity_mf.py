@@ -141,42 +141,34 @@ class TestBallsInBinsIdentity:
             f"identity τ=0 vs generic gap too large: id={eps_id_no_is}, ref={ref_eps}"
         )
 
-    def test_default_tilt_path_finite(self):
-        """Default importance_tilt=1.0 path produces a finite, positive ε."""
+    def test_factory_path_finite(self):
+        """The default ``balls_in_bins`` factory produces a finite, positive ε."""
         nm, k, E = 1.5, 32, 4
         eps = ftrl_acc.balls_in_bins(
             ftrl_acc.mf_identity(nm),
             num_bins=k,
             n_steps=k * E,
-        ).epsilon_at(_DELTA)
-        assert math.isfinite(eps) and eps > 0
-
-    def test_zero_tilt_path_finite(self):
-        """importance_tilt=0 path produces a finite, positive ε."""
-        nm, k, E = 1.5, 32, 4
-        eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_identity(nm),
-            num_bins=k,
-            n_steps=k * E,
-            importance_tilt=0.0,
         ).epsilon_at(_DELTA)
         assert math.isfinite(eps) and eps > 0
 
     @pytest.mark.slow
     def test_is_reduces_variance_on_ensemble(self):
-        """``importance_tilt=1.0`` reduces ε std vs ``τ=0`` over a large enough
-        seed ensemble.  This is the *empirical* point of the IS specialisation;
-        small-N seed ensembles can be unlucky (std varies as χ² with `df = N-1`),
+        """The internal IS tilt reduces ε std vs no-IS over a large enough seed
+        ensemble.  This is the *empirical* point of the IS specialisation;
+        small-N seed ensembles can be unlucky (std varies as χ² with df=N-1),
         so we use 32 seeds and require ≥ 1.4× std reduction (squared variance
-        ≥ 2×).  In practice IS gives 3-30× std reduction at this config.
+        ≥ 2×).  In practice the gain at this config is 3-30×.
         """
         import statistics
         from opaque.accounting.discretization import DiscretizationConfig
+        from opaque.dpftrl.accounting.amplification._balls_in_bins import (
+            _IDENTITY_IS_TILT,
+        )
 
         nm, k, E = 1.5, 32, 4
         budget = 200_000
         seeds = list(range(32))
-        eps_no_is, eps_is = [], []
+        eps_no_is, eps_with_is = [], []
         for s in seeds:
             cfg_native = DiscretizationConfig(num_mc_samples=budget, seed=s).to_native()
             eps_no_is.append(
@@ -184,16 +176,16 @@ class TestBallsInBinsIdentity:
                     _DELTA
                 )
             )
-            eps_is.append(
-                _native.bnb_mc_pld_identity(k, E, nm, 1.0, cfg_native).epsilon_at(
-                    _DELTA
-                )
+            eps_with_is.append(
+                _native.bnb_mc_pld_identity(
+                    k, E, nm, _IDENTITY_IS_TILT, cfg_native
+                ).epsilon_at(_DELTA)
             )
         std_no_is = statistics.stdev(eps_no_is)
-        std_is = statistics.stdev(eps_is)
-        assert std_is < std_no_is / 1.4, (
+        std_with_is = statistics.stdev(eps_with_is)
+        assert std_with_is < std_no_is / 1.4, (
             f"IS should reduce per-seed std vs τ=0 over 32 seeds: "
-            f"std(τ=0)={std_no_is:.4f}, std(τ=1)={std_is:.4f}"
+            f"std(τ=0)={std_no_is:.4f}, std(τ={_IDENTITY_IS_TILT})={std_with_is:.4f}"
         )
 
     def test_strictly_tighter_than_unamplified_composition(self):
