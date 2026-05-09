@@ -1140,8 +1140,8 @@ def main():
     elif args.mechanism == "identity":
 
         def acct_mechanism(nm):
-            return ftrl_acc.mf_identity(
-                nm,
+            return ftrl_acc.cyclic_poisson(
+                ftrl_acc.mf_identity(nm),
                 sample_rate=sample_rate,
                 num_steps=total_steps,
             )
@@ -1279,8 +1279,8 @@ def main():
         try:
 
             def identity_acct(nm):
-                return ftrl_acc.mf_identity(
-                    nm,
+                return ftrl_acc.cyclic_poisson(
+                    ftrl_acc.mf_identity(nm),
                     sample_rate=sample_rate,
                     num_steps=total_steps,
                 )
