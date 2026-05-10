@@ -153,7 +153,6 @@ loader = data.DataLoader(dataset, batch_sampler=sampler)
 | `sample_rate` | `float` in (0, 1] | required | Inclusion probability within each active group |
 | `bands` | `int` | 1 | Number of cyclic groups (1 = standard Poisson over the whole set) |
 | `n_steps` | `int` | 1 | Total batches to yield |
-| `truncated_batch_size` | `int` or `None` | `None` | Optional upper bound on batch size |
 | `partition_type` | `PartitionType` | `EQUAL_SPLIT` | How examples are assigned to groups |
 | `key` | `RngKey` | required | RNG key |
 

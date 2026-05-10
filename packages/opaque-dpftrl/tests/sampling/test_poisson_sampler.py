@@ -72,23 +72,6 @@ class TestPoissonSamplerBasic:
         # Batches 2 and 5 should have same elements
         assert set(batches[2]) == set(batches[5])
 
-    def test_truncated_batch_size(self):
-        """truncated_batch_size caps batch sizes."""
-        dataset_size = 200
-        max_batch_size = 10
-        sampler = PoissonSampler(
-            range(dataset_size),
-            sample_rate=1.0,  # High prob to get large natural batches
-            bands=1,
-            n_steps=10,
-            truncated_batch_size=max_batch_size,
-            key=key(42),
-        )
-
-        batches = list(sampler)
-        for batch in batches:
-            assert len(batch) <= max_batch_size
-
     def test_equal_split_partition(self):
         """EQUAL_SPLIT partitions evenly."""
         dataset_size = 100
@@ -337,17 +320,6 @@ class TestPoissonSamplerEdgeCases:
         """Invalid bands raises ValueError."""
         with pytest.raises(ValueError):
             PoissonSampler(range(10), sample_rate=0.5, bands=0, key=key(0))
-
-    def test_invalid_truncated_batch_size_raises(self):
-        """Invalid truncated_batch_size raises ValueError."""
-        with pytest.raises(ValueError):
-            PoissonSampler(
-                range(10),
-                sample_rate=0.5,
-                truncated_batch_size=0,
-                key=key(0),
-            )
-
 
 class TestPoissonSamplerDistributedSimulation:
     """Test distributed support via external sharding (inner composition).

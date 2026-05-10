@@ -40,7 +40,6 @@ class PoissonSampler(Sampler):
         sample_rate: Per-step inclusion probability ``∈ (0, 1]``.
         bands: Number of cyclic groups.  ``1`` = standard Poisson on full data.
         n_steps: Total number of batches to yield.  Defaults to ``1``.
-        truncated_batch_size: Optional cap on per-step batch size.
         partition_type: Partition strategy when ``bands > 1``.
         key: RNG key for reproducibility.
 
@@ -53,9 +52,14 @@ class PoissonSampler(Sampler):
         loader = DataLoader(dataset, batch_sampler=sampler)
 
     Note:
-        Batch sizes are variable (Poisson).  Expected batch size per step
-        is ``|group| * sample_rate`` where ``|group| = |D| / bands``.
-        Use with ``DataLoader``'s ``batch_sampler`` parameter.
+        Batch sizes are variable (Poisson).  There is **no** batch-size cap
+        on this sampler: ``ftrl_acc.poisson`` accounting matches uncapped
+        Poisson draws only.  For capped batches, use DP-SGD's
+        :class:`opaque.dpsgd.sampling.PoissonSubsampler` with
+        ``dpsgd_acc.poisson(..., truncated_batch_size=, dataset_size=)``.
+
+        Expected batch size per step is ``|group| * sample_rate`` where
+        ``|group| = |D| / bands``.  Use with ``DataLoader``'s ``batch_sampler``.
     """
 
     def __init__(
@@ -64,7 +68,6 @@ class PoissonSampler(Sampler):
         sample_rate: float,
         bands: int = 1,
         n_steps: int = 1,
-        truncated_batch_size: int | None = None,
         partition_type: PartitionType = PartitionType.EQUAL_SPLIT,
         *,
         key: RngKey,
@@ -79,10 +82,6 @@ class PoissonSampler(Sampler):
             raise ValueError(f"bands must be >= 1, got {bands}")
         if n_steps < 1:
             raise ValueError(f"n_steps must be >= 1, got {n_steps}")
-        if truncated_batch_size is not None and truncated_batch_size < 1:
-            raise ValueError(
-                f"truncated_batch_size must be >= 1, got {truncated_batch_size}"
-            )
 
         self.num_examples = len(data_source)
         self.generator = np.random.default_rng(key.seed)
@@ -101,23 +100,19 @@ class PoissonSampler(Sampler):
         self.sample_rate = sample_rate
         self.bands = bands
         self.n_steps = n_steps
-        self.truncated_batch_size = truncated_batch_size
         self.partition_type = partition_type
 
     def __iter__(self) -> Iterator[list[int]]:
         """Yield Poisson batches.
 
         For each step, samples from group ``step % bands`` with inclusion
-        probability ``sample_rate`` per example.  When
-        ``truncated_batch_size`` is set, caps the result.
+        probability ``sample_rate`` per example.
         """
         for step in range(self.n_steps):
             group_idx = step % self.bands
             group = self.partition[group_idx]
 
             sample_size = self.generator.binomial(n=len(group), p=self.sample_rate)
-            if self.truncated_batch_size is not None:
-                sample_size = min(sample_size, self.truncated_batch_size)
 
             if sample_size > 0:
                 batch = self.generator.choice(

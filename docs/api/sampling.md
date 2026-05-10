@@ -1,7 +1,7 @@
 # Sampling
 
 Sampling primitives live in `opaque.dpsgd.sampling` (Poisson) and
-`opaque.dpftrl.sampling` (Poisson with optional ``bands`` / cap, b-min-sep, balls-in-bins, sequential).
+`opaque.dpftrl.sampling` (Poisson with optional ``bands``, b-min-sep, balls-in-bins, sequential).
 Distributed shard helpers live in `opaque.distributed`. They provide
 privacy-amplifying sampling mechanisms for DP-SGD and DP-FTRL.
 
@@ -125,14 +125,15 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 | `sample_rate` | `float` | required | Probability of including each eligible example, in (0, 1] |
 | `bands` | `int` | `1` | Number of cyclic groups (band width). `1` collapses to plain Poisson |
 | `n_steps` | `int` | `1` | Total batches to yield |
-| `truncated_batch_size` | `int \| None` | `None` | Optional per-step batch size cap |
 | `partition_type` | `PartitionType` | `EQUAL_SPLIT` | How to partition: `EQUAL_SPLIT` (only used when `bands > 1`) or `INDEPENDENT` |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
 In distributed training, shard the dataset with `local_shard()` and pass
 a per-rank key via `fold_in(key, rank)`. Best used with `mf_noise`
 for correlated noise (DP-FTRL); account with
-`ftrl_acc.poisson(mechanism, sample_rate, n_steps=...)`.
+`ftrl_acc.poisson(mechanism, sample_rate, n_steps=...)`.  There is no
+batch-size cap on this sampler; ``ftrl_acc.poisson`` matches uncapped
+Poisson draws only.
 
 ## Distributed Helpers
 

@@ -107,6 +107,10 @@ def poisson(
             cycle count is ``ceil(n_steps / bands)``; for ``IdentityMf``
             it equals ``n_steps``.
 
+    This accountant matches **uncapped** Poisson draws (per-group
+    Binomial counts), as produced by :class:`opaque.dpftrl.sampling.PoissonSampler`.
+    It does **not** model post-draw batch-size caps.
+
     Returns:
         An :class:`MfPoisson` process.
 
