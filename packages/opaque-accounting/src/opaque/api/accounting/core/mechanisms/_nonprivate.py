@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 from .. import _native
 
-from opaque.accounting._base import DpProcess, Pld
-from opaque.accounting.discretization import get_discretization
+from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core.discretization import get_discretization
 
 
 @dataclass(frozen=True, slots=True)

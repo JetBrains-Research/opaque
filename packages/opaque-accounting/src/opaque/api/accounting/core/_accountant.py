@@ -14,8 +14,8 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
-from opaque.accounting._base import DpProcess
-from opaque.accounting._budgets import (
+from opaque.api.accounting.core._base import DpProcess
+from opaque.api.accounting.core._budgets import (
     AdvantageBudget,
     BetaBudget,
     Budget,
@@ -23,8 +23,8 @@ from opaque.accounting._budgets import (
     EpsilonBudget,
     RiskBudget,
 )
-from opaque.accounting._process_flat import _load_dp_process
-from opaque.accounting.mechanisms.types import Identity
+from opaque.api.accounting.core._process_flat import _load_dp_process
+from opaque.api.accounting.core.mechanisms.types import Identity
 
 __all__ = ["Accountant"]
 
@@ -38,7 +38,7 @@ class Accountant:
     Example::
 
         import opaque.accounting as acc
-        from opaque.accounting._accountant import Accountant
+        from opaque.api.accounting.core._accountant import Accountant
 
         acct = Accountant()
         step = acc.poisson(acc.gaussian(1.1), 0.01)

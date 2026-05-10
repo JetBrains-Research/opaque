@@ -7,8 +7,8 @@ import pytest
 
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
-from opaque.accounting._base import DpProcess
-from opaque.accounting.composition.types import CachedProcess, Composed, Repeated
+from opaque.api.accounting.core._base import DpProcess
+from opaque.api.accounting.core.composition.types import CachedProcess, Composed, Repeated
 
 # ── Node dataclass tests ─────────────────────────────────────────────
 

@@ -7,7 +7,7 @@ import pytest
 
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
-from opaque.accounting._base import DpProcess
+from opaque.api.accounting.core._base import DpProcess
 from opaque.dpsgd.accounting.amplification.types import (
     ParallelPoisson,
     Poisson,

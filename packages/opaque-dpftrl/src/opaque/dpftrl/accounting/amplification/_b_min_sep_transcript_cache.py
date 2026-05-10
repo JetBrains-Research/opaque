@@ -6,7 +6,7 @@ import os
 import threading
 from collections import OrderedDict
 
-from opaque.accounting import _native
+from opaque.api.accounting.core import _native
 
 
 def _max_registry_bytes() -> int:

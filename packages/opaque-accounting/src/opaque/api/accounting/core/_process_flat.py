@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import fields
 from typing import Any
 
-from opaque.accounting._base import DpProcess
+from opaque.api.accounting.core._base import DpProcess
 
 
 def _flat_dp_process_state(p: DpProcess, prefix: str = "") -> dict[str, Any]:
@@ -21,7 +21,7 @@ def _flat_dp_process_state(p: DpProcess, prefix: str = "") -> dict[str, Any]:
 
 
 def _load_dp_process(sd: dict[str, Any]) -> DpProcess:
-    from opaque.accounting._base import _PROCESS_REGISTRY
+    from opaque.api.accounting.core._base import _PROCESS_REGISTRY
 
     sd = dict(sd)
     t = sd.pop("type")

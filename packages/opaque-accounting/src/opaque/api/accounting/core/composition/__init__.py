@@ -12,8 +12,8 @@ The composition-node dataclasses (``Composed``, ``Repeated``,
 
 from __future__ import annotations
 
-from opaque.accounting._base import DpProcess
-from opaque.accounting.composition._cached import cached
+from opaque.api.accounting.core._base import DpProcess
+from opaque.api.accounting.core.composition._cached import cached
 
 
 def repeat(process: DpProcess, count: int) -> DpProcess:

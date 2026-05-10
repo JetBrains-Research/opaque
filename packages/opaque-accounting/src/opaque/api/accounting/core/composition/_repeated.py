@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
-from opaque.accounting._base import DpProcess, Pld
+from opaque.api.accounting.core._base import DpProcess, Pld
 
 
 @dataclass(frozen=True, slots=True)

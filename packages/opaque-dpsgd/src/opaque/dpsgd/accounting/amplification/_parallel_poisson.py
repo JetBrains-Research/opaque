@@ -5,10 +5,10 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
-from opaque.accounting import _native
+from opaque.api.accounting.core import _native
 
-from opaque.accounting._base import DpProcess, Pld
-from opaque.accounting.mechanisms._nonprivate import NonPrivate
+from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core.mechanisms._nonprivate import NonPrivate
 from opaque.dpsgd.accounting.amplification._poisson import Poisson
 from opaque.dpsgd.accounting.mechanisms._adaclip import AdaClip
 from opaque.dpsgd.accounting.mechanisms._gaussian import Gaussian
@@ -30,7 +30,7 @@ class ParallelPoisson(DpProcess):
         pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
-        from opaque.accounting.discretization import get_discretization
+        from opaque.api.accounting.core.discretization import get_discretization
 
         config = get_discretization(
             discretization=discretization,

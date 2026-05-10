@@ -144,8 +144,8 @@ def test_transcript_cache_evicts_for_byte_cap(monkeypatch):
 
 def test_b_min_sep_stricter_than_mf_only():
     """Subsampling should lower ε at fixed σ vs unamplified BandMF PLD."""
-    from opaque.accounting import _native as native
-    from opaque.accounting.discretization import get_discretization
+    from opaque.api.accounting.core import _native as native
+    from opaque.api.accounting.core.discretization import get_discretization
 
     coef = (1.0, 0.0, 0.0)
     inner = ftrl_acc.band_mf(1.0, sensitivity=0.7, coefficients=coef)

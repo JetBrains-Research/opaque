@@ -52,7 +52,7 @@ _PROCESS_REGISTRY: dict[str, type[DpProcess]] = {}
 
 def _register_dp_process_with_serialization(cls) -> None:
     """Hook each concrete process into :mod:`opaque.serialization`."""
-    from opaque.accounting._process_flat import _flat_dp_process_state, _load_dp_process
+    from opaque.api.accounting.core._process_flat import _flat_dp_process_state, _load_dp_process
     from opaque.serialization import register_serializer
 
     register_serializer(
@@ -264,7 +264,7 @@ class DpProcess(ABC):
                 "Use identity() for zero privacy loss."
             )
 
-        from opaque.accounting.composition.types import Repeated
+        from opaque.api.accounting.core.composition.types import Repeated
 
         leaf, existing = self._leaf_and_count()
         return Repeated(leaf, existing * count)
@@ -279,8 +279,8 @@ class DpProcess(ABC):
         Applies identity elision, direct merge, and right-spine merge
         using structural equality (``==``).
         """
-        from opaque.accounting.composition.types import Composed, Repeated
-        from opaque.accounting.mechanisms.types import Identity
+        from opaque.api.accounting.core.composition.types import Composed, Repeated
+        from opaque.api.accounting.core.mechanisms.types import Identity
 
         # Identity elision
         match (self, other):

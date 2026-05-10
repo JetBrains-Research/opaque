@@ -10,7 +10,7 @@ Import this module (as :mod:`opaque.accounting` does) so
 
 from __future__ import annotations
 
-from opaque.accounting._accountant import _register_accountant_serialization
+from opaque.api.accounting.core._accountant import _register_accountant_serialization
 
 _register_accountant_serialization()
 

@@ -29,7 +29,7 @@ from ._toeplitz import (
 
 
 def _native():
-    from opaque.accounting import _native as _n
+    from opaque.api.accounting.core import _native as _n
 
     return _n
 

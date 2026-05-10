@@ -8,8 +8,8 @@ import pytest
 
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
-from opaque.accounting._accountant import Accountant
-from opaque.accounting.calibration import epsilon_budget
+from opaque.api.accounting.core._accountant import Accountant
+from opaque.api.accounting.core.calibration import epsilon_budget
 
 # ============================================================================
 # Construction & composition

@@ -7,7 +7,7 @@ import pytest
 
 import opaque.dpsgd.accounting as dpsgd_acc
 import opaque.dpftrl.accounting as ftrl_acc
-from opaque.accounting._base import DpProcess
+from opaque.api.accounting.core._base import DpProcess
 from opaque.dpftrl.accounting.mechanisms.types import LambdaCgd, Bisr
 
 

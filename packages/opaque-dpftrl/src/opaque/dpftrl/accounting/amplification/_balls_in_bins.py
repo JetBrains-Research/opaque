@@ -38,8 +38,8 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
-from opaque.accounting import _native
-from opaque.accounting._base import DpProcess, Pld
+from opaque.api.accounting.core import _native
+from opaque.api.accounting.core._base import DpProcess, Pld
 
 #: Mechanism types accepted by :func:`balls_in_bins`.
 _Inner = DpProcess
@@ -107,7 +107,7 @@ class BallsInBins(DpProcess):
         from opaque.dpftrl.accounting.mechanisms._bsr import Bsr
         from opaque.dpftrl.accounting.mechanisms._identity import IdentityMf
         from opaque.dpftrl.accounting.mechanisms._lambda_cgd import LambdaCgd
-        from opaque.accounting.discretization import get_discretization
+        from opaque.api.accounting.core.discretization import get_discretization
 
         config = get_discretization(
             discretization=discretization,

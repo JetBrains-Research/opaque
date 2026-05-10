@@ -6,10 +6,10 @@ import functools
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, overload
 
-from opaque.accounting._base import DpProcess, Pld
+from opaque.api.accounting.core._base import DpProcess, Pld
 
 if TYPE_CHECKING:
-    from opaque.accounting._accountant import Accountant
+    from opaque.api.accounting.core._accountant import Accountant
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +97,7 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
         A :class:`CachedProcess` wrapping *process*, or a new
         :class:`Accountant` with its inner process cached.
     """
-    from opaque.accounting._accountant import Accountant
+    from opaque.api.accounting.core._accountant import Accountant
 
     match process:
         case Accountant():

@@ -4,7 +4,7 @@ import pytest
 
 import opaque.accounting as acc  # noqa: F401  (used elsewhere; keep for cohesion)
 import opaque.dpsgd.accounting as dpsgd_acc
-from opaque.accounting.discretization import get_discretization, set_discretization
+from opaque.api.accounting.core.discretization import get_discretization, set_discretization
 
 
 @pytest.fixture(autouse=True)

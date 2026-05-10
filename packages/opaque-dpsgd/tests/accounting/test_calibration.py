@@ -6,7 +6,7 @@ import pytest
 
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import calibration as cal
-from opaque.accounting.calibration import (
+from opaque.api.accounting.core.calibration import (
     AdvantageBudget,
     BetaBudget,
     CalibrateResult,

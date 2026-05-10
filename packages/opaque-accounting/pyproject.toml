@@ -33,6 +33,6 @@ opaque-base = { workspace = true }
 
 [tool.maturin]
 features = ["python-extension"]
-module-name = "opaque.accounting.opaque_accounting"
+module-name = "opaque.api.accounting.core.opaque_accounting"
 python-source = "src"
-python-packages = ["opaque.accounting"]
+python-packages = ["opaque.accounting", "opaque.api.accounting.core"]

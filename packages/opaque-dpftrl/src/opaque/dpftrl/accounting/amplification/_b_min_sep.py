@@ -15,10 +15,10 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
-from opaque.accounting import _native
+from opaque.api.accounting.core import _native
 
-from opaque.accounting._base import DpProcess, Pld
-from opaque.accounting.discretization import get_discretization
+from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core.discretization import get_discretization
 from opaque.dpftrl.accounting.mechanisms._band_mf import BandMf
 
 from ._b_min_sep_transcript_cache import get_handle_or_none

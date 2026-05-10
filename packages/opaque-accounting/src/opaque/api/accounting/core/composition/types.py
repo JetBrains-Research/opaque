@@ -9,8 +9,8 @@ surface.
 
 from __future__ import annotations
 
-from opaque.accounting.composition._cached import CachedProcess
-from opaque.accounting.composition._composed import Composed
-from opaque.accounting.composition._repeated import Repeated
+from opaque.api.accounting.core.composition._cached import CachedProcess
+from opaque.api.accounting.core.composition._composed import Composed
+from opaque.api.accounting.core.composition._repeated import Repeated
 
 __all__ = ["Composed", "Repeated", "CachedProcess"]

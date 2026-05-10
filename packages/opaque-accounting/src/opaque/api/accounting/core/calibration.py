@@ -26,12 +26,12 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from opaque.accounting._base import DpProcess
+from opaque.api.accounting.core._base import DpProcess
 
-# Re-export budgets so ``from opaque.accounting.calibration import Budget``
+# Re-export budgets so ``from opaque.api.accounting.core.calibration import Budget``
 # and ``from opaque.accounting import calibration as cal; cal.epsilon_budget(...)``
 # work as convenience imports.
-from opaque.accounting._budgets import (  # noqa: F401
+from opaque.api.accounting.core._budgets import (  # noqa: F401
     AdvantageBudget,
     BetaBudget,
     Budget,

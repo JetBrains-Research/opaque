@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from opaque.accounting._base import DpProcess
+from opaque.api.accounting.core._base import DpProcess
 
 # =============================================================================
 # Budget protocol

@@ -25,9 +25,9 @@ module only re-exports the cross-cutting types that live in
 
 from __future__ import annotations
 
-from opaque.accounting._accountant import Accountant
-from opaque.accounting._base import DpProcess
-from opaque.accounting._budgets import (
+from opaque.api.accounting.core._accountant import Accountant
+from opaque.api.accounting.core._base import DpProcess
+from opaque.api.accounting.core._budgets import (
     AdvantageBudget,
     BetaBudget,
     Budget,
@@ -35,10 +35,10 @@ from opaque.accounting._budgets import (
     EpsilonBudget,
     RiskBudget,
 )
-from opaque.accounting.calibration import CalibrateResult
-from opaque.accounting.composition.types import CachedProcess, Composed, Repeated
-from opaque.accounting.discretization import DiscretizationConfig
-from opaque.accounting.mechanisms.types import (
+from opaque.api.accounting.core.calibration import CalibrateResult
+from opaque.api.accounting.core.composition.types import CachedProcess, Composed, Repeated
+from opaque.api.accounting.core.discretization import DiscretizationConfig
+from opaque.api.accounting.core.mechanisms.types import (
     EpsDelta,
     Identity,
     NonPrivate,

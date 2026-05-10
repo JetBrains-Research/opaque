@@ -8,8 +8,8 @@ Algorithm-specific types live in:
 
 from __future__ import annotations
 
-from opaque.accounting.mechanisms._eps_delta import EpsDelta
-from opaque.accounting.mechanisms._identity import Identity
-from opaque.accounting.mechanisms._nonprivate import NonPrivate
+from opaque.api.accounting.core.mechanisms._eps_delta import EpsDelta
+from opaque.api.accounting.core.mechanisms._identity import Identity
+from opaque.api.accounting.core.mechanisms._nonprivate import NonPrivate
 
 __all__ = ["EpsDelta", "Identity", "NonPrivate"]
