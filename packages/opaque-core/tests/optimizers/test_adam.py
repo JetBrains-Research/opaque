@@ -362,7 +362,7 @@ class TestPerGroupBC:
             "layer2": {"weight": torch.randn_like(nested_params["layer2"]["weight"])},
         }
         # PerGroup keyed by dotted leaf paths (exactly what
-        # opaque.clipping._per_group._extract_keys produces for nested dicts).
+        # opaque._clipping._per_group._extract_keys produces for nested dicts).
         pg = PerGroup(
             groups={
                 "layer1.weight": "g_a",

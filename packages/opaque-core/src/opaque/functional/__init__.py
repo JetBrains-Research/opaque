@@ -135,7 +135,7 @@ def make_functional(
 
     Example with LoRA partitioning:
         >>> import torch.nn as nn
-        >>> from opaque.clipping import clipped_grad
+        >>> from opaque.dpsgd.clipping import clipped_grad
         >>> from opaque.dpsgd.noise import gaussian_noise
         >>> from opaque.random import key
         >>> from opaque.functional import make_functional, merge

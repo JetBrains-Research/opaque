@@ -1,29 +1,22 @@
-"""DP-SGD-specific clipping: adaptive thresholding.
+"""DP-SGD clipping: fixed, AUTO-S, per-group, and adaptive thresholding.
 
 Headline factories:
 
-- :func:`adaptive_clipped_grad` — adaptive gradient clipping (Andrew et al. 2021)
+- :func:`clipped_grad` — fixed-threshold per-example clipping
+- :func:`auto_clipped_grad` — AUTO-S (Bu et al., NeurIPS 2023)
+- :func:`per_group` — build :class:`~opaque.types.PerGroup` groupings
+- :func:`adaptive_clipped_grad` — adaptive clipping (Andrew et al., 2021)
 
-The adaptive threshold drifts across steps based on the noisy clipping
-rate, which violates the constant per-step sensitivity assumption that
-matrix-factorization privacy proofs rely on; adaptive clipping is therefore
-exclusive to DP-SGD.
+Fixed and AUTO-S are implemented in :mod:`opaque._clipping` and re-exported
+here as the **canonical** import path for DP-SGD training code.  Adaptive
+clipping is DP-SGD-only: its threshold drifts across steps, which violates
+the constant-sensitivity assumption matrix-factorization proofs require.
 
-AUTO-S clipping (:func:`auto_clipped_grad`, Bu et al. 2023) lives in
-:mod:`opaque.clipping` because its per-record sensitivity bound is
-constant and data-independent; that makes it interchangeable with fixed
-clipping under both DP-SGD's Gaussian mechanism and DP-FTRL's
-matrix-factorization mechanisms.  :func:`auto_clipped_grad`,
-:func:`opaque.clipping.fun.auto_clipped_fun`, and the AUTO-S state / aux
-dataclasses are re-exported here for backward compatibility.
-
-State and auxiliary dataclasses (``AdaptiveClipState``,
-``AdaptiveClippedGradAux``, plus the re-exported ``AutoClipState``,
-``AutoClippedFunAux``, ``AutoClippedGradAux``) live in
-:mod:`opaque.dpsgd.clipping.types`.
+State and auxiliary dataclasses live in :mod:`opaque.dpsgd.clipping.types`.
+AUTO-S function-level helpers live in :mod:`opaque.dpsgd.clipping.fun`.
 """
 
-from opaque.clipping import auto_clipped_grad
+from opaque._clipping import auto_clipped_grad, clipped_grad, per_group
 from opaque.dpsgd.clipping._adaptive import adaptive_clipped_grad
 
 import opaque.dpsgd.clipping._distributed  # noqa: F401  (registers sync handlers)
@@ -31,4 +24,6 @@ import opaque.dpsgd.clipping._distributed  # noqa: F401  (registers sync handler
 __all__ = [
     "adaptive_clipped_grad",
     "auto_clipped_grad",
+    "clipped_grad",
+    "per_group",
 ]

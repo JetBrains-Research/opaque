@@ -16,7 +16,7 @@ mechanism confines noise to a clipped region from the start.
 The API returns ``(noise_fn, state)`` where state is always immutable:
 
     >>> from opaque.random import key
-    >>> from opaque.clipping.types import clipped
+    >>> from opaque.types import clipped
     >>> noise_fn, state = truncated_gaussian_noise(
     ...     noise_multiplier=1.0, radius=5.0, key=key(42)
     ... )
@@ -184,7 +184,7 @@ def truncated_gaussian_noise(
 
     Example:
         >>> import torch
-        >>> from opaque.clipping.types import clipped
+        >>> from opaque.types import clipped
         >>> from opaque.dpsgd.noise import truncated_gaussian_noise
         >>> from opaque.random import key
         >>>

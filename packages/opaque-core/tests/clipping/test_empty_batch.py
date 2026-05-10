@@ -10,14 +10,14 @@ import pytest
 
 from opaque.types import ClippedPytree
 
-from opaque.clipping import clipped_grad
+from opaque._clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.dpsgd.clipping._adaptive import (
     AdaptiveClipState,
     AdaptiveClippedGradAux,
     _compute_clipping_stats,
 )
-from opaque.clipping._clipped_grad import ClippedGradAux
+from opaque._clipping._clipped_grad import ClippedGradAux
 from opaque.random import key
 
 

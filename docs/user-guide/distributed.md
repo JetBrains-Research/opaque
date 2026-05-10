@@ -38,9 +38,9 @@ There are two valid approaches to noise in distributed DP-SGD:
 import torch
 import torch.distributed as dist
 import torchopt
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSubsampler
 from opaque.functional import make_functional
 import opaque.distributed as dist_utils
 from opaque.random import key, fold_in
@@ -72,7 +72,7 @@ noise_fn, noise_state = gaussian_noise(
 
 # Poisson sampler (shard dataset)
 shard = local_shard(dataset, rank=rank, world_size=dist.get_world_size())
-sampler = PoissonSampler(
+sampler = PoissonSubsampler(
     shard, sample_rate=0.01, key=fold_in(key(0), rank),
 )
 loader = torch.utils.data.DataLoader(shard, batch_sampler=sampler)
@@ -202,12 +202,12 @@ does not need synchronization. `sync(clip_state)` is a passthrough.
 
 ## Poisson sampling
 
-Shard the dataset using `local_shard()`, then create a `PoissonSampler`
+Shard the dataset using `local_shard()`, then create a `PoissonSubsampler`
 on the shard. Derive a per-rank key via `fold_in(key, rank)`.
 
 ```python
 import torch.distributed as dist
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSubsampler
 from opaque.random import key, fold_in
 from opaque.distributed import local_shard
 
@@ -215,7 +215,7 @@ rank = dist.get_rank()
 world_size = dist.get_world_size()
 
 shard = local_shard(dataset, rank=rank, world_size=world_size)
-sampler = PoissonSampler(
+sampler = PoissonSubsampler(
     shard,
     sample_rate=0.01,
     key=fold_in(key(42), rank),

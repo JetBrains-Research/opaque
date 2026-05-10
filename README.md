@@ -95,7 +95,7 @@ A minimal DP-SGD training loop:
 ```python
 import torch
 import opaque.accounting as acc
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.random import key
 from opaque.dpsgd.noise import gaussian_noise
 

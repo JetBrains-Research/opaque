@@ -160,7 +160,7 @@ PyTorch models store parameters internally. To use them with
 `clipped_grad`, convert to functional form with `make_functional`:
 
 ```python
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.functional import make_functional
 
 model = AutoModelForCausalLM.from_pretrained("gpt2")
@@ -216,7 +216,7 @@ model, making per-example gradients feasible.
 ```python
 from transformers import AutoModelForCausalLM
 from peft import get_peft_model, LoraConfig
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.functional import make_functional
 from opaque.random import key

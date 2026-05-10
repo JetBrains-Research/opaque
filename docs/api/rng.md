@@ -268,7 +268,7 @@ Sets:
 ```python
 from opaque.random import key, fold_in, split, set_reproducible_pytorch_seed
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSubsampler
 
 # Setup framework reproducibility once
 set_reproducible_pytorch_seed(key(42))
@@ -303,7 +303,7 @@ from opaque.random import split, key
 master = key(42)
 sampling_key, noise_key, init_key = split(master, num=3)
 
-sampler = PoissonSampler(..., key=sampling_key)
+sampler = PoissonSubsampler(..., key=sampling_key)
 noise_fn, _ = gaussian_noise(..., key=noise_key)
 model = initialize_model(init_key)  # If using jax
 ```

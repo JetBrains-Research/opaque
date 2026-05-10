@@ -20,7 +20,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.functional import make_functional
 from opaque.patches.kernels import (
     opaque_fused_add_rms_norm,

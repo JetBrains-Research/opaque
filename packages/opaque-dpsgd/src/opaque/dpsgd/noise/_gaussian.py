@@ -6,7 +6,7 @@ to clipped DP query values.
 The API returns ``(noise_fn, state)`` where state is always immutable:
 
     >>> from opaque.random import key
-    >>> from opaque.clipping.types import clipped
+    >>> from opaque.types import clipped
     >>> from opaque.dpsgd.noise import gaussian_noise
     >>> noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(42))
     >>> noisy_grads, state = noise_fn(clipped(grads, max_norm=1.0), state)
@@ -141,7 +141,7 @@ def gaussian_noise(
 
     Example:
         >>> import torch
-        >>> from opaque.clipping.types import clipped
+        >>> from opaque.types import clipped
         >>> from opaque.dpsgd.noise import gaussian_noise
         >>> from opaque.random import key
         >>>

@@ -6,8 +6,8 @@ from torch.func import grad
 
 from opaque.types import ClippedPytree
 
-from opaque.clipping._clipped_fun import clipped_fun
-from opaque.clipping._pytree import clip_pytree
+from opaque._clipping._clipped_fun import clipped_fun
+from opaque._clipping._pytree import clip_pytree
 
 
 def _unwrap_clipped(value):
@@ -432,7 +432,7 @@ def test_clipped_fun_microbatching_with_pytree():
     x = torch.randn(batch_size, 10, 1)
 
     # Create clipped gradient functions
-    from opaque.clipping import clipped_grad
+    from opaque._clipping import clipped_grad
 
     clipped_grad_fn_no_mb, clip_state_no_mb = clipped_grad(
         loss_fn, argnums=0, batch_argnums=1, clipping_norm=1.0, microbatch_size=None

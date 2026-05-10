@@ -3,7 +3,7 @@ import pytest
 import torch
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 from peft import LoraConfig, get_peft_model
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.functional import make_functional
 
 apply_runtime_patches()

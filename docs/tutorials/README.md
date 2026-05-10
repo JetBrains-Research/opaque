@@ -15,9 +15,9 @@ For complete function signatures, see the
 | [DP-SGD Training](dp_sgd_training.ipynb) | Train a model with differential privacy from scratch | `clipped_grad`, `gaussian_noise`, `make_functional`, accounting, calibration |
 | [Privacy Accounting & Calibration](accounting_and_calibration.ipynb) | Explore the accounting API, compare mechanisms, calibrate noise | `DpProcess`, composition, `calibrate`, privacy metrics |
 | [Fine-tuning an LLM](llm_finetuning.ipynb) | Fine-tune a HuggingFace model with DP and LoRA | `make_functional`, `partition_trainable`, PEFT, adaptive clipping |
-| [Sampling & Microbatching](sampling_and_microbatching.ipynb) | Compare sampling strategies and tune microbatch size | `PoissonSampler`, `TruncatedPoissonSampler`, `microbatch_size` |
+| [Sampling & Microbatching](sampling_and_microbatching.ipynb) | Compare sampling strategies and tune microbatch size | `PoissonSubsampler`, truncated Poisson via ``truncated_batch_size``, `microbatch_size` |
 | [Privacy Auditing](privacy_auditing.ipynb) | Validate privacy guarantees empirically | `auditing.coin_flip`, `auditing.one_run`, `OneRunEstimate`, bootstrap |
-| [Distributed Training](distributed_training.ipynb) | Run DP-SGD across multiple GPUs | `sum_gradients`, `local_shard`, `PoissonSampler`, shared RNG key |
+| [Distributed Training](distributed_training.ipynb) | Run DP-SGD across multiple GPUs | `sum_gradients`, `local_shard`, `PoissonSubsampler`, shared RNG key |
 
 Most tutorials run on CPU in reasonable time using small datasets.
 The distributed training tutorial requires multiple GPUs and `torchrun`.

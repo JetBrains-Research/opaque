@@ -12,7 +12,7 @@ hooks, no subclassing, no hidden mutation.
 to a maximum L2 norm, and sums the result.
 
 ```python
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 
 grad_fn, clip_state = clipped_grad(
     loss_fn, clipping_norm=1.0, argnums=0, batch_argnums=1,
@@ -83,10 +83,10 @@ probability `sample_rate`, producing variable-size batches. Distributed mode is
 detected and sharded automatically.
 
 ```python
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSubsampler
 from opaque.random import key
 
-sampler = PoissonSampler(dataset, sample_rate=0.01, num_iterations=10, key=key(0))
+sampler = PoissonSubsampler(dataset, sample_rate=0.01, n_steps=10, key=key(0))
 loader = DataLoader(dataset, batch_sampler=sampler)
 ```
 

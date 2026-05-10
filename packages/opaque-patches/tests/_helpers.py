@@ -12,7 +12,7 @@ pytest.importorskip("peft")
 from peft import LoraConfig, get_peft_model  # noqa: E402
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.functional import make_functional
 from opaque.patches import apply_model_patches
 

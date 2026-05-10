@@ -45,8 +45,8 @@ class MFNoiseState(NoiseState):
             enforce constant per-step sensitivity.  ``None`` until the first
             call.  MF privacy analyses assume the per-step sensitivity is
             constant across the sequence.  Both fixed clipping
-            (:func:`opaque.clipping.clipped_grad`) and AUTO-S clipping
-            (:func:`opaque.clipping.auto_clipped_grad`) satisfy this
+            (:func:`opaque.dpftrl.clipping.clipped_grad`) and AUTO-S clipping
+            (:func:`opaque.dpftrl.clipping.auto_clipped_grad`) satisfy this
             assumption — the per-record bound is fixed at construction and
             does not depend on data.  Adaptive clipping
             (:func:`opaque.dpsgd.clipping.adaptive_clipped_grad`) breaks it,

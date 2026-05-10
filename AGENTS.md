@@ -24,7 +24,7 @@ nested under `opaque.core.*`.
 | Distribution | Import roots | Purpose | Build |
 | --- | --- | --- | --- |
 | `opaque` | — | pins the curated sub-package bundle; extras add the rest | setuptools |
-| `opaque-core` | `opaque.core`, `opaque.functional`, `opaque.distributed`, `opaque.clipping`, `opaque.scheduling` | RNG, pytree, fixed + AUTO-S clipping, step-indexed schedules + warmup composition, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing | setuptools |
+| `opaque-core` | `opaque.core`, `opaque.functional`, `opaque.distributed`, `opaque._clipping`, `opaque.scheduling` | RNG, pytree, fixed + AUTO-S clipping (internal), step-indexed schedules + warmup composition, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing | setuptools |
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated-Gaussian / per-group noise, AdamW-BC, Poisson + truncated-Poisson samplers, adaptive clipping | setuptools |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, cyclic Poisson + b-min-sep + balls-in-bins + sequential samplers | setuptools |
 | `opaque-auditing` | `opaque.auditing` | empirical privacy auditing (one-run, coin-flip, loss attacks) | setuptools |
@@ -318,7 +318,7 @@ the canonical lint / test / Rust-test commands.
 - The first `uv sync` triggers a full Rust/maturin build of `opaque-accounting`
   (~30 s cold, cached afterwards). Subsequent syncs are fast (~seconds).
 - The namespace is PEP 420 — there is **no** `opaque.core` import path. Instead,
-  `opaque-core` installs `opaque.clipping`, `opaque.functional`, `opaque.random`,
+  `opaque-core` installs `opaque._clipping`, `opaque.functional`, `opaque.random`,
   `opaque.scheduling`, `opaque.distributed`, `opaque.optimizers`, `opaque.profiling`,
   `opaque.types`, and `opaque.pytree`.
 - `gaussian_noise` returns `(noise_fn, state)` and the inner `noise_fn` signature

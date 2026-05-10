@@ -1,6 +1,7 @@
-"""Per-example gradient clipping primitives (algorithm-agnostic).
+"""Internal clipping implementation (import :mod:`opaque.dpsgd.clipping` or
+:mod:`opaque.dpftrl.clipping` from application code).
 
-Headline entry points shared by DP-SGD and DP-FTRL:
+Headline entry points (re-exported by the training packages):
 
 - :func:`clipped_grad` — differentiate + fixed-threshold clip + sum the
   gradients
@@ -18,11 +19,11 @@ and therefore violates the constant-sensitivity assumption that
 matrix-factorization privacy proofs rely on.
 
 Power-user building blocks (``clipped_fun``, ``auto_clipped_fun``,
-``clip_pytree``, ``auto_scale_pytree``) live in :mod:`opaque.clipping.fun`.
+``clip_pytree``, ``auto_scale_pytree``) live in :mod:`opaque._clipping.fun`.
 State and auxiliary dataclasses (``FixedClipState``, ``AutoClipState``,
 ``ClippedGradAux``, ``AutoClippedGradAux``, ``ClippedFunAux``,
 ``AutoClippedFunAux``, ``ClipPytreeAux``) live in
-:mod:`opaque.clipping.types`. The cross-cutting DP types (``ClipState``
+:mod:`opaque._clipping.types`. The cross-cutting DP types (``ClipState``
 base, ``ClippedPytree``, ``PerGroup``, ``MaxNorm``, ``clipped()`` factory)
 live in :mod:`opaque.types`.
 
@@ -31,11 +32,11 @@ To synchronize clipping state across distributed ranks, use
 handler without you having to import it by name.
 """
 
-from opaque.clipping._auto import auto_clipped_grad
-from opaque.clipping._clipped_grad import clipped_grad
-from opaque.clipping._per_group import per_group
+from opaque._clipping._auto import auto_clipped_grad
+from opaque._clipping._clipped_grad import clipped_grad
+from opaque._clipping._per_group import per_group
 
-import opaque.clipping._distributed  # noqa: F401  (registers sync handlers)
+import opaque._clipping._distributed  # noqa: F401  (registers sync handlers)
 
 __all__ = [
     "auto_clipped_grad",

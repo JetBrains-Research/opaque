@@ -228,7 +228,7 @@ this — their per-record bound is set at construction and does not depend
 on data — so either can be wired into the loop interchangeably:
 
 ```python
-from opaque.clipping import auto_clipped_grad
+from opaque.dpsgd.clipping import auto_clipped_grad
 from opaque.dpftrl.noise import mf_noise, band_mf_strategy
 from opaque.random import key
 
@@ -290,7 +290,7 @@ the gradients (e.g., the model parameters).
 ### Per-group clipping
 
 `mf_noise` accepts `ClippedPytree` metadata where `max_norm` is a
-`PerGroup` (from `opaque.clipping.per_group`), not only a scalar. The
+`PerGroup` (from `opaque.dpsgd.clipping.per_group`), not only a scalar. The
 per-leaf IID noise scale follows the same MSE-optimal Mahalanobis allocation
 as `gaussian_noise` / `truncated_gaussian_noise` on DP-SGD: no extra privacy
 cost versus scalar clipping at the same `noise_multiplier`, and the MF
@@ -535,8 +535,11 @@ from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.random import key
 
 sampler = CyclicPoissonSampler(
-    dataset, sampling_prob=sample_rate, cycle_length=4,
-    iterations=num_steps, key=key(0),
+    dataset,
+    sample_rate=sample_rate,
+    bands=4,
+    n_steps=num_steps,
+    key=key(0),
 )
 ```
 

@@ -9,7 +9,7 @@ import torch
 
 from opaque.types import ClippedPytree
 
-from opaque.clipping import clipped_grad
+from opaque._clipping import clipped_grad
 
 
 def _unwrap_clipped(value):
@@ -761,7 +761,7 @@ class TestSecondMoment:
         assert torch.all(out.squared_grads.pytree["w"] == 0.0)
 
     def test_with_return_aux(self, setup):
-        from opaque.clipping._clipped_grad import ClippedGradAux
+        from opaque._clipping._clipped_grad import ClippedGradAux
         from opaque.types import SecondMomentClippingOutput
 
         params, x, y, loss_fn, batch_size = setup

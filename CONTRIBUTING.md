@@ -46,7 +46,7 @@ pyproject.toml           # opaque — pins the curated sub-package bundle
 README.md                # top-level description
 
 packages/
-├── opaque-core/         # RNG, pytree, clipping, scheduling, distributed plumbing
+├── opaque-core/         # RNG, pytree, internal _clipping, scheduling, distributed plumbing
 ├── opaque-dpsgd/        # Gaussian/per-group noise, AdamW-BC, Poisson samplers
 ├── opaque-dpftrl/       # Correlated-noise mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD)
 ├── opaque-auditing/     # Empirical privacy auditing
@@ -251,7 +251,7 @@ the above shape — no merge if the title doesn't parse.
 ```
 feat: implement basic clipped_grad
 
-- Add clipped_grad function to opaque.core.clipping
+- Add clipped_grad to opaque.dpsgd.clipping (implementation in opaque._clipping)
 - Support single parameter and batch data
 - Include tests comparing against JAX-Privacy
 

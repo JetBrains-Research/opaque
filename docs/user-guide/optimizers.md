@@ -38,7 +38,7 @@ No hidden mutable state.  Every piece of the training loop is explicit.
 
 ```python
 import torchopt
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.optimizers import adamw
 from opaque.random import key

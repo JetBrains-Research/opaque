@@ -208,7 +208,7 @@ sampling pattern that the noise strategy exploits:
 
 ```python
 import torch
-from opaque.clipping import clipped_grad
+from opaque.dpftrl.clipping import clipped_grad
 from opaque.dpftrl.noise import mf_noise, band_mf_strategy
 from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.random import key, split

@@ -39,7 +39,7 @@ def walk_dict_leaves(tree: Any, prefix: str = "") -> Any:
     """Yield ``(dotted_path, leaf)`` pairs for a ``dict``-tree.
 
     Mirrors the path convention of
-    :func:`opaque.clipping._per_group._extract_keys`: walks ``dict``-valued
+    :func:`opaque._clipping._per_group._extract_keys`: walks ``dict``-valued
     nodes recursively and treats anything that is not a ``dict`` as a
     leaf.  The yielded dotted-key paths match the keys
     :class:`PerGroup` expects when looking up per-leaf values, so this

@@ -69,7 +69,7 @@ import opaque.accounting as acc
 import opaque.auditing as auditing
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import calibration as cal, Accountant
-from opaque.clipping import auto_clipped_grad, clipped_grad
+from opaque.dpsgd.clipping import auto_clipped_grad, clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.distributed import sync
 from opaque.distributed.gradients import sum_gradients_
@@ -82,7 +82,7 @@ from opaque.profiling import (
     reset_peak_memory,
 )
 from opaque.random import key, fold_in
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSubsampler
 from opaque.distributed import local_shard
 from opaque.functional import make_functional
 from opaque.scheduling import (
@@ -98,7 +98,7 @@ from opaque.types import (
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
 )
-from opaque.clipping import per_group
+from opaque.dpsgd.clipping import per_group
 import wandb
 
 
@@ -1575,7 +1575,7 @@ def main():
 
         # Create sampler for this epoch
         if use_truncated_poisson:
-            epoch_sampler = PoissonSampler(
+            epoch_sampler = PoissonSubsampler(
                 train_dataset,
                 sample_rate=sample_rate,
                 truncated_batch_size=max_batch_size,
@@ -1583,7 +1583,7 @@ def main():
                 key=fold_in(key(args.seed), rank, epoch),
             )
         else:
-            epoch_sampler = PoissonSampler(
+            epoch_sampler = PoissonSubsampler(
                 train_dataset,
                 sample_rate=sample_rate,
                 n_steps=expected_steps_per_epoch,

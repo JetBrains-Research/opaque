@@ -1,17 +1,11 @@
-"""Backward-compat shim: AUTO-S function-level scaling moved to
-:mod:`opaque.clipping.fun`.
+"""AUTO-S function-level scaling (re-export).
 
-This submodule used to host :func:`auto_clipped_fun`; the canonical home
-is now :mod:`opaque.clipping.fun` (AUTO-S is algorithm-agnostic — its
-per-record sensitivity bound is constant, so it composes with both
-DP-SGD's Gaussian mechanism and DP-FTRL's matrix-factorization
-mechanisms).  This module re-exports :func:`auto_clipped_fun` so existing
-``from opaque.dpsgd.clipping.fun import auto_clipped_fun`` imports keep
-working.
+Implementation lives in :mod:`opaque._clipping.fun`.  Import from here for
+DP-SGD tutorials; :mod:`opaque.dpftrl.clipping.fun` mirrors this for FTRL.
 """
 
 from __future__ import annotations
 
-from opaque.clipping.fun import auto_clipped_fun
+from opaque._clipping.fun import auto_clipped_fun
 
 __all__ = ["auto_clipped_fun"]

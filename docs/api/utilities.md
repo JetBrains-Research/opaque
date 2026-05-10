@@ -4,7 +4,7 @@
 
 The `opaque.functional` module provides the `torch.func` bridges that turn
 standard `nn.Module` models into the pure-function form DP-SGD needs.
-`opaque.clipping.clipped_grad` and friends assume their `loss_fn`
+`opaque.dpsgd.clipping.clipped_grad` and friends assume their `loss_fn`
 argument is functional in this sense.
 
 **Key function**: `make_functional()` — convert a PyTorch module to

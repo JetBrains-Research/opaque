@@ -7,9 +7,13 @@ needed for a given privacy guarantee.
 
 Opaque provides three high-level clipping functions:
 
-- **`clipped_grad`** ([`opaque.clipping`](../api/clipping.md)) — Fixed-threshold clipping (recommended default).
-- **`auto_clipped_grad`** ([`opaque.clipping`](../api/clipping.md)) — AUTO-S automatic scaling, no threshold to tune (Bu et al. NeurIPS 2023). Algorithm-agnostic: composes with both DP-SGD's Gaussian mechanism and DP-FTRL's matrix-factorization mechanisms.
+- **`clipped_grad`** ([`opaque.dpsgd.clipping`](../api/clipping.md)) — Fixed-threshold clipping (recommended default).
+- **`auto_clipped_grad`** ([`opaque.dpsgd.clipping`](../api/clipping.md)) — AUTO-S automatic scaling, no threshold to tune (Bu et al. NeurIPS 2023). Algorithm-agnostic: composes with both DP-SGD's Gaussian mechanism and DP-FTRL's matrix-factorization mechanisms.
 - **`adaptive_clipped_grad`** ([`opaque.dpsgd.clipping`](../api/clipping.md)) — Auto-tuned threshold via quantile tracking (Andrew et al. 2021); DP-SGD-only because the threshold drifts across steps.
+
+For DP-FTRL workflows, import ``clipped_grad`` / ``auto_clipped_grad`` /
+``per_group`` from :mod:`opaque.dpftrl.clipping` instead (same implementations;
+MF-incompatible adaptive clipping is not exposed there).
 
 Lower-level building blocks (`clipped_fun`, `clip_pytree`, `auto_scale_pytree`)
 are documented in the [Clipping API Reference](../api/clipping.md).
@@ -21,7 +25,7 @@ gradients, clips each to a maximum L2 norm, and sums the result. This is the
 primary API for DP-SGD training.
 
 ```python
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 
 def loss_fn(params, x, y):
     return ((x @ params - y) ** 2).sum()
@@ -275,7 +279,7 @@ PyTorch models store parameters internally. To use them with `clipped_grad`,
 convert to functional form:
 
 ```python
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.functional import make_functional
 
 fmodel, params = make_functional(model)
@@ -321,7 +325,7 @@ Use `per_group` to construct a `PerGroup` from parameter keys and substring
 patterns:
 
 ```python
-from opaque.clipping import clipped_grad, per_group
+from opaque.dpsgd.clipping import clipped_grad, per_group
 pg = per_group(params, self_attn=1.0, mlp=2.0)
 
 grad_fn, clip_state = clipped_grad(
@@ -441,7 +445,7 @@ threshold to tune; the effective step size is absorbed into the learning
 rate.
 
 ```python
-from opaque.clipping import auto_clipped_grad
+from opaque.dpsgd.clipping import auto_clipped_grad
 
 grad_fn, clip_state = auto_clipped_grad(
     loss_fn,
@@ -472,7 +476,7 @@ on every step, so it flows through `mf_noise` exactly like fixed clipping
 does:
 
 ```python
-from opaque.clipping import auto_clipped_grad
+from opaque.dpsgd.clipping import auto_clipped_grad
 from opaque.dpftrl import band_mf_strategy, mf_noise
 from opaque.random import key
 
@@ -523,7 +527,7 @@ eps = training.epsilon_at(1e-5)
 Pass a `PerGroup` as `R` to scale each group independently:
 
 ```python
-from opaque.clipping import auto_clipped_grad, per_group
+from opaque.dpsgd.clipping import auto_clipped_grad, per_group
 
 pg = per_group(params, self_attn=1.0, mlp=2.0)
 

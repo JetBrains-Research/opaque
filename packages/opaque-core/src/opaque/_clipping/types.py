@@ -1,4 +1,4 @@
-"""Public type definitions for :mod:`opaque.clipping`.
+"""Public type definitions for :mod:`opaque._clipping`.
 
 Re-exports the clipping-specific state and auxiliary dataclasses for
 type annotations. The cross-cutting DP types (``ClipState`` base,
@@ -8,15 +8,15 @@ live in :mod:`opaque.types`.
 
 from __future__ import annotations
 
-from opaque.clipping._auto import (
+from opaque._clipping._auto import (
     AutoClippedFunAux,
     AutoClippedGradAux,
     AutoClipState,
 )
-from opaque.clipping._clipped_fun import ClippedFunAux
-from opaque.clipping._clipped_fun import FixedClipState
-from opaque.clipping._clipped_grad import ClippedGradAux
-from opaque.clipping._pytree import ClipPytreeAux
+from opaque._clipping._clipped_fun import ClippedFunAux
+from opaque._clipping._clipped_fun import FixedClipState
+from opaque._clipping._clipped_grad import ClippedGradAux
+from opaque._clipping._pytree import ClipPytreeAux
 
 __all__ = [
     "AutoClipState",

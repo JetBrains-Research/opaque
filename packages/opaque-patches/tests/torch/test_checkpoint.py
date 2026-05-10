@@ -164,7 +164,7 @@ class TestCheckpointWithClippedGrad:
         transformers = pytest.importorskip("transformers")
         peft = pytest.importorskip("peft")
 
-        from opaque.clipping import clipped_grad
+        from opaque.dpsgd.clipping import clipped_grad
         from opaque.functional import make_functional
         from opaque.patches import apply_model_patches
 
@@ -219,7 +219,7 @@ class TestCheckpointWithClippedGrad:
         transformers = pytest.importorskip("transformers")
         peft = pytest.importorskip("peft")
 
-        from opaque.clipping import clipped_grad
+        from opaque.dpsgd.clipping import clipped_grad
         from opaque.functional import make_functional
         from opaque.patches import apply_model_patches
 

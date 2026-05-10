@@ -254,8 +254,8 @@ def _validate_constant_max_norm(
     """Latch the per-step max_norm and reject changes across calls.
 
     MF privacy analyses calibrate noise from a sensitivity that is constant
-    across the sequence.  Fixed clipping (:func:`opaque.clipping.clipped_grad`)
-    and AUTO-S clipping (:func:`opaque.clipping.auto_clipped_grad`) both
+    across the sequence.  Fixed clipping (:func:`opaque.dpftrl.clipping.clipped_grad`)
+    and AUTO-S clipping (:func:`opaque.dpftrl.clipping.auto_clipped_grad`) both
     produce a constant ``ClippedPytree.max_norm`` and pass this latch.
     Adaptive clipping (:func:`opaque.dpsgd.clipping.adaptive_clipped_grad`)
     varies its threshold across steps, which breaks the proof; the

@@ -52,8 +52,8 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `calibrate()` — Binary-search noise multiplier for target privacy
 
 - **[Sampling](sampling.md)**: Privacy-amplifying sampling
-  - `PoissonSampler` - Standard Poisson sampling
-  - `TruncatedPoissonSampler` - Bounded Poisson sampling
+  - `PoissonSubsampler` - Standard Poisson sampling
+  - `PoissonSubsampler` + `truncated_batch_size` - Bounded Poisson sampling
   - `CyclicPoissonSampler` - Cyclic Poisson sampling (BandMF)
   - `BallsInBinsSampler` - Random-partition sampling (λCGD, BISR, BLT)
   - `SequentialBatchSampler` - Deterministic sequential batching (BLT)
@@ -87,7 +87,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 ```python
 import opaque.accounting as acc
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
@@ -190,8 +190,8 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 
 | Class                     | Purpose                    | User Guide                                                    |
 |---------------------------|----------------------------|---------------------------------------------------------------|
-| `PoissonSampler`          | Standard Poisson sampling  | [Guide](../user-guide/sampling.md#poisson-sampling) |
-| `TruncatedPoissonSampler` | Truncated Poisson sampling | [Guide](../user-guide/sampling.md#poisson-sampling) |
+| `PoissonSubsampler`          | Standard Poisson sampling  | [Guide](../user-guide/sampling.md#poisson-sampling) |
+| `PoissonSubsampler` (with ``truncated_batch_size``) | Truncated Poisson sampling | [Guide](../user-guide/sampling.md#poisson-sampling) |
 | `CyclicPoissonSampler`    | Cyclic Poisson sampling (BandMF) | [Guide](../user-guide/sampling.md#poisson-sampling) |
 | `BallsInBinsSampler`      | Random-partition sampling  | [Guide](../user-guide/sampling.md#balls-in-bins-sampling) |
 | `SequentialBatchSampler`  | Deterministic sequential batching (BLT) | [Guide](../user-guide/sampling.md#sequential-batch-sampling) |

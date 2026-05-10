@@ -20,7 +20,7 @@ from torch.utils.checkpoint import checkpoint
 
 from opaque.types import clipped
 
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.distributed import get_rank, get_world_size, sum_gradients, sync
 from opaque.distributed.gradients import sum_gradients_
