@@ -2,8 +2,10 @@
 
 Poisson subsampling: each example is independently included with
 probability ``sample_rate``.  Optional ``truncated_batch_size`` caps the
-realised batch (production DP-SGD pattern paired with
-:func:`opaque.dpsgd.accounting.poisson` with truncation enabled).
+realised batch for stable sizes and memory; that is **weaker** for privacy than
+plain Poisson at the same ``sample_rate``—pair with
+:func:`opaque.dpsgd.accounting.poisson` passing both
+``truncated_batch_size`` and ``dataset_size``.
 
 For distributed training, shard the dataset **before** creating the
 sampler using ``local_shard()`` and derive a per-rank key with
@@ -41,8 +43,9 @@ class PoissonSubsampler(Sampler):
         data_source: Dataset to sample from (any object with ``__len__``).
         sample_rate: Probability of including each example ``∈ (0, 1]``.
         n_steps: Number of batches to yield. ``None`` yields indefinitely.
-        truncated_batch_size: Optional cap on per-step batch size (production
-            truncated-Poisson pattern).
+        truncated_batch_size: Optional cap on per-step batch size (truncated
+            Poisson; use matching accounting—privacy is weaker than uncapped
+            Poisson at the same ``sample_rate``).
         key: RNG key for reproducibility.
 
     Example::

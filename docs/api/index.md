@@ -45,7 +45,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 - **[Accounting](accounting.md)**: Privacy budget tracking
   - `gaussian()`, `adaclip()` — DP-SGD mechanisms (also via `opaque.dpsgd.accounting`)
-  - `poisson()`, `truncated_poisson()`, `parallel_poisson()` — Poisson-family amplification
+  - `poisson()` (plain or truncated via ``truncated_batch_size`` / ``dataset_size``), `parallel_poisson()` — Poisson-family amplification
   - `band_mf()`, `blt()`, `lambda_cgd()`, `bisr()`, `cyclic_poisson()`, `balls_in_bins()` — MF mechanisms (also via `opaque.dpftrl.accounting`)
   - `DpProcess` operators: `*` (repeat), `|` (compose)
   - `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()`, `.risk_at()` — Privacy metrics
@@ -145,7 +145,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 |---------------------------|-----------------------------------|-------------------------------------------------------------------------|
 | `gaussian()`              | Gaussian mechanism                | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `poisson()`               | Poisson-subsampled mechanism      | [Guide](../user-guide/accounting.md#mechanisms)                         |
-| `truncated_poisson()`     | Truncated Poisson subsampling     | [Guide](../user-guide/accounting.md#mechanisms)                         |
+| `poisson(..., truncated_batch_size=, dataset_size=)` | Truncated Poisson subsampling | [Guide](../user-guide/accounting.md#mechanisms) |
 | `parallel_poisson()`      | Parallel Poisson subsampling      | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `adaclip()`               | Adaptive clipping mechanism       | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `eps_delta()`             | Fixed (ε, δ) guarantee            | [Guide](../user-guide/accounting.md#mechanisms)                         |

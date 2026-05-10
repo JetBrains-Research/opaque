@@ -96,7 +96,7 @@ sensitivity computation. There is no external amplification wrapper.
 | Amplification | Supported | Notes |
 |---------------|:---------:|-------|
 | `poisson()` | No | Not applicable |
-| `truncated_poisson()` | No | Not applicable |
+| `poisson()` (truncated) | No | Not applicable |
 | `cyclic_poisson()` | No | For BandMF only |
 
 If you need subsampling amplification with correlated noise, use

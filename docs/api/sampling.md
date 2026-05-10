@@ -15,8 +15,9 @@ Opaque provides these sampling strategies:
 
 1. **Poisson Sampling — DP-SGD** (`opaque.dpsgd.sampling.PoissonSubsampler`):
    each example is sampled independently with probability `sample_rate`.
-   Optional `truncated_batch_size` caps per-step batch size for predictable
-   memory usage and a tighter (truncated-Poisson) accounting bound.
+   Optional `truncated_batch_size` caps per-step batch size for more stable
+   batches and memory; accounting must use the truncated-Poisson PLD (weaker
+   than plain Poisson at the same `sample_rate`).
 
 2. **Poisson Sampling — DP-FTRL** (`opaque.dpftrl.sampling.PoissonSampler`):
    iteration ``i`` draws from group ``i % bands`` with probability

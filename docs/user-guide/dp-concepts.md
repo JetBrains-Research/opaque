@@ -161,7 +161,7 @@ Opaque supports several subsampling schemes:
 | Scheme | Description | Use case |
 |--------|-------------|----------|
 | **Poisson** | Each example included independently with probability $q$ | Standard DP-SGD. Variable batch size. |
-| **Truncated Poisson** | Poisson sampling capped at a maximum batch size | Production DP-SGD. Fixed memory budget. |
+| **Truncated Poisson** | Poisson draw capped at a maximum batch size | DP-SGD when you want stable batch sizes; privacy is weaker than plain Poisson at the same $q$. |
 | **DP-FTRL Poisson** | ``opaque.dpftrl.sampling.PoissonSampler``: one group per step; ``bands=1`` is plain Poisson | Correlated MF noise (e.g. BandMF). |
 
 The key distinction is between *Poisson* and *fixed-size* sampling. Poisson
@@ -169,9 +169,10 @@ sampling produces variable-size batches but has a clean privacy analysis.
 Fixed-size sampling (drawing exactly $B$ examples) has a slightly different
 privacy profile. Opaque uses Poisson-style sampling throughout.
 
-Truncated Poisson combines the best of both: it uses Poisson sampling but caps
-the batch size at a maximum, giving fixed memory usage while retaining the
-Poisson amplification guarantee.
+Truncated Poisson keeps Poisson-style randomness but caps realized batch size,
+which stabilises memory and batch norms at the cost of **weaker** privacy than
+unconditional Poisson at the same inclusion probability $q$ (use the
+truncated-Poisson accountant).
 
 Opaque's `PoissonSubsampler` implements Poisson subsampling. The accounting module
 accounts for this amplification via `dpsgd_acc.poisson(mechanism, sample_rate)`.

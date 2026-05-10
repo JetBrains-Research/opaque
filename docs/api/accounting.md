@@ -179,8 +179,9 @@ step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), sample_rate=256 / 50_000)
 
 `poisson()` switches to a truncated Poisson PLD when both
 `truncated_batch_size` and `dataset_size` are set together (must be both
-or neither). This gives tighter privacy bounds than plain Poisson
-subsampling and matches production DP-SGD with a capped batch size.
+or neither). This is the truncated-Poisson PLD for capped batches; it does
+**not** improve privacy versus plain Poisson at the same rate—use it when
+training actually truncates draws.
 
 - `inner` (Gaussian | AdaClip): Base mechanism
 - `sample_rate` (float): Expected sampling rate, in (0, 1]

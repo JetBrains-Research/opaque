@@ -108,7 +108,7 @@ eps = proc.epsilon_at(delta=1e-5)
 | Amplification | Supported | Notes |
 |---------------|:---------:|-------|
 | `poisson()` | No | Use `cyclic_poisson()` instead |
-| `truncated_poisson()` | No | Not applicable to MF mechanisms |
+| `poisson()` (truncated) | No | Not applicable to MF mechanisms |
 | `cyclic_poisson()` | Yes | Decomposes into $\lceil n/b \rceil$ independent groups |
 
 ### b-min-sep subsampling (`b_min_sep`)

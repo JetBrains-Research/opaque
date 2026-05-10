@@ -115,10 +115,10 @@ eps = training.epsilon_at(delta=1e-5)
 ### `dpsgd_acc.poisson(inner, sample_rate, *, truncated_batch_size, dataset_size)` (truncated form)
 
 Setting both `truncated_batch_size` and `dataset_size` (must be both or
-neither) caps the per-step batch size to limit memory consumption, with
-the matching truncated-Poisson PLD. Tighter privacy bounds than plain
-Poisson on the same `sample_rate`; production DP-SGD with a fixed batch
-size.
+neither) selects the truncated-Poisson PLD for a per-step batch cap. That
+matches production runs with capped batches but is **no stricter** than plain
+Poisson at the same `sample_rate`—typically **weaker** (higher ε at the same
+noise) because truncation changes the subsampling distribution.
 
 ```python
 n = 50_000

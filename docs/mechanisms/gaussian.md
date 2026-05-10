@@ -70,19 +70,21 @@ training = step * 1000
 eps = training.epsilon_at(delta=1e-5)
 ```
 
-### Truncated Poisson subsampling (`truncated_poisson`)
+### Truncated Poisson subsampling (``poisson`` with a batch cap)
 
-Production variant that caps batch size. In real systems, memory is finite,
-so batches are capped at `batch_size_cap` even though Poisson sampling can
-produce larger batches. The truncation costs slightly more privacy than
-standard Poisson but gives predictable memory usage.
+Production variant that caps batch size. Capping stabilises batches and
+memory but **weakens** privacy versus plain Poisson at the same
+``sample_rate`` unless noise is recalibrated—use ``truncated_batch_size`` and
+``dataset_size`` together on :func:`opaque.dpsgd.accounting.poisson`.
 
 ```python
 n = 50_000
 batch = 256
-step = dpsgd_acc.truncated_poisson(
-    dpsgd_acc.gaussian(1.0), sample_rate=batch / n,
-    batch_size_cap=batch, dataset_size=n,
+step = dpsgd_acc.poisson(
+    dpsgd_acc.gaussian(1.0),
+    batch / n,
+    truncated_batch_size=batch,
+    dataset_size=n,
 )
 training = step * 1000
 eps = training.epsilon_at(delta=1e-5)

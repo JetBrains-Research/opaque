@@ -85,8 +85,11 @@ sample rates, the standard deviation is roughly `sqrt(expected_batch_size)`.
 
 Use :class:`~opaque.dpsgd.sampling.PoissonSubsampler` with
 ``truncated_batch_size`` set. When a Poisson draw exceeds that cap, a
-uniform random subset of the selected indices is kept. This tightens
-privacy accounting (``dpsgd_acc.truncated_poisson``) and caps memory.
+uniform random subset of the selected indices is kept. That caps batch
+size (more stable training and memory) but **weakens** privacy relative to
+plain Poisson at the same ``sample_rate``—account with
+``dpsgd_acc.poisson(..., truncated_batch_size=..., dataset_size=...)`` so the
+PLD matches the cap.
 
 ```python
 from opaque.dpsgd.sampling import PoissonSubsampler
@@ -108,13 +111,13 @@ loader = data.DataLoader(dataset, batch_sampler=sampler)
 |-----------|------|-------------|
 | `truncated_batch_size` | `int` | Upper bound on batch size |
 
-Privacy accounting uses `dpsgd_acc.truncated_poisson` to match:
+Privacy accounting (truncated form of ``poisson``):
 
 ```python
-step = dpsgd_acc.truncated_poisson(
+step = dpsgd_acc.poisson(
     dpsgd_acc.gaussian(noise_multiplier),
-    sample_rate=batch_size / dataset_size,
-    batch_size_cap=batch_size,
+    batch_size / dataset_size,
+    truncated_batch_size=batch_size,
     dataset_size=dataset_size,
 )
 training = step * num_steps
@@ -417,14 +420,15 @@ grads_mb, state_mb = grad_fn_mb(params, batch_256, state=state_mb)
 | Sampler | Batch size | Privacy | Use case |
 |---------|-----------|---------|----------|
 | `PoissonSubsampler` | Variable | Standard amplification | Research, general use |
-| `PoissonSubsampler` + ``truncated_batch_size`` | Bounded above | Tighter (up to 20%) | Production, memory-constrained |
+| `PoissonSubsampler` + ``truncated_batch_size`` | Bounded above | Weaker than plain Poisson (same ``sample_rate``) | Production, stable batch sizes / memory |
 | `PoissonSampler` (``opaque.dpftrl``) | Variable | ``ftrl_acc.poisson`` | DP-FTRL; ``bands=1`` or cyclic ``bands>1`` |
 | `BallsInBinsSampler` | Fixed (deterministic) | Balls-in-bins amplification | λCGD, BISR, BLT |
 | `SequentialBatchSampler` | Fixed (deterministic) | No amplification | BLT (pre-shuffled dataset) |
 
 For most DP-SGD workloads, `PoissonSubsampler` is sufficient.
-Adding ``truncated_batch_size`` is a reasonable upgrade when you want tighter
-privacy bounds or need predictable batch sizes. For DP-FTRL, use
+Use ``truncated_batch_size`` when you need **capped** batch sizes; expect
+**worse** privacy than plain Poisson at the same ``sample_rate`` unless you
+recalibrate noise. For DP-FTRL, use
 ``opaque.dpftrl.sampling.PoissonSampler`` (``bands`` selects identity vs cyclic
 participation). `BallsInBinsSampler` and
 `SequentialBatchSampler` are used with matrix-factorization mechanisms

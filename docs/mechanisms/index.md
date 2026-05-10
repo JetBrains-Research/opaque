@@ -62,7 +62,7 @@ of correlated noise and are willing to fix the training length in advance.
 Subsampling amplification reduces per-step privacy cost. Not all mechanisms
 support all amplification types:
 
-| Mechanism | `poisson()` | `truncated_poisson()` | `cyclic_poisson()` | `balls_in_bins()` |
+| Mechanism | `poisson()` (plain) | `poisson()` (truncated) | `cyclic_poisson()` | `balls_in_bins()` |
 |-----------|:-----------:|:---------------------:|:-------------------:|:-----------------:|
 | Gaussian | Yes | Yes | — | Yes |
 | BandMF | — | — | Yes | — |
@@ -73,7 +73,9 @@ support all amplification types:
 
 - **`poisson()`**: Standard Poisson subsampling. Each example included
   independently with probability $q$.
-- **`truncated_poisson()`**: Poisson with a batch-size cap.
+- **`poisson()` (truncated)**: Same factory with ``truncated_batch_size`` and
+  ``dataset_size`` set; caps batches (stabler sizes) with weaker privacy than
+  plain Poisson at the same rate unless noise is recalibrated.
 - **`cyclic_poisson()`**: Cyclic decomposition specific to BandMF. Decomposes
   $n$ steps into $\lceil n/b \rceil$ independent groups.
 - **`balls_in_bins()`**: Random-partition amplification. Each epoch, examples
