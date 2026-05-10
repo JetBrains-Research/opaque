@@ -1,20 +1,30 @@
-"""DP-SGD-specific clipping mechanisms: adaptive and AUTO-S.
+"""DP-SGD-specific clipping: adaptive thresholding.
 
 Headline factories:
 
 - :func:`adaptive_clipped_grad` — adaptive gradient clipping (Andrew et al. 2021)
-- :func:`auto_clipped_grad` — AUTO-S smooth-scaled gradient clipping (Bu et al. 2023)
 
-Power-user :func:`auto_clipped_fun` (function-level AUTO-S) lives in
-:mod:`opaque.dpsgd.clipping.fun`.
+The adaptive threshold drifts across steps based on the noisy clipping
+rate, which violates the constant per-step sensitivity assumption that
+matrix-factorization privacy proofs rely on; adaptive clipping is therefore
+exclusive to DP-SGD.
+
+AUTO-S clipping (:func:`auto_clipped_grad`, Bu et al. 2023) lives in
+:mod:`opaque.clipping` because its per-record sensitivity bound is
+constant and data-independent; that makes it interchangeable with fixed
+clipping under both DP-SGD's Gaussian mechanism and DP-FTRL's
+matrix-factorization mechanisms.  :func:`auto_clipped_grad`,
+:func:`opaque.clipping.fun.auto_clipped_fun`, and the AUTO-S state / aux
+dataclasses are re-exported here for backward compatibility.
 
 State and auxiliary dataclasses (``AdaptiveClipState``,
-``AdaptiveClippedGradAux``, ``AutoClipState``, ``AutoClippedFunAux``,
-``AutoClippedGradAux``) live in :mod:`opaque.dpsgd.clipping.types`.
+``AdaptiveClippedGradAux``, plus the re-exported ``AutoClipState``,
+``AutoClippedFunAux``, ``AutoClippedGradAux``) live in
+:mod:`opaque.dpsgd.clipping.types`.
 """
 
+from opaque.clipping import auto_clipped_grad
 from opaque.dpsgd.clipping._adaptive import adaptive_clipped_grad
-from opaque.dpsgd.clipping._auto import auto_clipped_grad
 
 import opaque.dpsgd.clipping._distributed  # noqa: F401  (registers sync handlers)
 

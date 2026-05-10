@@ -1,17 +1,18 @@
 """Public type definitions for :mod:`opaque.dpsgd.clipping`.
 
-Re-exports the adaptive- and AUTO-S clipping state and auxiliary
-dataclasses for type annotations.
+Re-exports the adaptive clipping state and auxiliary dataclasses for type
+annotations.  AUTO-S types now live in :mod:`opaque.clipping.types`; they
+are re-exported here for backward compatibility.
 """
 
 from __future__ import annotations
 
-from opaque.dpsgd.clipping._adaptive import AdaptiveClippedGradAux, AdaptiveClipState
-from opaque.dpsgd.clipping._auto import (
+from opaque.clipping.types import (
     AutoClippedFunAux,
     AutoClippedGradAux,
     AutoClipState,
 )
+from opaque.dpsgd.clipping._adaptive import AdaptiveClippedGradAux, AdaptiveClipState
 
 __all__ = [
     "AdaptiveClipState",

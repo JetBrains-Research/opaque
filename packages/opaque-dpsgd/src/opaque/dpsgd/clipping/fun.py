@@ -1,21 +1,17 @@
-"""Power-user DP-SGD clipping building blocks.
+"""Backward-compat shim: AUTO-S function-level scaling moved to
+:mod:`opaque.clipping.fun`.
 
-Mirrors :mod:`opaque.clipping.fun`: this submodule exposes lower-level
-``*_fun`` clipping primitives for users implementing custom per-example
-DP-SGD clipping pipelines.  The headline factories
-(``adaptive_clipped_grad``, ``auto_clipped_grad``) live in
-:mod:`opaque.dpsgd.clipping`.
-
-- :func:`auto_clipped_fun` — AUTO-S smooth scaling on arbitrary
-  per-example function outputs (the function-level analogue of
-  ``auto_clipped_grad``).
-
-These are stable, supported public API; they live one level deeper to keep
-the headline surface concise.
+This submodule used to host :func:`auto_clipped_fun`; the canonical home
+is now :mod:`opaque.clipping.fun` (AUTO-S is algorithm-agnostic — its
+per-record sensitivity bound is constant, so it composes with both
+DP-SGD's Gaussian mechanism and DP-FTRL's matrix-factorization
+mechanisms).  This module re-exports :func:`auto_clipped_fun` so existing
+``from opaque.dpsgd.clipping.fun import auto_clipped_fun`` imports keep
+working.
 """
 
 from __future__ import annotations
 
-from opaque.dpsgd.clipping._auto import auto_clipped_fun
+from opaque.clipping.fun import auto_clipped_fun
 
 __all__ = ["auto_clipped_fun"]

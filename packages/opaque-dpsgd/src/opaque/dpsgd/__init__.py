@@ -1,16 +1,20 @@
 """Opaque DP-SGD: Differentially Private SGD mechanisms.
 
 Gaussian / truncated-Gaussian noise, adaptive and AUTO-S clipping, and the
-standard + truncated Poisson samplers.
-Fixed-clipping primitives used by this package live in
-:mod:`opaque.clipping`; functional optimizers (including the universal
-``adamw`` with DP bias-correction and private second-moment paths) live in
+standard + truncated Poisson samplers.  Fixed-clipping and AUTO-S primitives
+used by this package live in :mod:`opaque.clipping` (AUTO-S is algorithm-agnostic
+— its per-record sensitivity bound is constant, so it composes with DP-FTRL's
+matrix-factorization mechanisms in the same way it composes with the Gaussian
+mechanism here).  Functional optimizers (including the universal ``adamw`` with
+DP bias-correction and private second-moment paths) live in
 :mod:`opaque.optimizers`.
 
-State / aux dataclasses (``AdaptiveClipState``, ``AdaptiveClippedGradAux``,
-``AutoClipState``, ``AutoClippedFunAux``, ``AutoClippedGradAux``) live in
-:mod:`opaque.dpsgd.clipping.types`.  ``GaussianNoiseState`` lives in
-:mod:`opaque.dpsgd.noise.types`.
+DP-SGD-specific state / aux dataclasses (``AdaptiveClipState``,
+``AdaptiveClippedGradAux``) live in :mod:`opaque.dpsgd.clipping.types`,
+which also re-exports the cross-cutting ``AutoClipState`` /
+``AutoClippedFunAux`` / ``AutoClippedGradAux`` for backward compatibility
+(canonical home: :mod:`opaque.clipping.types`).  ``GaussianNoiseState``
+lives in :mod:`opaque.dpsgd.noise.types`.
 
 The :mod:`opaque.dpsgd.accounting` subpackage (DP-SGD-specific privacy
 accounting factories, requires ``opaque-accounting``) is **lazy-imported**:
@@ -63,9 +67,9 @@ __all__ = [
     "clipping",
     "noise",
     "sampling",
-    # Clipping (DP-SGD-specific; fixed-clipping at opaque.clipping)
+    # Clipping (fixed and AUTO-S clipping live at opaque.clipping)
     "adaptive_clipped_grad",
-    "auto_clipped_grad",
+    "auto_clipped_grad",  # re-exported from opaque.clipping for back-compat
     # Noise mechanisms
     "gaussian_noise",
     "truncated_gaussian_noise",

@@ -1,8 +1,10 @@
 # Gradient Clipping
 
 The `opaque.clipping` module provides algorithm-agnostic per-example
-gradient clipping primitives. DP-SGD-specific variants (adaptive, AUTO-S)
-live in `opaque.dpsgd.clipping`.
+gradient clipping primitives — both fixed-threshold clipping and AUTO-S
+smooth scaling. The DP-SGD-specific `adaptive_clipped_grad` (whose
+threshold drifts across steps and is therefore incompatible with MF
+privacy proofs) lives in `opaque.dpsgd.clipping`.
 
 ## Overview
 
@@ -11,13 +13,13 @@ differential privacy.
 
 ### Clipping Functions
 
-1. **`clipped_grad()`** — High-level API: differentiates, clips, and sums gradients.
-2. **`clipped_fun()`** — Clip and sum arbitrary function outputs (PyTrees).
-3. **`adaptive_clipped_grad()`** — Adaptive clipping (Andrew et al. 2021) with automatic threshold tuning.
-4. **`auto_clipped_grad()`** — AUTO-S (Bu et al. NeurIPS 2023) automatic per-example gradient scaling.
-5. **`auto_clipped_fun()`** — AUTO-S for arbitrary function outputs.
-6. **`clip_pytree()`** — Low-level: clip an existing PyTree of gradients.
-7. **`auto_scale_pytree()`** — Low-level: AUTO-S scale an existing PyTree.
+1. **`clipped_grad()`** ([`opaque.clipping`](../api/clipping.md)) — High-level API: differentiates, clips, and sums gradients.
+2. **`clipped_fun()`** ([`opaque.clipping.fun`](../api/clipping.md)) — Clip and sum arbitrary function outputs (PyTrees).
+3. **`auto_clipped_grad()`** ([`opaque.clipping`](../api/clipping.md)) — AUTO-S (Bu et al. NeurIPS 2023) automatic per-example gradient scaling. Constant per-record sensitivity ⇒ composes with both DP-SGD's Gaussian mechanism and DP-FTRL's matrix-factorization mechanisms.
+4. **`auto_clipped_fun()`** ([`opaque.clipping.fun`](../api/clipping.md)) — AUTO-S for arbitrary function outputs.
+5. **`adaptive_clipped_grad()`** ([`opaque.dpsgd.clipping`](../api/clipping.md)) — Adaptive clipping (Andrew et al. 2021) with automatic threshold tuning; DP-SGD-only.
+6. **`clip_pytree()`** ([`opaque.clipping.fun`](../api/clipping.md)) — Low-level: clip an existing PyTree of gradients.
+7. **`auto_scale_pytree()`** ([`opaque.clipping.fun`](../api/clipping.md)) — Low-level: AUTO-S scale an existing PyTree.
 
 ### State Types
 
