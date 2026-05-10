@@ -40,11 +40,13 @@ plugins:
       handlers:
         python:
           paths:
-            - packages/opaque-core/src
+            - packages/opaque-base/src
+            - packages/opaque-engine/src
+            - packages/opaque-optimizers/src
             - packages/opaque-dpsgd/src
             - packages/opaque-dpftrl/src
             - packages/opaque-auditing/src
-            - packages/opaque-accounting
+            - packages/opaque-accounting/src
             - packages/opaque-patches/src
             - packages/opaque-transformers/src
           options:

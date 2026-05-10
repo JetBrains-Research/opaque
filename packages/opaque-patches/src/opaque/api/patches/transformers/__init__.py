@@ -49,8 +49,14 @@ from opaque.api.patches.transformers._factory import (
     register_fused_add_rms_kind,
     register_rms_norm_kind,
 )
-from opaque.api.patches.transformers._family import family_name, make_apply_family_patches
-from opaque.api.patches.transformers._registry import register_family, supported_families
+from opaque.api.patches.transformers._family import (
+    family_name,
+    make_apply_family_patches,
+)
+from opaque.api.patches.transformers._registry import (
+    register_family,
+    supported_families,
+)
 from opaque.api.patches.transformers._router import apply_transformers_model_patches
 
 # Eagerly import built-in family modules so each one's import-time

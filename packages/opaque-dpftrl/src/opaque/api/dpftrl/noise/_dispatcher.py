@@ -22,7 +22,10 @@ import torch
 
 from opaque.types import PerGroup
 from opaque.types import ClippedPytree
-from opaque.api.engine.noise_allocation import paired_noise_stddevs, per_group_noise_stddev
+from opaque.api.engine.noise_allocation import (
+    paired_noise_stddevs,
+    per_group_noise_stddev,
+)
 from opaque.types import (
     NoisedPytree,
     SecondMomentClippingOutput,

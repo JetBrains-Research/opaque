@@ -38,7 +38,7 @@ acct2 = from_state_dict(Accountant(), flat)
 
 The same pattern applies to clip state, noise state, functional optimizer
 state, and any other value that flows through the DP training loop.  Custom
-types may register handlers with :func:`opaque.serialization.register_serialization_type`.
+types may register handlers with :func:`opaque.serialization.register_serializer`.
 
 ::: opaque.serialization
     options:

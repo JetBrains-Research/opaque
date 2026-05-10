@@ -15,7 +15,9 @@ from opaque.api.patches.transformers.components.cross_entropy import (
 )
 
 pytest.importorskip("triton")
-from opaque.api.patches.kernels.linear_cross_entropy import Opaque_LinearCrossEntropyLoss
+from opaque.api.patches.kernels.linear_cross_entropy import (
+    Opaque_LinearCrossEntropyLoss,
+)
 
 
 _KERNELS_AVAILABLE = (

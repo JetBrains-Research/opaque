@@ -22,9 +22,7 @@ import pathlib
 
 PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[1] / "packages"
 
-ACCOUNTING_FACADE_GLOBS = (
-    "packages/opaque-accounting/src/opaque/accounting/**/*.py",
-)
+ACCOUNTING_FACADE_GLOBS = ("packages/opaque-accounting/src/opaque/accounting/**/*.py",)
 
 # Per-stack factory roots — populated by phase 5.
 PER_STACK_FACTORY_GLOBS = (

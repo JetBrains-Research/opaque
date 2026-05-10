@@ -10,7 +10,10 @@ These are temporary shims until the corresponding fixes land in upstream
 PyTorch.
 """
 
-from opaque.api.patches.torch.runtime import apply_checkpoint_patch, is_checkpoint_patched
+from opaque.api.patches.torch.runtime import (
+    apply_checkpoint_patch,
+    is_checkpoint_patched,
+)
 
 __all__ = [
     "apply_checkpoint_patch",

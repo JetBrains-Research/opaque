@@ -31,8 +31,7 @@ def _tensor_load(template: torch.Tensor, sd: Mapping[str, Any]) -> torch.Tensor:
         return template
     if not isinstance(saved, torch.Tensor):
         raise TypeError(
-            f"state_dict value expected a torch.Tensor, "
-            f"got {type(saved).__name__}"
+            f"state_dict value expected a torch.Tensor, got {type(saved).__name__}"
         )
     return saved.to(dtype=template.dtype, device=template.device)
 

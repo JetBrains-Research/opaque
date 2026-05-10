@@ -12,7 +12,6 @@ from opaque.types import ClippedPytree
 from opaque.types import NoisedPytree
 
 from opaque.distributed import is_distributed, get_rank, get_world_size, sum_gradients
-from opaque.distributed import gradients as gradients_module
 from opaque.distributed.collectives import all_reduce, all_reduce_, barrier
 from opaque.distributed.gradients import (  # noqa: F401
     reduce_pytree,
@@ -27,6 +26,7 @@ from opaque.api.engine.distributed._state import (  # noqa: F401  (used in TestM
     reduce_scalar,
     sync_object,
 )
+
 # ``_reduced_metadata`` is a private helper exercised directly by the
 # tests below; reach for it via the impl-side path.
 from opaque.api.engine.distributed.gradients import (

@@ -48,7 +48,9 @@ def _drain_cache(tc) -> None:
 
 def test_transcript_cache_evicts_lru(monkeypatch):
     """Cache caps entries and drops LRU native handle *before* registering new."""
-    from opaque.api.accounting.dpftrl.amplification import _b_min_sep_transcript_cache as tc
+    from opaque.api.accounting.dpftrl.amplification import (
+        _b_min_sep_transcript_cache as tc,
+    )
 
     monkeypatch.delenv("OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES", raising=False)
     monkeypatch.setattr(tc, "_MAX_ENTRIES", 2)
@@ -101,7 +103,9 @@ def test_transcript_cache_evicts_lru(monkeypatch):
 
 def test_transcript_cache_evicts_for_byte_cap(monkeypatch):
     """Byte budget forces eviction even when entry count is below the cap."""
-    from opaque.api.accounting.dpftrl.amplification import _b_min_sep_transcript_cache as tc
+    from opaque.api.accounting.dpftrl.amplification import (
+        _b_min_sep_transcript_cache as tc,
+    )
 
     monkeypatch.setattr(tc, "_MAX_ENTRIES", 16)
     _drain_cache(tc)

@@ -69,7 +69,8 @@ Visit <http://localhost:8000> to view the docs.
 ```python
 from importlib.metadata import version
 
-print("opaque-core version:", version("opaque-core"))
+print("opaque-base version:", version("opaque-base"))
+print("opaque-engine version:", version("opaque-engine"))
 print("opaque-dpsgd version:", version("opaque-dpsgd"))
 ```
 

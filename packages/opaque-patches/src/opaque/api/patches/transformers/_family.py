@@ -34,7 +34,9 @@ from opaque.api.patches.transformers.components.attention import (
     vmap_eager_attention_forward,
     vmap_repeat_kv,
 )
-from opaque.api.patches.transformers.components.masking import apply_module_masking_patch
+from opaque.api.patches.transformers.components.masking import (
+    apply_module_masking_patch,
+)
 from opaque.api.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb
 
 

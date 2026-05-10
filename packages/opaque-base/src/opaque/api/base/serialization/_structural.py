@@ -34,9 +34,7 @@ def _is_named_tuple_instance(obj: Any) -> bool:
     return isinstance(obj, tuple) and hasattr(obj, "_fields")
 
 
-def walk_save(
-    state: Any, prefix: str, out: dict[str, Any], recurse: WalkSave
-) -> None:
+def walk_save(state: Any, prefix: str, out: dict[str, Any], recurse: WalkSave) -> None:
     """Save generic Python containers; opaque non-container leaves skip."""
     if dataclasses.is_dataclass(state) and not isinstance(state, type):
         for f in dataclasses.fields(state):
@@ -88,9 +86,7 @@ def walk_load(
             )
         )
     if isinstance(template, tuple):
-        return tuple(
-            recurse(v, sd, f"{prefix}[{i}]") for i, v in enumerate(template)
-        )
+        return tuple(recurse(v, sd, f"{prefix}[{i}]") for i, v in enumerate(template))
     if isinstance(template, list):
         return [recurse(v, sd, f"{prefix}[{i}]") for i, v in enumerate(template)]
     if isinstance(template, dict):

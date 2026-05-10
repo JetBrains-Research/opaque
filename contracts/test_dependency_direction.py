@@ -89,9 +89,7 @@ def test_dependency_direction() -> None:
             mods = _imports(path)
             for forbid in forbidden:
                 bad = sorted(
-                    m
-                    for m in mods
-                    if m == forbid or m.startswith(forbid + ".")
+                    m for m in mods if m == forbid or m.startswith(forbid + ".")
                 )
                 if bad:
                     rel = path.relative_to(PACKAGES_DIR.parent)

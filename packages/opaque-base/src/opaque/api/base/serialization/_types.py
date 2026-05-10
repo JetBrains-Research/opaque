@@ -25,9 +25,7 @@ class Serializer(Protocol):
 
     def state_dict(self, obj: Any) -> dict[str, Any]: ...
 
-    def from_state_dict(
-        self, template: Any, sd: Mapping[str, Any]
-    ) -> Any: ...
+    def from_state_dict(self, template: Any, sd: Mapping[str, Any]) -> Any: ...
 
 
 __all__ = [

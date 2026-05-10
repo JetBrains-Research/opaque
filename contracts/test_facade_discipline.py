@@ -71,9 +71,7 @@ FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
         "opaque/auditing/one_run/__init__.py",
     ),
     # Phase 1 — opaque-base.
-    "opaque-base": (
-        "opaque/serialization/__init__.py",
-    ),
+    "opaque-base": ("opaque/serialization/__init__.py",),
     # Phase 2 — opaque-engine.
     "opaque-engine": (
         "opaque/types.py",
@@ -95,9 +93,7 @@ FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
         "opaque/optimizers/types.py",
     ),
     # Phase 4 — opaque-accounting.
-    "opaque-accounting": (
-        "opaque/accounting/__init__.py",
-    ),
+    "opaque-accounting": ("opaque/accounting/__init__.py",),
     # Phase 6 — opaque-patches, opaque-transformers.
     "opaque-patches": (
         "opaque/patches/__init__.py",
@@ -107,9 +103,7 @@ FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
         "opaque/patches/transformers/__init__.py",
         "opaque/patches/transformers/runtime/__init__.py",
     ),
-    "opaque-transformers": (
-        "opaque/transformers/__init__.py",
-    ),
+    "opaque-transformers": ("opaque/transformers/__init__.py",),
 }
 
 
@@ -152,9 +146,7 @@ def _is_allowed_node(node: ast.stmt) -> bool:
     if isinstance(node, ast.Try):
         return (
             all(_is_allowed_node(s) for s in node.body)
-            and all(
-                _is_allowed_node(s) for h in node.handlers for s in h.body
-            )
+            and all(_is_allowed_node(s) for h in node.handlers for s in h.body)
             and all(_is_allowed_node(s) for s in node.orelse)
             and all(_is_allowed_node(s) for s in node.finalbody)
         )
@@ -166,9 +158,7 @@ def _is_allowed_node(node: ast.stmt) -> bool:
     return False
 
 
-def _collect_facade_files(
-    wheel: str, globs: tuple[str, ...]
-) -> list[pathlib.Path]:
+def _collect_facade_files(wheel: str, globs: tuple[str, ...]) -> list[pathlib.Path]:
     src_dir = PACKAGES_DIR / wheel / "src"
     if not src_dir.exists():
         return []

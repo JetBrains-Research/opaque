@@ -479,7 +479,9 @@ class TestSyncAdaptiveClipStateAllEmpty:
 
 class TestSyncAdaptiveClippedGradAux:
     def test_empty_grad_norms_passthrough(self):
-        from opaque.api.dpsgd.clipping._distributed import sync_adaptive_clipped_grad_aux
+        from opaque.api.dpsgd.clipping._distributed import (
+            sync_adaptive_clipped_grad_aux,
+        )
 
         aux = AdaptiveClippedGradAux(
             loss_values=torch.empty(0),

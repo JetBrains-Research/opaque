@@ -36,7 +36,11 @@ from opaque.api.accounting.core._budgets import (
     RiskBudget,
 )
 from opaque.api.accounting.core.calibration import CalibrateResult
-from opaque.api.accounting.core.composition.types import CachedProcess, Composed, Repeated
+from opaque.api.accounting.core.composition.types import (
+    CachedProcess,
+    Composed,
+    Repeated,
+)
 from opaque.api.accounting.core.discretization import DiscretizationConfig
 from opaque.api.accounting.core.mechanisms.types import (
     EpsDelta,
