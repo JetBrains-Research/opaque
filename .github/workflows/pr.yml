@@ -151,6 +151,27 @@ jobs:
             exit 1
           fi
 
+      - name: No opaque.api.* leakage in user-facing docs/examples
+        run: |
+          # The opaque.api.* contributor namespace is documented only under
+          # docs/extending/ and may be referenced in CONTRIBUTING.md / AGENTS.md.
+          # Concrete opaque.api.<module> paths must not appear in user-guide,
+          # reference, getting-started, mechanisms, tutorials, examples, or README.
+          targets=(
+            docs/user-guide
+            docs/reference
+            docs/getting-started
+            docs/mechanisms
+            docs/tutorials
+            examples
+            README.md
+          )
+          if rg -n 'opaque\.api\.[a-z_][a-z_0-9]*' "${targets[@]}"; then
+            echo "ERROR: opaque.api.* paths must not appear in user-facing docs/examples."
+            echo "       Document the contributor surface only under docs/extending/."
+            exit 1
+          fi
+
       - name: Import all public namespaces
         run: |
           uv run python -c "import opaque.api.engine.clipping, opaque.dpsgd.clipping, opaque.dpftrl.clipping, opaque.random, opaque.pytree, opaque.types, opaque.functional, opaque.optimizers, opaque.scheduling, opaque.profiling, opaque.distributed, opaque.serialization, opaque.dpsgd, opaque.dpsgd.sampling, opaque.dpftrl, opaque.auditing, opaque.patches, opaque.patches.kernels, opaque.patches.torch, opaque.patches.transformers, opaque.transformers, opaque.accounting; print('OK')"
