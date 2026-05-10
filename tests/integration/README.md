@@ -1,8 +1,8 @@
 # tests/integration/
 
-Cross-wheel integration tests that don't fit any single wheel's
-dependency cone. The full workspace install (`uv sync --all-packages
---extra all`) brings in every wheel, so the imports always resolve when
+End-to-end integration tests that exercise multiple opaque wheels
+together. The full workspace install (`uv sync --all-packages --extra
+all`) brings in every wheel, so the imports always resolve when
 running locally or in CI.
 
 These tests are **not** shipped inside any wheel's tarball.
@@ -11,48 +11,53 @@ These tests are **not** shipped inside any wheel's tarball.
 
 ```
 tests/integration/
-├── dpsgd_dpftrl/           — DP-SGD ↔ DP-FTRL cross-stack tests
-│   ├── accounting/
-│   ├── distributed/
-│   └── noise/
-└── patches/                — patches × DP pipeline integration smoke tests
-    ├── test_dpsgd_pipeline.py
-    └── test_dpftrl_pipeline.py
+├── README.md
+├── test_dpsgd_pipeline.py   — full DP-SGD step (clip → gaussian_noise → update)
+│                              on a patched LoRA model. Synthetic + Qwen2
+│                              variants in one file.
+├── test_dpftrl_pipeline.py  — full DP-FTRL step (clip → mf_noise → update)
+│                              on a patched LoRA model. Synthetic + Qwen2.
+└── dpsgd_dpftrl/            — DP-SGD ↔ DP-FTRL cross-stack tests
+    ├── accounting/          — composing per-stack accountants and round-tripping
+    │                          mixed processes through opaque.serialization
+    ├── distributed/         — DDP + DP step. CUDA-marked.
+    └── noise/               — comparing band-MF / mf_noise vs the DP-SGD
+                                Gaussian baseline on the same inputs
 ```
 
 ## What lives here vs. in a wheel's `tests/`
 
 A test belongs in `packages/<wheel>/tests/` when every package it
 imports is in `<wheel>`'s transitive dep cone — see
-`tests/contracts/test_test_placement.py`.
+`tests/contracts/test_test_placement.py`. That covers the vast majority
+of tests.
 
-Examples:
+A test belongs here when it imports across two or more wheels with
+**mutual non-dependency**, or when it exercises the end-to-end DP
+pipeline (clipping + noise + optimizer + patches all in one).
 
-- A patches test that does only `clipped_grad` (engine) — lives in
-  `packages/opaque-patches/tests/` (patches depends on engine).
-- A DP-FTRL test that exercises the MF noise mechanism alone — lives in
-  `packages/opaque-dpftrl/tests/`.
+Patches are part of the framework's normal usage, so applying them in
+an integration test isn't reason on its own to call it a "patches
+test" — it's still a DP-pipeline test.
 
-A test belongs in `tests/integration/` when it imports across two or
-more wheels with **mutual non-dependency**:
+## Markers
 
-- `dpsgd_dpftrl/` — neither dpsgd nor dpftrl depends on the other; the
-  test exercises both.
-- `patches/test_dpsgd_pipeline.py` — patches and dpsgd are sibling wheels;
-  patches doesn't depend on dpsgd. The test exercises a full DP-SGD step
-  (clipping + ``gaussian_noise`` + manual update) on a patched HF LoRA
-  model.
-- `patches/test_dpftrl_pipeline.py` — symmetric for DP-FTRL
-  (``mf_noise`` with identity strategy).
+- **No marker**: synthetic-config integration tests run in the PR gate
+  (CPU + MPS).
+- **`slow`**: real-HF integration tests download weights from HF Hub on
+  first run; excluded from the PR gate, run on push to main.
+- **`cuda`**: distributed / multi-GPU tests; auto-skip on hosts without
+  CUDA. The `dpsgd_dpftrl/distributed/` tests use this marker.
 
 ## Discovery
 
 Pytest picks these up automatically: the root `pyproject.toml`
-`testpaths` includes `tests`. Run them along with the rest of the
-suite or in isolation:
+`testpaths` is `["packages", "tests"]`. Run them along with the rest of
+the suite or in isolation:
 
 ```bash
-uv run pytest tests/integration/
-uv run pytest tests/integration/patches/
-uv run pytest tests/integration/dpsgd_dpftrl/
+uv run pytest tests/integration/                         # everything not slow / cuda
+uv run pytest tests/integration/ -m slow                 # slow tests (HF downloads)
+uv run pytest tests/integration/ -m cuda                 # CUDA tests (multi-GPU DDP)
+uv run pytest tests/integration/dpsgd_dpftrl/            # cross-stack only
 ```
