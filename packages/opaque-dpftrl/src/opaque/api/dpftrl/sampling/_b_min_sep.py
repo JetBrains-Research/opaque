@@ -33,7 +33,6 @@ class BMinSepSampler(Sampler):
         sampling_prob: Paper's ``p`` in ``(0, 1]`` (per-iteration inclusion
             probability for each eligible example).
         n_steps: Number of batches to yield.
-        truncated_batch_size: Optional cap on batch size.
         key: RNG key for reproducibility.
 
     Note:
@@ -49,7 +48,6 @@ class BMinSepSampler(Sampler):
         bands: int,
         sampling_prob: float,
         n_steps: int,
-        truncated_batch_size: int | None = None,
         *,
         key: RngKey,
     ):
@@ -62,17 +60,12 @@ class BMinSepSampler(Sampler):
             raise ValueError(f"sampling_prob must be in (0, 1], got {sampling_prob}")
         if n_steps < 1:
             raise ValueError(f"n_steps must be >= 1, got {n_steps}")
-        if truncated_batch_size is not None and truncated_batch_size < 1:
-            raise ValueError(
-                f"truncated_batch_size must be >= 1, got {truncated_batch_size}"
-            )
 
         self.num_examples = len(data_source)
         self.data_source = data_source
         self.bands = bands
         self.sampling_prob = sampling_prob
         self.n_steps = n_steps
-        self.truncated_batch_size = truncated_batch_size
         self.generator = np.random.default_rng(key.seed)
 
         # Warm-start initial cooldown (Algorithm 2, lines 1–2).
@@ -105,8 +98,6 @@ class BMinSepSampler(Sampler):
                 batch_indices: list[int] = []
             else:
                 sample_size = self.generator.binomial(n=n_elig, p=self.sampling_prob)
-                if self.truncated_batch_size is not None:
-                    sample_size = min(sample_size, self.truncated_batch_size)
                 if sample_size > 0:
                     pos = self.generator.choice(
                         n_elig, size=sample_size, replace=False, shuffle=False

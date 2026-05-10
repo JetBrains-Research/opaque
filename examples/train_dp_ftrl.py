@@ -461,6 +461,15 @@ def parse_args():
         help="BandMF data subsampling: poisson (default) or b_min_sep (Dong & Ganesh 2026).",
     )
     dp_g.add_argument(
+        "--truncated-batch-size",
+        type=int,
+        default=None,
+        help="Optional cap on per-step batch size (truncated Poisson). "
+        "Only supported with --mechanism identity; combining it with other "
+        "mechanisms or with --band-mf-sampling b_min_sep raises at accounting "
+        "construction time.",
+    )
+    dp_g.add_argument(
         "--mc-samples",
         type=int,
         default=100_000,
@@ -821,6 +830,7 @@ def main():
                     sample_rate=sampling_prob,
                     bands=args.bands,
                     n_steps=expected_steps_per_epoch,
+                    truncated_batch_size=args.truncated_batch_size,
                     key=fold_in(key(args.seed), epoch),
                 )
         else:
@@ -874,6 +884,7 @@ def main():
                 train_dataset,
                 sample_rate=sample_rate,
                 n_steps=expected_steps_per_epoch,
+                truncated_batch_size=args.truncated_batch_size,
                 key=fold_in(key(args.seed), epoch),
             )
 
@@ -1118,7 +1129,15 @@ def main():
             )
             if args.band_mf_sampling == "poisson":
                 return dpftrl_acc.poisson(
-                    mechanism, sample_rate=sampling_prob, n_steps=total_steps
+                    mechanism,
+                    sample_rate=sampling_prob,
+                    n_steps=total_steps,
+                    truncated_batch_size=args.truncated_batch_size,
+                    dataset_size=(
+                        global_train_size
+                        if args.truncated_batch_size is not None
+                        else None
+                    ),
                 )
             return dpftrl_acc.b_min_sep(
                 mechanism,
@@ -1175,6 +1194,12 @@ def main():
                 dpftrl_acc.identity_mf(nm),
                 sample_rate=sample_rate,
                 n_steps=total_steps,
+                truncated_batch_size=args.truncated_batch_size,
+                dataset_size=(
+                    global_train_size
+                    if args.truncated_batch_size is not None
+                    else None
+                ),
             )
     elif args.mechanism == "none":
 

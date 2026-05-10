@@ -226,6 +226,87 @@ class TestBallsInBinsIdentity:
 # ---------------------------------------------------------------------------
 
 
+class TestTruncatedPoissonIdentity:
+    """``ftrl_acc.poisson(identity_mf(...), ..., truncated_batch_size=, dataset_size=)``."""
+
+    def test_rejects_unpaired_truncated_batch_size(self):
+        with pytest.raises(ValueError, match="truncated_batch_size and dataset_size"):
+            ftrl_acc.poisson(
+                ftrl_acc.identity_mf(1.0),
+                sample_rate=0.01,
+                n_steps=10,
+                truncated_batch_size=64,
+            )
+
+    def test_rejects_unpaired_dataset_size(self):
+        with pytest.raises(ValueError, match="truncated_batch_size and dataset_size"):
+            ftrl_acc.poisson(
+                ftrl_acc.identity_mf(1.0),
+                sample_rate=0.01,
+                n_steps=10,
+                dataset_size=10_000,
+            )
+
+    def test_rejects_truncated_batch_size_below_one(self):
+        with pytest.raises(ValueError, match="truncated_batch_size must be >= 1"):
+            ftrl_acc.poisson(
+                ftrl_acc.identity_mf(1.0),
+                sample_rate=0.01,
+                n_steps=10,
+                truncated_batch_size=0,
+                dataset_size=10_000,
+            )
+
+    def test_rejects_dataset_size_below_one(self):
+        with pytest.raises(ValueError, match="dataset_size must be >= 1"):
+            ftrl_acc.poisson(
+                ftrl_acc.identity_mf(1.0),
+                sample_rate=0.01,
+                n_steps=10,
+                truncated_batch_size=64,
+                dataset_size=0,
+            )
+
+    def test_rejects_band_mf_with_truncation(self):
+        with pytest.raises(ValueError, match="IdentityMf inner"):
+            ftrl_acc.poisson(
+                ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0, 0.5)),
+                sample_rate=0.01,
+                n_steps=10,
+                truncated_batch_size=64,
+                dataset_size=10_000,
+            )
+
+    def test_pld_matches_self_composed_truncated_poisson_gaussian(self):
+        """Truncated path is the per-step PLD composed ``n_steps`` times."""
+        nm, p, T = 1.1, 0.01, 200
+        cap, n = 64, 50_000
+        proc = ftrl_acc.poisson(
+            ftrl_acc.identity_mf(nm),
+            sample_rate=p,
+            n_steps=T,
+            truncated_batch_size=cap,
+            dataset_size=n,
+        )
+        cfg = get_discretization()
+        ref = _native.truncated_poisson_gaussian_pld(
+            nm, p, cap, n, cfg.to_native()
+        ).self_compose(T)
+        assert math.isclose(
+            proc.epsilon_at(_DELTA), ref.epsilon_at(_DELTA), rel_tol=1e-9
+        )
+
+    def test_truncated_finite_and_positive(self):
+        eps = ftrl_acc.poisson(
+            ftrl_acc.identity_mf(1.1),
+            sample_rate=0.01,
+            n_steps=200,
+            truncated_batch_size=64,
+            dataset_size=50_000,
+        ).epsilon_at(_DELTA)
+        assert math.isfinite(eps) and eps > 0
+
+
 def test_identity_mf_calibrates_through_poisson():
     cal = acc.calibrate(
         acc.epsilon_budget(3.0, delta=_DELTA),

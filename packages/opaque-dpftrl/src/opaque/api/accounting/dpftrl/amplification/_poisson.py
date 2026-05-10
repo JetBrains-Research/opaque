@@ -7,7 +7,10 @@ For ``IdentityMf`` (encoder ``I``), ``bands == 1`` so every round is
 its own group — ``num_groups == n_steps``.
 
 The PLD is the ``num_groups``-fold composition of the per-group
-Poisson-Gaussian PLD.
+Poisson-Gaussian PLD.  When ``truncated_batch_size`` and
+``dataset_size`` are paired (``IdentityMf`` only), each group instead
+uses the truncated Poisson-Gaussian PLD — matching a per-step batch
+cap on the runtime sampler.
 
 References:
     - BandMF amplification: Choquette-Choo et al. (2023) https://arxiv.org/abs/2306.08153
@@ -31,14 +34,22 @@ _Inner = BandMf | IdentityMf
 
 
 @dataclass(frozen=True, slots=True)
-class MfPoisson(DpProcess):
+class PoissonMf(DpProcess):
     """Poisson-amplified MF mechanism — total privacy cost over ``n_steps``.
 
     For ``BandMf`` inner, ``num_groups = ceil(n_steps / bands)`` where
     ``bands = len(inner.coefficients)``.  For ``IdentityMf`` inner,
     ``num_groups = n_steps``.
 
-    Named ``MfPoisson`` (not ``Poisson``) to avoid a class-name collision
+    Plain Poisson when ``truncated_batch_size is None``; truncated
+    Poisson (capped batch) when ``truncated_batch_size`` and
+    ``dataset_size`` are set together.  Truncated Poisson is supported
+    only for ``IdentityMf`` (the per-step PLD reduces to the DP-SGD
+    truncated Poisson-Gaussian); ``BandMf`` is rejected because the
+    per-group population is the BandMF group of size ``|D| / bands``,
+    not the full dataset, and that analysis has not been vetted here.
+
+    Named ``PoissonMf`` (not ``Poisson``) to avoid a class-name collision
     with :class:`opaque.dpsgd.accounting.amplification.Poisson` in the
     serialization registry.  The user-facing factory is still
     :func:`poisson`.
@@ -47,6 +58,36 @@ class MfPoisson(DpProcess):
     inner: _Inner
     sample_rate: float
     n_steps: int
+    truncated_batch_size: int | None = None
+    dataset_size: int | None = None
+
+    def __post_init__(self):
+        # Validate truncation pairing here (not only in the factory) so
+        # direct construction and deserialization can't pass an unpaired
+        # ``(truncated_batch_size, dataset_size)`` into
+        # ``_native.truncated_poisson_gaussian_pld`` and fail at PLD time.
+        if (self.truncated_batch_size is None) != (self.dataset_size is None):
+            raise ValueError(
+                "PoissonMf: truncated_batch_size and dataset_size must be set "
+                "together (both None for plain Poisson, both set for truncated)."
+            )
+        if self.truncated_batch_size is not None:
+            if int(self.truncated_batch_size) < 1:
+                raise ValueError(
+                    "PoissonMf: truncated_batch_size must be >= 1, got "
+                    f"{self.truncated_batch_size}"
+                )
+            if int(self.dataset_size) < 1:
+                raise ValueError(
+                    f"PoissonMf: dataset_size must be >= 1, got {self.dataset_size}"
+                )
+            if not isinstance(self.inner, IdentityMf):
+                raise ValueError(
+                    "PoissonMf: truncated Poisson is only supported for "
+                    "IdentityMf inner (BandMf per-group truncation is not "
+                    "implemented). Use plain Poisson "
+                    "(truncated_batch_size=None) with BandMf."
+                )
 
     @functools.lru_cache(maxsize=8)
     def pld(
@@ -81,9 +122,19 @@ class MfPoisson(DpProcess):
         if effective_nm == 0:
             return _native.non_private_pld(config.to_native())
 
-        per_group_pld = _native.poisson_gaussian_pld(
-            effective_nm, self.sample_rate, config.to_native()
-        )
+        native_cfg = config.to_native()
+        if self.truncated_batch_size is not None:
+            per_group_pld = _native.truncated_poisson_gaussian_pld(
+                effective_nm,
+                self.sample_rate,
+                self.truncated_batch_size,
+                self.dataset_size,
+                native_cfg,
+            )
+        else:
+            per_group_pld = _native.poisson_gaussian_pld(
+                effective_nm, self.sample_rate, native_cfg
+            )
         return per_group_pld.self_compose(num_groups)
 
 
@@ -92,12 +143,22 @@ def poisson(
     sample_rate: float,
     *,
     n_steps: int,
-) -> MfPoisson:
+    truncated_batch_size: int | None = None,
+    dataset_size: int | None = None,
+) -> PoissonMf:
     """Poisson amplification for DP-FTRL.
 
     Whole-process accountant: returns a :class:`DpProcess` covering all
     ``n_steps`` training rounds.  Compose nothing externally with
     ``* num_steps``.
+
+    Plain Poisson when ``truncated_batch_size is None``; truncated
+    Poisson (capped batch) when ``truncated_batch_size`` and
+    ``dataset_size`` are both set.  Truncated Poisson is only supported
+    for ``IdentityMf`` inner — for ``BandMf`` it is rejected because the
+    per-group population (size ``|D| / bands``) doesn't match the
+    truncated Poisson-Gaussian PLD's assumption that Bernoulli draws
+    happen over a fixed dataset of ``dataset_size`` examples.
 
     Args:
         inner: ``BandMf`` (banded MF strategy) or ``IdentityMf``
@@ -106,13 +167,19 @@ def poisson(
         n_steps: Total number of training rounds.  For ``BandMf`` the
             cycle count is ``ceil(n_steps / bands)``; for ``IdentityMf``
             it equals ``n_steps``.
+        truncated_batch_size: Optional max batch-size cap; switches the
+            per-step analysis to truncated Poisson.  ``IdentityMf`` only.
+        dataset_size: Required when ``truncated_batch_size`` is set;
+            ``|D|``.
 
-    This accountant matches **uncapped** Poisson draws (per-group
-    Binomial counts), as produced by :class:`opaque.dpftrl.sampling.CyclicPoissonSampler`.
-    It does **not** model post-draw batch-size caps.
+    This accountant matches uncapped Poisson draws (per-group Binomial
+    counts) by default, as produced by
+    :class:`opaque.dpftrl.sampling.CyclicPoissonSampler`.  When
+    ``truncated_batch_size`` is provided (``IdentityMf`` only), it
+    matches the same sampler with its matching cap.
 
     Returns:
-        An :class:`MfPoisson` process.
+        A :class:`PoissonMf` process.
 
     Example::
 
@@ -133,6 +200,17 @@ def poisson(
             n_steps=1000,
         )
         eps = proc.epsilon_at(1e-5)
+
+        # MF identity with truncated Poisson (production batch cap)
+        n, batch = 50_000, 250
+        proc = ftrl_acc.poisson(
+            ftrl_acc.identity_mf(0.8),
+            sample_rate=batch / n,
+            n_steps=1000,
+            truncated_batch_size=batch,
+            dataset_size=n,
+        )
+        eps = proc.epsilon_at(1e-5)
     """
     match inner:
         case BandMf() | IdentityMf():
@@ -146,5 +224,13 @@ def poisson(
         raise ValueError(f"sample_rate must be in (0, 1], got {sample_rate}")
     if int(n_steps) < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
-
-    return MfPoisson(inner=inner, sample_rate=float(sample_rate), n_steps=int(n_steps))
+    # Pairing + per-field bounds + IdentityMf-only check on
+    # truncated_batch_size / dataset_size are validated in
+    # ``PoissonMf.__post_init__`` so direct construction stays safe.
+    return PoissonMf(
+        inner=inner,
+        sample_rate=float(sample_rate),
+        n_steps=int(n_steps),
+        truncated_batch_size=truncated_batch_size,
+        dataset_size=dataset_size,
+    )

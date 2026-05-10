@@ -11,6 +11,11 @@ step is ordinary Poisson subsampling—use this with ``identity_mf_strategy`` /
 ``identity_mf`` and ``ftrl_acc.poisson``.  If ``bands > 1``, set ``bands`` to
 match ``band_mf_strategy`` / ``BandMf``.
 
+Optional ``truncated_batch_size`` caps the realised per-step batch.  Pair with
+``ftrl_acc.poisson(..., truncated_batch_size=, dataset_size=)`` so the
+accounting matches the runtime cap; that combination is only supported for
+``IdentityMf`` (``bands == 1``).
+
 For distributed training, shard the dataset before constructing the
 sampler with ``opaque.distributed.local_shard`` and derive a per-rank
 key with ``opaque.random.fold_in(key, rank)``.
@@ -52,6 +57,11 @@ class CyclicPoissonSampler(Sampler):
             Poisson on the full dataset every step.
         n_steps: Total number of batches to yield.  Defaults to ``1``.
         partition_type: Partition strategy when ``bands > 1``.
+        truncated_batch_size: Optional cap on per-step batch size (truncated
+            Poisson; use matching accounting—privacy is weaker than uncapped
+            Poisson at the same ``sample_rate``).  Only the ``bands == 1`` /
+            ``IdentityMf`` combination is supported in
+            :func:`opaque.dpftrl.accounting.poisson`.
         key: RNG key for reproducibility.
 
     Example::
@@ -63,14 +73,9 @@ class CyclicPoissonSampler(Sampler):
         loader = DataLoader(dataset, batch_sampler=sampler)
 
     Note:
-        Batch sizes are variable (Poisson).  There is **no** batch-size cap
-        on this sampler: ``ftrl_acc.poisson`` accounting matches uncapped
-        Poisson draws only.  For capped batches, use DP-SGD's
-        :class:`opaque.dpsgd.sampling.PoissonSubsampler` with
-        ``dpsgd_acc.poisson(..., truncated_batch_size=, dataset_size=)``.
-
-        Expected batch size per step is ``|group| * sample_rate`` where
-        ``|group| = |D| / bands``.  Use with ``DataLoader``'s ``batch_sampler``.
+        Batch sizes are variable (Poisson).  Expected batch size per step is
+        ``|group| * sample_rate`` where ``|group| = |D| / bands``.  Use with
+        ``DataLoader``'s ``batch_sampler``.
     """
 
     def __init__(
@@ -80,6 +85,7 @@ class CyclicPoissonSampler(Sampler):
         bands: int = 1,
         n_steps: int = 1,
         partition_type: PartitionType = PartitionType.EQUAL_SPLIT,
+        truncated_batch_size: int | None = None,
         *,
         key: RngKey,
     ):
@@ -93,6 +99,10 @@ class CyclicPoissonSampler(Sampler):
             raise ValueError(f"bands must be >= 1, got {bands}")
         if n_steps < 1:
             raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+        if truncated_batch_size is not None and truncated_batch_size < 1:
+            raise ValueError(
+                f"truncated_batch_size must be >= 1, got {truncated_batch_size}"
+            )
 
         self.num_examples = len(data_source)
         self.generator = np.random.default_rng(key.seed)
@@ -112,18 +122,22 @@ class CyclicPoissonSampler(Sampler):
         self.bands = bands
         self.n_steps = n_steps
         self.partition_type = partition_type
+        self.truncated_batch_size = truncated_batch_size
 
     def __iter__(self) -> Iterator[list[int]]:
         """Yield Poisson batches.
 
         For each step, samples from group ``step % bands`` with inclusion
-        probability ``sample_rate`` per example.
+        probability ``sample_rate`` per example, optionally capped at
+        ``truncated_batch_size``.
         """
         for step in range(self.n_steps):
             group_idx = step % self.bands
             group = self.partition[group_idx]
 
             sample_size = self.generator.binomial(n=len(group), p=self.sample_rate)
+            if self.truncated_batch_size is not None:
+                sample_size = min(sample_size, self.truncated_batch_size)
 
             if sample_size > 0:
                 batch = self.generator.choice(
@@ -139,12 +153,12 @@ class CyclicPoissonSampler(Sampler):
 
     @property
     def expected_batch_size(self) -> float:
-        """Expected batch size: ``|group| * sample_rate``."""
+        """Expected batch size: ``|group| * sample_rate`` (before truncation)."""
         avg_group_size = self.num_examples / self.bands
         return avg_group_size * self.sample_rate
 
     @property
     def batch_size_variance(self) -> float:
-        """Variance of batch size (Poisson property)."""
+        """Variance of batch size (Poisson property; before truncation)."""
         avg_group_size = self.num_examples / self.bands
         return avg_group_size * self.sample_rate * (1 - self.sample_rate)

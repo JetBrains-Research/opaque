@@ -552,19 +552,13 @@ def parse_args():
         help="Microbatch size passed to clipped_grad/adaptive_clipped_grad (None=process full batch with vmap, faster but more memory; use 0 on CLI to mean None)",
     )
     dp_group.add_argument(
-        "--sampler",
-        type=str,
-        choices=["poisson", "truncated_poisson"],
-        default="poisson",
-        help="Sampling strategy: poisson (standard, variable batch size) "
-        "or truncated_poisson (batch capped at --max-batch-size for clipped memory)",
-    )
-    dp_group.add_argument(
-        "--max-batch-size",
+        "--truncated-batch-size",
         type=int,
         default=None,
-        help="Max batch size for truncated_poisson sampler (default: same as --batch-size). "
-        "Ignored for standard poisson.",
+        help="Optional cap on per-step batch size (truncated Poisson). "
+        "When set, the sampler caps each Poisson draw at this size and the "
+        "accountant switches to the matching truncated Poisson-Gaussian PLD. "
+        "Standard plain Poisson when omitted.",
     )
     dp_group.add_argument(
         "--noise-mechanism",
@@ -1099,8 +1093,7 @@ def main():
     # Poisson: each example independently sampled with probability sample_rate each step.
     # In parallel Poisson mode each rank samples independently from the full dataset,
     # so we divide by world_size to keep the global expected batch size = args.batch_size.
-    use_truncated_poisson = args.sampler == "truncated_poisson"
-    max_batch_size = args.max_batch_size or args.batch_size
+    truncated_batch_size = args.truncated_batch_size
     sample_rate = args.batch_size / global_train_size
     if use_parallel_poisson:
         sample_rate /= world_size
@@ -1110,9 +1103,9 @@ def main():
     print("\nPoisson sampling setup:")
     if use_parallel_poisson:
         print(f"  Mode: parallel_poisson (no shard, world_size={world_size})")
-    print(f"  Sampler: {args.sampler}")
-    if use_truncated_poisson:
-        print(f"  Max batch size (cap): {max_batch_size}")
+    print(f"  Sampler: poisson")
+    if truncated_batch_size is not None:
+        print(f"  Truncated batch size (cap): {truncated_batch_size}")
     print(f"  Sample rate (per rank): {sample_rate:.6f}")
     print(f"  Expected global batch size: {args.batch_size}")
     print(f"  Expected steps per epoch: ~{expected_steps_per_epoch}")
@@ -1337,11 +1330,11 @@ def main():
     # first-moment-only release.
 
     _unamplified = mechanism
-    if use_truncated_poisson:
+    if truncated_batch_size is not None:
         mechanism = lambda nm: dpsgd_acc.poisson(
             _unamplified(nm),
             sample_rate=sample_rate,
-            truncated_batch_size=max_batch_size,
+            truncated_batch_size=truncated_batch_size,
             dataset_size=global_train_size,
         )
     elif use_parallel_poisson:
@@ -1579,24 +1572,16 @@ def main():
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
         print("-" * 80)
-        print(f"Creating {args.sampler} sampler...")
+        print("Creating poisson sampler...")
 
         # Create sampler for this epoch
-        if use_truncated_poisson:
-            epoch_sampler = PoissonSubsampler(
-                train_dataset,
-                sample_rate=sample_rate,
-                truncated_batch_size=max_batch_size,
-                n_steps=expected_steps_per_epoch,
-                key=fold_in(key(args.seed), rank, epoch),
-            )
-        else:
-            epoch_sampler = PoissonSubsampler(
-                train_dataset,
-                sample_rate=sample_rate,
-                n_steps=expected_steps_per_epoch,
-                key=fold_in(key(args.seed), rank, epoch),
-            )
+        epoch_sampler = PoissonSubsampler(
+            train_dataset,
+            sample_rate=sample_rate,
+            truncated_batch_size=truncated_batch_size,
+            n_steps=expected_steps_per_epoch,
+            key=fold_in(key(args.seed), rank, epoch),
+        )
         print("Creating DataLoader...")
 
         # DataLoader with batch_sampler
@@ -1787,9 +1772,9 @@ def main():
 
     final_epsilon = accounting.epsilon_at(args.target_delta)
     print("\nPrivacy:")
-    if use_truncated_poisson:
+    if truncated_batch_size is not None:
         print(
-            f"  Accounting: truncated_poisson (cap={max_batch_size}, n={global_train_size})"
+            f"  Accounting: truncated_poisson (cap={truncated_batch_size}, n={global_train_size})"
         )
     elif use_parallel_poisson:
         print(f"  Accounting: parallel_poisson (world_size={world_size})")

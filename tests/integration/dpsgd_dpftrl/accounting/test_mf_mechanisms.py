@@ -7,7 +7,7 @@ import pytest
 
 import opaque.dpsgd.accounting as dpsgd_acc
 import opaque.dpftrl.accounting as ftrl_acc
-from opaque.dpftrl.accounting.amplification.types import MfPoisson
+from opaque.dpftrl.accounting.amplification.types import PoissonMf
 from opaque.api.accounting.core._base import DpProcess
 from opaque.dpftrl.accounting.mechanisms.types import BandMf, Blt
 
@@ -57,22 +57,22 @@ class TestBandMfConstructor:
 
 
 class TestFtrlPoissonDataclass:
-    """opaque.dpftrl.accounting MfPoisson frozen dataclass."""
+    """opaque.dpftrl.accounting PoissonMf frozen dataclass."""
 
     def test_fields(self):
         inner = BandMf(1.0, 1.0, coefficients=(0.9, 0.1))
-        proc = MfPoisson(inner, 0.01, n_steps=100)
+        proc = PoissonMf(inner, 0.01, n_steps=100)
         assert proc.inner is inner
         assert proc.sample_rate == pytest.approx(0.01)
         assert proc.n_steps == 100
 
     def test_frozen(self):
-        proc = MfPoisson(BandMf(1.0, 1.0, coefficients=(1.0,)), 0.01, n_steps=20)
+        proc = PoissonMf(BandMf(1.0, 1.0, coefficients=(1.0,)), 0.01, n_steps=20)
         with pytest.raises(FrozenInstanceError):
             proc.sample_rate = 0.5  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        proc = MfPoisson(BandMf(1.0, 1.0, coefficients=(1.0,)), 0.01, n_steps=20)
+        proc = PoissonMf(BandMf(1.0, 1.0, coefficients=(1.0,)), 0.01, n_steps=20)
         assert isinstance(proc, DpProcess)
 
     def test_pld_returns_valid(self):
@@ -123,7 +123,7 @@ class TestFtrlPoissonConstructor:
             sample_rate=0.01,
             n_steps=20,
         )
-        assert isinstance(proc, MfPoisson)
+        assert isinstance(proc, PoissonMf)
 
     def test_rejects_unsupported_inner(self):
         with pytest.raises(TypeError, match="BandMf or IdentityMf"):
@@ -201,6 +201,6 @@ class TestMfComposition:
         inner = ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0,))
         proc = ftrl_acc.poisson(inner, 0.01, n_steps=20)
 
-        assert isinstance(proc, MfPoisson)
+        assert isinstance(proc, PoissonMf)
         assert isinstance(proc.inner, BandMf)
         assert proc.inner.bands == 1
