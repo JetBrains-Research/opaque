@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "opaque-core"
 dynamic = ["version"]
-description = "Opaque shared primitives: clipping, random, functional, distributed, optimizers, scheduling"
+description = "Opaque optimizers (transitional shell — drains in phase 3 once opaque-optimizers ships)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
@@ -24,33 +24,15 @@ classifiers = [
 ]
 dependencies = [
     "opaque-base",
-    "numpy>=1.22",
+    "opaque-engine",
     "torch>=2.10.0",
-    "optree>=0.17.0",
     "torchopt>=0.7.3",
-]
-
-[tool.setuptools]
-# Single-file modules at the namespace root — ``find_packages`` only
-# discovers sub-packages (directories with ``__init__``), so listing
-# them here keeps the wheel correct.
-py-modules = [
-    "opaque.types",
-    "opaque.pytree",
-    "opaque._noise_allocation",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = [
-    "opaque._clipping*",
-    "opaque.random*",
-    "opaque.functional*",
-    "opaque.distributed*",
-    "opaque.scheduling*",
-    "opaque.serialization*",
     "opaque.optimizers*",
-    "opaque.profiling*",
 ]
 namespaces = true
 

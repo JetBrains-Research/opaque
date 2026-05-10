@@ -21,6 +21,7 @@ members = [
     "opaque-core",
     "opaque-dpftrl",
     "opaque-dpsgd",
+    "opaque-engine",
     "opaque-patches",
     "opaque-transformers",
 ]
@@ -2302,18 +2303,16 @@ source = { editable = "packages/opaque-base" }
 name = "opaque-core"
 source = { editable = "packages/opaque-core" }
 dependencies = [
-    { name = "numpy" },
     { name = "opaque-base" },
-    { name = "optree" },
+    { name = "opaque-engine" },
     { name = "torch" },
     { name = "torchopt" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "numpy", specifier = ">=1.22" },
     { name = "opaque-base", editable = "packages/opaque-base" },
-    { name = "optree", specifier = ">=0.17.0" },
+    { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "torchopt", specifier = ">=0.7.3" },
 ]
@@ -2354,6 +2353,24 @@ requires-dist = [
     { name = "opaque-core", editable = "packages/opaque-core" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "torchopt", specifier = ">=0.7.3" },
+]
+
+[[package]]
+name = "opaque-engine"
+source = { editable = "packages/opaque-engine" }
+dependencies = [
+    { name = "numpy" },
+    { name = "opaque-base" },
+    { name = "optree" },
+    { name = "torch" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "opaque-base", editable = "packages/opaque-base" },
+    { name = "optree", specifier = ">=0.17.0" },
+    { name = "torch", specifier = ">=2.10.0" },
 ]
 
 [[package]]

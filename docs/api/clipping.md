@@ -72,7 +72,7 @@ object. It auto-dispatches to the right function based on type:
 
 ## API Documentation
 
-::: opaque._clipping
+::: opaque.api.engine.clipping
     options:
       show_source: true
       heading_level: 2

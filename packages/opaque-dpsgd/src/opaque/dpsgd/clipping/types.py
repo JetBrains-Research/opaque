@@ -5,7 +5,7 @@ Includes adaptive (DP-SGD) and AUTO-S dataclasses used in type annotations.
 
 from __future__ import annotations
 
-from opaque._clipping.types import (
+from opaque.api.engine.clipping.types import (
     AutoClippedFunAux,
     AutoClippedGradAux,
     AutoClipState,

@@ -15,7 +15,7 @@ State and auxiliary dataclasses live in :mod:`opaque.dpsgd.clipping.types`.
 AUTO-S function-level helpers live in :mod:`opaque.dpsgd.clipping.fun`.
 """
 
-from opaque._clipping import auto_clipped_grad, clipped_grad, per_group
+from opaque.api.engine.clipping import auto_clipped_grad, clipped_grad, per_group
 from opaque.dpsgd.clipping._adaptive import adaptive_clipped_grad
 
 import opaque.dpsgd.clipping._distributed  # noqa: F401  (registers sync handlers)

@@ -11,7 +11,7 @@ import hashlib
 import json
 
 from opaque.distributed import is_distributed
-from opaque.distributed._state import (
+from opaque.api.engine.distributed._state import (
     assert_scalar_equal,
     register_sync_type,
     sync_object,

@@ -22,7 +22,7 @@ import torch
 
 from opaque.types import PerGroup
 from opaque.types import ClippedPytree
-from opaque._noise_allocation import paired_noise_stddevs, per_group_noise_stddev
+from opaque.api.engine.noise_allocation import paired_noise_stddevs, per_group_noise_stddev
 from opaque.types import (
     NoisedPytree,
     SecondMomentClippingOutput,
@@ -97,7 +97,7 @@ def mf_noise(
       ``second_moment_strategy`` was supplied at construction).
 
     The paired-stream release uses the sensitivity-proportional joint
-    Mahalanobis allocation (``opaque._noise_allocation.paired_noise_stddevs``),
+    Mahalanobis allocation (``opaque.api.engine.noise_allocation.paired_noise_stddevs``),
     with the MF translation ``nm / ‖C₁‖`` as the joint effective multiplier so the
     joint PLD matches the single-stream MF Gaussian accountant at
     ``(noise_multiplier, ‖C₁‖)``.  ``PerGroup`` ``max_norm`` is supported on

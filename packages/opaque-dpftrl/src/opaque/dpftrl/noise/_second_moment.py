@@ -1,7 +1,7 @@
 """Internal state for paired-stream MF noise.
 
 The runtime allocation lives in
-``opaque._noise_allocation.paired_noise_stddevs``; this module only carries
+``opaque.api.engine.noise_allocation.paired_noise_stddevs``; this module only carries
 the joint state that wraps both stream noise states.
 """
 

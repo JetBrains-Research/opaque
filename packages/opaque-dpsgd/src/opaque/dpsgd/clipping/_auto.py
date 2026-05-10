@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from opaque._clipping import auto_clipped_grad
-from opaque._clipping.fun import auto_clipped_fun
-from opaque._clipping.types import (
+from opaque.api.engine.clipping import auto_clipped_grad
+from opaque.api.engine.clipping.fun import auto_clipped_fun
+from opaque.api.engine.clipping.types import (
     AutoClippedFunAux,
     AutoClippedGradAux,
     AutoClipState,

@@ -43,7 +43,7 @@ from opaque.types import (
 )
 
 from opaque.dpsgd.noise._gaussian import GaussianNoiseState
-from opaque._noise_allocation import (
+from opaque.api.engine.noise_allocation import (
     PAIRED_FIRST_STREAM_FOLD,
     PAIRED_SECOND_STREAM_FOLD,
     per_group_noise_stddev,

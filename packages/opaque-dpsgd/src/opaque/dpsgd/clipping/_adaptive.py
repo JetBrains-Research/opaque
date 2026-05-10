@@ -8,12 +8,12 @@ import torch
 
 from opaque.types import SecondMomentClippingOutput, clipped
 
-from opaque._clipping._helpers import (
+from opaque.api.engine.clipping._helpers import (
     batch_size_from_args,
     normalize_to_tuple,
     zero_grads_like,
 )
-from opaque._clipping._clipped_grad import (
+from opaque.api.engine.clipping._clipped_grad import (
     ClippedGradAux,
     _validate_static_args,
     clipped_grad,

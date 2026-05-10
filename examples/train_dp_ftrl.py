@@ -1075,7 +1075,7 @@ def main():
     # No paired-stream wrap on the accountant: the joint Mahalanobis
     # allocation in :func:`mf_noise` makes the paired-release PLD
     # identical to the first-moment-only release at the same noise
-    # multiplier (internal ``opaque._noise_allocation.paired_noise_stddevs``).
+    # multiplier (internal ``opaque.api.engine.noise_allocation.paired_noise_stddevs``).
 
     acc.set_discretization(num_mc_samples=args.mc_samples, seed=args.seed)
 
