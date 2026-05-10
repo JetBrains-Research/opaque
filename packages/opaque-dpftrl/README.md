@@ -2,7 +2,7 @@
 
 Matrix-factorization noise mechanisms for Opaque: BLT, BSR, BiSR,
 band-MF, lambda-CGD, identity — plus the MF-specific participation
-samplers (b-min-separation, cyclic Poisson, balls-in-bins, sequential
+samplers (b-min-separation, Poisson, balls-in-bins, sequential
 batches). Functional optimizers (including the universal ``adamw``
 that consumes private ``noisy_squared_grads`` streams) live in
 [`opaque.optimizers`](../opaque-core/README.md).

@@ -257,7 +257,7 @@ Opaque provides five MF strategies, all used through the unified `mf_noise()` di
 
 | Strategy factory | Memory | Best for |
 |----------|--------|----------|
-| `band_mf_strategy()` | O(bands) | General use with cyclic Poisson amplification |
+| `band_mf_strategy()` | O(bands) | General use with ``ftrl_acc.poisson`` amplification |
 | `blt_strategy()` | O(buffers) | Long training runs (n > 5000), multi-epoch |
 | `lambda_cgd_strategy()` | O(1) | Zero extra memory (PRNG replay) |
 | `bisr_strategy()` | O(bandwidth) | Asymptotically optimal, arbitrary bandwidth |
@@ -340,7 +340,7 @@ identical noise. See [Distributed Training](distributed.md) and
 ### `band_mf_strategy`
 
 Banded Toeplitz strategy. Optimizes banded Toeplitz coefficients for the
-workload. Uses cyclic Poisson amplification for privacy accounting.
+workload. Uses ``ftrl_acc.poisson`` for privacy accounting.
 
 ```python
 from opaque.dpftrl.noise import mf_noise, band_mf_strategy
@@ -444,12 +444,16 @@ import opaque.accounting as acc           # cross-cutting calibration / composit
 import opaque.dpftrl.accounting as ftrl_acc  # DP-FTRL factories
 from opaque.dpftrl.noise import band_mf_strategy, lambda_cgd_strategy
 
-# BandMF — strategy provides sensitivity and num_groups
+# BandMF — strategy provides sensitivity and coefficients
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = ftrl_acc.cyclic_poisson(
-    ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
-                     num_groups=strategy.num_groups),
+proc = ftrl_acc.poisson(
+    ftrl_acc.band_mf(
+        1.0,
+        sensitivity=strategy.sensitivity,
+        coefficients=strategy.coefficients,
+    ),
     sample_rate=0.01,
+    n_steps=1000,
 )
 eps = proc.epsilon_at(1e-5)
 

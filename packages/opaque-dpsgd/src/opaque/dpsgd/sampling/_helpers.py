@@ -23,6 +23,7 @@ def _plain_poisson_step_indices(
     sample_rate: float,
     truncated_batch_size: int | None,
 ) -> list[int]:
+    """Bernoulli inclusion over ``range(num_examples)`` (plain Poisson draw)."""
     included = rng.random(num_examples) < sample_rate
     indices = np.where(included)[0]
     return _maybe_truncate_indices(rng, indices, truncated_batch_size)

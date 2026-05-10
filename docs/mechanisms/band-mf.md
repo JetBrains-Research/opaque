@@ -73,12 +73,14 @@ then optionally composed with subsampling amplification.
 
 ## Supported amplifications
 
-### Cyclic Poisson subsampling (`cyclic_poisson`)
+### Poisson subsampling (`opaque.dpftrl.accounting.poisson`)
 
 The primary amplification method for BandMF. The training run is decomposed
 into $k = \lceil n / b \rceil$ independent **groups** of $b$ consecutive
-steps. Within each group, cyclic Poisson subsampling means each example
-is included independently with probability $q$.
+steps. Within each group, **cyclic Poisson** participation means each example
+in the active group is included independently with probability $q$ (this is
+what :func:`opaque.dpftrl.accounting.poisson` composes over; there is no
+separate ``cyclic_poisson`` factory).
 
 **What this means**: instead of analyzing the full $n$-step run as one
 mechanism, we analyze $k$ independent Poisson-subsampled Gaussian mechanisms
@@ -95,21 +97,26 @@ This is computed efficiently with 2 FFTs (self-composition).
 
 ```python
 import opaque.dpftrl.accounting as ftrl_acc
+from opaque.dpftrl.noise import band_mf_strategy
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = ftrl_acc.cyclic_poisson(
-    ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
-                     num_groups=strategy.num_groups),
+proc = ftrl_acc.poisson(
+    ftrl_acc.band_mf(
+        1.0,
+        sensitivity=strategy.sensitivity,
+        coefficients=strategy.coefficients,
+    ),
     sample_rate=0.01,
+    n_steps=1000,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
 | Amplification | Supported | Notes |
 |---------------|:---------:|-------|
-| `poisson()` | No | Use `cyclic_poisson()` instead |
-| `poisson()` (truncated) | No | Not applicable to MF mechanisms |
-| `cyclic_poisson()` | Yes | Decomposes into $\lceil n/b \rceil$ independent groups |
+| `opaque.dpsgd.accounting.poisson` | No | DP-SGD per-step factory; different object |
+| `opaque.dpsgd.accounting.poisson` (truncated) | No | DP-SGD only |
+| `opaque.dpftrl.accounting.poisson` | Yes | Whole-process MF Poisson; $\lceil n/b \rceil$ groups for ``BandMf`` |
 
 ### b-min-sep subsampling (`b_min_sep`)
 
@@ -138,9 +145,9 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 
 !!! note "Without amplification"
     You can also use BandMF without subsampling by omitting the
-    `cyclic_poisson()` wrapper. This accounts for the full training run
-    as a single Gaussian mechanism — useful for comparison or when
-    subsampling is not applicable.
+    :func:`opaque.dpftrl.accounting.poisson` wrapper (compose the Gaussian
+    mechanism directly if your accounting path supports it). Useful for
+    comparison when subsampling is not applicable.
 
 !!! note
     The `ftrl_acc.band_mf()` API takes pre-computed sensitivity and group count
@@ -187,11 +194,15 @@ from opaque.dpftrl.noise import band_mf_strategy
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 
-# BandMF with cyclic Poisson amplification (recommended)
-proc = ftrl_acc.cyclic_poisson(
-    ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
-                     num_groups=strategy.num_groups),
+# BandMF with Poisson amplification (recommended)
+proc = ftrl_acc.poisson(
+    ftrl_acc.band_mf(
+        1.0,
+        sensitivity=strategy.sensitivity,
+        coefficients=strategy.coefficients,
+    ),
     sample_rate=0.01,
+    n_steps=1000,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```

@@ -229,7 +229,7 @@ eps = proc.epsilon_at(delta=1e-5)
 
 ### `ftrl_acc.band_mf(noise_multiplier, sensitivity, coefficients)`
 
-BandMF mechanism for cyclic Poisson / b-min-sep amplification. Takes
+BandMF mechanism for Poisson and b-min-sep amplification. Takes
 `sensitivity` and `coefficients` from a `band_mf_strategy()`. Band
 width is `len(coefficients)`; `coefficients` must be non-empty.
 

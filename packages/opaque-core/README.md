@@ -60,4 +60,4 @@ rng = key(0)
 mechanisms (Gaussian noise, adaptive/auto clipping, truncated + standard
 Poisson samplers) live in `opaque-dpsgd`. DP-FTRL mechanisms (BLT / Toeplitz
 / BSR / BiSR / λ-CGD noise, private second-moment streams, b-min-sep /
-cyclic-Poisson / balls-in-bins / sequential samplers) live in `opaque-dpftrl`.
+Poisson / balls-in-bins / sequential samplers) live in `opaque-dpftrl`.

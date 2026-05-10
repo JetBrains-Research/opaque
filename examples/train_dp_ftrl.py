@@ -788,7 +788,7 @@ def main():
     # Static samplers (BnB, sequential) are created once and reused.
     # Dynamic samplers (Poisson) get a fresh key each epoch.
     if args.mechanism == "band_mf":
-        p0 = sample_rate  # E[batch]/|D| per iteration (same as cyclic Poisson regime)
+        p0 = sample_rate  # E[batch]/|D| per iteration (same as ``ftrl_acc.poisson`` regime)
         sampling_prob = 0.0
         p_bms = 0.0
         if args.band_mf_sampling == "poisson":

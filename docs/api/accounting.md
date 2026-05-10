@@ -307,7 +307,7 @@ All MF constructors return a `DpProcess` that composes with standard operators.
 
 ### `band_mf(noise_multiplier, sensitivity, coefficients) -> DpProcess`
 
-BandMF mechanism for cyclic Poisson / b-min-sep amplification. Takes
+BandMF mechanism for Poisson and b-min-sep amplification. Takes
 `sensitivity` and `coefficients` from a `band_mf_strategy()`. The
 band-width is `len(coefficients)`; `coefficients` must be non-empty.
 
