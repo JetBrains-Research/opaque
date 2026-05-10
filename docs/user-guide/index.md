@@ -3,7 +3,7 @@
 This guide explains each component of Opaque's DP-SGD pipeline: what it does,
 how the API works, and the practical decisions you need to make. For hands-on
 practice, see the [Tutorials](../tutorials/README.md). For complete function
-signatures, see the [API Reference](../api/index.md).
+signatures, see the [API Reference](../reference/index.md).
 
 ## Installation surface
 
@@ -108,7 +108,7 @@ understanding, or jump to a specific topic.
 
 - **[Optimizers](optimizers.md)** -- Using TorchOpt functional optimizers with
   DP-SGD.
-- **[Serialization (API)](../api/serialization.md)** -- Checkpoint explicit state
+- **[Serialization (API)](../reference/serialization.md)** -- Checkpoint explicit state
   with ``opaque.serialization.state_dict`` / ``from_state_dict`` (see also
   optimizers and accounting guides for examples).
 - **[LR Scheduling](lr-scheduling.md)** -- Warmup, cosine and inverse-sqrt

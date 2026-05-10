@@ -6,7 +6,7 @@ build something concrete and see it work.
 
 For conceptual explanations, see the [User Guide](../user-guide/index.md).
 For complete function signatures, see the
-[API Reference](../api/index.md).
+[API Reference](../reference/index.md).
 
 ## Notebooks
 

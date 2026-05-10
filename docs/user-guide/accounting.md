@@ -19,7 +19,7 @@ factories live next to its runtime:
 | `opaque.dpsgd.accounting` | DP-SGD factories — `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`. | `opaque-dpsgd` |
 | `opaque.dpftrl.accounting` | DP-FTRL factories — `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `mf_identity`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins`. | `opaque-dpftrl` |
 
-Private second moments do **not** use a separate accounting wrapper: the joint gradient + squared-gradient release is handled in the runtime σ split (sensitivity-proportional Mahalanobis allocation), so calibration stays on the same underlying mechanism PLD as first-moment-only training. See [Noise API](../api/noise.md#paired-second-moment-release).
+Private second moments do **not** use a separate accounting wrapper: the joint gradient + squared-gradient release is handled in the runtime σ split (sensitivity-proportional Mahalanobis allocation), so calibration stays on the same underlying mechanism PLD as first-moment-only training. See [Noise API](../reference/noise.md#paired-second-moment-release).
 
 Both algorithm-specific namespaces re-export from the shared `opaque-accounting`
 implementation; the split is purely organisational. The `Accountant` interactive
@@ -522,5 +522,5 @@ eps = training.epsilon_at(delta=1e-5, discretization=1e-5)
 
 ## API reference
 
-See [Accounting API Reference](../api/accounting.md) for complete function
+See [Accounting API Reference](../reference/accounting.md) for complete function
 signatures and return types.

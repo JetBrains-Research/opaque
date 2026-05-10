@@ -442,5 +442,5 @@ that require fixed batch sizes.
 
 ## API reference
 
-See [Sampling API Reference](../api/sampling.md) for complete function
+See [Sampling API Reference](../reference/sampling.md) for complete function
 signatures and return types.

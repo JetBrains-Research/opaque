@@ -122,18 +122,18 @@ nav:
     - Privacy Auditing: tutorials/privacy_auditing.ipynb
     - Distributed Training: tutorials/distributed_training.ipynb
   - API Reference:
-    - Overview: api/index.md
-    - Serialization: api/serialization.md
-    - Clipping: api/clipping.md
-    - Noise: api/noise.md
-    - Accounting: api/accounting.md
-    - Sampling: api/sampling.md
-    - Random: api/rng.md
-    - Distributed: api/distributed.md
-    - Auditing: api/auditing.md
-    - Utilities: api/utilities.md
-    - Optimizers: api/optimizers.md
-    - Schedules: api/schedules.md
+    - Overview: reference/index.md
+    - Serialization: reference/serialization.md
+    - Clipping: reference/clipping.md
+    - Noise: reference/noise.md
+    - Accounting: reference/accounting.md
+    - Sampling: reference/sampling.md
+    - Random: reference/rng.md
+    - Distributed: reference/distributed.md
+    - Auditing: reference/auditing.md
+    - Utilities: reference/utilities.md
+    - Optimizers: reference/optimizers.md
+    - Schedules: reference/schedules.md
 
 extra:
   social:

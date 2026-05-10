@@ -591,5 +591,5 @@ noise state type. See [Distributed Training](distributed.md) for details.
 
 ## API reference
 
-See [Noise API Reference](../api/noise.md) for complete function signatures
+See [Noise API Reference](../reference/noise.md) for complete function signatures
 and return types.

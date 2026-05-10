@@ -6,7 +6,7 @@ already-noised update direction.  The privacy guarantee is
 unchanged.
 
 This page explains the schedules and warmup composition Opaque
-provides via [`opaque.scheduling`](../api/schedules.md), and the
+provides via [`opaque.scheduling`](../reference/schedules.md), and the
 pattern for using them with TorchOpt functional optimizers.
 
 ## Why warmup matters under DP-SGD
@@ -49,16 +49,16 @@ opt = torchopt.adamw(lr=schedule)
 ```
 
 `opaque.scheduling` ships the common decay curves directly:
-[`linear_schedule`](../api/schedules.md#linear_schedule),
-[`polynomial_schedule`](../api/schedules.md#polynomial_schedule),
-[`exponential_schedule`](../api/schedules.md#exponential_schedule),
-[`cosine_schedule`](../api/schedules.md#cosine_schedule),
-[`inverse_sqrt_schedule`](../api/schedules.md#inverse_sqrt_schedule),
-and [`one_minus_sqrt_schedule`](../api/schedules.md#one_minus_sqrt_schedule).
+[`linear_schedule`](../reference/schedules.md#linear_schedule),
+[`polynomial_schedule`](../reference/schedules.md#polynomial_schedule),
+[`exponential_schedule`](../reference/schedules.md#exponential_schedule),
+[`cosine_schedule`](../reference/schedules.md#cosine_schedule),
+[`inverse_sqrt_schedule`](../reference/schedules.md#inverse_sqrt_schedule),
+and [`one_minus_sqrt_schedule`](../reference/schedules.md#one_minus_sqrt_schedule).
 
 ## Adding warmup
 
-[`with_warmup`](../api/schedules.md#with_warmup) multiplies a
+[`with_warmup`](../reference/schedules.md#with_warmup) multiplies a
 schedule by a linear ramp `0 → 1` during the first `transition_steps`
 steps and leaves it untouched afterwards.
 
@@ -139,7 +139,7 @@ schedule = with_warmup(1e-3, transition_steps=500)
 
 ## Restarts
 
-[`with_restarts`](../api/schedules.md#with_restarts) replays a
+[`with_restarts`](../reference/schedules.md#with_restarts) replays a
 schedule `num_cycles` times over a window.  Combined with cosine you
 get SGDR (Loshchilov & Hutter, 2017):
 
@@ -175,5 +175,5 @@ not interfere with how the optimizer applies the schedule.
 
 ## See Also
 
-- [Schedules API](../api/schedules.md) — full signatures and behavior.
+- [Schedules API](../reference/schedules.md) — full signatures and behavior.
 - [Optimizers User Guide](optimizers.md) — bias correction, weight decay, AdamW-BC.

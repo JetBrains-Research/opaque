@@ -7,15 +7,15 @@ needed for a given privacy guarantee.
 
 Opaque provides three high-level clipping functions:
 
-- **`clipped_grad`** ([`opaque.dpsgd.clipping`](../api/clipping.md)) — Fixed-threshold clipping (recommended default).
-- **`auto_clipped_grad`** ([`opaque.dpsgd.clipping`](../api/clipping.md)) — AUTO-S automatic scaling, no threshold to tune (Bu et al. NeurIPS 2023). Algorithm-agnostic: composes with both DP-SGD's Gaussian mechanism and DP-FTRL's matrix-factorization mechanisms.
-- **`adaptive_clipped_grad`** ([`opaque.dpsgd.clipping`](../api/clipping.md)) — Auto-tuned threshold via quantile tracking (Andrew et al. 2021); DP-SGD-only because the threshold drifts across steps.
+- **`clipped_grad`** ([`opaque.dpsgd.clipping`](../reference/clipping.md)) — Fixed-threshold clipping (recommended default).
+- **`auto_clipped_grad`** ([`opaque.dpsgd.clipping`](../reference/clipping.md)) — AUTO-S automatic scaling, no threshold to tune (Bu et al. NeurIPS 2023). Algorithm-agnostic: composes with both DP-SGD's Gaussian mechanism and DP-FTRL's matrix-factorization mechanisms.
+- **`adaptive_clipped_grad`** ([`opaque.dpsgd.clipping`](../reference/clipping.md)) — Auto-tuned threshold via quantile tracking (Andrew et al. 2021); DP-SGD-only because the threshold drifts across steps.
 
 For DP-FTRL, import ``clipped_grad``, ``auto_clipped_grad``, and ``per_group``
 from :mod:`opaque.dpftrl.clipping`.
 
 Lower-level building blocks (`clipped_fun`, `clip_pytree`, `auto_scale_pytree`)
-are documented in the [Clipping API Reference](../api/clipping.md).
+are documented in the [Clipping API Reference](../reference/clipping.md).
 
 ## `clipped_grad` -- recommended API
 
@@ -598,5 +598,5 @@ at ε=3:
 
 ## API reference
 
-See [Clipping API Reference](../api/clipping.md) for complete function
+See [Clipping API Reference](../reference/clipping.md) for complete function
 signatures, all parameters, and return types.

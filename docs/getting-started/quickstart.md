@@ -109,4 +109,4 @@ for epoch in range(10):
 - [User Guide](../user-guide/index.md) -- detailed explanations of each
   component.
 - [Tutorials](../tutorials/README.md) -- hands-on Jupyter notebooks.
-- [API Reference](../api/index.md) -- complete function signatures.
+- [API Reference](../reference/index.md) -- complete function signatures.

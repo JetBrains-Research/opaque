@@ -135,5 +135,5 @@ module with detailed explanations, API patterns, and practical guidance.
 **Hands-on practice**: [Tutorials](tutorials/README.md) are task-based Jupyter
 notebooks that exercise the library on concrete problems.
 
-**API details**: [API Reference](api/index.md) provides complete function
+**API details**: [API Reference](reference/index.md) provides complete function
 signatures and docstrings.

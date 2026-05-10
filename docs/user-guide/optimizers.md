@@ -1,7 +1,7 @@
 # Optimizers
 
 Opaque ships its own functional optimizer library at
-[`opaque.optimizers`](../api/optimizers.md): Opaque-built factories with a
+[`opaque.optimizers`](../reference/optimizers.md): Opaque-built factories with a
 common wrapper-aware update surface (`sgd`, `adam`, `adamw`, `radam`, `lion`,
 `ademamix`, `adafactor`, `rmsprop`, `adagrad`, `adadelta`, `schedule_free`).
 Every factory carries DP-aware behaviour selectable at construction time and
@@ -123,7 +123,7 @@ Whether the correction helps in practice depends on the workload —
 ablate against ``noise_bias_correction=False``.
 
 **AdEMAMix**, **Adafactor**, **Lion**, **schedule-free** — see the
-[API reference](../api/optimizers.md#whats-in-opaqueoptimizers) for
+[API reference](../reference/optimizers.md#whats-in-opaqueoptimizers) for
 their DP modes.
 
 ## The second-moment problem in DP training
@@ -462,7 +462,7 @@ no manual accumulation is needed.
 
 Standard LR schedules work with DP training.  Linear warmup followed
 by cosine decay is common for DP fine-tuning.  Use Opaque's
-[scheduling primitives](../api/schedules.md):
+[scheduling primitives](../reference/schedules.md):
 
 ```python
 from opaque.optimizers import adamw
@@ -527,6 +527,6 @@ the output of the DP noise mechanism into `optimizer.update()`.
 
 ## API reference
 
-See [Optimizers API Reference](../api/optimizers.md) for full factory
+See [Optimizers API Reference](../reference/optimizers.md) for full factory
 signatures, knob descriptions, and the `serialization` /
 `schedule_free` submodule helpers.

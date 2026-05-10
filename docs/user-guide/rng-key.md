@@ -312,5 +312,5 @@ noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=k)
 
 ## API reference
 
-See [Random API Reference](../api/rng.md) for complete function signatures
+See [Random API Reference](../reference/rng.md) for complete function signatures
 and return types.
