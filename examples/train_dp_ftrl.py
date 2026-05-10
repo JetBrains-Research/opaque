@@ -122,7 +122,7 @@ apply_runtime_patches()
 import torchopt
 
 import opaque.accounting as acc
-import opaque.dpftrl.accounting as ftrl_acc
+import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.accounting import calibration as cal
 from opaque.dpftrl.clipping import clipped_grad, per_group
 from opaque.types import PerGroup, SecondMomentNoiseOutput
@@ -788,7 +788,7 @@ def main():
     # Static samplers (BnB, sequential) are created once and reused.
     # Dynamic samplers (Poisson) get a fresh key each epoch.
     if args.mechanism == "band_mf":
-        p0 = sample_rate  # E[batch]/|D| per iteration (same as ``ftrl_acc.poisson`` regime)
+        p0 = sample_rate  # E[batch]/|D| per iteration (same as ``dpftrl_acc.poisson`` regime)
         sampling_prob = 0.0
         p_bms = 0.0
         if args.band_mf_sampling == "poisson":
@@ -1075,23 +1075,23 @@ def main():
     # No paired-stream wrap on the accountant: the joint Mahalanobis
     # allocation in :func:`mf_noise` makes the paired-release PLD
     # identical to the first-moment-only release at the same noise
-    # multiplier (internal ``opaque._noise_allocation.paired_noise_stddevs``).
+    # multiplier.
 
     acc.set_discretization(num_mc_samples=args.mc_samples, seed=args.seed)
 
     if args.mechanism == "band_mf" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = ftrl_acc.band_mf(
+            mechanism = dpftrl_acc.band_mf(
                 nm,
                 sensitivity=strategy.sensitivity,
                 coefficients=strategy.coefficients,
             )
             if args.band_mf_sampling == "poisson":
-                return ftrl_acc.poisson(
+                return dpftrl_acc.poisson(
                     mechanism, sample_rate=sampling_prob, n_steps=total_steps
                 )
-            return ftrl_acc.b_min_sep(
+            return dpftrl_acc.b_min_sep(
                 mechanism,
                 n_steps=total_steps,
                 p0=p0,
@@ -1099,16 +1099,16 @@ def main():
     elif args.mechanism == "blt" and strategy is not None:
 
         def acct_mechanism(nm):
-            return ftrl_acc.blt(nm, sensitivity=strategy.sensitivity)
+            return dpftrl_acc.blt(nm, sensitivity=strategy.sensitivity)
     elif args.mechanism == "lambda_cgd" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = ftrl_acc.lambda_cgd(
+            mechanism = dpftrl_acc.lambda_cgd(
                 nm,
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
-            return ftrl_acc.balls_in_bins(
+            return dpftrl_acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
@@ -1116,12 +1116,12 @@ def main():
     elif args.mechanism == "bisr" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = ftrl_acc.bisr(
+            mechanism = dpftrl_acc.bisr(
                 nm,
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
-            return ftrl_acc.balls_in_bins(
+            return dpftrl_acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
@@ -1129,12 +1129,12 @@ def main():
     elif args.mechanism == "bsr" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = ftrl_acc.bsr(
+            mechanism = dpftrl_acc.bsr(
                 nm,
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
-            return ftrl_acc.balls_in_bins(
+            return dpftrl_acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
@@ -1142,8 +1142,8 @@ def main():
     elif args.mechanism == "identity":
 
         def acct_mechanism(nm):
-            return ftrl_acc.poisson(
-                ftrl_acc.mf_identity(nm),
+            return dpftrl_acc.poisson(
+                dpftrl_acc.mf_identity(nm),
                 sample_rate=sample_rate,
                 n_steps=total_steps,
             )
@@ -1281,8 +1281,8 @@ def main():
         try:
 
             def identity_acct(nm):
-                return ftrl_acc.poisson(
-                    ftrl_acc.mf_identity(nm),
+                return dpftrl_acc.poisson(
+                    dpftrl_acc.mf_identity(nm),
                     sample_rate=sample_rate,
                     n_steps=total_steps,
                 )

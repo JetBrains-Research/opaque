@@ -19,19 +19,21 @@ factories live next to its runtime:
 | `opaque.dpsgd.accounting` | DP-SGD factories — `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`. | `opaque-dpsgd` |
 | `opaque.dpftrl.accounting` | DP-FTRL factories — `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `mf_identity`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins`. | `opaque-dpftrl` |
 
-Private second moments do **not** use a separate accounting wrapper: the joint gradient + squared-gradient release is handled in the runtime σ split (sensitivity-proportional Mahalanobis allocation), so calibration stays on the same underlying mechanism PLD as first-moment-only training. See [Noise API](../api/noise.md#paired-second-moment-release).
+Private second moments do **not** use a separate accounting wrapper: the joint gradient + squared-gradient release is handled in the runtime σ split (sensitivity-proportional Mahalanobis allocation), so calibration stays on the same underlying mechanism PLD as first-moment-only training. See [Noise API](../reference/noise.md#paired-second-moment-release).
 
 Both algorithm-specific namespaces re-export from the shared `opaque-accounting`
 implementation; the split is purely organisational. The `Accountant` interactive
-container and all dataclasses live in `opaque.accounting.types`.
+container is on `opaque.accounting` directly (`from opaque.accounting import
+Accountant`); calibration helpers (`calibrate`, `epsilon_budget`, etc.) live
+there too.
 
-For backward compatibility every algorithm-specific factory is still
-importable from `opaque.accounting` directly (e.g. `opaque.accounting.gaussian`),
-but the canonical / documented path is the namespace your training run uses
-(`opaque.dpsgd.accounting` or `opaque.dpftrl.accounting`). The
-algorithm-specific subpackages are *lazy-imported* from `opaque.dpsgd` /
-`opaque.dpftrl`, so the Rust PLD extension only loads when accounting is
-actually used.
+The mechanism factories themselves (`gaussian`, `poisson`, `band_mf`, …) are
+**only** on the algorithm-specific namespaces. Use the namespace that matches
+your training run (`opaque.dpsgd.accounting` or `opaque.dpftrl.accounting`) —
+the per-step (DP-SGD) vs whole-process (DP-FTRL) distinction is part of the
+import path, on purpose. The algorithm-specific subpackages are
+*lazy-imported* from `opaque.dpsgd` / `opaque.dpftrl`, so the Rust PLD
+extension only loads when accounting is actually used.
 
 ## Core concepts
 
@@ -210,13 +212,13 @@ truth.
 
 ```python
 from opaque.dpftrl.noise import band_mf_strategy
-import opaque.dpftrl.accounting as ftrl_acc
+import opaque.dpftrl.accounting as dpftrl_acc
 
 # Strategy computes sensitivity and coefficients internally
 strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.95)
 
-proc = ftrl_acc.poisson(
-    ftrl_acc.band_mf(
+proc = dpftrl_acc.poisson(
+    dpftrl_acc.band_mf(
         1.0,
         sensitivity=strategy.sensitivity,
         coefficients=strategy.coefficients,
@@ -227,7 +229,7 @@ proc = ftrl_acc.poisson(
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-### `ftrl_acc.band_mf(noise_multiplier, sensitivity, coefficients)`
+### `dpftrl_acc.band_mf(noise_multiplier, sensitivity, coefficients)`
 
 BandMF mechanism for Poisson and b-min-sep amplification. Takes
 `sensitivity` and `coefficients` from a `band_mf_strategy()`. Band
@@ -235,7 +237,7 @@ width is `len(coefficients)`; `coefficients` must be non-empty.
 
 ```python
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = ftrl_acc.band_mf(
+proc = dpftrl_acc.band_mf(
     1.0,
     sensitivity=strategy.sensitivity,
     coefficients=strategy.coefficients,
@@ -243,10 +245,10 @@ proc = ftrl_acc.band_mf(
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-For subsampling amplification, wrap with `ftrl_acc.poisson(..., n_steps=...)`
+For subsampling amplification, wrap with `dpftrl_acc.poisson(..., n_steps=...)`
 (see below).
 
-### `ftrl_acc.blt(noise_multiplier, sensitivity, gram_matrix=())`
+### `dpftrl_acc.blt(noise_multiplier, sensitivity, gram_matrix=())`
 
 BLT mechanism. Takes `sensitivity` and optional `gram_matrix` from a
 `blt_strategy()`.
@@ -257,18 +259,18 @@ strategy = blt_strategy(
 )
 
 # Unamplified
-proc = ftrl_acc.blt(1.0, sensitivity=strategy.sensitivity)
+proc = dpftrl_acc.blt(1.0, sensitivity=strategy.sensitivity)
 eps = proc.epsilon_at(delta=1e-5)
 
 # With Balls-in-Bins amplification
-proc = ftrl_acc.balls_in_bins(
-    ftrl_acc.blt(1.0, sensitivity=strategy.sensitivity,
+proc = dpftrl_acc.balls_in_bins(
+    dpftrl_acc.blt(1.0, sensitivity=strategy.sensitivity,
             gram_matrix=strategy.gram_matrix),
     num_bins=1000, num_epochs=5,
 )
 ```
 
-### `ftrl_acc.lambda_cgd(noise_multiplier, sensitivity, gram_matrix=())`
+### `dpftrl_acc.lambda_cgd(noise_multiplier, sensitivity, gram_matrix=())`
 
 DP-λCGD mechanism (Kalinin et al., 2026). Takes `sensitivity` and
 `gram_matrix` from a `lambda_cgd_strategy()`.
@@ -278,15 +280,15 @@ strategy = lambda_cgd_strategy(
     lambda_=0.9, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-proc = ftrl_acc.balls_in_bins(
-    ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+proc = dpftrl_acc.balls_in_bins(
+    dpftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
                    gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-### `ftrl_acc.bisr(noise_multiplier, sensitivity, gram_matrix=())`
+### `dpftrl_acc.bisr(noise_multiplier, sensitivity, gram_matrix=())`
 
 BISR mechanism (Kalinin et al., ICLR 2026). Generalises λCGD to
 arbitrary bandwidth. Takes `sensitivity` and `gram_matrix` from a
@@ -297,14 +299,14 @@ strategy = bisr_strategy(
     bandwidth=4, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-proc = ftrl_acc.balls_in_bins(
-    ftrl_acc.bisr(1.0, sensitivity=strategy.sensitivity,
+proc = dpftrl_acc.balls_in_bins(
+    dpftrl_acc.bisr(1.0, sensitivity=strategy.sensitivity,
              gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
 ```
 
-### `ftrl_acc.poisson(inner, sample_rate, *, n_steps)`
+### `dpftrl_acc.poisson(inner, sample_rate, *, n_steps)`
 
 Poisson amplification for DP-FTRL. Whole-process accountant covering all
 `n_steps` rounds (do **not** compose with `* num_steps` externally).
@@ -314,8 +316,8 @@ when the inner is `IdentityMf` or `BandMf` with `bands == 1`.
 
 ```python
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = ftrl_acc.poisson(
-    ftrl_acc.band_mf(
+proc = dpftrl_acc.poisson(
+    dpftrl_acc.band_mf(
         1.0,
         sensitivity=strategy.sensitivity,
         coefficients=strategy.coefficients,
@@ -326,7 +328,7 @@ proc = ftrl_acc.poisson(
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-### `ftrl_acc.balls_in_bins(inner, num_bins, n_steps)`
+### `dpftrl_acc.balls_in_bins(inner, num_bins, n_steps)`
 
 Balls-in-Bins (random-partition) amplification. Returns the **total**
 privacy cost across all `n_steps` rounds (must be a positive multiple of
@@ -341,8 +343,8 @@ strategy = lambda_cgd_strategy(
     lambda_=0.9, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-proc = ftrl_acc.balls_in_bins(
-    ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+proc = dpftrl_acc.balls_in_bins(
+    dpftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
                    gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
@@ -361,8 +363,8 @@ strategy = band_mf_strategy(n_steps=1000, bands=10)
 
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: ftrl_acc.poisson(
-        ftrl_acc.band_mf(
+    lambda nm: dpftrl_acc.poisson(
+        dpftrl_acc.band_mf(
             nm,
             sensitivity=strategy.sensitivity,
             coefficients=strategy.coefficients,
@@ -522,5 +524,5 @@ eps = training.epsilon_at(delta=1e-5, discretization=1e-5)
 
 ## API reference
 
-See [Accounting API Reference](../api/accounting.md) for complete function
+See [Accounting API Reference](../reference/accounting.md) for complete function
 signatures and return types.

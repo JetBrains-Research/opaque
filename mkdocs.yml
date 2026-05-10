@@ -40,11 +40,13 @@ plugins:
       handlers:
         python:
           paths:
-            - packages/opaque-core/src
+            - packages/opaque-base/src
+            - packages/opaque-engine/src
+            - packages/opaque-optimizers/src
             - packages/opaque-dpsgd/src
             - packages/opaque-dpftrl/src
             - packages/opaque-auditing/src
-            - packages/opaque-accounting
+            - packages/opaque-accounting/src
             - packages/opaque-patches/src
             - packages/opaque-transformers/src
           options:
@@ -91,9 +93,11 @@ nav:
     - Overview: user-guide/index.md
     - Differential Privacy Concepts: user-guide/dp-concepts.md
     - Random Number Generation: user-guide/rng-key.md
+    - End-to-end pipelines:
+      - DP-SGD: user-guide/dp-sgd.md
+      - DP-FTRL: user-guide/dp-ftrl.md
     - Per-Example Gradient Clipping: user-guide/clipping.md
     - Noise Addition: user-guide/noise.md
-    - Correlated noise (DP-FTRL): user-guide/dp-ftrl.md
     - Privacy Accounting: user-guide/accounting.md
     - Sampling & Microbatching: user-guide/sampling.md
     - Optimizers: user-guide/optimizers.md
@@ -105,33 +109,48 @@ nav:
     - Known Limitations: limitations.md
   - Mechanisms:
     - Overview: mechanisms/index.md
-    - Gaussian: mechanisms/gaussian.md
-    - BSR: mechanisms/bsr.md
-    - BandMF: mechanisms/band-mf.md
-    - BLT: mechanisms/blt.md
-    - DP-λCGD: mechanisms/lambda-cgd.md
-    - BISR: mechanisms/bisr.md
+    - DP-SGD:
+      - Overview: mechanisms/dp-sgd/index.md
+      - Gaussian: mechanisms/dp-sgd/gaussian.md
+    - DP-FTRL:
+      - Overview: mechanisms/dp-ftrl/index.md
+      - BandMF: mechanisms/dp-ftrl/band-mf.md
+      - BLT: mechanisms/dp-ftrl/blt.md
+      - BSR: mechanisms/dp-ftrl/bsr.md
+      - BISR: mechanisms/dp-ftrl/bisr.md
+      - DP-λCGD: mechanisms/dp-ftrl/lambda-cgd.md
   - Tutorials:
     - Overview: tutorials/README.md
-    - DP-SGD Training: tutorials/dp_sgd_training.ipynb
-    - Accounting & Calibration: tutorials/accounting_and_calibration.ipynb
-    - Fine-tuning an LLM: tutorials/llm_finetuning.ipynb
-    - Sampling & Microbatching: tutorials/sampling_and_microbatching.ipynb
-    - Privacy Auditing: tutorials/privacy_auditing.ipynb
-    - Distributed Training: tutorials/distributed_training.ipynb
+    - DP-SGD track:
+      - DP-SGD Training: tutorials/dp_sgd_training.ipynb
+      - Accounting & Calibration: tutorials/accounting_and_calibration.ipynb
+      - Sampling & Microbatching: tutorials/sampling_and_microbatching.ipynb
+      - Fine-tuning an LLM: tutorials/llm_finetuning.ipynb
+    - DP-FTRL track:
+      - DP-FTRL Training: tutorials/dp_ftrl_training.ipynb
+    - Cross-cutting:
+      - Privacy Auditing: tutorials/privacy_auditing.ipynb
+      - Distributed Training: tutorials/distributed_training.ipynb
+    - Extending Opaque: tutorials/extending_opaque.ipynb
   - API Reference:
-    - Overview: api/index.md
-    - Serialization: api/serialization.md
-    - Clipping: api/clipping.md
-    - Noise: api/noise.md
-    - Accounting: api/accounting.md
-    - Sampling: api/sampling.md
-    - Random: api/rng.md
-    - Distributed: api/distributed.md
-    - Auditing: api/auditing.md
-    - Utilities: api/utilities.md
-    - Optimizers: api/optimizers.md
-    - Schedules: api/schedules.md
+    - Overview: reference/index.md
+    - Serialization: reference/serialization.md
+    - Clipping: reference/clipping.md
+    - Noise: reference/noise.md
+    - Accounting: reference/accounting.md
+    - Sampling: reference/sampling.md
+    - Random: reference/rng.md
+    - Distributed: reference/distributed.md
+    - Auditing: reference/auditing.md
+    - Utilities: reference/utilities.md
+    - Optimizers: reference/optimizers.md
+    - Schedules: reference/schedules.md
+  - Extending Opaque:
+    - Overview: extending/index.md
+    - Serialization registry: extending/serialization.md
+    - Distributed sync: extending/distributed-sync.md
+    - Clipping fun helpers: extending/clipping-fun.md
+    - Adding a new mechanism family: extending/new-mechanism.md
 
 extra:
   social:

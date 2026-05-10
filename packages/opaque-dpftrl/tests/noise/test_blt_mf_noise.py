@@ -1,7 +1,7 @@
 """Tests for BltStrategy factory and accounting equivalence."""
 
 import opaque.dpftrl.accounting as ftrl_acc
-from opaque.dpftrl.noise._blt import BltStrategy, blt_strategy
+from opaque.api.dpftrl.noise._blt import BltStrategy, blt_strategy
 
 
 class TestBltStrategy:

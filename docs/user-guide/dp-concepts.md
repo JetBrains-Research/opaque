@@ -162,7 +162,7 @@ Opaque supports several subsampling schemes:
 |--------|-------------|----------|
 | **Poisson** | Each example included independently with probability $q$ | Standard DP-SGD. Variable batch size. |
 | **Truncated Poisson** | Poisson draw capped at a maximum batch size | DP-SGD when you want stable batch sizes; privacy is weaker than plain Poisson at the same $q$. |
-| **Cyclic Poisson (DP-FTRL)** | ``opaque.dpftrl.sampling.CyclicPoissonSampler``: ``bands`` disjoint groups, step ``i`` uses group ``i % bands``, inclusion prob. ``q`` per eligible example. ``bands=1`` is identity (full data each step); larger ``bands`` match BandMF-style rotation. | ``mf_noise`` + ``ftrl_acc.poisson`` (whole-process accountant). |
+| **Cyclic Poisson (DP-FTRL)** | ``opaque.dpftrl.sampling.CyclicPoissonSampler``: ``bands`` disjoint groups, step ``i`` uses group ``i % bands``, inclusion prob. ``q`` per eligible example. ``bands=1`` is identity (full data each step); larger ``bands`` match BandMF-style rotation. | ``mf_noise`` + ``dpftrl_acc.poisson`` (whole-process accountant). |
 
 The key distinction is between *Poisson* and *fixed-size* sampling. Poisson
 sampling produces variable-size batches but has a clean privacy analysis.

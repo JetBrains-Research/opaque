@@ -19,7 +19,7 @@ from opaque.types import (
     SecondMomentNoiseOutput,
     clipped,
 )
-from opaque._noise_allocation import paired_noise_stddevs
+from opaque.api.engine.noise_allocation import paired_noise_stddevs
 from opaque.dpsgd.noise import truncated_gaussian_noise
 from opaque.random import key
 

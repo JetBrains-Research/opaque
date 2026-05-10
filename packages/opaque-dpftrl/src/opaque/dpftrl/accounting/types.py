@@ -1,24 +1,16 @@
-"""Type definitions for :mod:`opaque.dpftrl.accounting`.
+"""DP-FTRL accounting types façade — re-exports MF mechanism + amplification dataclasses."""
 
-Re-exports DP-FTRL-specific dataclasses for type annotations.  The
-constructor functions live in the package init.
-"""
-
-from __future__ import annotations
-
-from opaque.dpftrl.accounting.amplification.types import (
+from opaque.api.accounting.dpftrl.types import (
     BallsInBins,
-    BMinSep,
-    MfPoisson,
-)
-from opaque.dpftrl.accounting.mechanisms.types import (
     BandMf,
     Bisr,
     Blt,
+    BMinSep,
     Bsr,
     IdentityMf,
     LambdaCgd,
     MfGaussian,
+    MfPoisson,
 )
 
 __all__ = [

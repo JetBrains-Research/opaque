@@ -14,7 +14,7 @@ import torch.nn as nn
 import torchopt
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
-from opaque.accounting.types import Accountant
+from opaque.accounting import Accountant
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.functional import make_functional
@@ -109,4 +109,4 @@ for epoch in range(10):
 - [User Guide](../user-guide/index.md) -- detailed explanations of each
   component.
 - [Tutorials](../tutorials/README.md) -- hands-on Jupyter notebooks.
-- [API Reference](../api/index.md) -- complete function signatures.
+- [API Reference](../reference/index.md) -- complete function signatures.

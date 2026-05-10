@@ -12,10 +12,10 @@ Known incompatibilities (not tested):
 
 import torch
 
-from opaque.dpsgd.clipping import clipped_grad
+from opaque.api.engine.clipping import clipped_grad
 from opaque.functional import make_functional
 
-from tests._helpers import prepare_lora_model, run_clipped_grad_test
+from ..._helpers import prepare_lora_model, run_clipped_grad_test
 
 
 class TestAttentionImplementations:

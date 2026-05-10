@@ -1,18 +1,36 @@
 # Opaque
 
-**Functional DP-SGD for PyTorch**
+**Functional DP-SGD and DP-FTRL for PyTorch.**
 
-Opaque provides composable primitives for differentially private model training
-in PyTorch. Built on `torch.func`, every component uses explicit state -- no
-hooks, no subclassing, no hidden mutation.
+Opaque provides composable primitives for differentially private
+model training in PyTorch. Built on `torch.func`, every component
+uses explicit state — no hooks, no subclassing, no hidden mutation.
+
+Opaque ships two complementary training pipelines:
+
+- **[DP-SGD](user-guide/dp-sgd.md)** — independent Gaussian noise at
+  every step, per-step privacy composition. The standard DP training
+  recipe.
+- **[DP-FTRL](user-guide/dp-ftrl.md)** — correlated noise across the
+  whole training run via matrix factorization. Reduces effective
+  noise on cumulative updates at the cost of fixing the training
+  length in advance.
+
+Both pipelines share the same primitives — clipping, noise, sampling,
+optimizer, accounting — but use them differently. Pick the track
+that matches your problem.
 
 ## Per-example gradient clipping
 
-`clipped_grad` computes per-example gradients via `vmap` + `grad`, clips each
-to a maximum L2 norm, and sums the result.
+`clipped_grad` computes per-example gradients via `vmap` + `grad`,
+clips each to a maximum L2 norm, and sums the result.
 
 ```python
+# DP-SGD context:
 from opaque.dpsgd.clipping import clipped_grad
+
+# DP-FTRL context:
+# from opaque.dpftrl.clipping import clipped_grad
 
 grad_fn, clip_state = clipped_grad(
     loss_fn, clipping_norm=1.0, argnums=0, batch_argnums=1,
@@ -23,8 +41,7 @@ grads, clip_state = grad_fn(params, batch, state=clip_state)
 
 ## Noise injection
 
-Add calibrated Gaussian noise scaled to `grads.max_norm`. All noise functions
-return `(noise_fn, state)`. Pass the same key on all ranks for synchronized distributed noise.
+DP-SGD adds independent Gaussian noise scaled to `grads.max_norm`:
 
 ```python
 from opaque.dpsgd.noise import gaussian_noise
@@ -36,65 +53,52 @@ noise_fn, noise_state = gaussian_noise(
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
-Three noise families are available: **standard Gaussian** (`gaussian_noise`),
-**bounded Gaussian** (`truncated_gaussian_noise`) for
-bounded support at the same noise level, and **matrix factorization**
-(`mf_noise` with strategies like `band_mf_strategy`, `blt_strategy`,
-`lambda_cgd_strategy`) for correlated noise that
-reduces effective noise on cumulative updates (DP-FTRL). See the
-[Mechanisms](mechanisms/index.md) reference for details.
+DP-FTRL adds correlated noise via a matrix-factorization strategy:
+
+```python
+from opaque.dpftrl.noise import band_mf_strategy, mf_noise
+from opaque.random import key
+
+strategy = band_mf_strategy(n_steps=1000, bands=10)
+noise_fn, noise_state = mf_noise(
+    grads_template, strategy,
+    noise_multiplier=noise_multiplier, key=key(42),
+)
+noisy_grads, noise_state = noise_fn(grads, noise_state)
+```
 
 ## Privacy accounting
 
-Composable `DpProcess` objects built on a Rust PLD engine. Mechanisms compose
-with `*` (repeat) and `|` (heterogeneous composition). Query multiple privacy
-metrics from the same object.
+Composable `DpProcess` objects built on a Rust PLD engine. Mechanisms
+compose with `*` (repeat) and `|` (heterogeneous composition).
 
 ```python
-import opaque.accounting as acc
-import opaque.dpsgd.accounting as dpsgd_acc
+import opaque.accounting as acc                # cross-cutting
+import opaque.dpsgd.accounting as dpsgd_acc    # DP-SGD per-step factories
+import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL whole-process factories
+from opaque.dpftrl.noise import band_mf_strategy
 
-step = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate=0.01)
-training = step * 1000
+# DP-SGD: per-step Gaussian + Poisson, composed across N steps.
+dpsgd_proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01) * 1000
 
-eps = training.epsilon_at(delta=1e-5)
-adv = training.advantage()
-beta = training.beta_at(alpha=0.01)
-```
-
-## Noise calibration
-
-Binary search for the noise multiplier (or any parameter) that satisfies a
-target privacy budget.
-
-```python
-result = acc.calibrate(
-    acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=0.01) * 1000,
-    param_min=0.1, param_max=10.0,
+# DP-FTRL: whole-process MF + Poisson at calibration time.
+strategy = band_mf_strategy(n_steps=1000, bands=10)
+dpftrl_proc = dpftrl_acc.poisson(
+    dpftrl_acc.band_mf(
+        1.0, sensitivity=strategy.sensitivity,
+        coefficients=strategy.coefficients,
+    ),
+    sample_rate=0.01, n_steps=1000,
 )
-noise_multiplier = result.param
-```
 
-## Poisson sampling
-
-Privacy-amplifying batch sampling. Each example is included independently with
-probability `sample_rate`, producing variable-size batches. Distributed mode is
-detected and sharded automatically.
-
-```python
-from opaque.dpsgd.sampling import PoissonSubsampler
-from opaque.random import key
-
-sampler = PoissonSubsampler(dataset, sample_rate=0.01, n_steps=10, key=key(0))
-loader = DataLoader(dataset, batch_sampler=sampler)
+print(f"DP-SGD ε    = {dpsgd_proc.epsilon_at(1e-5):.4f}")
+print(f"DP-FTRL ε   = {dpftrl_proc.epsilon_at(1e-5):.4f}")
 ```
 
 ## Distributed training
 
-DDP-compatible: each device clips locally, gradients are aggregated via
-AllReduce, and noise is added identically on every device (same key, same
-noise).
+DDP-aware: pass the same key on all ranks for synchronized noise,
+use `sum_gradients` for cross-rank reduction.
 
 ```python
 from opaque.distributed import sum_gradients
@@ -115,7 +119,7 @@ from opaque.random import key
 
 cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
 train_data = dataset.select(cf.train_indices(len(dataset)))
-# ... train with DP-SGD ...
+# ... train with DP-SGD or DP-FTRL ...
 scores = auditing.loss_scores(
     loss_fn, trained_params,
     batch_argnums=(1,), dataloader=canary_loader,
@@ -129,11 +133,20 @@ print(f"ε (empirical): {estimate.epsilon_at(delta=1e-5):.4f}")
 **Getting started**: [Installation](getting-started/installation.md) and
 [Quick Start](getting-started/quickstart.md).
 
-**Understanding the API**: [User Guide](user-guide/index.md) covers each
-module with detailed explanations, API patterns, and practical guidance.
+**End-to-end pipelines**:
+[DP-SGD](user-guide/dp-sgd.md) ·
+[DP-FTRL](user-guide/dp-ftrl.md).
 
-**Hands-on practice**: [Tutorials](tutorials/README.md) are task-based Jupyter
-notebooks that exercise the library on concrete problems.
+**Understanding the API**: [User Guide](user-guide/index.md) covers
+each component with detailed explanations and practical guidance.
 
-**API details**: [API Reference](api/index.md) provides complete function
-signatures and docstrings.
+**Hands-on practice**: [Tutorials](tutorials/README.md) are
+task-based Jupyter notebooks.
+
+**API details**: [API Reference](reference/index.md) provides complete
+function signatures and docstrings.
+
+**Plugging in something new**:
+[Extending Opaque](extending/index.md) documents the contributor
+surface (registries, low-level helpers, the `opaque.api.*` plug-in
+pattern).

@@ -14,48 +14,62 @@ Opaque provides composable primitives for differentially private model
 training in PyTorch. Built on `torch.func` (vmap, grad), every component
 uses explicit state — no hooks, no subclassing, no hidden mutation.
 
-## Packages (Option B layout)
+## Packages (post-split layout)
 
-Every sub-package lives under `opaque.*` as a PEP 420 implicit namespace
-(no `__init__.py` at the `opaque/` level in any distribution). User-facing
-primitives are hoisted to the namespace root; internal primitives stay
-nested under `opaque.core.*`.
+Every sub-package lives under `opaque.*` / `opaque.api.*` as PEP 420
+implicit namespaces. Implementation lives at `opaque.api.<contrib>.*`;
+users import the same surface via thin re-export façades at
+`opaque.<concern>` / `opaque.<stack>.<concern>`. Multiple wheels
+contribute to the `opaque/` and `opaque/api/` namespaces — neither root
+ships an `__init__.py`.
 
-| Distribution | Import roots | Purpose | Build |
+| Distribution | Import roots | Purpose | Depends on |
 | --- | --- | --- | --- |
-| `opaque` | — | pins the curated sub-package bundle; extras add the rest | setuptools |
-| `opaque-core` | `opaque.core`, `opaque.functional`, `opaque.distributed`, `opaque._clipping`, `opaque.scheduling` | RNG, pytree, fixed + AUTO-S clip primitives, step-indexed schedules + warmup composition, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing | setuptools |
-| `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated-Gaussian / per-group noise, AdamW-BC, Poisson + truncated-Poisson samplers, adaptive clipping | setuptools |
-| `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, Poisson + b-min-sep + balls-in-bins + sequential samplers | setuptools |
-| `opaque-auditing` | `opaque.auditing` | empirical privacy auditing (one-run, coin-flip, loss attacks) | setuptools |
-| `opaque-performance` | `opaque.performance`, `opaque.performance.huggingface`, `opaque.performance.profiling` | fused Triton kernels, PyTorch checkpoint patches, HF model kernel patches, memory/step profiler | setuptools |
-| `opaque-transformers` | `opaque.transformers` | HF Transformers compat patches (vmap-safe attention, KV cache, Poisson collator) | setuptools |
-| `opaque-accounting` | `opaque.accounting` | PLD privacy accounting (PyO3 extension at `opaque.accounting.opaque_accounting`, aliased as `_native`) | maturin |
+| `opaque` | — | umbrella pin for the default bundle | sub-wheels |
+| `opaque-base` | `opaque.api.base.serialization`; façade `opaque.serialization` | Pure-Python serialization registry + dispatcher (the seam for `state_dict` / `from_state_dict`); no torch / numpy / optree | stdlib only |
+| `opaque-engine` | `opaque.api.engine.{types,pytree,random,serialization,distributed,noise_allocation,clipping,functional,scheduling,profiling}`; façades `opaque.types`, `opaque.pytree`, `opaque.random`, `opaque.distributed`, `opaque.functional`, `opaque.scheduling`, `opaque.profiling` | Torch substrate: pytree wrappers (`ClippedPytree`, `NoisedPytree`, `PerGroup`), `RngKey`, fixed + AUTO-S clipping, schedules + warmup, DDP plumbing, profiler, structural state-dict for tensors/ndarrays/dataclasses, per-group / paired noise stddev math | `opaque-base`, torch, numpy, optree |
+| `opaque-optimizers` | `opaque.api.optimizers`; façade `opaque.optimizers` | Torchopt-based functional optimizer chain (DP-aware AdamW-BC and friends) | `opaque-engine`, torchopt |
+| `opaque-accounting` | `opaque.api.accounting.core` (+ Rust ext); façade `opaque.accounting` | PLD privacy accounting (PyO3 extension at `opaque.api.accounting.core.opaque_accounting`, aliased as `_native`); torch-free | `opaque-base` |
+| `opaque-dpsgd` | `opaque.api.dpsgd.*`, `opaque.api.accounting.dpsgd.*`; façade `opaque.dpsgd` | Gaussian / truncated-Gaussian / per-group noise, adaptive clipping, Poisson + truncated-Poisson samplers, DP-SGD-specific accounting factories | `opaque-engine`, `opaque-accounting` |
+| `opaque-dpftrl` | `opaque.api.dpftrl.*`, `opaque.api.accounting.dpftrl.*`; façade `opaque.dpftrl` | MF mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, Poisson + b-min-sep + balls-in-bins + sequential samplers, DP-FTRL-specific accounting factories | `opaque-engine`, `opaque-accounting` |
+| `opaque-auditing` | `opaque.api.auditing.*`; façade `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) | `opaque-engine`, `opaque-accounting` |
+| `opaque-patches` | `opaque.api.patches.*`; façade `opaque.patches` | Torch checkpoint patches + HF Transformers compat (vmap-safe attention, KV cache) + fused Triton kernels (SwiGLU, GeGLU, RoPE, fused CE, LoRA) | `opaque-engine` |
+| `opaque-transformers` | `opaque.api.transformers.*`; façade `opaque.transformers` | HF trainer + integration | `opaque-engine`, `opaque-patches`, transformers, peft |
 
 Sub-packages are independently installable; `pip install opaque-dpsgd`
-gives a working `import opaque.dpsgd` without pulling any other package.
+pulls only `opaque-engine`, `opaque-accounting`, and their transitive
+deps. `pip install opaque-accounting` alone is **torch-free** (only
+`opaque-base` + the Rust extension).
 
 ## Namespace contract
 
-Three rules (rule 1 enforced in CI; rules 2 and 3 are design invariants):
+Five rules (rules 1 + 2 enforced in CI under `tests/contracts/`):
 
-1. **No package ships `src/opaque/__init__.py`.** `opaque` is a pure PEP 420
-   namespace. Each sub-package installs under `opaque/<name>/` and composes
-   automatically. CI enforces that no `src/opaque/__init__.py` slips in.
-2. **The root `opaque` distribution ships no code.** Installing `opaque[all]`
-   pulls in the sub-packages, but the root distribution itself exposes no
-   names. Each algorithm owns its own dotted path
-   (`opaque.dpsgd.noise.gaussian`, `opaque.dpftrl.sampling.b_min_sep`, …)
-   and that's intentional. This matches the convention of `zope.*`,
-   `google.cloud.*`, `azure.*`, `sphinxcontrib.*`.
-3. **`opaque.accounting` is its own distribution.** It is not split into
-   `opaque.dpsgd.accounting` / `opaque.dpftrl.accounting`: the PLD library is a
-   general-purpose primitive consumed by (but not exclusive to) MF. It depends
-   on `opaque-core` so checkpoints can use the same flat :mod:`opaque.serialization`
-   format as training state. The Rust/PyO3 extension is mounted at
-   `opaque.accounting.opaque_accounting` (the `.so` filename matches the Rust
-   crate) and aliased as `_native` in the package's `__init__.py` so internal
-   code can keep using the short name.
+1. **No wheel ships `src/opaque/__init__.py`, `src/opaque/api/__init__.py`,
+   or `src/opaque/api/accounting/__init__.py`.** All three are pure PEP 420
+   implicit namespaces because multiple wheels contribute to them. CI guard
+   in `pr.yml` + `tests/contracts/test_pep420_no_init.py`.
+2. **Façade modules contain only re-exports.** A façade under
+   `opaque/<concern>/` re-exports from the corresponding `opaque.api.*`
+   impl tree, with `__all__` and (optionally) `__version__` / private
+   PEP 562 lazy-import helpers. No business logic.
+   `tests/contracts/test_facade_discipline.py` enforces this on every
+   listed façade.
+3. **`opaque.api.*` is internal-but-discoverable.** It is the contributor
+   surface for new mechanism families (`opaque.api.lipschitz.*` plugs in
+   without foundation changes). User code is expected to import from the
+   façades. `opaque.api.*` paths surface in tracebacks and IDE jumps;
+   that is intentional. No runtime warning machinery.
+4. **`opaque-accounting` is torch-free.** Source and tests must not
+   import torch (`tests/contracts/test_accounting_torch_free.py`). The
+   wheel's only `opaque` dependency is `opaque-base`, the pure-Python
+   serialization registry. PLD types register against the unified
+   registry directly — no bridging code in dpsgd/dpftrl.
+5. **Tests live in the wheel that depends on every package they
+   import.** `tests/contracts/test_test_placement.py` enforces this with
+   an explicit `KNOWN_CROSS_CONE_IMPORTS` allowlist for legitimate
+   cross-cutting tests (mutual non-dependency between dpsgd ↔ dpftrl,
+   patches ↔ dpsgd). Each refactor phase shrinks the allowlist.
 
 ## Pull requests
 
@@ -107,24 +121,31 @@ cargo test --workspace                           # Rust tests
 Per-package tests:
 
 ```bash
-uv run pytest packages/opaque-core/tests/
+uv run pytest packages/opaque-base/tests/
+uv run pytest packages/opaque-engine/tests/
+uv run pytest packages/opaque-optimizers/tests/
 uv run pytest packages/opaque-dpsgd/tests/
 uv run pytest packages/opaque-dpftrl/tests/
 uv run pytest packages/opaque-auditing/tests/
-uv run pytest packages/opaque-performance/tests/
+uv run pytest packages/opaque-patches/tests/
 uv run pytest packages/opaque-transformers/tests/
 uv run pytest packages/opaque-accounting/tests/  # smoke; PLD factory tests live under dpsgd/dpftrl
+uv run pytest tests/contracts/                   # repo-level structural-invariant checks
 ```
 
 ## Installation matrix
 
 ```bash
-pip install opaque-core                  # primitives only
-pip install opaque-dpsgd                 # + DP-SGD mechanisms
-pip install opaque-dpftrl                    # + MF (DP-FTRL) mechanisms
-pip install opaque-accounting            # + Rust PLD accounting
-pip install opaque-performance[kernels]  # + Triton fused kernels
-pip install opaque-transformers[peft]     # + HF patches + PEFT extras
+pip install opaque-base                  # serialization registry only (stdlib-only, torch-free)
+pip install opaque-engine                # torch substrate (types, pytree, clipping, distributed, ...)
+pip install opaque-optimizers            # torchopt-based functional optimizers
+pip install opaque-accounting            # PLD accounting (torch-free standalone)
+pip install opaque-dpsgd                 # DP-SGD mechanisms
+pip install opaque-dpsgd[optimizers]     # DP-SGD + opaque-optimizers
+pip install opaque-dpftrl                # MF (DP-FTRL) mechanisms
+pip install opaque-patches               # PyTorch checkpoint + HF compat patches
+pip install opaque-patches[transformers] # + HF Transformers + PEFT extras
+pip install opaque-transformers          # HF trainer integration
 pip install "opaque[all]"                # everything
 ```
 
@@ -140,11 +161,9 @@ Everything else lives in the relevant package's
 
 | Extra | Pulls in |
 | --- | --- |
-| `opaque-transformers[peft]` | `peft`, `transformers`, `datasets` |
-| `opaque-transformers[kernels]` | HF + `opaque-performance[kernels]` |
-| `opaque-performance[kernels]` | `triton` |
-| `opaque-dpsgd[optimizers]` | `torchopt` |
-| `opaque-dpftrl[optimizers]` | `torchopt` |
+| `opaque-patches[transformers]` | `transformers`, `peft` |
+| `opaque-dpsgd[optimizers]` | `opaque-optimizers` (torchopt-based functional optimizers) |
+| `opaque-dpftrl[optimizers]` | `opaque-optimizers` |
 | `opaque-accounting[cross-validation]` | `dp-accounting`, `riskcal` |
 | `opaque[all]` | everything |
 
@@ -200,14 +219,14 @@ under caller's autocast, backward has autocast OFF.
 
 ### Partition policy
 
-`opaque.core` holds algorithm-agnostic primitives. Anything that only one
-algorithm would construct (DP-SGD adaptive clipping, truncated
-Poisson; MF b-min-sep / cyclic / balls-in-bins / sequential sampling,
-BLT/BSR/BiSR/band-MF/λ-CGD noise, private second-moment streams) lives
-with that algorithm.
+`opaque-engine` holds algorithm-agnostic torch-using primitives.
+Anything that only one algorithm would construct (DP-SGD adaptive
+clipping, truncated Poisson; MF b-min-sep / cyclic / balls-in-bins /
+sequential sampling, BLT/BSR/BiSR/band-MF/λ-CGD noise, private
+second-moment streams) lives with that algorithm.
 
-AUTO-S clipping (`auto_clipped_grad`) lives in `opaque-core` because its
-per-record sensitivity bound is constant and data-independent
+AUTO-S clipping (`auto_clipped_grad`) lives in `opaque-engine` because
+its per-record sensitivity bound is constant and data-independent
 (`sup_g ‖R · g / (‖g‖ + γ)‖ ≤ R`), making it compatible with both
 DP-SGD's Gaussian mechanism and DP-FTRL's matrix-factorization
 mechanisms — exactly like fixed clipping. Adaptive clipping is the only
@@ -285,16 +304,24 @@ OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all \
 
 ## Documentation
 
-- User-facing: `docs/` (MkDocs, Material theme)
-- Development: `docs/development/`
+- User-facing: `docs/` (MkDocs, Material theme).
+  - End-to-end guides: `docs/user-guide/{dp-sgd,dp-ftrl}.md`.
+  - Concept reference (per-topic): `docs/user-guide/{clipping,noise,
+    sampling,accounting,distributed,...}.md`.
+  - API reference (public façades): `docs/reference/`.
+  - Contributor / extending guides (only place that documents
+    `opaque.api.*` paths): `docs/extending/`.
+  - Mechanism reference (split per stack): `docs/mechanisms/{dp-sgd,
+    dp-ftrl}/`.
+  - Tutorials: `docs/tutorials/*.ipynb`.
 - This file (`AGENTS.md`) is agent-oriented; users should read
   `docs/index.md` or `README.md`.
 - Keep user-facing docs and code comments diary-free: describe the
   current API and behavior, not the development history (file moves,
   package regroups, removed dependencies, planned-but-unimplemented
-  features). Migration narrative belongs in PR bodies, the changelog,
-  or `docs/development/`. Forward-references to features that don't
-  yet exist in the codebase don't belong anywhere.
+  features). Migration narrative belongs in PR bodies and the
+  changelog. Forward-references to features that don't yet exist in
+  the codebase don't belong anywhere.
 
 ## Cursor Cloud specific instructions
 
@@ -317,10 +344,11 @@ the canonical lint / test / Rust-test commands.
 
 - The first `uv sync` triggers a full Rust/maturin build of `opaque-accounting`
   (~30 s cold, cached afterwards). Subsequent syncs are fast (~seconds).
-- The namespace is PEP 420 — there is **no** `opaque.core` import path. Instead,
-  `opaque-core` installs `opaque._clipping`, `opaque.functional`, `opaque.random`,
-  `opaque.scheduling`, `opaque.distributed`, `opaque.optimizers`, `opaque.profiling`,
-  `opaque.types`, and `opaque.pytree`.
+- The namespace is PEP 420 — there is **no** `opaque.core` import path.
+  Public primitives live at `opaque.{types,pytree,random,distributed,
+  functional,scheduling,profiling,serialization,optimizers}` (provided
+  by `opaque-base` + `opaque-engine` + `opaque-optimizers`); stack code
+  imports clipping via `opaque.dpsgd.clipping` / `opaque.dpftrl.clipping`.
 - `gaussian_noise` returns `(noise_fn, state)` and the inner `noise_fn` signature
   is `noise_fn(clipped_pytree, state) -> (noised_pytree, new_state)` (positional args).
 - `clipped_grad` returns `(clip_fn, clip_state)` and `clip_fn` is called as

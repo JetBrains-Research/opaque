@@ -516,7 +516,7 @@ which kernel causes the issue.
 
 ## API reference
 
-See [Utilities API Reference](../api/utilities.md) for
-`make_functional` signatures and [Clipping API Reference](../api/clipping.md)
+See [Utilities API Reference](../reference/utilities.md) for
+`make_functional` signatures and [Clipping API Reference](../reference/clipping.md)
 for `clipped_grad` with `partition_trainable` examples.
-See the [Kernels API](../api/index.md) for complete kernel function signatures.
+See the [Kernels API](../reference/index.md) for complete kernel function signatures.

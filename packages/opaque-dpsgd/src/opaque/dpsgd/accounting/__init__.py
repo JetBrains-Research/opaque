@@ -1,4 +1,4 @@
-"""DP-SGD-specific accounting factories.
+"""DP-SGD accounting façade — mechanism + amplification factories.
 
 Mechanism and amplification primitives scoped to DP-SGD (independent-noise
 per-step Gaussian + subsampling):
@@ -10,7 +10,7 @@ Mechanisms (in :mod:`opaque.dpsgd.accounting.mechanisms`):
 
 Amplification (in :mod:`opaque.dpsgd.accounting.amplification`):
 
-- :func:`poisson` — Poisson subsampling.  Set ``truncated_batch_size``
+- :func:`poisson` — Poisson subsampling. Set ``truncated_batch_size``
   and ``dataset_size`` together for the truncated-Poisson production form.
 - :func:`parallel_poisson` — Poisson subsampling under parallel workers.
 
@@ -31,11 +31,12 @@ Example::
     eps = training.epsilon_at(1e-5)
 """
 
-from opaque.dpsgd.accounting.amplification import (
+from opaque.api.accounting.dpsgd import (
+    adaclip,
+    gaussian,
     parallel_poisson,
     poisson,
 )
-from opaque.dpsgd.accounting.mechanisms import adaclip, gaussian
 
 __all__ = [
     "gaussian",

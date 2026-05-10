@@ -6,9 +6,9 @@ import pytest
 
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
-from opaque.accounting._base import DpProcess
-from opaque.accounting.mechanisms.types import Identity, NonPrivate
-from opaque.dpsgd.accounting.mechanisms._gaussian import Gaussian
+from opaque.api.accounting.core._base import DpProcess
+from opaque.api.accounting.core.mechanisms.types import Identity, NonPrivate
+from opaque.api.accounting.dpsgd.mechanisms._gaussian import Gaussian
 from opaque.serialization import from_state_dict, state_dict
 
 # ── NonPrivate dataclass tests ──────────────────────────────────────

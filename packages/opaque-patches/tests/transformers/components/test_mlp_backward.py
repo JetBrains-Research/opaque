@@ -1,5 +1,5 @@
 import pytest
-from tests._helpers import requires_hf_auth
+from ..._helpers import requires_hf_auth
 import torch
 from transformers import AutoConfig
 

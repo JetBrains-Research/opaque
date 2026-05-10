@@ -2,7 +2,7 @@
 
 import torch
 
-from opaque.dpftrl.noise._streaming_matrix import (
+from opaque.api.dpftrl.noise._streaming_matrix import (
     StreamingMatrix,
     diagonal,
     identity,

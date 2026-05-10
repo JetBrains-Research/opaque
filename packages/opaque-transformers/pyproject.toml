@@ -16,7 +16,8 @@ dependencies = [
     "transformers==4.57.1",
     "peft>=0.13.0",
     "datasets>=2.0.0",
-    "opaque-core",
+    "opaque-engine",
+    "opaque-patches",
 ]
 
 [tool.setuptools]
@@ -24,7 +25,7 @@ package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["opaque.transformers*"]
+include = ["opaque.transformers*", "opaque.api.transformers*"]
 namespaces = true
 
 [tool.setuptools_scm]
@@ -36,4 +37,5 @@ git_describe_command = "git describe --dirty --tags --long --match v*"
 package = true
 
 [tool.uv.sources]
-opaque-core = { workspace = true }
+opaque-engine = { workspace = true }
+opaque-patches = { workspace = true }

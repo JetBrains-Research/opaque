@@ -21,31 +21,32 @@ Install and depend on `opaque` only. The repository is implemented as
 | Distribution | Import roots | Purpose |
 |---|---|---|
 | `opaque` | — | Convenience installer; pulls in a curated bundle of sub-packages |
-| `opaque-core` | `opaque.{clipping,random,pytree,functional,distributed,optimizers,scheduling,profiling,types}` | RNG, pytree, clipping, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing, optimizers |
-| `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, Poisson samplers, adaptive + auto clipping |
-| `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers |
+| `opaque-base` | `opaque.serialization` | Pure-Python serialization registry + dispatcher; the seam every other wheel registers handlers against |
+| `opaque-engine` | `opaque.{types,pytree,random,distributed,functional,scheduling,profiling}` | Torch substrate: pytree wrappers (`ClippedPytree` / `NoisedPytree` / `PerGroup`), `RngKey`, fixed + AUTO-S clipping, schedules + warmup, DDP plumbing, profiler |
+| `opaque-optimizers` | `opaque.optimizers` | Torchopt-based functional optimizer chain (DP-aware AdamW-BC and friends) |
+| `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, Poisson samplers, adaptive clipping, DP-SGD-specific accounting factories |
+| `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers, DP-FTRL-specific accounting factories |
 | `opaque-auditing` | `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) |
 | `opaque-patches` | `opaque.patches` | Unified patching entrypoint for PyTorch checkpointing, Hugging Face compat wrappers, Triton kernels, and PEFT/LoRA fusion |
-| `opaque-transformers` | `opaque.transformers` | Transformers dependency bundle and namespace package for Hugging Face integrations |
-| `opaque-accounting` | `opaque.accounting` | PLD privacy accounting (Rust/PyO3 backend) |
+| `opaque-transformers` | `opaque.transformers` | Hugging Face trainer + integration |
+| `opaque-accounting` | `opaque.accounting` | PLD privacy accounting (Rust/PyO3 backend); torch-free standalone |
 
 [PEP 420]: https://peps.python.org/pep-0420/
 
 ### Import layout
 
 ```
-opaque.{clipping,random,pytree,types}                      <- opaque-core
-opaque.distributed.{collectives,gradients,state,shard}     <- opaque-core
-opaque.functional                                          <- opaque-core
-opaque.optimizers                                          <- opaque-core
-opaque.scheduling                                          <- opaque-core
-opaque.profiling                                           <- opaque-core
-opaque.dpsgd.{noise,clipping,sampling,optimizers}          <- opaque-dpsgd
-opaque.dpftrl.{noise,sampling,optimizers}                  <- opaque-dpftrl
+opaque.serialization                                       <- opaque-base
+opaque.{types,pytree}                                      <- opaque-engine
+opaque.{random,distributed}                                <- opaque-engine
+opaque.{functional,scheduling,profiling}                   <- opaque-engine
+opaque.optimizers                                          <- opaque-optimizers
+opaque.dpsgd.{clipping,noise,sampling,accounting}          <- opaque-dpsgd
+opaque.dpftrl.{clipping,noise,sampling,accounting}         <- opaque-dpftrl
 opaque.auditing                                            <- opaque-auditing
 opaque.patches.{kernels,torch,transformers,peft}           <- opaque-patches
 opaque.transformers                                        <- opaque-transformers
-opaque.accounting (._native)                               <- opaque-accounting
+opaque.accounting                                          <- opaque-accounting
 ```
 
 ## Installation
@@ -63,7 +64,7 @@ uv add opaque \
 Extras:
 
 ```bash
-pip install "opaque[auditing]"      # auditing components
+pip install "opaque[auditing]"      # empirical privacy auditing
 pip install "opaque[dpftrl]"        # correlated-noise DP-FTRL components
 pip install "opaque[transformers]"  # Hugging Face + patching components
 pip install "opaque[all]"           # all optional components
@@ -94,10 +95,11 @@ A minimal DP-SGD training loop:
 
 ```python
 import torch
-import opaque.accounting as acc
+import opaque.accounting as acc                # cross-cutting (calibrate, budget)
+import opaque.dpsgd.accounting as dpsgd_acc    # DP-SGD per-step factories
 from opaque.dpsgd.clipping import clipped_grad
-from opaque.random import key
 from opaque.dpsgd.noise import gaussian_noise
+from opaque.random import key
 
 def loss_fn(params, x, y):
     return ((x @ params - y) ** 2).sum()
@@ -105,7 +107,7 @@ def loss_fn(params, x, y):
 # Calibrate noise for target privacy budget
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=0.01) * 1000,
     param_min=0.1, param_max=10.0,
 )
 batch_size = 64  # expected batch size for Poisson sampling
@@ -116,7 +118,7 @@ grad_fn, clip_state = clipped_grad(
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
-  noise_multiplier=result.param, key=key(42),
+    noise_multiplier=result.param, key=key(42),
 )
 
 # Training loop
@@ -125,7 +127,7 @@ lr = 0.01
 for batch_x, batch_y in dataloader:
     grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = params - lr * noisy_grads  # or use torchopt optimizer
+    params = params - lr * noisy_grads.pytree  # or wire opaque.optimizers
 ```
 
 ## Features
@@ -152,7 +154,7 @@ for batch_x, batch_y in dataloader:
 - [Getting Started](docs/getting-started/quickstart.md)
 - [User Guide](docs/user-guide/index.md)
 - [Tutorials](docs/tutorials/README.md)
-- [API Reference](docs/api/index.md)
+- [API Reference](docs/reference/index.md)
 - [Examples](examples/)
 
 ## Development

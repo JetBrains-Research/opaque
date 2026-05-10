@@ -5,8 +5,8 @@ import warnings
 import pytest
 import torch
 
-from opaque.dpftrl.noise._band_mf import _momentum_workload_coef
-from opaque.dpftrl.noise._toeplitz import (
+from opaque.api.dpftrl.noise._band_mf import _momentum_workload_coef
+from opaque.api.dpftrl.noise._toeplitz import (
     inverse_as_streaming_matrix,
     inverse_coef,
     loss,

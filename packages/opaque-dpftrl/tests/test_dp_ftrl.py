@@ -15,9 +15,9 @@ from opaque.dpftrl.noise import (
     identity_strategy,
     lambda_cgd_strategy,
 )
-from opaque.dpftrl.noise._engine import _matrix_factorization_noise
-from opaque.dpftrl.noise._streaming_matrix import identity
-from opaque.dpftrl.noise._toeplitz import (
+from opaque.api.dpftrl.noise._engine import _matrix_factorization_noise
+from opaque.api.dpftrl.noise._streaming_matrix import identity
+from opaque.api.dpftrl.noise._toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )

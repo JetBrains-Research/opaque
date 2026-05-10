@@ -17,7 +17,7 @@ from torch.func import vmap, grad
 
 pytest.importorskip("triton")
 
-from opaque.patches.kernels.geglu import Opaque_GeGLU_Exact, Opaque_GeGLU_Approx
+from opaque.api.patches.kernels.geglu import Opaque_GeGLU_Exact, Opaque_GeGLU_Approx
 
 pytestmark = [
     pytest.mark.cuda,

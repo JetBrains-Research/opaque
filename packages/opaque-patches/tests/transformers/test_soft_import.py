@@ -13,7 +13,7 @@ import sys
 # Block `import transformers` before opaque touches it.
 sys.modules["transformers"] = None
 
-from opaque.patches.transformers._router import apply_transformers_model_patches
+from opaque.api.patches.transformers._router import apply_transformers_model_patches
 
 # Should not raise and should not have patched anything.
 try:

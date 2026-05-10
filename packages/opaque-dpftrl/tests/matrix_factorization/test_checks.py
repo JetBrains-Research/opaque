@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from opaque.dpftrl.noise._checks import (
+from opaque.api.dpftrl.noise._checks import (
     check,
     check_exactly_one,
     check_finite,

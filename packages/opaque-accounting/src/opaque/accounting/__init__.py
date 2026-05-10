@@ -1,7 +1,7 @@
 """Differential privacy accounting using Privacy Loss Distributions (PLD).
 
 Cross-cutting accounting surface — composition, calibration, generic
-mechanisms (``identity``, ``nonprivate``, ``eps_delta``), and shared
+mechanisms (``identity``, ``nonprivate``, ``eps_delta``), shared
 transformations.
 
 Algorithm-specific factories live in their respective packages
@@ -26,49 +26,30 @@ Example (requires ``opaque-dpsgd`` in the environment)::
     epsilon = training.epsilon_at(1e-5)
 """
 
-# Native PyO3 extension. Compiled artifact lives at
-# ``opaque/accounting/opaque_accounting.abi3.so`` (named after the Rust
-# crate); aliased to ``_native`` so submodules can use a short private
-# name.
-try:
-    from . import opaque_accounting as _native  # noqa: F401
-except ImportError as e:
-    raise ImportError(
-        "opaque.accounting native extension not found. "
-        "Build with: uv run maturin develop --release "
-        "-m packages/opaque-accounting/Cargo.toml"
-    ) from e
-
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
-
-try:
-    __version__ = _pkg_version("opaque-accounting")
-except PackageNotFoundError:
-    __version__ = "0.0.0"
-
-from . import (
+from opaque.api.accounting.core import (
+    Accountant,
+    __version__,
+    advantage_budget,
     amplification,
+    beta_budget,
+    cached,
+    calibrate,
     calibration,
+    compose,
     composition,
+    delta_budget,
     discretization,
+    eps_delta,
+    epsilon_budget,
+    get_discretization,
+    identity,
     mechanisms,
+    nonprivate,
+    repeat,
+    risk_budget,
+    set_discretization,
     transformations,
 )
-
-from opaque.accounting._accountant import Accountant
-
-import opaque.accounting._serialization  # noqa: F401  (opaque.serialization hook)
-from opaque.accounting.calibration import (
-    advantage_budget,
-    beta_budget,
-    calibrate,
-    delta_budget,
-    epsilon_budget,
-    risk_budget,
-)
-from opaque.accounting.composition import cached, compose, repeat
-from opaque.accounting.discretization import get_discretization, set_discretization
-from opaque.accounting.mechanisms import eps_delta, identity, nonprivate
 
 __all__ = [
     "__version__",

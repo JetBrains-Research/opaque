@@ -1,6 +1,20 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Shared fixtures and helpers for compatibility tests."""
+"""Shared fixtures and helpers for opaque-patches compatibility tests.
+
+The helpers exercise ``opaque.patches.apply_model_patches`` against
+``opaque.api.engine.clipping.clipped_grad`` to verify that patched HF
+models still vmap-grad cleanly. These tests intentionally stick to the
+**engine** clipping primitive (rather than ``opaque.dpsgd.clipping``)
+because patches has no dependency on opaque-dpsgd; the test subject is
+"patches preserve gradient flow under vmap", not any DP-SGD specific
+behavior.
+
+Genuine DP-SGD ↔ patches and DP-FTRL ↔ patches integration tests
+(end-to-end pipelines exercising noise + accounting in addition to
+clipping) live in ``tests/integration/patches/`` if and when they are
+added.
+"""
 
 import os
 
@@ -12,7 +26,7 @@ pytest.importorskip("peft")
 from peft import LoraConfig, get_peft_model  # noqa: E402
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
-from opaque.dpsgd.clipping import clipped_grad
+from opaque.api.engine.clipping import clipped_grad
 from opaque.functional import make_functional
 from opaque.patches import apply_model_patches
 
@@ -69,6 +83,13 @@ def prepare_lora_model(config, target_modules=None):
 
 
 def run_clipped_grad_test(model, tokenizer, device=None):
+    """Verify a patched model still vmap-grad-clips correctly.
+
+    Engine-side assertion — uses ``opaque.api.engine.clipping.clipped_grad``
+    rather than ``opaque.dpsgd.clipping`` so it doesn't pull in any
+    DP-SGD-specific behavior. The test passes if the model produces
+    finite gradients of the right shape under ``vmap(grad(...))``.
+    """
     if device is None:
         device = next(model.parameters()).device
 

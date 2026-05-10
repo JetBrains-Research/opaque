@@ -23,7 +23,7 @@ from torch.func import vmap, grad
 
 pytest.importorskip("triton")
 
-from opaque.patches.kernels.swiglu import Opaque_SwiGLU
+from opaque.api.patches.kernels.swiglu import Opaque_SwiGLU
 
 pytestmark = [
     pytest.mark.cuda,

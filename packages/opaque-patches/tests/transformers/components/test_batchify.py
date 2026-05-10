@@ -17,7 +17,9 @@ class TestBatchifyForward:
 
     def test_batchify_1d_input_ids(self):
         """1D input_ids should be unsqueezed, output logits squeezed back."""
-        from opaque.patches.transformers.components.batchify import _batchify_forward
+        from opaque.api.patches.transformers.components.batchify import (
+            _batchify_forward,
+        )
 
         config = AutoConfig.from_pretrained("openai-community/gpt2")
         config.num_hidden_layers = 1
@@ -36,7 +38,9 @@ class TestBatchifyForward:
 
     def test_batchify_2d_input_ids_is_noop(self):
         """2D input_ids (already batched) should pass through unchanged."""
-        from opaque.patches.transformers.components.batchify import _batchify_forward
+        from opaque.api.patches.transformers.components.batchify import (
+            _batchify_forward,
+        )
 
         config = AutoConfig.from_pretrained("openai-community/gpt2")
         config.num_hidden_layers = 1
@@ -52,7 +56,9 @@ class TestBatchifyForward:
 
     def test_batchify_positional_input_ids(self):
         """input_ids passed positionally should also be batchified."""
-        from opaque.patches.transformers.components.batchify import _batchify_forward
+        from opaque.api.patches.transformers.components.batchify import (
+            _batchify_forward,
+        )
 
         config = AutoConfig.from_pretrained("openai-community/gpt2")
         config.num_hidden_layers = 1

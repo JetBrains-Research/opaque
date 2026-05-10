@@ -19,7 +19,7 @@ from torch.func import grad, vmap
 
 pytest.importorskip("triton")
 
-from opaque.patches.kernels.rms_norm import Opaque_RMSNorm
+from opaque.api.patches.kernels.rms_norm import Opaque_RMSNorm
 
 pytestmark = [
     pytest.mark.cuda,

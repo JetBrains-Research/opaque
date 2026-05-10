@@ -17,9 +17,11 @@ members = [
     "opaque",
     "opaque-accounting",
     "opaque-auditing",
-    "opaque-core",
+    "opaque-base",
     "opaque-dpftrl",
     "opaque-dpsgd",
+    "opaque-engine",
+    "opaque-optimizers",
     "opaque-patches",
     "opaque-transformers",
 ]
@@ -2168,8 +2170,9 @@ name = "opaque"
 source = { editable = "." }
 dependencies = [
     { name = "opaque-accounting" },
-    { name = "opaque-core" },
     { name = "opaque-dpsgd" },
+    { name = "opaque-engine" },
+    { name = "opaque-optimizers" },
     { name = "opaque-patches" },
 ]
 
@@ -2225,10 +2228,11 @@ requires-dist = [
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
     { name = "opaque-auditing", marker = "extra == 'all'", editable = "packages/opaque-auditing" },
     { name = "opaque-auditing", marker = "extra == 'auditing'", editable = "packages/opaque-auditing" },
-    { name = "opaque-core", editable = "packages/opaque-core" },
     { name = "opaque-dpftrl", marker = "extra == 'all'", editable = "packages/opaque-dpftrl" },
     { name = "opaque-dpftrl", marker = "extra == 'dpftrl'", editable = "packages/opaque-dpftrl" },
     { name = "opaque-dpsgd", editable = "packages/opaque-dpsgd" },
+    { name = "opaque-engine", editable = "packages/opaque-engine" },
+    { name = "opaque-optimizers", editable = "packages/opaque-optimizers" },
     { name = "opaque-patches", editable = "packages/opaque-patches" },
     { name = "opaque-patches", marker = "extra == 'all'", editable = "packages/opaque-patches" },
     { name = "opaque-patches", extras = ["transformers"], marker = "extra == 'transformers'", editable = "packages/opaque-patches" },
@@ -2271,80 +2275,112 @@ name = "opaque-accounting"
 version = "0.0.0.dev0"
 source = { editable = "packages/opaque-accounting" }
 dependencies = [
-    { name = "opaque-core" },
+    { name = "opaque-base" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "opaque-core", editable = "packages/opaque-core" }]
+requires-dist = [{ name = "opaque-base", editable = "packages/opaque-base" }]
 
 [[package]]
 name = "opaque-auditing"
 source = { editable = "packages/opaque-auditing" }
 dependencies = [
-    { name = "opaque-core" },
+    { name = "opaque-accounting" },
+    { name = "opaque-engine" },
     { name = "scipy" },
     { name = "torch" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "opaque-core", editable = "packages/opaque-core" },
+    { name = "opaque-accounting", editable = "packages/opaque-accounting" },
+    { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "scipy", specifier = ">=1.11.0" },
     { name = "torch", specifier = ">=2.10.0" },
 ]
 
 [[package]]
-name = "opaque-core"
-source = { editable = "packages/opaque-core" }
-dependencies = [
-    { name = "numpy" },
-    { name = "optree" },
-    { name = "torch" },
-    { name = "torchopt" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.22" },
-    { name = "optree", specifier = ">=0.17.0" },
-    { name = "torch", specifier = ">=2.10.0" },
-    { name = "torchopt", specifier = ">=0.7.3" },
-]
+name = "opaque-base"
+source = { editable = "packages/opaque-base" }
 
 [[package]]
 name = "opaque-dpftrl"
 source = { editable = "packages/opaque-dpftrl" }
 dependencies = [
     { name = "opaque-accounting" },
-    { name = "opaque-core" },
+    { name = "opaque-engine" },
     { name = "scipy" },
     { name = "torch" },
-    { name = "torchopt" },
+]
+
+[package.optional-dependencies]
+optimizers = [
+    { name = "opaque-optimizers" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
-    { name = "opaque-core", editable = "packages/opaque-core" },
+    { name = "opaque-engine", editable = "packages/opaque-engine" },
+    { name = "opaque-optimizers", marker = "extra == 'optimizers'", editable = "packages/opaque-optimizers" },
     { name = "scipy", specifier = ">=1.11.0" },
     { name = "torch", specifier = ">=2.10.0" },
-    { name = "torchopt", specifier = ">=0.7.3" },
 ]
+provides-extras = ["optimizers"]
 
 [[package]]
 name = "opaque-dpsgd"
 source = { editable = "packages/opaque-dpsgd" }
 dependencies = [
     { name = "opaque-accounting" },
-    { name = "opaque-core" },
+    { name = "opaque-engine" },
+    { name = "torch" },
+]
+
+[package.optional-dependencies]
+optimizers = [
+    { name = "opaque-optimizers" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "opaque-accounting", editable = "packages/opaque-accounting" },
+    { name = "opaque-engine", editable = "packages/opaque-engine" },
+    { name = "opaque-optimizers", marker = "extra == 'optimizers'", editable = "packages/opaque-optimizers" },
+    { name = "torch", specifier = ">=2.10.0" },
+]
+provides-extras = ["optimizers"]
+
+[[package]]
+name = "opaque-engine"
+source = { editable = "packages/opaque-engine" }
+dependencies = [
+    { name = "numpy" },
+    { name = "opaque-base" },
+    { name = "optree" },
+    { name = "torch" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "opaque-base", editable = "packages/opaque-base" },
+    { name = "optree", specifier = ">=0.17.0" },
+    { name = "torch", specifier = ">=2.10.0" },
+]
+
+[[package]]
+name = "opaque-optimizers"
+source = { editable = "packages/opaque-optimizers" }
+dependencies = [
+    { name = "opaque-engine" },
     { name = "torch" },
     { name = "torchopt" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "opaque-accounting", editable = "packages/opaque-accounting" },
-    { name = "opaque-core", editable = "packages/opaque-core" },
+    { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "torchopt", specifier = ">=0.7.3" },
 ]
@@ -2353,7 +2389,7 @@ requires-dist = [
 name = "opaque-patches"
 source = { editable = "packages/opaque-patches" }
 dependencies = [
-    { name = "opaque-core" },
+    { name = "opaque-engine" },
     { name = "torch" },
 ]
 
@@ -2365,7 +2401,7 @@ transformers = [
 
 [package.metadata]
 requires-dist = [
-    { name = "opaque-core", editable = "packages/opaque-core" },
+    { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "peft", marker = "extra == 'transformers'", specifier = ">=0.13.0" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "transformers", marker = "extra == 'transformers'", specifier = "==4.57.1" },
@@ -2377,7 +2413,8 @@ name = "opaque-transformers"
 source = { editable = "packages/opaque-transformers" }
 dependencies = [
     { name = "datasets" },
-    { name = "opaque-core" },
+    { name = "opaque-engine" },
+    { name = "opaque-patches" },
     { name = "peft" },
     { name = "transformers" },
 ]
@@ -2385,7 +2422,8 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "datasets", specifier = ">=2.0.0" },
-    { name = "opaque-core", editable = "packages/opaque-core" },
+    { name = "opaque-engine", editable = "packages/opaque-engine" },
+    { name = "opaque-patches", editable = "packages/opaque-patches" },
     { name = "peft", specifier = ">=0.13.0" },
     { name = "transformers", specifier = "==4.57.1" },
 ]

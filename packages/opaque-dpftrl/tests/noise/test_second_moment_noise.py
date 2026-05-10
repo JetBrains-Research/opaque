@@ -5,7 +5,7 @@ import math
 import pytest
 import torch
 
-from opaque._noise_allocation import paired_noise_stddevs
+from opaque.api.engine.noise_allocation import paired_noise_stddevs
 from opaque.types import (
     NoisedPytree,
     PerGroup,

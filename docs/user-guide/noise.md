@@ -257,7 +257,7 @@ Opaque provides five MF strategies, all used through the unified `mf_noise()` di
 
 | Strategy factory | Memory | Best for |
 |----------|--------|----------|
-| `band_mf_strategy()` | O(bands) | General use with ``ftrl_acc.poisson`` amplification |
+| `band_mf_strategy()` | O(bands) | General use with ``dpftrl_acc.poisson`` amplification |
 | `blt_strategy()` | O(buffers) | Long training runs (n > 5000), multi-epoch |
 | `lambda_cgd_strategy()` | O(1) | Zero extra memory (PRNG replay) |
 | `bisr_strategy()` | O(bandwidth) | Asymptotically optimal, arbitrary bandwidth |
@@ -340,7 +340,7 @@ identical noise. See [Distributed Training](distributed.md) and
 ### `band_mf_strategy`
 
 Banded Toeplitz strategy. Optimizes banded Toeplitz coefficients for the
-workload. Uses ``ftrl_acc.poisson`` for privacy accounting.
+workload. Uses ``dpftrl_acc.poisson`` for privacy accounting.
 
 ```python
 from opaque.dpftrl.noise import mf_noise, band_mf_strategy
@@ -441,13 +441,13 @@ noise generation and privacy accounting always agree on the mechanism.
 
 ```python
 import opaque.accounting as acc           # cross-cutting calibration / composition
-import opaque.dpftrl.accounting as ftrl_acc  # DP-FTRL factories
+import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 from opaque.dpftrl.noise import band_mf_strategy, lambda_cgd_strategy
 
 # BandMF — strategy provides sensitivity and coefficients
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = ftrl_acc.poisson(
-    ftrl_acc.band_mf(
+proc = dpftrl_acc.poisson(
+    dpftrl_acc.band_mf(
         1.0,
         sensitivity=strategy.sensitivity,
         coefficients=strategy.coefficients,
@@ -462,8 +462,8 @@ strategy = lambda_cgd_strategy(
     lambda_=0.9, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-proc = ftrl_acc.balls_in_bins(
-    ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+proc = dpftrl_acc.balls_in_bins(
+    dpftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
                         gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
@@ -472,8 +472,8 @@ proc = ftrl_acc.balls_in_bins(
 # The runtime σ allocation absorbs the joint cost via the
 # sensitivity-proportional Mahalanobis budget; calibrate against the same
 # MF mechanism PLD used for the first-moment-only release.
-proc = ftrl_acc.balls_in_bins(
-    ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+proc = dpftrl_acc.balls_in_bins(
+    dpftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
                         gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
@@ -536,7 +536,7 @@ Values are illustrative; actual results depend on problem specifics.
 ``sample_rate``.  Use ``bands=1`` with ``identity_strategy`` / ``mf_identity``
 so each step is plain Poisson on the full dataset; for BandMF, match ``bands``
 to ``band_mf_strategy``.  That keeps the data schedule aligned with ``mf_noise``
-and ``ftrl_acc.poisson``:
+and ``dpftrl_acc.poisson``:
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
@@ -591,5 +591,5 @@ noise state type. See [Distributed Training](distributed.md) for details.
 
 ## API reference
 
-See [Noise API Reference](../api/noise.md) for complete function signatures
+See [Noise API Reference](../reference/noise.md) for complete function signatures
 and return types.

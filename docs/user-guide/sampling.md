@@ -134,7 +134,7 @@ group stays Poisson-style.
 
 For an identity MF baseline (``identity_strategy`` / ``mf_identity``), use
 ``bands=1`` so the lone group is the full dataset and every step is plain
-Poisson on all examples, matching whole-process ``ftrl_acc.poisson`` with an
+Poisson on all examples, matching whole-process ``dpftrl_acc.poisson`` with an
 ``IdentityMf`` inner.  For BandMF, set ``bands`` to the same count as in
 ``band_mf_strategy`` / ``BandMf`` so participation matches correlated
 ``mf_noise``.
@@ -427,7 +427,7 @@ grads_mb, state_mb = grad_fn_mb(params, batch_256, state=state_mb)
 |---------|-----------|---------|----------|
 | `PoissonSubsampler` | Variable | Standard amplification | Research, general use |
 | `PoissonSubsampler` + ``truncated_batch_size`` | Bounded above | Weaker than plain Poisson (same ``sample_rate``) | Production, stable batch sizes / memory |
-| `CyclicPoissonSampler` (``opaque.dpftrl``) | Variable | ``ftrl_acc.poisson`` | DP-FTRL; identity MF → ``bands=1``; BandMF → ``bands`` = strategy |
+| `CyclicPoissonSampler` (``opaque.dpftrl``) | Variable | ``dpftrl_acc.poisson`` | DP-FTRL; identity MF → ``bands=1``; BandMF → ``bands`` = strategy |
 | `BallsInBinsSampler` | Fixed (deterministic) | Balls-in-bins amplification | λCGD, BISR, BLT |
 | `SequentialBatchSampler` | Fixed (deterministic) | No amplification | BLT (pre-shuffled dataset) |
 
@@ -442,5 +442,5 @@ that require fixed batch sizes.
 
 ## API reference
 
-See [Sampling API Reference](../api/sampling.md) for complete function
+See [Sampling API Reference](../reference/sampling.md) for complete function
 signatures and return types.

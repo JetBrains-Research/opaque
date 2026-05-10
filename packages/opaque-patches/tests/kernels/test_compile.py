@@ -18,7 +18,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from opaque.dpsgd.clipping import clipped_grad
+from opaque.api.engine.clipping import clipped_grad
 from opaque.functional import make_functional
 from opaque.patches.kernels import opaque_rms_norm, opaque_swiglu
 

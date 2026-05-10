@@ -1,4 +1,4 @@
-"""Empirical privacy auditing for differential privacy.
+"""Empirical privacy auditing façade — canary-based with pluggable attacks.
 
 Canary-based auditing with pluggable attacks and estimation methods.
 
@@ -33,9 +33,7 @@ References:
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-from opaque.auditing._coin_flip import coin_flip
-from opaque.auditing.attacks import loss_scores
-from opaque.auditing.one_run import one_run
+from opaque.api.auditing import coin_flip, loss_scores, one_run
 
 try:
     __version__ = _pkg_version("opaque-auditing")

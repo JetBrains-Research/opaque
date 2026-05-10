@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from torch.func import grad, vmap
 from torch.utils.checkpoint import checkpoint
 
-from opaque.patches.torch.runtime import is_checkpoint_patched
+from opaque.api.patches.torch.runtime import is_checkpoint_patched
 from opaque.patches import apply_runtime_patches
 
 apply_runtime_patches(vmap_checkpointing=True)
@@ -164,7 +164,7 @@ class TestCheckpointWithClippedGrad:
         transformers = pytest.importorskip("transformers")
         peft = pytest.importorskip("peft")
 
-        from opaque.dpsgd.clipping import clipped_grad
+        from opaque.api.engine.clipping import clipped_grad
         from opaque.functional import make_functional
         from opaque.patches import apply_model_patches
 
@@ -219,7 +219,7 @@ class TestCheckpointWithClippedGrad:
         transformers = pytest.importorskip("transformers")
         peft = pytest.importorskip("peft")
 
-        from opaque.dpsgd.clipping import clipped_grad
+        from opaque.api.engine.clipping import clipped_grad
         from opaque.functional import make_functional
         from opaque.patches import apply_model_patches
 

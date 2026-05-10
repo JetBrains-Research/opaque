@@ -31,7 +31,7 @@ from dp_accounting.pld import privacy_loss_distribution as pld_lib  # noqa: E402
 import opaque.accounting as acc  # noqa: E402
 import opaque.dpsgd.accounting as dpsgd_acc  # noqa: E402
 from opaque.accounting import calibration as cal  # noqa: E402
-from opaque.accounting.discretization import get_discretization  # noqa: E402
+from opaque.api.accounting.core.discretization import get_discretization  # noqa: E402
 
 # ============================================================================
 # Helpers
@@ -390,7 +390,7 @@ class TestAdaClipCrossValidation:
         ],
     )
     def test_adaclip_effective_noise(self, sigma, batch_size):
-        from opaque.accounting import _native
+        from opaque.api.accounting.core import _native
 
         proc = dpsgd_acc.adaclip(
             dpsgd_acc.gaussian(sigma), expected_batch_size=batch_size

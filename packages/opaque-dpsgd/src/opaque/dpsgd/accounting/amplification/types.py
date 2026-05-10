@@ -1,8 +1,8 @@
-"""Public type definitions for :mod:`opaque.dpsgd.accounting.amplification`."""
+"""DP-SGD accounting amplification types façade."""
 
-from __future__ import annotations
-
-from opaque.dpsgd.accounting.amplification._parallel_poisson import ParallelPoisson
-from opaque.dpsgd.accounting.amplification._poisson import Poisson
+from opaque.api.accounting.dpsgd.amplification.types import (
+    ParallelPoisson,
+    Poisson,
+)
 
 __all__ = ["Poisson", "ParallelPoisson"]

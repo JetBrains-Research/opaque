@@ -1,0 +1,247 @@
+"""Functional DP process accountant for training loops.
+
+An Accountant tracks the accumulated privacy loss from composed DP processes.
+It provides a functional API: composing a new process returns a fresh Accountant.
+
+Merge optimization is handled entirely by :meth:`DpProcess.__or__`:
+identical steps are collapsed using structural equality (``==``), so
+``acct | step`` in a loop produces ``Repeated(step, n)`` — one
+``self_compose(n)`` (2 FFTs) instead of *n* heterogeneous composes.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+from typing import Any
+
+from opaque.api.accounting.core._base import DpProcess
+from opaque.api.accounting.core._budgets import (
+    AdvantageBudget,
+    BetaBudget,
+    Budget,
+    DeltaBudget,
+    EpsilonBudget,
+    RiskBudget,
+)
+from opaque.api.accounting.core._process_flat import _load_dp_process
+from opaque.api.accounting.core.mechanisms.types import Identity
+
+__all__ = ["Accountant"]
+
+
+class Accountant:
+    """Functional DP process accountant for training loops.
+
+    Tracks accumulated privacy by composing processes over time.
+    Provides a functional API: composing returns a new Accountant instead of mutating.
+
+    Example::
+
+        import opaque.accounting as acc
+        from opaque.api.accounting.core._accountant import Accountant
+
+        acct = Accountant()
+        step = acc.poisson(acc.gaussian(1.1), 0.01)
+
+        for i in range(num_steps):
+            acct = acct | step
+
+            if i % 100 == 0:
+                eps = acct.epsilon_at(1e-5)
+                print(f"Step {i}: ε={eps:.2f}")
+
+    With an optional privacy budget::
+
+        from opaque.accounting import calibration as cal
+
+        budget = cal.epsilon_budget(3.0, delta=1e-5)
+        acct = Accountant(budget=budget)
+        step = acc.poisson(acc.gaussian(1.1), 0.01)
+
+        for i in range(num_steps):
+            acct = acct | step
+
+            if acct.budget_exceeded:
+                print("Privacy budget exhausted!")
+                break
+    """
+
+    def __init__(self, budget: Budget | None = None) -> None:
+        """Initialize an Accountant.
+
+        Args:
+            budget: Optional privacy budget. If provided, enables
+                budget_exceeded checks. Should be a Budget from the
+                budgets module (e.g., epsilon_budget(3.0, delta=1e-5)).
+        """
+        self._process: DpProcess = Identity()
+        self._budget: Budget | None = budget
+
+    def __or__(self, process: DpProcess) -> Accountant:
+        """Compose a new process onto this accountant.
+
+        Returns a new Accountant with the composed process.  The original
+        accountant is not modified.
+
+        Merge optimization is automatic: ``DpProcess.__or__`` uses
+        structural equality to collapse identical steps into a single
+        :class:`~opaque.accounting.composition.Repeated` node.
+
+        Args:
+            process: DpProcess to compose (e.g., from poisson(), gaussian(), etc.)
+
+        Returns:
+            New Accountant with composed process.
+
+        Example::
+
+            acct = Accountant()
+            step = poisson(gaussian(1.1), 0.01)
+            acct = acct | step  # One step
+            acct = acct | step  # Collapsed into Repeated(step, 2)
+        """
+        new_acct = Accountant(budget=self._budget)
+        new_acct._process = self._process | process
+        return new_acct
+
+    def epsilon_at(self, delta: float) -> float:
+        """Get epsilon for a target delta.
+
+        Computes (ε, δ)-DP parameter epsilon at the given delta.
+
+        Args:
+            delta: Target failure probability. Typically 1e-5 or 1e-6.
+
+        Returns:
+            Privacy budget epsilon. Lower is more private.
+
+        Example::
+
+            acct = Accountant()
+            step = poisson(gaussian(1.1), 0.01)
+            for i in range(1000):
+                acct = acct | step
+
+            eps = acct.epsilon_at(1e-5)
+            print(f"Privacy: (ε={eps:.2f}, δ=1e-5)")
+        """
+        return self._process.epsilon_at(delta)
+
+    def delta_at(self, epsilon: float) -> float:
+        """Get delta for a target epsilon.
+
+        Computes (ε, δ)-DP parameter delta at the given epsilon.
+
+        Args:
+            epsilon: Privacy budget.
+
+        Returns:
+            Failure probability delta. Lower is better.
+        """
+        return self._process.delta_at(epsilon)
+
+    def advantage(self) -> float:
+        """Get f-DP advantage (total-variation privacy).
+
+        Represents the maximum probability of distinguishing neighboring
+        datasets. Lower is more private (0 = perfectly private).
+
+        Returns:
+            Advantage in [0, 1].
+        """
+        return self._process.advantage()
+
+    def beta_at(self, alpha: float) -> float:
+        """Get Type-II error rate (hypothesis testing interpretation).
+
+        Args:
+            alpha: Type-I error rate (false positive). Must be in [0, 1].
+
+        Returns:
+            Type-II error rate (false negative) in [0, 1].
+            Higher is more private (attacker makes more mistakes).
+        """
+        return self._process.beta_at(alpha)
+
+    def risk_at(self, prior: float) -> float:
+        """Get Bayes risk under an optimal adversary.
+
+        Args:
+            prior: Prior probability that data came from D (vs D').
+                Typically 0.5 for balanced prior.
+
+        Returns:
+            Bayes risk in [0, 0.5]. Higher is more private.
+        """
+        return self._process.risk_at(prior)
+
+    @property
+    def budget_exceeded(self) -> bool:
+        """Check if accumulated privacy exceeds the budget.
+
+        Returns False if no budget was specified. Otherwise, evaluates the
+        target metric on the accumulated process and checks if it violates
+        the budget bound.
+
+        Returns:
+            True if privacy budget is violated, False otherwise.
+        """
+        if self._budget is None:
+            return False
+
+        achieved = self._budget.evaluate(self._process)
+        return achieved > self._budget.value
+
+
+def _accountant_state_dict(acct: Accountant) -> dict[str, Any]:
+    from opaque.serialization import state_dict as opaque_state_dict
+
+    out: dict[str, Any] = {}
+    proc_flat = opaque_state_dict(acct._process)
+    for k, v in proc_flat.items():
+        out[f"process.{k}"] = v
+    if acct._budget is not None:
+        b = acct._budget
+        out["budget.type"] = type(b).__name__
+        for f in dataclasses.fields(b):
+            out[f"budget.{f.name}"] = getattr(b, f.name)
+    return out
+
+
+def _accountant_from_state_dict(state: dict[str, Any]) -> Accountant:
+    budget = None
+    if any(k.startswith("budget.") for k in state):
+        bflat = {k[7:]: v for k, v in state.items() if k.startswith("budget.")}
+        budget = _deserialize_budget(bflat)
+    acct = Accountant(budget=budget)
+    proc_flat = {k[8:]: v for k, v in state.items() if k.startswith("process.")}
+    acct._process = _load_dp_process(dict(proc_flat))
+    return acct
+
+
+_BUDGET_REGISTRY: dict[str, type] = {
+    "EpsilonBudget": EpsilonBudget,
+    "DeltaBudget": DeltaBudget,
+    "AdvantageBudget": AdvantageBudget,
+    "BetaBudget": BetaBudget,
+    "RiskBudget": RiskBudget,
+}
+
+
+def _deserialize_budget(data: dict[str, Any]) -> Budget:
+    data = dict(data)
+    type_name = data.pop("type")
+    budget_cls = _BUDGET_REGISTRY.get(type_name)
+    if budget_cls is None:
+        raise ValueError(f"Unknown budget type: {type_name}")
+    return budget_cls(**data)
+
+
+def _register_accountant_serialization() -> None:
+    from opaque.serialization import register_serializer
+
+    register_serializer(
+        Accountant,
+        _accountant_state_dict,
+        lambda _template, sd: _accountant_from_state_dict(dict(sd)),
+    )

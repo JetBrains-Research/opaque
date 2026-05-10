@@ -27,7 +27,7 @@ uv add opaque \
 pip install "opaque[auditing]"      # + opaque-auditing (empirical privacy auditing)
 pip install "opaque[dpftrl]"        # + opaque-dpftrl (correlated-noise mechanisms)
 pip install "opaque[transformers]"  # + opaque-transformers + opaque-patches[transformers]
-pip install "opaque[all]"           # everything above, including [optimizers] extras
+pip install "opaque[all]"           # everything above
 ```
 
 ## From Source
@@ -69,7 +69,8 @@ Visit <http://localhost:8000> to view the docs.
 ```python
 from importlib.metadata import version
 
-print("opaque-core version:", version("opaque-core"))
+print("opaque-base version:", version("opaque-base"))
+print("opaque-engine version:", version("opaque-engine"))
 print("opaque-dpsgd version:", version("opaque-dpsgd"))
 ```
 

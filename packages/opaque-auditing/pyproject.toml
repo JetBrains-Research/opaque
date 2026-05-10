@@ -25,12 +25,13 @@ classifiers = [
 dependencies = [
     "torch>=2.10.0",
     "scipy>=1.11.0",
-    "opaque-core",
+    "opaque-engine",
+    "opaque-accounting",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["opaque.auditing*"]
+include = ["opaque.auditing*", "opaque.api.auditing*"]
 namespaces = true
 
 [tool.setuptools_scm]
@@ -42,4 +43,5 @@ git_describe_command = "git describe --dirty --tags --long --match v*"
 package = true
 
 [tool.uv.sources]
-opaque-core = { workspace = true }
+opaque-engine = { workspace = true }
+opaque-accounting = { workspace = true }

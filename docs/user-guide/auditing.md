@@ -168,5 +168,5 @@ high-noise regimes.
 
 ## API reference
 
-See [Auditing API Reference](../api/auditing.md) for complete function
+See [Auditing API Reference](../reference/auditing.md) for complete function
 signatures.

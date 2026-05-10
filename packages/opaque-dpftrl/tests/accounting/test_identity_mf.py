@@ -7,8 +7,8 @@ import pytest
 
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as ftrl_acc
-from opaque.accounting import _native
-from opaque.accounting.discretization import get_discretization
+from opaque.api.accounting.core import _native
+from opaque.api.accounting.core.discretization import get_discretization
 from opaque.dpftrl.accounting.types import IdentityMf
 
 
@@ -120,7 +120,7 @@ class TestBallsInBinsIdentity:
         room for rare outliers without becoming a privacy-blind tolerance."""
         nm, k, E = 1.5, 32, 4
         # Use a higher sample budget than the package default for a tight check.
-        from opaque.accounting.discretization import DiscretizationConfig
+        from opaque.api.accounting.core.discretization import DiscretizationConfig
 
         tight_cfg = DiscretizationConfig(num_mc_samples=1_000_000, seed=2024)
         cfg_native = tight_cfg.to_native()
@@ -160,8 +160,8 @@ class TestBallsInBinsIdentity:
         ≥ 2×).  In practice the gain at this config is 3-30×.
         """
         import statistics
-        from opaque.accounting.discretization import DiscretizationConfig
-        from opaque.dpftrl.accounting.amplification._balls_in_bins import (
+        from opaque.api.accounting.core.discretization import DiscretizationConfig
+        from opaque.api.accounting.dpftrl.amplification._balls_in_bins import (
             _IDENTITY_IS_TILT,
         )
 

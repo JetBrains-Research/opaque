@@ -297,7 +297,7 @@ following types are registered:
 Rectified and truncated Gaussian noise also return `GaussianNoiseState`,
 so `sync()` handles them automatically — no extra helpers needed.
 
-See [API Reference](../api/distributed.md) for full docstrings.
+See [API Reference](../reference/distributed.md) for full docstrings.
 
 ## Limitations
 
@@ -309,5 +309,5 @@ See [API Reference](../api/distributed.md) for full docstrings.
 
 ## API reference
 
-See [Distributed API Reference](../api/distributed.md) for complete
+See [Distributed API Reference](../reference/distributed.md) for complete
 function signatures and return types.

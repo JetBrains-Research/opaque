@@ -17,7 +17,7 @@ from opaque.patches import apply_model_patches
 def test_lora_patching_allowed_on_non_cuda_hosts(monkeypatch):
     import torch
 
-    from opaque.patches.peft._router import _lora_patching_allowed
+    from opaque.api.patches.peft._router import _lora_patching_allowed
 
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
 
@@ -27,7 +27,7 @@ def test_lora_patching_allowed_on_non_cuda_hosts(monkeypatch):
 def test_lora_patching_rejected_on_cuda_without_triton(monkeypatch):
     import torch
 
-    from opaque.patches.peft._router import _lora_patching_allowed
+    from opaque.api.patches.peft._router import _lora_patching_allowed
 
     real_import = builtins.__import__
 

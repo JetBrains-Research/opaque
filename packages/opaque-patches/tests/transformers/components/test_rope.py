@@ -41,8 +41,8 @@ def test_cohere_cohere2_apply_rotary_uses_opaque_kernel():
     """Cohere / Cohere2 use the same module-level API as Llama; patch must land."""
     out = _run(
         "import torch.nn as nn\n"
-        "from opaque.patches.transformers._router import apply_transformers_model_patches\n"
-        "from opaque.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb\n"
+        "from opaque.api.patches.transformers._router import apply_transformers_model_patches\n"
+        "from opaque.api.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb\n"
         "import transformers.models.cohere.modeling_cohere as mc\n"
         "import transformers.models.cohere2.modeling_cohere2 as mc2\n"
         "class C: model_type='cohere'\n"
@@ -63,7 +63,7 @@ def test_skip_rope_token_leaves_cohere_stock():
     """OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=rope skips module-level RoPE swap."""
     out = _run(
         "import torch.nn as nn\n"
-        "from opaque.patches.transformers._router import apply_transformers_model_patches\n"
+        "from opaque.api.patches.transformers._router import apply_transformers_model_patches\n"
         "import transformers.models.cohere.modeling_cohere as mc\n"
         "import transformers.models.cohere2.modeling_cohere2 as mc2\n"
         "class C: model_type='cohere'\n"
@@ -81,8 +81,8 @@ def test_gemma3_apply_rotary_uses_opaque_kernel():
     """Gemma3 uses the same module-level apply_rotary_pos_emb API as Llama."""
     out = _run(
         "import torch.nn as nn\n"
-        "from opaque.patches.transformers._router import apply_transformers_model_patches\n"
-        "from opaque.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb\n"
+        "from opaque.api.patches.transformers._router import apply_transformers_model_patches\n"
+        "from opaque.api.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb\n"
         "import transformers.models.gemma3.modeling_gemma3 as m3\n"
         "class C: model_type='gemma3'\n"
         "class M(nn.Module): config=C()\n"
@@ -98,7 +98,7 @@ def test_skip_rope_token_leaves_gemma3_stock():
     """OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=rope skips Gemma3 RoPE swap too."""
     out = _run(
         "import torch.nn as nn\n"
-        "from opaque.patches.transformers._router import apply_transformers_model_patches\n"
+        "from opaque.api.patches.transformers._router import apply_transformers_model_patches\n"
         "import transformers.models.gemma3.modeling_gemma3 as m3\n"
         "class C: model_type='gemma3'\n"
         "class M(nn.Module): config=C()\n"
@@ -114,8 +114,8 @@ def test_exaone4_apply_rotary_uses_opaque_kernel():
     """Exaone4 uses the same module-level apply_rotary_pos_emb API as Llama."""
     out = _run(
         "import torch.nn as nn\n"
-        "from opaque.patches.transformers._router import apply_transformers_model_patches\n"
-        "from opaque.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb\n"
+        "from opaque.api.patches.transformers._router import apply_transformers_model_patches\n"
+        "from opaque.api.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb\n"
         "import transformers.models.exaone4.modeling_exaone4 as me4\n"
         "class C: model_type='exaone4'\n"
         "class M(nn.Module): config=C()\n"
@@ -131,7 +131,7 @@ def test_skip_rope_token_leaves_exaone4_stock():
     """OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=rope skips Exaone4 RoPE swap too."""
     out = _run(
         "import torch.nn as nn\n"
-        "from opaque.patches.transformers._router import apply_transformers_model_patches\n"
+        "from opaque.api.patches.transformers._router import apply_transformers_model_patches\n"
         "import transformers.models.exaone4.modeling_exaone4 as me4\n"
         "class C: model_type='exaone4'\n"
         "class M(nn.Module): config=C()\n"

@@ -4,7 +4,7 @@
 
 import torch
 
-from opaque.patches.transformers.components.cross_entropy import (
+from opaque.api.patches.transformers.components.cross_entropy import (
     _fused_linear_ce_loss_is_supported,
 )
 

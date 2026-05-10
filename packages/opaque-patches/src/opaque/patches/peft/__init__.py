@@ -1,9 +1,5 @@
-# Copyright (c) 2025 Opaque Authors
-# SPDX-License-Identifier: Apache-2.0
-from __future__ import annotations
+"""PEFT / LoRA fusion patches — wires fused LoRA kernels onto PEFT modules."""
 
-from ._router import apply_peft_model_patches
+from opaque.api.patches.peft import apply_peft_model_patches
 
-__all__ = [
-    "apply_peft_model_patches",
-]
+__all__ = ["apply_peft_model_patches"]

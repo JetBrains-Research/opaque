@@ -1,81 +1,245 @@
-# Correlated noise (DP-FTRL)
+# DP-FTRL end-to-end
 
-Opaque's DP-FTRL mechanisms add **correlated** Gaussian noise across
-training steps via matrix factorization. Compared to independent noise at
-each step (standard DP-SGD), correlated noise reduces variance on the
-**cumulative** updates that the optimizer effectively applies, for the same
-calibrated privacy guarantee.
+This guide walks through the full DP-FTRL pipeline: pick a
+matrix-factorization strategy, calibrate the noise multiplier for the
+*whole training run*, clip gradients, add correlated MF noise, run a
+torchopt step, and checkpoint state. Every import on this page comes
+from the `opaque.dpftrl.*` public façade.
 
-The mechanisms live in `opaque.dpftrl`. Mechanism-specific math and API
-details live in [Mechanisms](../mechanisms/index.md).
+For DP-FTRL theory and a side-by-side comparison of mechanisms, see
+[DP-FTRL mechanisms](../mechanisms/dp-ftrl/index.md). For the DP-SGD
+counterpart, see [DP-SGD end-to-end](dp-sgd.md).
 
-## What Opaque implements
+## Why DP-FTRL
 
-1. A **strategy** object (e.g. `band_mf_strategy`, `bsr_strategy`) holds:
-   - coefficients that define a lower-triangular linear map used for noise,
-   - **sensitivity** (and sometimes a **Gram matrix**) for privacy accounting,
-   - a streaming representation for efficient noise generation.
+DP-FTRL adds **correlated** Gaussian noise across training steps via
+matrix factorization. Compared to independent noise at each step
+(DP-SGD), correlated noise reduces variance on the **cumulative**
+updates that the optimizer actually applies, for the same calibrated
+privacy guarantee.
 
-2. `mf_noise(grad_template, strategy, noise_multiplier=..., key=...)` returns `(noise_fn, state)` that injects noise each step. The mechanism reads the per-step contribution bound from each `ClippedPytree` input (typically produced by `clipped_grad`) and uses `noise_multiplier × bound` as the realized standard deviation; the latched first-call bound must remain constant across steps.
+The trade-off: DP-FTRL accountants describe **whole training runs**.
+The amplification factory takes `n_steps` at calibration time, the
+strategy commits to a sensitivity / Gram matrix at construction time,
+and the noise mechanism latches the per-step contribution bound on
+the first call. Changing the training length, the per-step bound, or
+the strategy mid-run breaks the privacy claim.
 
-3. **Privacy accounting** uses the same sensitivity (and Gram matrix when needed) as the strategy passed to `mf_noise`. Always build the accounting mechanism from **the same** strategy object you use for noise.
+## Two notions of "correct"
 
-## Two notions of “correct”
+DP-FTRL has two distinct notions of "correctness" worth keeping
+separate:
 
-Understanding MF in Opaque is easier if you separate:
+1. **DP correctness** — the privacy guarantee applies to the
+   randomized algorithm you actually run. As long as the accounting
+   uses the same sensitivity (and Gram matrix when needed) as the
+   strategy passed to `mf_noise`, and the sampler matches the
+   amplification analysis, the DP statement is valid.
+2. **Workload fidelity / utility** — strategies are designed for a
+   workload model (Polyak momentum, constant LR, exponential decay).
+   If the real loop differs (different optimizer, different schedule,
+   accumulation pattern), utility may be worse than the paper's
+   ideal even when the DP statement is unchanged.
 
-### 1. Mechanism / DP correctness
+## 1. Strategy choice
 
-The **differential privacy guarantee** applies to the **randomized algorithm you actually run**: the linear map implied by the strategy, the noise scale, and the data collection / subsampling process.
+Pick a matrix-factorization strategy by mechanism. The strategy
+object holds: coefficients defining the lower-triangular linear map
+used for noise, the sensitivity (and sometimes a Gram matrix) used by
+the accountant, and a streaming representation for efficient noise
+generation.
 
-If accounting uses the same sensitivity (and compatible amplification) as the noise function, and the sampler matches what the analysis assumes, the DP statement is about **that** mechanism—not about whether the strategy was numerically optimal for an idealized workload.
+```python
+from opaque.dpftrl.noise import (
+    band_mf_strategy,    # numerical Toeplitz optimization
+    blt_strategy,        # buffered linear toeplitz, multi-epoch
+    bisr_strategy,       # banded inverse square root
+    bsr_strategy,        # banded square root, closed-form
+    lambda_cgd_strategy, # PRNG replay, O(1) memory
+    identity_strategy,   # no correlation; baseline
+)
 
-### 2. Workload fidelity / utility
+strategy = band_mf_strategy(n_steps=1000, bands=10)
+```
 
-Many strategies are **designed or optimized** under a **model** of the optimizer (e.g. Polyak momentum, constant learning rate, workload decay such as BSR’s paper \(\alpha\)). If the **real** training loop differs (different optimizer, schedule, accumulation pattern), **utility** may be worse than the paper’s ideal, even when DP is still valid for the implemented \(C\).
+See [DP-FTRL mechanisms](../mechanisms/dp-ftrl/index.md) for the
+choice criteria.
 
-Opaque’s BandMF and BLT pass **workload coefficients** into a Toeplitz optimization problem. For **non-constant** learning rate schedules, the encoded workload is a **Toeplitz surrogate**: it does not exactly match every entry of the time-varying triangular map \(W_{t,s} = \eta_t \beta^{t-s}\) unless \(\eta_t\) is constant. Privacy remains correct for the constructed strategy; the gap is in how tightly the optimization target matches your true discrete-time operator.
+## 2. Calibration
 
-See [BandMF — Assumptions and limitations](../mechanisms/band-mf.md#assumptions-and-limitations) for a concise statement.
+DP-FTRL accountants describe a whole training run. Build the strategy
+first, then build the matching accounting mechanism using its
+sensitivity / Gram matrix:
 
-## Choosing a mechanism (summary)
+```python
+import opaque.accounting as acc                  # cross-cutting
+import opaque.dpftrl.accounting as dpftrl_acc    # DP-FTRL factories
 
-| Mechanism | Noise pattern | Typical amplification | Extra memory | Notes |
-|-----------|---------------|----------------------|--------------|-------|
-| [BandMF](../mechanisms/band-mf.md) | Optimized banded Toeplitz | Cyclic Poisson or b-min-sep | \(O(\text{bands})\) | General default; L-BFGS at init |
-| [BLT](../mechanisms/blt.md) | Buffered linear Toeplitz | BnB (+ sequential data order) | \(O(\text{buffers})\) | Long runs / multi-epoch |
-| [DP-λCGD](../mechanisms/lambda-cgd.md) | PRNG replay, bandwidth 2 | BnB | \(O(1)\) | Minimal memory |
-| [BISR](../mechanisms/bisr.md) | Banded inverse square root | BnB | \(O(p)\) | Analytic inverse coefficients |
-| [BSR](../mechanisms/bsr.md) | Banded square root (closed form) | BnB | \(O(p)\) | Paper `alpha`, `beta` (kw-only); bind `beta` from SGD momentum or Adam \(\beta_1\) |
-| Identity | Independent (DP-SGD style) | Poisson / standard | \(O(1)\) | Baseline via MF API |
+# Same strategy that will go into mf_noise below.
+strategy = band_mf_strategy(n_steps=1000, bands=10)
 
-## Private Second Moments And MF
+result = acc.calibrate(
+    acc.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: dpftrl_acc.poisson(
+        dpftrl_acc.band_mf(
+            nm,
+            sensitivity=strategy.sensitivity,
+            coefficients=strategy.coefficients,
+        ),
+        sample_rate=0.01,
+        n_steps=1000,
+    ),
+    param_min=0.1, param_max=5.0,
+)
+noise_multiplier = result.param
+```
 
-Private second-moment estimation uses **two** correlated noise streams
-(gradients and squared gradients) with a **joint sensitivity**. It is
-**not** the same workload model as single-stream SGD+momentum mechanisms.
+Three amplification factories under
+`opaque.dpftrl.accounting` — pick the one that matches your sampler:
 
-When using `mf_noise(..., second_moment_strategy=...)`, pass
-`second_moment_strategy` explicitly. This keeps first-moment and
-second-moment workload choices visible, especially for λCGD where there
-is no single universally correct mapping from optimizer β₂ to strategy λ.
+- `dpftrl_acc.poisson(...)` — Poisson subsampling (cyclic-Poisson
+  under banded MF).
+- `dpftrl_acc.b_min_sep(...)` — b-min-separation participation
+  pattern.
+- `dpftrl_acc.balls_in_bins(...)` — fixed-partition participation.
 
-## BSR scope
+Each amplification factory wraps a mechanism into a single
+`DpProcess` describing the full training run. **Always pass the same
+strategy object** into `mf_noise` and the accounting factory — that's
+how DP correctness is preserved.
 
-[BSR](../mechanisms/bsr.md) ships **closed-form** coefficients for the Kalinin–Lampert workload in \((\alpha,\beta)\). It does **not** accept arbitrary `lr_schedule` inside the closed-form path. For general schedules or optimizers, use **BandMF** (numerical Toeplitz optimization) or **BLT**.
+## 3. Clipping
 
-With private second moments + BSR, the second stream is a second
-`bsr_strategy(..., alpha=..., beta=β₂)`; require \(\alpha > \beta\) for
-each stream’s \(\beta\).
+Same engine clipping primitives as DP-SGD, just imported from
+`opaque.dpftrl.clipping`. Adaptive clipping is **not** available
+under DP-FTRL — its threshold drifts across steps, violating the
+constant per-step sensitivity assumption MF privacy proofs require.
 
-## LR schedule and workload modeling
+```python
+from opaque.dpftrl.clipping import clipped_grad
 
-**No MF mechanism in Opaque currently implements schedule-aware factorizations** from Kalinin & Andersson (arXiv:2511.17994). That paper proposes constructions provably better under non-constant LR for the schedule workload \(A_\chi = A_1 D\), but the closed-form path only covers **exponential decay** and is not generic enough for general schedules (including warmup).
+def loss_fn(params, batch):
+    return loss
 
-BandMF and BLT accept `lr_schedule` as a **Toeplitz-surrogate** workload optimization input (utility heuristic, not exact schedule-aware construction). BISR, BSR, and λCGD do **not** accept `lr_schedule`.
+grad_fn, clip_state = clipped_grad(
+    loss_fn,
+    clipping_norm=1.0,
+    argnums=0,
+    batch_argnums=1,
+    normalize_by=batch_size,
+)
+```
 
-## Further reading
+`auto_clipped_grad` (AUTO-S) is also available and compatible with
+DP-FTRL — its sensitivity bound is constant.
 
-- [Noise addition](noise.md) — Gaussian vs MF entry points
-- [Mechanisms index](../mechanisms/index.md) — per-mechanism docs
-- [Optimizers](optimizers.md) — SGD vs private second-moment AdamW
+## 4. Noise
+
+`opaque.dpftrl.noise.mf_noise` injects correlated noise:
+
+```python
+from opaque.dpftrl.noise import mf_noise
+from opaque.random import key
+
+# grad_template is the structure of clipped_grad's output —
+# typically a ClippedPytree from a single warm-up call.
+warmup_grads, _ = grad_fn(params, warmup_batch, state=clip_state)
+
+noise_fn, noise_state = mf_noise(
+    warmup_grads,
+    strategy,                       # same object you used in accounting
+    noise_multiplier=noise_multiplier,
+    key=key(0),
+)
+```
+
+`mf_noise` reads the per-step contribution bound from the
+`ClippedPytree` input on the **first call** and latches it for the
+rest of the run. The bound is `noise_multiplier × max_norm`, so each
+step must produce gradients with the same `max_norm` for the privacy
+claim to hold.
+
+For private second-moment estimation (Adam-style optimizers), pass
+`second_moment_strategy=...` — see [Optimizers](optimizers.md).
+
+## 5. Sampling
+
+DP-FTRL has its own sampler family under `opaque.dpftrl.sampling`:
+
+```python
+from opaque.dpftrl.sampling import (
+    CyclicPoissonSampler,    # banded MF: cyclic Poisson subsampling
+    BMinSepSampler,          # b-min-separation
+    BallsInBinsSampler,      # fixed-partition
+    SequentialBatchSampler,  # deterministic order, used by BLT
+)
+
+sampler = CyclicPoissonSampler(
+    dataset, sample_rate=0.01, bands=10, n_steps=1000, key=key(42),
+)
+```
+
+The sampler must match the amplification factory you used in
+calibration.
+
+## 6. Optimizer
+
+Same surface as DP-SGD:
+
+```python
+from opaque.optimizers import adamw
+
+optimizer = adamw(lr=1e-3, noise_bias_correction=True)
+opt_state = optimizer.init(params)
+```
+
+Private second-moment AdamW pairs with `mf_noise(...,
+second_moment_strategy=...)` — the noise mechanism produces a
+`SecondMomentNoiseOutput` and the optimizer's DP-aware path consumes
+it. See [Optimizers](optimizers.md) for the full second-moment story.
+
+## 7. End-to-end loop
+
+```python
+import torch
+from opaque.serialization import state_dict
+from opaque.functional import make_functional
+
+fmodel, params = make_functional(model)
+for step, batch in enumerate(sampler):
+    grads, clip_state = grad_fn(params, batch, state=clip_state)
+    noised, noise_state = noise_fn(grads, noise_state)
+    updates, opt_state = optimizer.update(noised, opt_state, params)
+    params = torchopt.apply_updates(params, updates)
+
+# Checkpoint:
+ckpt = {
+    "params": params,
+    "opt_state": opt_state,
+    "clip_state": clip_state,
+    "noise_state": noise_state,  # carries MF streaming-matrix state
+}
+torch.save(state_dict(ckpt), "step.pt")
+```
+
+## Runnable references
+
+- [`examples/train_dp_ftrl.py`](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dp_ftrl.py)
+  — full DP-FTRL training script.
+- `tests/integration/test_dpftrl_pipeline.py` — minimal smoke test
+  exercising the same flow on a tiny LlamaConfig + LoRA model (and
+  the Qwen2 variant).
+
+## See also
+
+- [Clipping](clipping.md) — fixed and AUTO-S variants
+  (adaptive is DP-SGD-only).
+- [Noise](noise.md) — `mf_noise` shape, strategy types,
+  per-step bound latching.
+- [Sampling](sampling.md) — DP-FTRL sampler family.
+- [Accounting](accounting.md) — `DpProcess`, the
+  whole-process model, MF-specific composition.
+- [Optimizers](optimizers.md) — second-moment integration.
+- [DP-FTRL mechanisms](../mechanisms/dp-ftrl/index.md) — per-mechanism
+  reference pages.
+- [DP-SGD end-to-end](dp-sgd.md) — the per-step companion pipeline.
