@@ -52,8 +52,8 @@ except ImportError as exc:
 
 from opaque.types import PerGroup, TensorPytree
 from opaque.pytree import tree_map
-from opaque.optimizers._bias_correction import is_per_group, resolve_noise_variance
-from opaque.optimizers._chain import make_optimizer_chain
+from opaque.api.optimizers._bias_correction import is_per_group, resolve_noise_variance
+from opaque.api.optimizers._chain import make_optimizer_chain
 
 
 _LR = float | Callable[[int], float]

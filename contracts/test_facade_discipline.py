@@ -25,7 +25,7 @@ from __future__ import annotations
 import ast
 import pathlib
 
-from .conftest import PACKAGES_DIR
+PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[1] / "packages"
 
 # Façade roots, by wheel. Each entry is a glob relative to the wheel's
 # ``src/`` directory. The mapping is the source of truth: CI enforces

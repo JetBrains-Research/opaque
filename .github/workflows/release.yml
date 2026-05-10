@@ -39,7 +39,9 @@ jobs:
       fail-fast: false
       matrix:
         package:
-          - opaque-core
+          - opaque-base
+          - opaque-engine
+          - opaque-optimizers
           - opaque-dpsgd
           - opaque-dpftrl
           - opaque-auditing

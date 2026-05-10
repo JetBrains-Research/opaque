@@ -16,7 +16,8 @@ dependencies = [
     "transformers==4.57.1",
     "peft>=0.13.0",
     "datasets>=2.0.0",
-    "opaque-core",
+    "opaque-engine",
+    "opaque-patches",
 ]
 
 [tool.setuptools]
@@ -36,4 +37,5 @@ git_describe_command = "git describe --dirty --tags --long --match v*"
 package = true
 
 [tool.uv.sources]
-opaque-core = { workspace = true }
+opaque-engine = { workspace = true }
+opaque-patches = { workspace = true }

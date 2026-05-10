@@ -23,7 +23,7 @@ classifiers = [
 ]
 dependencies = [
     "torch>=2.10.0",
-    "opaque-core",
+    "opaque-engine",
 ]
 
 [project.optional-dependencies]
@@ -46,4 +46,4 @@ git_describe_command = "git describe --dirty --tags --long --match v*"
 package = true
 
 [tool.uv.sources]
-opaque-core = { workspace = true }
+opaque-engine = { workspace = true }

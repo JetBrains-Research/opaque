@@ -25,7 +25,7 @@ from opaque.types import PerGroup  # noqa: E402
 from opaque.types import SecondMomentNoiseOutput  # noqa: E402
 from opaque.optimizers import radam  # noqa: E402
 from opaque.optimizers.types import RAdamState  # noqa: E402
-from opaque.optimizers._radam import _rectification, _rho_t  # noqa: E402
+from opaque.api.optimizers._radam import _rectification, _rho_t  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

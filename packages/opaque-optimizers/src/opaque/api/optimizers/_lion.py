@@ -34,7 +34,7 @@ except ImportError as exc:
 
 from opaque.types import TensorPytree
 from opaque.pytree import tree_map
-from opaque.optimizers._chain import make_optimizer_chain
+from opaque.api.optimizers._chain import make_optimizer_chain
 
 
 _LR = float | Callable[[int], float]

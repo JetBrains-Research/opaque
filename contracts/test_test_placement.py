@@ -20,7 +20,7 @@ import pathlib
 import sys
 import tomllib
 
-from .conftest import PACKAGES_DIR
+PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[1] / "packages"
 
 # Top-level ``opaque.*`` import roots shipped by each wheel. Updated phase
 # by phase as the wheel set evolves. This is the source-of-truth mapping

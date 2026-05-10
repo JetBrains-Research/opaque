@@ -21,7 +21,7 @@ from __future__ import annotations
 import ast
 import pathlib
 
-from .conftest import PACKAGES_DIR
+PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[1] / "packages"
 
 # wheel_dir → forbidden-import prefixes
 FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {

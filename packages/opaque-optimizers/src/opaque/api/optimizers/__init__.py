@@ -69,16 +69,16 @@ Per-optimizer state dataclasses (``AdamState``, ``LionState``,
 ``ScheduleFreeState``) live in :mod:`opaque.optimizers.types`.
 """
 
-from opaque.optimizers._adadelta import adadelta
-from opaque.optimizers._adafactor import adafactor
-from opaque.optimizers._adagrad import adagrad
-from opaque.optimizers._adam import adam, adamw
-from opaque.optimizers._ademamix import ademamix
-from opaque.optimizers._lion import lion
-from opaque.optimizers._radam import radam
-from opaque.optimizers._rmsprop import rmsprop
-from opaque.optimizers._schedule_free import schedule_free
-from opaque.optimizers._sgd import sgd
+from opaque.api.optimizers._adadelta import adadelta
+from opaque.api.optimizers._adafactor import adafactor
+from opaque.api.optimizers._adagrad import adagrad
+from opaque.api.optimizers._adam import adam, adamw
+from opaque.api.optimizers._ademamix import ademamix
+from opaque.api.optimizers._lion import lion
+from opaque.api.optimizers._radam import radam
+from opaque.api.optimizers._rmsprop import rmsprop
+from opaque.api.optimizers._schedule_free import schedule_free
+from opaque.api.optimizers._sgd import sgd
 
 __all__ = [
     "adam",

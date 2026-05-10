@@ -20,7 +20,7 @@ from __future__ import annotations
 import ast
 import pathlib
 
-from .conftest import PACKAGES_DIR
+PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[1] / "packages"
 
 ACCOUNTING_FACADE_GLOBS = (
     "packages/opaque-accounting/src/opaque/accounting/**/*.py",
