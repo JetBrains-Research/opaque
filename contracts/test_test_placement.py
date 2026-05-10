@@ -181,67 +181,12 @@ def _root_match(import_path: str, roots: set[str]) -> bool:
 # removed; the test stays green throughout.
 KNOWN_CROSS_CONE_IMPORTS: frozenset[tuple[str, str]] = frozenset(
     {
-        # Cross-stack DPSGD↔DPFTRL tests. Mutual non-dependency; no
-        # natural home. Park here until the bidirectional placement
-        # decision is taken (likely a top-level ``tests/integration/``
-        # parking lot or moved into the most-downstream wheel — phase 5
-        # opens this question).
-        (
-            "packages/opaque-dpsgd/tests/accounting/test_lambda_cgd.py",
-            "opaque.dpftrl.accounting",
-        ),
-        (
-            "packages/opaque-dpsgd/tests/accounting/test_lambda_cgd.py",
-            "opaque.dpftrl.accounting.mechanisms.types",
-        ),
-        (
-            "packages/opaque-dpsgd/tests/accounting/test_mf_mechanisms.py",
-            "opaque.dpftrl.accounting",
-        ),
-        (
-            "packages/opaque-dpsgd/tests/accounting/test_mf_mechanisms.py",
-            "opaque.dpftrl.accounting.amplification.types",
-        ),
-        (
-            "packages/opaque-dpsgd/tests/accounting/test_mf_mechanisms.py",
-            "opaque.dpftrl.accounting.mechanisms.types",
-        ),
-        (
-            "packages/opaque-dpsgd/tests/accounting/test_state_dict.py",
-            "opaque.dpftrl.accounting",
-        ),
-        (
-            "packages/opaque-dpsgd/tests/accounting/test_state_dict.py",
-            "opaque.api.accounting.dpftrl.amplification._b_min_sep",
-        ),
-        (
-            "packages/opaque-dpsgd/tests/accounting/test_state_dict.py",
-            "opaque.api.accounting.dpftrl.amplification._poisson",
-        ),
-        (
-            "packages/opaque-dpsgd/tests/accounting/test_state_dict.py",
-            "opaque.api.accounting.dpftrl.mechanisms._band_mf",
-        ),
-        (
-            "packages/opaque-dpsgd/tests/distributed/test_ddp_integration.py",
-            "opaque.dpftrl.noise",
-        ),
-        (
-            "packages/opaque-dpsgd/tests/distributed/test_noise_determinism.py",
-            "opaque.dpftrl.noise",
-        ),
-        (
-            "packages/opaque-dpftrl/tests/noise/test_auto_clipping_mf_noise.py",
-            "opaque.dpsgd.clipping",
-        ),
-        (
-            "packages/opaque-dpftrl/tests/noise/test_band_mf_noise.py",
-            "opaque.dpsgd.accounting",
-        ),
-        (
-            "packages/opaque-dpftrl/tests/noise/test_mf_noise.py",
-            "opaque.dpsgd.accounting",
-        ),
+        # DP-SGD ↔ DP-FTRL integration tests have moved to
+        # ``integration_tests/dpsgd_dpftrl/`` (a top-level test root,
+        # not bound to any single wheel). The contract check skips
+        # ``integration_tests/`` entirely — tests there can import any
+        # opaque.* module without violating any wheel's dep cone.
+        #
         # Patches tests use dpsgd's clipping to verify gradient flow
         # through the kernel patches survives. Mutual non-dependency
         # between patches and dpsgd; phase 6 revisits placement.
