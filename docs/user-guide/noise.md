@@ -525,16 +525,16 @@ For a linear regression with n=1000 steps, epsilon=1.0:
 
 Values are illustrative; actual results depend on problem specifics.
 
-### MF noise with cyclic sampling
+### MF noise with Poisson sampling
 
-MF noise works best with `CyclicPoissonSampler`, which creates a predictable
+MF noise pairs with `opaque.dpftrl.sampling.PoissonSampler`, which yields a predictable
 sampling pattern that the noise strategy can exploit:
 
 ```python
-from opaque.dpftrl.sampling import CyclicPoissonSampler
+from opaque.dpftrl.sampling import PoissonSampler
 from opaque.random import key
 
-sampler = CyclicPoissonSampler(
+sampler = PoissonSampler(
     dataset,
     sample_rate=sample_rate,
     bands=4,

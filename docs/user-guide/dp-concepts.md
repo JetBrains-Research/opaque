@@ -162,7 +162,7 @@ Opaque supports several subsampling schemes:
 |--------|-------------|----------|
 | **Poisson** | Each example included independently with probability $q$ | Standard DP-SGD. Variable batch size. |
 | **Truncated Poisson** | Poisson sampling capped at a maximum batch size | Production DP-SGD. Fixed memory budget. |
-| **Cyclic Poisson** | Training rounds divided into groups; Poisson within each group | BandMF correlated noise. |
+| **DP-FTRL Poisson** | ``opaque.dpftrl.sampling.PoissonSampler``: one group per step; ``bands=1`` is plain Poisson | Correlated MF noise (e.g. BandMF). |
 
 The key distinction is between *Poisson* and *fixed-size* sampling. Poisson
 sampling produces variable-size batches but has a clean privacy analysis.
@@ -353,8 +353,8 @@ Three MF strategies are available:
 | **BandMF** | $O(b)$ | Streaming, long training runs |
 | **BLT** | $O(b)$ | Multi-epoch training |
 
-MF mechanisms require different samplers (CyclicPoissonSampler for BandMF)
-and have different amplification properties. See the
+MF mechanisms use ``opaque.dpftrl.sampling.PoissonSampler`` (and other FTRL
+samplers) with amplification that depends on the mechanism. See the
 [Mechanisms](../mechanisms/index.md) reference for details.
 
 ## Neighboring relations

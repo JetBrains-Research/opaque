@@ -18,11 +18,11 @@ Opaque provides these sampling strategies:
    Optional `truncated_batch_size` caps per-step batch size for predictable
    memory usage and a tighter (truncated-Poisson) accounting bound.
 
-2. **Poisson Sampling — DP-FTRL** (`opaque.dpftrl.sampling.CyclicPoissonSampler`):
-   examples are partitioned into `bands` groups; iteration `i` yields a
-   Poisson batch from group `i % bands`. `bands=1` collapses to plain
-   Poisson. Designed for matrix-factorization mechanisms (BandMF) where
-   predictable sampling structure enables correlated noise.
+2. **Poisson Sampling — DP-FTRL** (`opaque.dpftrl.sampling.PoissonSampler`):
+   iteration ``i`` draws from group ``i % bands`` with probability
+   ``sample_rate``. ``bands=1`` is plain Poisson on the full dataset; larger
+   ``bands`` give cyclic participation for correlated matrix-factorization
+   noise (e.g. BandMF).
 
 3. **Balls-in-Bins Sampling** (`BallsInBinsSampler`): each example is
    independently assigned to a bin once at init; the assignment is **fixed
@@ -102,13 +102,13 @@ Account with `ftrl_acc.balls_in_bins(mechanism, num_bins, n_steps)` where
 `mechanism` is `ftrl_acc.lambda_cgd(...)`, `ftrl_acc.bisr(...)`,
 `ftrl_acc.blt(...)`, or `ftrl_acc.mf_identity(...)`.
 
-## CyclicPoissonSampler (DP-FTRL)
+## PoissonSampler (DP-FTRL)
 
 ```python
-from opaque.dpftrl.sampling import CyclicPoissonSampler
+from opaque.dpftrl.sampling import PoissonSampler
 from opaque.random import key
 
-sampler = CyclicPoissonSampler(
+sampler = PoissonSampler(
     data_source,
     sample_rate=0.5,
     bands=4,
@@ -173,7 +173,7 @@ loader = DataLoader(shard, batch_sampler=sampler)
       show_source: true
       heading_level: 3
 
-::: opaque.dpftrl.sampling.CyclicPoissonSampler
+::: opaque.dpftrl.sampling.PoissonSampler
     options:
       show_source: true
       heading_level: 3

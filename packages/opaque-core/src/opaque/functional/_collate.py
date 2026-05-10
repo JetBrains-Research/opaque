@@ -4,7 +4,7 @@
 
 The :func:`empty_collate` wrapper handles the empty-batch case that arises
 from any Poisson-style sampler (``opaque.dpsgd.sampling.PoissonSubsampler``,
-``opaque.dpftrl.sampling.CyclicPoissonSampler``, ...) without knowing which
+``opaque.dpftrl.sampling.PoissonSampler``, ...) without knowing which
 mechanism produced the empty list.
 """
 

@@ -201,16 +201,17 @@ eps = proc.epsilon_at(delta=1e-5)
     hardcoded values. The strategy computes these from the optimized Toeplitz
     coefficients.
 
-### End-to-end with cyclic sampler
+### End-to-end BandMF example
 
-BandMF works best with `CyclicPoissonSampler`, which creates a predictable
+BandMF uses `opaque.dpftrl.sampling.PoissonSampler` with ``bands`` matching the
+strategy; it yields a predictable
 sampling pattern that the noise strategy exploits:
 
 ```python
 import torch
 from opaque.dpftrl.clipping import clipped_grad
 from opaque.dpftrl.noise import mf_noise, band_mf_strategy
-from opaque.dpftrl.sampling import CyclicPoissonSampler
+from opaque.dpftrl.sampling import PoissonSampler
 from opaque.random import key, split
 
 n_steps, bands = 1000, 10
@@ -228,9 +229,12 @@ noise_fn, noise_state = mf_noise(
     noise_multiplier=result.param,
     key=key_noise,
 )
-sampler = CyclicPoissonSampler(
-    dataset, sampling_prob=sample_rate, cycle_length=bands,
-    iterations=n_steps, key=key_samp,
+sampler = PoissonSampler(
+    dataset,
+    sample_rate=sample_rate,
+    bands=bands,
+    n_steps=n_steps,
+    key=key_samp,
 )
 loader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
 
@@ -259,7 +263,7 @@ for batch in loader:
   better per-group amplification but more composition steps.
 - BandMF requires knowing `n_steps` before training starts. If the training
   length is uncertain, use standard Gaussian noise with early stopping.
-- Pair with `CyclicPoissonSampler` for consistent sampling and accounting.
+- Pair with `PoissonSampler` for consistent sampling and accounting.
 
 ## References
 

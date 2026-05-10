@@ -29,7 +29,7 @@ from opaque.dpftrl.sampling import BMinSepSampler
 
 - `opaque.dpftrl.noise` — strategies (band-MF, BLT, BSR, BiSR, identity, lambda-CGD) + dispatchers
 - `opaque.dpftrl.clipping` — MF-safe `clipped_grad`, `auto_clipped_grad`, `per_group`
-- `opaque.dpftrl.sampling` — `BMinSepSampler`, `CyclicPoissonSampler`, `BallsInBinsSampler`, `SequentialBatchSampler`
+- `opaque.dpftrl.sampling` — `BMinSepSampler`, `PoissonSampler`, `BallsInBinsSampler`, `SequentialBatchSampler`
 
 Shared clipping implementation and other cross-cutting primitives live in
 [`opaque-core`](../opaque-core/README.md).

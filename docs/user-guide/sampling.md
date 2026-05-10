@@ -120,19 +120,18 @@ step = dpsgd_acc.truncated_poisson(
 training = step * num_steps
 ```
 
-### `CyclicPoissonSampler`
+### `PoissonSampler` (DP-FTRL)
 
-Partitions the dataset into ``bands`` groups and cycles through them,
-sampling from each group with probability ``sample_rate``. This sampler
-is required for matrix-factorization correlated noise mechanisms
-(BandMF via `mf_noise`) which need a fixed participation pattern.
+Poisson subsampling under :mod:`opaque.dpftrl.sampling`.  ``bands=1`` draws
+from the full dataset each step (identity baseline).  Larger ``bands``
+partition examples and cycle groups each step (e.g. BandMF with ``mf_noise``).
 
 ```python
-from opaque.dpftrl.sampling import CyclicPoissonSampler
+from opaque.dpftrl.sampling import PoissonSampler
 from opaque.dpftrl.sampling.types import PartitionType
 from opaque.random import key
 
-sampler = CyclicPoissonSampler(
+sampler = PoissonSampler(
     dataset,
     sample_rate=0.5,
     bands=5,
@@ -419,14 +418,15 @@ grads_mb, state_mb = grad_fn_mb(params, batch_256, state=state_mb)
 |---------|-----------|---------|----------|
 | `PoissonSubsampler` | Variable | Standard amplification | Research, general use |
 | `PoissonSubsampler` + ``truncated_batch_size`` | Bounded above | Tighter (up to 20%) | Production, memory-constrained |
-| `CyclicPoissonSampler` | Cyclic groups | Depends on mechanism | Matrix-factorization noise (BandMF) |
+| `PoissonSampler` (``opaque.dpftrl``) | Variable | ``ftrl_acc.poisson`` | DP-FTRL; ``bands=1`` or cyclic ``bands>1`` |
 | `BallsInBinsSampler` | Fixed (deterministic) | Balls-in-bins amplification | λCGD, BISR, BLT |
 | `SequentialBatchSampler` | Fixed (deterministic) | No amplification | BLT (pre-shuffled dataset) |
 
 For most DP-SGD workloads, `PoissonSubsampler` is sufficient.
 Adding ``truncated_batch_size`` is a reasonable upgrade when you want tighter
-privacy bounds or need predictable batch sizes. `CyclicPoissonSampler` is
-only needed with BandMF correlated noise. `BallsInBinsSampler` and
+privacy bounds or need predictable batch sizes. For DP-FTRL, use
+``opaque.dpftrl.sampling.PoissonSampler`` (``bands`` selects identity vs cyclic
+participation). `BallsInBinsSampler` and
 `SequentialBatchSampler` are used with matrix-factorization mechanisms
 that require fixed batch sizes.
 

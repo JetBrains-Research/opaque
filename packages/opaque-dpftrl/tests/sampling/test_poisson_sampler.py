@@ -1,20 +1,20 @@
-"""Tests for CyclicPoissonSampler with DDP support."""
+"""Tests for PoissonSampler with DDP support."""
 
 import pytest
 import torch
 
 from opaque.random import key
-from opaque.dpftrl.sampling import CyclicPoissonSampler
+from opaque.dpftrl.sampling import PoissonSampler
 from opaque.dpftrl.sampling._partitions import PartitionType
 
 
-class TestCyclicPoissonSamplerBasic:
+class TestPoissonSamplerBasic:
     """Basic functionality tests (single device)."""
 
     def test_standard_poisson(self):
         """bands=1 behaves like standard Poisson sampling."""
         dataset_size = 100
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             range(dataset_size),
             sample_rate=0.5,
             bands=1,
@@ -36,7 +36,7 @@ class TestCyclicPoissonSamplerBasic:
     def test_fixed_order(self):
         """sample_rate=1.0 gives deterministic fixed order."""
         dataset_size = 20
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             range(dataset_size),
             sample_rate=1.0,
             bands=4,
@@ -55,7 +55,7 @@ class TestCyclicPoissonSamplerBasic:
     def test_cyclic_structure(self):
         """Verify cyclic group structure."""
         dataset_size = 15
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             range(dataset_size),
             sample_rate=1.0,
             bands=3,
@@ -76,7 +76,7 @@ class TestCyclicPoissonSamplerBasic:
         """truncated_batch_size caps batch sizes."""
         dataset_size = 200
         max_batch_size = 10
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             range(dataset_size),
             sample_rate=1.0,  # High prob to get large natural batches
             bands=1,
@@ -93,7 +93,7 @@ class TestCyclicPoissonSamplerBasic:
         """EQUAL_SPLIT partitions evenly."""
         dataset_size = 100
         bands = 5
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             range(dataset_size),
             sample_rate=1.0,
             bands=bands,
@@ -112,7 +112,7 @@ class TestCyclicPoissonSamplerBasic:
         """INDEPENDENT partition works."""
         dataset_size = 100
         bands = 4
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             range(dataset_size),
             sample_rate=0.5,
             bands=bands,
@@ -134,7 +134,7 @@ class TestCyclicPoissonSamplerBasic:
         dataset_size = 100
 
         def create_sampler():
-            return CyclicPoissonSampler(
+            return PoissonSampler(
                 range(dataset_size),
                 sample_rate=0.5,
                 bands=3,
@@ -151,7 +151,7 @@ class TestCyclicPoissonSamplerBasic:
         """Different seeds produce different batches."""
         dataset_size = 100
 
-        sampler1 = CyclicPoissonSampler(
+        sampler1 = PoissonSampler(
             range(dataset_size),
             sample_rate=0.5,
             bands=3,
@@ -159,7 +159,7 @@ class TestCyclicPoissonSamplerBasic:
             key=key(42),
         )
 
-        sampler2 = CyclicPoissonSampler(
+        sampler2 = PoissonSampler(
             range(dataset_size),
             sample_rate=0.5,
             bands=3,
@@ -178,7 +178,7 @@ class TestCyclicPoissonSamplerBasic:
         dataset_size = 100
         k = key(42)
 
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             range(dataset_size),
             sample_rate=0.5,
             bands=2,
@@ -190,7 +190,7 @@ class TestCyclicPoissonSamplerBasic:
         assert len(batches) == 5
 
 
-class TestCyclicPoissonSamplerProperties:
+class TestPoissonSamplerProperties:
     """Test statistical properties."""
 
     def test_expected_batch_size(self):
@@ -199,7 +199,7 @@ class TestCyclicPoissonSamplerProperties:
         sampling_prob = 0.1
         bands = 5
 
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             range(dataset_size),
             sample_rate=sampling_prob,
             bands=bands,
@@ -219,7 +219,7 @@ class TestCyclicPoissonSamplerProperties:
         sampling_prob = 0.1
         bands = 5
 
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             range(dataset_size),
             sample_rate=sampling_prob,
             bands=bands,
@@ -238,7 +238,7 @@ class TestCyclicPoissonSamplerProperties:
         dataset_size = 100
         n_steps = 25
 
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             range(dataset_size),
             sample_rate=0.5,
             bands=2,
@@ -249,7 +249,7 @@ class TestCyclicPoissonSamplerProperties:
         assert len(sampler) == n_steps
 
 
-class TestCyclicPoissonSamplerEdgeCases:
+class TestPoissonSamplerEdgeCases:
     """Test edge cases and error handling."""
 
     def test_requires_key_parameter(self):
@@ -260,16 +260,16 @@ class TestCyclicPoissonSamplerEdgeCases:
         raise rather than pick a default.
         """
         with pytest.raises(TypeError, match="key"):
-            CyclicPoissonSampler(range(100), sample_rate=0.1, bands=10)
+            PoissonSampler(range(100), sample_rate=0.1, bands=10)
 
     def test_empty_dataset_raises(self):
         """Empty dataset raises error."""
         with pytest.raises(ValueError):
-            CyclicPoissonSampler([], sample_rate=0.5, key=key(0))
+            PoissonSampler([], sample_rate=0.5, key=key(0))
 
     def test_single_example(self):
         """Single example dataset works."""
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             [0],
             sample_rate=1.0,
             bands=1,
@@ -285,7 +285,7 @@ class TestCyclicPoissonSamplerEdgeCases:
     def test_bands_larger_than_dataset(self):
         """bands > dataset_size works but gives small groups."""
         dataset_size = 10
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             range(dataset_size),
             sample_rate=0.5,
             bands=20,
@@ -304,7 +304,7 @@ class TestCyclicPoissonSamplerEdgeCases:
         dataset_size = 100
 
         # Near 1
-        sampler_high = CyclicPoissonSampler(
+        sampler_high = PoissonSampler(
             range(dataset_size),
             sample_rate=0.99,
             bands=1,
@@ -315,7 +315,7 @@ class TestCyclicPoissonSamplerEdgeCases:
         assert all(len(b) > 0.9 * dataset_size for b in batches_high)
 
         # Near 0
-        sampler_low = CyclicPoissonSampler(
+        sampler_low = PoissonSampler(
             range(dataset_size),
             sample_rate=0.01,
             bands=1,
@@ -328,20 +328,20 @@ class TestCyclicPoissonSamplerEdgeCases:
     def test_invalid_sampling_prob_raises(self):
         """Invalid sampling_prob raises ValueError."""
         with pytest.raises(ValueError):
-            CyclicPoissonSampler(range(10), sample_rate=0.0, key=key(0))
+            PoissonSampler(range(10), sample_rate=0.0, key=key(0))
 
         with pytest.raises(ValueError):
-            CyclicPoissonSampler(range(10), sample_rate=1.5, key=key(0))
+            PoissonSampler(range(10), sample_rate=1.5, key=key(0))
 
     def test_invalid_bands_raises(self):
         """Invalid bands raises ValueError."""
         with pytest.raises(ValueError):
-            CyclicPoissonSampler(range(10), sample_rate=0.5, bands=0, key=key(0))
+            PoissonSampler(range(10), sample_rate=0.5, bands=0, key=key(0))
 
     def test_invalid_truncated_batch_size_raises(self):
         """Invalid truncated_batch_size raises ValueError."""
         with pytest.raises(ValueError):
-            CyclicPoissonSampler(
+            PoissonSampler(
                 range(10),
                 sample_rate=0.5,
                 truncated_batch_size=0,
@@ -349,7 +349,7 @@ class TestCyclicPoissonSamplerEdgeCases:
             )
 
 
-class TestCyclicPoissonSamplerDistributedSimulation:
+class TestPoissonSamplerDistributedSimulation:
     """Test distributed support via external sharding (inner composition).
 
     Samplers no longer accept rank/world_size. Instead, the dataset is
@@ -365,7 +365,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
         start, end = _local_shard_bounds(len(dataset), rank=0, world_size=4)
         shard = dataset[start:end]
 
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             shard,
             sample_rate=0.5,
             bands=2,
@@ -383,7 +383,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
         start, end = _local_shard_bounds(len(dataset), rank=0, world_size=4)
         shard = dataset[start:end]
 
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             shard,
             sample_rate=1.0,
             bands=1,
@@ -406,7 +406,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
         start, end = _local_shard_bounds(len(dataset), rank=3, world_size=4)
         shard = dataset[start:end]
 
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             shard,
             sample_rate=1.0,
             bands=1,
@@ -431,7 +431,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
 
         # Rank 0
         s0, e0 = _local_shard_bounds(len(dataset), rank=0, world_size=world_size)
-        sampler0 = CyclicPoissonSampler(
+        sampler0 = PoissonSampler(
             dataset[s0:e0],
             sample_rate=0.5,
             bands=1,
@@ -442,7 +442,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
 
         # Rank 1
         s1, e1 = _local_shard_bounds(len(dataset), rank=1, world_size=world_size)
-        sampler1 = CyclicPoissonSampler(
+        sampler1 = PoissonSampler(
             dataset[s1:e1],
             sample_rate=0.5,
             bands=1,
@@ -463,7 +463,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
         start, end = _local_shard_bounds(len(dataset), rank=0, world_size=2)
         shard = dataset[start:end]
 
-        sampler0 = CyclicPoissonSampler(
+        sampler0 = PoissonSampler(
             shard,
             sample_rate=1.0,
             bands=2,
@@ -479,13 +479,13 @@ class TestCyclicPoissonSamplerDistributedSimulation:
             assert all(0 <= idx < 50 for idx in batch)
 
 
-class TestCyclicPoissonSamplerDataLoader:
+class TestPoissonSamplerDataLoader:
     """Test integration with PyTorch DataLoader."""
 
     def test_dataloader_integration(self):
         """Works with PyTorch DataLoader."""
         dataset = list(range(100))
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             dataset,
             sample_rate=0.5,
             bands=2,
@@ -509,7 +509,7 @@ class TestCyclicPoissonSamplerDataLoader:
     def test_dataloader_variable_batch_sizes(self):
         """DataLoader handles variable batch sizes."""
         dataset = list(range(200))
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             dataset,
             sample_rate=0.3,
             bands=1,
@@ -527,7 +527,7 @@ class TestCyclicPoissonSamplerDataLoader:
         assert len(set(batch_sizes)) > 1
 
 
-class TestCyclicPoissonSamplerRangeDataset:
+class TestPoissonSamplerRangeDataset:
     """Test with actual Dataset objects."""
 
     def test_with_torch_dataset(self):
@@ -544,7 +544,7 @@ class TestCyclicPoissonSamplerRangeDataset:
                 return idx
 
         dataset = SimpleDataset(100)
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             dataset,
             sample_rate=0.5,
             bands=3,

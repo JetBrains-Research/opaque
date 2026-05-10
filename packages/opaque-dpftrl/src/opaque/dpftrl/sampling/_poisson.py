@@ -1,11 +1,10 @@
-"""Cyclic Poisson sampler for DP-FTRL training (BandMF + identity baseline).
+"""Poisson sampler for DP-FTRL training (identity and band-MF regimes).
 
-This sampler generalises plain Poisson subsampling to the cyclic
-participation pattern used by BandMF amplification: examples are
-partitioned into ``bands`` groups; at iteration ``i`` the sampler yields
-a Poisson(``sample_rate``) batch from group ``i % bands``.  Plain
-Poisson sampling (the identity-encoder baseline) is the ``bands == 1``
-special case.
+Examples are partitioned into ``bands`` groups; at iteration ``i`` the
+sampler draws a Poisson(``sample_rate``) batch from group ``i % bands``.
+With ``bands == 1`` this is plain Poisson subsampling over the full dataset
+(identity-encoder baseline).  With ``bands > 1`` it matches the cyclic
+participation pattern used in BandMF amplification.
 
 For distributed training, shard the dataset before constructing the
 sampler with ``opaque.distributed.local_shard`` and derive a per-rank
@@ -29,29 +28,26 @@ from opaque.dpftrl.sampling._partitions import (
 )
 
 
-class CyclicPoissonSampler(Sampler):
-    """Cyclic Poisson sampler for DP-FTRL.
+class PoissonSampler(Sampler):
+    """Poisson subsampling for DP-FTRL (``bands`` selects identity vs cyclic).
 
-    Examples are partitioned into ``bands`` groups.  At iteration ``i``,
-    each example in group ``i % bands`` is independently included with
-    probability ``sample_rate``.  ``bands=1`` collapses to plain
-    Poisson subsampling (the identity-encoder baseline).
+    At iteration ``i``, each example in group ``i % bands`` is included
+    independently with probability ``sample_rate``.  ``bands=1`` is plain
+    Poisson over the whole dataset.
 
     Args:
         data_source: Dataset to sample from (any object with ``__len__``).
-        sample_rate: Per-step Poisson sampling probability ``∈ (0, 1]``.
-        bands: Number of cyclic groups (band width).  Defaults to ``1``
-            (plain Poisson).
+        sample_rate: Per-step inclusion probability ``∈ (0, 1]``.
+        bands: Number of cyclic groups.  ``1`` = standard Poisson on full data.
         n_steps: Total number of batches to yield.  Defaults to ``1``.
         truncated_batch_size: Optional cap on per-step batch size.
-        partition_type: Strategy for partitioning the dataset into groups
-            (only used when ``bands > 1``).
+        partition_type: Partition strategy when ``bands > 1``.
         key: RNG key for reproducibility.
 
     Example::
 
         from opaque.random import key
-        sampler = CyclicPoissonSampler(
+        sampler = PoissonSampler(
             dataset, sample_rate=0.01, bands=4, n_steps=1000, key=key(42),
         )
         loader = DataLoader(dataset, batch_sampler=sampler)
