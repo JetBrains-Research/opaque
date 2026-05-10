@@ -1,12 +1,11 @@
 # opaque-dpsgd
 
 Differentially Private SGD mechanisms for Opaque: Gaussian /
-truncated-Gaussian noise, adaptive clipping, and truncated Poisson
-subsampling. Fixed and AUTO-S clipping live in
-[`opaque.dpsgd.clipping`](../opaque-core/README.md) (implemented in
-`opaque._clipping` inside `opaque-core`). Functional optimizers
-(including the universal ``adamw`` with optional DP bias-correction) live
-in [`opaque.optimizers`](../opaque-core/README.md).
+truncated-Gaussian noise, clipping (fixed, AUTO-S, adaptive), and Poisson
+subsampling. Clipping entry points live in
+[`opaque.dpsgd.clipping`](../opaque-core/README.md). Functional optimizers
+(including the universal ``adamw`` with optional DP bias-correction) live in
+[`opaque.optimizers`](../opaque-core/README.md).
 
 ## Install
 
@@ -33,6 +32,5 @@ from opaque.dpsgd.sampling import PoissonSubsampler
 - `opaque.dpsgd.clipping` — `clipped_grad`, `auto_clipped_grad`, `per_group`, `adaptive_clipped_grad`, `.types`, `.fun`
 - `opaque.dpsgd.sampling` — `PoissonSubsampler` (optional ``truncated_batch_size``)
 
-Shared low-level clipping code ships in `opaque-core` as `opaque._clipping`;
-RNG keys, pytree helpers, distributed plumbing, and serialization also live
-in [`opaque-core`](../opaque-core/README.md).
+RNG keys, pytree helpers, distributed plumbing, and serialization live in
+[`opaque-core`](../opaque-core/README.md).

@@ -1,35 +1,26 @@
-"""Internal clipping implementation (import :mod:`opaque.dpsgd.clipping` or
-:mod:`opaque.dpftrl.clipping` from application code).
+"""Per-example gradient clipping (fixed threshold and AUTO-S).
 
-Headline entry points (re-exported by the training packages):
+Entry points:
 
-- :func:`clipped_grad` — differentiate + fixed-threshold clip + sum the
-  gradients
+- :func:`clipped_grad` — differentiate + fixed-threshold clip + sum
 - :func:`auto_clipped_grad` — differentiate + AUTO-S smooth-scale + sum
-  the gradients (Bu et al., NeurIPS 2023)
-- :func:`per_group` — factory for :class:`opaque.types.PerGroup` groupings
+  (Bu et al., NeurIPS 2023)
+- :func:`per_group` — build :class:`opaque.types.PerGroup` groupings
 
-Both fixed clipping and AUTO-S produce a constant per-record sensitivity
-bound that is independent of the input data, so they compose with any
-mechanism in :mod:`opaque.dpsgd.noise` (Gaussian / truncated Gaussian)
-or :mod:`opaque.dpftrl.noise` (identity / band-MF / BLT / BiSR / BSR /
-λ-CGD).  The DP-SGD-specific :func:`adaptive_clipped_grad` lives in
-:mod:`opaque.dpsgd.clipping` because its threshold drifts across steps
-and therefore violates the constant-sensitivity assumption that
-matrix-factorization privacy proofs rely on.
+Fixed clipping and AUTO-S give a constant, data-independent per-record
+sensitivity bound, so they pair with mechanisms in :mod:`opaque.dpsgd.noise`
+and :mod:`opaque.dpftrl.noise`. Adaptive thresholding
+(:func:`opaque.dpsgd.clipping.adaptive_clipped_grad`) is DP-SGD-only: the
+threshold moves across steps and does not meet the constant-sensitivity
+assumption used in matrix-factorization analyses.
 
-Power-user building blocks (``clipped_fun``, ``auto_clipped_fun``,
-``clip_pytree``, ``auto_scale_pytree``) live in :mod:`opaque._clipping.fun`.
-State and auxiliary dataclasses (``FixedClipState``, ``AutoClipState``,
-``ClippedGradAux``, ``AutoClippedGradAux``, ``ClippedFunAux``,
-``AutoClippedFunAux``, ``ClipPytreeAux``) live in
-:mod:`opaque._clipping.types`. The cross-cutting DP types (``ClipState``
-base, ``ClippedPytree``, ``PerGroup``, ``MaxNorm``, ``clipped()`` factory)
-live in :mod:`opaque.types`.
+Power-user APIs live in :mod:`opaque._clipping.fun`; state and aux types in
+:mod:`opaque._clipping.types`. Cross-cutting wrapper types
+(:class:`opaque.types.ClippedPytree`, :class:`opaque.types.PerGroup`, …) live
+in :mod:`opaque.types`.
 
-To synchronize clipping state across distributed ranks, use
-:func:`opaque.distributed.sync`; it auto-dispatches by type to the right
-handler without you having to import it by name.
+Use :func:`opaque.distributed.sync` to synchronize clipping state or aux
+objects across ranks.
 """
 
 from opaque._clipping._auto import auto_clipped_grad

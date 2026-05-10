@@ -1,4 +1,4 @@
-"""AUTO-S function-level scaling (re-export for DP-FTRL)."""
+"""AUTO-S at the function level (:func:`auto_clipped_fun`)."""
 
 from __future__ import annotations
 

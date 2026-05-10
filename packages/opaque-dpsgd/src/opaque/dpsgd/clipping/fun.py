@@ -1,8 +1,4 @@
-"""AUTO-S function-level scaling (re-export).
-
-Implementation lives in :mod:`opaque._clipping.fun`.  Import from here for
-DP-SGD tutorials; :mod:`opaque.dpftrl.clipping.fun` mirrors this for FTRL.
-"""
+"""AUTO-S at the function level (:func:`auto_clipped_fun`)."""
 
 from __future__ import annotations
 

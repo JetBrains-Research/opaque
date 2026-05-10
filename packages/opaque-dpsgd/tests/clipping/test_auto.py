@@ -1,4 +1,4 @@
-"""Tests that :mod:`opaque.dpsgd.clipping` re-exports match :mod:`opaque._clipping`."""
+"""AUTO-S clipping on the :mod:`opaque.dpsgd.clipping` import surface."""
 
 from __future__ import annotations
 

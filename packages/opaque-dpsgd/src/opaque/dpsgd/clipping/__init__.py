@@ -7,10 +7,9 @@ Headline factories:
 - :func:`per_group` — build :class:`~opaque.types.PerGroup` groupings
 - :func:`adaptive_clipped_grad` — adaptive clipping (Andrew et al., 2021)
 
-Fixed and AUTO-S are implemented in :mod:`opaque._clipping` and re-exported
-here as the **canonical** import path for DP-SGD training code.  Adaptive
-clipping is DP-SGD-only: its threshold drifts across steps, which violates
-the constant-sensitivity assumption matrix-factorization proofs require.
+Adaptive clipping is DP-SGD-only: its threshold drifts across steps, which
+violates the constant-sensitivity assumption matrix-factorization proofs
+require.
 
 State and auxiliary dataclasses live in :mod:`opaque.dpsgd.clipping.types`.
 AUTO-S function-level helpers live in :mod:`opaque.dpsgd.clipping.fun`.

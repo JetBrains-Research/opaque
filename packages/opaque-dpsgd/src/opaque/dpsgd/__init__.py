@@ -1,17 +1,16 @@
 """Opaque DP-SGD: Differentially Private SGD mechanisms.
 
 Gaussian / truncated-Gaussian noise, adaptive and AUTO-S clipping, and the
-standard + truncated Poisson samplers.  Fixed-clipping and AUTO-S primitives
-live in :mod:`opaque.dpsgd.clipping` (re-exported from :mod:`opaque._clipping`;
-AUTO-S is algorithm-agnostic — constant per-record sensitivity bound).  Functional optimizers (including the universal ``adamw`` with
+standard + truncated Poisson samplers.  Fixed and AUTO-S clipping live in
+:mod:`opaque.dpsgd.clipping` (AUTO-S keeps a constant per-record sensitivity
+bound).  Functional optimizers (including the universal ``adamw`` with
 DP bias-correction and private second-moment paths) live in
 :mod:`opaque.optimizers`.
 
-DP-SGD-specific state / aux dataclasses (``AdaptiveClipState``,
-``AdaptiveClippedGradAux``) live in :mod:`opaque.dpsgd.clipping.types`,
-which also re-exports AUTO-S state types from :mod:`opaque._clipping.types`.
-``GaussianNoiseState``
-lives in :mod:`opaque.dpsgd.noise.types`.
+Clipping state and aux types (including ``AdaptiveClipState``,
+``AdaptiveClippedGradAux``, and AUTO-S types) live in
+:mod:`opaque.dpsgd.clipping.types`.  ``GaussianNoiseState`` lives in
+:mod:`opaque.dpsgd.noise.types`.
 
 The :mod:`opaque.dpsgd.accounting` subpackage (DP-SGD-specific privacy
 accounting factories, requires ``opaque-accounting``) is **lazy-imported**:

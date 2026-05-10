@@ -39,9 +39,6 @@ Additional primitives:
 - `opaque.random` — JAX-style RNG keys, PyTorch generator bridge
 - `opaque.pytree` — `tree_map`, `tree_leaves`, `partition`, `merge`,
   `global_norm`
-- `opaque._clipping` — internal implementation of fixed + AUTO-S clipping
-  (import via `opaque.dpsgd.clipping` or `opaque.dpftrl.clipping` in
-  application code). Distributed sync registers on import of those modules.
 - `opaque.profiling` — `TrainingProfiler`, `StepTimer`, memory diagnostics
 - `opaque.types` — wrapper-pytree types (`ClippedPytree`, `NoisedPytree`,
   `PerGroup`, `ClipState`, `NoiseState`, …)

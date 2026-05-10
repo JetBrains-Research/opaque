@@ -1,11 +1,7 @@
-"""DP-FTRL clipping: fixed threshold and AUTO-S (MF-safe).
+"""DP-FTRL clipping: fixed threshold, AUTO-S, and per-group norms.
 
-:func:`adaptive_clipped_grad` from DP-SGD is **not** available here — adaptive
-thresholds violate the constant per-step sensitivity assumption used in
-matrix-factorization privacy proofs.
-
-Implementation is shared via :mod:`opaque._clipping`; this module is the
-canonical import path for DP-FTRL application code.
+Training scripts should import from here. Adaptive thresholding is only
+available under :mod:`opaque.dpsgd.clipping` (DP-SGD).
 """
 
 from opaque._clipping import auto_clipped_grad, clipped_grad, per_group

@@ -1,8 +1,4 @@
-"""Shim re-exporting AUTO-S clipping from :mod:`opaque._clipping`.
-
-Prefer importing from :mod:`opaque.dpsgd.clipping` or
-:mod:`opaque.dpsgd.clipping.types` in new code.
-"""
+"""AUTO-S clipping symbols (see :mod:`opaque.dpsgd.clipping`)."""
 
 from __future__ import annotations
 

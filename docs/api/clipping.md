@@ -1,10 +1,9 @@
 # Gradient Clipping
 
-The `opaque.dpsgd.clipping` module provides algorithm-agnostic per-example
-gradient clipping primitives — both fixed-threshold clipping and AUTO-S
-smooth scaling. The DP-SGD-specific `adaptive_clipped_grad` (whose
-threshold drifts across steps and is therefore incompatible with MF
-privacy proofs) lives in `opaque.dpsgd.clipping`.
+Per-example clipping APIs for DP training: fixed norm, AUTO-S scaling, and
+(on the DP-SGD side) adaptive clipping. DP-FTRL users import fixed and
+AUTO-S helpers from `opaque.dpftrl.clipping`; DP-SGD users use
+`opaque.dpsgd.clipping` for all three.
 
 ## Overview
 

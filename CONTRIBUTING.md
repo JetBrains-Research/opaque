@@ -251,7 +251,7 @@ the above shape — no merge if the title doesn't parse.
 ```
 feat: implement basic clipped_grad
 
-- Add clipped_grad to opaque.dpsgd.clipping (implementation in opaque._clipping)
+- Add clipped_grad to opaque.dpsgd.clipping
 - Support single parameter and batch data
 - Include tests comparing against JAX-Privacy
 

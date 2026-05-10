@@ -24,7 +24,7 @@ nested under `opaque.core.*`.
 | Distribution | Import roots | Purpose | Build |
 | --- | --- | --- | --- |
 | `opaque` | — | pins the curated sub-package bundle; extras add the rest | setuptools |
-| `opaque-core` | `opaque.core`, `opaque.functional`, `opaque.distributed`, `opaque._clipping`, `opaque.scheduling` | RNG, pytree, fixed + AUTO-S clipping (internal), step-indexed schedules + warmup composition, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing | setuptools |
+| `opaque-core` | `opaque.core`, `opaque.functional`, `opaque.distributed`, `opaque._clipping`, `opaque.scheduling` | RNG, pytree, fixed + AUTO-S clip primitives, step-indexed schedules + warmup composition, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing | setuptools |
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated-Gaussian / per-group noise, AdamW-BC, Poisson + truncated-Poisson samplers, adaptive clipping | setuptools |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, cyclic Poisson + b-min-sep + balls-in-bins + sequential samplers | setuptools |
 | `opaque-auditing` | `opaque.auditing` | empirical privacy auditing (one-run, coin-flip, loss attacks) | setuptools |

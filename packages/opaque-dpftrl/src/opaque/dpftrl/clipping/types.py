@@ -1,4 +1,4 @@
-"""Type aliases for DP-FTRL clipping (AUTO-S + fixed-clip state)."""
+"""Clipping state and auxiliary types for :mod:`opaque.dpftrl.clipping`."""
 
 from __future__ import annotations
 
