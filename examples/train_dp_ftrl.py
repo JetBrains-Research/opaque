@@ -123,7 +123,6 @@ import torchopt
 
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as ftrl_acc
-import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import calibration as cal
 from opaque.clipping import clipped_grad, per_group
 from opaque.types import PerGroup, SecondMomentNoiseOutput
@@ -1141,9 +1140,10 @@ def main():
     elif args.mechanism == "identity":
 
         def acct_mechanism(nm):
-            return (
-                dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=sample_rate)
-                * total_steps
+            return ftrl_acc.cyclic_poisson(
+                ftrl_acc.mf_identity(nm),
+                sample_rate=sample_rate,
+                num_steps=total_steps,
             )
     elif args.mechanism == "none":
 
@@ -1279,9 +1279,10 @@ def main():
         try:
 
             def identity_acct(nm):
-                return (
-                    dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=sample_rate)
-                    * total_steps
+                return ftrl_acc.cyclic_poisson(
+                    ftrl_acc.mf_identity(nm),
+                    sample_rate=sample_rate,
+                    num_steps=total_steps,
                 )
 
             identity_cal = cal.calibrate(

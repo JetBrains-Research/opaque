@@ -6,15 +6,27 @@ is fixed once at sampler init and reused across all ``num_epochs``
 epochs, so each example stays in its bin — required for the
 dominating-pair analysis.
 
-This module covers the **correlated-noise** (matrix-factorisation)
-case: ``Blt``, ``LambdaCgd``, ``Bisr``, ``Bsr``.  The PLD is computed
-by Monte Carlo sampling of the dominating pair from
-Choquette-Choo et al. (2024) arxiv:2410.06266.
+The Choquette-Choo et al. (2024) dominating pair (Lemma 3.2) is::
 
-For independent-noise mechanisms (Gaussian / AdaClip), BnB collapses
-to ``poisson(gaussian(nm), 1/num_bins) * (num_bins * num_epochs)``
-under the conservative per-step Poisson approximation, with no gain
-over plain DP-SGD subsampling.  Use that pattern directly.
+    P = (1/b) Σ_{i=1}^{b} N(m_i, σ²I)        m_i = Σ_{j=0}^{E-1} |C|[:, b·j + i]
+    Q = N(0, σ²I)
+
+After Gram-matrix reduction (``G[i,j] = m_i · m_j``) the privacy loss only
+depends on ``G``, ``num_bins`` and ``σ``.  Both dispatch paths feed this
+construction:
+
+- **Correlated-noise** (matrix-factorisation): ``Blt``, ``LambdaCgd``,
+  ``Bisr``, ``Bsr`` — pass the strategy's pre-computed Gram matrix.
+- **MF identity** (uncorrelated noise — :class:`IdentityMf`): ``C = I``
+  gives orthogonal ``m_i`` with ``‖m_i‖² = num_epochs``, i.e.
+  ``G = num_epochs · I_b`` (diagonal).  This feeds the same Lemma 3.2
+  dominating pair through Monte Carlo — a valid bound on the BnB
+  mechanism's privacy.  In standard regimes the heuristic per-step
+  Poisson approximation
+  ``poisson(gaussian(σ), 1/num_bins) * (num_bins * num_epochs)`` happens
+  to be numerically tighter, but it is not a strict upper bound on
+  shuffle-style BnB sampling (Chua et al. 2024).  Lemma 3.2 is the
+  rigorous bound and is used here.
 
 The returned process represents the **total** privacy cost across
 all ``num_epochs`` epochs.  Do NOT compose further with ``* num_epochs``.
@@ -73,6 +85,7 @@ class BallsInBins(DpProcess):
         from opaque.dpftrl.accounting.mechanisms._bisr import Bisr
         from opaque.dpftrl.accounting.mechanisms._blt import Blt
         from opaque.dpftrl.accounting.mechanisms._bsr import Bsr
+        from opaque.dpftrl.accounting.mechanisms._identity import IdentityMf
         from opaque.dpftrl.accounting.mechanisms._lambda_cgd import LambdaCgd
         from opaque.accounting.discretization import get_discretization
 
@@ -100,13 +113,27 @@ class BallsInBins(DpProcess):
                     mg.noise_multiplier,
                     native_cfg,
                 )
+            case IdentityMf() as mf_id:
+                # Identity (C = I) ⇒ Lemma 3.2 m_i are orthogonal with
+                # ‖m_i‖² = num_epochs ⇒ Gram = num_epochs · I_b.
+                if mf_id.noise_multiplier == 0:
+                    return _native.non_private_pld(native_cfg)
+                b = self.num_bins
+                gram_diag = float(self.num_epochs)
+                gram_flat = [
+                    gram_diag if i == j else 0.0 for i in range(b) for j in range(b)
+                ]
+                return _native.bnb_mc_pld(
+                    gram_flat,
+                    b,
+                    float(mf_id.noise_multiplier),
+                    native_cfg,
+                )
             case _:
                 raise TypeError(
-                    "BallsInBins requires a Blt, LambdaCgd, Bisr, or Bsr "
-                    "inner mechanism, got "
-                    f"{type(self.inner).__name__}.  For Gaussian/AdaClip use "
-                    "dpsgd_acc.poisson(inner, sample_rate=1/num_bins) * "
-                    "(num_bins * num_epochs)."
+                    "BallsInBins requires Blt, LambdaCgd, Bisr, Bsr, or "
+                    "IdentityMf inner mechanism, got "
+                    f"{type(self.inner).__name__}."
                 )
 
 
@@ -122,49 +149,58 @@ def balls_in_bins(
     participates exactly once per epoch.  The returned process covers all
     ``num_epochs`` epochs — do NOT compose further with ``* num_epochs``.
 
-    Only correlated-noise (matrix-factorisation) inner mechanisms are
-    accepted: :func:`blt`, :func:`lambda_cgd`, :func:`bisr`, :func:`bsr`.
-    For Gaussian / AdaClip the BnB analysis collapses to plain
-    Poisson-subsampling per step — use
-    ``dpsgd_acc.poisson(inner, sample_rate=1/num_bins) * (num_bins * num_epochs)``
-    directly.
+    Accepted inner mechanisms:
+
+    - **Correlated-noise (matrix-factorisation)**: :func:`blt`, :func:`lambda_cgd`,
+      :func:`bisr`, :func:`bsr` — PLD via the Monte Carlo dominating-pair
+      analysis (Choquette-Choo et al. 2024).
+    - **MF identity** (:func:`mf_identity`) — Lemma 3.2 dominating pair with
+      diagonal Gram ``num_epochs · I`` (orthogonal ``m_i`` for ``C = I``),
+      evaluated with the same Monte Carlo ``bnb_mc_pld`` path as the
+      correlated MF strategies (see :meth:`BallsInBins.pld`).
 
     Args:
-        inner: An MF mechanism — :func:`blt`, :func:`lambda_cgd`,
-            :func:`bisr`, or :func:`bsr`.
+        inner: An MF mechanism — :func:`blt`, :func:`lambda_cgd`, :func:`bisr`,
+            :func:`bsr`, or :func:`mf_identity`.
         num_bins: Bins per epoch (k ≥ 2).  Typically ``dataset_size / batch_size``.
         num_epochs: Number of training epochs (default 1).  For correlated-
             noise mechanisms the epoch count is already encoded in the inner
-            mechanism's ``n_steps`` / ``max_participations``; ``num_epochs``
-            serves as validation here.
+            mechanism's ``n_steps`` / ``max_participations`` — ``num_epochs``
+            serves as validation.  For ``IdentityMf`` it is the actual epoch
+            count used in the tight reduction.
 
     Returns:
         A :class:`BallsInBins` process (total cost).
 
     Example::
 
+        # Correlated MF
         training = ftrl_acc.balls_in_bins(
             ftrl_acc.lambda_cgd(nm, sensitivity=s.sensitivity,
                                 gram_matrix=s.gram_matrix),
             num_bins=100,
             num_epochs=10,
         )
+
+        # Identity baseline through the FTRL training loop
+        training = ftrl_acc.balls_in_bins(
+            ftrl_acc.mf_identity(1.0), num_bins=100, num_epochs=10,
+        )
         eps = training.epsilon_at(1e-5)
     """
     from opaque.dpftrl.accounting.mechanisms._bisr import Bisr
     from opaque.dpftrl.accounting.mechanisms._blt import Blt
     from opaque.dpftrl.accounting.mechanisms._bsr import Bsr
+    from opaque.dpftrl.accounting.mechanisms._identity import IdentityMf
     from opaque.dpftrl.accounting.mechanisms._lambda_cgd import LambdaCgd
 
     match inner:
-        case Blt() | LambdaCgd() | Bisr() | Bsr():
+        case Blt() | LambdaCgd() | Bisr() | Bsr() | IdentityMf():
             pass
         case _:
             raise TypeError(
-                "balls_in_bins() requires a Blt, LambdaCgd, Bisr, or Bsr "
-                f"inner mechanism, got {type(inner).__name__}.  For "
-                "Gaussian/AdaClip use dpsgd_acc.poisson(inner, "
-                "sample_rate=1/num_bins) * (num_bins * num_epochs)."
+                "balls_in_bins() requires Blt, LambdaCgd, Bisr, Bsr, or "
+                f"IdentityMf inner mechanism, got {type(inner).__name__}."
             )
     if num_bins < 2:
         raise ValueError(f"num_bins must be >= 2 for BnB amplification, got {num_bins}")

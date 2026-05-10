@@ -181,7 +181,7 @@ def gaussian_noise(
     def _add_noise_tree(grads, effective_stddev, generator):
         _validate_noise_stddev(effective_stddev)
 
-        # Per-group noise path
+        # Per-group σ: ClippedPytree.pytree must be a flat dict[path_key, Tensor].
         if isinstance(effective_stddev, PerGroup):
             if all(v == 0 for v in effective_stddev.values.values()):
                 return grads

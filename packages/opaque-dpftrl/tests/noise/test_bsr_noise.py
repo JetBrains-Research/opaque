@@ -87,8 +87,8 @@ class TestBsrStrategy:
                 beta=1.0,
             )
 
-    def test_rejects_normalized_flag(self):
-        with pytest.raises(ValueError, match="normalized=True"):
+    def test_rejects_unknown_normalized_kwarg(self):
+        with pytest.raises(TypeError, match="normalized"):
             bsr_strategy(
                 bandwidth=4,
                 n_steps=50,

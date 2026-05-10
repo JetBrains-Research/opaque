@@ -128,7 +128,6 @@ def bsr_strategy(
     *,
     alpha: float,
     beta: float,
-    normalized: bool = False,
 ) -> BsrStrategy:
     """Create a BSR strategy with closed-form Toeplitz coefficients.
 
@@ -147,7 +146,6 @@ def bsr_strategy(
         beta: Paper Polyak momentum :math:`\\beta \\in [0, 1)`. For training scripts,
             bind from SGD ``momentum`` or Adam :math:`\\beta_1` (first-moment EMA) so
             the noise workload matches the optimizer you analyze.
-        normalized: Reserved for future column-normalized BSR; must be ``False`` in v1.
 
     Returns:
         A :class:`BsrStrategy` with Gram matrix for BnB.
@@ -155,10 +153,6 @@ def bsr_strategy(
     Raises:
         ValueError: If hyperparameters are outside the supported closed-form regime.
     """
-    if normalized:
-        raise ValueError(
-            "bsr_strategy(..., normalized=True) is not supported in v1; use normalized=False."
-        )
     if n_steps < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
     if min_sep < 1:
@@ -195,7 +189,7 @@ def bsr_strategy(
         n_steps,
         min_sep,
         max_participations,
-        normalized,
+        False,
     )
     gram_matrix = tuple(gram)
 

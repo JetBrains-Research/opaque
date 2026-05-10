@@ -38,7 +38,8 @@ Opaque-built:
   ``state.x`` field (see :class:`opaque.optimizers.types.ScheduleFreeState`).
 
 DP-aware behavior is selected at ``update()`` time by passing metadata
-wrappers:
+wrappers on ``updates`` (not separate ``noise_stddev=`` / ``noisy_squared_grads``
+kwargs):
 
 - ``NoisedPytree`` — carries the realized per-step noise σ with the
   privatized update; this activates whatever noise-aware path the
