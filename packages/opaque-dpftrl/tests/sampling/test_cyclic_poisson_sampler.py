@@ -321,6 +321,7 @@ class TestCyclicPoissonSamplerEdgeCases:
         with pytest.raises(ValueError):
             CyclicPoissonSampler(range(10), sample_rate=0.5, bands=0, key=key(0))
 
+
 class TestCyclicPoissonSamplerDistributedSimulation:
     """Test distributed support via external sharding (inner composition).
 
