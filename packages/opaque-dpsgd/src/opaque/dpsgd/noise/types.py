@@ -1,10 +1,5 @@
-"""Public type definitions for :mod:`opaque.dpsgd.noise`.
+"""DP-SGD noise types façade — re-exports ``GaussianNoiseState``."""
 
-Re-exports the Gaussian-noise state for type annotations.
-"""
-
-from __future__ import annotations
-
-from opaque.dpsgd.noise._gaussian import GaussianNoiseState
+from opaque.api.dpsgd.noise.types import GaussianNoiseState
 
 __all__ = ["GaussianNoiseState"]

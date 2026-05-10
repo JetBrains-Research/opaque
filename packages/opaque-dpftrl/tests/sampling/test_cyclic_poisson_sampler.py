@@ -5,7 +5,7 @@ import torch
 
 from opaque.random import key
 from opaque.dpftrl.sampling import CyclicPoissonSampler
-from opaque.dpftrl.sampling._partitions import PartitionType
+from opaque.api.dpftrl.sampling._partitions import PartitionType
 
 
 class TestCyclicPoissonSamplerBasic:

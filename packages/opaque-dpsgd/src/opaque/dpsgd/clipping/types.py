@@ -1,16 +1,18 @@
-"""Clipping state and auxiliary types for :mod:`opaque.dpsgd.clipping`.
+"""DP-SGD clipping types façade.
 
-Includes adaptive (DP-SGD) and AUTO-S dataclasses used in type annotations.
+Re-exports adaptive (DP-SGD) and AUTO-S clipping state / aux dataclasses
+for type annotations from the impl trees.
 """
 
-from __future__ import annotations
-
+from opaque.api.dpsgd.clipping.types import (
+    AdaptiveClippedGradAux,
+    AdaptiveClipState,
+)
 from opaque.api.engine.clipping.types import (
     AutoClippedFunAux,
     AutoClippedGradAux,
     AutoClipState,
 )
-from opaque.dpsgd.clipping._adaptive import AdaptiveClippedGradAux, AdaptiveClipState
 
 __all__ = [
     "AdaptiveClipState",

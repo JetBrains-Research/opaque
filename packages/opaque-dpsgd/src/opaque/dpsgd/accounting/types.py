@@ -1,16 +1,14 @@
-"""Type definitions for :mod:`opaque.dpsgd.accounting`.
+"""DP-SGD accounting types façade.
 
-Re-exports DP-SGD-specific dataclasses for type annotations.  The
+Re-exports DP-SGD-specific dataclasses for type annotations. The
 constructor functions live in the package init.
 """
 
-from __future__ import annotations
-
-from opaque.dpsgd.accounting.amplification.types import (
+from opaque.api.accounting.dpsgd.amplification.types import (
     ParallelPoisson,
     Poisson,
 )
-from opaque.dpsgd.accounting.mechanisms.types import AdaClip, Gaussian
+from opaque.api.accounting.dpsgd.mechanisms.types import AdaClip, Gaussian
 
 __all__ = [
     "Gaussian",

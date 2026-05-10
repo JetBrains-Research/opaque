@@ -34,7 +34,7 @@ optimizers = ["opaque-optimizers"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["opaque.dpftrl*"]
+include = ["opaque.dpftrl*", "opaque.api.dpftrl*", "opaque.api.accounting.dpftrl*"]
 namespaces = true
 
 [tool.setuptools_scm]

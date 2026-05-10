@@ -3,9 +3,9 @@
 import pytest
 import torch
 
-from opaque.dpftrl.noise._engine import MFNoiseState, _matrix_factorization_noise
-from opaque.dpftrl.noise._streaming_matrix import identity, prefix_sum
-from opaque.dpftrl.noise._toeplitz import (
+from opaque.api.dpftrl.noise._engine import MFNoiseState, _matrix_factorization_noise
+from opaque.api.dpftrl.noise._streaming_matrix import identity, prefix_sum
+from opaque.api.dpftrl.noise._toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )

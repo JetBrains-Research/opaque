@@ -9,7 +9,7 @@ from opaque.types import ClippedPytree
 
 from opaque.types import PerGroup
 from opaque.dpsgd.clipping import per_group
-from opaque.dpsgd.clipping._adaptive import AdaptiveClipState, adaptive_clipped_grad
+from opaque.api.dpsgd.clipping._adaptive import AdaptiveClipState, adaptive_clipped_grad
 from opaque.random import key
 
 

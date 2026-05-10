@@ -1,6 +1,5 @@
-"""DP-SGD Poisson-family amplification constructors."""
+"""DP-SGD accounting Poisson-family amplification factories façade."""
 
-from opaque.dpsgd.accounting.amplification._parallel_poisson import parallel_poisson
-from opaque.dpsgd.accounting.amplification._poisson import poisson
+from opaque.api.accounting.dpsgd.amplification import parallel_poisson, poisson
 
 __all__ = ["poisson", "parallel_poisson"]

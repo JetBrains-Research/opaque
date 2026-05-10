@@ -1,12 +1,5 @@
-"""Public type definitions for :mod:`opaque.dpftrl.sampling`.
+"""DP-FTRL sampling types façade."""
 
-Re-exports the partition-strategy enum used by
-:class:`opaque.dpftrl.sampling.CyclicPoissonSampler` for type annotations
-and explicit construction.
-"""
-
-from __future__ import annotations
-
-from opaque.dpftrl.sampling._partitions import PartitionType
+from opaque.api.dpftrl.sampling.types import PartitionType
 
 __all__ = ["PartitionType"]

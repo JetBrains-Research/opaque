@@ -7,9 +7,9 @@ import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.accounting import Accountant
-from opaque.dpftrl.accounting.amplification._b_min_sep import BMinSep
-from opaque.dpftrl.accounting.amplification._poisson import MfPoisson
-from opaque.dpftrl.accounting.mechanisms._band_mf import BandMf
+from opaque.api.accounting.dpftrl.amplification._b_min_sep import BMinSep
+from opaque.api.accounting.dpftrl.amplification._poisson import MfPoisson
+from opaque.api.accounting.dpftrl.mechanisms._band_mf import BandMf
 from opaque.serialization import from_state_dict, state_dict
 
 # Template type selects the registered handler; PLD decode uses the flat dict's

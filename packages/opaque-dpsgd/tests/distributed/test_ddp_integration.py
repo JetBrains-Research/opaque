@@ -230,7 +230,7 @@ def _worker_reduce_pytree_nested(rank: int, world_size: int, port: int) -> None:
 
 
 def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> None:
-    from opaque.dpsgd.clipping._adaptive import AdaptiveClipState
+    from opaque.api.dpsgd.clipping._adaptive import AdaptiveClipState
     from opaque.distributed import sync
     from opaque.random import key as rng_key
 

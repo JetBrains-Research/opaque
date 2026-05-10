@@ -1,8 +1,5 @@
-"""Public type definitions for :mod:`opaque.dpsgd.accounting.mechanisms`."""
+"""DP-SGD accounting mechanism types façade."""
 
-from __future__ import annotations
-
-from opaque.dpsgd.accounting.mechanisms._adaclip import AdaClip
-from opaque.dpsgd.accounting.mechanisms._gaussian import Gaussian
+from opaque.api.accounting.dpsgd.mechanisms.types import AdaClip, Gaussian
 
 __all__ = ["Gaussian", "AdaClip"]

@@ -20,7 +20,7 @@ from opaque.dpftrl.noise import (
     lambda_cgd_strategy,
     mf_noise,
 )
-from opaque.dpftrl.noise._distributed import fingerprint_per_group_max_norm
+from opaque.api.dpftrl.noise._distributed import fingerprint_per_group_max_norm
 from opaque.random import key
 
 

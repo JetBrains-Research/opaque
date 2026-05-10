@@ -1,6 +1,5 @@
-"""DP-SGD mechanism constructors."""
+"""DP-SGD accounting mechanisms façade."""
 
-from opaque.dpsgd.accounting.mechanisms._adaclip import adaclip
-from opaque.dpsgd.accounting.mechanisms._gaussian import gaussian
+from opaque.api.accounting.dpsgd.mechanisms import adaclip, gaussian
 
 __all__ = ["gaussian", "adaclip"]

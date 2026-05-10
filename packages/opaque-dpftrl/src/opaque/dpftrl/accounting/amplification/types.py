@@ -1,9 +1,9 @@
-"""Public type definitions for :mod:`opaque.dpftrl.accounting.amplification`."""
+"""DP-FTRL accounting amplification types façade."""
 
-from __future__ import annotations
-
-from opaque.dpftrl.accounting.amplification._b_min_sep import BMinSep
-from opaque.dpftrl.accounting.amplification._balls_in_bins import BallsInBins
-from opaque.dpftrl.accounting.amplification._poisson import MfPoisson
+from opaque.api.accounting.dpftrl.amplification.types import (
+    BallsInBins,
+    BMinSep,
+    MfPoisson,
+)
 
 __all__ = ["MfPoisson", "BMinSep", "BallsInBins"]

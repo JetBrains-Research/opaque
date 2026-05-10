@@ -3,7 +3,7 @@
 import pytest
 
 import opaque.dpftrl.accounting as ftrl_acc
-from opaque.dpftrl.noise._bisr import BisrStrategy, bisr_strategy
+from opaque.api.dpftrl.noise._bisr import BisrStrategy, bisr_strategy
 
 
 class TestBisrStrategy:

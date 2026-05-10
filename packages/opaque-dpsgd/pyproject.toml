@@ -33,7 +33,7 @@ optimizers = ["opaque-optimizers"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["opaque.dpsgd*"]
+include = ["opaque.dpsgd*", "opaque.api.dpsgd*", "opaque.api.accounting.dpsgd*"]
 namespaces = true
 
 [tool.setuptools_scm]

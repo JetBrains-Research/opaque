@@ -9,7 +9,7 @@ from opaque.types import ClippedPytree
 
 from opaque.types import NoisedPytree
 
-from opaque.dpsgd.clipping._adaptive import adaptive_clipped_grad
+from opaque.api.dpsgd.clipping._adaptive import adaptive_clipped_grad
 from opaque.random import key
 
 
@@ -112,7 +112,7 @@ class TestAdaptiveClippedGrad:
 
     def test_geometric_update_formula(self):
         """Test proportional update: C_{t+1} = C_t * exp(η * (ρ̃ - γ))."""
-        from opaque.dpsgd.clipping._adaptive import _adaptive_clipping_norm_update
+        from opaque.api.dpsgd.clipping._adaptive import _adaptive_clipping_norm_update
 
         # Direct unit test of the update formula with known values
         base = 1.0
@@ -156,7 +156,7 @@ class TestAdaptiveClippedGrad:
 
     def test_proportional_update_step_size(self):
         """Test that step size is proportional to deviation from target."""
-        from opaque.dpsgd.clipping._adaptive import _adaptive_clipping_norm_update
+        from opaque.api.dpsgd.clipping._adaptive import _adaptive_clipping_norm_update
 
         base = 1.0
         lr = 0.2

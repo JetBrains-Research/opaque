@@ -1,14 +1,11 @@
-"""Power-user clipping building blocks for DP-FTRL.
+"""DP-FTRL clipping power-user façade — re-exports from
+``opaque.api.engine.clipping.fun``.
 
-Mirrors :mod:`opaque.api.engine.clipping.fun`:
-
-- :func:`clipped_fun` / :func:`auto_clipped_fun` — clip + sum any per-example
-  function output (PyTree).
+- :func:`clipped_fun` / :func:`auto_clipped_fun` — clip + sum any
+  per-example function output (PyTree).
 - :func:`clip_pytree` / :func:`auto_scale_pytree` — clip / AUTO-S an
   already-batched pytree.
 """
-
-from __future__ import annotations
 
 from opaque.api.engine.clipping.fun import (
     auto_clipped_fun,

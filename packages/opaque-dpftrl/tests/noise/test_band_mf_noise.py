@@ -5,7 +5,7 @@ import torch
 
 import opaque.dpftrl.accounting as ftrl_acc
 import opaque.dpsgd.accounting as dpsgd_acc
-from opaque.dpftrl.noise._band_mf import BandMfStrategy, band_mf_strategy
+from opaque.api.dpftrl.noise._band_mf import BandMfStrategy, band_mf_strategy
 
 
 class TestBandMfStrategy:

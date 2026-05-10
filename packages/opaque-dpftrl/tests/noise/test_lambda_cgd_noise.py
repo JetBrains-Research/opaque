@@ -8,7 +8,7 @@ from opaque.types import clipped
 
 from opaque.types import NoisedPytree
 
-from opaque.dpftrl.noise._lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
+from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
 from opaque.dpftrl.noise import mf_noise
 from opaque.random import key
 

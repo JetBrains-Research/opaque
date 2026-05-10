@@ -1,8 +1,8 @@
-"""Clipping state and auxiliary types for :mod:`opaque.dpftrl.clipping`."""
+"""DP-FTRL clipping types façade — re-exports from
+``opaque.api.dpftrl.clipping.types``.
+"""
 
-from __future__ import annotations
-
-from opaque.api.engine.clipping.types import (
+from opaque.api.dpftrl.clipping.types import (
     AutoClippedFunAux,
     AutoClippedGradAux,
     AutoClipState,

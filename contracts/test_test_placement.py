@@ -189,11 +189,11 @@ KNOWN_CROSS_CONE_IMPORTS: frozenset[tuple[str, str]] = frozenset(
         ),
         (
             "packages/opaque-engine/tests/clipping/test_empty_batch.py",
-            "opaque.dpsgd.clipping._adaptive",
+            "opaque.api.dpsgd.clipping._adaptive",
         ),
         (
             "packages/opaque-engine/tests/clipping/test_empty_batch.py",
-            "opaque.dpsgd.clipping._distributed",
+            "opaque.api.dpsgd.clipping._distributed",
         ),
         (
             "packages/opaque-engine/tests/clipping/test_empty_batch.py",
@@ -249,15 +249,15 @@ KNOWN_CROSS_CONE_IMPORTS: frozenset[tuple[str, str]] = frozenset(
         ),
         (
             "packages/opaque-dpsgd/tests/accounting/test_state_dict.py",
-            "opaque.dpftrl.accounting.amplification._b_min_sep",
+            "opaque.api.accounting.dpftrl.amplification._b_min_sep",
         ),
         (
             "packages/opaque-dpsgd/tests/accounting/test_state_dict.py",
-            "opaque.dpftrl.accounting.amplification._poisson",
+            "opaque.api.accounting.dpftrl.amplification._poisson",
         ),
         (
             "packages/opaque-dpsgd/tests/accounting/test_state_dict.py",
-            "opaque.dpftrl.accounting.mechanisms._band_mf",
+            "opaque.api.accounting.dpftrl.mechanisms._band_mf",
         ),
         (
             "packages/opaque-dpsgd/tests/distributed/test_ddp_integration.py",

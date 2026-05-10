@@ -161,7 +161,7 @@ class TestBallsInBinsIdentity:
         """
         import statistics
         from opaque.api.accounting.core.discretization import DiscretizationConfig
-        from opaque.dpftrl.accounting.amplification._balls_in_bins import (
+        from opaque.api.accounting.dpftrl.amplification._balls_in_bins import (
             _IDENTITY_IS_TILT,
         )
 

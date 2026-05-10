@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from opaque.dpftrl.noise._blt_math import (
+from opaque.api.dpftrl.noise._blt_math import (
     BufferedToeplitz,
     LossFn,
     Parameterization,
@@ -28,7 +28,7 @@ from opaque.dpftrl.noise._blt_math import (
     sensitivity_squared,
     toeplitz_coefs,
 )
-from opaque.dpftrl.noise._toeplitz import materialize_lower_triangular
+from opaque.api.dpftrl.noise._toeplitz import materialize_lower_triangular
 
 
 class TestBufferedToeplitz:
