@@ -6,11 +6,12 @@ import pytest
 import torch
 
 from opaque._noise_allocation import paired_noise_stddevs
-from opaque.types import clipped
 from opaque.types import (
     NoisedPytree,
+    PerGroup,
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
+    clipped,
 )
 from opaque.dpftrl.noise import (
     band_mf_strategy,
@@ -173,6 +174,52 @@ class TestSecondMomentMFNoiseMatchesMfGaussianPld:
         # nm·ζ; the paired σ_first should converge to that as Δ²/Δ¹ → 0.
         single_sigma = nm * small_zeta
         assert out.noisy_grads.noise_stddev == pytest.approx(single_sigma, rel=1e-3)
+
+
+class TestPairedPerGroupMahalanobis:
+    """Per-group paired MF: joint encoded Mahalanobis equals ``(c1 / nm)²``."""
+
+    @pytest.fixture
+    def grad_template(self):
+        return {"w": torch.zeros(3, 2), "b": torch.zeros(3)}
+
+    def test_joint_budget_with_per_group_bounds(self, grad_template):
+        strategy = band_mf_strategy(n_steps=25, bands=4, momentum=0.9)
+        second_strategy = band_mf_strategy(n_steps=25, bands=4, momentum=0.99)
+        nm = 1.1
+        c1 = float(strategy._max_column_norm)
+        c2 = float(second_strategy._max_column_norm)
+        z = 0.04
+        pg = PerGroup(
+            groups={"w": "a", "b": "b"},
+            values={"a": z, "b": z * 2},
+        )
+        sq = {k: v * v for k, v in {"w": torch.ones(3, 2), "b": torch.ones(3)}.items()}
+        sq_pg = pg * pg
+        paired = SecondMomentClippingOutput(
+            grads=clipped({"w": torch.ones(3, 2), "b": torch.ones(3)}, max_norm=pg),
+            squared_grads=clipped(sq, max_norm=sq_pg),
+        )
+        noise_fn, state = mf_noise(
+            grad_template,
+            strategy,
+            noise_multiplier=nm,
+            key=key(123),
+            second_moment_strategy=second_strategy,
+        )
+        out, _ = noise_fn(paired, state)
+        s1 = out.noisy_grads.noise_stddev
+        s2 = out.noisy_squared_grads.noise_stddev
+        assert isinstance(s1, PerGroup)
+        assert isinstance(s2, PerGroup)
+        mahal = 0.0
+        for param_key in ("w", "b"):
+            d1 = pg.for_key(param_key) * c1
+            d2 = sq_pg.for_key(param_key) * c2
+            mahal += (d1 / s1.for_key(param_key)) ** 2 + (
+                d2 / s2.for_key(param_key)
+            ) ** 2
+        assert mahal == pytest.approx((c1 / nm) ** 2, rel=1e-9)
 
 
 class TestSecondMomentMFNoise:

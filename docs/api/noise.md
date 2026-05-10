@@ -87,13 +87,17 @@ This satisfies the joint Mahalanobis budget with equality:
 \]
 
 So the paired release has **the same PLD as a single sensitivity-1
-Gaussian release at multiplier `nm`** — i.e. **the same first-moment-only
-mechanism at the same noise multiplier**. Accounting is plain `gaussian(nm)`
-for DP-SGD and the underlying `mf_gaussian(nm, …)` for DP-FTRL; there is
-no separate transformation wrapper and no `ρ` knob.
+Gaussian release at the joint effective multiplier** passed to
+`paired_noise_stddevs` (see its docstring: no-op for DP-SGD; divide by
+`‖C₁‖` for DP-FTRL). Accounting is plain `gaussian(nm)` for DP-SGD and the
+underlying `mf_gaussian(nm, …)` for DP-FTRL; there is no separate
+transformation wrapper and no `ρ` knob.
 
-`mf_noise` accepts scalar `max_norm` only; per-group + DP-FTRL is not
-implemented.
+`mf_noise` accepts scalar or `PerGroup` `max_norm` on `ClippedPytree`
+inputs. Single-stream IID stddevs for `PerGroup` bounds match the
+MSE-optimal allocation from :meth:`ClippedPytree.noise_stddev_for` (same
+Mahalanobis allocation as `gaussian_noise`). Trainable gradients must be a
+flat `dict[str, Tensor]` so each leaf maps to a group.
 
 ## Standard Gaussian
 
