@@ -827,6 +827,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#per-group-clipping" class="md-nav__link">
+    <span class="md-ellipsis">
+      Per-group clipping
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#private-second-moments" class="md-nav__link">
     <span class="md-ellipsis">
       Private second moments
@@ -2099,6 +2108,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#per-group-clipping" class="md-nav__link">
+    <span class="md-ellipsis">
+      Per-group clipping
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#private-second-moments" class="md-nav__link">
     <span class="md-ellipsis">
       Private second moments
@@ -2492,6 +2510,15 @@ requires knowing the total number of steps in advance.</p>
 <p>The <code>grad_template</code> argument provides shape and dtype information for
 pre-allocating noise buffers. Pass any pytree with the same structure as
 the gradients (e.g., the model parameters).</p>
+<h3 id="per-group-clipping">Per-group clipping<a class="headerlink" href="#per-group-clipping" title="Permanent link">&para;</a></h3>
+<p><code>mf_noise</code> accepts <code>ClippedPytree</code> metadata where <code>max_norm</code> is a
+<code>PerGroup</code> (from <code>opaque.clipping.per_group</code>), not only a scalar. The
+per-leaf IID noise scale follows the same MSE-optimal Mahalanobis allocation
+as <code>gaussian_noise</code> / <code>truncated_gaussian_noise</code> on DP-SGD: no extra privacy
+cost versus scalar clipping at the same <code>noise_multiplier</code>, and the MF
+Gaussian accountant is unchanged. Trainable parameters must be a <strong>flat</strong>
+<code>dict[str, torch.Tensor]</code> (as with <code>make_functional(..., partition_trainable=True)</code>)
+so each key maps to a clipping group.</p>
 <h3 id="private-second-moments">Private second moments<a class="headerlink" href="#private-second-moments" title="Permanent link">&para;</a></h3>
 <p>MF noise can release both noisy gradients and a private squared-gradient stream
 for adaptive optimizers:</p>
