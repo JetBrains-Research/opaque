@@ -132,10 +132,10 @@ jobs:
             echo "ERROR: stray src/opaque/__init__.py: $stray"; exit 1
           fi
 
-      - name: Docs/examples must not import opaque.clipping
+      - name: Validate clipping imports in docs and examples
         run: |
           if rg -n 'from opaque\.clipping|import opaque\.clipping' docs examples; then
-            echo "ERROR: import clipping from opaque.dpsgd.clipping or opaque.dpftrl.clipping"
+            echo "ERROR: use opaque.dpsgd.clipping or opaque.dpftrl.clipping in docs/ and examples/"
             exit 1
           fi
 
