@@ -11,7 +11,6 @@ For narrower namespaces, types are also re-exported from per-subpackage
 - :mod:`opaque.accounting.mechanisms.types` — mechanism dataclasses
 - :mod:`opaque.accounting.amplification.types` — subsampling dataclasses
 - :mod:`opaque.accounting.composition.types` — composition-node types
-- :mod:`opaque.accounting.transformations.types` — transformation types
 
 DP-SGD-specific dataclasses (``Gaussian``, ``Poisson``, ``ParallelPoisson``,
 ``AdaClip``) are re-exported from :mod:`opaque.dpsgd.accounting.types`
