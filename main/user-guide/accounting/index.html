@@ -822,9 +822,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#dpsgd_acctruncated_poissoninner-sample_rate-batch_size_cap-dataset_size" class="md-nav__link">
+  <a href="#dpsgd_accpoissoninner-sample_rate-truncated_batch_size-dataset_size-truncated-form" class="md-nav__link">
     <span class="md-ellipsis">
-      dpsgd_acc.truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size)
+      dpsgd_acc.poisson(inner, sample_rate, *, truncated_batch_size, dataset_size) (truncated form)
     </span>
   </a>
   
@@ -891,9 +891,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#ftrl_accband_mfnoise_multiplier-sensitivity-num_groups1" class="md-nav__link">
+  <a href="#ftrl_accband_mfnoise_multiplier-sensitivity-coefficients" class="md-nav__link">
     <span class="md-ellipsis">
-      ftrl_acc.band_mf(noise_multiplier, sensitivity, num_groups=1)
+      ftrl_acc.band_mf(noise_multiplier, sensitivity, coefficients)
     </span>
   </a>
   
@@ -927,18 +927,18 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#ftrl_acccyclic_poissoninner-sample_rate" class="md-nav__link">
+  <a href="#ftrl_accpoissoninner-sample_rate-n_steps" class="md-nav__link">
     <span class="md-ellipsis">
-      ftrl_acc.cyclic_poisson(inner, sample_rate)
+      ftrl_acc.poisson(inner, sample_rate, *, n_steps)
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#ftrl_accballs_in_binsinner-num_bins-num_epochs" class="md-nav__link">
+  <a href="#ftrl_accballs_in_binsinner-num_bins-n_steps" class="md-nav__link">
     <span class="md-ellipsis">
-      ftrl_acc.balls_in_bins(inner, num_bins, num_epochs)
+      ftrl_acc.balls_in_bins(inner, num_bins, n_steps)
     </span>
   </a>
   
@@ -2096,9 +2096,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#dpsgd_acctruncated_poissoninner-sample_rate-batch_size_cap-dataset_size" class="md-nav__link">
+  <a href="#dpsgd_accpoissoninner-sample_rate-truncated_batch_size-dataset_size-truncated-form" class="md-nav__link">
     <span class="md-ellipsis">
-      dpsgd_acc.truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size)
+      dpsgd_acc.poisson(inner, sample_rate, *, truncated_batch_size, dataset_size) (truncated form)
     </span>
   </a>
   
@@ -2165,9 +2165,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#ftrl_accband_mfnoise_multiplier-sensitivity-num_groups1" class="md-nav__link">
+  <a href="#ftrl_accband_mfnoise_multiplier-sensitivity-coefficients" class="md-nav__link">
     <span class="md-ellipsis">
-      ftrl_acc.band_mf(noise_multiplier, sensitivity, num_groups=1)
+      ftrl_acc.band_mf(noise_multiplier, sensitivity, coefficients)
     </span>
   </a>
   
@@ -2201,18 +2201,18 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#ftrl_acccyclic_poissoninner-sample_rate" class="md-nav__link">
+  <a href="#ftrl_accpoissoninner-sample_rate-n_steps" class="md-nav__link">
     <span class="md-ellipsis">
-      ftrl_acc.cyclic_poisson(inner, sample_rate)
+      ftrl_acc.poisson(inner, sample_rate, *, n_steps)
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#ftrl_accballs_in_binsinner-num_bins-num_epochs" class="md-nav__link">
+  <a href="#ftrl_accballs_in_binsinner-num_bins-n_steps" class="md-nav__link">
     <span class="md-ellipsis">
-      ftrl_acc.balls_in_bins(inner, num_bins, num_epochs)
+      ftrl_acc.balls_in_bins(inner, num_bins, n_steps)
     </span>
   </a>
   
@@ -2370,12 +2370,12 @@ factories live next to its runtime:</p>
 </tr>
 <tr>
 <td><code>opaque.dpsgd.accounting</code></td>
-<td>DP-SGD factories — <code>gaussian</code>, <code>adaclip</code>, <code>poisson</code>, <code>truncated_poisson</code>, <code>parallel_poisson</code>.</td>
+<td>DP-SGD factories — <code>gaussian</code>, <code>adaclip</code>, <code>poisson</code> (plain or truncated via <code>truncated_batch_size</code> / <code>dataset_size</code>), <code>parallel_poisson</code>.</td>
 <td><code>opaque-dpsgd</code></td>
 </tr>
 <tr>
 <td><code>opaque.dpftrl.accounting</code></td>
-<td>DP-FTRL factories — <code>band_mf</code>, <code>blt</code>, <code>bisr</code>, <code>bsr</code>, <code>lambda_cgd</code>, <code>cyclic_poisson</code>, <code>b_min_sep</code>, <code>balls_in_bins</code>.</td>
+<td>DP-FTRL factories — <code>band_mf</code>, <code>blt</code>, <code>bisr</code>, <code>bsr</code>, <code>lambda_cgd</code>, <code>mf_identity</code>, <code>poisson</code> (cyclic when <code>bands &gt; 1</code>, plain when <code>bands == 1</code>, parameterized by <code>n_steps</code>), <code>b_min_sep</code>, <code>balls_in_bins</code>.</td>
 <td><code>opaque-dpftrl</code></td>
 </tr>
 </tbody>
@@ -2467,20 +2467,24 @@ subsampling. Accepts <code>gaussian()</code> or <code>adaclip()</code> as the in
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="mi">1000</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<h3 id="dpsgd_acctruncated_poissoninner-sample_rate-batch_size_cap-dataset_size"><code>dpsgd_acc.truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size)</code><a class="headerlink" href="#dpsgd_acctruncated_poissoninner-sample_rate-batch_size_cap-dataset_size" title="Permanent link">&para;</a></h3>
-<p>Caps the maximum batch size to limit memory consumption, at the cost of
-slightly worse privacy bounds compared to standard Poisson (the truncation
-introduces additional privacy cost).</p>
+<h3 id="dpsgd_accpoissoninner-sample_rate-truncated_batch_size-dataset_size-truncated-form"><code>dpsgd_acc.poisson(inner, sample_rate, *, truncated_batch_size, dataset_size)</code> (truncated form)<a class="headerlink" href="#dpsgd_accpoissoninner-sample_rate-truncated_batch_size-dataset_size-truncated-form" title="Permanent link">&para;</a></h3>
+<p>Setting both <code>truncated_batch_size</code> and <code>dataset_size</code> (must be both or
+neither) caps the per-step batch size to limit memory consumption, with
+the matching truncated-Poisson PLD. Tighter privacy bounds than plain
+Poisson on the same <code>sample_rate</code>; production DP-SGD with a fixed batch
+size.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">n</span> <span class="o">=</span> <span class="mi">50_000</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">batch</span> <span class="o">=</span> <span class="mi">256</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">truncated_poisson</span><span class="p">(</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span> <span class="n">batch</span> <span class="o">/</span> <span class="n">n</span><span class="p">,</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">batch_size_cap</span><span class="o">=</span><span class="n">batch</span><span class="p">,</span> <span class="n">dataset_size</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">)</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="n">batch</span> <span class="o">/</span> <span class="n">n</span><span class="p">,</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">truncated_batch_size</span><span class="o">=</span><span class="n">batch</span><span class="p">,</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">dataset_size</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="p">)</span>
 </code></pre></div>
 <h3 id="dpsgd_accparallel_poissoninner-sample_rate-num_workers"><code>dpsgd_acc.parallel_poisson(inner, sample_rate, num_workers)</code><a class="headerlink" href="#dpsgd_accparallel_poissoninner-sample_rate-num_workers" title="Permanent link">&para;</a></h3>
 <p>Accounts for Poisson sampling under parallel worker execution. Like
-<code>poisson()</code> and <code>truncated_poisson()</code>, this is a full wrapper: pass the
+<code>poisson()</code> (plain or truncated), this is a full wrapper: pass the
 inner Gaussian mechanism and sample rate directly.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">parallel_poisson</span><span class="p">(</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
@@ -2537,25 +2541,34 @@ truth.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpftrl.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ftrl_acc</span>
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Strategy computes sensitivity and num_groups internally</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Strategy computes sensitivity and coefficients internally</span>
 <a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.95</span><span class="p">)</span>
 <a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span>
-<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>    <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
-<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>                     <span class="n">num_groups</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">num_groups</span><span class="p">),</span>
-<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
-<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="p">)</span>
-<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>    <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>        <span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>        <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>        <span class="n">coefficients</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">coefficients</span><span class="p">,</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>    <span class="p">),</span>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="p">)</span>
+<a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<h3 id="ftrl_accband_mfnoise_multiplier-sensitivity-num_groups1"><code>ftrl_acc.band_mf(noise_multiplier, sensitivity, num_groups=1)</code><a class="headerlink" href="#ftrl_accband_mfnoise_multiplier-sensitivity-num_groups1" title="Permanent link">&para;</a></h3>
-<p>BandMF mechanism for cyclic Poisson amplification. Takes <code>sensitivity</code> and
-<code>num_groups</code> from a <code>band_mf_strategy()</code>.</p>
+<h3 id="ftrl_accband_mfnoise_multiplier-sensitivity-coefficients"><code>ftrl_acc.band_mf(noise_multiplier, sensitivity, coefficients)</code><a class="headerlink" href="#ftrl_accband_mfnoise_multiplier-sensitivity-coefficients" title="Permanent link">&para;</a></h3>
+<p>BandMF mechanism for cyclic Poisson / b-min-sep amplification. Takes
+<code>sensitivity</code> and <code>coefficients</code> from a <code>band_mf_strategy()</code>. Band
+width is <code>len(coefficients)</code>; <code>coefficients</code> must be non-empty.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>                   <span class="n">num_groups</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">num_groups</span><span class="p">)</span>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="n">coefficients</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">coefficients</span><span class="p">,</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="p">)</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<p>For subsampling amplification, wrap with <code>cyclic_poisson</code> (see below).</p>
+<p>For subsampling amplification, wrap with <code>ftrl_acc.poisson(..., n_steps=...)</code>
+(see below).</p>
 <h3 id="ftrl_accbltnoise_multiplier-sensitivity-gram_matrix"><code>ftrl_acc.blt(noise_multiplier, sensitivity, gram_matrix=())</code><a class="headerlink" href="#ftrl_accbltnoise_multiplier-sensitivity-gram_matrix" title="Permanent link">&para;</a></h3>
 <p>BLT mechanism. Takes <code>sensitivity</code> and optional <code>gram_matrix</code> from a
 <code>blt_strategy()</code>.</p>
@@ -2602,22 +2615,31 @@ arbitrary bandwidth. Takes <code>sensitivity</code> and <code>gram_matrix</code>
 <a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span> <span class="n">num_epochs</span><span class="o">=</span><span class="n">num_epochs</span><span class="p">,</span>
 <a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="ftrl_acccyclic_poissoninner-sample_rate"><code>ftrl_acc.cyclic_poisson(inner, sample_rate)</code><a class="headerlink" href="#ftrl_acccyclic_poissoninner-sample_rate" title="Permanent link">&para;</a></h3>
-<p>Cyclic Poisson amplification for BandMF. Decomposes the training run
-into <code>ceil(n_steps / bands)</code> independent groups, each analyzed as a
-Poisson-subsampled Gaussian mechanism. Only accepts <code>band_mf</code> processes.</p>
+<h3 id="ftrl_accpoissoninner-sample_rate-n_steps"><code>ftrl_acc.poisson(inner, sample_rate, *, n_steps)</code><a class="headerlink" href="#ftrl_accpoissoninner-sample_rate-n_steps" title="Permanent link">&para;</a></h3>
+<p>Poisson amplification for DP-FTRL. Whole-process accountant covering all
+<code>n_steps</code> rounds (do <strong>not</strong> compose with <code>* num_steps</code> externally).
+Cyclic when the inner is <code>BandMf</code> with <code>bands &gt; 1</code> (decomposes into
+<code>ceil(n_steps / bands)</code> independent groups), plain Poisson per round
+when the inner is <code>IdentityMf</code> or <code>BandMf</code> with <code>bands == 1</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span>
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>    <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>                <span class="n">num_groups</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">num_groups</span><span class="p">),</span>
-<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
-<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="p">)</span>
-<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>    <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>        <span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>        <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>        <span class="n">coefficients</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">coefficients</span><span class="p">,</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>    <span class="p">),</span>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="p">)</span>
+<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<h3 id="ftrl_accballs_in_binsinner-num_bins-num_epochs"><code>ftrl_acc.balls_in_bins(inner, num_bins, num_epochs)</code><a class="headerlink" href="#ftrl_accballs_in_binsinner-num_bins-num_epochs" title="Permanent link">&para;</a></h3>
-<p>Balls-in-Bins (random-partition) amplification. Returns the <strong>total</strong> privacy
-cost across all epochs — do NOT compose further with <code>* num_epochs</code>.</p>
-<p>Used with DP-λCGD, BISR, BLT (with Gram matrix), and Gaussian mechanisms.</p>
+<h3 id="ftrl_accballs_in_binsinner-num_bins-n_steps"><code>ftrl_acc.balls_in_bins(inner, num_bins, n_steps)</code><a class="headerlink" href="#ftrl_accballs_in_binsinner-num_bins-n_steps" title="Permanent link">&para;</a></h3>
+<p>Balls-in-Bins (random-partition) amplification. Returns the <strong>total</strong>
+privacy cost across all <code>n_steps</code> rounds (must be a positive multiple of
+<code>num_bins</code>; per-bin participation count is <code>n_steps // num_bins</code>). Do NOT
+compose further externally.</p>
+<p>Used with DP-λCGD, BISR, BLT (with Gram matrix), <code>mf_identity</code>, and
+Gaussian mechanisms.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span>
 <a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>    <span class="n">lambda_</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="n">total_steps</span><span class="p">,</span>
 <a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>    <span class="n">min_sep</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span> <span class="n">max_participations</span><span class="o">=</span><span class="n">num_epochs</span><span class="p">,</span>
@@ -2625,9 +2647,10 @@ cost across all epochs — do NOT compose further with <code>* num_epochs</code>
 <a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
 <a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>    <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">lambda_cgd</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
 <a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>                   <span class="n">gram_matrix</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">gram_matrix</span><span class="p">),</span>
-<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span> <span class="n">num_epochs</span><span class="o">=</span><span class="n">num_epochs</span><span class="p">,</span>
-<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="p">)</span>
-<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span>
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="n">steps_per_epoch</span> <span class="o">*</span> <span class="n">num_epochs</span><span class="p">,</span>
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="p">)</span>
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="calibrating-mf-noise">Calibrating MF noise<a class="headerlink" href="#calibrating-mf-noise" title="Permanent link">&para;</a></h3>
 <p>Calibration works the same way — create the strategy first, then build
@@ -2637,15 +2660,19 @@ created once, and the calibration lambda varies only <code>noise_multiplier</cod
 <a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>
 <a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
 <a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span>
-<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>        <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="n">nm</span><span class="p">,</span> <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
-<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>                    <span class="n">num_groups</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">num_groups</span><span class="p">),</span>
-<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>        <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
-<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>    <span class="p">),</span>
-<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
-<a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
-<a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a><span class="p">)</span>
-<a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a><span class="n">noise_multiplier</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">param</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>        <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>            <span class="n">nm</span><span class="p">,</span>
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>            <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
+<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>            <span class="n">coefficients</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">coefficients</span><span class="p">,</span>
+<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a>        <span class="p">),</span>
+<a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a>        <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+<a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a>        <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+<a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a>    <span class="p">),</span>
+<a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+<a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
+<a id="__codelineno-16-16" name="__codelineno-16-16" href="#__codelineno-16-16"></a><span class="p">)</span>
+<a id="__codelineno-16-17" name="__codelineno-16-17" href="#__codelineno-16-17"></a><span class="n">noise_multiplier</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">param</span>
 </code></pre></div>
 <h2 id="privacy-metrics">Privacy metrics<a class="headerlink" href="#privacy-metrics" title="Permanent link">&para;</a></h2>
 <p>All metrics are methods on <code>DpProcess</code>. They compute the underlying PLD on
