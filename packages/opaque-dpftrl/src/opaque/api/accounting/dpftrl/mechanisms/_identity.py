@@ -1,6 +1,6 @@
 """MF identity mechanism — uncorrelated Gaussian under the MF training API.
 
-Pairs with :func:`opaque.dpftrl.noise.identity_strategy` (encoder
+Pairs with :func:`opaque.dpftrl.noise.identity_mf_strategy` (encoder
 :math:`C^{-1} = I`, sensitivity ``1.0``).  As a *mechanism*, the standalone
 :class:`IdentityMf` PLD models a single sensitivity-1 Gaussian release
 (``gaussian_pld(noise_multiplier)``).  Realistic FTRL training uses one of
@@ -12,7 +12,7 @@ the FTRL amplifications on top:
   multi-epoch sampling.
 
 Unsubsampled training is the existing :class:`opaque.accounting.composition.types.Repeated`
-form: ``mf_identity(nm) * n_steps`` composes plain Gaussian.
+form: ``identity_mf(nm) * n_steps`` composes plain Gaussian.
 """
 
 from __future__ import annotations
@@ -61,17 +61,17 @@ class IdentityMf(DpProcess):
         return _native.gaussian_pld(float(self.noise_multiplier), native_cfg)
 
 
-def mf_identity(noise_multiplier: float) -> IdentityMf:
+def identity_mf(noise_multiplier: float) -> IdentityMf:
     """MF identity mechanism factory (sensitivity ``1.0``).
 
-    Pairs with :func:`opaque.dpftrl.noise.identity_strategy`.  Use as the inner
+    Pairs with :func:`opaque.dpftrl.noise.identity_mf_strategy`.  Use as the inner
     of an FTRL amplification factory for the subsampled / fixed-partition
     accounting story you want:
 
     - Per-step Poisson over ``T`` rounds::
 
         ftrl_acc.poisson(
-            ftrl_acc.mf_identity(nm),
+            ftrl_acc.identity_mf(nm),
             sample_rate=p,
             n_steps=T,
         )
@@ -79,14 +79,14 @@ def mf_identity(noise_multiplier: float) -> IdentityMf:
     - Fixed-partition (Balls-in-Bins) over ``k * E`` rounds::
 
         ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_identity(nm),
+            ftrl_acc.identity_mf(nm),
             num_bins=k,
             n_steps=k * E,
         )
 
     - Unamplified composition::
 
-        ftrl_acc.mf_identity(nm) * T
+        ftrl_acc.identity_mf(nm) * T
 
     Args:
         noise_multiplier: Gaussian noise multiplier ``σ / Δ`` with sensitivity
@@ -106,4 +106,4 @@ def mf_identity(noise_multiplier: float) -> IdentityMf:
     return IdentityMf(noise_multiplier=nm)
 
 
-__all__ = ["IdentityMf", "mf_identity"]
+__all__ = ["IdentityMf", "identity_mf"]

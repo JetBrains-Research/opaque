@@ -5,8 +5,8 @@ from opaque.api.accounting.dpftrl.mechanisms import (
     bisr,
     blt,
     bsr,
+    identity_mf,
     lambda_cgd,
-    mf_identity,
 )
 
-__all__ = ["band_mf", "blt", "bisr", "bsr", "lambda_cgd", "mf_identity"]
+__all__ = ["band_mf", "blt", "bisr", "bsr", "identity_mf", "lambda_cgd"]

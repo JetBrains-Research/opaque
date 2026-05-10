@@ -10,7 +10,7 @@ Algorithm-specific factories live in their respective packages
 - :mod:`opaque.dpsgd.accounting` — ``gaussian``, ``adaclip``, ``poisson``,
   ``truncated_poisson``, ``parallel_poisson``.
 - :mod:`opaque.dpftrl.accounting` — ``band_mf``, ``blt``, ``bisr``,
-  ``bsr``, ``lambda_cgd``, ``mf_identity``, ``poisson``, ``b_min_sep``,
+  ``bsr``, ``lambda_cgd``, ``identity_mf``, ``poisson``, ``b_min_sep``,
   ``balls_in_bins``.
 
 Implementation uses Google's PLD accounting via the ``opaque-accounting``

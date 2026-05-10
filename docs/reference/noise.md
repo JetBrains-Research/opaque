@@ -29,7 +29,7 @@ Strategy factories (passed to `mf_noise()`):
 - **`blt_strategy()`** — Buffered Linear Toeplitz (BLT) correlated noise
 - **`lambda_cgd_strategy()`** — DP-λCGD correlated noise (PRNG replay, zero extra memory)
 - **`bisr_strategy()`** — BISR (Banded Inverse Square Root) correlated noise
-- **`identity_strategy()`** — Identity (DP-SGD via MF API, easy to swap)
+- **`identity_mf_strategy()`** — Identity (DP-SGD via MF API, easy to swap)
 
 All noise functions return `(noise_fn, state)` where `noise_fn(grads, state) -> (noisy_grads, new_state)`.
 When private second moments are enabled, the noisy value is a
@@ -136,7 +136,7 @@ drawn from a truncated normal of half-width `radius·σ`.
     options:
       heading_level: 4
 
-::: opaque.dpftrl.noise.identity_strategy
+::: opaque.dpftrl.noise.identity_mf_strategy
     options:
       heading_level: 4
 

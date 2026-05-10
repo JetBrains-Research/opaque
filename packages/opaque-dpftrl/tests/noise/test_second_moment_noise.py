@@ -18,7 +18,7 @@ from opaque.dpftrl.noise import (
     bisr_strategy,
     bsr_strategy,
     blt_strategy,
-    identity_strategy,
+    identity_mf_strategy,
     lambda_cgd_strategy,
     mf_noise,
 )
@@ -382,8 +382,8 @@ class TestSecondMomentMFNoise:
                 beta=0.99,
             )
         elif mechanism == "identity":
-            strategy = identity_strategy()
-            second_strategy = identity_strategy()
+            strategy = identity_mf_strategy()
+            second_strategy = identity_mf_strategy()
 
         noise_fn, state = mf_noise(
             grad_template,

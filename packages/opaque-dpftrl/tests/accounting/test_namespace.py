@@ -18,7 +18,7 @@ _HEADLINE = (
     "bisr",
     "bsr",
     "lambda_cgd",
-    "mf_identity",
+    "identity_mf",
     "poisson",
     "b_min_sep",
     "balls_in_bins",

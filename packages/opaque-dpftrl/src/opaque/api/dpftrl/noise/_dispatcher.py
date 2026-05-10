@@ -1,7 +1,7 @@
 """MF strategy types and unified noise dispatcher.
 
 Each mechanism file defines its own strategy dataclass and factory:
-- ``identity.py``: :class:`IdentityStrategy`, :func:`identity_strategy`
+- ``identity.py``: :class:`IdentityMfStrategy`, :func:`identity_mf_strategy`
 - ``band_mf.py``: :class:`BandMfStrategy`, :func:`band_mf_strategy`
 - ``blt.py``: :class:`BltStrategy`, :func:`blt_strategy`
 - ``lambda_cgd.py``: :class:`LambdaCgdStrategy`, :func:`lambda_cgd_strategy`
@@ -38,7 +38,7 @@ from ._band_mf import BandMfStrategy, band_mf_strategy
 from ._bisr import BisrStrategy, bisr_strategy
 from ._bsr import BsrStrategy, bsr_strategy
 from ._blt import BltStrategy, blt_strategy
-from ._identity import IdentityStrategy, identity_strategy
+from ._identity import IdentityMfStrategy, identity_mf_strategy
 from ._lambda_cgd import LambdaCgdStrategy, _make_lambda_cgd_noise, lambda_cgd_strategy
 from ._distributed import (
     fingerprint_per_group_max_norm,
@@ -67,7 +67,7 @@ MfStrategy = (
     | LambdaCgdStrategy
     | BisrStrategy
     | BsrStrategy
-    | IdentityStrategy
+    | IdentityMfStrategy
 )
 
 
@@ -196,7 +196,7 @@ def _make_raw_mf_noise(
     dtype: torch.dtype | None,
 ) -> tuple[Callable[..., tuple[Any, MFNoiseState]], MFNoiseState]:
     match strategy:
-        case IdentityStrategy():
+        case IdentityMfStrategy():
             return _matrix_factorization_noise(
                 grad_template,
                 identity(),
@@ -411,7 +411,7 @@ def _make_second_moment_mf_noise(
 __all__ = [
     "BandMfStrategy",
     "BltStrategy",
-    "IdentityStrategy",
+    "IdentityMfStrategy",
     "LambdaCgdStrategy",
     "BisrStrategy",
     "BsrStrategy",
@@ -420,7 +420,7 @@ __all__ = [
     "SecondMomentNoiseOutput",
     "band_mf_strategy",
     "blt_strategy",
-    "identity_strategy",
+    "identity_mf_strategy",
     "lambda_cgd_strategy",
     "bisr_strategy",
     "bsr_strategy",

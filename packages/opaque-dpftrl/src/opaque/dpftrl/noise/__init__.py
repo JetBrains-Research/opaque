@@ -12,10 +12,10 @@ Strategy factories:
 
 - :func:`band_mf_strategy`, :func:`blt_strategy`, :func:`bisr_strategy`,
   :func:`bsr_strategy`, :func:`lambda_cgd_strategy`,
-  :func:`identity_strategy`.
+  :func:`identity_mf_strategy`.
 
 Strategy types and noise state classes (``BandMfStrategy``, ``BltStrategy``,
-``BisrStrategy``, ``BsrStrategy``, ``IdentityStrategy``,
+``BisrStrategy``, ``BsrStrategy``, ``IdentityMfStrategy``,
 ``LambdaCgdStrategy``, ``MfStrategy``, ``MFNoiseState``,
 ``SecondMomentMFNoiseState``) live in :mod:`opaque.dpftrl.noise.types`.
 
@@ -31,7 +31,7 @@ from opaque.api.dpftrl.noise import (
     bisr_strategy,
     blt_strategy,
     bsr_strategy,
-    identity_strategy,
+    identity_mf_strategy,
     lambda_cgd_strategy,
     mf_noise,
 )
@@ -42,6 +42,6 @@ __all__ = [
     "bisr_strategy",
     "bsr_strategy",
     "blt_strategy",
-    "identity_strategy",
+    "identity_mf_strategy",
     "lambda_cgd_strategy",
 ]

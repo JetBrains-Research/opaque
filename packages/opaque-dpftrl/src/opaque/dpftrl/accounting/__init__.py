@@ -16,7 +16,7 @@ Mechanisms (in :mod:`opaque.dpftrl.accounting.mechanisms`):
 - :func:`bisr` — banded inverse square root Gaussian.
 - :func:`bsr` — banded square root Gaussian.
 - :func:`lambda_cgd` — DP-λCGD Gaussian.
-- :func:`mf_identity` — uncorrelated (identity-encoder) sensitivity-1 Gaussian.
+- :func:`identity_mf` — uncorrelated (identity-encoder) sensitivity-1 Gaussian.
 
 Amplification (in :mod:`opaque.dpftrl.accounting.amplification`):
 
@@ -39,7 +39,7 @@ registry. The user-facing factory is still :func:`poisson`.
 
 **Do not confuse** with :func:`~opaque.accounting.identity` — that object
 is the **composition algebra** identity (approximately ε=0), not MF
-``identity_strategy``.
+``identity_mf_strategy``.
 
 Example::
 
@@ -62,8 +62,8 @@ from opaque.api.accounting.dpftrl import (
     bisr,
     blt,
     bsr,
+    identity_mf,
     lambda_cgd,
-    mf_identity,
     poisson,
 )
 
@@ -72,8 +72,8 @@ __all__ = [
     "blt",
     "bisr",
     "bsr",
+    "identity_mf",
     "lambda_cgd",
-    "mf_identity",
     "poisson",
     "b_min_sep",
     "balls_in_bins",

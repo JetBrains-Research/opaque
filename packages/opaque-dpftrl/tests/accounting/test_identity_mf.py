@@ -16,19 +16,19 @@ _DELTA = 1e-5
 
 
 # ---------------------------------------------------------------------------
-# Mechanism: opaque.dpftrl.accounting.mf_identity
+# Mechanism: opaque.dpftrl.accounting.identity_mf
 # ---------------------------------------------------------------------------
 
 
 class TestMfIdentityMechanism:
     def test_factory_returns_identity_mf(self):
-        proc = ftrl_acc.mf_identity(1.0)
+        proc = ftrl_acc.identity_mf(1.0)
         assert isinstance(proc, IdentityMf)
         assert proc.noise_multiplier == 1.0
 
     def test_pld_matches_unsubsampled_gaussian(self):
         nm = 1.5
-        proc = ftrl_acc.mf_identity(nm)
+        proc = ftrl_acc.identity_mf(nm)
 
         cfg = get_discretization()
         ref = _native.gaussian_pld(nm, cfg.to_native())
@@ -37,16 +37,16 @@ class TestMfIdentityMechanism:
         )
 
     def test_zero_noise_is_non_private(self):
-        assert math.isinf(ftrl_acc.mf_identity(0.0).epsilon_at(_DELTA))
+        assert math.isinf(ftrl_acc.identity_mf(0.0).epsilon_at(_DELTA))
 
     def test_negative_noise_multiplier_raises(self):
         with pytest.raises(ValueError, match="non-negative"):
-            ftrl_acc.mf_identity(-0.1)
+            ftrl_acc.identity_mf(-0.1)
 
     def test_self_compose_matches_repeated_gaussian(self):
         nm = 2.0
         T = 50
-        proc = ftrl_acc.mf_identity(nm) * T
+        proc = ftrl_acc.identity_mf(nm) * T
 
         cfg = get_discretization()
         ref = _native.gaussian_pld(nm, cfg.to_native()).self_compose(T)
@@ -63,7 +63,7 @@ class TestMfIdentityMechanism:
 class TestPoissonIdentity:
     def test_pld_matches_self_composed_poisson_gaussian(self):
         nm, p, T = 1.1, 0.01, 500
-        proc = ftrl_acc.poisson(ftrl_acc.mf_identity(nm), sample_rate=p, n_steps=T)
+        proc = ftrl_acc.poisson(ftrl_acc.identity_mf(nm), sample_rate=p, n_steps=T)
         cfg = get_discretization()
         ref = _native.poisson_gaussian_pld(nm, p, cfg.to_native()).self_compose(T)
         assert math.isclose(
@@ -72,15 +72,15 @@ class TestPoissonIdentity:
 
     def test_requires_n_steps(self):
         with pytest.raises(TypeError):
-            ftrl_acc.poisson(ftrl_acc.mf_identity(1.0), sample_rate=0.1)
+            ftrl_acc.poisson(ftrl_acc.identity_mf(1.0), sample_rate=0.1)
 
     def test_rejects_invalid_n_steps(self):
         with pytest.raises(ValueError, match="n_steps"):
-            ftrl_acc.poisson(ftrl_acc.mf_identity(1.0), sample_rate=0.1, n_steps=0)
+            ftrl_acc.poisson(ftrl_acc.identity_mf(1.0), sample_rate=0.1, n_steps=0)
 
     def test_rejects_invalid_sample_rate(self):
         with pytest.raises(ValueError, match="sample_rate"):
-            ftrl_acc.poisson(ftrl_acc.mf_identity(1.0), sample_rate=1.5, n_steps=10)
+            ftrl_acc.poisson(ftrl_acc.identity_mf(1.0), sample_rate=1.5, n_steps=10)
 
 
 class TestPoissonBandMf:
@@ -145,7 +145,7 @@ class TestBallsInBinsIdentity:
         """The default ``balls_in_bins`` factory produces a finite, positive ε."""
         nm, k, E = 1.5, 32, 4
         eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_identity(nm),
+            ftrl_acc.identity_mf(nm),
             num_bins=k,
             n_steps=k * E,
         ).epsilon_at(_DELTA)
@@ -192,7 +192,7 @@ class TestBallsInBinsIdentity:
         """Amplification (factor ~1/num_bins) must beat unamplified composition."""
         nm, k, E = 1.5, 32, 4
         amplified = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_identity(nm), num_bins=k, n_steps=k * E
+            ftrl_acc.identity_mf(nm), num_bins=k, n_steps=k * E
         ).epsilon_at(_DELTA)
         cfg = get_discretization()
         unamplified = (
@@ -204,21 +204,21 @@ class TestBallsInBinsIdentity:
 
     def test_zero_noise_non_private(self):
         proc = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_identity(0.0), num_bins=10, n_steps=20
+            ftrl_acc.identity_mf(0.0), num_bins=10, n_steps=20
         )
         assert math.isinf(proc.epsilon_at(_DELTA))
 
     def test_rejects_invalid_num_bins(self):
         with pytest.raises(ValueError, match="num_bins"):
-            ftrl_acc.balls_in_bins(ftrl_acc.mf_identity(1.0), num_bins=1, n_steps=20)
+            ftrl_acc.balls_in_bins(ftrl_acc.identity_mf(1.0), num_bins=1, n_steps=20)
 
     def test_rejects_invalid_n_steps(self):
         with pytest.raises(ValueError, match="n_steps"):
-            ftrl_acc.balls_in_bins(ftrl_acc.mf_identity(1.0), num_bins=10, n_steps=0)
+            ftrl_acc.balls_in_bins(ftrl_acc.identity_mf(1.0), num_bins=10, n_steps=0)
 
     def test_rejects_n_steps_not_multiple_of_num_bins(self):
         with pytest.raises(ValueError, match="multiple of"):
-            ftrl_acc.balls_in_bins(ftrl_acc.mf_identity(1.0), num_bins=10, n_steps=15)
+            ftrl_acc.balls_in_bins(ftrl_acc.identity_mf(1.0), num_bins=10, n_steps=15)
 
 
 # ---------------------------------------------------------------------------
@@ -226,11 +226,11 @@ class TestBallsInBinsIdentity:
 # ---------------------------------------------------------------------------
 
 
-def test_mf_identity_calibrates_through_poisson():
+def test_identity_mf_calibrates_through_poisson():
     cal = acc.calibrate(
         acc.epsilon_budget(3.0, delta=_DELTA),
         lambda nm: ftrl_acc.poisson(
-            ftrl_acc.mf_identity(nm), sample_rate=0.01, n_steps=500
+            ftrl_acc.identity_mf(nm), sample_rate=0.01, n_steps=500
         ),
         param_min=0.1,
         param_max=10.0,
