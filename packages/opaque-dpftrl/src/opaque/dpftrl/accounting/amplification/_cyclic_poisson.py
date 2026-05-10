@@ -131,6 +131,11 @@ def cyclic_poisson(
                     "cyclic_poisson(BandMf, num_steps=...) must match "
                     f"inner.num_groups={inner.num_groups}, got {num_steps}."
                 )
+            if inner.num_groups < 1:
+                raise ValueError(
+                    "cyclic_poisson requires BandMf with num_groups >= 1, "
+                    f"got {inner.num_groups}"
+                )
             resolved_num_steps = inner.num_groups
         case IdentityMf():
             if num_steps is None:

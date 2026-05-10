@@ -156,9 +156,10 @@ def balls_in_bins(
     - **Correlated-noise (matrix-factorisation)**: :func:`blt`, :func:`lambda_cgd`,
       :func:`bisr`, :func:`bsr` — PLD via the Monte Carlo dominating-pair
       analysis (Choquette-Choo et al. 2024).
-    - **MF identity** (:func:`mf_identity`) — tight process-level reduction
-      using the bin-aggregation equivalence (E rounds per bin collapse to one
-      Gaussian at ``σ / √E``) plus Poisson at the bin granularity.
+    - **MF identity** (:func:`mf_identity`) — Lemma 3.2 dominating pair with
+      diagonal Gram ``num_epochs · I`` (orthogonal ``m_i`` for ``C = I``),
+      evaluated with the same Monte Carlo ``bnb_mc_pld`` path as the
+      correlated MF strategies (see :meth:`BallsInBins.pld`).
 
     Args:
         inner: An MF mechanism — :func:`blt`, :func:`lambda_cgd`, :func:`bisr`,

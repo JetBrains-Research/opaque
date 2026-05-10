@@ -95,8 +95,14 @@ def mf_identity(noise_multiplier: float) -> IdentityMf:
 
     Returns:
         An :class:`IdentityMf` mechanism dataclass.
+
+    Raises:
+        ValueError: If ``noise_multiplier`` is negative.
     """
-    return IdentityMf(noise_multiplier=float(noise_multiplier))
+    nm = float(noise_multiplier)
+    if nm < 0:
+        raise ValueError(f"noise_multiplier must be non-negative, got {noise_multiplier}")
+    return IdentityMf(noise_multiplier=nm)
 
 
 __all__ = ["IdentityMf", "mf_identity"]

@@ -39,6 +39,10 @@ class TestMfIdentityMechanism:
     def test_zero_noise_is_non_private(self):
         assert math.isinf(ftrl_acc.mf_identity(0.0).epsilon_at(_DELTA))
 
+    def test_negative_noise_multiplier_raises(self):
+        with pytest.raises(ValueError, match="non-negative"):
+            ftrl_acc.mf_identity(-0.1)
+
     def test_self_compose_matches_repeated_gaussian(self):
         nm = 2.0
         T = 50
