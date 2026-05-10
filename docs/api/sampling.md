@@ -20,11 +20,9 @@ Opaque provides these sampling strategies:
    than plain Poisson at the same `sample_rate`).
 
 2. **Cyclic Poisson (DP-FTRL)** (`opaque.dpftrl.sampling.CyclicPoissonSampler`):
-   the dataset is split into ``bands`` fixed groups; step ``i`` samples only
-   from group ``i % bands``, with each eligible example included independently
-   with probability ``sample_rate``.  **Identity baseline:** ``bands=1`` (one
-   group = full data, plain Poisson every step).  **BandMF:** ``bands`` matches
-   the MF strategy so participation rotates with correlated noise.
+   ``bands`` disjoint groups; step ``i`` samples only group ``i % bands``, with
+   independent inclusion at ``sample_rate``.  Use ``bands=1`` for identity MF
+   (full dataset each step); for BandMF, match ``bands`` to the MF strategy.
 
 3. **Balls-in-Bins Sampling** (`BallsInBinsSampler`): each example is
    independently assigned to a bin once at init; the assignment is **fixed
@@ -106,12 +104,11 @@ Account with `ftrl_acc.balls_in_bins(mechanism, num_bins, n_steps)` where
 
 ## CyclicPoissonSampler (DP-FTRL)
 
-**Cyclic Poisson** fixes a partition of the dataset into ``bands`` groups.
-Each training step activates exactly one group in cyclic order; within that
-group, inclusion is independent Bernoulli(``sample_rate``), so batch sizes are
-random (Binomial).  This matches the amplification models behind
-``ftrl_acc.poisson`` for ``IdentityMf`` (use ``bands=1``) and ``BandMf`` (use
-``bands`` equal to the mechanism’s band count).
+Partitions the dataset into ``bands`` groups and, at step ``i``, draws only
+from group ``i % bands``, with each eligible example included independently at
+``sample_rate`` (Binomial batch size within the group).  Identity MF uses
+``bands=1``; BandMF uses ``bands`` equal to the mechanism’s band count—both
+pair with ``ftrl_acc.poisson``.
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler

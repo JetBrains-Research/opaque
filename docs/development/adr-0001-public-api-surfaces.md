@@ -41,6 +41,6 @@ Lower-level helpers and state dataclasses live under `.types` and `.fun` on thos
 | `PoissonSubsampler` | `opaque.dpsgd.sampling` |
 | `CyclicPoissonSampler` | `opaque.dpftrl.sampling` |
 
-Inclusion probability is passed as ``sample_rate`` on both samplers.
-**Cyclic Poisson** (FTRL) means disjoint groups and step ``i`` samples group
-``i % bands``; use ``bands=1`` for identity MF (full-dataset Poisson each step).
+Inclusion probability is passed as ``sample_rate`` on both samplers.  On
+``CyclicPoissonSampler``, ``bands`` disjoint groups rotate ``i % bands`` per
+step; ``bands=1`` is identity MF (full-dataset Poisson each step).

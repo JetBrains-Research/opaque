@@ -215,11 +215,9 @@ eps = proc.epsilon_at(delta=1e-5)
 ### End-to-end BandMF example
 
 BandMF uses `opaque.dpftrl.sampling.CyclicPoissonSampler` with ``bands`` matching the
-strategy; it yields a predictable
-sampling pattern that the noise strategy exploits.
-For an **identity** MF baseline (``mf_identity`` / ``identity_strategy``), use
-``bands=1`` so each step is plain Poisson on the full dataset (no rotation
-between disjoint groups):
+strategy so participation lines up with the noise.  The same class with
+``bands=1`` gives plain Poisson on the full dataset each step for an identity MF
+baseline (``mf_identity`` / ``identity_strategy``):
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
@@ -234,7 +232,7 @@ sampler = CyclicPoissonSampler(
 )
 ```
 
-**BandMF** (cyclic amplification, ``bands`` matches the strategy) example:
+BandMF training (``bands`` matches ``band_mf_strategy``):
 
 ```python
 import torch
