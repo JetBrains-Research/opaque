@@ -1,5 +1,5 @@
 """Tests for :class:`~opaque.dpftrl.accounting.types.IdentityMf` and the FTRL
-amplifications dispatching on it (``cyclic_poisson``, ``balls_in_bins``)."""
+amplifications dispatching on it (``poisson``, ``balls_in_bins``)."""
 
 import math
 
@@ -56,87 +56,143 @@ class TestMfIdentityMechanism:
 
 
 # ---------------------------------------------------------------------------
-# cyclic_poisson(IdentityMf(...), sample_rate, num_steps)
+# poisson(IdentityMf(...), sample_rate, n_steps)
 # ---------------------------------------------------------------------------
 
 
-class TestCyclicPoissonIdentity:
+class TestPoissonIdentity:
     def test_pld_matches_self_composed_poisson_gaussian(self):
         nm, p, T = 1.1, 0.01, 500
-        proc = ftrl_acc.cyclic_poisson(
-            ftrl_acc.mf_identity(nm), sample_rate=p, num_steps=T
-        )
+        proc = ftrl_acc.poisson(ftrl_acc.mf_identity(nm), sample_rate=p, n_steps=T)
         cfg = get_discretization()
         ref = _native.poisson_gaussian_pld(nm, p, cfg.to_native()).self_compose(T)
         assert math.isclose(
             proc.epsilon_at(_DELTA), ref.epsilon_at(_DELTA), rel_tol=1e-9
         )
 
-    def test_requires_num_steps(self):
-        with pytest.raises(ValueError, match="num_steps"):
-            ftrl_acc.cyclic_poisson(ftrl_acc.mf_identity(1.0), sample_rate=0.1)
+    def test_requires_n_steps(self):
+        with pytest.raises(TypeError):
+            ftrl_acc.poisson(ftrl_acc.mf_identity(1.0), sample_rate=0.1)
 
-    def test_rejects_invalid_num_steps(self):
-        with pytest.raises(ValueError, match="num_steps"):
-            ftrl_acc.cyclic_poisson(
-                ftrl_acc.mf_identity(1.0), sample_rate=0.1, num_steps=0
-            )
+    def test_rejects_invalid_n_steps(self):
+        with pytest.raises(ValueError, match="n_steps"):
+            ftrl_acc.poisson(ftrl_acc.mf_identity(1.0), sample_rate=0.1, n_steps=0)
 
     def test_rejects_invalid_sample_rate(self):
         with pytest.raises(ValueError, match="sample_rate"):
-            ftrl_acc.cyclic_poisson(
-                ftrl_acc.mf_identity(1.0), sample_rate=1.5, num_steps=10
-            )
-
-    def test_band_mf_unaffected_by_num_steps_passthrough(self):
-        # Existing BandMF behaviour: num_steps None reads from inner.num_groups.
-        T = 100
-        proc = ftrl_acc.cyclic_poisson(
-            ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=T), sample_rate=0.01
-        )
-        explicit = ftrl_acc.cyclic_poisson(
-            ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=T),
-            sample_rate=0.01,
-            num_steps=T,
-        )
-        assert math.isclose(
-            proc.epsilon_at(_DELTA), explicit.epsilon_at(_DELTA), rel_tol=1e-12
-        )
-
-    def test_band_mf_num_steps_mismatch_raises(self):
-        with pytest.raises(ValueError, match="num_groups"):
-            ftrl_acc.cyclic_poisson(
-                ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=100),
-                sample_rate=0.01,
-                num_steps=200,
-            )
+            ftrl_acc.poisson(ftrl_acc.mf_identity(1.0), sample_rate=1.5, n_steps=10)
 
 
-# ---------------------------------------------------------------------------
-# balls_in_bins(IdentityMf(...), num_bins, num_epochs)  — tight reduction
-# ---------------------------------------------------------------------------
-
-
-class TestBallsInBinsIdentity:
-    def test_pld_matches_lemma_3_2_dominating_pair(self):
-        """For identity C=I, Lemma 3.2 of CC2024 gives Gram = E * I_b."""
-        nm, k, E = 1.5, 32, 4
-        proc = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_identity(nm), num_bins=k, num_epochs=E
+class TestPoissonBandMf:
+    def test_pld_matches_self_composed_with_bands(self):
+        """For BandMf: num_groups = ceil(n_steps / bands)."""
+        nm, p = 1.1, 0.01
+        coefs = (1.0, 0.5)  # bands = 2
+        bands = len(coefs)
+        n_steps = 100
+        proc = ftrl_acc.poisson(
+            ftrl_acc.band_mf(nm, sensitivity=1.0, coefficients=coefs),
+            sample_rate=p,
+            n_steps=n_steps,
         )
         cfg = get_discretization()
-        gram = [E if i == j else 0.0 for i in range(k) for j in range(k)]
-        ref = _native.bnb_mc_pld(gram, k, nm, cfg.to_native())
+        num_groups = math.ceil(n_steps / bands)
+        ref = _native.poisson_gaussian_pld(nm, p, cfg.to_native()).self_compose(
+            num_groups
+        )
         assert math.isclose(
             proc.epsilon_at(_DELTA), ref.epsilon_at(_DELTA), rel_tol=1e-9
         )
 
+
+# ---------------------------------------------------------------------------
+# balls_in_bins(IdentityMf(...), num_bins, n_steps)  — tight reduction
+# ---------------------------------------------------------------------------
+
+
+class TestBallsInBinsIdentity:
+    def test_pld_agrees_with_generic_bnb_mc(self):
+        """Identity-specialised MC must agree with generic ``bnb_mc_pld`` at
+        ``G = E·I_b`` up to MC noise.  At the high sample budget set here, the
+        per-seed relative MC σ for both methods is < 2% and the gap between
+        means is small — empirically <5% at a single seed × 1M samples
+        (verified across many seeds at this config).  Bound at 10% to leave
+        room for rare outliers without becoming a privacy-blind tolerance."""
+        nm, k, E = 1.5, 32, 4
+        # Use a higher sample budget than the package default for a tight check.
+        from opaque.accounting.discretization import DiscretizationConfig
+
+        tight_cfg = DiscretizationConfig(num_mc_samples=1_000_000, seed=2024)
+        cfg_native = tight_cfg.to_native()
+
+        ref_eps = _native.bnb_mc_pld(
+            [E if i == j else 0.0 for i in range(k) for j in range(k)],
+            k,
+            nm,
+            cfg_native,
+        ).epsilon_at(_DELTA)
+        # Identity-specialised path with τ = 0 (no IS) should match generic
+        # at any tilt the user picks; the IS specialisation only changes
+        # variance, not the mean.
+        eps_id_no_is = _native.bnb_mc_pld_identity(
+            k, E, nm, 0.0, cfg_native
+        ).epsilon_at(_DELTA)
+        assert abs(eps_id_no_is - ref_eps) < 0.10 * abs(ref_eps), (
+            f"identity τ=0 vs generic gap too large: id={eps_id_no_is}, ref={ref_eps}"
+        )
+
+    def test_factory_path_finite(self):
+        """The default ``balls_in_bins`` factory produces a finite, positive ε."""
+        nm, k, E = 1.5, 32, 4
+        eps = ftrl_acc.balls_in_bins(
+            ftrl_acc.mf_identity(nm),
+            num_bins=k,
+            n_steps=k * E,
+        ).epsilon_at(_DELTA)
+        assert math.isfinite(eps) and eps > 0
+
+    @pytest.mark.slow
+    def test_is_reduces_variance_on_ensemble(self):
+        """The internal IS tilt reduces ε std vs no-IS over a large enough seed
+        ensemble.  This is the *empirical* point of the IS specialisation;
+        small-N seed ensembles can be unlucky (std varies as χ² with df=N-1),
+        so we use 32 seeds and require ≥ 1.4× std reduction (squared variance
+        ≥ 2×).  In practice the gain at this config is 3-30×.
+        """
+        import statistics
+        from opaque.accounting.discretization import DiscretizationConfig
+        from opaque.dpftrl.accounting.amplification._balls_in_bins import (
+            _IDENTITY_IS_TILT,
+        )
+
+        nm, k, E = 1.5, 32, 4
+        budget = 200_000
+        seeds = list(range(32))
+        eps_no_is, eps_with_is = [], []
+        for s in seeds:
+            cfg_native = DiscretizationConfig(num_mc_samples=budget, seed=s).to_native()
+            eps_no_is.append(
+                _native.bnb_mc_pld_identity(k, E, nm, 0.0, cfg_native).epsilon_at(
+                    _DELTA
+                )
+            )
+            eps_with_is.append(
+                _native.bnb_mc_pld_identity(
+                    k, E, nm, _IDENTITY_IS_TILT, cfg_native
+                ).epsilon_at(_DELTA)
+            )
+        std_no_is = statistics.stdev(eps_no_is)
+        std_with_is = statistics.stdev(eps_with_is)
+        assert std_with_is < std_no_is / 1.4, (
+            f"IS should reduce per-seed std vs τ=0 over 32 seeds: "
+            f"std(τ=0)={std_no_is:.4f}, std(τ={_IDENTITY_IS_TILT})={std_with_is:.4f}"
+        )
+
     def test_strictly_tighter_than_unamplified_composition(self):
-        """Lemma 3.2 amplification (factor ~1/num_bins) must beat the unamplified
-        Gaussian composition over all k*E rounds."""
+        """Amplification (factor ~1/num_bins) must beat unamplified composition."""
         nm, k, E = 1.5, 32, 4
         amplified = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_identity(nm), num_bins=k, num_epochs=E
+            ftrl_acc.mf_identity(nm), num_bins=k, n_steps=k * E
         ).epsilon_at(_DELTA)
         cfg = get_discretization()
         unamplified = (
@@ -148,17 +204,21 @@ class TestBallsInBinsIdentity:
 
     def test_zero_noise_non_private(self):
         proc = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_identity(0.0), num_bins=10, num_epochs=2
+            ftrl_acc.mf_identity(0.0), num_bins=10, n_steps=20
         )
         assert math.isinf(proc.epsilon_at(_DELTA))
 
     def test_rejects_invalid_num_bins(self):
         with pytest.raises(ValueError, match="num_bins"):
-            ftrl_acc.balls_in_bins(ftrl_acc.mf_identity(1.0), num_bins=1, num_epochs=2)
+            ftrl_acc.balls_in_bins(ftrl_acc.mf_identity(1.0), num_bins=1, n_steps=20)
 
-    def test_rejects_invalid_num_epochs(self):
-        with pytest.raises(ValueError, match="num_epochs"):
-            ftrl_acc.balls_in_bins(ftrl_acc.mf_identity(1.0), num_bins=10, num_epochs=0)
+    def test_rejects_invalid_n_steps(self):
+        with pytest.raises(ValueError, match="n_steps"):
+            ftrl_acc.balls_in_bins(ftrl_acc.mf_identity(1.0), num_bins=10, n_steps=0)
+
+    def test_rejects_n_steps_not_multiple_of_num_bins(self):
+        with pytest.raises(ValueError, match="multiple of"):
+            ftrl_acc.balls_in_bins(ftrl_acc.mf_identity(1.0), num_bins=10, n_steps=15)
 
 
 # ---------------------------------------------------------------------------
@@ -166,11 +226,11 @@ class TestBallsInBinsIdentity:
 # ---------------------------------------------------------------------------
 
 
-def test_mf_identity_calibrates_through_cyclic_poisson():
+def test_mf_identity_calibrates_through_poisson():
     cal = acc.calibrate(
         acc.epsilon_budget(3.0, delta=_DELTA),
-        lambda nm: ftrl_acc.cyclic_poisson(
-            ftrl_acc.mf_identity(nm), sample_rate=0.01, num_steps=500
+        lambda nm: ftrl_acc.poisson(
+            ftrl_acc.mf_identity(nm), sample_rate=0.01, n_steps=500
         ),
         param_min=0.1,
         param_max=10.0,

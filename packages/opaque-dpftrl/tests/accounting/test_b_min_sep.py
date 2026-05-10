@@ -15,11 +15,10 @@ def test_p_conversion():
 
 
 def test_b_min_sep_smoke_pld():
-    inner = ftrl_acc.band_mf(1.0, sensitivity=0.5, num_groups=10)
     coef = (0.8**0.5, 0.2**0.5, 0.0, 0.0)
+    inner = ftrl_acc.band_mf(1.0, sensitivity=0.5, coefficients=coef)
     proc = ftrl_acc.b_min_sep(
         inner,
-        strategy_coefficients=coef,
         n_steps=40,
         p0=0.02,
     )
@@ -148,11 +147,10 @@ def test_b_min_sep_stricter_than_mf_only():
     from opaque.accounting import _native as native
     from opaque.accounting.discretization import get_discretization
 
-    inner = ftrl_acc.band_mf(1.0, sensitivity=0.7, num_groups=5)
     coef = (1.0, 0.0, 0.0)
+    inner = ftrl_acc.band_mf(1.0, sensitivity=0.7, coefficients=coef)
     bms = ftrl_acc.b_min_sep(
         inner,
-        strategy_coefficients=coef,
         n_steps=20,
         p0=0.1,
     )

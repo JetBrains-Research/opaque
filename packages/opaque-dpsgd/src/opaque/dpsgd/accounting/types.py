@@ -9,7 +9,6 @@ from __future__ import annotations
 from opaque.dpsgd.accounting.amplification.types import (
     ParallelPoisson,
     Poisson,
-    TruncatedPoisson,
 )
 from opaque.dpsgd.accounting.mechanisms.types import AdaClip, Gaussian
 
@@ -17,6 +16,5 @@ __all__ = [
     "Gaussian",
     "AdaClip",
     "Poisson",
-    "TruncatedPoisson",
     "ParallelPoisson",
 ]

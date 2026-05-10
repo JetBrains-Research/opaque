@@ -19,7 +19,7 @@ _HEADLINE = (
     "bsr",
     "lambda_cgd",
     "mf_identity",
-    "cyclic_poisson",
+    "poisson",
     "b_min_sep",
     "balls_in_bins",
 )
@@ -32,7 +32,7 @@ _TYPES = (
     "LambdaCgd",
     "IdentityMf",
     "MfGaussian",
-    "CyclicPoisson",
+    "MfPoisson",
     "BMinSep",
     "BallsInBins",
 )
@@ -63,13 +63,14 @@ class TestNamespaceSurface:
 class TestEndToEndCalibration:
     """Constructed mechanisms compute valid PLDs through the new namespace."""
 
-    def test_band_mf_cyclic_poisson(self):
+    def test_band_mf_poisson(self):
         import math
         import opaque.dpftrl.accounting as ftrl_acc
 
-        proc = ftrl_acc.cyclic_poisson(
-            ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=10),
+        proc = ftrl_acc.poisson(
+            ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0, 0.5)),
             sample_rate=0.01,
+            n_steps=20,
         )
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0

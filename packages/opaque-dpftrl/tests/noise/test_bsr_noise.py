@@ -127,6 +127,6 @@ class TestBsrPld:
         eps = ftrl_acc.balls_in_bins(
             ftrl_acc.bsr(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
             num_bins=25,
-            num_epochs=4,
+            n_steps=100,
         ).epsilon_at(self.delta)
         assert eps > 0

@@ -347,7 +347,7 @@ class TestBLTWithBnB:
         sampler = BallsInBinsSampler(
             dataset,
             num_bins=num_bins,
-            num_epochs=num_epochs,
+            n_steps=num_bins * num_epochs,
             key=key(99),
         )
 
@@ -381,7 +381,7 @@ class TestBLTWithBnB:
         sampler = BallsInBinsSampler(
             dataset,
             num_bins=num_bins,
-            num_epochs=1,
+            n_steps=num_bins,
             key=key(42),
         )
 
@@ -404,7 +404,7 @@ class TestBLTWithBnB:
         sampler = BallsInBinsSampler(
             dataset,
             num_bins=num_bins,
-            num_epochs=num_epochs,
+            n_steps=num_bins * num_epochs,
             key=key(42),
         )
 
@@ -429,7 +429,7 @@ class TestBLTWithBnB:
         sampler = BallsInBinsSampler(
             dataset,
             num_bins=num_bins,
-            num_epochs=1,
+            n_steps=num_bins,
             key=key(123),
         )
 

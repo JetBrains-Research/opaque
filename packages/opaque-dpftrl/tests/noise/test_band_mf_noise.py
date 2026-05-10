@@ -19,7 +19,7 @@ class TestBandMfStrategy:
         assert s.sensitivity == pytest.approx(1.0, abs=1e-6)
 
     def test_gram_matrix_is_none(self):
-        """BandMF uses cyclic_poisson, not BnB."""
+        """BandMF uses Poisson amplification, not BnB."""
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
         assert s.gram_matrix is None
 
@@ -32,7 +32,7 @@ class TestBandMfStrategy:
         assert s._streaming_matrix is not None
 
     def test_matches_old_sensitivity(self):
-        ftrl_acc.band_mf(1.0, sensitivity=1.0, num_groups=10)
+        ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0,) * 10)
         new = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
         assert new.sensitivity == pytest.approx(1.0, abs=1e-6)
 
@@ -58,17 +58,22 @@ class TestBandMfPld:
 
     def test_band_mf_pld(self):
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        eps = ftrl_acc.band_mf(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
+        eps = ftrl_acc.band_mf(
+            1.0, sensitivity=s.sensitivity, coefficients=s.coefficients
+        ).epsilon_at(self.delta)
         assert eps > 0
 
-    def test_cyclic_poisson_matches_manual(self):
-        """Cyclic Poisson via band_mf matches manual poisson composition."""
+    def test_poisson_matches_manual(self):
+        """Poisson via band_mf matches manual poisson composition."""
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
         sample_rate = 0.05
 
-        eps_new = ftrl_acc.cyclic_poisson(
-            ftrl_acc.band_mf(1.0, sensitivity=s.sensitivity, num_groups=s.num_groups),
+        eps_new = ftrl_acc.poisson(
+            ftrl_acc.band_mf(
+                1.0, sensitivity=s.sensitivity, coefficients=s.coefficients
+            ),
             sample_rate=sample_rate,
+            n_steps=100,
         ).epsilon_at(self.delta)
         eps_manual = (
             dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0 / s.sensitivity), sample_rate)

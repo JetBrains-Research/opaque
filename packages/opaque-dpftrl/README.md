@@ -28,7 +28,7 @@ from opaque.dpftrl.sampling import BMinSepSampler
 ## Layout
 
 - `opaque.dpftrl.noise` — strategies (band-MF, BLT, BSR, BiSR, identity, lambda-CGD) + dispatchers
-- `opaque.dpftrl.sampling` — `BMinSepSampler`, `CyclicPoissonSampler`, `BallsInBinsSampler`, `SequentialBatchSampler`
+- `opaque.dpftrl.sampling` — `BMinSepSampler`, `PoissonSampler`, `BallsInBinsSampler`, `SequentialBatchSampler`
 
 All algorithm-agnostic primitives (Poisson sampling, fixed clipping,
 RNG keys, pytree / distributed / profiling helpers) live in

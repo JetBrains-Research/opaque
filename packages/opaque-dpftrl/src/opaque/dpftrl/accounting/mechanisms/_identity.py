@@ -6,14 +6,13 @@ Pairs with :func:`opaque.dpftrl.noise.identity_strategy` (encoder
 (``gaussian_pld(noise_multiplier)``).  Realistic FTRL training uses one of
 the FTRL amplifications on top:
 
-- :func:`opaque.dpftrl.accounting.cyclic_poisson` for per-step Poisson
-  inclusion (``T`` independent rounds).
+- :func:`opaque.dpftrl.accounting.poisson` for per-step Poisson
+  inclusion across ``n_steps`` rounds.
 - :func:`opaque.dpftrl.accounting.balls_in_bins` for fixed-partition
-  multi-epoch sampling — tight identity-aware reduction inside
-  :class:`BallsInBins`.
+  multi-epoch sampling.
 
 Unsubsampled training is the existing :class:`opaque.accounting.composition.types.Repeated`
-form: ``mf_identity(nm) * num_steps`` composes plain Gaussian.
+form: ``mf_identity(nm) * n_steps`` composes plain Gaussian.
 """
 
 from __future__ import annotations
@@ -34,9 +33,9 @@ class IdentityMf(DpProcess):
     Sensitivity is fixed at ``1.0`` because the encoder is :math:`I`.  Stand-
     alone composition (``IdentityMf(...) * T``) gives unsubsampled
     Gaussian-over-T-rounds accounting; wrap with
-    :func:`opaque.dpftrl.accounting.cyclic_poisson` /
-    :func:`opaque.dpftrl.accounting.balls_in_bins` for FTRL-native subsampled
-    or fixed-partition analyses.
+    :func:`opaque.dpftrl.accounting.poisson` /
+    :func:`opaque.dpftrl.accounting.balls_in_bins` for FTRL-native
+    subsampled or fixed-partition analyses.
     """
 
     noise_multiplier: float
@@ -71,18 +70,18 @@ def mf_identity(noise_multiplier: float) -> IdentityMf:
 
     - Per-step Poisson over ``T`` rounds::
 
-        ftrl_acc.cyclic_poisson(
+        ftrl_acc.poisson(
             ftrl_acc.mf_identity(nm),
             sample_rate=p,
-            num_steps=T,
+            n_steps=T,
         )
 
-    - Fixed-partition (Balls-in-Bins) over ``E`` epochs::
+    - Fixed-partition (Balls-in-Bins) over ``k * E`` rounds::
 
         ftrl_acc.balls_in_bins(
             ftrl_acc.mf_identity(nm),
             num_bins=k,
-            num_epochs=E,
+            n_steps=k * E,
         )
 
     - Unamplified composition::

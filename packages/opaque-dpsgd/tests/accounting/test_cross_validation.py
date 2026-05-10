@@ -284,19 +284,19 @@ class TestTruncatedPoissonValidity:
 
     @pytest.mark.parametrize("sigma", [0.5, 0.8, 1.2])
     def test_larger_cap_lower_epsilon(self, sigma):
-        """Larger batch_size_cap → less truncation → lower epsilon."""
+        """Larger truncated_batch_size → less truncation → lower epsilon."""
         n = 100_000
         q = 0.001
         steps = 500
         g = dpsgd_acc.gaussian(sigma)
         # cap=50 (heavy truncation: expected_batch=100, cap < expected)
-        eps_small_cap = (dpsgd_acc.truncated_poisson(g, q, 50, n) * steps).epsilon_at(
-            1e-5
-        )
+        eps_small_cap = (
+            dpsgd_acc.poisson(g, q, truncated_batch_size=50, dataset_size=n) * steps
+        ).epsilon_at(1e-5)
         # cap=500 (light truncation: expected_batch=100, cap >> expected)
-        eps_large_cap = (dpsgd_acc.truncated_poisson(g, q, 500, n) * steps).epsilon_at(
-            1e-5
-        )
+        eps_large_cap = (
+            dpsgd_acc.poisson(g, q, truncated_batch_size=500, dataset_size=n) * steps
+        ).epsilon_at(1e-5)
         assert eps_large_cap <= eps_small_cap + 1e-10, (
             f"Larger cap should give ≤ epsilon: cap=500 → {eps_large_cap}, cap=50 → {eps_small_cap}"
         )
@@ -308,25 +308,33 @@ class TestTruncatedPoissonValidity:
         epsilons = []
         for steps in [10, 100, 500, 1000]:
             eps = (
-                dpsgd_acc.truncated_poisson(g, 0.005, 250, 50_000) * steps
+                dpsgd_acc.poisson(
+                    g, 0.005, truncated_batch_size=250, dataset_size=50_000
+                )
+                * steps
             ).epsilon_at(1e-5)
             epsilons.append(eps)
         for i in range(len(epsilons) - 1):
             assert epsilons[i] < epsilons[i + 1]
 
     def test_positive_epsilon(self):
-        """TruncatedPoisson epsilon > 0 for non-trivial mechanism."""
+        """Truncated poisson epsilon > 0 for non-trivial mechanism."""
         g = dpsgd_acc.gaussian(0.8)
-        proc = dpsgd_acc.truncated_poisson(g, 0.005, 250, 50_000) * 100
+        proc = (
+            dpsgd_acc.poisson(g, 0.005, truncated_batch_size=250, dataset_size=50_000)
+            * 100
+        )
         assert proc.epsilon_at(1e-5) > 0
 
     def test_fallback_when_no_truncation(self):
-        """When batch_size_cap >> expected batch, result ≈ standard Poisson."""
-        # expected_batch = 100000 * 0.001 = 100, cap = 100000 (no truncation)
+        """When truncated_batch_size >> expected batch, result ≈ standard Poisson."""
         g = dpsgd_acc.gaussian(0.8)
         steps = 500
         eps_trunc = (
-            dpsgd_acc.truncated_poisson(g, 0.001, 100_000, 100_000) * steps
+            dpsgd_acc.poisson(
+                g, 0.001, truncated_batch_size=100_000, dataset_size=100_000
+            )
+            * steps
         ).epsilon_at(1e-5)
         eps_poisson = (dpsgd_acc.poisson(g, 0.001) * steps).epsilon_at(1e-5)
         assert eps_trunc == pytest.approx(eps_poisson, rel=1e-6)

@@ -39,6 +39,10 @@ def fingerprint_per_group_max_norm(pg: PerGroup) -> int:
 
     Scalar and per-group norms use disjoint ``kind`` payloads so a scalar latch
     on one rank cannot collide with a per-group latch fingerprint on another.
+
+    Returns the leading 64 bits of the SHA-256 digest as an int (never
+    coerced through float) so that cross-rank ``PerGroup`` mismatches can't
+    slip past the equality check by colliding under float-precision loss.
     """
     payload = {
         "kind": "mf_noise_per_group_max_norm",

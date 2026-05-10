@@ -12,6 +12,11 @@ Per-method subclasses live in their own modules:
 - :mod:`~opaque.dpftrl.accounting.mechanisms._bisr` — :class:`Bisr`
 - :mod:`~opaque.dpftrl.accounting.mechanisms._bsr` — :class:`Bsr`
 
+Each subclass adds the strategy-shape data the corresponding amplification needs:
+``coefficients`` for ``BandMf`` (cyclic Poisson / b-min-sep), ``gram_matrix`` for
+``Blt`` / ``Bisr`` / ``Bsr`` / ``LambdaCgd`` (BnB).  Length parameters
+(``n_steps``, ``num_bins``) live on the amplification factory, not here.
+
 The MF **identity** (uncorrelated) baseline lives in :mod:`~opaque.dpftrl.accounting.mechanisms._identity`
 as :class:`~opaque.dpftrl.accounting.types.IdentityMf` — it does not subclass
 :class:`MfGaussian`.
