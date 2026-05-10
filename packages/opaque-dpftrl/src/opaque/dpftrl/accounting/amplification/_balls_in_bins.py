@@ -121,9 +121,7 @@ class BallsInBins(DpProcess):
                 b = self.num_bins
                 gram_diag = float(self.num_epochs)
                 gram_flat = [
-                    gram_diag if i == j else 0.0
-                    for i in range(b)
-                    for j in range(b)
+                    gram_diag if i == j else 0.0 for i in range(b) for j in range(b)
                 ]
                 return _native.bnb_mc_pld(
                     gram_flat,

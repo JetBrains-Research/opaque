@@ -154,15 +154,11 @@ class TestBallsInBinsIdentity:
 
     def test_rejects_invalid_num_bins(self):
         with pytest.raises(ValueError, match="num_bins"):
-            ftrl_acc.balls_in_bins(
-                ftrl_acc.mf_identity(1.0), num_bins=1, num_epochs=2
-            )
+            ftrl_acc.balls_in_bins(ftrl_acc.mf_identity(1.0), num_bins=1, num_epochs=2)
 
     def test_rejects_invalid_num_epochs(self):
         with pytest.raises(ValueError, match="num_epochs"):
-            ftrl_acc.balls_in_bins(
-                ftrl_acc.mf_identity(1.0), num_bins=10, num_epochs=0
-            )
+            ftrl_acc.balls_in_bins(ftrl_acc.mf_identity(1.0), num_bins=10, num_epochs=0)
 
 
 # ---------------------------------------------------------------------------

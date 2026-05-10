@@ -101,7 +101,9 @@ def mf_identity(noise_multiplier: float) -> IdentityMf:
     """
     nm = float(noise_multiplier)
     if nm < 0:
-        raise ValueError(f"noise_multiplier must be non-negative, got {noise_multiplier}")
+        raise ValueError(
+            f"noise_multiplier must be non-negative, got {noise_multiplier}"
+        )
     return IdentityMf(noise_multiplier=nm)
 
 
