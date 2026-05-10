@@ -17,7 +17,7 @@ from collections.abc import Iterator
 import numpy as np
 from torch.utils.data import Sampler
 
-from opaque._poisson_impl import plain_poisson_step_indices
+from ._helpers import _plain_poisson_step_indices
 from opaque.random.types import RngKey
 
 
@@ -92,7 +92,7 @@ class PoissonSubsampler(Sampler):
         self.generator = np.random.default_rng(key.seed)
 
     def _sample_step(self) -> list[int]:
-        return plain_poisson_step_indices(
+        return _plain_poisson_step_indices(
             self.generator,
             self._num_samples,
             self.sample_rate,

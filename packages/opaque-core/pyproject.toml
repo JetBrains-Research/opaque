@@ -37,7 +37,6 @@ py-modules = [
     "opaque.types",
     "opaque.pytree",
     "opaque._noise_allocation",
-    "opaque._poisson_impl",
 ]
 
 [tool.setuptools.packages.find]
