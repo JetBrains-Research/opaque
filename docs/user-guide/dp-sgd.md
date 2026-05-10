@@ -95,9 +95,10 @@ noise_fn, noise_state = gaussian_noise(
 )
 ```
 
-For bounded noise support, use
-`opaque.dpsgd.noise.truncated_gaussian_noise` — same accounting,
-inverse-CDF sampling.
+For bounded noise support, pass ``bound=...`` to
+`opaque.dpsgd.noise.gaussian_noise` — same accounting, inverse-CDF
+sampling, accepts a positive scalar (symmetric ``[-B, B]``) or a
+``(low, high)`` tuple.
 
 ## 4. Sampling
 
@@ -174,7 +175,7 @@ Restore from the same flat state dict with
 
 - [Clipping](clipping.md) — fixed, AUTO-S, adaptive variants and
   per-group norms.
-- [Noise](noise.md) — Gaussian, truncated Gaussian, when to choose
+- [Noise](noise.md) — Gaussian (optionally bounded), when to choose
   which.
 - [Sampling](sampling.md) — Poisson sampler details and the
   truncated-Poisson trade-off.

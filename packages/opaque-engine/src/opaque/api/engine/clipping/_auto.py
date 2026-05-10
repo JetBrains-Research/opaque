@@ -257,7 +257,7 @@ def auto_clipped_grad(
         Under add/remove or zero-out DP, the L2 sensitivity of the
         summed gradients is the returned ``ClippedPytree.max_norm`` metadata —
         a constant independent of the input data.  Per-step Gaussian noise
-        (``gaussian_noise``, ``truncated_gaussian_noise``, …) reads that value
+        (``gaussian_noise``, …) reads that value
         each step; PLD composition does not require ``max_norm`` to be
         identical across steps when the accountant models step-varying
         sensitivity (for example adaptive clipping with ``adaclip``).

@@ -96,8 +96,8 @@ training loop.
 ### Per-group noise
 
 When using [per-group clipping](clipping.md#per-group-clipping),
-`gaussian_noise` and `truncated_gaussian_noise` use MSE-optimal allocation
-automatically.  To inspect the realized allocation, call
+`gaussian_noise` (bounded or not) uses MSE-optimal allocation automatically.
+To inspect the realized allocation, call
 `ClippedPytree.noise_stddev_for(...)` directly on the clipped output:
 
 ```python
@@ -136,54 +136,55 @@ scale used for that step.
 ## Bounded Gaussian noise
 
 Standard Gaussian noise has unbounded support, which means privatized outputs
-can land arbitrarily far from the input. Bounded Gaussian noise restricts the
-support to a finite interval, giving tighter privacy accounting because the
-worst-case divergence is limited.
+can land arbitrarily far from the input.  Pass ``bound`` to `gaussian_noise`
+to restrict the per-coordinate support to a finite interval — the
+*bounded Gaussian mechanism* of Chen and Hale (2024).
 
-Opaque provides two variants that differ in how they handle the probability mass
-that falls outside the bounds:
-
-### Truncated (renormalized)
-
-`truncated_gaussian_noise` draws from a Gaussian renormalized over the bounded
+`gaussian_noise(..., bound=...)` draws from a Gaussian renormalized over the
 interval. No probability mass sits at the boundaries — the density is smooth
-but slightly taller than the original Gaussian.
+but slightly taller than the original Gaussian.  ``bound`` accepts a positive
+scalar ``B`` (interpreted as ``[-B, B]``) or an asymmetric ``(low, high)``
+tuple/list with ``low <= 0 <= high``.  Bounds are absolute (same units as
+the gradient / clip norm), not multiples of σ.
 
 ```python
-from opaque.dpsgd.noise import truncated_gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
-noise_fn, noise_state = truncated_gaussian_noise(
+# Symmetric bound [-2, 2]
+noise_fn, noise_state = gaussian_noise(
     noise_multiplier=noise_multiplier,
-    radius=2.0,
+    bound=2.0,
     key=key(42),
 )
 noisy_grads, noise_state = noise_fn(grads, noise_state)
+
+# Asymmetric bound [-1, 4]
+noise_fn, noise_state = gaussian_noise(
+    noise_multiplier=noise_multiplier,
+    bound=(-1.0, 4.0),
+    key=key(42),
+)
 ```
 
-The truncation uses an inverse-CDF method: for each gradient element, noise is
-sampled from a Gaussian centered on that element and truncated to the bounds.
+The implementation uses an inverse-CDF method: for each gradient element,
+noise is sampled from a Gaussian centred on that element and truncated to
+the per-coordinate interval.
 
-For high-dimensional tasks like model training, the truncated Gaussian
-converges to the standard Gaussian, so use `dpsgd_acc.gaussian(noise_multiplier)`
-for accounting.
+For high-dimensional model training, the per-coordinate ε-DP analysis of the
+paper does not apply (gradients live under an ℓ₂-ball constraint, not a
+product of intervals); use `dpsgd_acc.gaussian(noise_multiplier)` for
+accounting and treat the bound as bounded-support post-processing on the
+standard (ε, δ)-Gaussian mechanism.
 
-`truncated_gaussian_noise` accepts the same paired-stream input as
-`gaussian_noise`: when a `SecondMomentClippingOutput` (from
+`gaussian_noise` (bounded or not) accepts the same paired-stream input:
+when a `SecondMomentClippingOutput` (from
 ``clipped_grad(..., second_moment=True)``) flows in, the function returns
 a `SecondMomentNoiseOutput` with both streams noised under the joint
 sensitivity-proportional Mahalanobis allocation (scalar case:
 ``σ¹ = nm·sqrt(Δ¹·S)``, ``σ² = nm·sqrt(Δ²·S)``, ``S = Δ¹+Δ²``; with
 :class:`~opaque.types.PerGroup` bounds, ``S`` sums ``Δ¹_g+Δ²_g`` over
-groups).  Each
-stream is sampled from its own truncated Gaussian with bounds scaled to
-its own ``radius * stddev``.
-
-### Which variant to use
-
-The truncated Gaussian provides bounded support, which can be useful when
-gradient bounds are important for downstream optimization. For privacy
-accounting, use `dpsgd_acc.gaussian()` regardless of the noise variant.
+groups).  Each stream is independently sampled with the same ``bound``.
 
 ## Matrix-factorization noise (DP-FTRL)
 
@@ -292,7 +293,7 @@ the gradients (e.g., the model parameters).
 `mf_noise` accepts `ClippedPytree` metadata where `max_norm` is a
 `PerGroup` (from `opaque.dpsgd.clipping.per_group`), not only a scalar. The
 per-leaf IID noise scale follows the same MSE-optimal Mahalanobis allocation
-as `gaussian_noise` / `truncated_gaussian_noise` on DP-SGD: no extra privacy
+as `gaussian_noise` (bounded or not) on DP-SGD: no extra privacy
 cost versus scalar clipping at the same `noise_multiplier`, and the MF
 Gaussian accountant is unchanged. Trainable parameters must be a **flat**
 `dict[str, torch.Tensor]` (as with `make_functional(..., partition_trainable=True)`)

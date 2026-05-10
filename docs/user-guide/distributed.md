@@ -294,8 +294,9 @@ following types are registered:
 | `MFNoiseState` | Assert seed and step counter match for MF noise |
 | `TrainingProfiler` | Aggregate only unsynchronized step/checkpoint suffix into a global profiler snapshot |
 
-Rectified and truncated Gaussian noise also return `GaussianNoiseState`,
-so `sync()` handles them automatically — no extra helpers needed.
+The bounded Gaussian path (`gaussian_noise(..., bound=...)`) also returns
+`GaussianNoiseState`, so `sync()` handles it automatically — no extra
+helpers needed.
 
 See [API Reference](../reference/distributed.md) for full docstrings.
 

@@ -21,8 +21,8 @@ gradient sum. Simple and broadly applicable.
 |-----------|--------------------|----------|
 | [Gaussian](dp-sgd/gaussian.md) | $\mathcal{N}(0, \sigma^2)$ | $(-\infty, +\infty)$ |
 
-For bounded noise support, use `truncated_gaussian_noise()` for noise
-injection while accounting with `opaque.dpsgd.accounting.gaussian()`.
+For bounded noise support, pass ``bound=B`` (or ``bound=(low, high)``) to
+`gaussian_noise()` while accounting with `opaque.dpsgd.accounting.gaussian()`.
 See [Gaussian — Bounded noise variant](dp-sgd/gaussian.md#bounded-noise-variant).
 
 ## Correlated noise (DP-FTRL)
@@ -51,7 +51,7 @@ second-moment caveats), see the [DP-FTRL user guide](../user-guide/dp-ftrl.md).
 Need correlated noise across steps (DP-FTRL)?
 │
 ├─ No ─── Gaussian (standard DP-SGD)
-│         Use truncated_gaussian_noise() for bounded support if desired;
+│         Pass bound=... to gaussian_noise() for bounded support if desired;
 │         accounting always uses opaque.dpsgd.accounting.gaussian().
 │
 └─ Yes ── Constraints?

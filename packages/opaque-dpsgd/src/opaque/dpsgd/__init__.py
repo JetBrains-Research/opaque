@@ -1,7 +1,8 @@
 """Opaque DP-SGD: Differentially Private SGD mechanisms.
 
-Gaussian / truncated-Gaussian noise, adaptive and AUTO-S clipping, and the
-standard + truncated Poisson samplers.  Fixed and AUTO-S clipping live in
+Gaussian noise (optionally bounded — Chen and Hale, 2024), adaptive and
+AUTO-S clipping, and the standard + truncated Poisson samplers.  Fixed and
+AUTO-S clipping live in
 :mod:`opaque.dpsgd.clipping` (AUTO-S keeps a constant per-record sensitivity
 bound).  Functional optimizers (including the universal ``adamw`` with
 DP bias-correction and private second-moment paths) live in
@@ -31,7 +32,7 @@ from opaque.dpsgd.clipping import (
     clipped_grad,
     per_group,
 )
-from opaque.dpsgd.noise import gaussian_noise, truncated_gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.sampling import PoissonSubsampler
 
 if TYPE_CHECKING:
@@ -75,7 +76,6 @@ __all__ = [
     "per_group",
     # Noise mechanisms
     "gaussian_noise",
-    "truncated_gaussian_noise",
     # Sampling
     "PoissonSubsampler",
 ]

@@ -38,8 +38,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `auto_clipped_grad()` - AUTO-S automatic per-example gradient scaling (Bu et al. 2023)
 
 - **[Noise](noise.md)**: Noise injection for DP
-  - `gaussian_noise()` - Standard Gaussian noise
-  - `truncated_gaussian_noise()` - Bounded Gaussian noise
+  - `gaussian_noise()` - Gaussian noise (pass ``bound=...`` for the bounded Gaussian mechanism)
   - `mf_noise()` - Correlated noise dispatcher (DP-FTRL)
   - Strategy factories: `band_mf_strategy()`, `blt_strategy()`, `lambda_cgd_strategy()`, `bisr_strategy()`, `identity_strategy()`
 
@@ -130,8 +129,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 
 | Function                       | Purpose                                      | User Guide                      |
 |--------------------------------|----------------------------------------------|---------------------------------|
-| `gaussian_noise()`                   | Standard Gaussian noise (unbounded)          | [Guide](../user-guide/noise.md) |
-| `truncated_gaussian_noise()`           | Bounded Gaussian — renormalized density       | [Guide](../user-guide/noise.md#bounded-gaussian-noise) |
+| `gaussian_noise()`                   | Gaussian noise; pass ``bound=...`` for the bounded Gaussian mechanism (renormalized density) | [Guide](../user-guide/noise.md#bounded-gaussian-noise) |
 | `mf_noise()`                         | Correlated noise dispatcher (DP-FTRL)        | [Guide](../user-guide/noise.md#matrix-factorization-noise-dp-ftrl) |
 | `band_mf_strategy()`                | BandMF banded Toeplitz strategy              | [Guide](../user-guide/noise.md#band_mf_strategy) |
 | `blt_strategy()`                     | BLT buffered Toeplitz strategy               | [Guide](../user-guide/noise.md#blt_strategy) |
