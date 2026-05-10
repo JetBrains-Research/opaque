@@ -20,7 +20,7 @@ import pathlib
 import sys
 import tomllib
 
-PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[1] / "packages"
+PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[2] / "packages"
 
 # Top-level ``opaque.*`` import roots shipped by each wheel. Updated phase
 # by phase as the wheel set evolves. This is the source-of-truth mapping
@@ -181,10 +181,10 @@ def _root_match(import_path: str, roots: set[str]) -> bool:
 # removed; the test stays green throughout.
 #
 # Cross-wheel integration tests (DP-SGD ↔ DP-FTRL, DP-SGD ↔ patches)
-# live under ``integration_tests/`` at the repo root — a top-level
+# live under ``tests/integration/`` at the repo root — a top-level
 # test root that isn't bound to any single wheel's dep cone. The
 # contract check below scans ``packages/<wheel>/tests/`` only; tests
-# under ``integration_tests/`` can import any opaque.* module.
+# under ``tests/integration/`` can import any opaque.* module.
 #
 # This allowlist is now empty: all known cross-cone tests have been
 # rehomed.

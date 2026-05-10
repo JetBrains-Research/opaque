@@ -1,6 +1,6 @@
 from opaque.patches import apply_model_patches, apply_runtime_patches
 import pytest
-from integration_tests.dpsgd_patches._helpers import requires_hf_auth
+from tests.integration.patches._helpers import requires_hf_auth
 import torch
 import torch.nn.functional as F
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer

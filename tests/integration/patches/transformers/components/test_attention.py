@@ -15,7 +15,7 @@ import torch
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.functional import make_functional
 
-from integration_tests.dpsgd_patches._helpers import prepare_lora_model, run_clipped_grad_test
+from tests.integration.patches._helpers import prepare_lora_model, run_clipped_grad_test
 
 
 class TestAttentionImplementations:

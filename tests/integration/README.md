@@ -1,4 +1,4 @@
-# integration_tests/
+# tests/integration/
 
 Cross-wheel integration tests that don't fit any single wheel's
 dependency cone.
@@ -13,7 +13,7 @@ natural home in any wheel. It lives here.
 ## Layout
 
 ```
-integration_tests/
+tests/integration/
 └── <pair>/<concern>/test_*.py
 ```
 
@@ -31,7 +31,7 @@ Examples:
 ## Discovery
 
 Pytest picks these up automatically: the root `pyproject.toml`
-`testpaths` includes `integration_tests`. The full workspace install
+`testpaths` includes `tests/integration`. The full workspace install
 (`uv sync --all-packages --extra all`) brings in every wheel, so the
 imports always resolve when running locally or in CI.
 

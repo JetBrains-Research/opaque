@@ -43,17 +43,17 @@ deps. `pip install opaque-accounting` alone is **torch-free** (only
 
 ## Namespace contract
 
-Five rules (rules 1 + 2 enforced in CI under `contracts/`):
+Five rules (rules 1 + 2 enforced in CI under `tests/contracts/`):
 
 1. **No wheel ships `src/opaque/__init__.py`, `src/opaque/api/__init__.py`,
    or `src/opaque/api/accounting/__init__.py`.** All three are pure PEP 420
    implicit namespaces because multiple wheels contribute to them. CI guard
-   in `pr.yml` + `contracts/test_pep420_no_init.py`.
+   in `pr.yml` + `tests/contracts/test_pep420_no_init.py`.
 2. **Façade modules contain only re-exports.** A façade under
    `opaque/<concern>/` re-exports from the corresponding `opaque.api.*`
    impl tree, with `__all__` and (optionally) `__version__` / private
    PEP 562 lazy-import helpers. No business logic.
-   `contracts/test_facade_discipline.py` enforces this on every
+   `tests/contracts/test_facade_discipline.py` enforces this on every
    listed façade.
 3. **`opaque.api.*` is internal-but-discoverable.** It is the contributor
    surface for new mechanism families (`opaque.api.lipschitz.*` plugs in
@@ -61,12 +61,12 @@ Five rules (rules 1 + 2 enforced in CI under `contracts/`):
    façades. `opaque.api.*` paths surface in tracebacks and IDE jumps;
    that is intentional. No runtime warning machinery.
 4. **`opaque-accounting` is torch-free.** Source and tests must not
-   import torch (`contracts/test_accounting_torch_free.py`). The
+   import torch (`tests/contracts/test_accounting_torch_free.py`). The
    wheel's only `opaque` dependency is `opaque-base`, the pure-Python
    serialization registry. PLD types register against the unified
    registry directly — no bridging code in dpsgd/dpftrl.
 5. **Tests live in the wheel that depends on every package they
-   import.** `contracts/test_test_placement.py` enforces this with
+   import.** `tests/contracts/test_test_placement.py` enforces this with
    an explicit `KNOWN_CROSS_CONE_IMPORTS` allowlist for legitimate
    cross-cutting tests (mutual non-dependency between dpsgd ↔ dpftrl,
    patches ↔ dpsgd). Each refactor phase shrinks the allowlist.
@@ -130,7 +130,7 @@ uv run pytest packages/opaque-auditing/tests/
 uv run pytest packages/opaque-patches/tests/
 uv run pytest packages/opaque-transformers/tests/
 uv run pytest packages/opaque-accounting/tests/  # smoke; PLD factory tests live under dpsgd/dpftrl
-uv run pytest contracts/                   # repo-level structural-invariant checks
+uv run pytest tests/contracts/                   # repo-level structural-invariant checks
 ```
 
 ## Installation matrix

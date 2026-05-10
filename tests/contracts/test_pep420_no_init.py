@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pathlib
 
-PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[1] / "packages"
+PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[2] / "packages"
 
 FORBIDDEN_INIT_PATHS = (
     "src/opaque/__init__.py",

@@ -10,7 +10,7 @@ is opt-in in production; tests opt in via this conftest.
 
 import pytest
 
-from tests._helpers import qwen2_config, qwen2_tokenizer  # noqa: F401
+from ..._helpers import qwen2_config, qwen2_tokenizer  # noqa: F401
 
 
 @pytest.fixture(scope="session", autouse=True)

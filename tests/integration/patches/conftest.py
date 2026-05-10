@@ -9,7 +9,7 @@ via this conftest.
 
 import pytest
 
-from integration_tests.dpsgd_patches._helpers import (
+from tests.integration.patches._helpers import (
     qwen2_config,  # noqa: F401  (pytest fixture re-export)
     qwen2_tokenizer,  # noqa: F401  (pytest fixture re-export)
 )

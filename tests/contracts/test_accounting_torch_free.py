@@ -14,7 +14,7 @@ from __future__ import annotations
 import ast
 import pathlib
 
-PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[1] / "packages"
+PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[2] / "packages"
 
 ACCOUNTING_DIR = PACKAGES_DIR / "opaque-accounting"
 

@@ -3,8 +3,8 @@
 """Shared fixtures and helpers for patches-only compatibility tests.
 
 DP-SGD ↔ patches integration helpers (``run_clipped_grad_test``) live
-in ``integration_tests/dpsgd_patches/_helpers.py``. opaque-patches has
-no dependency on opaque-dpsgd; tests that need both belong in the
+in ``tests/integration/patches/_helpers.py``. opaque-patches has no
+dependency on opaque-dpsgd; tests that need both belong in the
 integration tree.
 """
 

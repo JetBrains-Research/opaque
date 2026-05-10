@@ -142,7 +142,7 @@ jobs:
 
       - name: Repo-level contract tests
         run: |
-          uv run pytest contracts/ -v
+          uv run pytest tests/contracts/ -v
 
       - name: Validate clipping imports in docs and examples
         run: |
