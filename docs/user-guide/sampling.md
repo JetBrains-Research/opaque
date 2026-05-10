@@ -125,10 +125,21 @@ training = step * num_steps
 
 ### `CyclicPoissonSampler` (DP-FTRL)
 
-Cyclic Poisson subsampling under :mod:`opaque.dpftrl.sampling`.  ``bands=1``
-is a single group, so each step is plain Poisson on the full dataset (identity
-baseline).  Larger ``bands`` partition examples and advance one group per step
-(e.g. BandMF with ``mf_noise``).
+**What “cyclic Poisson” means:** the dataset is divided into ``bands`` disjoint
+groups (see ``partition_type`` below).  At step ``i`` only group ``i % bands``
+can contribute examples; each example in that group is kept independently with
+probability ``sample_rate``.  So the active **group cycles** 0 → 1 → … →
+``bands-1`` → 0 … while inclusion inside the active group is Poisson-style
+(random subset, random size).
+
+**Identity MF baseline:** pair ``identity_strategy`` / ``mf_identity`` with
+``bands=1``.  Then there is only one group (the full dataset), so there is no
+rotation—each step is plain Poisson on all examples, matching whole-process
+``ftrl_acc.poisson`` for an ``IdentityMf`` inner.
+
+**BandMF (and similar):** set ``bands`` to the same count as in
+``band_mf_strategy`` / ``BandMf`` so the sampler’s cycle lines up with the
+correlated noise.
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
@@ -152,7 +163,7 @@ loader = data.DataLoader(dataset, batch_sampler=sampler)
 |-----------|------|---------|-------------|
 | `data_source` | any with `__len__` | required | The dataset |
 | `sample_rate` | `float` in (0, 1] | required | Inclusion probability within each active group |
-| `bands` | `int` | 1 | Number of cyclic groups (1 = standard Poisson over the whole set) |
+| `bands` | `int` | 1 | Number of groups in the cycle. Use **1** for identity MF (full-dataset Poisson each step); match strategy ``bands`` for BandMF. |
 | `n_steps` | `int` | 1 | Total batches to yield |
 | `partition_type` | `PartitionType` | `EQUAL_SPLIT` | How examples are assigned to groups |
 | `key` | `RngKey` | required | RNG key |
@@ -421,7 +432,7 @@ grads_mb, state_mb = grad_fn_mb(params, batch_256, state=state_mb)
 |---------|-----------|---------|----------|
 | `PoissonSubsampler` | Variable | Standard amplification | Research, general use |
 | `PoissonSubsampler` + ``truncated_batch_size`` | Bounded above | Weaker than plain Poisson (same ``sample_rate``) | Production, stable batch sizes / memory |
-| `CyclicPoissonSampler` (``opaque.dpftrl``) | Variable | ``ftrl_acc.poisson`` | DP-FTRL; ``bands=1`` or cyclic ``bands>1`` |
+| `CyclicPoissonSampler` (``opaque.dpftrl``) | Variable | ``ftrl_acc.poisson`` | DP-FTRL; identity MF → ``bands=1``; BandMF → ``bands`` = strategy |
 | `BallsInBinsSampler` | Fixed (deterministic) | Balls-in-bins amplification | λCGD, BISR, BLT |
 | `SequentialBatchSampler` | Fixed (deterministic) | No amplification | BLT (pre-shuffled dataset) |
 
@@ -429,8 +440,8 @@ For most DP-SGD workloads, `PoissonSubsampler` is sufficient.
 Use ``truncated_batch_size`` when you need **capped** batch sizes; expect
 **worse** privacy than plain Poisson at the same ``sample_rate`` unless you
 recalibrate noise. For DP-FTRL, use
-``opaque.dpftrl.sampling.CyclicPoissonSampler`` (``bands`` selects identity vs cyclic
-participation). `BallsInBinsSampler` and
+``opaque.dpftrl.sampling.CyclicPoissonSampler`` (see the section above: cyclic
+groups vs ``bands=1`` for identity). `BallsInBinsSampler` and
 `SequentialBatchSampler` are used with matrix-factorization mechanisms
 that require fixed batch sizes.
 

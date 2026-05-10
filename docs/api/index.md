@@ -54,7 +54,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 - **[Sampling](sampling.md)**: Privacy-amplifying sampling
   - `PoissonSubsampler` - Standard Poisson sampling
   - `PoissonSubsampler` + `truncated_batch_size` - Bounded Poisson sampling
-  - `CyclicPoissonSampler` (``opaque.dpftrl``) - DP-FTRL Poisson (``bands=1`` or cyclic)
+  - `CyclicPoissonSampler` (``opaque.dpftrl``) - cyclic Poisson over ``bands`` groups; ``bands=1`` = identity (full-data Poisson each step)
   - `BallsInBinsSampler` - Random-partition sampling (λCGD, BISR, BLT)
   - `SequentialBatchSampler` - Deterministic sequential batching (BLT)
 
@@ -192,7 +192,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 |---------------------------|----------------------------|---------------------------------------------------------------|
 | `PoissonSubsampler`          | Standard Poisson sampling  | [Guide](../user-guide/sampling.md#poisson-sampling) |
 | `PoissonSubsampler` (with ``truncated_batch_size``) | Truncated Poisson sampling | [Guide](../user-guide/sampling.md#poisson-sampling) |
-| `CyclicPoissonSampler` (``opaque.dpftrl``) | DP-FTRL Poisson (identity or cyclic ``bands``) | [Guide](../user-guide/sampling.md#poisson-sampling) |
+| `CyclicPoissonSampler` (``opaque.dpftrl``) | Cyclic Poisson over ``bands`` groups; ``bands=1`` = identity | [Guide](../user-guide/sampling.md#poisson-sampling) |
 | `BallsInBinsSampler`      | Random-partition sampling  | [Guide](../user-guide/sampling.md#balls-in-bins-sampling) |
 | `SequentialBatchSampler`  | Deterministic sequential batching (BLT) | [Guide](../user-guide/sampling.md#sequential-batch-sampling) |
 

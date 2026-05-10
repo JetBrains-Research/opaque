@@ -531,8 +531,16 @@ Values are illustrative; actual results depend on problem specifics.
 
 ### MF noise with Poisson sampling
 
-MF noise pairs with `opaque.dpftrl.sampling.CyclicPoissonSampler`, which yields a predictable
-sampling pattern that the noise strategy can exploit:
+**Cyclic Poisson** (``CyclicPoissonSampler``) means disjoint dataset groups and
+a training step that only draws from one group at a time, rotating
+``0, 1, …, bands-1, 0, …``.  Inside the active group, each example is kept
+independently with probability ``sample_rate``.  For an **identity** MF run
+(``identity_strategy`` / ``mf_identity``), set ``bands=1`` so every step uses
+the full dataset under plain Poisson.  For **BandMF**, set ``bands`` to the
+same value as in ``band_mf_strategy``.
+
+MF noise pairs with ``CyclicPoissonSampler`` so the participation pattern lines
+up with what the strategy and ``ftrl_acc.poisson`` assume:
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler

@@ -20,10 +20,11 @@ Opaque provides these sampling strategies:
    than plain Poisson at the same `sample_rate`).
 
 2. **Cyclic Poisson (DP-FTRL)** (`opaque.dpftrl.sampling.CyclicPoissonSampler`):
-   iteration ``i`` draws from group ``i % bands`` with probability
-   ``sample_rate``. ``bands=1`` is plain Poisson on the full dataset; larger
-   ``bands`` give cyclic participation for correlated matrix-factorization
-   noise (e.g. BandMF).
+   the dataset is split into ``bands`` fixed groups; step ``i`` samples only
+   from group ``i % bands``, with each eligible example included independently
+   with probability ``sample_rate``.  **Identity baseline:** ``bands=1`` (one
+   group = full data, plain Poisson every step).  **BandMF:** ``bands`` matches
+   the MF strategy so participation rotates with correlated noise.
 
 3. **Balls-in-Bins Sampling** (`BallsInBinsSampler`): each example is
    independently assigned to a bin once at init; the assignment is **fixed
@@ -105,6 +106,13 @@ Account with `ftrl_acc.balls_in_bins(mechanism, num_bins, n_steps)` where
 
 ## CyclicPoissonSampler (DP-FTRL)
 
+**Cyclic Poisson** fixes a partition of the dataset into ``bands`` groups.
+Each training step activates exactly one group in cyclic order; within that
+group, inclusion is independent Bernoulli(``sample_rate``), so batch sizes are
+random (Binomial).  This matches the amplification models behind
+``ftrl_acc.poisson`` for ``IdentityMf`` (use ``bands=1``) and ``BandMf`` (use
+``bands`` equal to the mechanism’s band count).
+
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.random import key
@@ -123,7 +131,7 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 |-----------|------|---------|-------------|
 | `data_source` | dataset with `len()` | required | The training dataset |
 | `sample_rate` | `float` | required | Probability of including each eligible example, in (0, 1] |
-| `bands` | `int` | `1` | Number of cyclic groups (band width). `1` collapses to plain Poisson |
+| `bands` | `int` | `1` | Groups in the cycle. `1` = identity-style (full dataset each step). `>1` = cyclic BandMF-style (match strategy ``bands``). |
 | `n_steps` | `int` | `1` | Total batches to yield |
 | `partition_type` | `PartitionType` | `EQUAL_SPLIT` | How to partition: `EQUAL_SPLIT` (only used when `bands > 1`) or `INDEPENDENT` |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |

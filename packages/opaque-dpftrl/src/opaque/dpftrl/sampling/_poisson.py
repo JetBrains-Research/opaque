@@ -1,10 +1,18 @@
 """Cyclic Poisson sampler for DP-FTRL training (identity and band-MF regimes).
 
-Examples are partitioned into ``bands`` groups; at iteration ``i`` the
-sampler draws a Poisson(``sample_rate``) batch from group ``i % bands``.
-With ``bands == 1`` this is plain Poisson subsampling over the full dataset
-(identity-encoder baseline).  With ``bands > 1`` it matches the cyclic
-participation pattern used in BandMF amplification.
+**Cyclic Poisson** here means: the dataset is split into ``bands`` disjoint
+groups (see ``partition_type``).  Training step ``i`` activates only group
+``i % bands``; each example in that group is included independently with
+probability ``sample_rate``, so the batch size is Binomial on that group's
+size.  Advancing ``i`` **cycles** which group is active, which is the
+participation pattern paired with correlated MF noise (e.g. BandMF).
+
+With ``bands == 1`` there is a single group—the whole dataset—so every step
+is ordinary Poisson subsampling with no cross-step group rotation.  That is
+the setting for an **identity** MF baseline: use ``bands=1`` with
+``identity_strategy`` / ``mf_identity`` and whole-process
+``ftrl_acc.poisson``.  With ``bands > 1`` the schedule matches BandMF-style
+cyclic amplification (``bands`` should match the band MF strategy).
 
 For distributed training, shard the dataset before constructing the
 sampler with ``opaque.distributed.local_shard`` and derive a per-rank
@@ -31,16 +39,22 @@ from opaque.dpftrl.sampling._partitions import (
 class CyclicPoissonSampler(Sampler):
     """Cyclic Poisson subsampling for DP-FTRL (one active group per step).
 
-    At iteration ``i``, each example in group ``i % bands`` is included
-    independently with probability ``sample_rate``.  ``bands=1`` is the
-    degenerate case: a single group, so each step is plain Poisson over the
-    full dataset (identity baseline).
+    **Cyclic Poisson:** disjoint groups of examples are fixed at construction
+    (modulo ``partition_type``).  Step ``i`` samples only from group ``i %
+    bands``; each eligible example is a Bernoulli(``sample_rate``) draw, so
+    batch size is random within that group.  Larger ``bands`` mean each group
+    is smaller and the active group **rotates** each step.
+
+    **Identity baseline:** use ``bands=1`` so the lone group is the full
+    dataset—plain Poisson each step, aligned with ``identity_strategy`` /
+    ``mf_identity`` and whole-process ``ftrl_acc.poisson``.  **BandMF:** set
+    ``bands`` equal to the band count in ``band_mf_strategy`` / ``BandMf``.
 
     Args:
         data_source: Dataset to sample from (any object with ``__len__``).
         sample_rate: Per-step inclusion probability ``∈ (0, 1]``.
-        bands: Number of groups in the participation cycle.  ``1`` = one group
-            (plain Poisson on the full dataset each step).
+        bands: Number of groups in the cycle.  ``1`` = identity-style plain
+            Poisson on the full dataset every step.
         n_steps: Total number of batches to yield.  Defaults to ``1``.
         partition_type: Partition strategy when ``bands > 1``.
         key: RNG key for reproducibility.
