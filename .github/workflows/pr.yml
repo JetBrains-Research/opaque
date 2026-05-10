@@ -132,9 +132,16 @@ jobs:
             echo "ERROR: stray src/opaque/__init__.py: $stray"; exit 1
           fi
 
+      - name: Validate clipping imports in docs and examples
+        run: |
+          if rg -n 'from opaque\.clipping|import opaque\.clipping' docs examples; then
+            echo "ERROR: use opaque.dpsgd.clipping or opaque.dpftrl.clipping in docs/ and examples/"
+            exit 1
+          fi
+
       - name: Import all public namespaces
         run: |
-          uv run python -c "import opaque.clipping, opaque.random, opaque.pytree, opaque.types, opaque.functional, opaque.optimizers, opaque.scheduling, opaque.profiling, opaque.distributed, opaque.dpsgd, opaque.dpsgd.sampling, opaque.dpftrl, opaque.auditing, opaque.patches, opaque.patches.kernels, opaque.patches.torch, opaque.patches.transformers, opaque.transformers, opaque.accounting; print('OK')"
+          uv run python -c "import opaque._clipping, opaque.dpsgd.clipping, opaque.dpftrl.clipping, opaque.random, opaque.pytree, opaque.types, opaque.functional, opaque.optimizers, opaque.scheduling, opaque.profiling, opaque.distributed, opaque.dpsgd, opaque.dpsgd.sampling, opaque.dpftrl, opaque.auditing, opaque.patches, opaque.patches.kernels, opaque.patches.torch, opaque.patches.transformers, opaque.transformers, opaque.accounting; print('OK')"
 
   docs:
     name: Build documentation

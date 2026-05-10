@@ -124,7 +124,7 @@ import torchopt
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.accounting import calibration as cal
-from opaque.clipping import clipped_grad, per_group
+from opaque.dpftrl.clipping import clipped_grad, per_group
 from opaque.types import PerGroup, SecondMomentNoiseOutput
 from opaque.dpftrl.noise import (
     band_mf_strategy,
@@ -146,7 +146,7 @@ from opaque.functional import empty_collate
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
     BMinSepSampler,
-    PoissonSampler,
+    CyclicPoissonSampler,
     SequentialBatchSampler,
 )
 from opaque.functional import make_functional
@@ -788,7 +788,7 @@ def main():
     # Static samplers (BnB, sequential) are created once and reused.
     # Dynamic samplers (Poisson) get a fresh key each epoch.
     if args.mechanism == "band_mf":
-        p0 = sample_rate  # E[batch]/|D| per iteration (same as cyclic Poisson regime)
+        p0 = sample_rate  # E[batch]/|D| per iteration (same as ``ftrl_acc.poisson`` regime)
         sampling_prob = 0.0
         p_bms = 0.0
         if args.band_mf_sampling == "poisson":
@@ -800,9 +800,9 @@ def main():
                 )
 
             def make_epoch_sampler(epoch):
-                return PoissonSampler(
+                return CyclicPoissonSampler(
                     train_dataset,
-                    sampling_prob=sampling_prob,
+                    sample_rate=sampling_prob,
                     bands=args.bands,
                     n_steps=expected_steps_per_epoch,
                     key=fold_in(key(args.seed), epoch),
@@ -854,9 +854,9 @@ def main():
     else:  # identity, none
 
         def make_epoch_sampler(epoch):
-            return PoissonSampler(
+            return CyclicPoissonSampler(
                 train_dataset,
-                sampling_prob=sample_rate,
+                sample_rate=sample_rate,
                 n_steps=expected_steps_per_epoch,
                 key=fold_in(key(args.seed), epoch),
             )

@@ -22,9 +22,9 @@ them together:
 import torch
 import torchopt
 import opaque.accounting as acc
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSubsampler
 from opaque.random import key, split
 
 # --- Privacy parameters ---
@@ -57,7 +57,7 @@ from opaque.optimizers import adam
 optimizer = adam(lr=1e-3, noise_bias_correction=True)
 opt_state = optimizer.init(params)
 
-sampler = PoissonSampler(dataset, sample_rate=sample_rate, key=key_sampling)
+sampler = PoissonSubsampler(dataset, sample_rate=sample_rate, key=key_sampling)
 dataloader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
 
 # --- Training loop ---

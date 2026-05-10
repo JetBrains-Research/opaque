@@ -95,7 +95,7 @@ A minimal DP-SGD training loop:
 ```python
 import torch
 import opaque.accounting as acc
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.random import key
 from opaque.dpsgd.noise import gaussian_noise
 
@@ -138,7 +138,7 @@ for batch_x, batch_y in dataloader:
 - **Privacy accounting**: Rust-based PLD engine with tight composition,
   multiple privacy metrics (ε-δ, f-DP advantage, error rates), and noise
   calibration via binary search.
-- **Sampling**: standard Poisson, truncated Poisson, cyclic Poisson,
+- **Sampling**: DP-SGD Poisson (plain or capped), DP-FTRL Poisson (identity or banded),
   balls-in-bins, b-min-separation, and sequential batch samplers.
 - **Privacy auditing**: empirical privacy validation via membership inference.
 - **Distributed training**: DDP-compatible with synchronized noise and

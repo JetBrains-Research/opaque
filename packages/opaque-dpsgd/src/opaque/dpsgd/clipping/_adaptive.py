@@ -8,12 +8,12 @@ import torch
 
 from opaque.types import SecondMomentClippingOutput, clipped
 
-from opaque.clipping._helpers import (
+from opaque._clipping._helpers import (
     batch_size_from_args,
     normalize_to_tuple,
     zero_grads_like,
 )
-from opaque.clipping._clipped_grad import (
+from opaque._clipping._clipped_grad import (
     ClippedGradAux,
     _validate_static_args,
     clipped_grad,
@@ -172,8 +172,8 @@ def adaptive_clipped_grad(
 
     Note:
         **Empty-batch parity (``second_moment``):** the empty-batch
-        short-circuit mirrors :func:`~opaque.clipping.clipped_grad` and
-        :func:`~opaque.clipping.auto_clipped_grad` — when ``second_moment=True``
+        short-circuit mirrors :func:`~opaque.dpsgd.clipping.clipped_grad` and
+        :func:`~opaque.dpsgd.clipping.auto_clipped_grad` — when ``second_moment=True``
         it returns a :class:`~opaque.types.SecondMomentClippingOutput` of zeros
         (squared-stream sensitivity ``C²/normalize_by``), so paired-stream
         noise and optimizer dispatch are stable across empty and non-empty
@@ -230,10 +230,11 @@ def adaptive_clipped_grad(
 
     Example with distributed training (DDP with Poisson sampling):
         >>> import torch.distributed as dist
-        >>> from opaque.clipping import adaptive_clipped_grad, sync_adaptive_clip_state
+        >>> from opaque.dpsgd.clipping import adaptive_clipped_grad
+        >>> from opaque.dpsgd.clipping._distributed import sync_adaptive_clip_state
         >>> from opaque.distributed import sum_gradients
         >>> from opaque.random import key
-        >>> from opaque.dpsgd.sampling import PoissonSampler
+        >>> from opaque.dpsgd.sampling import PoissonSubsampler
         >>>
         >>> # Initialize distributed
         >>> dist.init_process_group(backend='nccl')
@@ -246,7 +247,7 @@ def adaptive_clipped_grad(
         ... )
         >>>
         >>> # Use Poisson sampling (different batch sizes on each device)
-        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
+        >>> sampler = PoissonSubsampler(dataset, sample_rate=0.01, key=key(42))
         >>>
         >>> for batch_x, batch_y in dataloader:
         ...     # Each device: compute clipped gradients and local adaptive state

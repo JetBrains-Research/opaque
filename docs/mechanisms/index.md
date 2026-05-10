@@ -49,7 +49,7 @@ Need correlated noise across steps (DP-FTRL)?
           ├─ Zero extra memory → DP-λCGD (PRNG replay)
           ├─ Asymptotically optimal → BISR (generalises λCGD)
           ├─ Closed-form workload (α>β) → BSR (NeurIPS 2024)
-          ├─ n < 5000 → BandMF + cyclic Poisson (good default)
+          ├─ n < 5000 → BandMF + ``ftrl_acc.poisson`` (good default)
           └─ n > 5000, multi-epoch → BLT (memory-efficient)
 ```
 
@@ -62,7 +62,7 @@ of correlated noise and are willing to fix the training length in advance.
 Subsampling amplification reduces per-step privacy cost. Not all mechanisms
 support all amplification types:
 
-| Mechanism | `poisson()` | `truncated_poisson()` | `cyclic_poisson()` | `balls_in_bins()` |
+| Mechanism | `dpsgd_acc.poisson` | `dpsgd_acc.poisson` (truncated) | `ftrl_acc.poisson` | `balls_in_bins()` |
 |-----------|:-----------:|:---------------------:|:-------------------:|:-----------------:|
 | Gaussian | Yes | Yes | — | Yes |
 | BandMF | — | — | Yes | — |
@@ -71,11 +71,13 @@ support all amplification types:
 | BISR | — | — | — | Yes |
 | BSR | — | — | — | Yes |
 
-- **`poisson()`**: Standard Poisson subsampling. Each example included
-  independently with probability $q$.
-- **`truncated_poisson()`**: Poisson with a batch-size cap.
-- **`cyclic_poisson()`**: Cyclic decomposition specific to BandMF. Decomposes
-  $n$ steps into $\lceil n/b \rceil$ independent groups.
+- **`dpsgd_acc.poisson`**: DP-SGD per-step Poisson subsampling ($q$ per example).
+- **`dpsgd_acc.poisson` (truncated)**: Same factory with ``truncated_batch_size``
+  and ``dataset_size``; caps batches (weaker privacy than plain Poisson at the
+  same $q$ unless noise is recalibrated).
+- **`ftrl_acc.poisson`**: DP-FTRL whole-process Poisson amplification
+  (``BandMf`` / ``IdentityMf`` inner, ``n_steps`` required). For ``BandMf`` this
+  is the cyclic-participation analysis ($\lceil n/b\rceil$ independent groups).
 - **`balls_in_bins()`**: Random-partition amplification. Each epoch, examples
   are randomly assigned to bins. Used with BLT, DP-λCGD, and BISR.
 - **internal**: BLT handles multi-participation patterns (min-sep)
@@ -97,10 +99,14 @@ gauss     = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01) * 1000
 # --- Correlated noise ---
 # BandMF: strategy computes sensitivity and num_groups
 band_s = band_mf_strategy(n_steps=1000, bands=10)
-band   = ftrl_acc.cyclic_poisson(
-    ftrl_acc.band_mf(1.0, sensitivity=band_s.sensitivity,
-                     num_groups=band_s.num_groups),
+band   = ftrl_acc.poisson(
+    ftrl_acc.band_mf(
+        1.0,
+        sensitivity=band_s.sensitivity,
+        coefficients=band_s.coefficients,
+    ),
     sample_rate=0.01,
+    n_steps=1000,
 )
 
 # DP-λCGD: strategy computes sensitivity and gram_matrix.  ``balls_in_bins``

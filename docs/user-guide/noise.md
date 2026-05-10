@@ -228,7 +228,7 @@ this — their per-record bound is set at construction and does not depend
 on data — so either can be wired into the loop interchangeably:
 
 ```python
-from opaque.clipping import auto_clipped_grad
+from opaque.dpsgd.clipping import auto_clipped_grad
 from opaque.dpftrl.noise import mf_noise, band_mf_strategy
 from opaque.random import key
 
@@ -257,7 +257,7 @@ Opaque provides five MF strategies, all used through the unified `mf_noise()` di
 
 | Strategy factory | Memory | Best for |
 |----------|--------|----------|
-| `band_mf_strategy()` | O(bands) | General use with cyclic Poisson amplification |
+| `band_mf_strategy()` | O(bands) | General use with ``ftrl_acc.poisson`` amplification |
 | `blt_strategy()` | O(buffers) | Long training runs (n > 5000), multi-epoch |
 | `lambda_cgd_strategy()` | O(1) | Zero extra memory (PRNG replay) |
 | `bisr_strategy()` | O(bandwidth) | Asymptotically optimal, arbitrary bandwidth |
@@ -290,7 +290,7 @@ the gradients (e.g., the model parameters).
 ### Per-group clipping
 
 `mf_noise` accepts `ClippedPytree` metadata where `max_norm` is a
-`PerGroup` (from `opaque.clipping.per_group`), not only a scalar. The
+`PerGroup` (from `opaque.dpsgd.clipping.per_group`), not only a scalar. The
 per-leaf IID noise scale follows the same MSE-optimal Mahalanobis allocation
 as `gaussian_noise` / `truncated_gaussian_noise` on DP-SGD: no extra privacy
 cost versus scalar clipping at the same `noise_multiplier`, and the MF
@@ -340,7 +340,7 @@ identical noise. See [Distributed Training](distributed.md) and
 ### `band_mf_strategy`
 
 Banded Toeplitz strategy. Optimizes banded Toeplitz coefficients for the
-workload. Uses cyclic Poisson amplification for privacy accounting.
+workload. Uses ``ftrl_acc.poisson`` for privacy accounting.
 
 ```python
 from opaque.dpftrl.noise import mf_noise, band_mf_strategy
@@ -444,12 +444,16 @@ import opaque.accounting as acc           # cross-cutting calibration / composit
 import opaque.dpftrl.accounting as ftrl_acc  # DP-FTRL factories
 from opaque.dpftrl.noise import band_mf_strategy, lambda_cgd_strategy
 
-# BandMF — strategy provides sensitivity and num_groups
+# BandMF — strategy provides sensitivity and coefficients
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = ftrl_acc.cyclic_poisson(
-    ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity,
-                     num_groups=strategy.num_groups),
+proc = ftrl_acc.poisson(
+    ftrl_acc.band_mf(
+        1.0,
+        sensitivity=strategy.sensitivity,
+        coefficients=strategy.coefficients,
+    ),
     sample_rate=0.01,
+    n_steps=1000,
 )
 eps = proc.epsilon_at(1e-5)
 
@@ -525,18 +529,25 @@ For a linear regression with n=1000 steps, epsilon=1.0:
 
 Values are illustrative; actual results depend on problem specifics.
 
-### MF noise with cyclic sampling
+### MF noise with Poisson sampling
 
-MF noise works best with `CyclicPoissonSampler`, which creates a predictable
-sampling pattern that the noise strategy can exploit:
+``CyclicPoissonSampler`` splits the data into ``bands`` groups and, at step
+``i``, samples only group ``i % bands`` with per-example probability
+``sample_rate``.  Use ``bands=1`` with ``identity_strategy`` / ``mf_identity``
+so each step is plain Poisson on the full dataset; for BandMF, match ``bands``
+to ``band_mf_strategy``.  That keeps the data schedule aligned with ``mf_noise``
+and ``ftrl_acc.poisson``:
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.random import key
 
 sampler = CyclicPoissonSampler(
-    dataset, sampling_prob=sample_rate, cycle_length=4,
-    iterations=num_steps, key=key(0),
+    dataset,
+    sample_rate=sample_rate,
+    bands=4,
+    n_steps=num_steps,
+    key=key(0),
 )
 ```
 

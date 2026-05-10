@@ -7,9 +7,9 @@ import torch
 
 from opaque.types import ClippedPytree
 
-from opaque.clipping import auto_clipped_grad, clipped_grad
-from opaque.clipping.fun import auto_clipped_fun, auto_scale_pytree
-from opaque.clipping.types import AutoClippedGradAux, AutoClipState
+from opaque._clipping import auto_clipped_grad, clipped_grad
+from opaque._clipping.fun import auto_clipped_fun, auto_scale_pytree
+from opaque._clipping.types import AutoClippedGradAux, AutoClipState
 from opaque.types import PerGroup
 
 

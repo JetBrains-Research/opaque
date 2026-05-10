@@ -62,7 +62,7 @@ GPU utilization. Below that, the overhead of launching kernels dominates.
 Use a short manual sweep with `TrainingProfiler`:
 
 ```python
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.profiling import reset_peak_memory
 from opaque.profiling import StepTimer, TrainingProfiler
 

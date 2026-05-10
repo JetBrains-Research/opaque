@@ -2,7 +2,7 @@
 
 Matrix-factorization noise mechanisms for Opaque: BLT, BSR, BiSR,
 band-MF, lambda-CGD, identity — plus the MF-specific participation
-samplers (b-min-separation, cyclic Poisson, balls-in-bins, sequential
+samplers (b-min-separation, Poisson, balls-in-bins, sequential
 batches). Functional optimizers (including the universal ``adamw``
 that consumes private ``noisy_squared_grads`` streams) live in
 [`opaque.optimizers`](../opaque-core/README.md).
@@ -28,8 +28,8 @@ from opaque.dpftrl.sampling import BMinSepSampler
 ## Layout
 
 - `opaque.dpftrl.noise` — strategies (band-MF, BLT, BSR, BiSR, identity, lambda-CGD) + dispatchers
-- `opaque.dpftrl.sampling` — `BMinSepSampler`, `PoissonSampler`, `BallsInBinsSampler`, `SequentialBatchSampler`
+- `opaque.dpftrl.clipping` — MF-safe `clipped_grad`, `auto_clipped_grad`, `per_group`
+- `opaque.dpftrl.sampling` — `BMinSepSampler`, `CyclicPoissonSampler`, `BallsInBinsSampler`, `SequentialBatchSampler`
 
-All algorithm-agnostic primitives (Poisson sampling, fixed clipping,
-RNG keys, pytree / distributed / profiling helpers) live in
+Shared clipping implementation and other cross-cutting primitives live in
 [`opaque-core`](../opaque-core/README.md).

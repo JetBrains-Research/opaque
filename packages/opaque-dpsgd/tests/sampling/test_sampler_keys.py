@@ -6,26 +6,26 @@ import torch
 from torch.utils.data import TensorDataset
 
 from opaque.random import fold_in, key
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSubsampler
 
 
-class TestPoissonSamplerKeys:
-    """Test PoissonSampler with key-based RNG."""
+class TestPoissonSubsamplerKeys:
+    """Test PoissonSubsampler with key-based RNG."""
 
     def test_requires_key_parameter(self):
         """Should require key parameter (no None fallback)."""
         dataset = TensorDataset(torch.randn(1000, 10))
 
         with pytest.raises(TypeError, match="key"):
-            PoissonSampler(dataset, sample_rate=0.1, n_steps=5)
+            PoissonSubsampler(dataset, sample_rate=0.1, n_steps=5)
 
     def test_reproducibility_with_same_key(self):
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler1 = PoissonSampler(dataset, sample_rate=0.1, n_steps=5, key=key(42))
+        sampler1 = PoissonSubsampler(dataset, sample_rate=0.1, n_steps=5, key=key(42))
         batches1 = list(sampler1)
 
-        sampler2 = PoissonSampler(dataset, sample_rate=0.1, n_steps=5, key=key(42))
+        sampler2 = PoissonSubsampler(dataset, sample_rate=0.1, n_steps=5, key=key(42))
         batches2 = list(sampler2)
 
         assert len(batches1) == len(batches2)
@@ -35,10 +35,10 @@ class TestPoissonSamplerKeys:
     def test_different_keys_produce_different_samples(self):
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler1 = PoissonSampler(dataset, sample_rate=0.1, n_steps=5, key=key(42))
+        sampler1 = PoissonSubsampler(dataset, sample_rate=0.1, n_steps=5, key=key(42))
         batches1 = list(sampler1)
 
-        sampler2 = PoissonSampler(dataset, sample_rate=0.1, n_steps=5, key=key(43))
+        sampler2 = PoissonSubsampler(dataset, sample_rate=0.1, n_steps=5, key=key(43))
         batches2 = list(sampler2)
 
         assert batches1 != batches2
@@ -48,13 +48,13 @@ class TestPoissonSamplerKeys:
         base_key = key(42)
 
         rank0_key = base_key
-        sampler_rank0 = PoissonSampler(
+        sampler_rank0 = PoissonSubsampler(
             dataset, sample_rate=0.1, n_steps=5, key=rank0_key
         )
         batches_rank0 = list(sampler_rank0)
 
         rank1_key = fold_in(base_key, 1)
-        sampler_rank1 = PoissonSampler(
+        sampler_rank1 = PoissonSubsampler(
             dataset, sample_rate=0.1, n_steps=5, key=rank1_key
         )
         batches_rank1 = list(sampler_rank1)
@@ -65,7 +65,7 @@ class TestPoissonSamplerKeys:
         dataset = TensorDataset(torch.randn(1000, 10))
 
         k = fold_in(key(42), 0)
-        sampler = PoissonSampler(dataset, sample_rate=0.1, n_steps=5, key=k)
+        sampler = PoissonSubsampler(dataset, sample_rate=0.1, n_steps=5, key=k)
 
         batches = list(sampler)
         assert len(batches) > 0
@@ -74,7 +74,7 @@ class TestPoissonSamplerKeys:
     def test_sampling_with_key(self):
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler = PoissonSampler(
+        sampler = PoissonSubsampler(
             dataset,
             sample_rate=0.1,
             n_steps=5,
@@ -85,19 +85,21 @@ class TestPoissonSamplerKeys:
         assert len(batches) > 0
 
 
-class TestPoissonSamplerTruncatedKeys:
-    """Test PoissonSampler with truncation and key-based RNG."""
+class TestPoissonSubsamplerTruncatedKeys:
+    """Test PoissonSubsampler with truncation and key-based RNG."""
 
     def test_requires_key_parameter(self):
         dataset = TensorDataset(torch.randn(1000, 10))
 
         with pytest.raises(TypeError, match="key"):
-            PoissonSampler(dataset, sample_rate=0.1, truncated_batch_size=50, n_steps=5)
+            PoissonSubsampler(
+                dataset, sample_rate=0.1, truncated_batch_size=50, n_steps=5
+            )
 
     def test_reproducibility_with_same_key(self):
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler1 = PoissonSampler(
+        sampler1 = PoissonSubsampler(
             dataset,
             sample_rate=0.1,
             truncated_batch_size=50,
@@ -106,7 +108,7 @@ class TestPoissonSamplerTruncatedKeys:
         )
         batches1 = list(sampler1)
 
-        sampler2 = PoissonSampler(
+        sampler2 = PoissonSubsampler(
             dataset,
             sample_rate=0.1,
             truncated_batch_size=50,
@@ -122,7 +124,7 @@ class TestPoissonSamplerTruncatedKeys:
     def test_truncation_respects_max_batch_size(self):
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler = PoissonSampler(
+        sampler = PoissonSubsampler(
             dataset,
             sample_rate=0.5,
             truncated_batch_size=50,
@@ -140,7 +142,9 @@ class TestCrossValidationWithNumpy:
     def test_poisson_matches_numpy_generator(self):
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler_key = PoissonSampler(dataset, sample_rate=0.1, n_steps=1, key=key(42))
+        sampler_key = PoissonSubsampler(
+            dataset, sample_rate=0.1, n_steps=1, key=key(42)
+        )
         batches_key = list(sampler_key)
 
         rng = np.random.default_rng(42)

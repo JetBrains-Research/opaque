@@ -124,8 +124,8 @@ class TestEndToEndPerGroup:
     """Integration test: clipped_grad emits clipped values for gaussian_noise."""
 
     def test_full_pipeline_per_group_bound(self):
-        from opaque.clipping import clipped_grad
-        from opaque.clipping._per_group import per_group
+        from opaque.dpsgd.clipping import clipped_grad
+        from opaque.dpsgd.clipping import per_group
 
         def loss(params, data):
             pred = params["attn_w"] * data + params["mlp_w"] * data

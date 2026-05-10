@@ -1,4 +1,4 @@
-"""Power-user clipping building blocks for DP-SGD.
+"""Power-user clipping building blocks for DP-FTRL.
 
 Mirrors :mod:`opaque._clipping.fun`:
 

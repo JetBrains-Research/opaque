@@ -9,8 +9,8 @@ from typing import Any
 import torch
 from torch.func import vmap as _vmap
 
-from opaque.clipping._helpers import normalize_to_tuple
-from opaque.clipping._pytree import clip_pytree
+from opaque._clipping._helpers import normalize_to_tuple
+from opaque._clipping._pytree import clip_pytree
 from opaque.pytree import global_norm, tree_map
 from opaque.types import ClipState as _ClipState
 from opaque.types import (
@@ -25,7 +25,7 @@ from opaque.types import (
 class FixedClipState(_ClipState):
     """Marker state for fixed (non-adaptive) clipping.
 
-    Returned by :func:`clipped_fun` and :func:`opaque.clipping.clipped_grad`.
+    Returned by :func:`clipped_fun` and :func:`opaque._clipping.clipped_grad`.
     Carries no fields; the configured clipping threshold flows through
     the ``ClippedPytree.max_norm`` metadata, not through the state.
     """
@@ -314,7 +314,7 @@ def clipped_fun(
     summed values without metadata.
 
     Example Usage:
-        >>> from opaque.clipping._clipped_fun import clipped_fun
+        >>> from opaque._clipping._clipped_fun import clipped_fun
         >>> data = torch.tensor([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
         >>> clipped_mean, clip_state = clipped_fun(torch.mean, clipping_norm=1.0)
         >>> result, clip_state = clipped_mean(data, state=clip_state)

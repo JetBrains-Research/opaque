@@ -38,21 +38,21 @@ batch_size = 256
 sample_rate = batch_size / dataset_size  # 0.00512
 ```
 
-### `PoissonSampler`
+### `PoissonSubsampler`
 
 The standard sampler. Each example is included independently with probability
 `sample_rate`, producing variable-size batches.
 
 ```python
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSubsampler
 from opaque.random import key
 import torch.utils.data as data
 
 dataset = data.TensorDataset(X, y)
-sampler = PoissonSampler(
+sampler = PoissonSubsampler(
     dataset,
     sample_rate=0.01,
-    num_iterations=10,
+    n_steps=10,
     key=key(42),
 )
 loader = data.DataLoader(dataset, batch_sampler=sampler)
@@ -68,7 +68,7 @@ for batch in loader:
 |-----------|------|-------------|
 | `data_source` | any with `__len__` | The dataset |
 | `sample_rate` | `float` in (0, 1] | Inclusion probability per example |
-| `num_iterations` | `int` or `None` | Number of batches to yield (default: `None` = infinite) |
+| `n_steps` | `int` or `None` | Number of batches to yield (default: `None` = infinite) |
 | `key` | `RngKey` | RNG key for reproducibility |
 
 **Properties:**
@@ -81,22 +81,25 @@ for batch in loader:
 Batch sizes follow a Binomial distribution. For large datasets and small
 sample rates, the standard deviation is roughly `sqrt(expected_batch_size)`.
 
-### `TruncatedPoissonSampler`
+### Truncated Poisson (batch cap)
 
-Poisson sampling with an upper bound on batch size. When a Poisson sample
-exceeds `max_batch_size`, it is randomly subsampled down. This gives
-tighter privacy bounds than standard Poisson (up to 20% improvement in
-epsilon) while preventing memory spikes from unusually large batches.
+Use :class:`~opaque.dpsgd.sampling.PoissonSubsampler` with
+``truncated_batch_size`` set. When a Poisson draw exceeds that cap, a
+uniform random subset of the selected indices is kept. That caps batch
+size (more stable training and memory) but **weakens** privacy relative to
+plain Poisson at the same ``sample_rate``—account with
+``dpsgd_acc.poisson(..., truncated_batch_size=..., dataset_size=...)`` so the
+PLD matches the cap.
 
 ```python
-from opaque.dpsgd.sampling import TruncatedPoissonSampler
+from opaque.dpsgd.sampling import PoissonSubsampler
 from opaque.random import key
 
-sampler = TruncatedPoissonSampler(
+sampler = PoissonSubsampler(
     dataset,
     sample_rate=batch_size / dataset_size,
-    max_batch_size=batch_size,
-    num_iterations=num_steps,
+    truncated_batch_size=batch_size,
+    n_steps=num_steps,
     key=key(42),
 )
 loader = data.DataLoader(dataset, batch_sampler=sampler)
@@ -106,26 +109,35 @@ loader = data.DataLoader(dataset, batch_sampler=sampler)
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `max_batch_size` | `int` | Upper bound on batch size |
+| `truncated_batch_size` | `int` | Upper bound on batch size |
 
-Privacy accounting uses `dpsgd_acc.truncated_poisson` to match:
+Privacy accounting (truncated form of ``poisson``):
 
 ```python
-step = dpsgd_acc.truncated_poisson(
+step = dpsgd_acc.poisson(
     dpsgd_acc.gaussian(noise_multiplier),
-    sample_rate=batch_size / dataset_size,
-    batch_size_cap=batch_size,
+    batch_size / dataset_size,
+    truncated_batch_size=batch_size,
     dataset_size=dataset_size,
 )
 training = step * num_steps
 ```
 
-### `CyclicPoissonSampler`
+### `CyclicPoissonSampler` (DP-FTRL)
 
-Partitions the dataset into `cycle_length` groups and cycles through them,
-sampling from each group with probability `sampling_prob`. This sampler
-is required for matrix-factorization correlated noise mechanisms
-(BandMF via `mf_noise`) which need a fixed participation pattern.
+The dataset is split into ``bands`` disjoint groups (``partition_type`` fixes
+how, when ``bands > 1``).  Step ``i`` draws only from group ``i % bands``: each
+example in that group is kept independently with probability ``sample_rate``,
+so the within-step batch size is Binomial.  Training steps therefore advance a
+fixed rotation over which group is active, while inclusion inside the active
+group stays Poisson-style.
+
+For an identity MF baseline (``identity_strategy`` / ``mf_identity``), use
+``bands=1`` so the lone group is the full dataset and every step is plain
+Poisson on all examples, matching whole-process ``ftrl_acc.poisson`` with an
+``IdentityMf`` inner.  For BandMF, set ``bands`` to the same count as in
+``band_mf_strategy`` / ``BandMf`` so participation matches correlated
+``mf_noise``.
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
@@ -134,9 +146,9 @@ from opaque.random import key
 
 sampler = CyclicPoissonSampler(
     dataset,
-    sampling_prob=0.5,
-    cycle_length=5,
-    iterations=500,
+    sample_rate=0.5,
+    bands=5,
+    n_steps=500,
     partition_type=PartitionType.EQUAL_SPLIT,
     key=key(42),
 )
@@ -148,10 +160,9 @@ loader = data.DataLoader(dataset, batch_sampler=sampler)
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `data_source` | any with `__len__` | required | The dataset |
-| `sampling_prob` | `float` in (0, 1] | required | Inclusion probability within each group |
-| `cycle_length` | `int` | 1 | Number of groups (1 = standard Poisson) |
-| `iterations` | `int` or `None` | `None` (= 1) | Total batches to yield |
-| `truncated_batch_size` | `int` or `None` | `None` | Optional upper bound on batch size |
+| `sample_rate` | `float` in (0, 1] | required | Inclusion probability within each active group |
+| `bands` | `int` | 1 | Number of groups in the cycle (``1`` = full dataset each step; match strategy for BandMF). |
+| `n_steps` | `int` | 1 | Total batches to yield |
 | `partition_type` | `PartitionType` | `EQUAL_SPLIT` | How examples are assigned to groups |
 | `key` | `RngKey` | required | RNG key |
 
@@ -162,11 +173,8 @@ loader = data.DataLoader(dataset, batch_sampler=sampler)
 - `PartitionType.INDEPENDENT` -- assign each example to a random group
   (multinomial). Group sizes vary.
 
-At iteration `i`, the sampler draws from group `i % cycle_length`. With
-`cycle_length=1` it reduces to standard Poisson sampling.
-
-See [Noise Addition](noise.md#matrix-factorization-noise-dp-ftrl) for how cyclic
-sampling integrates with correlated noise mechanisms.
+See [Noise Addition](noise.md#matrix-factorization-noise-dp-ftrl) for how this
+sampler pairs with matrix-factorization noise.
 
 ### `BMinSepSampler`
 
@@ -310,7 +318,7 @@ rank = dist.get_rank()
 world_size = dist.get_world_size()
 
 shard = local_shard(dataset, rank=rank, world_size=world_size)
-sampler = PoissonSampler(shard, sample_rate=0.01, key=fold_in(key(42), rank))
+sampler = PoissonSubsampler(shard, sample_rate=0.01, key=fold_in(key(42), rank))
 loader = data.DataLoader(shard, batch_sampler=sampler)
 ```
 
@@ -343,7 +351,7 @@ clipped gradient sums. The result is mathematically identical to processing
 the full batch.
 
 ```python
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 
 grad_fn, clip_state = clipped_grad(
     loss_fn,
@@ -417,16 +425,18 @@ grads_mb, state_mb = grad_fn_mb(params, batch_256, state=state_mb)
 
 | Sampler | Batch size | Privacy | Use case |
 |---------|-----------|---------|----------|
-| `PoissonSampler` | Variable | Standard amplification | Research, general use |
-| `TruncatedPoissonSampler` | Bounded above | Tighter (up to 20%) | Production, memory-constrained |
-| `CyclicPoissonSampler` | Cyclic groups | Depends on mechanism | Matrix-factorization noise (BandMF) |
+| `PoissonSubsampler` | Variable | Standard amplification | Research, general use |
+| `PoissonSubsampler` + ``truncated_batch_size`` | Bounded above | Weaker than plain Poisson (same ``sample_rate``) | Production, stable batch sizes / memory |
+| `CyclicPoissonSampler` (``opaque.dpftrl``) | Variable | ``ftrl_acc.poisson`` | DP-FTRL; identity MF → ``bands=1``; BandMF → ``bands`` = strategy |
 | `BallsInBinsSampler` | Fixed (deterministic) | Balls-in-bins amplification | λCGD, BISR, BLT |
 | `SequentialBatchSampler` | Fixed (deterministic) | No amplification | BLT (pre-shuffled dataset) |
 
-For most DP-SGD workloads, `PoissonSampler` is sufficient.
-`TruncatedPoissonSampler` is a reasonable upgrade when you want tighter
-privacy bounds or need predictable batch sizes. `CyclicPoissonSampler` is
-only needed with BandMF correlated noise. `BallsInBinsSampler` and
+For most DP-SGD workloads, `PoissonSubsampler` is sufficient.
+Use ``truncated_batch_size`` when you need **capped** batch sizes; expect
+**worse** privacy than plain Poisson at the same ``sample_rate`` unless you
+recalibrate noise. For DP-FTRL, use
+``opaque.dpftrl.sampling.CyclicPoissonSampler`` as in the section above.
+`BallsInBinsSampler` and
 `SequentialBatchSampler` are used with matrix-factorization mechanisms
 that require fixed batch sizes.
 

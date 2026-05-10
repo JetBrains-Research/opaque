@@ -161,19 +161,20 @@ Opaque supports several subsampling schemes:
 | Scheme | Description | Use case |
 |--------|-------------|----------|
 | **Poisson** | Each example included independently with probability $q$ | Standard DP-SGD. Variable batch size. |
-| **Truncated Poisson** | Poisson sampling capped at a maximum batch size | Production DP-SGD. Fixed memory budget. |
-| **Cyclic Poisson** | Training rounds divided into groups; Poisson within each group | BandMF correlated noise. |
+| **Truncated Poisson** | Poisson draw capped at a maximum batch size | DP-SGD when you want stable batch sizes; privacy is weaker than plain Poisson at the same $q$. |
+| **Cyclic Poisson (DP-FTRL)** | ``opaque.dpftrl.sampling.CyclicPoissonSampler``: ``bands`` disjoint groups, step ``i`` uses group ``i % bands``, inclusion prob. ``q`` per eligible example. ``bands=1`` is identity (full data each step); larger ``bands`` match BandMF-style rotation. | ``mf_noise`` + ``ftrl_acc.poisson`` (whole-process accountant). |
 
 The key distinction is between *Poisson* and *fixed-size* sampling. Poisson
 sampling produces variable-size batches but has a clean privacy analysis.
 Fixed-size sampling (drawing exactly $B$ examples) has a slightly different
 privacy profile. Opaque uses Poisson-style sampling throughout.
 
-Truncated Poisson combines the best of both: it uses Poisson sampling but caps
-the batch size at a maximum, giving fixed memory usage while retaining the
-Poisson amplification guarantee.
+Truncated Poisson keeps Poisson-style randomness but caps realized batch size,
+which stabilises memory and batch norms at the cost of **weaker** privacy than
+unconditional Poisson at the same inclusion probability $q$ (use the
+truncated-Poisson accountant).
 
-Opaque's `PoissonSampler` implements Poisson subsampling. The accounting module
+Opaque's `PoissonSubsampler` implements Poisson subsampling. The accounting module
 accounts for this amplification via `dpsgd_acc.poisson(mechanism, sample_rate)`.
 See [Sampling & Microbatching](sampling.md) and the
 [Mechanisms](../mechanisms/index.md) reference for per-mechanism amplification
@@ -353,8 +354,9 @@ Three MF strategies are available:
 | **BandMF** | $O(b)$ | Streaming, long training runs |
 | **BLT** | $O(b)$ | Multi-epoch training |
 
-MF mechanisms require different samplers (CyclicPoissonSampler for BandMF)
-and have different amplification properties. See the
+MF mechanisms use ``opaque.dpftrl.sampling.CyclicPoissonSampler`` (and other FTRL
+samplers) with amplification that depends on the mechanism; identity runs use
+``bands=1``. See the
 [Mechanisms](../mechanisms/index.md) reference for details.
 
 ## Neighboring relations

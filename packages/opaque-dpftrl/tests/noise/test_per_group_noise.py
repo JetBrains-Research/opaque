@@ -7,7 +7,7 @@ import math
 import pytest
 import torch
 
-from opaque.clipping import clipped_grad
+from opaque.dpftrl.clipping import clipped_grad
 from opaque._noise_allocation import per_group_noise_stddev
 from opaque.types import PerGroup, clipped
 from opaque.types import NoisedPytree, SecondMomentClippingOutput

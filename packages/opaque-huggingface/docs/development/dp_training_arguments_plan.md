@@ -52,8 +52,8 @@ Highlights of what landed:
   `training_args.bin`, `rng_state.pth` under `checkpoint-<step>/`.
 - **`state_dict` / `from_state_dict` on Opaque types** — `FixedClipState`,
   `AdaptiveClipState`, `GaussianNoiseState`, `PerGroup`, plus PyTorch-style
-  `state_dict` / `load_state_dict` on `PoissonSampler` /
-  `TruncatedPoissonSampler`. Sampler resume is O(1) via per-iteration
+  `state_dict` / `load_state_dict` on `CyclicPoissonSampler` /
+  `PoissonSubsampler` (with ``truncated_batch_size``). Sampler resume is O(1) via per-iteration
   `fold_in(key, iter_count)` (no batch replay).
 - **Strategies** — `save_strategy ∈ {"no", "steps", "epoch", "best"}` (HF
   parity — all four are members of `transformers.trainer_utils.SaveStrategy`,
@@ -401,7 +401,7 @@ mechanism change, not as a routine loader optimization.
 **Why this needs care**:
 
 - PyTorch DataLoader workers do not normally own the `batch_sampler`; with the
-  current `batch_sampler=PoissonSampler(...)` design, enabling workers does **not**
+  current `batch_sampler=CyclicPoissonSampler(...)` design, enabling workers does **not**
   make Poisson sampling parallel.
 - To make sampling itself parallel, we would need a different execution model
   (for example rank-local samplers over shards, or a worker-owned iterable data

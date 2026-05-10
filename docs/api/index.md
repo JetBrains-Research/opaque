@@ -45,16 +45,16 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 - **[Accounting](accounting.md)**: Privacy budget tracking
   - `gaussian()`, `adaclip()` — DP-SGD mechanisms (also via `opaque.dpsgd.accounting`)
-  - `poisson()`, `truncated_poisson()`, `parallel_poisson()` — Poisson-family amplification
-  - `band_mf()`, `blt()`, `lambda_cgd()`, `bisr()`, `cyclic_poisson()`, `balls_in_bins()` — MF mechanisms (also via `opaque.dpftrl.accounting`)
+  - `poisson()` (plain or truncated via ``truncated_batch_size`` / ``dataset_size``), `parallel_poisson()` — Poisson-family amplification
+  - `band_mf()`, `blt()`, `lambda_cgd()`, `bisr()`, `poisson()` (MF whole-process), `balls_in_bins()` — MF mechanisms (also via `opaque.dpftrl.accounting`)
   - `DpProcess` operators: `*` (repeat), `|` (compose)
   - `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()`, `.risk_at()` — Privacy metrics
   - `calibrate()` — Binary-search noise multiplier for target privacy
 
 - **[Sampling](sampling.md)**: Privacy-amplifying sampling
-  - `PoissonSampler` - Standard Poisson sampling
-  - `TruncatedPoissonSampler` - Bounded Poisson sampling
-  - `CyclicPoissonSampler` - Cyclic Poisson sampling (BandMF)
+  - `PoissonSubsampler` - Standard Poisson sampling
+  - `PoissonSubsampler` + `truncated_batch_size` - Bounded Poisson sampling
+  - `CyclicPoissonSampler` (``opaque.dpftrl``) - cyclic Poisson over ``bands`` groups; ``bands=1`` = identity (full-data Poisson each step)
   - `BallsInBinsSampler` - Random-partition sampling (λCGD, BISR, BLT)
   - `SequentialBatchSampler` - Deterministic sequential batching (BLT)
 
@@ -87,7 +87,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 ```python
 import opaque.accounting as acc
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
@@ -145,7 +145,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 |---------------------------|-----------------------------------|-------------------------------------------------------------------------|
 | `gaussian()`              | Gaussian mechanism                | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `poisson()`               | Poisson-subsampled mechanism      | [Guide](../user-guide/accounting.md#mechanisms)                         |
-| `truncated_poisson()`     | Truncated Poisson subsampling     | [Guide](../user-guide/accounting.md#mechanisms)                         |
+| `poisson(..., truncated_batch_size=, dataset_size=)` | Truncated Poisson subsampling | [Guide](../user-guide/accounting.md#mechanisms) |
 | `parallel_poisson()`      | Parallel Poisson subsampling      | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `adaclip()`               | Adaptive clipping mechanism       | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `eps_delta()`             | Fixed (ε, δ) guarantee            | [Guide](../user-guide/accounting.md#mechanisms)                         |
@@ -161,7 +161,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `lambda_cgd()`           | DP-λCGD mechanism                 | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
 | `bisr()`                 | BISR mechanism                    | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
 | `balls_in_bins()`        | Balls-in-Bins amplification       | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
-| `cyclic_poisson()`       | Cyclic Poisson amplification (BandMF) | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)|
+| `poisson()` (``opaque.dpftrl``) | MF Poisson amplification (BandMF / identity) | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)|
 
 ### Accounting (Composition & Metrics)
 
@@ -190,9 +190,9 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 
 | Class                     | Purpose                    | User Guide                                                    |
 |---------------------------|----------------------------|---------------------------------------------------------------|
-| `PoissonSampler`          | Standard Poisson sampling  | [Guide](../user-guide/sampling.md#poisson-sampling) |
-| `TruncatedPoissonSampler` | Truncated Poisson sampling | [Guide](../user-guide/sampling.md#poisson-sampling) |
-| `CyclicPoissonSampler`    | Cyclic Poisson sampling (BandMF) | [Guide](../user-guide/sampling.md#poisson-sampling) |
+| `PoissonSubsampler`          | Standard Poisson sampling  | [Guide](../user-guide/sampling.md#poisson-sampling) |
+| `PoissonSubsampler` (with ``truncated_batch_size``) | Truncated Poisson sampling | [Guide](../user-guide/sampling.md#poisson-sampling) |
+| `CyclicPoissonSampler` (``opaque.dpftrl``) | Cyclic Poisson over ``bands`` groups; ``bands=1`` = identity | [Guide](../user-guide/sampling.md#poisson-sampling) |
 | `BallsInBinsSampler`      | Random-partition sampling  | [Guide](../user-guide/sampling.md#balls-in-bins-sampling) |
 | `SequentialBatchSampler`  | Deterministic sequential batching (BLT) | [Guide](../user-guide/sampling.md#sequential-batch-sampling) |
 

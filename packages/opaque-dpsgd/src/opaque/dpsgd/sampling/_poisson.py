@@ -1,9 +1,11 @@
-"""Poisson sampler for DP-SGD training.
+"""Poisson subsampling for DP-SGD training.
 
 Poisson subsampling: each example is independently included with
 probability ``sample_rate``.  Optional ``truncated_batch_size`` caps the
-realised batch (production DP-SGD pattern paired with
-:func:`opaque.dpsgd.accounting.poisson` with truncation enabled).
+realised batch for stable sizes and memory; that is **weaker** for privacy than
+plain Poisson at the same ``sample_rate``—pair with
+:func:`opaque.dpsgd.accounting.poisson` passing both
+``truncated_batch_size`` and ``dataset_size``.
 
 For distributed training, shard the dataset **before** creating the
 sampler using ``local_shard()`` and derive a per-rank key with
@@ -15,11 +17,12 @@ from collections.abc import Iterator
 import numpy as np
 from torch.utils.data import Sampler
 
+from ._helpers import _plain_poisson_step_indices
 from opaque.random.types import RngKey
 
 
-class PoissonSampler(Sampler):
-    """Poisson sampler for privacy amplification.
+class PoissonSubsampler(Sampler):
+    """Poisson subsampler for privacy amplification (DP-SGD).
 
     Each example is independently included with probability
     ``sample_rate``.  When ``truncated_batch_size`` is set, batches are
@@ -32,7 +35,7 @@ class PoissonSampler(Sampler):
         from opaque.distributed import local_shard
 
         shard = local_shard(dataset, rank=rank, world_size=world_size)
-        sampler = PoissonSampler(
+        sampler = PoissonSubsampler(
             shard, sample_rate=0.01, key=fold_in(key(42), rank)
         )
 
@@ -40,14 +43,15 @@ class PoissonSampler(Sampler):
         data_source: Dataset to sample from (any object with ``__len__``).
         sample_rate: Probability of including each example ``∈ (0, 1]``.
         n_steps: Number of batches to yield. ``None`` yields indefinitely.
-        truncated_batch_size: Optional cap on per-step batch size (production
-            truncated-Poisson pattern).
+        truncated_batch_size: Optional cap on per-step batch size (truncated
+            Poisson; use matching accounting—privacy is weaker than uncapped
+            Poisson at the same ``sample_rate``).
         key: RNG key for reproducibility.
 
     Example::
 
         from opaque.random import key
-        sampler = PoissonSampler(
+        sampler = PoissonSubsampler(
             dataset, sample_rate=0.01, n_steps=1000, key=key(42),
         )
         loader = DataLoader(dataset, batch_sampler=sampler)
@@ -88,16 +92,12 @@ class PoissonSampler(Sampler):
         self.generator = np.random.default_rng(key.seed)
 
     def _sample_step(self) -> list[int]:
-        included = self.generator.random(self._num_samples) < self.sample_rate
-        indices = np.where(included)[0]
-        if (
-            self.truncated_batch_size is not None
-            and indices.size > self.truncated_batch_size
-        ):
-            indices = self.generator.choice(
-                indices, size=self.truncated_batch_size, replace=False
-            )
-        return indices.tolist()
+        return _plain_poisson_step_indices(
+            self.generator,
+            self._num_samples,
+            self.sample_rate,
+            self.truncated_batch_size,
+        )
 
     def __iter__(self) -> Iterator[list[int]]:
         """Yield variable-size batches as lists of indices.

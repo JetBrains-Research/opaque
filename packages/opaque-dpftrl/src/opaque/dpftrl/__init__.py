@@ -3,10 +3,10 @@
 Strategies (BLT, BSR, BiSR, band-MF, λ-CGD, identity) + DP-FTRL-specific
 participation samplers (b-min-sep, Poisson, balls-in-bins, sequential).
 
-Compatible clipping rules live in :mod:`opaque.clipping` — the MF privacy
+Compatible clipping rules live in :mod:`opaque.dpftrl.clipping` — the MF privacy
 proof requires a constant per-step record sensitivity, which both
-:func:`~opaque.clipping.clipped_grad` (fixed threshold) and
-:func:`~opaque.clipping.auto_clipped_grad` (AUTO-S smooth scaling, Bu
+:func:`~opaque.dpftrl.clipping.clipped_grad` (fixed threshold) and
+:func:`~opaque.dpftrl.clipping.auto_clipped_grad` (AUTO-S smooth scaling, Bu
 et al. NeurIPS 2023) provide by construction.  The DP-SGD-specific
 :func:`~opaque.dpsgd.clipping.adaptive_clipped_grad` is *not* compatible:
 its threshold drifts across steps based on the noisy clipping rate, so
@@ -32,7 +32,8 @@ from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from typing import TYPE_CHECKING
 
-from opaque.dpftrl import noise, sampling
+from opaque.dpftrl import clipping, noise, sampling
+from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad, per_group
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
@@ -45,7 +46,7 @@ from opaque.dpftrl.noise import (
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
     BMinSepSampler,
-    PoissonSampler,
+    CyclicPoissonSampler,
     SequentialBatchSampler,
 )
 
@@ -80,8 +81,13 @@ __all__ = [
     "__version__",
     # Subpackages
     "accounting",
+    "clipping",
     "noise",
     "sampling",
+    # MF-safe clipping (re-exported for one-stop imports)
+    "clipped_grad",
+    "auto_clipped_grad",
+    "per_group",
     # Dispatchers
     "mf_noise",
     # Strategy factories
@@ -94,6 +100,6 @@ __all__ = [
     # Samplers
     "BallsInBinsSampler",
     "BMinSepSampler",
-    "PoissonSampler",
+    "CyclicPoissonSampler",
     "SequentialBatchSampler",
 ]

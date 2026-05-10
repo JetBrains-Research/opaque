@@ -133,7 +133,7 @@ at any single `update()` call; passing both routes raises `ValueError`.
 
 ```python
 import torchopt
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.optimizers import adamw
 from opaque.random import key
@@ -229,7 +229,7 @@ ranks receive identical noisy gradients after `sum_gradients` + noise
 addition with the same key on all ranks.
 
 Use `local_shard()` to partition the dataset across ranks and pass a
-per-rank key via `fold_in(key, rank)` to each `PoissonSampler`.
+per-rank key via `fold_in(key, rank)` to each `PoissonSubsampler`.
 
 ---
 

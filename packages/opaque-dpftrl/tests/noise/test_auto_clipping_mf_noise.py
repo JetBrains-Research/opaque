@@ -44,7 +44,7 @@ import math
 import pytest
 import torch
 
-from opaque.clipping import auto_clipped_grad, clipped_grad
+from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
@@ -540,7 +540,7 @@ class TestAutoSPerExampleCapMath:
     """
 
     def test_per_example_bound_is_R_in_supremum(self):
-        from opaque.clipping.fun import auto_scale_pytree
+        from opaque.dpftrl.clipping.fun import auto_scale_pytree
 
         gamma = 0.01
         for scale in (1e-3, 1.0, 1e3, 1e6):
@@ -557,7 +557,7 @@ class TestAutoSPerExampleCapMath:
 
     def test_squared_per_example_bound_is_R_squared(self):
         """The second-moment stream is bounded by ``R²``."""
-        from opaque.clipping.fun import auto_scale_pytree
+        from opaque.dpftrl.clipping.fun import auto_scale_pytree
 
         big = torch.tensor([1e9, 0.0])
         scaled, _ = auto_scale_pytree({"w": big}, R=R, gamma=0.01)

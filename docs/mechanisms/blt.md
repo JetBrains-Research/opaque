@@ -85,7 +85,7 @@ where $S$ is the sensitivity. The PLD is a single Gaussian PLD.
 
 - BLT targets long runs via a **buffered** Toeplitz parameterization; privacy is for the optimized strategy you instantiate.
 - Optional **`lr_schedule`** is encoded like BandMF into a Toeplitz workload for the optimizer; see [BandMF — Assumptions](band-mf.md#assumptions-and-limitations) for the constant- versus variable-\(\eta\) caveat.
-- **Subsampling**: BLT does not use `cyclic_poisson` the way BandMF does; combine with Balls-in-Bins when using correlated MF + epoch structure (see examples).
+- **Subsampling**: BLT does not use ``ftrl_acc.poisson`` the way BandMF does; combine with Balls-in-Bins when using correlated MF + epoch structure (see examples).
 - Overview: [Correlated noise (DP-FTRL)](../user-guide/dp-ftrl.md).
 
 ## Supported amplifications
@@ -96,11 +96,11 @@ sensitivity computation. There is no external amplification wrapper.
 | Amplification | Supported | Notes |
 |---------------|:---------:|-------|
 | `poisson()` | No | Not applicable |
-| `truncated_poisson()` | No | Not applicable |
-| `cyclic_poisson()` | No | For BandMF only |
+| `poisson()` (truncated) | No | Not applicable |
+| `ftrl_acc.poisson` | No | For BandMF / identity MF |
 
 If you need subsampling amplification with correlated noise, use
-[BandMF](band-mf.md) with `cyclic_poisson()` instead.
+[BandMF](band-mf.md) with :func:`opaque.dpftrl.accounting.poisson` instead.
 
 !!! note "Multi-epoch vs subsampling"
     BLT and Poisson subsampling solve different problems. Poisson subsampling
@@ -109,7 +109,7 @@ If you need subsampling amplification with correlated noise, use
     multi-participation (min-sep / max-participations) sensitivity computation.
     BLT itself does **not** model subsampling amplification and has no
     `sample_rate` parameter. If you need subsampling with correlated noise,
-    use [BandMF](band-mf.md) with `cyclic_poisson()` instead.
+    use [BandMF](band-mf.md) with :func:`opaque.dpftrl.accounting.poisson` instead.
 
 ## Code examples
 

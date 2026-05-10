@@ -11,13 +11,13 @@ from torch.func import grad_and_value
 
 from opaque.types import clipped
 
-from opaque.clipping._helpers import (
+from opaque._clipping._helpers import (
     batch_size_from_args,
     normalize_fun_to_return_aux,
     normalize_to_tuple,
     zero_grads_like,
 )
-from opaque.clipping._clipped_fun import FixedClipState, clipped_fun
+from opaque._clipping._clipped_fun import FixedClipState, clipped_fun
 from opaque.types import PerGroup
 
 
@@ -104,7 +104,7 @@ def clipped_grad(
 
     Example Usage:
         >>> import torch
-        >>> from opaque.clipping import clipped_grad
+        >>> from opaque._clipping import clipped_grad
         >>> f = lambda param, data: 0.5 * ((data - param) ** 2).mean()
         >>> g, clip_state = clipped_grad(f, clipping_norm=float('inf'))
         >>> result, clip_state = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]), state=clip_state)

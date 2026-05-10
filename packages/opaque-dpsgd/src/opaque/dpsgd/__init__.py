@@ -1,20 +1,16 @@
 """Opaque DP-SGD: Differentially Private SGD mechanisms.
 
 Gaussian / truncated-Gaussian noise, adaptive and AUTO-S clipping, and the
-standard + truncated Poisson samplers.  Fixed-clipping and AUTO-S primitives
-used by this package live in :mod:`opaque.clipping` (AUTO-S is algorithm-agnostic
-— its per-record sensitivity bound is constant, so it composes with DP-FTRL's
-matrix-factorization mechanisms in the same way it composes with the Gaussian
-mechanism here).  Functional optimizers (including the universal ``adamw`` with
+standard + truncated Poisson samplers.  Fixed and AUTO-S clipping live in
+:mod:`opaque.dpsgd.clipping` (AUTO-S keeps a constant per-record sensitivity
+bound).  Functional optimizers (including the universal ``adamw`` with
 DP bias-correction and private second-moment paths) live in
 :mod:`opaque.optimizers`.
 
-DP-SGD-specific state / aux dataclasses (``AdaptiveClipState``,
-``AdaptiveClippedGradAux``) live in :mod:`opaque.dpsgd.clipping.types`,
-which also re-exports the cross-cutting ``AutoClipState`` /
-``AutoClippedFunAux`` / ``AutoClippedGradAux`` for backward compatibility
-(canonical home: :mod:`opaque.clipping.types`).  ``GaussianNoiseState``
-lives in :mod:`opaque.dpsgd.noise.types`.
+Clipping state and aux types (including ``AdaptiveClipState``,
+``AdaptiveClippedGradAux``, and AUTO-S types) live in
+:mod:`opaque.dpsgd.clipping.types`.  ``GaussianNoiseState`` lives in
+:mod:`opaque.dpsgd.noise.types`.
 
 The :mod:`opaque.dpsgd.accounting` subpackage (DP-SGD-specific privacy
 accounting factories, requires ``opaque-accounting``) is **lazy-imported**:
@@ -29,9 +25,14 @@ from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from typing import TYPE_CHECKING
 
 from opaque.dpsgd import clipping, noise, sampling
-from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
+from opaque.dpsgd.clipping import (
+    adaptive_clipped_grad,
+    auto_clipped_grad,
+    clipped_grad,
+    per_group,
+)
 from opaque.dpsgd.noise import gaussian_noise, truncated_gaussian_noise
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSubsampler
 
 if TYPE_CHECKING:
     # Static type checkers see ``accounting`` as a real attribute; at
@@ -67,12 +68,14 @@ __all__ = [
     "clipping",
     "noise",
     "sampling",
-    # Clipping (fixed and AUTO-S clipping live at opaque.clipping)
+    # Clipping
     "adaptive_clipped_grad",
-    "auto_clipped_grad",  # re-exported from opaque.clipping for back-compat
+    "auto_clipped_grad",
+    "clipped_grad",
+    "per_group",
     # Noise mechanisms
     "gaussian_noise",
     "truncated_gaussian_noise",
     # Sampling
-    "PoissonSampler",
+    "PoissonSubsampler",
 ]

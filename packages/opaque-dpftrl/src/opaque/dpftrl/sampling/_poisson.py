@@ -1,11 +1,15 @@
-"""Poisson sampler for DP-FTRL training (BandMF + identity baseline).
+"""Cyclic Poisson sampler for DP-FTRL training (identity and band-MF regimes).
 
-This sampler generalises plain Poisson subsampling to the cyclic
-participation pattern used by BandMF amplification: examples are
-partitioned into ``bands`` groups; at iteration ``i`` the sampler yields
-a Poisson(``sampling_prob``) batch from group ``i % bands``.  Plain
-Poisson sampling (the identity-encoder baseline) is the ``bands == 1``
-special case.
+The dataset is split into ``bands`` disjoint groups (see ``partition_type``).
+Step ``i`` activates only group ``i % bands``; each example in that group is
+included independently with probability ``sample_rate``, so the batch size is
+Binomial on that group's size.  That rotating participation pattern pairs with
+correlated MF noise (e.g. BandMF).
+
+If ``bands == 1`` there is a single group covering the whole dataset, so every
+step is ordinary Poisson subsampling—use this with ``identity_strategy`` /
+``mf_identity`` and ``ftrl_acc.poisson``.  If ``bands > 1``, set ``bands`` to
+match ``band_mf_strategy`` / ``BandMf``.
 
 For distributed training, shard the dataset before constructing the
 sampler with ``opaque.distributed.local_shard`` and derive a per-rank
@@ -29,46 +33,52 @@ from opaque.dpftrl.sampling._partitions import (
 )
 
 
-class PoissonSampler(Sampler):
-    """Poisson sampler for DP-FTRL.
+class CyclicPoissonSampler(Sampler):
+    """Cyclic Poisson subsampling for DP-FTRL (one active group per step).
 
-    Examples are partitioned into ``bands`` groups.  At iteration ``i``,
-    each example in group ``i % bands`` is independently included with
-    probability ``sampling_prob``.  ``bands=1`` collapses to plain
-    Poisson subsampling (the identity-encoder baseline).
+    Disjoint example groups are fixed at construction (modulo
+    ``partition_type``).  Step ``i`` samples only from group ``i % bands``;
+    each eligible example is a Bernoulli(``sample_rate``) draw, so batch size is
+    random within that group and the active group advances each step.
+
+    Use ``bands=1`` for identity MF (full dataset, plain Poisson each step,
+    ``identity_strategy`` / ``mf_identity`` and ``ftrl_acc.poisson``).  For
+    BandMF, set ``bands`` to the band count in ``band_mf_strategy`` / ``BandMf``.
 
     Args:
         data_source: Dataset to sample from (any object with ``__len__``).
-        sampling_prob: Per-step Poisson sampling probability ``∈ (0, 1]``.
-        bands: Number of cyclic groups (band width).  Defaults to ``1``
-            (plain Poisson).
+        sample_rate: Per-step inclusion probability ``∈ (0, 1]``.
+        bands: Number of groups in the cycle.  ``1`` = identity-style plain
+            Poisson on the full dataset every step.
         n_steps: Total number of batches to yield.  Defaults to ``1``.
-        truncated_batch_size: Optional cap on per-step batch size.
-        partition_type: Strategy for partitioning the dataset into groups
-            (only used when ``bands > 1``).
+        partition_type: Partition strategy when ``bands > 1``.
         key: RNG key for reproducibility.
 
     Example::
 
         from opaque.random import key
-        sampler = PoissonSampler(
-            dataset, sampling_prob=0.01, bands=4, n_steps=1000, key=key(42),
+        sampler = CyclicPoissonSampler(
+            dataset, sample_rate=0.01, bands=4, n_steps=1000, key=key(42),
         )
         loader = DataLoader(dataset, batch_sampler=sampler)
 
     Note:
-        Batch sizes are variable (Poisson).  Expected batch size per step
-        is ``|group| * sampling_prob`` where ``|group| = |D| / bands``.
-        Use with ``DataLoader``'s ``batch_sampler`` parameter.
+        Batch sizes are variable (Poisson).  There is **no** batch-size cap
+        on this sampler: ``ftrl_acc.poisson`` accounting matches uncapped
+        Poisson draws only.  For capped batches, use DP-SGD's
+        :class:`opaque.dpsgd.sampling.PoissonSubsampler` with
+        ``dpsgd_acc.poisson(..., truncated_batch_size=, dataset_size=)``.
+
+        Expected batch size per step is ``|group| * sample_rate`` where
+        ``|group| = |D| / bands``.  Use with ``DataLoader``'s ``batch_sampler``.
     """
 
     def __init__(
         self,
         data_source: object,
-        sampling_prob: float,
+        sample_rate: float,
         bands: int = 1,
         n_steps: int = 1,
-        truncated_batch_size: int | None = None,
         partition_type: PartitionType = PartitionType.EQUAL_SPLIT,
         *,
         key: RngKey,
@@ -77,16 +87,12 @@ class PoissonSampler(Sampler):
 
         if len(data_source) == 0:
             raise ValueError("data_source must not be empty")
-        if not 0 < sampling_prob <= 1:
-            raise ValueError(f"sampling_prob must be in (0, 1], got {sampling_prob}")
+        if not 0 < sample_rate <= 1:
+            raise ValueError(f"sample_rate must be in (0, 1], got {sample_rate}")
         if bands < 1:
             raise ValueError(f"bands must be >= 1, got {bands}")
         if n_steps < 1:
             raise ValueError(f"n_steps must be >= 1, got {n_steps}")
-        if truncated_batch_size is not None and truncated_batch_size < 1:
-            raise ValueError(
-                f"truncated_batch_size must be >= 1, got {truncated_batch_size}"
-            )
 
         self.num_examples = len(data_source)
         self.generator = np.random.default_rng(key.seed)
@@ -102,26 +108,22 @@ class PoissonSampler(Sampler):
         self.partition = partition_fn(self.num_examples, bands, self.generator, dtype)
 
         self.data_source = data_source
-        self.sampling_prob = sampling_prob
+        self.sample_rate = sample_rate
         self.bands = bands
         self.n_steps = n_steps
-        self.truncated_batch_size = truncated_batch_size
         self.partition_type = partition_type
 
     def __iter__(self) -> Iterator[list[int]]:
         """Yield Poisson batches.
 
         For each step, samples from group ``step % bands`` with inclusion
-        probability ``sampling_prob`` per example.  When
-        ``truncated_batch_size`` is set, caps the result.
+        probability ``sample_rate`` per example.
         """
         for step in range(self.n_steps):
             group_idx = step % self.bands
             group = self.partition[group_idx]
 
-            sample_size = self.generator.binomial(n=len(group), p=self.sampling_prob)
-            if self.truncated_batch_size is not None:
-                sample_size = min(sample_size, self.truncated_batch_size)
+            sample_size = self.generator.binomial(n=len(group), p=self.sample_rate)
 
             if sample_size > 0:
                 batch = self.generator.choice(
@@ -137,12 +139,12 @@ class PoissonSampler(Sampler):
 
     @property
     def expected_batch_size(self) -> float:
-        """Expected batch size: ``|group| * sampling_prob``."""
+        """Expected batch size: ``|group| * sample_rate``."""
         avg_group_size = self.num_examples / self.bands
-        return avg_group_size * self.sampling_prob
+        return avg_group_size * self.sample_rate
 
     @property
     def batch_size_variance(self) -> float:
         """Variance of batch size (Poisson property)."""
         avg_group_size = self.num_examples / self.bands
-        return avg_group_size * self.sampling_prob * (1 - self.sampling_prob)
+        return avg_group_size * self.sample_rate * (1 - self.sample_rate)

@@ -1,7 +1,7 @@
 """Power-user clipping building blocks.
 
 The headline entry points for DP training are
-:func:`opaque.clipping.clipped_grad` and :func:`opaque.clipping.auto_clipped_grad`.
+:func:`opaque._clipping.clipped_grad` and :func:`opaque._clipping.auto_clipped_grad`.
 This submodule exposes the lower-level primitives they build on, for users
 who need to clip arbitrary per-example outputs or compose custom pipelines:
 
@@ -17,9 +17,9 @@ the headline surface concise.
 
 from __future__ import annotations
 
-from opaque.clipping._auto import auto_clipped_fun
-from opaque.clipping._clipped_fun import clipped_fun
-from opaque.clipping._pytree import auto_scale_pytree, clip_pytree
+from opaque._clipping._auto import auto_clipped_fun
+from opaque._clipping._clipped_fun import clipped_fun
+from opaque._clipping._pytree import auto_scale_pytree, clip_pytree
 
 __all__ = [
     "auto_clipped_fun",

@@ -38,7 +38,7 @@ No hidden mutable state.  Every piece of the training loop is explicit.
 
 ```python
 import torchopt
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.optimizers import adamw
 from opaque.random import key
@@ -317,8 +317,8 @@ is sensitivity-proportional, so the joint Mahalanobis budget collapses to
 a single sensitivity-1 Gaussian release at the same noise multiplier.
 
 ```python
-mechanism = ftrl_acc.band_mf(nm, sensitivity=S, num_groups=k)
-process = ftrl_acc.cyclic_poisson(mechanism, sample_rate=q)
+mechanism = ftrl_acc.band_mf(nm, sensitivity=S, coefficients=coeffs)
+process = ftrl_acc.poisson(mechanism, sample_rate=q, n_steps=n)
 ```
 
 Same pattern for DP-SGD: just `dpsgd_acc.gaussian(nm)` (or
