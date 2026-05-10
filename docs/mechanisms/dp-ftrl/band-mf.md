@@ -157,7 +157,7 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 ## Assumptions and limitations
 
 - **DP correctness** is for the **implemented** banded Toeplitz matrix \(C\) and the sampler you pair with accounting. If those match, the privacy guarantee stands even when the workload model is approximate.
-- **`lr_schedule` (optional)**: workload coefficients are folded into a **lower-triangular Toeplitz** workload inside optimization. That matches the usual **constant** learning-rate momentum-SGD story. For a **varying** schedule \(\eta_t\), the implied Toeplitz workload can differ from the full map \(W_{t,s}=\eta_t\beta^{t-s}\): privacy is still valid for the constructed \(C\); **utility** alignment is approximate unless \(\eta\) is constant. See the [DP-FTRL user guide](../user-guide/dp-ftrl.md).
+- **`lr_schedule` (optional)**: workload coefficients are folded into a **lower-triangular Toeplitz** workload inside optimization. That matches the usual **constant** learning-rate momentum-SGD story. For a **varying** schedule \(\eta_t\), the implied Toeplitz workload can differ from the full map \(W_{t,s}=\eta_t\beta^{t-s}\): privacy is still valid for the constructed \(C\); **utility** alignment is approximate unless \(\eta\) is constant. See the [DP-FTRL user guide](../../user-guide/dp-ftrl.md).
 - **Momentum \(\beta=0\)**: Opaque warns because the workload becomes essentially identity (little benefit over independent noise).
 
 ## Code examples

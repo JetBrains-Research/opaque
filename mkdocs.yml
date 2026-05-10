@@ -93,9 +93,11 @@ nav:
     - Overview: user-guide/index.md
     - Differential Privacy Concepts: user-guide/dp-concepts.md
     - Random Number Generation: user-guide/rng-key.md
+    - End-to-end pipelines:
+      - DP-SGD: user-guide/dp-sgd.md
+      - DP-FTRL: user-guide/dp-ftrl.md
     - Per-Example Gradient Clipping: user-guide/clipping.md
     - Noise Addition: user-guide/noise.md
-    - Correlated noise (DP-FTRL): user-guide/dp-ftrl.md
     - Privacy Accounting: user-guide/accounting.md
     - Sampling & Microbatching: user-guide/sampling.md
     - Optimizers: user-guide/optimizers.md
@@ -107,12 +109,16 @@ nav:
     - Known Limitations: limitations.md
   - Mechanisms:
     - Overview: mechanisms/index.md
-    - Gaussian: mechanisms/gaussian.md
-    - BSR: mechanisms/bsr.md
-    - BandMF: mechanisms/band-mf.md
-    - BLT: mechanisms/blt.md
-    - DP-λCGD: mechanisms/lambda-cgd.md
-    - BISR: mechanisms/bisr.md
+    - DP-SGD:
+      - Overview: mechanisms/dp-sgd/index.md
+      - Gaussian: mechanisms/dp-sgd/gaussian.md
+    - DP-FTRL:
+      - Overview: mechanisms/dp-ftrl/index.md
+      - BandMF: mechanisms/dp-ftrl/band-mf.md
+      - BLT: mechanisms/dp-ftrl/blt.md
+      - BSR: mechanisms/dp-ftrl/bsr.md
+      - BISR: mechanisms/dp-ftrl/bisr.md
+      - DP-λCGD: mechanisms/dp-ftrl/lambda-cgd.md
   - Tutorials:
     - Overview: tutorials/README.md
     - DP-SGD Training: tutorials/dp_sgd_training.ipynb

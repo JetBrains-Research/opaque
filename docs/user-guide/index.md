@@ -1,129 +1,91 @@
 # User Guide
 
-This guide explains each component of Opaque's DP-SGD pipeline: what it does,
-how the API works, and the practical decisions you need to make. For hands-on
-practice, see the [Tutorials](../tutorials/README.md). For complete function
+This guide explains each component of Opaque's DP training pipeline:
+what it does, how the API works, and the practical decisions you
+need to make. For hands-on practice, see the
+[Tutorials](../tutorials/README.md). For complete function
 signatures, see the [API Reference](../reference/index.md).
 
 ## Installation surface
 
-Use `pip install opaque` (plus `opaque[...]` extras) as the public install
-target. The `opaque.*` import modules are implemented across namespace
-sub-packages, but those sub-packages are not documented as standalone install
-targets in user-facing workflows.
+Use `pip install opaque` (plus `opaque[...]` extras) as the public
+install target. The `opaque.*` import modules are implemented across
+namespace sub-packages, but those sub-packages are not documented as
+standalone install targets in user-facing workflows.
 
-## End-to-end DP-SGD training
+## End-to-end pipelines
 
-A complete DP-SGD training loop uses five components: calibration, clipping,
-noise, sampling, and accounting. Here is a minimal working example that ties
-them together:
+Pick the track that matches your problem:
 
-```python
-import torch
-import torchopt
-import opaque.accounting as acc
-from opaque.dpsgd.clipping import clipped_grad
-from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.sampling import PoissonSubsampler
-from opaque.random import key, split
+- **[DP-SGD end-to-end](dp-sgd.md)** — independent Gaussian noise at
+  every step, per-step privacy composition. The standard DP training
+  recipe. Imports from `opaque.dpsgd.*`.
+- **[DP-FTRL end-to-end](dp-ftrl.md)** — correlated noise across the
+  whole training run via matrix factorization. Imports from
+  `opaque.dpftrl.*`.
 
-# --- Privacy parameters ---
-dataset_size = 50_000
-batch_size = 256
-sample_rate = batch_size / dataset_size
-num_steps = 1000
-
-# --- Calibrate noise multiplier ---
-result = acc.calibrate(
-    acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate) * num_steps,
-    param_min=0.1, param_max=5.0,
-)
-noise_multiplier = result.param
-
-# --- Create DP components ---
-key_sampling, key_noise = split(key(42), num=2)
-
-grad_fn, clip_state = clipped_grad(
-    loss_fn, clipping_norm=1.0, argnums=0, batch_argnums=1,
-    normalize_by=batch_size,
-)
-noise_fn, noise_state = gaussian_noise(
-  noise_multiplier=noise_multiplier, key=key_noise,
-)
-
-from opaque.optimizers import adam
-
-optimizer = adam(lr=1e-3, noise_bias_correction=True)
-opt_state = optimizer.init(params)
-
-sampler = PoissonSubsampler(dataset, sample_rate=sample_rate, key=key_sampling)
-dataloader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
-
-# --- Training loop ---
-from opaque.accounting import Accountant
-
-step_proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate)
-acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
-
-for batch in dataloader:
-    grads, clip_state = grad_fn(params, batch, state=clip_state)
-    noisy_grads, noise_state = noise_fn(grads, noise_state)
-
-    updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
-    params = torchopt.apply_updates(params, updates)
-
-    acct = acct | step_proc
-    if acct.budget_exceeded:
-        break
-
-print(f"Final privacy: epsilon={acct.epsilon_at(1e-5):.2f}")
-```
-
-The sections below explain each part. Read them in order for a complete
-understanding, or jump to a specific topic.
+Both pipelines share the same primitives (clipping, noise, sampling,
+optimizer, accounting). The topic pages below are stack-agnostic
+concept reference; each end-to-end guide picks the right pieces and
+stitches them.
 
 ## Topics
 
 ### Foundations
 
-- **[Differential Privacy Concepts](dp-concepts.md)** -- What DP guarantees,
-  how DP-SGD works, privacy budgets, composition, and amplification.
-- **[Random Number Generation](rng-key.md)** -- Explicit RNG keys, splitting,
-  fold_in, and reproducibility in distributed training.
+- **[Differential Privacy Concepts](dp-concepts.md)** — What DP
+  guarantees, how DP-SGD works, privacy budgets, composition, and
+  amplification.
+- **[Random Number Generation](rng-key.md)** — Explicit RNG keys,
+  splitting, `fold_in`, reproducibility in distributed training.
 
 ### Core pipeline
 
-- **[Per-Example Gradient Clipping](clipping.md)** -- `clipped_grad`,
-  `adaptive_clipped_grad`, `auto_clipped_grad`, microbatching, and
-  per-group clipping.
-- **[Noise Addition](noise.md)** -- Gaussian noise, bounded Gaussian variants
-  (truncated, rectified), and matrix-factorization correlated noise for DP-FTRL.
-- **[Privacy Accounting](accounting.md)** -- Composable `DpProcess` objects,
-  privacy metrics, calibration, and the `Accountant` helper.
-- **[Sampling & Microbatching](sampling.md)** -- Poisson, truncated Poisson,
-  and cyclic samplers with distributed support.
+- **[Per-Example Gradient Clipping](clipping.md)** — `clipped_grad`,
+  `auto_clipped_grad`, `adaptive_clipped_grad` (DP-SGD-only),
+  microbatching, per-group clipping.
+- **[Noise Addition](noise.md)** — `gaussian_noise` /
+  `truncated_gaussian_noise` (DP-SGD); `mf_noise` with strategy
+  factories (DP-FTRL).
+- **[Privacy Accounting](accounting.md)** — Composable `DpProcess`
+  objects, privacy metrics, calibration, the `Accountant` helper.
+- **[Sampling & Microbatching](sampling.md)** — Poisson, truncated
+  Poisson, cyclic / b-min-sep / balls-in-bins / sequential samplers.
 
 ### Integration
 
-- **[Optimizers](optimizers.md)** -- Using TorchOpt functional optimizers with
-  DP-SGD.
-- **[Serialization (API)](../reference/serialization.md)** -- Checkpoint explicit state
-  with ``opaque.serialization.state_dict`` / ``from_state_dict`` (see also
-  optimizers and accounting guides for examples).
-- **[LR Scheduling](lr-scheduling.md)** -- Warmup, cosine and inverse-sqrt
-  schedules; composing `with_warmup` with any decay curve.
-- **[Distributed Training](distributed.md)** -- DDP with synchronized noise
-  and gradient aggregation.
-- **[HuggingFace Compatibility](huggingface.md)** -- Using HuggingFace
-  Transformers models with Opaque, including LoRA, fused Triton kernels,
-  and model compatibility.
-- **[Memory Optimizations](memory-optimizations.md)** -- Microbatching,
-  gradient checkpointing, fused kernels, profiling, and configuration.
-- **[Privacy Auditing](auditing.md)** -- Empirical privacy validation via
-  membership inference.
+- **[Optimizers](optimizers.md)** — TorchOpt functional optimizers
+  with DP-SGD bias correction and the private second-moment story
+  for DP-FTRL.
+- **[Serialization (API reference)](../reference/serialization.md)** —
+  Checkpoint explicit state with
+  `opaque.serialization.state_dict` / `from_state_dict`.
+- **[LR Scheduling](lr-scheduling.md)** — Warmup, cosine,
+  inverse-sqrt schedules; composing `with_warmup` with any decay
+  curve.
+- **[Distributed Training](distributed.md)** — DDP with synchronized
+  noise and gradient aggregation.
+- **[HuggingFace Compatibility](huggingface.md)** — HuggingFace
+  Transformers models with Opaque, LoRA, fused Triton kernels.
+- **[Memory Optimizations](memory-optimizations.md)** — Microbatching,
+  gradient checkpointing, fused kernels, profiling.
+- **[Privacy Auditing](auditing.md)** — Empirical privacy validation
+  via membership inference.
+
+### Mechanism reference
+
+- **[DP-SGD mechanisms](../mechanisms/dp-sgd/index.md)** — Gaussian
+  per-step noise.
+- **[DP-FTRL mechanisms](../mechanisms/dp-ftrl/index.md)** — BandMF,
+  BLT, BSR, BISR, λ-CGD strategies.
+
+### Extending
+
+- **[Extending Opaque](../extending/index.md)** — Plugging in a new
+  mechanism family, registering custom state types, the
+  `opaque.api.*` contributor surface.
 
 ### Reference
 
-- **[Known Limitations](../limitations.md)** -- Flash Attention, DDP-only,
-  in-place operations, and other constraints.
+- **[Known Limitations](../limitations.md)** — Flash Attention,
+  DDP-only, in-place operations, other constraints.
