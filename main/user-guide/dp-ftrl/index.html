@@ -15,10 +15,10 @@
         <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/user-guide/dp-ftrl/">
       
       
-        <link rel="prev" href="../noise/">
+        <link rel="prev" href="../dp-sgd/">
       
       
-        <link rel="next" href="../accounting/">
+        <link rel="next" href="../clipping/">
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
@@ -26,7 +26,7 @@
     
     
       
-        <title>Correlated noise (DP-FTRL) - Opaque</title>
+        <title>DP-FTRL - Opaque</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#correlated-noise-dp-ftrl" class="md-skip">
+        <a href="#dp-ftrl-end-to-end" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Correlated noise (DP-FTRL)
+              DP-FTRL
             
           </span>
         </div>
@@ -334,11 +334,31 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../api/" class="md-tabs__link">
+        <a href="../../reference/" class="md-tabs__link">
           
   
   
   API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../extending/" class="md-tabs__link">
+          
+  
+  
+  Extending Opaque
 
         </a>
       </li>
@@ -630,6 +650,249 @@
                 
   
   
+    
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3_4" id="__nav_3_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    End-to-end pipelines
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3_4">
+            <span class="md-nav__icon md-icon"></span>
+            End-to-end pipelines
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dp-sgd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    DP-SGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    DP-FTRL
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    DP-FTRL
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#why-dp-ftrl" class="md-nav__link">
+    <span class="md-ellipsis">
+      Why DP-FTRL
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#two-notions-of-correct" class="md-nav__link">
+    <span class="md-ellipsis">
+      Two notions of "correct"
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-strategy-choice" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Strategy choice
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-calibration" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Calibration
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-clipping" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Clipping
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-noise" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Noise
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-sampling" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Sampling
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-optimizer" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. Optimizer
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-end-to-end-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      7. End-to-end loop
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#runnable-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      Runnable references
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      See also
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
   
   
     <li class="md-nav__item">
@@ -667,158 +930,6 @@
   
 
       </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-    
-  
-  
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    Correlated noise (DP-FTRL)
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
-        
-  
-  
-  <span class="md-ellipsis">
-    Correlated noise (DP-FTRL)
-    
-  </span>
-  
-
-      </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#what-opaque-implements" class="md-nav__link">
-    <span class="md-ellipsis">
-      What Opaque implements
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#two-notions-of-correct" class="md-nav__link">
-    <span class="md-ellipsis">
-      Two notions of “correct”
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Two notions of “correct”">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#1-mechanism-dp-correctness" class="md-nav__link">
-    <span class="md-ellipsis">
-      1. Mechanism / DP correctness
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#2-workload-fidelity-utility" class="md-nav__link">
-    <span class="md-ellipsis">
-      2. Workload fidelity / utility
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#choosing-a-mechanism-summary" class="md-nav__link">
-    <span class="md-ellipsis">
-      Choosing a mechanism (summary)
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#private-second-moments-and-mf" class="md-nav__link">
-    <span class="md-ellipsis">
-      Private Second Moments And MF
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#bsr-scope" class="md-nav__link">
-    <span class="md-ellipsis">
-      BSR scope
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#lr-schedule-and-workload-modeling" class="md-nav__link">
-    <span class="md-ellipsis">
-      LR schedule and workload modeling
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#further-reading" class="md-nav__link">
-    <span class="md-ellipsis">
-      Further reading
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1110,8 +1221,74 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    DP-SGD
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            DP-SGD
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
-      <a href="../../mechanisms/gaussian/" class="md-nav__link">
+      <a href="../../mechanisms/dp-sgd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/dp-sgd/gaussian/" class="md-nav__link">
         
   
   
@@ -1127,6 +1304,57 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    DP-FTRL
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            DP-FTRL
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
               
                 
   
@@ -1134,12 +1362,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/bsr/" class="md-nav__link">
+      <a href="../../mechanisms/dp-ftrl/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    BSR
+    Overview
     
   </span>
   
@@ -1157,7 +1385,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/band-mf/" class="md-nav__link">
+      <a href="../../mechanisms/dp-ftrl/band-mf/" class="md-nav__link">
         
   
   
@@ -1180,7 +1408,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/blt/" class="md-nav__link">
+      <a href="../../mechanisms/dp-ftrl/blt/" class="md-nav__link">
         
   
   
@@ -1203,12 +1431,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/lambda-cgd/" class="md-nav__link">
+      <a href="../../mechanisms/dp-ftrl/bsr/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    DP-λCGD
+    BSR
     
   </span>
   
@@ -1226,7 +1454,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/bisr/" class="md-nav__link">
+      <a href="../../mechanisms/dp-ftrl/bisr/" class="md-nav__link">
         
   
   
@@ -1237,6 +1465,37 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/dp-ftrl/lambda-cgd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    DP-λCGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1321,6 +1580,49 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    DP-SGD track
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            DP-SGD track
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../../tutorials/dp_sgd_training/" class="md-nav__link">
         
@@ -1368,12 +1670,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../../tutorials/llm_finetuning/" class="md-nav__link">
+      <a href="../../tutorials/sampling_and_microbatching/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Fine-tune an LLM with Differential Privacy
+    Sampling Strategies and Microbatching
     
   </span>
   
@@ -1391,12 +1693,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../../tutorials/sampling_and_microbatching/" class="md-nav__link">
+      <a href="../../tutorials/llm_finetuning/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Sampling Strategies and Microbatching
+    Fine-tune an LLM with Differential Privacy
     
   </span>
   
@@ -1406,6 +1708,131 @@
   
 
               
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_3" id="__nav_5_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    DP-FTRL track
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_3">
+            <span class="md-nav__icon md-icon"></span>
+            DP-FTRL track
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/dp_ftrl_training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Train a Model with DP-FTRL
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_4" id="__nav_5_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Cross-cutting
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_4">
+            <span class="md-nav__icon md-icon"></span>
+            Cross-cutting
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1443,6 +1870,37 @@
   
   <span class="md-ellipsis">
     Distributed DP-SGD Training
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/extending_opaque/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Extending Opaque
     
   </span>
   
@@ -1510,7 +1968,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/" class="md-nav__link">
+      <a href="../../reference/" class="md-nav__link">
         
   
   
@@ -1533,7 +1991,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/serialization/" class="md-nav__link">
+      <a href="../../reference/serialization/" class="md-nav__link">
         
   
   
@@ -1556,7 +2014,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/clipping/" class="md-nav__link">
+      <a href="../../reference/clipping/" class="md-nav__link">
         
   
   
@@ -1579,7 +2037,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/noise/" class="md-nav__link">
+      <a href="../../reference/noise/" class="md-nav__link">
         
   
   
@@ -1602,7 +2060,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/accounting/" class="md-nav__link">
+      <a href="../../reference/accounting/" class="md-nav__link">
         
   
   
@@ -1625,7 +2083,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/sampling/" class="md-nav__link">
+      <a href="../../reference/sampling/" class="md-nav__link">
         
   
   
@@ -1648,7 +2106,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/rng/" class="md-nav__link">
+      <a href="../../reference/rng/" class="md-nav__link">
         
   
   
@@ -1671,7 +2129,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/distributed/" class="md-nav__link">
+      <a href="../../reference/distributed/" class="md-nav__link">
         
   
   
@@ -1694,7 +2152,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/auditing/" class="md-nav__link">
+      <a href="../../reference/auditing/" class="md-nav__link">
         
   
   
@@ -1717,7 +2175,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/utilities/" class="md-nav__link">
+      <a href="../../reference/utilities/" class="md-nav__link">
         
   
   
@@ -1740,7 +2198,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/optimizers/" class="md-nav__link">
+      <a href="../../reference/optimizers/" class="md-nav__link">
         
   
   
@@ -1763,12 +2221,177 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/schedules/" class="md-nav__link">
+      <a href="../../reference/schedules/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     Schedules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Extending Opaque
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Extending Opaque
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../extending/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../extending/serialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Serialization registry
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../extending/distributed-sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed sync
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../extending/clipping-fun/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Clipping fun helpers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../extending/new-mechanism/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Adding a new mechanism family
     
   </span>
   
@@ -1813,9 +2436,9 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#what-opaque-implements" class="md-nav__link">
+  <a href="#why-dp-ftrl" class="md-nav__link">
     <span class="md-ellipsis">
-      What Opaque implements
+      Why DP-FTRL
     </span>
   </a>
   
@@ -1824,76 +2447,88 @@
         <li class="md-nav__item">
   <a href="#two-notions-of-correct" class="md-nav__link">
     <span class="md-ellipsis">
-      Two notions of “correct”
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Two notions of “correct”">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#1-mechanism-dp-correctness" class="md-nav__link">
-    <span class="md-ellipsis">
-      1. Mechanism / DP correctness
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#2-workload-fidelity-utility" class="md-nav__link">
-    <span class="md-ellipsis">
-      2. Workload fidelity / utility
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#choosing-a-mechanism-summary" class="md-nav__link">
-    <span class="md-ellipsis">
-      Choosing a mechanism (summary)
+      Two notions of "correct"
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#private-second-moments-and-mf" class="md-nav__link">
+  <a href="#1-strategy-choice" class="md-nav__link">
     <span class="md-ellipsis">
-      Private Second Moments And MF
+      1. Strategy choice
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#bsr-scope" class="md-nav__link">
+  <a href="#2-calibration" class="md-nav__link">
     <span class="md-ellipsis">
-      BSR scope
+      2. Calibration
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#lr-schedule-and-workload-modeling" class="md-nav__link">
+  <a href="#3-clipping" class="md-nav__link">
     <span class="md-ellipsis">
-      LR schedule and workload modeling
+      3. Clipping
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#further-reading" class="md-nav__link">
+  <a href="#4-noise" class="md-nav__link">
     <span class="md-ellipsis">
-      Further reading
+      4. Noise
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-sampling" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Sampling
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-optimizer" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. Optimizer
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-end-to-end-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      7. End-to-end loop
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#runnable-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      Runnable references
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      See also
     </span>
   </a>
   
@@ -1918,115 +2553,210 @@
   
 
 
-<h1 id="correlated-noise-dp-ftrl">Correlated noise (DP-FTRL)<a class="headerlink" href="#correlated-noise-dp-ftrl" title="Permanent link">&para;</a></h1>
-<p>Opaque's DP-FTRL mechanisms add <strong>correlated</strong> Gaussian noise across
-training steps via matrix factorization. Compared to independent noise at
-each step (standard DP-SGD), correlated noise reduces variance on the
-<strong>cumulative</strong> updates that the optimizer effectively applies, for the same
-calibrated privacy guarantee.</p>
-<p>The mechanisms live in <code>opaque.dpftrl</code>. Mechanism-specific math and API
-details live in <a href="../../mechanisms/">Mechanisms</a>.</p>
-<h2 id="what-opaque-implements">What Opaque implements<a class="headerlink" href="#what-opaque-implements" title="Permanent link">&para;</a></h2>
+<h1 id="dp-ftrl-end-to-end">DP-FTRL end-to-end<a class="headerlink" href="#dp-ftrl-end-to-end" title="Permanent link">&para;</a></h1>
+<p>This guide walks through the full DP-FTRL pipeline: pick a
+matrix-factorization strategy, calibrate the noise multiplier for the
+<em>whole training run</em>, clip gradients, add correlated MF noise, run a
+torchopt step, and checkpoint state. Every import on this page comes
+from the <code>opaque.dpftrl.*</code> public façade.</p>
+<p>For DP-FTRL theory and a side-by-side comparison of mechanisms, see
+<a href="../../mechanisms/dp-ftrl/">DP-FTRL mechanisms</a>. For the DP-SGD
+counterpart, see <a href="../dp-sgd/">DP-SGD end-to-end</a>.</p>
+<h2 id="why-dp-ftrl">Why DP-FTRL<a class="headerlink" href="#why-dp-ftrl" title="Permanent link">&para;</a></h2>
+<p>DP-FTRL adds <strong>correlated</strong> Gaussian noise across training steps via
+matrix factorization. Compared to independent noise at each step
+(DP-SGD), correlated noise reduces variance on the <strong>cumulative</strong>
+updates that the optimizer actually applies, for the same calibrated
+privacy guarantee.</p>
+<p>The trade-off: DP-FTRL accountants describe <strong>whole training runs</strong>.
+The amplification factory takes <code>n_steps</code> at calibration time, the
+strategy commits to a sensitivity / Gram matrix at construction time,
+and the noise mechanism latches the per-step contribution bound on
+the first call. Changing the training length, the per-step bound, or
+the strategy mid-run breaks the privacy claim.</p>
+<h2 id="two-notions-of-correct">Two notions of "correct"<a class="headerlink" href="#two-notions-of-correct" title="Permanent link">&para;</a></h2>
+<p>DP-FTRL has two distinct notions of "correctness" worth keeping
+separate:</p>
 <ol>
-<li>A <strong>strategy</strong> object (e.g. <code>band_mf_strategy</code>, <code>bsr_strategy</code>) holds:</li>
-<li>coefficients that define a lower-triangular linear map used for noise,</li>
-<li><strong>sensitivity</strong> (and sometimes a <strong>Gram matrix</strong>) for privacy accounting,</li>
-<li>
-<p>a streaming representation for efficient noise generation.</p>
-</li>
-<li>
-<p><code>mf_noise(grad_template, strategy, noise_multiplier=..., key=...)</code> returns <code>(noise_fn, state)</code> that injects noise each step. The mechanism reads the per-step contribution bound from each <code>ClippedPytree</code> input (typically produced by <code>clipped_grad</code>) and uses <code>noise_multiplier × bound</code> as the realized standard deviation; the latched first-call bound must remain constant across steps.</p>
-</li>
-<li>
-<p><strong>Privacy accounting</strong> uses the same sensitivity (and Gram matrix when needed) as the strategy passed to <code>mf_noise</code>. Always build the accounting mechanism from <strong>the same</strong> strategy object you use for noise.</p>
-</li>
+<li><strong>DP correctness</strong> — the privacy guarantee applies to the
+   randomized algorithm you actually run. As long as the accounting
+   uses the same sensitivity (and Gram matrix when needed) as the
+   strategy passed to <code>mf_noise</code>, and the sampler matches the
+   amplification analysis, the DP statement is valid.</li>
+<li><strong>Workload fidelity / utility</strong> — strategies are designed for a
+   workload model (Polyak momentum, constant LR, exponential decay).
+   If the real loop differs (different optimizer, different schedule,
+   accumulation pattern), utility may be worse than the paper's
+   ideal even when the DP statement is unchanged.</li>
 </ol>
-<h2 id="two-notions-of-correct">Two notions of “correct”<a class="headerlink" href="#two-notions-of-correct" title="Permanent link">&para;</a></h2>
-<p>Understanding MF in Opaque is easier if you separate:</p>
-<h3 id="1-mechanism-dp-correctness">1. Mechanism / DP correctness<a class="headerlink" href="#1-mechanism-dp-correctness" title="Permanent link">&para;</a></h3>
-<p>The <strong>differential privacy guarantee</strong> applies to the <strong>randomized algorithm you actually run</strong>: the linear map implied by the strategy, the noise scale, and the data collection / subsampling process.</p>
-<p>If accounting uses the same sensitivity (and compatible amplification) as the noise function, and the sampler matches what the analysis assumes, the DP statement is about <strong>that</strong> mechanism—not about whether the strategy was numerically optimal for an idealized workload.</p>
-<h3 id="2-workload-fidelity-utility">2. Workload fidelity / utility<a class="headerlink" href="#2-workload-fidelity-utility" title="Permanent link">&para;</a></h3>
-<p>Many strategies are <strong>designed or optimized</strong> under a <strong>model</strong> of the optimizer (e.g. Polyak momentum, constant learning rate, workload decay such as BSR’s paper <span class="arithmatex">\(\alpha\)</span>). If the <strong>real</strong> training loop differs (different optimizer, schedule, accumulation pattern), <strong>utility</strong> may be worse than the paper’s ideal, even when DP is still valid for the implemented <span class="arithmatex">\(C\)</span>.</p>
-<p>Opaque’s BandMF and BLT pass <strong>workload coefficients</strong> into a Toeplitz optimization problem. For <strong>non-constant</strong> learning rate schedules, the encoded workload is a <strong>Toeplitz surrogate</strong>: it does not exactly match every entry of the time-varying triangular map <span class="arithmatex">\(W_{t,s} = \eta_t \beta^{t-s}\)</span> unless <span class="arithmatex">\(\eta_t\)</span> is constant. Privacy remains correct for the constructed strategy; the gap is in how tightly the optimization target matches your true discrete-time operator.</p>
-<p>See <a href="../../mechanisms/band-mf/#assumptions-and-limitations">BandMF — Assumptions and limitations</a> for a concise statement.</p>
-<h2 id="choosing-a-mechanism-summary">Choosing a mechanism (summary)<a class="headerlink" href="#choosing-a-mechanism-summary" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Mechanism</th>
-<th>Noise pattern</th>
-<th>Typical amplification</th>
-<th>Extra memory</th>
-<th>Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="../../mechanisms/band-mf/">BandMF</a></td>
-<td>Optimized banded Toeplitz</td>
-<td>Cyclic Poisson or b-min-sep</td>
-<td><span class="arithmatex">\(O(\text{bands})\)</span></td>
-<td>General default; L-BFGS at init</td>
-</tr>
-<tr>
-<td><a href="../../mechanisms/blt/">BLT</a></td>
-<td>Buffered linear Toeplitz</td>
-<td>BnB (+ sequential data order)</td>
-<td><span class="arithmatex">\(O(\text{buffers})\)</span></td>
-<td>Long runs / multi-epoch</td>
-</tr>
-<tr>
-<td><a href="../../mechanisms/lambda-cgd/">DP-λCGD</a></td>
-<td>PRNG replay, bandwidth 2</td>
-<td>BnB</td>
-<td><span class="arithmatex">\(O(1)\)</span></td>
-<td>Minimal memory</td>
-</tr>
-<tr>
-<td><a href="../../mechanisms/bisr/">BISR</a></td>
-<td>Banded inverse square root</td>
-<td>BnB</td>
-<td><span class="arithmatex">\(O(p)\)</span></td>
-<td>Analytic inverse coefficients</td>
-</tr>
-<tr>
-<td><a href="../../mechanisms/bsr/">BSR</a></td>
-<td>Banded square root (closed form)</td>
-<td>BnB</td>
-<td><span class="arithmatex">\(O(p)\)</span></td>
-<td>Paper <code>alpha</code>, <code>beta</code> (kw-only); bind <code>beta</code> from SGD momentum or Adam <span class="arithmatex">\(\beta_1\)</span></td>
-</tr>
-<tr>
-<td>Identity</td>
-<td>Independent (DP-SGD style)</td>
-<td>Poisson / standard</td>
-<td><span class="arithmatex">\(O(1)\)</span></td>
-<td>Baseline via MF API</td>
-</tr>
-</tbody>
-</table>
-<h2 id="private-second-moments-and-mf">Private Second Moments And MF<a class="headerlink" href="#private-second-moments-and-mf" title="Permanent link">&para;</a></h2>
-<p>Private second-moment estimation uses <strong>two</strong> correlated noise streams
-(gradients and squared gradients) with a <strong>joint sensitivity</strong>. It is
-<strong>not</strong> the same workload model as single-stream SGD+momentum mechanisms.</p>
-<p>When using <code>mf_noise(..., second_moment_strategy=...)</code>, pass
-<code>second_moment_strategy</code> explicitly. This keeps first-moment and
-second-moment workload choices visible, especially for λCGD where there
-is no single universally correct mapping from optimizer β₂ to strategy λ.</p>
-<h2 id="bsr-scope">BSR scope<a class="headerlink" href="#bsr-scope" title="Permanent link">&para;</a></h2>
-<p><a href="../../mechanisms/bsr/">BSR</a> ships <strong>closed-form</strong> coefficients for the Kalinin–Lampert workload in <span class="arithmatex">\((\alpha,\beta)\)</span>. It does <strong>not</strong> accept arbitrary <code>lr_schedule</code> inside the closed-form path. For general schedules or optimizers, use <strong>BandMF</strong> (numerical Toeplitz optimization) or <strong>BLT</strong>.</p>
-<p>With private second moments + BSR, the second stream is a second
-<code>bsr_strategy(..., alpha=..., beta=β₂)</code>; require <span class="arithmatex">\(\alpha &gt; \beta\)</span> for
-each stream’s <span class="arithmatex">\(\beta\)</span>.</p>
-<h2 id="lr-schedule-and-workload-modeling">LR schedule and workload modeling<a class="headerlink" href="#lr-schedule-and-workload-modeling" title="Permanent link">&para;</a></h2>
-<p><strong>No MF mechanism in Opaque currently implements schedule-aware factorizations</strong> from Kalinin &amp; Andersson (arXiv:2511.17994). That paper proposes constructions provably better under non-constant LR for the schedule workload <span class="arithmatex">\(A_\chi = A_1 D\)</span>, but the closed-form path only covers <strong>exponential decay</strong> and is not generic enough for general schedules (including warmup).</p>
-<p>BandMF and BLT accept <code>lr_schedule</code> as a <strong>Toeplitz-surrogate</strong> workload optimization input (utility heuristic, not exact schedule-aware construction). BISR, BSR, and λCGD do <strong>not</strong> accept <code>lr_schedule</code>.</p>
-<h2 id="further-reading">Further reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
+<h2 id="1-strategy-choice">1. Strategy choice<a class="headerlink" href="#1-strategy-choice" title="Permanent link">&para;</a></h2>
+<p>Pick a matrix-factorization strategy by mechanism. The strategy
+object holds: coefficients defining the lower-triangular linear map
+used for noise, the sensitivity (and sometimes a Gram matrix) used by
+the accountant, and a streaming representation for efficient noise
+generation.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">band_mf_strategy</span><span class="p">,</span>    <span class="c1"># numerical Toeplitz optimization</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">blt_strategy</span><span class="p">,</span>        <span class="c1"># buffered linear toeplitz, multi-epoch</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">bisr_strategy</span><span class="p">,</span>       <span class="c1"># banded inverse square root</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">bsr_strategy</span><span class="p">,</span>        <span class="c1"># banded square root, closed-form</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">lambda_cgd_strategy</span><span class="p">,</span> <span class="c1"># PRNG replay, O(1) memory</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">identity_strategy</span><span class="p">,</span>   <span class="c1"># no correlation; baseline</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="p">)</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+</code></pre></div>
+<p>See <a href="../../mechanisms/dp-ftrl/">DP-FTRL mechanisms</a> for the
+choice criteria.</p>
+<h2 id="2-calibration">2. Calibration<a class="headerlink" href="#2-calibration" title="Permanent link">&para;</a></h2>
+<p>DP-FTRL accountants describe a whole training run. Build the strategy
+first, then build the matching accounting mechanism using its
+sensitivity / Gram matrix:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>                  <span class="c1"># cross-cutting</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpftrl.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpftrl_acc</span>    <span class="c1"># DP-FTRL factories</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Same strategy that will go into mf_noise below.</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>        <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>            <span class="n">nm</span><span class="p">,</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>            <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>            <span class="n">coefficients</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">coefficients</span><span class="p">,</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>        <span class="p">),</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>        <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>        <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>    <span class="p">),</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">param_max</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="p">)</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="n">noise_multiplier</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">param</span>
+</code></pre></div>
+<p>Three amplification factories under
+<code>opaque.dpftrl.accounting</code> — pick the one that matches your sampler:</p>
 <ul>
-<li><a href="../noise/">Noise addition</a> — Gaussian vs MF entry points</li>
-<li><a href="../../mechanisms/">Mechanisms index</a> — per-mechanism docs</li>
-<li><a href="../optimizers/">Optimizers</a> — SGD vs private second-moment AdamW</li>
+<li><code>dpftrl_acc.poisson(...)</code> — Poisson subsampling (cyclic-Poisson
+  under banded MF).</li>
+<li><code>dpftrl_acc.b_min_sep(...)</code> — b-min-separation participation
+  pattern.</li>
+<li><code>dpftrl_acc.balls_in_bins(...)</code> — fixed-partition participation.</li>
+</ul>
+<p>Each amplification factory wraps a mechanism into a single
+<code>DpProcess</code> describing the full training run. <strong>Always pass the same
+strategy object</strong> into <code>mf_noise</code> and the accounting factory — that's
+how DP correctness is preserved.</p>
+<h2 id="3-clipping">3. Clipping<a class="headerlink" href="#3-clipping" title="Permanent link">&para;</a></h2>
+<p>Same engine clipping primitives as DP-SGD, just imported from
+<code>opaque.dpftrl.clipping</code>. Adaptive clipping is <strong>not</strong> available
+under DP-FTRL — its threshold drifts across steps, violating the
+constant per-step sensitivity assumption MF privacy proofs require.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">loss_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">):</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="k">return</span> <span class="n">loss</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">loss_fn</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="p">)</span>
+</code></pre></div>
+<p><code>auto_clipped_grad</code> (AUTO-S) is also available and compatible with
+DP-FTRL — its sensitivity bound is constant.</p>
+<h2 id="4-noise">4. Noise<a class="headerlink" href="#4-noise" title="Permanent link">&para;</a></h2>
+<p><code>opaque.dpftrl.noise.mf_noise</code> injects correlated noise:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># grad_template is the structure of clipped_grad&#39;s output —</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># typically a ClippedPytree from a single warm-up call.</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">warmup_grads</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">warmup_batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">mf_noise</span><span class="p">(</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">warmup_grads</span><span class="p">,</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="n">strategy</span><span class="p">,</span>                       <span class="c1"># same object you used in accounting</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>    <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="p">)</span>
+</code></pre></div>
+<p><code>mf_noise</code> reads the per-step contribution bound from the
+<code>ClippedPytree</code> input on the <strong>first call</strong> and latches it for the
+rest of the run. The bound is <code>noise_multiplier × max_norm</code>, so each
+step must produce gradients with the same <code>max_norm</code> for the privacy
+claim to hold.</p>
+<p>For private second-moment estimation (Adam-style optimizers), pass
+<code>second_moment_strategy=...</code> — see <a href="../optimizers/">Optimizers</a>.</p>
+<h2 id="5-sampling">5. Sampling<a class="headerlink" href="#5-sampling" title="Permanent link">&para;</a></h2>
+<p>DP-FTRL has its own sampler family under <code>opaque.dpftrl.sampling</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">CyclicPoissonSampler</span><span class="p">,</span>    <span class="c1"># banded MF: cyclic Poisson subsampling</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">BMinSepSampler</span><span class="p">,</span>          <span class="c1"># b-min-separation</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">BallsInBinsSampler</span><span class="p">,</span>      <span class="c1"># fixed-partition</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">SequentialBatchSampler</span><span class="p">,</span>  <span class="c1"># deterministic order, used by BLT</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">)</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">CyclicPoissonSampler</span><span class="p">(</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">dataset</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">)</span>
+</code></pre></div>
+<p>The sampler must match the amplification factory you used in
+calibration.</p>
+<h2 id="6-optimizer">6. Optimizer<a class="headerlink" href="#6-optimizer" title="Permanent link">&para;</a></h2>
+<p>Same surface as DP-SGD:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">noise_bias_correction</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
+</code></pre></div>
+<p>Private second-moment AdamW pairs with <code>mf_noise(...,
+second_moment_strategy=...)</code> — the noise mechanism produces a
+<code>SecondMomentNoiseOutput</code> and the optimizer's DP-aware path consumes
+it. See <a href="../optimizers/">Optimizers</a> for the full second-moment story.</p>
+<h2 id="7-end-to-end-loop">7. End-to-end loop<a class="headerlink" href="#7-end-to-end-loop" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">state_dict</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_functional</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">fmodel</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">make_functional</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="k">for</span> <span class="n">step</span><span class="p">,</span> <span class="n">batch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">sampler</span><span class="p">):</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">noised</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noised</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="c1"># Checkpoint:</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="n">ckpt</span> <span class="o">=</span> <span class="p">{</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>    <span class="s2">&quot;params&quot;</span><span class="p">:</span> <span class="n">params</span><span class="p">,</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>    <span class="s2">&quot;opt_state&quot;</span><span class="p">:</span> <span class="n">opt_state</span><span class="p">,</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>    <span class="s2">&quot;clip_state&quot;</span><span class="p">:</span> <span class="n">clip_state</span><span class="p">,</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>    <span class="s2">&quot;noise_state&quot;</span><span class="p">:</span> <span class="n">noise_state</span><span class="p">,</span>  <span class="c1"># carries MF streaming-matrix state</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="p">}</span>
+<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">state_dict</span><span class="p">(</span><span class="n">ckpt</span><span class="p">),</span> <span class="s2">&quot;step.pt&quot;</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="runnable-references">Runnable references<a class="headerlink" href="#runnable-references" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dp_ftrl.py"><code>examples/train_dp_ftrl.py</code></a>
+  — full DP-FTRL training script.</li>
+<li><code>tests/integration/test_dpftrl_pipeline.py</code> — minimal smoke test
+  exercising the same flow on a tiny LlamaConfig + LoRA model (and
+  the Qwen2 variant).</li>
+</ul>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../clipping/">Clipping</a> — fixed and AUTO-S variants
+  (adaptive is DP-SGD-only).</li>
+<li><a href="../noise/">Noise</a> — <code>mf_noise</code> shape, strategy types,
+  per-step bound latching.</li>
+<li><a href="../sampling/">Sampling</a> — DP-FTRL sampler family.</li>
+<li><a href="../accounting/">Accounting</a> — <code>DpProcess</code>, the
+  whole-process model, MF-specific composition.</li>
+<li><a href="../optimizers/">Optimizers</a> — second-moment integration.</li>
+<li><a href="../../mechanisms/dp-ftrl/">DP-FTRL mechanisms</a> — per-mechanism
+  reference pages.</li>
+<li><a href="../dp-sgd/">DP-SGD end-to-end</a> — the per-step companion pipeline.</li>
 </ul>
 
 

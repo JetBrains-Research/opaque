@@ -9,59 +9,23 @@
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/api/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/main/extending/</loc>
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/api/accounting/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/main/extending/clipping-fun/</loc>
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/api/auditing/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/main/extending/distributed-sync/</loc>
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/api/clipping/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/main/extending/new-mechanism/</loc>
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/api/distributed/</loc>
-         <lastmod>2026-05-10</lastmod>
-    </url>
-    <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/api/noise/</loc>
-         <lastmod>2026-05-10</lastmod>
-    </url>
-    <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/api/optimizers/</loc>
-         <lastmod>2026-05-10</lastmod>
-    </url>
-    <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/api/rng/</loc>
-         <lastmod>2026-05-10</lastmod>
-    </url>
-    <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/api/sampling/</loc>
-         <lastmod>2026-05-10</lastmod>
-    </url>
-    <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/api/schedules/</loc>
-         <lastmod>2026-05-10</lastmod>
-    </url>
-    <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/api/serialization/</loc>
-         <lastmod>2026-05-10</lastmod>
-    </url>
-    <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/api/utilities/</loc>
-         <lastmod>2026-05-10</lastmod>
-    </url>
-    <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/development/liger-kernel-porting-plan/</loc>
-         <lastmod>2026-05-10</lastmod>
-    </url>
-    <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/development/plan-opaque-core-split/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/main/extending/serialization/</loc>
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
@@ -77,27 +41,83 @@
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/band-mf/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/dp-ftrl/</loc>
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/bisr/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/dp-ftrl/band-mf/</loc>
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/blt/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/dp-ftrl/bisr/</loc>
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/bsr/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/dp-ftrl/blt/</loc>
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/gaussian/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/dp-ftrl/bsr/</loc>
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/lambda-cgd/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/dp-ftrl/lambda-cgd/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/dp-sgd/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/dp-sgd/gaussian/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/reference/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/reference/accounting/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/reference/auditing/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/reference/clipping/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/reference/distributed/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/reference/noise/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/reference/optimizers/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/reference/rng/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/reference/sampling/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/reference/schedules/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/reference/serialization/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/reference/utilities/</loc>
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
@@ -113,7 +133,15 @@
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/tutorials/dp_ftrl_training/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
          <loc>https://jetbrains-research.github.io/opaque/main/tutorials/dp_sgd_training/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/tutorials/extending_opaque/</loc>
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
@@ -154,6 +182,10 @@
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/dp-ftrl/</loc>
+         <lastmod>2026-05-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/user-guide/dp-sgd/</loc>
          <lastmod>2026-05-10</lastmod>
     </url>
     <url>
