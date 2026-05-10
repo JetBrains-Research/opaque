@@ -123,18 +123,19 @@ step = dpsgd_acc.poisson(
 training = step * num_steps
 ```
 
-### `PoissonSampler` (DP-FTRL)
+### `CyclicPoissonSampler` (DP-FTRL)
 
-Poisson subsampling under :mod:`opaque.dpftrl.sampling`.  ``bands=1`` draws
-from the full dataset each step (identity baseline).  Larger ``bands``
-partition examples and cycle groups each step (e.g. BandMF with ``mf_noise``).
+Cyclic Poisson subsampling under :mod:`opaque.dpftrl.sampling`.  ``bands=1``
+is a single group, so each step is plain Poisson on the full dataset (identity
+baseline).  Larger ``bands`` partition examples and advance one group per step
+(e.g. BandMF with ``mf_noise``).
 
 ```python
-from opaque.dpftrl.sampling import PoissonSampler
+from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.dpftrl.sampling.types import PartitionType
 from opaque.random import key
 
-sampler = PoissonSampler(
+sampler = CyclicPoissonSampler(
     dataset,
     sample_rate=0.5,
     bands=5,
@@ -163,8 +164,8 @@ loader = data.DataLoader(dataset, batch_sampler=sampler)
 - `PartitionType.INDEPENDENT` -- assign each example to a random group
   (multinomial). Group sizes vary.
 
-At iteration `i`, the sampler draws from group `i % cycle_length`. With
-`cycle_length=1` it reduces to standard Poisson sampling.
+At iteration `i`, the sampler draws from group `i % bands`. With `bands=1`
+there is only one group, so each step is standard Poisson on the full dataset.
 
 See [Noise Addition](noise.md#matrix-factorization-noise-dp-ftrl) for how cyclic
 sampling integrates with correlated noise mechanisms.
@@ -420,7 +421,7 @@ grads_mb, state_mb = grad_fn_mb(params, batch_256, state=state_mb)
 |---------|-----------|---------|----------|
 | `PoissonSubsampler` | Variable | Standard amplification | Research, general use |
 | `PoissonSubsampler` + ``truncated_batch_size`` | Bounded above | Weaker than plain Poisson (same ``sample_rate``) | Production, stable batch sizes / memory |
-| `PoissonSampler` (``opaque.dpftrl``) | Variable | ``ftrl_acc.poisson`` | DP-FTRL; ``bands=1`` or cyclic ``bands>1`` |
+| `CyclicPoissonSampler` (``opaque.dpftrl``) | Variable | ``ftrl_acc.poisson`` | DP-FTRL; ``bands=1`` or cyclic ``bands>1`` |
 | `BallsInBinsSampler` | Fixed (deterministic) | Balls-in-bins amplification | λCGD, BISR, BLT |
 | `SequentialBatchSampler` | Fixed (deterministic) | No amplification | BLT (pre-shuffled dataset) |
 
@@ -428,7 +429,7 @@ For most DP-SGD workloads, `PoissonSubsampler` is sufficient.
 Use ``truncated_batch_size`` when you need **capped** batch sizes; expect
 **worse** privacy than plain Poisson at the same ``sample_rate`` unless you
 recalibrate noise. For DP-FTRL, use
-``opaque.dpftrl.sampling.PoissonSampler`` (``bands`` selects identity vs cyclic
+``opaque.dpftrl.sampling.CyclicPoissonSampler`` (``bands`` selects identity vs cyclic
 participation). `BallsInBinsSampler` and
 `SequentialBatchSampler` are used with matrix-factorization mechanisms
 that require fixed batch sizes.

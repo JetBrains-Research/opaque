@@ -214,7 +214,7 @@ eps = proc.epsilon_at(delta=1e-5)
 
 ### End-to-end BandMF example
 
-BandMF uses `opaque.dpftrl.sampling.PoissonSampler` with ``bands`` matching the
+BandMF uses `opaque.dpftrl.sampling.CyclicPoissonSampler` with ``bands`` matching the
 strategy; it yields a predictable
 sampling pattern that the noise strategy exploits:
 
@@ -222,7 +222,7 @@ sampling pattern that the noise strategy exploits:
 import torch
 from opaque.dpftrl.clipping import clipped_grad
 from opaque.dpftrl.noise import mf_noise, band_mf_strategy
-from opaque.dpftrl.sampling import PoissonSampler
+from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.random import key, split
 
 n_steps, bands = 1000, 10
@@ -240,7 +240,7 @@ noise_fn, noise_state = mf_noise(
     noise_multiplier=result.param,
     key=key_noise,
 )
-sampler = PoissonSampler(
+sampler = CyclicPoissonSampler(
     dataset,
     sample_rate=sample_rate,
     bands=bands,
@@ -274,7 +274,7 @@ for batch in loader:
   better per-group amplification but more composition steps.
 - BandMF requires knowing `n_steps` before training starts. If the training
   length is uncertain, use standard Gaussian noise with early stopping.
-- Pair with `PoissonSampler` for consistent sampling and accounting.
+- Pair with `CyclicPoissonSampler` for consistent sampling and accounting.
 
 ## References
 

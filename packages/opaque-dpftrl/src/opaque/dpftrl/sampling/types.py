@@ -1,7 +1,7 @@
 """Public type definitions for :mod:`opaque.dpftrl.sampling`.
 
 Re-exports the partition-strategy enum used by
-:class:`opaque.dpftrl.sampling.PoissonSampler` for type annotations
+:class:`opaque.dpftrl.sampling.CyclicPoissonSampler` for type annotations
 and explicit construction.
 """
 

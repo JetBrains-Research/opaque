@@ -46,7 +46,7 @@ from opaque.dpftrl.noise import (
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
     BMinSepSampler,
-    PoissonSampler,
+    CyclicPoissonSampler,
     SequentialBatchSampler,
 )
 
@@ -100,6 +100,6 @@ __all__ = [
     # Samplers
     "BallsInBinsSampler",
     "BMinSepSampler",
-    "PoissonSampler",
+    "CyclicPoissonSampler",
     "SequentialBatchSampler",
 ]

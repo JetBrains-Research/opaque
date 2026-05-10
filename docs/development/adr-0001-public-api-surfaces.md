@@ -39,6 +39,6 @@ Lower-level helpers and state dataclasses live under `.types` and `.fun` on thos
 | Class | Module |
 |-------|--------|
 | `PoissonSubsampler` | `opaque.dpsgd.sampling` |
-| `PoissonSampler` | `opaque.dpftrl.sampling` |
+| `CyclicPoissonSampler` | `opaque.dpftrl.sampling` |
 
 Constructor keyword for inclusion probability: `sample_rate`.

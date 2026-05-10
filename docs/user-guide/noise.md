@@ -531,14 +531,14 @@ Values are illustrative; actual results depend on problem specifics.
 
 ### MF noise with Poisson sampling
 
-MF noise pairs with `opaque.dpftrl.sampling.PoissonSampler`, which yields a predictable
+MF noise pairs with `opaque.dpftrl.sampling.CyclicPoissonSampler`, which yields a predictable
 sampling pattern that the noise strategy can exploit:
 
 ```python
-from opaque.dpftrl.sampling import PoissonSampler
+from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.random import key
 
-sampler = PoissonSampler(
+sampler = CyclicPoissonSampler(
     dataset,
     sample_rate=sample_rate,
     bands=4,

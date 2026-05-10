@@ -108,7 +108,7 @@ def poisson(
             it equals ``n_steps``.
 
     This accountant matches **uncapped** Poisson draws (per-group
-    Binomial counts), as produced by :class:`opaque.dpftrl.sampling.PoissonSampler`.
+    Binomial counts), as produced by :class:`opaque.dpftrl.sampling.CyclicPoissonSampler`.
     It does **not** model post-draw batch-size caps.
 
     Returns:

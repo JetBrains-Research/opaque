@@ -146,7 +146,7 @@ from opaque.functional import empty_collate
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
     BMinSepSampler,
-    PoissonSampler,
+    CyclicPoissonSampler,
     SequentialBatchSampler,
 )
 from opaque.functional import make_functional
@@ -800,7 +800,7 @@ def main():
                 )
 
             def make_epoch_sampler(epoch):
-                return PoissonSampler(
+                return CyclicPoissonSampler(
                     train_dataset,
                     sample_rate=sampling_prob,
                     bands=args.bands,
@@ -854,7 +854,7 @@ def main():
     else:  # identity, none
 
         def make_epoch_sampler(epoch):
-            return PoissonSampler(
+            return CyclicPoissonSampler(
                 train_dataset,
                 sample_rate=sample_rate,
                 n_steps=expected_steps_per_epoch,

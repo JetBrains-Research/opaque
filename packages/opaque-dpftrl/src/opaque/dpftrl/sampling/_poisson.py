@@ -1,4 +1,4 @@
-"""Poisson sampler for DP-FTRL training (identity and band-MF regimes).
+"""Cyclic Poisson sampler for DP-FTRL training (identity and band-MF regimes).
 
 Examples are partitioned into ``bands`` groups; at iteration ``i`` the
 sampler draws a Poisson(``sample_rate``) batch from group ``i % bands``.
@@ -28,17 +28,19 @@ from opaque.dpftrl.sampling._partitions import (
 )
 
 
-class PoissonSampler(Sampler):
-    """Poisson subsampling for DP-FTRL (``bands`` selects identity vs cyclic).
+class CyclicPoissonSampler(Sampler):
+    """Cyclic Poisson subsampling for DP-FTRL (one active group per step).
 
     At iteration ``i``, each example in group ``i % bands`` is included
-    independently with probability ``sample_rate``.  ``bands=1`` is plain
-    Poisson over the whole dataset.
+    independently with probability ``sample_rate``.  ``bands=1`` is the
+    degenerate case: a single group, so each step is plain Poisson over the
+    full dataset (identity baseline).
 
     Args:
         data_source: Dataset to sample from (any object with ``__len__``).
         sample_rate: Per-step inclusion probability ``∈ (0, 1]``.
-        bands: Number of cyclic groups.  ``1`` = standard Poisson on full data.
+        bands: Number of groups in the participation cycle.  ``1`` = one group
+            (plain Poisson on the full dataset each step).
         n_steps: Total number of batches to yield.  Defaults to ``1``.
         partition_type: Partition strategy when ``bands > 1``.
         key: RNG key for reproducibility.
@@ -46,7 +48,7 @@ class PoissonSampler(Sampler):
     Example::
 
         from opaque.random import key
-        sampler = PoissonSampler(
+        sampler = CyclicPoissonSampler(
             dataset, sample_rate=0.01, bands=4, n_steps=1000, key=key(42),
         )
         loader = DataLoader(dataset, batch_sampler=sampler)

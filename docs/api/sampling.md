@@ -1,7 +1,7 @@
 # Sampling
 
 Sampling primitives live in `opaque.dpsgd.sampling` (Poisson) and
-`opaque.dpftrl.sampling` (Poisson with optional ``bands``, b-min-sep, balls-in-bins, sequential).
+`opaque.dpftrl.sampling` (cyclic Poisson with optional ``bands``, b-min-sep, balls-in-bins, sequential).
 Distributed shard helpers live in `opaque.distributed`. They provide
 privacy-amplifying sampling mechanisms for DP-SGD and DP-FTRL.
 
@@ -19,7 +19,7 @@ Opaque provides these sampling strategies:
    batches and memory; accounting must use the truncated-Poisson PLD (weaker
    than plain Poisson at the same `sample_rate`).
 
-2. **Poisson Sampling — DP-FTRL** (`opaque.dpftrl.sampling.PoissonSampler`):
+2. **Cyclic Poisson (DP-FTRL)** (`opaque.dpftrl.sampling.CyclicPoissonSampler`):
    iteration ``i`` draws from group ``i % bands`` with probability
    ``sample_rate``. ``bands=1`` is plain Poisson on the full dataset; larger
    ``bands`` give cyclic participation for correlated matrix-factorization
@@ -103,13 +103,13 @@ Account with `ftrl_acc.balls_in_bins(mechanism, num_bins, n_steps)` where
 `mechanism` is `ftrl_acc.lambda_cgd(...)`, `ftrl_acc.bisr(...)`,
 `ftrl_acc.blt(...)`, or `ftrl_acc.mf_identity(...)`.
 
-## PoissonSampler (DP-FTRL)
+## CyclicPoissonSampler (DP-FTRL)
 
 ```python
-from opaque.dpftrl.sampling import PoissonSampler
+from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.random import key
 
-sampler = PoissonSampler(
+sampler = CyclicPoissonSampler(
     data_source,
     sample_rate=0.5,
     bands=4,
@@ -175,7 +175,7 @@ loader = DataLoader(shard, batch_sampler=sampler)
       show_source: true
       heading_level: 3
 
-::: opaque.dpftrl.sampling.PoissonSampler
+::: opaque.dpftrl.sampling.CyclicPoissonSampler
     options:
       show_source: true
       heading_level: 3
