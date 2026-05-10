@@ -1,4 +1,4 @@
-"""Patches peft façade — re-exports from ``opaque.api.patches.peft``."""
+"""PEFT / LoRA fusion patches — wires fused LoRA kernels onto PEFT modules."""
 
 from opaque.api.patches.peft import apply_peft_model_patches
 

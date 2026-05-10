@@ -1,4 +1,4 @@
-"""Torch-pytree ops — façade re-exporting from ``opaque.api.engine.pytree``."""
+"""Torch-pytree ops — ``tree_map``, ``tree_leaves``, ``partition``, ``merge``, ``global_norm``."""
 
 from opaque.api.engine.pytree import (
     global_norm,

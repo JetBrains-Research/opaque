@@ -1,10 +1,13 @@
-"""Distributed façade — re-exports from ``opaque.api.engine.distributed``.
+"""Distributed primitives for DP training.
 
-Submodule façades ``opaque.distributed.collectives`` and
-``opaque.distributed.gradients`` mirror the impl tree's
-``opaque.api.engine.distributed.{collectives,gradients}`` for callers
-that import the submodules by name (``from opaque.distributed.collectives
-import all_reduce``).
+DDP detection (``is_distributed``, ``get_rank``, ``get_world_size``),
+collectives (``all_reduce``, ``barrier``), gradient reductions
+(``reduce_pytree``, ``sum_gradients``), wrapper-aware ``sync()``
+dispatch, and ``local_shard`` for dataset partitioning.
+
+The ``opaque.distributed.collectives`` and
+``opaque.distributed.gradients`` submodules expose the lower-level
+power-user primitives directly.
 """
 
 from opaque.api.engine.distributed import (

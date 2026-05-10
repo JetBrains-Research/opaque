@@ -1,4 +1,4 @@
-"""Patches transformers façade — re-exports from ``opaque.api.patches.transformers``."""
+"""HF Transformers compat patches — vmap-safe attention, KV cache, custom-family registry."""
 
 from opaque.api.patches.transformers import (
     apply_transformers_model_patches,

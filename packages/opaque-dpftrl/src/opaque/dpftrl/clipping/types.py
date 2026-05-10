@@ -1,6 +1,4 @@
-"""DP-FTRL clipping types façade — re-exports from
-``opaque.api.dpftrl.clipping.types``.
-"""
+"""DP-FTRL clipping state and aux types for type annotations."""
 
 from opaque.api.dpftrl.clipping.types import (
     AutoClippedFunAux,

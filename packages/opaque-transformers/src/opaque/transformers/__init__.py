@@ -1,4 +1,4 @@
-"""Hugging Face compatibility layer for Opaque — façade for ``opaque.api.transformers``.
+"""Hugging Face Trainer integration for Opaque.
 
 Skeleton; populated by the parallel HF-trainer branch.
 """

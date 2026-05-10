@@ -1,4 +1,4 @@
-"""Distributed gradient reductions façade — re-exports from ``opaque.api.engine.distributed.gradients``."""
+"""Distributed gradient reductions — ``reduce_pytree``, ``sum_gradients``."""
 
 from opaque.api.engine.distributed.gradients import (
     reduce_pytree,

@@ -1,4 +1,4 @@
-"""Scheduling façade — re-exports from ``opaque.api.engine.scheduling``."""
+"""Step-indexed schedules + warmup / restart composition."""
 
 from opaque.api.engine.scheduling import (
     constant_schedule,

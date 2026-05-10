@@ -1,4 +1,4 @@
-"""Profiling façade — re-exports from ``opaque.api.engine.profiling``."""
+"""Memory + step-time profiler for DP training."""
 
 from opaque.api.engine.profiling import (
     StepTimer,

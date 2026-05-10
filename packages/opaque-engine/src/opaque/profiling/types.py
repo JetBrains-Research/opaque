@@ -1,4 +1,4 @@
-"""Profiling types façade — re-exports from ``opaque.api.engine.profiling.types``."""
+"""Profiling result types — ``MemoryStats``, ``StepMetrics``, ``Checkpoint``."""
 
 from opaque.api.engine.profiling.types import Checkpoint, MemoryStats, StepMetrics
 

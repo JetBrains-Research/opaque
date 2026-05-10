@@ -1,4 +1,4 @@
-"""Patches kernels façade — re-exports from ``opaque.api.patches.kernels``."""
+"""Fused Triton kernels — SwiGLU, GeGLU, RoPE, RMSNorm, fused CE, LoRA."""
 
 from opaque.api.patches.kernels import (
     ACTIVATION_GEGLU_APPROX,

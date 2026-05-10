@@ -1,4 +1,4 @@
-"""Unified patching façade — re-exports from ``opaque.api.patches``.
+"""Unified patching for Opaque.
 
 User-facing entry points:
 
@@ -8,6 +8,10 @@ User-facing entry points:
 - :func:`apply_transformers_model_patches` — HF Transformers-only
   variant.
 - :func:`apply_peft_model_patches` — PEFT-only variant.
+
+See :mod:`opaque.patches.kernels`, :mod:`opaque.patches.transformers`,
+:mod:`opaque.patches.peft`, and :mod:`opaque.patches.torch` for the
+power-user submodules.
 """
 
 from opaque.api.patches import (

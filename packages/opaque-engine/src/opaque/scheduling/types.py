@@ -1,4 +1,4 @@
-"""Scheduling types façade — re-exports from ``opaque.api.engine.scheduling.types``."""
+"""Scheduling type protocols (Schedule)."""
 
 from opaque.api.engine.scheduling.types import Schedule
 

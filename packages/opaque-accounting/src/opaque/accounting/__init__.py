@@ -1,8 +1,8 @@
 """Differential privacy accounting using Privacy Loss Distributions (PLD).
 
-User-facing façade — re-exports the algebra primitives, calibration,
-composition algebra, and shared transformations from
-:mod:`opaque.api.accounting.core`.
+Cross-cutting accounting surface — composition, calibration, generic
+mechanisms (``identity``, ``nonprivate``, ``eps_delta``), shared
+transformations.
 
 Algorithm-specific factories live in their respective packages
 (``opaque-dpsgd`` / ``opaque-dpftrl``):
@@ -14,8 +14,7 @@ Algorithm-specific factories live in their respective packages
   ``balls_in_bins``.
 
 Implementation uses Google's PLD accounting via the ``opaque-accounting``
-Rust crate (PyO3 bindings); the extension lives at
-``opaque.api.accounting.core.opaque_accounting``.
+Rust crate (PyO3 bindings).
 
 Example (requires ``opaque-dpsgd`` in the environment)::
 

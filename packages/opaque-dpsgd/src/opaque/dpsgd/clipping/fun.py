@@ -1,5 +1,4 @@
-"""DP-SGD clipping power-user façade — re-exports from
-``opaque.api.engine.clipping.fun`` and ``opaque.api.dpsgd.clipping.fun``.
+"""DP-SGD clipping power-user helpers.
 
 - :func:`clipped_fun` / :func:`auto_clipped_fun` — clip + sum any
   per-example function output (PyTree).

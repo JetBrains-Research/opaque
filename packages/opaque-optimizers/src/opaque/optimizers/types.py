@@ -1,4 +1,4 @@
-"""Optimizer state types façade — re-exports from ``opaque.api.optimizers.types``."""
+"""Optimizer state dataclasses for type annotations."""
 
 from opaque.api.optimizers.types import (
     AdadeltaState,

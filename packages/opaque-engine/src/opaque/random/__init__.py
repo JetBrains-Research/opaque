@@ -1,4 +1,4 @@
-"""RNG façade — re-exports from ``opaque.api.engine.random``."""
+"""RNG keys + helpers — torch.Generator-backed deterministic RNG."""
 
 from opaque.api.engine.random import (
     fold_in,

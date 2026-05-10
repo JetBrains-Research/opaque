@@ -1,8 +1,16 @@
-"""Functional optimizers façade — re-exports from ``opaque.api.optimizers``.
+"""Functional optimizers — torchopt-based factories with a DP-aware update surface.
 
-See :mod:`opaque.api.optimizers` for the canonical implementation.
-``opaque.optimizers.types`` mirrors the impl tree's ``types`` module
-for callers that import the types submodule by name.
+Headline factories:
+
+- :func:`adamw` — universal Adam / AdamW with DP bias correction.
+- :func:`adam` — original Adam / L2 variant.
+- :func:`sgd` — vanilla SGD; unbiased under additive DP noise.
+- :func:`radam`, :func:`lion`, :func:`ademamix`, :func:`adafactor`,
+  :func:`adagrad`, :func:`adadelta`, :func:`rmsprop`,
+  :func:`schedule_free` — additional families, some via ``torchopt``
+  re-export.
+
+State dataclasses live in :mod:`opaque.optimizers.types`.
 """
 
 from opaque.api.optimizers import (

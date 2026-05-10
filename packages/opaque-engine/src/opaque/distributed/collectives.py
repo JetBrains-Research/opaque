@@ -1,4 +1,4 @@
-"""Distributed collectives façade — re-exports from ``opaque.api.engine.distributed.collectives``."""
+"""Distributed collectives — ``all_reduce``, ``barrier``, rank/world helpers."""
 
 from opaque.api.engine.distributed.collectives import (
     all_reduce,
