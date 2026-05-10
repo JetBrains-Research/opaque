@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from opaque.serialization import (
     from_state_dict,
-    register_serialization_type,
+    register_serializer,
     state_dict,
 )
 
@@ -40,7 +40,7 @@ class _WrapList:
 
 
 def test_registered_paths_join_like_structural() -> None:
-    register_serialization_type(_RegNode, _reg_save, _reg_load)
+    register_serializer(_RegNode, _reg_save, _reg_load)
     w = _Wrap(cell=_RegNode(tag="a"))
     flat = state_dict(w)
     assert flat["cell"] == "root"

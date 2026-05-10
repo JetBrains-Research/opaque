@@ -17,6 +17,7 @@ members = [
     "opaque",
     "opaque-accounting",
     "opaque-auditing",
+    "opaque-base",
     "opaque-core",
     "opaque-dpftrl",
     "opaque-dpsgd",
@@ -2294,10 +2295,15 @@ requires-dist = [
 ]
 
 [[package]]
+name = "opaque-base"
+source = { editable = "packages/opaque-base" }
+
+[[package]]
 name = "opaque-core"
 source = { editable = "packages/opaque-core" }
 dependencies = [
     { name = "numpy" },
+    { name = "opaque-base" },
     { name = "optree" },
     { name = "torch" },
     { name = "torchopt" },
@@ -2306,6 +2312,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "numpy", specifier = ">=1.22" },
+    { name = "opaque-base", editable = "packages/opaque-base" },
     { name = "optree", specifier = ">=0.17.0" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "torchopt", specifier = ">=0.7.3" },

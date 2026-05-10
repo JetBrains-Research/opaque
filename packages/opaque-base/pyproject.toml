@@ -3,14 +3,14 @@ requires = ["setuptools>=68.0", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "opaque-core"
+name = "opaque-base"
 dynamic = ["version"]
-description = "Opaque shared primitives: clipping, random, functional, distributed, optimizers, scheduling"
+description = "Opaque foundation: pure-Python serialization registry and dispatcher (the seam used by every other opaque wheel)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
 requires-python = ">=3.11,<3.13"
-keywords = ["differential-privacy", "pytorch", "privacy", "machine-learning"]
+keywords = ["differential-privacy", "serialization"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -22,36 +22,16 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Security",
 ]
-dependencies = [
-    "opaque-base",
-    "numpy>=1.22",
-    "torch>=2.10.0",
-    "optree>=0.17.0",
-    "torchopt>=0.7.3",
-]
-
-[tool.setuptools]
-# Single-file modules at the namespace root — ``find_packages`` only
-# discovers sub-packages (directories with ``__init__``), so listing
-# them here keeps the wheel correct.
-py-modules = [
-    "opaque.types",
-    "opaque.pytree",
-    "opaque._noise_allocation",
-]
+# opaque-base is intentionally torch-free. It ships only the pure-Python
+# serialization registry + dispatcher that every other opaque wheel
+# registers handlers against. Adding any third-party dependency here
+# would propagate into opaque-accounting (the only standalone consumer
+# besides opaque-engine) and break the "torch-free accounting" guarantee.
+dependencies = []
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = [
-    "opaque._clipping*",
-    "opaque.random*",
-    "opaque.functional*",
-    "opaque.distributed*",
-    "opaque.scheduling*",
-    "opaque.serialization*",
-    "opaque.optimizers*",
-    "opaque.profiling*",
-]
+include = ["opaque.api.base*"]
 namespaces = true
 
 [tool.setuptools_scm]

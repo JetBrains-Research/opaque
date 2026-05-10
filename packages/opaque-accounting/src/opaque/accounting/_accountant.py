@@ -238,9 +238,9 @@ def _deserialize_budget(data: dict[str, Any]) -> Budget:
 
 
 def _register_accountant_serialization() -> None:
-    from opaque.serialization import register_serialization_type
+    from opaque.serialization import register_serializer
 
-    register_serialization_type(
+    register_serializer(
         Accountant,
         _accountant_state_dict,
         lambda _template, sd: _accountant_from_state_dict(dict(sd)),

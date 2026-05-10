@@ -72,6 +72,7 @@ git_describe_command = "git describe --dirty --tags --long --match v*"
 [tool.uv]
 package = true
 workspace.members = [
+    "packages/opaque-base",
     "packages/opaque-core",
     "packages/opaque-dpsgd",
     "packages/opaque-dpftrl",
@@ -86,6 +87,7 @@ workspace.members = [
 constraint-dependencies = ["torch<2.11"]
 
 [tool.uv.sources]
+opaque-base = { workspace = true }
 opaque-core = { workspace = true }
 opaque-dpsgd = { workspace = true }
 opaque-dpftrl = { workspace = true }
