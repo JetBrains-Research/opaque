@@ -15,7 +15,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 - **[Serialization](serialization.md)**: Flat `state_dict` / `from_state_dict` for
   explicit state trees (optimizers, accounting, clip/noise state, …);
-  template-driven restore; optional `register_serialization_type` for custom types
+  template-driven restore; optional `register_serializer` for custom types
 
 - **[Random Number Generation](rng.md)**: Immutable RNG keys for deterministic DP
   - `RngKey` - Immutable key type

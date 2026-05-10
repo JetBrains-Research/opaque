@@ -206,10 +206,9 @@ def _record_perf_row(
 ) -> None:
     """Append one acceptance row to the in-memory buffer.
 
-    The row schema matches the plan in
-    ``docs/development/liger-kernel-porting-plan.md`` — kernel/op are derived
-    from the test ``nodeid`` and the ``label`` argument; numeric fields come
-    straight from ``measure_time_and_memory`` stats.
+    Kernel and op identifiers are derived from the test ``nodeid`` and the
+    ``label`` argument; numeric fields come straight from
+    ``measure_time_and_memory`` stats.
     """
     speedup = pt_stats["time_ms"] / op_stats["time_ms"]
     mem_reduction = pt_stats["memory_mb"] / op_stats["memory_mb"]

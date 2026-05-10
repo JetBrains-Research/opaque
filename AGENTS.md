@@ -161,11 +161,9 @@ Everything else lives in the relevant package's
 
 | Extra | Pulls in |
 | --- | --- |
-| `opaque-transformers[peft]` | `peft`, `transformers`, `datasets` |
-| `opaque-transformers[kernels]` | HF + `opaque-performance[kernels]` |
-| `opaque-performance[kernels]` | `triton` |
-| `opaque-dpsgd[optimizers]` | `torchopt` |
-| `opaque-dpftrl[optimizers]` | `torchopt` |
+| `opaque-patches[transformers]` | `transformers`, `peft` |
+| `opaque-dpsgd[optimizers]` | `opaque-optimizers` (torchopt-based functional optimizers) |
+| `opaque-dpftrl[optimizers]` | `opaque-optimizers` |
 | `opaque-accounting[cross-validation]` | `dp-accounting`, `riskcal` |
 | `opaque[all]` | everything |
 
@@ -221,14 +219,14 @@ under caller's autocast, backward has autocast OFF.
 
 ### Partition policy
 
-`opaque.core` holds algorithm-agnostic primitives. Anything that only one
-algorithm would construct (DP-SGD adaptive clipping, truncated
-Poisson; MF b-min-sep / cyclic / balls-in-bins / sequential sampling,
-BLT/BSR/BiSR/band-MF/λ-CGD noise, private second-moment streams) lives
-with that algorithm.
+`opaque-engine` holds algorithm-agnostic torch-using primitives.
+Anything that only one algorithm would construct (DP-SGD adaptive
+clipping, truncated Poisson; MF b-min-sep / cyclic / balls-in-bins /
+sequential sampling, BLT/BSR/BiSR/band-MF/λ-CGD noise, private
+second-moment streams) lives with that algorithm.
 
-AUTO-S clipping (`auto_clipped_grad`) lives in `opaque-core` because its
-per-record sensitivity bound is constant and data-independent
+AUTO-S clipping (`auto_clipped_grad`) lives in `opaque-engine` because
+its per-record sensitivity bound is constant and data-independent
 (`sup_g ‖R · g / (‖g‖ + γ)‖ ≤ R`), making it compatible with both
 DP-SGD's Gaussian mechanism and DP-FTRL's matrix-factorization
 mechanisms — exactly like fixed clipping. Adaptive clipping is the only
@@ -306,16 +304,24 @@ OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all \
 
 ## Documentation
 
-- User-facing: `docs/` (MkDocs, Material theme)
-- Development: `docs/development/`
+- User-facing: `docs/` (MkDocs, Material theme).
+  - End-to-end guides: `docs/user-guide/{dp-sgd,dp-ftrl}.md`.
+  - Concept reference (per-topic): `docs/user-guide/{clipping,noise,
+    sampling,accounting,distributed,...}.md`.
+  - API reference (public façades): `docs/reference/`.
+  - Contributor / extending guides (only place that documents
+    `opaque.api.*` paths): `docs/extending/`.
+  - Mechanism reference (split per stack): `docs/mechanisms/{dp-sgd,
+    dp-ftrl}/`.
+  - Tutorials: `docs/tutorials/*.ipynb`.
 - This file (`AGENTS.md`) is agent-oriented; users should read
   `docs/index.md` or `README.md`.
 - Keep user-facing docs and code comments diary-free: describe the
   current API and behavior, not the development history (file moves,
   package regroups, removed dependencies, planned-but-unimplemented
-  features). Migration narrative belongs in PR bodies, the changelog,
-  or `docs/development/`. Forward-references to features that don't
-  yet exist in the codebase don't belong anywhere.
+  features). Migration narrative belongs in PR bodies and the
+  changelog. Forward-references to features that don't yet exist in
+  the codebase don't belong anywhere.
 
 ## Cursor Cloud specific instructions
 
@@ -338,10 +344,11 @@ the canonical lint / test / Rust-test commands.
 
 - The first `uv sync` triggers a full Rust/maturin build of `opaque-accounting`
   (~30 s cold, cached afterwards). Subsequent syncs are fast (~seconds).
-- The namespace is PEP 420 — there is **no** `opaque.core` import path. Instead,
-  `opaque-core` installs `opaque._clipping`, `opaque.functional`, `opaque.random`,
-  `opaque.scheduling`, `opaque.distributed`, `opaque.optimizers`, `opaque.profiling`,
-  `opaque.types`, and `opaque.pytree`.
+- The namespace is PEP 420 — there is **no** `opaque.core` import path.
+  Public primitives live at `opaque.{types,pytree,random,distributed,
+  functional,scheduling,profiling,serialization,optimizers}` (provided
+  by `opaque-base` + `opaque-engine` + `opaque-optimizers`); stack code
+  imports clipping via `opaque.dpsgd.clipping` / `opaque.dpftrl.clipping`.
 - `gaussian_noise` returns `(noise_fn, state)` and the inner `noise_fn` signature
   is `noise_fn(clipped_pytree, state) -> (noised_pytree, new_state)` (positional args).
 - `clipped_grad` returns `(clip_fn, clip_state)` and `clip_fn` is called as

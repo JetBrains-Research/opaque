@@ -21,31 +21,32 @@ Install and depend on `opaque` only. The repository is implemented as
 | Distribution | Import roots | Purpose |
 |---|---|---|
 | `opaque` | — | Convenience installer; pulls in a curated bundle of sub-packages |
-| `opaque-core` | `opaque.{clipping,random,pytree,functional,distributed,optimizers,scheduling,profiling,types}` | RNG, pytree, clipping, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing, optimizers |
-| `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, Poisson samplers, adaptive + auto clipping |
-| `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers |
+| `opaque-base` | `opaque.serialization` | Pure-Python serialization registry + dispatcher; the seam every other wheel registers handlers against |
+| `opaque-engine` | `opaque.{types,pytree,random,distributed,functional,scheduling,profiling}` | Torch substrate: pytree wrappers (`ClippedPytree` / `NoisedPytree` / `PerGroup`), `RngKey`, fixed + AUTO-S clipping, schedules + warmup, DDP plumbing, profiler |
+| `opaque-optimizers` | `opaque.optimizers` | Torchopt-based functional optimizer chain (DP-aware AdamW-BC and friends) |
+| `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, Poisson samplers, adaptive clipping, DP-SGD-specific accounting factories |
+| `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers, DP-FTRL-specific accounting factories |
 | `opaque-auditing` | `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) |
 | `opaque-patches` | `opaque.patches` | Unified patching entrypoint for PyTorch checkpointing, Hugging Face compat wrappers, Triton kernels, and PEFT/LoRA fusion |
-| `opaque-transformers` | `opaque.transformers` | Transformers dependency bundle and namespace package for Hugging Face integrations |
-| `opaque-accounting` | `opaque.accounting` | PLD privacy accounting (Rust/PyO3 backend) |
+| `opaque-transformers` | `opaque.transformers` | Hugging Face trainer + integration |
+| `opaque-accounting` | `opaque.accounting` | PLD privacy accounting (Rust/PyO3 backend); torch-free standalone |
 
 [PEP 420]: https://peps.python.org/pep-0420/
 
 ### Import layout
 
 ```
-opaque.{clipping,random,pytree,types}                      <- opaque-core
-opaque.distributed.{collectives,gradients,state,shard}     <- opaque-core
-opaque.functional                                          <- opaque-core
-opaque.optimizers                                          <- opaque-core
-opaque.scheduling                                          <- opaque-core
-opaque.profiling                                           <- opaque-core
-opaque.dpsgd.{noise,clipping,sampling,optimizers}          <- opaque-dpsgd
-opaque.dpftrl.{noise,sampling,optimizers}                  <- opaque-dpftrl
+opaque.serialization                                       <- opaque-base
+opaque.{types,pytree}                                      <- opaque-engine
+opaque.{random,distributed}                                <- opaque-engine
+opaque.{functional,scheduling,profiling}                   <- opaque-engine
+opaque.optimizers                                          <- opaque-optimizers
+opaque.dpsgd.{clipping,noise,sampling,accounting}          <- opaque-dpsgd
+opaque.dpftrl.{clipping,noise,sampling,accounting}         <- opaque-dpftrl
 opaque.auditing                                            <- opaque-auditing
 opaque.patches.{kernels,torch,transformers,peft}           <- opaque-patches
 opaque.transformers                                        <- opaque-transformers
-opaque.accounting (._native)                               <- opaque-accounting
+opaque.accounting                                          <- opaque-accounting
 ```
 
 ## Installation
@@ -63,8 +64,9 @@ uv add opaque \
 Extras:
 
 ```bash
-pip install "opaque[auditing]"      # auditing components
+pip install "opaque[auditing]"      # empirical privacy auditing
 pip install "opaque[dpftrl]"        # correlated-noise DP-FTRL components
+pip install "opaque[optimizers]"    # functional torchopt-based optimizers
 pip install "opaque[transformers]"  # Hugging Face + patching components
 pip install "opaque[all]"           # all optional components
 ```

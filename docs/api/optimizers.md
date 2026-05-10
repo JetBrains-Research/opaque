@@ -1,7 +1,7 @@
 # Optimizers
 
 Opaque ships its own functional optimizer library at
-[`opaque.optimizers`](#opaque.optimizers): Opaque-built factories with
+`opaque.optimizers`: Opaque-built factories with
 DP-aware paths, plus a curated set of `torchopt` re-exports for the
 stateless primitives where vanilla behaviour is acceptable under DP
 noise.  All factories return

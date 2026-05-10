@@ -286,7 +286,7 @@ def _microbatch_accumulate(
 
 
 def clipped_fun(
-    fun,
+    fun: Callable[..., Any],
     has_aux: bool = False,
     *,
     batch_argnums: int | tuple[int, ...] = 0,

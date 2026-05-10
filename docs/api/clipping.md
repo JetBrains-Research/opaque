@@ -72,17 +72,32 @@ object. It auto-dispatches to the right function based on type:
 
 ## API Documentation
 
-::: opaque.api.engine.clipping
-    options:
-      show_source: true
-      heading_level: 2
-
 ::: opaque.dpsgd.clipping
     options:
       show_source: true
       heading_level: 2
 
+::: opaque.dpsgd.clipping.fun
+    options:
+      show_source: true
+      heading_level: 2
+
+::: opaque.dpsgd.clipping.types
+    options:
+      show_source: true
+      heading_level: 2
+
 ::: opaque.dpftrl.clipping
+    options:
+      show_source: true
+      heading_level: 2
+
+::: opaque.dpftrl.clipping.fun
+    options:
+      show_source: true
+      heading_level: 2
+
+::: opaque.dpftrl.clipping.types
     options:
       show_source: true
       heading_level: 2
