@@ -181,43 +181,6 @@ def _root_match(import_path: str, roots: set[str]) -> bool:
 # removed; the test stays green throughout.
 KNOWN_CROSS_CONE_IMPORTS: frozenset[tuple[str, str]] = frozenset(
     {
-        # opaque-engine tests that use dpsgd primitives — phase 5 will move
-        # them to opaque-dpsgd/tests/ during the dpsgd reshape (originally in opaque-core, moved to engine in phase 2).
-        (
-            "packages/opaque-engine/tests/clipping/test_empty_batch.py",
-            "opaque.dpsgd.clipping",
-        ),
-        (
-            "packages/opaque-engine/tests/clipping/test_empty_batch.py",
-            "opaque.api.dpsgd.clipping._adaptive",
-        ),
-        (
-            "packages/opaque-engine/tests/clipping/test_empty_batch.py",
-            "opaque.api.dpsgd.clipping._distributed",
-        ),
-        (
-            "packages/opaque-engine/tests/clipping/test_empty_batch.py",
-            "opaque.dpsgd.noise",
-        ),
-        (
-            "packages/opaque-engine/tests/functional/test_compile.py",
-            "opaque.dpsgd.noise",
-        ),
-        (
-            "packages/opaque-engine/tests/functional/test_precision.py",
-            "opaque.dpsgd.noise",
-        ),
-        (
-            "packages/opaque-engine/tests/rng/test_rng_helpers.py",
-            "opaque.dpsgd.noise",
-        ),
-        # Engine functional test that exercises an optimizer chain. Phase 3
-        # moves opaque.optimizers to opaque-optimizers; this test is a
-        # candidate to relocate there as part of phase 3 cleanup.
-        (
-            "packages/opaque-engine/tests/functional/test_precision.py",
-            "opaque.optimizers",
-        ),
         # Cross-stack DPSGD↔DPFTRL tests. Mutual non-dependency; no
         # natural home. Park here until the bidirectional placement
         # decision is taken (likely a top-level ``tests/integration/``
