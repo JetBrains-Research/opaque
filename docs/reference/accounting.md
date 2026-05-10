@@ -32,9 +32,10 @@ The accounting API is split into three namespaces:
 | `opaque.dpsgd.accounting` | DP-SGD mechanisms: `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson` | `from opaque.dpsgd import accounting as dpsgd_acc` |
 | `opaque.dpftrl.accounting` | DP-FTRL mechanisms: `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `mf_identity`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins` | `from opaque.dpftrl import accounting as dpftrl_acc` |
 
-The legacy paths (`dpsgd_acc.gaussian`, `dpsgd_acc.poisson`, etc.) remain available on
-`opaque.accounting` for backwards compatibility, but new code should prefer
-the algorithm-scoped namespaces.
+The mechanism factories (`gaussian`, `poisson`, `band_mf`, …) live **only** on
+the algorithm-scoped namespaces — use the namespace that matches your training
+run. Cross-cutting primitives (`Accountant`, `calibrate`, `epsilon_budget`,
+composition operators) live on `opaque.accounting`.
 
 ```python
 # DP-SGD
