@@ -74,7 +74,6 @@ from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.distributed import sync
 from opaque.distributed.gradients import sum_gradients_
 from opaque.dpsgd.noise import gaussian_noise
-from opaque._noise_allocation import per_group_noise_stddev
 from opaque.dpsgd.noise import truncated_gaussian_noise
 from opaque.profiling import (
     StepTimer,
@@ -94,7 +93,12 @@ from opaque.scheduling import (
     with_warmup,
 )
 from opaque.scheduling.types import Schedule
-from opaque.types import PerGroup, SecondMomentClippingOutput, SecondMomentNoiseOutput
+from opaque.types import (
+    ClippedPytree,
+    PerGroup,
+    SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
+)
 from opaque.clipping import per_group
 import wandb
 
@@ -107,7 +111,9 @@ def _effective(value):
 def _noise_stddev(max_norm, noise_multiplier, *, per_group=True):
     """Noise stddev: MSE-optimal per-group when available, isotropic otherwise."""
     if per_group and isinstance(max_norm, PerGroup):
-        return per_group_noise_stddev(max_norm, noise_multiplier)
+        return ClippedPytree(pytree={}, max_norm=max_norm).noise_stddev_for(
+            noise_multiplier=noise_multiplier
+        )
     return noise_multiplier * max_norm
 
 

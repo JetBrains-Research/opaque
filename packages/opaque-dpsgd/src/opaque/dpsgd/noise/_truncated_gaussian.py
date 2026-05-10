@@ -337,32 +337,12 @@ def truncated_gaussian_noise(
             _rng_key=st._rng_key,
         )
 
-        # Per-group noise path: per-key zero-σ returns an exact zero tensor
-        # (truncated support collapses to ``{0}`` when σ=0).
+        # Per-group noise path: reuse the same tree walk as paired streams so
+        # dict[str, Tensor] and σ=0 semantics stay aligned with _add_truncated_tree.
         if isinstance(effective_stddev, PerGroup):
-            if not isinstance(grads.pytree, dict):
-                raise TypeError(
-                    "truncated_gaussian_noise with PerGroup stddev requires "
-                    "ClippedPytree.pytree to be a dict[str, torch.Tensor]."
-                )
             step_key = rng_fold_in(st._rng_key, st._step_counter)
             g = generator_from_key(step_key)
-
-            noised = {}
-            for param_key, tensor in grads.pytree.items():
-                group_std = effective_stddev.for_key(param_key)
-                if group_std == 0:
-                    noised[param_key] = torch.zeros_like(tensor)
-                    continue
-                max_norm = group_std * radius
-                noised[param_key] = _truncated_normal_around(
-                    tensor,
-                    stddev=group_std,
-                    lower=-max_norm,
-                    upper=max_norm,
-                    generator=g,
-                )
-
+            noised = _add_truncated_tree(grads.pytree, effective_stddev, g)
             return NoisedPytree(
                 pytree=noised,
                 max_norm=grads.max_norm,
