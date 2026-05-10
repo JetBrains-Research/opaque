@@ -1926,7 +1926,7 @@ privacy budget — at the cost of knowing the total number of steps in advance.<
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>          ├─ Zero extra memory → DP-λCGD (PRNG replay)
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>          ├─ Asymptotically optimal → BISR (generalises λCGD)
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>          ├─ Closed-form workload (α&gt;β) → BSR (NeurIPS 2024)
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>          ├─ n &lt; 5000 → BandMF + cyclic Poisson (good default)
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>          ├─ n &lt; 5000 → BandMF + ``ftrl_acc.poisson`` (good default)
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>          └─ n &gt; 5000, multi-epoch → BLT (memory-efficient)
 </code></pre></div>
 <p>For most DP-SGD workloads, <strong>Gaussian</strong> is the right starting point.
@@ -1939,9 +1939,9 @@ support all amplification types:</p>
 <thead>
 <tr>
 <th>Mechanism</th>
-<th style="text-align: center;"><code>poisson()</code></th>
-<th style="text-align: center;"><code>truncated_poisson()</code></th>
-<th style="text-align: center;"><code>cyclic_poisson()</code></th>
+<th style="text-align: center;"><code>dpsgd_acc.poisson</code></th>
+<th style="text-align: center;"><code>dpsgd_acc.poisson</code> (truncated)</th>
+<th style="text-align: center;"><code>ftrl_acc.poisson</code></th>
 <th style="text-align: center;"><code>balls_in_bins()</code></th>
 </tr>
 </thead>
@@ -1991,11 +1991,13 @@ support all amplification types:</p>
 </tbody>
 </table>
 <ul>
-<li><strong><code>poisson()</code></strong>: Standard Poisson subsampling. Each example included
-  independently with probability <span class="arithmatex">\(q\)</span>.</li>
-<li><strong><code>truncated_poisson()</code></strong>: Poisson with a batch-size cap.</li>
-<li><strong><code>cyclic_poisson()</code></strong>: Cyclic decomposition specific to BandMF. Decomposes
-  <span class="arithmatex">\(n\)</span> steps into <span class="arithmatex">\(\lceil n/b \rceil\)</span> independent groups.</li>
+<li><strong><code>dpsgd_acc.poisson</code></strong>: DP-SGD per-step Poisson subsampling (<span class="arithmatex">\(q\)</span> per example).</li>
+<li><strong><code>dpsgd_acc.poisson</code> (truncated)</strong>: Same factory with <code>truncated_batch_size</code>
+  and <code>dataset_size</code>; caps batches (weaker privacy than plain Poisson at the
+  same <span class="arithmatex">\(q\)</span> unless noise is recalibrated).</li>
+<li><strong><code>ftrl_acc.poisson</code></strong>: DP-FTRL whole-process Poisson amplification
+  (<code>BandMf</code> / <code>IdentityMf</code> inner, <code>n_steps</code> required). For <code>BandMf</code> this
+  is the cyclic-participation analysis (<span class="arithmatex">\(\lceil n/b\rceil\)</span> independent groups).</li>
 <li><strong><code>balls_in_bins()</code></strong>: Random-partition amplification. Each epoch, examples
   are randomly assigned to bins. Used with BLT, DP-λCGD, and BISR.</li>
 <li><strong>internal</strong>: BLT handles multi-participation patterns (min-sep)
@@ -2015,26 +2017,30 @@ support all amplification types:</p>
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="c1"># --- Correlated noise ---</span>
 <a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="c1"># BandMF: strategy computes sensitivity and num_groups</span>
 <a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="n">band_s</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="n">band</span>   <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">sensitivity</span><span class="o">=</span><span class="n">band_s</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>                     <span class="n">num_groups</span><span class="o">=</span><span class="n">band_s</span><span class="o">.</span><span class="n">num_groups</span><span class="p">),</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="p">)</span>
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>
-<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="c1"># DP-λCGD: strategy computes sensitivity and gram_matrix.  ``balls_in_bins``</span>
-<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="c1"># is cross-cutting and lives at ``opaque.accounting`` (it accepts both</span>
-<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="c1"># Gaussian and MF inners).</span>
-<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="n">lcgd_s</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span>
-<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>    <span class="n">lambda_</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">min_sep</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">max_participations</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
-<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="p">)</span>
-<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="n">lcgd</span>   <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
-<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>    <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">lambda_cgd</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">sensitivity</span><span class="o">=</span><span class="n">lcgd_s</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
-<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>                        <span class="n">gram_matrix</span><span class="o">=</span><span class="n">lcgd_s</span><span class="o">.</span><span class="n">gram_matrix</span><span class="p">),</span>
-<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">num_epochs</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
-<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="p">)</span>
-<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a>
-<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">proc</span> <span class="ow">in</span> <span class="p">[(</span><span class="s2">&quot;Gaussian&quot;</span><span class="p">,</span> <span class="n">gauss</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;BandMF&quot;</span><span class="p">,</span> <span class="n">band</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;λCGD&quot;</span><span class="p">,</span> <span class="n">lcgd</span><span class="p">)]:</span>
-<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">12s</span><span class="si">}</span><span class="s2">  ε = </span><span class="si">{</span><span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="n">band</span>   <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>        <span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>        <span class="n">sensitivity</span><span class="o">=</span><span class="n">band_s</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>        <span class="n">coefficients</span><span class="o">=</span><span class="n">band_s</span><span class="o">.</span><span class="n">coefficients</span><span class="p">,</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>    <span class="p">),</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="p">)</span>
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="c1"># DP-λCGD: strategy computes sensitivity and gram_matrix.  ``balls_in_bins``</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="c1"># is cross-cutting and lives at ``opaque.accounting`` (it accepts both</span>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="c1"># Gaussian and MF inners).</span>
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="n">lcgd_s</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span>
+<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>    <span class="n">lambda_</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">min_sep</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">max_participations</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="p">)</span>
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="n">lcgd</span>   <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
+<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a>    <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">lambda_cgd</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">sensitivity</span><span class="o">=</span><span class="n">lcgd_s</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
+<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a>                        <span class="n">gram_matrix</span><span class="o">=</span><span class="n">lcgd_s</span><span class="o">.</span><span class="n">gram_matrix</span><span class="p">),</span>
+<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">num_epochs</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="p">)</span>
+<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a>
+<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">proc</span> <span class="ow">in</span> <span class="p">[(</span><span class="s2">&quot;Gaussian&quot;</span><span class="p">,</span> <span class="n">gauss</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;BandMF&quot;</span><span class="p">,</span> <span class="n">band</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;λCGD&quot;</span><span class="p">,</span> <span class="n">lcgd</span><span class="p">)]:</span>
+<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">12s</span><span class="si">}</span><span class="s2">  ε = </span><span class="si">{</span><span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 
 

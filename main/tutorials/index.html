@@ -1815,7 +1815,7 @@ For complete function signatures, see the
 <tr>
 <td><a href="sampling_and_microbatching/">Sampling &amp; Microbatching</a></td>
 <td>Compare sampling strategies and tune microbatch size</td>
-<td><code>PoissonSampler</code>, <code>TruncatedPoissonSampler</code>, <code>microbatch_size</code></td>
+<td><code>PoissonSubsampler</code>, truncated Poisson via <code>truncated_batch_size</code>, <code>microbatch_size</code></td>
 </tr>
 <tr>
 <td><a href="privacy_auditing/">Privacy Auditing</a></td>
@@ -1825,7 +1825,7 @@ For complete function signatures, see the
 <tr>
 <td><a href="distributed_training/">Distributed Training</a></td>
 <td>Run DP-SGD across multiple GPUs</td>
-<td><code>sum_gradients</code>, <code>local_shard</code>, <code>PoissonSampler</code>, shared RNG key</td>
+<td><code>sum_gradients</code>, <code>local_shard</code>, <code>PoissonSubsampler</code>, shared RNG key</td>
 </tr>
 </tbody>
 </table>

@@ -1339,9 +1339,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#training-with-truncatedpoissonsampler" class="md-nav__link">
+  <a href="#training-with-poissonsubsampler" class="md-nav__link">
     <span class="md-ellipsis">
-      Training with TruncatedPoissonSampler
+      Training with PoissonSubsampler
     </span>
   </a>
   
@@ -1807,9 +1807,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#training-with-truncatedpoissonsampler" class="md-nav__link">
+  <a href="#training-with-poissonsubsampler" class="md-nav__link">
     <span class="md-ellipsis">
-      Training with TruncatedPoissonSampler
+      Training with PoissonSubsampler
     </span>
   </a>
   
@@ -2296,12 +2296,12 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h1 id="sampling-strategies-and-microbatching">Sampling Strategies and Microbatching<a class="anchor-link" href="#sampling-strategies-and-microbatching">¶</a></h1><p>The batch sampling strategy determines the privacy amplification
 guarantee. This notebook compares Poisson and truncated Poisson
-sampling, shows how to match the sampler to the correct accounting
+sampling (truncation caps batch size but is no better for privacy at the
+same rate), shows how to match the sampler to the correct accounting
 method, and demonstrates microbatching for memory-efficient training.</p>
 <p><strong>Prerequisites:</strong> <a href="dp_sgd_training.ipynb">DP-SGD Training tutorial</a>.</p>
-<p><strong>Components exercised:</strong> <code>PoissonSampler</code>, <code>TruncatedPoissonSampler</code>,
-<code>clipped_grad</code> with <code>microbatch_size</code>, <code>dpsgd_acc.poisson</code>,
-<code>dpsgd_acc.truncated_poisson</code>.</p>
+<p><strong>Components exercised:</strong> <code>PoissonSubsampler</code> (plain + truncated via <code>truncated_batch_size</code>),
+<code>clipped_grad</code> with <code>microbatch_size</code>, <code>dpsgd_acc.poisson</code> (plain and truncated forms).</p>
 </div>
 </div>
 </div>
@@ -2332,9 +2332,9 @@ method, and demonstrates microbatching for memory-efficient training.</p>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.utils.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataLoader</span><span class="p">,</span> <span class="n">TensorDataset</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSampler</span><span class="p">,</span> <span class="n">TruncatedPoissonSampler</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSubsampler</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_functional</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 
@@ -2349,14 +2349,15 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 import opaque.accounting as acc
-from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.sampling import PoissonSampler, TruncatedPoissonSampler
+from opaque.dpsgd.sampling import PoissonSubsampler
 from opaque.functional import make_functional
 from opaque.random import key
 
 torch.manual_seed(42)
-np.random.seed(42)</div>
+np.random.seed(42)
+</div>
 </div>
 </div>
 </div>
@@ -2465,20 +2466,20 @@ class MLP(nn.Module):
 <span class="n">fixed_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="n">batch_size</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_samples</span>
 
 <span class="c1"># Poisson</span>
-<span class="n">poisson_sampler</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span>
+<span class="n">poisson_sampler</span> <span class="o">=</span> <span class="n">PoissonSubsampler</span><span class="p">(</span>
     <span class="n">dataset</span><span class="p">,</span>
     <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
-    <span class="n">num_iterations</span><span class="o">=</span><span class="n">n_samples</span><span class="p">,</span>
+    <span class="n">n_steps</span><span class="o">=</span><span class="n">n_samples</span><span class="p">,</span>
     <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <span class="p">)</span>
 <span class="n">poisson_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span> <span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">poisson_sampler</span><span class="p">]</span>
 
 <span class="c1"># Truncated Poisson</span>
-<span class="n">trunc_sampler</span> <span class="o">=</span> <span class="n">TruncatedPoissonSampler</span><span class="p">(</span>
+<span class="n">trunc_sampler</span> <span class="o">=</span> <span class="n">PoissonSubsampler</span><span class="p">(</span>
     <span class="n">dataset</span><span class="p">,</span>
     <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
-    <span class="n">max_batch_size</span><span class="o">=</span><span class="n">max_batch</span><span class="p">,</span>
-    <span class="n">num_iterations</span><span class="o">=</span><span class="n">n_samples</span><span class="p">,</span>
+    <span class="n">truncated_batch_size</span><span class="o">=</span><span class="n">max_batch</span><span class="p">,</span>
+    <span class="n">n_steps</span><span class="o">=</span><span class="n">n_samples</span><span class="p">,</span>
     <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">43</span><span class="p">),</span>
 <span class="p">)</span>
 <span class="n">trunc_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span> <span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">trunc_sampler</span><span class="p">]</span>
@@ -2502,8 +2503,7 @@ class MLP(nn.Module):
 <span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span>
     <span class="sa">f</span><span class="s2">"Truncated -- mean: </span><span class="si">{</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">trunc_sizes</span><span class="p">)</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">, std: </span><span class="si">{</span><span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">trunc_sizes</span><span class="p">)</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">, "</span>
-    <span class="sa">f</span><span class="s2">"max: </span><span class="si">{</span><span class="nb">max</span><span class="p">(</span><span class="n">trunc_sizes</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
-<span class="p">)</span>
+    <span class="sa">f</span><span class="s2">"max: </span><span class="si">{</span><span class="nb">max</span><span class="p">(</span><span class="n">trunc_sizes</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-3">batch_size = 32
 sample_rate = batch_size / dataset_size
@@ -2514,20 +2514,20 @@ n_samples = 200
 fixed_sizes = [batch_size] * n_samples
 
 # Poisson
-poisson_sampler = PoissonSampler(
+poisson_sampler = PoissonSubsampler(
     dataset,
     sample_rate=sample_rate,
-    num_iterations=n_samples,
+    n_steps=n_samples,
     key=key(42),
 )
 poisson_sizes = [len(batch) for batch in poisson_sampler]
 
 # Truncated Poisson
-trunc_sampler = TruncatedPoissonSampler(
+trunc_sampler = PoissonSubsampler(
     dataset,
     sample_rate=sample_rate,
-    max_batch_size=max_batch,
-    num_iterations=n_samples,
+    truncated_batch_size=max_batch,
+    n_steps=n_samples,
     key=key(43),
 )
 trunc_sizes = [len(batch) for batch in trunc_sampler]
@@ -2551,8 +2551,7 @@ print(
 )
 print(
     f"Truncated -- mean: {np.mean(trunc_sizes):.1f}, std: {np.std(trunc_sizes):.1f}, "
-    f"max: {max(trunc_sizes)}"
-)</div>
+    f"max: {max(trunc_sizes)}")</div>
 </div>
 </div>
 </div>
@@ -2579,12 +2578,12 @@ print(
 <td><code>dpsgd_acc.poisson</code> (approximation)</td>
 </tr>
 <tr>
-<td><code>PoissonSampler</code></td>
+<td><code>PoissonSubsampler</code> (plain)</td>
 <td><code>dpsgd_acc.poisson</code></td>
 </tr>
 <tr>
-<td><code>TruncatedPoissonSampler</code></td>
-<td><code>dpsgd_acc.truncated_poisson</code></td>
+<td><code>PoissonSubsampler</code> + <code>truncated_batch_size</code></td>
+<td><code>dpsgd_acc.poisson(..., truncated_batch_size=, dataset_size=)</code></td>
 </tr>
 </tbody>
 </table>
@@ -2619,10 +2618,10 @@ print(
 <span class="p">)</span>
 
 <span class="n">eps_truncated</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">truncated_poisson</span><span class="p">(</span>
+    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
         <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_mult</span><span class="p">),</span>
-        <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
-        <span class="n">batch_size_cap</span><span class="o">=</span><span class="n">max_batch</span><span class="p">,</span>
+        <span class="n">sample_rate</span><span class="p">,</span>
+        <span class="n">truncated_batch_size</span><span class="o">=</span><span class="n">max_batch</span><span class="p">,</span>
         <span class="n">dataset_size</span><span class="o">=</span><span class="n">dataset_size</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="o">*</span> <span class="n">n_steps</span>
@@ -2641,10 +2640,10 @@ eps_poisson = (dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_mult), sample_rate) * 
 )
 
 eps_truncated = (
-    dpsgd_acc.truncated_poisson(
+    dpsgd_acc.poisson(
         dpsgd_acc.gaussian(noise_mult),
-        sample_rate=sample_rate,
-        batch_size_cap=max_batch,
+        sample_rate,
+        truncated_batch_size=max_batch,
         dataset_size=dataset_size,
     )
     * n_steps
@@ -2665,9 +2664,9 @@ print(f"Ratio:             {eps_truncated / eps_poisson:.2f}x")</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="training-with-truncatedpoissonsampler">Training with TruncatedPoissonSampler<a class="anchor-link" href="#training-with-truncatedpoissonsampler">¶</a></h2><p>Truncated Poisson is recommended for production: it provides privacy
-amplification from randomised sampling while bounding the maximum batch
-size.</p>
+<h2 id="training-with-poissonsubsampler">Training with PoissonSubsampler<a class="anchor-link" href="#training-with-poissonsubsampler">¶</a></h2><p>Capping with <code>truncated_batch_size</code> bounds batch size (stabler training)
+but worsens privacy versus plain Poisson at the same <code>sample_rate</code> unless
+you recalibrate noise; use <code>dpsgd_acc.poisson(..., truncated_batch_size=, dataset_size=)</code>.</p>
 </div>
 </div>
 </div>
@@ -2708,11 +2707,11 @@ size.</p>
 <span class="p">)</span>
 <span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.1</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
 
-<span class="n">sampler</span> <span class="o">=</span> <span class="n">TruncatedPoissonSampler</span><span class="p">(</span>
+<span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSubsampler</span><span class="p">(</span>
     <span class="n">dataset</span><span class="p">,</span>
     <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
-    <span class="n">max_batch_size</span><span class="o">=</span><span class="n">max_batch</span><span class="p">,</span>
-    <span class="n">num_iterations</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+    <span class="n">truncated_batch_size</span><span class="o">=</span><span class="n">max_batch</span><span class="p">,</span>
+    <span class="n">n_steps</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
     <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">44</span><span class="p">),</span>
 <span class="p">)</span>
 <span class="n">loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
@@ -2747,11 +2746,11 @@ grad_fn, clip_state = clipped_grad(
 )
 noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
 
-sampler = TruncatedPoissonSampler(
+sampler = PoissonSubsampler(
     dataset,
     sample_rate=sample_rate,
-    max_batch_size=max_batch,
-    num_iterations=10,
+    truncated_batch_size=max_batch,
+    n_steps=10,
     key=key(44),
 )
 loader = DataLoader(dataset, batch_sampler=sampler)

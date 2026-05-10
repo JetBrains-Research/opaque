@@ -1,0 +1,3312 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Functional DP-SGD for PyTorch">
+      
+      
+        <meta name="author" content="Opaque Contributors">
+      
+      
+        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/development/plan-opaque-core-split/">
+      
+      
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.23">
+    
+    
+      
+        <title>Plan: Opaque package split — wheels, opaque.api, façades, and per-package layout - Opaque</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.84d31ad4.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#plan-opaque-package-split-wheels-opaqueapi-facades-and-per-package-layout" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Opaque" class="md-header__button md-logo" aria-label="Opaque" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Opaque
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Plan: Opaque package split — wheels, opaque.api, façades, and per-package layout
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/JetBrains-Research/opaque" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    JetBrains-Research/opaque
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../user-guide/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../mechanisms/" class="md-tabs__link">
+          
+  
+  
+  Mechanisms
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tutorials/" class="md-tabs__link">
+          
+  
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Opaque" class="md-nav__button md-logo" aria-label="Opaque" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Opaque
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/JetBrains-Research/opaque" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    JetBrains-Research/opaque
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Quick Start
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    User Guide
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            User Guide
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/dp-concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Differential Privacy Concepts
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/rng-key/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Random Number Generation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/clipping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Per-Example Gradient Clipping
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/noise/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Noise Addition
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/dp-ftrl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Correlated noise (DP-FTRL)
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/accounting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Privacy Accounting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/sampling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Sampling & Microbatching
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/optimizers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Optimizers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/lr-scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    LR Scheduling
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed Training
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/huggingface/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    HuggingFace Compatibility
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/memory-optimizations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Memory Optimizations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/auditing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Privacy Auditing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../limitations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Known Limitations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Mechanisms
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Mechanisms
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/gaussian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Gaussian
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/bsr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BSR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/band-mf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BandMF
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/blt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BLT
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/lambda-cgd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    DP-λCGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/bisr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BISR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Tutorials
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Tutorials
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/dp_sgd_training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Train a Model with DP-SGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/accounting_and_calibration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Privacy Accounting and Calibration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/llm_finetuning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Fine-tune an LLM with Differential Privacy
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/sampling_and_microbatching/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Sampling Strategies and Microbatching
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/privacy_auditing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Privacy Auditing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/distributed_training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DP-SGD Training
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    API Reference
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            API Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/serialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Serialization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/clipping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Clipping
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/noise/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Noise
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/accounting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Accounting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/sampling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Sampling
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/rng/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Random
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/distributed/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/auditing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Auditing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/utilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Utilities
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/optimizers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Optimizers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/schedules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Schedules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#0-goals-recap" class="md-nav__link">
+    <span class="md-ellipsis">
+      0. Goals (recap)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-final-wheel-set" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Final wheel set
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-pep-420-invariants-ci-enforced" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. PEP 420 invariants (CI-enforced)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-facade-vs-impl-convention" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Façade-vs-impl convention
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-opaque-base-folder-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. opaque-base — folder plan
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. opaque-base — folder plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-opaqueapibase-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      4.1 opaque/api/base/ (implementation)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-facade-modules-opaque-base-wheel" class="md-nav__link">
+    <span class="md-ellipsis">
+      4.2 Façade modules (opaque-base wheel)
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-opaque-engine-folder-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. opaque-engine — folder plan
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. opaque-engine — folder plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-opaqueapiengine-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.1 opaque/api/engine/ (implementation)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-facades-opaque-engine-wheel" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.2 Façades (opaque-engine wheel)
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-opaque-optimizers-folder-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. opaque-optimizers — folder plan
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. opaque-optimizers — folder plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-opaqueapioptimizers" class="md-nav__link">
+    <span class="md-ellipsis">
+      6.1 opaque/api/optimizers/
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-facade" class="md-nav__link">
+    <span class="md-ellipsis">
+      6.2 Façade
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-opaque-accounting-folder-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      7. opaque-accounting — folder plan
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. opaque-accounting — folder plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-opaqueapiaccountingcore-impl-rust-binding" class="md-nav__link">
+    <span class="md-ellipsis">
+      7.1 opaque/api/accounting/core/ (impl + Rust binding)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-facade-opaqueaccounting" class="md-nav__link">
+    <span class="md-ellipsis">
+      7.2 Façade — opaque/accounting/
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-opaque-dpsgd-folder-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      8. opaque-dpsgd — folder plan
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. opaque-dpsgd — folder plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-opaqueapidpsgd-training-impl" class="md-nav__link">
+    <span class="md-ellipsis">
+      8.1 opaque/api/dpsgd/ (training impl)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-opaqueapiaccountingdpsgd-dp-sgd-accounting-factories" class="md-nav__link">
+    <span class="md-ellipsis">
+      8.2 opaque/api/accounting/dpsgd/ (DP-SGD accounting factories)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#83-facade-opaquedpsgd" class="md-nav__link">
+    <span class="md-ellipsis">
+      8.3 Façade — opaque/dpsgd/
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-opaque-dpftrl-folder-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      9. opaque-dpftrl — folder plan
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. opaque-dpftrl — folder plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#91-opaqueapidpftrl-training-impl" class="md-nav__link">
+    <span class="md-ellipsis">
+      9.1 opaque/api/dpftrl/ (training impl)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#92-opaqueapiaccountingdpftrl-dp-ftrl-accounting-factories" class="md-nav__link">
+    <span class="md-ellipsis">
+      9.2 opaque/api/accounting/dpftrl/ (DP-FTRL accounting factories)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#93-facade-opaquedpftrl" class="md-nav__link">
+    <span class="md-ellipsis">
+      9.3 Façade — opaque/dpftrl/
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-opaque-auditing-folder-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      10. opaque-auditing — folder plan
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="10. opaque-auditing — folder plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#101-opaqueapiauditing" class="md-nav__link">
+    <span class="md-ellipsis">
+      10.1 opaque/api/auditing/
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#102-facade" class="md-nav__link">
+    <span class="md-ellipsis">
+      10.2 Façade
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-opaque-patches-folder-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      11. opaque-patches — folder plan
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="11. opaque-patches — folder plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#111-opaqueapipatches-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      11.1 opaque/api/patches/ (implementation)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#112-facade-opaquepatches" class="md-nav__link">
+    <span class="md-ellipsis">
+      11.2 Façade — opaque/patches/
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#113-opaque-transformers-placeholder-wheel" class="md-nav__link">
+    <span class="md-ellipsis">
+      11.3 opaque-transformers (placeholder wheel)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#114-no-opaqueperformance-facade-for-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      11.4 No opaque.performance façade for now
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-cross-cutting-registries" class="md-nav__link">
+    <span class="md-ellipsis">
+      12. Cross-cutting registries
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="12. Cross-cutting registries">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#121-sync-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      12.1 sync registry
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#122-serialization-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      12.2 Serialization registry
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-migration-phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      13. Migration phases
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-ci-guards" class="md-nav__link">
+    <span class="md-ellipsis">
+      14. CI guards
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-open-decisions-small" class="md-nav__link">
+    <span class="md-ellipsis">
+      15. Open decisions (small)
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="plan-opaque-package-split-wheels-opaqueapi-facades-and-per-package-layout">Plan: Opaque package split — wheels, <code>opaque.api</code>, façades, and per-package layout<a class="headerlink" href="#plan-opaque-package-split-wheels-opaqueapi-facades-and-per-package-layout" title="Permanent link">&para;</a></h1>
+<p>This plan supersedes prior drafts. It is the <strong>single proposal</strong> for how
+<code>opaque-core</code> is decomposed, how <code>opaque.api.*</code> (PEP 420 namespace) carries
+implementation, how user-facing façades re-export from it, and the <strong>folder
+layout, modules, and <code>__all__</code></strong> for every package, subpackage, and module that
+results.</p>
+<h2 id="0-goals-recap">0. Goals (recap)<a class="headerlink" href="#0-goals-recap" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>No combinatorial explosion:</strong> DP-SGD and DP-FTRL stay independently
+   installable; their incompatible mechanisms / samplers do not mix at the
+   import level.</li>
+<li><strong>Accounting math split (per-step vs whole-process) stays;</strong> the <strong>user UX
+   does not split</strong> into competing public surfaces (the original confusion).</li>
+<li><strong><code>opaque-core</code> becomes a real foundation</strong> — narrow contracts and
+   registration hubs — and the rest moves to a small handful of focused wheels.</li>
+<li><strong><code>opaque.api</code> is a PEP 420 namespace</strong> that <strong>multiple wheels contribute
+   to</strong>, with longer paths that <strong>expose package structure</strong>; <strong><code>opaque.dpsgd</code> /
+   <code>opaque.dpftrl</code> / <code>opaque.accounting</code> / …</strong> are <strong>thin re-export façades</strong>
+   (small <code>__init__.py</code> files) that hide depth for everyday users.</li>
+<li><strong>Lipschitz / future stacks</strong> plug in by adding <code>opaque-lipschitz</code> →
+   <code>opaque.api.lipschitz.*</code> and an <code>opaque.lipschitz</code> façade — no foundation
+   changes needed.</li>
+</ol>
+<h2 id="1-final-wheel-set">1. Final wheel set<a class="headerlink" href="#1-final-wheel-set" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Wheel</th>
+<th>Ships these import roots</th>
+<th>Depends on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>opaque-base</code></strong></td>
+<td><code>opaque.api.base.*</code>; façades <code>opaque.types</code>, <code>opaque.pytree</code>, <code>opaque.random</code>, <code>opaque.serialization</code>, <code>opaque.distributed</code></td>
+<td>torch, numpy, optree</td>
+</tr>
+<tr>
+<td><strong><code>opaque-engine</code></strong></td>
+<td><code>opaque.api.engine.*</code>; façades <code>opaque.functional</code>, <code>opaque.scheduling</code>, <code>opaque.profiling</code></td>
+<td><code>opaque-base</code>, torch</td>
+</tr>
+<tr>
+<td><strong><code>opaque-optimizers</code></strong></td>
+<td><code>opaque.api.optimizers.*</code>; façade <code>opaque.optimizers</code></td>
+<td><code>opaque-base</code>, torchopt</td>
+</tr>
+<tr>
+<td><strong><code>opaque-accounting</code></strong></td>
+<td><code>opaque.api.accounting.core.*</code> (+ Rust ext); façade <code>opaque.accounting</code></td>
+<td><code>opaque-base</code>, <code>opaque_accounting</code> (Rust)</td>
+</tr>
+<tr>
+<td><strong><code>opaque-dpsgd</code></strong></td>
+<td><code>opaque.api.dpsgd.*</code>, <code>opaque.api.accounting.dpsgd.*</code>; façade <code>opaque.dpsgd</code> (incl. <code>opaque.dpsgd.accounting</code>)</td>
+<td><code>opaque-base</code>, <code>opaque-engine</code>, <code>opaque-accounting</code>; extra <code>[optimizers]</code> → <code>opaque-optimizers</code></td>
+</tr>
+<tr>
+<td><strong><code>opaque-dpftrl</code></strong></td>
+<td><code>opaque.api.dpftrl.*</code>, <code>opaque.api.accounting.dpftrl.*</code>; façade <code>opaque.dpftrl</code> (incl. <code>opaque.dpftrl.accounting</code>)</td>
+<td><code>opaque-base</code>, <code>opaque-engine</code>, <code>opaque-accounting</code>; extra <code>[optimizers]</code> → <code>opaque-optimizers</code></td>
+</tr>
+<tr>
+<td><strong><code>opaque-auditing</code></strong></td>
+<td><code>opaque.api.auditing.*</code>; façade <code>opaque.auditing</code></td>
+<td><code>opaque-base</code>, <code>opaque-accounting</code></td>
+</tr>
+<tr>
+<td><strong><code>opaque-patches</code></strong></td>
+<td><code>opaque.api.patches.*</code>; façades <code>opaque.patches</code>, <code>opaque.transformers</code>, <code>opaque.performance</code> (as today)</td>
+<td><code>opaque-base</code>, <code>opaque-engine</code>, optional <code>transformers</code>, <code>peft</code>, <code>triton</code> extras</td>
+</tr>
+<tr>
+<td><strong><code>opaque</code> (umbrella, optional)</strong></td>
+<td>nothing of its own</td>
+<td>bundle pin: <code>opaque-base</code>, <code>opaque-engine</code>, <code>opaque-dpsgd</code>, <code>opaque-dpftrl</code>, <code>opaque-accounting</code>, <code>opaque-auditing</code>, <code>opaque-optimizers</code></td>
+</tr>
+</tbody>
+</table>
+<p>There is <strong>no separate</strong> <code>opaque-accounting-core</code> wheel: shared accounting
+implementation lives in <code>opaque.api.accounting.core</code> inside the
+<code>opaque-accounting</code> wheel; per-stack factories live in the matching stack
+wheel under <code>opaque.api.accounting.{dpsgd,dpftrl}</code>.</p>
+<h2 id="2-pep-420-invariants-ci-enforced">2. PEP 420 invariants (CI-enforced)<a class="headerlink" href="#2-pep-420-invariants-ci-enforced" title="Permanent link">&para;</a></h2>
+<p>The following directories are <strong>PEP 420 implicit namespaces</strong>. <strong>No</strong> wheel
+ships an <code>__init__.py</code> for them:</p>
+<ul>
+<li><code>opaque/</code></li>
+<li><code>opaque/api/</code></li>
+<li><code>opaque/api/accounting/</code></li>
+</ul>
+<p>Any other directory may have a real <code>__init__.py</code>. CI shell guard already exists
+for <code>opaque/__init__.py</code>; this plan extends the same script to the two new
+namespace roots above.</p>
+<h2 id="3-facade-vs-impl-convention">3. Façade-vs-impl convention<a class="headerlink" href="#3-facade-vs-impl-convention" title="Permanent link">&para;</a></h2>
+<p>For every public concept:</p>
+<ul>
+<li><strong>Implementation</strong> lives under <strong><code>opaque.api.&lt;contrib&gt;.&lt;concern&gt;...</code></strong> in the
+  wheel that owns it. Internal modules use a leading underscore
+  (<code>_gaussian.py</code>, <code>_helpers.py</code>, …).</li>
+<li><strong>Public façade</strong> is <strong>one</strong> <code>opaque.&lt;concern&gt;</code> (or
+  <code>opaque.&lt;stack&gt;.&lt;concern&gt;</code>) module whose <code>__init__.py</code> is a <strong>small block of
+  re-exports</strong> plus a tight <code>__all__</code>.</li>
+<li>Façades <strong>never</strong> define new behaviour — they only <code>from opaque.api… import
+  …</code> and append to <code>__all__</code>. Tests live next to implementation under
+  <code>opaque.api.*</code>; façade tests assert that re-exports stay in sync.</li>
+<li><strong>Subpackage <code>__all__</code> rule:</strong> every <code>__init__.py</code> declares <code>__all__</code>. Every
+  multi-symbol <code>_*.py</code> module also declares <code>__all__</code> (single-class modules may
+  omit it). <code>types.py</code> modules always declare <code>__all__</code> (they are the public
+  type contract for that subpackage).</li>
+</ul>
+<p>Two <strong>wheels of the same façade root are forbidden:</strong> only one wheel ships
+<code>opaque.dpsgd/__init__.py</code> (i.e., <code>opaque-dpsgd</code>); only one wheel ships
+<code>opaque.accounting/__init__.py</code> (i.e., <code>opaque-accounting</code>); etc. Façades are
+<strong>not</strong> PEP 420 namespaces.</p>
+<hr />
+<h2 id="4-opaque-base-folder-plan">4. <code>opaque-base</code> — folder plan<a class="headerlink" href="#4-opaque-base-folder-plan" title="Permanent link">&para;</a></h2>
+<h3 id="41-opaqueapibase-implementation">4.1 <code>opaque/api/base/</code> (implementation)<a class="headerlink" href="#41-opaqueapibase-implementation" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>opaque/api/base/
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── types/
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│   ├── __init__.py          # public types contract for opaque.api.base.types
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│   ├── _pytree.py           # ClippedPytree, NoisedPytree, TensorPytree
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   ├── _grouping.py         # PerGroup
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│   ├── _states.py           # ClipState, NoiseState
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│   └── _aux.py              # SecondMomentNoiseOutput, common aux dataclasses
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>├── pytree/
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│   ├── __init__.py
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│   └── _ops.py              # tree_map, tree_leaves, partition, merge, global_norm
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>├── random/
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│   ├── __init__.py
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   ├── _types.py            # RngKey
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   ├── _engine.py           # key, split, fold_in
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>│   └── _helpers.py          # to_generator, with_torch_generator
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>├── serialization/
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│   ├── __init__.py
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>│   ├── _types.py            # SerializedState, Serializer Protocol
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>│   ├── _registry.py         # register_serializer, lookup_serializer
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>│   ├── _structural.py       # state_dict / from_state_dict scaffolding
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>│   └── _compat.py           # version-tag helpers
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>├── distributed/
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>│   ├── __init__.py
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>│   ├── _types.py            # SyncHandler Protocol
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>│   ├── _registry.py         # register_sync_handler, lookup_sync_handler
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>│   ├── _sync.py             # sync(obj) dispatcher
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>│   ├── _collectives.py      # all_reduce, all_reduce_, barrier
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>│   ├── _gradients.py        # reduce_pytree, sum_gradients, sum_gradients_
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>│   ├── _shard.py            # local_shard, _local_shard_bounds
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>│   └── _detection.py        # is_distributed, get_rank, get_world_size
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>└── _noise_allocation.py
+</code></pre></div>
+<p><code>__all__</code> per file:</p>
+<ul>
+<li><code>opaque/api/base/types/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="s2">&quot;ClippedPytree&quot;</span><span class="p">,</span> <span class="s2">&quot;NoisedPytree&quot;</span><span class="p">,</span> <span class="s2">&quot;TensorPytree&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="s2">&quot;PerGroup&quot;</span><span class="p">,</span> <span class="s2">&quot;ClipState&quot;</span><span class="p">,</span> <span class="s2">&quot;NoiseState&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="s2">&quot;SecondMomentNoiseOutput&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/base/pytree/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;tree_map&quot;</span><span class="p">,</span> <span class="s2">&quot;tree_leaves&quot;</span><span class="p">,</span> <span class="s2">&quot;partition&quot;</span><span class="p">,</span> <span class="s2">&quot;merge&quot;</span><span class="p">,</span> <span class="s2">&quot;global_norm&quot;</span><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/base/random/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;RngKey&quot;</span><span class="p">,</span> <span class="s2">&quot;key&quot;</span><span class="p">,</span> <span class="s2">&quot;split&quot;</span><span class="p">,</span> <span class="s2">&quot;fold_in&quot;</span><span class="p">,</span> <span class="s2">&quot;to_generator&quot;</span><span class="p">,</span> <span class="s2">&quot;with_torch_generator&quot;</span><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/base/serialization/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="s2">&quot;Serializer&quot;</span><span class="p">,</span> <span class="s2">&quot;register_serializer&quot;</span><span class="p">,</span> <span class="s2">&quot;lookup_serializer&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="s2">&quot;state_dict&quot;</span><span class="p">,</span> <span class="s2">&quot;from_state_dict&quot;</span><span class="p">,</span> <span class="s2">&quot;SerializedState&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/base/distributed/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="s2">&quot;SyncHandler&quot;</span><span class="p">,</span> <span class="s2">&quot;register_sync_handler&quot;</span><span class="p">,</span> <span class="s2">&quot;lookup_sync_handler&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="s2">&quot;sync&quot;</span><span class="p">,</span> <span class="s2">&quot;is_distributed&quot;</span><span class="p">,</span> <span class="s2">&quot;get_rank&quot;</span><span class="p">,</span> <span class="s2">&quot;get_world_size&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="s2">&quot;all_reduce&quot;</span><span class="p">,</span> <span class="s2">&quot;all_reduce_&quot;</span><span class="p">,</span> <span class="s2">&quot;barrier&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="s2">&quot;reduce_pytree&quot;</span><span class="p">,</span> <span class="s2">&quot;reduce_pytree_&quot;</span><span class="p">,</span> <span class="s2">&quot;sum_gradients&quot;</span><span class="p">,</span> <span class="s2">&quot;sum_gradients_&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="s2">&quot;local_shard&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="p">]</span>
+</code></pre></div></li>
+</ul>
+<p><code>_*.py</code> modules each declare a local <code>__all__</code> of the names they export to
+their package <code>__init__.py</code> (e.g. <code>_collectives.py</code> exports <code>__all__ =
+["all_reduce", "all_reduce_", "barrier"]</code>). <code>_noise_allocation.py</code> exports
+<code>__all__ = ["allocate_noise"]</code> (or whatever its current public name is).</p>
+<h3 id="42-facade-modules-opaque-base-wheel">4.2 Façade modules (<code>opaque-base</code> wheel)<a class="headerlink" href="#42-facade-modules-opaque-base-wheel" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>opaque/
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>├── types.py                 # re-exports opaque.api.base.types.*
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>├── pytree.py                # re-exports opaque.api.base.pytree.*
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>├── random/__init__.py       # re-exports opaque.api.base.random.*
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>├── serialization/__init__.py# re-exports user-facing serialization API
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>└── distributed/__init__.py  # re-exports user-facing distributed API
+</code></pre></div>
+<p>Façade <code>__all__</code> examples:</p>
+<ul>
+<li><code>opaque/types.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.base.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">ClippedPytree</span><span class="p">,</span> <span class="n">NoisedPytree</span><span class="p">,</span> <span class="n">TensorPytree</span><span class="p">,</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="n">PerGroup</span><span class="p">,</span> <span class="n">ClipState</span><span class="p">,</span> <span class="n">NoiseState</span><span class="p">,</span> <span class="n">SecondMomentNoiseOutput</span><span class="p">,</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="p">)</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>    <span class="s2">&quot;ClippedPytree&quot;</span><span class="p">,</span> <span class="s2">&quot;NoisedPytree&quot;</span><span class="p">,</span> <span class="s2">&quot;TensorPytree&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>    <span class="s2">&quot;PerGroup&quot;</span><span class="p">,</span> <span class="s2">&quot;ClipState&quot;</span><span class="p">,</span> <span class="s2">&quot;NoiseState&quot;</span><span class="p">,</span> <span class="s2">&quot;SecondMomentNoiseOutput&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/serialization/__init__.py</code> re-exports <strong>only</strong> <code>state_dict</code>,
+  <code>from_state_dict</code>, <code>SerializedState</code> (user-facing). Registry helpers
+  (<code>register_serializer</code>, <code>Serializer</code>) stay in <code>opaque.api.base.serialization</code>
+  for power users.</li>
+<li><code>opaque/distributed/__init__.py</code> re-exports <code>sync</code>, <code>is_distributed</code>,
+  <code>get_rank</code>, <code>get_world_size</code>, <code>all_reduce</code>, <code>reduce_pytree</code>,
+  <code>sum_gradients</code>, <code>local_shard</code>. <code>register_sync_handler</code> and <code>SyncHandler</code> stay
+  in <code>opaque.api.base.distributed</code>.</li>
+</ul>
+<hr />
+<h2 id="5-opaque-engine-folder-plan">5. <code>opaque-engine</code> — folder plan<a class="headerlink" href="#5-opaque-engine-folder-plan" title="Permanent link">&para;</a></h2>
+<h3 id="51-opaqueapiengine-implementation">5.1 <code>opaque/api/engine/</code> (implementation)<a class="headerlink" href="#51-opaqueapiengine-implementation" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>opaque/api/engine/
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>├── functional/
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>│   ├── __init__.py
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>│   ├── _make_functional.py  # make_functional, _set_module_params
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>│   ├── _batch_dim.py        # with_batch_dim
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>│   └── _collate.py          # empty_collate (PoissonSubsampler / CyclicPoissonSampler glue)
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>├── clipping/
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>│   ├── __init__.py
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>│   ├── types.py             # ClipState public contract; PerGroupAux
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>│   ├── fun.py               # power-user functional surface (auto_clipped_fun, ...)
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>│   ├── _clipped_grad.py     # clipped_grad (fixed threshold)
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>│   ├── _auto.py             # auto_clipped_grad (AUTO-S)
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>│   ├── _per_group.py        # per_group helper
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>│   ├── _clipped_fun.py      # internal lower-level fun helpers
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>│   ├── _helpers.py          # private helpers used across clip implementations
+<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a>│   ├── _pytree.py           # internal pytree shaping for clipping
+<a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a>│   └── _distributed.py      # registers ClipState sync handler at import
+<a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a>├── scheduling/
+<a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a>│   ├── __init__.py
+<a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a>│   ├── types.py             # Schedule, ScheduleState
+<a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a>│   ├── _curves.py           # constant_schedule, cosine_schedule, inverse_sqrt_schedule, ...
+<a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a>│   └── _compose.py          # with_warmup, with_restarts
+<a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a>└── profiling/
+<a id="__codelineno-8-24" name="__codelineno-8-24" href="#__codelineno-8-24"></a>    ├── __init__.py
+<a id="__codelineno-8-25" name="__codelineno-8-25" href="#__codelineno-8-25"></a>    ├── types.py             # StepRecord
+<a id="__codelineno-8-26" name="__codelineno-8-26" href="#__codelineno-8-26"></a>    ├── _memory.py           # memory measurement helpers
+<a id="__codelineno-8-27" name="__codelineno-8-27" href="#__codelineno-8-27"></a>    └── _distributed.py      # rank-aware profiler bits
+</code></pre></div>
+<p><code>__all__</code> per <code>__init__.py</code>:</p>
+<ul>
+<li><code>opaque/api/engine/functional/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;make_functional&quot;</span><span class="p">,</span> <span class="s2">&quot;with_batch_dim&quot;</span><span class="p">,</span> <span class="s2">&quot;empty_collate&quot;</span><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/engine/clipping/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;clipped_grad&quot;</span><span class="p">,</span> <span class="s2">&quot;auto_clipped_grad&quot;</span><span class="p">,</span> <span class="s2">&quot;per_group&quot;</span><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/engine/clipping/types.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;ClipState&quot;</span><span class="p">,</span> <span class="s2">&quot;PerGroupAux&quot;</span><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/engine/clipping/fun.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;auto_clipped_fun&quot;</span><span class="p">,</span> <span class="s2">&quot;clipped_fun&quot;</span><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/engine/scheduling/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>    <span class="s2">&quot;constant_schedule&quot;</span><span class="p">,</span> <span class="s2">&quot;cosine_schedule&quot;</span><span class="p">,</span> <span class="s2">&quot;inverse_sqrt_schedule&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>    <span class="s2">&quot;one_minus_sqrt_schedule&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>    <span class="s2">&quot;with_warmup&quot;</span><span class="p">,</span> <span class="s2">&quot;with_restarts&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/engine/scheduling/types.py</code>: <code>__all__ = ["Schedule", "ScheduleState"]</code></li>
+<li><code>opaque/api/engine/profiling/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;TrainingProfiler&quot;</span><span class="p">,</span> <span class="s2">&quot;StepTimer&quot;</span><span class="p">,</span> <span class="s2">&quot;StepRecord&quot;</span><span class="p">]</span>
+</code></pre></div></li>
+</ul>
+<h3 id="52-facades-opaque-engine-wheel">5.2 Façades (<code>opaque-engine</code> wheel)<a class="headerlink" href="#52-facades-opaque-engine-wheel" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>opaque/
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>├── functional/__init__.py    # re-exports opaque.api.engine.functional.*
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>├── scheduling/__init__.py    # re-exports opaque.api.engine.scheduling.*
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>└── profiling/__init__.py     # re-exports opaque.api.engine.profiling.*
+</code></pre></div>
+<p>Each façade copies the same <code>__all__</code> as its impl <code>__init__.py</code>. <strong>Clipping has
+no top-level façade</strong> (<code>opaque.clipping</code> does not exist) — clipping is
+always imported through <code>opaque.dpsgd.clipping</code> / <code>opaque.dpftrl.clipping</code>.
+This is the post-refactor ADR rule.</p>
+<hr />
+<h2 id="6-opaque-optimizers-folder-plan">6. <code>opaque-optimizers</code> — folder plan<a class="headerlink" href="#6-opaque-optimizers-folder-plan" title="Permanent link">&para;</a></h2>
+<h3 id="61-opaqueapioptimizers">6.1 <code>opaque/api/optimizers/</code><a class="headerlink" href="#61-opaqueapioptimizers" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>opaque/api/optimizers/
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>├── __init__.py              # all factory names
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>├── types.py                 # state dataclasses for non-trivial optimizers
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>├── _chain.py                # make_optimizer_chain (DP-aware chain wrapper)
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>├── _bias_correction.py      # is_per_group, resolve_noise_variance, ...
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>├── _sgd.py                  # sgd
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>├── _adam.py                 # adam, adamw
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>├── _adagrad.py              # adagrad
+<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>├── _adafactor.py            # adafactor
+<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a>├── _adadelta.py             # adadelta (vanilla torchopt re-export)
+<a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a>├── _radam.py                # radam (vanilla torchopt re-export)
+<a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a>├── _rmsprop.py              # rmsprop
+<a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a>├── _lion.py                 # lion
+<a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a>├── _ademamix.py             # ademamix
+<a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a>└── _schedule_free.py        # schedule_free wrapper
+</code></pre></div>
+<p><code>__all__</code>:</p>
+<ul>
+<li><code>opaque/api/optimizers/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>    <span class="s2">&quot;sgd&quot;</span><span class="p">,</span> <span class="s2">&quot;adam&quot;</span><span class="p">,</span> <span class="s2">&quot;adamw&quot;</span><span class="p">,</span> <span class="s2">&quot;adagrad&quot;</span><span class="p">,</span> <span class="s2">&quot;adafactor&quot;</span><span class="p">,</span> <span class="s2">&quot;adadelta&quot;</span><span class="p">,</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>    <span class="s2">&quot;radam&quot;</span><span class="p">,</span> <span class="s2">&quot;rmsprop&quot;</span><span class="p">,</span> <span class="s2">&quot;lion&quot;</span><span class="p">,</span> <span class="s2">&quot;ademamix&quot;</span><span class="p">,</span> <span class="s2">&quot;schedule_free&quot;</span><span class="p">,</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/optimizers/types.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>    <span class="s2">&quot;AdamState&quot;</span><span class="p">,</span> <span class="s2">&quot;AdamWState&quot;</span><span class="p">,</span> <span class="s2">&quot;AdagradState&quot;</span><span class="p">,</span> <span class="s2">&quot;AdafactorState&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>    <span class="s2">&quot;AdadeltaState&quot;</span><span class="p">,</span> <span class="s2">&quot;RAdamState&quot;</span><span class="p">,</span> <span class="s2">&quot;RMSpropState&quot;</span><span class="p">,</span> <span class="s2">&quot;LionState&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>    <span class="s2">&quot;AdEMAMixState&quot;</span><span class="p">,</span> <span class="s2">&quot;ScheduleFreeState&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="p">]</span>
+</code></pre></div></li>
+<li><code>_chain.py</code>: <code>__all__ = ["make_optimizer_chain"]</code></li>
+<li><code>_bias_correction.py</code>: <code>__all__ = ["is_per_group", "resolve_noise_variance"]</code></li>
+<li>Each <code>_&lt;name&gt;.py</code> module: <code>__all__ = ["&lt;name&gt;"]</code> (or <code>[..., "&lt;name&gt;w"]</code> for adam/adamw).</li>
+</ul>
+<h3 id="62-facade">6.2 Façade<a class="headerlink" href="#62-facade" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>opaque/
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>└── optimizers/__init__.py   # re-exports opaque.api.optimizers.*
+</code></pre></div>
+<p>Façade <code>__all__</code> matches the impl package; <code>types.py</code> re-export stays at
+<code>opaque.optimizers.types</code> for stability.</p>
+<hr />
+<h2 id="7-opaque-accounting-folder-plan">7. <code>opaque-accounting</code> — folder plan<a class="headerlink" href="#7-opaque-accounting-folder-plan" title="Permanent link">&para;</a></h2>
+<h3 id="71-opaqueapiaccountingcore-impl-rust-binding">7.1 <code>opaque/api/accounting/core/</code> (impl + Rust binding)<a class="headerlink" href="#71-opaqueapiaccountingcore-impl-rust-binding" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>opaque/api/accounting/core/
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>├── __init__.py              # core public surface (composition algebra)
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>├── types.py                 # public dataclasses: DpProcess, Pld, Budget, ...
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>├── discretization.py        # get_discretization, default config
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>├── calibration.py           # calibrate, epsilon_budget, delta_budget, ...
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>├── _native.py               # `from . import opaque_accounting as _native` re-aliasing
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a>├── _base.py                 # DpProcess, Pld base classes
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>├── _accountant.py           # Accountant (state machine)
+<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a>├── _budgets.py              # epsilon_budget, delta_budget, advantage_budget, ...
+<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a>├── _process_flat.py         # flat composition operators (`*`, `|`, ...)
+<a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a>├── _serialization.py        # registers tag/load/dump for accounting types
+<a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a>├── composition/
+<a id="__codelineno-20-13" name="__codelineno-20-13" href="#__codelineno-20-13"></a>│   ├── __init__.py
+<a id="__codelineno-20-14" name="__codelineno-20-14" href="#__codelineno-20-14"></a>│   ├── types.py             # Composition / Composed / Repeated / Cached types
+<a id="__codelineno-20-15" name="__codelineno-20-15" href="#__codelineno-20-15"></a>│   ├── _composed.py
+<a id="__codelineno-20-16" name="__codelineno-20-16" href="#__codelineno-20-16"></a>│   ├── _repeated.py
+<a id="__codelineno-20-17" name="__codelineno-20-17" href="#__codelineno-20-17"></a>│   └── _cached.py
+<a id="__codelineno-20-18" name="__codelineno-20-18" href="#__codelineno-20-18"></a>├── mechanisms/
+<a id="__codelineno-20-19" name="__codelineno-20-19" href="#__codelineno-20-19"></a>│   ├── __init__.py
+<a id="__codelineno-20-20" name="__codelineno-20-20" href="#__codelineno-20-20"></a>│   ├── types.py
+<a id="__codelineno-20-21" name="__codelineno-20-21" href="#__codelineno-20-21"></a>│   ├── _identity.py         # identity (composition algebra identity ≈ ε=0)
+<a id="__codelineno-20-22" name="__codelineno-20-22" href="#__codelineno-20-22"></a>│   ├── _eps_delta.py        # eps_delta mechanism
+<a id="__codelineno-20-23" name="__codelineno-20-23" href="#__codelineno-20-23"></a>│   └── _nonprivate.py       # nonprivate (∞)
+<a id="__codelineno-20-24" name="__codelineno-20-24" href="#__codelineno-20-24"></a>├── transformations/
+<a id="__codelineno-20-25" name="__codelineno-20-25" href="#__codelineno-20-25"></a>│   ├── __init__.py
+<a id="__codelineno-20-26" name="__codelineno-20-26" href="#__codelineno-20-26"></a>│   └── types.py
+<a id="__codelineno-20-27" name="__codelineno-20-27" href="#__codelineno-20-27"></a>├── amplification/
+<a id="__codelineno-20-28" name="__codelineno-20-28" href="#__codelineno-20-28"></a>│   ├── __init__.py          # placeholder (per-stack amplification lives elsewhere)
+<a id="__codelineno-20-29" name="__codelineno-20-29" href="#__codelineno-20-29"></a>│   └── types.py             # generic amplification protocol types
+<a id="__codelineno-20-30" name="__codelineno-20-30" href="#__codelineno-20-30"></a>└── opaque_accounting.abi3.so  # Rust PyO3 extension (built by maturin)
+</code></pre></div>
+<p><code>__all__</code>:</p>
+<ul>
+<li><code>opaque/api/accounting/core/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>    <span class="s2">&quot;DpProcess&quot;</span><span class="p">,</span> <span class="s2">&quot;Pld&quot;</span><span class="p">,</span> <span class="s2">&quot;Accountant&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>    <span class="s2">&quot;calibrate&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>    <span class="s2">&quot;epsilon_budget&quot;</span><span class="p">,</span> <span class="s2">&quot;delta_budget&quot;</span><span class="p">,</span> <span class="s2">&quot;advantage_budget&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>    <span class="s2">&quot;beta_budget&quot;</span><span class="p">,</span> <span class="s2">&quot;risk_budget&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>    <span class="s2">&quot;identity&quot;</span><span class="p">,</span> <span class="s2">&quot;eps_delta&quot;</span><span class="p">,</span> <span class="s2">&quot;nonprivate&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a>    <span class="s2">&quot;get_discretization&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/accounting/core/types.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>    <span class="s2">&quot;DpProcess&quot;</span><span class="p">,</span> <span class="s2">&quot;Pld&quot;</span><span class="p">,</span> <span class="s2">&quot;Accountant&quot;</span><span class="p">,</span> <span class="s2">&quot;Budget&quot;</span><span class="p">,</span>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>    <span class="s2">&quot;Discretization&quot;</span><span class="p">,</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/accounting/core/composition/__init__.py</code>: <code>__all__ = ["Composed", "Repeated", "Cached"]</code></li>
+<li><code>opaque/api/accounting/core/mechanisms/__init__.py</code>: <code>__all__ = ["identity", "eps_delta", "nonprivate"]</code></li>
+<li><code>opaque/api/accounting/core/calibration.py</code>: <code>__all__ = ["calibrate"]</code></li>
+<li><code>opaque/api/accounting/core/discretization.py</code>: <code>__all__ = ["get_discretization", "Discretization"]</code></li>
+<li><code>_native.py</code>: <code>__all__ = ["_native"]</code></li>
+</ul>
+<h3 id="72-facade-opaqueaccounting">7.2 Façade — <code>opaque/accounting/</code><a class="headerlink" href="#72-facade-opaqueaccounting" title="Permanent link">&para;</a></h3>
+<p>The façade <strong>mirrors the impl tree</strong> the same way <code>opaque/dpsgd/accounting/</code> /
+<code>opaque/dpftrl/accounting/</code> mirror their impl trees: subpackages are exposed in
+the same shape; the root <code>__init__.py</code> is a small convenience layer that
+re-exports the algebra entry points and keeps submodules accessible.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>opaque/
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>└── accounting/
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>    ├── __init__.py
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>    ├── types.py
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>    ├── calibration.py
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a>    ├── discretization.py
+<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a>    ├── composition/
+<a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a>    │   ├── __init__.py
+<a id="__codelineno-23-9" name="__codelineno-23-9" href="#__codelineno-23-9"></a>    │   └── types.py
+<a id="__codelineno-23-10" name="__codelineno-23-10" href="#__codelineno-23-10"></a>    ├── mechanisms/
+<a id="__codelineno-23-11" name="__codelineno-23-11" href="#__codelineno-23-11"></a>    │   ├── __init__.py
+<a id="__codelineno-23-12" name="__codelineno-23-12" href="#__codelineno-23-12"></a>    │   └── types.py
+<a id="__codelineno-23-13" name="__codelineno-23-13" href="#__codelineno-23-13"></a>    ├── transformations/
+<a id="__codelineno-23-14" name="__codelineno-23-14" href="#__codelineno-23-14"></a>    │   ├── __init__.py
+<a id="__codelineno-23-15" name="__codelineno-23-15" href="#__codelineno-23-15"></a>    │   └── types.py
+<a id="__codelineno-23-16" name="__codelineno-23-16" href="#__codelineno-23-16"></a>    └── amplification/
+<a id="__codelineno-23-17" name="__codelineno-23-17" href="#__codelineno-23-17"></a>        ├── __init__.py
+<a id="__codelineno-23-18" name="__codelineno-23-18" href="#__codelineno-23-18"></a>        └── types.py
+</code></pre></div>
+<p><code>opaque/accounting/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>    <span class="n">composition</span><span class="p">,</span> <span class="n">mechanisms</span><span class="p">,</span> <span class="n">transformations</span><span class="p">,</span> <span class="n">amplification</span><span class="p">,</span>
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a><span class="p">)</span>
+<a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.accounting.core</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a>    <span class="n">DpProcess</span><span class="p">,</span> <span class="n">Pld</span><span class="p">,</span> <span class="n">Accountant</span><span class="p">,</span>
+<a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a>    <span class="n">calibrate</span><span class="p">,</span>
+<a id="__codelineno-24-7" name="__codelineno-24-7" href="#__codelineno-24-7"></a>    <span class="n">epsilon_budget</span><span class="p">,</span> <span class="n">delta_budget</span><span class="p">,</span> <span class="n">advantage_budget</span><span class="p">,</span>
+<a id="__codelineno-24-8" name="__codelineno-24-8" href="#__codelineno-24-8"></a>    <span class="n">beta_budget</span><span class="p">,</span> <span class="n">risk_budget</span><span class="p">,</span>
+<a id="__codelineno-24-9" name="__codelineno-24-9" href="#__codelineno-24-9"></a>    <span class="n">get_discretization</span><span class="p">,</span>
+<a id="__codelineno-24-10" name="__codelineno-24-10" href="#__codelineno-24-10"></a><span class="p">)</span>
+<a id="__codelineno-24-11" name="__codelineno-24-11" href="#__codelineno-24-11"></a>
+<a id="__codelineno-24-12" name="__codelineno-24-12" href="#__codelineno-24-12"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-24-13" name="__codelineno-24-13" href="#__codelineno-24-13"></a>    <span class="s2">&quot;composition&quot;</span><span class="p">,</span> <span class="s2">&quot;mechanisms&quot;</span><span class="p">,</span> <span class="s2">&quot;transformations&quot;</span><span class="p">,</span> <span class="s2">&quot;amplification&quot;</span><span class="p">,</span>
+<a id="__codelineno-24-14" name="__codelineno-24-14" href="#__codelineno-24-14"></a>    <span class="s2">&quot;DpProcess&quot;</span><span class="p">,</span> <span class="s2">&quot;Pld&quot;</span><span class="p">,</span> <span class="s2">&quot;Accountant&quot;</span><span class="p">,</span>
+<a id="__codelineno-24-15" name="__codelineno-24-15" href="#__codelineno-24-15"></a>    <span class="s2">&quot;calibrate&quot;</span><span class="p">,</span>
+<a id="__codelineno-24-16" name="__codelineno-24-16" href="#__codelineno-24-16"></a>    <span class="s2">&quot;epsilon_budget&quot;</span><span class="p">,</span> <span class="s2">&quot;delta_budget&quot;</span><span class="p">,</span> <span class="s2">&quot;advantage_budget&quot;</span><span class="p">,</span>
+<a id="__codelineno-24-17" name="__codelineno-24-17" href="#__codelineno-24-17"></a>    <span class="s2">&quot;beta_budget&quot;</span><span class="p">,</span> <span class="s2">&quot;risk_budget&quot;</span><span class="p">,</span>
+<a id="__codelineno-24-18" name="__codelineno-24-18" href="#__codelineno-24-18"></a>    <span class="s2">&quot;get_discretization&quot;</span><span class="p">,</span>
+<a id="__codelineno-24-19" name="__codelineno-24-19" href="#__codelineno-24-19"></a><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/accounting/types.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.accounting.core.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>    <span class="n">DpProcess</span><span class="p">,</span> <span class="n">Pld</span><span class="p">,</span> <span class="n">Accountant</span><span class="p">,</span> <span class="n">Budget</span><span class="p">,</span> <span class="n">Discretization</span><span class="p">,</span>
+<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a><span class="p">)</span>
+<a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;DpProcess&quot;</span><span class="p">,</span> <span class="s2">&quot;Pld&quot;</span><span class="p">,</span> <span class="s2">&quot;Accountant&quot;</span><span class="p">,</span> <span class="s2">&quot;Budget&quot;</span><span class="p">,</span> <span class="s2">&quot;Discretization&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/accounting/calibration.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.accounting.core.calibration</span><span class="w"> </span><span class="kn">import</span> <span class="n">calibrate</span>
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;calibrate&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/accounting/discretization.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.accounting.core.discretization</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>    <span class="n">get_discretization</span><span class="p">,</span> <span class="n">Discretization</span><span class="p">,</span>
+<a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a><span class="p">)</span>
+<a id="__codelineno-27-4" name="__codelineno-27-4" href="#__codelineno-27-4"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;get_discretization&quot;</span><span class="p">,</span> <span class="s2">&quot;Discretization&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/accounting/mechanisms/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.accounting.core.mechanisms</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>    <span class="n">identity</span><span class="p">,</span> <span class="n">eps_delta</span><span class="p">,</span> <span class="n">nonprivate</span><span class="p">,</span>
+<a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a><span class="p">)</span>
+<a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;identity&quot;</span><span class="p">,</span> <span class="s2">&quot;eps_delta&quot;</span><span class="p">,</span> <span class="s2">&quot;nonprivate&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/accounting/mechanisms/types.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.accounting.core.mechanisms.types</span><span class="w"> </span><span class="kn">import</span> <span class="o">*</span>  <span class="c1"># noqa: F401,F403</span>
+<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.accounting.core.mechanisms.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">__all__</span> <span class="k">as</span> <span class="n">__all__</span>
+</code></pre></div>
+<p><code>opaque/accounting/composition/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.accounting.core.composition</span><span class="w"> </span><span class="kn">import</span> <span class="n">Composed</span><span class="p">,</span> <span class="n">Repeated</span><span class="p">,</span> <span class="n">Cached</span>
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;Composed&quot;</span><span class="p">,</span> <span class="s2">&quot;Repeated&quot;</span><span class="p">,</span> <span class="s2">&quot;Cached&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/accounting/composition/types.py</code> re-exports from
+<code>opaque.api.accounting.core.composition.types</code> with the same <code>__all__</code> policy.</p>
+<p><code>opaque/accounting/transformations/__init__.py</code> and
+<code>opaque/accounting/amplification/__init__.py</code> re-export their respective
+<code>opaque.api.accounting.core.transformations</code> /
+<code>opaque.api.accounting.core.amplification</code> surfaces (today these are
+mostly type / protocol holders; if they grow, the façade grows symmetrically).
+Each declares an explicit <code>__all__</code>.</p>
+<p><strong><code>opaque.accounting</code> does NOT re-export <code>gaussian</code> / <code>band_mf</code> / <code>poisson</code>
+/ etc.</strong> Those live only on <code>opaque.dpsgd.accounting</code> and
+<code>opaque.dpftrl.accounting</code>. The mechanisms exposed here
+(<code>identity</code>, <code>eps_delta</code>, <code>nonprivate</code>) are <strong>algebra primitives</strong>, not
+DP-SGD- or DP-FTRL-specific factories — keeping them under the same
+<code>opaque.accounting.mechanisms</code> submodule that exists in the impl tree
+preserves §0’s “no parallel factory namespace” rule while matching the
+shape of the other façades.</p>
+<hr />
+<h2 id="8-opaque-dpsgd-folder-plan">8. <code>opaque-dpsgd</code> — folder plan<a class="headerlink" href="#8-opaque-dpsgd-folder-plan" title="Permanent link">&para;</a></h2>
+<h3 id="81-opaqueapidpsgd-training-impl">8.1 <code>opaque/api/dpsgd/</code> (training impl)<a class="headerlink" href="#81-opaqueapidpsgd-training-impl" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>opaque/api/dpsgd/
+<a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a>├── __init__.py              # __all__ = [] (impl tree; users go through facade)
+<a id="__codelineno-31-3" name="__codelineno-31-3" href="#__codelineno-31-3"></a>├── types.py                 # DP-SGD state dataclasses
+<a id="__codelineno-31-4" name="__codelineno-31-4" href="#__codelineno-31-4"></a>├── clipping/
+<a id="__codelineno-31-5" name="__codelineno-31-5" href="#__codelineno-31-5"></a>│   ├── __init__.py
+<a id="__codelineno-31-6" name="__codelineno-31-6" href="#__codelineno-31-6"></a>│   ├── types.py             # AdaptiveClipState
+<a id="__codelineno-31-7" name="__codelineno-31-7" href="#__codelineno-31-7"></a>│   └── _adaptive.py         # adaptive_clipped_grad
+<a id="__codelineno-31-8" name="__codelineno-31-8" href="#__codelineno-31-8"></a>│   # Fixed / AUTO-S / per_group are NOT duplicated here — the dpsgd facade
+<a id="__codelineno-31-9" name="__codelineno-31-9" href="#__codelineno-31-9"></a>│   # re-exports them from opaque.api.engine.clipping.
+<a id="__codelineno-31-10" name="__codelineno-31-10" href="#__codelineno-31-10"></a>├── noise/
+<a id="__codelineno-31-11" name="__codelineno-31-11" href="#__codelineno-31-11"></a>│   ├── __init__.py
+<a id="__codelineno-31-12" name="__codelineno-31-12" href="#__codelineno-31-12"></a>│   ├── types.py             # GaussianNoiseState (shared by both noise functions)
+<a id="__codelineno-31-13" name="__codelineno-31-13" href="#__codelineno-31-13"></a>│   ├── _gaussian.py         # gaussian_noise (defines GaussianNoiseState)
+<a id="__codelineno-31-14" name="__codelineno-31-14" href="#__codelineno-31-14"></a>│   ├── _truncated_gaussian.py # truncated_gaussian_noise (reuses GaussianNoiseState)
+<a id="__codelineno-31-15" name="__codelineno-31-15" href="#__codelineno-31-15"></a>│   └── _distributed.py      # registers noise-state sync handlers
+<a id="__codelineno-31-16" name="__codelineno-31-16" href="#__codelineno-31-16"></a>└── sampling/
+<a id="__codelineno-31-17" name="__codelineno-31-17" href="#__codelineno-31-17"></a>    ├── __init__.py
+<a id="__codelineno-31-18" name="__codelineno-31-18" href="#__codelineno-31-18"></a>    ├── _poisson.py          # PoissonSubsampler
+<a id="__codelineno-31-19" name="__codelineno-31-19" href="#__codelineno-31-19"></a>    └── _helpers.py          # _maybe_truncate_indices, _plain_poisson_step_indices
+</code></pre></div>
+<p><code>__all__</code>:</p>
+<ul>
+<li><code>opaque/api/dpsgd/__init__.py</code>: <code>__all__ = []</code> (this tree is browsed by power
+  users; everyday imports go through the façade).</li>
+<li><code>opaque/api/dpsgd/clipping/__init__.py</code>: <code>__all__ = ["adaptive_clipped_grad"]</code></li>
+<li><code>opaque/api/dpsgd/clipping/types.py</code>: <code>__all__ = ["AdaptiveClipState"]</code></li>
+<li><code>opaque/api/dpsgd/noise/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;gaussian_noise&quot;</span><span class="p">,</span> <span class="s2">&quot;truncated_gaussian_noise&quot;</span><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/dpsgd/noise/types.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;GaussianNoiseState&quot;</span><span class="p">]</span>
+</code></pre></div>
+  (Both <code>gaussian_noise()</code> and <code>truncated_gaussian_noise()</code> return the <strong>same</strong>
+  <code>GaussianNoiseState</code>; per-group noise is realized by passing a <code>PerGroup</code>
+  <code>max_norm</code> on the <code>ClippedPytree</code> input — there is no separate noise state
+  type for it.)</li>
+<li><code>opaque/api/dpsgd/sampling/__init__.py</code>: <code>__all__ = ["PoissonSubsampler"]</code></li>
+</ul>
+<h3 id="82-opaqueapiaccountingdpsgd-dp-sgd-accounting-factories">8.2 <code>opaque/api/accounting/dpsgd/</code> (DP-SGD accounting factories)<a class="headerlink" href="#82-opaqueapiaccountingdpsgd-dp-sgd-accounting-factories" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>opaque/api/accounting/dpsgd/
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>├── __init__.py              # public DP-SGD factories
+<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a>├── types.py                 # Gaussian, Adaclip, Poisson, ParallelPoisson dataclasses
+<a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a>├── mechanisms/
+<a id="__codelineno-34-5" name="__codelineno-34-5" href="#__codelineno-34-5"></a>│   ├── __init__.py          # __all__ = [&quot;gaussian&quot;, &quot;adaclip&quot;]
+<a id="__codelineno-34-6" name="__codelineno-34-6" href="#__codelineno-34-6"></a>│   ├── types.py             # __all__ = [&quot;Gaussian&quot;, &quot;Adaclip&quot;]
+<a id="__codelineno-34-7" name="__codelineno-34-7" href="#__codelineno-34-7"></a>│   ├── _gaussian.py
+<a id="__codelineno-34-8" name="__codelineno-34-8" href="#__codelineno-34-8"></a>│   └── _adaclip.py
+<a id="__codelineno-34-9" name="__codelineno-34-9" href="#__codelineno-34-9"></a>└── amplification/
+<a id="__codelineno-34-10" name="__codelineno-34-10" href="#__codelineno-34-10"></a>    ├── __init__.py          # __all__ = [&quot;poisson&quot;, &quot;parallel_poisson&quot;]
+<a id="__codelineno-34-11" name="__codelineno-34-11" href="#__codelineno-34-11"></a>    ├── types.py             # __all__ = [&quot;Poisson&quot;, &quot;ParallelPoisson&quot;]
+<a id="__codelineno-34-12" name="__codelineno-34-12" href="#__codelineno-34-12"></a>    ├── _poisson.py
+<a id="__codelineno-34-13" name="__codelineno-34-13" href="#__codelineno-34-13"></a>    └── _parallel_poisson.py
+</code></pre></div>
+<p><code>opaque/api/accounting/dpsgd/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.accounting.dpsgd.mechanisms</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian</span><span class="p">,</span> <span class="n">adaclip</span>
+<a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.accounting.dpsgd.amplification</span><span class="w"> </span><span class="kn">import</span> <span class="n">poisson</span><span class="p">,</span> <span class="n">parallel_poisson</span>
+<a id="__codelineno-35-3" name="__codelineno-35-3" href="#__codelineno-35-3"></a>
+<a id="__codelineno-35-4" name="__codelineno-35-4" href="#__codelineno-35-4"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;gaussian&quot;</span><span class="p">,</span> <span class="s2">&quot;adaclip&quot;</span><span class="p">,</span> <span class="s2">&quot;poisson&quot;</span><span class="p">,</span> <span class="s2">&quot;parallel_poisson&quot;</span><span class="p">]</span>
+</code></pre></div>
+<h3 id="83-facade-opaquedpsgd">8.3 Façade — <code>opaque/dpsgd/</code><a class="headerlink" href="#83-facade-opaquedpsgd" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>opaque/
+<a id="__codelineno-36-2" name="__codelineno-36-2" href="#__codelineno-36-2"></a>└── dpsgd/
+<a id="__codelineno-36-3" name="__codelineno-36-3" href="#__codelineno-36-3"></a>    ├── __init__.py          # convenience root re-exports (small)
+<a id="__codelineno-36-4" name="__codelineno-36-4" href="#__codelineno-36-4"></a>    ├── types.py             # DP-SGD-specific public types
+<a id="__codelineno-36-5" name="__codelineno-36-5" href="#__codelineno-36-5"></a>    ├── clipping/
+<a id="__codelineno-36-6" name="__codelineno-36-6" href="#__codelineno-36-6"></a>    │   ├── __init__.py      # ALL clipping the DP-SGD user needs (engine + dpsgd-only)
+<a id="__codelineno-36-7" name="__codelineno-36-7" href="#__codelineno-36-7"></a>    │   ├── types.py
+<a id="__codelineno-36-8" name="__codelineno-36-8" href="#__codelineno-36-8"></a>    │   └── fun.py
+<a id="__codelineno-36-9" name="__codelineno-36-9" href="#__codelineno-36-9"></a>    ├── noise/
+<a id="__codelineno-36-10" name="__codelineno-36-10" href="#__codelineno-36-10"></a>    │   ├── __init__.py
+<a id="__codelineno-36-11" name="__codelineno-36-11" href="#__codelineno-36-11"></a>    │   └── types.py
+<a id="__codelineno-36-12" name="__codelineno-36-12" href="#__codelineno-36-12"></a>    ├── sampling/
+<a id="__codelineno-36-13" name="__codelineno-36-13" href="#__codelineno-36-13"></a>    │   ├── __init__.py
+<a id="__codelineno-36-14" name="__codelineno-36-14" href="#__codelineno-36-14"></a>    │   └── types.py
+<a id="__codelineno-36-15" name="__codelineno-36-15" href="#__codelineno-36-15"></a>    └── accounting/
+<a id="__codelineno-36-16" name="__codelineno-36-16" href="#__codelineno-36-16"></a>        ├── __init__.py      # __all__ = [&quot;gaussian&quot;, &quot;adaclip&quot;, &quot;poisson&quot;, &quot;parallel_poisson&quot;]
+<a id="__codelineno-36-17" name="__codelineno-36-17" href="#__codelineno-36-17"></a>        ├── types.py
+<a id="__codelineno-36-18" name="__codelineno-36-18" href="#__codelineno-36-18"></a>        ├── mechanisms/__init__.py
+<a id="__codelineno-36-19" name="__codelineno-36-19" href="#__codelineno-36-19"></a>        └── amplification/__init__.py
+</code></pre></div>
+<p><code>opaque/dpsgd/clipping/__init__.py</code> (the “self-sufficient” story):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.engine.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span><span class="p">,</span> <span class="n">auto_clipped_grad</span><span class="p">,</span> <span class="n">per_group</span>
+<a id="__codelineno-37-2" name="__codelineno-37-2" href="#__codelineno-37-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">adaptive_clipped_grad</span>
+<a id="__codelineno-37-3" name="__codelineno-37-3" href="#__codelineno-37-3"></a>
+<a id="__codelineno-37-4" name="__codelineno-37-4" href="#__codelineno-37-4"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-37-5" name="__codelineno-37-5" href="#__codelineno-37-5"></a>    <span class="s2">&quot;clipped_grad&quot;</span><span class="p">,</span> <span class="s2">&quot;auto_clipped_grad&quot;</span><span class="p">,</span> <span class="s2">&quot;per_group&quot;</span><span class="p">,</span>
+<a id="__codelineno-37-6" name="__codelineno-37-6" href="#__codelineno-37-6"></a>    <span class="s2">&quot;adaptive_clipped_grad&quot;</span><span class="p">,</span>
+<a id="__codelineno-37-7" name="__codelineno-37-7" href="#__codelineno-37-7"></a><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/dpsgd/clipping/types.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.engine.clipping.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClipState</span>
+<a id="__codelineno-38-2" name="__codelineno-38-2" href="#__codelineno-38-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.dpsgd.clipping.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">AdaptiveClipState</span>
+<a id="__codelineno-38-3" name="__codelineno-38-3" href="#__codelineno-38-3"></a>
+<a id="__codelineno-38-4" name="__codelineno-38-4" href="#__codelineno-38-4"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;ClipState&quot;</span><span class="p">,</span> <span class="s2">&quot;AdaptiveClipState&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/dpsgd/clipping/fun.py</code>: <code>from opaque.api.engine.clipping.fun import *</code>
+with <code>__all__ = [...]</code> mirrored explicitly.</p>
+<p><code>opaque/dpsgd/noise/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span><span class="p">,</span> <span class="n">truncated_gaussian_noise</span>
+<a id="__codelineno-39-2" name="__codelineno-39-2" href="#__codelineno-39-2"></a>
+<a id="__codelineno-39-3" name="__codelineno-39-3" href="#__codelineno-39-3"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;gaussian_noise&quot;</span><span class="p">,</span> <span class="s2">&quot;truncated_gaussian_noise&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/dpsgd/sampling/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSubsampler</span>
+<a id="__codelineno-40-2" name="__codelineno-40-2" href="#__codelineno-40-2"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;PoissonSubsampler&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/dpsgd/accounting/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.accounting.dpsgd</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian</span><span class="p">,</span> <span class="n">adaclip</span><span class="p">,</span> <span class="n">poisson</span><span class="p">,</span> <span class="n">parallel_poisson</span>
+<a id="__codelineno-41-2" name="__codelineno-41-2" href="#__codelineno-41-2"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;gaussian&quot;</span><span class="p">,</span> <span class="s2">&quot;adaclip&quot;</span><span class="p">,</span> <span class="s2">&quot;poisson&quot;</span><span class="p">,</span> <span class="s2">&quot;parallel_poisson&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/dpsgd/__init__.py</code> (root convenience — keep narrow):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd</span><span class="w"> </span><span class="kn">import</span> <span class="n">accounting</span><span class="p">,</span> <span class="n">clipping</span><span class="p">,</span> <span class="n">noise</span><span class="p">,</span> <span class="n">sampling</span>
+<a id="__codelineno-42-2" name="__codelineno-42-2" href="#__codelineno-42-2"></a>
+<a id="__codelineno-42-3" name="__codelineno-42-3" href="#__codelineno-42-3"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;accounting&quot;</span><span class="p">,</span> <span class="s2">&quot;clipping&quot;</span><span class="p">,</span> <span class="s2">&quot;noise&quot;</span><span class="p">,</span> <span class="s2">&quot;sampling&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p>(Root does not re-export every leaf name — submodules are the canonical home.)</p>
+<hr />
+<h2 id="9-opaque-dpftrl-folder-plan">9. <code>opaque-dpftrl</code> — folder plan<a class="headerlink" href="#9-opaque-dpftrl-folder-plan" title="Permanent link">&para;</a></h2>
+<h3 id="91-opaqueapidpftrl-training-impl">9.1 <code>opaque/api/dpftrl/</code> (training impl)<a class="headerlink" href="#91-opaqueapidpftrl-training-impl" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-43-1" name="__codelineno-43-1" href="#__codelineno-43-1"></a>opaque/api/dpftrl/
+<a id="__codelineno-43-2" name="__codelineno-43-2" href="#__codelineno-43-2"></a>├── __init__.py              # __all__ = []
+<a id="__codelineno-43-3" name="__codelineno-43-3" href="#__codelineno-43-3"></a>├── types.py                 # DP-FTRL state dataclasses
+<a id="__codelineno-43-4" name="__codelineno-43-4" href="#__codelineno-43-4"></a>├── clipping/
+<a id="__codelineno-43-5" name="__codelineno-43-5" href="#__codelineno-43-5"></a>│   └── __init__.py          # empty (`__all__ = []`); FTRL has no extra clip methods
+<a id="__codelineno-43-6" name="__codelineno-43-6" href="#__codelineno-43-6"></a>├── noise/
+<a id="__codelineno-43-7" name="__codelineno-43-7" href="#__codelineno-43-7"></a>│   ├── __init__.py
+<a id="__codelineno-43-8" name="__codelineno-43-8" href="#__codelineno-43-8"></a>│   ├── types.py             # MfNoiseState, IdentityState, BandMfState, BltState, BisrState, BsrState, LambdaCgdState
+<a id="__codelineno-43-9" name="__codelineno-43-9" href="#__codelineno-43-9"></a>│   ├── _dispatcher.py       # mf_noise dispatcher
+<a id="__codelineno-43-10" name="__codelineno-43-10" href="#__codelineno-43-10"></a>│   ├── _engine.py           # streaming MF engine
+<a id="__codelineno-43-11" name="__codelineno-43-11" href="#__codelineno-43-11"></a>│   ├── _identity.py         # identity_strategy
+<a id="__codelineno-43-12" name="__codelineno-43-12" href="#__codelineno-43-12"></a>│   ├── _band_mf.py          # band_mf_strategy
+<a id="__codelineno-43-13" name="__codelineno-43-13" href="#__codelineno-43-13"></a>│   ├── _blt.py              # blt_strategy
+<a id="__codelineno-43-14" name="__codelineno-43-14" href="#__codelineno-43-14"></a>│   ├── _blt_math.py
+<a id="__codelineno-43-15" name="__codelineno-43-15" href="#__codelineno-43-15"></a>│   ├── _bisr.py             # bisr_strategy
+<a id="__codelineno-43-16" name="__codelineno-43-16" href="#__codelineno-43-16"></a>│   ├── _bsr.py              # bsr_strategy
+<a id="__codelineno-43-17" name="__codelineno-43-17" href="#__codelineno-43-17"></a>│   ├── _lambda_cgd.py       # lambda_cgd_strategy
+<a id="__codelineno-43-18" name="__codelineno-43-18" href="#__codelineno-43-18"></a>│   ├── _toeplitz.py         # internal Toeplitz utils
+<a id="__codelineno-43-19" name="__codelineno-43-19" href="#__codelineno-43-19"></a>│   ├── _streaming_matrix.py # internal streaming matrix base
+<a id="__codelineno-43-20" name="__codelineno-43-20" href="#__codelineno-43-20"></a>│   ├── _sensitivity.py      # internal sensitivity helpers
+<a id="__codelineno-43-21" name="__codelineno-43-21" href="#__codelineno-43-21"></a>│   ├── _second_moment.py    # private second moment streams
+<a id="__codelineno-43-22" name="__codelineno-43-22" href="#__codelineno-43-22"></a>│   ├── _checks.py           # internal validation
+<a id="__codelineno-43-23" name="__codelineno-43-23" href="#__codelineno-43-23"></a>│   └── _distributed.py      # registers MF-noise sync handlers
+<a id="__codelineno-43-24" name="__codelineno-43-24" href="#__codelineno-43-24"></a>└── sampling/
+<a id="__codelineno-43-25" name="__codelineno-43-25" href="#__codelineno-43-25"></a>    ├── __init__.py
+<a id="__codelineno-43-26" name="__codelineno-43-26" href="#__codelineno-43-26"></a>    ├── types.py             # PartitionType enum
+<a id="__codelineno-43-27" name="__codelineno-43-27" href="#__codelineno-43-27"></a>    ├── _partitions.py       # _equal_split_partition, _independent_partition
+<a id="__codelineno-43-28" name="__codelineno-43-28" href="#__codelineno-43-28"></a>    ├── _poisson.py          # CyclicPoissonSampler
+<a id="__codelineno-43-29" name="__codelineno-43-29" href="#__codelineno-43-29"></a>    ├── _b_min_sep.py        # BMinSepSampler
+<a id="__codelineno-43-30" name="__codelineno-43-30" href="#__codelineno-43-30"></a>    ├── _balls_in_bins.py    # BallsInBinsSampler
+<a id="__codelineno-43-31" name="__codelineno-43-31" href="#__codelineno-43-31"></a>    └── _sequential.py       # SequentialBatchSampler
+</code></pre></div>
+<p><code>__all__</code>:</p>
+<ul>
+<li><code>opaque/api/dpftrl/clipping/__init__.py</code>: <code>__all__ = []</code></li>
+<li><code>opaque/api/dpftrl/noise/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-44-1" name="__codelineno-44-1" href="#__codelineno-44-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-44-2" name="__codelineno-44-2" href="#__codelineno-44-2"></a>    <span class="s2">&quot;mf_noise&quot;</span><span class="p">,</span>
+<a id="__codelineno-44-3" name="__codelineno-44-3" href="#__codelineno-44-3"></a>    <span class="s2">&quot;identity_strategy&quot;</span><span class="p">,</span> <span class="s2">&quot;band_mf_strategy&quot;</span><span class="p">,</span>
+<a id="__codelineno-44-4" name="__codelineno-44-4" href="#__codelineno-44-4"></a>    <span class="s2">&quot;blt_strategy&quot;</span><span class="p">,</span> <span class="s2">&quot;bisr_strategy&quot;</span><span class="p">,</span> <span class="s2">&quot;bsr_strategy&quot;</span><span class="p">,</span> <span class="s2">&quot;lambda_cgd_strategy&quot;</span><span class="p">,</span>
+<a id="__codelineno-44-5" name="__codelineno-44-5" href="#__codelineno-44-5"></a><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/dpftrl/noise/types.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-45-2" name="__codelineno-45-2" href="#__codelineno-45-2"></a>    <span class="s2">&quot;MfNoiseState&quot;</span><span class="p">,</span>
+<a id="__codelineno-45-3" name="__codelineno-45-3" href="#__codelineno-45-3"></a>    <span class="s2">&quot;IdentityState&quot;</span><span class="p">,</span> <span class="s2">&quot;BandMfState&quot;</span><span class="p">,</span>
+<a id="__codelineno-45-4" name="__codelineno-45-4" href="#__codelineno-45-4"></a>    <span class="s2">&quot;BltState&quot;</span><span class="p">,</span> <span class="s2">&quot;BisrState&quot;</span><span class="p">,</span> <span class="s2">&quot;BsrState&quot;</span><span class="p">,</span> <span class="s2">&quot;LambdaCgdState&quot;</span><span class="p">,</span>
+<a id="__codelineno-45-5" name="__codelineno-45-5" href="#__codelineno-45-5"></a><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/dpftrl/sampling/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-46-1" name="__codelineno-46-1" href="#__codelineno-46-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-46-2" name="__codelineno-46-2" href="#__codelineno-46-2"></a>    <span class="s2">&quot;CyclicPoissonSampler&quot;</span><span class="p">,</span> <span class="s2">&quot;BMinSepSampler&quot;</span><span class="p">,</span>
+<a id="__codelineno-46-3" name="__codelineno-46-3" href="#__codelineno-46-3"></a>    <span class="s2">&quot;BallsInBinsSampler&quot;</span><span class="p">,</span> <span class="s2">&quot;SequentialBatchSampler&quot;</span><span class="p">,</span>
+<a id="__codelineno-46-4" name="__codelineno-46-4" href="#__codelineno-46-4"></a><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/dpftrl/sampling/types.py</code>: <code>__all__ = ["PartitionType"]</code></li>
+</ul>
+<h3 id="92-opaqueapiaccountingdpftrl-dp-ftrl-accounting-factories">9.2 <code>opaque/api/accounting/dpftrl/</code> (DP-FTRL accounting factories)<a class="headerlink" href="#92-opaqueapiaccountingdpftrl-dp-ftrl-accounting-factories" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-47-1" name="__codelineno-47-1" href="#__codelineno-47-1"></a>opaque/api/accounting/dpftrl/
+<a id="__codelineno-47-2" name="__codelineno-47-2" href="#__codelineno-47-2"></a>├── __init__.py              # public DP-FTRL factories
+<a id="__codelineno-47-3" name="__codelineno-47-3" href="#__codelineno-47-3"></a>├── types.py                 # MF mechanism dataclasses + amplification dataclasses
+<a id="__codelineno-47-4" name="__codelineno-47-4" href="#__codelineno-47-4"></a>├── mechanisms/
+<a id="__codelineno-47-5" name="__codelineno-47-5" href="#__codelineno-47-5"></a>│   ├── __init__.py          # __all__ = [&quot;band_mf&quot;, &quot;blt&quot;, &quot;bisr&quot;, &quot;bsr&quot;, &quot;lambda_cgd&quot;, &quot;mf_identity&quot;]
+<a id="__codelineno-47-6" name="__codelineno-47-6" href="#__codelineno-47-6"></a>│   ├── types.py             # __all__ = [&quot;BandMf&quot;, &quot;Blt&quot;, &quot;Bisr&quot;, &quot;Bsr&quot;, &quot;LambdaCgd&quot;, &quot;IdentityMf&quot;, &quot;MfGaussian&quot;]
+<a id="__codelineno-47-7" name="__codelineno-47-7" href="#__codelineno-47-7"></a>│   ├── _band_mf.py
+<a id="__codelineno-47-8" name="__codelineno-47-8" href="#__codelineno-47-8"></a>│   ├── _blt.py
+<a id="__codelineno-47-9" name="__codelineno-47-9" href="#__codelineno-47-9"></a>│   ├── _bisr.py
+<a id="__codelineno-47-10" name="__codelineno-47-10" href="#__codelineno-47-10"></a>│   ├── _bsr.py
+<a id="__codelineno-47-11" name="__codelineno-47-11" href="#__codelineno-47-11"></a>│   ├── _lambda_cgd.py
+<a id="__codelineno-47-12" name="__codelineno-47-12" href="#__codelineno-47-12"></a>│   ├── _identity.py
+<a id="__codelineno-47-13" name="__codelineno-47-13" href="#__codelineno-47-13"></a>│   └── _mf_gaussian.py
+<a id="__codelineno-47-14" name="__codelineno-47-14" href="#__codelineno-47-14"></a>└── amplification/
+<a id="__codelineno-47-15" name="__codelineno-47-15" href="#__codelineno-47-15"></a>    ├── __init__.py          # __all__ = [&quot;poisson&quot;, &quot;b_min_sep&quot;, &quot;balls_in_bins&quot;]
+<a id="__codelineno-47-16" name="__codelineno-47-16" href="#__codelineno-47-16"></a>    ├── types.py             # __all__ = [&quot;MfPoisson&quot;, &quot;BMinSep&quot;, &quot;BallsInBins&quot;]
+<a id="__codelineno-47-17" name="__codelineno-47-17" href="#__codelineno-47-17"></a>    ├── _poisson.py          # MfPoisson + poisson factory
+<a id="__codelineno-47-18" name="__codelineno-47-18" href="#__codelineno-47-18"></a>    ├── _b_min_sep.py        # BMinSep + b_min_sep factory
+<a id="__codelineno-47-19" name="__codelineno-47-19" href="#__codelineno-47-19"></a>    ├── _b_min_sep_transcript_cache.py
+<a id="__codelineno-47-20" name="__codelineno-47-20" href="#__codelineno-47-20"></a>    └── _balls_in_bins.py    # BallsInBins + balls_in_bins factory
+</code></pre></div>
+<p><code>opaque/api/accounting/dpftrl/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-48-1" name="__codelineno-48-1" href="#__codelineno-48-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.accounting.dpftrl.mechanisms</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-48-2" name="__codelineno-48-2" href="#__codelineno-48-2"></a>    <span class="n">band_mf</span><span class="p">,</span> <span class="n">blt</span><span class="p">,</span> <span class="n">bisr</span><span class="p">,</span> <span class="n">bsr</span><span class="p">,</span> <span class="n">lambda_cgd</span><span class="p">,</span> <span class="n">mf_identity</span><span class="p">,</span>
+<a id="__codelineno-48-3" name="__codelineno-48-3" href="#__codelineno-48-3"></a><span class="p">)</span>
+<a id="__codelineno-48-4" name="__codelineno-48-4" href="#__codelineno-48-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.accounting.dpftrl.amplification</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-48-5" name="__codelineno-48-5" href="#__codelineno-48-5"></a>    <span class="n">poisson</span><span class="p">,</span> <span class="n">b_min_sep</span><span class="p">,</span> <span class="n">balls_in_bins</span><span class="p">,</span>
+<a id="__codelineno-48-6" name="__codelineno-48-6" href="#__codelineno-48-6"></a><span class="p">)</span>
+<a id="__codelineno-48-7" name="__codelineno-48-7" href="#__codelineno-48-7"></a>
+<a id="__codelineno-48-8" name="__codelineno-48-8" href="#__codelineno-48-8"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-48-9" name="__codelineno-48-9" href="#__codelineno-48-9"></a>    <span class="s2">&quot;band_mf&quot;</span><span class="p">,</span> <span class="s2">&quot;blt&quot;</span><span class="p">,</span> <span class="s2">&quot;bisr&quot;</span><span class="p">,</span> <span class="s2">&quot;bsr&quot;</span><span class="p">,</span> <span class="s2">&quot;lambda_cgd&quot;</span><span class="p">,</span> <span class="s2">&quot;mf_identity&quot;</span><span class="p">,</span>
+<a id="__codelineno-48-10" name="__codelineno-48-10" href="#__codelineno-48-10"></a>    <span class="s2">&quot;poisson&quot;</span><span class="p">,</span> <span class="s2">&quot;b_min_sep&quot;</span><span class="p">,</span> <span class="s2">&quot;balls_in_bins&quot;</span><span class="p">,</span>
+<a id="__codelineno-48-11" name="__codelineno-48-11" href="#__codelineno-48-11"></a><span class="p">]</span>
+</code></pre></div>
+<h3 id="93-facade-opaquedpftrl">9.3 Façade — <code>opaque/dpftrl/</code><a class="headerlink" href="#93-facade-opaquedpftrl" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-49-1" name="__codelineno-49-1" href="#__codelineno-49-1"></a>opaque/
+<a id="__codelineno-49-2" name="__codelineno-49-2" href="#__codelineno-49-2"></a>└── dpftrl/
+<a id="__codelineno-49-3" name="__codelineno-49-3" href="#__codelineno-49-3"></a>    ├── __init__.py          # convenience root
+<a id="__codelineno-49-4" name="__codelineno-49-4" href="#__codelineno-49-4"></a>    ├── types.py
+<a id="__codelineno-49-5" name="__codelineno-49-5" href="#__codelineno-49-5"></a>    ├── clipping/
+<a id="__codelineno-49-6" name="__codelineno-49-6" href="#__codelineno-49-6"></a>    │   ├── __init__.py      # __all__ = [&quot;clipped_grad&quot;, &quot;auto_clipped_grad&quot;, &quot;per_group&quot;]
+<a id="__codelineno-49-7" name="__codelineno-49-7" href="#__codelineno-49-7"></a>    │   ├── types.py
+<a id="__codelineno-49-8" name="__codelineno-49-8" href="#__codelineno-49-8"></a>    │   └── fun.py
+<a id="__codelineno-49-9" name="__codelineno-49-9" href="#__codelineno-49-9"></a>    ├── noise/
+<a id="__codelineno-49-10" name="__codelineno-49-10" href="#__codelineno-49-10"></a>    │   ├── __init__.py
+<a id="__codelineno-49-11" name="__codelineno-49-11" href="#__codelineno-49-11"></a>    │   └── types.py
+<a id="__codelineno-49-12" name="__codelineno-49-12" href="#__codelineno-49-12"></a>    ├── sampling/
+<a id="__codelineno-49-13" name="__codelineno-49-13" href="#__codelineno-49-13"></a>    │   ├── __init__.py
+<a id="__codelineno-49-14" name="__codelineno-49-14" href="#__codelineno-49-14"></a>    │   └── types.py
+<a id="__codelineno-49-15" name="__codelineno-49-15" href="#__codelineno-49-15"></a>    └── accounting/
+<a id="__codelineno-49-16" name="__codelineno-49-16" href="#__codelineno-49-16"></a>        ├── __init__.py      # __all__ = [&quot;band_mf&quot;, &quot;blt&quot;, &quot;bisr&quot;, &quot;bsr&quot;, &quot;lambda_cgd&quot;, &quot;mf_identity&quot;, &quot;poisson&quot;, &quot;b_min_sep&quot;, &quot;balls_in_bins&quot;]
+<a id="__codelineno-49-17" name="__codelineno-49-17" href="#__codelineno-49-17"></a>        ├── types.py
+<a id="__codelineno-49-18" name="__codelineno-49-18" href="#__codelineno-49-18"></a>        ├── mechanisms/__init__.py
+<a id="__codelineno-49-19" name="__codelineno-49-19" href="#__codelineno-49-19"></a>        └── amplification/__init__.py
+</code></pre></div>
+<p><code>opaque/dpftrl/clipping/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-50-1" name="__codelineno-50-1" href="#__codelineno-50-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.engine.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span><span class="p">,</span> <span class="n">auto_clipped_grad</span><span class="p">,</span> <span class="n">per_group</span>
+<a id="__codelineno-50-2" name="__codelineno-50-2" href="#__codelineno-50-2"></a>
+<a id="__codelineno-50-3" name="__codelineno-50-3" href="#__codelineno-50-3"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;clipped_grad&quot;</span><span class="p">,</span> <span class="s2">&quot;auto_clipped_grad&quot;</span><span class="p">,</span> <span class="s2">&quot;per_group&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p>(No <code>adaptive_clipped_grad</code> here — DP-FTRL does not expose it; the §0 “stacks
+self-sufficient” rule.)</p>
+<p><code>opaque/dpftrl/noise/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-51-1" name="__codelineno-51-1" href="#__codelineno-51-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-51-2" name="__codelineno-51-2" href="#__codelineno-51-2"></a>    <span class="n">mf_noise</span><span class="p">,</span>
+<a id="__codelineno-51-3" name="__codelineno-51-3" href="#__codelineno-51-3"></a>    <span class="n">identity_strategy</span><span class="p">,</span> <span class="n">band_mf_strategy</span><span class="p">,</span>
+<a id="__codelineno-51-4" name="__codelineno-51-4" href="#__codelineno-51-4"></a>    <span class="n">blt_strategy</span><span class="p">,</span> <span class="n">bisr_strategy</span><span class="p">,</span> <span class="n">bsr_strategy</span><span class="p">,</span> <span class="n">lambda_cgd_strategy</span><span class="p">,</span>
+<a id="__codelineno-51-5" name="__codelineno-51-5" href="#__codelineno-51-5"></a><span class="p">)</span>
+<a id="__codelineno-51-6" name="__codelineno-51-6" href="#__codelineno-51-6"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-51-7" name="__codelineno-51-7" href="#__codelineno-51-7"></a>    <span class="s2">&quot;mf_noise&quot;</span><span class="p">,</span>
+<a id="__codelineno-51-8" name="__codelineno-51-8" href="#__codelineno-51-8"></a>    <span class="s2">&quot;identity_strategy&quot;</span><span class="p">,</span> <span class="s2">&quot;band_mf_strategy&quot;</span><span class="p">,</span>
+<a id="__codelineno-51-9" name="__codelineno-51-9" href="#__codelineno-51-9"></a>    <span class="s2">&quot;blt_strategy&quot;</span><span class="p">,</span> <span class="s2">&quot;bisr_strategy&quot;</span><span class="p">,</span> <span class="s2">&quot;bsr_strategy&quot;</span><span class="p">,</span> <span class="s2">&quot;lambda_cgd_strategy&quot;</span><span class="p">,</span>
+<a id="__codelineno-51-10" name="__codelineno-51-10" href="#__codelineno-51-10"></a><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/dpftrl/sampling/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-52-1" name="__codelineno-52-1" href="#__codelineno-52-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-52-2" name="__codelineno-52-2" href="#__codelineno-52-2"></a>    <span class="n">CyclicPoissonSampler</span><span class="p">,</span> <span class="n">BMinSepSampler</span><span class="p">,</span> <span class="n">BallsInBinsSampler</span><span class="p">,</span> <span class="n">SequentialBatchSampler</span><span class="p">,</span>
+<a id="__codelineno-52-3" name="__codelineno-52-3" href="#__codelineno-52-3"></a><span class="p">)</span>
+<a id="__codelineno-52-4" name="__codelineno-52-4" href="#__codelineno-52-4"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-52-5" name="__codelineno-52-5" href="#__codelineno-52-5"></a>    <span class="s2">&quot;CyclicPoissonSampler&quot;</span><span class="p">,</span> <span class="s2">&quot;BMinSepSampler&quot;</span><span class="p">,</span>
+<a id="__codelineno-52-6" name="__codelineno-52-6" href="#__codelineno-52-6"></a>    <span class="s2">&quot;BallsInBinsSampler&quot;</span><span class="p">,</span> <span class="s2">&quot;SequentialBatchSampler&quot;</span><span class="p">,</span>
+<a id="__codelineno-52-7" name="__codelineno-52-7" href="#__codelineno-52-7"></a><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/dpftrl/accounting/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-53-1" name="__codelineno-53-1" href="#__codelineno-53-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.accounting.dpftrl</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-53-2" name="__codelineno-53-2" href="#__codelineno-53-2"></a>    <span class="n">band_mf</span><span class="p">,</span> <span class="n">blt</span><span class="p">,</span> <span class="n">bisr</span><span class="p">,</span> <span class="n">bsr</span><span class="p">,</span> <span class="n">lambda_cgd</span><span class="p">,</span> <span class="n">mf_identity</span><span class="p">,</span>
+<a id="__codelineno-53-3" name="__codelineno-53-3" href="#__codelineno-53-3"></a>    <span class="n">poisson</span><span class="p">,</span> <span class="n">b_min_sep</span><span class="p">,</span> <span class="n">balls_in_bins</span><span class="p">,</span>
+<a id="__codelineno-53-4" name="__codelineno-53-4" href="#__codelineno-53-4"></a><span class="p">)</span>
+<a id="__codelineno-53-5" name="__codelineno-53-5" href="#__codelineno-53-5"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-53-6" name="__codelineno-53-6" href="#__codelineno-53-6"></a>    <span class="s2">&quot;band_mf&quot;</span><span class="p">,</span> <span class="s2">&quot;blt&quot;</span><span class="p">,</span> <span class="s2">&quot;bisr&quot;</span><span class="p">,</span> <span class="s2">&quot;bsr&quot;</span><span class="p">,</span> <span class="s2">&quot;lambda_cgd&quot;</span><span class="p">,</span> <span class="s2">&quot;mf_identity&quot;</span><span class="p">,</span>
+<a id="__codelineno-53-7" name="__codelineno-53-7" href="#__codelineno-53-7"></a>    <span class="s2">&quot;poisson&quot;</span><span class="p">,</span> <span class="s2">&quot;b_min_sep&quot;</span><span class="p">,</span> <span class="s2">&quot;balls_in_bins&quot;</span><span class="p">,</span>
+<a id="__codelineno-53-8" name="__codelineno-53-8" href="#__codelineno-53-8"></a><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/dpftrl/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-54-1" name="__codelineno-54-1" href="#__codelineno-54-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl</span><span class="w"> </span><span class="kn">import</span> <span class="n">accounting</span><span class="p">,</span> <span class="n">clipping</span><span class="p">,</span> <span class="n">noise</span><span class="p">,</span> <span class="n">sampling</span>
+<a id="__codelineno-54-2" name="__codelineno-54-2" href="#__codelineno-54-2"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;accounting&quot;</span><span class="p">,</span> <span class="s2">&quot;clipping&quot;</span><span class="p">,</span> <span class="s2">&quot;noise&quot;</span><span class="p">,</span> <span class="s2">&quot;sampling&quot;</span><span class="p">]</span>
+</code></pre></div>
+<hr />
+<h2 id="10-opaque-auditing-folder-plan">10. <code>opaque-auditing</code> — folder plan<a class="headerlink" href="#10-opaque-auditing-folder-plan" title="Permanent link">&para;</a></h2>
+<h3 id="101-opaqueapiauditing">10.1 <code>opaque/api/auditing/</code><a class="headerlink" href="#101-opaqueapiauditing" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-55-1" name="__codelineno-55-1" href="#__codelineno-55-1"></a>opaque/api/auditing/
+<a id="__codelineno-55-2" name="__codelineno-55-2" href="#__codelineno-55-2"></a>├── __init__.py
+<a id="__codelineno-55-3" name="__codelineno-55-3" href="#__codelineno-55-3"></a>├── types.py                 # AuditResult, AuditConfig, ...
+<a id="__codelineno-55-4" name="__codelineno-55-4" href="#__codelineno-55-4"></a>├── _coin_flip.py            # coin_flip estimator
+<a id="__codelineno-55-5" name="__codelineno-55-5" href="#__codelineno-55-5"></a>├── attacks/
+<a id="__codelineno-55-6" name="__codelineno-55-6" href="#__codelineno-55-6"></a>│   ├── __init__.py
+<a id="__codelineno-55-7" name="__codelineno-55-7" href="#__codelineno-55-7"></a>│   └── _loss.py             # loss-based attack
+<a id="__codelineno-55-8" name="__codelineno-55-8" href="#__codelineno-55-8"></a>└── one_run/
+<a id="__codelineno-55-9" name="__codelineno-55-9" href="#__codelineno-55-9"></a>    ├── __init__.py
+<a id="__codelineno-55-10" name="__codelineno-55-10" href="#__codelineno-55-10"></a>    ├── _estimate.py
+<a id="__codelineno-55-11" name="__codelineno-55-11" href="#__codelineno-55-11"></a>    ├── _stats.py
+<a id="__codelineno-55-12" name="__codelineno-55-12" href="#__codelineno-55-12"></a>    └── _roc.py
+</code></pre></div>
+<p><code>__all__</code>:</p>
+<ul>
+<li><code>opaque/api/auditing/__init__.py</code>: <code>__all__ = ["coin_flip", "attacks", "one_run"]</code></li>
+<li><code>opaque/api/auditing/types.py</code>: <code>__all__ = ["AuditResult", "AuditConfig"]</code></li>
+<li><code>opaque/api/auditing/attacks/__init__.py</code>: <code>__all__ = ["loss_attack"]</code></li>
+<li><code>opaque/api/auditing/one_run/__init__.py</code>: <code>__all__ = ["one_run_estimate", "one_run_roc", "one_run_stats"]</code></li>
+</ul>
+<h3 id="102-facade">10.2 Façade<a class="headerlink" href="#102-facade" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-56-1" name="__codelineno-56-1" href="#__codelineno-56-1"></a>opaque/
+<a id="__codelineno-56-2" name="__codelineno-56-2" href="#__codelineno-56-2"></a>└── auditing/
+<a id="__codelineno-56-3" name="__codelineno-56-3" href="#__codelineno-56-3"></a>    ├── __init__.py          # re-exports opaque.api.auditing.*
+<a id="__codelineno-56-4" name="__codelineno-56-4" href="#__codelineno-56-4"></a>    ├── types.py
+<a id="__codelineno-56-5" name="__codelineno-56-5" href="#__codelineno-56-5"></a>    ├── attacks/__init__.py
+<a id="__codelineno-56-6" name="__codelineno-56-6" href="#__codelineno-56-6"></a>    └── one_run/__init__.py
+</code></pre></div>
+<p>Same <code>__all__</code> as the impl tree.</p>
+<hr />
+<h2 id="11-opaque-patches-folder-plan">11. <code>opaque-patches</code> — folder plan<a class="headerlink" href="#11-opaque-patches-folder-plan" title="Permanent link">&para;</a></h2>
+<p>The patches package is <strong>not</strong> a pure side-effect package: it ships several
+<strong>explicit entry functions</strong> users call (<code>apply_model_patches</code>,
+<code>apply_runtime_patches</code>, plus per-family <code>apply_*_model_patches</code> / runtime
+<code>apply_*_patches</code>), a <strong>family-registration / factory API</strong> for downstream
+projects with their own architectures, <strong>kernel functions</strong> (<code>opaque_swiglu</code>,
+<code>opaque_rope</code>, …), and <strong>PEFT / Torch checkpoint</strong> entry points. Those have to
+be reflected in the façade.</p>
+<h3 id="111-opaqueapipatches-implementation">11.1 <code>opaque/api/patches/</code> (implementation)<a class="headerlink" href="#111-opaqueapipatches-implementation" title="Permanent link">&para;</a></h3>
+<p>Layout mirrors today's <code>opaque.patches.*</code> but lives under <code>opaque.api.patches</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-57-1" name="__codelineno-57-1" href="#__codelineno-57-1"></a>opaque/api/patches/
+<a id="__codelineno-57-2" name="__codelineno-57-2" href="#__codelineno-57-2"></a>├── __init__.py
+<a id="__codelineno-57-3" name="__codelineno-57-3" href="#__codelineno-57-3"></a>├── _runtime.py                # apply_runtime_patches orchestrator (was top-level patches/__init__.py)
+<a id="__codelineno-57-4" name="__codelineno-57-4" href="#__codelineno-57-4"></a>├── _model.py                  # apply_model_patches orchestrator
+<a id="__codelineno-57-5" name="__codelineno-57-5" href="#__codelineno-57-5"></a>├── torch/
+<a id="__codelineno-57-6" name="__codelineno-57-6" href="#__codelineno-57-6"></a>│   ├── __init__.py
+<a id="__codelineno-57-7" name="__codelineno-57-7" href="#__codelineno-57-7"></a>│   └── runtime.py             # apply_checkpoint_patch, is_checkpoint_patched
+<a id="__codelineno-57-8" name="__codelineno-57-8" href="#__codelineno-57-8"></a>├── kernels/
+<a id="__codelineno-57-9" name="__codelineno-57-9" href="#__codelineno-57-9"></a>│   ├── __init__.py
+<a id="__codelineno-57-10" name="__codelineno-57-10" href="#__codelineno-57-10"></a>│   ├── _utils.py
+<a id="__codelineno-57-11" name="__codelineno-57-11" href="#__codelineno-57-11"></a>│   ├── cross_entropy.py
+<a id="__codelineno-57-12" name="__codelineno-57-12" href="#__codelineno-57-12"></a>│   ├── linear_cross_entropy.py
+<a id="__codelineno-57-13" name="__codelineno-57-13" href="#__codelineno-57-13"></a>│   ├── swiglu.py
+<a id="__codelineno-57-14" name="__codelineno-57-14" href="#__codelineno-57-14"></a>│   ├── geglu.py
+<a id="__codelineno-57-15" name="__codelineno-57-15" href="#__codelineno-57-15"></a>│   ├── rope_embedding.py
+<a id="__codelineno-57-16" name="__codelineno-57-16" href="#__codelineno-57-16"></a>│   ├── lora.py
+<a id="__codelineno-57-17" name="__codelineno-57-17" href="#__codelineno-57-17"></a>│   ├── rms_norm.py
+<a id="__codelineno-57-18" name="__codelineno-57-18" href="#__codelineno-57-18"></a>│   └── fused_add_rms_norm.py
+<a id="__codelineno-57-19" name="__codelineno-57-19" href="#__codelineno-57-19"></a>├── transformers/
+<a id="__codelineno-57-20" name="__codelineno-57-20" href="#__codelineno-57-20"></a>│   ├── __init__.py            # public factories + registry
+<a id="__codelineno-57-21" name="__codelineno-57-21" href="#__codelineno-57-21"></a>│   ├── _factory.py            # make_apply_model_patches, register_*_kind
+<a id="__codelineno-57-22" name="__codelineno-57-22" href="#__codelineno-57-22"></a>│   ├── _family.py             # family_name, make_apply_family_patches
+<a id="__codelineno-57-23" name="__codelineno-57-23" href="#__codelineno-57-23"></a>│   ├── _registry.py           # register_family, supported_families
+<a id="__codelineno-57-24" name="__codelineno-57-24" href="#__codelineno-57-24"></a>│   ├── _router.py             # apply_transformers_model_patches
+<a id="__codelineno-57-25" name="__codelineno-57-25" href="#__codelineno-57-25"></a>│   ├── runtime/
+<a id="__codelineno-57-26" name="__codelineno-57-26" href="#__codelineno-57-26"></a>│   │   ├── __init__.py        # apply_collator_patches, apply_masking_patches
+<a id="__codelineno-57-27" name="__codelineno-57-27" href="#__codelineno-57-27"></a>│   │   ├── collator.py
+<a id="__codelineno-57-28" name="__codelineno-57-28" href="#__codelineno-57-28"></a>│   │   └── masking.py
+<a id="__codelineno-57-29" name="__codelineno-57-29" href="#__codelineno-57-29"></a>│   ├── components/
+<a id="__codelineno-57-30" name="__codelineno-57-30" href="#__codelineno-57-30"></a>│   │   ├── __init__.py        # __all__ = []
+<a id="__codelineno-57-31" name="__codelineno-57-31" href="#__codelineno-57-31"></a>│   │   ├── attention.py
+<a id="__codelineno-57-32" name="__codelineno-57-32" href="#__codelineno-57-32"></a>│   │   ├── batchify.py
+<a id="__codelineno-57-33" name="__codelineno-57-33" href="#__codelineno-57-33"></a>│   │   ├── cross_entropy.py
+<a id="__codelineno-57-34" name="__codelineno-57-34" href="#__codelineno-57-34"></a>│   │   ├── fused_add_rms_norm.py
+<a id="__codelineno-57-35" name="__codelineno-57-35" href="#__codelineno-57-35"></a>│   │   ├── geglu.py
+<a id="__codelineno-57-36" name="__codelineno-57-36" href="#__codelineno-57-36"></a>│   │   ├── kv_cache.py
+<a id="__codelineno-57-37" name="__codelineno-57-37" href="#__codelineno-57-37"></a>│   │   ├── masking.py
+<a id="__codelineno-57-38" name="__codelineno-57-38" href="#__codelineno-57-38"></a>│   │   ├── rms_norm.py
+<a id="__codelineno-57-39" name="__codelineno-57-39" href="#__codelineno-57-39"></a>│   │   ├── rope.py
+<a id="__codelineno-57-40" name="__codelineno-57-40" href="#__codelineno-57-40"></a>│   │   └── swiglu.py
+<a id="__codelineno-57-41" name="__codelineno-57-41" href="#__codelineno-57-41"></a>│   └── models/
+<a id="__codelineno-57-42" name="__codelineno-57-42" href="#__codelineno-57-42"></a>│       ├── __init__.py        # __all__ = []  (each module registers on import)
+<a id="__codelineno-57-43" name="__codelineno-57-43" href="#__codelineno-57-43"></a>│       ├── cohere.py
+<a id="__codelineno-57-44" name="__codelineno-57-44" href="#__codelineno-57-44"></a>│       ├── cohere2.py
+<a id="__codelineno-57-45" name="__codelineno-57-45" href="#__codelineno-57-45"></a>│       ├── exaone4.py
+<a id="__codelineno-57-46" name="__codelineno-57-46" href="#__codelineno-57-46"></a>│       ├── gemma.py
+<a id="__codelineno-57-47" name="__codelineno-57-47" href="#__codelineno-57-47"></a>│       ├── gemma2.py
+<a id="__codelineno-57-48" name="__codelineno-57-48" href="#__codelineno-57-48"></a>│       ├── gemma3.py
+<a id="__codelineno-57-49" name="__codelineno-57-49" href="#__codelineno-57-49"></a>│       ├── glm4.py
+<a id="__codelineno-57-50" name="__codelineno-57-50" href="#__codelineno-57-50"></a>│       ├── gpt2.py
+<a id="__codelineno-57-51" name="__codelineno-57-51" href="#__codelineno-57-51"></a>│       ├── granite.py
+<a id="__codelineno-57-52" name="__codelineno-57-52" href="#__codelineno-57-52"></a>│       ├── llama.py
+<a id="__codelineno-57-53" name="__codelineno-57-53" href="#__codelineno-57-53"></a>│       ├── ministral.py
+<a id="__codelineno-57-54" name="__codelineno-57-54" href="#__codelineno-57-54"></a>│       ├── mistral.py
+<a id="__codelineno-57-55" name="__codelineno-57-55" href="#__codelineno-57-55"></a>│       ├── olmo2.py
+<a id="__codelineno-57-56" name="__codelineno-57-56" href="#__codelineno-57-56"></a>│       ├── olmo3.py
+<a id="__codelineno-57-57" name="__codelineno-57-57" href="#__codelineno-57-57"></a>│       ├── phi3.py
+<a id="__codelineno-57-58" name="__codelineno-57-58" href="#__codelineno-57-58"></a>│       ├── qwen2.py
+<a id="__codelineno-57-59" name="__codelineno-57-59" href="#__codelineno-57-59"></a>│       ├── qwen3.py
+<a id="__codelineno-57-60" name="__codelineno-57-60" href="#__codelineno-57-60"></a>│       └── smollm3.py
+<a id="__codelineno-57-61" name="__codelineno-57-61" href="#__codelineno-57-61"></a>└── peft/
+<a id="__codelineno-57-62" name="__codelineno-57-62" href="#__codelineno-57-62"></a>    ├── __init__.py            # apply_peft_model_patches
+<a id="__codelineno-57-63" name="__codelineno-57-63" href="#__codelineno-57-63"></a>    ├── _router.py
+<a id="__codelineno-57-64" name="__codelineno-57-64" href="#__codelineno-57-64"></a>    └── components/
+<a id="__codelineno-57-65" name="__codelineno-57-65" href="#__codelineno-57-65"></a>        ├── __init__.py        # __all__ = []
+<a id="__codelineno-57-66" name="__codelineno-57-66" href="#__codelineno-57-66"></a>        ├── _utils.py
+<a id="__codelineno-57-67" name="__codelineno-57-67" href="#__codelineno-57-67"></a>        ├── linear.py
+<a id="__codelineno-57-68" name="__codelineno-57-68" href="#__codelineno-57-68"></a>        ├── mlp.py
+<a id="__codelineno-57-69" name="__codelineno-57-69" href="#__codelineno-57-69"></a>        └── qkv.py
+</code></pre></div>
+<p><code>__all__</code> per public <code>__init__.py</code>:</p>
+<ul>
+<li><code>opaque/api/patches/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-58-1" name="__codelineno-58-1" href="#__codelineno-58-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-58-2" name="__codelineno-58-2" href="#__codelineno-58-2"></a>    <span class="s2">&quot;apply_model_patches&quot;</span><span class="p">,</span>
+<a id="__codelineno-58-3" name="__codelineno-58-3" href="#__codelineno-58-3"></a>    <span class="s2">&quot;apply_runtime_patches&quot;</span><span class="p">,</span>
+<a id="__codelineno-58-4" name="__codelineno-58-4" href="#__codelineno-58-4"></a>    <span class="s2">&quot;apply_transformers_model_patches&quot;</span><span class="p">,</span>
+<a id="__codelineno-58-5" name="__codelineno-58-5" href="#__codelineno-58-5"></a>    <span class="s2">&quot;apply_peft_model_patches&quot;</span><span class="p">,</span>
+<a id="__codelineno-58-6" name="__codelineno-58-6" href="#__codelineno-58-6"></a><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/patches/torch/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-59-1" name="__codelineno-59-1" href="#__codelineno-59-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;apply_checkpoint_patch&quot;</span><span class="p">,</span> <span class="s2">&quot;is_checkpoint_patched&quot;</span><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/patches/kernels/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-60-1" name="__codelineno-60-1" href="#__codelineno-60-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-60-2" name="__codelineno-60-2" href="#__codelineno-60-2"></a>    <span class="c1"># Loss</span>
+<a id="__codelineno-60-3" name="__codelineno-60-3" href="#__codelineno-60-3"></a>    <span class="s2">&quot;opaque_cross_entropy_loss&quot;</span><span class="p">,</span>
+<a id="__codelineno-60-4" name="__codelineno-60-4" href="#__codelineno-60-4"></a>    <span class="s2">&quot;opaque_linear_cross_entropy_loss&quot;</span><span class="p">,</span>
+<a id="__codelineno-60-5" name="__codelineno-60-5" href="#__codelineno-60-5"></a>    <span class="c1"># Activations</span>
+<a id="__codelineno-60-6" name="__codelineno-60-6" href="#__codelineno-60-6"></a>    <span class="s2">&quot;opaque_swiglu&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_geglu_exact&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_geglu_approx&quot;</span><span class="p">,</span>
+<a id="__codelineno-60-7" name="__codelineno-60-7" href="#__codelineno-60-7"></a>    <span class="s2">&quot;opaque_rms_norm&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_fused_add_rms_norm&quot;</span><span class="p">,</span>
+<a id="__codelineno-60-8" name="__codelineno-60-8" href="#__codelineno-60-8"></a>    <span class="c1"># Position embeddings</span>
+<a id="__codelineno-60-9" name="__codelineno-60-9" href="#__codelineno-60-9"></a>    <span class="s2">&quot;opaque_rope&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_rope_qk&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_slow_rope&quot;</span><span class="p">,</span>
+<a id="__codelineno-60-10" name="__codelineno-60-10" href="#__codelineno-60-10"></a>    <span class="c1"># LoRA</span>
+<a id="__codelineno-60-11" name="__codelineno-60-11" href="#__codelineno-60-11"></a>    <span class="s2">&quot;opaque_lora_w&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_lora_qkv&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_lora_mlp&quot;</span><span class="p">,</span>
+<a id="__codelineno-60-12" name="__codelineno-60-12" href="#__codelineno-60-12"></a>    <span class="s2">&quot;ACTIVATION_SWIGLU&quot;</span><span class="p">,</span> <span class="s2">&quot;ACTIVATION_GEGLU_EXACT&quot;</span><span class="p">,</span> <span class="s2">&quot;ACTIVATION_GEGLU_APPROX&quot;</span><span class="p">,</span>
+<a id="__codelineno-60-13" name="__codelineno-60-13" href="#__codelineno-60-13"></a><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/patches/transformers/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-61-1" name="__codelineno-61-1" href="#__codelineno-61-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-61-2" name="__codelineno-61-2" href="#__codelineno-61-2"></a>    <span class="s2">&quot;apply_transformers_model_patches&quot;</span><span class="p">,</span>
+<a id="__codelineno-61-3" name="__codelineno-61-3" href="#__codelineno-61-3"></a>    <span class="s2">&quot;family_name&quot;</span><span class="p">,</span>
+<a id="__codelineno-61-4" name="__codelineno-61-4" href="#__codelineno-61-4"></a>    <span class="s2">&quot;make_apply_family_patches&quot;</span><span class="p">,</span>
+<a id="__codelineno-61-5" name="__codelineno-61-5" href="#__codelineno-61-5"></a>    <span class="s2">&quot;make_apply_model_patches&quot;</span><span class="p">,</span>
+<a id="__codelineno-61-6" name="__codelineno-61-6" href="#__codelineno-61-6"></a>    <span class="s2">&quot;register_activation_kind&quot;</span><span class="p">,</span>
+<a id="__codelineno-61-7" name="__codelineno-61-7" href="#__codelineno-61-7"></a>    <span class="s2">&quot;register_family&quot;</span><span class="p">,</span>
+<a id="__codelineno-61-8" name="__codelineno-61-8" href="#__codelineno-61-8"></a>    <span class="s2">&quot;register_fused_add_rms_kind&quot;</span><span class="p">,</span>
+<a id="__codelineno-61-9" name="__codelineno-61-9" href="#__codelineno-61-9"></a>    <span class="s2">&quot;register_rms_norm_kind&quot;</span><span class="p">,</span>
+<a id="__codelineno-61-10" name="__codelineno-61-10" href="#__codelineno-61-10"></a>    <span class="s2">&quot;supported_families&quot;</span><span class="p">,</span>
+<a id="__codelineno-61-11" name="__codelineno-61-11" href="#__codelineno-61-11"></a><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/patches/transformers/runtime/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-62-1" name="__codelineno-62-1" href="#__codelineno-62-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;apply_collator_patches&quot;</span><span class="p">,</span> <span class="s2">&quot;apply_masking_patches&quot;</span><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/patches/transformers/components/__init__.py</code>: <code>__all__ = []</code>
+  (per-instance components imported by patch internals).</li>
+<li><code>opaque/api/patches/transformers/models/__init__.py</code>: <code>__all__ = []</code>
+  (each model file does <code>register_family(...)</code> at import).</li>
+<li><code>opaque/api/patches/peft/__init__.py</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-63-1" name="__codelineno-63-1" href="#__codelineno-63-1"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;apply_peft_model_patches&quot;</span><span class="p">]</span>
+</code></pre></div></li>
+<li><code>opaque/api/patches/peft/components/__init__.py</code>: <code>__all__ = []</code>.</li>
+</ul>
+<h3 id="112-facade-opaquepatches">11.2 Façade — <code>opaque/patches/</code><a class="headerlink" href="#112-facade-opaquepatches" title="Permanent link">&para;</a></h3>
+<p>The façade mirrors the impl tree's public sub-API and <strong>re-exports every entry
+function</strong>, not just the orchestrators:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-64-1" name="__codelineno-64-1" href="#__codelineno-64-1"></a>opaque/
+<a id="__codelineno-64-2" name="__codelineno-64-2" href="#__codelineno-64-2"></a>└── patches/
+<a id="__codelineno-64-3" name="__codelineno-64-3" href="#__codelineno-64-3"></a>    ├── __init__.py
+<a id="__codelineno-64-4" name="__codelineno-64-4" href="#__codelineno-64-4"></a>    ├── torch/__init__.py
+<a id="__codelineno-64-5" name="__codelineno-64-5" href="#__codelineno-64-5"></a>    ├── kernels/__init__.py
+<a id="__codelineno-64-6" name="__codelineno-64-6" href="#__codelineno-64-6"></a>    ├── transformers/
+<a id="__codelineno-64-7" name="__codelineno-64-7" href="#__codelineno-64-7"></a>    │   ├── __init__.py
+<a id="__codelineno-64-8" name="__codelineno-64-8" href="#__codelineno-64-8"></a>    │   └── runtime/__init__.py
+<a id="__codelineno-64-9" name="__codelineno-64-9" href="#__codelineno-64-9"></a>    └── peft/__init__.py
+</code></pre></div>
+<p><code>opaque/patches/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-65-1" name="__codelineno-65-1" href="#__codelineno-65-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.patches</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-65-2" name="__codelineno-65-2" href="#__codelineno-65-2"></a>    <span class="n">apply_model_patches</span><span class="p">,</span>
+<a id="__codelineno-65-3" name="__codelineno-65-3" href="#__codelineno-65-3"></a>    <span class="n">apply_runtime_patches</span><span class="p">,</span>
+<a id="__codelineno-65-4" name="__codelineno-65-4" href="#__codelineno-65-4"></a>    <span class="n">apply_transformers_model_patches</span><span class="p">,</span>
+<a id="__codelineno-65-5" name="__codelineno-65-5" href="#__codelineno-65-5"></a>    <span class="n">apply_peft_model_patches</span><span class="p">,</span>
+<a id="__codelineno-65-6" name="__codelineno-65-6" href="#__codelineno-65-6"></a><span class="p">)</span>
+<a id="__codelineno-65-7" name="__codelineno-65-7" href="#__codelineno-65-7"></a>
+<a id="__codelineno-65-8" name="__codelineno-65-8" href="#__codelineno-65-8"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-65-9" name="__codelineno-65-9" href="#__codelineno-65-9"></a>    <span class="s2">&quot;apply_model_patches&quot;</span><span class="p">,</span>
+<a id="__codelineno-65-10" name="__codelineno-65-10" href="#__codelineno-65-10"></a>    <span class="s2">&quot;apply_runtime_patches&quot;</span><span class="p">,</span>
+<a id="__codelineno-65-11" name="__codelineno-65-11" href="#__codelineno-65-11"></a>    <span class="s2">&quot;apply_transformers_model_patches&quot;</span><span class="p">,</span>
+<a id="__codelineno-65-12" name="__codelineno-65-12" href="#__codelineno-65-12"></a>    <span class="s2">&quot;apply_peft_model_patches&quot;</span><span class="p">,</span>
+<a id="__codelineno-65-13" name="__codelineno-65-13" href="#__codelineno-65-13"></a><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/patches/torch/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-66-1" name="__codelineno-66-1" href="#__codelineno-66-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.patches.torch</span><span class="w"> </span><span class="kn">import</span> <span class="n">apply_checkpoint_patch</span><span class="p">,</span> <span class="n">is_checkpoint_patched</span>
+<a id="__codelineno-66-2" name="__codelineno-66-2" href="#__codelineno-66-2"></a>
+<a id="__codelineno-66-3" name="__codelineno-66-3" href="#__codelineno-66-3"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;apply_checkpoint_patch&quot;</span><span class="p">,</span> <span class="s2">&quot;is_checkpoint_patched&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/patches/kernels/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-67-1" name="__codelineno-67-1" href="#__codelineno-67-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.patches.kernels</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-67-2" name="__codelineno-67-2" href="#__codelineno-67-2"></a>    <span class="n">opaque_cross_entropy_loss</span><span class="p">,</span> <span class="n">opaque_linear_cross_entropy_loss</span><span class="p">,</span>
+<a id="__codelineno-67-3" name="__codelineno-67-3" href="#__codelineno-67-3"></a>    <span class="n">opaque_swiglu</span><span class="p">,</span> <span class="n">opaque_geglu_exact</span><span class="p">,</span> <span class="n">opaque_geglu_approx</span><span class="p">,</span>
+<a id="__codelineno-67-4" name="__codelineno-67-4" href="#__codelineno-67-4"></a>    <span class="n">opaque_rms_norm</span><span class="p">,</span> <span class="n">opaque_fused_add_rms_norm</span><span class="p">,</span>
+<a id="__codelineno-67-5" name="__codelineno-67-5" href="#__codelineno-67-5"></a>    <span class="n">opaque_rope</span><span class="p">,</span> <span class="n">opaque_rope_qk</span><span class="p">,</span> <span class="n">opaque_slow_rope</span><span class="p">,</span>
+<a id="__codelineno-67-6" name="__codelineno-67-6" href="#__codelineno-67-6"></a>    <span class="n">opaque_lora_w</span><span class="p">,</span> <span class="n">opaque_lora_qkv</span><span class="p">,</span> <span class="n">opaque_lora_mlp</span><span class="p">,</span>
+<a id="__codelineno-67-7" name="__codelineno-67-7" href="#__codelineno-67-7"></a>    <span class="n">ACTIVATION_SWIGLU</span><span class="p">,</span> <span class="n">ACTIVATION_GEGLU_EXACT</span><span class="p">,</span> <span class="n">ACTIVATION_GEGLU_APPROX</span><span class="p">,</span>
+<a id="__codelineno-67-8" name="__codelineno-67-8" href="#__codelineno-67-8"></a><span class="p">)</span>
+<a id="__codelineno-67-9" name="__codelineno-67-9" href="#__codelineno-67-9"></a>
+<a id="__codelineno-67-10" name="__codelineno-67-10" href="#__codelineno-67-10"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-67-11" name="__codelineno-67-11" href="#__codelineno-67-11"></a>    <span class="s2">&quot;opaque_cross_entropy_loss&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_linear_cross_entropy_loss&quot;</span><span class="p">,</span>
+<a id="__codelineno-67-12" name="__codelineno-67-12" href="#__codelineno-67-12"></a>    <span class="s2">&quot;opaque_swiglu&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_geglu_exact&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_geglu_approx&quot;</span><span class="p">,</span>
+<a id="__codelineno-67-13" name="__codelineno-67-13" href="#__codelineno-67-13"></a>    <span class="s2">&quot;opaque_rms_norm&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_fused_add_rms_norm&quot;</span><span class="p">,</span>
+<a id="__codelineno-67-14" name="__codelineno-67-14" href="#__codelineno-67-14"></a>    <span class="s2">&quot;opaque_rope&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_rope_qk&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_slow_rope&quot;</span><span class="p">,</span>
+<a id="__codelineno-67-15" name="__codelineno-67-15" href="#__codelineno-67-15"></a>    <span class="s2">&quot;opaque_lora_w&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_lora_qkv&quot;</span><span class="p">,</span> <span class="s2">&quot;opaque_lora_mlp&quot;</span><span class="p">,</span>
+<a id="__codelineno-67-16" name="__codelineno-67-16" href="#__codelineno-67-16"></a>    <span class="s2">&quot;ACTIVATION_SWIGLU&quot;</span><span class="p">,</span> <span class="s2">&quot;ACTIVATION_GEGLU_EXACT&quot;</span><span class="p">,</span> <span class="s2">&quot;ACTIVATION_GEGLU_APPROX&quot;</span><span class="p">,</span>
+<a id="__codelineno-67-17" name="__codelineno-67-17" href="#__codelineno-67-17"></a><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/patches/transformers/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-68-1" name="__codelineno-68-1" href="#__codelineno-68-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.patches.transformers</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-68-2" name="__codelineno-68-2" href="#__codelineno-68-2"></a>    <span class="n">apply_transformers_model_patches</span><span class="p">,</span>
+<a id="__codelineno-68-3" name="__codelineno-68-3" href="#__codelineno-68-3"></a>    <span class="n">family_name</span><span class="p">,</span>
+<a id="__codelineno-68-4" name="__codelineno-68-4" href="#__codelineno-68-4"></a>    <span class="n">make_apply_family_patches</span><span class="p">,</span>
+<a id="__codelineno-68-5" name="__codelineno-68-5" href="#__codelineno-68-5"></a>    <span class="n">make_apply_model_patches</span><span class="p">,</span>
+<a id="__codelineno-68-6" name="__codelineno-68-6" href="#__codelineno-68-6"></a>    <span class="n">register_activation_kind</span><span class="p">,</span>
+<a id="__codelineno-68-7" name="__codelineno-68-7" href="#__codelineno-68-7"></a>    <span class="n">register_family</span><span class="p">,</span>
+<a id="__codelineno-68-8" name="__codelineno-68-8" href="#__codelineno-68-8"></a>    <span class="n">register_fused_add_rms_kind</span><span class="p">,</span>
+<a id="__codelineno-68-9" name="__codelineno-68-9" href="#__codelineno-68-9"></a>    <span class="n">register_rms_norm_kind</span><span class="p">,</span>
+<a id="__codelineno-68-10" name="__codelineno-68-10" href="#__codelineno-68-10"></a>    <span class="n">supported_families</span><span class="p">,</span>
+<a id="__codelineno-68-11" name="__codelineno-68-11" href="#__codelineno-68-11"></a><span class="p">)</span>
+<a id="__codelineno-68-12" name="__codelineno-68-12" href="#__codelineno-68-12"></a>
+<a id="__codelineno-68-13" name="__codelineno-68-13" href="#__codelineno-68-13"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-68-14" name="__codelineno-68-14" href="#__codelineno-68-14"></a>    <span class="s2">&quot;apply_transformers_model_patches&quot;</span><span class="p">,</span>
+<a id="__codelineno-68-15" name="__codelineno-68-15" href="#__codelineno-68-15"></a>    <span class="s2">&quot;family_name&quot;</span><span class="p">,</span>
+<a id="__codelineno-68-16" name="__codelineno-68-16" href="#__codelineno-68-16"></a>    <span class="s2">&quot;make_apply_family_patches&quot;</span><span class="p">,</span>
+<a id="__codelineno-68-17" name="__codelineno-68-17" href="#__codelineno-68-17"></a>    <span class="s2">&quot;make_apply_model_patches&quot;</span><span class="p">,</span>
+<a id="__codelineno-68-18" name="__codelineno-68-18" href="#__codelineno-68-18"></a>    <span class="s2">&quot;register_activation_kind&quot;</span><span class="p">,</span>
+<a id="__codelineno-68-19" name="__codelineno-68-19" href="#__codelineno-68-19"></a>    <span class="s2">&quot;register_family&quot;</span><span class="p">,</span>
+<a id="__codelineno-68-20" name="__codelineno-68-20" href="#__codelineno-68-20"></a>    <span class="s2">&quot;register_fused_add_rms_kind&quot;</span><span class="p">,</span>
+<a id="__codelineno-68-21" name="__codelineno-68-21" href="#__codelineno-68-21"></a>    <span class="s2">&quot;register_rms_norm_kind&quot;</span><span class="p">,</span>
+<a id="__codelineno-68-22" name="__codelineno-68-22" href="#__codelineno-68-22"></a>    <span class="s2">&quot;supported_families&quot;</span><span class="p">,</span>
+<a id="__codelineno-68-23" name="__codelineno-68-23" href="#__codelineno-68-23"></a><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/patches/transformers/runtime/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-69-1" name="__codelineno-69-1" href="#__codelineno-69-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.patches.transformers.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-69-2" name="__codelineno-69-2" href="#__codelineno-69-2"></a>    <span class="n">apply_collator_patches</span><span class="p">,</span> <span class="n">apply_masking_patches</span><span class="p">,</span>
+<a id="__codelineno-69-3" name="__codelineno-69-3" href="#__codelineno-69-3"></a><span class="p">)</span>
+<a id="__codelineno-69-4" name="__codelineno-69-4" href="#__codelineno-69-4"></a>
+<a id="__codelineno-69-5" name="__codelineno-69-5" href="#__codelineno-69-5"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;apply_collator_patches&quot;</span><span class="p">,</span> <span class="s2">&quot;apply_masking_patches&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p><code>opaque/patches/peft/__init__.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-70-1" name="__codelineno-70-1" href="#__codelineno-70-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.patches.peft</span><span class="w"> </span><span class="kn">import</span> <span class="n">apply_peft_model_patches</span>
+<a id="__codelineno-70-2" name="__codelineno-70-2" href="#__codelineno-70-2"></a>
+<a id="__codelineno-70-3" name="__codelineno-70-3" href="#__codelineno-70-3"></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;apply_peft_model_patches&quot;</span><span class="p">]</span>
+</code></pre></div>
+<h3 id="113-opaque-transformers-placeholder-wheel">11.3 <code>opaque-transformers</code> (placeholder wheel)<a class="headerlink" href="#113-opaque-transformers-placeholder-wheel" title="Permanent link">&para;</a></h3>
+<p>Today <code>opaque-transformers</code> ships only <code>opaque/transformers/__init__.py</code> with
+<code>__version__</code>. Two options to lock in:</p>
+<ol>
+<li><strong>Drop <code>opaque-transformers</code></strong> as a separate distribution and route HF
+   patching exclusively through <code>opaque.patches.transformers</code> (preferred —
+   avoids two “transformers” entry points).</li>
+<li><strong>Keep <code>opaque-transformers</code></strong> as a thin alias that re-exports the same
+   surface as <code>opaque.patches.transformers</code> (<code>apply_transformers_model_patches</code>
+   and the registration helpers above), plus <code>__version__</code>. Same <code>__all__</code> as
+   §11.2 façade for transformers, with <code>__version__</code> appended.</li>
+</ol>
+<p>This plan recommends <strong>option 1</strong> unless we actively want a top-level
+<code>opaque.transformers</code> namespace for future features beyond patches.</p>
+<h3 id="114-no-opaqueperformance-facade-for-now">11.4 No <code>opaque.performance</code> façade for now<a class="headerlink" href="#114-no-opaqueperformance-facade-for-now" title="Permanent link">&para;</a></h3>
+<p>There is no <code>opaque/performance/</code> in the current tree. Kernels and the torch
+checkpoint patch are reachable from <code>opaque.patches.kernels</code> and
+<code>opaque.patches.torch</code>. If a <code>opaque.performance</code> umbrella is introduced
+later, it can be a thin re-export over both — added in a separate ADR.</p>
+<hr />
+<h2 id="12-cross-cutting-registries">12. Cross-cutting registries<a class="headerlink" href="#12-cross-cutting-registries" title="Permanent link">&para;</a></h2>
+<h3 id="121-sync-registry">12.1 <code>sync</code> registry<a class="headerlink" href="#121-sync-registry" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Defined in:</strong> <code>opaque.api.base.distributed._registry</code> and <code>_sync</code>.</li>
+<li><strong>Public dispatch:</strong> <code>opaque.distributed.sync(obj)</code>.</li>
+<li><strong>Power-user registration:</strong> <code>opaque.api.base.distributed.register_sync_handler(type_, handler)</code>.</li>
+<li><strong>Registered handlers (side-effect imports on stack import):</strong></li>
+<li><code>opaque.api.engine.clipping._distributed</code> → <code>ClipState</code></li>
+<li><code>opaque.api.dpsgd.noise._distributed</code> → <code>GaussianNoiseState</code>, …</li>
+<li><code>opaque.api.dpftrl.noise._distributed</code> → <code>MfNoiseState</code>, …</li>
+<li>The dispatcher never imports stack code; stacks register on import.</li>
+</ul>
+<h3 id="122-serialization-registry">12.2 Serialization registry<a class="headerlink" href="#122-serialization-registry" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Defined in:</strong> <code>opaque.api.base.serialization._registry</code>.</li>
+<li><strong>Public load/save:</strong> <code>opaque.serialization.state_dict</code> / <code>from_state_dict</code>.</li>
+<li><strong>Power-user registration:</strong> <code>opaque.api.base.serialization.register_serializer(tag, dumper, loader)</code>.</li>
+<li><strong>Registered serializers (side-effect imports on stack import):</strong></li>
+<li><code>opaque.api.accounting.core._serialization</code>: PLD types, DpProcess base.</li>
+<li><code>opaque.api.accounting.dpsgd._serialization</code> (new file): SGD process types.</li>
+<li><code>opaque.api.accounting.dpftrl._serialization</code> (new file): FTRL process types.</li>
+<li><code>opaque.api.dpsgd.&lt;concern&gt;._serialization</code>, … as needed for state objects.</li>
+<li>Tags are versioned strings (<code>"opaque.dpsgd.gaussian/1"</code>).</li>
+</ul>
+<hr />
+<h2 id="13-migration-phases">13. Migration phases<a class="headerlink" href="#13-migration-phases" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Scope</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>0</strong></td>
+<td>ADR finalising names, façade contract, PEP 420 list (<code>opaque/</code>, <code>opaque/api/</code>, <code>opaque/api/accounting/</code>); CI guard updated.</td>
+</tr>
+<tr>
+<td><strong>1</strong></td>
+<td>Create <code>opaque/api/base/</code> inside today’s <code>opaque-core</code>; move types/pytree/random/serialization/distributed implementations there; convert <code>opaque/types.py</code> etc. into re-export façades. <strong>Same wheel</strong> for now.</td>
+</tr>
+<tr>
+<td><strong>2</strong></td>
+<td>Split <code>opaque-engine</code> out of <code>opaque-core</code>: move <code>_clipping</code> → <code>opaque/api/engine/clipping</code>, <code>functional</code> / <code>scheduling</code> / <code>profiling</code> → <code>opaque/api/engine/...</code>; create façades.</td>
+</tr>
+<tr>
+<td><strong>3</strong></td>
+<td>Split <code>opaque-optimizers</code> out: move <code>optimizers/</code> → <code>opaque/api/optimizers/</code>, façade at <code>opaque/optimizers/</code>.</td>
+</tr>
+<tr>
+<td><strong>4</strong></td>
+<td>Inside <code>opaque-accounting</code>, reorganise <code>opaque/accounting/_*</code> into <code>opaque/api/accounting/core/...</code>; thin the façade per §7.2.</td>
+</tr>
+<tr>
+<td><strong>5</strong></td>
+<td>Inside <code>opaque-dpsgd</code> / <code>opaque-dpftrl</code>: move impl into <code>opaque/api/dpsgd/...</code> and <code>opaque/api/dpftrl/...</code>; move accounting factories into <code>opaque/api/accounting/{dpsgd,dpftrl}/...</code>; convert <code>opaque/dpsgd/...</code> and <code>opaque/dpftrl/...</code> to thin façades.</td>
+</tr>
+<tr>
+<td><strong>6</strong></td>
+<td><code>opaque-auditing</code> and <code>opaque-patches</code> follow the same façade/impl rule.</td>
+</tr>
+<tr>
+<td><strong>7</strong></td>
+<td>Drop <code>opaque-core</code> as a published wheel name: it is now empty (or deprecated to a meta-pin equivalent of the umbrella <code>opaque</code>).</td>
+</tr>
+</tbody>
+</table>
+<p>Each phase keeps the public façade names byte-stable, so application code does
+not break between phases.</p>
+<h2 id="14-ci-guards">14. CI guards<a class="headerlink" href="#14-ci-guards" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>PEP 420 namespace check:</strong> fail if any wheel ships <code>opaque/__init__.py</code>,
+   <code>opaque/api/__init__.py</code>, or <code>opaque/api/accounting/__init__.py</code>.</li>
+<li><strong>Façade discipline:</strong> scripted check that <code>opaque.dpsgd.*</code> / <code>opaque.dpftrl.*</code>
+   modules contain only <code>from opaque.api... import ...</code> statements plus
+   <code>__all__</code> (no other code; comments + docstrings allowed).</li>
+<li><strong>No accounting factory leakage:</strong> <code>opaque/accounting/__init__.py</code>,
+   <code>opaque/accounting/mechanisms/__init__.py</code>, and any other façade module under
+   <code>opaque/accounting/</code> must not re-export names from
+   <code>opaque/api/accounting/dpsgd/...</code> or <code>opaque/api/accounting/dpftrl/...</code>.
+   CI compares the cross-cutting façade <code>__all__</code> against the per-stack
+   factory names exported by <code>opaque/api/accounting/{dpsgd,dpftrl}/__init__.py</code>
+   (and their submodules) and fails on any overlap.</li>
+<li><strong>Dependency direction:</strong> <code>opaque-accounting</code> wheel may not import from
+   <code>opaque.api.engine</code>, <code>opaque.api.optimizers</code>, <code>opaque.api.dpsgd</code>, or
+   <code>opaque.api.dpftrl</code>. Static check via <code>rg</code>/<code>ruff</code>-style import-allowlist.</li>
+<li><strong><code>__all__</code> presence:</strong> every <code>__init__.py</code> and every multi-symbol <code>_*.py</code>
+   module declares <code>__all__</code>.</li>
+<li><strong>Existing <code>opaque.clipping</code> import ban</strong> in <code>docs/</code> and <code>examples/</code> stays.</li>
+</ol>
+<h2 id="15-open-decisions-small">15. Open decisions (small)<a class="headerlink" href="#15-open-decisions-small" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Naming <code>opaque-engine</code> vs <code>opaque-runtime</code>:</strong> plan uses <strong><code>opaque-engine</code></strong>.</li>
+<li><strong>Should <code>opaque.types</code> keep being a single-file module?</strong> Yes (re-export
+  shim) — IDE jump-to-def is cleaner than a folder for a re-export.</li>
+<li><strong>Should <code>opaque.api.optimizers</code> live in <code>opaque-engine</code> instead of its own
+  wheel?</strong> Default: <strong>own wheel</strong> (drops torchopt from base/accounting cone).
+  Foldable into engine if torchopt is judged acceptable there.</li>
+<li><strong>Future <code>opaque-lipschitz</code>:</strong> mirrors <code>opaque-dpsgd</code> (<code>opaque.api.lipschitz.*</code></li>
+<li><code>opaque.api.accounting.lipschitz.*</code> + façade <code>opaque.lipschitz</code>).</li>
+<li><strong><code>gaussian_noise</code> vs <code>truncated_gaussian_noise</code>:</strong> today these are two
+  separate functions sharing the same <code>GaussianNoiseState</code> (the truncated
+  variant takes an extra <code>radius</code>; math is from the <em>Bounded Gaussian Mechanism</em>
+  — Chen &amp; Hale 2024 — not a clipping post-process). The Poisson refactor
+  collapsed <code>Poisson</code> / <code>TruncatedPoisson</code> into one factory dispatching on
+  <code>truncated_batch_size</code> because both use the same draw and only differ in PLD;
+  Gaussian is <strong>not</strong> symmetric: the truncated version uses a different
+  sampling routine (truncated normal via inverse-CDF) and has its own privacy
+  bound. Open question: <strong>fold them into one <code>gaussian_noise(..., radius=None)</code>
+  signature</strong> (single user-facing function with dispatch on <code>radius is not None</code>)
+  vs <strong>keep them separate</strong> (current plan). Recommendation: <strong>keep separate
+  unless we also unify the accountant story</strong>; revisit when truncated-Gaussian
+  accounting moves under <code>opaque.api.accounting.dpsgd</code>.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/JetBrains-Research/opaque" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.f55a23d4.min.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>

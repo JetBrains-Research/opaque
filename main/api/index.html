@@ -2194,8 +2194,8 @@ user-facing installation target.</p>
 <p><strong><a href="accounting/">Accounting</a></strong>: Privacy budget tracking</p>
 </li>
 <li><code>gaussian()</code>, <code>adaclip()</code> — DP-SGD mechanisms (also via <code>opaque.dpsgd.accounting</code>)</li>
-<li><code>poisson()</code>, <code>truncated_poisson()</code>, <code>parallel_poisson()</code> — Poisson-family amplification</li>
-<li><code>band_mf()</code>, <code>blt()</code>, <code>lambda_cgd()</code>, <code>bisr()</code>, <code>cyclic_poisson()</code>, <code>balls_in_bins()</code> — MF mechanisms (also via <code>opaque.dpftrl.accounting</code>)</li>
+<li><code>poisson()</code> (plain or truncated via <code>truncated_batch_size</code> / <code>dataset_size</code>), <code>parallel_poisson()</code> — Poisson-family amplification</li>
+<li><code>band_mf()</code>, <code>blt()</code>, <code>lambda_cgd()</code>, <code>bisr()</code>, <code>poisson()</code> (MF whole-process), <code>balls_in_bins()</code> — MF mechanisms (also via <code>opaque.dpftrl.accounting</code>)</li>
 <li><code>DpProcess</code> operators: <code>*</code> (repeat), <code>|</code> (compose)</li>
 <li><code>.epsilon_at()</code>, <code>.delta_at()</code>, <code>.advantage()</code>, <code>.beta_at()</code>, <code>.risk_at()</code> — Privacy metrics</li>
 <li>
@@ -2204,9 +2204,9 @@ user-facing installation target.</p>
 <li>
 <p><strong><a href="sampling/">Sampling</a></strong>: Privacy-amplifying sampling</p>
 </li>
-<li><code>PoissonSampler</code> - Standard Poisson sampling</li>
-<li><code>TruncatedPoissonSampler</code> - Bounded Poisson sampling</li>
-<li><code>CyclicPoissonSampler</code> - Cyclic Poisson sampling (BandMF)</li>
+<li><code>PoissonSubsampler</code> - Standard Poisson sampling</li>
+<li><code>PoissonSubsampler</code> + <code>truncated_batch_size</code> - Bounded Poisson sampling</li>
+<li><code>CyclicPoissonSampler</code> (<code>opaque.dpftrl</code>) - cyclic Poisson over <code>bands</code> groups; <code>bands=1</code> = identity (full-data Poisson each step)</li>
 <li><code>BallsInBinsSampler</code> - Random-partition sampling (λCGD, BISR, BLT)</li>
 <li>
 <p><code>SequentialBatchSampler</code> - Deterministic sequential batching (BLT)</p>
@@ -2242,7 +2242,7 @@ user-facing installation target.</p>
 <h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link">&para;</a></h2>
 <h3 id="typical-dp-sgd-workflow">Typical DP-SGD Workflow<a class="headerlink" href="#typical-dp-sgd-workflow" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
@@ -2370,7 +2370,7 @@ user-facing installation target.</p>
 <td><a href="../user-guide/accounting/#mechanisms">Guide</a></td>
 </tr>
 <tr>
-<td><code>truncated_poisson()</code></td>
+<td><code>poisson(..., truncated_batch_size=, dataset_size=)</code></td>
 <td>Truncated Poisson subsampling</td>
 <td><a href="../user-guide/accounting/#mechanisms">Guide</a></td>
 </tr>
@@ -2437,8 +2437,8 @@ user-facing installation target.</p>
 <td><a href="../user-guide/accounting/#matrix-factorization-mechanisms">Guide</a></td>
 </tr>
 <tr>
-<td><code>cyclic_poisson()</code></td>
-<td>Cyclic Poisson amplification (BandMF)</td>
+<td><code>poisson()</code> (<code>opaque.dpftrl</code>)</td>
+<td>MF Poisson amplification (BandMF / identity)</td>
 <td><a href="../user-guide/accounting/#matrix-factorization-mechanisms">Guide</a></td>
 </tr>
 </tbody>
@@ -2543,18 +2543,18 @@ user-facing installation target.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>PoissonSampler</code></td>
+<td><code>PoissonSubsampler</code></td>
 <td>Standard Poisson sampling</td>
 <td><a href="../user-guide/sampling/#poisson-sampling">Guide</a></td>
 </tr>
 <tr>
-<td><code>TruncatedPoissonSampler</code></td>
+<td><code>PoissonSubsampler</code> (with <code>truncated_batch_size</code>)</td>
 <td>Truncated Poisson sampling</td>
 <td><a href="../user-guide/sampling/#poisson-sampling">Guide</a></td>
 </tr>
 <tr>
-<td><code>CyclicPoissonSampler</code></td>
-<td>Cyclic Poisson sampling (BandMF)</td>
+<td><code>CyclicPoissonSampler</code> (<code>opaque.dpftrl</code>)</td>
+<td>Cyclic Poisson over <code>bands</code> groups; <code>bands=1</code> = identity</td>
 <td><a href="../user-guide/sampling/#poisson-sampling">Guide</a></td>
 </tr>
 <tr>

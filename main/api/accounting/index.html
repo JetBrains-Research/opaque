@@ -2656,8 +2656,9 @@ sensitivity-1 queries. Base mechanism for DP-SGD.</p>
 <h3 id="poissoninner-sample_rate-truncated_batch_sizenone-dataset_sizenone-dpprocess-truncated-form"><code>poisson(inner, sample_rate, *, truncated_batch_size=None, dataset_size=None) -&gt; DpProcess</code> (truncated form)<a class="headerlink" href="#poissoninner-sample_rate-truncated_batch_sizenone-dataset_sizenone-dpprocess-truncated-form" title="Permanent link">&para;</a></h3>
 <p><code>poisson()</code> switches to a truncated Poisson PLD when both
 <code>truncated_batch_size</code> and <code>dataset_size</code> are set together (must be both
-or neither). This gives tighter privacy bounds than plain Poisson
-subsampling and matches production DP-SGD with a capped batch size.</p>
+or neither). This is the truncated-Poisson PLD for capped batches; it does
+<strong>not</strong> improve privacy versus plain Poisson at the same rate—use it when
+training actually truncates draws.</p>
 <ul>
 <li><code>inner</code> (Gaussian | AdaClip): Base mechanism</li>
 <li><code>sample_rate</code> (float): Expected sampling rate, in (0, 1]</li>
@@ -2756,7 +2757,7 @@ The strategy is the single source of truth for these quantities — never hardco
 them. This keeps noise generation and accounting in sync.</p>
 <p>All MF constructors return a <code>DpProcess</code> that composes with standard operators.</p>
 <h3 id="band_mfnoise_multiplier-sensitivity-coefficients-dpprocess"><code>band_mf(noise_multiplier, sensitivity, coefficients) -&gt; DpProcess</code><a class="headerlink" href="#band_mfnoise_multiplier-sensitivity-coefficients-dpprocess" title="Permanent link">&para;</a></h3>
-<p>BandMF mechanism for cyclic Poisson / b-min-sep amplification. Takes
+<p>BandMF mechanism for Poisson and b-min-sep amplification. Takes
 <code>sensitivity</code> and <code>coefficients</code> from a <code>band_mf_strategy()</code>. The
 band-width is <code>len(coefficients)</code>; <code>coefficients</code> must be non-empty.</p>
 <ul>

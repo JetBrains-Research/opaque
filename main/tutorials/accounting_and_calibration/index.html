@@ -2336,8 +2336,7 @@ calibrate noise multipliers for a target privacy budget, and query
 multiple privacy metrics.</p>
 <p><strong>Prerequisites:</strong> Familiarity with (epsilon, delta)-DP at the level of
 the <a href="../user-guide/dp-concepts.md">DP Concepts guide</a>.</p>
-<p><strong>Components exercised:</strong> <code>DpProcess</code>, <code>dpsgd_acc.gaussian</code>, <code>dpsgd_acc.poisson</code>,
-<code>dpsgd_acc.truncated_poisson</code>, <code>acc.calibrate</code>, <code>acc.epsilon_budget</code>,
+<p><strong>Components exercised:</strong> <code>DpProcess</code>, <code>dpsgd_acc.gaussian</code>, <code>dpsgd_acc.poisson</code> (plain and truncated), <code>acc.calibrate</code>, <code>acc.epsilon_budget</code>,
 composition operators (<code>*</code>, <code>|</code>).</p>
 </div>
 </div>
@@ -2479,10 +2478,10 @@ usage predictable at the cost of slightly worse privacy bounds.</p>
     <span class="n">eps_poisson</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="p">))</span>
 
     <span class="n">t</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">truncated_poisson</span><span class="p">(</span>
+        <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
             <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_mult</span><span class="p">),</span>
-            <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
-            <span class="n">batch_size_cap</span><span class="o">=</span><span class="n">batch_cap</span><span class="p">,</span>
+            <span class="n">sample_rate</span><span class="p">,</span>
+            <span class="n">truncated_batch_size</span><span class="o">=</span><span class="n">batch_cap</span><span class="p">,</span>
             <span class="n">dataset_size</span><span class="o">=</span><span class="n">dataset_size</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="o">*</span> <span class="n">n</span>
@@ -2515,10 +2514,10 @@ for n in steps_range:
     eps_poisson.append(p.epsilon_at(delta))
 
     t = (
-        dpsgd_acc.truncated_poisson(
+        dpsgd_acc.poisson(
             dpsgd_acc.gaussian(noise_mult),
-            sample_rate=sample_rate,
-            batch_size_cap=batch_cap,
+            sample_rate,
+            truncated_batch_size=batch_cap,
             dataset_size=dataset_size,
         )
         * n
@@ -2889,7 +2888,7 @@ print(f"Budget exceeded: {accountant.budget_exceeded}")</div>
 </tr>
 <tr>
 <td>Truncated Poisson</td>
-<td><code>dpsgd_acc.truncated_poisson(mechanism, sample_rate, batch_size_cap, dataset_size)</code></td>
+<td><code>dpsgd_acc.poisson(mechanism, sample_rate, truncated_batch_size=..., dataset_size=...)</code></td>
 </tr>
 <tr>
 <td>Repeat</td>

@@ -2484,13 +2484,13 @@ probability <span class="arithmatex">\(q\)</span>), the effective noise multipli
 </tr>
 <tr>
 <td><strong>Truncated Poisson</strong></td>
-<td>Poisson sampling capped at a maximum batch size</td>
-<td>Production DP-SGD. Fixed memory budget.</td>
+<td>Poisson draw capped at a maximum batch size</td>
+<td>DP-SGD when you want stable batch sizes; privacy is weaker than plain Poisson at the same <span class="arithmatex">\(q\)</span>.</td>
 </tr>
 <tr>
-<td><strong>Cyclic Poisson</strong></td>
-<td>Training rounds divided into groups; Poisson within each group</td>
-<td>BandMF correlated noise.</td>
+<td><strong>Cyclic Poisson (DP-FTRL)</strong></td>
+<td><code>opaque.dpftrl.sampling.CyclicPoissonSampler</code>: <code>bands</code> disjoint groups, step <code>i</code> uses group <code>i % bands</code>, inclusion prob. <code>q</code> per eligible example. <code>bands=1</code> is identity (full data each step); larger <code>bands</code> match BandMF-style rotation.</td>
+<td><code>mf_noise</code> + <code>ftrl_acc.poisson</code> (whole-process accountant).</td>
 </tr>
 </tbody>
 </table>
@@ -2498,10 +2498,11 @@ probability <span class="arithmatex">\(q\)</span>), the effective noise multipli
 sampling produces variable-size batches but has a clean privacy analysis.
 Fixed-size sampling (drawing exactly <span class="arithmatex">\(B\)</span> examples) has a slightly different
 privacy profile. Opaque uses Poisson-style sampling throughout.</p>
-<p>Truncated Poisson combines the best of both: it uses Poisson sampling but caps
-the batch size at a maximum, giving fixed memory usage while retaining the
-Poisson amplification guarantee.</p>
-<p>Opaque's <code>PoissonSampler</code> implements Poisson subsampling. The accounting module
+<p>Truncated Poisson keeps Poisson-style randomness but caps realized batch size,
+which stabilises memory and batch norms at the cost of <strong>weaker</strong> privacy than
+unconditional Poisson at the same inclusion probability <span class="arithmatex">\(q\)</span> (use the
+truncated-Poisson accountant).</p>
+<p>Opaque's <code>PoissonSubsampler</code> implements Poisson subsampling. The accounting module
 accounts for this amplification via <code>dpsgd_acc.poisson(mechanism, sample_rate)</code>.
 See <a href="../sampling/">Sampling &amp; Microbatching</a> and the
 <a href="../../mechanisms/">Mechanisms</a> reference for per-mechanism amplification
@@ -2668,8 +2669,9 @@ independent noise would give.</p>
 </tr>
 </tbody>
 </table>
-<p>MF mechanisms require different samplers (CyclicPoissonSampler for BandMF)
-and have different amplification properties. See the
+<p>MF mechanisms use <code>opaque.dpftrl.sampling.CyclicPoissonSampler</code> (and other FTRL
+samplers) with amplification that depends on the mechanism; identity runs use
+<code>bands=1</code>. See the
 <a href="../../mechanisms/">Mechanisms</a> reference for details.</p>
 <h2 id="neighboring-relations">Neighboring relations<a class="headerlink" href="#neighboring-relations" title="Permanent link">&para;</a></h2>
 <p>The privacy guarantee depends on what "differ in one record" means:</p>

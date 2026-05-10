@@ -2043,7 +2043,7 @@ effective noise multiplier:</p>
 <ul>
 <li>BLT targets long runs via a <strong>buffered</strong> Toeplitz parameterization; privacy is for the optimized strategy you instantiate.</li>
 <li>Optional <strong><code>lr_schedule</code></strong> is encoded like BandMF into a Toeplitz workload for the optimizer; see <a href="../band-mf/#assumptions-and-limitations">BandMF — Assumptions</a> for the constant- versus variable-<span class="arithmatex">\(\eta\)</span> caveat.</li>
-<li><strong>Subsampling</strong>: BLT does not use <code>cyclic_poisson</code> the way BandMF does; combine with Balls-in-Bins when using correlated MF + epoch structure (see examples).</li>
+<li><strong>Subsampling</strong>: BLT does not use <code>ftrl_acc.poisson</code> the way BandMF does; combine with Balls-in-Bins when using correlated MF + epoch structure (see examples).</li>
 <li>Overview: <a href="../../user-guide/dp-ftrl/">Correlated noise (DP-FTRL)</a>.</li>
 </ul>
 <h2 id="supported-amplifications">Supported amplifications<a class="headerlink" href="#supported-amplifications" title="Permanent link">&para;</a></h2>
@@ -2064,19 +2064,19 @@ sensitivity computation. There is no external amplification wrapper.</p>
 <td>Not applicable</td>
 </tr>
 <tr>
-<td><code>truncated_poisson()</code></td>
+<td><code>poisson()</code> (truncated)</td>
 <td style="text-align: center;">No</td>
 <td>Not applicable</td>
 </tr>
 <tr>
-<td><code>cyclic_poisson()</code></td>
+<td><code>ftrl_acc.poisson</code></td>
 <td style="text-align: center;">No</td>
-<td>For BandMF only</td>
+<td>For BandMF / identity MF</td>
 </tr>
 </tbody>
 </table>
 <p>If you need subsampling amplification with correlated noise, use
-<a href="../band-mf/">BandMF</a> with <code>cyclic_poisson()</code> instead.</p>
+<a href="../band-mf/">BandMF</a> with :func:<code>opaque.dpftrl.accounting.poisson</code> instead.</p>
 <div class="admonition note">
 <p class="admonition-title">Multi-epoch vs subsampling</p>
 <p>BLT and Poisson subsampling solve different problems. Poisson subsampling
@@ -2085,7 +2085,7 @@ privacy cost of the same example appearing in multiple steps via its
 multi-participation (min-sep / max-participations) sensitivity computation.
 BLT itself does <strong>not</strong> model subsampling amplification and has no
 <code>sample_rate</code> parameter. If you need subsampling with correlated noise,
-use <a href="../band-mf/">BandMF</a> with <code>cyclic_poisson()</code> instead.</p>
+use <a href="../band-mf/">BandMF</a> with :func:<code>opaque.dpftrl.accounting.poisson</code> instead.</p>
 </div>
 <h2 id="code-examples">Code examples<a class="headerlink" href="#code-examples" title="Permanent link">&para;</a></h2>
 <h3 id="noise-injection">Noise injection<a class="headerlink" href="#noise-injection" title="Permanent link">&para;</a></h3>

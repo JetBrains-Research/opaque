@@ -794,27 +794,27 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#poissonsampler" class="md-nav__link">
+  <a href="#poissonsubsampler" class="md-nav__link">
     <span class="md-ellipsis">
-      PoissonSampler
+      PoissonSubsampler
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#truncatedpoissonsampler" class="md-nav__link">
+  <a href="#truncated-poisson-batch-cap" class="md-nav__link">
     <span class="md-ellipsis">
-      TruncatedPoissonSampler
+      Truncated Poisson (batch cap)
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#cyclicpoissonsampler" class="md-nav__link">
+  <a href="#cyclicpoissonsampler-dp-ftrl" class="md-nav__link">
     <span class="md-ellipsis">
-      CyclicPoissonSampler
+      CyclicPoissonSampler (DP-FTRL)
     </span>
   </a>
   
@@ -1937,27 +1937,27 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#poissonsampler" class="md-nav__link">
+  <a href="#poissonsubsampler" class="md-nav__link">
     <span class="md-ellipsis">
-      PoissonSampler
+      PoissonSubsampler
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#truncatedpoissonsampler" class="md-nav__link">
+  <a href="#truncated-poisson-batch-cap" class="md-nav__link">
     <span class="md-ellipsis">
-      TruncatedPoissonSampler
+      Truncated Poisson (batch cap)
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#cyclicpoissonsampler" class="md-nav__link">
+  <a href="#cyclicpoissonsampler-dp-ftrl" class="md-nav__link">
     <span class="md-ellipsis">
-      CyclicPoissonSampler
+      CyclicPoissonSampler (DP-FTRL)
     </span>
   </a>
   
@@ -2157,18 +2157,18 @@ sample rate, the stronger the amplification:</p>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">batch_size</span> <span class="o">=</span> <span class="mi">256</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">sample_rate</span> <span class="o">=</span> <span class="n">batch_size</span> <span class="o">/</span> <span class="n">dataset_size</span>  <span class="c1"># 0.00512</span>
 </code></pre></div>
-<h3 id="poissonsampler"><code>PoissonSampler</code><a class="headerlink" href="#poissonsampler" title="Permanent link">&para;</a></h3>
+<h3 id="poissonsubsampler"><code>PoissonSubsampler</code><a class="headerlink" href="#poissonsubsampler" title="Permanent link">&para;</a></h3>
 <p>The standard sampler. Each example is included independently with probability
 <code>sample_rate</code>, producing variable-size batches.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSampler</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSubsampler</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch.utils.data</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">data</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">dataset</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">TensorDataset</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSubsampler</span><span class="p">(</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">dataset</span><span class="p">,</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">num_iterations</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="p">)</span>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="n">loader</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
@@ -2198,7 +2198,7 @@ sample rate, the stronger the amplification:</p>
 <td>Inclusion probability per example</td>
 </tr>
 <tr>
-<td><code>num_iterations</code></td>
+<td><code>n_steps</code></td>
 <td><code>int</code> or <code>None</code></td>
 <td>Number of batches to yield (default: <code>None</code> = infinite)</td>
 </tr>
@@ -2233,19 +2233,22 @@ sample rate, the stronger the amplification:</p>
 </table>
 <p>Batch sizes follow a Binomial distribution. For large datasets and small
 sample rates, the standard deviation is roughly <code>sqrt(expected_batch_size)</code>.</p>
-<h3 id="truncatedpoissonsampler"><code>TruncatedPoissonSampler</code><a class="headerlink" href="#truncatedpoissonsampler" title="Permanent link">&para;</a></h3>
-<p>Poisson sampling with an upper bound on batch size. When a Poisson sample
-exceeds <code>max_batch_size</code>, it is randomly subsampled down. This gives
-tighter privacy bounds than standard Poisson (up to 20% improvement in
-epsilon) while preventing memory spikes from unusually large batches.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">TruncatedPoissonSampler</span>
+<h3 id="truncated-poisson-batch-cap">Truncated Poisson (batch cap)<a class="headerlink" href="#truncated-poisson-batch-cap" title="Permanent link">&para;</a></h3>
+<p>Use :class:<code>~opaque.dpsgd.sampling.PoissonSubsampler</code> with
+<code>truncated_batch_size</code> set. When a Poisson draw exceeds that cap, a
+uniform random subset of the selected indices is kept. That caps batch
+size (more stable training and memory) but <strong>weakens</strong> privacy relative to
+plain Poisson at the same <code>sample_rate</code>—account with
+<code>dpsgd_acc.poisson(..., truncated_batch_size=..., dataset_size=...)</code> so the
+PLD matches the cap.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSubsampler</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">TruncatedPoissonSampler</span><span class="p">(</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSubsampler</span><span class="p">(</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">dataset</span><span class="p">,</span>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="n">batch_size</span> <span class="o">/</span> <span class="n">dataset_size</span><span class="p">,</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">max_batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">num_iterations</span><span class="o">=</span><span class="n">num_steps</span><span class="p">,</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">truncated_batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="n">num_steps</span><span class="p">,</span>
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="p">)</span>
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="n">loader</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
@@ -2261,35 +2264,43 @@ epsilon) while preventing memory spikes from unusually large batches.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>max_batch_size</code></td>
+<td><code>truncated_batch_size</code></td>
 <td><code>int</code></td>
 <td>Upper bound on batch size</td>
 </tr>
 </tbody>
 </table>
-<p>Privacy accounting uses <code>dpsgd_acc.truncated_poisson</code> to match:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">truncated_poisson</span><span class="p">(</span>
+<p>Privacy accounting (truncated form of <code>poisson</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="n">batch_size</span> <span class="o">/</span> <span class="n">dataset_size</span><span class="p">,</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">batch_size_cap</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">batch_size</span> <span class="o">/</span> <span class="n">dataset_size</span><span class="p">,</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">truncated_batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">dataset_size</span><span class="o">=</span><span class="n">dataset_size</span><span class="p">,</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">)</span>
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="n">num_steps</span>
 </code></pre></div>
-<h3 id="cyclicpoissonsampler"><code>CyclicPoissonSampler</code><a class="headerlink" href="#cyclicpoissonsampler" title="Permanent link">&para;</a></h3>
-<p>Partitions the dataset into <code>cycle_length</code> groups and cycles through them,
-sampling from each group with probability <code>sampling_prob</code>. This sampler
-is required for matrix-factorization correlated noise mechanisms
-(BandMF via <code>mf_noise</code>) which need a fixed participation pattern.</p>
+<h3 id="cyclicpoissonsampler-dp-ftrl"><code>CyclicPoissonSampler</code> (DP-FTRL)<a class="headerlink" href="#cyclicpoissonsampler-dp-ftrl" title="Permanent link">&para;</a></h3>
+<p>The dataset is split into <code>bands</code> disjoint groups (<code>partition_type</code> fixes
+how, when <code>bands &gt; 1</code>).  Step <code>i</code> draws only from group <code>i % bands</code>: each
+example in that group is kept independently with probability <code>sample_rate</code>,
+so the within-step batch size is Binomial.  Training steps therefore advance a
+fixed rotation over which group is active, while inclusion inside the active
+group stays Poisson-style.</p>
+<p>For an identity MF baseline (<code>identity_strategy</code> / <code>mf_identity</code>), use
+<code>bands=1</code> so the lone group is the full dataset and every step is plain
+Poisson on all examples, matching whole-process <code>ftrl_acc.poisson</code> with an
+<code>IdentityMf</code> inner.  For BandMF, set <code>bands</code> to the same count as in
+<code>band_mf_strategy</code> / <code>BandMf</code> so participation matches correlated
+<code>mf_noise</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">CyclicPoissonSampler</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">PartitionType</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">CyclicPoissonSampler</span><span class="p">(</span>
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">dataset</span><span class="p">,</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">sampling_prob</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">cycle_length</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="n">iterations</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">bands</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span>
 <a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>    <span class="n">partition_type</span><span class="o">=</span><span class="n">PartitionType</span><span class="o">.</span><span class="n">EQUAL_SPLIT</span><span class="p">,</span>
 <a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="p">)</span>
@@ -2313,28 +2324,22 @@ is required for matrix-factorization correlated noise mechanisms
 <td>The dataset</td>
 </tr>
 <tr>
-<td><code>sampling_prob</code></td>
+<td><code>sample_rate</code></td>
 <td><code>float</code> in (0, 1]</td>
 <td>required</td>
-<td>Inclusion probability within each group</td>
+<td>Inclusion probability within each active group</td>
 </tr>
 <tr>
-<td><code>cycle_length</code></td>
+<td><code>bands</code></td>
 <td><code>int</code></td>
 <td>1</td>
-<td>Number of groups (1 = standard Poisson)</td>
+<td>Number of groups in the cycle (<code>1</code> = full dataset each step; match strategy for BandMF).</td>
 </tr>
 <tr>
-<td><code>iterations</code></td>
-<td><code>int</code> or <code>None</code></td>
-<td><code>None</code> (= 1)</td>
+<td><code>n_steps</code></td>
+<td><code>int</code></td>
+<td>1</td>
 <td>Total batches to yield</td>
-</tr>
-<tr>
-<td><code>truncated_batch_size</code></td>
-<td><code>int</code> or <code>None</code></td>
-<td><code>None</code></td>
-<td>Optional upper bound on batch size</td>
 </tr>
 <tr>
 <td><code>partition_type</code></td>
@@ -2357,10 +2362,8 @@ is required for matrix-factorization correlated noise mechanisms
 <li><code>PartitionType.INDEPENDENT</code> -- assign each example to a random group
   (multinomial). Group sizes vary.</li>
 </ul>
-<p>At iteration <code>i</code>, the sampler draws from group <code>i % cycle_length</code>. With
-<code>cycle_length=1</code> it reduces to standard Poisson sampling.</p>
-<p>See <a href="../noise/#matrix-factorization-noise-dp-ftrl">Noise Addition</a> for how cyclic
-sampling integrates with correlated noise mechanisms.</p>
+<p>See <a href="../noise/#matrix-factorization-noise-dp-ftrl">Noise Addition</a> for how this
+sampler pairs with matrix-factorization noise.</p>
 <h3 id="bminsepsampler"><code>BMinSepSampler</code><a class="headerlink" href="#bminsepsampler" title="Permanent link">&para;</a></h3>
 <p>Warm-start <strong>b-min-sep</strong> subsampling for BandMF (Dong &amp; Ganesh, arXiv:2602.09338).
 Each step includes each <em>eligible</em> example independently with probability <code>p</code>
@@ -2503,7 +2506,7 @@ and derive a per-rank key via <code>fold_in(key, rank)</code>:</p>
 <a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="n">world_size</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_world_size</span><span class="p">()</span>
 <a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>
 <a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="n">shard</span> <span class="o">=</span> <span class="n">local_shard</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">rank</span><span class="o">=</span><span class="n">rank</span><span class="p">,</span> <span class="n">world_size</span><span class="o">=</span><span class="n">world_size</span><span class="p">)</span>
-<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span><span class="n">shard</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span> <span class="n">rank</span><span class="p">))</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSubsampler</span><span class="p">(</span><span class="n">shard</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span> <span class="n">rank</span><span class="p">))</span>
 <a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="n">loader</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">shard</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>Privacy accounting in distributed mode</strong> uses the global sample rate:</p>
@@ -2539,7 +2542,7 @@ per-example gradient computation via <code>vmap</code> exceeds GPU memory,
 microbatching processes the batch in smaller chunks and accumulates the
 clipped gradient sums. The result is mathematically identical to processing
 the full batch.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
 <a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>
 <a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
 <a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    <span class="n">loss_fn</span><span class="p">,</span>
@@ -2610,22 +2613,22 @@ sum is identical whether the batch is processed in one shot or in chunks:</p>
 </thead>
 <tbody>
 <tr>
-<td><code>PoissonSampler</code></td>
+<td><code>PoissonSubsampler</code></td>
 <td>Variable</td>
 <td>Standard amplification</td>
 <td>Research, general use</td>
 </tr>
 <tr>
-<td><code>TruncatedPoissonSampler</code></td>
+<td><code>PoissonSubsampler</code> + <code>truncated_batch_size</code></td>
 <td>Bounded above</td>
-<td>Tighter (up to 20%)</td>
-<td>Production, memory-constrained</td>
+<td>Weaker than plain Poisson (same <code>sample_rate</code>)</td>
+<td>Production, stable batch sizes / memory</td>
 </tr>
 <tr>
-<td><code>CyclicPoissonSampler</code></td>
-<td>Cyclic groups</td>
-<td>Depends on mechanism</td>
-<td>Matrix-factorization noise (BandMF)</td>
+<td><code>CyclicPoissonSampler</code> (<code>opaque.dpftrl</code>)</td>
+<td>Variable</td>
+<td><code>ftrl_acc.poisson</code></td>
+<td>DP-FTRL; identity MF → <code>bands=1</code>; BandMF → <code>bands</code> = strategy</td>
 </tr>
 <tr>
 <td><code>BallsInBinsSampler</code></td>
@@ -2641,10 +2644,12 @@ sum is identical whether the batch is processed in one shot or in chunks:</p>
 </tr>
 </tbody>
 </table>
-<p>For most DP-SGD workloads, <code>PoissonSampler</code> is sufficient.
-<code>TruncatedPoissonSampler</code> is a reasonable upgrade when you want tighter
-privacy bounds or need predictable batch sizes. <code>CyclicPoissonSampler</code> is
-only needed with BandMF correlated noise. <code>BallsInBinsSampler</code> and
+<p>For most DP-SGD workloads, <code>PoissonSubsampler</code> is sufficient.
+Use <code>truncated_batch_size</code> when you need <strong>capped</strong> batch sizes; expect
+<strong>worse</strong> privacy than plain Poisson at the same <code>sample_rate</code> unless you
+recalibrate noise. For DP-FTRL, use
+<code>opaque.dpftrl.sampling.CyclicPoissonSampler</code> as in the section above.
+<code>BallsInBinsSampler</code> and
 <code>SequentialBatchSampler</code> are used with matrix-factorization mechanisms
 that require fixed batch sizes.</p>
 <h2 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>

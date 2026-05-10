@@ -2170,7 +2170,7 @@ at any single <code>update()</code> call; passing both routes raises <code>Value
 <hr />
 <h2 id="complete-pattern-dp-sgd">Complete pattern (DP-SGD)<a class="headerlink" href="#complete-pattern-dp-sgd" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torchopt</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
@@ -2250,7 +2250,7 @@ synchronised because <code>optimizer.update</code> is a pure function and all
 ranks receive identical noisy gradients after <code>sum_gradients</code> + noise
 addition with the same key on all ranks.</p>
 <p>Use <code>local_shard()</code> to partition the dataset across ranks and pass a
-per-rank key via <code>fold_in(key, rank)</code> to each <code>PoissonSampler</code>.</p>
+per-rank key via <code>fold_in(key, rank)</code> to each <code>PoissonSubsampler</code>.</p>
 <hr />
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>

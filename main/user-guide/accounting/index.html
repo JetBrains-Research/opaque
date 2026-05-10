@@ -2469,10 +2469,10 @@ subsampling. Accepts <code>gaussian()</code> or <code>adaclip()</code> as the in
 </code></pre></div>
 <h3 id="dpsgd_accpoissoninner-sample_rate-truncated_batch_size-dataset_size-truncated-form"><code>dpsgd_acc.poisson(inner, sample_rate, *, truncated_batch_size, dataset_size)</code> (truncated form)<a class="headerlink" href="#dpsgd_accpoissoninner-sample_rate-truncated_batch_size-dataset_size-truncated-form" title="Permanent link">&para;</a></h3>
 <p>Setting both <code>truncated_batch_size</code> and <code>dataset_size</code> (must be both or
-neither) caps the per-step batch size to limit memory consumption, with
-the matching truncated-Poisson PLD. Tighter privacy bounds than plain
-Poisson on the same <code>sample_rate</code>; production DP-SGD with a fixed batch
-size.</p>
+neither) selects the truncated-Poisson PLD for a per-step batch cap. That
+matches production runs with capped batches but is <strong>no stricter</strong> than plain
+Poisson at the same <code>sample_rate</code>—typically <strong>weaker</strong> (higher ε at the same
+noise) because truncation changes the subsampling distribution.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">n</span> <span class="o">=</span> <span class="mi">50_000</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">batch</span> <span class="o">=</span> <span class="mi">256</span>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
@@ -2556,7 +2556,7 @@ truth.</p>
 <a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="ftrl_accband_mfnoise_multiplier-sensitivity-coefficients"><code>ftrl_acc.band_mf(noise_multiplier, sensitivity, coefficients)</code><a class="headerlink" href="#ftrl_accband_mfnoise_multiplier-sensitivity-coefficients" title="Permanent link">&para;</a></h3>
-<p>BandMF mechanism for cyclic Poisson / b-min-sep amplification. Takes
+<p>BandMF mechanism for Poisson and b-min-sep amplification. Takes
 <code>sensitivity</code> and <code>coefficients</code> from a <code>band_mf_strategy()</code>. Band
 width is <code>len(coefficients)</code>; <code>coefficients</code> must be non-empty.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>

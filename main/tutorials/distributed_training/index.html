@@ -2306,10 +2306,9 @@ differences from single-device training are:</p>
 <p><strong>Prerequisites:</strong> <a href="dp_sgd_training.ipynb">DP-SGD Training</a>,
 familiarity with <code>torchrun</code>.</p>
 <p><strong>Components exercised:</strong> <code>sum_gradients</code>, <code>local_shard</code>,
-<code>PoissonSampler</code>, <code>gaussian_noise</code> with shared RNG key.</p>
+<code>PoissonSubsampler</code>, <code>gaussian_noise</code> with shared RNG key.</p>
 <p><strong>Note:</strong> This notebook is meant to be saved as a <code>.py</code> script and
-launched with <code>torchrun --nproc_per_node=N</code>. The cells below show
-the complete code with explanations.</p>
+launched with <code>torchrun --nproc_per_node=N</code>. The cells below show the complete code with explanations.</p>
 </div>
 </div>
 </div>
@@ -2351,9 +2350,10 @@ device.</p>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.utils.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataLoader</span><span class="p">,</span> <span class="n">TensorDataset</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpsgd.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpsgd_acc</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSampler</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSubsampler</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_functional</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed.gradients</span><span class="w"> </span><span class="kn">import</span> <span class="n">sum_gradients_</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span><span class="p">,</span> <span class="n">fold_in</span>
@@ -2375,9 +2375,10 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 import opaque.accounting as acc
-from opaque.clipping import clipped_grad
+import opaque.dpsgd.accounting as dpsgd_acc
+from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSubsampler
 from opaque.functional import make_functional
 from opaque.distributed.gradients import sum_gradients_
 from opaque.random import key, fold_in
@@ -2548,10 +2549,10 @@ identical noise.</p>
 
 <span class="c1"># Shard dataset and create per-rank sampler</span>
 <span class="n">shard</span> <span class="o">=</span> <span class="n">local_shard</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">rank</span><span class="o">=</span><span class="n">rank</span><span class="p">,</span> <span class="n">world_size</span><span class="o">=</span><span class="n">world_size</span><span class="p">)</span>
-<span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span>
+<span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSubsampler</span><span class="p">(</span>
     <span class="n">shard</span><span class="p">,</span>
     <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
-    <span class="n">num_epochs</span><span class="o">=</span><span class="n">NUM_STEPS</span><span class="p">,</span>
+    <span class="n">n_steps</span><span class="o">=</span><span class="n">NUM_STEPS</span><span class="p">,</span>
     <span class="n">key</span><span class="o">=</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="n">rank</span><span class="p">),</span>
 <span class="p">)</span>
 <span class="n">loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">shard</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
@@ -2600,10 +2601,10 @@ noise_fn, noise_state = gaussian_noise(
 
 # Shard dataset and create per-rank sampler
 shard = local_shard(dataset, rank=rank, world_size=world_size)
-sampler = PoissonSampler(
+sampler = PoissonSubsampler(
     shard,
     sample_rate=sample_rate,
-    num_epochs=NUM_STEPS,
+    n_steps=NUM_STEPS,
     key=fold_in(key(0), rank),
 )
 loader = DataLoader(shard, batch_sampler=sampler)</div>
@@ -2782,8 +2783,8 @@ single-device training:</p>
 </tr>
 <tr>
 <td>Data sampling</td>
-<td><code>PoissonSampler(dataset, ...)</code></td>
-<td><code>local_shard()</code> + <code>PoissonSampler(shard, ..., key=fold_in(key, rank))</code></td>
+<td><code>PoissonSubsampler(dataset, ...)</code></td>
+<td><code>local_shard()</code> + <code>PoissonSubsampler(shard, ..., key=fold_in(key, rank))</code></td>
 </tr>
 </tbody>
 </table>

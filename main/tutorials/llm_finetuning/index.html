@@ -2337,9 +2337,9 @@ optimisation.</p>
 <p><strong>Prerequisites:</strong> <a href="dp_sgd_training.ipynb">DP-SGD Training</a>,
 <a href="sampling_and_microbatching.ipynb">Sampling &amp; Microbatching</a>.</p>
 <p><strong>Components exercised:</strong> <code>make_functional</code> with <code>partition_trainable</code>,
-<code>adaptive_clipped_grad</code>, <code>TruncatedPoissonSampler</code>, <code>torchopt.adamw</code>,
-<code>dpsgd_acc.truncated_poisson</code>, PEFT LoRA.</p>
-<p><strong>Runtime:</strong> ~10--15 minutes on CPU.</p>
+<code>adaptive_clipped_grad</code>, <code>PoissonSubsampler</code>, <code>torchopt.adamw</code>,
+<code>dpsgd_acc.poisson</code> (truncated form), PEFT LoRA.
+<strong>Runtime:</strong> ~10--15 minutes on CPU.</p>
 </div>
 </div>
 </div>
@@ -2373,7 +2373,7 @@ optimisation.</p>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">TruncatedPoissonSampler</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSubsampler</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_functional</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">adaptive_clipped_grad</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
@@ -2392,13 +2392,14 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import opaque.accounting as acc
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.sampling import TruncatedPoissonSampler
+from opaque.dpsgd.sampling import PoissonSubsampler
 from opaque.functional import make_functional
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.random import key
 
 torch.manual_seed(42)
-np.random.seed(42)</div>
+np.random.seed(42)
+</div>
 </div>
 </div>
 </div>
@@ -2722,11 +2723,11 @@ def per_example_loss(trainable, frozen, ids, mask, labels):
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">sample_rate</span> <span class="o">=</span> <span class="n">BATCH_SIZE</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">train_dataset</span><span class="p">)</span>
 
-<span class="n">sampler</span> <span class="o">=</span> <span class="n">TruncatedPoissonSampler</span><span class="p">(</span>
+<span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSubsampler</span><span class="p">(</span>
     <span class="n">train_dataset</span><span class="p">,</span>
     <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
-    <span class="n">max_batch_size</span><span class="o">=</span><span class="n">MAX_BATCH_SIZE</span><span class="p">,</span>
-    <span class="n">num_iterations</span><span class="o">=</span><span class="n">NUM_STEPS</span><span class="p">,</span>
+    <span class="n">truncated_batch_size</span><span class="o">=</span><span class="n">MAX_BATCH_SIZE</span><span class="p">,</span>
+    <span class="n">n_steps</span><span class="o">=</span><span class="n">NUM_STEPS</span><span class="p">,</span>
     <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <span class="p">)</span>
 <span class="n">train_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">train_dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
@@ -2755,10 +2756,10 @@ def per_example_loss(trainable, frozen, ids, mask, labels):
 
 <span class="c1"># Pre-compute expected final epsilon</span>
 <span class="n">expected_eps</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">truncated_poisson</span><span class="p">(</span>
+    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
         <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">NOISE_MULTIPLIER</span><span class="p">),</span>
-        <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
-        <span class="n">batch_size_cap</span><span class="o">=</span><span class="n">MAX_BATCH_SIZE</span><span class="p">,</span>
+        <span class="n">sample_rate</span><span class="p">,</span>
+        <span class="n">truncated_batch_size</span><span class="o">=</span><span class="n">MAX_BATCH_SIZE</span><span class="p">,</span>
         <span class="n">dataset_size</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">train_dataset</span><span class="p">),</span>
     <span class="p">)</span>
     <span class="o">*</span> <span class="n">NUM_STEPS</span>
@@ -2767,11 +2768,11 @@ def per_example_loss(trainable, frozen, ids, mask, labels):
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-6">sample_rate = BATCH_SIZE / len(train_dataset)
 
-sampler = TruncatedPoissonSampler(
+sampler = PoissonSubsampler(
     train_dataset,
     sample_rate=sample_rate,
-    max_batch_size=MAX_BATCH_SIZE,
-    num_iterations=NUM_STEPS,
+    truncated_batch_size=MAX_BATCH_SIZE,
+    n_steps=NUM_STEPS,
     key=key(42),
 )
 train_loader = DataLoader(train_dataset, batch_sampler=sampler)
@@ -2800,10 +2801,10 @@ opt_state = optimizer.init(trainable_params)
 
 # Pre-compute expected final epsilon
 expected_eps = (
-    dpsgd_acc.truncated_poisson(
+    dpsgd_acc.poisson(
         dpsgd_acc.gaussian(NOISE_MULTIPLIER),
-        sample_rate=sample_rate,
-        batch_size_cap=MAX_BATCH_SIZE,
+        sample_rate,
+        truncated_batch_size=MAX_BATCH_SIZE,
         dataset_size=len(train_dataset),
     )
     * NUM_STEPS
@@ -2875,10 +2876,10 @@ print(f"Expected final epsilon: {expected_eps:.2f}")</div>
     <span class="n">trainable_params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">trainable_params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
 
     <span class="c1"># 4. Track privacy</span>
-    <span class="n">dp_step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">truncated_poisson</span><span class="p">(</span>
+    <span class="n">dp_step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
         <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">NOISE_MULTIPLIER</span><span class="p">),</span>
-        <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
-        <span class="n">batch_size_cap</span><span class="o">=</span><span class="n">MAX_BATCH_SIZE</span><span class="p">,</span>
+        <span class="n">sample_rate</span><span class="p">,</span>
+        <span class="n">truncated_batch_size</span><span class="o">=</span><span class="n">MAX_BATCH_SIZE</span><span class="p">,</span>
         <span class="n">dataset_size</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">train_dataset</span><span class="p">),</span>
     <span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
     <span class="n">epsilon</span> <span class="o">=</span> <span class="n">dp_step</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">TARGET_DELTA</span><span class="p">)</span>
@@ -2929,10 +2930,10 @@ for step, (batch_ids, batch_mask, batch_labels) in enumerate(train_loader):
     trainable_params = torchopt.apply_updates(trainable_params, updates)
 
     # 4. Track privacy
-    dp_step = dpsgd_acc.truncated_poisson(
+    dp_step = dpsgd_acc.poisson(
         dpsgd_acc.gaussian(NOISE_MULTIPLIER),
-        sample_rate=sample_rate,
-        batch_size_cap=MAX_BATCH_SIZE,
+        sample_rate,
+        truncated_batch_size=MAX_BATCH_SIZE,
         dataset_size=len(train_dataset),
     ) * (step + 1)
     epsilon = dp_step.epsilon_at(TARGET_DELTA)
