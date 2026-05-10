@@ -28,7 +28,7 @@ from opaque.patches.transformers import (
     register_rms_norm_kind,
     supported_families,
 )
-from opaque.patches.transformers._registry import _FAMILY_REGISTRY
+from opaque.api.patches.transformers._registry import _FAMILY_REGISTRY
 
 
 @pytest.fixture
@@ -206,7 +206,7 @@ def test_activation_kwarg_gates_family_selected_activation_patch(monkeypatch):
 def test_cross_entropy_sets_loss_function_on_model_instance(monkeypatch):
     import torch
 
-    from opaque.patches.transformers.components.cross_entropy import (
+    from opaque.api.patches.transformers.components.cross_entropy import (
         _opaque_causal_lm_loss,
     )
 
@@ -276,7 +276,7 @@ def test_family_name_returns_none_for_non_hf_object():
 
 def test_family_factory_default_replacements_are_opaque_vmap_safe():
     """Default closures bind opaque's vmap-safe implementations."""
-    from opaque.patches.transformers._family import (
+    from opaque.api.patches.transformers._family import (
         apply_module_masking_patch,
         vmap_eager_attention_forward,
         vmap_repeat_kv,
@@ -328,7 +328,7 @@ def test_family_factory_accepts_none_to_skip_concern():
 
 
 def test_family_factory_tracks_idempotency_per_enabled_concern(monkeypatch):
-    from opaque.patches.transformers._family import _reset_patched_families
+    from opaque.api.patches.transformers._family import _reset_patched_families
 
     _reset_patched_families()
     module_name = "public_api_fake_family_module"
@@ -404,7 +404,7 @@ def test_register_family_routes_via_apply_transformers_model_patches(_restore_re
     :func:`opaque.patches.apply_model_patches`) consults the registry,
     so user-registered families are reached without any source-code
     changes inside opaque-patches."""
-    from opaque.patches.transformers._router import apply_transformers_model_patches
+    from opaque.api.patches.transformers._router import apply_transformers_model_patches
 
     name = "public_api_test_router_dispatch"
     calls: list[dict] = []
@@ -433,7 +433,7 @@ def test_register_family_routes_via_apply_transformers_model_patches(_restore_re
 def test_unregistered_family_silently_skips():
     """An unknown family doesn't crash the dispatcher — it just doesn't
     apply any opaque patches."""
-    from opaque.patches.transformers._router import apply_transformers_model_patches
+    from opaque.api.patches.transformers._router import apply_transformers_model_patches
 
     class _Cfg:
         model_type = "definitely-not-registered-xyz"

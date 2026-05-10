@@ -25,7 +25,7 @@ package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["opaque.transformers*"]
+include = ["opaque.transformers*", "opaque.api.transformers*"]
 namespaces = true
 
 [tool.setuptools_scm]

@@ -11,7 +11,7 @@ import types
 import pytest
 import torch
 
-from opaque.patches.transformers.components.cross_entropy import (
+from opaque.api.patches.transformers.components.cross_entropy import (
     _make_fused_ce_causal_lm_forward,
 )
 

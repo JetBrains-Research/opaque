@@ -63,20 +63,53 @@ FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
         "opaque/dpftrl/accounting/mechanisms/__init__.py",
         "opaque/dpftrl/accounting/amplification/__init__.py",
     ),
-    # Phase 6 already clean today: auditing has no business logic in
-    # ``__init__.py``.
+    # Phase 6 — opaque-auditing has no business logic in __init__.
     "opaque-auditing": (
         "opaque/auditing/__init__.py",
+        "opaque/auditing/types.py",
         "opaque/auditing/attacks/__init__.py",
         "opaque/auditing/one_run/__init__.py",
     ),
-    # Added phase by phase as each façade is reshaped:
-    # - Phase 1 → "opaque-base": opaque/serialization/...
-    # - Phase 2 → "opaque-engine": opaque/{types,pytree,random,
-    #   distributed,functional,scheduling,profiling}
-    # - Phase 3 → "opaque-optimizers": opaque/optimizers/...
-    # - Phase 4 → "opaque-accounting": opaque/accounting/...
-    # - Phase 6 → "opaque-patches", "opaque-transformers"
+    # Phase 1 — opaque-base.
+    "opaque-base": (
+        "opaque/serialization/__init__.py",
+    ),
+    # Phase 2 — opaque-engine.
+    "opaque-engine": (
+        "opaque/types.py",
+        "opaque/pytree.py",
+        "opaque/random/__init__.py",
+        "opaque/random/types.py",
+        "opaque/distributed/__init__.py",
+        "opaque/distributed/collectives.py",
+        "opaque/distributed/gradients.py",
+        "opaque/functional/__init__.py",
+        "opaque/scheduling/__init__.py",
+        "opaque/scheduling/types.py",
+        "opaque/profiling/__init__.py",
+        "opaque/profiling/types.py",
+    ),
+    # Phase 3 — opaque-optimizers.
+    "opaque-optimizers": (
+        "opaque/optimizers/__init__.py",
+        "opaque/optimizers/types.py",
+    ),
+    # Phase 4 — opaque-accounting.
+    "opaque-accounting": (
+        "opaque/accounting/__init__.py",
+    ),
+    # Phase 6 — opaque-patches, opaque-transformers.
+    "opaque-patches": (
+        "opaque/patches/__init__.py",
+        "opaque/patches/torch/__init__.py",
+        "opaque/patches/kernels/__init__.py",
+        "opaque/patches/peft/__init__.py",
+        "opaque/patches/transformers/__init__.py",
+        "opaque/patches/transformers/runtime/__init__.py",
+    ),
+    "opaque-transformers": (
+        "opaque/transformers/__init__.py",
+    ),
 }
 
 

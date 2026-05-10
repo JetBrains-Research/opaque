@@ -1,5 +1,5 @@
 import pytest
-from opaque.patches.transformers._router import apply_transformers_model_patches
+from opaque.api.patches.transformers._router import apply_transformers_model_patches
 import torch.nn as nn
 
 

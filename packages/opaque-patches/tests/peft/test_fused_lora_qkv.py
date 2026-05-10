@@ -24,7 +24,7 @@ class TestFusedLoRAQKV:
 
     def test_fused_lora_qkv_forward(self, device):
         """Fused LoRA QKV forward should match PyTorch matmul reference."""
-        from opaque.patches.kernels.lora import Opaque_LoRA_QKV
+        from opaque.api.patches.kernels.lora import Opaque_LoRA_QKV
 
         torch.manual_seed(42)
         batch, seq, hidden, q_out, kv_out, rank = (2, 16, 256, 256, 64, 8)
@@ -57,7 +57,7 @@ class TestFusedLoRAQKV:
 
     def test_fused_lora_qkv_backward(self, device):
         """Fused LoRA QKV should produce correct gradients."""
-        from opaque.patches.kernels.lora import Opaque_LoRA_QKV
+        from opaque.api.patches.kernels.lora import Opaque_LoRA_QKV
 
         torch.manual_seed(42)
         batch, seq, hidden, q_out, kv_out, rank = (2, 16, 256, 256, 64, 8)

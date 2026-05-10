@@ -1,8 +1,9 @@
-# SPDX-License-Identifier: Apache-2.0
-"""Global runtime patches for HuggingFace Transformers."""
+"""Patches transformers runtime façade."""
 
-from .collator import apply_collator_patches
-from .masking import apply_masking_patches
+from opaque.api.patches.transformers.runtime import (
+    apply_collator_patches,
+    apply_masking_patches,
+)
 
 __all__ = [
     "apply_collator_patches",

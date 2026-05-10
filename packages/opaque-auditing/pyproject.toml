@@ -31,7 +31,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["opaque.auditing*"]
+include = ["opaque.auditing*", "opaque.api.auditing*"]
 namespaces = true
 
 [tool.setuptools_scm]

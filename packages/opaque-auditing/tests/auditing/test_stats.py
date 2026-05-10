@@ -1,6 +1,6 @@
 """Tests for auditing statistical helpers (one_run/stats.py)."""
 
-from opaque.auditing.one_run._stats import one_run_p_value
+from opaque.api.auditing.one_run._stats import one_run_p_value
 
 
 class TestOneRunPValue:

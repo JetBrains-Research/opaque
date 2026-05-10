@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from opaque.auditing.one_run._roc import (
+from opaque.api.auditing.one_run._roc import (
     get_tn_fn_counts,
     pareto_frontier,
     tpr_at_given_fpr,

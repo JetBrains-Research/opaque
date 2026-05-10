@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from torch.func import grad, vmap
 from torch.utils.checkpoint import checkpoint
 
-from opaque.patches.torch.runtime import is_checkpoint_patched
+from opaque.api.patches.torch.runtime import is_checkpoint_patched
 from opaque.patches import apply_runtime_patches
 
 apply_runtime_patches(vmap_checkpointing=True)

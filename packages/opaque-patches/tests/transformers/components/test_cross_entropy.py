@@ -17,7 +17,7 @@ class TestCrossEntropyPatches:
 
     def test_causal_lm_loss_matches_pytorch(self, device):
         """Patched ForCausalLMLoss should match F.cross_entropy reference."""
-        from opaque.patches.transformers.components.cross_entropy import (
+        from opaque.api.patches.transformers.components.cross_entropy import (
             _opaque_causal_lm_loss,
         )
 
@@ -39,7 +39,7 @@ class TestCrossEntropyPatches:
 
     def test_causal_lm_loss_with_num_items_in_batch(self, device):
         """Loss with num_items_in_batch should use sum reduction."""
-        from opaque.patches.transformers.components.cross_entropy import (
+        from opaque.api.patches.transformers.components.cross_entropy import (
             _opaque_causal_lm_loss,
         )
 
@@ -70,7 +70,7 @@ class TestCrossEntropyPatches:
 
     def test_backward_through_patched_loss(self, device):
         """Gradients should flow through patched cross-entropy loss."""
-        from opaque.patches.transformers.components.cross_entropy import (
+        from opaque.api.patches.transformers.components.cross_entropy import (
             _opaque_causal_lm_loss,
         )
 

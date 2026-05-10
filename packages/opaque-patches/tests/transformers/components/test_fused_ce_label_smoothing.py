@@ -10,12 +10,12 @@ import types
 import pytest
 import torch
 
-from opaque.patches.transformers.components.cross_entropy import (
+from opaque.api.patches.transformers.components.cross_entropy import (
     _make_fused_ce_causal_lm_forward,
 )
 
 pytest.importorskip("triton")
-from opaque.patches.kernels.linear_cross_entropy import Opaque_LinearCrossEntropyLoss
+from opaque.api.patches.kernels.linear_cross_entropy import Opaque_LinearCrossEntropyLoss
 
 
 _KERNELS_AVAILABLE = (

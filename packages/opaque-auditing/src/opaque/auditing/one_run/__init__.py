@@ -1,8 +1,8 @@
-"""One-run privacy auditing (Steinke et al. 2023).
+"""One-run privacy auditing façade (Steinke et al. 2023).
 
 The ``OneRunEstimate`` data class lives in :mod:`opaque.auditing.types`.
 """
 
-from opaque.auditing.one_run._estimate import one_run
+from opaque.api.auditing.one_run import one_run
 
 __all__ = ["one_run"]

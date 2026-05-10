@@ -34,7 +34,7 @@ transformers = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["opaque.patches*"]
+include = ["opaque.patches*", "opaque.api.patches*"]
 namespaces = true
 
 [tool.setuptools_scm]
