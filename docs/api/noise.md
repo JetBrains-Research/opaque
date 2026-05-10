@@ -94,10 +94,10 @@ underlying `mf_gaussian(nm, …)` for DP-FTRL; there is no separate
 transformation wrapper and no `ρ` knob.
 
 `mf_noise` accepts scalar or `PerGroup` `max_norm` on `ClippedPytree`
-inputs. Single-stream IID stddevs use
-`opaque.noise_allocation.per_group_noise_stddev` when `max_norm` is
-`PerGroup` (same Mahalanobis allocation as `gaussian_noise`). Trainable
-gradients must be a flat `dict[str, Tensor]` so each leaf maps to a group.
+inputs. Single-stream IID stddevs for `PerGroup` bounds match the
+MSE-optimal allocation from :meth:`ClippedPytree.noise_stddev_for` (same
+Mahalanobis allocation as `gaussian_noise`). Trainable gradients must be a
+flat `dict[str, Tensor]` so each leaf maps to a group.
 
 ## Standard Gaussian
 

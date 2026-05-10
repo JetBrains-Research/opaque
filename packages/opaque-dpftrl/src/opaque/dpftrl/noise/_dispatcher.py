@@ -37,7 +37,10 @@ from ._bsr import BsrStrategy, bsr_strategy
 from ._blt import BltStrategy, blt_strategy
 from ._identity import IdentityStrategy, identity_strategy
 from ._lambda_cgd import LambdaCgdStrategy, _make_lambda_cgd_noise, lambda_cgd_strategy
-from ._distributed import fingerprint_per_group_max_norm
+from ._distributed import (
+    fingerprint_per_group_max_norm,
+    fingerprint_scalar_max_norm,
+)
 from ._engine import MFNoiseState, _matrix_factorization_noise
 from ._streaming_matrix import identity
 from ._second_moment import SecondMomentMFNoiseState
@@ -46,12 +49,12 @@ from ._second_moment import SecondMomentMFNoiseState
 def _mf_per_group_sync_fingerprint_for_latch(
     prior: MFNoiseState,
     max_norm: float | PerGroup,
-) -> float | None:
-    """Scalar fingerprint for distributed sync; computed once per ``PerGroup`` latch."""
-    if not isinstance(max_norm, PerGroup):
-        return None
+) -> int | None:
+    """Integer fingerprint for distributed sync; set on every latched ``max_norm``."""
     if prior._first_max_norm is None:
-        return fingerprint_per_group_max_norm(max_norm)
+        if isinstance(max_norm, PerGroup):
+            return fingerprint_per_group_max_norm(max_norm)
+        return fingerprint_scalar_max_norm(float(max_norm))
     return prior._first_max_norm_sync_fingerprint
 
 

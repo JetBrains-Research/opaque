@@ -943,8 +943,8 @@ def main():
     if args.per_group_clipping:
         clip_norm = per_group(
             trainable_params,
+            patterns=args.per_group_clipping,
             fallback=args.per_group_clipping_fallback,
-            **args.per_group_clipping,
         )
         print("\nPer-group clipping norms:")
         for gname, val in clip_norm.values.items():

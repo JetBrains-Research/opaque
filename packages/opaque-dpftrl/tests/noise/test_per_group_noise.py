@@ -8,7 +8,7 @@ import pytest
 import torch
 
 from opaque.clipping import clipped_grad
-from opaque.noise_allocation import per_group_noise_stddev
+from opaque._noise_allocation import per_group_noise_stddev
 from opaque.types import PerGroup, clipped
 from opaque.types import NoisedPytree, SecondMomentClippingOutput
 from opaque.dpftrl.noise import (
@@ -189,8 +189,8 @@ class TestMfNoisePerGroupSingleStream:
         _, state = noise_fn(clipped(tree, max_norm=pg), state)
         _, state = noise_fn(clipped(tree, max_norm=pg), state)
         assert state._first_max_norm == pg
-        assert state._first_max_norm_sync_fingerprint == pytest.approx(
-            fingerprint_per_group_max_norm(pg)
+        assert state._first_max_norm_sync_fingerprint == fingerprint_per_group_max_norm(
+            pg
         )
 
     def test_per_group_matches_isotropic_when_uniform(self):
