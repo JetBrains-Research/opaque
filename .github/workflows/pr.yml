@@ -125,12 +125,24 @@ jobs:
       - name: uv sync
         run: uv sync --group dev --all-packages --extra all
 
-      - name: No stray src/opaque/__init__.py in sub-packages
+      - name: No stray __init__.py at PEP 420 namespace roots
         run: |
-          stray=$(find packages -path '*/src/opaque/__init__.py' -print)
+          # ``opaque/``, ``opaque/api/``, and ``opaque/api/accounting/``
+          # are pure implicit namespaces. Any wheel shipping an
+          # ``__init__.py`` at one of these paths breaks sibling-wheel
+          # imports.
+          stray=$(find packages \
+            \( -path '*/src/opaque/__init__.py' \
+            -o -path '*/src/opaque/api/__init__.py' \
+            -o -path '*/src/opaque/api/accounting/__init__.py' \
+            \) -print)
           if [ -n "$stray" ]; then
-            echo "ERROR: stray src/opaque/__init__.py: $stray"; exit 1
+            echo "ERROR: stray namespace __init__.py:"; echo "$stray"; exit 1
           fi
+
+      - name: Repo-level contract tests
+        run: |
+          uv run pytest tests/contracts/ -v
 
       - name: Validate clipping imports in docs and examples
         run: |
