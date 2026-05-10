@@ -122,13 +122,16 @@ def test_dpsgd_step_synthetic():
 
 
 @pytest.mark.slow
+@pytest.mark.cuda
 def test_dpsgd_step_qwen2():
     """DP-SGD step on Qwen2-0.5B + LoRA + patches.
 
-    Hits the full HF stack — real attention masks from the tokenizer,
-    real RoPE θ, real intermediate sizes — so it catches issues the
-    synthetic case can't. ``slow`` because the first run downloads the
-    model from HF Hub (cached afterward).
+    Exercises the full HF stack — attention masks built by the
+    tokenizer, the model's actual RoPE θ, the actual intermediate
+    sizes — so it catches issues the synthetic case can't.
+    ``slow`` because the first run downloads the model from HF Hub
+    (cached afterward); ``cuda`` because Qwen2 forward+vmap+grad is
+    too slow on CPU to be worth the runtime cost.
     """
     tokenizer = AutoTokenizer.from_pretrained(QWEN2_REPO)
     if tokenizer.pad_token is None:

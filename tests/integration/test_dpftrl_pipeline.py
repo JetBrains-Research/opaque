@@ -123,10 +123,13 @@ def test_dpftrl_step_synthetic():
 
 
 @pytest.mark.slow
+@pytest.mark.cuda
 def test_dpftrl_step_qwen2():
     """DP-FTRL step on Qwen2-0.5B + LoRA + patches.
 
-    ``slow`` because the first run downloads from HF Hub.
+    ``slow`` because the first run downloads from HF Hub; ``cuda``
+    because Qwen2 forward+vmap+grad is too slow on CPU to be worth
+    the runtime cost.
     """
     tokenizer = AutoTokenizer.from_pretrained(QWEN2_REPO)
     if tokenizer.pad_token is None:

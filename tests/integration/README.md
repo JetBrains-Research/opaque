@@ -44,7 +44,7 @@ test" — it's still a DP-pipeline test.
 
 - **No marker**: synthetic-config integration tests run in the PR gate
   (CPU + MPS).
-- **`slow`**: real-HF integration tests download weights from HF Hub on
+- **`slow`**: integration tests that download a model from HF Hub on
   first run; excluded from the PR gate, run on push to main.
 - **`cuda`**: distributed / multi-GPU tests; auto-skip on hosts without
   CUDA. The `dpsgd_dpftrl/distributed/` tests use this marker.
