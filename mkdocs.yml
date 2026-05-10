@@ -134,6 +134,12 @@ nav:
     - Utilities: reference/utilities.md
     - Optimizers: reference/optimizers.md
     - Schedules: reference/schedules.md
+  - Extending Opaque:
+    - Overview: extending/index.md
+    - Serialization registry: extending/serialization.md
+    - Distributed sync: extending/distributed-sync.md
+    - Clipping fun helpers: extending/clipping-fun.md
+    - Adding a new mechanism family: extending/new-mechanism.md
 
 extra:
   social:

@@ -263,6 +263,9 @@ Opaque's API follows these principles:
 - **[User Guides](../user-guide/index.md)**: Conceptual explanations and examples
 - **[Tutorials](../tutorials/README.md)**: Interactive Jupyter notebooks
 - **[Quick Start](../getting-started/quickstart.md)**: End-to-end DP-SGD example
+- **[Extending Opaque](../extending/index.md)**: Plugging in a new
+  mechanism family (registries, low-level helpers, the `opaque.api.*`
+  contributor surface)
 
 ---
 
