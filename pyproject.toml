@@ -34,13 +34,13 @@ dependencies = [
     "opaque-engine",
     "opaque-accounting",
     "opaque-dpsgd",
+    "opaque-optimizers",
     "opaque-patches",
 ]
 
 [project.optional-dependencies]
 auditing = ["opaque-auditing"]
 dpftrl = ["opaque-dpftrl"]
-optimizers = ["opaque-optimizers"]
 transformers = [
   "opaque-transformers",
   "opaque-patches[transformers]"
@@ -48,7 +48,6 @@ transformers = [
 all = [
     "opaque-auditing",
     "opaque-dpftrl",
-    "opaque-optimizers",
     "opaque-patches",
     "opaque-transformers"
 ]

@@ -96,12 +96,12 @@ $$\text{PLD}_{\text{total}} = \text{PLD}_{\text{group}}^{\otimes k}$$
 This is computed efficiently with 2 FFTs (self-composition).
 
 ```python
-import opaque.dpftrl.accounting as ftrl_acc
+import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.dpftrl.noise import band_mf_strategy
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = ftrl_acc.poisson(
-    ftrl_acc.band_mf(
+proc = dpftrl_acc.poisson(
+    dpftrl_acc.band_mf(
         1.0,
         sensitivity=strategy.sensitivity,
         coefficients=strategy.coefficients,
@@ -150,7 +150,7 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
     comparison when subsampling is not applicable.
 
 !!! note
-    The `ftrl_acc.band_mf()` API takes pre-computed sensitivity and group count
+    The `dpftrl_acc.band_mf()` API takes pre-computed sensitivity and group count
     from the noise strategy. For end-to-end usage, `mf_noise()` +
     `band_mf_strategy()` computes these automatically.
 
@@ -189,14 +189,14 @@ the same `band_mf_strategy` used for noise generation. This keeps both
 components in sync:
 
 ```python
-import opaque.dpftrl.accounting as ftrl_acc
+import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.dpftrl.noise import band_mf_strategy
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 
 # BandMF with Poisson amplification (recommended)
-proc = ftrl_acc.poisson(
-    ftrl_acc.band_mf(
+proc = dpftrl_acc.poisson(
+    dpftrl_acc.band_mf(
         1.0,
         sensitivity=strategy.sensitivity,
         coefficients=strategy.coefficients,

@@ -85,7 +85,7 @@ where $S$ is the sensitivity. The PLD is a single Gaussian PLD.
 
 - BLT targets long runs via a **buffered** Toeplitz parameterization; privacy is for the optimized strategy you instantiate.
 - Optional **`lr_schedule`** is encoded like BandMF into a Toeplitz workload for the optimizer; see [BandMF — Assumptions](band-mf.md#assumptions-and-limitations) for the constant- versus variable-\(\eta\) caveat.
-- **Subsampling**: BLT does not use ``ftrl_acc.poisson`` the way BandMF does; combine with Balls-in-Bins when using correlated MF + epoch structure (see examples).
+- **Subsampling**: BLT does not use ``dpftrl_acc.poisson`` the way BandMF does; combine with Balls-in-Bins when using correlated MF + epoch structure (see examples).
 - Overview: [Correlated noise (DP-FTRL)](../../user-guide/dp-ftrl.md).
 
 ## Supported amplifications
@@ -97,7 +97,7 @@ sensitivity computation. There is no external amplification wrapper.
 |---------------|:---------:|-------|
 | `poisson()` | No | Not applicable |
 | `poisson()` (truncated) | No | Not applicable |
-| `ftrl_acc.poisson` | No | For BandMF / identity MF |
+| `dpftrl_acc.poisson` | No | For BandMF / identity MF |
 
 If you need subsampling amplification with correlated noise, use
 [BandMF](band-mf.md) with :func:`opaque.dpftrl.accounting.poisson` instead.
@@ -154,7 +154,7 @@ same `blt_strategy` used for noise generation:
 
 ```python
 import opaque.accounting as acc           # cross-cutting balls_in_bins
-import opaque.dpftrl.accounting as ftrl_acc  # DP-FTRL factories
+import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 from opaque.dpftrl.noise import blt_strategy
 
 strategy = blt_strategy(
@@ -162,12 +162,12 @@ strategy = blt_strategy(
 )
 
 # Unamplified BLT
-proc = ftrl_acc.blt(1.0, sensitivity=strategy.sensitivity)
+proc = dpftrl_acc.blt(1.0, sensitivity=strategy.sensitivity)
 eps = proc.epsilon_at(delta=1e-5)
 
 # With Balls-in-Bins amplification (recommended)
-proc = ftrl_acc.balls_in_bins(
-    ftrl_acc.blt(1.0, sensitivity=strategy.sensitivity,
+proc = dpftrl_acc.balls_in_bins(
+    dpftrl_acc.blt(1.0, sensitivity=strategy.sensitivity,
                  gram_matrix=strategy.gram_matrix),
     num_bins=100, num_epochs=5,
 )

@@ -76,6 +76,7 @@ compose with `*` (repeat) and `|` (heterogeneous composition).
 import opaque.accounting as acc                # cross-cutting
 import opaque.dpsgd.accounting as dpsgd_acc    # DP-SGD per-step factories
 import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL whole-process factories
+from opaque.dpftrl.noise import band_mf_strategy
 
 # DP-SGD: per-step Gaussian + Poisson, composed across N steps.
 dpsgd_proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01) * 1000

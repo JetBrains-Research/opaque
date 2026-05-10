@@ -248,8 +248,8 @@ step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=batch_size / datas
 training = step * num_steps
 
 # DP-FTRL with BandMF: same chain as first-moment-only
-proc = ftrl_acc.poisson(
-    ftrl_acc.band_mf(
+proc = dpftrl_acc.poisson(
+    dpftrl_acc.band_mf(
         1.0,
         sensitivity=strategy.sensitivity,
         coefficients=strategy.coefficients,
@@ -318,7 +318,7 @@ band-width is `len(coefficients)`; `coefficients` must be non-empty.
 ```python
 from opaque.dpftrl.noise import band_mf_strategy
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = ftrl_acc.band_mf(
+proc = dpftrl_acc.band_mf(
     1.0,
     sensitivity=strategy.sensitivity,
     coefficients=strategy.coefficients,
@@ -340,11 +340,11 @@ from opaque.dpftrl.noise import blt_strategy
 strategy = blt_strategy(n_steps=10000, min_sep=1000, max_participations=5)
 
 # Unamplified
-proc = ftrl_acc.blt(1.0, sensitivity=strategy.sensitivity)
+proc = dpftrl_acc.blt(1.0, sensitivity=strategy.sensitivity)
 
 # With Balls-in-Bins amplification
-proc = ftrl_acc.balls_in_bins(
-    ftrl_acc.blt(1.0, sensitivity=strategy.sensitivity,
+proc = dpftrl_acc.balls_in_bins(
+    dpftrl_acc.blt(1.0, sensitivity=strategy.sensitivity,
             gram_matrix=strategy.gram_matrix),
     num_bins=1000, num_epochs=5,
 )
@@ -365,8 +365,8 @@ strategy = lambda_cgd_strategy(
     lambda_=0.9, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-proc = ftrl_acc.balls_in_bins(
-    ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+proc = dpftrl_acc.balls_in_bins(
+    dpftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
                    gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
@@ -388,8 +388,8 @@ strategy = bisr_strategy(
     bandwidth=4, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-proc = ftrl_acc.balls_in_bins(
-    ftrl_acc.bisr(1.0, sensitivity=strategy.sensitivity,
+proc = dpftrl_acc.balls_in_bins(
+    dpftrl_acc.bisr(1.0, sensitivity=strategy.sensitivity,
              gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
@@ -409,8 +409,8 @@ when the inner is `IdentityMf` or `BandMf` with `bands == 1`.
 
 ```python
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = ftrl_acc.poisson(
-    ftrl_acc.band_mf(
+proc = dpftrl_acc.poisson(
+    dpftrl_acc.band_mf(
         1.0,
         sensitivity=strategy.sensitivity,
         coefficients=strategy.coefficients,
@@ -449,14 +449,14 @@ strategy = lambda_cgd_strategy(
     lambda_=0.9, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-proc = ftrl_acc.balls_in_bins(
-    ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+proc = dpftrl_acc.balls_in_bins(
+    dpftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
                    gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
 
 # With Gaussian (conservative Poisson approximation)
-proc = ftrl_acc.balls_in_bins(dpsgd_acc.gaussian(1.1), num_bins=100, num_epochs=10)
+proc = dpftrl_acc.balls_in_bins(dpsgd_acc.gaussian(1.1), num_bins=100, num_epochs=10)
 ```
 
 ---

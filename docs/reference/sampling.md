@@ -36,7 +36,7 @@ Opaque provides these sampling strategies:
    Used with the BLT mechanism.
 
 5. **b-min-sep** (`BMinSepSampler`): warm-start minimum-separation Poisson
-   subsampling for BandMF (arXiv:2602.09338). Use with `ftrl_acc.b_min_sep`.
+   subsampling for BandMF (arXiv:2602.09338). Use with `dpftrl_acc.b_min_sep`.
 
 **See also**: [Sampling & Microbatching User Guide](../user-guide/sampling.md)
 
@@ -98,9 +98,9 @@ Bin sizes are variable (Binomial distribution). Assignments are **fixed
 across epochs** (required for BnB dominating-pair accounting). Empty bins
 are skipped.
 
-Account with `ftrl_acc.balls_in_bins(mechanism, num_bins, n_steps)` where
-`mechanism` is `ftrl_acc.lambda_cgd(...)`, `ftrl_acc.bisr(...)`,
-`ftrl_acc.blt(...)`, or `ftrl_acc.mf_identity(...)`.
+Account with `dpftrl_acc.balls_in_bins(mechanism, num_bins, n_steps)` where
+`mechanism` is `dpftrl_acc.lambda_cgd(...)`, `dpftrl_acc.bisr(...)`,
+`dpftrl_acc.blt(...)`, or `dpftrl_acc.mf_identity(...)`.
 
 ## CyclicPoissonSampler (DP-FTRL)
 
@@ -108,7 +108,7 @@ Partitions the dataset into ``bands`` groups and, at step ``i``, draws only
 from group ``i % bands``, with each eligible example included independently at
 ``sample_rate`` (Binomial batch size within the group).  Identity MF uses
 ``bands=1``; BandMF uses ``bands`` equal to the mechanism’s band count—both
-pair with ``ftrl_acc.poisson``.
+pair with ``dpftrl_acc.poisson``.
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
@@ -136,8 +136,8 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 In distributed training, shard the dataset with `local_shard()` and pass
 a per-rank key via `fold_in(key, rank)`. Best used with `mf_noise`
 for correlated noise (DP-FTRL); account with
-`ftrl_acc.poisson(mechanism, sample_rate, n_steps=...)`.  There is no
-batch-size cap on this sampler; ``ftrl_acc.poisson`` matches uncapped
+`dpftrl_acc.poisson(mechanism, sample_rate, n_steps=...)`.  There is no
+batch-size cap on this sampler; ``dpftrl_acc.poisson`` matches uncapped
 Poisson draws only.
 
 ## Distributed Helpers

@@ -317,8 +317,8 @@ is sensitivity-proportional, so the joint Mahalanobis budget collapses to
 a single sensitivity-1 Gaussian release at the same noise multiplier.
 
 ```python
-mechanism = ftrl_acc.band_mf(nm, sensitivity=S, coefficients=coeffs)
-process = ftrl_acc.poisson(mechanism, sample_rate=q, n_steps=n)
+mechanism = dpftrl_acc.band_mf(nm, sensitivity=S, coefficients=coeffs)
+process = dpftrl_acc.poisson(mechanism, sample_rate=q, n_steps=n)
 ```
 
 Same pattern for DP-SGD: just `dpsgd_acc.gaussian(nm)` (or

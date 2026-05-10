@@ -27,7 +27,7 @@ uv add opaque \
 pip install "opaque[auditing]"      # + opaque-auditing (empirical privacy auditing)
 pip install "opaque[dpftrl]"        # + opaque-dpftrl (correlated-noise mechanisms)
 pip install "opaque[transformers]"  # + opaque-transformers + opaque-patches[transformers]
-pip install "opaque[all]"           # everything above, including [optimizers] extras
+pip install "opaque[all]"           # everything above
 ```
 
 ## From Source

@@ -26,7 +26,7 @@ mechanism parameters in two places.
 ```python
 from opaque.dpftrl.noise import lambda_cgd_strategy
 import opaque.accounting as acc           # cross-cutting balls_in_bins
-import opaque.dpftrl.accounting as ftrl_acc  # DP-FTRL factories
+import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 
 # 1. Create strategy — computes sensitivity and Gram matrix internally
 strategy = lambda_cgd_strategy(
@@ -37,8 +37,8 @@ strategy = lambda_cgd_strategy(
 )
 
 # 2. Build accounting mechanism from strategy-derived quantities
-training = ftrl_acc.balls_in_bins(
-    ftrl_acc.lambda_cgd(noise_multiplier,
+training = dpftrl_acc.balls_in_bins(
+    dpftrl_acc.lambda_cgd(noise_multiplier,
                         sensitivity=strategy.sensitivity,
                         gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch,
@@ -107,4 +107,4 @@ At each step t, the noise function:
 ## Relationship to BISR
 
 DP-λCGD is the bandwidth-2 special case of [BISR](bisr.md). For bandwidth > 2,
-use `ftrl_acc.bisr()` which generalises the correlation structure.
+use `dpftrl_acc.bisr()` which generalises the correlation structure.

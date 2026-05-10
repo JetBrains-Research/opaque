@@ -66,7 +66,6 @@ Extras:
 ```bash
 pip install "opaque[auditing]"      # empirical privacy auditing
 pip install "opaque[dpftrl]"        # correlated-noise DP-FTRL components
-pip install "opaque[optimizers]"    # functional torchopt-based optimizers
 pip install "opaque[transformers]"  # Hugging Face + patching components
 pip install "opaque[all]"           # all optional components
 ```
@@ -96,10 +95,11 @@ A minimal DP-SGD training loop:
 
 ```python
 import torch
-import opaque.accounting as acc
+import opaque.accounting as acc                # cross-cutting (calibrate, budget)
+import opaque.dpsgd.accounting as dpsgd_acc    # DP-SGD per-step factories
 from opaque.dpsgd.clipping import clipped_grad
-from opaque.random import key
 from opaque.dpsgd.noise import gaussian_noise
+from opaque.random import key
 
 def loss_fn(params, x, y):
     return ((x @ params - y) ** 2).sum()
@@ -107,7 +107,7 @@ def loss_fn(params, x, y):
 # Calibrate noise for target privacy budget
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=0.01) * 1000,
     param_min=0.1, param_max=10.0,
 )
 batch_size = 64  # expected batch size for Poisson sampling
@@ -118,7 +118,7 @@ grad_fn, clip_state = clipped_grad(
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
-  noise_multiplier=result.param, key=key(42),
+    noise_multiplier=result.param, key=key(42),
 )
 
 # Training loop
@@ -127,7 +127,7 @@ lr = 0.01
 for batch_x, batch_y in dataloader:
     grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = params - lr * noisy_grads  # or use torchopt optimizer
+    params = params - lr * noisy_grads.pytree  # or wire opaque.optimizers
 ```
 
 ## Features
