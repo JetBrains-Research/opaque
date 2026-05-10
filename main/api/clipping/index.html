@@ -1556,6 +1556,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#opaque.clipping.auto_clipped_grad" class="md-nav__link">
+    <span class="md-ellipsis">
+      auto_clipped_grad
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#opaque.clipping.clipped_grad" class="md-nav__link">
     <span class="md-ellipsis">
       clipped_grad
@@ -1589,18 +1598,18 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#opaque.dpsgd.clipping.adaptive_clipped_grad" class="md-nav__link">
+  <a href="#opaque.dpsgd.clipping.auto_clipped_grad" class="md-nav__link">
     <span class="md-ellipsis">
-      adaptive_clipped_grad
+      auto_clipped_grad
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#opaque.dpsgd.clipping.auto_clipped_grad" class="md-nav__link">
+  <a href="#opaque.dpsgd.clipping.adaptive_clipped_grad" class="md-nav__link">
     <span class="md-ellipsis">
-      auto_clipped_grad
+      adaptive_clipped_grad
     </span>
   </a>
   
@@ -1940,6 +1949,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#opaque.clipping.auto_clipped_grad" class="md-nav__link">
+    <span class="md-ellipsis">
+      auto_clipped_grad
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#opaque.clipping.clipped_grad" class="md-nav__link">
     <span class="md-ellipsis">
       clipped_grad
@@ -1973,18 +1991,18 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#opaque.dpsgd.clipping.adaptive_clipped_grad" class="md-nav__link">
+  <a href="#opaque.dpsgd.clipping.auto_clipped_grad" class="md-nav__link">
     <span class="md-ellipsis">
-      adaptive_clipped_grad
+      auto_clipped_grad
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#opaque.dpsgd.clipping.auto_clipped_grad" class="md-nav__link">
+  <a href="#opaque.dpsgd.clipping.adaptive_clipped_grad" class="md-nav__link">
     <span class="md-ellipsis">
-      auto_clipped_grad
+      adaptive_clipped_grad
     </span>
   </a>
   
@@ -2016,20 +2034,22 @@
 
 <h1 id="gradient-clipping">Gradient Clipping<a class="headerlink" href="#gradient-clipping" title="Permanent link">&para;</a></h1>
 <p>The <code>opaque.clipping</code> module provides algorithm-agnostic per-example
-gradient clipping primitives. DP-SGD-specific variants (adaptive, AUTO-S)
-live in <code>opaque.dpsgd.clipping</code>.</p>
+gradient clipping primitives — both fixed-threshold clipping and AUTO-S
+smooth scaling. The DP-SGD-specific <code>adaptive_clipped_grad</code> (whose
+threshold drifts across steps and is therefore incompatible with MF
+privacy proofs) lives in <code>opaque.dpsgd.clipping</code>.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>Per-sample gradient clipping bounds the influence any single training example can have on the model, enabling
 differential privacy.</p>
 <h3 id="clipping-functions">Clipping Functions<a class="headerlink" href="#clipping-functions" title="Permanent link">&para;</a></h3>
 <ol>
-<li><strong><code>clipped_grad()</code></strong> — High-level API: differentiates, clips, and sums gradients.</li>
-<li><strong><code>clipped_fun()</code></strong> — Clip and sum arbitrary function outputs (PyTrees).</li>
-<li><strong><code>adaptive_clipped_grad()</code></strong> — Adaptive clipping (Andrew et al. 2021) with automatic threshold tuning.</li>
-<li><strong><code>auto_clipped_grad()</code></strong> — AUTO-S (Bu et al. NeurIPS 2023) automatic per-example gradient scaling.</li>
-<li><strong><code>auto_clipped_fun()</code></strong> — AUTO-S for arbitrary function outputs.</li>
-<li><strong><code>clip_pytree()</code></strong> — Low-level: clip an existing PyTree of gradients.</li>
-<li><strong><code>auto_scale_pytree()</code></strong> — Low-level: AUTO-S scale an existing PyTree.</li>
+<li><strong><code>clipped_grad()</code></strong> (<a href="./"><code>opaque.clipping</code></a>) — High-level API: differentiates, clips, and sums gradients.</li>
+<li><strong><code>clipped_fun()</code></strong> (<a href="./"><code>opaque.clipping.fun</code></a>) — Clip and sum arbitrary function outputs (PyTrees).</li>
+<li><strong><code>auto_clipped_grad()</code></strong> (<a href="./"><code>opaque.clipping</code></a>) — AUTO-S (Bu et al. NeurIPS 2023) automatic per-example gradient scaling. Constant per-record sensitivity ⇒ composes with both DP-SGD's Gaussian mechanism and DP-FTRL's matrix-factorization mechanisms.</li>
+<li><strong><code>auto_clipped_fun()</code></strong> (<a href="./"><code>opaque.clipping.fun</code></a>) — AUTO-S for arbitrary function outputs.</li>
+<li><strong><code>adaptive_clipped_grad()</code></strong> (<a href="./"><code>opaque.dpsgd.clipping</code></a>) — Adaptive clipping (Andrew et al. 2021) with automatic threshold tuning; DP-SGD-only.</li>
+<li><strong><code>clip_pytree()</code></strong> (<a href="./"><code>opaque.clipping.fun</code></a>) — Low-level: clip an existing PyTree of gradients.</li>
+<li><strong><code>auto_scale_pytree()</code></strong> (<a href="./"><code>opaque.clipping.fun</code></a>) — Low-level: AUTO-S scale an existing PyTree.</li>
 </ol>
 <h3 id="state-types">State Types<a class="headerlink" href="#state-types" title="Permanent link">&para;</a></h3>
 <ul>
@@ -2095,18 +2115,28 @@ object. It auto-dispatches to the right function based on type:</p>
         <p>Per-example gradient clipping primitives (algorithm-agnostic).</p>
 <p>Headline entry points shared by DP-SGD and DP-FTRL:</p>
 <ul>
-<li>:func:<code>clipped_grad</code> — differentiate + clip + sum the gradients</li>
+<li>:func:<code>clipped_grad</code> — differentiate + fixed-threshold clip + sum the
+  gradients</li>
+<li>:func:<code>auto_clipped_grad</code> — differentiate + AUTO-S smooth-scale + sum
+  the gradients (Bu et al., NeurIPS 2023)</li>
 <li>:func:<code>per_group</code> — factory for :class:<code>opaque.types.PerGroup</code> groupings</li>
 </ul>
-<p>DP-SGD-specific variants (<code>adaptive_clipped_grad</code>, <code>auto_clipped_grad</code>)
-live in :mod:<code>opaque.dpsgd.clipping</code>.</p>
-<p>Power-user building blocks (<code>clipped_fun</code>, <code>clip_pytree</code>,
-<code>auto_scale_pytree</code>) live in :mod:<code>opaque.clipping.fun</code>. State and
-auxiliary dataclasses (<code>FixedClipState</code>, <code>ClippedGradAux</code>,
-<code>ClippedFunAux</code>, <code>ClipPytreeAux</code>) live in :mod:<code>opaque.clipping.types</code>.
-The cross-cutting DP types (<code>ClipState</code> base, <code>ClippedPytree</code>,
-<code>PerGroup</code>, <code>MaxNorm</code>, <code>clipped()</code> factory) live in
-:mod:<code>opaque.types</code>.</p>
+<p>Both fixed clipping and AUTO-S produce a constant per-record sensitivity
+bound that is independent of the input data, so they compose with any
+mechanism in :mod:<code>opaque.dpsgd.noise</code> (Gaussian / truncated Gaussian)
+or :mod:<code>opaque.dpftrl.noise</code> (identity / band-MF / BLT / BiSR / BSR /
+λ-CGD).  The DP-SGD-specific :func:<code>adaptive_clipped_grad</code> lives in
+:mod:<code>opaque.dpsgd.clipping</code> because its threshold drifts across steps
+and therefore violates the constant-sensitivity assumption that
+matrix-factorization privacy proofs rely on.</p>
+<p>Power-user building blocks (<code>clipped_fun</code>, <code>auto_clipped_fun</code>,
+<code>clip_pytree</code>, <code>auto_scale_pytree</code>) live in :mod:<code>opaque.clipping.fun</code>.
+State and auxiliary dataclasses (<code>FixedClipState</code>, <code>AutoClipState</code>,
+<code>ClippedGradAux</code>, <code>AutoClippedGradAux</code>, <code>ClippedFunAux</code>,
+<code>AutoClippedFunAux</code>, <code>ClipPytreeAux</code>) live in
+:mod:<code>opaque.clipping.types</code>. The cross-cutting DP types (<code>ClipState</code>
+base, <code>ClippedPytree</code>, <code>PerGroup</code>, <code>MaxNorm</code>, <code>clipped()</code> factory)
+live in :mod:<code>opaque.types</code>.</p>
 <p>To synchronize clipping state across distributed ranks, use
 :func:<code>opaque.distributed.sync</code>; it auto-dispatches by type to the right
 handler without you having to import it by name.</p>
@@ -2130,6 +2160,640 @@ handler without you having to import it by name.</p>
 
 
 
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="opaque.clipping.auto_clipped_grad" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">auto_clipped_grad</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">has_aux</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">R</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">gamma</span><span class="o">=</span><span class="n">_DEFAULT_GAMMA</span><span class="p">,</span> <span class="n">normalize_by</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">return_aux</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">pre_clipping_transform</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">,</span> <span class="n">microbatch_size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">second_moment</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+
+<a href="#opaque.clipping.auto_clipped_grad" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Create a function that computes the sum of AUTO-S scaled per-example gradients.</p>
+<p>AUTO-S (Bu et al., 2023) replaces the standard clipping threshold with
+a per-example scaling</p>
+<p>.. math::</p>
+<div class="codehilite"><pre><span></span><code>\tilde g_i = R \cdot g_i / (\lVert g_i \rVert + \gamma)
+</code></pre></div>
+
+<p>so every per-example gradient has L2 norm at most <code>R</code> by
+construction.  There is no threshold to tune; the effective step size
+is absorbed into the optimizer learning rate.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>loss_fn</code>
+            </td>
+            <td>
+                  <code><span title="collections.abc.Callable">Callable</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Scalar loss function.  If <code>has_aux</code>, returns
+<code>(scalar, loss_aux)</code>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>argnums</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span> | <span title="tuple">tuple</span>[<span title="int">int</span>, ...]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Which argument(s) to differentiate w.r.t.</p>
+              </div>
+            </td>
+            <td>
+                  <code>0</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>has_aux</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, <code>loss_fn</code> returns <code>(scalar, loss_aux)</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>R</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span> | <span title="opaque.types.PerGroup">PerGroup</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Sensitivity max_norm (default 1.0).  When <code>PerGroup</code>, each
+parameter group is scaled independently to its own <code>R_k</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>1.0</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>gamma</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Denominator stabilizer :math:<code>\gamma</code> (default 0.01,
+strictly positive).</p>
+              </div>
+            </td>
+            <td>
+                  <code><span title="opaque.clipping._auto._DEFAULT_GAMMA">_DEFAULT_GAMMA</span></code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>normalize_by</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Divisor applied to the summed gradients (set to
+expected batch size for averaged gradients).</p>
+              </div>
+            </td>
+            <td>
+                  <code>1.0</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>batch_argnums</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span> | <span title="tuple">tuple</span>[<span title="int">int</span>, ...]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Which arguments have a batch dimension.</p>
+              </div>
+            </td>
+            <td>
+                  <code>1</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>return_aux</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, returns per-example diagnostics as
+:class:<code>AutoClippedGradAux</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>pre_clipping_transform</code>
+            </td>
+            <td>
+                  <code><span title="collections.abc.Callable">Callable</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional per-example gradient transform
+applied before AUTO-S scaling.</p>
+              </div>
+            </td>
+            <td>
+                  <code>lambda x: <span title="x">x</span></code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>microbatch_size</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Process the batch in chunks of this size.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>dtype</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional accumulation dtype for the summed gradient.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>second_moment</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, also accumulate the per-example sum of
+element-wise squared scaled gradients and return a
+:class:<code>~opaque.types.SecondMomentClippingOutput</code> carrying
+both streams.  Privacy accounting is unchanged
+(<code>gaussian(noise_multiplier)</code> for DP-SGD or any standard MF
+mechanism for DP-FTRL); the sensitivity-proportional joint
+Mahalanobis allocation gives the paired release the same PLD
+as a single first-moment release.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="collections.abc.Callable">Callable</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>(grad_fn, state)</code>.  <code>grad_fn</code> has the signature</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="opaque.clipping._auto.AutoClipState">AutoClipState</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>(*args, state, **kwargs) -&gt; (grad, state)</code>, or</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="tuple">tuple</span>[<span title="collections.abc.Callable">Callable</span>, <span title="opaque.clipping._auto.AutoClipState">AutoClipState</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>(*args, state, **kwargs) -&gt; ((grad, aux), state)</code> when</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="tuple">tuple</span>[<span title="collections.abc.Callable">Callable</span>, <span title="opaque.clipping._auto.AutoClipState">AutoClipState</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>return_aux=True</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="formal-guarantee" open>
+  <summary>Formal guarantee</summary>
+  <p>Under add/remove or zero-out DP, the L2 sensitivity of the
+summed gradients is the returned <code>ClippedPytree.max_norm</code> metadata —
+a constant independent of the input data.  Per-step Gaussian noise
+(<code>gaussian_noise</code>, <code>truncated_gaussian_noise</code>, …) reads that value
+each step; PLD composition does not require <code>max_norm</code> to be
+identical across steps when the accountant models step-varying
+sensitivity (for example adaptive clipping with <code>adaclip</code>).
+<code>mf_noise</code>'s matrix-factorization correlated noise <em>does</em> require
+<code>max_norm</code> to stay fixed for the whole run — the dispatcher latches
+the first-call bound — and AUTO-S satisfies that because <code>R</code> and
+<code>normalize_by</code> do not drift.  AUTO-S scaling is per-example and adds
+no privacy cost beyond <code>gaussian(noise_multiplier)</code> for the
+gradient release.</p>
+</details>
+
+<details class="example" open>
+  <summary>Example</summary>
+  <blockquote>
+<blockquote>
+<blockquote>
+<p>import torch
+from opaque.clipping import auto_clipped_grad
+def loss_fn(params, x, y):
+...     return ((x @ params - y) ** 2).mean()
+grad_fn, state = auto_clipped_grad(
+...     loss_fn, argnums=0, batch_argnums=(1, 2),
+...     R=1.0, normalize_by=32,
+... )
+params = torch.randn(10)
+batch_x = torch.randn(32, 10)
+batch_y = torch.randn(32)
+grads, state = grad_fn(params, batch_x, batch_y, state=state)</p>
+</blockquote>
+</blockquote>
+</blockquote>
+</details>        <p>The returned <code>ClippedPytree</code> carries <code>max_norm = R / normalize_by</code>
+(constant across steps), so it composes with <code>mf_noise</code> (DP-FTRL)
+and <code>gaussian_noise</code> (DP-SGD) the same way <code>clipped_grad</code> does at
+the same bound.</p>
+
+
+<details class="references" open>
+  <summary>References</summary>
+  <p>Bu, Wang, Zha, Karypis.  "Automatic Clipping: Differentially
+Private Deep Learning Made Easier and Stronger."  NeurIPS 2023.</p>
+</details>
+
+            <details class="quote">
+              <summary>Source code in <code>packages/opaque-core/src/opaque/clipping/_auto.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-195">195</a></span>
+<span class="normal"><a href="#__codelineno-0-196">196</a></span>
+<span class="normal"><a href="#__codelineno-0-197">197</a></span>
+<span class="normal"><a href="#__codelineno-0-198">198</a></span>
+<span class="normal"><a href="#__codelineno-0-199">199</a></span>
+<span class="normal"><a href="#__codelineno-0-200">200</a></span>
+<span class="normal"><a href="#__codelineno-0-201">201</a></span>
+<span class="normal"><a href="#__codelineno-0-202">202</a></span>
+<span class="normal"><a href="#__codelineno-0-203">203</a></span>
+<span class="normal"><a href="#__codelineno-0-204">204</a></span>
+<span class="normal"><a href="#__codelineno-0-205">205</a></span>
+<span class="normal"><a href="#__codelineno-0-206">206</a></span>
+<span class="normal"><a href="#__codelineno-0-207">207</a></span>
+<span class="normal"><a href="#__codelineno-0-208">208</a></span>
+<span class="normal"><a href="#__codelineno-0-209">209</a></span>
+<span class="normal"><a href="#__codelineno-0-210">210</a></span>
+<span class="normal"><a href="#__codelineno-0-211">211</a></span>
+<span class="normal"><a href="#__codelineno-0-212">212</a></span>
+<span class="normal"><a href="#__codelineno-0-213">213</a></span>
+<span class="normal"><a href="#__codelineno-0-214">214</a></span>
+<span class="normal"><a href="#__codelineno-0-215">215</a></span>
+<span class="normal"><a href="#__codelineno-0-216">216</a></span>
+<span class="normal"><a href="#__codelineno-0-217">217</a></span>
+<span class="normal"><a href="#__codelineno-0-218">218</a></span>
+<span class="normal"><a href="#__codelineno-0-219">219</a></span>
+<span class="normal"><a href="#__codelineno-0-220">220</a></span>
+<span class="normal"><a href="#__codelineno-0-221">221</a></span>
+<span class="normal"><a href="#__codelineno-0-222">222</a></span>
+<span class="normal"><a href="#__codelineno-0-223">223</a></span>
+<span class="normal"><a href="#__codelineno-0-224">224</a></span>
+<span class="normal"><a href="#__codelineno-0-225">225</a></span>
+<span class="normal"><a href="#__codelineno-0-226">226</a></span>
+<span class="normal"><a href="#__codelineno-0-227">227</a></span>
+<span class="normal"><a href="#__codelineno-0-228">228</a></span>
+<span class="normal"><a href="#__codelineno-0-229">229</a></span>
+<span class="normal"><a href="#__codelineno-0-230">230</a></span>
+<span class="normal"><a href="#__codelineno-0-231">231</a></span>
+<span class="normal"><a href="#__codelineno-0-232">232</a></span>
+<span class="normal"><a href="#__codelineno-0-233">233</a></span>
+<span class="normal"><a href="#__codelineno-0-234">234</a></span>
+<span class="normal"><a href="#__codelineno-0-235">235</a></span>
+<span class="normal"><a href="#__codelineno-0-236">236</a></span>
+<span class="normal"><a href="#__codelineno-0-237">237</a></span>
+<span class="normal"><a href="#__codelineno-0-238">238</a></span>
+<span class="normal"><a href="#__codelineno-0-239">239</a></span>
+<span class="normal"><a href="#__codelineno-0-240">240</a></span>
+<span class="normal"><a href="#__codelineno-0-241">241</a></span>
+<span class="normal"><a href="#__codelineno-0-242">242</a></span>
+<span class="normal"><a href="#__codelineno-0-243">243</a></span>
+<span class="normal"><a href="#__codelineno-0-244">244</a></span>
+<span class="normal"><a href="#__codelineno-0-245">245</a></span>
+<span class="normal"><a href="#__codelineno-0-246">246</a></span>
+<span class="normal"><a href="#__codelineno-0-247">247</a></span>
+<span class="normal"><a href="#__codelineno-0-248">248</a></span>
+<span class="normal"><a href="#__codelineno-0-249">249</a></span>
+<span class="normal"><a href="#__codelineno-0-250">250</a></span>
+<span class="normal"><a href="#__codelineno-0-251">251</a></span>
+<span class="normal"><a href="#__codelineno-0-252">252</a></span>
+<span class="normal"><a href="#__codelineno-0-253">253</a></span>
+<span class="normal"><a href="#__codelineno-0-254">254</a></span>
+<span class="normal"><a href="#__codelineno-0-255">255</a></span>
+<span class="normal"><a href="#__codelineno-0-256">256</a></span>
+<span class="normal"><a href="#__codelineno-0-257">257</a></span>
+<span class="normal"><a href="#__codelineno-0-258">258</a></span>
+<span class="normal"><a href="#__codelineno-0-259">259</a></span>
+<span class="normal"><a href="#__codelineno-0-260">260</a></span>
+<span class="normal"><a href="#__codelineno-0-261">261</a></span>
+<span class="normal"><a href="#__codelineno-0-262">262</a></span>
+<span class="normal"><a href="#__codelineno-0-263">263</a></span>
+<span class="normal"><a href="#__codelineno-0-264">264</a></span>
+<span class="normal"><a href="#__codelineno-0-265">265</a></span>
+<span class="normal"><a href="#__codelineno-0-266">266</a></span>
+<span class="normal"><a href="#__codelineno-0-267">267</a></span>
+<span class="normal"><a href="#__codelineno-0-268">268</a></span>
+<span class="normal"><a href="#__codelineno-0-269">269</a></span>
+<span class="normal"><a href="#__codelineno-0-270">270</a></span>
+<span class="normal"><a href="#__codelineno-0-271">271</a></span>
+<span class="normal"><a href="#__codelineno-0-272">272</a></span>
+<span class="normal"><a href="#__codelineno-0-273">273</a></span>
+<span class="normal"><a href="#__codelineno-0-274">274</a></span>
+<span class="normal"><a href="#__codelineno-0-275">275</a></span>
+<span class="normal"><a href="#__codelineno-0-276">276</a></span>
+<span class="normal"><a href="#__codelineno-0-277">277</a></span>
+<span class="normal"><a href="#__codelineno-0-278">278</a></span>
+<span class="normal"><a href="#__codelineno-0-279">279</a></span>
+<span class="normal"><a href="#__codelineno-0-280">280</a></span>
+<span class="normal"><a href="#__codelineno-0-281">281</a></span>
+<span class="normal"><a href="#__codelineno-0-282">282</a></span>
+<span class="normal"><a href="#__codelineno-0-283">283</a></span>
+<span class="normal"><a href="#__codelineno-0-284">284</a></span>
+<span class="normal"><a href="#__codelineno-0-285">285</a></span>
+<span class="normal"><a href="#__codelineno-0-286">286</a></span>
+<span class="normal"><a href="#__codelineno-0-287">287</a></span>
+<span class="normal"><a href="#__codelineno-0-288">288</a></span>
+<span class="normal"><a href="#__codelineno-0-289">289</a></span>
+<span class="normal"><a href="#__codelineno-0-290">290</a></span>
+<span class="normal"><a href="#__codelineno-0-291">291</a></span>
+<span class="normal"><a href="#__codelineno-0-292">292</a></span>
+<span class="normal"><a href="#__codelineno-0-293">293</a></span>
+<span class="normal"><a href="#__codelineno-0-294">294</a></span>
+<span class="normal"><a href="#__codelineno-0-295">295</a></span>
+<span class="normal"><a href="#__codelineno-0-296">296</a></span>
+<span class="normal"><a href="#__codelineno-0-297">297</a></span>
+<span class="normal"><a href="#__codelineno-0-298">298</a></span>
+<span class="normal"><a href="#__codelineno-0-299">299</a></span>
+<span class="normal"><a href="#__codelineno-0-300">300</a></span>
+<span class="normal"><a href="#__codelineno-0-301">301</a></span>
+<span class="normal"><a href="#__codelineno-0-302">302</a></span>
+<span class="normal"><a href="#__codelineno-0-303">303</a></span>
+<span class="normal"><a href="#__codelineno-0-304">304</a></span>
+<span class="normal"><a href="#__codelineno-0-305">305</a></span>
+<span class="normal"><a href="#__codelineno-0-306">306</a></span>
+<span class="normal"><a href="#__codelineno-0-307">307</a></span>
+<span class="normal"><a href="#__codelineno-0-308">308</a></span>
+<span class="normal"><a href="#__codelineno-0-309">309</a></span>
+<span class="normal"><a href="#__codelineno-0-310">310</a></span>
+<span class="normal"><a href="#__codelineno-0-311">311</a></span>
+<span class="normal"><a href="#__codelineno-0-312">312</a></span>
+<span class="normal"><a href="#__codelineno-0-313">313</a></span>
+<span class="normal"><a href="#__codelineno-0-314">314</a></span>
+<span class="normal"><a href="#__codelineno-0-315">315</a></span>
+<span class="normal"><a href="#__codelineno-0-316">316</a></span>
+<span class="normal"><a href="#__codelineno-0-317">317</a></span>
+<span class="normal"><a href="#__codelineno-0-318">318</a></span>
+<span class="normal"><a href="#__codelineno-0-319">319</a></span>
+<span class="normal"><a href="#__codelineno-0-320">320</a></span>
+<span class="normal"><a href="#__codelineno-0-321">321</a></span>
+<span class="normal"><a href="#__codelineno-0-322">322</a></span>
+<span class="normal"><a href="#__codelineno-0-323">323</a></span>
+<span class="normal"><a href="#__codelineno-0-324">324</a></span>
+<span class="normal"><a href="#__codelineno-0-325">325</a></span>
+<span class="normal"><a href="#__codelineno-0-326">326</a></span>
+<span class="normal"><a href="#__codelineno-0-327">327</a></span>
+<span class="normal"><a href="#__codelineno-0-328">328</a></span>
+<span class="normal"><a href="#__codelineno-0-329">329</a></span>
+<span class="normal"><a href="#__codelineno-0-330">330</a></span>
+<span class="normal"><a href="#__codelineno-0-331">331</a></span>
+<span class="normal"><a href="#__codelineno-0-332">332</a></span>
+<span class="normal"><a href="#__codelineno-0-333">333</a></span>
+<span class="normal"><a href="#__codelineno-0-334">334</a></span>
+<span class="normal"><a href="#__codelineno-0-335">335</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-195" name="__codelineno-0-195"></a><span class="k">def</span><span class="w"> </span><span class="nf">auto_clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-0-196" name="__codelineno-0-196"></a>    <span class="n">loss_fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span>
+<a id="__codelineno-0-197" name="__codelineno-0-197"></a>    <span class="n">argnums</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-0-198" name="__codelineno-0-198"></a>    <span class="n">has_aux</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-0-199" name="__codelineno-0-199"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-200" name="__codelineno-0-200"></a>    <span class="n">R</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">PerGroup</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-0-201" name="__codelineno-0-201"></a>    <span class="n">gamma</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">_DEFAULT_GAMMA</span><span class="p">,</span>
+<a id="__codelineno-0-202" name="__codelineno-0-202"></a>    <span class="n">normalize_by</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-0-203" name="__codelineno-0-203"></a>    <span class="n">batch_argnums</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-0-204" name="__codelineno-0-204"></a>    <span class="n">return_aux</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-0-205" name="__codelineno-0-205"></a>    <span class="n">pre_clipping_transform</span><span class="p">:</span> <span class="n">Callable</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">,</span>
+<a id="__codelineno-0-206" name="__codelineno-0-206"></a>    <span class="n">microbatch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-207" name="__codelineno-0-207"></a>    <span class="n">dtype</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-208" name="__codelineno-0-208"></a>    <span class="n">second_moment</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-0-209" name="__codelineno-0-209"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Callable</span><span class="p">,</span> <span class="n">AutoClipState</span><span class="p">]:</span>
+<a id="__codelineno-0-210" name="__codelineno-0-210"></a><span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Create a function that computes the sum of AUTO-S scaled per-example gradients.</span>
+<a id="__codelineno-0-211" name="__codelineno-0-211"></a>
+<a id="__codelineno-0-212" name="__codelineno-0-212"></a><span class="sd">    AUTO-S (Bu et al., 2023) replaces the standard clipping threshold with</span>
+<a id="__codelineno-0-213" name="__codelineno-0-213"></a><span class="sd">    a per-example scaling</span>
+<a id="__codelineno-0-214" name="__codelineno-0-214"></a>
+<a id="__codelineno-0-215" name="__codelineno-0-215"></a><span class="sd">    .. math::</span>
+<a id="__codelineno-0-216" name="__codelineno-0-216"></a>
+<a id="__codelineno-0-217" name="__codelineno-0-217"></a><span class="sd">        \tilde g_i = R \cdot g_i / (\lVert g_i \rVert + \gamma)</span>
+<a id="__codelineno-0-218" name="__codelineno-0-218"></a>
+<a id="__codelineno-0-219" name="__codelineno-0-219"></a><span class="sd">    so every per-example gradient has L2 norm at most ``R`` by</span>
+<a id="__codelineno-0-220" name="__codelineno-0-220"></a><span class="sd">    construction.  There is no threshold to tune; the effective step size</span>
+<a id="__codelineno-0-221" name="__codelineno-0-221"></a><span class="sd">    is absorbed into the optimizer learning rate.</span>
+<a id="__codelineno-0-222" name="__codelineno-0-222"></a>
+<a id="__codelineno-0-223" name="__codelineno-0-223"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-224" name="__codelineno-0-224"></a><span class="sd">        loss_fn: Scalar loss function.  If ``has_aux``, returns</span>
+<a id="__codelineno-0-225" name="__codelineno-0-225"></a><span class="sd">            ``(scalar, loss_aux)``.</span>
+<a id="__codelineno-0-226" name="__codelineno-0-226"></a><span class="sd">        argnums: Which argument(s) to differentiate w.r.t.</span>
+<a id="__codelineno-0-227" name="__codelineno-0-227"></a><span class="sd">        has_aux: If True, ``loss_fn`` returns ``(scalar, loss_aux)``.</span>
+<a id="__codelineno-0-228" name="__codelineno-0-228"></a><span class="sd">        R: Sensitivity max_norm (default 1.0).  When ``PerGroup``, each</span>
+<a id="__codelineno-0-229" name="__codelineno-0-229"></a><span class="sd">            parameter group is scaled independently to its own ``R_k``.</span>
+<a id="__codelineno-0-230" name="__codelineno-0-230"></a><span class="sd">        gamma: Denominator stabilizer :math:`\gamma` (default 0.01,</span>
+<a id="__codelineno-0-231" name="__codelineno-0-231"></a><span class="sd">            strictly positive).</span>
+<a id="__codelineno-0-232" name="__codelineno-0-232"></a><span class="sd">        normalize_by: Divisor applied to the summed gradients (set to</span>
+<a id="__codelineno-0-233" name="__codelineno-0-233"></a><span class="sd">            expected batch size for averaged gradients).</span>
+<a id="__codelineno-0-234" name="__codelineno-0-234"></a><span class="sd">        batch_argnums: Which arguments have a batch dimension.</span>
+<a id="__codelineno-0-235" name="__codelineno-0-235"></a><span class="sd">        return_aux: If True, returns per-example diagnostics as</span>
+<a id="__codelineno-0-236" name="__codelineno-0-236"></a><span class="sd">            :class:`AutoClippedGradAux`.</span>
+<a id="__codelineno-0-237" name="__codelineno-0-237"></a><span class="sd">        pre_clipping_transform: Optional per-example gradient transform</span>
+<a id="__codelineno-0-238" name="__codelineno-0-238"></a><span class="sd">            applied before AUTO-S scaling.</span>
+<a id="__codelineno-0-239" name="__codelineno-0-239"></a><span class="sd">        microbatch_size: Process the batch in chunks of this size.</span>
+<a id="__codelineno-0-240" name="__codelineno-0-240"></a><span class="sd">        dtype: Optional accumulation dtype for the summed gradient.</span>
+<a id="__codelineno-0-241" name="__codelineno-0-241"></a><span class="sd">        second_moment: If True, also accumulate the per-example sum of</span>
+<a id="__codelineno-0-242" name="__codelineno-0-242"></a><span class="sd">            element-wise squared scaled gradients and return a</span>
+<a id="__codelineno-0-243" name="__codelineno-0-243"></a><span class="sd">            :class:`~opaque.types.SecondMomentClippingOutput` carrying</span>
+<a id="__codelineno-0-244" name="__codelineno-0-244"></a><span class="sd">            both streams.  Privacy accounting is unchanged</span>
+<a id="__codelineno-0-245" name="__codelineno-0-245"></a><span class="sd">            (``gaussian(noise_multiplier)`` for DP-SGD or any standard MF</span>
+<a id="__codelineno-0-246" name="__codelineno-0-246"></a><span class="sd">            mechanism for DP-FTRL); the sensitivity-proportional joint</span>
+<a id="__codelineno-0-247" name="__codelineno-0-247"></a><span class="sd">            Mahalanobis allocation gives the paired release the same PLD</span>
+<a id="__codelineno-0-248" name="__codelineno-0-248"></a><span class="sd">            as a single first-moment release.</span>
+<a id="__codelineno-0-249" name="__codelineno-0-249"></a>
+<a id="__codelineno-0-250" name="__codelineno-0-250"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-251" name="__codelineno-0-251"></a><span class="sd">        ``(grad_fn, state)``.  ``grad_fn`` has the signature</span>
+<a id="__codelineno-0-252" name="__codelineno-0-252"></a><span class="sd">        ``(*args, state, **kwargs) -&gt; (grad, state)``, or</span>
+<a id="__codelineno-0-253" name="__codelineno-0-253"></a><span class="sd">        ``(*args, state, **kwargs) -&gt; ((grad, aux), state)`` when</span>
+<a id="__codelineno-0-254" name="__codelineno-0-254"></a><span class="sd">        ``return_aux=True``.</span>
+<a id="__codelineno-0-255" name="__codelineno-0-255"></a>
+<a id="__codelineno-0-256" name="__codelineno-0-256"></a><span class="sd">    Formal guarantee:</span>
+<a id="__codelineno-0-257" name="__codelineno-0-257"></a><span class="sd">        Under add/remove or zero-out DP, the L2 sensitivity of the</span>
+<a id="__codelineno-0-258" name="__codelineno-0-258"></a><span class="sd">        summed gradients is the returned ``ClippedPytree.max_norm`` metadata —</span>
+<a id="__codelineno-0-259" name="__codelineno-0-259"></a><span class="sd">        a constant independent of the input data.  Per-step Gaussian noise</span>
+<a id="__codelineno-0-260" name="__codelineno-0-260"></a><span class="sd">        (``gaussian_noise``, ``truncated_gaussian_noise``, …) reads that value</span>
+<a id="__codelineno-0-261" name="__codelineno-0-261"></a><span class="sd">        each step; PLD composition does not require ``max_norm`` to be</span>
+<a id="__codelineno-0-262" name="__codelineno-0-262"></a><span class="sd">        identical across steps when the accountant models step-varying</span>
+<a id="__codelineno-0-263" name="__codelineno-0-263"></a><span class="sd">        sensitivity (for example adaptive clipping with ``adaclip``).</span>
+<a id="__codelineno-0-264" name="__codelineno-0-264"></a><span class="sd">        ``mf_noise``&#39;s matrix-factorization correlated noise *does* require</span>
+<a id="__codelineno-0-265" name="__codelineno-0-265"></a><span class="sd">        ``max_norm`` to stay fixed for the whole run — the dispatcher latches</span>
+<a id="__codelineno-0-266" name="__codelineno-0-266"></a><span class="sd">        the first-call bound — and AUTO-S satisfies that because ``R`` and</span>
+<a id="__codelineno-0-267" name="__codelineno-0-267"></a><span class="sd">        ``normalize_by`` do not drift.  AUTO-S scaling is per-example and adds</span>
+<a id="__codelineno-0-268" name="__codelineno-0-268"></a><span class="sd">        no privacy cost beyond ``gaussian(noise_multiplier)`` for the</span>
+<a id="__codelineno-0-269" name="__codelineno-0-269"></a><span class="sd">        gradient release.</span>
+<a id="__codelineno-0-270" name="__codelineno-0-270"></a>
+<a id="__codelineno-0-271" name="__codelineno-0-271"></a><span class="sd">    Example:</span>
+<a id="__codelineno-0-272" name="__codelineno-0-272"></a><span class="sd">        &gt;&gt;&gt; import torch</span>
+<a id="__codelineno-0-273" name="__codelineno-0-273"></a><span class="sd">        &gt;&gt;&gt; from opaque.clipping import auto_clipped_grad</span>
+<a id="__codelineno-0-274" name="__codelineno-0-274"></a><span class="sd">        &gt;&gt;&gt; def loss_fn(params, x, y):</span>
+<a id="__codelineno-0-275" name="__codelineno-0-275"></a><span class="sd">        ...     return ((x @ params - y) ** 2).mean()</span>
+<a id="__codelineno-0-276" name="__codelineno-0-276"></a><span class="sd">        &gt;&gt;&gt; grad_fn, state = auto_clipped_grad(</span>
+<a id="__codelineno-0-277" name="__codelineno-0-277"></a><span class="sd">        ...     loss_fn, argnums=0, batch_argnums=(1, 2),</span>
+<a id="__codelineno-0-278" name="__codelineno-0-278"></a><span class="sd">        ...     R=1.0, normalize_by=32,</span>
+<a id="__codelineno-0-279" name="__codelineno-0-279"></a><span class="sd">        ... )</span>
+<a id="__codelineno-0-280" name="__codelineno-0-280"></a><span class="sd">        &gt;&gt;&gt; params = torch.randn(10)</span>
+<a id="__codelineno-0-281" name="__codelineno-0-281"></a><span class="sd">        &gt;&gt;&gt; batch_x = torch.randn(32, 10)</span>
+<a id="__codelineno-0-282" name="__codelineno-0-282"></a><span class="sd">        &gt;&gt;&gt; batch_y = torch.randn(32)</span>
+<a id="__codelineno-0-283" name="__codelineno-0-283"></a><span class="sd">        &gt;&gt;&gt; grads, state = grad_fn(params, batch_x, batch_y, state=state)</span>
+<a id="__codelineno-0-284" name="__codelineno-0-284"></a>
+<a id="__codelineno-0-285" name="__codelineno-0-285"></a><span class="sd">    The returned ``ClippedPytree`` carries ``max_norm = R / normalize_by``</span>
+<a id="__codelineno-0-286" name="__codelineno-0-286"></a><span class="sd">    (constant across steps), so it composes with ``mf_noise`` (DP-FTRL)</span>
+<a id="__codelineno-0-287" name="__codelineno-0-287"></a><span class="sd">    and ``gaussian_noise`` (DP-SGD) the same way ``clipped_grad`` does at</span>
+<a id="__codelineno-0-288" name="__codelineno-0-288"></a><span class="sd">    the same bound.</span>
+<a id="__codelineno-0-289" name="__codelineno-0-289"></a>
+<a id="__codelineno-0-290" name="__codelineno-0-290"></a><span class="sd">    References:</span>
+<a id="__codelineno-0-291" name="__codelineno-0-291"></a><span class="sd">        Bu, Wang, Zha, Karypis.  &quot;Automatic Clipping: Differentially</span>
+<a id="__codelineno-0-292" name="__codelineno-0-292"></a><span class="sd">        Private Deep Learning Made Easier and Stronger.&quot;  NeurIPS 2023.</span>
+<a id="__codelineno-0-293" name="__codelineno-0-293"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-294" name="__codelineno-0-294"></a>    <span class="n">_validate_auto_params</span><span class="p">(</span><span class="n">R</span><span class="p">,</span> <span class="n">gamma</span><span class="p">)</span>
+<a id="__codelineno-0-295" name="__codelineno-0-295"></a>
+<a id="__codelineno-0-296" name="__codelineno-0-296"></a>    <span class="n">scale_fn</span> <span class="o">=</span> <span class="n">_make_auto_scale_fn</span><span class="p">(</span><span class="n">R</span><span class="p">,</span> <span class="n">gamma</span><span class="p">)</span>
+<a id="__codelineno-0-297" name="__codelineno-0-297"></a>    <span class="n">inner_fn</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-0-298" name="__codelineno-0-298"></a>        <span class="n">loss_fn</span><span class="p">,</span>
+<a id="__codelineno-0-299" name="__codelineno-0-299"></a>        <span class="n">argnums</span><span class="o">=</span><span class="n">argnums</span><span class="p">,</span>
+<a id="__codelineno-0-300" name="__codelineno-0-300"></a>        <span class="n">has_aux</span><span class="o">=</span><span class="n">has_aux</span><span class="p">,</span>
+<a id="__codelineno-0-301" name="__codelineno-0-301"></a>        <span class="n">clipping_norm</span><span class="o">=</span><span class="n">R</span><span class="p">,</span>
+<a id="__codelineno-0-302" name="__codelineno-0-302"></a>        <span class="n">normalize_by</span><span class="o">=</span><span class="n">normalize_by</span><span class="p">,</span>
+<a id="__codelineno-0-303" name="__codelineno-0-303"></a>        <span class="n">batch_argnums</span><span class="o">=</span><span class="n">batch_argnums</span><span class="p">,</span>
+<a id="__codelineno-0-304" name="__codelineno-0-304"></a>        <span class="n">return_aux</span><span class="o">=</span><span class="n">return_aux</span><span class="p">,</span>
+<a id="__codelineno-0-305" name="__codelineno-0-305"></a>        <span class="n">pre_clipping_transform</span><span class="o">=</span><span class="n">pre_clipping_transform</span><span class="p">,</span>
+<a id="__codelineno-0-306" name="__codelineno-0-306"></a>        <span class="n">microbatch_size</span><span class="o">=</span><span class="n">microbatch_size</span><span class="p">,</span>
+<a id="__codelineno-0-307" name="__codelineno-0-307"></a>        <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
+<a id="__codelineno-0-308" name="__codelineno-0-308"></a>        <span class="n">second_moment</span><span class="o">=</span><span class="n">second_moment</span><span class="p">,</span>
+<a id="__codelineno-0-309" name="__codelineno-0-309"></a>        <span class="n">_scale_fn</span><span class="o">=</span><span class="n">scale_fn</span><span class="p">,</span>
+<a id="__codelineno-0-310" name="__codelineno-0-310"></a>    <span class="p">)</span>
+<a id="__codelineno-0-311" name="__codelineno-0-311"></a>
+<a id="__codelineno-0-312" name="__codelineno-0-312"></a>    <span class="n">state</span> <span class="o">=</span> <span class="n">AutoClipState</span><span class="p">()</span>
+<a id="__codelineno-0-313" name="__codelineno-0-313"></a>
+<a id="__codelineno-0-314" name="__codelineno-0-314"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">return_aux</span><span class="p">:</span>
+<a id="__codelineno-0-315" name="__codelineno-0-315"></a>
+<a id="__codelineno-0-316" name="__codelineno-0-316"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">grad_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<a id="__codelineno-0-317" name="__codelineno-0-317"></a>            <span class="n">result</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">inner_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+<a id="__codelineno-0-318" name="__codelineno-0-318"></a>            <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">state</span>
+<a id="__codelineno-0-319" name="__codelineno-0-319"></a>
+<a id="__codelineno-0-320" name="__codelineno-0-320"></a>        <span class="k">return</span> <span class="n">grad_fn</span><span class="p">,</span> <span class="n">state</span>
+<a id="__codelineno-0-321" name="__codelineno-0-321"></a>
+<a id="__codelineno-0-322" name="__codelineno-0-322"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">grad_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<a id="__codelineno-0-323" name="__codelineno-0-323"></a>        <span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">),</span> <span class="n">_</span> <span class="o">=</span> <span class="n">inner_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+<a id="__codelineno-0-324" name="__codelineno-0-324"></a>        <span class="n">auto_aux</span> <span class="o">=</span> <span class="n">AutoClippedGradAux</span><span class="p">(</span>
+<a id="__codelineno-0-325" name="__codelineno-0-325"></a>            <span class="n">loss_values</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">loss_values</span><span class="p">,</span>
+<a id="__codelineno-0-326" name="__codelineno-0-326"></a>            <span class="n">grad_norms</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">grad_norms</span><span class="p">,</span>
+<a id="__codelineno-0-327" name="__codelineno-0-327"></a>            <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">clipped_grad_norms</span><span class="p">,</span>
+<a id="__codelineno-0-328" name="__codelineno-0-328"></a>            <span class="n">loss_aux</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">loss_aux</span><span class="p">,</span>
+<a id="__codelineno-0-329" name="__codelineno-0-329"></a>            <span class="n">clipping_rate</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span>
+<a id="__codelineno-0-330" name="__codelineno-0-330"></a>            <span class="n">batch_size</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-0-331" name="__codelineno-0-331"></a>            <span class="n">group_norms</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">group_norms</span><span class="p">,</span>
+<a id="__codelineno-0-332" name="__codelineno-0-332"></a>        <span class="p">)</span>
+<a id="__codelineno-0-333" name="__codelineno-0-333"></a>        <span class="k">return</span> <span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">auto_aux</span><span class="p">),</span> <span class="n">state</span>
+<a id="__codelineno-0-334" name="__codelineno-0-334"></a>
+<a id="__codelineno-0-335" name="__codelineno-0-335"></a>    <span class="k">return</span> <span class="n">grad_fn</span><span class="p">,</span> <span class="n">state</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
 
 <div class="doc doc-object doc-function">
 
@@ -3312,17 +3976,26 @@ matches multiple patterns, or if any value is not positive.</p>
 
     <div class="doc doc-contents first">
 
-        <p>DP-SGD-specific clipping mechanisms: adaptive and AUTO-S.</p>
+        <p>DP-SGD-specific clipping: adaptive thresholding.</p>
 <p>Headline factories:</p>
 <ul>
 <li>:func:<code>adaptive_clipped_grad</code> — adaptive gradient clipping (Andrew et al. 2021)</li>
-<li>:func:<code>auto_clipped_grad</code> — AUTO-S smooth-scaled gradient clipping (Bu et al. 2023)</li>
 </ul>
-<p>Power-user :func:<code>auto_clipped_fun</code> (function-level AUTO-S) lives in
-:mod:<code>opaque.dpsgd.clipping.fun</code>.</p>
+<p>The adaptive threshold drifts across steps based on the noisy clipping
+rate, which violates the constant per-step sensitivity assumption that
+matrix-factorization privacy proofs rely on; adaptive clipping is therefore
+exclusive to DP-SGD.</p>
+<p>AUTO-S clipping (:func:<code>auto_clipped_grad</code>, Bu et al. 2023) lives in
+:mod:<code>opaque.clipping</code> because its per-record sensitivity bound is
+constant and data-independent; that makes it interchangeable with fixed
+clipping under both DP-SGD's Gaussian mechanism and DP-FTRL's
+matrix-factorization mechanisms.  :func:<code>auto_clipped_grad</code>,
+:func:<code>opaque.clipping.fun.auto_clipped_fun</code>, and the AUTO-S state / aux
+dataclasses are re-exported here for backward compatibility.</p>
 <p>State and auxiliary dataclasses (<code>AdaptiveClipState</code>,
-<code>AdaptiveClippedGradAux</code>, <code>AutoClipState</code>, <code>AutoClippedFunAux</code>,
-<code>AutoClippedGradAux</code>) live in :mod:<code>opaque.dpsgd.clipping.types</code>.</p>
+<code>AdaptiveClippedGradAux</code>, plus the re-exported <code>AutoClipState</code>,
+<code>AutoClippedFunAux</code>, <code>AutoClippedGradAux</code>) live in
+:mod:<code>opaque.dpsgd.clipping.types</code>.</p>
 
 
 
@@ -3343,6 +4016,640 @@ matches multiple patterns, or if any value is not positive.</p>
 
 
 
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="opaque.dpsgd.clipping.auto_clipped_grad" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">auto_clipped_grad</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">has_aux</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">R</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">gamma</span><span class="o">=</span><span class="n">_DEFAULT_GAMMA</span><span class="p">,</span> <span class="n">normalize_by</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">return_aux</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">pre_clipping_transform</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">,</span> <span class="n">microbatch_size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">second_moment</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+
+<a href="#opaque.dpsgd.clipping.auto_clipped_grad" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Create a function that computes the sum of AUTO-S scaled per-example gradients.</p>
+<p>AUTO-S (Bu et al., 2023) replaces the standard clipping threshold with
+a per-example scaling</p>
+<p>.. math::</p>
+<div class="codehilite"><pre><span></span><code>\tilde g_i = R \cdot g_i / (\lVert g_i \rVert + \gamma)
+</code></pre></div>
+
+<p>so every per-example gradient has L2 norm at most <code>R</code> by
+construction.  There is no threshold to tune; the effective step size
+is absorbed into the optimizer learning rate.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>loss_fn</code>
+            </td>
+            <td>
+                  <code><span title="collections.abc.Callable">Callable</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Scalar loss function.  If <code>has_aux</code>, returns
+<code>(scalar, loss_aux)</code>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>argnums</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span> | <span title="tuple">tuple</span>[<span title="int">int</span>, ...]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Which argument(s) to differentiate w.r.t.</p>
+              </div>
+            </td>
+            <td>
+                  <code>0</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>has_aux</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, <code>loss_fn</code> returns <code>(scalar, loss_aux)</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>R</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span> | <span title="opaque.types.PerGroup">PerGroup</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Sensitivity max_norm (default 1.0).  When <code>PerGroup</code>, each
+parameter group is scaled independently to its own <code>R_k</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>1.0</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>gamma</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Denominator stabilizer :math:<code>\gamma</code> (default 0.01,
+strictly positive).</p>
+              </div>
+            </td>
+            <td>
+                  <code><span title="opaque.clipping._auto._DEFAULT_GAMMA">_DEFAULT_GAMMA</span></code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>normalize_by</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Divisor applied to the summed gradients (set to
+expected batch size for averaged gradients).</p>
+              </div>
+            </td>
+            <td>
+                  <code>1.0</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>batch_argnums</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span> | <span title="tuple">tuple</span>[<span title="int">int</span>, ...]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Which arguments have a batch dimension.</p>
+              </div>
+            </td>
+            <td>
+                  <code>1</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>return_aux</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, returns per-example diagnostics as
+:class:<code>AutoClippedGradAux</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>pre_clipping_transform</code>
+            </td>
+            <td>
+                  <code><span title="collections.abc.Callable">Callable</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional per-example gradient transform
+applied before AUTO-S scaling.</p>
+              </div>
+            </td>
+            <td>
+                  <code>lambda x: <span title="x">x</span></code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>microbatch_size</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Process the batch in chunks of this size.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>dtype</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional accumulation dtype for the summed gradient.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>second_moment</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, also accumulate the per-example sum of
+element-wise squared scaled gradients and return a
+:class:<code>~opaque.types.SecondMomentClippingOutput</code> carrying
+both streams.  Privacy accounting is unchanged
+(<code>gaussian(noise_multiplier)</code> for DP-SGD or any standard MF
+mechanism for DP-FTRL); the sensitivity-proportional joint
+Mahalanobis allocation gives the paired release the same PLD
+as a single first-moment release.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="collections.abc.Callable">Callable</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>(grad_fn, state)</code>.  <code>grad_fn</code> has the signature</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="opaque.clipping._auto.AutoClipState">AutoClipState</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>(*args, state, **kwargs) -&gt; (grad, state)</code>, or</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="tuple">tuple</span>[<span title="collections.abc.Callable">Callable</span>, <span title="opaque.clipping._auto.AutoClipState">AutoClipState</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>(*args, state, **kwargs) -&gt; ((grad, aux), state)</code> when</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="tuple">tuple</span>[<span title="collections.abc.Callable">Callable</span>, <span title="opaque.clipping._auto.AutoClipState">AutoClipState</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>return_aux=True</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="formal-guarantee" open>
+  <summary>Formal guarantee</summary>
+  <p>Under add/remove or zero-out DP, the L2 sensitivity of the
+summed gradients is the returned <code>ClippedPytree.max_norm</code> metadata —
+a constant independent of the input data.  Per-step Gaussian noise
+(<code>gaussian_noise</code>, <code>truncated_gaussian_noise</code>, …) reads that value
+each step; PLD composition does not require <code>max_norm</code> to be
+identical across steps when the accountant models step-varying
+sensitivity (for example adaptive clipping with <code>adaclip</code>).
+<code>mf_noise</code>'s matrix-factorization correlated noise <em>does</em> require
+<code>max_norm</code> to stay fixed for the whole run — the dispatcher latches
+the first-call bound — and AUTO-S satisfies that because <code>R</code> and
+<code>normalize_by</code> do not drift.  AUTO-S scaling is per-example and adds
+no privacy cost beyond <code>gaussian(noise_multiplier)</code> for the
+gradient release.</p>
+</details>
+
+<details class="example" open>
+  <summary>Example</summary>
+  <blockquote>
+<blockquote>
+<blockquote>
+<p>import torch
+from opaque.clipping import auto_clipped_grad
+def loss_fn(params, x, y):
+...     return ((x @ params - y) ** 2).mean()
+grad_fn, state = auto_clipped_grad(
+...     loss_fn, argnums=0, batch_argnums=(1, 2),
+...     R=1.0, normalize_by=32,
+... )
+params = torch.randn(10)
+batch_x = torch.randn(32, 10)
+batch_y = torch.randn(32)
+grads, state = grad_fn(params, batch_x, batch_y, state=state)</p>
+</blockquote>
+</blockquote>
+</blockquote>
+</details>        <p>The returned <code>ClippedPytree</code> carries <code>max_norm = R / normalize_by</code>
+(constant across steps), so it composes with <code>mf_noise</code> (DP-FTRL)
+and <code>gaussian_noise</code> (DP-SGD) the same way <code>clipped_grad</code> does at
+the same bound.</p>
+
+
+<details class="references" open>
+  <summary>References</summary>
+  <p>Bu, Wang, Zha, Karypis.  "Automatic Clipping: Differentially
+Private Deep Learning Made Easier and Stronger."  NeurIPS 2023.</p>
+</details>
+
+            <details class="quote">
+              <summary>Source code in <code>packages/opaque-core/src/opaque/clipping/_auto.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-195">195</a></span>
+<span class="normal"><a href="#__codelineno-0-196">196</a></span>
+<span class="normal"><a href="#__codelineno-0-197">197</a></span>
+<span class="normal"><a href="#__codelineno-0-198">198</a></span>
+<span class="normal"><a href="#__codelineno-0-199">199</a></span>
+<span class="normal"><a href="#__codelineno-0-200">200</a></span>
+<span class="normal"><a href="#__codelineno-0-201">201</a></span>
+<span class="normal"><a href="#__codelineno-0-202">202</a></span>
+<span class="normal"><a href="#__codelineno-0-203">203</a></span>
+<span class="normal"><a href="#__codelineno-0-204">204</a></span>
+<span class="normal"><a href="#__codelineno-0-205">205</a></span>
+<span class="normal"><a href="#__codelineno-0-206">206</a></span>
+<span class="normal"><a href="#__codelineno-0-207">207</a></span>
+<span class="normal"><a href="#__codelineno-0-208">208</a></span>
+<span class="normal"><a href="#__codelineno-0-209">209</a></span>
+<span class="normal"><a href="#__codelineno-0-210">210</a></span>
+<span class="normal"><a href="#__codelineno-0-211">211</a></span>
+<span class="normal"><a href="#__codelineno-0-212">212</a></span>
+<span class="normal"><a href="#__codelineno-0-213">213</a></span>
+<span class="normal"><a href="#__codelineno-0-214">214</a></span>
+<span class="normal"><a href="#__codelineno-0-215">215</a></span>
+<span class="normal"><a href="#__codelineno-0-216">216</a></span>
+<span class="normal"><a href="#__codelineno-0-217">217</a></span>
+<span class="normal"><a href="#__codelineno-0-218">218</a></span>
+<span class="normal"><a href="#__codelineno-0-219">219</a></span>
+<span class="normal"><a href="#__codelineno-0-220">220</a></span>
+<span class="normal"><a href="#__codelineno-0-221">221</a></span>
+<span class="normal"><a href="#__codelineno-0-222">222</a></span>
+<span class="normal"><a href="#__codelineno-0-223">223</a></span>
+<span class="normal"><a href="#__codelineno-0-224">224</a></span>
+<span class="normal"><a href="#__codelineno-0-225">225</a></span>
+<span class="normal"><a href="#__codelineno-0-226">226</a></span>
+<span class="normal"><a href="#__codelineno-0-227">227</a></span>
+<span class="normal"><a href="#__codelineno-0-228">228</a></span>
+<span class="normal"><a href="#__codelineno-0-229">229</a></span>
+<span class="normal"><a href="#__codelineno-0-230">230</a></span>
+<span class="normal"><a href="#__codelineno-0-231">231</a></span>
+<span class="normal"><a href="#__codelineno-0-232">232</a></span>
+<span class="normal"><a href="#__codelineno-0-233">233</a></span>
+<span class="normal"><a href="#__codelineno-0-234">234</a></span>
+<span class="normal"><a href="#__codelineno-0-235">235</a></span>
+<span class="normal"><a href="#__codelineno-0-236">236</a></span>
+<span class="normal"><a href="#__codelineno-0-237">237</a></span>
+<span class="normal"><a href="#__codelineno-0-238">238</a></span>
+<span class="normal"><a href="#__codelineno-0-239">239</a></span>
+<span class="normal"><a href="#__codelineno-0-240">240</a></span>
+<span class="normal"><a href="#__codelineno-0-241">241</a></span>
+<span class="normal"><a href="#__codelineno-0-242">242</a></span>
+<span class="normal"><a href="#__codelineno-0-243">243</a></span>
+<span class="normal"><a href="#__codelineno-0-244">244</a></span>
+<span class="normal"><a href="#__codelineno-0-245">245</a></span>
+<span class="normal"><a href="#__codelineno-0-246">246</a></span>
+<span class="normal"><a href="#__codelineno-0-247">247</a></span>
+<span class="normal"><a href="#__codelineno-0-248">248</a></span>
+<span class="normal"><a href="#__codelineno-0-249">249</a></span>
+<span class="normal"><a href="#__codelineno-0-250">250</a></span>
+<span class="normal"><a href="#__codelineno-0-251">251</a></span>
+<span class="normal"><a href="#__codelineno-0-252">252</a></span>
+<span class="normal"><a href="#__codelineno-0-253">253</a></span>
+<span class="normal"><a href="#__codelineno-0-254">254</a></span>
+<span class="normal"><a href="#__codelineno-0-255">255</a></span>
+<span class="normal"><a href="#__codelineno-0-256">256</a></span>
+<span class="normal"><a href="#__codelineno-0-257">257</a></span>
+<span class="normal"><a href="#__codelineno-0-258">258</a></span>
+<span class="normal"><a href="#__codelineno-0-259">259</a></span>
+<span class="normal"><a href="#__codelineno-0-260">260</a></span>
+<span class="normal"><a href="#__codelineno-0-261">261</a></span>
+<span class="normal"><a href="#__codelineno-0-262">262</a></span>
+<span class="normal"><a href="#__codelineno-0-263">263</a></span>
+<span class="normal"><a href="#__codelineno-0-264">264</a></span>
+<span class="normal"><a href="#__codelineno-0-265">265</a></span>
+<span class="normal"><a href="#__codelineno-0-266">266</a></span>
+<span class="normal"><a href="#__codelineno-0-267">267</a></span>
+<span class="normal"><a href="#__codelineno-0-268">268</a></span>
+<span class="normal"><a href="#__codelineno-0-269">269</a></span>
+<span class="normal"><a href="#__codelineno-0-270">270</a></span>
+<span class="normal"><a href="#__codelineno-0-271">271</a></span>
+<span class="normal"><a href="#__codelineno-0-272">272</a></span>
+<span class="normal"><a href="#__codelineno-0-273">273</a></span>
+<span class="normal"><a href="#__codelineno-0-274">274</a></span>
+<span class="normal"><a href="#__codelineno-0-275">275</a></span>
+<span class="normal"><a href="#__codelineno-0-276">276</a></span>
+<span class="normal"><a href="#__codelineno-0-277">277</a></span>
+<span class="normal"><a href="#__codelineno-0-278">278</a></span>
+<span class="normal"><a href="#__codelineno-0-279">279</a></span>
+<span class="normal"><a href="#__codelineno-0-280">280</a></span>
+<span class="normal"><a href="#__codelineno-0-281">281</a></span>
+<span class="normal"><a href="#__codelineno-0-282">282</a></span>
+<span class="normal"><a href="#__codelineno-0-283">283</a></span>
+<span class="normal"><a href="#__codelineno-0-284">284</a></span>
+<span class="normal"><a href="#__codelineno-0-285">285</a></span>
+<span class="normal"><a href="#__codelineno-0-286">286</a></span>
+<span class="normal"><a href="#__codelineno-0-287">287</a></span>
+<span class="normal"><a href="#__codelineno-0-288">288</a></span>
+<span class="normal"><a href="#__codelineno-0-289">289</a></span>
+<span class="normal"><a href="#__codelineno-0-290">290</a></span>
+<span class="normal"><a href="#__codelineno-0-291">291</a></span>
+<span class="normal"><a href="#__codelineno-0-292">292</a></span>
+<span class="normal"><a href="#__codelineno-0-293">293</a></span>
+<span class="normal"><a href="#__codelineno-0-294">294</a></span>
+<span class="normal"><a href="#__codelineno-0-295">295</a></span>
+<span class="normal"><a href="#__codelineno-0-296">296</a></span>
+<span class="normal"><a href="#__codelineno-0-297">297</a></span>
+<span class="normal"><a href="#__codelineno-0-298">298</a></span>
+<span class="normal"><a href="#__codelineno-0-299">299</a></span>
+<span class="normal"><a href="#__codelineno-0-300">300</a></span>
+<span class="normal"><a href="#__codelineno-0-301">301</a></span>
+<span class="normal"><a href="#__codelineno-0-302">302</a></span>
+<span class="normal"><a href="#__codelineno-0-303">303</a></span>
+<span class="normal"><a href="#__codelineno-0-304">304</a></span>
+<span class="normal"><a href="#__codelineno-0-305">305</a></span>
+<span class="normal"><a href="#__codelineno-0-306">306</a></span>
+<span class="normal"><a href="#__codelineno-0-307">307</a></span>
+<span class="normal"><a href="#__codelineno-0-308">308</a></span>
+<span class="normal"><a href="#__codelineno-0-309">309</a></span>
+<span class="normal"><a href="#__codelineno-0-310">310</a></span>
+<span class="normal"><a href="#__codelineno-0-311">311</a></span>
+<span class="normal"><a href="#__codelineno-0-312">312</a></span>
+<span class="normal"><a href="#__codelineno-0-313">313</a></span>
+<span class="normal"><a href="#__codelineno-0-314">314</a></span>
+<span class="normal"><a href="#__codelineno-0-315">315</a></span>
+<span class="normal"><a href="#__codelineno-0-316">316</a></span>
+<span class="normal"><a href="#__codelineno-0-317">317</a></span>
+<span class="normal"><a href="#__codelineno-0-318">318</a></span>
+<span class="normal"><a href="#__codelineno-0-319">319</a></span>
+<span class="normal"><a href="#__codelineno-0-320">320</a></span>
+<span class="normal"><a href="#__codelineno-0-321">321</a></span>
+<span class="normal"><a href="#__codelineno-0-322">322</a></span>
+<span class="normal"><a href="#__codelineno-0-323">323</a></span>
+<span class="normal"><a href="#__codelineno-0-324">324</a></span>
+<span class="normal"><a href="#__codelineno-0-325">325</a></span>
+<span class="normal"><a href="#__codelineno-0-326">326</a></span>
+<span class="normal"><a href="#__codelineno-0-327">327</a></span>
+<span class="normal"><a href="#__codelineno-0-328">328</a></span>
+<span class="normal"><a href="#__codelineno-0-329">329</a></span>
+<span class="normal"><a href="#__codelineno-0-330">330</a></span>
+<span class="normal"><a href="#__codelineno-0-331">331</a></span>
+<span class="normal"><a href="#__codelineno-0-332">332</a></span>
+<span class="normal"><a href="#__codelineno-0-333">333</a></span>
+<span class="normal"><a href="#__codelineno-0-334">334</a></span>
+<span class="normal"><a href="#__codelineno-0-335">335</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-195" name="__codelineno-0-195"></a><span class="k">def</span><span class="w"> </span><span class="nf">auto_clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-0-196" name="__codelineno-0-196"></a>    <span class="n">loss_fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span>
+<a id="__codelineno-0-197" name="__codelineno-0-197"></a>    <span class="n">argnums</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-0-198" name="__codelineno-0-198"></a>    <span class="n">has_aux</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-0-199" name="__codelineno-0-199"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-200" name="__codelineno-0-200"></a>    <span class="n">R</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">PerGroup</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-0-201" name="__codelineno-0-201"></a>    <span class="n">gamma</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">_DEFAULT_GAMMA</span><span class="p">,</span>
+<a id="__codelineno-0-202" name="__codelineno-0-202"></a>    <span class="n">normalize_by</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-0-203" name="__codelineno-0-203"></a>    <span class="n">batch_argnums</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-0-204" name="__codelineno-0-204"></a>    <span class="n">return_aux</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-0-205" name="__codelineno-0-205"></a>    <span class="n">pre_clipping_transform</span><span class="p">:</span> <span class="n">Callable</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">,</span>
+<a id="__codelineno-0-206" name="__codelineno-0-206"></a>    <span class="n">microbatch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-207" name="__codelineno-0-207"></a>    <span class="n">dtype</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-208" name="__codelineno-0-208"></a>    <span class="n">second_moment</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-0-209" name="__codelineno-0-209"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Callable</span><span class="p">,</span> <span class="n">AutoClipState</span><span class="p">]:</span>
+<a id="__codelineno-0-210" name="__codelineno-0-210"></a><span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Create a function that computes the sum of AUTO-S scaled per-example gradients.</span>
+<a id="__codelineno-0-211" name="__codelineno-0-211"></a>
+<a id="__codelineno-0-212" name="__codelineno-0-212"></a><span class="sd">    AUTO-S (Bu et al., 2023) replaces the standard clipping threshold with</span>
+<a id="__codelineno-0-213" name="__codelineno-0-213"></a><span class="sd">    a per-example scaling</span>
+<a id="__codelineno-0-214" name="__codelineno-0-214"></a>
+<a id="__codelineno-0-215" name="__codelineno-0-215"></a><span class="sd">    .. math::</span>
+<a id="__codelineno-0-216" name="__codelineno-0-216"></a>
+<a id="__codelineno-0-217" name="__codelineno-0-217"></a><span class="sd">        \tilde g_i = R \cdot g_i / (\lVert g_i \rVert + \gamma)</span>
+<a id="__codelineno-0-218" name="__codelineno-0-218"></a>
+<a id="__codelineno-0-219" name="__codelineno-0-219"></a><span class="sd">    so every per-example gradient has L2 norm at most ``R`` by</span>
+<a id="__codelineno-0-220" name="__codelineno-0-220"></a><span class="sd">    construction.  There is no threshold to tune; the effective step size</span>
+<a id="__codelineno-0-221" name="__codelineno-0-221"></a><span class="sd">    is absorbed into the optimizer learning rate.</span>
+<a id="__codelineno-0-222" name="__codelineno-0-222"></a>
+<a id="__codelineno-0-223" name="__codelineno-0-223"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-224" name="__codelineno-0-224"></a><span class="sd">        loss_fn: Scalar loss function.  If ``has_aux``, returns</span>
+<a id="__codelineno-0-225" name="__codelineno-0-225"></a><span class="sd">            ``(scalar, loss_aux)``.</span>
+<a id="__codelineno-0-226" name="__codelineno-0-226"></a><span class="sd">        argnums: Which argument(s) to differentiate w.r.t.</span>
+<a id="__codelineno-0-227" name="__codelineno-0-227"></a><span class="sd">        has_aux: If True, ``loss_fn`` returns ``(scalar, loss_aux)``.</span>
+<a id="__codelineno-0-228" name="__codelineno-0-228"></a><span class="sd">        R: Sensitivity max_norm (default 1.0).  When ``PerGroup``, each</span>
+<a id="__codelineno-0-229" name="__codelineno-0-229"></a><span class="sd">            parameter group is scaled independently to its own ``R_k``.</span>
+<a id="__codelineno-0-230" name="__codelineno-0-230"></a><span class="sd">        gamma: Denominator stabilizer :math:`\gamma` (default 0.01,</span>
+<a id="__codelineno-0-231" name="__codelineno-0-231"></a><span class="sd">            strictly positive).</span>
+<a id="__codelineno-0-232" name="__codelineno-0-232"></a><span class="sd">        normalize_by: Divisor applied to the summed gradients (set to</span>
+<a id="__codelineno-0-233" name="__codelineno-0-233"></a><span class="sd">            expected batch size for averaged gradients).</span>
+<a id="__codelineno-0-234" name="__codelineno-0-234"></a><span class="sd">        batch_argnums: Which arguments have a batch dimension.</span>
+<a id="__codelineno-0-235" name="__codelineno-0-235"></a><span class="sd">        return_aux: If True, returns per-example diagnostics as</span>
+<a id="__codelineno-0-236" name="__codelineno-0-236"></a><span class="sd">            :class:`AutoClippedGradAux`.</span>
+<a id="__codelineno-0-237" name="__codelineno-0-237"></a><span class="sd">        pre_clipping_transform: Optional per-example gradient transform</span>
+<a id="__codelineno-0-238" name="__codelineno-0-238"></a><span class="sd">            applied before AUTO-S scaling.</span>
+<a id="__codelineno-0-239" name="__codelineno-0-239"></a><span class="sd">        microbatch_size: Process the batch in chunks of this size.</span>
+<a id="__codelineno-0-240" name="__codelineno-0-240"></a><span class="sd">        dtype: Optional accumulation dtype for the summed gradient.</span>
+<a id="__codelineno-0-241" name="__codelineno-0-241"></a><span class="sd">        second_moment: If True, also accumulate the per-example sum of</span>
+<a id="__codelineno-0-242" name="__codelineno-0-242"></a><span class="sd">            element-wise squared scaled gradients and return a</span>
+<a id="__codelineno-0-243" name="__codelineno-0-243"></a><span class="sd">            :class:`~opaque.types.SecondMomentClippingOutput` carrying</span>
+<a id="__codelineno-0-244" name="__codelineno-0-244"></a><span class="sd">            both streams.  Privacy accounting is unchanged</span>
+<a id="__codelineno-0-245" name="__codelineno-0-245"></a><span class="sd">            (``gaussian(noise_multiplier)`` for DP-SGD or any standard MF</span>
+<a id="__codelineno-0-246" name="__codelineno-0-246"></a><span class="sd">            mechanism for DP-FTRL); the sensitivity-proportional joint</span>
+<a id="__codelineno-0-247" name="__codelineno-0-247"></a><span class="sd">            Mahalanobis allocation gives the paired release the same PLD</span>
+<a id="__codelineno-0-248" name="__codelineno-0-248"></a><span class="sd">            as a single first-moment release.</span>
+<a id="__codelineno-0-249" name="__codelineno-0-249"></a>
+<a id="__codelineno-0-250" name="__codelineno-0-250"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-251" name="__codelineno-0-251"></a><span class="sd">        ``(grad_fn, state)``.  ``grad_fn`` has the signature</span>
+<a id="__codelineno-0-252" name="__codelineno-0-252"></a><span class="sd">        ``(*args, state, **kwargs) -&gt; (grad, state)``, or</span>
+<a id="__codelineno-0-253" name="__codelineno-0-253"></a><span class="sd">        ``(*args, state, **kwargs) -&gt; ((grad, aux), state)`` when</span>
+<a id="__codelineno-0-254" name="__codelineno-0-254"></a><span class="sd">        ``return_aux=True``.</span>
+<a id="__codelineno-0-255" name="__codelineno-0-255"></a>
+<a id="__codelineno-0-256" name="__codelineno-0-256"></a><span class="sd">    Formal guarantee:</span>
+<a id="__codelineno-0-257" name="__codelineno-0-257"></a><span class="sd">        Under add/remove or zero-out DP, the L2 sensitivity of the</span>
+<a id="__codelineno-0-258" name="__codelineno-0-258"></a><span class="sd">        summed gradients is the returned ``ClippedPytree.max_norm`` metadata —</span>
+<a id="__codelineno-0-259" name="__codelineno-0-259"></a><span class="sd">        a constant independent of the input data.  Per-step Gaussian noise</span>
+<a id="__codelineno-0-260" name="__codelineno-0-260"></a><span class="sd">        (``gaussian_noise``, ``truncated_gaussian_noise``, …) reads that value</span>
+<a id="__codelineno-0-261" name="__codelineno-0-261"></a><span class="sd">        each step; PLD composition does not require ``max_norm`` to be</span>
+<a id="__codelineno-0-262" name="__codelineno-0-262"></a><span class="sd">        identical across steps when the accountant models step-varying</span>
+<a id="__codelineno-0-263" name="__codelineno-0-263"></a><span class="sd">        sensitivity (for example adaptive clipping with ``adaclip``).</span>
+<a id="__codelineno-0-264" name="__codelineno-0-264"></a><span class="sd">        ``mf_noise``&#39;s matrix-factorization correlated noise *does* require</span>
+<a id="__codelineno-0-265" name="__codelineno-0-265"></a><span class="sd">        ``max_norm`` to stay fixed for the whole run — the dispatcher latches</span>
+<a id="__codelineno-0-266" name="__codelineno-0-266"></a><span class="sd">        the first-call bound — and AUTO-S satisfies that because ``R`` and</span>
+<a id="__codelineno-0-267" name="__codelineno-0-267"></a><span class="sd">        ``normalize_by`` do not drift.  AUTO-S scaling is per-example and adds</span>
+<a id="__codelineno-0-268" name="__codelineno-0-268"></a><span class="sd">        no privacy cost beyond ``gaussian(noise_multiplier)`` for the</span>
+<a id="__codelineno-0-269" name="__codelineno-0-269"></a><span class="sd">        gradient release.</span>
+<a id="__codelineno-0-270" name="__codelineno-0-270"></a>
+<a id="__codelineno-0-271" name="__codelineno-0-271"></a><span class="sd">    Example:</span>
+<a id="__codelineno-0-272" name="__codelineno-0-272"></a><span class="sd">        &gt;&gt;&gt; import torch</span>
+<a id="__codelineno-0-273" name="__codelineno-0-273"></a><span class="sd">        &gt;&gt;&gt; from opaque.clipping import auto_clipped_grad</span>
+<a id="__codelineno-0-274" name="__codelineno-0-274"></a><span class="sd">        &gt;&gt;&gt; def loss_fn(params, x, y):</span>
+<a id="__codelineno-0-275" name="__codelineno-0-275"></a><span class="sd">        ...     return ((x @ params - y) ** 2).mean()</span>
+<a id="__codelineno-0-276" name="__codelineno-0-276"></a><span class="sd">        &gt;&gt;&gt; grad_fn, state = auto_clipped_grad(</span>
+<a id="__codelineno-0-277" name="__codelineno-0-277"></a><span class="sd">        ...     loss_fn, argnums=0, batch_argnums=(1, 2),</span>
+<a id="__codelineno-0-278" name="__codelineno-0-278"></a><span class="sd">        ...     R=1.0, normalize_by=32,</span>
+<a id="__codelineno-0-279" name="__codelineno-0-279"></a><span class="sd">        ... )</span>
+<a id="__codelineno-0-280" name="__codelineno-0-280"></a><span class="sd">        &gt;&gt;&gt; params = torch.randn(10)</span>
+<a id="__codelineno-0-281" name="__codelineno-0-281"></a><span class="sd">        &gt;&gt;&gt; batch_x = torch.randn(32, 10)</span>
+<a id="__codelineno-0-282" name="__codelineno-0-282"></a><span class="sd">        &gt;&gt;&gt; batch_y = torch.randn(32)</span>
+<a id="__codelineno-0-283" name="__codelineno-0-283"></a><span class="sd">        &gt;&gt;&gt; grads, state = grad_fn(params, batch_x, batch_y, state=state)</span>
+<a id="__codelineno-0-284" name="__codelineno-0-284"></a>
+<a id="__codelineno-0-285" name="__codelineno-0-285"></a><span class="sd">    The returned ``ClippedPytree`` carries ``max_norm = R / normalize_by``</span>
+<a id="__codelineno-0-286" name="__codelineno-0-286"></a><span class="sd">    (constant across steps), so it composes with ``mf_noise`` (DP-FTRL)</span>
+<a id="__codelineno-0-287" name="__codelineno-0-287"></a><span class="sd">    and ``gaussian_noise`` (DP-SGD) the same way ``clipped_grad`` does at</span>
+<a id="__codelineno-0-288" name="__codelineno-0-288"></a><span class="sd">    the same bound.</span>
+<a id="__codelineno-0-289" name="__codelineno-0-289"></a>
+<a id="__codelineno-0-290" name="__codelineno-0-290"></a><span class="sd">    References:</span>
+<a id="__codelineno-0-291" name="__codelineno-0-291"></a><span class="sd">        Bu, Wang, Zha, Karypis.  &quot;Automatic Clipping: Differentially</span>
+<a id="__codelineno-0-292" name="__codelineno-0-292"></a><span class="sd">        Private Deep Learning Made Easier and Stronger.&quot;  NeurIPS 2023.</span>
+<a id="__codelineno-0-293" name="__codelineno-0-293"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-294" name="__codelineno-0-294"></a>    <span class="n">_validate_auto_params</span><span class="p">(</span><span class="n">R</span><span class="p">,</span> <span class="n">gamma</span><span class="p">)</span>
+<a id="__codelineno-0-295" name="__codelineno-0-295"></a>
+<a id="__codelineno-0-296" name="__codelineno-0-296"></a>    <span class="n">scale_fn</span> <span class="o">=</span> <span class="n">_make_auto_scale_fn</span><span class="p">(</span><span class="n">R</span><span class="p">,</span> <span class="n">gamma</span><span class="p">)</span>
+<a id="__codelineno-0-297" name="__codelineno-0-297"></a>    <span class="n">inner_fn</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-0-298" name="__codelineno-0-298"></a>        <span class="n">loss_fn</span><span class="p">,</span>
+<a id="__codelineno-0-299" name="__codelineno-0-299"></a>        <span class="n">argnums</span><span class="o">=</span><span class="n">argnums</span><span class="p">,</span>
+<a id="__codelineno-0-300" name="__codelineno-0-300"></a>        <span class="n">has_aux</span><span class="o">=</span><span class="n">has_aux</span><span class="p">,</span>
+<a id="__codelineno-0-301" name="__codelineno-0-301"></a>        <span class="n">clipping_norm</span><span class="o">=</span><span class="n">R</span><span class="p">,</span>
+<a id="__codelineno-0-302" name="__codelineno-0-302"></a>        <span class="n">normalize_by</span><span class="o">=</span><span class="n">normalize_by</span><span class="p">,</span>
+<a id="__codelineno-0-303" name="__codelineno-0-303"></a>        <span class="n">batch_argnums</span><span class="o">=</span><span class="n">batch_argnums</span><span class="p">,</span>
+<a id="__codelineno-0-304" name="__codelineno-0-304"></a>        <span class="n">return_aux</span><span class="o">=</span><span class="n">return_aux</span><span class="p">,</span>
+<a id="__codelineno-0-305" name="__codelineno-0-305"></a>        <span class="n">pre_clipping_transform</span><span class="o">=</span><span class="n">pre_clipping_transform</span><span class="p">,</span>
+<a id="__codelineno-0-306" name="__codelineno-0-306"></a>        <span class="n">microbatch_size</span><span class="o">=</span><span class="n">microbatch_size</span><span class="p">,</span>
+<a id="__codelineno-0-307" name="__codelineno-0-307"></a>        <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
+<a id="__codelineno-0-308" name="__codelineno-0-308"></a>        <span class="n">second_moment</span><span class="o">=</span><span class="n">second_moment</span><span class="p">,</span>
+<a id="__codelineno-0-309" name="__codelineno-0-309"></a>        <span class="n">_scale_fn</span><span class="o">=</span><span class="n">scale_fn</span><span class="p">,</span>
+<a id="__codelineno-0-310" name="__codelineno-0-310"></a>    <span class="p">)</span>
+<a id="__codelineno-0-311" name="__codelineno-0-311"></a>
+<a id="__codelineno-0-312" name="__codelineno-0-312"></a>    <span class="n">state</span> <span class="o">=</span> <span class="n">AutoClipState</span><span class="p">()</span>
+<a id="__codelineno-0-313" name="__codelineno-0-313"></a>
+<a id="__codelineno-0-314" name="__codelineno-0-314"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">return_aux</span><span class="p">:</span>
+<a id="__codelineno-0-315" name="__codelineno-0-315"></a>
+<a id="__codelineno-0-316" name="__codelineno-0-316"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">grad_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<a id="__codelineno-0-317" name="__codelineno-0-317"></a>            <span class="n">result</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">inner_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+<a id="__codelineno-0-318" name="__codelineno-0-318"></a>            <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">state</span>
+<a id="__codelineno-0-319" name="__codelineno-0-319"></a>
+<a id="__codelineno-0-320" name="__codelineno-0-320"></a>        <span class="k">return</span> <span class="n">grad_fn</span><span class="p">,</span> <span class="n">state</span>
+<a id="__codelineno-0-321" name="__codelineno-0-321"></a>
+<a id="__codelineno-0-322" name="__codelineno-0-322"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">grad_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<a id="__codelineno-0-323" name="__codelineno-0-323"></a>        <span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">),</span> <span class="n">_</span> <span class="o">=</span> <span class="n">inner_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+<a id="__codelineno-0-324" name="__codelineno-0-324"></a>        <span class="n">auto_aux</span> <span class="o">=</span> <span class="n">AutoClippedGradAux</span><span class="p">(</span>
+<a id="__codelineno-0-325" name="__codelineno-0-325"></a>            <span class="n">loss_values</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">loss_values</span><span class="p">,</span>
+<a id="__codelineno-0-326" name="__codelineno-0-326"></a>            <span class="n">grad_norms</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">grad_norms</span><span class="p">,</span>
+<a id="__codelineno-0-327" name="__codelineno-0-327"></a>            <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">clipped_grad_norms</span><span class="p">,</span>
+<a id="__codelineno-0-328" name="__codelineno-0-328"></a>            <span class="n">loss_aux</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">loss_aux</span><span class="p">,</span>
+<a id="__codelineno-0-329" name="__codelineno-0-329"></a>            <span class="n">clipping_rate</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span>
+<a id="__codelineno-0-330" name="__codelineno-0-330"></a>            <span class="n">batch_size</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-0-331" name="__codelineno-0-331"></a>            <span class="n">group_norms</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">group_norms</span><span class="p">,</span>
+<a id="__codelineno-0-332" name="__codelineno-0-332"></a>        <span class="p">)</span>
+<a id="__codelineno-0-333" name="__codelineno-0-333"></a>        <span class="k">return</span> <span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">auto_aux</span><span class="p">),</span> <span class="n">state</span>
+<a id="__codelineno-0-334" name="__codelineno-0-334"></a>
+<a id="__codelineno-0-335" name="__codelineno-0-335"></a>    <span class="k">return</span> <span class="n">grad_fn</span><span class="p">,</span> <span class="n">state</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
 
 <div class="doc doc-object doc-function">
 
@@ -4415,599 +5722,6 @@ Clipping", NeurIPS 2021.</p>
 <a id="__codelineno-0-493" name="__codelineno-0-493"></a>    <span class="p">)</span>
 <a id="__codelineno-0-494" name="__codelineno-0-494"></a>
 <a id="__codelineno-0-495" name="__codelineno-0-495"></a>    <span class="k">return</span> <span class="n">grad_fn</span><span class="p">,</span> <span class="n">initial_state</span>
-</code></pre></div></td></tr></table></div>
-            </details>
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-function">
-
-
-<h3 id="opaque.dpsgd.clipping.auto_clipped_grad" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">auto_clipped_grad</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">has_aux</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">R</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">gamma</span><span class="o">=</span><span class="n">_DEFAULT_GAMMA</span><span class="p">,</span> <span class="n">normalize_by</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">return_aux</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">pre_clipping_transform</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">,</span> <span class="n">microbatch_size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">second_moment</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
-
-<a href="#opaque.dpsgd.clipping.auto_clipped_grad" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Create a function that computes the sum of AUTO-S scaled per-example gradients.</p>
-<p>AUTO-S (Bu et al., 2023) replaces the standard clipping threshold with
-a per-example scaling</p>
-<p>.. math::</p>
-<div class="codehilite"><pre><span></span><code>\tilde g_i = R \cdot g_i / (\lVert g_i \rVert + \gamma)
-</code></pre></div>
-
-<p>so every per-example gradient has L2 norm at most <code>R</code> by
-construction.  There is no threshold to tune; the effective step size
-is absorbed into the optimizer learning rate.</p>
-
-
-<p><span class="doc-section-title">Parameters:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-          <th>Default</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                <code>loss_fn</code>
-            </td>
-            <td>
-                  <code><span title="collections.abc.Callable">Callable</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Scalar loss function.  If <code>has_aux</code>, returns
-<code>(scalar, loss_aux)</code>.</p>
-              </div>
-            </td>
-            <td>
-                <em>required</em>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>argnums</code>
-            </td>
-            <td>
-                  <code><span title="int">int</span> | <span title="tuple">tuple</span>[<span title="int">int</span>, ...]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Which argument(s) to differentiate w.r.t.</p>
-              </div>
-            </td>
-            <td>
-                  <code>0</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>has_aux</code>
-            </td>
-            <td>
-                  <code><span title="bool">bool</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>If True, <code>loss_fn</code> returns <code>(scalar, loss_aux)</code>.</p>
-              </div>
-            </td>
-            <td>
-                  <code>False</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>R</code>
-            </td>
-            <td>
-                  <code><span title="float">float</span> | <span title="opaque.types.PerGroup">PerGroup</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Sensitivity max_norm (default 1.0).  When <code>PerGroup</code>, each
-parameter group is scaled independently to its own <code>R_k</code>.</p>
-              </div>
-            </td>
-            <td>
-                  <code>1.0</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>gamma</code>
-            </td>
-            <td>
-                  <code><span title="float">float</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Denominator stabilizer :math:<code>\gamma</code> (default 0.01,
-strictly positive).</p>
-              </div>
-            </td>
-            <td>
-                  <code><span title="opaque.dpsgd.clipping._auto._DEFAULT_GAMMA">_DEFAULT_GAMMA</span></code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>normalize_by</code>
-            </td>
-            <td>
-                  <code><span title="float">float</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Divisor applied to the summed gradients (set to
-expected batch size for averaged gradients).</p>
-              </div>
-            </td>
-            <td>
-                  <code>1.0</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>batch_argnums</code>
-            </td>
-            <td>
-                  <code><span title="int">int</span> | <span title="tuple">tuple</span>[<span title="int">int</span>, ...]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Which arguments have a batch dimension.</p>
-              </div>
-            </td>
-            <td>
-                  <code>1</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>return_aux</code>
-            </td>
-            <td>
-                  <code><span title="bool">bool</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>If True, returns per-example diagnostics as
-:class:<code>AutoClippedGradAux</code>.</p>
-              </div>
-            </td>
-            <td>
-                  <code>False</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>pre_clipping_transform</code>
-            </td>
-            <td>
-                  <code><span title="collections.abc.Callable">Callable</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Optional per-example gradient transform
-applied before AUTO-S scaling.</p>
-              </div>
-            </td>
-            <td>
-                  <code>lambda x: <span title="x">x</span></code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>microbatch_size</code>
-            </td>
-            <td>
-                  <code><span title="int">int</span> | None</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Process the batch in chunks of this size.</p>
-              </div>
-            </td>
-            <td>
-                  <code>None</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>dtype</code>
-            </td>
-            <td>
-                  <code><span title="typing.Any">Any</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Optional accumulation dtype for the summed gradient.</p>
-              </div>
-            </td>
-            <td>
-                  <code>None</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>second_moment</code>
-            </td>
-            <td>
-                  <code><span title="bool">bool</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>If True, also accumulate the per-example sum of
-element-wise squared scaled gradients and return a
-:class:<code>~opaque.types.SecondMomentClippingOutput</code> carrying
-both streams.  Privacy accounting is unchanged
-(<code>gaussian(noise_multiplier)</code>); the noise mechanism's
-sensitivity-proportional Mahalanobis allocation gives the
-joint paired release the same PLD as a single first-moment
-release.</p>
-              </div>
-            </td>
-            <td>
-                  <code>False</code>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-    <p><span class="doc-section-title">Returns:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="collections.abc.Callable">Callable</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p><code>(grad_fn, state)</code>.  <code>grad_fn</code> has the signature</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="opaque.dpsgd.clipping._auto.AutoClipState">AutoClipState</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p><code>(*args, state, **kwargs) -&gt; (grad, state)</code>, or</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="tuple">tuple</span>[<span title="collections.abc.Callable">Callable</span>, <span title="opaque.dpsgd.clipping._auto.AutoClipState">AutoClipState</span>]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p><code>(*args, state, **kwargs) -&gt; ((grad, aux), state)</code> when</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="tuple">tuple</span>[<span title="collections.abc.Callable">Callable</span>, <span title="opaque.dpsgd.clipping._auto.AutoClipState">AutoClipState</span>]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p><code>return_aux=True</code>.</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-<details class="formal-guarantee" open>
-  <summary>Formal guarantee</summary>
-  <p>Under add/remove or zero-out DP, the L2 sensitivity of the
-summed gradients is the returned <code>ClippedPytree.max_norm</code> metadata.
-Privacy accounting is plain <code>gaussian(noise_multiplier)</code> —
-AUTO-S scaling is per-example and adds no additional privacy cost.</p>
-</details>
-
-<details class="example" open>
-  <summary>Example</summary>
-  <blockquote>
-<blockquote>
-<blockquote>
-<p>import torch
-from opaque.clipping import auto_clipped_grad
-def loss_fn(params, x, y):
-...     return ((x @ params - y) ** 2).mean()
-grad_fn, state = auto_clipped_grad(
-...     loss_fn, argnums=0, batch_argnums=(1, 2),
-...     R=1.0, normalize_by=32,
-... )
-params = torch.randn(10)
-batch_x = torch.randn(32, 10)
-batch_y = torch.randn(32)
-grads, state = grad_fn(params, batch_x, batch_y, state=state)</p>
-</blockquote>
-</blockquote>
-</blockquote>
-</details>
-
-<details class="references" open>
-  <summary>References</summary>
-  <p>Bu, Wang, Zha, Karypis.  "Automatic Clipping: Differentially
-Private Deep Learning Made Easier and Stronger."  NeurIPS 2023.</p>
-</details>
-
-            <details class="quote">
-              <summary>Source code in <code>packages/opaque-dpsgd/src/opaque/dpsgd/clipping/_auto.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-182">182</a></span>
-<span class="normal"><a href="#__codelineno-0-183">183</a></span>
-<span class="normal"><a href="#__codelineno-0-184">184</a></span>
-<span class="normal"><a href="#__codelineno-0-185">185</a></span>
-<span class="normal"><a href="#__codelineno-0-186">186</a></span>
-<span class="normal"><a href="#__codelineno-0-187">187</a></span>
-<span class="normal"><a href="#__codelineno-0-188">188</a></span>
-<span class="normal"><a href="#__codelineno-0-189">189</a></span>
-<span class="normal"><a href="#__codelineno-0-190">190</a></span>
-<span class="normal"><a href="#__codelineno-0-191">191</a></span>
-<span class="normal"><a href="#__codelineno-0-192">192</a></span>
-<span class="normal"><a href="#__codelineno-0-193">193</a></span>
-<span class="normal"><a href="#__codelineno-0-194">194</a></span>
-<span class="normal"><a href="#__codelineno-0-195">195</a></span>
-<span class="normal"><a href="#__codelineno-0-196">196</a></span>
-<span class="normal"><a href="#__codelineno-0-197">197</a></span>
-<span class="normal"><a href="#__codelineno-0-198">198</a></span>
-<span class="normal"><a href="#__codelineno-0-199">199</a></span>
-<span class="normal"><a href="#__codelineno-0-200">200</a></span>
-<span class="normal"><a href="#__codelineno-0-201">201</a></span>
-<span class="normal"><a href="#__codelineno-0-202">202</a></span>
-<span class="normal"><a href="#__codelineno-0-203">203</a></span>
-<span class="normal"><a href="#__codelineno-0-204">204</a></span>
-<span class="normal"><a href="#__codelineno-0-205">205</a></span>
-<span class="normal"><a href="#__codelineno-0-206">206</a></span>
-<span class="normal"><a href="#__codelineno-0-207">207</a></span>
-<span class="normal"><a href="#__codelineno-0-208">208</a></span>
-<span class="normal"><a href="#__codelineno-0-209">209</a></span>
-<span class="normal"><a href="#__codelineno-0-210">210</a></span>
-<span class="normal"><a href="#__codelineno-0-211">211</a></span>
-<span class="normal"><a href="#__codelineno-0-212">212</a></span>
-<span class="normal"><a href="#__codelineno-0-213">213</a></span>
-<span class="normal"><a href="#__codelineno-0-214">214</a></span>
-<span class="normal"><a href="#__codelineno-0-215">215</a></span>
-<span class="normal"><a href="#__codelineno-0-216">216</a></span>
-<span class="normal"><a href="#__codelineno-0-217">217</a></span>
-<span class="normal"><a href="#__codelineno-0-218">218</a></span>
-<span class="normal"><a href="#__codelineno-0-219">219</a></span>
-<span class="normal"><a href="#__codelineno-0-220">220</a></span>
-<span class="normal"><a href="#__codelineno-0-221">221</a></span>
-<span class="normal"><a href="#__codelineno-0-222">222</a></span>
-<span class="normal"><a href="#__codelineno-0-223">223</a></span>
-<span class="normal"><a href="#__codelineno-0-224">224</a></span>
-<span class="normal"><a href="#__codelineno-0-225">225</a></span>
-<span class="normal"><a href="#__codelineno-0-226">226</a></span>
-<span class="normal"><a href="#__codelineno-0-227">227</a></span>
-<span class="normal"><a href="#__codelineno-0-228">228</a></span>
-<span class="normal"><a href="#__codelineno-0-229">229</a></span>
-<span class="normal"><a href="#__codelineno-0-230">230</a></span>
-<span class="normal"><a href="#__codelineno-0-231">231</a></span>
-<span class="normal"><a href="#__codelineno-0-232">232</a></span>
-<span class="normal"><a href="#__codelineno-0-233">233</a></span>
-<span class="normal"><a href="#__codelineno-0-234">234</a></span>
-<span class="normal"><a href="#__codelineno-0-235">235</a></span>
-<span class="normal"><a href="#__codelineno-0-236">236</a></span>
-<span class="normal"><a href="#__codelineno-0-237">237</a></span>
-<span class="normal"><a href="#__codelineno-0-238">238</a></span>
-<span class="normal"><a href="#__codelineno-0-239">239</a></span>
-<span class="normal"><a href="#__codelineno-0-240">240</a></span>
-<span class="normal"><a href="#__codelineno-0-241">241</a></span>
-<span class="normal"><a href="#__codelineno-0-242">242</a></span>
-<span class="normal"><a href="#__codelineno-0-243">243</a></span>
-<span class="normal"><a href="#__codelineno-0-244">244</a></span>
-<span class="normal"><a href="#__codelineno-0-245">245</a></span>
-<span class="normal"><a href="#__codelineno-0-246">246</a></span>
-<span class="normal"><a href="#__codelineno-0-247">247</a></span>
-<span class="normal"><a href="#__codelineno-0-248">248</a></span>
-<span class="normal"><a href="#__codelineno-0-249">249</a></span>
-<span class="normal"><a href="#__codelineno-0-250">250</a></span>
-<span class="normal"><a href="#__codelineno-0-251">251</a></span>
-<span class="normal"><a href="#__codelineno-0-252">252</a></span>
-<span class="normal"><a href="#__codelineno-0-253">253</a></span>
-<span class="normal"><a href="#__codelineno-0-254">254</a></span>
-<span class="normal"><a href="#__codelineno-0-255">255</a></span>
-<span class="normal"><a href="#__codelineno-0-256">256</a></span>
-<span class="normal"><a href="#__codelineno-0-257">257</a></span>
-<span class="normal"><a href="#__codelineno-0-258">258</a></span>
-<span class="normal"><a href="#__codelineno-0-259">259</a></span>
-<span class="normal"><a href="#__codelineno-0-260">260</a></span>
-<span class="normal"><a href="#__codelineno-0-261">261</a></span>
-<span class="normal"><a href="#__codelineno-0-262">262</a></span>
-<span class="normal"><a href="#__codelineno-0-263">263</a></span>
-<span class="normal"><a href="#__codelineno-0-264">264</a></span>
-<span class="normal"><a href="#__codelineno-0-265">265</a></span>
-<span class="normal"><a href="#__codelineno-0-266">266</a></span>
-<span class="normal"><a href="#__codelineno-0-267">267</a></span>
-<span class="normal"><a href="#__codelineno-0-268">268</a></span>
-<span class="normal"><a href="#__codelineno-0-269">269</a></span>
-<span class="normal"><a href="#__codelineno-0-270">270</a></span>
-<span class="normal"><a href="#__codelineno-0-271">271</a></span>
-<span class="normal"><a href="#__codelineno-0-272">272</a></span>
-<span class="normal"><a href="#__codelineno-0-273">273</a></span>
-<span class="normal"><a href="#__codelineno-0-274">274</a></span>
-<span class="normal"><a href="#__codelineno-0-275">275</a></span>
-<span class="normal"><a href="#__codelineno-0-276">276</a></span>
-<span class="normal"><a href="#__codelineno-0-277">277</a></span>
-<span class="normal"><a href="#__codelineno-0-278">278</a></span>
-<span class="normal"><a href="#__codelineno-0-279">279</a></span>
-<span class="normal"><a href="#__codelineno-0-280">280</a></span>
-<span class="normal"><a href="#__codelineno-0-281">281</a></span>
-<span class="normal"><a href="#__codelineno-0-282">282</a></span>
-<span class="normal"><a href="#__codelineno-0-283">283</a></span>
-<span class="normal"><a href="#__codelineno-0-284">284</a></span>
-<span class="normal"><a href="#__codelineno-0-285">285</a></span>
-<span class="normal"><a href="#__codelineno-0-286">286</a></span>
-<span class="normal"><a href="#__codelineno-0-287">287</a></span>
-<span class="normal"><a href="#__codelineno-0-288">288</a></span>
-<span class="normal"><a href="#__codelineno-0-289">289</a></span>
-<span class="normal"><a href="#__codelineno-0-290">290</a></span>
-<span class="normal"><a href="#__codelineno-0-291">291</a></span>
-<span class="normal"><a href="#__codelineno-0-292">292</a></span>
-<span class="normal"><a href="#__codelineno-0-293">293</a></span>
-<span class="normal"><a href="#__codelineno-0-294">294</a></span>
-<span class="normal"><a href="#__codelineno-0-295">295</a></span>
-<span class="normal"><a href="#__codelineno-0-296">296</a></span>
-<span class="normal"><a href="#__codelineno-0-297">297</a></span>
-<span class="normal"><a href="#__codelineno-0-298">298</a></span>
-<span class="normal"><a href="#__codelineno-0-299">299</a></span>
-<span class="normal"><a href="#__codelineno-0-300">300</a></span>
-<span class="normal"><a href="#__codelineno-0-301">301</a></span>
-<span class="normal"><a href="#__codelineno-0-302">302</a></span>
-<span class="normal"><a href="#__codelineno-0-303">303</a></span>
-<span class="normal"><a href="#__codelineno-0-304">304</a></span>
-<span class="normal"><a href="#__codelineno-0-305">305</a></span>
-<span class="normal"><a href="#__codelineno-0-306">306</a></span>
-<span class="normal"><a href="#__codelineno-0-307">307</a></span>
-<span class="normal"><a href="#__codelineno-0-308">308</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-182" name="__codelineno-0-182"></a><span class="k">def</span><span class="w"> </span><span class="nf">auto_clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-0-183" name="__codelineno-0-183"></a>    <span class="n">loss_fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span>
-<a id="__codelineno-0-184" name="__codelineno-0-184"></a>    <span class="n">argnums</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
-<a id="__codelineno-0-185" name="__codelineno-0-185"></a>    <span class="n">has_aux</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-<a id="__codelineno-0-186" name="__codelineno-0-186"></a>    <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-0-187" name="__codelineno-0-187"></a>    <span class="n">R</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">PerGroup</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-0-188" name="__codelineno-0-188"></a>    <span class="n">gamma</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">_DEFAULT_GAMMA</span><span class="p">,</span>
-<a id="__codelineno-0-189" name="__codelineno-0-189"></a>    <span class="n">normalize_by</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-0-190" name="__codelineno-0-190"></a>    <span class="n">batch_argnums</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
-<a id="__codelineno-0-191" name="__codelineno-0-191"></a>    <span class="n">return_aux</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-<a id="__codelineno-0-192" name="__codelineno-0-192"></a>    <span class="n">pre_clipping_transform</span><span class="p">:</span> <span class="n">Callable</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">,</span>
-<a id="__codelineno-0-193" name="__codelineno-0-193"></a>    <span class="n">microbatch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-194" name="__codelineno-0-194"></a>    <span class="n">dtype</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-195" name="__codelineno-0-195"></a>    <span class="n">second_moment</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-<a id="__codelineno-0-196" name="__codelineno-0-196"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Callable</span><span class="p">,</span> <span class="n">AutoClipState</span><span class="p">]:</span>
-<a id="__codelineno-0-197" name="__codelineno-0-197"></a><span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Create a function that computes the sum of AUTO-S scaled per-example gradients.</span>
-<a id="__codelineno-0-198" name="__codelineno-0-198"></a>
-<a id="__codelineno-0-199" name="__codelineno-0-199"></a><span class="sd">    AUTO-S (Bu et al., 2023) replaces the standard clipping threshold with</span>
-<a id="__codelineno-0-200" name="__codelineno-0-200"></a><span class="sd">    a per-example scaling</span>
-<a id="__codelineno-0-201" name="__codelineno-0-201"></a>
-<a id="__codelineno-0-202" name="__codelineno-0-202"></a><span class="sd">    .. math::</span>
-<a id="__codelineno-0-203" name="__codelineno-0-203"></a>
-<a id="__codelineno-0-204" name="__codelineno-0-204"></a><span class="sd">        \tilde g_i = R \cdot g_i / (\lVert g_i \rVert + \gamma)</span>
-<a id="__codelineno-0-205" name="__codelineno-0-205"></a>
-<a id="__codelineno-0-206" name="__codelineno-0-206"></a><span class="sd">    so every per-example gradient has L2 norm at most ``R`` by</span>
-<a id="__codelineno-0-207" name="__codelineno-0-207"></a><span class="sd">    construction.  There is no threshold to tune; the effective step size</span>
-<a id="__codelineno-0-208" name="__codelineno-0-208"></a><span class="sd">    is absorbed into the optimizer learning rate.</span>
-<a id="__codelineno-0-209" name="__codelineno-0-209"></a>
-<a id="__codelineno-0-210" name="__codelineno-0-210"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-211" name="__codelineno-0-211"></a><span class="sd">        loss_fn: Scalar loss function.  If ``has_aux``, returns</span>
-<a id="__codelineno-0-212" name="__codelineno-0-212"></a><span class="sd">            ``(scalar, loss_aux)``.</span>
-<a id="__codelineno-0-213" name="__codelineno-0-213"></a><span class="sd">        argnums: Which argument(s) to differentiate w.r.t.</span>
-<a id="__codelineno-0-214" name="__codelineno-0-214"></a><span class="sd">        has_aux: If True, ``loss_fn`` returns ``(scalar, loss_aux)``.</span>
-<a id="__codelineno-0-215" name="__codelineno-0-215"></a><span class="sd">        R: Sensitivity max_norm (default 1.0).  When ``PerGroup``, each</span>
-<a id="__codelineno-0-216" name="__codelineno-0-216"></a><span class="sd">            parameter group is scaled independently to its own ``R_k``.</span>
-<a id="__codelineno-0-217" name="__codelineno-0-217"></a><span class="sd">        gamma: Denominator stabilizer :math:`\gamma` (default 0.01,</span>
-<a id="__codelineno-0-218" name="__codelineno-0-218"></a><span class="sd">            strictly positive).</span>
-<a id="__codelineno-0-219" name="__codelineno-0-219"></a><span class="sd">        normalize_by: Divisor applied to the summed gradients (set to</span>
-<a id="__codelineno-0-220" name="__codelineno-0-220"></a><span class="sd">            expected batch size for averaged gradients).</span>
-<a id="__codelineno-0-221" name="__codelineno-0-221"></a><span class="sd">        batch_argnums: Which arguments have a batch dimension.</span>
-<a id="__codelineno-0-222" name="__codelineno-0-222"></a><span class="sd">        return_aux: If True, returns per-example diagnostics as</span>
-<a id="__codelineno-0-223" name="__codelineno-0-223"></a><span class="sd">            :class:`AutoClippedGradAux`.</span>
-<a id="__codelineno-0-224" name="__codelineno-0-224"></a><span class="sd">        pre_clipping_transform: Optional per-example gradient transform</span>
-<a id="__codelineno-0-225" name="__codelineno-0-225"></a><span class="sd">            applied before AUTO-S scaling.</span>
-<a id="__codelineno-0-226" name="__codelineno-0-226"></a><span class="sd">        microbatch_size: Process the batch in chunks of this size.</span>
-<a id="__codelineno-0-227" name="__codelineno-0-227"></a><span class="sd">        dtype: Optional accumulation dtype for the summed gradient.</span>
-<a id="__codelineno-0-228" name="__codelineno-0-228"></a><span class="sd">        second_moment: If True, also accumulate the per-example sum of</span>
-<a id="__codelineno-0-229" name="__codelineno-0-229"></a><span class="sd">            element-wise squared scaled gradients and return a</span>
-<a id="__codelineno-0-230" name="__codelineno-0-230"></a><span class="sd">            :class:`~opaque.types.SecondMomentClippingOutput` carrying</span>
-<a id="__codelineno-0-231" name="__codelineno-0-231"></a><span class="sd">            both streams.  Privacy accounting is unchanged</span>
-<a id="__codelineno-0-232" name="__codelineno-0-232"></a><span class="sd">            (``gaussian(noise_multiplier)``); the noise mechanism&#39;s</span>
-<a id="__codelineno-0-233" name="__codelineno-0-233"></a><span class="sd">            sensitivity-proportional Mahalanobis allocation gives the</span>
-<a id="__codelineno-0-234" name="__codelineno-0-234"></a><span class="sd">            joint paired release the same PLD as a single first-moment</span>
-<a id="__codelineno-0-235" name="__codelineno-0-235"></a><span class="sd">            release.</span>
-<a id="__codelineno-0-236" name="__codelineno-0-236"></a>
-<a id="__codelineno-0-237" name="__codelineno-0-237"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-238" name="__codelineno-0-238"></a><span class="sd">        ``(grad_fn, state)``.  ``grad_fn`` has the signature</span>
-<a id="__codelineno-0-239" name="__codelineno-0-239"></a><span class="sd">        ``(*args, state, **kwargs) -&gt; (grad, state)``, or</span>
-<a id="__codelineno-0-240" name="__codelineno-0-240"></a><span class="sd">        ``(*args, state, **kwargs) -&gt; ((grad, aux), state)`` when</span>
-<a id="__codelineno-0-241" name="__codelineno-0-241"></a><span class="sd">        ``return_aux=True``.</span>
-<a id="__codelineno-0-242" name="__codelineno-0-242"></a>
-<a id="__codelineno-0-243" name="__codelineno-0-243"></a><span class="sd">    Formal guarantee:</span>
-<a id="__codelineno-0-244" name="__codelineno-0-244"></a><span class="sd">        Under add/remove or zero-out DP, the L2 sensitivity of the</span>
-<a id="__codelineno-0-245" name="__codelineno-0-245"></a><span class="sd">        summed gradients is the returned ``ClippedPytree.max_norm`` metadata.</span>
-<a id="__codelineno-0-246" name="__codelineno-0-246"></a><span class="sd">        Privacy accounting is plain ``gaussian(noise_multiplier)`` —</span>
-<a id="__codelineno-0-247" name="__codelineno-0-247"></a><span class="sd">        AUTO-S scaling is per-example and adds no additional privacy cost.</span>
-<a id="__codelineno-0-248" name="__codelineno-0-248"></a>
-<a id="__codelineno-0-249" name="__codelineno-0-249"></a><span class="sd">    Example:</span>
-<a id="__codelineno-0-250" name="__codelineno-0-250"></a><span class="sd">        &gt;&gt;&gt; import torch</span>
-<a id="__codelineno-0-251" name="__codelineno-0-251"></a><span class="sd">        &gt;&gt;&gt; from opaque.clipping import auto_clipped_grad</span>
-<a id="__codelineno-0-252" name="__codelineno-0-252"></a><span class="sd">        &gt;&gt;&gt; def loss_fn(params, x, y):</span>
-<a id="__codelineno-0-253" name="__codelineno-0-253"></a><span class="sd">        ...     return ((x @ params - y) ** 2).mean()</span>
-<a id="__codelineno-0-254" name="__codelineno-0-254"></a><span class="sd">        &gt;&gt;&gt; grad_fn, state = auto_clipped_grad(</span>
-<a id="__codelineno-0-255" name="__codelineno-0-255"></a><span class="sd">        ...     loss_fn, argnums=0, batch_argnums=(1, 2),</span>
-<a id="__codelineno-0-256" name="__codelineno-0-256"></a><span class="sd">        ...     R=1.0, normalize_by=32,</span>
-<a id="__codelineno-0-257" name="__codelineno-0-257"></a><span class="sd">        ... )</span>
-<a id="__codelineno-0-258" name="__codelineno-0-258"></a><span class="sd">        &gt;&gt;&gt; params = torch.randn(10)</span>
-<a id="__codelineno-0-259" name="__codelineno-0-259"></a><span class="sd">        &gt;&gt;&gt; batch_x = torch.randn(32, 10)</span>
-<a id="__codelineno-0-260" name="__codelineno-0-260"></a><span class="sd">        &gt;&gt;&gt; batch_y = torch.randn(32)</span>
-<a id="__codelineno-0-261" name="__codelineno-0-261"></a><span class="sd">        &gt;&gt;&gt; grads, state = grad_fn(params, batch_x, batch_y, state=state)</span>
-<a id="__codelineno-0-262" name="__codelineno-0-262"></a>
-<a id="__codelineno-0-263" name="__codelineno-0-263"></a><span class="sd">    References:</span>
-<a id="__codelineno-0-264" name="__codelineno-0-264"></a><span class="sd">        Bu, Wang, Zha, Karypis.  &quot;Automatic Clipping: Differentially</span>
-<a id="__codelineno-0-265" name="__codelineno-0-265"></a><span class="sd">        Private Deep Learning Made Easier and Stronger.&quot;  NeurIPS 2023.</span>
-<a id="__codelineno-0-266" name="__codelineno-0-266"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-267" name="__codelineno-0-267"></a>    <span class="n">_validate_auto_params</span><span class="p">(</span><span class="n">R</span><span class="p">,</span> <span class="n">gamma</span><span class="p">)</span>
-<a id="__codelineno-0-268" name="__codelineno-0-268"></a>
-<a id="__codelineno-0-269" name="__codelineno-0-269"></a>    <span class="n">scale_fn</span> <span class="o">=</span> <span class="n">_make_auto_scale_fn</span><span class="p">(</span><span class="n">R</span><span class="p">,</span> <span class="n">gamma</span><span class="p">)</span>
-<a id="__codelineno-0-270" name="__codelineno-0-270"></a>    <span class="n">inner_fn</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-0-271" name="__codelineno-0-271"></a>        <span class="n">loss_fn</span><span class="p">,</span>
-<a id="__codelineno-0-272" name="__codelineno-0-272"></a>        <span class="n">argnums</span><span class="o">=</span><span class="n">argnums</span><span class="p">,</span>
-<a id="__codelineno-0-273" name="__codelineno-0-273"></a>        <span class="n">has_aux</span><span class="o">=</span><span class="n">has_aux</span><span class="p">,</span>
-<a id="__codelineno-0-274" name="__codelineno-0-274"></a>        <span class="n">clipping_norm</span><span class="o">=</span><span class="n">R</span><span class="p">,</span>
-<a id="__codelineno-0-275" name="__codelineno-0-275"></a>        <span class="n">normalize_by</span><span class="o">=</span><span class="n">normalize_by</span><span class="p">,</span>
-<a id="__codelineno-0-276" name="__codelineno-0-276"></a>        <span class="n">batch_argnums</span><span class="o">=</span><span class="n">batch_argnums</span><span class="p">,</span>
-<a id="__codelineno-0-277" name="__codelineno-0-277"></a>        <span class="n">return_aux</span><span class="o">=</span><span class="n">return_aux</span><span class="p">,</span>
-<a id="__codelineno-0-278" name="__codelineno-0-278"></a>        <span class="n">pre_clipping_transform</span><span class="o">=</span><span class="n">pre_clipping_transform</span><span class="p">,</span>
-<a id="__codelineno-0-279" name="__codelineno-0-279"></a>        <span class="n">microbatch_size</span><span class="o">=</span><span class="n">microbatch_size</span><span class="p">,</span>
-<a id="__codelineno-0-280" name="__codelineno-0-280"></a>        <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
-<a id="__codelineno-0-281" name="__codelineno-0-281"></a>        <span class="n">second_moment</span><span class="o">=</span><span class="n">second_moment</span><span class="p">,</span>
-<a id="__codelineno-0-282" name="__codelineno-0-282"></a>        <span class="n">_scale_fn</span><span class="o">=</span><span class="n">scale_fn</span><span class="p">,</span>
-<a id="__codelineno-0-283" name="__codelineno-0-283"></a>    <span class="p">)</span>
-<a id="__codelineno-0-284" name="__codelineno-0-284"></a>
-<a id="__codelineno-0-285" name="__codelineno-0-285"></a>    <span class="n">state</span> <span class="o">=</span> <span class="n">AutoClipState</span><span class="p">()</span>
-<a id="__codelineno-0-286" name="__codelineno-0-286"></a>
-<a id="__codelineno-0-287" name="__codelineno-0-287"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">return_aux</span><span class="p">:</span>
-<a id="__codelineno-0-288" name="__codelineno-0-288"></a>
-<a id="__codelineno-0-289" name="__codelineno-0-289"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">grad_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-<a id="__codelineno-0-290" name="__codelineno-0-290"></a>            <span class="n">result</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">inner_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-<a id="__codelineno-0-291" name="__codelineno-0-291"></a>            <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">state</span>
-<a id="__codelineno-0-292" name="__codelineno-0-292"></a>
-<a id="__codelineno-0-293" name="__codelineno-0-293"></a>        <span class="k">return</span> <span class="n">grad_fn</span><span class="p">,</span> <span class="n">state</span>
-<a id="__codelineno-0-294" name="__codelineno-0-294"></a>
-<a id="__codelineno-0-295" name="__codelineno-0-295"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">grad_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-<a id="__codelineno-0-296" name="__codelineno-0-296"></a>        <span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">),</span> <span class="n">_</span> <span class="o">=</span> <span class="n">inner_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-<a id="__codelineno-0-297" name="__codelineno-0-297"></a>        <span class="n">auto_aux</span> <span class="o">=</span> <span class="n">AutoClippedGradAux</span><span class="p">(</span>
-<a id="__codelineno-0-298" name="__codelineno-0-298"></a>            <span class="n">loss_values</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">loss_values</span><span class="p">,</span>
-<a id="__codelineno-0-299" name="__codelineno-0-299"></a>            <span class="n">grad_norms</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">grad_norms</span><span class="p">,</span>
-<a id="__codelineno-0-300" name="__codelineno-0-300"></a>            <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">clipped_grad_norms</span><span class="p">,</span>
-<a id="__codelineno-0-301" name="__codelineno-0-301"></a>            <span class="n">loss_aux</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">loss_aux</span><span class="p">,</span>
-<a id="__codelineno-0-302" name="__codelineno-0-302"></a>            <span class="n">clipping_rate</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span>
-<a id="__codelineno-0-303" name="__codelineno-0-303"></a>            <span class="n">batch_size</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-0-304" name="__codelineno-0-304"></a>            <span class="n">group_norms</span><span class="o">=</span><span class="n">grad_aux</span><span class="o">.</span><span class="n">group_norms</span><span class="p">,</span>
-<a id="__codelineno-0-305" name="__codelineno-0-305"></a>        <span class="p">)</span>
-<a id="__codelineno-0-306" name="__codelineno-0-306"></a>        <span class="k">return</span> <span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">auto_aux</span><span class="p">),</span> <span class="n">state</span>
-<a id="__codelineno-0-307" name="__codelineno-0-307"></a>
-<a id="__codelineno-0-308" name="__codelineno-0-308"></a>    <span class="k">return</span> <span class="n">grad_fn</span><span class="p">,</span> <span class="n">state</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>

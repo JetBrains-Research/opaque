@@ -948,6 +948,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#compatibility-with-dp-ftrl-matrix-factorization-noise" class="md-nav__link">
+    <span class="md-ellipsis">
+      Compatibility with DP-FTRL / matrix-factorization noise
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#state-and-privacy-accounting" class="md-nav__link">
     <span class="md-ellipsis">
       State and privacy accounting
@@ -985,6 +994,15 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#empirical-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      Empirical evidence
+    </span>
+  </a>
   
 </li>
       
@@ -2306,6 +2324,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#compatibility-with-dp-ftrl-matrix-factorization-noise" class="md-nav__link">
+    <span class="md-ellipsis">
+      Compatibility with DP-FTRL / matrix-factorization noise
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#state-and-privacy-accounting" class="md-nav__link">
     <span class="md-ellipsis">
       State and privacy accounting
@@ -2347,6 +2374,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#empirical-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      Empirical evidence
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#api-reference" class="md-nav__link">
     <span class="md-ellipsis">
       API reference
@@ -2381,9 +2417,9 @@ clipping establishes a known sensitivity, which determines how much noise is
 needed for a given privacy guarantee.</p>
 <p>Opaque provides three high-level clipping functions:</p>
 <ul>
-<li><strong><code>clipped_grad</code></strong> — Fixed-threshold clipping (recommended default).</li>
-<li><strong><code>adaptive_clipped_grad</code></strong> — Auto-tuned threshold via quantile tracking (Andrew et al. 2021).</li>
-<li><strong><code>auto_clipped_grad</code></strong> — AUTO-S automatic scaling, no threshold to tune (Bu et al. NeurIPS 2023).</li>
+<li><strong><code>clipped_grad</code></strong> (<a href="../../api/clipping/"><code>opaque.clipping</code></a>) — Fixed-threshold clipping (recommended default).</li>
+<li><strong><code>auto_clipped_grad</code></strong> (<a href="../../api/clipping/"><code>opaque.clipping</code></a>) — AUTO-S automatic scaling, no threshold to tune (Bu et al. NeurIPS 2023). Algorithm-agnostic: composes with both DP-SGD's Gaussian mechanism and DP-FTRL's matrix-factorization mechanisms.</li>
+<li><strong><code>adaptive_clipped_grad</code></strong> (<a href="../../api/clipping/"><code>opaque.dpsgd.clipping</code></a>) — Auto-tuned threshold via quantile tracking (Andrew et al. 2021); DP-SGD-only because the threshold drifts across steps.</li>
 </ul>
 <p>Lower-level building blocks (<code>clipped_fun</code>, <code>clip_pytree</code>, <code>auto_scale_pytree</code>)
 are documented in the <a href="../../api/clipping/">Clipping API Reference</a>.</p>
@@ -2778,7 +2814,7 @@ scaled by</p>
 <p>so the output has L2 norm at most <code>R</code> by construction. There is no clip
 threshold to tune; the effective step size is absorbed into the learning
 rate.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">auto_clipped_grad</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">auto_clipped_grad</span>
 <a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>
 <a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">auto_clipped_grad</span><span class="p">(</span>
 <a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>    <span class="n">loss_fn</span><span class="p">,</span>
@@ -2796,45 +2832,75 @@ rate.</p>
 gradient, so the sensitivity <code>R / normalize_by</code> is guaranteed without any
 adaptation or tuning. AUTO-S removes the clip-threshold hyperparameter
 from the DP-SGD hyperparameter search.</p>
+<h3 id="compatibility-with-dp-ftrl-matrix-factorization-noise">Compatibility with DP-FTRL / matrix-factorization noise<a class="headerlink" href="#compatibility-with-dp-ftrl-matrix-factorization-noise" title="Permanent link">&para;</a></h3>
+<p>Because the per-record sensitivity bound <code>R</code> is constant and
+data-independent, AUTO-S satisfies the constant per-step sensitivity
+assumption that matrix-factorization privacy proofs rely on. The
+returned <code>ClippedPytree.max_norm</code> is the same value (<code>R / normalize_by</code>)
+on every step, so it flows through <code>mf_noise</code> exactly like fixed clipping
+does:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">auto_clipped_grad</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span><span class="p">,</span> <span class="n">mf_noise</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">auto_clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>    <span class="n">R</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="p">)</span>
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">mf_noise</span><span class="p">(</span>
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>    <span class="n">params</span><span class="p">,</span>
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a>    <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="n">num_steps</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">4</span><span class="p">),</span>
+<a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a>    <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span>
+<a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+<a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a><span class="p">)</span>
+<a id="__codelineno-19-15" name="__codelineno-19-15" href="#__codelineno-19-15"></a>
+<a id="__codelineno-19-16" name="__codelineno-19-16" href="#__codelineno-19-16"></a><span class="k">for</span> <span class="n">batch_x</span><span class="p">,</span> <span class="n">batch_y</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
+<a id="__codelineno-19-17" name="__codelineno-19-17" href="#__codelineno-19-17"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch_x</span><span class="p">,</span> <span class="n">batch_y</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-19-18" name="__codelineno-19-18" href="#__codelineno-19-18"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-19-19" name="__codelineno-19-19" href="#__codelineno-19-19"></a>    <span class="c1"># ... optimizer step</span>
+</code></pre></div>
+<p><code>adaptive_clipped_grad</code>, by contrast, <em>cannot</em> be used with <code>mf_noise</code>:
+its threshold drifts across steps and the dispatcher's
+<code>_validate_constant_max_norm</code> latch (rightly) rejects the resulting
+varying <code>max_norm</code>.</p>
 <h3 id="state-and-privacy-accounting">State and privacy accounting<a class="headerlink" href="#state-and-privacy-accounting" title="Permanent link">&para;</a></h3>
 <p>The returned <code>AutoClipState</code> is a fixed marker. <code>R</code>, <code>gamma</code>, and
 <code>normalize_by</code> are captured by the clipping closure, while <code>grads.max_norm</code>
 carries the sensitivity. Privacy accounting is plain Gaussian DP-SGD — AUTO-S
 introduces no extra data-dependent query:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
-<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
-<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
-<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>
-<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
-<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>
-<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span>
-<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="n">num_steps</span>
-<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a>
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span>
+<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="n">num_steps</span>
+<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="per-group-auto-s">Per-group AUTO-S<a class="headerlink" href="#per-group-auto-s" title="Permanent link">&para;</a></h3>
 <p>Pass a <code>PerGroup</code> as <code>R</code> to scale each group independently:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">per_group</span>
-<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">auto_clipped_grad</span>
-<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>
-<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="n">pg</span> <span class="o">=</span> <span class="n">per_group</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">self_attn</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">mlp</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span>
-<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>
-<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">auto_clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>    <span class="n">R</span><span class="o">=</span><span class="n">pg</span><span class="p">,</span> <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a><span class="p">)</span>
-<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="c1"># grads.max_norm.effective = sqrt(sum R_k^2) / normalize_by</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">auto_clipped_grad</span><span class="p">,</span> <span class="n">per_group</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="n">pg</span> <span class="o">=</span> <span class="n">per_group</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">self_attn</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">mlp</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">auto_clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a>    <span class="n">R</span><span class="o">=</span><span class="n">pg</span><span class="p">,</span> <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="p">)</span>
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a><span class="c1"># grads.max_norm.effective = sqrt(sum R_k^2) / normalize_by</span>
 </code></pre></div>
 <h3 id="cli-usage-in-train_causal_lmpy">CLI usage in <code>train_causal_lm.py</code><a class="headerlink" href="#cli-usage-in-train_causal_lmpy" title="Permanent link">&para;</a></h3>
 <p>The training script exposes clipping mode through <code>--clipping-mode</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="c1"># Flat AUTO-S (default R=1, γ=0.01)</span>
-<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>python<span class="w"> </span>examples/train_causal_lm.py<span class="w"> </span>--clipping-mode<span class="w"> </span>auto<span class="w"> </span>--clipping-norm<span class="w"> </span><span class="m">1</span>.0
-<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>
-<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="c1"># Per-layer AUTO-S: smaller R for q_proj (naturally smaller gradients)</span>
-<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>python<span class="w"> </span>examples/train_causal_lm.py<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a><span class="w">    </span>--clipping-mode<span class="w"> </span>auto<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="w">    </span>--per-group-clipping<span class="w"> </span><span class="nv">q_proj</span><span class="o">=</span><span class="m">0</span>.1<span class="w"> </span><span class="nv">fallback</span><span class="o">=</span><span class="m">0</span>.9<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="w">    </span>--auto-clipping-gamma<span class="w"> </span><span class="m">0</span>.01
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="c1"># Flat AUTO-S (default R=1, γ=0.01)</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>python<span class="w"> </span>examples/train_causal_lm.py<span class="w"> </span>--clipping-mode<span class="w"> </span>auto<span class="w"> </span>--clipping-norm<span class="w"> </span><span class="m">1</span>.0
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="c1"># Per-layer AUTO-S: smaller R for q_proj (naturally smaller gradients)</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>python<span class="w"> </span>examples/train_causal_lm.py<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="w">    </span>--clipping-mode<span class="w"> </span>auto<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="w">    </span>--per-group-clipping<span class="w"> </span><span class="nv">q_proj</span><span class="o">=</span><span class="m">0</span>.1<span class="w"> </span><span class="nv">fallback</span><span class="o">=</span><span class="m">0</span>.9<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="w">    </span>--auto-clipping-gamma<span class="w"> </span><span class="m">0</span>.01
 </code></pre></div>
 <p>Mode choices: <code>fixed</code>, <code>adaptive</code> (Andrew et al.), <code>auto</code> (AUTO-S). The
 <code>--clipping-norm</code> flag is reinterpreted by mode: threshold <code>C</code> for fixed,
@@ -2848,6 +2914,40 @@ starting threshold for adaptive, sensitivity bound <code>R</code> for auto.</p>
   track a target quantile of gradient norms, at a small additional
   privacy cost for the quantile query.</li>
 </ul>
+<h2 id="empirical-evidence">Empirical evidence<a class="headerlink" href="#empirical-evidence" title="Permanent link">&para;</a></h2>
+<p>How <code>--second-moment</code> and <code>--per-group-clipping</code> interact with the
+choice of clip norm <code>C</code>, distilled from end-to-end DP fine-tuning runs
+at ε=3:</p>
+<ol>
+<li>
+<p><strong><code>--second-moment</code> redistributes σ in proportion to <code>C</code>.</strong> Joint
+   Mahalanobis allocation between the first- and second-moment streams
+   keeps privacy accounting at <code>gaussian(nm)</code>, but the first-moment σ
+   picks up a <span class="arithmatex">\(\sqrt{1+C}\)</span> factor relative to running without
+   <code>--second-moment</code> at the same noise multiplier — roughly +5% at
+   <code>C=0.1</code>, +40% at <code>C=1</code>. Use the smallest <code>C</code> your optimizer
+   tolerates when <code>--second-moment</code> is on.</p>
+</li>
+<li>
+<p><strong><code>--per-group-clipping</code> pays off when groups have heterogeneous
+   gradient norms.</strong> PG noise is allocated non-uniformly,
+   <code>σᵢ ∝ √Cᵢ</code>, against a joint per-example sensitivity of
+   <code>√(ΣCᵢ²)</code>. A tight <code>Cᵢ</code> on a naturally-small-gradient group cuts
+   σ on that group's coordinates; setting all <code>Cᵢ = c</code> uniformly
+   leaves you with <code>√K</code> more per-group noise than scalar clipping at
+   <code>c</code> and gains nothing. Reach for PG when one group sits an order
+   of magnitude away from the rest on gradient norm — for example a
+   freshly initialised classifier head over frozen layers, or a
+   single LoRA target whose gradients are much smaller than its
+   siblings.</p>
+</li>
+<li>
+<p><strong><code>--second-moment</code> and <code>--per-group-clipping</code> compose.</strong> Stacked,
+   the two carry the same <code>C</code>-dependent σ cost as <code>--second-moment</code>
+   alone and the same per-group thresholding as <code>--per-group-clipping</code>
+   alone — no additional accounting cost from the combination.</p>
+</li>
+</ol>
 <h2 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
 <p>See <a href="../../api/clipping/">Clipping API Reference</a> for complete function
 signatures, all parameters, and return types.</p>

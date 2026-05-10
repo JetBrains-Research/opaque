@@ -5863,9 +5863,14 @@ Noise for step <code>t</code> is generated from <code>fold_in(_rng_key, t)</code
 or :class:<code>~opaque.types.PerGroup</code>), latched by the dispatcher to
 enforce constant per-step sensitivity.  <code>None</code> until the first
 call.  MF privacy analyses assume the per-step sensitivity is
-constant across the sequence; varying it (e.g. via adaptive
-clipping) breaks the standard proof, so the dispatcher rejects
-subsequent calls whose <code>max_norm</code> differs.</p>
+constant across the sequence.  Both fixed clipping
+(:func:<code>opaque.clipping.clipped_grad</code>) and AUTO-S clipping
+(:func:<code>opaque.clipping.auto_clipped_grad</code>) satisfy this
+assumption — the per-record bound is fixed at construction and
+does not depend on data.  Adaptive clipping
+(:func:<code>opaque.dpsgd.clipping.adaptive_clipped_grad</code>) breaks it,
+so the dispatcher rejects subsequent calls whose <code>max_norm</code>
+differs.</p>
               </div>
             </td>
           </tr>
@@ -5920,7 +5925,12 @@ subsequent calls whose <code>max_norm</code> differs.</p>
 <span class="normal"><a href="#__codelineno-0-57">57</a></span>
 <span class="normal"><a href="#__codelineno-0-58">58</a></span>
 <span class="normal"><a href="#__codelineno-0-59">59</a></span>
-<span class="normal"><a href="#__codelineno-0-60">60</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-35" name="__codelineno-0-35"></a><span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="normal"><a href="#__codelineno-0-60">60</a></span>
+<span class="normal"><a href="#__codelineno-0-61">61</a></span>
+<span class="normal"><a href="#__codelineno-0-62">62</a></span>
+<span class="normal"><a href="#__codelineno-0-63">63</a></span>
+<span class="normal"><a href="#__codelineno-0-64">64</a></span>
+<span class="normal"><a href="#__codelineno-0-65">65</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-35" name="__codelineno-0-35"></a><span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <a id="__codelineno-0-36" name="__codelineno-0-36"></a><span class="k">class</span><span class="w"> </span><span class="nc">MFNoiseState</span><span class="p">(</span><span class="n">NoiseState</span><span class="p">):</span>
 <a id="__codelineno-0-37" name="__codelineno-0-37"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;State for matrix factorization noise.</span>
 <a id="__codelineno-0-38" name="__codelineno-0-38"></a>
@@ -5932,20 +5942,25 @@ subsequent calls whose <code>max_norm</code> differs.</p>
 <a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="sd">            or :class:`~opaque.types.PerGroup`), latched by the dispatcher to</span>
 <a id="__codelineno-0-45" name="__codelineno-0-45"></a><span class="sd">            enforce constant per-step sensitivity.  ``None`` until the first</span>
 <a id="__codelineno-0-46" name="__codelineno-0-46"></a><span class="sd">            call.  MF privacy analyses assume the per-step sensitivity is</span>
-<a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="sd">            constant across the sequence; varying it (e.g. via adaptive</span>
-<a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">            clipping) breaks the standard proof, so the dispatcher rejects</span>
-<a id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="sd">            subsequent calls whose ``max_norm`` differs.</span>
-<a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="sd">        _first_max_norm_sync_fingerprint: Deterministic 64-bit fingerprint</span>
-<a id="__codelineno-0-51" name="__codelineno-0-51"></a><span class="sd">            (computed at latch time) for cheap cross-rank checks in</span>
-<a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">            :func:`sync_mf_noise_state`, for both scalar and ``PerGroup`` norms.</span>
-<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">            ``None`` before the first call.</span>
-<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-55" name="__codelineno-0-55"></a>
-<a id="__codelineno-0-56" name="__codelineno-0-56"></a>    <span class="n">_inner_state</span><span class="p">:</span> <span class="n">Any</span>
-<a id="__codelineno-0-57" name="__codelineno-0-57"></a>    <span class="n">_step_counter</span><span class="p">:</span> <span class="nb">int</span>
-<a id="__codelineno-0-58" name="__codelineno-0-58"></a>    <span class="n">_rng_key</span><span class="p">:</span> <span class="n">RngKey</span>
-<a id="__codelineno-0-59" name="__codelineno-0-59"></a>    <span class="n">_first_max_norm</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">PerGroup</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-<a id="__codelineno-0-60" name="__codelineno-0-60"></a>    <span class="n">_first_max_norm_sync_fingerprint</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="sd">            constant across the sequence.  Both fixed clipping</span>
+<a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">            (:func:`opaque.clipping.clipped_grad`) and AUTO-S clipping</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="sd">            (:func:`opaque.clipping.auto_clipped_grad`) satisfy this</span>
+<a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="sd">            assumption — the per-record bound is fixed at construction and</span>
+<a id="__codelineno-0-51" name="__codelineno-0-51"></a><span class="sd">            does not depend on data.  Adaptive clipping</span>
+<a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">            (:func:`opaque.dpsgd.clipping.adaptive_clipped_grad`) breaks it,</span>
+<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">            so the dispatcher rejects subsequent calls whose ``max_norm``</span>
+<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">            differs.</span>
+<a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="sd">        _first_max_norm_sync_fingerprint: Deterministic 64-bit fingerprint</span>
+<a id="__codelineno-0-56" name="__codelineno-0-56"></a><span class="sd">            (computed at latch time) for cheap cross-rank checks in</span>
+<a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="sd">            :func:`sync_mf_noise_state`, for both scalar and ``PerGroup`` norms.</span>
+<a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">            ``None`` before the first call.</span>
+<a id="__codelineno-0-59" name="__codelineno-0-59"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-60" name="__codelineno-0-60"></a>
+<a id="__codelineno-0-61" name="__codelineno-0-61"></a>    <span class="n">_inner_state</span><span class="p">:</span> <span class="n">Any</span>
+<a id="__codelineno-0-62" name="__codelineno-0-62"></a>    <span class="n">_step_counter</span><span class="p">:</span> <span class="nb">int</span>
+<a id="__codelineno-0-63" name="__codelineno-0-63"></a>    <span class="n">_rng_key</span><span class="p">:</span> <span class="n">RngKey</span>
+<a id="__codelineno-0-64" name="__codelineno-0-64"></a>    <span class="n">_first_max_norm</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">PerGroup</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-65" name="__codelineno-0-65"></a>    <span class="n">_first_max_norm_sync_fingerprint</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 </code></pre></div></td></tr></table></div>
               </details>
 
