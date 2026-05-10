@@ -1,26 +1,55 @@
 # Tutorials
 
-These Jupyter notebooks provide hands-on practice with Opaque's DP-SGD
-components. Each tutorial is self-contained and task-oriented: you will
-build something concrete and see it work.
+These Jupyter notebooks provide hands-on practice with Opaque. Each is
+self-contained: you build something concrete and see it work.
 
 For conceptual explanations, see the [User Guide](../user-guide/index.md).
 For complete function signatures, see the
-[API Reference](../reference/index.md).
+[API Reference](../reference/index.md). For the contributor surface,
+see [Extending Opaque](../extending/index.md).
 
-## Notebooks
+## DP-SGD track
 
-| Tutorial | Task | Components exercised |
-| -------- | ---- | -------------------- |
-| [DP-SGD Training](dp_sgd_training.ipynb) | Train a model with differential privacy from scratch | `clipped_grad`, `gaussian_noise`, `make_functional`, accounting, calibration |
-| [Privacy Accounting & Calibration](accounting_and_calibration.ipynb) | Explore the accounting API, compare mechanisms, calibrate noise | `DpProcess`, composition, `calibrate`, privacy metrics |
-| [Fine-tuning an LLM](llm_finetuning.ipynb) | Fine-tune a HuggingFace model with DP and LoRA | `make_functional`, `partition_trainable`, PEFT, adaptive clipping |
-| [Sampling & Microbatching](sampling_and_microbatching.ipynb) | Compare sampling strategies and tune microbatch size | `PoissonSubsampler`, truncated Poisson via ``truncated_batch_size``, `microbatch_size` |
-| [Privacy Auditing](privacy_auditing.ipynb) | Validate privacy guarantees empirically | `auditing.coin_flip`, `auditing.one_run`, `OneRunEstimate`, bootstrap |
-| [Distributed Training](distributed_training.ipynb) | Run DP-SGD across multiple GPUs | `sum_gradients`, `local_shard`, `PoissonSubsampler`, shared RNG key |
+Independent per-step Gaussian noise. The classical DP training pipeline.
 
-Most tutorials run on CPU in reasonable time using small datasets.
-The distributed training tutorial requires multiple GPUs and `torchrun`.
+| Tutorial | Task |
+| -------- | ---- |
+| [DP-SGD Training](dp_sgd_training.ipynb) | Train a model with DP-SGD from scratch — the canonical reference. |
+| [Privacy Accounting & Calibration](accounting_and_calibration.ipynb) | Compose mechanisms, calibrate the noise multiplier, query ε at the end. |
+| [Sampling & Microbatching](sampling_and_microbatching.ipynb) | Plain vs truncated Poisson, microbatch size, the privacy/memory trade-off. |
+| [Fine-tuning an LLM](llm_finetuning.ipynb) | LoRA + adaptive clipping + truncated Poisson on a real Hugging Face model. |
+
+## DP-FTRL track
+
+Correlated noise across the run via matrix factorization. Better
+privacy/utility on cumulative updates, at the cost of fixing the
+training length up front.
+
+| Tutorial | Task |
+| -------- | ---- |
+| [DP-FTRL Training](dp_ftrl_training.ipynb) | Train a model with DP-FTRL — strategy choice, whole-process accounting, MF noise. |
+
+The DP-SGD-track accounting and sampling notebooks share their core
+ideas with DP-FTRL; the strategy-and-`n_steps`-up-front difference is
+covered explicitly in the DP-FTRL training tutorial above.
+
+## Cross-cutting
+
+Concerns that apply to either stack.
+
+| Tutorial | Task |
+| -------- | ---- |
+| [Privacy Auditing](privacy_auditing.ipynb) | Validate privacy guarantees empirically with one-run / coin-flip auditing. |
+| [Distributed Training](distributed_training.ipynb) | Multi-GPU DP training under DDP — synchronized noise, sharded sampling. |
+
+## Extending Opaque
+
+| Tutorial | Task |
+| -------- | ---- |
+| [Extending Opaque](extending_opaque.ipynb) | Register a custom serializer + sync handler, build a custom mechanism with `clipped_fun`. |
+
+This is the only tutorial that imports from `opaque.api.*`. User-facing
+code lives behind public façades.
 
 ## Running the tutorials
 
@@ -29,10 +58,11 @@ Install Opaque and its tutorial dependencies from a repository checkout:
 ```bash
 git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
-uv sync --group examples --all-packages --extra transformers
+uv sync --group examples --all-packages --extra all
 jupyter lab docs/tutorials/
 ```
 
 The `examples` group ships Jupyter, matplotlib, torchvision, torchopt,
-datasets, and wandb; HuggingFace integration is enabled via
-`--extra transformers`. There is no separate `tutorials` group.
+datasets, and wandb; HuggingFace integration comes via `--extra all`
+(or `--extra transformers`). The distributed-training tutorial requires
+multiple processes via `torchrun`.

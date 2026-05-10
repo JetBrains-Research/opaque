@@ -121,12 +121,17 @@ nav:
       - DP-λCGD: mechanisms/dp-ftrl/lambda-cgd.md
   - Tutorials:
     - Overview: tutorials/README.md
-    - DP-SGD Training: tutorials/dp_sgd_training.ipynb
-    - Accounting & Calibration: tutorials/accounting_and_calibration.ipynb
-    - Fine-tuning an LLM: tutorials/llm_finetuning.ipynb
-    - Sampling & Microbatching: tutorials/sampling_and_microbatching.ipynb
-    - Privacy Auditing: tutorials/privacy_auditing.ipynb
-    - Distributed Training: tutorials/distributed_training.ipynb
+    - DP-SGD track:
+      - DP-SGD Training: tutorials/dp_sgd_training.ipynb
+      - Accounting & Calibration: tutorials/accounting_and_calibration.ipynb
+      - Sampling & Microbatching: tutorials/sampling_and_microbatching.ipynb
+      - Fine-tuning an LLM: tutorials/llm_finetuning.ipynb
+    - DP-FTRL track:
+      - DP-FTRL Training: tutorials/dp_ftrl_training.ipynb
+    - Cross-cutting:
+      - Privacy Auditing: tutorials/privacy_auditing.ipynb
+      - Distributed Training: tutorials/distributed_training.ipynb
+    - Extending Opaque: tutorials/extending_opaque.ipynb
   - API Reference:
     - Overview: reference/index.md
     - Serialization: reference/serialization.md

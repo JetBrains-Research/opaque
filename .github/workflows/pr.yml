@@ -155,8 +155,9 @@ jobs:
         run: |
           # The opaque.api.* contributor namespace is documented only under
           # docs/extending/ and may be referenced in CONTRIBUTING.md / AGENTS.md.
-          # Concrete opaque.api.<module> paths must not appear in user-guide,
-          # reference, getting-started, mechanisms, tutorials, examples, or README.
+          # The docs/tutorials/extending_opaque.ipynb notebook is the
+          # contributor-track companion to docs/extending/ and is also allowed.
+          # Concrete opaque.api.<module> paths must not appear elsewhere.
           targets=(
             docs/user-guide
             docs/reference
@@ -166,9 +167,11 @@ jobs:
             examples
             README.md
           )
-          if rg -n 'opaque\.api\.[a-z_][a-z_0-9]*' "${targets[@]}"; then
+          if rg -n --glob '!docs/tutorials/extending_opaque.ipynb' \
+              'opaque\.api\.[a-z_][a-z_0-9]*' "${targets[@]}"; then
             echo "ERROR: opaque.api.* paths must not appear in user-facing docs/examples."
-            echo "       Document the contributor surface only under docs/extending/."
+            echo "       Document the contributor surface only under docs/extending/"
+            echo "       or docs/tutorials/extending_opaque.ipynb."
             exit 1
           fi
 

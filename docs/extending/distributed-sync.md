@@ -7,14 +7,10 @@ Like the serialisation registry, it dispatches by exact type.
 ## The registry
 
 ```python
-from opaque.api.engine.distributed._registry import (
-    register_sync_handler,
-    lookup_sync_handler,
-)
-from opaque.api.engine.distributed._types import SyncHandler  # Protocol
+from opaque.api.engine.distributed import register_sync_type
 ```
 
-`register_sync_handler(type_, handler)` wires a callable that takes a
+`register_sync_type(type_, handler)` wires a callable that takes a
 state object and returns a synced state object (typically a
 `dataclasses.replace`-style update with cross-rank-reduced fields).
 
@@ -52,9 +48,12 @@ register a second handler keyed by the aux type.
 ## Worked example: a custom adaptive clip-state
 
 ```python
+import dataclasses
 from dataclasses import replace
 
-from opaque.api.engine.distributed._registry import register_sync_handler
+import torch
+
+from opaque.api.engine.distributed import register_sync_type
 from opaque.distributed import is_distributed
 from opaque.distributed.collectives import all_reduce
 
@@ -75,7 +74,7 @@ def _sync_my_state(state: MyDriftedClipState) -> MyDriftedClipState:
     return replace(state, threshold=averaged)
 
 
-register_sync_handler(MyDriftedClipState, _sync_my_state)
+register_sync_type(MyDriftedClipState, _sync_my_state)
 ```
 
 Now `opaque.distributed.sync(state)` dispatches to your handler.
@@ -84,7 +83,7 @@ Now `opaque.distributed.sync(state)` dispatches to your handler.
 
 Side-effect import on the module that defines the state class. The
 Opaque convention: a `_distributed.py` sibling of the state file that
-imports the state class and calls `register_sync_handler` at module
+imports the state class and calls `register_sync_type` at module
 load. The state-class-defining module then does
 `from . import _distributed  # noqa: F401` so any consumer that loads
 the state class also loads the sync registration.

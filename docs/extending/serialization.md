@@ -13,8 +13,8 @@ artefacts that you want to round-trip.
 
 ## The registry
 
-The registry lives at `opaque.api.base.serialization._registry`. The
-entry points you'll use:
+The entry points you'll use, all re-exported on
+`opaque.api.base.serialization`:
 
 ```python
 from opaque.api.base.serialization import (
@@ -25,9 +25,8 @@ from opaque.api.base.serialization import (
 )
 ```
 
-`register_serializer` is also re-exported from the public façade as
-`opaque.serialization.register_serializer` — both names refer to the
-same function.
+`register_serializer` is also re-exported on the public
+`opaque.serialization` façade — both names refer to the same function.
 
 ## Handler shape
 

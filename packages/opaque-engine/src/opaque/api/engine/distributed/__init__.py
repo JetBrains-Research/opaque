@@ -26,7 +26,7 @@ from opaque.api.engine.distributed.collectives import (
 )
 from opaque.api.engine.distributed.gradients import sum_gradients, sum_gradients_
 from opaque.api.engine.distributed._shard import local_shard
-from opaque.api.engine.distributed._state import sync
+from opaque.api.engine.distributed._state import register_sync_type, sync
 
 __all__ = [
     "is_distributed",
@@ -36,5 +36,6 @@ __all__ = [
     "sum_gradients",
     "sum_gradients_",
     "sync",
+    "register_sync_type",
     "local_shard",
 ]
