@@ -12,6 +12,6 @@ working.
 
 from __future__ import annotations
 
-from opaque.clipping._auto import auto_clipped_fun
+from opaque.clipping.fun import auto_clipped_fun
 
 __all__ = ["auto_clipped_fun"]

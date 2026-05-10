@@ -120,8 +120,10 @@ _ALL_STRATEGY_NAMES = ("identity", "band_mf", "blt", "bisr", "bsr", "lambda_cgd"
 def _per_group_supported_by_mf_noise() -> bool:
     """Probe whether the dispatcher accepts ``PerGroup`` bounds.
 
-    On plain ``main`` ``mf_noise`` rejects per-group bounds via
-    ``_expect_clipped``.  PR #192 removes that rejection.  These tests
+    On plain ``main`` ``mf_noise`` rejects ``PerGroup`` bounds because the
+    dispatcher only allows a constant per-step ``max_norm`` shape that older
+    releases did not support for MF noise.  PR #192 removes that rejection.
+    These tests
     light up automatically once #192 lands; until then they are skipped
     rather than failing the suite.
     """

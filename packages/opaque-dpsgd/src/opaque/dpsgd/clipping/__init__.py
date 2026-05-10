@@ -23,7 +23,7 @@ State and auxiliary dataclasses (``AdaptiveClipState``,
 :mod:`opaque.dpsgd.clipping.types`.
 """
 
-from opaque.clipping._auto import auto_clipped_grad
+from opaque.clipping import auto_clipped_grad
 from opaque.dpsgd.clipping._adaptive import adaptive_clipped_grad
 
 import opaque.dpsgd.clipping._distributed  # noqa: F401  (registers sync handlers)

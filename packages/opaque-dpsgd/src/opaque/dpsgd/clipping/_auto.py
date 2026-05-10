@@ -10,12 +10,12 @@ keep working.
 
 from __future__ import annotations
 
-from opaque.clipping._auto import (
+from opaque.clipping import auto_clipped_grad
+from opaque.clipping.fun import auto_clipped_fun
+from opaque.clipping.types import (
     AutoClippedFunAux,
     AutoClippedGradAux,
     AutoClipState,
-    auto_clipped_fun,
-    auto_clipped_grad,
 )
 
 __all__ = [

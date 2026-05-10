@@ -7,7 +7,7 @@ are re-exported here for backward compatibility.
 
 from __future__ import annotations
 
-from opaque.clipping._auto import (
+from opaque.clipping.types import (
     AutoClippedFunAux,
     AutoClippedGradAux,
     AutoClipState,
