@@ -1,7 +1,25 @@
-"""AUTO-S at the function level (:func:`auto_clipped_fun`)."""
+"""Power-user clipping building blocks for DP-FTRL.
+
+Mirrors :mod:`opaque._clipping.fun`:
+
+- :func:`clipped_fun` / :func:`auto_clipped_fun` — clip + sum any per-example
+  function output (PyTree).
+- :func:`clip_pytree` / :func:`auto_scale_pytree` — clip / AUTO-S an
+  already-batched pytree.
+"""
 
 from __future__ import annotations
 
-from opaque._clipping.fun import auto_clipped_fun, auto_scale_pytree, clip_pytree
+from opaque._clipping.fun import (
+    auto_clipped_fun,
+    auto_scale_pytree,
+    clip_pytree,
+    clipped_fun,
+)
 
-__all__ = ["auto_clipped_fun", "auto_scale_pytree", "clip_pytree"]
+__all__ = [
+    "auto_clipped_fun",
+    "auto_scale_pytree",
+    "clip_pytree",
+    "clipped_fun",
+]
