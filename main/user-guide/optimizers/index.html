@@ -2536,53 +2536,18 @@ above.</p>
 <a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="accounting">Accounting<a class="headerlink" href="#accounting" title="Permanent link">&para;</a></h3>
-<p>Wrap the base mechanism with <code>acc.second_moment()</code> to account for both moment streams:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">clip_bound</span> <span class="o">=</span> <span class="n">clipping_norm</span> <span class="o">/</span> <span class="n">batch_size</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="n">mechanism</span> <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="n">nm</span><span class="p">,</span> <span class="n">sensitivity</span><span class="o">=</span><span class="n">S</span><span class="p">,</span> <span class="n">num_groups</span><span class="o">=</span><span class="n">k</span><span class="p">)</span>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="k">if</span> <span class="n">use_adam</span><span class="p">:</span>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    <span class="n">mechanism</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">second_moment</span><span class="p">(</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>        <span class="n">mechanism</span><span class="p">,</span>
-<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>        <span class="n">sensitivity</span><span class="o">=</span><span class="n">clip_bound</span><span class="p">,</span>
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>        <span class="n">max_column_norm</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">_max_column_norm</span><span class="p">,</span>
-<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>    <span class="p">)</span>
-<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="n">process</span> <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span><span class="n">mechanism</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="n">q</span><span class="p">)</span>
+<p>Privacy accounting for the paired release uses the same underlying
+mechanism PLD as the first-moment-only release: the runtime σ allocation
+is sensitivity-proportional, so the joint Mahalanobis budget collapses to
+a single sensitivity-1 Gaussian release at the same noise multiplier.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">mechanism</span> <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="n">nm</span><span class="p">,</span> <span class="n">sensitivity</span><span class="o">=</span><span class="n">S</span><span class="p">,</span> <span class="n">num_groups</span><span class="o">=</span><span class="n">k</span><span class="p">)</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="n">process</span> <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span><span class="n">mechanism</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="n">q</span><span class="p">)</span>
 </code></pre></div>
-<p><code>acc.second_moment</code> accepts three kinds of Gaussian-family inner:</p>
-<table>
-<thead>
-<tr>
-<th>Inner</th>
-<th>Use case</th>
-<th>Composition</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>dpsgd_acc.gaussian(nm)</code></td>
-<td>DP-SGD with fixed clipping</td>
-<td><code>acc.second_moment(dpsgd_acc.gaussian(nm), sensitivity=...)</code></td>
-</tr>
-<tr>
-<td><code>dpsgd_acc.adaclip(dpsgd_acc.gaussian(nm), ...)</code></td>
-<td>DP-SGD with adaptive clipping</td>
-<td><code>acc.second_moment(dpsgd_acc.adaclip(...), sensitivity=...)</code></td>
-</tr>
-<tr>
-<td><code>ftrl_acc.band_mf(nm, ...)</code> (or any other MF Gaussian)</td>
-<td>DP-FTRL</td>
-<td><code>acc.second_moment(ftrl_acc.band_mf(...), sensitivity=...)</code></td>
-</tr>
-</tbody>
-</table>
-<p>For the <code>AdaClip</code> inner the threshold-quantile noise is folded into the
-gradient noise via Theorem 1's <code>z_eff</code> first; the second-moment
-overhead then applies on the resulting effective Gaussian.  The
-composition is exact because the threshold-quantile and gradient/squared-
-gradient releases use independent randomness.</p>
-<p>For DP-SGD AUTO-S clipping (<code>auto_clipped_grad(..., second_moment=True)</code>)
-the matching accountant is just <code>acc.second_moment(dpsgd_acc.gaussian(nm), ...)</code>
-— AUTO-S is per-example smooth scaling and contributes no extra
-threshold-quantile cost.</p>
+<p>Same pattern for DP-SGD: just <code>dpsgd_acc.gaussian(nm)</code> (or
+<code>dpsgd_acc.adaclip(dpsgd_acc.gaussian(nm), ...)</code>) — no transformation
+wrapper. AUTO-S clipping (<code>auto_clipped_grad(..., second_moment=True)</code>)
+calibrates against the same plain <code>dpsgd_acc.gaussian(nm)</code> because AUTO-S
+contributes no extra threshold-quantile cost.</p>
 <h3 id="cli">CLI<a class="headerlink" href="#cli" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>python<span class="w"> </span>examples/train_dp_ftrl.py<span class="w"> </span>--preset<span class="w"> </span>smoke<span class="w"> </span>--optimizer<span class="w"> </span>adamw<span class="w"> </span>--mechanism<span class="w"> </span>blt<span class="w"> </span>--second-moment
 </code></pre></div>

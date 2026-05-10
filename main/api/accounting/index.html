@@ -1620,9 +1620,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#second_momentinner-sensitivity-max_column_normnone-first_moment_overheadsqrt32-dpprocess" class="md-nav__link">
+  <a href="#private-second-moment-release" class="md-nav__link">
     <span class="md-ellipsis">
-      second_moment(inner, *, sensitivity, max_column_norm=None, first_moment_overhead=sqrt(3/2)) -&gt; DpProcess
+      Private second-moment release
     </span>
   </a>
   
@@ -2165,9 +2165,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#second_momentinner-sensitivity-max_column_normnone-first_moment_overheadsqrt32-dpprocess" class="md-nav__link">
+  <a href="#private-second-moment-release" class="md-nav__link">
     <span class="md-ellipsis">
-      second_moment(inner, *, sensitivity, max_column_norm=None, first_moment_overhead=sqrt(3/2)) -&gt; DpProcess
+      Private second-moment release
     </span>
   </a>
   
@@ -2457,7 +2457,7 @@ resulting process.</p>
 <tbody>
 <tr>
 <td><code>opaque.accounting</code></td>
-<td>Cross-cutting: calibration, composition, <code>second_moment</code>, <code>balls_in_bins</code>, <code>Accountant</code>, <code>repeat</code>, <code>compose</code></td>
+<td>Cross-cutting: calibration, composition, <code>Accountant</code>, <code>repeat</code>, <code>compose</code></td>
 <td><code>import opaque.accounting as acc</code></td>
 </tr>
 <tr>
@@ -2686,68 +2686,31 @@ fraction query. Returns an <code>AdaClip</code> process composable with
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">adaclip</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">fraction_noise_std</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">expected_batch_size</span><span class="o">=</span><span class="mi">256</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
 </code></pre></div>
-<h3 id="second_momentinner-sensitivity-max_column_normnone-first_moment_overheadsqrt32-dpprocess"><code>second_moment(inner, *, sensitivity, max_column_norm=None, first_moment_overhead=sqrt(3/2)) -&gt; DpProcess</code><a class="headerlink" href="#second_momentinner-sensitivity-max_column_normnone-first_moment_overheadsqrt32-dpprocess" title="Permanent link">&para;</a></h3>
-<p>Accounts for the additional privacy cost of releasing <strong>both</strong> gradients and
-squared gradients in the same step (used with private adaptive optimizers such
-as Adam and RMSProp). The shared noise budget is split optimally between the
-two streams.</p>
-<p>Accepted inners:</p>
-<table>
-<thead>
-<tr>
-<th><code>inner</code></th>
-<th>Use case</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>gaussian(nm)</code></td>
-<td>DP-SGD with fixed or AUTO-S clipping</td>
-</tr>
-<tr>
-<td><code>adaclip(gaussian(nm))</code></td>
-<td>DP-SGD with adaptive clipping (quantile overhead included)</td>
-</tr>
-<tr>
-<td><code>band_mf(nm)</code>, <code>blt(nm)</code>, <code>lambda_cgd(nm)</code>, <code>bisr(nm)</code></td>
-<td>DP-FTRL (MF noise)</td>
-</tr>
-</tbody>
-</table>
-<ul>
-<li><code>inner</code>: Base mechanism.</li>
-<li><code>sensitivity</code> (float): Clipped-gradient sensitivity (<code>clipping_norm / batch_size</code> for mean reduction).</li>
-<li><code>max_column_norm</code> (float | None): Max column norm of the first-moment strategy matrix. Defaults to <code>inner.sensitivity</code> for MF inners, <code>1.0</code> for Gaussian / AdaClip.</li>
-<li><code>first_moment_overhead</code> (float): Overhead multiplied onto the first-stream sensitivity. Default <code>sqrt(3/2)</code> (tight for d ≥ 2 add/remove DP).</li>
-</ul>
+<h3 id="private-second-moment-release">Private second-moment release<a class="headerlink" href="#private-second-moment-release" title="Permanent link">&para;</a></h3>
+<p>When the noise mechanism produces both gradients <strong>and</strong> squared gradients
+(via <code>clipped_grad(..., second_moment=True)</code>), the joint paired release uses
+sensitivity-proportional Mahalanobis allocation in the runtime σ split (see
+the <a href="../noise/#paired-second-moment-release">paired second-moment release</a>
+section). The Mahalanobis
+budget collapses to a single sensitivity-1 Gaussian release at the same
+noise multiplier, so <strong>privacy accounting is exactly the underlying
+first-moment mechanism</strong>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="c1"># DP-SGD with fixed clipping</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">second_moment</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span> <span class="n">sensitivity</span><span class="o">=</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">batch_size</span><span class="p">),</span>
-<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="n">batch_size</span> <span class="o">/</span> <span class="n">dataset_size</span><span class="p">,</span>
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="p">)</span>
-<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>
-<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="c1"># DP-SGD with adaptive clipping (quantile noise folded in)</span>
-<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
-<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">second_moment</span><span class="p">(</span>
-<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>        <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">adaclip</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span> <span class="n">fraction_noise_std</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">expected_batch_size</span><span class="o">=</span><span class="mi">256</span><span class="p">),</span>
-<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>        <span class="n">sensitivity</span><span class="o">=</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>    <span class="p">),</span>
-<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="n">batch_size</span> <span class="o">/</span> <span class="n">dataset_size</span><span class="p">,</span>
-<a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="p">)</span>
-<a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a>
-<a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="c1"># DP-FTRL with BandMF</span>
-<a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span>
-<a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-<a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span>
-<a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">second_moment</span><span class="p">(</span>
-<a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a>        <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span> <span class="n">num_groups</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">num_groups</span><span class="p">),</span>
-<a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a>        <span class="n">sensitivity</span><span class="o">=</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a>    <span class="p">),</span>
-<a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="n">batch_size</span> <span class="o">/</span> <span class="n">dataset_size</span><span class="p">,</span>
-<a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a><span class="p">)</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="c1"># DP-SGD: same chain as first-moment-only</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="n">batch_size</span> <span class="o">/</span> <span class="n">dataset_size</span><span class="p">)</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="n">num_steps</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="c1"># DP-FTRL with BandMF: same chain as first-moment-only</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>    <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span> <span class="n">num_groups</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">num_groups</span><span class="p">),</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="n">batch_size</span> <span class="o">/</span> <span class="n">dataset_size</span><span class="p">,</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="p">)</span>
 </code></pre></div>
+<p>There is no separate <code>second_moment</code> transformation to wrap and no <code>ρ</code> knob:
+the runtime σ on each stream already absorbs the joint cost. Use the
+underlying mechanism factories (<code>dpsgd_acc.gaussian</code>, <code>dpftrl_acc.band_mf</code>,
+…) directly.</p>
 <h3 id="eps_deltaepsilon-delta00-dpprocess"><code>eps_delta(epsilon, delta=0.0) -&gt; DpProcess</code><a class="headerlink" href="#eps_deltaepsilon-delta00-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Fixed (epsilon, delta)-DP guarantee. Useful for composing an external mechanism
 with known privacy parameters into tracked processes.</p>
@@ -2763,8 +2726,8 @@ with known privacy parameters into tracked processes.</p>
 composition: <code>identity() | a</code> returns <code>a</code>.</p>
 <h3 id="nonprivate-dpprocess"><code>nonprivate() -&gt; DpProcess</code><a class="headerlink" href="#nonprivate-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Non-private mechanism (ε=∞, δ=0). Useful as a baseline or for training without
-a privacy guarantee. <code>second_moment(inner)</code> and all Poisson-family amplifications
-handle <code>nonprivate()</code> inner transparently (zero privacy cost).</p>
+a privacy guarantee. All Poisson-family amplifications handle <code>nonprivate()</code>
+inner transparently (zero privacy cost).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">nonprivate</span><span class="p">(),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
 <a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="mi">1000</span>
 <a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="c1"># training.epsilon_at(1e-5) == inf</span>
@@ -2868,7 +2831,7 @@ Poisson-subsampled Gaussian. Only accepts <code>BandMf</code> inner processes.</
 </code></pre></div>
 <h3 id="b_min_sepinner-strategy_coefficients-n_steps-p0-num_mc_samples100_000-mc_seed42-dpprocess"><code>b_min_sep(inner, strategy_coefficients, n_steps, p0, *, num_mc_samples=100_000, mc_seed=42) -&gt; DpProcess</code><a class="headerlink" href="#b_min_sepinner-strategy_coefficients-n_steps-p0-num_mc_samples100_000-mc_seed42-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Warm-start <strong>b-min-sep</strong> amplification for BandMF (Dong &amp; Ganesh, arXiv:2602.09338).
-Uses Monte Carlo PLD accounting. <code>inner</code> must be <code>BandMf</code> or <code>SecondMoment(BandMf)</code>.
+Uses Monte Carlo PLD accounting. <code>inner</code> must be <code>BandMf</code>.
 <code>strategy_coefficients</code> is the first column of the same BandMF strategy matrix
 used for noise. <code>p0</code> is the per-example participation rate per iteration
 <code>E[|B|]/|D|</code> (match the training sampler’s target batch size).</p>

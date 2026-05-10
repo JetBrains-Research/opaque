@@ -2365,7 +2365,7 @@ factories live next to its runtime:</p>
 <tbody>
 <tr>
 <td><code>opaque.accounting</code></td>
-<td>Cross-cutting primitives — composition (<code>compose</code>, <code>repeat</code>, <code>cached</code>), <code>calibrate</code>, generic mechanisms (<code>identity</code>, <code>nonprivate</code>, <code>eps_delta</code>), and the two cross-algorithm primitives <code>balls_in_bins</code> and <code>second_moment</code>.</td>
+<td>Cross-cutting primitives — composition (<code>compose</code>, <code>repeat</code>, <code>cached</code>), <code>calibrate</code>, generic mechanisms (<code>identity</code>, <code>nonprivate</code>, <code>eps_delta</code>), <code>Accountant</code>, and the shared PLD / discretization stack.</td>
 <td><code>opaque-accounting</code></td>
 </tr>
 <tr>
@@ -2375,11 +2375,12 @@ factories live next to its runtime:</p>
 </tr>
 <tr>
 <td><code>opaque.dpftrl.accounting</code></td>
-<td>DP-FTRL factories — <code>band_mf</code>, <code>blt</code>, <code>bisr</code>, <code>bsr</code>, <code>lambda_cgd</code>, <code>cyclic_poisson</code>, <code>b_min_sep</code>.</td>
+<td>DP-FTRL factories — <code>band_mf</code>, <code>blt</code>, <code>bisr</code>, <code>bsr</code>, <code>lambda_cgd</code>, <code>cyclic_poisson</code>, <code>b_min_sep</code>, <code>balls_in_bins</code>.</td>
 <td><code>opaque-dpftrl</code></td>
 </tr>
 </tbody>
 </table>
+<p>Private second moments do <strong>not</strong> use a separate accounting wrapper: the joint gradient + squared-gradient release is handled in the runtime σ split (sensitivity-proportional Mahalanobis allocation), so calibration stays on the same underlying mechanism PLD as first-moment-only training. See <a href="../../api/noise/#paired-second-moment-release">Noise API</a>.</p>
 <p>Both algorithm-specific namespaces re-export from the shared <code>opaque-accounting</code>
 implementation; the split is purely organisational. The <code>Accountant</code> interactive
 container and all dataclasses live in <code>opaque.accounting.types</code>.</p>
