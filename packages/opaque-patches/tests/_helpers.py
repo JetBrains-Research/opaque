@@ -1,6 +1,12 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Shared fixtures and helpers for compatibility tests."""
+"""Shared fixtures and helpers for patches-only compatibility tests.
+
+DP-SGD ↔ patches integration helpers (``run_clipped_grad_test``) live
+in ``integration_tests/dpsgd_patches/_helpers.py``. opaque-patches has
+no dependency on opaque-dpsgd; tests that need both belong in the
+integration tree.
+"""
 
 import os
 
@@ -12,8 +18,6 @@ pytest.importorskip("peft")
 from peft import LoraConfig, get_peft_model  # noqa: E402
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
-from opaque.dpsgd.clipping import clipped_grad
-from opaque.functional import make_functional
 from opaque.patches import apply_model_patches
 
 
@@ -66,33 +70,3 @@ def prepare_lora_model(config, target_modules=None):
         eager_attention=True,
     )
     return model
-
-
-def run_clipped_grad_test(model, tokenizer, device=None):
-    if device is None:
-        device = next(model.parameters()).device
-
-    texts = ["Hello world test", "Another example", "Third sample", "Final one"]
-    inputs = tokenizer(
-        texts, return_tensors="pt", padding=True, max_length=16, truncation=True
-    )
-    input_ids = inputs["input_ids"].to(device)
-    attention_mask = inputs["attention_mask"].to(device)
-    labels = input_ids.clone()
-
-    fmodel, trainable, frozen = make_functional(
-        model, disable_autograd_tracking=True, partition_trainable=True
-    )
-
-    def per_example_loss(trainable_params, frozen_params, ids, mask, lbls):
-        all_params = {**frozen_params, **trainable_params}
-        outputs = fmodel(all_params, ids, attention_mask=mask, labels=lbls)
-        return outputs.loss
-
-    grad_fn, clip_state = clipped_grad(
-        per_example_loss, argnums=0, batch_argnums=(2, 3, 4), clipping_norm=1.0
-    )
-    grads, state = grad_fn(
-        trainable, frozen, input_ids, attention_mask, labels, state=clip_state
-    )
-    return grads, state

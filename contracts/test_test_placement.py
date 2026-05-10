@@ -179,55 +179,16 @@ def _root_match(import_path: str, roots: set[str]) -> bool:
 # work cannot accidentally introduce new cross-cone tests. As each phase
 # moves tests into their proper home, the corresponding entries here are
 # removed; the test stays green throughout.
-KNOWN_CROSS_CONE_IMPORTS: frozenset[tuple[str, str]] = frozenset(
-    {
-        # DP-SGD ↔ DP-FTRL integration tests have moved to
-        # ``integration_tests/dpsgd_dpftrl/`` (a top-level test root,
-        # not bound to any single wheel). The contract check skips
-        # ``integration_tests/`` entirely — tests there can import any
-        # opaque.* module without violating any wheel's dep cone.
-        #
-        # Patches tests use dpsgd's clipping to verify gradient flow
-        # through the kernel patches survives. Mutual non-dependency
-        # between patches and dpsgd; phase 6 revisits placement.
-        (
-            "packages/opaque-patches/tests/_helpers.py",
-            "opaque.dpsgd.clipping",
-        ),
-        (
-            "packages/opaque-patches/tests/kernels/test_autocast.py",
-            "opaque.dpsgd.clipping",
-        ),
-        (
-            "packages/opaque-patches/tests/kernels/test_compile.py",
-            "opaque.dpsgd.clipping",
-        ),
-        (
-            "packages/opaque-patches/tests/peft/test_fused_lora_qkv.py",
-            "opaque.dpsgd.clipping",
-        ),
-        (
-            "packages/opaque-patches/tests/peft/test_qwen2_lora.py",
-            "opaque.dpsgd.clipping",
-        ),
-        (
-            "packages/opaque-patches/tests/torch/test_checkpoint.py",
-            "opaque.dpsgd.clipping",
-        ),
-        (
-            "packages/opaque-patches/tests/torch/test_cpu_offload.py",
-            "opaque.dpsgd.clipping",
-        ),
-        (
-            "packages/opaque-patches/tests/transformers/components/test_attention.py",
-            "opaque.dpsgd.clipping",
-        ),
-        (
-            "packages/opaque-patches/tests/transformers/models/_test_utils.py",
-            "opaque.dpsgd.clipping",
-        ),
-    }
-)
+#
+# Cross-wheel integration tests (DP-SGD ↔ DP-FTRL, DP-SGD ↔ patches)
+# live under ``integration_tests/`` at the repo root — a top-level
+# test root that isn't bound to any single wheel's dep cone. The
+# contract check below scans ``packages/<wheel>/tests/`` only; tests
+# under ``integration_tests/`` can import any opaque.* module.
+#
+# This allowlist is now empty: all known cross-cone tests have been
+# rehomed.
+KNOWN_CROSS_CONE_IMPORTS: frozenset[tuple[str, str]] = frozenset()
 
 
 def test_each_wheels_tests_respect_dep_cone() -> None:
