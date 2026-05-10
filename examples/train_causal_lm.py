@@ -1528,7 +1528,11 @@ def main():
     # Noise functions consume ClippedPytree metadata directly and return
     # NoisedPytree updates carrying the realized per-step stddev.
     initial_bound = clip_norm / args.batch_size
-    if args.noise_mechanism == "bounded_gaussian" and noise_multiplier != 0:
+    if args.noise_mechanism == "bounded_gaussian":
+        # Pass ``bound`` unconditionally — at ``noise_multiplier=0`` the
+        # bounded path clamps the input to the interval (vs. the unbounded
+        # path which returns it unchanged), so the mechanism stays
+        # consistent for the user's chosen flag.
         noise_fn, noise_state = gaussian_noise(
             noise_multiplier=noise_multiplier,
             bound=args.noise_bound,

@@ -262,9 +262,13 @@ def gaussian_noise(
         else:
             center_c = center
 
+        # Clamp ``u`` away from 0 and 1 so ``2u-1`` never reaches ±1 and
+        # ``erfinv`` can't return ±inf.  ``finfo.tiny`` (denormal min) is
+        # below ``compute_dtype`` machine eps, so ``1 - tiny`` rounds back to
+        # ``1.0`` and the upper clamp would be a no-op — use ``finfo.eps``.
+        eps = torch.finfo(compute_dtype).eps
         if resolved_bound is None:
             # Unbounded N(0, 1) via inverse CDF: μ + σ √2 erfinv(2u - 1)
-            eps = torch.finfo(compute_dtype).tiny
             u = torch.clamp(u, min=eps, max=1.0 - eps)
             sample = center_c + std * _SQRT2 * torch.erfinv(2.0 * u - 1.0)
         else:
@@ -274,7 +278,6 @@ def gaussian_noise(
             alpha = 0.5 * (1.0 + torch.erf(z_low / _SQRT2))
             beta = 0.5 * (1.0 + torch.erf(z_high / _SQRT2))
             u = alpha + u * (beta - alpha)
-            eps = torch.finfo(compute_dtype).tiny
             u = torch.clamp(u, min=eps, max=1.0 - eps)
             sample = center_c + std * _SQRT2 * torch.erfinv(2.0 * u - 1.0)
             sample = torch.clamp(sample, min=low, max=high)
