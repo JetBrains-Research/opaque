@@ -321,6 +321,7 @@ class TestPoissonSamplerEdgeCases:
         with pytest.raises(ValueError):
             PoissonSampler(range(10), sample_rate=0.5, bands=0, key=key(0))
 
+
 class TestPoissonSamplerDistributedSimulation:
     """Test distributed support via external sharding (inner composition).
 
