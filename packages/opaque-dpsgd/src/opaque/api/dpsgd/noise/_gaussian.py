@@ -253,9 +253,9 @@ def gaussian_noise(
             low, high = resolved_bound
             return torch.clamp(center, min=low, max=high)
 
-        u = torch.rand(
-            center.shape, dtype=compute_dtype, generator=generator
-        ).to(device=device)
+        u = torch.rand(center.shape, dtype=compute_dtype, generator=generator).to(
+            device=device
+        )
 
         if in_dtype != compute_dtype:
             center_c = center.to(compute_dtype)

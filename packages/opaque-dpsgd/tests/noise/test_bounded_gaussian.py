@@ -20,16 +20,12 @@ class TestBoundedGaussian:
     """Tests for ``gaussian_noise(bound=...)``."""
 
     def test_returns_tuple(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=3.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=3.0, key=key(0))
         assert callable(noise_fn)
         assert isinstance(state, GaussianNoiseState)
 
     def test_adds_noise_to_tensor(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=5.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=5.0, key=key(0))
         grad = torch.zeros(10, 5)
         output, state = noise_fn(clipped(grad, max_norm=1.0), state)
 
@@ -41,9 +37,7 @@ class TestBoundedGaussian:
         assert not torch.allclose(output.pytree, grad)
 
     def test_adds_noise_to_pytree(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=5.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=5.0, key=key(0))
         grads = {
             "weight": torch.zeros(10, 5),
             "bias": torch.zeros(10),
@@ -56,26 +50,20 @@ class TestBoundedGaussian:
         assert not torch.allclose(output.pytree["weight"], grads["weight"])
 
     def test_requires_clipped_input(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=5.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=5.0, key=key(0))
 
         with pytest.raises(TypeError, match="expects ClippedPytree"):
             noise_fn(torch.zeros(8), state)
 
     def test_rejects_already_noisy_input(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=5.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=5.0, key=key(0))
 
         with pytest.raises(TypeError, match="not NoisedPytree"):
             noise_fn(noised(torch.zeros(8), max_norm=1.0, noise_stddev=1.0), state)
 
     def test_output_within_symmetric_bounds(self):
         bound = 2.0
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=bound, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=bound, key=key(0))
         grad = torch.zeros(10000)
         output, state = noise_fn(clipped(grad, max_norm=2.0), state)
 
@@ -103,9 +91,7 @@ class TestBoundedGaussian:
         assert output.pytree.max().item() <= 2.5
 
     def test_output_within_bounds_nonzero_center(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=3.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=3.0, key=key(0))
         grad = torch.tensor([2.5, -2.5, 0.0, 1.0, -1.0]).repeat(2000)
         output, state = noise_fn(clipped(grad, max_norm=1.0), state)
 
@@ -114,9 +100,7 @@ class TestBoundedGaussian:
 
     def test_zero_noise_multiplier_clamps_to_bound(self):
         # σ=0 + bound=(low, high) → clamp(input, low, high).
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=0.0, bound=1.5, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=0.0, bound=1.5, key=key(0))
         grad = torch.tensor([2.0, -2.0, 0.5, -0.5])
         output, _ = noise_fn(clipped(grad, max_norm=1.0), state)
         expected = torch.tensor([1.5, -1.5, 0.5, -0.5])
@@ -136,9 +120,7 @@ class TestBoundedGaussian:
             gaussian_noise(noise_multiplier=-1.0, bound=3.0, key=key(0))
 
     def test_negative_bound_raises_at_call(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=3.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=3.0, key=key(0))
         with pytest.raises(ValueError, match="non-negative"):
             noise_fn(clipped(torch.zeros(3), max_norm=-1.0), state)
 
@@ -163,9 +145,7 @@ class TestBoundedGaussian:
             gaussian_noise(noise_multiplier=1.0, bound=(1.0, 2.0, 3.0), key=key(0))
 
     def test_dtype_preservation(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=5.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=5.0, key=key(0))
 
         grad_f32 = torch.randn(5, 3, dtype=torch.float32)
         out_f32, state = noise_fn(clipped(grad_f32, max_norm=1.0), state)
@@ -176,9 +156,7 @@ class TestBoundedGaussian:
         assert out_f64.pytree.dtype == torch.float64
 
     def test_device_preservation(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=5.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=5.0, key=key(0))
 
         grad_cpu = torch.randn(5, 3)
         out_cpu, state = noise_fn(clipped(grad_cpu, max_norm=1.0), state)
@@ -208,18 +186,14 @@ class TestBoundedGaussian:
         assert p_value > 0.01, f"KS test failed with p={p_value}"
 
     def test_variance_less_than_unclipped(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=2.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=2.0, key=key(0))
         zeros = torch.zeros(50000)
         output, state = noise_fn(clipped(zeros, max_norm=1.0), state)
 
         assert output.pytree.var().item() < 1.0
 
     def test_uniqueness(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=5.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=5.0, key=key(0))
         grad = clipped(torch.zeros(100), max_norm=1.0)
 
         output1, state = noise_fn(grad, state)
@@ -228,9 +202,7 @@ class TestBoundedGaussian:
         assert not torch.allclose(output1.pytree, output2.pytree)
 
     def test_nested_pytree(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=5.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=5.0, key=key(0))
         grads = {
             "layer1": {"w": torch.zeros(10, 5), "b": torch.zeros(10)},
             "layer2": {"w": torch.zeros(5, 3), "b": torch.zeros(3)},
@@ -241,9 +213,7 @@ class TestBoundedGaussian:
         assert not torch.allclose(output.pytree["layer1"]["w"], grads["layer1"]["w"])
 
     def test_tuple_pytree(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=5.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=5.0, key=key(0))
         grads = (torch.zeros(10, 5), torch.zeros(10))
         output, state = noise_fn(clipped(grads, max_norm=1.0), state)
 
@@ -255,12 +225,8 @@ class TestBoundedGaussianKey:
     """Tests for key parameter."""
 
     def test_reproducibility(self):
-        noise_fn1, state1 = gaussian_noise(
-            noise_multiplier=1.0, bound=3.0, key=key(42)
-        )
-        noise_fn2, state2 = gaussian_noise(
-            noise_multiplier=1.0, bound=3.0, key=key(42)
-        )
+        noise_fn1, state1 = gaussian_noise(noise_multiplier=1.0, bound=3.0, key=key(42))
+        noise_fn2, state2 = gaussian_noise(noise_multiplier=1.0, bound=3.0, key=key(42))
 
         grad = clipped(torch.zeros(10, 10), max_norm=1.0)
         output1, state1 = noise_fn1(grad, state1)
@@ -269,12 +235,8 @@ class TestBoundedGaussianKey:
         assert torch.allclose(output1.pytree, output2.pytree)
 
     def test_different_seeds(self):
-        noise_fn1, state1 = gaussian_noise(
-            noise_multiplier=1.0, bound=3.0, key=key(42)
-        )
-        noise_fn2, state2 = gaussian_noise(
-            noise_multiplier=1.0, bound=3.0, key=key(43)
-        )
+        noise_fn1, state1 = gaussian_noise(noise_multiplier=1.0, bound=3.0, key=key(42))
+        noise_fn2, state2 = gaussian_noise(noise_multiplier=1.0, bound=3.0, key=key(43))
 
         grad = clipped(torch.zeros(10, 10), max_norm=1.0)
         output1, _ = noise_fn1(grad, state1)
@@ -295,9 +257,7 @@ class TestBoundedGaussianPerGroup:
             groups={"weight": "attn", "bias": "mlp"},
             values={"attn": 1.0, "mlp": 5.0},
         )
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=20.0, key=key(42)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=20.0, key=key(42))
         grads = {
             "weight": torch.zeros(1000),
             "bias": torch.zeros(1000),
@@ -323,9 +283,7 @@ class TestBoundedGaussianPerGroup:
             values={"lo": 0.5, "hi": 2.0},
         )
         bound = 3.0
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=bound, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=bound, key=key(0))
         grads = {
             "small": torch.zeros(10000),
             "large": torch.zeros(10000),
@@ -338,9 +296,7 @@ class TestBoundedGaussianPerGroup:
 
     def test_per_group_stddev_requires_dict_pytree(self):
         max_norm = PerGroup(groups={"w": "g"}, values={"g": 1.0})
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=3.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=3.0, key=key(0))
         with pytest.raises(TypeError, match="dict\\[str"):
             noise_fn(clipped([torch.zeros(3)], max_norm=max_norm), state)
 
@@ -351,9 +307,7 @@ class TestBoundedGaussianPerGroup:
             values={"g1": 0.0, "g2": 0.0},
         )
         bound = 0.5
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=bound, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=bound, key=key(0))
         grads = {
             "a": torch.tensor([2.0, -2.0, 0.1]),
             "b": torch.tensor([-1.0, 1.0, 0.3]),
@@ -368,9 +322,7 @@ class TestBoundedGaussianPerGroup:
 
     def test_negative_group_bound_raises(self):
         max_norm = PerGroup(groups={"w": "g"}, values={"g": -1.0})
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=3.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=3.0, key=key(0))
         with pytest.raises(ValueError, match="non-negative"):
             noise_fn(clipped({"w": torch.zeros(3)}, max_norm=max_norm), state)
 
@@ -378,23 +330,17 @@ class TestBoundedGaussianPerGroup:
         max_norm = PerGroup(groups={"w": "g"}, values={"g": 1.0})
         grads = clipped({"w": torch.zeros(10)}, max_norm=max_norm)
 
-        noise_fn1, state1 = gaussian_noise(
-            noise_multiplier=1.0, bound=3.0, key=key(42)
-        )
+        noise_fn1, state1 = gaussian_noise(noise_multiplier=1.0, bound=3.0, key=key(42))
         output1, _ = noise_fn1(grads, state1)
 
-        noise_fn2, state2 = gaussian_noise(
-            noise_multiplier=1.0, bound=3.0, key=key(42)
-        )
+        noise_fn2, state2 = gaussian_noise(noise_multiplier=1.0, bound=3.0, key=key(42))
         output2, _ = noise_fn2(grads, state2)
 
         torch.testing.assert_close(output1.pytree["w"], output2.pytree["w"])
 
     def test_step_counter_advances(self):
         max_norm = PerGroup(groups={"w": "g"}, values={"g": 1.0})
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0, bound=3.0, key=key(0)
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=3.0, key=key(0))
         assert state._step_counter == 0
 
         grads = clipped({"w": torch.zeros(3)}, max_norm=max_norm)
