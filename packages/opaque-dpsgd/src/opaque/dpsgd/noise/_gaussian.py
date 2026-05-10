@@ -37,15 +37,16 @@ from opaque.types import (
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
 )
-from opaque.dpsgd.noise._second_moment import (
-    DEFAULT_SECOND_MOMENT_OVERHEAD,
-    second_moment_stddevs,
-)
 from opaque.random import generator_from_key
 from opaque.random.types import RngKey
 from opaque.random import fold_in as rng_fold_in
 from opaque.pytree import tree_map
-from opaque.dpsgd.noise._per_group_noise import per_group_noise_stddev
+from opaque._noise_allocation import (
+    PAIRED_FIRST_STREAM_FOLD,
+    PAIRED_SECOND_STREAM_FOLD,
+    per_group_noise_stddev,
+    resolve_paired_clipped,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -96,7 +97,6 @@ def gaussian_noise(
     noise_multiplier: float,
     key: RngKey,
     compute_dtype: torch.dtype = torch.float32,
-    first_moment_overhead: float = DEFAULT_SECOND_MOMENT_OVERHEAD,
 ) -> tuple[
     Callable[..., tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
@@ -206,42 +206,24 @@ def gaussian_noise(
         _validate_noise_stddev(effective)
         return effective
 
-    def _reject_per_group_for_paired(clipped_grads: ClippedPytree) -> None:
-        if isinstance(clipped_grads.max_norm, PerGroup):
-            raise TypeError(
-                "gaussian_noise paired-stream output (SecondMomentNoiseOutput) "
-                "does not support PerGroup max_norm.  Per-group second-moment "
-                "allocation has not been validated.  Use a scalar max_norm or "
-                "pass a single-stream ClippedPytree input."
-            )
-
     def _add_paired(
         clipped_input: SecondMomentClippingOutput, st: GaussianNoiseState
     ) -> tuple[SecondMomentNoiseOutput, GaussianNoiseState]:
-        first_clipped = clipped_input.grads
-        second_clipped = clipped_input.squared_grads
-        if not isinstance(first_clipped, ClippedPytree):
-            raise TypeError("SecondMomentClippingOutput.grads must be a ClippedPytree.")
-        if not isinstance(second_clipped, ClippedPytree):
-            raise TypeError(
-                "SecondMomentClippingOutput.squared_grads must be a ClippedPytree."
+        first_clipped, second_clipped, first_stddev, second_stddev = (
+            resolve_paired_clipped(
+                clipped_input,
+                noise_multiplier=resolved_noise_multiplier,
             )
-        _reject_per_group_for_paired(first_clipped)
-        _reject_per_group_for_paired(second_clipped)
-        # Identity strategy → c1 = c2 = 1.0; pass per-record bounds for
-        # both streams so the joint allocation is correct (per-example
-        # squared, not (Σg)²).
-        first_stddev, second_stddev = second_moment_stddevs(
-            resolved_noise_multiplier,
-            first_max_norm=float(first_clipped.sensitivity),
-            squared_max_norm=float(second_clipped.sensitivity),
-            first_moment_overhead=first_moment_overhead,
         )
-        # Two independent noise streams; fold-in 1 / 2 namespaces them so
-        # they don't collide with the single-stream key derivation
+        # Two independent noise streams; fold-in tags namespace them so they
+        # don't collide with the single-stream key derivation
         # (``fold_in(_rng_key, _step_counter)``).
-        first_step_key = rng_fold_in(rng_fold_in(st._rng_key, 1), st._step_counter)
-        second_step_key = rng_fold_in(rng_fold_in(st._rng_key, 2), st._step_counter)
+        first_step_key = rng_fold_in(
+            rng_fold_in(st._rng_key, PAIRED_FIRST_STREAM_FOLD), st._step_counter
+        )
+        second_step_key = rng_fold_in(
+            rng_fold_in(st._rng_key, PAIRED_SECOND_STREAM_FOLD), st._step_counter
+        )
         noisy_grads = _add_noise_tree(
             first_clipped.pytree,
             first_stddev,

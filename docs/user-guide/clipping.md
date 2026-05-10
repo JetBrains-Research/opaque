@@ -385,15 +385,8 @@ uniform = grads.noise_stddev_for(
 )
 ```
 
-For callers holding a bare `PerGroup` (for example restored via
-`opaque.serialization.from_state_dict` with a matching template), the
-equivalent free function is also available:
-
-```python
-from opaque.dpsgd.noise import per_group_noise_stddev
-
-stddev = per_group_noise_stddev(grads.max_norm, noise_multiplier)
-```
+For a bare `PerGroup` bound, wrap it in a `ClippedPytree` with placeholder
+tensors keyed like your parameters, then use `noise_stddev_for` as above.
 
 The optimal allocation sets $\sigma_i \propto \sqrt{C_i}$ instead of a
 uniform σ.  Privacy accounting remains `gaussian(nm)` — the allocation

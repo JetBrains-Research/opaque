@@ -43,10 +43,11 @@ from opaque.types import (
 )
 
 from opaque.dpsgd.noise._gaussian import GaussianNoiseState
-from opaque.dpsgd.noise._per_group_noise import per_group_noise_stddev
-from opaque.dpsgd.noise._second_moment import (
-    DEFAULT_SECOND_MOMENT_OVERHEAD,
-    second_moment_stddevs,
+from opaque._noise_allocation import (
+    PAIRED_FIRST_STREAM_FOLD,
+    PAIRED_SECOND_STREAM_FOLD,
+    per_group_noise_stddev,
+    resolve_paired_clipped,
 )
 from opaque.random import generator_from_key
 from opaque.random.types import RngKey
@@ -143,7 +144,6 @@ def truncated_gaussian_noise(
     noise_multiplier: float,
     key: RngKey,
     radius: float = 3.0,
-    first_moment_overhead: float = DEFAULT_SECOND_MOMENT_OVERHEAD,
 ) -> tuple[
     Callable[..., tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
@@ -171,14 +171,6 @@ def truncated_gaussian_noise(
         key: Explicit RNG key for deterministic, functional randomness.
             Same key on all ranks → same noise (synchronized).
             ``fold_in(key, rank)`` → independent noise per rank.
-        first_moment_overhead: First-moment sensitivity overhead used when
-            a :class:`~opaque.types.SecondMomentClippingOutput` flows in
-            (paired-stream private first + second moment estimation).
-            Must be strictly greater than 1.0.  Defaults to ``sqrt(3/2)``
-            (the d ≥ 2 add/remove-DP value); pass-through to
-            :func:`opaque.dpsgd.noise._second_moment.second_moment_stddevs`.
-            Ignored for single-stream :class:`~opaque.types.ClippedPytree`
-            inputs.
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -188,8 +180,7 @@ def truncated_gaussian_noise(
 
     Raises:
         ValueError: If ``noise_multiplier`` or the realized max_norm-derived
-            standard deviation is negative, ``radius`` is not positive, or
-            ``first_moment_overhead`` is not strictly greater than 1.0.
+            standard deviation is negative, or ``radius`` is not positive.
 
     Example:
         >>> import torch
@@ -233,8 +224,7 @@ def truncated_gaussian_noise(
         tensor: torch.Tensor, std: float, generator: torch.Generator
     ) -> torch.Tensor:
         if std == 0:
-            bound = 0.0
-            return torch.clamp(tensor, min=-bound, max=bound)
+            return torch.zeros_like(tensor)
         bound = std * radius
         return _truncated_normal_around(
             tensor,
@@ -244,47 +234,63 @@ def truncated_gaussian_noise(
             generator=generator,
         )
 
+    def _add_truncated_tree(
+        grads: Any,
+        stddev: float | PerGroup,
+        generator: torch.Generator,
+    ) -> Any:
+        """Apply truncated Gaussian noise; dispatch on scalar vs PerGroup.
+
+        For ``σ_g = 0`` the truncated support collapses to ``{0}``; we
+        return a zero tensor (same dtype/device) rather than leaving
+        non-finite values untouched (``clamp`` would preserve NaNs).
+
+        ``PerGroup`` stddev requires a flat ``dict[str, Tensor]`` pytree so
+        each parameter key maps to a leaf tensor.
+        """
+        if isinstance(stddev, PerGroup):
+            if not isinstance(grads, dict):
+                raise TypeError(
+                    "truncated_gaussian_noise with PerGroup stddev requires "
+                    "ClippedPytree.pytree to be a dict[str, torch.Tensor]."
+                )
+            noised: dict[str, torch.Tensor] = {}
+            for param_key, tensor in grads.items():
+                group_std = stddev.for_key(param_key)
+                if group_std == 0:
+                    noised[param_key] = torch.zeros_like(tensor)
+                    continue
+                bound = group_std * radius
+                noised[param_key] = _truncated_normal_around(
+                    tensor,
+                    stddev=group_std,
+                    lower=-bound,
+                    upper=bound,
+                    generator=generator,
+                )
+            return noised
+        return tree_map(lambda t: _add_truncated(t, stddev, generator), grads)
+
     def _add_paired(
         clipped_input: SecondMomentClippingOutput, st: GaussianNoiseState
     ) -> tuple[SecondMomentNoiseOutput, GaussianNoiseState]:
-        first_clipped = clipped_input.grads
-        second_clipped = clipped_input.squared_grads
-        if not isinstance(first_clipped, ClippedPytree):
-            raise TypeError("SecondMomentClippingOutput.grads must be a ClippedPytree.")
-        if not isinstance(second_clipped, ClippedPytree):
-            raise TypeError(
-                "SecondMomentClippingOutput.squared_grads must be a ClippedPytree."
+        first_clipped, second_clipped, first_stddev, second_stddev = (
+            resolve_paired_clipped(
+                clipped_input,
+                noise_multiplier=resolved_noise_multiplier,
             )
-        if isinstance(first_clipped.max_norm, PerGroup) or isinstance(
-            second_clipped.max_norm, PerGroup
-        ):
-            raise TypeError(
-                "truncated_gaussian_noise paired-stream output "
-                "(SecondMomentNoiseOutput) does not support PerGroup max_norm. "
-                "Per-group second-moment allocation has not been validated. "
-                "Use a scalar max_norm or pass a single-stream ClippedPytree input."
-            )
-        # Identity strategy → c1 = c2 = 1.0; per-record bounds for
-        # both streams so the joint allocation is correct.
-        first_stddev, second_stddev = second_moment_stddevs(
-            resolved_noise_multiplier,
-            first_max_norm=float(first_clipped.sensitivity),
-            squared_max_norm=float(second_clipped.sensitivity),
-            first_moment_overhead=first_moment_overhead,
         )
-        # Two independent noise streams; fold-in 1 / 2 namespaces them so
-        # they don't collide with the single-stream key derivation.
-        first_step_key = rng_fold_in(rng_fold_in(st._rng_key, 1), st._step_counter)
-        second_step_key = rng_fold_in(rng_fold_in(st._rng_key, 2), st._step_counter)
+        first_step_key = rng_fold_in(
+            rng_fold_in(st._rng_key, PAIRED_FIRST_STREAM_FOLD), st._step_counter
+        )
+        second_step_key = rng_fold_in(
+            rng_fold_in(st._rng_key, PAIRED_SECOND_STREAM_FOLD), st._step_counter
+        )
         first_gen = generator_from_key(first_step_key)
         second_gen = generator_from_key(second_step_key)
-        noisy_grads = tree_map(
-            lambda t: _add_truncated(t, first_stddev, first_gen),
-            first_clipped.pytree,
-        )
-        noisy_squared = tree_map(
-            lambda t: _add_truncated(t, second_stddev, second_gen),
-            second_clipped.pytree,
+        noisy_grads = _add_truncated_tree(first_clipped.pytree, first_stddev, first_gen)
+        noisy_squared = _add_truncated_tree(
+            second_clipped.pytree, second_stddev, second_gen
         )
         next_state = GaussianNoiseState(
             _step_counter=st._step_counter + 1,
@@ -331,30 +337,12 @@ def truncated_gaussian_noise(
             _rng_key=st._rng_key,
         )
 
-        # Per-group noise path
+        # Per-group noise path: reuse the same tree walk as paired streams so
+        # dict[str, Tensor] and σ=0 semantics stay aligned with _add_truncated_tree.
         if isinstance(effective_stddev, PerGroup):
-            if all(v == 0 for v in effective_stddev.values.values()):
-                return NoisedPytree(
-                    pytree=grads.pytree,
-                    max_norm=grads.max_norm,
-                    noise_stddev=effective_stddev,
-                ), next_state
-
             step_key = rng_fold_in(st._rng_key, st._step_counter)
             g = generator_from_key(step_key)
-
-            noised = {}
-            for param_key, tensor in grads.pytree.items():
-                group_std = effective_stddev.for_key(param_key)
-                max_norm = group_std * radius
-                noised[param_key] = _truncated_normal_around(
-                    tensor,
-                    stddev=group_std,
-                    lower=-max_norm,
-                    upper=max_norm,
-                    generator=g,
-                )
-
+            noised = _add_truncated_tree(grads.pytree, effective_stddev, g)
             return NoisedPytree(
                 pytree=noised,
                 max_norm=grads.max_norm,
@@ -365,9 +353,7 @@ def truncated_gaussian_noise(
         max_norm = effective_stddev * radius
 
         if effective_stddev == 0:
-            noised = tree_map(
-                lambda t: torch.clamp(t, min=-max_norm, max=max_norm), grads.pytree
-            )
+            noised = tree_map(lambda t: torch.zeros_like(t), grads.pytree)
             return NoisedPytree(
                 pytree=noised,
                 max_norm=grads.max_norm,

@@ -138,20 +138,6 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
 
-    // Private second-moment helpers
-    m.add_function(wrap_pyfunction!(
-        matrix_factorization::py_second_moment_lambda,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        matrix_factorization::py_second_moment_joint_sensitivity,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        matrix_factorization::py_second_moment_noise_scale,
-        m
-    )?)?;
-
     // AdaClip
     m.add_function(wrap_pyfunction!(adaclip::py_adaclip_sensitivity, m)?)?;
 

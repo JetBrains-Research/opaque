@@ -186,11 +186,6 @@ def clipped_grad(
             - loss_aux: Per-example auxiliary data (if has_aux=True)
     """
     _validate_static_args(argnums, batch_argnums, normalize_by)
-    if second_moment and isinstance(clipping_norm, PerGroup):
-        raise TypeError(
-            "second_moment=True is not supported with PerGroup clipping_norm. "
-            "Per-group second-moment allocation has not been validated."
-        )
     argnums_tuple = normalize_to_tuple(argnums)
     batch_argnums_tuple = normalize_to_tuple(batch_argnums)
     loss_fn = normalize_fun_to_return_aux(loss_fn, has_aux)

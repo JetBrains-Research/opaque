@@ -27,7 +27,7 @@ from opaque.dpsgd.sampling import TruncatedPoissonSampler
 
 ## Layout
 
-- `opaque.dpsgd.noise` — `gaussian_noise`, `truncated_gaussian_noise`, `per_group_noise_stddev`
+- `opaque.dpsgd.noise` — `gaussian_noise`, `truncated_gaussian_noise`
 - `opaque.dpsgd.clipping` — `adaptive_clipped_grad`, `auto_clipped_grad`, `auto_clipped_fun`
 - `opaque.dpsgd.sampling` — `TruncatedPoissonSampler`
 

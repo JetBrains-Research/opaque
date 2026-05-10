@@ -3,8 +3,10 @@
 Public API:
 
 - :func:`mf_noise` — strategy-based dispatcher (SGD + Polyak momentum)
-- ``mf_noise(..., second_moment=True, second_moment_strategy=...)`` — private
-    second-moment stream for Adam-style optimizers
+- ``mf_noise(..., second_moment_strategy=...)`` — optional paired stream for
+  private second moments (Adam-style optimizers); requires
+  ``second_moment_strategy`` at construction and
+  ``SecondMomentClippingOutput`` at runtime
 
 Strategy factories:
 
@@ -22,13 +24,6 @@ References:
     - Multi-epoch BLT: https://arxiv.org/abs/2408.08868
     - Private second moments: https://arxiv.org/abs/2502.06597
 """
-
-from opaque.dpftrl.noise._second_moment import (
-    DEFAULT_SECOND_MOMENT_OVERHEAD,
-    second_moment_joint_sensitivity,
-    second_moment_noise_scale,
-    second_moment_stddevs,
-)
 
 from ._band_mf import band_mf_strategy
 from ._bisr import bisr_strategy
@@ -48,8 +43,4 @@ __all__ = [
     "blt_strategy",
     "identity_strategy",
     "lambda_cgd_strategy",
-    "DEFAULT_SECOND_MOMENT_OVERHEAD",
-    "second_moment_joint_sensitivity",
-    "second_moment_noise_scale",
-    "second_moment_stddevs",
 ]

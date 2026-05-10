@@ -56,18 +56,55 @@ across ranks. It auto-dispatches based on type:
 
 **See also**: [Noise Addition User Guide](../user-guide/noise.md)
 
+## Paired second-moment release
+
+When `clipped_grad(..., second_moment=True)` produces a
+`SecondMomentClippingOutput`, both `gaussian_noise` /
+`truncated_gaussian_noise` (DP-SGD) and `mf_noise(..., second_moment_strategy=...)`
+(DP-FTRL) consume it and emit a `SecondMomentNoiseOutput` with paired noise
+on both streams.
+
+The runtime σ allocation is **sensitivity-proportional** and works
+identically for scalar `max_norm` and per-group `PerGroup` `max_norm`. For
+each group \(g\) (single-group `K=1` for scalar clipping), let
+\(\Delta^{(1)}_g\) be the first-stream per-record bound (`C_g / n` for
+averaged clipping, or `ζ · ‖C₁‖` strategy-amplified for DP-FTRL) and
+\(\Delta^{(2)}_g\) the second-stream per-record bound (`C_g² / n` derived
+from the same clip; `ζ² · ‖C₂‖` for DP-FTRL). Then with noise multiplier
+\(\text{nm}\), set
+
+\[
+  S := \sum_h \bigl(\Delta^{(1)}_h + \Delta^{(2)}_h\bigr),\qquad
+  \sigma^{(1)}_g := \text{nm}\sqrt{\Delta^{(1)}_g\,S},\qquad
+  \sigma^{(2)}_g := \text{nm}\sqrt{\Delta^{(2)}_g\,S}.
+\]
+
+This satisfies the joint Mahalanobis budget with equality:
+
+\[
+  \sum_{g,i} \Bigl(\frac{\Delta^{(i)}_g}{\sigma^{(i)}_g}\Bigr)^2
+  = \frac{1}{\text{nm}^2}.
+\]
+
+So the paired release has **the same PLD as a single sensitivity-1
+Gaussian release at multiplier `nm`** — i.e. **the same first-moment-only
+mechanism at the same noise multiplier**. Accounting is plain `gaussian(nm)`
+for DP-SGD and the underlying `mf_gaussian(nm, …)` for DP-FTRL; there is
+no separate transformation wrapper and no `ρ` knob.
+
+`mf_noise` accepts scalar `max_norm` only; per-group + DP-FTRL is not
+implemented.
+
 ## Standard Gaussian
 
 ::: opaque.dpsgd.noise.gaussian_noise
 
 ## Bounded Gaussian — Truncated (renormalized)
 
-`truncated_gaussian_noise` accepts the same `SecondMomentClippingOutput`
-input as `gaussian_noise`: when gradients and squared-gradients are passed
-together, it allocates the noise budget optimally between the two streams
-(splitting noise proportionally to sensitivity). The `first_moment_overhead`
-parameter (default `sqrt(3/2)`) controls the sensitivity ratio between the
-two streams and must match the value used in `acc.second_moment()`.
+`truncated_gaussian_noise` consumes the same `SecondMomentClippingOutput`
+inputs as `gaussian_noise` and uses the same sensitivity-proportional joint
+allocation; the only difference is that the per-coordinate noise sample is
+drawn from a truncated normal of half-width `radius·σ`.
 
 ::: opaque.dpsgd.noise.truncated_gaussian_noise
 

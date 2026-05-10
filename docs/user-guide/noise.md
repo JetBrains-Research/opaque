@@ -110,15 +110,10 @@ uniform_stddev = grads.noise_stddev_for(
 )
 ```
 
-For callers that already hold a bare `PerGroup` (for example restored
-via `opaque.serialization.from_state_dict` with a template that matches
-the saved keys), the equivalent free function is still available:
-
-```python
-from opaque.dpsgd.noise import per_group_noise_stddev
-
-stddev = per_group_noise_stddev(grads.max_norm, noise_multiplier)
-```
+For a bare `PerGroup` bound (for example restored via
+`opaque.serialization.from_state_dict` with a matching template), wrap it
+in a `ClippedPytree` with placeholder tensors that share the same parameter
+keys, then call `noise_stddev_for` as above.
 
 Both routes return a `PerGroup` of per-group standard deviations with
 $\sigma_i \propto \sqrt{C_i}$.  `gaussian_noise` applies the optimal
@@ -176,11 +171,13 @@ for accounting.
 `truncated_gaussian_noise` accepts the same paired-stream input as
 `gaussian_noise`: when a `SecondMomentClippingOutput` (from
 ``clipped_grad(..., second_moment=True)``) flows in, the function returns
-a `SecondMomentNoiseOutput` with both the first-moment and squared-moment
-streams noised under the joint sensitivity allocation
-(``sqrt(3/2)`` overhead on the first stream by default).  Each stream is
-sampled from its own truncated Gaussian with bounds scaled to its own
-``radius * stddev``.
+a `SecondMomentNoiseOutput` with both streams noised under the joint
+sensitivity-proportional Mahalanobis allocation (scalar case:
+``σ¹ = nm·sqrt(Δ¹·S)``, ``σ² = nm·sqrt(Δ²·S)``, ``S = Δ¹+Δ²``; with
+:class:`~opaque.types.PerGroup` bounds, ``S`` sums ``Δ¹_g+Δ²_g`` over
+groups).  Each
+stream is sampled from its own truncated Gaussian with bounds scaled to
+its own ``radius * stddev``.
 
 ### Which variant to use
 
@@ -400,7 +397,7 @@ receives these values rather than recomputing them. This ensures that
 noise generation and privacy accounting always agree on the mechanism.
 
 ```python
-import opaque.accounting as acc           # cross-cutting balls_in_bins, second_moment
+import opaque.accounting as acc           # cross-cutting calibration / composition
 import opaque.dpftrl.accounting as ftrl_acc  # DP-FTRL factories
 from opaque.dpftrl.noise import band_mf_strategy, lambda_cgd_strategy
 
@@ -424,15 +421,13 @@ proc = ftrl_acc.balls_in_bins(
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
 
-# Private second moments — wrap the MF mechanism before amplification
-mechanism = acc.second_moment(
+# Private second moments — accounting is unchanged from first-moment-only.
+# The runtime σ allocation absorbs the joint cost via the
+# sensitivity-proportional Mahalanobis budget; calibrate against the same
+# MF mechanism PLD used for the first-moment-only release.
+proc = ftrl_acc.balls_in_bins(
     ftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
                         gram_matrix=strategy.gram_matrix),
-    sensitivity=clip_bound,
-    max_column_norm=strategy._max_column_norm,
-)
-proc = ftrl_acc.balls_in_bins(
-    mechanism,
     num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
 ```

@@ -2,11 +2,13 @@
 
 Mirrors ``gaussian_noise`` second-moment handling: when a
 :class:`SecondMomentClippingOutput` flows in, allocates the joint noise
-budget across the two streams via :func:`second_moment_stddevs` and adds
+budget across the two streams via ``paired_noise_stddevs`` and adds
 truncated Gaussian noise to each.
 """
 
 from __future__ import annotations
+
+import math
 
 import pytest
 import torch
@@ -17,11 +19,8 @@ from opaque.types import (
     SecondMomentNoiseOutput,
     clipped,
 )
+from opaque._noise_allocation import paired_noise_stddevs
 from opaque.dpsgd.noise import truncated_gaussian_noise
-from opaque.dpsgd.noise._second_moment import (
-    DEFAULT_SECOND_MOMENT_OVERHEAD,
-    second_moment_stddevs,
-)
 from opaque.random import key
 
 
@@ -60,8 +59,8 @@ class TestPairedStreamShape:
         assert isinstance(out.noisy_grads, NoisedPytree)
         assert isinstance(out.noisy_squared_grads, NoisedPytree)
 
-    def test_streams_carry_distinct_stddevs(self):
-        """First-stream stddev (with √(3/2) overhead) ≠ second-stream stddev."""
+    def test_streams_match_paired_noise_stddevs(self):
+        """Output stddevs match ``paired_noise_stddevs`` on the same inputs."""
         noise_fn, state = truncated_gaussian_noise(
             noise_multiplier=1.0,
             radius=5.0,
@@ -76,17 +75,14 @@ class TestPairedStreamShape:
             ),
             state,
         )
-        first_expected, second_expected = second_moment_stddevs(
-            1.0,
-            first_max_norm=1.0,
-            squared_max_norm=1.0,
-            first_moment_overhead=DEFAULT_SECOND_MOMENT_OVERHEAD,
+        first_expected, second_expected = paired_noise_stddevs(
+            1.0, first=1.0, second=1.0
         )
         assert out.noisy_grads.noise_stddev == pytest.approx(first_expected)
         assert out.noisy_squared_grads.noise_stddev == pytest.approx(second_expected)
-        # With equal per-record bounds Δ₁ = Δ₂ = 1, the second-stream stddev
-        # is σ_first · 1 / sqrt(ρ² − 1) for ρ = sqrt(3/2), which exceeds σ_first.
-        assert second_expected > first_expected
+        # With Δ₁ = Δ₂ = 1, S = 2, both streams get σ = sqrt(2).
+        assert first_expected == pytest.approx(math.sqrt(2.0))
+        assert second_expected == pytest.approx(math.sqrt(2.0))
 
 
 class TestPairedStreamNoiseBounded:
@@ -133,11 +129,11 @@ class TestPairedStreamNoiseBounded:
         )
 
 
-class TestPairedStreamIndependence:
-    """Per-record stream-2 stddev grows with squared_max_norm."""
+class TestPairedStreamCoupling:
+    """Squared-stream sensitivity enters S, so it shifts both σ's."""
 
-    def test_squared_max_norm_changes_second_stream_only(self):
-        """Doubling `squared_max_norm` doubles the second-stream stddev."""
+    def test_squared_max_norm_shifts_both_streams(self):
+        """The Mahalanobis budget couples both streams: changing Δ² shifts σ¹ and σ²."""
         noise_fn_a, state_a = truncated_gaussian_noise(
             noise_multiplier=1.0,
             radius=5.0,
@@ -166,20 +162,51 @@ class TestPairedStreamIndependence:
             ),
             state_b,
         )
-        # First stream depends only on first max_norm — unchanged.
-        assert out_a.noisy_grads.noise_stddev == pytest.approx(
-            out_b.noisy_grads.noise_stddev
+        # Closed form: σ¹ = sqrt(Δ¹ · S), with S = Δ¹ + Δ².
+        # Doubling Δ² grows S from 2 → 3, so σ¹ grows by sqrt(3/2) and σ² by
+        # sqrt(2 · 3 / (1 · 2)) = sqrt(3).
+        assert out_b.noisy_grads.noise_stddev == pytest.approx(
+            out_a.noisy_grads.noise_stddev * math.sqrt(3 / 2)
         )
-        # Second stream stddev scales linearly with squared_max_norm.
         assert out_b.noisy_squared_grads.noise_stddev == pytest.approx(
-            2.0 * out_a.noisy_squared_grads.noise_stddev
+            out_a.noisy_squared_grads.noise_stddev * math.sqrt(3.0)
         )
 
 
-class TestPairedStreamPerGroupRejected:
-    """Per-group max_norm + paired stream is not supported."""
+class TestPairedStreamPerGroup:
+    """Per-group max_norm on paired streams uses the joint MSE-optimal allocation."""
 
-    def test_first_stream_per_group_rejected(self):
+    def test_per_group_on_both_streams_returns_per_group_stddevs(self):
+        from opaque.types import PerGroup
+
+        noise_fn, state = truncated_gaussian_noise(
+            noise_multiplier=1.0,
+            radius=5.0,
+            key=key(0),
+        )
+        first_norm = PerGroup(
+            groups={"a": "g1", "b": "g2"},
+            values={"g1": 1.0, "g2": 2.0},
+        )
+        squared_norm = first_norm * first_norm  # per-group squared bounds
+        paired = SecondMomentClippingOutput(
+            grads=clipped(
+                {"a": torch.zeros(4), "b": torch.zeros(4)}, max_norm=first_norm
+            ),
+            squared_grads=clipped(
+                {"a": torch.zeros(4), "b": torch.zeros(4)},
+                max_norm=squared_norm,
+            ),
+        )
+        out, _ = noise_fn(paired, state)
+        assert isinstance(out, SecondMomentNoiseOutput)
+        assert isinstance(out.noisy_grads.noise_stddev, PerGroup)
+        assert isinstance(out.noisy_squared_grads.noise_stddev, PerGroup)
+        # Per-group bound, per-group stddev keys match the input groups.
+        assert out.noisy_grads.noise_stddev.groups == first_norm.groups
+        assert out.noisy_squared_grads.noise_stddev.groups == squared_norm.groups
+
+    def test_mismatched_kinds_rejected(self):
         from opaque.types import PerGroup
 
         noise_fn, state = truncated_gaussian_noise(
@@ -195,7 +222,7 @@ class TestPairedStreamPerGroupRejected:
             grads=clipped({"weight": torch.zeros(4)}, max_norm=per_group_norm),
             squared_grads=clipped({"weight": torch.zeros(4)}, max_norm=1.0),
         )
-        with pytest.raises(TypeError, match="PerGroup"):
+        with pytest.raises(TypeError, match="same kind"):
             noise_fn(paired, state)
 
 
@@ -285,7 +312,7 @@ class TestZeroNoiseMultiplier:
     """``noise_multiplier=0`` collapses both streams to a zero-width support.
 
     Both the noise stddev *and* the truncation bound (= radius·stddev) go to
-    zero, so every leaf is clamped to ±0.  The original input values are not
+    zero, so every leaf becomes an exact zero tensor.  The original input values are not
     preserved — this is the documented "no-noise" path mirroring how
     ``gaussian_noise`` returns the centred deterministic output.
     """
@@ -305,7 +332,7 @@ class TestZeroNoiseMultiplier:
             ),
             state,
         )
-        # σ=0 → the truncated-noise sample is 0, but the truncation bound
-        # also collapses to 0 so values are clamped to ±0.
+        # σ=0 → the truncated-noise sample is 0, and the truncation bound
+        # collapses to 0 so leaves are replaced with exact zeros.
         assert torch.all(out.noisy_grads.pytree == 0.0)
         assert torch.all(out.noisy_squared_grads.pytree == 0.0)

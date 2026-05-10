@@ -22,12 +22,7 @@ import torch
 
 from opaque.types import PerGroup
 from opaque.types import ClippedPytree
-from opaque.dpftrl.noise._second_moment import (
-    DEFAULT_SECOND_MOMENT_OVERHEAD,
-    second_moment_joint_sensitivity,
-    second_moment_noise_scale,
-    second_moment_stddevs,
-)
+from opaque._noise_allocation import paired_noise_stddevs
 from opaque.types import (
     NoisedPytree,
     SecondMomentClippingOutput,
@@ -64,7 +59,6 @@ def mf_noise(
     key: RngKey,
     dtype: torch.dtype | None = None,
     second_moment_strategy: MfStrategy | None = None,
-    first_moment_overhead: float = DEFAULT_SECOND_MOMENT_OVERHEAD,
 ) -> tuple[
     Callable[..., tuple[Any, MFNoiseState | SecondMomentMFNoiseState]],
     MFNoiseState | SecondMomentMFNoiseState,
@@ -85,6 +79,13 @@ def mf_noise(
       (paired-stream noise; only available when
       ``second_moment_strategy`` was supplied at construction).
 
+    The paired-stream release uses the sensitivity-proportional joint
+    Mahalanobis allocation (``opaque._noise_allocation.paired_noise_stddevs``):
+    the joint privacy
+    budget collapses to the same first-moment-only mechanism at the
+    given ``noise_multiplier``, so calibration is identical to a
+    first-moment-only release.
+
     Args:
         grad_template: Pytree with same structure/shapes as gradients.
         strategy: MF strategy from one of the factory functions.
@@ -98,10 +99,6 @@ def mf_noise(
             ``SecondMomentClippingOutput`` inputs at call time.  When
             ``None`` (default) only single-stream ``ClippedPytree`` inputs
             are accepted.
-        first_moment_overhead: First-stream noise overhead used when
-            paired-stream output is requested.  Defaults to ``√(3/2)``
-            (the d ≥ 2 add/remove DP value).  Ignored when
-            ``second_moment_strategy`` is ``None``.
 
     Returns:
         A tuple ``(noise_fn, state)`` for the training loop.
@@ -118,7 +115,6 @@ def mf_noise(
             noise_multiplier=resolved_noise_multiplier,
             key=key,
             dtype=dtype,
-            first_moment_overhead=first_moment_overhead,
         )
 
     raw_noise_fn, raw_state = _make_raw_mf_noise(
@@ -220,11 +216,10 @@ def _expect_clipped(value: Any, *, op: str) -> ClippedPytree:
         )
     if isinstance(value.max_norm, PerGroup):
         raise TypeError(
-            f"{op} does not support PerGroup bounds. Per-group noise allocation "
-            "for matrix-factorization mechanisms has not been validated; the "
-            "interaction of per-group clipping with correlated noise across "
-            "time is an open question. Use a scalar clipping_norm with "
-            "MF mechanisms."
+            f"{op} does not support PerGroup bounds. Per-group paired second "
+            "moments are implemented for DP-SGD Gaussian / truncated-Gaussian "
+            "noise only; MF strategies use correlated noise with scalar "
+            "latched sensitivities. Use a scalar clipping_norm with mf_noise."
         )
     return value
 
@@ -267,7 +262,6 @@ def _make_second_moment_mf_noise(
     noise_multiplier: float,
     key: RngKey,
     dtype: torch.dtype | None,
-    first_moment_overhead: float,
 ) -> tuple[
     Callable[
         [Any, SecondMomentMFNoiseState],
@@ -275,12 +269,6 @@ def _make_second_moment_mf_noise(
     ],
     SecondMomentMFNoiseState,
 ]:
-    if first_moment_overhead <= 1.0:
-        raise ValueError(
-            "first_moment_overhead must be greater than 1.0, "
-            f"got {first_moment_overhead}"
-        )
-
     first_fn, first_state = _make_raw_mf_noise(
         grad_template,
         first_strategy,
@@ -324,13 +312,20 @@ def _make_second_moment_mf_noise(
             st._second_state._first_max_norm,
             op="mf_noise (squared stream)",
         )
-        first_stddev, second_stddev = second_moment_stddevs(
-            noise_multiplier,
-            first_max_norm=max_norm,
-            squared_max_norm=squared_max_norm,
-            c1_max_column_norm=first_strategy._max_column_norm,
-            c2_max_column_norm=second_strategy._max_column_norm,
-            first_moment_overhead=first_moment_overhead,
+        # Strategy norms enter the per-record sensitivity on each stream
+        # before the joint Mahalanobis allocation: Δ¹ = ζ·‖C₁‖, Δ² = ζ²·‖C₂‖.
+        # The single-stream MF release has effective Gaussian noise
+        # multiplier ``nm / ‖C₁‖`` on the encoded stream (`MfGaussian` PLD
+        # is ``gaussian_pld(nm / sensitivity)``).  To match that calibration
+        # the joint paired Mahalanobis budget must equal ``(‖C₁‖ / nm)²``
+        # — pass ``nm / ‖C₁‖`` as the joint effective multiplier so the
+        # allocator's ``1 / nm²`` budget identity hits the right value.
+        c1 = first_strategy._max_column_norm
+        c2 = second_strategy._max_column_norm
+        first_stddev, second_stddev = paired_noise_stddevs(
+            noise_multiplier / c1,
+            first=max_norm * c1,
+            second=squared_max_norm * c2,
         )
         noisy_grads, new_first = first_fn(
             first_clipped.pytree,
@@ -371,7 +366,6 @@ __all__ = [
     "LambdaCgdStrategy",
     "BisrStrategy",
     "BsrStrategy",
-    "DEFAULT_SECOND_MOMENT_OVERHEAD",
     "MfStrategy",
     "SecondMomentMFNoiseState",
     "SecondMomentNoiseOutput",
@@ -381,8 +375,5 @@ __all__ = [
     "lambda_cgd_strategy",
     "bisr_strategy",
     "bsr_strategy",
-    "second_moment_joint_sensitivity",
-    "second_moment_noise_scale",
-    "second_moment_stddevs",
     "mf_noise",
 ]

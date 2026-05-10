@@ -28,7 +28,7 @@ The accounting API is split into three namespaces:
 
 | Namespace | Contents | Import |
 |-----------|----------|--------|
-| `opaque.accounting` | Cross-cutting: calibration, composition, `second_moment`, `balls_in_bins`, `Accountant`, `repeat`, `compose` | `import opaque.accounting as acc` |
+| `opaque.accounting` | Cross-cutting: calibration, composition, `Accountant`, `repeat`, `compose` | `import opaque.accounting as acc` |
 | `opaque.dpsgd.accounting` | DP-SGD mechanisms: `gaussian`, `adaclip`, `poisson`, `truncated_poisson`, `parallel_poisson` | `from opaque.dpsgd import accounting as dpsgd_acc` |
 | `opaque.dpftrl.accounting` | DP-FTRL mechanisms: `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `cyclic_poisson`, `b_min_sep` | `from opaque.dpftrl import accounting as dpftrl_acc` |
 
@@ -217,55 +217,35 @@ fraction query. Returns an `AdaClip` process composable with
 step = dpsgd_acc.poisson(dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.5), fraction_noise_std=0.05, expected_batch_size=256), 0.01)
 ```
 
-### `second_moment(inner, *, sensitivity, max_column_norm=None, first_moment_overhead=sqrt(3/2)) -> DpProcess`
+### Private second-moment release
 
-Accounts for the additional privacy cost of releasing **both** gradients and
-squared gradients in the same step (used with private adaptive optimizers such
-as Adam and RMSProp). The shared noise budget is split optimally between the
-two streams.
-
-Accepted inners:
-
-| `inner` | Use case |
-|---------|----------|
-| `gaussian(nm)` | DP-SGD with fixed or AUTO-S clipping |
-| `adaclip(gaussian(nm))` | DP-SGD with adaptive clipping (quantile overhead included) |
-| `band_mf(nm)`, `blt(nm)`, `lambda_cgd(nm)`, `bisr(nm)` | DP-FTRL (MF noise) |
-
-- `inner`: Base mechanism.
-- `sensitivity` (float): Clipped-gradient sensitivity (`clipping_norm / batch_size` for mean reduction).
-- `max_column_norm` (float | None): Max column norm of the first-moment strategy matrix. Defaults to `inner.sensitivity` for MF inners, `1.0` for Gaussian / AdaClip.
-- `first_moment_overhead` (float): Overhead multiplied onto the first-stream sensitivity. Default `sqrt(3/2)` (tight for d ≥ 2 add/remove DP).
+When the noise mechanism produces both gradients **and** squared gradients
+(via `clipped_grad(..., second_moment=True)`), the joint paired release uses
+sensitivity-proportional Mahalanobis allocation in the runtime σ split (see
+the [paired second-moment release](noise.md#paired-second-moment-release)
+section). The Mahalanobis
+budget collapses to a single sensitivity-1 Gaussian release at the same
+noise multiplier, so **privacy accounting is exactly the underlying
+first-moment mechanism**:
 
 ```python
 import opaque.accounting as acc
 
-# DP-SGD with fixed clipping
-step = dpsgd_acc.poisson(
-    acc.second_moment(dpsgd_acc.gaussian(0.8), sensitivity=1.0 / batch_size),
-    sample_rate=batch_size / dataset_size,
-)
+# DP-SGD: same chain as first-moment-only
+step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=batch_size / dataset_size)
+training = step * num_steps
 
-# DP-SGD with adaptive clipping (quantile noise folded in)
-step = dpsgd_acc.poisson(
-    acc.second_moment(
-        dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.8), fraction_noise_std=0.05, expected_batch_size=256),
-        sensitivity=1.0 / batch_size,
-    ),
-    sample_rate=batch_size / dataset_size,
-)
-
-# DP-FTRL with BandMF
-from opaque.dpftrl.noise import band_mf_strategy
-strategy = band_mf_strategy(n_steps=1000, bands=10)
+# DP-FTRL with BandMF: same chain as first-moment-only
 proc = ftrl_acc.cyclic_poisson(
-    acc.second_moment(
-        ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups),
-        sensitivity=1.0 / batch_size,
-    ),
+    ftrl_acc.band_mf(1.0, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups),
     sample_rate=batch_size / dataset_size,
 )
 ```
+
+There is no separate `second_moment` transformation to wrap and no `ρ` knob:
+the runtime σ on each stream already absorbs the joint cost. Use the
+underlying mechanism factories (`dpsgd_acc.gaussian`, `dpftrl_acc.band_mf`,
+…) directly.
 
 ### `eps_delta(epsilon, delta=0.0) -> DpProcess`
 
@@ -288,8 +268,8 @@ composition: `identity() | a` returns `a`.
 ### `nonprivate() -> DpProcess`
 
 Non-private mechanism (ε=∞, δ=0). Useful as a baseline or for training without
-a privacy guarantee. `second_moment(inner)` and all Poisson-family amplifications
-handle `nonprivate()` inner transparently (zero privacy cost).
+a privacy guarantee. All Poisson-family amplifications handle `nonprivate()`
+inner transparently (zero privacy cost).
 
 ```python
 step = dpsgd_acc.poisson(acc.nonprivate(), sample_rate=0.01)
@@ -416,7 +396,7 @@ eps = proc.epsilon_at(1e-5)
 ### `b_min_sep(inner, strategy_coefficients, n_steps, p0, *, num_mc_samples=100_000, mc_seed=42) -> DpProcess`
 
 Warm-start **b-min-sep** amplification for BandMF (Dong & Ganesh, arXiv:2602.09338).
-Uses Monte Carlo PLD accounting. `inner` must be `BandMf` or `SecondMoment(BandMf)`.
+Uses Monte Carlo PLD accounting. `inner` must be `BandMf`.
 `strategy_coefficients` is the first column of the same BandMF strategy matrix
 used for noise. `p0` is the per-example participation rate per iteration
 `E[|B|]/|D|` (match the training sampler’s target batch size).

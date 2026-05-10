@@ -127,7 +127,6 @@ from opaque.accounting import calibration as cal
 from opaque.clipping import clipped_grad
 from opaque.types import SecondMomentNoiseOutput
 from opaque.dpftrl.noise import (
-    DEFAULT_SECOND_MOMENT_OVERHEAD,
     band_mf_strategy,
     bisr_strategy,
     bsr_strategy,
@@ -135,7 +134,6 @@ from opaque.dpftrl.noise import (
     identity_strategy,
     lambda_cgd_strategy,
     mf_noise,
-    second_moment_joint_sensitivity,
 )
 from opaque.profiling import (
     StepTimer,
@@ -345,20 +343,12 @@ def parse_args():
         help=(
             "Activate private second-moment noise: ``mf_noise`` produces a "
             "privately-estimated ``g²`` stream alongside noised gradients, "
-            "and Opaque optimizers consume it automatically.  Costs ~22% "
-            "extra noise on the first-moment stream under add/remove DP; "
-            "in exchange the optimizer's v̂ is unbiased.  Requires an "
-            "Adam-family optimizer (``adamw`` or ``ademamix``) with a "
-            "second moment to consume the paired stream.  Off by default."
-        ),
-    )
-    train_g.add_argument(
-        "--second-moment-overhead",
-        type=float,
-        default=None,
-        help=(
-            "Optional first-stream noise overhead for --second-moment.  "
-            "Defaults to sqrt(3/2) for d>=2 add/remove DP."
+            "and Opaque optimizers consume it automatically.  Joint noise "
+            "uses sensitivity-proportional Mahalanobis allocation: privacy "
+            "accounting is the underlying MF mechanism at the same noise "
+            "multiplier — no extra cost.  Requires an Adam-family optimizer "
+            "(``adamw`` or ``ademamix``) with a second moment to consume "
+            "the paired stream.  Off by default."
         ),
     )
     train_g.add_argument(
@@ -961,11 +951,6 @@ def main():
     #     Requires the optimizer to consume ``SecondMomentNoiseOutput``.
     is_adam_family = args.optimizer in ("adamw", "ademamix", "lion")
     use_second_moment = args.second_moment
-    second_moment_accounting_overhead = (
-        args.second_moment_overhead
-        if args.second_moment_overhead is not None
-        else DEFAULT_SECOND_MOMENT_OVERHEAD
-    )
 
     if use_second_moment and args.optimizer not in ("adamw", "ademamix"):
         raise ValueError(
@@ -1035,15 +1020,10 @@ def main():
 
     strategy = _make_strategy(lr_sched=lr_schedule)
 
-    def _wrap_second_moment(mechanism):
-        if not use_second_moment:
-            return mechanism
-        return acc.second_moment(
-            mechanism,
-            sensitivity=zeta,
-            max_column_norm=strategy._max_column_norm,
-            first_moment_overhead=second_moment_accounting_overhead,
-        )
+    # No paired-stream wrap on the accountant: the joint Mahalanobis
+    # allocation in :func:`mf_noise` makes the paired-release PLD
+    # identical to the first-moment-only release at the same noise
+    # multiplier (internal ``opaque._noise_allocation.paired_noise_stddevs``).
 
     acc.set_discretization(num_mc_samples=args.mc_samples, seed=args.seed)
 
@@ -1053,7 +1033,6 @@ def main():
             mechanism = ftrl_acc.band_mf(
                 nm, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups
             )
-            mechanism = _wrap_second_moment(mechanism)
             if args.band_mf_sampling == "cyclic_poisson":
                 return ftrl_acc.cyclic_poisson(mechanism, sample_rate=sampling_prob)
             return ftrl_acc.b_min_sep(
@@ -1065,9 +1044,7 @@ def main():
     elif args.mechanism == "blt" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = ftrl_acc.blt(nm, sensitivity=strategy.sensitivity)
-            mechanism = _wrap_second_moment(mechanism)
-            return mechanism
+            return ftrl_acc.blt(nm, sensitivity=strategy.sensitivity)
     elif args.mechanism == "lambda_cgd" and strategy is not None:
 
         def acct_mechanism(nm):
@@ -1076,7 +1053,6 @@ def main():
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
-            mechanism = _wrap_second_moment(mechanism)
             return ftrl_acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
@@ -1090,7 +1066,6 @@ def main():
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
-            mechanism = _wrap_second_moment(mechanism)
             return ftrl_acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
@@ -1104,7 +1079,6 @@ def main():
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
-            mechanism = _wrap_second_moment(mechanism)
             return ftrl_acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
@@ -1113,7 +1087,10 @@ def main():
     elif args.mechanism == "identity":
 
         def acct_mechanism(nm):
-            return dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=sample_rate) * total_steps
+            return (
+                dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=sample_rate)
+                * total_steps
+            )
     elif args.mechanism == "none":
 
         def acct_mechanism(nm):
@@ -1180,7 +1157,6 @@ def main():
             noise_multiplier=noise_multiplier,
             key=key(args.seed),
             second_moment_strategy=second_strategy,
-            first_moment_overhead=second_moment_accounting_overhead,
         )
     elif args.mechanism in ("identity", "none"):
         noise_fn, noise_state = mf_noise(
@@ -1250,7 +1226,8 @@ def main():
 
             def identity_acct(nm):
                 return (
-                    dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=sample_rate) * total_steps
+                    dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=sample_rate)
+                    * total_steps
                 )
 
             identity_cal = cal.calibrate(
@@ -1308,13 +1285,10 @@ def main():
     print(f"  Sensitivity: {zeta:.6f} (= {args.clipping_norm} / {args.batch_size})")
     print(f"  Noise multiplier (σ): {noise_multiplier:.4f}")
     if use_second_moment and args.mechanism not in ("identity", "none"):
-        joint_sens = second_moment_joint_sensitivity(
-            strategy._max_column_norm,
-            zeta,
-            first_moment_overhead=second_moment_accounting_overhead,
-        )
-        print(f"  Second-moment joint sensitivity: {joint_sens:.6f}")
-        print(f"  Noise stddev (1st moment): {noise_multiplier * joint_sens:.6f}")
+        # Per-stream σ is allocated by the dispatcher
+        # (sensitivity-proportional Mahalanobis on the encoded streams) and
+        # surfaces at runtime via ``noise_output.{noisy_grads,noisy_squared_grads}.noise_stddev``.
+        print("  Paired-stream allocation: sensitivity-proportional Mahalanobis")
     else:
         print(
             f"  Base noise stddev: {base_noise_stddev:.6f} (= {noise_multiplier:.4f} × {zeta:.6f})"

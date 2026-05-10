@@ -5,6 +5,7 @@ import math
 import pytest
 import torch
 
+from opaque._noise_allocation import paired_noise_stddevs
 from opaque.types import clipped
 from opaque.types import (
     NoisedPytree,
@@ -19,9 +20,6 @@ from opaque.dpftrl.noise import (
     identity_strategy,
     lambda_cgd_strategy,
     mf_noise,
-    second_moment_joint_sensitivity,
-    second_moment_noise_scale,
-    second_moment_stddevs,
 )
 from opaque.dpftrl.noise.types import SecondMomentMFNoiseState
 from opaque.random import key
@@ -51,76 +49,130 @@ def _clipped(grads):
 
 
 class TestSecondMomentCalibration:
-    def test_joint_sensitivity_default_overhead(self):
-        sensitivity = second_moment_joint_sensitivity(1.5, 0.1)
-        expected = 0.1 * 1.5 * math.sqrt(1.5)
-        assert sensitivity == pytest.approx(expected, rel=1e-10)
+    """``mf_noise`` consumes ``paired_noise_stddevs`` for σ allocation.
 
-    def test_noise_scale_default_overhead(self):
-        # Δ_first=0.5, Δ_second=0.25, c1=2, c2=1
-        # → scale = Δ_second · c2 / (Δ_first · c1 · √(ρ²−1))
-        # = 0.25 / (2 · 0.5 · √0.5).
-        scale = second_moment_noise_scale(
-            c1_max_column_norm=2.0,
-            c2_max_column_norm=1.0,
-            first_max_norm=0.5,
-            squared_max_norm=0.25,
-        )
-        expected = 0.25 / (2.0 * 0.5 * math.sqrt(0.5))
-        assert scale == pytest.approx(expected, rel=1e-10)
+    The strategy norms enter as multipliers on the per-record bounds:
+    ``Δ¹ = ζ · ‖C₁‖``, ``Δ² = ζ² · ‖C₂‖``.  These tests pin the closed
+    form on representative inputs.
+    """
 
-    def test_stddevs(self):
-        first, second = second_moment_stddevs(
-            3.0,
-            first_max_norm=0.2,
-            squared_max_norm=0.04,
-            c1_max_column_norm=2.0,
-            c2_max_column_norm=1.5,
-        )
-        expected_first = 3.0 * 0.2 * 2.0 * math.sqrt(1.5)
-        expected_second = expected_first * (0.04 * 1.5 / (0.2 * 2.0 * math.sqrt(0.5)))
-        assert first == pytest.approx(expected_first, rel=1e-10)
-        assert second == pytest.approx(expected_second, rel=1e-10)
+    def test_paired_stddevs_with_strategy_norms(self):
+        # Δ¹ = ζ · c1, Δ² = ζ² · c2.
+        zeta, c1, c2 = 0.2, 2.0, 1.5
+        nm = 3.0
+        delta1 = zeta * c1
+        delta2 = (zeta**2) * c2
+        s_first, s_second = paired_noise_stddevs(nm, first=delta1, second=delta2)
+        s_total = delta1 + delta2
+        assert s_first == pytest.approx(nm * math.sqrt(delta1 * s_total))
+        assert s_second == pytest.approx(nm * math.sqrt(delta2 * s_total))
 
-    def test_custom_overhead(self):
-        first, second = second_moment_stddevs(
-            1.0,
-            first_max_norm=0.5,
-            squared_max_norm=0.25,
-            c1_max_column_norm=2.0,
-            c2_max_column_norm=1.0,
-            first_moment_overhead=1.25,
-        )
-        assert first == pytest.approx(1.25)
-        assert second == pytest.approx(
-            1.25 * 0.25 / (0.5 * 2.0 * math.sqrt(1.25**2 - 1.0))
-        )
+    def test_mahalanobis_equality(self):
+        zeta, c1, c2, nm = 0.5, 2.0, 1.0, 1.0
+        delta1 = zeta * c1
+        delta2 = (zeta**2) * c2
+        s_first, s_second = paired_noise_stddevs(nm, first=delta1, second=delta2)
+        mahal = (delta1 / s_first) ** 2 + (delta2 / s_second) ** 2
+        assert mahal == pytest.approx(1.0 / nm**2, rel=1e-12)
 
-    def test_squared_max_norm_scales_second_stream_linearly(self):
-        """second_stddev is proportional to ``squared_max_norm`` (linearly):
-        scaling Δ_y by ``n`` scales σ_second by ``n`` for fixed Δ_first."""
-        n = 16
-        C = 1.0
-        _, σ2_a = second_moment_stddevs(
-            1.0, first_max_norm=C / n, squared_max_norm=C**2 / n
-        )
-        _, σ2_b = second_moment_stddevs(
-            1.0, first_max_norm=C / n, squared_max_norm=(C / n) ** 2
-        )
-        assert σ2_a == pytest.approx(σ2_b * n, rel=1e-10)
+    def test_squared_max_norm_couples_both_streams(self):
+        """Increasing ``squared_max_norm`` shifts both σ's via S = Δ¹+Δ²."""
+        a_first, a_second = paired_noise_stddevs(1.0, first=0.1, second=0.01)
+        b_first, b_second = paired_noise_stddevs(1.0, first=0.1, second=0.04)
+        assert b_first > a_first
+        assert b_second > a_second
 
     def test_rejects_invalid(self):
         with pytest.raises(ValueError):
-            second_moment_joint_sensitivity(0.0, 1.0)
+            paired_noise_stddevs(-1.0, first=0.1, second=0.01)
         with pytest.raises(ValueError):
-            second_moment_noise_scale(
-                c1_max_column_norm=1.0,
-                c2_max_column_norm=1.0,
-                first_max_norm=0.0,
-                squared_max_norm=1.0,
-            )
+            paired_noise_stddevs(1.0, first=-0.1, second=0.01)
         with pytest.raises(ValueError):
-            second_moment_stddevs(-1.0, first_max_norm=1.0, squared_max_norm=1.0)
+            paired_noise_stddevs(1.0, first=0.1, second=-0.01)
+
+
+class TestSecondMomentMFNoiseMatchesMfGaussianPld:
+    """Joint paired Mahalanobis on encoded streams equals ``(‖C₁‖ / nm)²``.
+
+    The dispatcher must translate the calibrated ``MfGaussian(nm, ‖C₁‖)``
+    parameter into the appropriate ``paired_noise_stddevs`` effective
+    multiplier (``nm / ‖C₁‖``) so the joint paired release has the same
+    PLD ``gaussian_pld(nm / ‖C₁‖)`` as the single-stream MF release.
+
+    Without the translation the runtime over-noises by a factor of
+    ``‖C₁‖`` per stream — privacy is strictly stricter than the
+    calibration target but utility suffers.
+    """
+
+    @pytest.fixture
+    def grad_template(self):
+        return {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
+
+    @pytest.mark.parametrize("nm", [0.5, 1.0, 2.0])
+    def test_joint_mahalanobis_matches_mf_gaussian_pld(self, grad_template, nm):
+        # BLT has ‖C₁‖ ≠ 1 robustly across platforms.  BandMF column-
+        # normalises to ‖C‖ ≈ 1 (1.0 - O(eps) on x86 Linux but exactly 1.0
+        # on Apple Silicon), so it's a poor regression target for the
+        # ``nm / c1`` scaling fix this test guards.
+        strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.9)
+        second_strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.99)
+        c1 = float(strategy._max_column_norm)
+        c2 = float(second_strategy._max_column_norm)
+
+        noise_fn, state = mf_noise(
+            grad_template,
+            strategy,
+            noise_multiplier=nm,
+            key=key(42),
+            second_moment_strategy=second_strategy,
+        )
+        grads = {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
+        out, _ = noise_fn(_paired(grads), state)
+
+        sigma_first = out.noisy_grads.noise_stddev
+        sigma_second = out.noisy_squared_grads.noise_stddev
+        # Encoded per-record sensitivities.
+        delta1 = _SENSITIVITY * c1
+        delta2 = (_SENSITIVITY**2) * c2
+        mahal = (delta1 / sigma_first) ** 2 + (delta2 / sigma_second) ** 2
+
+        # Target: the joint PLD must equal MfGaussian(nm, c1) PLD =
+        # gaussian_pld(nm / c1), i.e. effective multiplier nm / c1, i.e.
+        # joint Mahalanobis = (c1 / nm)².
+        expected = (c1 / nm) ** 2
+        assert mahal == pytest.approx(expected, rel=1e-10), (
+            f"joint Mahalanobis {mahal} != (c1/nm)² = {expected} (c1={c1}, nm={nm})"
+        )
+
+    def test_first_stream_recovers_single_stream_in_small_squared_limit(
+        self, grad_template
+    ):
+        """As Δ² / Δ¹ → 0, σ_first → single-stream MF σ = nm·ζ."""
+        strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.9)
+        second_strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.99)
+        nm = 1.0
+        # Build a paired input where the squared-stream sensitivity is
+        # effectively negligible relative to the first.
+        grads = {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
+        small_zeta = 1e-6
+        first_clipped = clipped(grads, max_norm=small_zeta)
+        sq_pytree = {k: v * v for k, v in grads.items()}
+        sq_clipped = clipped(sq_pytree, max_norm=small_zeta * small_zeta)
+        paired = SecondMomentClippingOutput(
+            grads=first_clipped, squared_grads=sq_clipped
+        )
+        noise_fn, state = mf_noise(
+            grad_template,
+            strategy,
+            noise_multiplier=nm,
+            key=key(42),
+            second_moment_strategy=second_strategy,
+        )
+        out, _ = noise_fn(paired, state)
+        # Single-stream MF runtime σ on the noise tensor for ζ=small_zeta is
+        # nm·ζ; the paired σ_first should converge to that as Δ²/Δ¹ → 0.
+        single_sigma = nm * small_zeta
+        assert out.noisy_grads.noise_stddev == pytest.approx(single_sigma, rel=1e-3)
 
 
 class TestSecondMomentMFNoise:
