@@ -1,5 +1,5 @@
 """DP-SGD sampler impl — Poisson subsampling."""
 
-from opaque.api.dpsgd.sampling._poisson import PoissonSubsampler
+from opaque.api.dpsgd.sampling._poisson import PoissonSampler
 
-__all__ = ["PoissonSubsampler"]
+__all__ = ["PoissonSampler"]

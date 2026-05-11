@@ -3,7 +3,7 @@ self-composed ``n_steps`` times.
 
 Regression guard: the ``ftrl_acc.poisson(identity_mf(...), ...,
 truncated_batch_size=, dataset_size=)`` path goes through
-``PoissonMf.pld``'s truncated branch, while
+``CyclicPoisson.pld``'s truncated branch, while
 ``dpsgd_acc.poisson(gaussian(...), ..., truncated_batch_size=,
 dataset_size=) * n_steps`` goes through ``Poisson.pld``'s truncated
 branch followed by ``self_compose``.  Both reduce to the same native

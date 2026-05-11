@@ -21,8 +21,8 @@ from ._helpers import _plain_poisson_step_indices
 from opaque.random.types import RngKey
 
 
-class PoissonSubsampler(Sampler):
-    """Poisson subsampler for privacy amplification (DP-SGD).
+class PoissonSampler(Sampler):
+    """Poisson sampler for privacy amplification (DP-SGD).
 
     Each example is independently included with probability
     ``sample_rate``.  When ``truncated_batch_size`` is set, batches are
@@ -35,7 +35,7 @@ class PoissonSubsampler(Sampler):
         from opaque.distributed import local_shard
 
         shard = local_shard(dataset, rank=rank, world_size=world_size)
-        sampler = PoissonSubsampler(
+        sampler = PoissonSampler(
             shard, sample_rate=0.01, key=fold_in(key(42), rank)
         )
 
@@ -51,7 +51,7 @@ class PoissonSubsampler(Sampler):
     Example::
 
         from opaque.random import key
-        sampler = PoissonSubsampler(
+        sampler = PoissonSampler(
             dataset, sample_rate=0.01, n_steps=1000, key=key(42),
         )
         loader = DataLoader(dataset, batch_sampler=sampler)

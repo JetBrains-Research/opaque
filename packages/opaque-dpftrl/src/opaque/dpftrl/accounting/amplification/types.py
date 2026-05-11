@@ -3,7 +3,7 @@
 from opaque.api.accounting.dpftrl.amplification.types import (
     BallsInBins,
     BMinSep,
-    PoissonMf,
+    CyclicPoisson,
 )
 
-__all__ = ["PoissonMf", "BMinSep", "BallsInBins"]
+__all__ = ["CyclicPoisson", "BMinSep", "BallsInBins"]

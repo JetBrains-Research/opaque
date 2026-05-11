@@ -33,7 +33,7 @@ from opaque.dpsgd.clipping import (
     per_group,
 )
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.sampling import PoissonSubsampler
+from opaque.dpsgd.sampling import PoissonSampler
 
 if TYPE_CHECKING:
     # Static type checkers see ``accounting`` as a real attribute; at
@@ -77,5 +77,5 @@ __all__ = [
     # Noise mechanisms
     "gaussian_noise",
     # Sampling
-    "PoissonSubsampler",
+    "PoissonSampler",
 ]

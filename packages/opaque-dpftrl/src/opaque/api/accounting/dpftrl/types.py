@@ -9,7 +9,7 @@ from __future__ import annotations
 from opaque.api.accounting.dpftrl.amplification.types import (
     BallsInBins,
     BMinSep,
-    PoissonMf,
+    CyclicPoisson,
 )
 from opaque.api.accounting.dpftrl.mechanisms.types import (
     BandMf,
@@ -29,7 +29,7 @@ __all__ = [
     "LambdaCgd",
     "IdentityMf",
     "MfGaussian",
-    "PoissonMf",
+    "CyclicPoisson",
     "BMinSep",
     "BallsInBins",
 ]

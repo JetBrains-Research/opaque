@@ -3,7 +3,7 @@
 DP-SGD amplification types (``Poisson``, ``ParallelPoisson``) live in
 :mod:`opaque.dpsgd.accounting.amplification.types`.
 
-DP-FTRL amplification types (``PoissonMf``, ``BMinSep``, ``BallsInBins``)
+DP-FTRL amplification types (``CyclicPoisson``, ``BMinSep``, ``BallsInBins``)
 live in :mod:`opaque.dpftrl.accounting.amplification.types`.
 """
 

@@ -25,7 +25,7 @@ class BandMf(MfGaussian):
 
     def __post_init__(self):
         # Empty ``coefficients`` would set ``bands == 0`` and silently zero
-        # out downstream amplification (``PoissonMf`` derives
+        # out downstream amplification (``CyclicPoisson`` derives
         # ``num_groups = ceil(n_steps / bands)``), so guard direct construction
         # and deserialization the same way the factory does.
         if not self.coefficients:

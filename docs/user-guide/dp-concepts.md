@@ -174,7 +174,7 @@ which stabilises memory and batch norms at the cost of **weaker** privacy than
 unconditional Poisson at the same inclusion probability $q$ (use the
 truncated-Poisson accountant).
 
-Opaque's `PoissonSubsampler` implements Poisson subsampling. The accounting module
+Opaque's `PoissonSampler` implements Poisson subsampling. The accounting module
 accounts for this amplification via `dpsgd_acc.poisson(mechanism, sample_rate)`.
 See [Sampling & Microbatching](sampling.md) and the
 [Mechanisms](../mechanisms/index.md) reference for per-mechanism amplification

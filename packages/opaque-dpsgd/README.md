@@ -23,14 +23,14 @@ from opaque.dpsgd.clipping import auto_clipped_grad, clipped_grad
 from opaque.random import key
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.sampling import PoissonSubsampler
+from opaque.dpsgd.sampling import PoissonSampler
 ```
 
 ## Layout
 
 - `opaque.dpsgd.noise` — `gaussian_noise` (optional ``bound`` for the bounded Gaussian mechanism)
 - `opaque.dpsgd.clipping` — `clipped_grad`, `auto_clipped_grad`, `per_group`, `adaptive_clipped_grad`, `.types`, `.fun`
-- `opaque.dpsgd.sampling` — `PoissonSubsampler` (optional ``truncated_batch_size``)
+- `opaque.dpsgd.sampling` — `PoissonSampler` (optional ``truncated_batch_size``)
 
 RNG keys, pytree helpers, distributed plumbing, and serialization live in
 [`opaque-core`](../opaque-core/README.md).

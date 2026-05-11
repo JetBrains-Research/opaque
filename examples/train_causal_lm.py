@@ -81,7 +81,7 @@ from opaque.profiling import (
     reset_peak_memory,
 )
 from opaque.random import key, fold_in
-from opaque.dpsgd.sampling import PoissonSubsampler
+from opaque.dpsgd.sampling import PoissonSampler
 from opaque.distributed import local_shard
 from opaque.functional import make_functional
 from opaque.scheduling import (
@@ -1575,7 +1575,7 @@ def main():
         print("Creating poisson sampler...")
 
         # Create sampler for this epoch
-        epoch_sampler = PoissonSubsampler(
+        epoch_sampler = PoissonSampler(
             train_dataset,
             sample_rate=sample_rate,
             truncated_batch_size=truncated_batch_size,

@@ -32,7 +32,7 @@ _TYPES = (
     "LambdaCgd",
     "IdentityMf",
     "MfGaussian",
-    "PoissonMf",
+    "CyclicPoisson",
     "BMinSep",
     "BallsInBins",
 )

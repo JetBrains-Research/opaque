@@ -34,7 +34,7 @@ _Inner = BandMf | IdentityMf
 
 
 @dataclass(frozen=True, slots=True)
-class PoissonMf(DpProcess):
+class CyclicPoisson(DpProcess):
     """Poisson-amplified MF mechanism — total privacy cost over ``n_steps``.
 
     For ``BandMf`` inner, ``num_groups = ceil(n_steps / bands)`` where
@@ -49,7 +49,7 @@ class PoissonMf(DpProcess):
     per-group population is the BandMF group of size ``|D| / bands``,
     not the full dataset, and that analysis has not been vetted here.
 
-    Named ``PoissonMf`` (not ``Poisson``) to avoid a class-name collision
+    Named ``CyclicPoisson`` (not ``Poisson``) to avoid a class-name collision
     with :class:`opaque.dpsgd.accounting.amplification.Poisson` in the
     serialization registry.  The user-facing factory is still
     :func:`poisson`.
@@ -68,22 +68,22 @@ class PoissonMf(DpProcess):
         # ``_native.truncated_poisson_gaussian_pld`` and fail at PLD time.
         if (self.truncated_batch_size is None) != (self.dataset_size is None):
             raise ValueError(
-                "PoissonMf: truncated_batch_size and dataset_size must be set "
+                "CyclicPoisson: truncated_batch_size and dataset_size must be set "
                 "together (both None for plain Poisson, both set for truncated)."
             )
         if self.truncated_batch_size is not None:
             if int(self.truncated_batch_size) < 1:
                 raise ValueError(
-                    "PoissonMf: truncated_batch_size must be >= 1, got "
+                    "CyclicPoisson: truncated_batch_size must be >= 1, got "
                     f"{self.truncated_batch_size}"
                 )
             if int(self.dataset_size) < 1:
                 raise ValueError(
-                    f"PoissonMf: dataset_size must be >= 1, got {self.dataset_size}"
+                    f"CyclicPoisson: dataset_size must be >= 1, got {self.dataset_size}"
                 )
             if not isinstance(self.inner, IdentityMf):
                 raise ValueError(
-                    "PoissonMf: truncated Poisson is only supported for "
+                    "CyclicPoisson: truncated Poisson is only supported for "
                     "IdentityMf inner (BandMf per-group truncation is not "
                     "implemented). Use plain Poisson "
                     "(truncated_batch_size=None) with BandMf."
@@ -145,7 +145,7 @@ def poisson(
     n_steps: int,
     truncated_batch_size: int | None = None,
     dataset_size: int | None = None,
-) -> PoissonMf:
+) -> CyclicPoisson:
     """Poisson amplification for DP-FTRL.
 
     Whole-process accountant: returns a :class:`DpProcess` covering all
@@ -179,7 +179,7 @@ def poisson(
     matches the same sampler with its matching cap.
 
     Returns:
-        A :class:`PoissonMf` process.
+        A :class:`CyclicPoisson` process.
 
     Example::
 
@@ -226,8 +226,8 @@ def poisson(
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
     # Pairing + per-field bounds + IdentityMf-only check on
     # truncated_batch_size / dataset_size are validated in
-    # ``PoissonMf.__post_init__`` so direct construction stays safe.
-    return PoissonMf(
+    # ``CyclicPoisson.__post_init__`` so direct construction stays safe.
+    return CyclicPoisson(
         inner=inner,
         sample_rate=float(sample_rate),
         n_steps=int(n_steps),

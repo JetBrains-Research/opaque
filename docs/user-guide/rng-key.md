@@ -73,12 +73,12 @@ first.
 ```python
 # Wrong: reusing the same key
 noise_fn, ns = gaussian_noise(noise_multiplier=1.0, key=k)
-sampler = PoissonSubsampler(dataset, sample_rate=0.01, key=k)  # correlated
+sampler = PoissonSampler(dataset, sample_rate=0.01, key=k)  # correlated
 
 # Right: split first
 k_noise, k_sample = split(k)
 noise_fn, ns = gaussian_noise(noise_multiplier=1.0, key=k_noise)
-sampler = PoissonSubsampler(dataset, sample_rate=0.01, key=k_sample)
+sampler = PoissonSampler(dataset, sample_rate=0.01, key=k_sample)
 ```
 
 ### `fold_in(k, *data)`
@@ -154,10 +154,10 @@ the base key and the current step counter, then increments the counter.
 ### Sampling
 
 ```python
-from opaque.dpsgd.sampling import PoissonSubsampler
+from opaque.dpsgd.sampling import PoissonSampler
 from opaque.random import key
 
-sampler = PoissonSubsampler(dataset, sample_rate=0.01, key=key(42))
+sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
 ```
 
 ### Adaptive clipping
