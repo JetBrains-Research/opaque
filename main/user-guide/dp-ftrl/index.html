@@ -2665,7 +2665,26 @@ constant per-step sensitivity assumption MF privacy proofs require.</p>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="p">)</span>
 </code></pre></div>
 <p><code>auto_clipped_grad</code> (AUTO-S) is also available and compatible with
-DP-FTRL — its sensitivity bound is constant.</p>
+DP-FTRL — its per-record sensitivity bound
+<code>sup ‖R · g / (‖g‖ + γ)‖ ≤ R</code> is constant in the input, satisfying
+the same invariant MF accounting requires of fixed clipping.</p>
+<p><strong>Choosing among the three.</strong> Scalar <code>clipped_grad</code> is the right
+default. Reach for <code>per_group</code> clipping when one or more parameter
+groups have substantially different gradient magnitudes than the
+rest — a freshly initialised head on top of frozen pretrained
+layers, or a LoRA target whose gradients sit far below its
+siblings: the non-uniform <code>σᵢ ∝ √Cᵢ</code> noise allocation concentrates
+less noise on small-gradient groups without sacrificing much
+sensitivity on the dominant ones, and on heterogeneous workloads
+this recovers a small eval-loss improvement over scalar clipping
+at the same joint budget. Setting <code>Cᵢ</code> substantially tighter than
+the per-group typical magnitudes (e.g. half the per-group median)
+regresses below scalar — clipping bias dominates the
+noise-redistribution benefit, so target <code>Cᵢ</code> near per-group typical
+gradient magnitudes. Reach for <code>auto_clipped_grad</code> when you don't
+want to tune <code>R</code> per workload — on the workloads we've measured
+AUTO-S matches or slightly beats fixed clipping at the same <code>R</code>,
+with no per-workload tuning needed.</p>
 <h2 id="4-noise">4. Noise<a class="headerlink" href="#4-noise" title="Permanent link">&para;</a></h2>
 <p><code>opaque.dpftrl.noise.mf_noise</code> injects correlated noise:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span>
@@ -2688,7 +2707,18 @@ rest of the run. The bound is <code>noise_multiplier × max_norm</code>, so each
 step must produce gradients with the same <code>max_norm</code> for the privacy
 claim to hold.</p>
 <p>For private second-moment estimation (Adam-style optimizers), pass
-<code>second_moment_strategy=...</code> — see <a href="../optimizers/">Optimizers</a>.</p>
+<code>second_moment_strategy=...</code> — see <a href="../optimizers/">Optimizers</a>. The
+joint Mahalanobis allocation between the two streams keeps privacy
+accounting at the same <code>gaussian(nm)</code> shape as the first-moment-only
+release: with the same strategy used for both streams, the
+first-moment σ picks up exactly a <code>√(1+C)</code> factor over the no-paired
+baseline (where <code>C</code> is the per-record clipping bound — scalar for
+<code>clipped_grad</code>, <code>PerGroup</code> for per-group clipping; AUTO-S uses <code>R</code>
+for the same role). With distinct strategies for the two streams the
+inflation depends on the ratio of their column norms — see
+<a href="../noise/">Noise</a>. Either way, pick <code>C</code> as small as the optimizer
+tolerates when the paired release is on (cross-reference: the same
+guidance as in the <a href="../clipping/">Clipping</a> empirical evidence).</p>
 <h2 id="5-sampling">5. Sampling<a class="headerlink" href="#5-sampling" title="Permanent link">&para;</a></h2>
 <p>DP-FTRL has its own sampler family under <code>opaque.dpftrl.sampling</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -2715,6 +2745,19 @@ calibration.</p>
 second_moment_strategy=...)</code> — the noise mechanism produces a
 <code>SecondMomentNoiseOutput</code> and the optimizer's DP-aware path consumes
 it. See <a href="../optimizers/">Optimizers</a> for the full second-moment story.</p>
+<p><strong>Stability under the paired release.</strong> The math holds under MF
+(the predicted σ_first inflation matches the formula referenced in
+<a href="../noise/">Noise</a>), but Adam-family optimizer stability is
+workload-dependent. The destabilisation risk comes from the
+v update: when per-coordinate gradient signal is small relative to
+the second-stream σ — common when some parameter groups have very
+small gradients — Adam's per-coordinate scaling accumulates bias
+and the average gradient norm grows across training. Watch for a
+rising clipping rate and a growing per-step gradient norm in the
+early steps. Mitigations: lower the learning rate (a ~3× drop is
+sometimes enough), or use <code>per_group</code> clipping to scope <code>C</code> per
+group so the per-group σ on small-gradient groups doesn't dominate
+the v signal there.</p>
 <h2 id="7-end-to-end-loop">7. End-to-end loop<a class="headerlink" href="#7-end-to-end-loop" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">state_dict</span>

@@ -1118,15 +1118,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#empirical-evidence" class="md-nav__link">
-    <span class="md-ellipsis">
-      Empirical evidence
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#api-reference" class="md-nav__link">
     <span class="md-ellipsis">
       API reference
@@ -2983,15 +2974,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#empirical-evidence" class="md-nav__link">
-    <span class="md-ellipsis">
-      Empirical evidence
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#api-reference" class="md-nav__link">
     <span class="md-ellipsis">
       API reference
@@ -3331,6 +3313,22 @@ are treated as constants by <code>vmap</code>.</p>
 groups. Instead of a single global L2 norm bound, each group is clipped
 independently. This can better match the natural gradient scale of different
 layers or module types (e.g., attention vs. MLP).</p>
+<p><strong>When to reach for it.</strong> Per-group clipping is most useful when one or
+more parameter groups have substantially different gradient magnitudes
+than the rest — a freshly initialised classifier head over frozen
+pretrained layers, or a LoRA target whose gradients sit far below its
+siblings. With <code>Cᵢ</code> near per-group typical gradient magnitudes, the
+non-uniform <code>σᵢ ∝ √Cᵢ</code> noise allocation concentrates less noise on
+small-gradient groups without sacrificing much sensitivity on the
+dominant ones, and on heterogeneous workloads this recovers a small
+eval-loss improvement over scalar clipping at the same joint budget.
+Setting <code>Cᵢ</code> substantially tighter than the per-group typical magnitudes
+(e.g. half the per-group median) regresses below scalar — clipping bias
+dominates the noise-redistribution benefit. When groups are
+near-homogeneous the joint sensitivity <code>√(ΣCᵢ²)</code> is <code>√K</code>-times the per
+group bound, so uniform <code>Cᵢ = c</code> is strictly worse than scalar at <code>c</code>;
+either pick scalar or assign asymmetric <code>Cᵢ</code> that exploit the
+heterogeneity.</p>
 <h3 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h3>
 <p>Use <code>per_group</code> to construct a <code>PerGroup</code> from parameter keys and substring
 patterns:</p>
@@ -3387,6 +3385,17 @@ tensors keyed like your parameters, then use <code>noise_stddev_for</code> as ab
 <p>The optimal allocation sets <span class="arithmatex">\(\sigma_i \propto \sqrt{C_i}\)</span> instead of a
 uniform σ.  Privacy accounting remains <code>gaussian(nm)</code> — the allocation
 satisfies the same Mahalanobis constraint, just with better MSE.</p>
+<p>The same joint allocation extends to a paired first/second-moment
+release (Adam-family optimizers via the private second-moment release).
+With a single shared noise multiplier, the first-moment σ picks up a
+<span class="arithmatex">\(\sqrt{1+C}\)</span> factor over the no-paired baseline (where <code>C</code> is the
+per-record clipping bound — scalar for <code>clipped_grad</code>, the joint
+<code>√(ΣCᵢ²)</code> for per-group). At <code>C=0.1</code> the inflation is +5%; at <code>C=1</code> it
+is +40%. Use the smallest <code>C</code> the optimizer tolerates when running with
+the paired release. The two compose: stacked, per-group clipping plus
+the paired release carry the same <code>C</code>-dependent σ cost as the paired
+release alone and the same per-group thresholding as per-group clipping
+alone — no additional accounting cost from the combination.</p>
 <h3 id="diagnostics_1">Diagnostics<a class="headerlink" href="#diagnostics_1" title="Permanent link">&para;</a></h3>
 <p>With <code>return_aux=True</code>, the returned auxiliary data includes per-group norms:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
@@ -3525,40 +3534,6 @@ starting threshold for adaptive, sensitivity bound <code>R</code> for auto.</p>
   track a target quantile of gradient norms, at a small additional
   privacy cost for the quantile query.</li>
 </ul>
-<h2 id="empirical-evidence">Empirical evidence<a class="headerlink" href="#empirical-evidence" title="Permanent link">&para;</a></h2>
-<p>How <code>--second-moment</code> and <code>--per-group-clipping</code> interact with the
-choice of clip norm <code>C</code>, distilled from end-to-end DP fine-tuning runs
-at ε=3:</p>
-<ol>
-<li>
-<p><strong><code>--second-moment</code> redistributes σ in proportion to <code>C</code>.</strong> Joint
-   Mahalanobis allocation between the first- and second-moment streams
-   keeps privacy accounting at <code>gaussian(nm)</code>, but the first-moment σ
-   picks up a <span class="arithmatex">\(\sqrt{1+C}\)</span> factor relative to running without
-   <code>--second-moment</code> at the same noise multiplier — roughly +5% at
-   <code>C=0.1</code>, +40% at <code>C=1</code>. Use the smallest <code>C</code> your optimizer
-   tolerates when <code>--second-moment</code> is on.</p>
-</li>
-<li>
-<p><strong><code>--per-group-clipping</code> pays off when groups have heterogeneous
-   gradient norms.</strong> PG noise is allocated non-uniformly,
-   <code>σᵢ ∝ √Cᵢ</code>, against a joint per-example sensitivity of
-   <code>√(ΣCᵢ²)</code>. A tight <code>Cᵢ</code> on a naturally-small-gradient group cuts
-   σ on that group's coordinates; setting all <code>Cᵢ = c</code> uniformly
-   leaves you with <code>√K</code> more per-group noise than scalar clipping at
-   <code>c</code> and gains nothing. Reach for PG when one group sits an order
-   of magnitude away from the rest on gradient norm — for example a
-   freshly initialised classifier head over frozen layers, or a
-   single LoRA target whose gradients are much smaller than its
-   siblings.</p>
-</li>
-<li>
-<p><strong><code>--second-moment</code> and <code>--per-group-clipping</code> compose.</strong> Stacked,
-   the two carry the same <code>C</code>-dependent σ cost as <code>--second-moment</code>
-   alone and the same per-group thresholding as <code>--per-group-clipping</code>
-   alone — no additional accounting cost from the combination.</p>
-</li>
-</ol>
 <h2 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
 <p>See <a href="../../reference/clipping/">Clipping API Reference</a> for complete function
 signatures, all parameters, and return types.</p>
