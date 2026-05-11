@@ -160,15 +160,12 @@ class TestCyclicPoissonBand:
         M = proc.atomic_unit
         for K in range(1, proc.n_steps + 1):
             G, r = divmod(K, M)
-            e_lo = (
-                proc.at_step(G * M).epsilon_at(_DELTA) if G > 0 else 0.0
-            )
+            e_lo = proc.at_step(G * M).epsilon_at(_DELTA) if G > 0 else 0.0
             e_K = proc.at_step(K).epsilon_at(_DELTA)
             e_hi_step = min((G + 1) * M, proc.n_steps)
             e_hi = proc.at_step(e_hi_step).epsilon_at(_DELTA)
             assert e_lo - 1e-10 <= e_K <= e_hi + 1e-10, (
-                f"sandwich broken at K={K} (G={G}, r={r}): "
-                f"{e_lo} ≤ {e_K} ≤ {e_hi}"
+                f"sandwich broken at K={K} (G={G}, r={r}): {e_lo} ≤ {e_K} ≤ {e_hi}"
             )
 
     def test_monotonic_across_bands(self):
@@ -241,9 +238,7 @@ class TestBMinSep:
 
 
 class TestBallsInBinsIdentity:
-    def _proc(
-        self, num_bins: int = 10, num_epochs: int = 10
-    ) -> BallsInBins:
+    def _proc(self, num_bins: int = 10, num_epochs: int = 10) -> BallsInBins:
         return ftrl_acc.balls_in_bins(
             ftrl_acc.identity_mf(1.0),
             num_bins=num_bins,
@@ -402,7 +397,6 @@ class TestAtomicUnitValidation:
 
         with pytest.raises(ValueError, match="atomic_unit"):
             _Broken().at_step(5)
-
 
 
 # ---------------------------------------------------------------------------
@@ -566,9 +560,7 @@ class TestAtStepInvariants:
         if steps[-1] != n:
             steps.append(n)
         for K in steps:
-            sub = (
-                Identity() if K == 0 else proc if K >= n else proc.at_step(K)
-            )
+            sub = Identity() if K == 0 else proc if K >= n else proc.at_step(K)
             e_K = _eps(sub, _DELTA, amp)
             assert e_K >= prev - slack
             prev = e_K
@@ -580,9 +572,7 @@ class TestAtStepInvariants:
         n, M = proc.n_steps, proc.atomic_unit
         K = max(1, min(n - 1, n // 2 + M // 2))
         G, _r = divmod(K, M)
-        e_lo = _eps(
-            proc.at_step(G * M) if G > 0 else Identity(), _DELTA, amp
-        )
+        e_lo = _eps(proc.at_step(G * M) if G > 0 else Identity(), _DELTA, amp)
         e_K = _eps(proc.at_step(K), _DELTA, amp)
         e_hi = _eps(proc.at_step(min((G + 1) * M, n)), _DELTA, amp)
         assert e_lo - 1e-9 <= e_K <= e_hi + 1e-9
@@ -596,9 +586,7 @@ class TestAtStepInvariants:
         assert math.isfinite((sub * 2).epsilon_at(_DELTA))
 
 
-@pytest.mark.parametrize(
-    "amp,mech", _AT_STEP_RAISES_PAIRS, ids=_AT_STEP_RAISES_IDS
-)
+@pytest.mark.parametrize("amp,mech", _AT_STEP_RAISES_PAIRS, ids=_AT_STEP_RAISES_IDS)
 class TestAtStepDocumentedRaise:
     """Pairs where ``at_step`` is documented to raise ``NotImplementedError``
     at intermediate K because the strategy's pre-computed ``gram_matrix`` is
