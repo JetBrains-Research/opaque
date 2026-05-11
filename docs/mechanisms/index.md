@@ -123,15 +123,13 @@ band = dpftrl_acc.poisson(
     n_steps=1000,
 )
 
-# DP-λCGD: strategy computes sensitivity and gram_matrix
+# DP-λCGD: strategy.as_mechanism populates the accounting
 lcgd_s = lambda_cgd_strategy(
     lambda_=0.9, n_steps=1000, min_sep=100, max_participations=5,
 )
 lcgd = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.lambda_cgd(
-        1.0, sensitivity=lcgd_s.sensitivity, gram_matrix=lcgd_s.gram_matrix
-    ),
-    num_bins=100, num_epochs=5,
+    lcgd_s.as_mechanism(1.0),
+    num_bins=100, n_steps=500,
 )
 
 for name, proc in [("Gaussian", gauss), ("BandMF", band), ("λCGD", lcgd)]:

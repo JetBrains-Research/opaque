@@ -28,13 +28,9 @@ strategy = bsr_strategy(
 )
 
 training = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.bsr(
-        noise_multiplier,
-        sensitivity=strategy.sensitivity,
-        gram_matrix=strategy.gram_matrix,
-    ),
+    strategy.as_mechanism(noise_multiplier),
     num_bins=steps_per_epoch,
-    num_epochs=num_epochs,
+    n_steps=steps_per_epoch * num_epochs,
 )
 eps = training.epsilon_at(1e-5)
 ```

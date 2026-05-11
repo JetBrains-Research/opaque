@@ -458,15 +458,14 @@ proc = dpftrl_acc.poisson(
 )
 eps = proc.epsilon_at(1e-5)
 
-# DP-λCGD / BISR / BLT — strategy provides sensitivity and gram_matrix
+# DP-λCGD / BISR / BLT — strategy.as_mechanism populates the accounting
 strategy = lambda_cgd_strategy(
     lambda_=0.9, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
-                        gram_matrix=strategy.gram_matrix),
-    num_bins=steps_per_epoch, num_epochs=num_epochs,
+    strategy.as_mechanism(1.0),
+    num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
 
 # Private second moments — accounting is unchanged from first-moment-only.
@@ -474,9 +473,8 @@ proc = dpftrl_acc.balls_in_bins(
 # sensitivity-proportional Mahalanobis budget; calibrate against the same
 # MF mechanism PLD used for the first-moment-only release.
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
-                        gram_matrix=strategy.gram_matrix),
-    num_bins=steps_per_epoch, num_epochs=num_epochs,
+    strategy.as_mechanism(1.0),
+    num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
 ```
 

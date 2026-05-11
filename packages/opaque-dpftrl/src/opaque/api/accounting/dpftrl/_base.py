@@ -28,7 +28,6 @@ configurations that cannot be safely truncated).
 from __future__ import annotations
 
 import dataclasses
-import math
 from abc import abstractmethod
 
 from opaque.api.accounting.core._base import DpProcess
@@ -84,5 +83,7 @@ class DpFtrlProcess(DpProcess):
             raise ValueError(
                 f"{type(self).__name__}.atomic_unit must be >= 1, got {unit}"
             )
-        rounded = min(math.ceil(step / unit) * unit, self.n_steps)
+        rounded = min(-(-step // unit) * unit, self.n_steps)
+        if rounded == self.n_steps:
+            return self
         return dataclasses.replace(self, n_steps=rounded)

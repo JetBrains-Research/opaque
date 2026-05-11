@@ -6,6 +6,7 @@ References:
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
@@ -15,34 +16,29 @@ from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 class Bisr(MfGaussian):
     """BISR mechanism with pre-computed Gram matrix.
 
-    The ``gram_matrix`` (flattened row-major) is needed by
-    :func:`~opaque.dpftrl.accounting.amplification._balls_in_bins.balls_in_bins`.
+    Construct via :meth:`opaque.dpftrl.noise.BisrStrategy.as_mechanism`.
+    ``inv_coefficients`` is the bandwidth-length C^{-1} band sequence.
     """
 
-    gram_matrix: tuple[float, ...] = ()
+    gram_matrix: tuple[float, ...]
+    inv_coefficients: tuple[float, ...]
+    min_sep: int
+    max_participations: int | None
+    normalized: bool
 
+    def with_horizon(
+        self, n_steps: int, max_participations: int | None
+    ) -> "Bisr":
+        """Return a copy with Gram regenerated for a shorter horizon."""
+        from opaque.api.accounting.core import _native
 
-def bisr(
-    noise_multiplier: float,
-    sensitivity: float,
-    gram_matrix: tuple[float, ...] = (),
-) -> Bisr:
-    """BISR mechanism with Gram matrix for BnB amplification.
-
-    Args:
-        noise_multiplier: Raw noise standard deviation σ.
-        sensitivity: L2 sensitivity of the BISR strategy.
-        gram_matrix: Pre-computed Gram matrix (flattened row-major).
-
-    Returns:
-        A :class:`Bisr` process.
-
-    Example::
-
-        proc = ftrl_acc.balls_in_bins(
-            ftrl_acc.bisr(1.0, sensitivity=s.sensitivity,
-                          gram_matrix=s.gram_matrix),
-            num_bins=1953, n_steps=15624,
+        new_gram = tuple(
+            _native.bisr_gram_matrix(
+                list(self.inv_coefficients),
+                n_steps,
+                self.min_sep,
+                max_participations,
+                self.normalized,
+            )
         )
-    """
-    return Bisr(noise_multiplier, sensitivity, gram_matrix)
+        return dataclasses.replace(self, gram_matrix=new_gram)

@@ -59,6 +59,23 @@ class BltStrategy:
     _max_buffers: int = 10
     _lr_schedule: torch.Tensor | None = None
 
+    def as_mechanism(self, noise_multiplier: float):
+        """Construct the matching accounting mechanism for BnB amplification."""
+        from opaque.api.accounting.dpftrl.mechanisms._blt import Blt
+
+        if self.gram_matrix is None:
+            raise ValueError(
+                "BltStrategy has no gram_matrix; construct via blt_strategy(...)."
+            )
+        return Blt(
+            noise_multiplier=noise_multiplier,
+            sensitivity=self.sensitivity,
+            gram_matrix=self.gram_matrix,
+            coefficients=self.coefficients,
+            min_sep=self._min_sep,
+            max_participations=self._max_participations,
+        )
+
 
 def blt_strategy(
     n_steps: int,

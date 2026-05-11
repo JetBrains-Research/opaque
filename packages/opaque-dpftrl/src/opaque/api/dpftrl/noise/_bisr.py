@@ -93,6 +93,26 @@ class BisrStrategy:
     _n_steps: int = 1
     _min_sep: int = 1
     _max_participations: int | None = 1
+    _inv_coefficients: tuple[float, ...] = ()
+    _normalized: bool = True
+
+    def as_mechanism(self, noise_multiplier: float):
+        """Construct the matching accounting mechanism for BnB amplification."""
+        from opaque.api.accounting.dpftrl.mechanisms._bisr import Bisr
+
+        if self.gram_matrix is None:
+            raise ValueError(
+                "BisrStrategy has no gram_matrix; construct via bisr_strategy(...)."
+            )
+        return Bisr(
+            noise_multiplier=noise_multiplier,
+            sensitivity=self.sensitivity,
+            gram_matrix=self.gram_matrix,
+            inv_coefficients=self._inv_coefficients,
+            min_sep=self._min_sep,
+            max_participations=self._max_participations,
+            normalized=self._normalized,
+        )
 
 
 def bisr_strategy(
@@ -198,4 +218,6 @@ def bisr_strategy(
         _n_steps=n_steps,
         _min_sep=min_sep,
         _max_participations=max_participations,
+        _inv_coefficients=tuple(inv_coefs),
+        _normalized=normalized,
     )

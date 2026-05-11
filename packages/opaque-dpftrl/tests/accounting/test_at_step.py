@@ -9,13 +9,15 @@ The contract is documented on :class:`DpFtrlProcess`:
 - ``ε(at_step(K)) ≤ ε(self)`` for ``K ≤ N``.
 
 Tests cover all three amplifications (CyclicPoisson, BMinSep, BallsInBins),
-both the method and the free-function form, type preservation, and the
-documented error path for BallsInBins with correlated-MF inners.
+both the method and the free-function form, and type preservation.  For
+BallsInBins with correlated-MF inners, an oracle test verifies that
+``at_step`` matches a freshly-built strategy at the shorter horizon.
 """
 
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 import pytest
 
@@ -26,6 +28,12 @@ from opaque.dpftrl.accounting.types import (
     BMinSep,
     CyclicPoisson,
     DpFtrlProcess,
+)
+from opaque.dpftrl.noise import (
+    bisr_strategy,
+    blt_strategy,
+    bsr_strategy,
+    lambda_cgd_strategy,
 )
 
 _DELTA = 1e-5
@@ -286,42 +294,133 @@ class TestBallsInBinsIdentity:
 
 
 # ---------------------------------------------------------------------------
-# BallsInBins(correlated MF): NotImplementedError until Gram regen lands.
+# BallsInBins(correlated MF): Gram regeneration oracle.
+#
+# ``inner.with_horizon`` is the load-bearing path: ``at_step(K)`` must match a
+# strategy built directly at the shorter horizon ``K`` (up to MC variance).
 # ---------------------------------------------------------------------------
 
 
-class TestBallsInBinsCorrelatedNotSupported:
-    @pytest.fixture
-    def proc(self) -> BallsInBins:
-        gram = (1.0,) * (10 * 10)
-        return ftrl_acc.balls_in_bins(
-            ftrl_acc.blt(1.0, sensitivity=1.0, gram_matrix=gram),
-            num_bins=10,
-            n_steps=100,
+_REGEN_NUM_BINS = 4
+_REGEN_N_FULL = 16
+_REGEN_K = 8
+_REGEN_TOL = 0.05  # generous: bnb_mc_pld is MC-based.
+
+
+def _bnb(mechanism, n_steps: int) -> BallsInBins:
+    return ftrl_acc.balls_in_bins(
+        mechanism, num_bins=_REGEN_NUM_BINS, n_steps=n_steps
+    )
+
+
+class TestGramRegenMatchesDirect:
+    """``at_step(K)`` must match a strategy built directly at horizon ``K``.
+
+    For each correlated MF, build BnB at full horizon and call ``at_step(K)``;
+    independently build BnB at horizon ``K`` from a fresh strategy.  Both
+    paths use the same ``bnb_mc_pld`` primitive on the same Gram structure,
+    so ε agrees up to MC variance.
+    """
+
+    def test_blt(self):
+        full = blt_strategy(
+            n_steps=_REGEN_N_FULL, min_sep=_REGEN_NUM_BINS, max_participations=4
+        )
+        direct = blt_strategy(
+            n_steps=_REGEN_K, min_sep=_REGEN_NUM_BINS, max_participations=2
+        )
+        e_at = _bnb(full.as_mechanism(1.0), _REGEN_N_FULL).at_step(_REGEN_K)
+        e_dir = _bnb(direct.as_mechanism(1.0), _REGEN_K)
+        assert math.isclose(
+            e_at.epsilon_at(_DELTA),
+            e_dir.epsilon_at(_DELTA),
+            rel_tol=_REGEN_TOL,
         )
 
-    def test_endpoints_still_work(self, proc: BallsInBins):
-        # K=0 returns Identity (no Gram needed); K=N returns self.
-        assert isinstance(proc.at_step(0), Identity)
-        assert proc.at_step(100) is proc
+    def test_bsr(self):
+        full = bsr_strategy(
+            bandwidth=2,
+            n_steps=_REGEN_N_FULL,
+            min_sep=_REGEN_NUM_BINS,
+            max_participations=4,
+            alpha=1.0,
+            beta=0.5,
+        )
+        direct = bsr_strategy(
+            bandwidth=2,
+            n_steps=_REGEN_K,
+            min_sep=_REGEN_NUM_BINS,
+            max_participations=2,
+            alpha=1.0,
+            beta=0.5,
+        )
+        e_at = _bnb(full.as_mechanism(1.0), _REGEN_N_FULL).at_step(_REGEN_K)
+        e_dir = _bnb(direct.as_mechanism(1.0), _REGEN_K)
+        assert math.isclose(
+            e_at.epsilon_at(_DELTA),
+            e_dir.epsilon_at(_DELTA),
+            rel_tol=_REGEN_TOL,
+        )
 
-    def test_partial_step_raises(self, proc: BallsInBins):
-        with pytest.raises(NotImplementedError, match="gram_matrix"):
-            proc.at_step(50)
+    def test_bisr(self):
+        full = bisr_strategy(
+            bandwidth=2,
+            n_steps=_REGEN_N_FULL,
+            min_sep=_REGEN_NUM_BINS,
+            max_participations=4,
+        )
+        direct = bisr_strategy(
+            bandwidth=2,
+            n_steps=_REGEN_K,
+            min_sep=_REGEN_NUM_BINS,
+            max_participations=2,
+        )
+        e_at = _bnb(full.as_mechanism(1.0), _REGEN_N_FULL).at_step(_REGEN_K)
+        e_dir = _bnb(direct.as_mechanism(1.0), _REGEN_K)
+        assert math.isclose(
+            e_at.epsilon_at(_DELTA),
+            e_dir.epsilon_at(_DELTA),
+            rel_tol=_REGEN_TOL,
+        )
 
-    def test_message_mentions_inner_class(self, proc: BallsInBins):
-        with pytest.raises(NotImplementedError, match="Blt"):
-            proc.at_step(50)
+    def test_lambda_cgd(self):
+        full = lambda_cgd_strategy(
+            0.5,
+            n_steps=_REGEN_N_FULL,
+            min_sep=_REGEN_NUM_BINS,
+            max_participations=4,
+        )
+        direct = lambda_cgd_strategy(
+            0.5,
+            n_steps=_REGEN_K,
+            min_sep=_REGEN_NUM_BINS,
+            max_participations=2,
+        )
+        e_at = _bnb(full.as_mechanism(1.0), _REGEN_N_FULL).at_step(_REGEN_K)
+        e_dir = _bnb(direct.as_mechanism(1.0), _REGEN_K)
+        assert math.isclose(
+            e_at.epsilon_at(_DELTA),
+            e_dir.epsilon_at(_DELTA),
+            rel_tol=_REGEN_TOL,
+        )
 
-    def test_other_correlated_inners_raise_too(self):
-        gram = (1.0,) * (4 * 4)
-        for factory_name in ("bsr", "bisr", "lambda_cgd"):
-            inner = getattr(ftrl_acc, factory_name)(
-                1.0, sensitivity=1.0, gram_matrix=gram
-            )
-            proc = ftrl_acc.balls_in_bins(inner, num_bins=4, n_steps=16)
-            with pytest.raises(NotImplementedError):
-                proc.at_step(8)
+
+# ---------------------------------------------------------------------------
+# Serialization registry hardening: abstract bases must NOT be registered.
+# ---------------------------------------------------------------------------
+
+
+class TestSerializationRegistryHardening:
+    """Abstract intermediates (``DpFtrlProcess``, etc.) are not dataclasses
+    and have no fields to serialize; they must not pollute the registry."""
+
+    def test_abstract_bases_not_registered(self):
+        from opaque.api.accounting.core._base import _PROCESS_REGISTRY
+
+        assert "DpFtrlProcess" not in _PROCESS_REGISTRY
+        # Concrete classes still register normally.
+        assert "CyclicPoisson" in _PROCESS_REGISTRY
+        assert "BallsInBins" in _PROCESS_REGISTRY
 
 
 # ---------------------------------------------------------------------------
@@ -411,17 +510,12 @@ class TestAtomicUnitValidation:
 # here.
 #
 # To add a new supported pair: register the amp / inner factory below and
-# append the tuple to ``_SUPPORTED_PAIRS`` (or ``_AT_STEP_RAISES_PAIRS`` if
-# the pair is legal but ``at_step`` is documented to raise until additional
-# machinery lands).
+# append the tuple to ``_SUPPORTED_PAIRS``.
 # ---------------------------------------------------------------------------
 
 
-_GRAM_K4 = (1.0,) * 16  # flat 4×4 Gram, matches num_bins=4 below
-
-
 # Amplification name → (factory(inner) -> DpFtrlProcess, is_monte_carlo).
-_AMPLIFICATIONS: dict[str, tuple[callable, bool]] = {
+_AMPLIFICATIONS: dict[str, tuple[Callable[..., DpFtrlProcess], bool]] = {
     "CyclicPoisson": (
         lambda inner: ftrl_acc.poisson(inner, sample_rate=0.01, n_steps=64),
         False,
@@ -432,23 +526,34 @@ _AMPLIFICATIONS: dict[str, tuple[callable, bool]] = {
     ),
     "BallsInBins": (
         lambda inner: ftrl_acc.balls_in_bins(inner, num_bins=4, n_steps=16),
-        False,
+        True,  # bnb_mc_pld is MC-based.
     ),
 }
 
 
 # Inner mechanism name → factory() -> mechanism dataclass.
-_MECHANISMS: dict[str, callable] = {
+_MECHANISMS: dict[str, Callable[[], object]] = {
     "IdentityMf": lambda: ftrl_acc.identity_mf(1.0),
     "BandMf": lambda: ftrl_acc.band_mf(
         1.0, sensitivity=2.0, coefficients=(1.0, 1.0, 1.0, 1.0)
     ),
-    "Blt": lambda: ftrl_acc.blt(1.0, sensitivity=1.0, gram_matrix=_GRAM_K4),
-    "LambdaCgd": lambda: ftrl_acc.lambda_cgd(
-        1.0, sensitivity=1.0, gram_matrix=_GRAM_K4
-    ),
-    "Bisr": lambda: ftrl_acc.bisr(1.0, sensitivity=1.0, gram_matrix=_GRAM_K4),
-    "Bsr": lambda: ftrl_acc.bsr(1.0, sensitivity=1.0, gram_matrix=_GRAM_K4),
+    "Blt": lambda: blt_strategy(
+        n_steps=16, min_sep=4, max_participations=4
+    ).as_mechanism(1.0),
+    "LambdaCgd": lambda: lambda_cgd_strategy(
+        0.5, n_steps=16, min_sep=4, max_participations=4
+    ).as_mechanism(1.0),
+    "Bisr": lambda: bisr_strategy(
+        bandwidth=2, n_steps=16, min_sep=4, max_participations=4
+    ).as_mechanism(1.0),
+    "Bsr": lambda: bsr_strategy(
+        bandwidth=2,
+        n_steps=16,
+        min_sep=4,
+        max_participations=4,
+        alpha=1.0,
+        beta=0.5,
+    ).as_mechanism(1.0),
 }
 
 
@@ -458,14 +563,6 @@ _SUPPORTED_PAIRS: list[tuple[str, str]] = [
     ("CyclicPoisson", "BandMf"),
     ("BMinSep", "BandMf"),
     ("BallsInBins", "IdentityMf"),
-]
-
-
-# Pairs that the amp factory accepts but where ``at_step`` at intermediate K
-# is documented to raise ``NotImplementedError``: the inner's Gram matrix is
-# sized for the original ``n_steps`` and opaque has no access to the
-# underlying encoder ``C`` to rebuild it for a shorter horizon.
-_AT_STEP_RAISES_PAIRS: list[tuple[str, str]] = [
     ("BallsInBins", "Blt"),
     ("BallsInBins", "LambdaCgd"),
     ("BallsInBins", "Bisr"),
@@ -493,7 +590,6 @@ def _pair_id(pair: tuple[str, str]) -> str:
 
 
 _SUPPORTED_IDS = [_pair_id(p) for p in _SUPPORTED_PAIRS]
-_AT_STEP_RAISES_IDS = [_pair_id(p) for p in _AT_STEP_RAISES_PAIRS]
 
 
 @pytest.mark.parametrize("amp,mech", _SUPPORTED_PAIRS, ids=_SUPPORTED_IDS)
@@ -586,25 +682,3 @@ class TestAtStepInvariants:
         assert math.isfinite((sub * 2).epsilon_at(_DELTA))
 
 
-@pytest.mark.parametrize("amp,mech", _AT_STEP_RAISES_PAIRS, ids=_AT_STEP_RAISES_IDS)
-class TestAtStepDocumentedRaise:
-    """Pairs where ``at_step`` is documented to raise ``NotImplementedError``
-    at intermediate K because the strategy's pre-computed ``gram_matrix`` is
-    sized for the original ``n_steps`` and opaque cannot rebuild the
-    truncated Gram without the underlying encoder matrix ``C``.
-
-    We assert the raise (so a regression that silently returns the
-    mis-sized PLD gets caught) and that endpoints still work.
-    """
-
-    def test_endpoint_zero_returns_identity(self, amp: str, mech: str):
-        assert isinstance(_build(amp, mech).at_step(0), Identity)
-
-    def test_endpoint_full_returns_self(self, amp: str, mech: str):
-        proc = _build(amp, mech)
-        assert proc.at_step(proc.n_steps) is proc
-
-    def test_intermediate_raises_named(self, amp: str, mech: str):
-        proc = _build(amp, mech)
-        with pytest.raises(NotImplementedError, match=mech):
-            proc.at_step(proc.n_steps // 2)

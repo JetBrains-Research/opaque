@@ -141,38 +141,52 @@ class TestFtrlPoissonConstructor:
 
 
 class TestBltDataclass:
-    """Blt frozen dataclass."""
+    """Blt frozen dataclass — built via BltStrategy.as_mechanism()."""
+
+    def _blt(self, noise_multiplier: float = 1.0):
+        from opaque.dpftrl.noise import blt_strategy
+
+        s = blt_strategy(
+            n_steps=10, min_sep=10, max_participations=1, momentum=1.0
+        )
+        return s.as_mechanism(noise_multiplier)
 
     def test_fields(self):
-        proc = Blt(1.0, 1.0, gram_matrix=(0.1, 0.2))
+        proc = self._blt(1.0)
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.sensitivity == pytest.approx(1.0)
-        assert proc.gram_matrix == (0.1, 0.2)
+        assert proc.sensitivity > 0
+        assert isinstance(proc.gram_matrix, tuple)
+        assert isinstance(proc.coefficients, tuple)
 
     def test_frozen(self):
-        proc = Blt(1.0, 1.0)
+        proc = self._blt()
         with pytest.raises(FrozenInstanceError):
             proc.noise_multiplier = 2.0  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        assert isinstance(Blt(1.0, 1.0), DpProcess)
+        assert isinstance(self._blt(), DpProcess)
 
     def test_pld_returns_valid(self):
-        proc = ftrl_acc.blt(1.0, sensitivity=1.0)
-        eps = proc.epsilon_at(1e-5)
+        eps = self._blt().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
 class TestBltConstructor:
-    """ftrl_acc.blt() returns Blt."""
+    """BltStrategy.as_mechanism() returns Blt with gram_matrix populated."""
 
     def test_returns_correct_type(self):
-        proc = ftrl_acc.blt(1.0, sensitivity=1.0)
+        from opaque.dpftrl.noise import blt_strategy
+
+        s = blt_strategy(n_steps=10, min_sep=10, max_participations=1)
+        proc = s.as_mechanism(1.0)
         assert isinstance(proc, Blt)
 
-    def test_gram_matrix_default_empty(self):
-        proc = ftrl_acc.blt(1.0, sensitivity=1.0)
-        assert proc.gram_matrix == ()
+    def test_gram_matrix_populated(self):
+        from opaque.dpftrl.noise import blt_strategy
+
+        s = blt_strategy(n_steps=10, min_sep=10, max_participations=1)
+        proc = s.as_mechanism(1.0)
+        assert proc.gram_matrix != ()
 
 
 # ── Composition tests ───────────────────────────────────────────────

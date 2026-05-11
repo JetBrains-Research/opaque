@@ -14,10 +14,6 @@ import sys
 
 _HEADLINE = (
     "band_mf",
-    "blt",
-    "bisr",
-    "bsr",
-    "lambda_cgd",
     "identity_mf",
     "poisson",
     "b_min_sep",
@@ -79,10 +75,10 @@ class TestEndToEndCalibration:
 
     def test_blt_standalone(self):
         import math
-        import opaque.dpftrl.accounting as ftrl_acc
+        from opaque.dpftrl.noise import blt_strategy
 
-        proc = ftrl_acc.blt(1.0, sensitivity=1.0)
-        eps = proc.epsilon_at(1e-5)
+        s = blt_strategy(n_steps=10, min_sep=10, max_participations=1, momentum=1.0)
+        eps = s.as_mechanism(1.0).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 

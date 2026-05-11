@@ -36,13 +36,11 @@ strategy = lambda_cgd_strategy(
     max_participations=num_epochs,
 )
 
-# 2. Build accounting mechanism from strategy-derived quantities
+# 2. Build accounting mechanism via strategy.as_mechanism
 training = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.lambda_cgd(noise_multiplier,
-                        sensitivity=strategy.sensitivity,
-                        gram_matrix=strategy.gram_matrix),
+    strategy.as_mechanism(noise_multiplier),
     num_bins=steps_per_epoch,
-    num_epochs=num_epochs,
+    n_steps=steps_per_epoch * num_epochs,
 )
 eps = training.epsilon_at(1e-5)
 ```
@@ -107,4 +105,4 @@ At each step t, the noise function:
 ## Relationship to BISR
 
 DP-λCGD is the bandwidth-2 special case of [BISR](bisr.md). For bandwidth > 2,
-use `dpftrl_acc.bisr()` which generalises the correlation structure.
+use `bisr_strategy(...)` which generalises the correlation structure.

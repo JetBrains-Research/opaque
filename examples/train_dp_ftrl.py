@@ -1149,43 +1149,28 @@ def main():
     elif args.mechanism == "blt" and strategy is not None:
 
         def acct_mechanism(nm):
-            return dpftrl_acc.blt(nm, sensitivity=strategy.sensitivity)
+            return strategy.as_mechanism(nm)
     elif args.mechanism == "lambda_cgd" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = dpftrl_acc.lambda_cgd(
-                nm,
-                sensitivity=strategy.sensitivity,
-                gram_matrix=strategy.gram_matrix,
-            )
             return dpftrl_acc.balls_in_bins(
-                mechanism,
+                strategy.as_mechanism(nm),
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
             )
     elif args.mechanism == "bisr" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = dpftrl_acc.bisr(
-                nm,
-                sensitivity=strategy.sensitivity,
-                gram_matrix=strategy.gram_matrix,
-            )
             return dpftrl_acc.balls_in_bins(
-                mechanism,
+                strategy.as_mechanism(nm),
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
             )
     elif args.mechanism == "bsr" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = dpftrl_acc.bsr(
-                nm,
-                sensitivity=strategy.sensitivity,
-                gram_matrix=strategy.gram_matrix,
-            )
             return dpftrl_acc.balls_in_bins(
-                mechanism,
+                strategy.as_mechanism(nm),
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
             )

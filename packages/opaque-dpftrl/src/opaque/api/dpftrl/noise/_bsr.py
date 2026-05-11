@@ -118,6 +118,24 @@ class BsrStrategy:
     _max_participations: int | None = 1
     _alpha: float = 1.0
     _beta: float = 0.0
+    _band_coefficients: tuple[float, ...] = ()
+
+    def as_mechanism(self, noise_multiplier: float):
+        """Construct the matching accounting mechanism for BnB amplification."""
+        from opaque.api.accounting.dpftrl.mechanisms._bsr import Bsr
+
+        if self.gram_matrix is None:
+            raise ValueError(
+                "BsrStrategy has no gram_matrix; construct via bsr_strategy(...)."
+            )
+        return Bsr(
+            noise_multiplier=noise_multiplier,
+            sensitivity=self.sensitivity,
+            gram_matrix=self.gram_matrix,
+            coefficients=self._band_coefficients,
+            min_sep=self._min_sep,
+            max_participations=self._max_participations,
+        )
 
 
 def bsr_strategy(
@@ -210,4 +228,5 @@ def bsr_strategy(
         _max_participations=max_participations,
         _alpha=alpha,
         _beta=beta,
+        _band_coefficients=tuple(band_coefs),
     )

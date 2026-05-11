@@ -78,6 +78,25 @@ class LambdaCgdStrategy:
     _min_sep: int = 1
     _max_participations: int | None = 1
 
+    def as_mechanism(self, noise_multiplier: float):
+        """Construct the matching accounting mechanism for BnB amplification."""
+        from opaque.api.accounting.dpftrl.mechanisms._lambda_cgd import LambdaCgd
+
+        if self.gram_matrix is None:
+            raise ValueError(
+                "LambdaCgdStrategy has no gram_matrix; "
+                "construct via lambda_cgd_strategy(...)."
+            )
+        return LambdaCgd(
+            noise_multiplier=noise_multiplier,
+            sensitivity=self.sensitivity,
+            gram_matrix=self.gram_matrix,
+            lambda_=self._lambda,
+            min_sep=self._min_sep,
+            max_participations=self._max_participations,
+            normalized=self._normalized,
+        )
+
 
 def lambda_cgd_strategy(
     lambda_: float,

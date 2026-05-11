@@ -75,8 +75,7 @@ class BallsInBins(DpFtrlProcess):
     Example (DP-λCGD)::
 
         training = ftrl_acc.balls_in_bins(
-            ftrl_acc.lambda_cgd(nm, sensitivity=s.sensitivity,
-                                gram_matrix=s.gram_matrix),
+            strategy.as_mechanism(nm),
             num_bins=steps_per_epoch,
             n_steps=steps_per_epoch * num_epochs,
         )
@@ -102,39 +101,38 @@ class BallsInBins(DpFtrlProcess):
     def at_step(self, step: int) -> DpProcess:
         """Process truncated to its first ``step`` rounds (rounded up to an epoch).
 
-        For ``IdentityMf`` inner the truncated process is well-defined: the
-        BnB-Identity PLD reads ``num_epochs = n_steps // num_bins`` directly
-        and has no Gram dependency.
-
-        For correlated-MF inners (``Blt``, ``LambdaCgd``, ``Bisr``, ``Bsr``)
-        the strategy's pre-computed ``gram_matrix`` is sized for the original
-        ``n_steps``; truncating the process would leave the Gram matched to
-        the wrong horizon.  Rebuilding the Gram for the shorter horizon
-        requires re-running the strategy factory (which has access to ``C``);
-        opaque does not have ``C`` here, so this case currently raises
-        :class:`NotImplementedError` rather than silently returning a
-        mis-sized PLD.
+        Correlated-MF inners (``Blt``, ``LambdaCgd``, ``Bisr``, ``Bsr``)
+        carry their own regen parameters and rebuild the Gram for the
+        shorter horizon via ``inner.with_horizon``.  ``IdentityMf`` has no
+        Gram and falls through to the default ``n_steps`` substitution.
         """
-        # Lazy imports to avoid the same circular-import shape pld() guards against.
+        import dataclasses
+
+        from opaque.api.accounting.core.mechanisms.types import Identity
         from opaque.api.accounting.dpftrl.mechanisms._bisr import Bisr
         from opaque.api.accounting.dpftrl.mechanisms._blt import Blt
         from opaque.api.accounting.dpftrl.mechanisms._bsr import Bsr
         from opaque.api.accounting.dpftrl.mechanisms._lambda_cgd import LambdaCgd
 
-        if 0 < step < self.n_steps and isinstance(
-            self.inner, (Blt, LambdaCgd, Bisr, Bsr)
-        ):
-            raise NotImplementedError(
-                f"BallsInBins.at_step is not yet supported for "
-                f"{type(self.inner).__name__} inner: the strategy's "
-                "gram_matrix is sized for the original n_steps and would need "
-                "to be regenerated for the shorter horizon by the upstream "
-                "strategy factory.  Use IdentityMf inner for partial accounting "
-                "or query epsilon at the full n_steps."
+        if step <= 0:
+            return Identity()
+        if step >= self.n_steps:
+            return self
+        unit = self.atomic_unit
+        if unit < 1:
+            raise ValueError(
+                f"{type(self).__name__}.atomic_unit must be >= 1, got {unit}"
             )
-        # Explicit super: ``@dataclass(slots=True)`` rebuilds the class, which
-        # invalidates the ``__class__`` cell that bare ``super()`` relies on.
-        return super(BallsInBins, self).at_step(step)
+        rounded = min(-(-step // unit) * unit, self.n_steps)
+        if rounded == self.n_steps:
+            return self
+        if isinstance(self.inner, (Blt, Bsr, Bisr, LambdaCgd)):
+            new_inner = self.inner.with_horizon(
+                n_steps=rounded,
+                max_participations=rounded // self.num_bins,
+            )
+            return dataclasses.replace(self, inner=new_inner, n_steps=rounded)
+        return dataclasses.replace(self, n_steps=rounded)
 
     @functools.lru_cache(maxsize=8)
     def pld(
@@ -217,9 +215,9 @@ def balls_in_bins(
 
     Accepted inner mechanisms:
 
-    - **Correlated-noise (matrix-factorisation)**: :func:`blt`, :func:`lambda_cgd`,
-      :func:`bisr`, :func:`bsr` — PLD via the Monte Carlo dominating-pair
-      analysis (Choquette-Choo et al. 2024).
+    - **Correlated-noise (matrix-factorisation)**: ``Blt``, ``LambdaCgd``,
+      ``Bisr``, ``Bsr`` — construct via ``strategy.as_mechanism(nm)``.  PLD
+      via the Monte Carlo dominating-pair analysis (Choquette-Choo et al. 2024).
     - **MF identity** (:func:`identity_mf`) — Lemma 3.2 dominating pair with
       diagonal Gram ``(n_steps // num_bins) · I`` (orthogonal ``m_i`` for
       ``C = I``), via the identity-specialised importance-sampled MC primitive
@@ -228,8 +226,8 @@ def balls_in_bins(
       ``_IDENTITY_IS_TILT`` for the rationale.
 
     Args:
-        inner: An MF mechanism — :func:`blt`, :func:`lambda_cgd`, :func:`bisr`,
-            :func:`bsr`, or :func:`identity_mf`.
+        inner: An MF mechanism — built via ``strategy.as_mechanism(nm)`` for
+            correlated MF or :func:`identity_mf` for the uncorrelated baseline.
         num_bins: Bins per epoch (k ≥ 2).
         n_steps: Total training rounds.  Must be a positive multiple of
             ``num_bins`` (per-bin participation = ``n_steps // num_bins``).
@@ -241,9 +239,7 @@ def balls_in_bins(
 
         # Correlated MF
         training = ftrl_acc.balls_in_bins(
-            ftrl_acc.lambda_cgd(nm, sensitivity=s.sensitivity,
-                                gram_matrix=s.gram_matrix),
-            num_bins=100, n_steps=1000,
+            strategy.as_mechanism(nm), num_bins=100, n_steps=1000,
         )
 
         # Identity baseline through the FTRL training loop

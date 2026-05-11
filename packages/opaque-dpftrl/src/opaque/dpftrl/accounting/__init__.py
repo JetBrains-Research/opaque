@@ -12,11 +12,12 @@ strategy-construction time.
 Mechanisms (in :mod:`opaque.dpftrl.accounting.mechanisms`):
 
 - :func:`band_mf` — banded matrix-factorisation Gaussian.
-- :func:`blt` — buffered-linear-toeplitz Gaussian.
-- :func:`bisr` — banded inverse square root Gaussian.
-- :func:`bsr` — banded square root Gaussian.
-- :func:`lambda_cgd` — DP-λCGD Gaussian.
 - :func:`identity_mf` — uncorrelated (identity-encoder) sensitivity-1 Gaussian.
+
+Correlated MF mechanisms (``Blt``, ``Bsr``, ``Bisr``, ``LambdaCgd``) are
+constructed via the corresponding ``*Strategy.as_mechanism(noise_multiplier)``
+helper in :mod:`opaque.dpftrl.noise` — the strategy owns the structural data
+those mechanisms need for BnB amplification and ``at_step``.
 
 Amplification (in :mod:`opaque.dpftrl.accounting.amplification`):
 
@@ -60,21 +61,13 @@ from opaque.api.accounting.dpftrl import (
     b_min_sep,
     balls_in_bins,
     band_mf,
-    bisr,
-    blt,
-    bsr,
     identity_mf,
-    lambda_cgd,
     poisson,
 )
 
 __all__ = [
     "band_mf",
-    "blt",
-    "bisr",
-    "bsr",
     "identity_mf",
-    "lambda_cgd",
     "poisson",
     "b_min_sep",
     "balls_in_bins",

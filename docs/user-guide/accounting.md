@@ -248,32 +248,31 @@ eps = proc.epsilon_at(delta=1e-5)
 For subsampling amplification, wrap with `dpftrl_acc.poisson(..., n_steps=...)`
 (see below).
 
-### `dpftrl_acc.blt(noise_multiplier, sensitivity, gram_matrix=())`
+### Correlated MF mechanisms (BLT, λCGD, BISR, BSR)
 
-BLT mechanism. Takes `sensitivity` and optional `gram_matrix` from a
-`blt_strategy()`.
+Correlated MF mechanisms are built via the strategy's `as_mechanism`
+helper — the strategy already holds every structural parameter (sensitivity,
+Gram matrix, coefficients, min_sep, max_participations), so the user supplies
+only the noise multiplier:
 
 ```python
 strategy = blt_strategy(
     n_steps=10000, min_sep=1000, max_participations=5,
 )
 
-# Unamplified
-proc = dpftrl_acc.blt(1.0, sensitivity=strategy.sensitivity)
+# Unamplified — single-Gaussian PLD
+proc = strategy.as_mechanism(1.0)
 eps = proc.epsilon_at(delta=1e-5)
 
 # With Balls-in-Bins amplification
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.blt(1.0, sensitivity=strategy.sensitivity,
-            gram_matrix=strategy.gram_matrix),
-    num_bins=1000, num_epochs=5,
+    strategy.as_mechanism(1.0),
+    num_bins=1000, n_steps=5000,
 )
 ```
 
-### `dpftrl_acc.lambda_cgd(noise_multiplier, sensitivity, gram_matrix=())`
-
-DP-λCGD mechanism (Kalinin et al., 2026). Takes `sensitivity` and
-`gram_matrix` from a `lambda_cgd_strategy()`.
+The same pattern works for `lambda_cgd_strategy`, `bisr_strategy`, and
+`bsr_strategy`:
 
 ```python
 strategy = lambda_cgd_strategy(
@@ -281,29 +280,10 @@ strategy = lambda_cgd_strategy(
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
-                   gram_matrix=strategy.gram_matrix),
-    num_bins=steps_per_epoch, num_epochs=num_epochs,
+    strategy.as_mechanism(1.0),
+    num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
 eps = proc.epsilon_at(delta=1e-5)
-```
-
-### `dpftrl_acc.bisr(noise_multiplier, sensitivity, gram_matrix=())`
-
-BISR mechanism (Kalinin et al., ICLR 2026). Generalises λCGD to
-arbitrary bandwidth. Takes `sensitivity` and `gram_matrix` from a
-`bisr_strategy()`.
-
-```python
-strategy = bisr_strategy(
-    bandwidth=4, n_steps=total_steps,
-    min_sep=steps_per_epoch, max_participations=num_epochs,
-)
-proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.bisr(1.0, sensitivity=strategy.sensitivity,
-             gram_matrix=strategy.gram_matrix),
-    num_bins=steps_per_epoch, num_epochs=num_epochs,
-)
 ```
 
 ### `dpftrl_acc.poisson(inner, sample_rate, *, n_steps)`
@@ -344,8 +324,7 @@ strategy = lambda_cgd_strategy(
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
-                   gram_matrix=strategy.gram_matrix),
+    strategy.as_mechanism(1.0),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
 )

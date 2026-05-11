@@ -162,22 +162,21 @@ strategy = blt_strategy(
 )
 
 # Unamplified BLT
-proc = dpftrl_acc.blt(1.0, sensitivity=strategy.sensitivity)
+proc = strategy.as_mechanism(1.0)
 eps = proc.epsilon_at(delta=1e-5)
 
 # With Balls-in-Bins amplification (recommended)
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.blt(1.0, sensitivity=strategy.sensitivity,
-                 gram_matrix=strategy.gram_matrix),
-    num_bins=100, num_epochs=5,
+    strategy.as_mechanism(1.0),
+    num_bins=100, n_steps=500,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
 !!! note
-    Always use `strategy.sensitivity` and `strategy.gram_matrix` rather than
-    hardcoded values. The strategy computes these from the optimized BLT
-    parameters and the participation pattern.
+    `strategy.as_mechanism(nm)` populates every structural field
+    (sensitivity, Gram matrix, coefficients, min_sep, max_participations)
+    from the optimized BLT parameters and the participation pattern.
 
 ## Parameter guide
 

@@ -31,13 +31,11 @@ strategy = bisr_strategy(
     momentum=0.9,
 )
 
-# 2. Build accounting mechanism from strategy-derived quantities
+# 2. Build accounting mechanism via strategy.as_mechanism
 training = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.bisr(noise_multiplier,
-                  sensitivity=strategy.sensitivity,
-                  gram_matrix=strategy.gram_matrix),
+    strategy.as_mechanism(noise_multiplier),
     num_bins=steps_per_epoch,
-    num_epochs=num_epochs,
+    n_steps=steps_per_epoch * num_epochs,
 )
 eps = training.epsilon_at(1e-5)
 ```

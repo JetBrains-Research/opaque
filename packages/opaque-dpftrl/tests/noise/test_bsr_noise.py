@@ -112,7 +112,7 @@ class TestBsrPld:
             alpha=1.0,
             beta=0.5,
         )
-        eps = ftrl_acc.bsr(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
+        eps = s.as_mechanism(1.0).epsilon_at(self.delta)
         assert eps > 0
 
     def test_bsr_bnb(self):
@@ -125,7 +125,7 @@ class TestBsrPld:
             beta=0.5,
         )
         eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.bsr(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
+            s.as_mechanism(1.0),
             num_bins=25,
             n_steps=100,
         ).epsilon_at(self.delta)

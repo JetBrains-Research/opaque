@@ -332,33 +332,27 @@ eps = proc.epsilon_at(1e-5)
 BLT (Buffered Linear Toeplitz) mechanism. Takes `sensitivity` and optional
 `gram_matrix` from a `blt_strategy()`.
 
-- `noise_multiplier` (float): Raw noise standard deviation sigma.
-- `sensitivity` (float): From `strategy.sensitivity`.
-- `gram_matrix` (tuple[float, ...]): From `strategy.gram_matrix`. Empty for unamplified accounting.
+### Correlated MF mechanisms (BLT, λCGD, BISR, BSR)
+
+Build via `strategy.as_mechanism(noise_multiplier)` — the strategy owns
+sensitivity, Gram matrix, coefficients, min_sep, and max_participations:
 
 ```python
 from opaque.dpftrl.noise import blt_strategy
 strategy = blt_strategy(n_steps=10000, min_sep=1000, max_participations=5)
 
-# Unamplified
-proc = dpftrl_acc.blt(1.0, sensitivity=strategy.sensitivity)
+# Unamplified — single-Gaussian PLD
+proc = strategy.as_mechanism(1.0)
 
 # With Balls-in-Bins amplification
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.blt(1.0, sensitivity=strategy.sensitivity,
-            gram_matrix=strategy.gram_matrix),
-    num_bins=1000, num_epochs=5,
+    strategy.as_mechanism(1.0),
+    num_bins=1000, n_steps=5000,
 )
 ```
 
-### `lambda_cgd(noise_multiplier, sensitivity, gram_matrix=()) -> DpProcess`
-
-DP-λCGD mechanism (Kalinin et al., 2026). Takes `sensitivity` and
-`gram_matrix` from a `lambda_cgd_strategy()`.
-
-- `noise_multiplier` (float): Raw noise standard deviation sigma.
-- `sensitivity` (float): From `strategy.sensitivity`.
-- `gram_matrix` (tuple[float, ...]): From `strategy.gram_matrix`.
+The same `as_mechanism` API works for `lambda_cgd_strategy`,
+`bisr_strategy`, and `bsr_strategy`:
 
 ```python
 from opaque.dpftrl.noise import lambda_cgd_strategy
@@ -367,32 +361,8 @@ strategy = lambda_cgd_strategy(
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
-                   gram_matrix=strategy.gram_matrix),
-    num_bins=steps_per_epoch, num_epochs=num_epochs,
-)
-```
-
-### `bisr(noise_multiplier, sensitivity, gram_matrix=()) -> DpProcess`
-
-BISR (Banded Inverse Square Root) mechanism (Kalinin et al., ICLR 2026).
-Generalises λCGD to arbitrary bandwidth. Takes `sensitivity` and
-`gram_matrix` from a `bisr_strategy()`.
-
-- `noise_multiplier` (float): Raw noise standard deviation sigma.
-- `sensitivity` (float): From `strategy.sensitivity`.
-- `gram_matrix` (tuple[float, ...]): From `strategy.gram_matrix`.
-
-```python
-from opaque.dpftrl.noise import bisr_strategy
-strategy = bisr_strategy(
-    bandwidth=4, n_steps=total_steps,
-    min_sep=steps_per_epoch, max_participations=num_epochs,
-)
-proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.bisr(1.0, sensitivity=strategy.sensitivity,
-             gram_matrix=strategy.gram_matrix),
-    num_bins=steps_per_epoch, num_epochs=num_epochs,
+    strategy.as_mechanism(1.0),
+    num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
 ```
 
@@ -451,9 +421,8 @@ strategy = lambda_cgd_strategy(
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
-                   gram_matrix=strategy.gram_matrix),
-    num_bins=steps_per_epoch, num_epochs=num_epochs,
+    strategy.as_mechanism(1.0),
+    num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
 
 # With Gaussian (conservative Poisson approximation)

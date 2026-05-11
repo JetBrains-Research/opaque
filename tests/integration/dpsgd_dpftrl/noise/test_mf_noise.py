@@ -232,19 +232,17 @@ class TestPldEquivalence:
 
     def test_blt_pld(self):
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        eps_new = ftrl_acc.blt(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
+        eps_new = s.as_mechanism(1.0).epsilon_at(self.delta)
         assert eps_new > 0
 
     def test_lambda_cgd_pld(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        eps_new = ftrl_acc.lambda_cgd(1.0, sensitivity=s.sensitivity).epsilon_at(
-            self.delta
-        )
+        eps_new = s.as_mechanism(1.0).epsilon_at(self.delta)
         assert eps_new > 0
 
     def test_bisr_pld(self):
         s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        eps_new = ftrl_acc.bisr(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
+        eps_new = s.as_mechanism(1.0).epsilon_at(self.delta)
         assert eps_new > 0
 
 
@@ -252,16 +250,14 @@ class TestPldEquivalence:
 
 
 class TestBnbEquivalence:
-    """BnB via MfGaussian(gram_matrix) matches old class-based BnB."""
+    """BnB via strategy.as_mechanism() composes correctly."""
 
     delta = 1e-5
 
     def test_lambda_cgd_bnb(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
         bnb_new = ftrl_acc.balls_in_bins(
-            ftrl_acc.lambda_cgd(
-                1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix
-            ),
+            s.as_mechanism(1.0),
             num_bins=25,
             n_steps=100,
         )
@@ -271,7 +267,7 @@ class TestBnbEquivalence:
     def test_blt_bnb(self):
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
         bnb_new = ftrl_acc.balls_in_bins(
-            ftrl_acc.blt(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
+            s.as_mechanism(1.0),
             num_bins=25,
             n_steps=100,
         )
@@ -281,21 +277,12 @@ class TestBnbEquivalence:
     def test_bisr_bnb(self):
         s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
         bnb_new = ftrl_acc.balls_in_bins(
-            ftrl_acc.bisr(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
+            s.as_mechanism(1.0),
             num_bins=25,
             n_steps=100,
         )
         eps = bnb_new.epsilon_at(self.delta)
         assert eps > 0
-
-    def test_mf_without_gram_raises(self):
-        """Blt without gram_matrix is rejected by balls_in_bins."""
-        with pytest.raises(ValueError):
-            ftrl_acc.balls_in_bins(
-                ftrl_acc.blt(1.0, sensitivity=1.0),
-                num_bins=25,
-                n_steps=100,
-            ).epsilon_at(1e-5)
 
 
 # ── mf_noise() tests ───────────────────────────────────────────────────
