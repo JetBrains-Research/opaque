@@ -1,6 +1,5 @@
 """DP-FTRL accounting factories impl."""
 
-from opaque.api.accounting.dpftrl._at_step import at_step
 from opaque.api.accounting.dpftrl.amplification import (
     b_min_sep,
     balls_in_bins,
@@ -17,5 +16,4 @@ __all__ = [
     "poisson",
     "b_min_sep",
     "balls_in_bins",
-    "at_step",
 ]

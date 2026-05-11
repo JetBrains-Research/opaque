@@ -3,7 +3,7 @@
 For correlated MF mechanisms (BLT, BSR, BISR, λCGD), build the dataclass
 via the corresponding ``*Strategy.as_mechanism(noise_multiplier)`` helper
 in :mod:`opaque.dpftrl.noise`; the strategy owns the structural data those
-mechanisms need for BnB amplification and ``at_step``.
+mechanisms need for BnB amplification and ``approx_at_step``.
 """
 
 from opaque.api.accounting.dpftrl.mechanisms._band_mf import band_mf

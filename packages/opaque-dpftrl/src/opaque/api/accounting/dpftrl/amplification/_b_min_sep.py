@@ -56,7 +56,7 @@ class BMinSep(DpFtrlProcess):
         # b-min-sep enforces one user contribution per ``bands``-row window;
         # the warm-start MC handles arbitrary ``n_steps`` natively, but the
         # accounting-meaningful quantum is one band (one full participation
-        # period).  ``at_step`` rounds up to a band boundary.
+        # period).  ``approx_at_step`` rounds up to a band boundary.
         return self.inner.bands
 
     @functools.lru_cache(maxsize=8)

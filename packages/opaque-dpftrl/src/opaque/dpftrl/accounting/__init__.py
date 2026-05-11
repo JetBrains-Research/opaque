@@ -17,7 +17,7 @@ Mechanisms (in :mod:`opaque.dpftrl.accounting.mechanisms`):
 Correlated MF mechanisms (``Blt``, ``Bsr``, ``Bisr``, ``LambdaCgd``) are
 constructed via the corresponding ``*Strategy.as_mechanism(noise_multiplier)``
 helper in :mod:`opaque.dpftrl.noise` — the strategy owns the structural data
-those mechanisms need for BnB amplification and ``at_step``.
+those mechanisms need for BnB amplification and ``approx_at_step``.
 
 Amplification (in :mod:`opaque.dpftrl.accounting.amplification`):
 
@@ -57,7 +57,6 @@ Example::
 """
 
 from opaque.api.accounting.dpftrl import (
-    at_step,
     b_min_sep,
     balls_in_bins,
     band_mf,
@@ -71,5 +70,4 @@ __all__ = [
     "poisson",
     "b_min_sep",
     "balls_in_bins",
-    "at_step",
 ]

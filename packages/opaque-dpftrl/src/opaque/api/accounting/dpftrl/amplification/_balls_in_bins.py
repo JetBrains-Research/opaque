@@ -94,17 +94,20 @@ class BallsInBins(DpFtrlProcess):
     @property
     def atomic_unit(self) -> int:
         # One full epoch covers ``num_bins`` rounds; the BnB dominating-pair
-        # analysis is defined at epoch boundaries.  ``at_step`` rounds up to
+        # analysis is defined at epoch boundaries.  ``approx_at_step`` rounds up to
         # the next epoch.
         return self.num_bins
 
-    def at_step(self, step: int) -> DpProcess:
+    def approx_at_step(self, step: int) -> DpProcess:
         """Process truncated to its first ``step`` rounds (rounded up to an epoch).
 
         Correlated-MF inners (``Blt``, ``LambdaCgd``, ``Bisr``, ``Bsr``)
         carry their own regen parameters and rebuild the Gram for the
         shorter horizon via ``inner.with_horizon``.  ``IdentityMf`` has no
         Gram and falls through to the default ``n_steps`` substitution.
+
+        See :meth:`DpFtrlProcess.approx_at_step` for the upper-bound
+        semantics.
         """
         import dataclasses
 
