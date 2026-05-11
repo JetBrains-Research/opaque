@@ -50,7 +50,7 @@ from opaque.dpftrl.noise import (
     bisr_strategy,
     blt_strategy,
     bsr_strategy,
-    identity_mf_strategy,
+    identity_strategy,
     lambda_cgd_strategy,
     mf_noise,
 )
@@ -87,7 +87,7 @@ def _per_group_loss_fn(params, x):
 def _make_strategy(name: str):
     """Construct each MF strategy with parameters matching ``N_STEPS``."""
     if name == "identity":
-        return identity_mf_strategy()
+        return identity_strategy()
     if name == "band_mf":
         return band_mf_strategy(n_steps=N_STEPS, bands=4, momentum=0.95)
     if name == "blt":
@@ -131,7 +131,7 @@ def _per_group_supported_by_mf_noise() -> bool:
     grads = clipped({"w": torch.zeros(2, 2)}, max_norm=pg)
     template = {"w": torch.zeros(2, 2)}
     noise_fn, state = mf_noise(
-        template, identity_mf_strategy(), noise_multiplier=1.0, key=key(0)
+        template, identity_strategy(), noise_multiplier=1.0, key=key(0)
     )
     try:
         noise_fn(grads, state)

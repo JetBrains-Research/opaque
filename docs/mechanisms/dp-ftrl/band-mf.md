@@ -101,11 +101,7 @@ from opaque.dpftrl.noise import band_mf_strategy
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.band_mf(
-        1.0,
-        sensitivity=strategy.sensitivity,
-        coefficients=strategy.coefficients,
-    ),
+    dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -196,11 +192,7 @@ strategy = band_mf_strategy(n_steps=1000, bands=10)
 
 # BandMF with Poisson amplification (recommended)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.band_mf(
-        1.0,
-        sensitivity=strategy.sensitivity,
-        coefficients=strategy.coefficients,
-    ),
+    dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -217,7 +209,7 @@ eps = proc.epsilon_at(delta=1e-5)
 BandMF uses `opaque.dpftrl.sampling.CyclicPoissonSampler` with ``bands`` matching the
 strategy so participation lines up with the noise.  The same class with
 ``bands=1`` gives plain Poisson on the full dataset each step for an identity MF
-baseline (``identity_mf`` / ``identity_mf_strategy``):
+baseline (``identity_mf`` / ``identity_strategy``):
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler

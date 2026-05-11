@@ -9,6 +9,7 @@ import opaque.dpsgd.accounting as dpsgd_acc
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.accounting.core._base import DpProcess
 from opaque.dpftrl.noise import bisr_strategy, lambda_cgd_strategy
+from opaque.dpftrl.noise.types import BandMfStrategy
 
 
 def _lambda_cgd_mech(noise_multiplier: float = 1.0, **kw):
@@ -18,7 +19,7 @@ def _lambda_cgd_mech(noise_multiplier: float = 1.0, **kw):
         min_sep=kw.pop("min_sep", 1),
         max_participations=kw.pop("max_participations", 1),
     )
-    return s.as_mechanism(noise_multiplier)
+    return ftrl_acc.mf_gaussian(noise_multiplier, s)
 
 
 def _bisr_mech(noise_multiplier: float = 1.0, **kw):
@@ -28,7 +29,7 @@ def _bisr_mech(noise_multiplier: float = 1.0, **kw):
         min_sep=kw.pop("min_sep", 1),
         max_participations=kw.pop("max_participations", 1),
     )
-    return s.as_mechanism(noise_multiplier)
+    return ftrl_acc.mf_gaussian(noise_multiplier, s)
 
 
 # ── LambdaCgd dataclass tests ──────────────────────────────────────
@@ -39,8 +40,8 @@ class TestLambdaCgdDataclass:
         proc = _lambda_cgd_mech(1.0, lambda_=0.5)
         assert proc.noise_multiplier == pytest.approx(1.0)
         assert proc.sensitivity > 0
-        assert proc.lambda_ == pytest.approx(0.5)
-        assert isinstance(proc.gram_matrix, tuple)
+        assert proc.strategy._lambda == pytest.approx(0.5)
+        assert isinstance(proc.strategy.gram_matrix, tuple)
 
     def test_frozen(self):
         proc = _lambda_cgd_mech()
@@ -65,7 +66,7 @@ class TestBisrDataclass:
         proc = _bisr_mech(1.0)
         assert proc.noise_multiplier == pytest.approx(1.0)
         assert proc.sensitivity > 0
-        assert isinstance(proc.gram_matrix, tuple)
+        assert isinstance(proc.strategy.gram_matrix, tuple)
 
     def test_frozen(self):
         proc = _bisr_mech()
@@ -97,7 +98,7 @@ class TestMfGaussianPld:
         """λCGD at n_steps=1 (lambda=0) reduces to a single Gaussian."""
         nm = 1.0
         s = lambda_cgd_strategy(0.0, n_steps=1, min_sep=1, max_participations=1)
-        eps_mf = s.as_mechanism(nm).epsilon_at(1e-5)
+        eps_mf = ftrl_acc.mf_gaussian(nm, s).epsilon_at(1e-5)
         eps_gauss = dpsgd_acc.gaussian(nm).epsilon_at(1e-5)
         assert abs(eps_mf - eps_gauss) / eps_gauss < 0.01
 
@@ -118,7 +119,7 @@ class TestBnbAmplification:
         """BnB rejects BandMf (should use poisson)."""
         with pytest.raises(TypeError):
             ftrl_acc.balls_in_bins(
-                ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0,)),
+                ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=1.0, coefficients=(1.0,))),
                 num_bins=50,
                 n_steps=150,
             )

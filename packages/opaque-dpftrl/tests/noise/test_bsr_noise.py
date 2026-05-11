@@ -112,7 +112,7 @@ class TestBsrPld:
             alpha=1.0,
             beta=0.5,
         )
-        eps = s.as_mechanism(1.0).epsilon_at(self.delta)
+        eps = ftrl_acc.mf_gaussian(1.0, s).epsilon_at(self.delta)
         assert eps > 0
 
     def test_bsr_bnb(self):
@@ -125,7 +125,7 @@ class TestBsrPld:
             beta=0.5,
         )
         eps = ftrl_acc.balls_in_bins(
-            s.as_mechanism(1.0),
+            ftrl_acc.mf_gaussian(1.0, s),
             num_bins=25,
             n_steps=100,
         ).epsilon_at(self.delta)

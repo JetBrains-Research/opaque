@@ -40,13 +40,13 @@ class TestBltPld:
 
     def test_blt_pld(self):
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        eps = s.as_mechanism(1.0).epsilon_at(self.delta)
+        eps = ftrl_acc.mf_gaussian(1.0, s).epsilon_at(self.delta)
         assert eps > 0
 
     def test_blt_bnb(self):
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
         eps = ftrl_acc.balls_in_bins(
-            s.as_mechanism(1.0),
+            ftrl_acc.mf_gaussian(1.0, s),
             num_bins=25,
             n_steps=100,
         ).epsilon_at(self.delta)

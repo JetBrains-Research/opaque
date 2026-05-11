@@ -18,6 +18,8 @@ from dataclasses import dataclass
 
 import torch
 
+from opaque.api.accounting.core._process_codec import register_strategy
+
 from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import inverse_as_streaming_matrix
 
@@ -80,6 +82,7 @@ __all__ = ["BisrStrategy", "bisr_strategy"]
 # ---------------------------------------------------------------------------
 
 
+@register_strategy
 @dataclass(frozen=True, slots=True)
 class BisrStrategy:
     """BISR (Banded Inverse Square Root) strategy."""
@@ -96,22 +99,49 @@ class BisrStrategy:
     _inv_coefficients: tuple[float, ...] = ()
     _normalized: bool = True
 
-    def as_mechanism(self, noise_multiplier: float):
-        """Construct the matching accounting mechanism for BnB amplification."""
-        from opaque.api.accounting.dpftrl.mechanisms._bisr import Bisr
+    def with_horizon(
+        self, n_steps: int, max_participations: int | None
+    ) -> "BisrStrategy":
+        """Return a fresh strategy regenerated at horizon ``n_steps``.
 
-        if self.gram_matrix is None:
-            raise ValueError(
-                "BisrStrategy has no gram_matrix; construct via bisr_strategy(...)."
+        Recomputes Gram, sensitivity, and forward strategy coefficients
+        for the new horizon via the same Rust helpers the factory uses.
+        """
+        import dataclasses
+
+        inv_coefs = list(self._inv_coefficients)
+        if self._normalized:
+            sens_sq = _native().bisr_normalized_sensitivity_squared(
+                inv_coefs, n_steps, self._min_sep, max_participations
             )
-        return Bisr(
-            noise_multiplier=noise_multiplier,
-            sensitivity=self.sensitivity,
-            gram_matrix=self.gram_matrix,
-            inv_coefficients=self._inv_coefficients,
-            min_sep=self._min_sep,
-            max_participations=self._max_participations,
-            normalized=self._normalized,
+            max_column_norm = 1.0
+        else:
+            sens_sq = _native().bisr_sensitivity_squared(
+                inv_coefs, n_steps, self._min_sep, max_participations
+            )
+            mcn_sq = _native().bisr_sensitivity_squared(
+                inv_coefs, n_steps, n_steps, 1
+            )
+            max_column_norm = float(mcn_sq**0.5)
+        new_sensitivity = float(sens_sq**0.5)
+        new_coefs = tuple(_recover_strategy_coefficients(inv_coefs, n_steps))
+        new_gram = tuple(
+            _native().bisr_gram_matrix(
+                inv_coefs,
+                n_steps,
+                self._min_sep,
+                max_participations,
+                self._normalized,
+            )
+        )
+        return dataclasses.replace(
+            self,
+            sensitivity=new_sensitivity,
+            coefficients=new_coefs,
+            gram_matrix=new_gram,
+            _max_column_norm=max_column_norm,
+            _n_steps=n_steps,
+            _max_participations=max_participations,
         )
 
 

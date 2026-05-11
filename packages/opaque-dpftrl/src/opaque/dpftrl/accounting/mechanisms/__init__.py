@@ -1,10 +1,9 @@
 """DP-FTRL accounting mechanism factories façade (matrix factorization).
 
-Correlated MF mechanisms (``Blt``, ``Bsr``, ``Bisr``, ``LambdaCgd``) are
-constructed via the matching ``*Strategy.as_mechanism(noise_multiplier)``
-helper in :mod:`opaque.dpftrl.noise` rather than exposed as factories here.
+Single factory :func:`mf_gaussian(nm, strategy)` builds the accounting
+mechanism for every MF strategy from :mod:`opaque.dpftrl.noise`.
 """
 
-from opaque.api.accounting.dpftrl.mechanisms import band_mf, identity_mf
+from opaque.api.accounting.dpftrl.mechanisms import mf_gaussian
 
-__all__ = ["band_mf", "identity_mf"]
+__all__ = ["mf_gaussian"]

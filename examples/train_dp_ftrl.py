@@ -131,7 +131,7 @@ from opaque.dpftrl.noise import (
     bisr_strategy,
     bsr_strategy,
     blt_strategy,
-    identity_mf_strategy,
+    identity_strategy,
     lambda_cgd_strategy,
     mf_noise,
 )
@@ -1108,7 +1108,7 @@ def main():
                 beta=mom,
             )
         elif args.mechanism == "identity":
-            return identity_mf_strategy()
+            return identity_strategy()
         else:
             return None
 
@@ -1124,11 +1124,7 @@ def main():
     if args.mechanism == "band_mf" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = dpftrl_acc.band_mf(
-                nm,
-                sensitivity=strategy.sensitivity,
-                coefficients=strategy.coefficients,
-            )
+            mechanism = dpftrl_acc.mf_gaussian(nm, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, ))
             if args.band_mf_sampling == "poisson":
                 return dpftrl_acc.poisson(
                     mechanism,
@@ -1149,12 +1145,12 @@ def main():
     elif args.mechanism == "blt" and strategy is not None:
 
         def acct_mechanism(nm):
-            return strategy.as_mechanism(nm)
+            return ftrl_acc.mf_gaussian(nm, strategy)
     elif args.mechanism == "lambda_cgd" and strategy is not None:
 
         def acct_mechanism(nm):
             return dpftrl_acc.balls_in_bins(
-                strategy.as_mechanism(nm),
+                ftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
             )
@@ -1162,7 +1158,7 @@ def main():
 
         def acct_mechanism(nm):
             return dpftrl_acc.balls_in_bins(
-                strategy.as_mechanism(nm),
+                ftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
             )
@@ -1170,7 +1166,7 @@ def main():
 
         def acct_mechanism(nm):
             return dpftrl_acc.balls_in_bins(
-                strategy.as_mechanism(nm),
+                ftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
             )
@@ -1178,7 +1174,7 @@ def main():
 
         def acct_mechanism(nm):
             return dpftrl_acc.poisson(
-                dpftrl_acc.identity_mf(nm),
+                dpftrl_acc.mf_gaussian(nm, identity_strategy()),
                 sample_rate=sample_rate,
                 n_steps=total_steps,
                 truncated_batch_size=args.truncated_batch_size,
@@ -1258,7 +1254,7 @@ def main():
     elif args.mechanism in ("identity", "none"):
         noise_fn, noise_state = mf_noise(
             trainable_params,
-            identity_mf_strategy(),
+            identity_strategy(),
             noise_multiplier=noise_multiplier,
             key=key(args.seed),
         )
@@ -1323,7 +1319,7 @@ def main():
 
             def identity_acct(nm):
                 return dpftrl_acc.poisson(
-                    dpftrl_acc.identity_mf(nm),
+                    dpftrl_acc.mf_gaussian(nm, identity_strategy()),
                     sample_rate=sample_rate,
                     n_steps=total_steps,
                 )

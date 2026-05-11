@@ -52,7 +52,7 @@ class TestBandMfStrategy:
         assert s._streaming_matrix is not None
 
     def test_matches_old_sensitivity(self):
-        ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0,) * 10)
+        ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=1.0, coefficients=(1.0,) * 10))
         new = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
         assert new.sensitivity == pytest.approx(1.0, abs=1e-6)
 
@@ -206,9 +206,7 @@ class TestPldEquivalence:
 
     def test_band_mf_pld(self):
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        eps_new = ftrl_acc.band_mf(
-            1.0, sensitivity=s.sensitivity, coefficients=s.coefficients
-        ).epsilon_at(self.delta)
+        eps_new = ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=s.sensitivity, coefficients=s.coefficients)).epsilon_at(self.delta)
         # Should be finite positive
         assert eps_new > 0
 
@@ -218,9 +216,7 @@ class TestPldEquivalence:
         sample_rate = 0.05
 
         eps_new = ftrl_acc.poisson(
-            ftrl_acc.band_mf(
-                1.0, sensitivity=s.sensitivity, coefficients=s.coefficients
-            ),
+            ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=s.sensitivity, coefficients=s.coefficients)),
             sample_rate=sample_rate,
             n_steps=100,
         ).epsilon_at(self.delta)
@@ -232,17 +228,17 @@ class TestPldEquivalence:
 
     def test_blt_pld(self):
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        eps_new = s.as_mechanism(1.0).epsilon_at(self.delta)
+        eps_new = ftrl_acc.mf_gaussian(1.0, s).epsilon_at(self.delta)
         assert eps_new > 0
 
     def test_lambda_cgd_pld(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        eps_new = s.as_mechanism(1.0).epsilon_at(self.delta)
+        eps_new = ftrl_acc.mf_gaussian(1.0, s).epsilon_at(self.delta)
         assert eps_new > 0
 
     def test_bisr_pld(self):
         s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        eps_new = s.as_mechanism(1.0).epsilon_at(self.delta)
+        eps_new = ftrl_acc.mf_gaussian(1.0, s).epsilon_at(self.delta)
         assert eps_new > 0
 
 
@@ -257,7 +253,7 @@ class TestBnbEquivalence:
     def test_lambda_cgd_bnb(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
         bnb_new = ftrl_acc.balls_in_bins(
-            s.as_mechanism(1.0),
+            ftrl_acc.mf_gaussian(1.0, s),
             num_bins=25,
             n_steps=100,
         )
@@ -267,7 +263,7 @@ class TestBnbEquivalence:
     def test_blt_bnb(self):
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
         bnb_new = ftrl_acc.balls_in_bins(
-            s.as_mechanism(1.0),
+            ftrl_acc.mf_gaussian(1.0, s),
             num_bins=25,
             n_steps=100,
         )
@@ -277,7 +273,7 @@ class TestBnbEquivalence:
     def test_bisr_bnb(self):
         s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
         bnb_new = ftrl_acc.balls_in_bins(
-            s.as_mechanism(1.0),
+            ftrl_acc.mf_gaussian(1.0, s),
             num_bins=25,
             n_steps=100,
         )

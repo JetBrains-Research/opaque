@@ -162,19 +162,19 @@ strategy = blt_strategy(
 )
 
 # Unamplified BLT
-proc = strategy.as_mechanism(1.0)
+proc = ftrl_acc.mf_gaussian(1.0, strategy)
 eps = proc.epsilon_at(delta=1e-5)
 
 # With Balls-in-Bins amplification (recommended)
 proc = dpftrl_acc.balls_in_bins(
-    strategy.as_mechanism(1.0),
+    ftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=100, n_steps=500,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
 !!! note
-    `strategy.as_mechanism(nm)` populates every structural field
+    `ftrl_acc.mf_gaussian(nm, strategy)` populates every structural field
     (sensitivity, Gram matrix, coefficients, min_sep, max_participations)
     from the optimized BLT parameters and the participation pattern.
 

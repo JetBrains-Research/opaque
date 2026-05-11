@@ -9,7 +9,8 @@ import opaque.dpftrl.accounting as ftrl_acc
 from opaque.accounting import Accountant
 from opaque.api.accounting.dpftrl.amplification._b_min_sep import BMinSep
 from opaque.api.accounting.dpftrl.amplification._poisson import CyclicPoisson
-from opaque.api.accounting.dpftrl.mechanisms._band_mf import BandMf
+from opaque.dpftrl.accounting.types import MfGaussian
+from opaque.dpftrl.noise.types import BandMfStrategy
 from opaque.serialization import from_state_dict, state_dict
 
 # Template type selects the registered handler; PLD decode uses the root
@@ -108,7 +109,7 @@ def test_cached_state_dict_structure():
 
 def test_ftrl_poisson_state_dict_structure():
     proc = ftrl_acc.poisson(
-        ftrl_acc.band_mf(1.0, sensitivity=2.5, coefficients=(0.9, 0.1)),
+        ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=2.5, coefficients=(0.9, 0.1))),
         sample_rate=0.01,
         n_steps=200,
     )
@@ -116,14 +117,15 @@ def test_ftrl_poisson_state_dict_structure():
     assert state["type"] == "CyclicPoisson"
     assert state["sample_rate"] == 0.01
     assert state["n_steps"] == 200
-    assert state["inner"]["type"] == "BandMf"
+    assert state["inner"]["type"] == "MfGaussian"
     assert state["inner"]["noise_multiplier"] == 1.0
-    assert state["inner"]["sensitivity"] == 2.5
+    assert state["inner"]["strategy"]["type"] == "BandMfStrategy"
+    assert state["inner"]["strategy"]["sensitivity"] == 2.5
 
 
 def test_b_min_sep_round_trip():
     proc = ftrl_acc.b_min_sep(
-        ftrl_acc.band_mf(1.0, sensitivity=1.2, coefficients=(0.9, 0.1)),
+        ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=1.2, coefficients=(0.9, 0.1))),
         n_steps=100,
         p0=0.02,
     )
@@ -135,14 +137,15 @@ def test_b_min_sep_round_trip():
 
 def test_ftrl_poisson_round_trip():
     proc = ftrl_acc.poisson(
-        ftrl_acc.band_mf(1.0, sensitivity=2.5, coefficients=(0.9, 0.1)),
+        ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=2.5, coefficients=(0.9, 0.1))),
         sample_rate=0.01,
         n_steps=200,
     )
     state = state_dict(proc)
     restored = from_state_dict(_PROCESS_TEMPLATE, state)
     assert isinstance(restored, CyclicPoisson)
-    assert isinstance(restored.inner, BandMf)
+    assert isinstance(restored.inner, MfGaussian)
+    assert isinstance(restored.inner.strategy, BandMfStrategy)
     assert restored == proc
 
 

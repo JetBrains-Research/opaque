@@ -24,6 +24,8 @@ from ._blt_math import (
     toeplitz_coefs as _blt_toeplitz_coefs,
 )
 from ._sensitivity import minsep_true_max_participations
+from opaque.api.accounting.core._process_codec import register_strategy
+
 from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import (
     minsep_sensitivity_squared as _toeplitz_minsep_sensitivity_squared,
@@ -44,6 +46,7 @@ __all__ = ["BltStrategy", "blt_strategy"]
 # ---------------------------------------------------------------------------
 
 
+@register_strategy
 @dataclass(frozen=True, slots=True)
 class BltStrategy:
     """BLT (Buffered Linear Toeplitz) strategy."""
@@ -59,22 +62,56 @@ class BltStrategy:
     _max_buffers: int = 10
     _lr_schedule: torch.Tensor | None = None
 
-    def as_mechanism(self, noise_multiplier: float):
-        """Construct the matching accounting mechanism for BnB amplification."""
-        from opaque.api.accounting.dpftrl.mechanisms._blt import Blt
+    def with_horizon(
+        self, n_steps: int, max_participations: int | None
+    ) -> "BltStrategy":
+        """Return a fresh strategy regenerated at a smaller horizon ``n_steps``.
 
-        if self.gram_matrix is None:
-            raise ValueError(
-                "BltStrategy has no gram_matrix; construct via blt_strategy(...)."
-            )
-        return Blt(
-            noise_multiplier=noise_multiplier,
-            sensitivity=self.sensitivity,
-            gram_matrix=self.gram_matrix,
-            coefficients=self.coefficients,
-            min_sep=self._min_sep,
-            max_participations=self._max_participations,
+        Recomputes ``gram_matrix`` and ``sensitivity`` for the new horizon
+        using the same Rust helpers the factory called.
+        """
+        import dataclasses
+
+        import torch
+
+        new_coefs = tuple(self.coefficients[:n_steps])
+        coef_tensor = torch.tensor(list(new_coefs), dtype=torch.float64)
+        max_col_norm = float(_l2_norm(coef_tensor))
+        k = minsep_true_max_participations(
+            n=n_steps, min_sep=self._min_sep, max_participations=max_participations
         )
+        if k == 1:
+            new_sensitivity = max_col_norm
+        else:
+            sens_sq = _toeplitz_minsep_sensitivity_squared(
+                strategy_coef=coef_tensor,
+                min_sep=self._min_sep,
+                max_participations=max_participations,
+                skip_checks=True,
+            )
+            new_sensitivity = float(sens_sq.sqrt())
+        new_gram = tuple(
+            _native().toeplitz_gram_matrix(
+                list(new_coefs),
+                n_steps,
+                self._min_sep,
+                max_participations,
+                True,
+            )
+        )
+        return dataclasses.replace(
+            self,
+            sensitivity=new_sensitivity,
+            coefficients=new_coefs,
+            gram_matrix=new_gram,
+            _max_column_norm=max_col_norm,
+            _n_steps=n_steps,
+            _max_participations=max_participations,
+        )
+
+
+def _l2_norm(x):
+    return (x * x).sum().sqrt()
 
 
 def blt_strategy(

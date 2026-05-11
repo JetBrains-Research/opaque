@@ -20,6 +20,8 @@ from dataclasses import dataclass
 import torch
 
 from ._sensitivity import minsep_true_max_participations
+from opaque.api.accounting.core._process_codec import register_strategy
+
 from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import (
     inverse_as_streaming_matrix,
@@ -103,6 +105,7 @@ def _validate_bsr_hyperparams(
             )
 
 
+@register_strategy
 @dataclass(frozen=True, slots=True)
 class BsrStrategy:
     """BSR (banded square root) strategy; workload parameters :math:`\\alpha,\\beta`."""
@@ -120,21 +123,64 @@ class BsrStrategy:
     _beta: float = 0.0
     _band_coefficients: tuple[float, ...] = ()
 
-    def as_mechanism(self, noise_multiplier: float):
-        """Construct the matching accounting mechanism for BnB amplification."""
-        from opaque.api.accounting.dpftrl.mechanisms._bsr import Bsr
+    def with_horizon(
+        self, n_steps: int, max_participations: int | None
+    ) -> "BsrStrategy":
+        """Return a fresh strategy regenerated at horizon ``n_steps``.
 
-        if self.gram_matrix is None:
-            raise ValueError(
-                "BsrStrategy has no gram_matrix; construct via bsr_strategy(...)."
+        The band coefficients are horizon-independent (BSR is closed-form);
+        we re-pad the strategy ``coefficients`` to the new length and rebuild
+        Gram and sensitivity for the smaller horizon.
+        """
+        import dataclasses
+
+        import torch
+
+        from ._sensitivity import minsep_true_max_participations
+        from ._toeplitz import (
+            minsep_sensitivity_squared as _toeplitz_minsep_sensitivity_squared,
+        )
+        from ._toeplitz import sensitivity_squared as _toeplitz_col_norm_sq
+
+        band_coefs = list(self._band_coefficients)
+        coef_tensor = torch.zeros(n_steps, dtype=torch.float64)
+        copy_len = min(self._bandwidth, n_steps)
+        coef_tensor[:copy_len] = torch.tensor(
+            band_coefs[:copy_len], dtype=torch.float64
+        )
+        max_col_sq = _toeplitz_col_norm_sq(coef_tensor, n_steps)
+        max_column_norm = float(max_col_sq.sqrt())
+        k = minsep_true_max_participations(
+            n=n_steps, min_sep=self._min_sep, max_participations=max_participations
+        )
+        if k == 1:
+            new_sensitivity = max_column_norm
+        else:
+            sens_sq = _toeplitz_minsep_sensitivity_squared(
+                strategy_coef=coef_tensor,
+                min_sep=self._min_sep,
+                max_participations=max_participations,
+                skip_checks=True,
             )
-        return Bsr(
-            noise_multiplier=noise_multiplier,
-            sensitivity=self.sensitivity,
-            gram_matrix=self.gram_matrix,
-            coefficients=self._band_coefficients,
-            min_sep=self._min_sep,
-            max_participations=self._max_participations,
+            new_sensitivity = float(sens_sq.sqrt())
+        new_coefficients = tuple(coef_tensor.tolist())
+        new_gram = tuple(
+            _native().toeplitz_gram_matrix(
+                band_coefs,
+                n_steps,
+                self._min_sep,
+                max_participations,
+                False,
+            )
+        )
+        return dataclasses.replace(
+            self,
+            sensitivity=new_sensitivity,
+            coefficients=new_coefficients,
+            gram_matrix=new_gram,
+            _max_column_norm=max_column_norm,
+            _n_steps=n_steps,
+            _max_participations=max_participations,
         )
 
 

@@ -28,7 +28,7 @@ strategy = bsr_strategy(
 )
 
 training = dpftrl_acc.balls_in_bins(
-    strategy.as_mechanism(noise_multiplier),
+    ftrl_acc.mf_gaussian(noise_multiplier, strategy),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
 )

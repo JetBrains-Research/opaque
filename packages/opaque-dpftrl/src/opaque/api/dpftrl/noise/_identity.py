@@ -1,6 +1,6 @@
-"""Identity noise strategy — independent Gaussian noise (DP-SGD via MF API).
+"""Identity MF strategy — uncorrelated noise baseline (DP-SGD via MF API).
 
-Use ``mf_noise(template, identity_mf_strategy(), ...)`` for standard DP-SGD
+Use ``mf_noise(template, identity_strategy(), ...)`` for standard DP-SGD
 with independent noise at each step.
 """
 
@@ -8,34 +8,35 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from opaque.api.accounting.core._process_codec import register_strategy
 
+
+@register_strategy
 @dataclass(frozen=True)
-class IdentityMfStrategy:
-    """Identity (DP-SGD) strategy — independent noise at each step.
+class IdentityStrategy:
+    """Identity (uncorrelated) MF strategy — independent noise per step.
 
-    The identity matrix has column norms of 1, so ``sensitivity = 1.0``.
+    Encoder ``C = I`` so every column has unit L2 norm: ``sensitivity = 1.0``.
+    Horizon-invariant: :meth:`with_horizon` returns ``self``.
     """
 
     sensitivity: float = 1.0
     _max_column_norm: float = 1.0
 
+    def with_horizon(
+        self, n_steps: int, max_participations: int | None
+    ) -> "IdentityStrategy":
+        return self
 
-def identity_mf_strategy() -> IdentityMfStrategy:
+
+def identity_strategy() -> IdentityStrategy:
     """Create an identity (DP-SGD) noise strategy.
 
     Returns:
-        An :class:`IdentityMfStrategy` for use with :func:`mf_noise`.
-
-    Example:
-        >>> from opaque.types import clipped
-        >>> from opaque.api.dpftrl.noise import mf_noise, identity_mf_strategy
-        >>> from opaque.random import key
-        >>> noise_fn, state = mf_noise(
-        ...     template, identity_mf_strategy(), noise_multiplier=1.0, key=key(42)
-        ... )
-        >>> noised, state = noise_fn(clipped(grads, max_norm=1.0), state)
+        An :class:`IdentityStrategy` for use with :func:`mf_noise` and
+        :func:`opaque.dpftrl.accounting.mf_gaussian`.
     """
-    return IdentityMfStrategy()
+    return IdentityStrategy()
 
 
-__all__ = ["IdentityMfStrategy", "identity_mf_strategy"]
+__all__ = ["IdentityStrategy", "identity_strategy"]

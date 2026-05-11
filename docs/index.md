@@ -84,10 +84,7 @@ dpsgd_proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01) * 1000
 # DP-FTRL: whole-process MF + Poisson at calibration time.
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 dpftrl_proc = dpftrl_acc.poisson(
-    dpftrl_acc.band_mf(
-        1.0, sensitivity=strategy.sensitivity,
-        coefficients=strategy.coefficients,
-    ),
+    dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
     sample_rate=0.01, n_steps=1000,
 )
 

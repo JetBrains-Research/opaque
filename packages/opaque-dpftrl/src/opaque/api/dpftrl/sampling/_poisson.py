@@ -7,7 +7,7 @@ Binomial on that group's size.  That rotating participation pattern pairs with
 correlated MF noise (e.g. BandMF).
 
 If ``bands == 1`` there is a single group covering the whole dataset, so every
-step is ordinary Poisson subsampling—use this with ``identity_mf_strategy`` /
+step is ordinary Poisson subsampling—use this with ``identity_strategy`` /
 ``identity_mf`` and ``ftrl_acc.poisson``.  If ``bands > 1``, set ``bands`` to
 match ``band_mf_strategy`` / ``BandMf``.
 
@@ -47,7 +47,7 @@ class CyclicPoissonSampler(Sampler):
     random within that group and the active group advances each step.
 
     Use ``bands=1`` for identity MF (full dataset, plain Poisson each step,
-    ``identity_mf_strategy`` / ``identity_mf`` and ``ftrl_acc.poisson``).  For
+    ``identity_strategy`` / ``identity_mf`` and ``ftrl_acc.poisson``).  For
     BandMF, set ``bands`` to the band count in ``band_mf_strategy`` / ``BandMf``.
 
     Args:

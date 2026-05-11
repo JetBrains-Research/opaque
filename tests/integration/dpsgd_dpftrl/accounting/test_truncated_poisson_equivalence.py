@@ -19,6 +19,7 @@ import pytest
 
 import opaque.dpftrl.accounting as ftrl_acc
 import opaque.dpsgd.accounting as dpsgd_acc
+from opaque.dpftrl.noise import identity_strategy
 
 
 _DELTA = 1e-5
@@ -40,7 +41,7 @@ def test_ftrl_identity_truncated_matches_dpsgd_truncated_composed(
     dataset_size: int,
 ):
     ftrl_proc = ftrl_acc.poisson(
-        ftrl_acc.identity_mf(nm),
+        ftrl_acc.mf_gaussian(nm, identity_strategy()),
         sample_rate=sample_rate,
         n_steps=n_steps,
         truncated_batch_size=truncated_batch_size,

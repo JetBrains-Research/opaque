@@ -11,22 +11,16 @@ from __future__ import annotations
 import subprocess
 import sys
 
+from opaque.dpftrl.noise.types import BandMfStrategy
 
 _HEADLINE = (
-    "band_mf",
-    "identity_mf",
+    "mf_gaussian",
     "poisson",
     "b_min_sep",
     "balls_in_bins",
 )
 
 _TYPES = (
-    "BandMf",
-    "Blt",
-    "Bisr",
-    "Bsr",
-    "LambdaCgd",
-    "IdentityMf",
     "MfGaussian",
     "CyclicPoisson",
     "BMinSep",
@@ -65,7 +59,9 @@ class TestEndToEndCalibration:
         import opaque.dpftrl.accounting as ftrl_acc
 
         proc = ftrl_acc.poisson(
-            ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0, 0.5)),
+            ftrl_acc.mf_gaussian(
+                1.0, BandMfStrategy(sensitivity=1.0, coefficients=(1.0, 0.5))
+            ),
             sample_rate=0.01,
             n_steps=20,
         )
@@ -74,10 +70,11 @@ class TestEndToEndCalibration:
 
     def test_blt_standalone(self):
         import math
+        import opaque.dpftrl.accounting as ftrl_acc
         from opaque.dpftrl.noise import blt_strategy
 
         s = blt_strategy(n_steps=10, min_sep=10, max_participations=1, momentum=1.0)
-        eps = s.as_mechanism(1.0).epsilon_at(1e-5)
+        eps = ftrl_acc.mf_gaussian(1.0, s).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 

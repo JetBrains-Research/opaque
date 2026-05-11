@@ -33,8 +33,10 @@ from opaque.dpftrl.noise import (
     bisr_strategy,
     blt_strategy,
     bsr_strategy,
+    identity_strategy,
     lambda_cgd_strategy,
 )
+from opaque.dpftrl.noise.types import BandMfStrategy
 
 _DELTA = 1e-5
 _MC_KW = {"num_mc_samples": 4000, "seed": 17}
@@ -49,7 +51,7 @@ _MC_KW = {"num_mc_samples": 4000, "seed": 17}
 class TestCyclicPoissonIdentity:
     def _proc(self, n_steps: int = 200) -> CyclicPoisson:
         return ftrl_acc.poisson(
-            ftrl_acc.identity_mf(1.0),
+            ftrl_acc.mf_gaussian(1.0, identity_strategy()),
             sample_rate=0.01,
             n_steps=n_steps,
         )
@@ -111,7 +113,7 @@ class TestCyclicPoissonIdentity:
     def test_truncated_poisson_works(self):
         """at_step preserves the truncated-Poisson kwarg pair."""
         proc = ftrl_acc.poisson(
-            ftrl_acc.identity_mf(1.0),
+            ftrl_acc.mf_gaussian(1.0, identity_strategy()),
             sample_rate=0.01,
             n_steps=200,
             truncated_batch_size=50,
@@ -133,7 +135,10 @@ class TestCyclicPoissonBand:
     def _proc(self, n_steps: int = 100, bands: int = 8) -> CyclicPoisson:
         coeffs = tuple(1.0 for _ in range(bands))
         return ftrl_acc.poisson(
-            ftrl_acc.band_mf(1.0, sensitivity=float(bands) ** 0.5, coefficients=coeffs),
+            ftrl_acc.mf_gaussian(
+                1.0,
+                BandMfStrategy(sensitivity=float(bands) ** 0.5, coefficients=coeffs),
+            ),
             sample_rate=0.01,
             n_steps=n_steps,
         )
@@ -193,7 +198,9 @@ class TestBMinSep:
     def _proc(self, n_steps: int = 32, bands: int = 4) -> BMinSep:
         coeffs = tuple(1.0 / bands**0.5 for _ in range(bands))
         return ftrl_acc.b_min_sep(
-            ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=coeffs),
+            ftrl_acc.mf_gaussian(
+                1.0, BandMfStrategy(sensitivity=1.0, coefficients=coeffs)
+            ),
             n_steps=n_steps,
             p0=0.02,
         )
@@ -248,7 +255,7 @@ class TestBMinSep:
 class TestBallsInBinsIdentity:
     def _proc(self, num_bins: int = 10, num_epochs: int = 10) -> BallsInBins:
         return ftrl_acc.balls_in_bins(
-            ftrl_acc.identity_mf(1.0),
+            ftrl_acc.mf_gaussian(1.0, identity_strategy()),
             num_bins=num_bins,
             n_steps=num_bins * num_epochs,
         )
@@ -327,8 +334,8 @@ class TestGramRegenMatchesDirect:
         direct = blt_strategy(
             n_steps=_REGEN_K, min_sep=_REGEN_NUM_BINS, max_participations=2
         )
-        e_at = _bnb(full.as_mechanism(1.0), _REGEN_N_FULL).approx_at_step(_REGEN_K)
-        e_dir = _bnb(direct.as_mechanism(1.0), _REGEN_K)
+        e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(_REGEN_K)
+        e_dir = _bnb(ftrl_acc.mf_gaussian(1.0, direct), _REGEN_K)
         assert math.isclose(
             e_at.epsilon_at(_DELTA),
             e_dir.epsilon_at(_DELTA),
@@ -352,8 +359,8 @@ class TestGramRegenMatchesDirect:
             alpha=1.0,
             beta=0.5,
         )
-        e_at = _bnb(full.as_mechanism(1.0), _REGEN_N_FULL).approx_at_step(_REGEN_K)
-        e_dir = _bnb(direct.as_mechanism(1.0), _REGEN_K)
+        e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(_REGEN_K)
+        e_dir = _bnb(ftrl_acc.mf_gaussian(1.0, direct), _REGEN_K)
         assert math.isclose(
             e_at.epsilon_at(_DELTA),
             e_dir.epsilon_at(_DELTA),
@@ -373,8 +380,8 @@ class TestGramRegenMatchesDirect:
             min_sep=_REGEN_NUM_BINS,
             max_participations=2,
         )
-        e_at = _bnb(full.as_mechanism(1.0), _REGEN_N_FULL).approx_at_step(_REGEN_K)
-        e_dir = _bnb(direct.as_mechanism(1.0), _REGEN_K)
+        e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(_REGEN_K)
+        e_dir = _bnb(ftrl_acc.mf_gaussian(1.0, direct), _REGEN_K)
         assert math.isclose(
             e_at.epsilon_at(_DELTA),
             e_dir.epsilon_at(_DELTA),
@@ -394,8 +401,8 @@ class TestGramRegenMatchesDirect:
             min_sep=_REGEN_NUM_BINS,
             max_participations=2,
         )
-        e_at = _bnb(full.as_mechanism(1.0), _REGEN_N_FULL).approx_at_step(_REGEN_K)
-        e_dir = _bnb(direct.as_mechanism(1.0), _REGEN_K)
+        e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(_REGEN_K)
+        e_dir = _bnb(ftrl_acc.mf_gaussian(1.0, direct), _REGEN_K)
         assert math.isclose(
             e_at.epsilon_at(_DELTA),
             e_dir.epsilon_at(_DELTA),
@@ -429,7 +436,7 @@ class TestSerializationRegistryHardening:
 class TestCompositionOnTruncated:
     def test_truncated_supports_or_composition(self):
         proc = ftrl_acc.poisson(
-            ftrl_acc.identity_mf(1.0), sample_rate=0.01, n_steps=100
+            ftrl_acc.mf_gaussian(1.0, identity_strategy()), sample_rate=0.01, n_steps=100
         )
         a = proc.approx_at_step(30)
         b = proc.approx_at_step(40)
@@ -439,7 +446,7 @@ class TestCompositionOnTruncated:
 
     def test_truncated_supports_self_compose(self):
         proc = ftrl_acc.poisson(
-            ftrl_acc.identity_mf(1.0), sample_rate=0.01, n_steps=100
+            ftrl_acc.mf_gaussian(1.0, identity_strategy()), sample_rate=0.01, n_steps=100
         )
         sub = proc.approx_at_step(50)
         repeated = sub * 2
@@ -508,27 +515,33 @@ _AMPLIFICATIONS: dict[str, tuple[Callable[..., DpFtrlProcess], bool]] = {
 
 # Inner mechanism name → factory() -> mechanism dataclass.
 _MECHANISMS: dict[str, Callable[[], object]] = {
-    "IdentityMf": lambda: ftrl_acc.identity_mf(1.0),
-    "BandMf": lambda: ftrl_acc.band_mf(
-        1.0, sensitivity=2.0, coefficients=(1.0, 1.0, 1.0, 1.0)
+    "IdentityMf": lambda: ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+    "BandMf": lambda: ftrl_acc.mf_gaussian(
+        1.0, BandMfStrategy(sensitivity=2.0, coefficients=(1.0, 1.0, 1.0, 1.0))
     ),
-    "Blt": lambda: blt_strategy(
-        n_steps=16, min_sep=4, max_participations=4
-    ).as_mechanism(1.0),
-    "LambdaCgd": lambda: lambda_cgd_strategy(
-        0.5, n_steps=16, min_sep=4, max_participations=4
-    ).as_mechanism(1.0),
-    "Bisr": lambda: bisr_strategy(
-        bandwidth=2, n_steps=16, min_sep=4, max_participations=4
-    ).as_mechanism(1.0),
-    "Bsr": lambda: bsr_strategy(
-        bandwidth=2,
-        n_steps=16,
-        min_sep=4,
-        max_participations=4,
-        alpha=1.0,
-        beta=0.5,
-    ).as_mechanism(1.0),
+    "Blt": lambda: ftrl_acc.mf_gaussian(
+        1.0,
+        blt_strategy(n_steps=16, min_sep=4, max_participations=4),
+    ),
+    "LambdaCgd": lambda: ftrl_acc.mf_gaussian(
+        1.0,
+        lambda_cgd_strategy(0.5, n_steps=16, min_sep=4, max_participations=4),
+    ),
+    "Bisr": lambda: ftrl_acc.mf_gaussian(
+        1.0,
+        bisr_strategy(bandwidth=2, n_steps=16, min_sep=4, max_participations=4),
+    ),
+    "Bsr": lambda: ftrl_acc.mf_gaussian(
+        1.0,
+        bsr_strategy(
+            bandwidth=2,
+            n_steps=16,
+            min_sep=4,
+            max_participations=4,
+            alpha=1.0,
+            beta=0.5,
+        ),
+    ),
 }
 
 

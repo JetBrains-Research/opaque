@@ -1,57 +1,53 @@
-"""MF Gaussian base mechanism — correlated noise for MF-DP.
+"""MF Gaussian mechanism — one mechanism class for every MF strategy.
 
-Provides the base :class:`MfGaussian` type used by all matrix factorization
-mechanisms. The privacy reduces to a single Gaussian mechanism with effective
-noise multiplier σ/S.
+The privacy of a matrix-factorization Gaussian release reduces to a single
+Gaussian mechanism with effective noise multiplier σ/S, regardless of which
+encoder C the training side used.  The accounting mechanism is therefore a
+thin wrapper over a noise multiplier and the strategy (which carries the
+matrix-factorization shape: sensitivity, Gram matrix, coefficients, etc.).
 
-Per-method subclasses live in their own modules:
+The accounting amplifications (Poisson, BMinSep, BallsInBins) dispatch on
+``type(mechanism.strategy)`` to select the right native PLD primitive.
 
-- :mod:`~opaque.dpftrl.accounting.mechanisms._band_mf` — :class:`BandMf`
-- :mod:`~opaque.dpftrl.accounting.mechanisms._blt` — :class:`Blt`
-- :mod:`~opaque.dpftrl.accounting.mechanisms._lambda_cgd` — :class:`LambdaCgd`
-- :mod:`~opaque.dpftrl.accounting.mechanisms._bisr` — :class:`Bisr`
-- :mod:`~opaque.dpftrl.accounting.mechanisms._bsr` — :class:`Bsr`
+Built via the :func:`mf_gaussian` factory in this module:
 
-Each subclass adds the strategy-shape data the corresponding amplification needs:
-``coefficients`` for ``BandMf`` (cyclic Poisson / b-min-sep), ``gram_matrix`` for
-``Blt`` / ``Bisr`` / ``Bsr`` / ``LambdaCgd`` (BnB).  Length parameters
-(``n_steps``, ``num_bins``) live on the amplification factory, not here.
+    proc = mf_gaussian(noise_multiplier, strategy)
 
-The MF **identity** (uncorrelated) baseline lives in :mod:`~opaque.dpftrl.accounting.mechanisms._identity`
-as :class:`~opaque.dpftrl.accounting.types.IdentityMf` — it does not subclass
-:class:`MfGaussian`.
+where ``strategy`` is one of the dataclasses from :mod:`opaque.dpftrl.noise`
+(``BltStrategy``, ``BsrStrategy``, ``BisrStrategy``, ``LambdaCgdStrategy``,
+``BandMfStrategy``, ``IdentityStrategy``).
 """
 
 from __future__ import annotations
 
 import functools
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from opaque.api.accounting.core import _native
 
 from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core.discretization import get_discretization
 
+if TYPE_CHECKING:
+    from opaque.api.dpftrl.noise.types import MfStrategy
+
 
 @dataclass(frozen=True, slots=True)
 class MfGaussian(DpProcess):
-    """MF Gaussian mechanism — internal base type.
+    """MF Gaussian mechanism — ``noise_multiplier`` + ``strategy``.
 
-    Represents the privacy cost of an entire matrix factorization DP
-    training process. The privacy reduces to a single Gaussian mechanism
-    with effective noise multiplier σ/S.
-
-    Use one of the per-method factories instead of constructing directly:
-
-    - :func:`~opaque.accounting.mechanisms._band_mf.band_mf` → :class:`~opaque.dpftrl.accounting.mechanisms._band_mf.BandMf`
-    - :func:`~opaque.accounting.mechanisms._blt.blt` → :class:`~opaque.dpftrl.accounting.mechanisms._blt.Blt`
-    - :func:`~opaque.accounting.mechanisms._lambda_cgd.lambda_cgd` → :class:`~opaque.dpftrl.accounting.mechanisms._lambda_cgd.LambdaCgd`
-    - :func:`~opaque.accounting.mechanisms._bisr.bisr` → :class:`~opaque.dpftrl.accounting.mechanisms._bisr.Bisr`
-    - :func:`~opaque.accounting.mechanisms._bsr.bsr` → :class:`~opaque.dpftrl.accounting.mechanisms._bsr.Bsr`
+    ``strategy`` is one of the dataclasses from :mod:`opaque.dpftrl.noise`.
+    Its ``sensitivity`` (and, when relevant, ``gram_matrix`` /
+    ``coefficients``) is read by the surrounding amplification at PLD time.
     """
 
     noise_multiplier: float
-    sensitivity: float
+    strategy: "MfStrategy"
+
+    @property
+    def sensitivity(self) -> float:
+        return self.strategy.sensitivity
 
     @functools.lru_cache(maxsize=8)
     def pld(
@@ -68,8 +64,43 @@ class MfGaussian(DpProcess):
             pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
+        if self.noise_multiplier == 0:
+            return _native.non_private_pld(config.to_native())
         return _native.mf_gaussian_pld(
             self.noise_multiplier,
             self.sensitivity,
             config.to_native(),
         )
+
+
+def mf_gaussian(noise_multiplier: float, strategy: "MfStrategy") -> MfGaussian:
+    """MF Gaussian mechanism — noise multiplier + strategy.
+
+    Standalone, this models a single Gaussian release with effective noise
+    multiplier ``noise_multiplier / strategy.sensitivity``.  Wrap in an
+    amplification factory (``poisson``, ``b_min_sep``, ``balls_in_bins``)
+    for the per-amplification PLD.
+
+    Args:
+        noise_multiplier: Raw noise standard deviation σ.
+        strategy: One of the strategy dataclasses from
+            :mod:`opaque.dpftrl.noise` — ``BltStrategy``, ``BsrStrategy``,
+            ``BisrStrategy``, ``LambdaCgdStrategy``, ``BandMfStrategy``, or
+            ``IdentityStrategy``.
+
+    Returns:
+        An :class:`MfGaussian` process.
+
+    Example::
+
+        s = blt_strategy(n_steps=100, min_sep=25, max_participations=4)
+        proc = ftrl_acc.balls_in_bins(
+            ftrl_acc.mf_gaussian(1.0, s), num_bins=25, n_steps=100,
+        )
+    """
+    nm = float(noise_multiplier)
+    if nm < 0:
+        raise ValueError(
+            f"noise_multiplier must be non-negative, got {noise_multiplier}"
+        )
+    return MfGaussian(noise_multiplier=nm, strategy=strategy)

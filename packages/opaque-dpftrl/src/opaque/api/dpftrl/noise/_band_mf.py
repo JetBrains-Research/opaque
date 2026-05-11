@@ -17,6 +17,8 @@ from dataclasses import dataclass
 
 import torch
 
+from opaque.api.accounting.core._process_codec import register_strategy
+
 from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import inverse_as_streaming_matrix
 from ._toeplitz import optimize as optimize_toeplitz
@@ -86,6 +88,7 @@ __all__ = ["BandMfStrategy", "band_mf_strategy"]
 # ---------------------------------------------------------------------------
 
 
+@register_strategy
 @dataclass(frozen=True, slots=True)
 class BandMfStrategy:
     """BandMF banded Toeplitz strategy.
@@ -111,6 +114,19 @@ class BandMfStrategy:
     def num_groups(self) -> int:
         """Number of independent cyclic groups: ceil(n_steps / bands)."""
         return math.ceil(self._n_steps / self._bands) if self._bands > 0 else 0
+
+    @property
+    def bands(self) -> int:
+        """Band width — convenience alias for ``len(coefficients)`` / ``_bands``."""
+        return self._bands or len(self.coefficients)
+
+    def with_horizon(
+        self, n_steps: int, max_participations: int | None
+    ) -> "BandMfStrategy":
+        """Return a copy clamped to ``n_steps`` rounds (sensitivity/bands unchanged)."""
+        import dataclasses
+
+        return dataclasses.replace(self, _n_steps=n_steps)
 
 
 def band_mf_strategy(

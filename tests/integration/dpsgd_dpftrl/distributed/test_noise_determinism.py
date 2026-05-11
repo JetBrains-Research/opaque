@@ -15,7 +15,7 @@ import torch.multiprocessing as mp
 from opaque.types import clipped
 
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpftrl.noise import mf_noise, identity_mf_strategy
+from opaque.dpftrl.noise import mf_noise, identity_strategy
 from opaque.random import key
 
 
@@ -272,7 +272,7 @@ def _worker_mf_shared_noise(rank: int, world_size: int, port: int) -> None:
         device = torch.device(f"cuda:{rank}")
         grad_template = {"weight": torch.zeros(4, device=device)}
         noise_fn, state = mf_noise(
-            grad_template, identity_mf_strategy(), stddev=1.0, key=key(0)
+            grad_template, identity_strategy(), stddev=1.0, key=key(0)
         )
         grads = {"weight": torch.zeros(4, device=device)}
         noised, _ = noise_fn(grads, state)

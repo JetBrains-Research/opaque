@@ -262,7 +262,7 @@ Opaque provides five MF strategies, all used through the unified `mf_noise()` di
 | `blt_strategy()` | O(buffers) | Long training runs (n > 5000), multi-epoch |
 | `lambda_cgd_strategy()` | O(1) | Zero extra memory (PRNG replay) |
 | `bisr_strategy()` | O(bandwidth) | Asymptotically optimal, arbitrary bandwidth |
-| `identity_mf_strategy()` | O(1) | Testing MF infrastructure with standard noise |
+| `identity_strategy()` | O(1) | Testing MF infrastructure with standard noise |
 
 All strategies are created by factory functions and passed to `mf_noise()`:
 
@@ -414,16 +414,16 @@ noise_fn, noise_state = mf_noise(
 )
 ```
 
-### `identity_mf_strategy`
+### `identity_strategy`
 
 Identity strategy — equivalent to standard DP-SGD (independent noise at each
 step) but using the MF API. Useful for testing or as a baseline.
 
 ```python
-from opaque.dpftrl.noise import mf_noise, identity_mf_strategy
+from opaque.dpftrl.noise import mf_noise, identity_strategy
 from opaque.random import key
 
-strategy = identity_mf_strategy()
+strategy = identity_strategy()
 noise_fn, noise_state = mf_noise(
     params, strategy,
     noise_multiplier=noise_multiplier,
@@ -448,11 +448,7 @@ from opaque.dpftrl.noise import band_mf_strategy, lambda_cgd_strategy
 # BandMF — strategy provides sensitivity and coefficients
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.band_mf(
-        1.0,
-        sensitivity=strategy.sensitivity,
-        coefficients=strategy.coefficients,
-    ),
+    dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -464,7 +460,7 @@ strategy = lambda_cgd_strategy(
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
 proc = dpftrl_acc.balls_in_bins(
-    strategy.as_mechanism(1.0),
+    ftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
 
@@ -473,7 +469,7 @@ proc = dpftrl_acc.balls_in_bins(
 # sensitivity-proportional Mahalanobis budget; calibrate against the same
 # MF mechanism PLD used for the first-moment-only release.
 proc = dpftrl_acc.balls_in_bins(
-    strategy.as_mechanism(1.0),
+    ftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
 ```
@@ -520,7 +516,7 @@ For a linear regression with n=1000 steps, epsilon=1.0:
 
 | Method | Strategy | Relative MSE | Memory |
 |--------|-----------|-------------|--------|
-| DP-SGD | `identity_mf_strategy()` | Baseline | O(1) |
+| DP-SGD | `identity_strategy()` | Baseline | O(1) |
 | BandMF | `band_mf_strategy(bands=4)` | ~0.7x | O(bands) |
 | BLT | `blt_strategy(max_buffers=3)` | ~0.6x | O(buffers) |
 | λCGD | `lambda_cgd_strategy(lambda_=0.9)` | ~0.7x | O(1) |
@@ -532,7 +528,7 @@ Values are illustrative; actual results depend on problem specifics.
 
 ``CyclicPoissonSampler`` splits the data into ``bands`` groups and, at step
 ``i``, samples only group ``i % bands`` with per-example probability
-``sample_rate``.  Use ``bands=1`` with ``identity_mf_strategy`` / ``identity_mf``
+``sample_rate``.  Use ``bands=1`` with ``identity_strategy`` / ``identity_mf``
 so each step is plain Poisson on the full dataset; for BandMF, match ``bands``
 to ``band_mf_strategy``.  That keeps the data schedule aligned with ``mf_noise``
 and ``dpftrl_acc.poisson``:

@@ -29,6 +29,7 @@ from typing import Any
 
 import torch
 
+from opaque.api.accounting.core._process_codec import register_strategy
 from opaque.pytree import tree_map
 from opaque.types import PerGroup
 from opaque.random import generator_from_key
@@ -64,6 +65,7 @@ __all__ = ["LambdaCgdStrategy", "lambda_cgd_strategy"]
 # ---------------------------------------------------------------------------
 
 
+@register_strategy
 @dataclass(frozen=True, slots=True)
 class LambdaCgdStrategy:
     """DP-lambda-CGD strategy (PRNG replay noise)."""
@@ -78,23 +80,47 @@ class LambdaCgdStrategy:
     _min_sep: int = 1
     _max_participations: int | None = 1
 
-    def as_mechanism(self, noise_multiplier: float):
-        """Construct the matching accounting mechanism for BnB amplification."""
-        from opaque.api.accounting.dpftrl.mechanisms._lambda_cgd import LambdaCgd
+    def with_horizon(
+        self, n_steps: int, max_participations: int | None
+    ) -> "LambdaCgdStrategy":
+        """Return a fresh strategy regenerated at horizon ``n_steps``.
 
-        if self.gram_matrix is None:
-            raise ValueError(
-                "LambdaCgdStrategy has no gram_matrix; "
-                "construct via lambda_cgd_strategy(...)."
+        Recomputes Gram, sensitivity, and the geometric forward coefficients
+        for the new horizon via the same closed-form Rust helpers.
+        """
+        import dataclasses
+
+        if self._normalized:
+            sens_sq = _native().lambda_cgd_normalized_sensitivity_squared(
+                self._lambda, n_steps, self._min_sep, max_participations
             )
-        return LambdaCgd(
-            noise_multiplier=noise_multiplier,
-            sensitivity=self.sensitivity,
-            gram_matrix=self.gram_matrix,
-            lambda_=self._lambda,
-            min_sep=self._min_sep,
-            max_participations=self._max_participations,
-            normalized=self._normalized,
+            max_column_norm = 1.0
+        else:
+            sens_sq = _native().lambda_cgd_sensitivity_squared(
+                self._lambda, n_steps, self._min_sep, max_participations
+            )
+            max_column_norm = float(
+                _native().lambda_cgd_max_column_norm(self._lambda, n_steps)
+            )
+        new_sensitivity = float(sens_sq**0.5)
+        new_coefs = tuple(self._lambda**i for i in range(n_steps))
+        new_gram = tuple(
+            _native().lambda_cgd_gram_matrix(
+                self._lambda,
+                n_steps,
+                self._min_sep,
+                max_participations,
+                self._normalized,
+            )
+        )
+        return dataclasses.replace(
+            self,
+            sensitivity=new_sensitivity,
+            coefficients=new_coefs,
+            gram_matrix=new_gram,
+            _n_steps=n_steps,
+            _max_column_norm=max_column_norm,
+            _max_participations=max_participations,
         )
 
 

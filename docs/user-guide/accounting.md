@@ -218,18 +218,14 @@ import opaque.dpftrl.accounting as dpftrl_acc
 strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.95)
 
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.band_mf(
-        1.0,
-        sensitivity=strategy.sensitivity,
-        coefficients=strategy.coefficients,
-    ),
+    dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
     sample_rate=0.01,
     n_steps=1000,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-### `dpftrl_acc.band_mf(noise_multiplier, sensitivity, coefficients)`
+### `dpftrl_acc.mf_gaussian(noise_multiplier, BandMfStrategy(sensitivity, coefficients))`
 
 BandMF mechanism for Poisson and b-min-sep amplification. Takes
 `sensitivity` and `coefficients` from a `band_mf_strategy()`. Band
@@ -237,11 +233,7 @@ width is `len(coefficients)`; `coefficients` must be non-empty.
 
 ```python
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = dpftrl_acc.band_mf(
-    1.0,
-    sensitivity=strategy.sensitivity,
-    coefficients=strategy.coefficients,
-)
+proc = dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, ))
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
@@ -261,12 +253,12 @@ strategy = blt_strategy(
 )
 
 # Unamplified — single-Gaussian PLD
-proc = strategy.as_mechanism(1.0)
+proc = ftrl_acc.mf_gaussian(1.0, strategy)
 eps = proc.epsilon_at(delta=1e-5)
 
 # With Balls-in-Bins amplification
 proc = dpftrl_acc.balls_in_bins(
-    strategy.as_mechanism(1.0),
+    ftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=1000, n_steps=5000,
 )
 ```
@@ -280,7 +272,7 @@ strategy = lambda_cgd_strategy(
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
 proc = dpftrl_acc.balls_in_bins(
-    strategy.as_mechanism(1.0),
+    ftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
 eps = proc.epsilon_at(delta=1e-5)
@@ -297,11 +289,7 @@ when the inner is `IdentityMf` or `BandMf` with `bands == 1`.
 ```python
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.band_mf(
-        1.0,
-        sensitivity=strategy.sensitivity,
-        coefficients=strategy.coefficients,
-    ),
+    dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -324,7 +312,7 @@ strategy = lambda_cgd_strategy(
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
 proc = dpftrl_acc.balls_in_bins(
-    strategy.as_mechanism(1.0),
+    ftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
 )
@@ -343,11 +331,7 @@ strategy = band_mf_strategy(n_steps=1000, bands=10)
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
     lambda nm: dpftrl_acc.poisson(
-        dpftrl_acc.band_mf(
-            nm,
-            sensitivity=strategy.sensitivity,
-            coefficients=strategy.coefficients,
-        ),
+        dpftrl_acc.mf_gaussian(nm, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
         sample_rate=0.01,
         n_steps=1000,
     ),

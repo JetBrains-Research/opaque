@@ -1,12 +1,11 @@
 """DP-FTRL accounting mechanism factories impl (matrix factorization).
 
-For correlated MF mechanisms (BLT, BSR, BISR, λCGD), build the dataclass
-via the corresponding ``*Strategy.as_mechanism(noise_multiplier)`` helper
-in :mod:`opaque.dpftrl.noise`; the strategy owns the structural data those
-mechanisms need for BnB amplification and ``approx_at_step``.
+A single ``mf_gaussian(nm, strategy)`` factory builds the accounting
+mechanism for any MF strategy — the strategy carries the structural data
+(sensitivity, Gram, coefficients) and the amplifications dispatch on
+``type(strategy)`` at PLD time.
 """
 
-from opaque.api.accounting.dpftrl.mechanisms._band_mf import band_mf
-from opaque.api.accounting.dpftrl.mechanisms._identity import identity_mf
+from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import mf_gaussian
 
-__all__ = ["band_mf", "identity_mf"]
+__all__ = ["mf_gaussian"]

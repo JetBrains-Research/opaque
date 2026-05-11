@@ -56,7 +56,7 @@ from opaque.dpftrl.noise import (
     bisr_strategy,       # banded inverse square root
     bsr_strategy,        # banded square root, closed-form
     lambda_cgd_strategy, # PRNG replay, O(1) memory
-    identity_mf_strategy,   # no correlation; baseline
+    identity_strategy,   # no correlation; baseline
 )
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
@@ -81,11 +81,7 @@ strategy = band_mf_strategy(n_steps=1000, bands=10)
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
     lambda nm: dpftrl_acc.poisson(
-        dpftrl_acc.band_mf(
-            nm,
-            sensitivity=strategy.sensitivity,
-            coefficients=strategy.coefficients,
-        ),
+        dpftrl_acc.mf_gaussian(nm, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
         sample_rate=0.01,
         n_steps=1000,
     ),

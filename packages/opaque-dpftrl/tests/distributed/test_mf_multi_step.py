@@ -19,7 +19,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 
 from opaque.types import clipped
-from opaque.dpftrl.noise import mf_noise, identity_mf_strategy
+from opaque.dpftrl.noise import mf_noise, identity_strategy
 from opaque.random import key as rng_key
 
 
@@ -73,7 +73,7 @@ def _worker_identity_mf_three_steps(rank: int, world_size: int, port: int) -> No
         # with max_norm=1.0 produces unit-stddev noise.
         noise_fn, state = mf_noise(
             grad_template,
-            identity_mf_strategy(),
+            identity_strategy(),
             noise_multiplier=1.0,
             key=rng_key(0),
         )

@@ -211,13 +211,13 @@ class TestLambdaCgdPld:
 
     def test_lambda_cgd_pld(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        eps = s.as_mechanism(1.0).epsilon_at(self.delta)
+        eps = ftrl_acc.mf_gaussian(1.0, s).epsilon_at(self.delta)
         assert eps > 0
 
     def test_lambda_cgd_bnb(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
         eps = ftrl_acc.balls_in_bins(
-            s.as_mechanism(1.0),
+            ftrl_acc.mf_gaussian(1.0, s),
             num_bins=25,
             n_steps=100,
         ).epsilon_at(self.delta)

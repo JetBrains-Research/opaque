@@ -99,8 +99,8 @@ across epochs** (required for BnB dominating-pair accounting). Empty bins
 are skipped.
 
 Account with `dpftrl_acc.balls_in_bins(mechanism, num_bins, n_steps)` where
-`mechanism` is `strategy.as_mechanism(nm)` for `lambda_cgd_strategy`,
-`bisr_strategy`, `blt_strategy`, `bsr_strategy`, or `dpftrl_acc.identity_mf(...)`.
+`mechanism` is `ftrl_acc.mf_gaussian(nm, strategy)` for `lambda_cgd_strategy`,
+`bisr_strategy`, `blt_strategy`, `bsr_strategy`, or `dpftrl_acc.mf_gaussian(..., identity_strategy())`.
 
 ## CyclicPoissonSampler (DP-FTRL)
 
