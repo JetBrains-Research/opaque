@@ -75,7 +75,7 @@ enter sensitivity or Gram matrix computation).
 ## Noise generation
 
 ```python
-from opaque.dpftrl.noise import mf_noise, bisr_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, bisr_strategy
 from opaque.random import key
 
 strategy = bisr_strategy(
@@ -85,7 +85,7 @@ strategy = bisr_strategy(
     max_participations=num_epochs,
     momentum=0.9,
 )
-noise_fn, state = mf_noise(
+noise_fn, state = mf_gaussian_noise(
     grad_template, strategy,
     noise_multiplier=noise_multiplier,
     key=key(seed),

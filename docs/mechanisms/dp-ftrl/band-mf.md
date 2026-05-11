@@ -147,7 +147,7 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 
 !!! note
     The `dpftrl_acc.band_mf()` API takes pre-computed sensitivity and group count
-    from the noise strategy. For end-to-end usage, `mf_noise()` +
+    from the noise strategy. For end-to-end usage, `mf_gaussian_noise()` +
     `band_mf_strategy()` computes these automatically.
 
 ## Assumptions and limitations
@@ -161,11 +161,11 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 ### Noise injection
 
 ```python
-from opaque.dpftrl.noise import mf_noise, band_mf_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     grad_template=params,
     strategy=strategy,
     noise_multiplier=noise_multiplier,
@@ -229,7 +229,7 @@ BandMF training (``bands`` matches ``band_mf_strategy``):
 ```python
 import torch
 from opaque.dpftrl.clipping import clipped_grad
-from opaque.dpftrl.noise import mf_noise, band_mf_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.random import key, split
 
@@ -243,7 +243,7 @@ grad_fn, clip_state = clipped_grad(
     normalize_by=batch_size,
 )
 strategy = band_mf_strategy(n_steps, bands)
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     params, strategy,
     noise_multiplier=result.param,
     key=key_noise,

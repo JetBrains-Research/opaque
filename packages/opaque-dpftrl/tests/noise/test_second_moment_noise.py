@@ -20,7 +20,7 @@ from opaque.dpftrl.noise import (
     blt_strategy,
     identity_strategy,
     lambda_cgd_strategy,
-    mf_noise,
+    mf_gaussian_noise,
 )
 from opaque.dpftrl.noise.types import SecondMomentMFNoiseState
 from opaque.random import key
@@ -57,7 +57,7 @@ def _clipped(grads):
 
 
 class TestSecondMomentCalibration:
-    """``mf_noise`` consumes ``paired_noise_stddevs`` for σ allocation.
+    """``mf_gaussian_noise`` consumes ``paired_noise_stddevs`` for σ allocation.
 
     The strategy norms enter as multipliers on the per-record bounds:
     ``Δ¹ = ζ · ‖C₁‖``, ``Δ² = ζ² · ‖C₂‖``.  These tests pin the closed
@@ -127,7 +127,7 @@ class TestSecondMomentMFNoiseMatchesMfGaussianPld:
         c1 = _max_column_norm(strategy, n_steps=50)
         c2 = _max_column_norm(second_strategy, n_steps=50)
 
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -172,7 +172,7 @@ class TestSecondMomentMFNoiseMatchesMfGaussianPld:
         paired = SecondMomentClippingOutput(
             grads=first_clipped, squared_grads=sq_clipped
         )
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -213,7 +213,7 @@ class TestPairedPerGroupMahalanobis:
             grads=clipped({"w": torch.ones(3, 2), "b": torch.ones(3)}, max_norm=pg),
             squared_grads=clipped(sq, max_norm=sq_pg),
         )
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -246,7 +246,7 @@ class TestSecondMomentMFNoise:
     def test_returns_correct_types(self, grad_template):
         strategy = band_mf_strategy(bands=5, momentum=0.9)
         second_strategy = band_mf_strategy(bands=5, momentum=0.99)
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -268,7 +268,7 @@ class TestSecondMomentMFNoise:
     def test_output_shapes_match_input(self, grad_template):
         strategy = band_mf_strategy(bands=5, momentum=0.9)
         second_strategy = band_mf_strategy(bands=5, momentum=0.99)
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -288,7 +288,7 @@ class TestSecondMomentMFNoise:
     def test_tuple_unpacking(self, grad_template):
         strategy = band_mf_strategy(bands=5, momentum=0.9)
         second_strategy = band_mf_strategy(bands=5, momentum=0.99)
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -306,7 +306,7 @@ class TestSecondMomentMFNoise:
     def test_step_counter_increments(self, grad_template):
         strategy = band_mf_strategy(bands=5, momentum=0.9)
         second_strategy = band_mf_strategy(bands=5, momentum=0.99)
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -328,7 +328,7 @@ class TestSecondMomentMFNoise:
         second_strategy = band_mf_strategy(bands=5, momentum=0.99)
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
 
-        noise_fn1, state1 = mf_noise(
+        noise_fn1, state1 = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -340,7 +340,7 @@ class TestSecondMomentMFNoise:
         )
         output1, _ = noise_fn1(_paired(grads), state1)
 
-        noise_fn2, state2 = mf_noise(
+        noise_fn2, state2 = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -365,7 +365,7 @@ class TestSecondMomentMFNoise:
         second_strategy = band_mf_strategy(bands=5, momentum=0.99)
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
 
-        noise_fn1, state1 = mf_noise(
+        noise_fn1, state1 = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -377,7 +377,7 @@ class TestSecondMomentMFNoise:
         )
         output1, _ = noise_fn1(_paired(grads), state1)
 
-        noise_fn2, state2 = mf_noise(
+        noise_fn2, state2 = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -411,7 +411,7 @@ class TestSecondMomentMFNoise:
             strategy = identity_strategy()
             second_strategy = identity_strategy()
 
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -428,9 +428,9 @@ class TestSecondMomentMFNoise:
         assert isinstance(new_state, SecondMomentMFNoiseState)
 
     def test_paired_input_requires_second_moment_strategy(self, grad_template):
-        """Single-stream mf_noise rejects paired-stream input."""
+        """Single-stream mf_gaussian_noise rejects paired-stream input."""
         strategy = lambda_cgd_strategy(lambda_=0.9)
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -446,10 +446,10 @@ class TestSecondMomentMFNoise:
     def test_single_input_rejected_when_second_moment_strategy_supplied(
         self, grad_template
     ):
-        """Paired-stream mf_noise rejects single-stream input."""
+        """Paired-stream mf_gaussian_noise rejects single-stream input."""
         strategy = lambda_cgd_strategy(lambda_=0.9)
         second_strategy = lambda_cgd_strategy(lambda_=0.999)
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -466,7 +466,7 @@ class TestSecondMomentMFNoise:
     def test_lambda_cgd_accepts_explicit_second_strategy(self, grad_template):
         strategy = lambda_cgd_strategy(lambda_=0.9)
         second_strategy = lambda_cgd_strategy(lambda_=0.999)
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,
@@ -483,7 +483,7 @@ class TestSecondMomentMFNoise:
     def test_squared_grads_are_noised_not_raw(self, grad_template):
         strategy = band_mf_strategy(bands=5, momentum=0.9)
         second_strategy = band_mf_strategy(bands=5, momentum=0.99)
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=50,

@@ -9,19 +9,19 @@ from opaque.types import clipped
 from opaque.types import NoisedPytree
 
 from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
-from opaque.dpftrl.noise import mf_noise
+from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.random import key
 
 
 def _make_noise(template, n_steps=100, lambda_=0.9, normalized=True, seed=42):
-    """Helper: create lambda-CGD noise via the strategy + mf_noise API.
+    """Helper: create lambda-CGD noise via the strategy + mf_gaussian_noise API.
 
     Uses ``noise_multiplier=1.0`` so realized stddev equals each call's
     ``ClippedPytree.max_norm``; tests pass ``max_norm=1.0`` to recover the
     historical ``stddev=1.0`` semantics.
     """
     strategy = lambda_cgd_strategy(lambda_=lambda_, normalized=normalized)
-    return mf_noise(
+    return mf_gaussian_noise(
         template,
         strategy,
         n_steps=n_steps,

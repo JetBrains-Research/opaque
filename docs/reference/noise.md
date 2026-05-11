@@ -20,10 +20,10 @@ Opaque provides several noise mechanisms:
 
 ### Correlated Noise (DP-FTRL / Matrix Factorization)
 
-- **`mf_noise()`** — Unified correlated noise dispatcher. Takes a strategy object and creates the
+- **`mf_gaussian_noise()`** — Unified correlated noise dispatcher. Takes a strategy object and creates the
   corresponding noise mechanism.
 
-Strategy factories (passed to `mf_noise()`):
+Strategy factories (passed to `mf_gaussian_noise()`):
 
 - **`band_mf_strategy()`** — BandMF banded Toeplitz correlated noise
 - **`blt_strategy()`** — Buffered Linear Toeplitz (BLT) correlated noise
@@ -41,8 +41,8 @@ When private second moments are enabled, the noisy value is a
 - **`NoiseState`** — Abstract base class for all noise state types. Defines `_step_counter` and `_rng_key`.
 - **`SecondMomentNoiseOutput`** — Paired first/squared-gradient output for private second moments.
 - **`GaussianNoiseState`** — State for `gaussian_noise()`. Holds step counter and RNG key.
-- **`MFNoiseState`** — State for `mf_noise()`. Holds internal correlation state, step counter, and RNG key.
-- **`SecondMomentMFNoiseState`** — Paired-stream MF state used by `mf_noise(..., second_moment_strategy=...)`.
+- **`MFNoiseState`** — State for `mf_gaussian_noise()`. Holds internal correlation state, step counter, and RNG key.
+- **`SecondMomentMFNoiseState`** — Paired-stream MF state used by `mf_gaussian_noise(..., second_moment_strategy=...)`.
 
 ### Distributed Sync Helpers
 
@@ -60,7 +60,7 @@ across ranks. It auto-dispatches based on type:
 
 When `clipped_grad(..., second_moment=True)` produces a
 `SecondMomentClippingOutput`, both `gaussian_noise` (DP-SGD; bounded or not)
-and `mf_noise(..., second_moment_strategy=...)` (DP-FTRL) consume it and
+and `mf_gaussian_noise(..., second_moment_strategy=...)` (DP-FTRL) consume it and
 emit a `SecondMomentNoiseOutput` with paired noise on both streams.
 
 The runtime σ allocation is **sensitivity-proportional** and works
@@ -92,7 +92,7 @@ Gaussian release at the joint effective multiplier** passed to
 underlying `mf_gaussian(nm, …)` for DP-FTRL; there is no separate
 transformation wrapper and no `ρ` knob.
 
-`mf_noise` accepts scalar or `PerGroup` `max_norm` on `ClippedPytree`
+`mf_gaussian_noise` accepts scalar or `PerGroup` `max_norm` on `ClippedPytree`
 inputs. Single-stream IID stddevs for `PerGroup` bounds match the
 MSE-optimal allocation from :meth:`ClippedPytree.noise_stddev_for` (same
 Mahalanobis allocation as `gaussian_noise`). Trainable gradients must be a
@@ -112,7 +112,7 @@ Bounds are absolute, in the same units as the gradient / clip norm.
 
 ### Dispatcher
 
-::: opaque.dpftrl.noise.mf_noise
+::: opaque.dpftrl.noise.mf_gaussian_noise
 
 ### Strategies
 

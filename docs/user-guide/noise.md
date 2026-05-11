@@ -222,7 +222,7 @@ requires knowing the total number of steps in advance.
 
 ### Compatible clipping
 
-`mf_noise` requires a constant per-step record sensitivity (the strategy
+`mf_gaussian_noise` requires a constant per-step record sensitivity (the strategy
 matrix is optimized offline against a fixed `Δ`). Both `clipped_grad`
 (fixed threshold) and `auto_clipped_grad` (AUTO-S smooth scaling) satisfy
 this — their per-record bound is set at construction and does not depend
@@ -230,14 +230,14 @@ on data — so either can be wired into the loop interchangeably:
 
 ```python
 from opaque.dpsgd.clipping import auto_clipped_grad
-from opaque.dpftrl.noise import mf_noise, band_mf_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.random import key
 
 grad_fn, clip_state = auto_clipped_grad(
     loss_fn, argnums=0, batch_argnums=(1, 2),
     R=1.0, normalize_by=batch_size,
 )
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     params,
     band_mf_strategy(n_steps=num_steps, bands=4),
     noise_multiplier=noise_multiplier, key=key(0),
@@ -254,7 +254,7 @@ varying `max_norm`, and the standard MF privacy proof would not apply.
 
 ### Variants
 
-Opaque provides five MF strategies, all used through the unified `mf_noise()` dispatcher:
+Opaque provides five MF strategies, all used through the unified `mf_gaussian_noise()` dispatcher:
 
 | Strategy factory | Memory | Best for |
 |----------|--------|----------|
@@ -264,14 +264,14 @@ Opaque provides five MF strategies, all used through the unified `mf_noise()` di
 | `bisr_strategy()` | O(bandwidth) | Asymptotically optimal, arbitrary bandwidth |
 | `identity_strategy()` | O(1) | Testing MF infrastructure with standard noise |
 
-All strategies are created by factory functions and passed to `mf_noise()`:
+All strategies are created by factory functions and passed to `mf_gaussian_noise()`:
 
 ```python
-from opaque.dpftrl.noise import mf_noise, band_mf_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     grad_template=params,
     strategy=strategy,
     noise_multiplier=noise_multiplier,
@@ -290,7 +290,7 @@ the gradients (e.g., the model parameters).
 
 ### Per-group clipping
 
-`mf_noise` accepts `ClippedPytree` metadata where `max_norm` is a
+`mf_gaussian_noise` accepts `ClippedPytree` metadata where `max_norm` is a
 `PerGroup` (from `opaque.dpsgd.clipping.per_group`), not only a scalar. The
 per-leaf IID noise scale follows the same MSE-optimal Mahalanobis allocation
 as `gaussian_noise` (bounded or not) on DP-SGD: no extra privacy
@@ -305,13 +305,13 @@ MF noise can release both noisy gradients and a private squared-gradient stream
 for adaptive optimizers:
 
 ```python
-from opaque.dpftrl.noise import mf_noise, band_mf_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.9)
 second_strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.999)
 
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     params,
     strategy,
     noise_multiplier=noise_multiplier,
@@ -344,11 +344,11 @@ Banded Toeplitz strategy. Optimizes banded Toeplitz coefficients for the
 workload. Uses ``dpftrl_acc.poisson`` for privacy accounting.
 
 ```python
-from opaque.dpftrl.noise import mf_noise, band_mf_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.95)
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     params, strategy,
     noise_multiplier=noise_multiplier,
     key=key(42),
@@ -362,13 +362,13 @@ long training runs, using a parametric representation via exponential decay
 buffers. Supports multi-epoch training via `min_sep` and `max_participations`.
 
 ```python
-from opaque.dpftrl.noise import mf_noise, blt_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, blt_strategy
 from opaque.random import key
 
 strategy = blt_strategy(
     n_steps=10000, min_sep=100, max_participations=5, max_buffers=10,
 )
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     params, strategy,
     noise_multiplier=noise_multiplier,
     key=key(42),
@@ -381,14 +381,14 @@ DP-λCGD strategy — uses PRNG seed replay instead of storing previous noise
 vectors. Zero extra memory overhead compared to DP-SGD.
 
 ```python
-from opaque.dpftrl.noise import mf_noise, lambda_cgd_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, lambda_cgd_strategy
 from opaque.random import key
 
 strategy = lambda_cgd_strategy(
     lambda_=0.9, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     params, strategy,
     noise_multiplier=noise_multiplier,
     key=key(42),
@@ -401,13 +401,13 @@ BISR (Banded Inverse Square Root) strategy — generalises λCGD to arbitrary
 bandwidth p ≥ 2. Asymptotically optimal.
 
 ```python
-from opaque.dpftrl.noise import mf_noise, bisr_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, bisr_strategy
 from opaque.random import key
 
 strategy = bisr_strategy(
     n_steps=total_steps, bandwidth=4, momentum=0.95,
 )
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     params, strategy,
     noise_multiplier=noise_multiplier,
     key=key(42),
@@ -420,11 +420,11 @@ Identity strategy — equivalent to standard DP-SGD (independent noise at each
 step) but using the MF API. Useful for testing or as a baseline.
 
 ```python
-from opaque.dpftrl.noise import mf_noise, identity_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, identity_strategy
 from opaque.random import key
 
 strategy = identity_strategy()
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     params, strategy,
     noise_multiplier=noise_multiplier,
     key=key(42),
@@ -485,7 +485,7 @@ Strategies that support multi-epoch patterns (`blt_strategy`, `lambda_cgd_strate
 sensitivity bounds:
 
 ```python
-from opaque.dpftrl.noise import mf_noise, blt_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, blt_strategy
 from opaque.random import key
 
 strategy = blt_strategy(
@@ -493,7 +493,7 @@ strategy = blt_strategy(
     min_sep=100,            # minimum steps between participations
     max_participations=5,   # 5 epochs
 )
-noise_fn, state = mf_noise(
+noise_fn, state = mf_gaussian_noise(
     grad_template, strategy,
     noise_multiplier=noise_multiplier,
     key=key(42),
@@ -530,7 +530,7 @@ Values are illustrative; actual results depend on problem specifics.
 ``i``, samples only group ``i % bands`` with per-example probability
 ``sample_rate``.  Use ``bands=1`` with ``identity_strategy`` / ``identity_mf``
 so each step is plain Poisson on the full dataset; for BandMF, match ``bands``
-to ``band_mf_strategy``.  That keeps the data schedule aligned with ``mf_noise``
+to ``band_mf_strategy``.  That keeps the data schedule aligned with ``mf_gaussian_noise``
 and ``dpftrl_acc.poisson``:
 
 ```python

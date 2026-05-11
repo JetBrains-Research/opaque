@@ -26,7 +26,7 @@ from opaque.distributed import get_rank, get_world_size, sum_gradients, sync
 from opaque.distributed.gradients import sum_gradients_
 from opaque.api.engine.distributed._state import reduce_scalar
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpftrl.noise import mf_noise, identity_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, identity_strategy
 from opaque.profiling import StepTimer, TrainingProfiler
 from opaque.random import key
 from opaque.functional import make_functional
@@ -296,7 +296,7 @@ def _worker_sync_noise_states(rank: int, world_size: int, port: int) -> None:
         synced_gaussian_state = sync(gaussian_state)
         assert synced_gaussian_state._step_counter == 1
 
-        mf_fn, mf_state = mf_noise(
+        mf_fn, mf_state = mf_gaussian_noise(
             grads,
             identity_strategy(),
             n_steps=1,

@@ -21,7 +21,7 @@ installation target.
 
 ```python
 from opaque.random import key
-from opaque.dpftrl.noise import mf_noise, blt_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, blt_strategy
 from opaque.dpftrl.sampling import BMinSepSampler
 ```
 

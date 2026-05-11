@@ -1,6 +1,6 @@
 """Identity MF strategy — uncorrelated noise baseline (DP-SGD via MF API).
 
-Use ``mf_noise(template, identity_strategy(), ...)`` for standard DP-SGD
+Use ``mf_gaussian_noise(template, identity_strategy(), ...)`` for standard DP-SGD
 with independent noise at each step.
 """
 

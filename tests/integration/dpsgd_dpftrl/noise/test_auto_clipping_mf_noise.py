@@ -1,4 +1,4 @@
-"""Integration tests for AUTO-S clipping wired into ``mf_noise``.
+"""Integration tests for AUTO-S clipping wired into ``mf_gaussian_noise``.
 
 AUTO-S has a constant, data-independent per-record sensitivity bound::
 
@@ -7,7 +7,7 @@ AUTO-S has a constant, data-independent per-record sensitivity bound::
 That satisfies the only assumption MF privacy accounting requires of
 clipping (constant per-step record sensitivity), so the same
 ``ClippedPytree`` output that flows into DP-SGD's :func:`gaussian_noise`
-also flows into DP-FTRL's :func:`mf_noise` for every strategy.  These
+also flows into DP-FTRL's :func:`mf_gaussian_noise` for every strategy.  These
 tests cover all six MF strategies — ``identity``, ``band_mf``, ``blt``,
 ``bisr``, ``bsr``, ``lambda_cgd`` — across:
 
@@ -20,19 +20,19 @@ tests cover all six MF strategies — ``identity``, ``band_mf``, ``blt``,
 3. **Per-record sensitivity bound, end-to-end** — gradients pumped to
    1e6 still leave the released signal bounded by ``R / batch_size``.
 4. **Per-group AUTO-S × MF** — once :class:`PerGroup` bounds are
-   accepted by ``mf_noise`` (PR #192), AUTO-S delivers a constant
+   accepted by ``mf_gaussian_noise`` (PR #192), AUTO-S delivers a constant
    per-group bound that flows through the per-group noise allocator
    identically to fixed clipping.
 5. **Second-moment AUTO-S × paired MF** — ``auto_clipped_grad(...,
    second_moment=True)`` returns a :class:`SecondMomentClippingOutput`
-   with constant ``R / B`` and ``R² / B`` bounds; ``mf_noise(...,
+   with constant ``R / B`` and ``R² / B`` bounds; ``mf_gaussian_noise(...,
    second_moment_strategy=...)`` consumes it and the paired
    Mahalanobis allocation matches the equivalent fixed-clipping path.
 6. **Negative regression guard** — adaptive clipping × MF still raises
    the constant-max_norm latch error, locking the only scenario the
    library legitimately rejects.
 
-The (4) per-group cases are gated behind a runtime check (``mf_noise``
+The (4) per-group cases are gated behind a runtime check (``mf_gaussian_noise``
 on plain ``main`` rejects ``PerGroup`` bounds; once PR #192 lands the
 gate falls open and the asserts run for real).
 """
@@ -52,7 +52,7 @@ from opaque.dpftrl.noise import (
     bsr_strategy,
     identity_strategy,
     lambda_cgd_strategy,
-    mf_noise,
+    mf_gaussian_noise,
 )
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.random import key
@@ -110,7 +110,7 @@ _ALL_STRATEGY_NAMES = ("identity", "band_mf", "blt", "bisr", "bsr", "lambda_cgd"
 def _per_group_supported_by_mf_noise() -> bool:
     """Probe whether the dispatcher accepts ``PerGroup`` bounds.
 
-    On plain ``main`` ``mf_noise`` rejects ``PerGroup`` bounds because the
+    On plain ``main`` ``mf_gaussian_noise`` rejects ``PerGroup`` bounds because the
     dispatcher only allows a constant per-step ``max_norm`` shape that older
     releases did not support for MF noise.  PR #192 removes that rejection.
     These tests
@@ -120,7 +120,7 @@ def _per_group_supported_by_mf_noise() -> bool:
     pg = PerGroup(groups={"w": "g"}, values={"g": 1.0})
     grads = clipped({"w": torch.zeros(2, 2)}, max_norm=pg)
     template = {"w": torch.zeros(2, 2)}
-    noise_fn, state = mf_noise(
+    noise_fn, state = mf_gaussian_noise(
         template, identity_strategy(), **_NOISE_PART,
             noise_multiplier=1.0, key=key(0)
     )
@@ -138,7 +138,7 @@ def _per_group_supported_by_mf_noise() -> bool:
 
 @pytest.mark.parametrize("strategy_name", _ALL_STRATEGY_NAMES)
 class TestScalarAutoSxMf:
-    """Scalar AUTO-S × ``mf_noise`` for every MF strategy."""
+    """Scalar AUTO-S × ``mf_gaussian_noise`` for every MF strategy."""
 
     def test_constant_max_norm_latch_passes(self, strategy_name):
         """``_validate_constant_max_norm`` never fires across many steps."""
@@ -151,7 +151,7 @@ class TestScalarAutoSxMf:
             R=R,
             normalize_by=BATCH_SIZE,
         )
-        noise_fn, noise_state = mf_noise(
+        noise_fn, noise_state = mf_gaussian_noise(
             params,
             _make_strategy(strategy_name),
             **_NOISE_PART,
@@ -184,7 +184,7 @@ class TestScalarAutoSxMf:
             R=R,
             normalize_by=BATCH_SIZE,
         )
-        noise_fn, noise_state = mf_noise(
+        noise_fn, noise_state = mf_gaussian_noise(
             params,
             _make_strategy(strategy_name),
             **_NOISE_PART,
@@ -219,14 +219,14 @@ class TestScalarAutoSxMf:
             clipping_norm=R,
             normalize_by=BATCH_SIZE,
         )
-        auto_noise_fn, auto_noise_state = mf_noise(
+        auto_noise_fn, auto_noise_state = mf_gaussian_noise(
             params,
             _make_strategy(strategy_name),
             **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(13),
         )
-        fixed_noise_fn, fixed_noise_state = mf_noise(
+        fixed_noise_fn, fixed_noise_state = mf_gaussian_noise(
             params,
             _make_strategy(strategy_name),
             **_NOISE_PART,
@@ -251,7 +251,7 @@ class TestScalarAutoSxMf:
         AUTO-S guarantees ``||tilde g_i|| <= R`` per example, hence
         ``||sum_i tilde g_i|| <= B·R`` and ``||clipped_grads.pytree|| <=
         R / normalize_by · batch_size``.  This test confirms the
-        end-to-end clipped pytree (the signal feeding ``mf_noise``)
+        end-to-end clipped pytree (the signal feeding ``mf_gaussian_noise``)
         respects that bound regardless of input gradient magnitude.
         """
         torch.manual_seed(0)
@@ -263,7 +263,7 @@ class TestScalarAutoSxMf:
             R=R,
             normalize_by=BATCH_SIZE,
         )
-        noise_fn, noise_state = mf_noise(
+        noise_fn, noise_state = mf_gaussian_noise(
             params,
             _make_strategy(strategy_name),
             **_NOISE_PART,
@@ -289,9 +289,9 @@ def _make_per_group() -> PerGroup:
 
 @pytest.mark.parametrize("strategy_name", _ALL_STRATEGY_NAMES)
 class TestPerGroupAutoSxMf:
-    """Per-group AUTO-S × ``mf_noise``.
+    """Per-group AUTO-S × ``mf_gaussian_noise``.
 
-    Skipped on plain ``main`` because ``mf_noise`` rejects per-group
+    Skipped on plain ``main`` because ``mf_gaussian_noise`` rejects per-group
     bounds via ``_expect_clipped``; PR #192 removes that gate.
     """
 
@@ -299,7 +299,7 @@ class TestPerGroupAutoSxMf:
     def _gate(self):
         if not _per_group_supported_by_mf_noise():
             pytest.skip(
-                "mf_noise does not yet accept PerGroup bounds; "
+                "mf_gaussian_noise does not yet accept PerGroup bounds; "
                 "test pending PR #192 (per-group MF noise)."
             )
 
@@ -314,7 +314,7 @@ class TestPerGroupAutoSxMf:
             R=pg,
             normalize_by=BATCH_SIZE,
         )
-        noise_fn, noise_state = mf_noise(
+        noise_fn, noise_state = mf_gaussian_noise(
             params,
             _make_strategy(strategy_name),
             **_NOISE_PART,
@@ -349,14 +349,14 @@ class TestPerGroupAutoSxMf:
             clipping_norm=pg,
             normalize_by=BATCH_SIZE,
         )
-        auto_noise_fn, auto_noise_state = mf_noise(
+        auto_noise_fn, auto_noise_state = mf_gaussian_noise(
             params,
             _make_strategy(strategy_name),
             **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(13),
         )
-        fixed_noise_fn, fixed_noise_state = mf_noise(
+        fixed_noise_fn, fixed_noise_state = mf_gaussian_noise(
             params,
             _make_strategy(strategy_name),
             **_NOISE_PART,
@@ -385,12 +385,12 @@ class TestPerGroupAutoSxMf:
 
 @pytest.mark.parametrize("strategy_name", _ALL_STRATEGY_NAMES)
 class TestSecondMomentAutoSxMf:
-    """Second-moment AUTO-S × paired ``mf_noise``.
+    """Second-moment AUTO-S × paired ``mf_gaussian_noise``.
 
     AUTO-S with ``second_moment=True`` produces a
     :class:`SecondMomentClippingOutput` with bounds ``R / B`` (first
     moment) and ``R² / B`` (second moment), both data-independent
-    constants.  ``mf_noise(..., second_moment_strategy=...)`` consumes
+    constants.  ``mf_gaussian_noise(..., second_moment_strategy=...)`` consumes
     it and applies the joint Mahalanobis allocation; the result must
     agree with the fixed-clipping path at the same ``R``.
     """
@@ -412,7 +412,7 @@ class TestSecondMomentAutoSxMf:
         # ``lambda_cgd`` are stateless modulo their RNG keys, but for the
         # streaming-matrix strategies we want two independent factories.
         second_strategy = _make_strategy(strategy_name)
-        noise_fn, noise_state = mf_noise(
+        noise_fn, noise_state = mf_gaussian_noise(
             params,
             first_strategy,
              **_NOISE_PART,
@@ -452,7 +452,7 @@ class TestSecondMomentAutoSxMf:
             normalize_by=BATCH_SIZE,
             second_moment=True,
         )
-        auto_noise_fn, auto_noise_state = mf_noise(
+        auto_noise_fn, auto_noise_state = mf_gaussian_noise(
             params,
             _make_strategy(strategy_name),
             **_NOISE_PART,
@@ -460,7 +460,7 @@ class TestSecondMomentAutoSxMf:
             key=key(23),
             second_moment_strategy=_make_strategy(strategy_name),
         )
-        fixed_noise_fn, fixed_noise_state = mf_noise(
+        fixed_noise_fn, fixed_noise_state = mf_gaussian_noise(
             params,
             _make_strategy(strategy_name),
             **_NOISE_PART,
@@ -509,7 +509,7 @@ class TestAdaptiveClippingRejected:
             key=key(31),
             normalize_by=BATCH_SIZE,
         )
-        noise_fn, noise_state = mf_noise(
+        noise_fn, noise_state = mf_gaussian_noise(
             params,
             band_mf_strategy(bands=4, momentum=0.95),
             **_NOISE_PART,

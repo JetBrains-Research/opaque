@@ -56,11 +56,11 @@ noisy_grads, noise_state = noise_fn(grads, noise_state)
 DP-FTRL adds correlated noise via a matrix-factorization strategy:
 
 ```python
-from opaque.dpftrl.noise import band_mf_strategy, mf_noise
+from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     grads_template, strategy,
     noise_multiplier=noise_multiplier, key=key(42),
 )

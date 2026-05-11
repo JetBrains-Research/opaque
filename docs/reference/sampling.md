@@ -134,7 +134,7 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
 In distributed training, shard the dataset with `local_shard()` and pass
-a per-rank key via `fold_in(key, rank)`. Best used with `mf_noise`
+a per-rank key via `fold_in(key, rank)`. Best used with `mf_gaussian_noise`
 for correlated noise (DP-FTRL); account with
 `dpftrl_acc.poisson(mechanism, sample_rate, n_steps=...)`.  There is no
 batch-size cap on this sampler; ``dpftrl_acc.poisson`` matches uncapped

@@ -1,4 +1,4 @@
-"""Tests for mf_noise with PerGroup clipping bounds."""
+"""Tests for mf_gaussian_noise with PerGroup clipping bounds."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from opaque.dpftrl.noise import (
     bsr_strategy,
     identity_strategy,
     lambda_cgd_strategy,
-    mf_noise,
+    mf_gaussian_noise,
 )
 from opaque.api.dpftrl.noise._distributed import fingerprint_per_group_max_norm
 from opaque.random import key
@@ -42,7 +42,7 @@ def _max_column_norm(strategy, *, n_steps: int) -> float:
 def _assert_per_group_stddev_matches_expected(grad_template, *, key_seed: int) -> None:
     strategy = band_mf_strategy(bands=4, momentum=0.9)
     nm = 1.5
-    noise_fn, state = mf_noise(
+    noise_fn, state = mf_gaussian_noise(
         grad_template,
         strategy,
         n_steps=20,
@@ -74,7 +74,7 @@ class TestMfNoisePerGroupSingleStream:
 
     def test_mlp_group_has_larger_noise_stddev_than_attn(self, grad_template):
         strategy = identity_strategy()
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=20,
@@ -91,7 +91,7 @@ class TestMfNoisePerGroupSingleStream:
 
     def test_constant_max_norm_latch_pergroup_mismatch(self, grad_template):
         strategy = band_mf_strategy(bands=3, momentum=0.9)
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=10,
@@ -118,7 +118,7 @@ class TestMfNoisePerGroupSingleStream:
 
     def test_constant_max_norm_latch_kind_mismatch(self, grad_template):
         strategy = band_mf_strategy(bands=3, momentum=0.9)
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=10,
@@ -141,7 +141,7 @@ class TestMfNoisePerGroupSingleStream:
 
     def test_per_group_non_dict_grads_raises(self, grad_template):
         strategy = identity_strategy()
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=5,
@@ -167,7 +167,7 @@ class TestMfNoisePerGroupSingleStream:
     )
     def test_per_group_runs_all_strategies(self, grad_template, make_strategy):
         strategy = make_strategy()
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=15,
@@ -188,7 +188,7 @@ class TestMfNoisePerGroupSingleStream:
     def test_constant_max_norm_latch_pergroup(self, grad_template):
         """Identical ``PerGroup`` across calls keeps the latch happy."""
         strategy = band_mf_strategy(bands=3, momentum=0.9)
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=10,
@@ -250,7 +250,7 @@ class TestMfNoisePerGroupPairedStream:
         second = band_mf_strategy(bands=4, momentum=0.99)
         nm = 1.2
         c1 = _max_column_norm(strategy, n_steps=n_steps)
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=n_steps,
@@ -300,7 +300,7 @@ class TestMfNoisePerGroupMahalanobisSingleStream:
         strategy = band_mf_strategy(bands=3, momentum=0.9)
         nm = 0.75
         c1 = _max_column_norm(strategy, n_steps=n_steps)
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=n_steps,
@@ -330,7 +330,7 @@ class TestMfNoisePerGroupMahalanobisSingleStream:
 
 
 class TestPerGroupPairedWithClippedGradAndMf:
-    """End-to-end: ``clipped_grad(..., second_moment=True, PerGroup)`` → ``mf_noise``."""
+    """End-to-end: ``clipped_grad(..., second_moment=True, PerGroup)`` → ``mf_gaussian_noise``."""
 
     def test_per_group_paired_with_mf(self):
         torch.manual_seed(0)
@@ -364,7 +364,7 @@ class TestPerGroupPairedWithClippedGradAndMf:
         nm = 1.0
         c1 = _max_column_norm(strategy, n_steps=n_steps)
         c2 = _max_column_norm(second, n_steps=n_steps)
-        noise_fn, noise_state = mf_noise(
+        noise_fn, noise_state = mf_gaussian_noise(
             grad_template,
             strategy,
             n_steps=n_steps,

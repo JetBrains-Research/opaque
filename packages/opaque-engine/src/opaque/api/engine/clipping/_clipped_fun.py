@@ -308,7 +308,7 @@ def clipped_fun(
     or :class:`SecondMomentClippingOutput` (paired-stream when
     ``second_moment=True``), carrying the post-normalization
     ``max_norm`` for downstream noise calibration.  The bound is part of
-    the contract: consumers (``gaussian_noise``, ``mf_noise``) read it
+    the contract: consumers (``gaussian_noise``, ``mf_gaussian_noise``) read it
     directly without the caller threading a separate ``sensitivity``
     argument.  Unwrap to a raw pytree via ``.pytree`` if you need the
     summed values without metadata.

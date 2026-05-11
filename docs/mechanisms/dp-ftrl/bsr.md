@@ -57,7 +57,7 @@ eps = training.epsilon_at(1e-5)
 ## Noise generation
 
 ```python
-from opaque.dpftrl.noise import mf_noise, bsr_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, bsr_strategy
 from opaque.random import key
 
 strategy = bsr_strategy(
@@ -68,7 +68,7 @@ strategy = bsr_strategy(
     alpha=1.0,
     beta=0.95,
 )
-noise_fn, state = mf_noise(
+noise_fn, state = mf_gaussian_noise(
     grad_template=params,
     strategy=strategy,
     noise_multiplier=noise_multiplier,

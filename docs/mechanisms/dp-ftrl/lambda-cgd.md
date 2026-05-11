@@ -80,7 +80,7 @@ has a closed-form expression in terms of λ, min_sep, and max_participations.
 ## Noise generation
 
 ```python
-from opaque.dpftrl.noise import mf_noise, lambda_cgd_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, lambda_cgd_strategy
 from opaque.random import key
 
 strategy = lambda_cgd_strategy(
@@ -89,7 +89,7 @@ strategy = lambda_cgd_strategy(
     min_sep=steps_per_epoch,
     max_participations=num_epochs,
 )
-noise_fn, state = mf_noise(
+noise_fn, state = mf_gaussian_noise(
     grad_template, strategy,
     noise_multiplier=noise_multiplier,
     key=key(seed),

@@ -33,7 +33,7 @@ def fingerprint_per_group_max_norm(pg: PerGroup) -> int:
     """Deterministic 64-bit integer fingerprint for cross-rank equality of
     ``PerGroup``.
 
-    Called once when ``mf_noise`` latches a ``PerGroup`` ``max_norm``; the
+    Called once when ``mf_gaussian_noise`` latches a ``PerGroup`` ``max_norm``; the
     result is stored on :class:`MFNoiseState` and equality is checked on each
     :func:`sync` (avoids re-hashing the full param→group map on the hot path).
 
@@ -53,6 +53,18 @@ def fingerprint_per_group_max_norm(pg: PerGroup) -> int:
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     ).digest()
     return int.from_bytes(digest[:8], "big")
+
+
+def mf_per_group_sync_fingerprint_for_latch(
+    prior: MFNoiseState,
+    max_norm: float | PerGroup,
+) -> int | None:
+    """Integer fingerprint for distributed sync; set on every latched ``max_norm``."""
+    if prior._first_max_norm is None:
+        if isinstance(max_norm, PerGroup):
+            return fingerprint_per_group_max_norm(max_norm)
+        return fingerprint_scalar_max_norm(float(max_norm))
+    return prior._first_max_norm_sync_fingerprint
 
 
 _MF_NOISE_STATE_FIELD_OPS: dict[str, str] = {
@@ -86,5 +98,6 @@ register_sync_type(MFNoiseState, sync_mf_noise_state)
 __all__ = [
     "fingerprint_per_group_max_norm",
     "fingerprint_scalar_max_norm",
+    "mf_per_group_sync_fingerprint_for_latch",
     "sync_mf_noise_state",
 ]

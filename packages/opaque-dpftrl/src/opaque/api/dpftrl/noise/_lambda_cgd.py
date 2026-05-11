@@ -85,7 +85,7 @@ class LambdaCgdStrategy:
     def streaming_matrix(self, **_) -> StreamingMatrix:
         # Lambda-CGD never materializes a streaming matrix — it uses
         # PRNG replay via :func:`_make_lambda_cgd_noise` instead.  The
-        # mf_noise dispatcher special-cases this strategy.
+        # mf_gaussian_noise dispatcher special-cases this strategy.
         raise NotImplementedError(
             "LambdaCgdStrategy uses PRNG-replay noise; the noise factory "
             "dispatches to _make_lambda_cgd_noise directly."
@@ -129,7 +129,7 @@ def lambda_cgd_strategy(
 
 
 # ---------------------------------------------------------------------------
-# Internal noise builder (called by mf_noise() dispatcher)
+# Internal noise builder (called by mf_gaussian_noise() dispatcher)
 # ---------------------------------------------------------------------------
 
 

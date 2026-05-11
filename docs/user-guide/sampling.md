@@ -137,7 +137,7 @@ For an identity MF baseline (``identity_strategy`` / ``identity_mf``), use
 Poisson on all examples, matching whole-process ``dpftrl_acc.poisson`` with an
 ``IdentityMf`` inner.  For BandMF, set ``bands`` to the same count as in
 ``band_mf_strategy`` / ``BandMf`` so participation matches correlated
-``mf_noise``.
+``mf_gaussian_noise``.
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler

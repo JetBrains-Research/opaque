@@ -38,7 +38,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.distributed import sum_gradients
-from opaque.dpftrl.noise import identity_strategy, mf_noise
+from opaque.dpftrl.noise import identity_strategy, mf_gaussian_noise
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.functional import make_functional
 from opaque.patches import apply_model_patches
@@ -147,7 +147,7 @@ def _run_dp_step(model, ids, mask, lbls, *, noise_kind: str, k):
         noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=k)
     elif noise_kind == "dpftrl":
         strategy = identity_strategy()
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             pooled, strategy, noise_multiplier=1.0, key=k,
         )
     else:

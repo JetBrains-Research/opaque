@@ -133,7 +133,7 @@ from opaque.dpftrl.noise import (
     blt_strategy,
     identity_strategy,
     lambda_cgd_strategy,
-    mf_noise,
+    mf_gaussian_noise,
 )
 from opaque.profiling import (
     StepTimer,
@@ -340,7 +340,7 @@ def parse_args():
         action=argparse.BooleanOptionalAction,
         default=False,
         help=(
-            "Activate private second-moment noise: ``mf_noise`` produces a "
+            "Activate private second-moment noise: ``mf_gaussian_noise`` produces a "
             "privately-estimated ``g²`` stream alongside noised gradients, "
             "and Opaque optimizers consume it automatically.  Joint noise "
             "uses sensitivity-proportional Mahalanobis allocation: privacy "
@@ -444,7 +444,7 @@ def parse_args():
         "for --preset smoke GPT-2 LoRA, or q_proj=0.5 fallback=1.0 for Mellum presets). "
         "Each trainable param must match exactly one pattern substring. "
         "Use 'fallback=NORM' as catch-all.  Incompatible with adaptive clipping; "
-        "MF ``mf_noise`` uses the same Mahalanobis allocation as DP-SGD Gaussian.",
+        "MF ``mf_gaussian_noise`` uses the same Mahalanobis allocation as DP-SGD Gaussian.",
     )
     dp_g.add_argument("--microbatch-size", type=int, default=None)
     dp_g.add_argument(
@@ -1115,7 +1115,7 @@ def main():
     strategy = _make_strategy(lr_sched=lr_schedule)
 
     # No paired-stream wrap on the accountant: the joint Mahalanobis
-    # allocation in :func:`mf_noise` makes the paired-release PLD
+    # allocation in :func:`mf_gaussian_noise` makes the paired-release PLD
     # identical to the first-moment-only release at the same noise
     # multiplier.
 
@@ -1244,7 +1244,7 @@ def main():
         second_strategy = _make_strategy(
             momentum_override=args.beta2, lr_sched=lr_schedule
         )
-        noise_fn, noise_state = mf_noise(
+        noise_fn, noise_state = mf_gaussian_noise(
             trainable_params,
             strategy,
             noise_multiplier=noise_multiplier,
@@ -1252,14 +1252,14 @@ def main():
             second_moment_strategy=second_strategy,
         )
     elif args.mechanism in ("identity", "none"):
-        noise_fn, noise_state = mf_noise(
+        noise_fn, noise_state = mf_gaussian_noise(
             trainable_params,
             identity_strategy(),
             noise_multiplier=noise_multiplier,
             key=key(args.seed),
         )
     else:
-        noise_fn, noise_state = mf_noise(
+        noise_fn, noise_state = mf_gaussian_noise(
             trainable_params,
             strategy,
             noise_multiplier=noise_multiplier,

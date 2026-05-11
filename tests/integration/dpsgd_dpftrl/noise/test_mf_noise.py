@@ -1,4 +1,4 @@
-"""Tests for MF strategy factories and mf_noise()."""
+"""Tests for MF strategy factories and mf_gaussian_noise()."""
 
 import pytest
 import torch
@@ -14,7 +14,7 @@ from opaque.dpftrl.noise import (
     bisr_strategy,
     blt_strategy,
     lambda_cgd_strategy,
-    mf_noise,
+    mf_gaussian_noise,
 )
 from opaque.dpftrl.noise.types import (
     BandMfStrategy,
@@ -257,11 +257,11 @@ class TestBnbEquivalence:
         assert eps > 0
 
 
-# ── mf_noise() tests ───────────────────────────────────────────────────
+# ── mf_gaussian_noise() tests ───────────────────────────────────────────────────
 
 
 class TestMfNoise:
-    """mf_noise() produces noise for all strategy types."""
+    """mf_gaussian_noise() produces noise for all strategy types."""
 
     grad = {"w": torch.randn(3, 4)}
 
@@ -270,7 +270,7 @@ class TestMfNoise:
 
     def test_band_mf_noise(self):
         s = band_mf_strategy(bands=10, momentum=0.95)
-        nf, ns = mf_noise(
+        nf, ns = mf_gaussian_noise(
             self.grad, s, n_steps=50, noise_multiplier=1.0, key=key(42)
         )
         noised, ns2 = nf(self._clipped_grad(), ns)
@@ -283,7 +283,7 @@ class TestMfNoise:
 
     def test_blt_noise(self):
         s = blt_strategy(momentum=0.95)
-        nf, ns = mf_noise(
+        nf, ns = mf_gaussian_noise(
             self.grad,
             s,
             n_steps=50,
@@ -298,7 +298,7 @@ class TestMfNoise:
 
     def test_lambda_cgd_noise(self):
         s = lambda_cgd_strategy(lambda_=0.9)
-        nf, ns = mf_noise(
+        nf, ns = mf_gaussian_noise(
             self.grad,
             s,
             n_steps=50,
@@ -313,7 +313,7 @@ class TestMfNoise:
 
     def test_bisr_noise(self):
         s = bisr_strategy(bandwidth=4)
-        nf, ns = mf_noise(
+        nf, ns = mf_gaussian_noise(
             self.grad,
             s,
             n_steps=50,
@@ -329,7 +329,7 @@ class TestMfNoise:
     def test_lambda_cgd_multi_step(self):
         """λCGD noise correctly handles step 0 (no prev) and step 1+ (with prev)."""
         s = lambda_cgd_strategy(lambda_=0.9)
-        nf, ns = mf_noise(
+        nf, ns = mf_gaussian_noise(
             self.grad,
             s,
             n_steps=50,
@@ -346,7 +346,7 @@ class TestMfNoise:
     def test_noise_is_nonzero(self):
         """Noise adds something to the gradients."""
         s = band_mf_strategy(bands=10, momentum=0.95)
-        nf, ns = mf_noise(
+        nf, ns = mf_gaussian_noise(
             self.grad, s, n_steps=50, noise_multiplier=1.0, key=key(42)
         )
         noised, _ = nf(self._clipped_grad(), ns)
@@ -355,7 +355,7 @@ class TestMfNoise:
 
     def test_raw_grads_are_rejected(self):
         s = band_mf_strategy(bands=10, momentum=0.95)
-        nf, ns = mf_noise(
+        nf, ns = mf_gaussian_noise(
             self.grad, s, n_steps=50, noise_multiplier=1.0, key=key(42)
         )
         with pytest.raises(TypeError, match="ClippedPytree"):

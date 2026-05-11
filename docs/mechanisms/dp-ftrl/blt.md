@@ -116,12 +116,12 @@ If you need subsampling amplification with correlated noise, use
 ### Noise injection
 
 ```python
-from opaque.dpftrl.noise import mf_noise, blt_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, blt_strategy
 from opaque.random import key
 
 # Single participation
 strategy = blt_strategy(n_steps=10000, min_sep=1, max_buffers=10)
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     grad_template=params,
     strategy=strategy,
     noise_multiplier=noise_multiplier,
@@ -139,7 +139,7 @@ for step in range(10000):
 strategy = blt_strategy(
     n_steps=5000, min_sep=100, max_participations=5,
 )
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     grad_template=params,
     strategy=strategy,
     noise_multiplier=noise_multiplier,
