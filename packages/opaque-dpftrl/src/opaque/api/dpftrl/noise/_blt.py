@@ -84,7 +84,9 @@ class BltStrategy:
     momentum: float = 1.0
     lr_schedule: torch.Tensor | None = field(default=None, compare=False)
 
-    def _blt(self, *, n_steps: int, min_sep: int, max_participations: int | None) -> BufferedToeplitz:
+    def _blt(
+        self, *, n_steps: int, min_sep: int, max_participations: int | None
+    ) -> BufferedToeplitz:
         return _blt_optimize_cached(
             n_steps,
             min_sep,

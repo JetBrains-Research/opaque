@@ -30,9 +30,7 @@ def _native():
 
 
 @lru_cache(maxsize=32)
-def _bisr_inverse_coefficients_cached(
-    bandwidth: int, beta: float
-) -> tuple[float, ...]:
+def _bisr_inverse_coefficients_cached(bandwidth: int, beta: float) -> tuple[float, ...]:
     """Compute BISR inverse square-root coefficients (Lemma 1, arxiv:2505.12128).
 
     For alpha=1: c_k = sum_{j=0}^{k} r_j * beta^j * r_{k-j}
@@ -55,9 +53,7 @@ def _bisr_inverse_coefficients_cached(
     return tuple(coefs)
 
 
-def _recover_strategy_coefficients(
-    inv_coefs: Sequence[float], n: int
-) -> list[float]:
+def _recover_strategy_coefficients(inv_coefs: Sequence[float], n: int) -> list[float]:
     """Recover strategy matrix first-column entries from C^{-1} coefficients."""
     alpha0 = inv_coefs[0]
     p = len(inv_coefs)

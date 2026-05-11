@@ -34,9 +34,7 @@ def _make_pg_two_groups() -> PerGroup:
 
 def _max_column_norm(strategy, *, n_steps: int) -> float:
     """Strategy's single-participation sensitivity = ``‖C‖_{1→2}``."""
-    return strategy.sensitivity(
-        n_steps=n_steps, min_sep=n_steps, max_participations=1
-    )
+    return strategy.sensitivity(n_steps=n_steps, min_sep=n_steps, max_participations=1)
 
 
 def _assert_per_group_stddev_matches_expected(grad_template, *, key_seed: int) -> None:

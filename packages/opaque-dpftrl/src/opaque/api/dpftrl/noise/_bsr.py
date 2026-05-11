@@ -125,7 +125,9 @@ class BsrStrategy:
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> tuple[float, ...]:
-        band = list(_bsr_band_coefficients_cached(self.bandwidth, self.alpha, self.beta))
+        band = list(
+            _bsr_band_coefficients_cached(self.bandwidth, self.alpha, self.beta)
+        )
         return tuple(
             _native().toeplitz_gram_matrix(
                 band, n_steps, min_sep, max_participations, False
