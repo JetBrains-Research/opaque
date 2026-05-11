@@ -1,19 +1,16 @@
-"""DP-lambda-CGD strategy and noise -- correlated noise via PRNG replay.
+"""DP-lambda-CGD strategy and noise — correlated noise via PRNG replay.
 
 The DP-lambda-CGD mechanism (Kalinin et al., 2026) uses a lower-triangular
-Toeplitz strategy matrix C_lambda whose inverse is bidiagonal: 1 on the
-diagonal, -lambda on the subdiagonal.  The correlated noise at step t is:
+Toeplitz strategy matrix :math:`C_\\lambda` whose inverse is bidiagonal: 1 on the
+diagonal, :math:`-\\lambda` on the subdiagonal.  The correlated noise at step t is::
 
-    n_t = z_t - lambda * z_{t-1}                  (unnormalized)
-    n_t = d_t * (z_t - lambda * z_{t-1})           (column-normalized, default)
+    n_t = z_t - lambda * z_{t-1}              (unnormalized)
+    n_t = d_t * (z_t - lambda * z_{t-1})      (column-normalized, default)
 
-where z_t ~ N(0, sigma^2 I) are i.i.d. Gaussians, and d_t is the column norm
-of C_lambda at step t.
-
-Instead of storing z_{t-1}, we regenerate it from the previous step's
-PRNG seed -- zero additional memory overhead compared to DP-SGD.
-
-Use ``mf_noise(lambda_cgd_strategy(...), ...)`` to create the noise function.
+where :math:`z_t \\sim N(0, \\sigma^2 I)` are i.i.d. Gaussians, and :math:`d_t`
+is the column norm of :math:`C_\\lambda` at step t.  Instead of storing
+:math:`z_{t-1}`, we regenerate it from the previous step's PRNG seed —
+zero additional memory overhead compared to DP-SGD.
 
 References:
     - Kalinin et al. (2026) "DP-lambda-CGD: Leveraging Correlated Gradients
@@ -37,6 +34,7 @@ from opaque.random.types import RngKey
 from opaque.random import fold_in as rng_fold_in
 
 from ._engine import MFNoiseState, _iid_normal_noise
+from ._streaming_matrix import StreamingMatrix
 
 
 def _native():
@@ -46,7 +44,7 @@ def _native():
 
 
 def _column_norm(lambda_: float, n_steps: int, step: int) -> float:
-    """Column norm d_t of C_lambda at 0-indexed step t."""
+    """Column norm :math:`d_t` of :math:`C_\\lambda` at 0-indexed step t."""
     if lambda_ == 0.0:
         return 1.0
     remaining = n_steps - step
@@ -57,150 +55,77 @@ def _column_norm(lambda_: float, n_steps: int, step: int) -> float:
     return math.sqrt((1.0 - lambda2r) / (1.0 - lambda2))
 
 
-__all__ = ["LambdaCgdStrategy", "lambda_cgd_strategy"]
-
-
-# ---------------------------------------------------------------------------
-# Strategy dataclass and factory
-# ---------------------------------------------------------------------------
-
-
 @register_strategy
 @dataclass(frozen=True, slots=True)
 class LambdaCgdStrategy:
-    """DP-lambda-CGD strategy (PRNG replay noise)."""
+    """DP-lambda-CGD strategy — recipe only (PRNG-replay noise)."""
 
-    sensitivity: float
-    n_steps: int
     lambda_: float
-    min_sep: int
-    max_participations: int | None
-    normalized: bool
-    _coefficients: tuple[float, ...]
-    _gram_matrix: tuple[float, ...] | None = None
-    _max_column_norm: float = 0.0
+    normalized: bool = True
 
-    def with_horizon(
-        self, n_steps: int, max_participations: int | None
-    ) -> "LambdaCgdStrategy":
-        """Return a fresh strategy regenerated at horizon ``n_steps``.
+    def __post_init__(self) -> None:
+        if self.lambda_ < 0 or self.lambda_ >= 1.0:
+            raise ValueError(f"lambda_ must be in [0, 1), got {self.lambda_}")
 
-        Recomputes Gram, sensitivity, and the geometric forward coefficients
-        for the new horizon via the same closed-form Rust helpers.
-        """
-        import dataclasses
+    def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
+        # [1, λ, λ², ..., λ^{n_steps-1}].
+        return torch.tensor(
+            [self.lambda_**i for i in range(n_steps)], dtype=torch.float64
+        )
 
+    def gram_matrix(
+        self, *, n_steps: int, min_sep: int, max_participations: int | None
+    ) -> tuple[float, ...]:
+        return tuple(
+            _native().lambda_cgd_gram_matrix(
+                self.lambda_, n_steps, min_sep, max_participations, self.normalized
+            )
+        )
+
+    def streaming_matrix(self, **_) -> StreamingMatrix:
+        # Lambda-CGD never materializes a streaming matrix — it uses
+        # PRNG replay via :func:`_make_lambda_cgd_noise` instead.  The
+        # mf_noise dispatcher special-cases this strategy.
+        raise NotImplementedError(
+            "LambdaCgdStrategy uses PRNG-replay noise; the noise factory "
+            "dispatches to _make_lambda_cgd_noise directly."
+        )
+
+    def sensitivity(
+        self, *, n_steps: int, min_sep: int, max_participations: int | None
+    ) -> float:
         if self.normalized:
             sens_sq = _native().lambda_cgd_normalized_sensitivity_squared(
-                self.lambda_, n_steps, self.min_sep, max_participations
+                self.lambda_, n_steps, min_sep, max_participations
             )
-            max_column_norm = 1.0
         else:
             sens_sq = _native().lambda_cgd_sensitivity_squared(
-                self.lambda_, n_steps, self.min_sep, max_participations
+                self.lambda_, n_steps, min_sep, max_participations
             )
-            max_column_norm = float(
-                _native().lambda_cgd_max_column_norm(self.lambda_, n_steps)
-            )
-        new_sensitivity = float(sens_sq**0.5)
-        new_coefs = tuple(self.lambda_**i for i in range(n_steps))
-        new_gram = tuple(
-            _native().lambda_cgd_gram_matrix(
-                self.lambda_,
-                n_steps,
-                self.min_sep,
-                max_participations,
-                self.normalized,
-            )
-        )
-        return dataclasses.replace(
-            self,
-            sensitivity=new_sensitivity,
-            n_steps=n_steps,
-            max_participations=max_participations,
-            _coefficients=new_coefs,
-            _gram_matrix=new_gram,
-            _max_column_norm=max_column_norm,
-        )
+        return float(sens_sq**0.5)
+
+    def max_column_norm(self, *, n_steps: int) -> float:
+        """Max L2 column norm of the strategy matrix at this horizon."""
+        if self.normalized:
+            return 1.0
+        return float(_native().lambda_cgd_max_column_norm(self.lambda_, n_steps))
 
 
 def lambda_cgd_strategy(
-    lambda_: float,
-    n_steps: int,
-    min_sep: int,
-    max_participations: int | None = 1,
     *,
+    lambda_: float,
     normalized: bool = True,
 ) -> LambdaCgdStrategy:
-    """Create a DP-lambda-CGD strategy (bandwidth=2, PRNG-replay noise).
-
-    Uses closed-form Rust functions for sensitivity and Gram matrix.
-
-    Note: momentum does not affect lambda-CGD (bandwidth=2). The strategy
-    coefficients are always [1, -lambda]. For momentum-aware coefficients,
-    use :func:`bisr_strategy` with bandwidth > 2.
+    """Create a DP-lambda-CGD strategy recipe (bandwidth=2, PRNG-replay noise).
 
     Args:
         lambda_: Correlation coefficient in [0, 1).
-        n_steps: Total training steps.
-        min_sep: Minimum separation between participations.
-        max_participations: Maximum participations per user (default 1).
         normalized: Use column-normalized matrix (default True).
 
     Returns:
-        A :class:`LambdaCgdStrategy` with pre-computed Gram matrix.
+        A :class:`LambdaCgdStrategy` recipe.
     """
-    if lambda_ < 0 or lambda_ >= 1.0:
-        raise ValueError(f"lambda_ must be in [0, 1), got {lambda_}")
-    if n_steps < 1:
-        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
-
-    # Sensitivity (closed-form Rust)
-    if normalized:
-        sens_sq = _native().lambda_cgd_normalized_sensitivity_squared(
-            lambda_,
-            n_steps,
-            min_sep,
-            max_participations,
-        )
-    else:
-        sens_sq = _native().lambda_cgd_sensitivity_squared(
-            lambda_,
-            n_steps,
-            min_sep,
-            max_participations,
-        )
-    sensitivity = float(sens_sq**0.5)
-
-    # Coefficients (for inspection): [1, lambda, lambda^2, ...] truncated at n_steps
-    coefficients = tuple(lambda_**i for i in range(n_steps))
-
-    # Gram matrix (closed-form Rust)
-    gram = _native().lambda_cgd_gram_matrix(
-        lambda_,
-        n_steps,
-        min_sep,
-        max_participations,
-        normalized,
-    )
-    gram_matrix = tuple(gram)
-
-    if normalized:
-        max_column_norm = 1.0  # all columns have unit norm after normalization
-    else:
-        max_column_norm = float(_native().lambda_cgd_max_column_norm(lambda_, n_steps))
-
-    return LambdaCgdStrategy(
-        sensitivity=sensitivity,
-        n_steps=n_steps,
-        lambda_=lambda_,
-        min_sep=min_sep,
-        max_participations=max_participations,
-        normalized=normalized,
-        _coefficients=coefficients,
-        _gram_matrix=gram_matrix,
-        _max_column_norm=max_column_norm,
-    )
+    return LambdaCgdStrategy(lambda_=lambda_, normalized=normalized)
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +137,7 @@ def _make_lambda_cgd_noise(
     grad_template: Any,
     strategy: LambdaCgdStrategy,
     *,
+    n_steps: int,
     key: RngKey,
     dtype: torch.dtype | None = None,
 ) -> tuple[
@@ -220,7 +146,6 @@ def _make_lambda_cgd_noise(
 ]:
     """DP-lambda-CGD noise via PRNG replay (zero extra memory)."""
     lambda_ = strategy.lambda_
-    n_steps = strategy.n_steps
     normalized = strategy.normalized
 
     state = MFNoiseState(
@@ -281,3 +206,6 @@ def _make_lambda_cgd_noise(
         return noisy_grads, new_state
 
     return noise_fn, state
+
+
+__all__ = ["LambdaCgdStrategy", "lambda_cgd_strategy"]

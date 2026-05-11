@@ -141,19 +141,20 @@ class CyclicPoisson(DpFtrlProcess):
             max_grid_size=max_grid_size,
         )
 
-        match self.inner.strategy:
-            case BandMfStrategy() as s:
-                effective_nm = self.inner.noise_multiplier / s.sensitivity
-                bands = s.bands
-                num_groups = math.ceil(self.n_steps / bands) if bands > 0 else 0
-            case IdentityStrategy():
-                effective_nm = float(self.inner.noise_multiplier)
-                num_groups = int(self.n_steps)
-            case _:
-                raise TypeError(
-                    "Poisson requires a BandMfStrategy or IdentityStrategy "
-                    f"inner.strategy, got {type(self.inner.strategy).__name__}."
-                )
+        s = self.inner.strategy
+        if isinstance(s, BandMfStrategy):
+            sensitivity = s.sensitivity(n_steps=self.n_steps)
+            effective_nm = self.inner.noise_multiplier / sensitivity
+            bands = s.bands
+            num_groups = math.ceil(self.n_steps / bands) if bands > 0 else 0
+        elif isinstance(s, IdentityStrategy):
+            effective_nm = float(self.inner.noise_multiplier)
+            num_groups = int(self.n_steps)
+        else:
+            raise TypeError(
+                "Poisson requires a BandMfStrategy or IdentityStrategy "
+                f"inner.strategy, got {type(s).__name__}."
+            )
 
         if effective_nm == 0:
             return _native.non_private_pld(config.to_native())

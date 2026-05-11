@@ -75,6 +75,9 @@ def mf_noise(
     grad_template: Any,
     strategy: MfStrategy,
     *,
+    n_steps: int,
+    min_sep: int = 1,
+    max_participations: int | None = None,
     noise_multiplier: float,
     key: RngKey,
     dtype: torch.dtype | None = None,
@@ -135,6 +138,9 @@ def mf_noise(
             grad_template,
             strategy,
             second_moment_strategy,
+            n_steps=n_steps,
+            min_sep=min_sep,
+            max_participations=max_participations,
             noise_multiplier=resolved_noise_multiplier,
             key=key,
             dtype=dtype,
@@ -143,6 +149,9 @@ def mf_noise(
     raw_noise_fn, raw_state = _make_raw_mf_noise(
         grad_template,
         strategy,
+        n_steps=n_steps,
+        min_sep=min_sep,
+        max_participations=max_participations,
         key=key,
         dtype=dtype,
     )
@@ -192,37 +201,32 @@ def _make_raw_mf_noise(
     grad_template: Any,
     strategy: MfStrategy,
     *,
+    n_steps: int,
+    min_sep: int,
+    max_participations: int | None,
     key: RngKey,
     dtype: torch.dtype | None,
 ) -> tuple[Callable[..., tuple[Any, MFNoiseState]], MFNoiseState]:
-    match strategy:
-        case IdentityStrategy():
-            return _matrix_factorization_noise(
-                grad_template,
-                identity(),
-                key=key,
-                dtype=dtype,
-            )
-        case LambdaCgdStrategy():
-            return _make_lambda_cgd_noise(
-                grad_template,
-                strategy,
-                key=key,
-                dtype=dtype,
-            )
-        case BandMfStrategy() | BltStrategy() | BisrStrategy() | BsrStrategy():
-            if strategy._streaming_matrix is None:
-                raise ValueError(
-                    "Strategy must have a _streaming_matrix for noise generation."
-                )
-            return _matrix_factorization_noise(
-                grad_template,
-                strategy._streaming_matrix,
-                key=key,
-                dtype=dtype,
-            )
-        case _:
-            raise TypeError(f"Unknown strategy type: {type(strategy).__name__}")
+    if isinstance(strategy, LambdaCgdStrategy):
+        # Lambda-CGD uses PRNG replay — no streaming matrix is built.
+        return _make_lambda_cgd_noise(
+            grad_template,
+            strategy,
+            n_steps=n_steps,
+            key=key,
+            dtype=dtype,
+        )
+    streaming = strategy.streaming_matrix(
+        n_steps=n_steps,
+        min_sep=min_sep,
+        max_participations=max_participations,
+    )
+    return _matrix_factorization_noise(
+        grad_template,
+        streaming,
+        key=key,
+        dtype=dtype,
+    )
 
 
 def _resolve_noise_multiplier(noise_multiplier: float) -> float:
@@ -294,6 +298,9 @@ def _make_second_moment_mf_noise(
     first_strategy: MfStrategy,
     second_strategy: MfStrategy,
     *,
+    n_steps: int,
+    min_sep: int,
+    max_participations: int | None,
     noise_multiplier: float,
     key: RngKey,
     dtype: torch.dtype | None,
@@ -307,12 +314,18 @@ def _make_second_moment_mf_noise(
     first_fn, first_state = _make_raw_mf_noise(
         grad_template,
         first_strategy,
+        n_steps=n_steps,
+        min_sep=min_sep,
+        max_participations=max_participations,
         key=rng_fold_in(key, 0),
         dtype=dtype,
     )
     second_fn, second_state = _make_raw_mf_noise(
         grad_template,
         second_strategy,
+        n_steps=n_steps,
+        min_sep=min_sep,
+        max_participations=max_participations,
         key=rng_fold_in(key, 1),
         dtype=dtype,
     )
@@ -355,8 +368,15 @@ def _make_second_moment_mf_noise(
         # the joint paired Mahalanobis budget must equal ``(‖C₁‖ / nm)²``
         # — pass ``nm / ‖C₁‖`` as the joint effective multiplier so the
         # allocator's ``1 / nm²`` budget identity hits the right value.
-        c1 = first_strategy._max_column_norm
-        c2 = second_strategy._max_column_norm
+        # Max column norm = single-participation sensitivity at this horizon.
+        # Reach through the polymorphic sensitivity surface so each strategy
+        # uses its own closed-form (Identity = 1, BLT = ‖C‖_{1→2}, etc.).
+        c1 = first_strategy.sensitivity(
+            n_steps=n_steps, min_sep=n_steps, max_participations=1
+        )
+        c2 = second_strategy.sensitivity(
+            n_steps=n_steps, min_sep=n_steps, max_participations=1
+        )
         first_stddev, second_stddev = paired_noise_stddevs(
             noise_multiplier / c1,
             first=max_norm * c1,

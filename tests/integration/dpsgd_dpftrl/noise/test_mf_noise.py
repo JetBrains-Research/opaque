@@ -25,51 +25,45 @@ from opaque.dpftrl.noise.types import (
 from opaque.random import key
 
 
+_PART = dict(n_steps=100, min_sep=25, max_participations=4)
+_BAND_PART = dict(n_steps=100, min_sep=1, max_participations=100)
+
+
 # ── BandMfStrategy ──────────────────────────────────────────────────────
 
 
 class TestBandMfStrategy:
     def test_returns_correct_type(self):
-        s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        assert isinstance(s, BandMfStrategy)
+        assert isinstance(band_mf_strategy(bands=10, momentum=0.95), BandMfStrategy)
 
     def test_sensitivity_is_one(self):
         """Optimized Toeplitz coefficients are L2-normalized."""
-        s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        assert s.sensitivity == pytest.approx(1.0, abs=1e-6)
+        s = band_mf_strategy(bands=10, momentum=0.95)
+        assert s.sensitivity(**_BAND_PART) == pytest.approx(1.0, abs=1e-6)
 
     def test_no_gram_matrix(self):
         """BandMF uses Poisson amplification, not BnB — no Gram needed."""
-        s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        assert not hasattr(s, "_gram_matrix")
+        s = band_mf_strategy(bands=10, momentum=0.95)
+        with pytest.raises(NotImplementedError):
+            s.gram_matrix(n_steps=100, min_sep=10, max_participations=10)
 
     def test_coefficients_length(self):
-        s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        assert len(s._coefficients) == 10
+        s = band_mf_strategy(bands=10, momentum=0.95)
+        assert len(s.coefficients(n_steps=100)) == 10
 
     def test_streaming_matrix_present(self):
-        s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        assert s._streaming_matrix is not None
-
-    def test_matches_old_sensitivity(self):
-        new = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        assert new.sensitivity == pytest.approx(1.0, abs=1e-6)
-
-    def test_rejects_bad_n_steps(self):
-        with pytest.raises(ValueError):
-            band_mf_strategy(n_steps=0, bands=5)
+        s = band_mf_strategy(bands=10, momentum=0.95)
+        assert s.streaming_matrix(n_steps=100) is not None
 
     def test_rejects_bad_bands(self):
         with pytest.raises(ValueError):
-            band_mf_strategy(n_steps=100, bands=0)
-        with pytest.raises(ValueError):
-            band_mf_strategy(n_steps=100, bands=101)
+            band_mf_strategy(bands=0)
 
     def test_with_lr_schedule(self):
         lr = torch.ones(100, dtype=torch.float64) * 0.01
         lr[:10] = torch.linspace(0.001, 0.01, 10)
-        s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95, lr_schedule=lr)
-        assert s.sensitivity == pytest.approx(1.0, abs=1e-6)
+        s = band_mf_strategy(bands=10, momentum=0.95, lr_schedule=lr)
+        assert s.sensitivity(**_BAND_PART) == pytest.approx(1.0, abs=1e-6)
 
 
 # ── BltStrategy ─────────────────────────────────────────────────────────
@@ -77,34 +71,29 @@ class TestBandMfStrategy:
 
 class TestBltStrategy:
     def test_returns_correct_type(self):
-        s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        assert isinstance(s, BltStrategy)
+        assert isinstance(blt_strategy(momentum=0.95), BltStrategy)
 
     def test_sensitivity_positive(self):
-        s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        assert s.sensitivity > 0
+        assert blt_strategy(momentum=0.95).sensitivity(**_PART) > 0
 
     def test_gram_matrix_present(self):
-        s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        assert s._gram_matrix is not None
-        # Gram matrix is 25x25 flattened
-        assert len(s._gram_matrix) == 25 * 25
+        gram = blt_strategy(momentum=0.95).gram_matrix(**_PART)
+        assert gram is not None
+        assert len(gram) == 25 * 25
 
     def test_coefficients_length(self):
-        s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        assert len(s._coefficients) == 100
+        s = blt_strategy(momentum=0.95)
+        assert len(s.coefficients(**_PART)) == 100
 
     def test_streaming_matrix_present(self):
-        s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        assert s._streaming_matrix is not None
+        assert blt_strategy(momentum=0.95).streaming_matrix(**_PART) is not None
 
     def test_matches_old_sensitivity(self):
-        new = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        assert new.sensitivity > 0
+        assert blt_strategy(momentum=0.95).sensitivity(**_PART) > 0
 
     def test_single_participation(self):
-        s = blt_strategy(n_steps=50, min_sep=1, max_participations=1)
-        assert s.sensitivity > 0
+        s = blt_strategy()
+        assert s.sensitivity(n_steps=50, min_sep=1, max_participations=1) > 0
 
 
 # ── LambdaCgdStrategy ──────────────────────────────────────────────────
@@ -112,50 +101,44 @@ class TestBltStrategy:
 
 class TestLambdaCgdStrategy:
     def test_returns_correct_type(self):
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        assert isinstance(s, LambdaCgdStrategy)
+        assert isinstance(lambda_cgd_strategy(lambda_=0.9), LambdaCgdStrategy)
 
     def test_sensitivity_positive(self):
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        assert s.sensitivity > 0
+        assert lambda_cgd_strategy(lambda_=0.9).sensitivity(**_PART) > 0
 
     def test_gram_matrix_present(self):
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        assert s._gram_matrix is not None
-        assert len(s._gram_matrix) == 25 * 25
+        gram = lambda_cgd_strategy(lambda_=0.9).gram_matrix(**_PART)
+        assert gram is not None
+        assert len(gram) == 25 * 25
 
     def test_normalized_single_participation_sensitivity_one(self):
         """Normalized + single participation → sensitivity = 1.0."""
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=1, max_participations=1)
-        assert s.sensitivity == pytest.approx(1.0, abs=1e-6)
+        s = lambda_cgd_strategy(lambda_=0.9)
+        assert s.sensitivity(
+            n_steps=100, min_sep=1, max_participations=1
+        ) == pytest.approx(1.0, abs=1e-6)
 
     def test_matches_old_sensitivity(self):
-        new = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        assert new.sensitivity > 0
+        assert lambda_cgd_strategy(lambda_=0.9).sensitivity(**_PART) > 0
 
     def test_with_momentum(self):
         """lambda_cgd_strategy does not accept momentum (use bisr_strategy)."""
         with pytest.raises(TypeError):
-            lambda_cgd_strategy(
-                0.5, n_steps=100, min_sep=25, max_participations=4, momentum=0.95
-            )
+            lambda_cgd_strategy(lambda_=0.5, momentum=0.95)
 
     def test_unnormalized(self):
-        s = lambda_cgd_strategy(
-            0.9, n_steps=100, min_sep=25, max_participations=4, normalized=False
-        )
-        assert s.sensitivity > 0
+        s = lambda_cgd_strategy(lambda_=0.9, normalized=False)
+        assert s.sensitivity(**_PART) > 0
 
     def test_rejects_bad_lambda(self):
         with pytest.raises(ValueError):
-            lambda_cgd_strategy(-0.1, n_steps=100, min_sep=25)
+            lambda_cgd_strategy(lambda_=-0.1)
         with pytest.raises(ValueError):
-            lambda_cgd_strategy(1.0, n_steps=100, min_sep=25)
+            lambda_cgd_strategy(lambda_=1.0)
 
     def test_internal_fields(self):
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
+        s = lambda_cgd_strategy(lambda_=0.9)
         assert s.lambda_ == pytest.approx(0.9)
-        assert s.n_steps == 100
         assert s.normalized is True
 
 
@@ -164,80 +147,77 @@ class TestLambdaCgdStrategy:
 
 class TestBisrStrategy:
     def test_returns_correct_type(self):
-        s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        assert isinstance(s, BisrStrategy)
+        assert isinstance(bisr_strategy(bandwidth=4), BisrStrategy)
 
     def test_sensitivity_positive(self):
-        s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        assert s.sensitivity > 0
+        assert bisr_strategy(bandwidth=4).sensitivity(**_PART) > 0
 
     def test_gram_matrix_present(self):
-        s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        assert s._gram_matrix is not None
-        assert len(s._gram_matrix) == 25 * 25
+        gram = bisr_strategy(bandwidth=4).gram_matrix(**_PART)
+        assert gram is not None
+        assert len(gram) == 25 * 25
 
     def test_streaming_matrix_present(self):
-        s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        assert s._streaming_matrix is not None
+        assert bisr_strategy(bandwidth=4).streaming_matrix(**_PART) is not None
 
     def test_matches_old_sensitivity(self):
-        new = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        assert new.sensitivity > 0
+        assert bisr_strategy(bandwidth=4).sensitivity(**_PART) > 0
 
     def test_with_momentum(self):
-        s = bisr_strategy(
-            bandwidth=4, n_steps=100, min_sep=25, max_participations=4, momentum=0.95
-        )
-        assert s.sensitivity > 0
+        assert bisr_strategy(bandwidth=4, momentum=0.95).sensitivity(**_PART) > 0
 
     def test_rejects_bad_bandwidth(self):
         with pytest.raises(ValueError):
-            bisr_strategy(bandwidth=1, n_steps=100, min_sep=25)
+            bisr_strategy(bandwidth=1)
 
 
 # ── PLD equivalence ────────────────────────────────────────────────────
 
 
 class TestPldEquivalence:
-    """New strategy + mf_gaussian produces identical PLD to old class API."""
+    """New strategy + mf_gaussian produces a finite, positive PLD."""
 
     delta = 1e-5
 
     def test_band_mf_pld(self):
-        s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        eps_new = ftrl_acc.mf_gaussian(1.0, s).epsilon_at(self.delta)
-        # Should be finite positive
+        s = band_mf_strategy(bands=10, momentum=0.95)
+        eps_new = ftrl_acc.mf_gaussian(1.0, s, **_BAND_PART).epsilon_at(self.delta)
         assert eps_new > 0
 
     def test_band_mf_poisson_pld(self):
         """Poisson via band_mf matches manual poisson composition."""
-        s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
+        import math
+
+        n_steps = 100
+        bands = 10
+        s = band_mf_strategy(bands=bands, momentum=0.95)
         sample_rate = 0.05
 
         eps_new = ftrl_acc.poisson(
             ftrl_acc.mf_gaussian(1.0, s),
             sample_rate=sample_rate,
-            n_steps=100,
+            n_steps=n_steps,
         ).epsilon_at(self.delta)
+        num_groups = math.ceil(n_steps / bands)
+        sens = s.sensitivity(n_steps=n_steps)
         eps_manual = (
-            dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0 / s.sensitivity), sample_rate)
-            * s.num_groups
+            dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0 / sens), sample_rate) * num_groups
         ).epsilon_at(self.delta)
         assert eps_new == pytest.approx(eps_manual, abs=1e-10)
 
     def test_blt_pld(self):
-        s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        eps_new = ftrl_acc.mf_gaussian(1.0, s).epsilon_at(self.delta)
+        s = blt_strategy(momentum=0.95)
+        eps_new = ftrl_acc.mf_gaussian(1.0, s, **_PART).epsilon_at(self.delta)
         assert eps_new > 0
 
     def test_lambda_cgd_pld(self):
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        eps_new = ftrl_acc.mf_gaussian(1.0, s).epsilon_at(self.delta)
+        s = lambda_cgd_strategy(lambda_=0.9)
+        eps_new = ftrl_acc.mf_gaussian(1.0, s, **_PART).epsilon_at(self.delta)
         assert eps_new > 0
 
     def test_bisr_pld(self):
-        s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        eps_new = ftrl_acc.mf_gaussian(1.0, s).epsilon_at(self.delta)
+        s = bisr_strategy(bandwidth=4)
+        eps_new = ftrl_acc.mf_gaussian(1.0, s, **_PART).epsilon_at(self.delta)
         assert eps_new > 0
 
 
@@ -245,38 +225,35 @@ class TestPldEquivalence:
 
 
 class TestBnbEquivalence:
-    """BnB via strategy.as_mechanism() composes correctly."""
+    """BnB built around each strategy composes correctly."""
 
     delta = 1e-5
 
     def test_lambda_cgd_bnb(self):
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        bnb_new = ftrl_acc.balls_in_bins(
+        s = lambda_cgd_strategy(lambda_=0.9)
+        eps = ftrl_acc.balls_in_bins(
             ftrl_acc.mf_gaussian(1.0, s),
             num_bins=25,
             n_steps=100,
-        )
-        eps = bnb_new.epsilon_at(self.delta)
+        ).epsilon_at(self.delta)
         assert eps > 0
 
     def test_blt_bnb(self):
-        s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        bnb_new = ftrl_acc.balls_in_bins(
+        s = blt_strategy(momentum=0.95)
+        eps = ftrl_acc.balls_in_bins(
             ftrl_acc.mf_gaussian(1.0, s),
             num_bins=25,
             n_steps=100,
-        )
-        eps = bnb_new.epsilon_at(self.delta)
+        ).epsilon_at(self.delta)
         assert eps > 0
 
     def test_bisr_bnb(self):
-        s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        bnb_new = ftrl_acc.balls_in_bins(
+        s = bisr_strategy(bandwidth=4)
+        eps = ftrl_acc.balls_in_bins(
             ftrl_acc.mf_gaussian(1.0, s),
             num_bins=25,
             n_steps=100,
-        )
-        eps = bnb_new.epsilon_at(self.delta)
+        ).epsilon_at(self.delta)
         assert eps > 0
 
 
@@ -292,8 +269,10 @@ class TestMfNoise:
         return clipped(self.grad, max_norm=1.0)
 
     def test_band_mf_noise(self):
-        s = band_mf_strategy(n_steps=50, bands=10, momentum=0.95)
-        nf, ns = mf_noise(self.grad, s, noise_multiplier=1.0, key=key(42))
+        s = band_mf_strategy(bands=10, momentum=0.95)
+        nf, ns = mf_noise(
+            self.grad, s, n_steps=50, noise_multiplier=1.0, key=key(42)
+        )
         noised, ns2 = nf(self._clipped_grad(), ns)
         assert ns2._step_counter == 1
         assert isinstance(noised, NoisedPytree)
@@ -303,30 +282,62 @@ class TestMfNoise:
         assert noised.pytree["w"].shape == self.grad["w"].shape
 
     def test_blt_noise(self):
-        s = blt_strategy(n_steps=50, min_sep=10, max_participations=5, momentum=0.95)
-        nf, ns = mf_noise(self.grad, s, noise_multiplier=1.0, key=key(42))
+        s = blt_strategy(momentum=0.95)
+        nf, ns = mf_noise(
+            self.grad,
+            s,
+            n_steps=50,
+            min_sep=10,
+            max_participations=5,
+            noise_multiplier=1.0,
+            key=key(42),
+        )
         noised, ns2 = nf(self._clipped_grad(), ns)
         assert ns2._step_counter == 1
         assert isinstance(noised, NoisedPytree)
 
     def test_lambda_cgd_noise(self):
-        s = lambda_cgd_strategy(0.9, n_steps=50, min_sep=10, max_participations=5)
-        nf, ns = mf_noise(self.grad, s, noise_multiplier=1.0, key=key(42))
+        s = lambda_cgd_strategy(lambda_=0.9)
+        nf, ns = mf_noise(
+            self.grad,
+            s,
+            n_steps=50,
+            min_sep=10,
+            max_participations=5,
+            noise_multiplier=1.0,
+            key=key(42),
+        )
         noised, ns2 = nf(self._clipped_grad(), ns)
         assert ns2._step_counter == 1
         assert isinstance(noised, NoisedPytree)
 
     def test_bisr_noise(self):
-        s = bisr_strategy(bandwidth=4, n_steps=50, min_sep=10, max_participations=5)
-        nf, ns = mf_noise(self.grad, s, noise_multiplier=1.0, key=key(42))
+        s = bisr_strategy(bandwidth=4)
+        nf, ns = mf_noise(
+            self.grad,
+            s,
+            n_steps=50,
+            min_sep=10,
+            max_participations=5,
+            noise_multiplier=1.0,
+            key=key(42),
+        )
         noised, ns2 = nf(self._clipped_grad(), ns)
         assert ns2._step_counter == 1
         assert isinstance(noised, NoisedPytree)
 
     def test_lambda_cgd_multi_step(self):
         """λCGD noise correctly handles step 0 (no prev) and step 1+ (with prev)."""
-        s = lambda_cgd_strategy(0.9, n_steps=50, min_sep=10, max_participations=5)
-        nf, ns = mf_noise(self.grad, s, noise_multiplier=1.0, key=key(42))
+        s = lambda_cgd_strategy(lambda_=0.9)
+        nf, ns = mf_noise(
+            self.grad,
+            s,
+            n_steps=50,
+            min_sep=10,
+            max_participations=5,
+            noise_multiplier=1.0,
+            key=key(42),
+        )
         _, ns = nf(self._clipped_grad(), ns)
         _, ns = nf(self._clipped_grad(), ns)
         _, ns = nf(self._clipped_grad(), ns)
@@ -334,14 +345,18 @@ class TestMfNoise:
 
     def test_noise_is_nonzero(self):
         """Noise adds something to the gradients."""
-        s = band_mf_strategy(n_steps=50, bands=10, momentum=0.95)
-        nf, ns = mf_noise(self.grad, s, noise_multiplier=1.0, key=key(42))
+        s = band_mf_strategy(bands=10, momentum=0.95)
+        nf, ns = mf_noise(
+            self.grad, s, n_steps=50, noise_multiplier=1.0, key=key(42)
+        )
         noised, _ = nf(self._clipped_grad(), ns)
         diff = torch.norm(noised.pytree["w"] - self.grad["w"])
         assert diff > 0.1
 
     def test_raw_grads_are_rejected(self):
-        s = band_mf_strategy(n_steps=50, bands=10, momentum=0.95)
-        nf, ns = mf_noise(self.grad, s, noise_multiplier=1.0, key=key(42))
+        s = band_mf_strategy(bands=10, momentum=0.95)
+        nf, ns = mf_noise(
+            self.grad, s, n_steps=50, noise_multiplier=1.0, key=key(42)
+        )
         with pytest.raises(TypeError, match="ClippedPytree"):
             nf(self.grad, ns)

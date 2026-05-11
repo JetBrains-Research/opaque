@@ -1,13 +1,10 @@
-"""BSR strategy — banded square root MF (Kalinin & Lampert, NeurIPS 2024).
+r"""BSR strategy — banded square root MF (Kalinin & Lampert, NeurIPS 2024).
 
 Closed-form lower-triangular Toeplitz coefficients for the paper workload
-:math:`A_{\\alpha,\\beta}` (multiplicative decay :math:`\\alpha`, Polyak momentum
-:math:`\\beta`). These are **not** the same names as PyTorch ``weight_decay`` or
-generic ``momentum`` on other strategies—here ``alpha`` and ``beta`` match the paper.
-
-No numerical optimization.
-
-Use ``mf_noise(bsr_strategy(...), ...)`` to create the noise function.
+:math:`A_{\alpha,\beta}` (multiplicative decay :math:`\alpha`, Polyak momentum
+:math:`\beta`).  These are **not** the same names as PyTorch ``weight_decay`` or
+generic ``momentum`` on other strategies — here ``alpha`` and ``beta`` match the
+paper.  No numerical optimization.
 
 References:
     - BSR: https://arxiv.org/abs/2405.13763 (Theorem 1, banded :math:`C^{|p|}`).
@@ -15,7 +12,8 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from functools import lru_cache
 
 import torch
 
@@ -36,9 +34,6 @@ def _native():
     return _n
 
 
-__all__ = ["BsrStrategy", "bsr_strategy"]
-
-
 def _r_sequence(length: int) -> list[float]:
     """Binomial-type coefficients r_k = |(-1/2 choose k)| (paper Theorem 1)."""
     if length < 1:
@@ -49,12 +44,11 @@ def _r_sequence(length: int) -> list[float]:
     return r
 
 
-def _bsr_coefficients(bandwidth: int, alpha: float, beta: float) -> list[float]:
-    """First-column coefficients of :math:`C^{|p|}_{\\alpha,\\beta}` (Theorem 1).
-
-    :math:`c_0 = 1`, :math:`c_j = \\sum_{i=0}^{j} \\alpha^{j-i} r_{j-i} r_i \\beta^i`
-    for :math:`j = 1,\\ldots,p-1`.
-    """
+@lru_cache(maxsize=32)
+def _bsr_band_coefficients_cached(
+    bandwidth: int, alpha: float, beta: float
+) -> tuple[float, ...]:
+    r"""First-column coefficients of :math:`C^{|p|}_{\alpha,\beta}` (Theorem 1)."""
     if bandwidth < 1:
         raise ValueError(f"bandwidth must be >= 1, got {bandwidth}")
     r = _r_sequence(bandwidth)
@@ -64,14 +58,10 @@ def _bsr_coefficients(bandwidth: int, alpha: float, beta: float) -> list[float]:
         for i in range(j + 1):
             s += (alpha ** (j - i)) * r[j - i] * r[i] * (beta**i)
         c.append(s)
-    return c
+    return tuple(c)
 
 
-def _validate_bsr_hyperparams(
-    bandwidth: int,
-    alpha: float,
-    beta: float,
-) -> None:
+def _validate_bsr_hyperparams(bandwidth: int, alpha: float, beta: float) -> None:
     """Raise ValueError if hyperparameters are outside the supported v1 regime."""
     if bandwidth < 1:
         raise ValueError(f"bandwidth must be >= 1, got {bandwidth}")
@@ -90,7 +80,7 @@ def _validate_bsr_hyperparams(
             f"BSR v1 requires α > β (paper regime); got α={alpha}, β={beta}. "
             "Reduce β or increase α, or use band_mf_strategy."
         )
-    coefs = _bsr_coefficients(bandwidth, alpha, beta)
+    coefs = _bsr_band_coefficients_cached(bandwidth, alpha, beta)
     for i in range(1, len(coefs)):
         if coefs[i] > coefs[i - 1] + 1e-12:
             raise ValueError(
@@ -105,166 +95,84 @@ def _validate_bsr_hyperparams(
             )
 
 
+def _bsr_full_coefficients(
+    bandwidth: int, alpha: float, beta: float, n_steps: int
+) -> torch.Tensor:
+    """Pad the band coefficients out to ``n_steps`` with zeros."""
+    band = _bsr_band_coefficients_cached(bandwidth, alpha, beta)
+    out = torch.zeros(n_steps, dtype=torch.float64)
+    copy_len = min(bandwidth, n_steps)
+    out[:copy_len] = torch.tensor(band[:copy_len], dtype=torch.float64)
+    return out
+
+
 @register_strategy
 @dataclass(frozen=True, slots=True)
 class BsrStrategy:
-    """BSR (banded square root) strategy; workload parameters :math:`\\alpha,\\beta`."""
+    r"""BSR (banded square root) strategy — recipe only.
 
-    sensitivity: float
-    n_steps: int
+    Carries the workload knobs ``bandwidth``, ``alpha``, ``beta``; all
+    derived quantities are computed on demand via the strategy methods.
+    """
+
     bandwidth: int
-    min_sep: int
-    max_participations: int | None
     alpha: float
     beta: float
-    _coefficients: tuple[float, ...] = ()
-    _gram_matrix: tuple[float, ...] | None = None
-    _streaming_matrix: StreamingMatrix | None = field(default=None, compare=False)
-    _max_column_norm: float = 0.0
-    _band_coefficients: tuple[float, ...] = ()
 
-    def with_horizon(
-        self, n_steps: int, max_participations: int | None
-    ) -> "BsrStrategy":
-        """Return a fresh strategy regenerated at horizon ``n_steps``.
+    def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
+        return _bsr_full_coefficients(self.bandwidth, self.alpha, self.beta, n_steps)
 
-        The band coefficients are horizon-independent (BSR is closed-form);
-        we re-pad ``_coefficients`` to the new length and rebuild Gram /
-        sensitivity for the smaller horizon.
-        """
-        import dataclasses
-
-        band_coefs = list(self._band_coefficients)
-        coef_tensor = torch.zeros(n_steps, dtype=torch.float64)
-        copy_len = min(self.bandwidth, n_steps)
-        coef_tensor[:copy_len] = torch.tensor(
-            band_coefs[:copy_len], dtype=torch.float64
+    def gram_matrix(
+        self, *, n_steps: int, min_sep: int, max_participations: int | None
+    ) -> tuple[float, ...]:
+        band = list(_bsr_band_coefficients_cached(self.bandwidth, self.alpha, self.beta))
+        return tuple(
+            _native().toeplitz_gram_matrix(
+                band, n_steps, min_sep, max_participations, False
+            )
         )
-        max_col_sq = _toeplitz_col_norm_sq(coef_tensor, n_steps)
-        max_column_norm = float(max_col_sq.sqrt())
+
+    def streaming_matrix(self, **_) -> StreamingMatrix:
+        band = _bsr_band_coefficients_cached(self.bandwidth, self.alpha, self.beta)
+        coef_tensor = torch.tensor(list(band), dtype=torch.float64)
+        return inverse_as_streaming_matrix(coef_tensor, column_normalize_for_n=None)
+
+    def sensitivity(
+        self, *, n_steps: int, min_sep: int, max_participations: int | None
+    ) -> float:
+        coef_tensor = self.coefficients(n_steps=n_steps)
         k = minsep_true_max_participations(
-            n=n_steps, min_sep=self.min_sep, max_participations=max_participations
+            n=n_steps, min_sep=min_sep, max_participations=max_participations
         )
         if k == 1:
-            new_sensitivity = max_column_norm
-        else:
-            sens_sq = _toeplitz_minsep_sensitivity_squared(
-                strategy_coef=coef_tensor,
-                min_sep=self.min_sep,
-                max_participations=max_participations,
-                skip_checks=True,
-            )
-            new_sensitivity = float(sens_sq.sqrt())
-        new_coefficients = tuple(coef_tensor.tolist())
-        new_gram = tuple(
-            _native().toeplitz_gram_matrix(
-                band_coefs,
-                n_steps,
-                self.min_sep,
-                max_participations,
-                False,
-            )
-        )
-        return dataclasses.replace(
-            self,
-            sensitivity=new_sensitivity,
-            n_steps=n_steps,
-            max_participations=max_participations,
-            _coefficients=new_coefficients,
-            _gram_matrix=new_gram,
-            _max_column_norm=max_column_norm,
-        )
-
-
-def bsr_strategy(
-    bandwidth: int,
-    n_steps: int,
-    min_sep: int,
-    max_participations: int | None = 1,
-    *,
-    alpha: float,
-    beta: float,
-) -> BsrStrategy:
-    """Create a BSR strategy with closed-form Toeplitz coefficients.
-
-    Coefficients follow Theorem 1 of arXiv:2405.13763 (banded square root of
-    :math:`A_{\\alpha,\\beta}`). Sensitivity uses Theorem 2 via
-    ``toeplitz_minsep_sensitivity_squared``. Gram matrix is for Balls-in-Bins
-    accounting (same as BLT/BISR Toeplitz Gram).
-
-    Args:
-        bandwidth: Bandwidth p (>= 1). Only c_0..c_{p-1} are non-zero.
-        n_steps: Total training steps (matrix dimension).
-        min_sep: Minimum separation between participations (steps per epoch).
-        max_participations: Maximum participations per user (epochs).
-        alpha: Paper workload decay :math:`\\alpha \\in (0, 1]`. **Not** AdamW
-            ``weight_decay`` in PyTorch units.
-        beta: Paper Polyak momentum :math:`\\beta \\in [0, 1)`. For training scripts,
-            bind from SGD ``momentum`` or Adam :math:`\\beta_1` (first-moment EMA) so
-            the noise workload matches the optimizer you analyze.
-
-    Returns:
-        A :class:`BsrStrategy` with Gram matrix for BnB.
-
-    Raises:
-        ValueError: If hyperparameters are outside the supported closed-form regime.
-    """
-    if n_steps < 1:
-        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
-    if min_sep < 1:
-        raise ValueError(f"min_sep must be >= 1, got {min_sep}")
-
-    _validate_bsr_hyperparams(bandwidth, alpha, beta)
-
-    band_coefs = _bsr_coefficients(bandwidth, alpha, beta)
-    coef_tensor = torch.zeros(n_steps, dtype=torch.float64)
-    copy_len = min(bandwidth, n_steps)
-    coef_tensor[:copy_len] = torch.tensor(band_coefs[:copy_len], dtype=torch.float64)
-
-    max_col_sq = _toeplitz_col_norm_sq(coef_tensor, n_steps)
-    max_column_norm = float(max_col_sq.sqrt())
-
-    k = minsep_true_max_participations(
-        n=n_steps, min_sep=min_sep, max_participations=max_participations
-    )
-    if k == 1:
-        sensitivity = max_column_norm
-    else:
+            return float(_toeplitz_col_norm_sq(coef_tensor, n_steps).sqrt())
         sens_sq = _toeplitz_minsep_sensitivity_squared(
             strategy_coef=coef_tensor,
             min_sep=min_sep,
             max_participations=max_participations,
             skip_checks=True,
         )
-        sensitivity = float(sens_sq.sqrt())
+        return float(sens_sq.sqrt())
 
-    coefficients = tuple(coef_tensor.tolist())
 
-    gram = _native().toeplitz_gram_matrix(
-        band_coefs,
-        n_steps,
-        min_sep,
-        max_participations,
-        False,
-    )
-    gram_matrix = tuple(gram)
+def bsr_strategy(
+    *,
+    bandwidth: int,
+    alpha: float,
+    beta: float,
+) -> BsrStrategy:
+    r"""Create a BSR strategy recipe (closed-form Toeplitz coefficients).
 
-    streaming = inverse_as_streaming_matrix(
-        coef_tensor[:copy_len].clone(),
-        column_normalize_for_n=None,
-    )
+    Args:
+        bandwidth: Bandwidth p (>= 1).  Only c_0..c_{p-1} are non-zero.
+        alpha: Paper workload decay :math:`\alpha \in (0, 1]`.
+        beta: Paper Polyak momentum :math:`\beta \in [0, 1)`.
 
-    return BsrStrategy(
-        sensitivity=sensitivity,
-        n_steps=n_steps,
-        bandwidth=bandwidth,
-        min_sep=min_sep,
-        max_participations=max_participations,
-        alpha=alpha,
-        beta=beta,
-        _coefficients=coefficients,
-        _gram_matrix=gram_matrix,
-        _streaming_matrix=streaming,
-        _max_column_norm=max_column_norm,
-        _band_coefficients=tuple(band_coefs),
-    )
+    Returns:
+        A :class:`BsrStrategy` recipe.
+    """
+    _validate_bsr_hyperparams(bandwidth, alpha, beta)
+    return BsrStrategy(bandwidth=bandwidth, alpha=alpha, beta=beta)
+
+
+__all__ = ["BsrStrategy", "bsr_strategy"]

@@ -134,7 +134,7 @@ class TestCyclicPoissonIdentity:
 class TestCyclicPoissonBand:
     def _proc(self, n_steps: int = 100, bands: int = 8) -> CyclicPoisson:
         return ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(1.0, band_mf_strategy(n_steps=n_steps, bands=bands)),
+            ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=bands)),
             sample_rate=0.01,
             n_steps=n_steps,
         )
@@ -193,7 +193,7 @@ class TestCyclicPoissonBand:
 class TestBMinSep:
     def _proc(self, n_steps: int = 32, bands: int = 4) -> BMinSep:
         return ftrl_acc.b_min_sep(
-            ftrl_acc.mf_gaussian(1.0, band_mf_strategy(n_steps=n_steps, bands=bands)),
+            ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=bands)),
             n_steps=n_steps,
             p0=0.02,
         )
@@ -321,12 +321,8 @@ class TestGramRegenMatchesDirect:
     """
 
     def test_blt(self):
-        full = blt_strategy(
-            n_steps=_REGEN_N_FULL, min_sep=_REGEN_NUM_BINS, max_participations=4
-        )
-        direct = blt_strategy(
-            n_steps=_REGEN_K, min_sep=_REGEN_NUM_BINS, max_participations=2
-        )
+        full = blt_strategy()
+        direct = blt_strategy()
         e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(
             _REGEN_K
         )
@@ -338,22 +334,8 @@ class TestGramRegenMatchesDirect:
         )
 
     def test_bsr(self):
-        full = bsr_strategy(
-            bandwidth=2,
-            n_steps=_REGEN_N_FULL,
-            min_sep=_REGEN_NUM_BINS,
-            max_participations=4,
-            alpha=1.0,
-            beta=0.5,
-        )
-        direct = bsr_strategy(
-            bandwidth=2,
-            n_steps=_REGEN_K,
-            min_sep=_REGEN_NUM_BINS,
-            max_participations=2,
-            alpha=1.0,
-            beta=0.5,
-        )
+        full = bsr_strategy(bandwidth=2, alpha=1.0, beta=0.5)
+        direct = bsr_strategy(bandwidth=2, alpha=1.0, beta=0.5)
         e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(
             _REGEN_K
         )
@@ -365,18 +347,8 @@ class TestGramRegenMatchesDirect:
         )
 
     def test_bisr(self):
-        full = bisr_strategy(
-            bandwidth=2,
-            n_steps=_REGEN_N_FULL,
-            min_sep=_REGEN_NUM_BINS,
-            max_participations=4,
-        )
-        direct = bisr_strategy(
-            bandwidth=2,
-            n_steps=_REGEN_K,
-            min_sep=_REGEN_NUM_BINS,
-            max_participations=2,
-        )
+        full = bisr_strategy(bandwidth=2)
+        direct = bisr_strategy(bandwidth=2)
         e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(
             _REGEN_K
         )
@@ -388,18 +360,8 @@ class TestGramRegenMatchesDirect:
         )
 
     def test_lambda_cgd(self):
-        full = lambda_cgd_strategy(
-            0.5,
-            n_steps=_REGEN_N_FULL,
-            min_sep=_REGEN_NUM_BINS,
-            max_participations=4,
-        )
-        direct = lambda_cgd_strategy(
-            0.5,
-            n_steps=_REGEN_K,
-            min_sep=_REGEN_NUM_BINS,
-            max_participations=2,
-        )
+        full = lambda_cgd_strategy(lambda_=0.5)
+        direct = lambda_cgd_strategy(lambda_=0.5)
         e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(
             _REGEN_K
         )
@@ -521,29 +483,22 @@ _AMPLIFICATIONS: dict[str, tuple[Callable[..., DpFtrlProcess], bool]] = {
 # Inner mechanism name → factory() -> mechanism dataclass.
 _MECHANISMS: dict[str, Callable[[], object]] = {
     "IdentityMf": lambda: ftrl_acc.mf_gaussian(1.0, identity_strategy()),
-    "BandMf": lambda: ftrl_acc.mf_gaussian(1.0, band_mf_strategy(n_steps=16, bands=4)),
+    "BandMf": lambda: ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=4)),
     "Blt": lambda: ftrl_acc.mf_gaussian(
         1.0,
-        blt_strategy(n_steps=16, min_sep=4, max_participations=4),
+        blt_strategy(),
     ),
     "LambdaCgd": lambda: ftrl_acc.mf_gaussian(
         1.0,
-        lambda_cgd_strategy(0.5, n_steps=16, min_sep=4, max_participations=4),
+        lambda_cgd_strategy(lambda_=0.5),
     ),
     "Bisr": lambda: ftrl_acc.mf_gaussian(
         1.0,
-        bisr_strategy(bandwidth=2, n_steps=16, min_sep=4, max_participations=4),
+        bisr_strategy(bandwidth=2),
     ),
     "Bsr": lambda: ftrl_acc.mf_gaussian(
         1.0,
-        bsr_strategy(
-            bandwidth=2,
-            n_steps=16,
-            min_sep=4,
-            max_participations=4,
-            alpha=1.0,
-            beta=0.5,
-        ),
+        bsr_strategy(bandwidth=2, alpha=1.0, beta=0.5),
     ),
 }
 

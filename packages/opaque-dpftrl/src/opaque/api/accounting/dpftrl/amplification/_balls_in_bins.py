@@ -119,10 +119,10 @@ class BallsInBins(DpFtrlProcess):
     def approx_at_step(self, step: int) -> DpProcess:
         """Process truncated to its first ``step`` rounds (rounded up to an epoch).
 
-        Correlated-MF strategies regenerate their Gram and sensitivity for
-        the shorter horizon via ``strategy.with_horizon``.  ``IdentityStrategy``
-        has no Gram and its ``with_horizon`` returns self; the wrapping BnB
-        just clamps ``n_steps``.
+        Strategies are pure recipes — no per-horizon state to regenerate.
+        Just clamp ``n_steps`` to the next epoch boundary; the strategy's
+        polymorphic ``gram_matrix(...)`` / ``sensitivity(...)`` methods
+        rebuild for the new horizon on the next ``pld()`` call.
 
         See :meth:`DpFtrlProcess.approx_at_step` for the upper-bound
         semantics.
@@ -143,13 +143,6 @@ class BallsInBins(DpFtrlProcess):
         rounded = min(-(-step // unit) * unit, self.n_steps)
         if rounded == self.n_steps:
             return self
-        if isinstance(self.inner.strategy, _CorrelatedStrategies):
-            new_strategy = self.inner.strategy.with_horizon(
-                n_steps=rounded,
-                max_participations=rounded // self.num_bins,
-            )
-            new_inner = dataclasses.replace(self.inner, strategy=new_strategy)
-            return dataclasses.replace(self, inner=new_inner, n_steps=rounded)
         return dataclasses.replace(self, n_steps=rounded)
 
     @functools.lru_cache(maxsize=8)
@@ -175,46 +168,31 @@ class BallsInBins(DpFtrlProcess):
         )
         native_cfg = config.to_native()
 
-        match self.inner.strategy:
-            case (
-                BltStrategy()
-                | LambdaCgdStrategy()
-                | BisrStrategy()
-                | BsrStrategy() as s
-            ):
-                if not s._gram_matrix:
-                    raise ValueError(
-                        f"{type(s).__name__} requires a non-empty gram_matrix "
-                        "for BnB amplification."
-                    )
-                return _native.bnb_mc_pld(
-                    list(s._gram_matrix),
-                    self.num_bins,
-                    self.inner.noise_multiplier,
-                    native_cfg,
-                )
-            case IdentityStrategy():
-                # Identity (C = I) ⇒ Lemma 3.2 m_i are orthogonal with
-                # ‖m_i‖² = num_epochs ⇒ Gram = num_epochs · I_b.
-                # Specialised primitive skips Cholesky, fixes shifted bin
-                # to index 0 by symmetry, and applies importance sampling
-                # on the shifted-bin coordinate.
-                if self.inner.noise_multiplier == 0:
-                    return _native.non_private_pld(native_cfg)
-                return _native.bnb_mc_pld_identity(
-                    self.num_bins,
-                    self.num_epochs,
-                    float(self.inner.noise_multiplier),
-                    _IDENTITY_IS_TILT,
-                    native_cfg,
-                )
-            case _:
-                raise TypeError(
-                    "BallsInBins requires inner.strategy in {BltStrategy, "
-                    "BsrStrategy, BisrStrategy, LambdaCgdStrategy, "
-                    "IdentityStrategy}, got "
-                    f"{type(self.inner.strategy).__name__}."
-                )
+        # Identity uses a dedicated MC primitive that exploits
+        # ``G = num_epochs · I_b`` (Cholesky-free, IS on the shifted-bin
+        # coordinate); all other strategies feed their gram into the
+        # generic ``bnb_mc_pld``.
+        if isinstance(self.inner.strategy, IdentityStrategy):
+            if self.inner.noise_multiplier == 0:
+                return _native.non_private_pld(native_cfg)
+            return _native.bnb_mc_pld_identity(
+                self.num_bins,
+                self.num_epochs,
+                float(self.inner.noise_multiplier),
+                _IDENTITY_IS_TILT,
+                native_cfg,
+            )
+        gram = self.inner.strategy.gram_matrix(
+            n_steps=self.n_steps,
+            min_sep=self.min_sep,
+            max_participations=self.max_participations,
+        )
+        return _native.bnb_mc_pld(
+            list(gram),
+            self.num_bins,
+            self.inner.noise_multiplier,
+            native_cfg,
+        )
 
 
 def balls_in_bins(

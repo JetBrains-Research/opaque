@@ -106,9 +106,10 @@ class TestPoissonBandMf:
         nm, p = 1.1, 0.01
         bands = 2
         n_steps = 100
-        strategy = band_mf_strategy(n_steps=n_steps, bands=bands)
+        strategy = band_mf_strategy(bands=bands)
+        sens = strategy.sensitivity(n_steps=n_steps)
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(nm / strategy.sensitivity, strategy),
+            ftrl_acc.mf_gaussian(nm / sens, strategy),
             sample_rate=p,
             n_steps=n_steps,
         )
@@ -293,7 +294,7 @@ class TestTruncatedPoissonIdentity:
     def test_rejects_band_mf_with_truncation(self):
         with pytest.raises(ValueError, match="IdentityStrategy"):
             ftrl_acc.poisson(
-                ftrl_acc.mf_gaussian(1.0, band_mf_strategy(n_steps=10, bands=2)),
+                ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2)),
                 sample_rate=0.01,
                 n_steps=10,
                 truncated_batch_size=64,

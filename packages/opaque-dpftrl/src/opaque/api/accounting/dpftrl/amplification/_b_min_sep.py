@@ -92,26 +92,25 @@ class BMinSep(DpFtrlProcess):
         )
         native_cfg = config.to_native()
 
-        match self.inner.strategy:
-            case BandMfStrategy() as s:
-                strategy_coefficients = s._coefficients
-                bands = s.bands
-                effective_nm = self.inner.noise_multiplier / s.sensitivity
-            case _:
-                raise TypeError(
-                    "b_min_sep requires inner.strategy to be BandMfStrategy, got "
-                    f"{type(self.inner.strategy).__name__}."
-                )
-
+        s = self.inner.strategy
+        if not isinstance(s, BandMfStrategy):
+            raise TypeError(
+                "b_min_sep requires inner.strategy to be BandMfStrategy, got "
+                f"{type(s).__name__}."
+            )
+        bands = s.bands
         if bands < 1:
             raise ValueError(
                 "BandMfStrategy inner must have non-empty coefficients (bands >= 1)."
             )
 
+        coefs = s.coefficients(n_steps=self.n_steps).tolist()
+        sensitivity = s.sensitivity(n_steps=self.n_steps)
+        effective_nm = self.inner.noise_multiplier / sensitivity
         p = _participation_p_from_per_example_rate(self.p0, bands)
 
         hid = get_handle_or_none(
-            strategy_coefficients,
+            tuple(coefs),
             self.n_steps,
             p,
             config.num_mc_samples,
@@ -119,7 +118,7 @@ class BMinSep(DpFtrlProcess):
         )
         if hid is None:
             return _native.bandmf_b_min_sep_warm_mc_pld(
-                list(strategy_coefficients),
+                coefs,
                 self.n_steps,
                 p,
                 effective_nm,
@@ -127,7 +126,7 @@ class BMinSep(DpFtrlProcess):
             )
         return _native.bandmf_b_min_sep_pld_from_transcript_handle(
             hid,
-            list(strategy_coefficients),
+            coefs,
             self.n_steps,
             p,
             effective_nm,

@@ -6,51 +6,47 @@ import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.dpftrl.noise._bisr import BisrStrategy, bisr_strategy
 
 
+_PART = dict(n_steps=100, min_sep=25, max_participations=4)
+
+
 class TestBisrStrategy:
     def test_returns_correct_type(self):
-        s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        assert isinstance(s, BisrStrategy)
+        assert isinstance(bisr_strategy(bandwidth=4), BisrStrategy)
 
     def test_sensitivity_positive(self):
-        s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        assert s.sensitivity > 0
+        assert bisr_strategy(bandwidth=4).sensitivity(**_PART) > 0
 
     def test_gram_matrix_present(self):
-        s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        assert s._gram_matrix is not None
-        assert len(s._gram_matrix) == 25 * 25
+        gram = bisr_strategy(bandwidth=4).gram_matrix(**_PART)
+        assert gram is not None
+        assert len(gram) == 25 * 25
 
     def test_streaming_matrix_present(self):
-        s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        assert s._streaming_matrix is not None
+        assert bisr_strategy(bandwidth=4).streaming_matrix(**_PART) is not None
 
     def test_matches_old_sensitivity(self):
-        new = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        assert new.sensitivity > 0
+        assert bisr_strategy(bandwidth=4).sensitivity(**_PART) > 0
 
     def test_with_momentum(self):
-        s = bisr_strategy(
-            bandwidth=4, n_steps=100, min_sep=25, max_participations=4, momentum=0.95
-        )
-        assert s.sensitivity > 0
+        assert bisr_strategy(bandwidth=4, momentum=0.95).sensitivity(**_PART) > 0
 
     def test_rejects_bad_bandwidth(self):
         with pytest.raises(ValueError):
-            bisr_strategy(bandwidth=1, n_steps=100, min_sep=25)
+            bisr_strategy(bandwidth=1)
 
 
 class TestBisrPld:
     delta = 1e-5
 
     def test_bisr_pld(self):
-        s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        eps = ftrl_acc.mf_gaussian(1.0, s).epsilon_at(self.delta)
+        eps = ftrl_acc.mf_gaussian(1.0, bisr_strategy(bandwidth=4), **_PART).epsilon_at(
+            self.delta
+        )
         assert eps > 0
 
     def test_bisr_bnb(self):
-        s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
         eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(1.0, s),
+            ftrl_acc.mf_gaussian(1.0, bisr_strategy(bandwidth=4)),
             num_bins=25,
             n_steps=100,
         ).epsilon_at(self.delta)

@@ -3,8 +3,8 @@
 The MF accounting layer collapses to one DpProcess class, ``MfGaussian``,
 parameterised by ``noise_multiplier`` and a strategy from
 ``opaque.dpftrl.noise``.  These tests cover the dataclass surface,
-amplification dispatch on ``type(strategy)``, and composition with
-other DpProcess nodes.
+amplification dispatch via the strategy's polymorphic methods, and
+composition with other DpProcess nodes.
 """
 
 import math
@@ -24,7 +24,9 @@ from opaque.dpftrl.noise import band_mf_strategy, blt_strategy, identity_strateg
 
 
 def _band(nm: float = 1.0, *, n_steps: int = 20, bands: int = 2) -> MfGaussian:
-    return ftrl_acc.mf_gaussian(nm, band_mf_strategy(n_steps=n_steps, bands=bands))
+    return ftrl_acc.mf_gaussian(
+        nm, band_mf_strategy(bands=bands), n_steps=n_steps
+    )
 
 
 class TestBandMfGaussian:
@@ -33,8 +35,8 @@ class TestBandMfGaussian:
     def test_fields_via_strategy(self):
         proc = _band(1.0, bands=2)
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.strategy.sensitivity == pytest.approx(1.0, abs=1e-6)
-        assert len(proc.strategy._coefficients) == 2
+        assert proc.strategy.sensitivity(n_steps=20) == pytest.approx(1.0, abs=1e-6)
+        assert len(proc.strategy.coefficients(n_steps=20)) == proc.strategy.bands
         assert proc.strategy.bands == 2
 
     def test_frozen(self):
@@ -71,23 +73,29 @@ class TestFtrlPoissonDataclass:
         assert proc.n_steps == 100
 
     def test_frozen(self):
-        proc = CyclicPoisson(inner=_band(1.0, n_steps=20, bands=1), sample_rate=0.01, n_steps=20)
+        proc = CyclicPoisson(
+            inner=_band(1.0, n_steps=20, bands=1), sample_rate=0.01, n_steps=20
+        )
         with pytest.raises(FrozenInstanceError):
             proc.sample_rate = 0.5  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        proc = CyclicPoisson(inner=_band(1.0, n_steps=20, bands=1), sample_rate=0.01, n_steps=20)
+        proc = CyclicPoisson(
+            inner=_band(1.0, n_steps=20, bands=1), sample_rate=0.01, n_steps=20
+        )
         assert isinstance(proc, DpProcess)
 
     def test_pld_returns_valid(self):
-        proc = ftrl_acc.poisson(_band(1.0, n_steps=20, bands=1), sample_rate=0.01, n_steps=20)
+        proc = ftrl_acc.poisson(
+            _band(1.0, n_steps=20, bands=1), sample_rate=0.01, n_steps=20
+        )
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_matches_manual_poisson_composition(self):
         """poisson(BandMf(bands=1)) should match poisson(gaussian(nm/S)) * n_steps."""
         n_steps, rate = 20, 0.01
-        strategy = band_mf_strategy(n_steps=n_steps, bands=1)
+        strategy = band_mf_strategy(bands=1)
         nm = 1.0
         proc = ftrl_acc.poisson(
             ftrl_acc.mf_gaussian(nm, strategy),
@@ -95,9 +103,10 @@ class TestFtrlPoissonDataclass:
             n_steps=n_steps,
         )
 
-        manual = dpsgd_acc.poisson(
-            dpsgd_acc.gaussian(nm / strategy.sensitivity), rate
-        ) * n_steps
+        sens = strategy.sensitivity(n_steps=n_steps)
+        manual = (
+            dpsgd_acc.poisson(dpsgd_acc.gaussian(nm / sens), rate) * n_steps
+        )
 
         assert proc.epsilon_at(1e-5) == pytest.approx(manual.epsilon_at(1e-5), rel=1e-6)
 
@@ -139,15 +148,21 @@ class TestBltMfGaussian:
     """``MfGaussian`` wrapping a ``BltStrategy``."""
 
     def _blt(self, noise_multiplier: float = 1.0):
-        s = blt_strategy(n_steps=10, min_sep=10, max_participations=1, momentum=1.0)
-        return ftrl_acc.mf_gaussian(noise_multiplier, s)
+        s = blt_strategy(momentum=1.0)
+        return ftrl_acc.mf_gaussian(
+            noise_multiplier, s, n_steps=10, min_sep=10, max_participations=1
+        )
 
     def test_fields(self):
         proc = self._blt(1.0)
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.strategy.sensitivity > 0
-        assert isinstance(proc.strategy._gram_matrix, tuple)
-        assert isinstance(proc.strategy._coefficients, tuple)
+        assert proc.strategy.sensitivity(
+            n_steps=10, min_sep=10, max_participations=1
+        ) > 0
+        assert isinstance(
+            proc.strategy.gram_matrix(n_steps=10, min_sep=10, max_participations=1),
+            tuple,
+        )
 
     def test_frozen(self):
         proc = self._blt()

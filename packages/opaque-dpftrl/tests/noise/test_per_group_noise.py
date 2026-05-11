@@ -32,12 +32,20 @@ def _make_pg_two_groups() -> PerGroup:
     )
 
 
+def _max_column_norm(strategy, *, n_steps: int) -> float:
+    """Strategy's single-participation sensitivity = ``‖C‖_{1→2}``."""
+    return strategy.sensitivity(
+        n_steps=n_steps, min_sep=n_steps, max_participations=1
+    )
+
+
 def _assert_per_group_stddev_matches_expected(grad_template, *, key_seed: int) -> None:
-    strategy = band_mf_strategy(n_steps=20, bands=4, momentum=0.9)
+    strategy = band_mf_strategy(bands=4, momentum=0.9)
     nm = 1.5
     noise_fn, state = mf_noise(
         grad_template,
         strategy,
+        n_steps=20,
         noise_multiplier=nm,
         key=key(key_seed),
     )
@@ -69,6 +77,7 @@ class TestMfNoisePerGroupSingleStream:
         noise_fn, state = mf_noise(
             grad_template,
             strategy,
+            n_steps=20,
             noise_multiplier=1.0,
             key=key(42),
         )
@@ -81,10 +90,11 @@ class TestMfNoisePerGroupSingleStream:
         assert s_mlp == pytest.approx(s_attn * math.sqrt(2.0), rel=1e-9)
 
     def test_constant_max_norm_latch_pergroup_mismatch(self, grad_template):
-        strategy = band_mf_strategy(n_steps=10, bands=3, momentum=0.9)
+        strategy = band_mf_strategy(bands=3, momentum=0.9)
         noise_fn, state = mf_noise(
             grad_template,
             strategy,
+            n_steps=10,
             noise_multiplier=1.0,
             key=key(0),
         )
@@ -107,10 +117,11 @@ class TestMfNoisePerGroupSingleStream:
             )
 
     def test_constant_max_norm_latch_kind_mismatch(self, grad_template):
-        strategy = band_mf_strategy(n_steps=10, bands=3, momentum=0.9)
+        strategy = band_mf_strategy(bands=3, momentum=0.9)
         noise_fn, state = mf_noise(
             grad_template,
             strategy,
+            n_steps=10,
             noise_multiplier=1.0,
             key=key(1),
         )
@@ -133,6 +144,7 @@ class TestMfNoisePerGroupSingleStream:
         noise_fn, state = mf_noise(
             grad_template,
             strategy,
+            n_steps=5,
             noise_multiplier=1.0,
             key=key(2),
         )
@@ -145,13 +157,11 @@ class TestMfNoisePerGroupSingleStream:
     @pytest.mark.parametrize(
         "make_strategy",
         [
-            lambda: band_mf_strategy(n_steps=15, bands=3, momentum=0.9),
-            lambda: blt_strategy(n_steps=15, min_sep=15, momentum=0.9),
-            lambda: bisr_strategy(bandwidth=3, n_steps=15, min_sep=15, momentum=0.9),
-            lambda: bsr_strategy(
-                bandwidth=4, n_steps=15, min_sep=15, alpha=1.0, beta=0.9
-            ),
-            lambda: lambda_cgd_strategy(0.85, n_steps=15, min_sep=15),
+            lambda: band_mf_strategy(bands=3, momentum=0.9),
+            lambda: blt_strategy(momentum=0.9),
+            lambda: bisr_strategy(bandwidth=3, momentum=0.9),
+            lambda: bsr_strategy(bandwidth=4, alpha=1.0, beta=0.9),
+            lambda: lambda_cgd_strategy(lambda_=0.85),
             lambda: identity_strategy(),
         ],
     )
@@ -160,6 +170,9 @@ class TestMfNoisePerGroupSingleStream:
         noise_fn, state = mf_noise(
             grad_template,
             strategy,
+            n_steps=15,
+            min_sep=15,
+            max_participations=1,
             noise_multiplier=0.8,
             key=key(99),
         )
@@ -174,10 +187,11 @@ class TestMfNoisePerGroupSingleStream:
 
     def test_constant_max_norm_latch_pergroup(self, grad_template):
         """Identical ``PerGroup`` across calls keeps the latch happy."""
-        strategy = band_mf_strategy(n_steps=10, bands=3, momentum=0.9)
+        strategy = band_mf_strategy(bands=3, momentum=0.9)
         noise_fn, state = mf_noise(
             grad_template,
             strategy,
+            n_steps=10,
             noise_multiplier=1.0,
             key=key(3),
         )
@@ -231,13 +245,15 @@ class TestMfNoisePerGroupPairedStream:
         return {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
 
     def test_paired_returns_per_group_stddevs(self, grad_template):
-        strategy = band_mf_strategy(n_steps=20, bands=4, momentum=0.9)
-        second = band_mf_strategy(n_steps=20, bands=4, momentum=0.99)
+        n_steps = 20
+        strategy = band_mf_strategy(bands=4, momentum=0.9)
+        second = band_mf_strategy(bands=4, momentum=0.99)
         nm = 1.2
-        c1 = float(strategy._max_column_norm)
+        c1 = _max_column_norm(strategy, n_steps=n_steps)
         noise_fn, state = mf_noise(
             grad_template,
             strategy,
+            n_steps=n_steps,
             noise_multiplier=nm,
             key=key(11),
             second_moment_strategy=second,
@@ -257,7 +273,7 @@ class TestMfNoisePerGroupPairedStream:
         assert isinstance(out.noisy_grads.noise_stddev, PerGroup)
         assert isinstance(out.noisy_squared_grads.noise_stddev, PerGroup)
         # Joint Mahalanobis on encoded sensitivities equals (c1 / nm)²
-        c2 = float(second._max_column_norm)
+        c2 = _max_column_norm(second, n_steps=n_steps)
         s1 = out.noisy_grads.noise_stddev
         s2 = out.noisy_squared_grads.noise_stddev
         mahal = 0.0
@@ -280,12 +296,14 @@ class TestMfNoisePerGroupMahalanobisSingleStream:
         return {"w": torch.zeros(3), "b": torch.zeros(3)}
 
     def test_mahalanobis_equals_c1_over_nm_squared(self, grad_template):
-        strategy = band_mf_strategy(n_steps=12, bands=3, momentum=0.9)
+        n_steps = 12
+        strategy = band_mf_strategy(bands=3, momentum=0.9)
         nm = 0.75
-        c1 = float(strategy._max_column_norm)
+        c1 = _max_column_norm(strategy, n_steps=n_steps)
         noise_fn, state = mf_noise(
             grad_template,
             strategy,
+            n_steps=n_steps,
             noise_multiplier=nm,
             key=key(5),
         )
@@ -339,15 +357,17 @@ class TestPerGroupPairedWithClippedGradAndMf:
         paired, clip_state = grad_fn(params, x, y, state=clip_state)
         assert isinstance(paired, SecondMomentClippingOutput)
 
+        n_steps = 40
         grad_template = {"w": torch.zeros(3), "b": torch.zeros(())}
-        strategy = band_mf_strategy(n_steps=40, bands=4, momentum=0.9)
-        second = band_mf_strategy(n_steps=40, bands=4, momentum=0.99)
+        strategy = band_mf_strategy(bands=4, momentum=0.9)
+        second = band_mf_strategy(bands=4, momentum=0.99)
         nm = 1.0
-        c1 = float(strategy._max_column_norm)
-        c2 = float(second._max_column_norm)
+        c1 = _max_column_norm(strategy, n_steps=n_steps)
+        c2 = _max_column_norm(second, n_steps=n_steps)
         noise_fn, noise_state = mf_noise(
             grad_template,
             strategy,
+            n_steps=n_steps,
             noise_multiplier=nm,
             key=key(2026),
             second_moment_strategy=second,

@@ -21,7 +21,7 @@ def _bnb():
 
 def _bms():
     return ftrl_acc.b_min_sep(
-        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(n_steps=80, bands=8)),
+        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=8)),
         n_steps=80,
         p0=0.05,
     )
@@ -57,7 +57,7 @@ def test_balls_in_bins_formulas():
 
 def test_b_min_sep_formulas():
     proc = ftrl_acc.b_min_sep(
-        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(n_steps=80, bands=8)),
+        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=8)),
         n_steps=80,
         p0=0.05,
     )

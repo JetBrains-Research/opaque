@@ -16,7 +16,7 @@ def test_p_conversion():
 
 
 def test_b_min_sep_smoke_pld():
-    strategy = band_mf_strategy(n_steps=40, bands=4)
+    strategy = band_mf_strategy(bands=4)
     inner = ftrl_acc.mf_gaussian(1.0, strategy)
     proc = ftrl_acc.b_min_sep(
         inner,
@@ -156,7 +156,7 @@ def test_b_min_sep_stricter_than_mf_only():
     from opaque.api.accounting.core import _native as native
     from opaque.api.accounting.core.discretization import get_discretization
 
-    strategy = band_mf_strategy(n_steps=50, bands=5)
+    strategy = band_mf_strategy(bands=5)
     # Use a low-noise / low-sample-rate regime where b-min-sep amplification
     # strictly beats unamplified composition.
     inner = ftrl_acc.mf_gaussian(1.0, strategy)
@@ -166,7 +166,11 @@ def test_b_min_sep_stricter_than_mf_only():
         p0=0.01,
     )
     cfg = get_discretization()
-    pld_mf = native.mf_gaussian_pld(1.0, strategy.sensitivity, cfg.to_native())
+    pld_mf = native.mf_gaussian_pld(
+        1.0,
+        strategy.sensitivity(n_steps=50, min_sep=50, max_participations=1),
+        cfg.to_native(),
+    )
     eps_mf = pld_mf.epsilon_at(1e-3)
     eps_bms = bms.pld(num_mc_samples=8000, seed=1).epsilon_at(1e-3)
     assert eps_bms < eps_mf

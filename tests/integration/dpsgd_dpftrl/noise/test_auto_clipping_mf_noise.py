@@ -85,33 +85,23 @@ def _per_group_loss_fn(params, x):
 
 
 def _make_strategy(name: str):
-    """Construct each MF strategy with parameters matching ``N_STEPS``."""
+    """Construct each MF strategy recipe (horizon is supplied at use time)."""
     if name == "identity":
         return identity_strategy()
     if name == "band_mf":
-        return band_mf_strategy(n_steps=N_STEPS, bands=4, momentum=0.95)
+        return band_mf_strategy(bands=4, momentum=0.95)
     if name == "blt":
-        return blt_strategy(
-            n_steps=N_STEPS, min_sep=1, max_participations=1, max_buffers=4
-        )
+        return blt_strategy(max_buffers=4)
     if name == "bisr":
-        return bisr_strategy(
-            bandwidth=4, n_steps=N_STEPS, min_sep=1, max_participations=1
-        )
+        return bisr_strategy(bandwidth=4)
     if name == "bsr":
-        return bsr_strategy(
-            bandwidth=4,
-            n_steps=N_STEPS,
-            min_sep=1,
-            max_participations=1,
-            alpha=1.0,
-            beta=0.5,
-        )
+        return bsr_strategy(bandwidth=4, alpha=1.0, beta=0.5)
     if name == "lambda_cgd":
-        return lambda_cgd_strategy(
-            lambda_=0.5, n_steps=N_STEPS, min_sep=1, max_participations=1
-        )
+        return lambda_cgd_strategy(lambda_=0.5)
     raise AssertionError(f"unknown strategy {name}")
+
+
+_NOISE_PART = dict(n_steps=N_STEPS, min_sep=1, max_participations=1)
 
 
 _ALL_STRATEGY_NAMES = ("identity", "band_mf", "blt", "bisr", "bsr", "lambda_cgd")
@@ -131,7 +121,8 @@ def _per_group_supported_by_mf_noise() -> bool:
     grads = clipped({"w": torch.zeros(2, 2)}, max_norm=pg)
     template = {"w": torch.zeros(2, 2)}
     noise_fn, state = mf_noise(
-        template, identity_strategy(), noise_multiplier=1.0, key=key(0)
+        template, identity_strategy(), **_NOISE_PART,
+            noise_multiplier=1.0, key=key(0)
     )
     try:
         noise_fn(grads, state)
@@ -163,6 +154,7 @@ class TestScalarAutoSxMf:
         noise_fn, noise_state = mf_noise(
             params,
             _make_strategy(strategy_name),
+            **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(7),
         )
@@ -195,6 +187,7 @@ class TestScalarAutoSxMf:
         noise_fn, noise_state = mf_noise(
             params,
             _make_strategy(strategy_name),
+            **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(11),
         )
@@ -229,12 +222,14 @@ class TestScalarAutoSxMf:
         auto_noise_fn, auto_noise_state = mf_noise(
             params,
             _make_strategy(strategy_name),
+            **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(13),
         )
         fixed_noise_fn, fixed_noise_state = mf_noise(
             params,
             _make_strategy(strategy_name),
+            **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(13),
         )
@@ -271,6 +266,7 @@ class TestScalarAutoSxMf:
         noise_fn, noise_state = mf_noise(
             params,
             _make_strategy(strategy_name),
+            **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(17),
         )
@@ -321,6 +317,7 @@ class TestPerGroupAutoSxMf:
         noise_fn, noise_state = mf_noise(
             params,
             _make_strategy(strategy_name),
+            **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(7),
         )
@@ -355,12 +352,14 @@ class TestPerGroupAutoSxMf:
         auto_noise_fn, auto_noise_state = mf_noise(
             params,
             _make_strategy(strategy_name),
+            **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(13),
         )
         fixed_noise_fn, fixed_noise_state = mf_noise(
             params,
             _make_strategy(strategy_name),
+            **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(13),
         )
@@ -416,6 +415,7 @@ class TestSecondMomentAutoSxMf:
         noise_fn, noise_state = mf_noise(
             params,
             first_strategy,
+             **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(19),
             second_moment_strategy=second_strategy,
@@ -455,6 +455,7 @@ class TestSecondMomentAutoSxMf:
         auto_noise_fn, auto_noise_state = mf_noise(
             params,
             _make_strategy(strategy_name),
+            **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(23),
             second_moment_strategy=_make_strategy(strategy_name),
@@ -462,6 +463,7 @@ class TestSecondMomentAutoSxMf:
         fixed_noise_fn, fixed_noise_state = mf_noise(
             params,
             _make_strategy(strategy_name),
+            **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(23),
             second_moment_strategy=_make_strategy(strategy_name),
@@ -509,7 +511,8 @@ class TestAdaptiveClippingRejected:
         )
         noise_fn, noise_state = mf_noise(
             params,
-            band_mf_strategy(n_steps=N_STEPS, bands=4, momentum=0.95),
+            band_mf_strategy(bands=4, momentum=0.95),
+            **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(37),
         )

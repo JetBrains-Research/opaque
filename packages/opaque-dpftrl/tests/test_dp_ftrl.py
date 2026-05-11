@@ -331,15 +331,13 @@ class TestBLTWithBnB:
         model = nn.Linear(dim, 1, bias=False)
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=momentum)
 
-        strategy = blt_strategy(
-            n_steps=total_steps,
-            min_sep=steps_per_epoch,
-            max_participations=num_epochs,
-            momentum=momentum,
-        )
+        strategy = blt_strategy(momentum=momentum)
         noise_fn, noise_state = mf_noise(
             self._make_template(model),
             strategy,
+            n_steps=total_steps,
+            min_sep=steps_per_epoch,
+            max_participations=num_epochs,
             noise_multiplier=1.0,
             key=key(42),
         )
@@ -452,30 +450,39 @@ class TestMfNoiseStrategies:
         return model, opt, template, x, y
 
     @pytest.mark.parametrize(
-        "strategy_factory",
+        "strategy_factory,kwargs",
         [
-            pytest.param(lambda: identity_strategy(), id="identity"),
             pytest.param(
-                lambda: band_mf_strategy(n_steps=50, bands=10, momentum=0.0),
+                lambda: identity_strategy(),
+                dict(n_steps=50, min_sep=1, max_participations=1),
+                id="identity",
+            ),
+            pytest.param(
+                lambda: band_mf_strategy(bands=10, momentum=0.0),
+                dict(n_steps=50, min_sep=1, max_participations=1),
                 id="band_mf",
             ),
             pytest.param(
-                lambda: lambda_cgd_strategy(
-                    0.9, n_steps=50, min_sep=1, max_participations=1
-                ),
+                lambda: lambda_cgd_strategy(lambda_=0.9),
+                dict(n_steps=50, min_sep=1, max_participations=1),
                 id="lambda_cgd",
             ),
             pytest.param(
-                lambda: bisr_strategy(
-                    bandwidth=4, n_steps=50, min_sep=10, max_participations=5
-                ),
+                lambda: bisr_strategy(bandwidth=4),
+                dict(n_steps=50, min_sep=10, max_participations=5),
                 id="bisr",
             ),
         ],
     )
-    def test_strategy_trains(self, strategy_factory):
+    def test_strategy_trains(self, strategy_factory, kwargs):
         model, opt, tmpl, x, y = self._setup()
-        nf, ns = mf_noise(tmpl, strategy_factory(), noise_multiplier=1.0, key=key(42))
+        nf, ns = mf_noise(
+            tmpl,
+            strategy_factory(),
+            noise_multiplier=1.0,
+            key=key(42),
+            **kwargs,
+        )
         losses = _mf_train_loop(model, opt, nf, ns, x, y, steps=50, max_norm=0.1)
         assert losses[-1] < losses[0]
 
@@ -483,7 +490,11 @@ class TestMfNoiseStrategies:
         """identity_strategy via mf_noise gives same noise as _matrix_factorization_noise + identity()."""
         tmpl = {"w": torch.zeros(10)}
         nf1, ns1 = mf_noise(
-            tmpl, identity_strategy(), noise_multiplier=1.0, key=key(42)
+            tmpl,
+            identity_strategy(),
+            n_steps=10,
+            noise_multiplier=1.0,
+            key=key(42),
         )
         nf2, ns2 = _matrix_factorization_noise(tmpl, identity(), key=key(42))
 

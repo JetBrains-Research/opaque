@@ -57,7 +57,7 @@ class TestEndToEndCalibration:
         import opaque.dpftrl.accounting as ftrl_acc
         from opaque.dpftrl.noise import band_mf_strategy
 
-        strategy = band_mf_strategy(n_steps=20, bands=2)
+        strategy = band_mf_strategy(bands=2)
         proc = ftrl_acc.poisson(
             ftrl_acc.mf_gaussian(1.0, strategy),
             sample_rate=0.01,
@@ -71,8 +71,10 @@ class TestEndToEndCalibration:
         import opaque.dpftrl.accounting as ftrl_acc
         from opaque.dpftrl.noise import blt_strategy
 
-        s = blt_strategy(n_steps=10, min_sep=10, max_participations=1, momentum=1.0)
-        eps = ftrl_acc.mf_gaussian(1.0, s).epsilon_at(1e-5)
+        s = blt_strategy(momentum=1.0)
+        eps = ftrl_acc.mf_gaussian(
+            1.0, s, n_steps=10, min_sep=10, max_participations=1
+        ).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 

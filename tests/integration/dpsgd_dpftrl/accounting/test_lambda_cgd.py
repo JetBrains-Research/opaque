@@ -12,23 +12,25 @@ from opaque.dpftrl.noise import bisr_strategy, lambda_cgd_strategy
 
 
 def _lambda_cgd_mech(noise_multiplier: float = 1.0, **kw):
-    s = lambda_cgd_strategy(
-        kw.pop("lambda_", 0.5),
+    s = lambda_cgd_strategy(lambda_=kw.pop("lambda_", 0.5))
+    return ftrl_acc.mf_gaussian(
+        noise_multiplier,
+        s,
         n_steps=kw.pop("n_steps", 10),
         min_sep=kw.pop("min_sep", 1),
         max_participations=kw.pop("max_participations", 1),
     )
-    return ftrl_acc.mf_gaussian(noise_multiplier, s)
 
 
 def _bisr_mech(noise_multiplier: float = 1.0, **kw):
-    s = bisr_strategy(
-        bandwidth=kw.pop("bandwidth", 2),
+    s = bisr_strategy(bandwidth=kw.pop("bandwidth", 2))
+    return ftrl_acc.mf_gaussian(
+        noise_multiplier,
+        s,
         n_steps=kw.pop("n_steps", 10),
         min_sep=kw.pop("min_sep", 1),
         max_participations=kw.pop("max_participations", 1),
     )
-    return ftrl_acc.mf_gaussian(noise_multiplier, s)
 
 
 # ── LambdaCgd dataclass tests ──────────────────────────────────────
@@ -38,9 +40,14 @@ class TestLambdaCgdDataclass:
     def test_fields_via_strategy(self):
         proc = _lambda_cgd_mech(1.0, lambda_=0.5)
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.strategy.sensitivity > 0
+        assert proc.strategy.sensitivity(
+            n_steps=10, min_sep=1, max_participations=1
+        ) > 0
         assert proc.strategy.lambda_ == pytest.approx(0.5)
-        assert isinstance(proc.strategy._gram_matrix, tuple)
+        assert isinstance(
+            proc.strategy.gram_matrix(n_steps=10, min_sep=1, max_participations=1),
+            tuple,
+        )
 
     def test_frozen(self):
         proc = _lambda_cgd_mech()
@@ -64,8 +71,13 @@ class TestBisrDataclass:
     def test_fields_via_strategy(self):
         proc = _bisr_mech(1.0)
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.strategy.sensitivity > 0
-        assert isinstance(proc.strategy._gram_matrix, tuple)
+        assert proc.strategy.sensitivity(
+            n_steps=10, min_sep=1, max_participations=1
+        ) > 0
+        assert isinstance(
+            proc.strategy.gram_matrix(n_steps=10, min_sep=1, max_participations=1),
+            tuple,
+        )
 
     def test_frozen(self):
         proc = _bisr_mech()
@@ -96,8 +108,10 @@ class TestMfGaussianPld:
     def test_single_step_matches_gaussian(self):
         """λCGD at n_steps=1 (lambda=0) reduces to a single Gaussian."""
         nm = 1.0
-        s = lambda_cgd_strategy(0.0, n_steps=1, min_sep=1, max_participations=1)
-        eps_mf = ftrl_acc.mf_gaussian(nm, s).epsilon_at(1e-5)
+        s = lambda_cgd_strategy(lambda_=0.0)
+        eps_mf = ftrl_acc.mf_gaussian(
+            nm, s, n_steps=1, min_sep=1, max_participations=1
+        ).epsilon_at(1e-5)
         eps_gauss = dpsgd_acc.gaussian(nm).epsilon_at(1e-5)
         assert abs(eps_mf - eps_gauss) / eps_gauss < 0.01
 
@@ -120,7 +134,7 @@ class TestBnbAmplification:
 
         with pytest.raises(TypeError):
             ftrl_acc.balls_in_bins(
-                ftrl_acc.mf_gaussian(1.0, band_mf_strategy(n_steps=150, bands=1)),
+                ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=1)),
                 num_bins=50,
                 n_steps=150,
             )

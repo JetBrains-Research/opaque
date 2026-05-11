@@ -297,7 +297,11 @@ def _worker_sync_noise_states(rank: int, world_size: int, port: int) -> None:
         assert synced_gaussian_state._step_counter == 1
 
         mf_fn, mf_state = mf_noise(
-            grads, identity_strategy(), noise_multiplier=1.0, key=key(42)
+            grads,
+            identity_strategy(),
+            n_steps=1,
+            noise_multiplier=1.0,
+            key=key(42),
         )
         _noisy_mf, mf_state = mf_fn(clipped(grads, max_norm=1.0), mf_state)
         synced_mf_state = sync(mf_state)

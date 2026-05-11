@@ -1,9 +1,10 @@
 """BLT (Buffered Linear Toeplitz) strategy — multi-epoch MF mechanism.
 
-Computes optimized BLT parameters, sensitivity under participation
-patterns, and pre-computed BnB Gram matrix.
-
-Use ``mf_noise(blt_strategy(...), ...)`` to create the noise function.
+Computes optimized BLT parameters on demand from the strategy's recipe
+(``max_buffers``, ``momentum``, ``lr_schedule``) plus the
+amplifier-supplied ``(n_steps, min_sep, max_participations)``.  The
+L-BFGS optimization is cached so a given recipe + amplification context
+runs the optimizer once across all (accounting + noise) consumers.
 
 References:
     - BLT: https://arxiv.org/abs/2404.16706
@@ -13,6 +14,7 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 import torch
 
@@ -20,8 +22,9 @@ from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 
 from ._band_mf import _momentum_workload_coef
 from ._blt_math import (
-    inverse_as_streaming_matrix,
-    optimize,
+    BufferedToeplitz,
+    inverse_as_streaming_matrix as _blt_inverse_as_streaming_matrix,
+    optimize as _blt_optimize,
     sensitivity_squared as _blt_sensitivity_squared,
     toeplitz_coefs as _blt_toeplitz_coefs,
 )
@@ -38,116 +41,25 @@ def _native():
     return _n
 
 
-__all__ = ["BltStrategy", "blt_strategy"]
+def _lr_key(lr_schedule: torch.Tensor | None) -> tuple[float, ...] | None:
+    return None if lr_schedule is None else tuple(lr_schedule.tolist())
 
 
-# ---------------------------------------------------------------------------
-# Strategy dataclass and factory
-# ---------------------------------------------------------------------------
-
-
-@register_strategy
-@dataclass(frozen=True, slots=True)
-class BltStrategy:
-    """BLT (Buffered Linear Toeplitz) strategy.
-
-    Public fields are the factory args + ``sensitivity``.  Private
-    (``_``-prefixed) fields are internal derivations the accounting /
-    noise machinery consumes; users shouldn't need them.
-    """
-
-    sensitivity: float
-    n_steps: int
-    min_sep: int
-    max_participations: int | None
-    max_buffers: int
-    momentum: float
-    lr_schedule: torch.Tensor | None = field(default=None, compare=False)
-    _coefficients: tuple[float, ...] = ()
-    _gram_matrix: tuple[float, ...] | None = None
-    _streaming_matrix: StreamingMatrix | None = field(default=None, compare=False)
-    _max_column_norm: float = 0.0
-
-    def with_horizon(
-        self, n_steps: int, max_participations: int | None
-    ) -> "BltStrategy":
-        """Return a fresh strategy regenerated at a smaller horizon ``n_steps``.
-
-        Recomputes ``_gram_matrix`` and ``sensitivity`` for the new horizon
-        using the same Rust helpers the factory called.
-        """
-        import dataclasses
-
-        new_coefs = tuple(self._coefficients[:n_steps])
-        coef_tensor = torch.tensor(list(new_coefs), dtype=torch.float64)
-        max_col_norm = float(_l2_norm(coef_tensor))
-        k = minsep_true_max_participations(
-            n=n_steps, min_sep=self.min_sep, max_participations=max_participations
-        )
-        if k == 1:
-            new_sensitivity = max_col_norm
-        else:
-            sens_sq = _toeplitz_minsep_sensitivity_squared(
-                strategy_coef=coef_tensor,
-                min_sep=self.min_sep,
-                max_participations=max_participations,
-                skip_checks=True,
-            )
-            new_sensitivity = float(sens_sq.sqrt())
-        new_gram = tuple(
-            _native().toeplitz_gram_matrix(
-                list(new_coefs),
-                n_steps,
-                self.min_sep,
-                max_participations,
-                True,
-            )
-        )
-        return dataclasses.replace(
-            self,
-            sensitivity=new_sensitivity,
-            n_steps=n_steps,
-            max_participations=max_participations,
-            _coefficients=new_coefs,
-            _gram_matrix=new_gram,
-            _max_column_norm=max_col_norm,
-        )
-
-
-def _l2_norm(x):
-    return (x * x).sum().sqrt()
-
-
-def blt_strategy(
+@lru_cache(maxsize=32)
+def _blt_optimize_cached(
     n_steps: int,
     min_sep: int,
-    max_participations: int | None = 1,
-    *,
-    max_buffers: int = 10,
-    momentum: float = 1.0,
-    lr_schedule: torch.Tensor | None = None,
-) -> BltStrategy:
-    """Create a BLT strategy by optimizing Buffered Linear Toeplitz parameters.
-
-    Computes sensitivity under the given participation pattern and
-    pre-computes the BnB Gram matrix.
-
-    Args:
-        n_steps: Number of training iterations.
-        min_sep: Minimum separation between participations.
-        max_participations: Maximum participations per user (default 1).
-        max_buffers: Maximum number of BLT buffers to try (default 10).
-        momentum: Polyak momentum coefficient (default 1.0 = prefix-sum).
-        lr_schedule: Optional per-step learning rates, shape [n_steps].
-
-    Returns:
-        A :class:`BltStrategy` with optimized parameters and Gram matrix.
-    """
+    max_participations: int | None,
+    max_buffers: int,
+    momentum: float,
+    lr_key: tuple[float, ...] | None,
+) -> BufferedToeplitz:
+    """Run BLT L-BFGS for the given recipe + amplification context."""
     if n_steps < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
-
-    workload_coef = _momentum_workload_coef(momentum, n_steps, lr_schedule=lr_schedule)
-    blt = optimize(
+    lr = torch.tensor(lr_key, dtype=torch.float64) if lr_key is not None else None
+    workload_coef = _momentum_workload_coef(momentum, n_steps, lr_schedule=lr)
+    return _blt_optimize(
         n=n_steps,
         min_sep=min_sep,
         max_participations=max_participations,
@@ -156,50 +68,110 @@ def blt_strategy(
         workload_coef=workload_coef,
     )
 
-    # Sensitivity
-    # max_column_norm = ‖C‖_{1→2} for single participation.
-    max_col_norm_sq = _blt_sensitivity_squared(blt, n=n_steps)
-    max_column_norm = float(max_col_norm_sq.sqrt())
 
-    k = minsep_true_max_participations(
-        n=n_steps,
-        min_sep=min_sep,
-        max_participations=max_participations,
-    )
-    if k == 1:
-        sensitivity = max_column_norm
-    else:
-        coefs_tensor = _blt_toeplitz_coefs(blt, n_steps)
+@register_strategy
+@dataclass(frozen=True, slots=True)
+class BltStrategy:
+    """BLT (Buffered Linear Toeplitz) strategy — recipe only.
+
+    Carries the genuinely free knobs (optimizer hyperparams + workload
+    shape).  All derived quantities are computed via the strategy
+    methods, keyed on the amplifier-supplied
+    ``(n_steps, min_sep, max_participations)``.
+    """
+
+    max_buffers: int = 10
+    momentum: float = 1.0
+    lr_schedule: torch.Tensor | None = field(default=None, compare=False)
+
+    def _blt(self, *, n_steps: int, min_sep: int, max_participations: int | None) -> BufferedToeplitz:
+        return _blt_optimize_cached(
+            n_steps,
+            min_sep,
+            max_participations,
+            self.max_buffers,
+            self.momentum,
+            _lr_key(self.lr_schedule),
+        )
+
+    def coefficients(
+        self, *, n_steps: int, min_sep: int = 1, max_participations: int | None = None
+    ) -> torch.Tensor:
+        blt = self._blt(
+            n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
+        )
+        return _blt_toeplitz_coefs(blt, n_steps)
+
+    def gram_matrix(
+        self, *, n_steps: int, min_sep: int, max_participations: int | None
+    ) -> tuple[float, ...]:
+        coefs = self.coefficients(
+            n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
+        )
+        return tuple(
+            _native().toeplitz_gram_matrix(
+                coefs.tolist(),
+                n_steps,
+                min_sep,
+                max_participations,
+                True,
+            )
+        )
+
+    def streaming_matrix(
+        self, *, n_steps: int, min_sep: int = 1, max_participations: int | None = None
+    ) -> StreamingMatrix:
+        blt = self._blt(
+            n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
+        )
+        return _blt_inverse_as_streaming_matrix(blt)
+
+    def sensitivity(
+        self, *, n_steps: int, min_sep: int = 1, max_participations: int | None = None
+    ) -> float:
+        blt = self._blt(
+            n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
+        )
+        k = minsep_true_max_participations(
+            n=n_steps, min_sep=min_sep, max_participations=max_participations
+        )
+        if k == 1:
+            return float(_blt_sensitivity_squared(blt, n=n_steps).sqrt())
+        coefs = _blt_toeplitz_coefs(blt, n_steps)
         sens_sq = _toeplitz_minsep_sensitivity_squared(
-            strategy_coef=coefs_tensor,
+            strategy_coef=coefs,
             min_sep=min_sep,
             max_participations=max_participations,
             skip_checks=True,
         )
-        sensitivity = float(sens_sq.sqrt())
+        return float(sens_sq.sqrt())
 
-    # Coefficients
-    coefs_tensor = _blt_toeplitz_coefs(blt, n_steps)
-    coefficients = tuple(coefs_tensor.tolist())
 
-    # Gram matrix
-    gram = _native().toeplitz_gram_matrix(
-        list(coefficients),
-        n_steps,
-        min_sep,
-        max_participations,
-        True,
-    )
-    gram_matrix = tuple(gram)
+def blt_strategy(
+    *,
+    max_buffers: int = 10,
+    momentum: float = 1.0,
+    lr_schedule: torch.Tensor | None = None,
+) -> BltStrategy:
+    """Create a BLT (Buffered Linear Toeplitz) strategy recipe.
 
-    # Streaming matrix
-    streaming = inverse_as_streaming_matrix(blt)
+    The L-BFGS optimization runs lazily inside the strategy methods
+    when an amplifier supplies the participation context
+    ``(n_steps, min_sep, max_participations)`` — once per recipe per
+    context, via a module-level cache shared with the noise side.
 
+    Args:
+        max_buffers: Maximum BLT buffer count for the optimizer (default 10).
+        momentum: Polyak momentum (default 1.0 = prefix-sum workload).
+        lr_schedule: Optional per-step learning rates (length must match
+            the amplifier's ``n_steps`` at use time).
+
+    Returns:
+        A :class:`BltStrategy` recipe.
+    """
+    if max_buffers < 1:
+        raise ValueError(f"max_buffers must be >= 1, got {max_buffers}")
     return BltStrategy(
-        sensitivity=sensitivity,
-        n_steps=n_steps,
-        min_sep=min_sep,
-        max_participations=max_participations,
         max_buffers=max_buffers,
         momentum=momentum,
         lr_schedule=(
@@ -207,8 +179,7 @@ def blt_strategy(
             if lr_schedule is not None
             else None
         ),
-        _coefficients=coefficients,
-        _gram_matrix=gram_matrix,
-        _streaming_matrix=streaming,
-        _max_column_norm=max_column_norm,
     )
+
+
+__all__ = ["BltStrategy", "blt_strategy"]
