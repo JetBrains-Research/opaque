@@ -131,7 +131,6 @@ nav:
     - Cross-cutting:
       - Privacy Auditing: tutorials/privacy_auditing.ipynb
       - Distributed Training: tutorials/distributed_training.ipynb
-    - Extending Opaque: tutorials/extending_opaque.ipynb
   - API Reference:
     - Overview: reference/index.md
     - Serialization: reference/serialization.md
@@ -145,13 +144,6 @@ nav:
     - Utilities: reference/utilities.md
     - Optimizers: reference/optimizers.md
     - Schedules: reference/schedules.md
-  - Extending Opaque:
-    - Overview: extending/index.md
-    - Serialization registry: extending/serialization.md
-    - Distributed sync: extending/distributed-sync.md
-    - Clipping fun helpers: extending/clipping-fun.md
-    - Adding a new mechanism family: extending/new-mechanism.md
-
 extra:
   social:
     - icon: fontawesome/brands/github

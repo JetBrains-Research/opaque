@@ -1,11 +1,11 @@
 """User-facing façade docstrings do not leak the internal ``opaque.api.*`` namespace.
 
-The ``opaque.api.*`` paths are the contributor-facing surface — only
-documented in ``docs/extending/`` and the corresponding tutorial. Any
-docstring on a public façade module that mentions ``opaque.api.``
-(in any sphinx role, in prose, or in code blocks) is a documentation
-leak: a reader of ``help(opaque.X)`` shouldn't be told to look at
-``opaque.api.X`` to understand the surface they just imported.
+The ``opaque.api.*`` paths are the internal contributor surface — not
+documented in the user-facing docs at all. Any docstring on a public
+façade module that mentions ``opaque.api.`` (in any sphinx role, in
+prose, or in code blocks) is a documentation leak: a reader of
+``help(opaque.X)`` shouldn't be told to look at ``opaque.api.X`` to
+understand the surface they just imported.
 
 The check uses the same ``FACADE_GLOBS_BY_WHEEL`` mapping as
 ``test_facade_discipline.py`` so the two stay in sync — when a wheel
@@ -131,8 +131,8 @@ def test_facade_docstrings_do_not_leak_internal_namespace() -> None:
                     violations.append(
                         f"{rel}:{lineno}: docstring leaks ``opaque.api.*`` "
                         f"to a user-facing surface (this is the public "
-                        f"façade — the internal namespace should only be "
-                        f"documented under docs/extending/)."
+                        f"façade — the internal namespace must not appear "
+                        f"in user-facing docstrings)."
                     )
 
     assert not violations, "Façade docstring leaks:\n" + "\n".join(

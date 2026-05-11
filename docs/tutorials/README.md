@@ -5,8 +5,7 @@ self-contained: you build something concrete and see it work.
 
 For conceptual explanations, see the [User Guide](../user-guide/index.md).
 For complete function signatures, see the
-[API Reference](../reference/index.md). For the contributor surface,
-see [Extending Opaque](../extending/index.md).
+[API Reference](../reference/index.md).
 
 ## DP-SGD track
 
@@ -41,15 +40,6 @@ Concerns that apply to either stack.
 | -------- | ---- |
 | [Privacy Auditing](privacy_auditing.ipynb) | Validate privacy guarantees empirically with one-run / coin-flip auditing. |
 | [Distributed Training](distributed_training.ipynb) | Multi-GPU DP training under DDP — synchronized noise, sharded sampling. |
-
-## Extending Opaque
-
-| Tutorial | Task |
-| -------- | ---- |
-| [Extending Opaque](extending_opaque.ipynb) | Register a custom serializer + sync handler, build a custom mechanism with `clipped_fun`. |
-
-This is the only tutorial that imports from `opaque.api.*`. User-facing
-code lives behind public façades.
 
 ## Running the tutorials
 

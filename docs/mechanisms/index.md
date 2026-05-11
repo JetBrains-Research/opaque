@@ -137,3 +137,4 @@ lcgd = dpftrl_acc.balls_in_bins(
 for name, proc in [("Gaussian", gauss), ("BandMF", band), ("λCGD", lcgd)]:
     print(f"{name:12s}  ε = {proc.epsilon_at(1e-5):.4f}")
 ```
+

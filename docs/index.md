@@ -145,8 +145,3 @@ task-based Jupyter notebooks.
 
 **API details**: [API Reference](reference/index.md) provides complete
 function signatures and docstrings.
-
-**Plugging in something new**:
-[Extending Opaque](extending/index.md) documents the contributor
-surface (registries, low-level helpers, the `opaque.api.*` plug-in
-pattern).
