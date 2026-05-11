@@ -7,6 +7,15 @@ power-user surface in
 `opaque.api.engine.clipping.fun` that you can call directly when you
 need fine-grained control.
 
+> **Building a sensitivity oracle instead?** If your extension
+> derives a per-record bound from architecture rather than from a
+> per-example norm computation (a Lipschitz-layer family is the
+> illustrative example), these helpers are not the right tool —
+> they presuppose a per-example function to clip. Emit
+> `ClippedPytree(pytree=…, max_norm=R)` directly using
+> `opaque.api.engine.types.clipped(...)`, and let the rest of the
+> pipeline run unchanged. See [Composition](composition.md).
+
 ## When to use it
 
 - You're clipping something that **isn't** a per-example loss
@@ -128,3 +137,7 @@ clipping invariant exactly (no double-clipping).
   `clipped_grad` surface.
 - [`opaque.types`](../reference/utilities.md) — `ClippedPytree`,
   `NoisedPytree`, `PerGroup`.
+- [Composition](composition.md) — what your output needs to be so
+  it flows downstream.
+- [Adding a new mechanism family](new-mechanism.md) — the broader
+  recipe.

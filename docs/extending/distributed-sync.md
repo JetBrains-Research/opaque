@@ -91,4 +91,10 @@ the state class also loads the sync registration.
 ## See also
 
 - [`opaque.distributed` reference](../reference/distributed.md)
-- [Adding a new mechanism family](new-mechanism.md)
+- [Adding a new mechanism family](new-mechanism.md) — the broader
+  contributor path; see the "Telemetry — the `*Aux` convention"
+  section for the Aux-side sync handler pattern.
+- [Composition](composition.md) — the types your state and Aux
+  records flow alongside.
+- [Contract tests at a glance](index.md#contract-tests-at-a-glance) —
+  the CI gates an extension PR typically trips.

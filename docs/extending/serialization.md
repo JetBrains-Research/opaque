@@ -115,3 +115,6 @@ type — register at module import, fail loudly if registration fails.
 - [`opaque.serialization` reference](../reference/serialization.md)
 - [Adding a new mechanism family](new-mechanism.md) — full contributor
   path including custom state + serializer + sync handler.
+- [Composition](composition.md) — the types your state interacts with.
+- [Contract tests at a glance](index.md#contract-tests-at-a-glance) —
+  the CI gates an extension PR typically trips.

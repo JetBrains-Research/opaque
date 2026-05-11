@@ -600,3 +600,7 @@ at ε=3:
 
 See [Clipping API Reference](../reference/clipping.md) for complete function
 signatures, all parameters, and return types.
+
+For the contributor view — what shape a custom clipper or
+sensitivity oracle needs to emit so the rest of the pipeline
+consumes it — see [Composition](../extending/composition.md).
