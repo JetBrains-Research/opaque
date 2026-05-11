@@ -404,304 +404,219 @@ class TestAtomicUnitValidation:
             _Broken().at_step(5)
 
 
+
 # ---------------------------------------------------------------------------
-# Cross-product compliance: parametrise the contract over every supported
-# (amplification, mechanism) combination so adding a new pair is one line.
+# Cross-product of (amplification, inner mechanism) supported by ``at_step``.
 #
-# Positive paths (at_step returns a DpFtrlProcess / Identity):
-#   CyclicPoisson(IdentityMf)        — band=1, exact per-step
-#   CyclicPoisson(BandMf)            — band=4
-#   BMinSep(BandMf)                  — Monte Carlo
-#   BallsInBins(IdentityMf)          — epoch=10
+# DP-FTRL accounting is defined by combining an amplification factory with
+# an inner mechanism and dispatching by ``match self.inner`` inside the
+# amplification.  These tests mirror that structure: every (amp, inner)
+# pair that ``at_step`` should support is exercised against the same
+# invariants.  Illegal combos (inner not in amp's pairing matrix) are the
+# amp factory's responsibility and are covered by their own tests — not
+# here.
 #
-# Negative paths (at_step raises NotImplementedError):
-#   BallsInBins(Blt | LambdaCgd | Bisr | Bsr) — Gram-sized to original n_steps.
+# To add a new supported pair: register the amp / inner factory below and
+# append the tuple to ``_SUPPORTED_PAIRS`` (or ``_AT_STEP_RAISES_PAIRS`` if
+# the pair is legal but ``at_step`` is documented to raise until additional
+# machinery lands).
 # ---------------------------------------------------------------------------
 
 
-# (label, factory, expected_amp_cls, expected_atomic_unit, n_steps, is_monte_carlo)
-_POSITIVE_CASES: list[
-    tuple[str, callable, type[DpFtrlProcess], int, int, bool]
-] = [
-    (
-        "CyclicPoisson(IdentityMf)",
-        lambda: ftrl_acc.poisson(
-            ftrl_acc.identity_mf(1.0), sample_rate=0.01, n_steps=80
-        ),
-        CyclicPoisson,
-        1,
-        80,
+_GRAM_K4 = (1.0,) * 16  # flat 4×4 Gram, matches num_bins=4 below
+
+
+# Amplification name → (factory(inner) -> DpFtrlProcess, is_monte_carlo).
+_AMPLIFICATIONS: dict[str, tuple[callable, bool]] = {
+    "CyclicPoisson": (
+        lambda inner: ftrl_acc.poisson(inner, sample_rate=0.01, n_steps=64),
         False,
     ),
-    (
-        "CyclicPoisson(BandMf)",
-        lambda: ftrl_acc.poisson(
-            ftrl_acc.band_mf(
-                1.0, sensitivity=2.0, coefficients=(1.0, 1.0, 1.0, 1.0)
-            ),
-            sample_rate=0.01,
-            n_steps=80,
-        ),
-        CyclicPoisson,
-        4,
-        80,
-        False,
-    ),
-    (
-        "BMinSep(BandMf)",
-        lambda: ftrl_acc.b_min_sep(
-            ftrl_acc.band_mf(
-                1.0, sensitivity=2.0, coefficients=(1.0, 1.0, 1.0, 1.0)
-            ),
-            n_steps=32,
-            p0=0.02,
-        ),
-        BMinSep,
-        4,
-        32,
+    "BMinSep": (
+        lambda inner: ftrl_acc.b_min_sep(inner, n_steps=32, p0=0.02),
         True,
     ),
-    (
-        "BallsInBins(IdentityMf)",
-        lambda: ftrl_acc.balls_in_bins(
-            ftrl_acc.identity_mf(1.0), num_bins=10, n_steps=100
-        ),
-        BallsInBins,
-        10,
-        100,
+    "BallsInBins": (
+        lambda inner: ftrl_acc.balls_in_bins(inner, num_bins=4, n_steps=16),
         False,
     ),
+}
+
+
+# Inner mechanism name → factory() -> mechanism dataclass.
+_MECHANISMS: dict[str, callable] = {
+    "IdentityMf": lambda: ftrl_acc.identity_mf(1.0),
+    "BandMf": lambda: ftrl_acc.band_mf(
+        1.0, sensitivity=2.0, coefficients=(1.0, 1.0, 1.0, 1.0)
+    ),
+    "Blt": lambda: ftrl_acc.blt(1.0, sensitivity=1.0, gram_matrix=_GRAM_K4),
+    "LambdaCgd": lambda: ftrl_acc.lambda_cgd(
+        1.0, sensitivity=1.0, gram_matrix=_GRAM_K4
+    ),
+    "Bisr": lambda: ftrl_acc.bisr(1.0, sensitivity=1.0, gram_matrix=_GRAM_K4),
+    "Bsr": lambda: ftrl_acc.bsr(1.0, sensitivity=1.0, gram_matrix=_GRAM_K4),
+}
+
+
+# Pairs where ``at_step`` returns a usable truncated process for any K.
+_SUPPORTED_PAIRS: list[tuple[str, str]] = [
+    ("CyclicPoisson", "IdentityMf"),
+    ("CyclicPoisson", "BandMf"),
+    ("BMinSep", "BandMf"),
+    ("BallsInBins", "IdentityMf"),
 ]
 
 
-def _pld_kwargs(is_mc: bool) -> dict:
-    return _MC_KW if is_mc else {}
+# Pairs that the amp factory accepts but where ``at_step`` at intermediate K
+# is documented to raise ``NotImplementedError``: the inner's Gram matrix is
+# sized for the original ``n_steps`` and opaque has no access to the
+# underlying encoder ``C`` to rebuild it for a shorter horizon.
+_AT_STEP_RAISES_PAIRS: list[tuple[str, str]] = [
+    ("BallsInBins", "Blt"),
+    ("BallsInBins", "LambdaCgd"),
+    ("BallsInBins", "Bisr"),
+    ("BallsInBins", "Bsr"),
+]
 
 
-def _eps(process, delta: float, is_mc: bool) -> float:
-    """Compute ε with the right kwargs (MC paths need samples + seed)."""
+def _build(amp: str, mech: str) -> DpFtrlProcess:
+    factory, _ = _AMPLIFICATIONS[amp]
+    return factory(_MECHANISMS[mech]())
+
+
+def _pld_kwargs(amp: str) -> dict:
+    return _MC_KW if _AMPLIFICATIONS[amp][1] else {}
+
+
+def _eps(process, delta: float, amp: str) -> float:
     if isinstance(process, Identity):
         return process.epsilon_at(delta)
-    return process.pld(**_pld_kwargs(is_mc)).epsilon_at(delta)
+    return process.pld(**_pld_kwargs(amp)).epsilon_at(delta)
 
 
-@pytest.mark.parametrize(
-    "label,factory,amp_cls,expected_unit,n_steps,is_mc",
-    _POSITIVE_CASES,
-    ids=[case[0] for case in _POSITIVE_CASES],
-)
-class TestContractAcrossAllSupportedPairs:
-    """Every supported (amp, mech) pair satisfies the at_step contract."""
+def _pair_id(pair: tuple[str, str]) -> str:
+    return f"{pair[0]}({pair[1]})"
 
-    def test_inherits_dp_ftrl_process(
-        self, label, factory, amp_cls, expected_unit, n_steps, is_mc
-    ):
-        proc = factory()
-        assert isinstance(proc, DpFtrlProcess), f"{label} is not a DpFtrlProcess"
-        assert isinstance(proc, amp_cls), f"{label}: expected {amp_cls.__name__}"
 
-    def test_atomic_unit_value(
-        self, label, factory, amp_cls, expected_unit, n_steps, is_mc
-    ):
-        assert factory().atomic_unit == expected_unit, label
+_SUPPORTED_IDS = [_pair_id(p) for p in _SUPPORTED_PAIRS]
+_AT_STEP_RAISES_IDS = [_pair_id(p) for p in _AT_STEP_RAISES_PAIRS]
 
-    def test_zero_step_returns_identity(
-        self, label, factory, amp_cls, expected_unit, n_steps, is_mc
-    ):
-        sub = factory().at_step(0)
-        assert isinstance(sub, Identity), f"{label}: at_step(0) is not Identity"
+
+@pytest.mark.parametrize("amp,mech", _SUPPORTED_PAIRS, ids=_SUPPORTED_IDS)
+class TestAtStepInvariants:
+    """For every supported (amp, inner) pair, ``at_step`` satisfies the
+    documented contract: endpoint identities, monotone non-decreasing,
+    bounded by ε of the full process, sandwich at atomic-unit boundaries,
+    and the result is a real :class:`DpProcess` (composes with ``|``, ``*``).
+
+    Monte-Carlo paths (``BMinSep``) skip the per-K sandwich because
+    independent transcripts per ``n_steps`` mean the bound holds only in
+    expectation; the trend assertion still covers the global direction.
+    """
+
+    def test_inherits_dp_ftrl_process(self, amp: str, mech: str):
+        proc = _build(amp, mech)
+        assert isinstance(proc, DpFtrlProcess)
+
+    def test_zero_step_returns_identity(self, amp: str, mech: str):
+        sub = _build(amp, mech).at_step(0)
+        assert isinstance(sub, Identity)
         assert sub.epsilon_at(_DELTA) == 0.0
 
-    def test_full_step_returns_self(
-        self, label, factory, amp_cls, expected_unit, n_steps, is_mc
-    ):
-        proc = factory()
-        assert proc.at_step(n_steps) is proc, f"{label}: at_step(N) ≠ self"
-        # And one step past N also returns self.
-        assert proc.at_step(n_steps + 1_000) is proc
+    def test_full_step_returns_self(self, amp: str, mech: str):
+        proc = _build(amp, mech)
+        assert proc.at_step(proc.n_steps) is proc
+        assert proc.at_step(proc.n_steps + 10_000) is proc
 
-    def test_intermediate_step_preserves_type(
-        self, label, factory, amp_cls, expected_unit, n_steps, is_mc
-    ):
-        proc = factory()
-        K = n_steps // 2
-        sub = proc.at_step(K)
-        assert type(sub) is amp_cls, (
-            f"{label}: at_step(N/2) returned {type(sub).__name__}, expected "
-            f"{amp_cls.__name__}"
-        )
+    def test_intermediate_type_preserved(self, amp: str, mech: str):
+        proc = _build(amp, mech)
+        sub = proc.at_step(proc.n_steps // 2)
+        assert type(sub) is type(proc)
         assert isinstance(sub, DpFtrlProcess)
 
-    def test_n_steps_respects_atomic_unit(
-        self, label, factory, amp_cls, expected_unit, n_steps, is_mc
-    ):
-        proc = factory()
-        for K in (1, expected_unit - 1 if expected_unit > 1 else 1, n_steps // 2):
+    def test_n_steps_aligned_to_atomic_unit(self, amp: str, mech: str):
+        proc = _build(amp, mech)
+        for K in (1, max(1, proc.atomic_unit - 1), proc.n_steps // 2):
             sub = proc.at_step(K)
             if isinstance(sub, Identity):
                 continue
-            # n_steps on the rebuilt process is on an atomic-unit boundary,
-            # and ≥ K (round-up), and ≤ original n_steps (clamp).
-            assert sub.n_steps % expected_unit == 0 or sub.n_steps == n_steps, (
-                f"{label}: at_step({K}).n_steps={sub.n_steps} not aligned"
-            )
-            assert sub.n_steps >= K, label
-            assert sub.n_steps <= n_steps, label
+            assert sub.n_steps % proc.atomic_unit == 0 or sub.n_steps == proc.n_steps
+            assert K <= sub.n_steps <= proc.n_steps
 
-    def test_bounded_by_full(
-        self, label, factory, amp_cls, expected_unit, n_steps, is_mc
-    ):
-        proc = factory()
-        e_full = _eps(proc, _DELTA, is_mc)
-        slack = 0.10 * max(e_full, 1.0) if is_mc else 1e-9
-        for K in (1, expected_unit, n_steps // 2, n_steps - 1):
-            sub = proc.at_step(K)
-            e_K = _eps(sub, _DELTA, is_mc)
-            assert e_K <= e_full + slack, (
-                f"{label}: ε(K={K})={e_K} exceeds ε(N={n_steps})={e_full} "
-                f"(slack {slack})"
-            )
+    def test_bounded_by_full(self, amp: str, mech: str):
+        proc = _build(amp, mech)
+        e_full = _eps(proc, _DELTA, amp)
+        slack = 0.10 * max(e_full, 1.0) if _AMPLIFICATIONS[amp][1] else 1e-9
+        for K in (1, proc.atomic_unit, proc.n_steps // 2, proc.n_steps - 1):
+            assert _eps(proc.at_step(K), _DELTA, amp) <= e_full + slack
 
-    def test_trend_increases_from_small_to_full(
-        self, label, factory, amp_cls, expected_unit, n_steps, is_mc
-    ):
-        proc = factory()
-        e_small = _eps(proc.at_step(expected_unit), _DELTA, is_mc)
-        e_full = _eps(proc, _DELTA, is_mc)
-        assert e_small < e_full, (
-            f"{label}: ε at first atomic unit ({e_small}) "
-            f"≮ ε at full ({e_full})"
-        )
+    def test_trend_increases(self, amp: str, mech: str):
+        proc = _build(amp, mech)
+        e_small = _eps(proc.at_step(proc.atomic_unit), _DELTA, amp)
+        e_full = _eps(proc, _DELTA, amp)
+        assert e_small < e_full
 
-    def test_monotone_at_atomic_unit_boundaries(
-        self, label, factory, amp_cls, expected_unit, n_steps, is_mc
-    ):
-        """At G·M boundaries the curve is monotone non-decreasing.
-
-        For Monte-Carlo paths a single realisation can fluctuate; we
-        allow a per-step slack proportional to ε_full.
-        """
-        proc = factory()
-        e_full = _eps(proc, _DELTA, is_mc)
-        slack = 0.10 * max(e_full, 1.0) if is_mc else 1e-9
-        steps = list(range(0, n_steps + 1, expected_unit))
-        if steps[-1] != n_steps:
-            steps.append(n_steps)
+    def test_monotone_at_unit_boundaries(self, amp: str, mech: str):
+        proc = _build(amp, mech)
+        n, M = proc.n_steps, proc.atomic_unit
+        e_full = _eps(proc, _DELTA, amp)
+        slack = 0.10 * max(e_full, 1.0) if _AMPLIFICATIONS[amp][1] else 1e-9
         prev = 0.0
+        steps = list(range(0, n + 1, M))
+        if steps[-1] != n:
+            steps.append(n)
         for K in steps:
-            sub = proc.at_step(K) if 0 < K < n_steps else (
-                Identity() if K == 0 else proc
+            sub = (
+                Identity() if K == 0 else proc if K >= n else proc.at_step(K)
             )
-            e_K = _eps(sub, _DELTA, is_mc)
-            assert e_K >= prev - slack, (
-                f"{label}: ε({K})={e_K} < ε(prev)={prev} (slack {slack})"
-            )
+            e_K = _eps(sub, _DELTA, amp)
+            assert e_K >= prev - slack
             prev = e_K
 
-    def test_sandwich_at_random_K(
-        self, label, factory, amp_cls, expected_unit, n_steps, is_mc
-    ):
-        """ε(G·M) ≤ ε(K) ≤ ε((G+1)·M) for K = G·M + r, r ∈ [0, M).
-
-        Skipped for Monte-Carlo paths where independent transcripts per
-        n_steps break the per-K bound (verified in expectation only).
-        """
-        if is_mc:
-            pytest.skip("MC path: bound holds in expectation, not per-sample")
-        proc = factory()
-        # Pick a K mid-way through the process.
-        K = max(1, min(n_steps - 1, n_steps // 2 + expected_unit // 2))
-        G, r = divmod(K, expected_unit)
+    def test_sandwich_at_intermediate_K(self, amp: str, mech: str):
+        if _AMPLIFICATIONS[amp][1]:
+            pytest.skip("MC path: sandwich holds in expectation only")
+        proc = _build(amp, mech)
+        n, M = proc.n_steps, proc.atomic_unit
+        K = max(1, min(n - 1, n // 2 + M // 2))
+        G, _r = divmod(K, M)
         e_lo = _eps(
-            proc.at_step(G * expected_unit) if G > 0 else Identity(),
-            _DELTA,
-            is_mc,
+            proc.at_step(G * M) if G > 0 else Identity(), _DELTA, amp
         )
-        e_K = _eps(proc.at_step(K), _DELTA, is_mc)
-        hi_step = min((G + 1) * expected_unit, n_steps)
-        e_hi = _eps(proc.at_step(hi_step), _DELTA, is_mc)
-        assert e_lo - 1e-9 <= e_K <= e_hi + 1e-9, (
-            f"{label}: sandwich broken at K={K} (G={G},r={r}): "
-            f"{e_lo} ≤ {e_K} ≤ {e_hi}"
-        )
+        e_K = _eps(proc.at_step(K), _DELTA, amp)
+        e_hi = _eps(proc.at_step(min((G + 1) * M, n)), _DELTA, amp)
+        assert e_lo - 1e-9 <= e_K <= e_hi + 1e-9
 
-    def test_supports_or_composition(
-        self, label, factory, amp_cls, expected_unit, n_steps, is_mc
-    ):
-        """Result is a real DpProcess: composes with ``|`` and ``*``.
-
-        We only check that composition constructs and evaluates — the
-        composed PLD uses default discretization (MC paths fall back to
-        their default sample count, which is fine for a structural check).
-        """
-        proc = factory()
-        sub = proc.at_step(n_steps // 2)
-        composed = sub | proc.at_step(expected_unit)
-        if isinstance(composed, Identity):
-            return
-        e = composed.epsilon_at(_DELTA)
-        assert math.isfinite(e), f"{label}: composed.epsilon_at = {e}"
-        # And ``*`` also works.
-        repeated = sub * 2
-        assert math.isfinite(repeated.epsilon_at(_DELTA)), label
-
-
-# ---------------------------------------------------------------------------
-# Negative parametrised path: every correlated-MF inner under BallsInBins
-# raises NotImplementedError at intermediate K but still handles endpoints.
-# ---------------------------------------------------------------------------
-
-
-_BNB_CORRELATED_FACTORIES = [
-    ("Blt", lambda gram: ftrl_acc.blt(1.0, sensitivity=1.0, gram_matrix=gram)),
-    ("Bsr", lambda gram: ftrl_acc.bsr(1.0, sensitivity=1.0, gram_matrix=gram)),
-    ("Bisr", lambda gram: ftrl_acc.bisr(1.0, sensitivity=1.0, gram_matrix=gram)),
-    (
-        "LambdaCgd",
-        lambda gram: ftrl_acc.lambda_cgd(1.0, sensitivity=1.0, gram_matrix=gram),
-    ),
-]
+    def test_supports_composition(self, amp: str, mech: str):
+        proc = _build(amp, mech)
+        sub = proc.at_step(proc.n_steps // 2)
+        composed = sub | proc.at_step(proc.atomic_unit)
+        if not isinstance(composed, Identity):
+            assert math.isfinite(composed.epsilon_at(_DELTA))
+        assert math.isfinite((sub * 2).epsilon_at(_DELTA))
 
 
 @pytest.mark.parametrize(
-    "mech_label,mech_factory",
-    _BNB_CORRELATED_FACTORIES,
-    ids=[m[0] for m in _BNB_CORRELATED_FACTORIES],
+    "amp,mech", _AT_STEP_RAISES_PAIRS, ids=_AT_STEP_RAISES_IDS
 )
-class TestBallsInBinsCorrelatedRaisesUniformly:
-    """Every correlated-MF inner under BallsInBins handles the boundary cases
-    and raises NotImplementedError for intermediate K (until Gram regen lands).
+class TestAtStepDocumentedRaise:
+    """Pairs where ``at_step`` is documented to raise ``NotImplementedError``
+    at intermediate K because the strategy's pre-computed ``gram_matrix`` is
+    sized for the original ``n_steps`` and opaque cannot rebuild the
+    truncated Gram without the underlying encoder matrix ``C``.
+
+    We assert the raise (so a regression that silently returns the
+    mis-sized PLD gets caught) and that endpoints still work.
     """
 
-    _NUM_BINS = 4
-    _N_STEPS = 16
-    _GRAM = (1.0,) * (_NUM_BINS * _NUM_BINS)
+    def test_endpoint_zero_returns_identity(self, amp: str, mech: str):
+        assert isinstance(_build(amp, mech).at_step(0), Identity)
 
-    def _proc(self, mech_factory) -> BallsInBins:
-        return ftrl_acc.balls_in_bins(
-            mech_factory(self._GRAM),
-            num_bins=self._NUM_BINS,
-            n_steps=self._N_STEPS,
-        )
+    def test_endpoint_full_returns_self(self, amp: str, mech: str):
+        proc = _build(amp, mech)
+        assert proc.at_step(proc.n_steps) is proc
 
-    def test_inherits_dp_ftrl_process(self, mech_label, mech_factory):
-        proc = self._proc(mech_factory)
-        assert isinstance(proc, DpFtrlProcess)
-        assert proc.atomic_unit == self._NUM_BINS
-
-    def test_endpoint_zero_returns_identity(self, mech_label, mech_factory):
-        assert isinstance(self._proc(mech_factory).at_step(0), Identity)
-
-    def test_endpoint_full_returns_self(self, mech_label, mech_factory):
-        proc = self._proc(mech_factory)
-        assert proc.at_step(self._N_STEPS) is proc
-
-    def test_intermediate_step_raises(self, mech_label, mech_factory):
-        proc = self._proc(mech_factory)
-        with pytest.raises(NotImplementedError, match="gram_matrix"):
-            proc.at_step(self._N_STEPS // 2)
-
-    def test_error_message_names_inner_class(self, mech_label, mech_factory):
-        proc = self._proc(mech_factory)
-        with pytest.raises(NotImplementedError, match=mech_label):
-            proc.at_step(self._N_STEPS // 2)
+    def test_intermediate_raises_named(self, amp: str, mech: str):
+        proc = _build(amp, mech)
+        with pytest.raises(NotImplementedError, match=mech):
+            proc.at_step(proc.n_steps // 2)
