@@ -101,7 +101,7 @@ from opaque.dpftrl.noise import band_mf_strategy
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -192,7 +192,7 @@ strategy = band_mf_strategy(n_steps=1000, bands=10)
 
 # BandMF with Poisson amplification (recommended)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     sample_rate=0.01,
     n_steps=1000,
 )

@@ -206,7 +206,7 @@ class TestPldEquivalence:
 
     def test_band_mf_pld(self):
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        eps_new = ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=s.sensitivity, coefficients=s.coefficients)).epsilon_at(self.delta)
+        eps_new = ftrl_acc.mf_gaussian(1.0, s).epsilon_at(self.delta)
         # Should be finite positive
         assert eps_new > 0
 
@@ -216,7 +216,7 @@ class TestPldEquivalence:
         sample_rate = 0.05
 
         eps_new = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=s.sensitivity, coefficients=s.coefficients)),
+            ftrl_acc.mf_gaussian(1.0, s),
             sample_rate=sample_rate,
             n_steps=100,
         ).epsilon_at(self.delta)

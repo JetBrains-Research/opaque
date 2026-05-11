@@ -218,7 +218,7 @@ import opaque.dpftrl.accounting as dpftrl_acc
 strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.95)
 
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -233,7 +233,7 @@ width is `len(coefficients)`; `coefficients` must be non-empty.
 
 ```python
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, ))
+proc = dpftrl_acc.mf_gaussian(1.0, strategy)
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
@@ -289,7 +289,7 @@ when the inner is `IdentityMf` or `BandMf` with `bands == 1`.
 ```python
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -331,7 +331,7 @@ strategy = band_mf_strategy(n_steps=1000, bands=10)
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
     lambda nm: dpftrl_acc.poisson(
-        dpftrl_acc.mf_gaussian(nm, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
+        dpftrl_acc.mf_gaussian(nm, strategy),
         sample_rate=0.01,
         n_steps=1000,
     ),

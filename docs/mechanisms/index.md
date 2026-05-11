@@ -114,7 +114,7 @@ gauss = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01) * 1000
 # BandMF: strategy computes sensitivity and coefficients
 band_s = band_mf_strategy(n_steps=1000, bands=10)
 band = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=band_s.sensitivity, coefficients=band_s.coefficients, )),
+    dpftrl_acc.mf_gaussian(1.0, band_s),
     sample_rate=0.01,
     n_steps=1000,
 )

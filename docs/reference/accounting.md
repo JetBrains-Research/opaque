@@ -47,7 +47,7 @@ from opaque.dpftrl import accounting as dpftrl_acc
 from opaque.dpftrl.noise import band_mf_strategy
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -246,7 +246,7 @@ training = step * num_steps
 
 # DP-FTRL with BandMF: same chain as first-moment-only
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     sample_rate=batch_size / dataset_size,
     n_steps=num_steps,
 )
@@ -311,7 +311,7 @@ band-width is `len(coefficients)`; `coefficients` must be non-empty.
 ```python
 from opaque.dpftrl.noise import band_mf_strategy
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, ))
+proc = dpftrl_acc.mf_gaussian(1.0, strategy)
 eps = proc.epsilon_at(1e-5)
 ```
 
@@ -369,7 +369,7 @@ when the inner is `IdentityMf` or `BandMf` with `bands == 1`.
 ```python
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, )),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     sample_rate=0.01,
     n_steps=1000,
 )

@@ -1124,7 +1124,7 @@ def main():
     if args.mechanism == "band_mf" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = dpftrl_acc.mf_gaussian(nm, BandMfStrategy(sensitivity=strategy.sensitivity, coefficients=strategy.coefficients, ))
+            mechanism = dpftrl_acc.mf_gaussian(nm, strategy)
             if args.band_mf_sampling == "poisson":
                 return dpftrl_acc.poisson(
                     mechanism,
