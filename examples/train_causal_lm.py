@@ -2368,13 +2368,17 @@ def main():
         if args.eval_humaneval or args.eval_mbpp:
             # Merge the adapter once and reuse for all downstream evals.
             # Cast to float32 first — merge_and_unload fails with bfloat16 tensors.
+            # For LoRA-XS, PEFT's merge_and_unload is broken (assigns raw Tensor
+            # instead of Parameter). Fall back to using peft_model directly for
+            # inference — slower but reliable.
             merged = None
             try:
                 peft_model = peft_model.float()
                 merged = peft_model.merge_and_unload()
                 merged = merged.to(device).to(torch.bfloat16)
             except Exception as e:
-                print(f"Adapter merge failed (skipping downstream evals): {e}")
+                print(f"Adapter merge failed (using peft_model directly, slower): {e}")
+                merged = peft_model.to(device).to(torch.bfloat16)
 
         if args.eval_humaneval and merged is not None:
             print("\n" + "=" * 60)
