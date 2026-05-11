@@ -465,9 +465,11 @@ def parse_args():
         type=int,
         default=None,
         help="Optional cap on per-step batch size (truncated Poisson). "
-        "Only supported with --mechanism identity; combining it with other "
-        "mechanisms or with --band-mf-sampling b_min_sep raises at accounting "
-        "construction time.",
+        "Matched privacy accounting exists only for --mechanism identity. "
+        "With --mechanism band_mf --band-mf-sampling poisson the accountant "
+        "rejects the combination at calibration time. Silently ignored for "
+        "--mechanism band_mf --band-mf-sampling b_min_sep and for blt, "
+        "lambda_cgd, bisr, bsr, none (no Poisson sampling).",
     )
     dp_g.add_argument(
         "--mc-samples",
