@@ -151,9 +151,7 @@ class TestPoissonSamplerTruncated:
         dataset = TensorDataset(torch.randn(100, 10))
 
         with pytest.raises(ValueError, match="truncated_batch_size must be"):
-            PoissonSampler(
-                dataset, sample_rate=0.1, truncated_batch_size=0, key=key(0)
-            )
+            PoissonSampler(dataset, sample_rate=0.1, truncated_batch_size=0, key=key(0))
 
     def test_truncation_enforced(self):
         dataset = TensorDataset(torch.randn(1000, 10))
