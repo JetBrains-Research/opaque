@@ -2856,7 +2856,7 @@ synchronised because <code>optimizer.update</code> is a pure function and all
 ranks receive identical noisy gradients after <code>sum_gradients</code> + noise
 addition with the same key on all ranks.</p>
 <p>Use <code>local_shard()</code> to partition the dataset across ranks and pass a
-per-rank key via <code>fold_in(key, rank)</code> to each <code>PoissonSubsampler</code>.</p>
+per-rank key via <code>fold_in(key, rank)</code> to each <code>PoissonSampler</code>.</p>
 <hr />
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>

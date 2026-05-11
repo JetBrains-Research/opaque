@@ -2809,8 +2809,8 @@ user-facing installation target.</p>
 <li>
 <p><strong><a href="sampling/">Sampling</a></strong>: Privacy-amplifying sampling</p>
 </li>
-<li><code>PoissonSubsampler</code> - Standard Poisson sampling</li>
-<li><code>PoissonSubsampler</code> + <code>truncated_batch_size</code> - Bounded Poisson sampling</li>
+<li><code>PoissonSampler</code> - Standard Poisson sampling</li>
+<li><code>PoissonSampler</code> + <code>truncated_batch_size</code> - Bounded Poisson sampling</li>
 <li><code>CyclicPoissonSampler</code> (<code>opaque.dpftrl</code>) - cyclic Poisson over <code>bands</code> groups; <code>bands=1</code> = identity (full-data Poisson each step)</li>
 <li><code>BallsInBinsSampler</code> - Random-partition sampling (λCGD, BISR, BLT)</li>
 <li>
@@ -3143,12 +3143,12 @@ user-facing installation target.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>PoissonSubsampler</code></td>
+<td><code>PoissonSampler</code></td>
 <td>Standard Poisson sampling</td>
 <td><a href="../user-guide/sampling/#poisson-sampling">Guide</a></td>
 </tr>
 <tr>
-<td><code>PoissonSubsampler</code> (with <code>truncated_batch_size</code>)</td>
+<td><code>PoissonSampler</code> (with <code>truncated_batch_size</code>)</td>
 <td>Truncated Poisson sampling</td>
 <td><a href="../user-guide/sampling/#poisson-sampling">Guide</a></td>
 </tr>

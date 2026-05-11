@@ -3111,7 +3111,7 @@ privacy profile. Opaque uses Poisson-style sampling throughout.</p>
 which stabilises memory and batch norms at the cost of <strong>weaker</strong> privacy than
 unconditional Poisson at the same inclusion probability <span class="arithmatex">\(q\)</span> (use the
 truncated-Poisson accountant).</p>
-<p>Opaque's <code>PoissonSubsampler</code> implements Poisson subsampling. The accounting module
+<p>Opaque's <code>PoissonSampler</code> implements Poisson subsampling. The accounting module
 accounts for this amplification via <code>dpsgd_acc.poisson(mechanism, sample_rate)</code>.
 See <a href="../sampling/">Sampling &amp; Microbatching</a> and the
 <a href="../../mechanisms/">Mechanisms</a> reference for per-mechanism amplification

@@ -2600,13 +2600,13 @@ sampling, accepts a positive scalar (symmetric <code>[-B, B]</code>) or a
 <code>(low, high)</code> tuple.</p>
 <h2 id="4-sampling">4. Sampling<a class="headerlink" href="#4-sampling" title="Permanent link">&para;</a></h2>
 <p>DP-SGD pairs with Poisson subsampling:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSubsampler</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSampler</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSubsampler</span><span class="p">(</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">dataset</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key_sampling</span><span class="p">,</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="p">)</span>
 </code></pre></div>
-<p><code>PoissonSubsampler</code> accepts <code>truncated_batch_size=</code> for the
+<p><code>PoissonSampler</code> accepts <code>truncated_batch_size=</code> for the
 truncated-Poisson variant; calibration must use
 <code>dpsgd_acc.poisson(..., truncated_batch_size=..., dataset_size=...)</code>
 to match.</p>

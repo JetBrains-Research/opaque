@@ -2953,7 +2953,7 @@ clipping, truncated Poisson sampling, microbatching, and DP-aware optimisation.<
 <p><strong>Prerequisites:</strong> <a href="dp_sgd_training.ipynb">DP-SGD Training</a>,
 <a href="sampling_and_microbatching.ipynb">Sampling &amp; Microbatching</a>.</p>
 <p><strong>Components exercised:</strong> <code>make_functional</code> with <code>partition_trainable</code>,
-<code>adaptive_clipped_grad</code>, <code>PoissonSubsampler</code>, <code>opaque.optimizers.adamw</code> (DP-aware bias correction),
+<code>adaptive_clipped_grad</code>, <code>PoissonSampler</code>, <code>opaque.optimizers.adamw</code> (DP-aware bias correction),
 <code>dpsgd_acc.poisson</code> (truncated form), PEFT LoRA.
 <strong>Runtime:</strong> ~2 minutes on CPU.</p>
 </div>
@@ -2990,7 +2990,7 @@ clipping, truncated Poisson sampling, microbatching, and DP-aware optimisation.<
 <span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpsgd.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpsgd_acc</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSubsampler</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSampler</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_functional</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">adaptive_clipped_grad</span>
@@ -3012,7 +3012,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.sampling import PoissonSubsampler
+from opaque.dpsgd.sampling import PoissonSampler
 from opaque.functional import make_functional
 from opaque.optimizers import adamw
 from opaque.dpsgd.clipping import adaptive_clipped_grad
@@ -3405,7 +3405,7 @@ def per_example_loss(trainable, frozen, ids, mask, labels):
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">sample_rate</span> <span class="o">=</span> <span class="n">BATCH_SIZE</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">train_dataset</span><span class="p">)</span>
 
-<span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSubsampler</span><span class="p">(</span>
+<span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span>
     <span class="n">train_dataset</span><span class="p">,</span>
     <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
     <span class="n">truncated_batch_size</span><span class="o">=</span><span class="n">MAX_BATCH_SIZE</span><span class="p">,</span>
@@ -3454,7 +3454,7 @@ def per_example_loss(trainable, frozen, ids, mask, labels):
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-6">sample_rate = BATCH_SIZE / len(train_dataset)
 
-sampler = PoissonSubsampler(
+sampler = PoissonSampler(
     train_dataset,
     sample_rate=sample_rate,
     truncated_batch_size=MAX_BATCH_SIZE,

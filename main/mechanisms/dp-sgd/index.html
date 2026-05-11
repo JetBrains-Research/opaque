@@ -2424,7 +2424,7 @@ the accountant.</p>
 </ul>
 <h2 id="pairing-with-sampling">Pairing with sampling<a class="headerlink" href="#pairing-with-sampling" title="Permanent link">&para;</a></h2>
 <p>DP-SGD typically pairs the Gaussian mechanism with Poisson subsampling
-(<code>opaque.dpsgd.sampling.PoissonSubsampler</code>). The accounting form is
+(<code>opaque.dpsgd.sampling.PoissonSampler</code>). The accounting form is
 <code>opaque.dpsgd.accounting.poisson(opaque.dpsgd.accounting.gaussian(nm),
 sample_rate=q)</code>; multiply by <code>* num_steps</code> for full-training privacy.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>

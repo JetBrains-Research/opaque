@@ -3614,7 +3614,7 @@ steps under Poisson sampling.</p>
     &gt;&gt;&gt; from opaque.api.dpsgd.clipping._distributed import sync_adaptive_clip_state
     &gt;&gt;&gt; from opaque.distributed import sum_gradients
     &gt;&gt;&gt; from opaque.random import key
-    &gt;&gt;&gt; from opaque.api.dpsgd.sampling import PoissonSubsampler
+    &gt;&gt;&gt; from opaque.api.dpsgd.sampling import PoissonSampler
     &gt;&gt;&gt;
     &gt;&gt;&gt; # Initialize distributed
     &gt;&gt;&gt; dist.init_process_group(backend='nccl')
@@ -3627,7 +3627,7 @@ steps under Poisson sampling.</p>
     ... )
     &gt;&gt;&gt;
     &gt;&gt;&gt; # Use Poisson sampling (different batch sizes on each device)
-    &gt;&gt;&gt; sampler = PoissonSubsampler(dataset, sample_rate=0.01, key=key(42))
+    &gt;&gt;&gt; sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
     &gt;&gt;&gt;
     &gt;&gt;&gt; for batch_x, batch_y in dataloader:
     ...     # Each device: compute clipped gradients and local adaptive state
@@ -4157,7 +4157,7 @@ Clipping", NeurIPS 2021.</p>
 <a id="__codelineno-0-234" name="__codelineno-0-234"></a><span class="sd">        &gt;&gt;&gt; from opaque.api.dpsgd.clipping._distributed import sync_adaptive_clip_state</span>
 <a id="__codelineno-0-235" name="__codelineno-0-235"></a><span class="sd">        &gt;&gt;&gt; from opaque.distributed import sum_gradients</span>
 <a id="__codelineno-0-236" name="__codelineno-0-236"></a><span class="sd">        &gt;&gt;&gt; from opaque.random import key</span>
-<a id="__codelineno-0-237" name="__codelineno-0-237"></a><span class="sd">        &gt;&gt;&gt; from opaque.api.dpsgd.sampling import PoissonSubsampler</span>
+<a id="__codelineno-0-237" name="__codelineno-0-237"></a><span class="sd">        &gt;&gt;&gt; from opaque.api.dpsgd.sampling import PoissonSampler</span>
 <a id="__codelineno-0-238" name="__codelineno-0-238"></a><span class="sd">        &gt;&gt;&gt;</span>
 <a id="__codelineno-0-239" name="__codelineno-0-239"></a><span class="sd">        &gt;&gt;&gt; # Initialize distributed</span>
 <a id="__codelineno-0-240" name="__codelineno-0-240"></a><span class="sd">        &gt;&gt;&gt; dist.init_process_group(backend=&#39;nccl&#39;)</span>
@@ -4170,7 +4170,7 @@ Clipping", NeurIPS 2021.</p>
 <a id="__codelineno-0-247" name="__codelineno-0-247"></a><span class="sd">        ... )</span>
 <a id="__codelineno-0-248" name="__codelineno-0-248"></a><span class="sd">        &gt;&gt;&gt;</span>
 <a id="__codelineno-0-249" name="__codelineno-0-249"></a><span class="sd">        &gt;&gt;&gt; # Use Poisson sampling (different batch sizes on each device)</span>
-<a id="__codelineno-0-250" name="__codelineno-0-250"></a><span class="sd">        &gt;&gt;&gt; sampler = PoissonSubsampler(dataset, sample_rate=0.01, key=key(42))</span>
+<a id="__codelineno-0-250" name="__codelineno-0-250"></a><span class="sd">        &gt;&gt;&gt; sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))</span>
 <a id="__codelineno-0-251" name="__codelineno-0-251"></a><span class="sd">        &gt;&gt;&gt;</span>
 <a id="__codelineno-0-252" name="__codelineno-0-252"></a><span class="sd">        &gt;&gt;&gt; for batch_x, batch_y in dataloader:</span>
 <a id="__codelineno-0-253" name="__codelineno-0-253"></a><span class="sd">        ...     # Each device: compute clipped gradients and local adaptive state</span>
