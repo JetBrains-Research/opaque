@@ -308,9 +308,7 @@ _REGEN_TOL = 0.05  # generous: bnb_mc_pld is MC-based.
 
 
 def _bnb(mechanism, n_steps: int) -> BallsInBins:
-    return ftrl_acc.balls_in_bins(
-        mechanism, num_bins=_REGEN_NUM_BINS, n_steps=n_steps
-    )
+    return ftrl_acc.balls_in_bins(mechanism, num_bins=_REGEN_NUM_BINS, n_steps=n_steps)
 
 
 class TestGramRegenMatchesDirect:
@@ -680,5 +678,3 @@ class TestAtStepInvariants:
         if not isinstance(composed, Identity):
             assert math.isfinite(composed.epsilon_at(_DELTA))
         assert math.isfinite((sub * 2).epsilon_at(_DELTA))
-
-

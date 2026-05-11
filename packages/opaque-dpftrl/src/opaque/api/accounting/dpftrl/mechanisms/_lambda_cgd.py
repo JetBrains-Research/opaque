@@ -25,9 +25,7 @@ class LambdaCgd(MfGaussian):
     max_participations: int | None
     normalized: bool
 
-    def with_horizon(
-        self, n_steps: int, max_participations: int | None
-    ) -> "LambdaCgd":
+    def with_horizon(self, n_steps: int, max_participations: int | None) -> "LambdaCgd":
         """Return a copy with Gram regenerated for a shorter horizon."""
         from opaque.api.accounting.core import _native
 

@@ -26,9 +26,7 @@ class Bisr(MfGaussian):
     max_participations: int | None
     normalized: bool
 
-    def with_horizon(
-        self, n_steps: int, max_participations: int | None
-    ) -> "Bisr":
+    def with_horizon(self, n_steps: int, max_participations: int | None) -> "Bisr":
         """Return a copy with Gram regenerated for a shorter horizon."""
         from opaque.api.accounting.core import _native
 

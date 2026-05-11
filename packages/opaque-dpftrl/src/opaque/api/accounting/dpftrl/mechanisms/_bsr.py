@@ -25,9 +25,7 @@ class Bsr(MfGaussian):
     min_sep: int
     max_participations: int | None
 
-    def with_horizon(
-        self, n_steps: int, max_participations: int | None
-    ) -> "Bsr":
+    def with_horizon(self, n_steps: int, max_participations: int | None) -> "Bsr":
         """Return a copy with Gram regenerated for a shorter horizon."""
         from opaque.api.accounting.core import _native
 
