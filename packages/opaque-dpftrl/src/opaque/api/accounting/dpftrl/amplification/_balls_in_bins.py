@@ -175,7 +175,7 @@ def balls_in_bins(
     - **Correlated-noise (matrix-factorisation)**: :func:`blt`, :func:`lambda_cgd`,
       :func:`bisr`, :func:`bsr` — PLD via the Monte Carlo dominating-pair
       analysis (Choquette-Choo et al. 2024).
-    - **MF identity** (:func:`mf_identity`) — Lemma 3.2 dominating pair with
+    - **MF identity** (:func:`identity_mf`) — Lemma 3.2 dominating pair with
       diagonal Gram ``(n_steps // num_bins) · I`` (orthogonal ``m_i`` for
       ``C = I``), via the identity-specialised importance-sampled MC primitive
       (same dominating-pair family as ``bnb_mc_pld`` for correlated MF; see
@@ -184,7 +184,7 @@ def balls_in_bins(
 
     Args:
         inner: An MF mechanism — :func:`blt`, :func:`lambda_cgd`, :func:`bisr`,
-            :func:`bsr`, or :func:`mf_identity`.
+            :func:`bsr`, or :func:`identity_mf`.
         num_bins: Bins per epoch (k ≥ 2).
         n_steps: Total training rounds.  Must be a positive multiple of
             ``num_bins`` (per-bin participation = ``n_steps // num_bins``).
@@ -203,7 +203,7 @@ def balls_in_bins(
 
         # Identity baseline through the FTRL training loop
         training = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_identity(1.0), num_bins=100, n_steps=1000,
+            ftrl_acc.identity_mf(1.0), num_bins=100, n_steps=1000,
         )
         eps = training.epsilon_at(1e-5)
     """

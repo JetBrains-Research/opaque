@@ -131,7 +131,7 @@ from opaque.dpftrl.noise import (
     bisr_strategy,
     bsr_strategy,
     blt_strategy,
-    identity_strategy,
+    identity_mf_strategy,
     lambda_cgd_strategy,
     mf_noise,
 )
@@ -1095,7 +1095,7 @@ def main():
                 beta=mom,
             )
         elif args.mechanism == "identity":
-            return identity_strategy()
+            return identity_mf_strategy()
         else:
             return None
 
@@ -1172,7 +1172,7 @@ def main():
 
         def acct_mechanism(nm):
             return dpftrl_acc.poisson(
-                dpftrl_acc.mf_identity(nm),
+                dpftrl_acc.identity_mf(nm),
                 sample_rate=sample_rate,
                 n_steps=total_steps,
             )
@@ -1246,7 +1246,7 @@ def main():
     elif args.mechanism in ("identity", "none"):
         noise_fn, noise_state = mf_noise(
             trainable_params,
-            identity_strategy(),
+            identity_mf_strategy(),
             noise_multiplier=noise_multiplier,
             key=key(args.seed),
         )
@@ -1311,7 +1311,7 @@ def main():
 
             def identity_acct(nm):
                 return dpftrl_acc.poisson(
-                    dpftrl_acc.mf_identity(nm),
+                    dpftrl_acc.identity_mf(nm),
                     sample_rate=sample_rate,
                     n_steps=total_steps,
                 )

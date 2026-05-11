@@ -56,7 +56,7 @@ from opaque.dpftrl.noise import (
     bisr_strategy,       # banded inverse square root
     bsr_strategy,        # banded square root, closed-form
     lambda_cgd_strategy, # PRNG replay, O(1) memory
-    identity_strategy,   # no correlation; baseline
+    identity_mf_strategy,   # no correlation; baseline
 )
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)

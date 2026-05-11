@@ -132,7 +132,7 @@ so the within-step batch size is Binomial.  Training steps therefore advance a
 fixed rotation over which group is active, while inclusion inside the active
 group stays Poisson-style.
 
-For an identity MF baseline (``identity_strategy`` / ``mf_identity``), use
+For an identity MF baseline (``identity_mf_strategy`` / ``identity_mf``), use
 ``bands=1`` so the lone group is the full dataset and every step is plain
 Poisson on all examples, matching whole-process ``dpftrl_acc.poisson`` with an
 ``IdentityMf`` inner.  For BandMF, set ``bands`` to the same count as in

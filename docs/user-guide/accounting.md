@@ -17,7 +17,7 @@ factories live next to its runtime:
 |--------|----------|------------|
 | `opaque.accounting` | Cross-cutting primitives — composition (`compose`, `repeat`, `cached`), `calibrate`, generic mechanisms (`identity`, `nonprivate`, `eps_delta`), `Accountant`, and the shared PLD / discretization stack. | `opaque-accounting` |
 | `opaque.dpsgd.accounting` | DP-SGD factories — `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`. | `opaque-dpsgd` |
-| `opaque.dpftrl.accounting` | DP-FTRL factories — `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `mf_identity`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins`. | `opaque-dpftrl` |
+| `opaque.dpftrl.accounting` | DP-FTRL factories — `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `identity_mf`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins`. | `opaque-dpftrl` |
 
 Private second moments do **not** use a separate accounting wrapper: the joint gradient + squared-gradient release is handled in the runtime σ split (sensitivity-proportional Mahalanobis allocation), so calibration stays on the same underlying mechanism PLD as first-moment-only training. See [Noise API](../reference/noise.md#paired-second-moment-release).
 
@@ -335,7 +335,7 @@ privacy cost across all `n_steps` rounds (must be a positive multiple of
 `num_bins`; per-bin participation count is `n_steps // num_bins`). Do NOT
 compose further externally.
 
-Used with DP-λCGD, BISR, BLT (with Gram matrix), `mf_identity`, and
+Used with DP-λCGD, BISR, BLT (with Gram matrix), `identity_mf`, and
 Gaussian mechanisms.
 
 ```python

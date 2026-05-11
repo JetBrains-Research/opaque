@@ -217,7 +217,7 @@ eps = proc.epsilon_at(delta=1e-5)
 BandMF uses `opaque.dpftrl.sampling.CyclicPoissonSampler` with ``bands`` matching the
 strategy so participation lines up with the noise.  The same class with
 ``bands=1`` gives plain Poisson on the full dataset each step for an identity MF
-baseline (``mf_identity`` / ``identity_strategy``):
+baseline (``identity_mf`` / ``identity_mf_strategy``):
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler

@@ -16,7 +16,7 @@ from opaque.dpftrl.noise import (
     bisr_strategy,
     blt_strategy,
     bsr_strategy,
-    identity_strategy,
+    identity_mf_strategy,
     lambda_cgd_strategy,
     mf_noise,
 )
@@ -65,7 +65,7 @@ class TestMfNoisePerGroupSingleStream:
         _assert_per_group_stddev_matches_expected(grad_template, key_seed=701)
 
     def test_mlp_group_has_larger_noise_stddev_than_attn(self, grad_template):
-        strategy = identity_strategy()
+        strategy = identity_mf_strategy()
         noise_fn, state = mf_noise(
             grad_template,
             strategy,
@@ -129,7 +129,7 @@ class TestMfNoisePerGroupSingleStream:
             )
 
     def test_per_group_non_dict_grads_raises(self, grad_template):
-        strategy = identity_strategy()
+        strategy = identity_mf_strategy()
         noise_fn, state = mf_noise(
             grad_template,
             strategy,
@@ -152,7 +152,7 @@ class TestMfNoisePerGroupSingleStream:
                 bandwidth=4, n_steps=15, min_sep=15, alpha=1.0, beta=0.9
             ),
             lambda: lambda_cgd_strategy(0.85, n_steps=15, min_sep=15),
-            lambda: identity_strategy(),
+            lambda: identity_mf_strategy(),
         ],
     )
     def test_per_group_runs_all_strategies(self, grad_template, make_strategy):

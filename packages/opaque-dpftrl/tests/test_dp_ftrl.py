@@ -12,7 +12,7 @@ from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
     blt_strategy,
-    identity_strategy,
+    identity_mf_strategy,
     lambda_cgd_strategy,
 )
 from opaque.api.dpftrl.noise._engine import _matrix_factorization_noise
@@ -454,7 +454,7 @@ class TestMfNoiseStrategies:
     @pytest.mark.parametrize(
         "strategy_factory",
         [
-            pytest.param(lambda: identity_strategy(), id="identity"),
+            pytest.param(lambda: identity_mf_strategy(), id="identity"),
             pytest.param(
                 lambda: band_mf_strategy(n_steps=50, bands=10, momentum=0.0),
                 id="band_mf",
@@ -480,10 +480,10 @@ class TestMfNoiseStrategies:
         assert losses[-1] < losses[0]
 
     def test_identity_matches_raw_engine(self):
-        """identity_strategy via mf_noise gives same noise as _matrix_factorization_noise + identity()."""
+        """identity_mf_strategy via mf_noise gives same noise as _matrix_factorization_noise + identity()."""
         tmpl = {"w": torch.zeros(10)}
         nf1, ns1 = mf_noise(
-            tmpl, identity_strategy(), noise_multiplier=1.0, key=key(42)
+            tmpl, identity_mf_strategy(), noise_multiplier=1.0, key=key(42)
         )
         nf2, ns2 = _matrix_factorization_noise(tmpl, identity(), key=key(42))
 

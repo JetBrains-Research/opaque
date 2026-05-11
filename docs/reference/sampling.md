@@ -100,7 +100,7 @@ are skipped.
 
 Account with `dpftrl_acc.balls_in_bins(mechanism, num_bins, n_steps)` where
 `mechanism` is `dpftrl_acc.lambda_cgd(...)`, `dpftrl_acc.bisr(...)`,
-`dpftrl_acc.blt(...)`, or `dpftrl_acc.mf_identity(...)`.
+`dpftrl_acc.blt(...)`, or `dpftrl_acc.identity_mf(...)`.
 
 ## CyclicPoissonSampler (DP-FTRL)
 

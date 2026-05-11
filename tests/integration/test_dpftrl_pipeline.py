@@ -29,7 +29,7 @@ from transformers import (  # noqa: E402
 )
 
 from opaque.api.engine.clipping import clipped_grad
-from opaque.dpftrl.noise import identity_strategy, mf_noise
+from opaque.dpftrl.noise import identity_mf_strategy, mf_noise
 from opaque.functional import make_functional
 from opaque.patches import apply_model_patches
 from opaque.random import key
@@ -96,7 +96,7 @@ def _run_dpftrl_step(model, input_ids, attention_mask, labels):
         trainable, frozen, input_ids, attention_mask, labels, state=clip_state
     )
 
-    strategy = identity_strategy()
+    strategy = identity_mf_strategy()
     noise_fn, noise_state = mf_noise(
         grads, strategy, noise_multiplier=1.0, key=key(0),
     )

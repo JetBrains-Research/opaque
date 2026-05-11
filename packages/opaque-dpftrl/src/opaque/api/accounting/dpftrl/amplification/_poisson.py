@@ -128,7 +128,7 @@ def poisson(
 
         # MF identity (DP-SGD-style baseline through the FTRL API)
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_identity(1.0),
+            ftrl_acc.identity_mf(1.0),
             sample_rate=0.01,
             n_steps=1000,
         )
