@@ -226,14 +226,22 @@ torch.save(state_dict(ckpt), "step.pt")
 
 How `--per-group-clipping`, `--clipping-mode auto`, and
 `--second-moment` behave under MF noise, distilled from end-to-end
-DP fine-tuning runs:
+DP fine-tuning runs. Throughout this section `C` is the
+fixed clipping norm (`--clipping-norm`, or the per-group `Cᵢ` set
+via `--per-group-clipping`); AUTO-S uses `R` for the same per-record
+sensitivity bound.
 
-1. **The `√(1+C)` σ inflation from joint Mahalanobis allocation is
-   mechanism-agnostic.** With `--second-moment` on, the first-moment
-   stream picks up the same `√(1+C)` factor under MF as under
-   per-step Gaussian — the formula does not depend on the strategy
-   matrix. The clipping-guide recommendation to pick `C` as small as
-   the optimizer tolerates carries over unchanged.
+1. **The `√(1+C)` σ inflation from joint Mahalanobis allocation
+   carries over to MF when the two streams share a strategy.** With
+   `--second-moment` on and the first- and second-moment streams
+   using the same strategy norm (the default path: same `mf_noise`
+   strategy for both, so `c1 == c2`), the first-moment σ picks up
+   exactly the `√(1+C)` factor over the no-SM baseline. With distinct
+   strategies (e.g. different momenta for β1 vs β2 in the optimizers
+   guide), the inflation depends on `c2 / c1` — see the joint
+   paired-stream allocation in
+   [Noise](noise.md). The clipping-guide recommendation to pick `C`
+   as small as the optimizer tolerates carries over either way.
 
 2. **`--per-group-clipping` × MF pays off on heterogeneous
    workloads.** When one parameter group's gradients sit an order of
@@ -254,8 +262,10 @@ DP fine-tuning runs:
    same `R`, with no need to retune `R` per workload.
 
 4. **`--second-moment` math is correct under MF, but Adam-family
-   optimizer stability is workload-dependent.** The σ_first inflation
-   matches the predicted `√(1+C)` to within measurement noise. The
+   optimizer stability is workload-dependent.** In the
+   shared-strategy case the σ_first inflation matches the predicted
+   `√(1+C)` to within measurement noise (the general
+   `c2 / c1`-dependent formula matches similarly). The
    destabilisation risk comes from the v update: when per-coordinate
    gradient signal is small relative to σ_second (common when some
    parameter groups have very small gradients), Adam's
