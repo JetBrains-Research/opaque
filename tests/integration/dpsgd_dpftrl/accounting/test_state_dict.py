@@ -1,4 +1,4 @@
-"""Tests for DpProcess flat state_dict serialization (opaque.serialization)."""
+"""Tests for DpProcess nested state_dict serialization (opaque.serialization)."""
 
 import math
 from typing import cast
@@ -12,8 +12,8 @@ from opaque.api.accounting.dpftrl.amplification._poisson import CyclicPoisson
 from opaque.api.accounting.dpftrl.mechanisms._band_mf import BandMf
 from opaque.serialization import from_state_dict, state_dict
 
-# Template type selects the registered handler; PLD decode uses the flat dict's
-# root ``type`` field, so any concrete :class:`~opaque.accounting._base.DpProcess`
+# Template type selects the registered handler; PLD decode uses the root
+# dict's ``type`` field, so any concrete :class:`~opaque.accounting._base.DpProcess`
 # instance is sufficient (``identity()`` is a stable choice).
 _PROCESS_TEMPLATE = acc.identity()
 
@@ -41,10 +41,10 @@ def test_identity_state_dict_structure():
 
 def test_poisson_state_dict_structure():
     proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01)
-    state = cast(dict[str, object], state_dict(proc))
+    state = cast(dict, state_dict(proc))
     assert state["type"] == "Poisson"
     assert state["sample_rate"] == 0.01
-    assert state["inner.type"] == "Gaussian"
+    assert state["inner"]["type"] == "Gaussian"
 
 
 def test_truncated_poisson_state_dict_structure():
@@ -54,56 +54,56 @@ def test_truncated_poisson_state_dict_structure():
         truncated_batch_size=128,
         dataset_size=10_000,
     )
-    state = cast(dict[str, object], state_dict(proc))
+    state = cast(dict, state_dict(proc))
     assert state["type"] == "Poisson"
     assert state["truncated_batch_size"] == 128
     assert state["dataset_size"] == 10_000
-    assert state["inner.type"] == "Gaussian"
+    assert state["inner"]["type"] == "Gaussian"
 
 
 def test_parallel_poisson_state_dict_structure():
     proc = dpsgd_acc.parallel_poisson(
         dpsgd_acc.gaussian(0.8), sample_rate=0.01, num_workers=4
     )
-    state = cast(dict[str, object], state_dict(proc))
+    state = cast(dict, state_dict(proc))
     assert state["type"] == "ParallelPoisson"
     assert state["num_workers"] == 4
-    assert state["inner.type"] == "Poisson"
-    assert state["inner.inner.type"] == "Gaussian"
+    assert state["inner"]["type"] == "Poisson"
+    assert state["inner"]["inner"]["type"] == "Gaussian"
 
 
 def test_adaclip_state_dict_structure():
     proc = dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.8), expected_batch_size=1000)
-    state = cast(dict[str, object], state_dict(proc))
+    state = cast(dict, state_dict(proc))
     assert state["type"] == "AdaClip"
     assert state["fraction_noise_std"] == 0.05
     assert state["expected_batch_size"] == 1000
-    assert state["inner.type"] == "Gaussian"
+    assert state["inner"]["type"] == "Gaussian"
 
 
 def test_composed_state_dict_structure():
     left = dpsgd_acc.gaussian(0.8)
     right = acc.eps_delta(1.0, 1e-5)
     proc = left | right
-    state = cast(dict[str, object], state_dict(proc))
+    state = cast(dict, state_dict(proc))
     assert state["type"] == "Composed"
-    assert state["left.type"] == "Gaussian"
-    assert state["right.type"] == "EpsDelta"
+    assert state["left"]["type"] == "Gaussian"
+    assert state["right"]["type"] == "EpsDelta"
 
 
 def test_repeated_state_dict_structure():
     proc = dpsgd_acc.gaussian(0.8) * 3
-    state = cast(dict[str, object], state_dict(proc))
+    state = cast(dict, state_dict(proc))
     assert state["type"] == "Repeated"
     assert state["count"] == 3
-    assert state["inner.type"] == "Gaussian"
+    assert state["inner"]["type"] == "Gaussian"
 
 
 def test_cached_state_dict_structure():
     proc = acc.cached(dpsgd_acc.gaussian(0.8))
-    state = cast(dict[str, object], state_dict(proc))
+    state = cast(dict, state_dict(proc))
     assert state["type"] == "CachedProcess"
-    assert state["inner.type"] == "Gaussian"
+    assert state["inner"]["type"] == "Gaussian"
 
 
 def test_ftrl_poisson_state_dict_structure():
@@ -112,13 +112,13 @@ def test_ftrl_poisson_state_dict_structure():
         sample_rate=0.01,
         n_steps=200,
     )
-    state = cast(dict[str, object], state_dict(proc))
+    state = cast(dict, state_dict(proc))
     assert state["type"] == "CyclicPoisson"
     assert state["sample_rate"] == 0.01
     assert state["n_steps"] == 200
-    assert state["inner.type"] == "BandMf"
-    assert state["inner.noise_multiplier"] == 1.0
-    assert state["inner.sensitivity"] == 2.5
+    assert state["inner"]["type"] == "BandMf"
+    assert state["inner"]["noise_multiplier"] == 1.0
+    assert state["inner"]["sensitivity"] == 2.5
 
 
 def test_b_min_sep_round_trip():

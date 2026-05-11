@@ -1,4 +1,8 @@
-"""Internal flat codec for :class:`DpProcess` (used by :mod:`opaque.serialization`)."""
+"""Internal nested codec for :class:`DpProcess` (used by :mod:`opaque.serialization`).
+
+Each process serializes as a nested dict carrying its concrete-class name in
+the ``type`` field; inner :class:`DpProcess` fields recurse as sub-dicts.
+"""
 
 from __future__ import annotations
 
@@ -8,15 +12,14 @@ from typing import Any
 from opaque.api.accounting.core._base import DpProcess
 
 
-def _flat_dp_process_state(p: DpProcess, prefix: str = "") -> dict[str, Any]:
-    out: dict[str, Any] = {f"{prefix}type": p.__class__.__name__}
+def _serialize_dp_process(p: DpProcess) -> dict[str, Any]:
+    out: dict[str, Any] = {"type": p.__class__.__name__}
     for f in fields(p):
         v = getattr(p, f.name)
-        fp = f"{prefix}{f.name}"
         if isinstance(v, DpProcess):
-            out.update(_flat_dp_process_state(v, f"{fp}."))
+            out[f.name] = _serialize_dp_process(v)
         else:
-            out[fp] = v
+            out[f.name] = v
     return out
 
 
@@ -31,21 +34,16 @@ def _load_dp_process(sd: dict[str, Any]) -> DpProcess:
 
     kwargs: dict[str, Any] = {}
     for f in fields(cls):
-        fp = f"{f.name}."
-        if f"{f.name}.type" in sd:
-            sub = {k[len(fp) :]: sd[k] for k in list(sd.keys()) if k.startswith(fp)}
-            for k in list(sd.keys()):
-                if k.startswith(fp):
-                    del sd[k]
-            kwargs[f.name] = _load_dp_process(sub)
+        try:
+            raw = sd.pop(f.name)
+        except KeyError as e:
+            raise ValueError(
+                f"missing field {f.name!r} for {cls.__name__} "
+                f"(remaining keys: {sorted(sd)!r})"
+            ) from e
+        if isinstance(raw, dict) and "type" in raw:
+            kwargs[f.name] = _load_dp_process(raw)
         else:
-            try:
-                raw = sd.pop(f.name)
-            except KeyError as e:
-                raise ValueError(
-                    f"missing field {f.name!r} for {cls.__name__} "
-                    f"(remaining keys: {sorted(sd)!r})"
-                ) from e
             kwargs[f.name] = _coerce_field(cls, f.name, raw)
 
     if sd:
