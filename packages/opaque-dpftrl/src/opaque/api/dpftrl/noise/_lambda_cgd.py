@@ -29,7 +29,7 @@ from typing import Any
 
 import torch
 
-from opaque.api.accounting.core._process_codec import register_strategy
+from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 from opaque.pytree import tree_map
 from opaque.types import PerGroup
 from opaque.random import generator_from_key
@@ -71,14 +71,14 @@ class LambdaCgdStrategy:
     """DP-lambda-CGD strategy (PRNG replay noise)."""
 
     sensitivity: float
-    coefficients: tuple[float, ...]
-    gram_matrix: tuple[float, ...] | None = None
-    _lambda: float = 0.0
-    _n_steps: int = 0
-    _normalized: bool = True
+    n_steps: int
+    lambda_: float
+    min_sep: int
+    max_participations: int | None
+    normalized: bool
+    _coefficients: tuple[float, ...]
+    _gram_matrix: tuple[float, ...] | None = None
     _max_column_norm: float = 0.0
-    _min_sep: int = 1
-    _max_participations: int | None = 1
 
     def with_horizon(
         self, n_steps: int, max_participations: int | None
@@ -90,37 +90,37 @@ class LambdaCgdStrategy:
         """
         import dataclasses
 
-        if self._normalized:
+        if self.normalized:
             sens_sq = _native().lambda_cgd_normalized_sensitivity_squared(
-                self._lambda, n_steps, self._min_sep, max_participations
+                self.lambda_, n_steps, self.min_sep, max_participations
             )
             max_column_norm = 1.0
         else:
             sens_sq = _native().lambda_cgd_sensitivity_squared(
-                self._lambda, n_steps, self._min_sep, max_participations
+                self.lambda_, n_steps, self.min_sep, max_participations
             )
             max_column_norm = float(
-                _native().lambda_cgd_max_column_norm(self._lambda, n_steps)
+                _native().lambda_cgd_max_column_norm(self.lambda_, n_steps)
             )
         new_sensitivity = float(sens_sq**0.5)
-        new_coefs = tuple(self._lambda**i for i in range(n_steps))
+        new_coefs = tuple(self.lambda_**i for i in range(n_steps))
         new_gram = tuple(
             _native().lambda_cgd_gram_matrix(
-                self._lambda,
+                self.lambda_,
                 n_steps,
-                self._min_sep,
+                self.min_sep,
                 max_participations,
-                self._normalized,
+                self.normalized,
             )
         )
         return dataclasses.replace(
             self,
             sensitivity=new_sensitivity,
-            coefficients=new_coefs,
-            gram_matrix=new_gram,
-            _n_steps=n_steps,
+            n_steps=n_steps,
+            max_participations=max_participations,
+            _coefficients=new_coefs,
+            _gram_matrix=new_gram,
             _max_column_norm=max_column_norm,
-            _max_participations=max_participations,
         )
 
 
@@ -192,14 +192,14 @@ def lambda_cgd_strategy(
 
     return LambdaCgdStrategy(
         sensitivity=sensitivity,
-        coefficients=coefficients,
-        gram_matrix=gram_matrix,
-        _lambda=lambda_,
-        _n_steps=n_steps,
-        _normalized=normalized,
+        n_steps=n_steps,
+        lambda_=lambda_,
+        min_sep=min_sep,
+        max_participations=max_participations,
+        normalized=normalized,
+        _coefficients=coefficients,
+        _gram_matrix=gram_matrix,
         _max_column_norm=max_column_norm,
-        _min_sep=min_sep,
-        _max_participations=max_participations,
     )
 
 
@@ -219,9 +219,9 @@ def _make_lambda_cgd_noise(
     MFNoiseState,
 ]:
     """DP-lambda-CGD noise via PRNG replay (zero extra memory)."""
-    lambda_ = strategy._lambda
-    n_steps = strategy._n_steps
-    normalized = strategy._normalized
+    lambda_ = strategy.lambda_
+    n_steps = strategy.n_steps
+    normalized = strategy.normalized
 
     state = MFNoiseState(
         _inner_state=None,

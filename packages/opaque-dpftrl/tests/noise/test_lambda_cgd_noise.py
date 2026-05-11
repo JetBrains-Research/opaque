@@ -178,8 +178,8 @@ class TestLambdaCgdStrategy:
 
     def test_gram_matrix_present(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        assert s.gram_matrix is not None
-        assert len(s.gram_matrix) == 25 * 25
+        assert s._gram_matrix is not None
+        assert len(s._gram_matrix) == 25 * 25
 
     def test_normalized_single_participation_sensitivity_one(self):
         """Normalized + single participation -> sensitivity = 1.0."""
@@ -201,9 +201,9 @@ class TestLambdaCgdStrategy:
 
     def test_internal_fields(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        assert s._lambda == pytest.approx(0.9)
-        assert s._n_steps == 100
-        assert s._normalized is True
+        assert s.lambda_ == pytest.approx(0.9)
+        assert s.n_steps == 100
+        assert s.normalized is True
 
 
 class TestLambdaCgdPld:

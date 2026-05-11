@@ -15,12 +15,12 @@ class TestBltStrategy:
 
     def test_gram_matrix_present(self):
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        assert s.gram_matrix is not None
-        assert len(s.gram_matrix) == 25 * 25
+        assert s._gram_matrix is not None
+        assert len(s._gram_matrix) == 25 * 25
 
     def test_coefficients_length(self):
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        assert len(s.coefficients) == 100
+        assert len(s._coefficients) == 100
 
     def test_streaming_matrix_present(self):
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)

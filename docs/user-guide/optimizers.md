@@ -317,7 +317,8 @@ is sensitivity-proportional, so the joint Mahalanobis budget collapses to
 a single sensitivity-1 Gaussian release at the same noise multiplier.
 
 ```python
-mechanism = dpftrl_acc.mf_gaussian(nm, BandMfStrategy(sensitivity=S, coefficients=coeffs))
+strategy = band_mf_strategy(n_steps=n, bands=bands)
+mechanism = dpftrl_acc.mf_gaussian(nm, strategy)
 process = dpftrl_acc.poisson(mechanism, sample_rate=q, n_steps=n)
 ```
 

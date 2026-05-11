@@ -18,21 +18,20 @@ class TestBandMfStrategy:
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
         assert s.sensitivity == pytest.approx(1.0, abs=1e-6)
 
-    def test_gram_matrix_is_none(self):
-        """BandMF uses Poisson amplification, not BnB."""
+    def test_no_gram_matrix(self):
+        """BandMF uses Poisson amplification, not BnB — no Gram needed."""
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        assert s.gram_matrix is None
+        assert not hasattr(s, "_gram_matrix")
 
     def test_coefficients_length(self):
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        assert len(s.coefficients) == 10
+        assert len(s._coefficients) == 10
 
     def test_streaming_matrix_present(self):
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
         assert s._streaming_matrix is not None
 
     def test_matches_old_sensitivity(self):
-        ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=1.0, coefficients=(1.0,) * 10))
         new = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
         assert new.sensitivity == pytest.approx(1.0, abs=1e-6)
 

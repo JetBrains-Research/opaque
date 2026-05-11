@@ -83,7 +83,7 @@ class BMinSep(DpFtrlProcess):
 
         match self.inner.strategy:
             case BandMfStrategy() as s:
-                strategy_coefficients = s.coefficients
+                strategy_coefficients = s._coefficients
                 bands = s.bands
                 effective_nm = self.inner.noise_multiplier / s.sensitivity
             case _:

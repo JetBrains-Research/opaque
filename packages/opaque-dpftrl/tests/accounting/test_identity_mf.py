@@ -10,8 +10,8 @@ import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core.discretization import get_discretization
 from opaque.dpftrl.accounting.types import MfGaussian
-from opaque.dpftrl.noise import identity_strategy
-from opaque.dpftrl.noise.types import BandMfStrategy, IdentityStrategy
+from opaque.dpftrl.noise import band_mf_strategy, identity_strategy
+from opaque.dpftrl.noise.types import IdentityStrategy
 
 
 _DELTA = 1e-5
@@ -104,13 +104,11 @@ class TestPoissonBandMf:
     def test_pld_matches_self_composed_with_bands(self):
         """For BandMf: num_groups = ceil(n_steps / bands)."""
         nm, p = 1.1, 0.01
-        coefs = (1.0, 0.5)  # bands = 2
-        bands = len(coefs)
+        bands = 2
         n_steps = 100
+        strategy = band_mf_strategy(n_steps=n_steps, bands=bands)
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(
-                nm, BandMfStrategy(sensitivity=1.0, coefficients=coefs)
-            ),
+            ftrl_acc.mf_gaussian(nm / strategy.sensitivity, strategy),
             sample_rate=p,
             n_steps=n_steps,
         )
@@ -295,9 +293,7 @@ class TestTruncatedPoissonIdentity:
     def test_rejects_band_mf_with_truncation(self):
         with pytest.raises(ValueError, match="IdentityStrategy"):
             ftrl_acc.poisson(
-                ftrl_acc.mf_gaussian(
-                    1.0, BandMfStrategy(sensitivity=1.0, coefficients=(1.0, 0.5))
-                ),
+                ftrl_acc.mf_gaussian(1.0, band_mf_strategy(n_steps=10, bands=2)),
                 sample_rate=0.01,
                 n_steps=10,
                 truncated_batch_size=64,

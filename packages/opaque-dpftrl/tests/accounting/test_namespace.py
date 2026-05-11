@@ -11,8 +11,6 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from opaque.dpftrl.noise.types import BandMfStrategy
-
 _HEADLINE = (
     "mf_gaussian",
     "poisson",
@@ -57,11 +55,11 @@ class TestEndToEndCalibration:
     def test_band_mf_poisson(self):
         import math
         import opaque.dpftrl.accounting as ftrl_acc
+        from opaque.dpftrl.noise import band_mf_strategy
 
+        strategy = band_mf_strategy(n_steps=20, bands=2)
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(
-                1.0, BandMfStrategy(sensitivity=1.0, coefficients=(1.0, 0.5))
-            ),
+            ftrl_acc.mf_gaussian(1.0, strategy),
             sample_rate=0.01,
             n_steps=20,
         )

@@ -171,13 +171,13 @@ class BallsInBins(DpFtrlProcess):
                 | BisrStrategy()
                 | BsrStrategy() as s
             ):
-                if not s.gram_matrix:
+                if not s._gram_matrix:
                     raise ValueError(
                         f"{type(s).__name__} requires a non-empty gram_matrix "
                         "for BnB amplification."
                     )
                 return _native.bnb_mc_pld(
-                    list(s.gram_matrix),
+                    list(s._gram_matrix),
                     self.num_bins,
                     self.inner.noise_multiplier,
                     native_cfg,

@@ -38,8 +38,8 @@ class TestBsrStrategy:
             alpha=1.0,
             beta=0.5,
         )
-        assert s.gram_matrix is not None
-        assert len(s.gram_matrix) == 25 * 25
+        assert s._gram_matrix is not None
+        assert len(s._gram_matrix) == 25 * 25
 
     def test_streaming_matrix_present(self):
         s = bsr_strategy(
@@ -61,7 +61,7 @@ class TestBsrStrategy:
             alpha=1.0,
             beta=0.9,
         )
-        head = list(s.coefficients[:6])
+        head = list(s._coefficients[:6])
         for i in range(1, len(head)):
             assert head[i] <= head[i - 1] + 1e-9
 

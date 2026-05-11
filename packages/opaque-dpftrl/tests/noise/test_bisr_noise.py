@@ -17,8 +17,8 @@ class TestBisrStrategy:
 
     def test_gram_matrix_present(self):
         s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        assert s.gram_matrix is not None
-        assert len(s.gram_matrix) == 25 * 25
+        assert s._gram_matrix is not None
+        assert len(s._gram_matrix) == 25 * 25
 
     def test_streaming_matrix_present(self):
         s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)

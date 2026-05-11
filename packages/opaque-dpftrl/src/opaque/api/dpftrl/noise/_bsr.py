@@ -15,13 +15,13 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 
-from ._sensitivity import minsep_true_max_participations
-from opaque.api.accounting.core._process_codec import register_strategy
+from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 
+from ._sensitivity import minsep_true_max_participations
 from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import (
     inverse_as_streaming_matrix,
@@ -111,16 +111,16 @@ class BsrStrategy:
     """BSR (banded square root) strategy; workload parameters :math:`\\alpha,\\beta`."""
 
     sensitivity: float
-    coefficients: tuple[float, ...]
-    gram_matrix: tuple[float, ...] | None = None
-    _streaming_matrix: StreamingMatrix | None = None
+    n_steps: int
+    bandwidth: int
+    min_sep: int
+    max_participations: int | None
+    alpha: float
+    beta: float
+    _coefficients: tuple[float, ...] = ()
+    _gram_matrix: tuple[float, ...] | None = None
+    _streaming_matrix: StreamingMatrix | None = field(default=None, compare=False)
     _max_column_norm: float = 0.0
-    _bandwidth: int = 1
-    _n_steps: int = 1
-    _min_sep: int = 1
-    _max_participations: int | None = 1
-    _alpha: float = 1.0
-    _beta: float = 0.0
     _band_coefficients: tuple[float, ...] = ()
 
     def with_horizon(
@@ -129,36 +129,28 @@ class BsrStrategy:
         """Return a fresh strategy regenerated at horizon ``n_steps``.
 
         The band coefficients are horizon-independent (BSR is closed-form);
-        we re-pad the strategy ``coefficients`` to the new length and rebuild
-        Gram and sensitivity for the smaller horizon.
+        we re-pad ``_coefficients`` to the new length and rebuild Gram /
+        sensitivity for the smaller horizon.
         """
         import dataclasses
 
-        import torch
-
-        from ._sensitivity import minsep_true_max_participations
-        from ._toeplitz import (
-            minsep_sensitivity_squared as _toeplitz_minsep_sensitivity_squared,
-        )
-        from ._toeplitz import sensitivity_squared as _toeplitz_col_norm_sq
-
         band_coefs = list(self._band_coefficients)
         coef_tensor = torch.zeros(n_steps, dtype=torch.float64)
-        copy_len = min(self._bandwidth, n_steps)
+        copy_len = min(self.bandwidth, n_steps)
         coef_tensor[:copy_len] = torch.tensor(
             band_coefs[:copy_len], dtype=torch.float64
         )
         max_col_sq = _toeplitz_col_norm_sq(coef_tensor, n_steps)
         max_column_norm = float(max_col_sq.sqrt())
         k = minsep_true_max_participations(
-            n=n_steps, min_sep=self._min_sep, max_participations=max_participations
+            n=n_steps, min_sep=self.min_sep, max_participations=max_participations
         )
         if k == 1:
             new_sensitivity = max_column_norm
         else:
             sens_sq = _toeplitz_minsep_sensitivity_squared(
                 strategy_coef=coef_tensor,
-                min_sep=self._min_sep,
+                min_sep=self.min_sep,
                 max_participations=max_participations,
                 skip_checks=True,
             )
@@ -168,7 +160,7 @@ class BsrStrategy:
             _native().toeplitz_gram_matrix(
                 band_coefs,
                 n_steps,
-                self._min_sep,
+                self.min_sep,
                 max_participations,
                 False,
             )
@@ -176,11 +168,11 @@ class BsrStrategy:
         return dataclasses.replace(
             self,
             sensitivity=new_sensitivity,
-            coefficients=new_coefficients,
-            gram_matrix=new_gram,
+            n_steps=n_steps,
+            max_participations=max_participations,
+            _coefficients=new_coefficients,
+            _gram_matrix=new_gram,
             _max_column_norm=max_column_norm,
-            _n_steps=n_steps,
-            _max_participations=max_participations,
         )
 
 
@@ -264,15 +256,15 @@ def bsr_strategy(
 
     return BsrStrategy(
         sensitivity=sensitivity,
-        coefficients=coefficients,
-        gram_matrix=gram_matrix,
+        n_steps=n_steps,
+        bandwidth=bandwidth,
+        min_sep=min_sep,
+        max_participations=max_participations,
+        alpha=alpha,
+        beta=beta,
+        _coefficients=coefficients,
+        _gram_matrix=gram_matrix,
         _streaming_matrix=streaming,
         _max_column_norm=max_column_norm,
-        _bandwidth=bandwidth,
-        _n_steps=n_steps,
-        _min_sep=min_sep,
-        _max_participations=max_participations,
-        _alpha=alpha,
-        _beta=beta,
         _band_coefficients=tuple(band_coefs),
     )

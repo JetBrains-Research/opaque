@@ -16,13 +16,19 @@ Built via the :func:`mf_gaussian` factory in this module:
 where ``strategy`` is one of the dataclasses from :mod:`opaque.dpftrl.noise`
 (``BltStrategy``, ``BsrStrategy``, ``BisrStrategy``, ``LambdaCgdStrategy``,
 ``BandMfStrategy``, ``IdentityStrategy``).
+
+Serialization: a custom serializer pair is registered here that emits
+``{"type": "MfGaussian", "noise_multiplier": ..., "strategy":
+{"type": "<StrategyName>", ...}}``.  The strategy sub-dict is produced
+and consumed by :mod:`opaque.api.dpftrl.noise._strategy_codec`, which
+owns the strategy class registry.
 """
 
 from __future__ import annotations
 
 import functools
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from opaque.api.accounting.core import _native
 
@@ -45,10 +51,6 @@ class MfGaussian(DpProcess):
     noise_multiplier: float
     strategy: "MfStrategy"
 
-    @property
-    def sensitivity(self) -> float:
-        return self.strategy.sensitivity
-
     @functools.lru_cache(maxsize=8)
     def pld(
         self,
@@ -68,7 +70,7 @@ class MfGaussian(DpProcess):
             return _native.non_private_pld(config.to_native())
         return _native.mf_gaussian_pld(
             self.noise_multiplier,
-            self.sensitivity,
+            self.strategy.sensitivity,
             config.to_native(),
         )
 
@@ -104,3 +106,44 @@ def mf_gaussian(noise_multiplier: float, strategy: "MfStrategy") -> MfGaussian:
             f"noise_multiplier must be non-negative, got {noise_multiplier}"
         )
     return MfGaussian(noise_multiplier=nm, strategy=strategy)
+
+
+# --- Custom serialization ---------------------------------------------------
+#
+# MfGaussian holds a ``strategy`` field whose value is one of the
+# strategy dataclasses from opaque.dpftrl.noise.  The generic DpProcess
+# codec only knows how to emit primitives, containers, and nested
+# DpProcess values; it would silently drop the strategy.  Register a
+# custom serializer pair that delegates strategy (de)serialization to
+# the strategy codec, which owns the strategy class name registry.
+
+
+def _serialize_mf_gaussian(p: MfGaussian) -> dict[str, Any]:
+    from opaque.api.dpftrl.noise._strategy_codec import serialize_strategy
+
+    return {
+        "type": "MfGaussian",
+        "noise_multiplier": p.noise_multiplier,
+        "strategy": serialize_strategy(p.strategy),
+    }
+
+
+def _load_mf_gaussian(_template: Any, sd: dict[str, Any]) -> MfGaussian:
+    from opaque.api.dpftrl.noise._strategy_codec import deserialize_strategy
+
+    sd = dict(sd)
+    sd.pop("type", None)
+    nm = sd["noise_multiplier"]
+    strategy = deserialize_strategy(dict(sd["strategy"]))
+    return MfGaussian(noise_multiplier=nm, strategy=strategy)
+
+
+def _register_mf_gaussian_serializer() -> None:
+    from opaque.serialization import register_serializer
+
+    register_serializer(
+        MfGaussian, _serialize_mf_gaussian, _load_mf_gaussian
+    )
+
+
+_register_mf_gaussian_serializer()

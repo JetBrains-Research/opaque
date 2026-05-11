@@ -9,7 +9,6 @@ import opaque.dpsgd.accounting as dpsgd_acc
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.accounting.core._base import DpProcess
 from opaque.dpftrl.noise import bisr_strategy, lambda_cgd_strategy
-from opaque.dpftrl.noise.types import BandMfStrategy
 
 
 def _lambda_cgd_mech(noise_multiplier: float = 1.0, **kw):
@@ -39,9 +38,9 @@ class TestLambdaCgdDataclass:
     def test_fields_via_strategy(self):
         proc = _lambda_cgd_mech(1.0, lambda_=0.5)
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.sensitivity > 0
-        assert proc.strategy._lambda == pytest.approx(0.5)
-        assert isinstance(proc.strategy.gram_matrix, tuple)
+        assert proc.strategy.sensitivity > 0
+        assert proc.strategy.lambda_ == pytest.approx(0.5)
+        assert isinstance(proc.strategy._gram_matrix, tuple)
 
     def test_frozen(self):
         proc = _lambda_cgd_mech()
@@ -65,8 +64,8 @@ class TestBisrDataclass:
     def test_fields_via_strategy(self):
         proc = _bisr_mech(1.0)
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.sensitivity > 0
-        assert isinstance(proc.strategy.gram_matrix, tuple)
+        assert proc.strategy.sensitivity > 0
+        assert isinstance(proc.strategy._gram_matrix, tuple)
 
     def test_frozen(self):
         proc = _bisr_mech()
@@ -117,9 +116,11 @@ class TestBnbAmplification:
     @pytest.mark.slow
     def test_bnb_rejects_non_accepted_type(self):
         """BnB rejects BandMf (should use poisson)."""
+        from opaque.dpftrl.noise import band_mf_strategy
+
         with pytest.raises(TypeError):
             ftrl_acc.balls_in_bins(
-                ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=1.0, coefficients=(1.0,))),
+                ftrl_acc.mf_gaussian(1.0, band_mf_strategy(n_steps=150, bands=1)),
                 num_bins=50,
                 n_steps=150,
             )

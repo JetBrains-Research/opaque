@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import math
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 
-from opaque.api.accounting.core._process_codec import register_strategy
+from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 
 from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import inverse_as_streaming_matrix
@@ -93,17 +93,21 @@ __all__ = ["BandMfStrategy", "band_mf_strategy"]
 class BandMfStrategy:
     """BandMF banded Toeplitz strategy.
 
-    BandMF uses cyclic Poisson amplification (not BnB), so
-    ``gram_matrix`` is always ``None``.
+    Public fields are the strategy's identity (factory args + ``sensitivity``).
+    Private (``_``-prefixed) fields are internal derivations used by the
+    accounting and noise machinery.
+
+    BandMF uses cyclic Poisson amplification (not BnB), so no Gram matrix
+    is needed.
     """
 
     sensitivity: float
-    coefficients: tuple[float, ...]
-    gram_matrix: None = None
-    _streaming_matrix: StreamingMatrix | None = None
-    _n_steps: int = 0
-    _bands: int = 0
-    _lr_schedule: torch.Tensor | None = None
+    n_steps: int
+    bands: int
+    momentum: float
+    lr_schedule: torch.Tensor | None = field(default=None, compare=False)
+    _coefficients: tuple[float, ...] = ()
+    _streaming_matrix: StreamingMatrix | None = field(default=None, compare=False)
 
     @property
     def _max_column_norm(self) -> float:
@@ -113,12 +117,7 @@ class BandMfStrategy:
     @property
     def num_groups(self) -> int:
         """Number of independent cyclic groups: ceil(n_steps / bands)."""
-        return math.ceil(self._n_steps / self._bands) if self._bands > 0 else 0
-
-    @property
-    def bands(self) -> int:
-        """Band width — convenience alias for ``len(coefficients)`` / ``_bands``."""
-        return self._bands or len(self.coefficients)
+        return math.ceil(self.n_steps / self.bands) if self.bands > 0 else 0
 
     def with_horizon(
         self, n_steps: int, max_participations: int | None
@@ -126,7 +125,7 @@ class BandMfStrategy:
         """Return a copy clamped to ``n_steps`` rounds (sensitivity/bands unchanged)."""
         import dataclasses
 
-        return dataclasses.replace(self, _n_steps=n_steps)
+        return dataclasses.replace(self, n_steps=n_steps)
 
 
 def band_mf_strategy(
@@ -138,8 +137,7 @@ def band_mf_strategy(
 ) -> BandMfStrategy:
     """Create a BandMF strategy by optimizing banded Toeplitz coefficients.
 
-    BandMF uses cyclic Poisson amplification, not BnB, so ``gram_matrix``
-    is always ``None``.
+    BandMF uses cyclic Poisson amplification, not BnB.
 
     Args:
         n_steps: Number of training iterations.
@@ -164,13 +162,14 @@ def band_mf_strategy(
 
     return BandMfStrategy(
         sensitivity=sensitivity,
-        coefficients=coefficients,
-        _streaming_matrix=streaming,
-        _n_steps=n_steps,
-        _bands=bands,
-        _lr_schedule=(
+        n_steps=n_steps,
+        bands=bands,
+        momentum=momentum,
+        lr_schedule=(
             torch.as_tensor(lr_schedule, dtype=torch.float64).clone()
             if lr_schedule is not None
             else None
         ),
+        _coefficients=coefficients,
+        _streaming_matrix=streaming,
     )

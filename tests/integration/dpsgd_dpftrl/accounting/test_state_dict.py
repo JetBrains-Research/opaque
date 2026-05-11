@@ -10,6 +10,7 @@ from opaque.accounting import Accountant
 from opaque.api.accounting.dpftrl.amplification._b_min_sep import BMinSep
 from opaque.api.accounting.dpftrl.amplification._poisson import CyclicPoisson
 from opaque.dpftrl.accounting.types import MfGaussian
+from opaque.dpftrl.noise import band_mf_strategy
 from opaque.dpftrl.noise.types import BandMfStrategy
 from opaque.serialization import from_state_dict, state_dict
 
@@ -108,8 +109,9 @@ def test_cached_state_dict_structure():
 
 
 def test_ftrl_poisson_state_dict_structure():
+    strategy = band_mf_strategy(n_steps=200, bands=2)
     proc = ftrl_acc.poisson(
-        ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=2.5, coefficients=(0.9, 0.1))),
+        ftrl_acc.mf_gaussian(1.0, strategy),
         sample_rate=0.01,
         n_steps=200,
     )
@@ -120,12 +122,16 @@ def test_ftrl_poisson_state_dict_structure():
     assert state["inner"]["type"] == "MfGaussian"
     assert state["inner"]["noise_multiplier"] == 1.0
     assert state["inner"]["strategy"]["type"] == "BandMfStrategy"
-    assert state["inner"]["strategy"]["sensitivity"] == 2.5
+    assert state["inner"]["strategy"]["n_steps"] == 200
+    assert state["inner"]["strategy"]["bands"] == 2
+    # ``sensitivity`` is a computed field; the strategy codec recomputes
+    # it on load from the factory args, so the on-wire dict omits it.
+    assert "sensitivity" not in state["inner"]["strategy"]
 
 
 def test_b_min_sep_round_trip():
     proc = ftrl_acc.b_min_sep(
-        ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=1.2, coefficients=(0.9, 0.1))),
+        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(n_steps=100, bands=2)),
         n_steps=100,
         p0=0.02,
     )
@@ -137,7 +143,7 @@ def test_b_min_sep_round_trip():
 
 def test_ftrl_poisson_round_trip():
     proc = ftrl_acc.poisson(
-        ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=2.5, coefficients=(0.9, 0.1))),
+        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(n_steps=200, bands=2)),
         sample_rate=0.01,
         n_steps=200,
     )

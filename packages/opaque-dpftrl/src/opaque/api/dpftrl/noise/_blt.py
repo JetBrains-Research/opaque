@@ -12,9 +12,11 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
+
+from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 
 from ._band_mf import _momentum_workload_coef
 from ._blt_math import (
@@ -24,8 +26,6 @@ from ._blt_math import (
     toeplitz_coefs as _blt_toeplitz_coefs,
 )
 from ._sensitivity import minsep_true_max_participations
-from opaque.api.accounting.core._process_codec import register_strategy
-
 from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import (
     minsep_sensitivity_squared as _toeplitz_minsep_sensitivity_squared,
@@ -49,43 +49,47 @@ __all__ = ["BltStrategy", "blt_strategy"]
 @register_strategy
 @dataclass(frozen=True, slots=True)
 class BltStrategy:
-    """BLT (Buffered Linear Toeplitz) strategy."""
+    """BLT (Buffered Linear Toeplitz) strategy.
+
+    Public fields are the factory args + ``sensitivity``.  Private
+    (``_``-prefixed) fields are internal derivations the accounting /
+    noise machinery consumes; users shouldn't need them.
+    """
 
     sensitivity: float
-    coefficients: tuple[float, ...]
-    gram_matrix: tuple[float, ...] | None = None
-    _streaming_matrix: StreamingMatrix | None = None
+    n_steps: int
+    min_sep: int
+    max_participations: int | None
+    max_buffers: int
+    momentum: float
+    lr_schedule: torch.Tensor | None = field(default=None, compare=False)
+    _coefficients: tuple[float, ...] = ()
+    _gram_matrix: tuple[float, ...] | None = None
+    _streaming_matrix: StreamingMatrix | None = field(default=None, compare=False)
     _max_column_norm: float = 0.0
-    _n_steps: int = 0
-    _min_sep: int = 1
-    _max_participations: int | None = 1
-    _max_buffers: int = 10
-    _lr_schedule: torch.Tensor | None = None
 
     def with_horizon(
         self, n_steps: int, max_participations: int | None
     ) -> "BltStrategy":
         """Return a fresh strategy regenerated at a smaller horizon ``n_steps``.
 
-        Recomputes ``gram_matrix`` and ``sensitivity`` for the new horizon
+        Recomputes ``_gram_matrix`` and ``sensitivity`` for the new horizon
         using the same Rust helpers the factory called.
         """
         import dataclasses
 
-        import torch
-
-        new_coefs = tuple(self.coefficients[:n_steps])
+        new_coefs = tuple(self._coefficients[:n_steps])
         coef_tensor = torch.tensor(list(new_coefs), dtype=torch.float64)
         max_col_norm = float(_l2_norm(coef_tensor))
         k = minsep_true_max_participations(
-            n=n_steps, min_sep=self._min_sep, max_participations=max_participations
+            n=n_steps, min_sep=self.min_sep, max_participations=max_participations
         )
         if k == 1:
             new_sensitivity = max_col_norm
         else:
             sens_sq = _toeplitz_minsep_sensitivity_squared(
                 strategy_coef=coef_tensor,
-                min_sep=self._min_sep,
+                min_sep=self.min_sep,
                 max_participations=max_participations,
                 skip_checks=True,
             )
@@ -94,7 +98,7 @@ class BltStrategy:
             _native().toeplitz_gram_matrix(
                 list(new_coefs),
                 n_steps,
-                self._min_sep,
+                self.min_sep,
                 max_participations,
                 True,
             )
@@ -102,11 +106,11 @@ class BltStrategy:
         return dataclasses.replace(
             self,
             sensitivity=new_sensitivity,
-            coefficients=new_coefs,
-            gram_matrix=new_gram,
+            n_steps=n_steps,
+            max_participations=max_participations,
+            _coefficients=new_coefs,
+            _gram_matrix=new_gram,
             _max_column_norm=max_col_norm,
-            _n_steps=n_steps,
-            _max_participations=max_participations,
         )
 
 
@@ -193,17 +197,18 @@ def blt_strategy(
 
     return BltStrategy(
         sensitivity=sensitivity,
-        coefficients=coefficients,
-        gram_matrix=gram_matrix,
-        _streaming_matrix=streaming,
-        _max_column_norm=max_column_norm,
-        _n_steps=n_steps,
-        _min_sep=min_sep,
-        _max_participations=max_participations,
-        _max_buffers=max_buffers,
-        _lr_schedule=(
+        n_steps=n_steps,
+        min_sep=min_sep,
+        max_participations=max_participations,
+        max_buffers=max_buffers,
+        momentum=momentum,
+        lr_schedule=(
             torch.as_tensor(lr_schedule, dtype=torch.float64).clone()
             if lr_schedule is not None
             else None
         ),
+        _coefficients=coefficients,
+        _gram_matrix=gram_matrix,
+        _streaming_matrix=streaming,
+        _max_column_norm=max_column_norm,
     )

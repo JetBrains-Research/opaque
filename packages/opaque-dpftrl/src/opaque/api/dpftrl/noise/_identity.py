@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from opaque.api.accounting.core._process_codec import register_strategy
+from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 
 
 @register_strategy

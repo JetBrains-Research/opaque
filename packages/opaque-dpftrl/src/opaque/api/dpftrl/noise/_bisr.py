@@ -14,11 +14,11 @@ References:
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 
-from opaque.api.accounting.core._process_codec import register_strategy
+from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 
 from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import inverse_as_streaming_matrix
@@ -88,16 +88,17 @@ class BisrStrategy:
     """BISR (Banded Inverse Square Root) strategy."""
 
     sensitivity: float
-    coefficients: tuple[float, ...]
-    gram_matrix: tuple[float, ...] | None = None
-    _streaming_matrix: StreamingMatrix | None = None
+    n_steps: int
+    bandwidth: int
+    min_sep: int
+    max_participations: int | None
+    normalized: bool
+    momentum: float
+    _coefficients: tuple[float, ...] = ()
+    _gram_matrix: tuple[float, ...] | None = None
+    _streaming_matrix: StreamingMatrix | None = field(default=None, compare=False)
     _max_column_norm: float = 0.0
-    _bandwidth: int = 2
-    _n_steps: int = 1
-    _min_sep: int = 1
-    _max_participations: int | None = 1
     _inv_coefficients: tuple[float, ...] = ()
-    _normalized: bool = True
 
     def with_horizon(
         self, n_steps: int, max_participations: int | None
@@ -110,14 +111,14 @@ class BisrStrategy:
         import dataclasses
 
         inv_coefs = list(self._inv_coefficients)
-        if self._normalized:
+        if self.normalized:
             sens_sq = _native().bisr_normalized_sensitivity_squared(
-                inv_coefs, n_steps, self._min_sep, max_participations
+                inv_coefs, n_steps, self.min_sep, max_participations
             )
             max_column_norm = 1.0
         else:
             sens_sq = _native().bisr_sensitivity_squared(
-                inv_coefs, n_steps, self._min_sep, max_participations
+                inv_coefs, n_steps, self.min_sep, max_participations
             )
             mcn_sq = _native().bisr_sensitivity_squared(inv_coefs, n_steps, n_steps, 1)
             max_column_norm = float(mcn_sq**0.5)
@@ -127,19 +128,19 @@ class BisrStrategy:
             _native().bisr_gram_matrix(
                 inv_coefs,
                 n_steps,
-                self._min_sep,
+                self.min_sep,
                 max_participations,
-                self._normalized,
+                self.normalized,
             )
         )
         return dataclasses.replace(
             self,
             sensitivity=new_sensitivity,
-            coefficients=new_coefs,
-            gram_matrix=new_gram,
+            n_steps=n_steps,
+            max_participations=max_participations,
+            _coefficients=new_coefs,
+            _gram_matrix=new_gram,
             _max_column_norm=max_column_norm,
-            _n_steps=n_steps,
-            _max_participations=max_participations,
         )
 
 
@@ -238,14 +239,15 @@ def bisr_strategy(
 
     return BisrStrategy(
         sensitivity=sensitivity,
-        coefficients=coefs_tuple,
-        gram_matrix=gram_matrix,
+        n_steps=n_steps,
+        bandwidth=bandwidth,
+        min_sep=min_sep,
+        max_participations=max_participations,
+        normalized=normalized,
+        momentum=momentum,
+        _coefficients=coefs_tuple,
+        _gram_matrix=gram_matrix,
         _streaming_matrix=streaming,
         _max_column_norm=max_column_norm,
-        _bandwidth=bandwidth,
-        _n_steps=n_steps,
-        _min_sep=min_sep,
-        _max_participations=max_participations,
         _inv_coefficients=tuple(inv_coefs),
-        _normalized=normalized,
     )

@@ -38,21 +38,20 @@ class TestBandMfStrategy:
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
         assert s.sensitivity == pytest.approx(1.0, abs=1e-6)
 
-    def test_gram_matrix_is_none(self):
-        """BandMF uses Poisson amplification, not BnB."""
+    def test_no_gram_matrix(self):
+        """BandMF uses Poisson amplification, not BnB — no Gram needed."""
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        assert s.gram_matrix is None
+        assert not hasattr(s, "_gram_matrix")
 
     def test_coefficients_length(self):
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
-        assert len(s.coefficients) == 10
+        assert len(s._coefficients) == 10
 
     def test_streaming_matrix_present(self):
         s = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
         assert s._streaming_matrix is not None
 
     def test_matches_old_sensitivity(self):
-        ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=1.0, coefficients=(1.0,) * 10))
         new = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
         assert new.sensitivity == pytest.approx(1.0, abs=1e-6)
 
@@ -87,13 +86,13 @@ class TestBltStrategy:
 
     def test_gram_matrix_present(self):
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        assert s.gram_matrix is not None
+        assert s._gram_matrix is not None
         # Gram matrix is 25x25 flattened
-        assert len(s.gram_matrix) == 25 * 25
+        assert len(s._gram_matrix) == 25 * 25
 
     def test_coefficients_length(self):
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
-        assert len(s.coefficients) == 100
+        assert len(s._coefficients) == 100
 
     def test_streaming_matrix_present(self):
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
@@ -122,8 +121,8 @@ class TestLambdaCgdStrategy:
 
     def test_gram_matrix_present(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        assert s.gram_matrix is not None
-        assert len(s.gram_matrix) == 25 * 25
+        assert s._gram_matrix is not None
+        assert len(s._gram_matrix) == 25 * 25
 
     def test_normalized_single_participation_sensitivity_one(self):
         """Normalized + single participation → sensitivity = 1.0."""
@@ -155,9 +154,9 @@ class TestLambdaCgdStrategy:
 
     def test_internal_fields(self):
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        assert s._lambda == pytest.approx(0.9)
-        assert s._n_steps == 100
-        assert s._normalized is True
+        assert s.lambda_ == pytest.approx(0.9)
+        assert s.n_steps == 100
+        assert s.normalized is True
 
 
 # ── BisrStrategy ────────────────────────────────────────────────────────
@@ -174,8 +173,8 @@ class TestBisrStrategy:
 
     def test_gram_matrix_present(self):
         s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
-        assert s.gram_matrix is not None
-        assert len(s.gram_matrix) == 25 * 25
+        assert s._gram_matrix is not None
+        assert len(s._gram_matrix) == 25 * 25
 
     def test_streaming_matrix_present(self):
         s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
