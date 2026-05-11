@@ -124,7 +124,7 @@ import torchopt
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.accounting import calibration as cal
-from opaque.dpftrl.clipping import clipped_grad, per_group
+from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad, per_group
 from opaque.types import PerGroup, SecondMomentNoiseOutput
 from opaque.dpftrl.noise import (
     band_mf_strategy,
@@ -417,6 +417,22 @@ def parse_args():
     )
     dp_g.add_argument(
         "--clipping-norm", type=float, default=0.9, help="Fixed clipping norm"
+    )
+    dp_g.add_argument(
+        "--clipping-mode",
+        type=str,
+        choices=["fixed", "auto"],
+        default="fixed",
+        help="Clipping mode: 'fixed' (clipped_grad, threshold = --clipping-norm) "
+        "or 'auto' (AUTO-S smooth scaling, sensitivity bound = --clipping-norm). "
+        "AUTO-S satisfies MF's constant per-record sensitivity invariant; both "
+        "modes compose with --per-group-clipping and --second-moment.",
+    )
+    dp_g.add_argument(
+        "--auto-gamma",
+        type=float,
+        default=0.01,
+        help="AUTO-S denominator stabilizer γ (only used with --clipping-mode auto).",
     )
     dp_g.add_argument(
         "--per-group-clipping",
@@ -952,16 +968,29 @@ def main():
     else:
         clip_norm = args.clipping_norm
 
-    grad_fn, clip_state = clipped_grad(
-        per_example_loss_fn,
-        argnums=0,
-        batch_argnums=(1,),
-        clipping_norm=clip_norm,
-        normalize_by=args.batch_size,
-        microbatch_size=args.microbatch_size,
-        return_aux=True,
-        second_moment=args.second_moment,
-    )
+    if args.clipping_mode == "auto":
+        grad_fn, clip_state = auto_clipped_grad(
+            per_example_loss_fn,
+            argnums=0,
+            batch_argnums=(1,),
+            R=clip_norm,
+            gamma=args.auto_gamma,
+            normalize_by=args.batch_size,
+            microbatch_size=args.microbatch_size,
+            return_aux=True,
+            second_moment=args.second_moment,
+        )
+    else:
+        grad_fn, clip_state = clipped_grad(
+            per_example_loss_fn,
+            argnums=0,
+            batch_argnums=(1,),
+            clipping_norm=clip_norm,
+            normalize_by=args.batch_size,
+            microbatch_size=args.microbatch_size,
+            return_aux=True,
+            second_moment=args.second_moment,
+        )
     zeta = (
         clip_norm.effective / args.batch_size
         if isinstance(clip_norm, PerGroup)
@@ -1469,28 +1498,49 @@ def main():
                 perf = profiler.current_metrics()
 
                 if use_wandb:
-                    wandb.log(
-                        {
-                            "train/loss": avg_loss,
-                            "train/batch_size": batch_size,
-                            "train/clipping_norm": (
-                                clip_norm.effective
-                                if isinstance(clip_norm, PerGroup)
-                                else clip_norm
-                            ),
-                            "train/clip_rate": clip_rate,
-                            "train/grad_norm_mean": mean_grad_norm,
-                            "train/noise_std": step_noise_stddev,
-                            "train/lr": lr_t,
-                            "train/momentum": args.momentum,
-                            "perf/step_time_sec": perf["step_time_sec"],
-                            "perf/throughput_samples_per_sec": perf[
-                                "throughput_samples_sec"
-                            ],
-                            "perf/peak_gb": perf["memory_peak_gb"],
-                        },
-                        step=global_step,
-                    )
+                    wb_metrics = {
+                        "train/loss": avg_loss,
+                        "train/batch_size": batch_size,
+                        "train/clipping_norm": (
+                            clip_norm.effective
+                            if isinstance(clip_norm, PerGroup)
+                            else clip_norm
+                        ),
+                        "train/clip_rate": clip_rate,
+                        "train/grad_norm_mean": mean_grad_norm,
+                        "train/noise_std": (
+                            step_noise_stddev.effective
+                            if isinstance(step_noise_stddev, PerGroup)
+                            else step_noise_stddev
+                        ),
+                        "train/lr": lr_t,
+                        "train/momentum": args.momentum,
+                        "perf/step_time_sec": perf["step_time_sec"],
+                        "perf/throughput_samples_per_sec": perf[
+                            "throughput_samples_sec"
+                        ],
+                        "perf/peak_gb": perf["memory_peak_gb"],
+                    }
+                    if (
+                        isinstance(clip_norm, PerGroup)
+                        and getattr(aux, "group_norms", None) is not None
+                    ):
+                        for gname in clip_norm.values:
+                            gn_bound = clip_norm.values[gname]
+                            wb_metrics[f"group/clipping_norm/{gname}"] = gn_bound
+                            gnorms = aux.group_norms[gname]
+                            wb_metrics[f"group/grad_norm/{gname}"] = (
+                                gnorms.mean().item()
+                            )
+                            gn_clipped = float((gnorms > gn_bound).sum().item())
+                            wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(
+                                1.0, float(batch_size)
+                            )
+                            if isinstance(step_noise_stddev, PerGroup):
+                                wb_metrics[f"group/noise_std/{gname}"] = (
+                                    step_noise_stddev.values[gname]
+                                )
+                    wandb.log(wb_metrics, step=global_step)
 
                 print(
                     f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
