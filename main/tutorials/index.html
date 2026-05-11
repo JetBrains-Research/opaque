@@ -346,26 +346,6 @@
   
 
       
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../extending/" class="md-tabs__link">
-          
-  
-  
-  Extending Opaque
-
-        </a>
-      </li>
-    
-  
-
-      
     </ul>
   </div>
 </nav>
@@ -1489,15 +1469,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#extending-opaque" class="md-nav__link">
-    <span class="md-ellipsis">
-      Extending Opaque
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#running-the-tutorials" class="md-nav__link">
     <span class="md-ellipsis">
       Running the tutorials
@@ -1838,29 +1809,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="extending_opaque/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Extending Opaque
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2194,171 +2142,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    Extending Opaque
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            Extending Opaque
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../extending/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Overview
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../extending/serialization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Serialization registry
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../extending/distributed-sync/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Distributed sync
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../extending/clipping-fun/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Clipping fun helpers
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../extending/new-mechanism/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Adding a new mechanism family
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -2413,15 +2196,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#extending-opaque" class="md-nav__link">
-    <span class="md-ellipsis">
-      Extending Opaque
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#running-the-tutorials" class="md-nav__link">
     <span class="md-ellipsis">
       Running the tutorials
@@ -2454,8 +2228,7 @@
 self-contained: you build something concrete and see it work.</p>
 <p>For conceptual explanations, see the <a href="../user-guide/">User Guide</a>.
 For complete function signatures, see the
-<a href="../reference/">API Reference</a>. For the contributor surface,
-see <a href="../extending/">Extending Opaque</a>.</p>
+<a href="../reference/">API Reference</a>.</p>
 <h2 id="dp-sgd-track">DP-SGD track<a class="headerlink" href="#dp-sgd-track" title="Permanent link">&para;</a></h2>
 <p>Independent per-step Gaussian noise. The classical DP training pipeline.</p>
 <table>
@@ -2525,23 +2298,6 @@ covered explicitly in the DP-FTRL training tutorial above.</p>
 </tr>
 </tbody>
 </table>
-<h2 id="extending-opaque">Extending Opaque<a class="headerlink" href="#extending-opaque" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Tutorial</th>
-<th>Task</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="extending_opaque/">Extending Opaque</a></td>
-<td>Register a custom serializer + sync handler, build a custom mechanism with <code>clipped_fun</code>.</td>
-</tr>
-</tbody>
-</table>
-<p>This is the only tutorial that imports from <code>opaque.api.*</code>. User-facing
-code lives behind public façades.</p>
 <h2 id="running-the-tutorials">Running the tutorials<a class="headerlink" href="#running-the-tutorials" title="Permanent link">&para;</a></h2>
 <p>Install Opaque and its tutorial dependencies from a repository checkout:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/JetBrains-Research/opaque.git
