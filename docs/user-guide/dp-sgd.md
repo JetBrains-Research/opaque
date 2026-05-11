@@ -105,14 +105,14 @@ sampling, accepts a positive scalar (symmetric ``[-B, B]``) or a
 DP-SGD pairs with Poisson subsampling:
 
 ```python
-from opaque.dpsgd.sampling import PoissonSubsampler
+from opaque.dpsgd.sampling import PoissonSampler
 
-sampler = PoissonSubsampler(
+sampler = PoissonSampler(
     dataset, sample_rate=sample_rate, key=key_sampling,
 )
 ```
 
-`PoissonSubsampler` accepts `truncated_batch_size=` for the
+`PoissonSampler` accepts `truncated_batch_size=` for the
 truncated-Poisson variant; calibration must use
 `dpsgd_acc.poisson(..., truncated_batch_size=..., dataset_size=...)`
 to match.

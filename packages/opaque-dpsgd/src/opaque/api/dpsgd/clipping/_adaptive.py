@@ -234,7 +234,7 @@ def adaptive_clipped_grad(
         >>> from opaque.api.dpsgd.clipping._distributed import sync_adaptive_clip_state
         >>> from opaque.distributed import sum_gradients
         >>> from opaque.random import key
-        >>> from opaque.api.dpsgd.sampling import PoissonSubsampler
+        >>> from opaque.api.dpsgd.sampling import PoissonSampler
         >>>
         >>> # Initialize distributed
         >>> dist.init_process_group(backend='nccl')
@@ -247,7 +247,7 @@ def adaptive_clipped_grad(
         ... )
         >>>
         >>> # Use Poisson sampling (different batch sizes on each device)
-        >>> sampler = PoissonSubsampler(dataset, sample_rate=0.01, key=key(42))
+        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
         >>>
         >>> for batch_x, batch_y in dataloader:
         ...     # Each device: compute clipped gradients and local adaptive state

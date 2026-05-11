@@ -8,7 +8,7 @@ import opaque.dpsgd.accounting as dpsgd_acc
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.accounting import Accountant
 from opaque.api.accounting.dpftrl.amplification._b_min_sep import BMinSep
-from opaque.api.accounting.dpftrl.amplification._poisson import MfPoisson
+from opaque.api.accounting.dpftrl.amplification._poisson import CyclicPoisson
 from opaque.api.accounting.dpftrl.mechanisms._band_mf import BandMf
 from opaque.serialization import from_state_dict, state_dict
 
@@ -113,7 +113,7 @@ def test_ftrl_poisson_state_dict_structure():
         n_steps=200,
     )
     state = cast(dict[str, object], state_dict(proc))
-    assert state["type"] == "MfPoisson"
+    assert state["type"] == "CyclicPoisson"
     assert state["sample_rate"] == 0.01
     assert state["n_steps"] == 200
     assert state["inner.type"] == "BandMf"
@@ -141,7 +141,7 @@ def test_ftrl_poisson_round_trip():
     )
     state = state_dict(proc)
     restored = from_state_dict(_PROCESS_TEMPLATE, state)
-    assert isinstance(restored, MfPoisson)
+    assert isinstance(restored, CyclicPoisson)
     assert isinstance(restored.inner, BandMf)
     assert restored == proc
 

@@ -13,7 +13,7 @@ full dataset.
 
 Opaque provides these sampling strategies:
 
-1. **Poisson Sampling — DP-SGD** (`opaque.dpsgd.sampling.PoissonSubsampler`):
+1. **Poisson Sampling — DP-SGD** (`opaque.dpsgd.sampling.PoissonSampler`):
    each example is sampled independently with probability `sample_rate`.
    Optional `truncated_batch_size` caps per-step batch size for more stable
    batches and memory; accounting must use the truncated-Poisson PLD (weaker
@@ -40,13 +40,13 @@ Opaque provides these sampling strategies:
 
 **See also**: [Sampling & Microbatching User Guide](../user-guide/sampling.md)
 
-## PoissonSubsampler (DP-SGD)
+## PoissonSampler (DP-SGD)
 
 ```python
-from opaque.dpsgd.sampling import PoissonSubsampler
+from opaque.dpsgd.sampling import PoissonSampler
 from opaque.random import key
 
-sampler = PoissonSubsampler(
+sampler = PoissonSampler(
     data_source,
     sample_rate=batch_size / len(data_source),
     n_steps=None,
@@ -156,7 +156,7 @@ shard = local_shard(
     rank=dist.get_rank(),
     world_size=dist.get_world_size(),
 )
-sampler = PoissonSubsampler(shard, sample_rate=0.01, key=fold_in(key(42), rank))
+sampler = PoissonSampler(shard, sample_rate=0.01, key=fold_in(key(42), rank))
 loader = DataLoader(shard, batch_sampler=sampler)
 ```
 
@@ -175,7 +175,7 @@ loader = DataLoader(shard, batch_sampler=sampler)
 
 ## API Documentation
 
-::: opaque.dpsgd.sampling.PoissonSubsampler
+::: opaque.dpsgd.sampling.PoissonSampler
     options:
       show_source: true
       heading_level: 3

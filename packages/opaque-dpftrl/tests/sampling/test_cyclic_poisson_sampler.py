@@ -531,3 +531,85 @@ class TestCyclicPoissonSamplerRangeDataset:
         # All indices valid
         for batch in batches:
             assert all(0 <= idx < 100 for idx in batch)
+
+
+class TestCyclicPoissonSamplerTruncated:
+    """Tests for CyclicPoissonSampler with ``truncated_batch_size`` set."""
+
+    def test_init_stores_truncated_batch_size(self):
+        sampler = CyclicPoissonSampler(
+            range(1000),
+            sample_rate=0.1,
+            bands=1,
+            n_steps=5,
+            truncated_batch_size=50,
+            key=key(0),
+        )
+        assert sampler.truncated_batch_size == 50
+
+    def test_invalid_truncated_batch_size_raises(self):
+        with pytest.raises(ValueError, match="truncated_batch_size"):
+            CyclicPoissonSampler(
+                range(100), sample_rate=0.1, truncated_batch_size=0, key=key(0)
+            )
+
+    def test_cap_enforced(self):
+        """``max(batch_sizes) <= truncated_batch_size`` always."""
+        sampler = CyclicPoissonSampler(
+            range(1000),
+            sample_rate=0.5,
+            bands=1,
+            n_steps=50,
+            truncated_batch_size=100,
+            key=key(42),
+        )
+
+        batch_sizes = [len(b) for b in sampler]
+        assert max(batch_sizes) <= 100
+        # With p=0.5 over 1000 examples the cap will be hit often.
+        assert max(batch_sizes) == 100
+
+    def test_same_as_plain_when_cap_unreachable(self):
+        """When the cap is far above the expected draw, the stream is identical."""
+        plain = CyclicPoissonSampler(
+            range(1000), sample_rate=0.05, bands=1, n_steps=20, key=key(42)
+        )
+        capped = CyclicPoissonSampler(
+            range(1000),
+            sample_rate=0.05,
+            bands=1,
+            n_steps=20,
+            truncated_batch_size=10_000,
+            key=key(42),
+        )
+        assert list(plain) == list(capped)
+
+    def test_no_duplicate_indices_after_truncation(self):
+        sampler = CyclicPoissonSampler(
+            range(1000),
+            sample_rate=0.5,
+            bands=1,
+            n_steps=20,
+            truncated_batch_size=100,
+            key=key(42),
+        )
+        for batch in sampler:
+            assert len(batch) == len(set(batch))
+            assert all(0 <= idx < 1000 for idx in batch)
+
+    def test_cap_applies_with_multiple_bands(self):
+        """Sampler caps each step regardless of bands.
+
+        Pairing with privacy accounting (``ftrl_acc.poisson``) for
+        ``bands > 1`` is rejected by the accountant, not by the sampler.
+        """
+        sampler = CyclicPoissonSampler(
+            range(1000),
+            sample_rate=0.5,
+            bands=4,
+            n_steps=40,
+            truncated_batch_size=20,
+            key=key(0),
+        )
+        for batch in sampler:
+            assert len(batch) <= 20

@@ -13,7 +13,7 @@ the accountant.
 ## Pairing with sampling
 
 DP-SGD typically pairs the Gaussian mechanism with Poisson subsampling
-(`opaque.dpsgd.sampling.PoissonSubsampler`). The accounting form is
+(`opaque.dpsgd.sampling.PoissonSampler`). The accounting form is
 `opaque.dpsgd.accounting.poisson(opaque.dpsgd.accounting.gaussian(nm),
 sample_rate=q)`; multiply by `* num_steps` for full-training privacy.
 

@@ -11,7 +11,7 @@ import torch
 from torch.utils.data import TensorDataset
 
 from opaque.random import fold_in, key
-from opaque.dpsgd.sampling import PoissonSubsampler
+from opaque.dpsgd.sampling import PoissonSampler
 from opaque.distributed import local_shard
 from opaque.api.engine.distributed._shard import _local_shard_bounds
 
@@ -90,7 +90,7 @@ class TestShardedSampling:
 
         for rank in range(world_size):
             shard = local_shard(dataset, rank=rank, world_size=world_size)
-            sampler = PoissonSubsampler(
+            sampler = PoissonSampler(
                 shard, sample_rate=0.5, n_steps=1, key=fold_in(key(42), rank)
             )
             batch = list(sampler)[0]
@@ -105,7 +105,7 @@ class TestShardedSampling:
 
         for rank in range(world_size):
             shard = local_shard(dataset, rank=rank, world_size=world_size)
-            sampler = PoissonSubsampler(
+            sampler = PoissonSampler(
                 shard,
                 sample_rate=sample_rate,
                 n_steps=100,
@@ -126,13 +126,13 @@ class TestShardedSampling:
 
         sizes0 = [
             len(b)
-            for b in PoissonSubsampler(
+            for b in PoissonSampler(
                 shard0, sample_rate=0.5, n_steps=20, key=fold_in(key(42), 0)
             )
         ]
         sizes1 = [
             len(b)
-            for b in PoissonSubsampler(
+            for b in PoissonSampler(
                 shard1, sample_rate=0.5, n_steps=20, key=fold_in(key(42), 1)
             )
         ]
@@ -145,25 +145,25 @@ class TestSingleDeviceMode:
     def test_single_device_full_dataset(self):
         """Default: sampler operates on full dataset."""
         dataset = TensorDataset(torch.randn(100, 10))
-        sampler = PoissonSubsampler(dataset, sample_rate=0.1, n_steps=1, key=key(0))
+        sampler = PoissonSampler(dataset, sample_rate=0.1, n_steps=1, key=key(0))
         batches = list(sampler)
         assert len(batches) == 1
 
     def test_different_keys_produce_different_batches(self):
         dataset = TensorDataset(torch.randn(1000, 10))
-        s0 = PoissonSubsampler(dataset, sample_rate=0.1, n_steps=10, key=key(42))
-        s1 = PoissonSubsampler(dataset, sample_rate=0.1, n_steps=10, key=key(43))
+        s0 = PoissonSampler(dataset, sample_rate=0.1, n_steps=10, key=key(42))
+        s1 = PoissonSampler(dataset, sample_rate=0.1, n_steps=10, key=key(43))
         assert list(s0) != list(s1)
 
     def test_same_key_reproduces_batches(self):
         dataset = TensorDataset(torch.randn(500, 10))
-        s1 = PoissonSubsampler(dataset, sample_rate=0.2, n_steps=5, key=key(12345))
-        s2 = PoissonSubsampler(dataset, sample_rate=0.2, n_steps=5, key=key(12345))
+        s1 = PoissonSampler(dataset, sample_rate=0.2, n_steps=5, key=key(12345))
+        s2 = PoissonSampler(dataset, sample_rate=0.2, n_steps=5, key=key(12345))
         assert list(s1) == list(s2)
 
 
 class TestPoissonTruncatedDistributed:
-    """Tests for PoissonSubsampler truncation under external sharding."""
+    """Tests for PoissonSampler truncation under external sharding."""
 
     def test_truncated_sharded_respects_max_batch_size(self):
         dataset = TensorDataset(torch.randn(1000, 10))
@@ -172,7 +172,7 @@ class TestPoissonTruncatedDistributed:
 
         for rank in range(world_size):
             shard = local_shard(dataset, rank=rank, world_size=world_size)
-            sampler = PoissonSubsampler(
+            sampler = PoissonSampler(
                 shard,
                 sample_rate=0.5,
                 truncated_batch_size=max_batch_size,
@@ -184,7 +184,7 @@ class TestPoissonTruncatedDistributed:
 
     def test_truncated_single_device(self):
         dataset = TensorDataset(torch.randn(500, 10))
-        sampler = PoissonSubsampler(
+        sampler = PoissonSampler(
             dataset,
             sample_rate=0.2,
             truncated_batch_size=60,
@@ -213,7 +213,7 @@ class TestEdgeCases:
 
         for rank in range(world_size):
             shard = local_shard(dataset, rank=rank, world_size=world_size)
-            sampler = PoissonSubsampler(
+            sampler = PoissonSampler(
                 shard,
                 sample_rate=0.5,
                 n_steps=10,

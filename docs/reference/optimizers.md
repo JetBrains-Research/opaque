@@ -229,7 +229,7 @@ ranks receive identical noisy gradients after `sum_gradients` + noise
 addition with the same key on all ranks.
 
 Use `local_shard()` to partition the dataset across ranks and pass a
-per-rank key via `fold_in(key, rank)` to each `PoissonSubsampler`.
+per-rank key via `fold_in(key, rank)` to each `PoissonSampler`.
 
 ---
 

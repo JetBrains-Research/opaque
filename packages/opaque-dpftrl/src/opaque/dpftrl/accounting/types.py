@@ -10,7 +10,7 @@ from opaque.api.accounting.dpftrl.types import (
     IdentityMf,
     LambdaCgd,
     MfGaussian,
-    MfPoisson,
+    CyclicPoisson,
 )
 
 __all__ = [
@@ -21,7 +21,7 @@ __all__ = [
     "LambdaCgd",
     "IdentityMf",
     "MfGaussian",
-    "MfPoisson",
+    "CyclicPoisson",
     "BMinSep",
     "BallsInBins",
 ]

@@ -32,7 +32,7 @@ Amplification (in :mod:`opaque.dpftrl.accounting.amplification`):
 Cross-cutting primitives (composition, calibration) live at
 :mod:`opaque.accounting`.
 
-The amplification dataclass is named ``MfPoisson`` (rather than ``Poisson``)
+The amplification dataclass is named ``CyclicPoisson`` (rather than ``Poisson``)
 to avoid a class-name collision with
 :class:`opaque.dpsgd.accounting.amplification.Poisson` in the serialization
 registry. The user-facing factory is still :func:`poisson`.

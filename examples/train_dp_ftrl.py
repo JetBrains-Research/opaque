@@ -461,6 +461,17 @@ def parse_args():
         help="BandMF data subsampling: poisson (default) or b_min_sep (Dong & Ganesh 2026).",
     )
     dp_g.add_argument(
+        "--truncated-batch-size",
+        type=int,
+        default=None,
+        help="Optional cap on per-step batch size (truncated Poisson). "
+        "Matched privacy accounting exists only for --mechanism identity. "
+        "With --mechanism band_mf --band-mf-sampling poisson the accountant "
+        "rejects the combination at calibration time. Silently ignored for "
+        "--mechanism band_mf --band-mf-sampling b_min_sep and for blt, "
+        "lambda_cgd, bisr, bsr, none (no Poisson sampling).",
+    )
+    dp_g.add_argument(
         "--mc-samples",
         type=int,
         default=100_000,
@@ -821,6 +832,7 @@ def main():
                     sample_rate=sampling_prob,
                     bands=args.bands,
                     n_steps=expected_steps_per_epoch,
+                    truncated_batch_size=args.truncated_batch_size,
                     key=fold_in(key(args.seed), epoch),
                 )
         else:
@@ -874,6 +886,7 @@ def main():
                 train_dataset,
                 sample_rate=sample_rate,
                 n_steps=expected_steps_per_epoch,
+                truncated_batch_size=args.truncated_batch_size,
                 key=fold_in(key(args.seed), epoch),
             )
 
@@ -1118,7 +1131,15 @@ def main():
             )
             if args.band_mf_sampling == "poisson":
                 return dpftrl_acc.poisson(
-                    mechanism, sample_rate=sampling_prob, n_steps=total_steps
+                    mechanism,
+                    sample_rate=sampling_prob,
+                    n_steps=total_steps,
+                    truncated_batch_size=args.truncated_batch_size,
+                    dataset_size=(
+                        global_train_size
+                        if args.truncated_batch_size is not None
+                        else None
+                    ),
                 )
             return dpftrl_acc.b_min_sep(
                 mechanism,
@@ -1175,6 +1196,12 @@ def main():
                 dpftrl_acc.identity_mf(nm),
                 sample_rate=sample_rate,
                 n_steps=total_steps,
+                truncated_batch_size=args.truncated_batch_size,
+                dataset_size=(
+                    global_train_size
+                    if args.truncated_batch_size is not None
+                    else None
+                ),
             )
     elif args.mechanism == "none":
 

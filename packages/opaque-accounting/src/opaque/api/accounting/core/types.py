@@ -16,7 +16,7 @@ DP-SGD-specific dataclasses (``Gaussian``, ``Poisson``, ``ParallelPoisson``,
 ``AdaClip``) are re-exported from :mod:`opaque.dpsgd.accounting.types`
 (requires the ``opaque-dpsgd`` install); DP-FTRL-specific dataclasses
 (``BandMf``, ``Blt``, ``LambdaCgd``, ``Bisr``, ``Bsr``, ``MfGaussian``,
-``IdentityMf``, ``MfPoisson``, ``BMinSep``, ``BallsInBins``) from
+``IdentityMf``, ``CyclicPoisson``, ``BMinSep``, ``BallsInBins``) from
 :mod:`opaque.dpftrl.accounting.types` (requires ``opaque-dpftrl``).  This
 module only re-exports the cross-cutting types that live in
 ``opaque-accounting`` itself.
