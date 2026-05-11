@@ -40,6 +40,7 @@ from dataclasses import dataclass
 
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 
 #: Mechanism types accepted by :func:`balls_in_bins`.
 _Inner = DpProcess
@@ -59,7 +60,7 @@ _IDENTITY_IS_TILT: float = 1.0
 
 
 @dataclass(frozen=True, slots=True)
-class BallsInBins(DpProcess):
+class BallsInBins(DpFtrlProcess):
     """Balls-in-Bins amplified MF mechanism — **total** privacy cost.
 
     The returned PLD covers all ``n_steps`` training rounds (= ``num_bins``
@@ -90,6 +91,50 @@ class BallsInBins(DpProcess):
     def num_epochs(self) -> int:
         """Per-bin participation count: ``n_steps // num_bins``."""
         return self.n_steps // self.num_bins
+
+    @property
+    def atomic_unit(self) -> int:
+        # One full epoch covers ``num_bins`` rounds; the BnB dominating-pair
+        # analysis is defined at epoch boundaries.  ``at_step`` rounds up to
+        # the next epoch.
+        return self.num_bins
+
+    def at_step(self, step: int) -> DpProcess:
+        """Process truncated to its first ``step`` rounds (rounded up to an epoch).
+
+        For ``IdentityMf`` inner the truncated process is well-defined: the
+        BnB-Identity PLD reads ``num_epochs = n_steps // num_bins`` directly
+        and has no Gram dependency.
+
+        For correlated-MF inners (``Blt``, ``LambdaCgd``, ``Bisr``, ``Bsr``)
+        the strategy's pre-computed ``gram_matrix`` is sized for the original
+        ``n_steps``; truncating the process would leave the Gram matched to
+        the wrong horizon.  Rebuilding the Gram for the shorter horizon
+        requires re-running the strategy factory (which has access to ``C``);
+        opaque does not have ``C`` here, so this case currently raises
+        :class:`NotImplementedError` rather than silently returning a
+        mis-sized PLD.
+        """
+        # Lazy imports to avoid the same circular-import shape pld() guards against.
+        from opaque.api.accounting.dpftrl.mechanisms._bisr import Bisr
+        from opaque.api.accounting.dpftrl.mechanisms._blt import Blt
+        from opaque.api.accounting.dpftrl.mechanisms._bsr import Bsr
+        from opaque.api.accounting.dpftrl.mechanisms._lambda_cgd import LambdaCgd
+
+        if 0 < step < self.n_steps and isinstance(
+            self.inner, (Blt, LambdaCgd, Bisr, Bsr)
+        ):
+            raise NotImplementedError(
+                f"BallsInBins.at_step is not yet supported for "
+                f"{type(self.inner).__name__} inner: the strategy's "
+                "gram_matrix is sized for the original n_steps and would need "
+                "to be regenerated for the shorter horizon by the upstream "
+                "strategy factory.  Use IdentityMf inner for partial accounting "
+                "or query epsilon at the full n_steps."
+            )
+        # Explicit super: ``@dataclass(slots=True)`` rebuilds the class, which
+        # invalidates the ``__class__`` cell that bare ``super()`` relies on.
+        return super(BallsInBins, self).at_step(step)
 
     @functools.lru_cache(maxsize=8)
     def pld(

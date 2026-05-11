@@ -24,8 +24,9 @@ from dataclasses import dataclass
 
 from opaque.api.accounting.core import _native
 
-from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core._base import Pld
 from opaque.api.accounting.core.discretization import get_discretization
+from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._band_mf import BandMf
 from opaque.api.accounting.dpftrl.mechanisms._identity import IdentityMf
 
@@ -34,7 +35,7 @@ _Inner = BandMf | IdentityMf
 
 
 @dataclass(frozen=True, slots=True)
-class CyclicPoisson(DpProcess):
+class CyclicPoisson(DpFtrlProcess):
     """Poisson-amplified MF mechanism — total privacy cost over ``n_steps``.
 
     For ``BandMf`` inner, ``num_groups = ceil(n_steps / bands)`` where
@@ -60,6 +61,22 @@ class CyclicPoisson(DpProcess):
     n_steps: int
     truncated_batch_size: int | None = None
     dataset_size: int | None = None
+
+    @property
+    def atomic_unit(self) -> int:
+        # BandMf factors over per-group PLDs of width ``bands``; IdentityMf is
+        # per-step (band ≡ 1).  See :meth:`pld` for the matching ``num_groups``
+        # formula.
+        match self.inner:
+            case BandMf():
+                return self.inner.bands
+            case IdentityMf():
+                return 1
+            case _:
+                raise TypeError(
+                    "CyclicPoisson.atomic_unit: inner must be BandMf or "
+                    f"IdentityMf, got {type(self.inner).__name__}."
+                )
 
     def __post_init__(self):
         # Validate truncation pairing here (not only in the factory) so

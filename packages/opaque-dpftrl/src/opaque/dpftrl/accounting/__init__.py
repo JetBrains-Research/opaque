@@ -56,6 +56,7 @@ Example::
 """
 
 from opaque.api.accounting.dpftrl import (
+    at_step,
     b_min_sep,
     balls_in_bins,
     band_mf,
@@ -77,4 +78,5 @@ __all__ = [
     "poisson",
     "b_min_sep",
     "balls_in_bins",
+    "at_step",
 ]

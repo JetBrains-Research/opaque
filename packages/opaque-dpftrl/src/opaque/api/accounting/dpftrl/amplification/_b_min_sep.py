@@ -17,8 +17,9 @@ from dataclasses import dataclass
 
 from opaque.api.accounting.core import _native
 
-from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core._base import Pld
 from opaque.api.accounting.core.discretization import get_discretization
+from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._band_mf import BandMf
 
 from ._b_min_sep_transcript_cache import get_handle_or_none
@@ -43,12 +44,20 @@ def _participation_p_from_per_example_rate(p0: float, bands: int) -> float:
 
 
 @dataclass(frozen=True, slots=True)
-class BMinSep(DpProcess):
+class BMinSep(DpFtrlProcess):
     """Monte Carlo PLD for BandMF + warm-start b-min-sep subsampling."""
 
     inner: _Inner
     n_steps: int
     p0: float
+
+    @property
+    def atomic_unit(self) -> int:
+        # b-min-sep enforces one user contribution per ``bands``-row window;
+        # the warm-start MC handles arbitrary ``n_steps`` natively, but the
+        # accounting-meaningful quantum is one band (one full participation
+        # period).  ``at_step`` rounds up to a band boundary.
+        return self.inner.bands
 
     @functools.lru_cache(maxsize=8)
     def pld(

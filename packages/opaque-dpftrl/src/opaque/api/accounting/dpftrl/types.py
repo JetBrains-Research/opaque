@@ -6,6 +6,7 @@ constructor functions live in the package init.
 
 from __future__ import annotations
 
+from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.amplification.types import (
     BallsInBins,
     BMinSep,
@@ -32,4 +33,5 @@ __all__ = [
     "CyclicPoisson",
     "BMinSep",
     "BallsInBins",
+    "DpFtrlProcess",
 ]
