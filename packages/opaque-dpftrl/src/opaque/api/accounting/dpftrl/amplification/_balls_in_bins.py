@@ -99,6 +99,17 @@ class BallsInBins(DpFtrlProcess):
         return self.n_steps // self.num_bins
 
     @property
+    def min_sep(self) -> int:
+        # Each example participates once per epoch; consecutive participations
+        # are exactly ``num_bins`` rounds apart.
+        return self.num_bins
+
+    @property
+    def max_participations(self) -> int:
+        # Once per epoch ⇒ ``num_epochs`` total per example.
+        return self.num_epochs
+
+    @property
     def atomic_unit(self) -> int:
         # One full epoch covers ``num_bins`` rounds; the BnB dominating-pair
         # analysis is defined at epoch boundaries.  ``approx_at_step`` rounds up to

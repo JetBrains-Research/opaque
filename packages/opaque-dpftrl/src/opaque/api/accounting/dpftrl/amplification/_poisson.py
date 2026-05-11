@@ -80,6 +80,23 @@ class CyclicPoisson(DpFtrlProcess):
                     f"{type(self.inner.strategy).__name__}."
                 )
 
+    @property
+    def min_sep(self) -> int:
+        # Cyclic Poisson provides no worst-case separation guarantee: any
+        # example could in principle be sampled on consecutive rounds.  The
+        # degenerate-limit value ``1`` is what downstream consumers (BLT-family
+        # noise/accounting) read; CyclicPoisson's validators already reject
+        # BLT-family inners, so this value only ever shows up for BandMF or
+        # Identity (which ignore it).
+        return 1
+
+    @property
+    def max_participations(self) -> int:
+        # Worst case: every round is a participation.  Same degenerate-limit
+        # justification as :attr:`min_sep` — only BandMF/Identity ever read
+        # this on a CyclicPoisson.
+        return self.n_steps
+
     def __post_init__(self):
         # Validate truncation pairing here (not only in the factory) so
         # direct construction and deserialization can't pass an unpaired

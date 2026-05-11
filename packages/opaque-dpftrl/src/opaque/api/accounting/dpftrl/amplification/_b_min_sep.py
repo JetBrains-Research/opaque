@@ -60,6 +60,17 @@ class BMinSep(DpFtrlProcess):
         # period).  ``approx_at_step`` rounds up to a band boundary.
         return self.inner.strategy.bands
 
+    @property
+    def min_sep(self) -> int:
+        # b-min-sep contract: each example participates at most once per
+        # ``bands``-row window ⇒ min separation = ``bands``.
+        return self.inner.strategy.bands
+
+    @property
+    def max_participations(self) -> int:
+        # At most one participation per ``bands`` rounds across ``n_steps``.
+        return self.n_steps // self.inner.strategy.bands
+
     @functools.lru_cache(maxsize=8)
     def pld(
         self,
