@@ -119,9 +119,7 @@ class BisrStrategy:
             sens_sq = _native().bisr_sensitivity_squared(
                 inv_coefs, n_steps, self._min_sep, max_participations
             )
-            mcn_sq = _native().bisr_sensitivity_squared(
-                inv_coefs, n_steps, n_steps, 1
-            )
+            mcn_sq = _native().bisr_sensitivity_squared(inv_coefs, n_steps, n_steps, 1)
             max_column_norm = float(mcn_sq**0.5)
         new_sensitivity = float(sens_sq**0.5)
         new_coefs = tuple(_recover_strategy_coefficients(inv_coefs, n_steps))

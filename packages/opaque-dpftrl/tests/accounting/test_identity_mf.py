@@ -40,7 +40,9 @@ class TestIdentityMfMechanism:
         )
 
     def test_zero_noise_is_non_private(self):
-        assert math.isinf(ftrl_acc.mf_gaussian(0.0, identity_strategy()).epsilon_at(_DELTA))
+        assert math.isinf(
+            ftrl_acc.mf_gaussian(0.0, identity_strategy()).epsilon_at(_DELTA)
+        )
 
     def test_negative_noise_multiplier_raises(self):
         with pytest.raises(ValueError, match="non-negative"):
@@ -66,7 +68,9 @@ class TestIdentityMfMechanism:
 class TestPoissonIdentity:
     def test_pld_matches_self_composed_poisson_gaussian(self):
         nm, p, T = 1.1, 0.01, 500
-        proc = ftrl_acc.poisson(ftrl_acc.mf_gaussian(nm, identity_strategy()), sample_rate=p, n_steps=T)
+        proc = ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(nm, identity_strategy()), sample_rate=p, n_steps=T
+        )
         cfg = get_discretization()
         ref = _native.poisson_gaussian_pld(nm, p, cfg.to_native()).self_compose(T)
         assert math.isclose(
@@ -75,15 +79,25 @@ class TestPoissonIdentity:
 
     def test_requires_n_steps(self):
         with pytest.raises(TypeError):
-            ftrl_acc.poisson(ftrl_acc.mf_gaussian(1.0, identity_strategy()), sample_rate=0.1)
+            ftrl_acc.poisson(
+                ftrl_acc.mf_gaussian(1.0, identity_strategy()), sample_rate=0.1
+            )
 
     def test_rejects_invalid_n_steps(self):
         with pytest.raises(ValueError, match="n_steps"):
-            ftrl_acc.poisson(ftrl_acc.mf_gaussian(1.0, identity_strategy()), sample_rate=0.1, n_steps=0)
+            ftrl_acc.poisson(
+                ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+                sample_rate=0.1,
+                n_steps=0,
+            )
 
     def test_rejects_invalid_sample_rate(self):
         with pytest.raises(ValueError, match="sample_rate"):
-            ftrl_acc.poisson(ftrl_acc.mf_gaussian(1.0, identity_strategy()), sample_rate=1.5, n_steps=10)
+            ftrl_acc.poisson(
+                ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+                sample_rate=1.5,
+                n_steps=10,
+            )
 
 
 class TestPoissonBandMf:
@@ -94,7 +108,9 @@ class TestPoissonBandMf:
         bands = len(coefs)
         n_steps = 100
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(nm, BandMfStrategy(sensitivity=1.0, coefficients=coefs)),
+            ftrl_acc.mf_gaussian(
+                nm, BandMfStrategy(sensitivity=1.0, coefficients=coefs)
+            ),
             sample_rate=p,
             n_steps=n_steps,
         )
@@ -213,15 +229,21 @@ class TestBallsInBinsIdentity:
 
     def test_rejects_invalid_num_bins(self):
         with pytest.raises(ValueError, match="num_bins"):
-            ftrl_acc.balls_in_bins(ftrl_acc.mf_gaussian(1.0, identity_strategy()), num_bins=1, n_steps=20)
+            ftrl_acc.balls_in_bins(
+                ftrl_acc.mf_gaussian(1.0, identity_strategy()), num_bins=1, n_steps=20
+            )
 
     def test_rejects_invalid_n_steps(self):
         with pytest.raises(ValueError, match="n_steps"):
-            ftrl_acc.balls_in_bins(ftrl_acc.mf_gaussian(1.0, identity_strategy()), num_bins=10, n_steps=0)
+            ftrl_acc.balls_in_bins(
+                ftrl_acc.mf_gaussian(1.0, identity_strategy()), num_bins=10, n_steps=0
+            )
 
     def test_rejects_n_steps_not_multiple_of_num_bins(self):
         with pytest.raises(ValueError, match="multiple of"):
-            ftrl_acc.balls_in_bins(ftrl_acc.mf_gaussian(1.0, identity_strategy()), num_bins=10, n_steps=15)
+            ftrl_acc.balls_in_bins(
+                ftrl_acc.mf_gaussian(1.0, identity_strategy()), num_bins=10, n_steps=15
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +295,9 @@ class TestTruncatedPoissonIdentity:
     def test_rejects_band_mf_with_truncation(self):
         with pytest.raises(ValueError, match="IdentityStrategy"):
             ftrl_acc.poisson(
-                ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=1.0, coefficients=(1.0, 0.5))),
+                ftrl_acc.mf_gaussian(
+                    1.0, BandMfStrategy(sensitivity=1.0, coefficients=(1.0, 0.5))
+                ),
                 sample_rate=0.01,
                 n_steps=10,
                 truncated_batch_size=64,

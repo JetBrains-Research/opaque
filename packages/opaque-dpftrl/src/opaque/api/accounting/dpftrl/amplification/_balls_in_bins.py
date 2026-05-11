@@ -165,7 +165,12 @@ class BallsInBins(DpFtrlProcess):
         native_cfg = config.to_native()
 
         match self.inner.strategy:
-            case BltStrategy() | LambdaCgdStrategy() | BisrStrategy() | BsrStrategy() as s:
+            case (
+                BltStrategy()
+                | LambdaCgdStrategy()
+                | BisrStrategy()
+                | BsrStrategy() as s
+            ):
                 if not s.gram_matrix:
                     raise ValueError(
                         f"{type(s).__name__} requires a non-empty gram_matrix "
@@ -247,21 +252,16 @@ def balls_in_bins(
     """
     if not isinstance(inner, MfGaussian):
         raise TypeError(
-            f"balls_in_bins() requires an MfGaussian inner, got "
-            f"{type(inner).__name__}."
+            f"balls_in_bins() requires an MfGaussian inner, got {type(inner).__name__}."
         )
-    if not isinstance(
-        inner.strategy, _CorrelatedStrategies + (IdentityStrategy,)
-    ):
+    if not isinstance(inner.strategy, _CorrelatedStrategies + (IdentityStrategy,)):
         raise TypeError(
             "balls_in_bins() requires inner.strategy in {BltStrategy, "
             "BsrStrategy, BisrStrategy, LambdaCgdStrategy, IdentityStrategy}, "
             f"got {type(inner.strategy).__name__}."
         )
     if num_bins < 2:
-        raise ValueError(
-            f"num_bins must be >= 2 for BnB amplification, got {num_bins}"
-        )
+        raise ValueError(f"num_bins must be >= 2 for BnB amplification, got {num_bins}")
     if n_steps < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
     if n_steps % num_bins != 0:

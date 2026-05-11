@@ -94,8 +94,7 @@ class BMinSep(DpFtrlProcess):
 
         if bands < 1:
             raise ValueError(
-                "BandMfStrategy inner must have non-empty coefficients "
-                "(bands >= 1)."
+                "BandMfStrategy inner must have non-empty coefficients (bands >= 1)."
             )
 
         p = _participation_p_from_per_example_rate(self.p0, bands)

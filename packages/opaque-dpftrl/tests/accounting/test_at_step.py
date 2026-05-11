@@ -334,7 +334,9 @@ class TestGramRegenMatchesDirect:
         direct = blt_strategy(
             n_steps=_REGEN_K, min_sep=_REGEN_NUM_BINS, max_participations=2
         )
-        e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(_REGEN_K)
+        e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(
+            _REGEN_K
+        )
         e_dir = _bnb(ftrl_acc.mf_gaussian(1.0, direct), _REGEN_K)
         assert math.isclose(
             e_at.epsilon_at(_DELTA),
@@ -359,7 +361,9 @@ class TestGramRegenMatchesDirect:
             alpha=1.0,
             beta=0.5,
         )
-        e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(_REGEN_K)
+        e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(
+            _REGEN_K
+        )
         e_dir = _bnb(ftrl_acc.mf_gaussian(1.0, direct), _REGEN_K)
         assert math.isclose(
             e_at.epsilon_at(_DELTA),
@@ -380,7 +384,9 @@ class TestGramRegenMatchesDirect:
             min_sep=_REGEN_NUM_BINS,
             max_participations=2,
         )
-        e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(_REGEN_K)
+        e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(
+            _REGEN_K
+        )
         e_dir = _bnb(ftrl_acc.mf_gaussian(1.0, direct), _REGEN_K)
         assert math.isclose(
             e_at.epsilon_at(_DELTA),
@@ -401,7 +407,9 @@ class TestGramRegenMatchesDirect:
             min_sep=_REGEN_NUM_BINS,
             max_participations=2,
         )
-        e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(_REGEN_K)
+        e_at = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL).approx_at_step(
+            _REGEN_K
+        )
         e_dir = _bnb(ftrl_acc.mf_gaussian(1.0, direct), _REGEN_K)
         assert math.isclose(
             e_at.epsilon_at(_DELTA),
@@ -436,7 +444,9 @@ class TestSerializationRegistryHardening:
 class TestCompositionOnTruncated:
     def test_truncated_supports_or_composition(self):
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(1.0, identity_strategy()), sample_rate=0.01, n_steps=100
+            ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+            sample_rate=0.01,
+            n_steps=100,
         )
         a = proc.approx_at_step(30)
         b = proc.approx_at_step(40)
@@ -446,7 +456,9 @@ class TestCompositionOnTruncated:
 
     def test_truncated_supports_self_compose(self):
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(1.0, identity_strategy()), sample_rate=0.01, n_steps=100
+            ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+            sample_rate=0.01,
+            n_steps=100,
         )
         sub = proc.approx_at_step(50)
         repeated = sub * 2

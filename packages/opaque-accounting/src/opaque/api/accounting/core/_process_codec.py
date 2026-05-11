@@ -86,9 +86,7 @@ def _load_dp_process(sd: dict[str, Any]) -> Any:
         elif f.default_factory is not dataclasses.MISSING:  # type: ignore[misc]
             kwargs[f.name] = f.default_factory()
         else:
-            raise ValueError(
-                f"missing required field {f.name!r} for {cls.__name__}"
-            )
+            raise ValueError(f"missing required field {f.name!r} for {cls.__name__}")
 
     if sd:
         raise ValueError(f"unexpected keys for {cls.__name__}: {sorted(sd)!r}")

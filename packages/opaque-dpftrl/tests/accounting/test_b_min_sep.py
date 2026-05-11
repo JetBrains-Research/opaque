@@ -17,7 +17,9 @@ def test_p_conversion():
 
 def test_b_min_sep_smoke_pld():
     coef = (0.8**0.5, 0.2**0.5, 0.0, 0.0)
-    inner = ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=0.5, coefficients=coef))
+    inner = ftrl_acc.mf_gaussian(
+        1.0, BandMfStrategy(sensitivity=0.5, coefficients=coef)
+    )
     proc = ftrl_acc.b_min_sep(
         inner,
         n_steps=40,
@@ -153,7 +155,9 @@ def test_b_min_sep_stricter_than_mf_only():
     from opaque.api.accounting.core.discretization import get_discretization
 
     coef = (1.0, 0.0, 0.0)
-    inner = ftrl_acc.mf_gaussian(1.0, BandMfStrategy(sensitivity=0.7, coefficients=coef))
+    inner = ftrl_acc.mf_gaussian(
+        1.0, BandMfStrategy(sensitivity=0.7, coefficients=coef)
+    )
     bms = ftrl_acc.b_min_sep(
         inner,
         n_steps=20,
