@@ -2594,9 +2594,10 @@ the clipped gradient sum:</p>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key_noise</span><span class="p">,</span>
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="p">)</span>
 </code></pre></div>
-<p>For bounded noise support, use
-<code>opaque.dpsgd.noise.truncated_gaussian_noise</code> — same accounting,
-inverse-CDF sampling.</p>
+<p>For bounded noise support, pass <code>bound=...</code> to
+<code>opaque.dpsgd.noise.gaussian_noise</code> — same accounting, inverse-CDF
+sampling, accepts a positive scalar (symmetric <code>[-B, B]</code>) or a
+<code>(low, high)</code> tuple.</p>
 <h2 id="4-sampling">4. Sampling<a class="headerlink" href="#4-sampling" title="Permanent link">&para;</a></h2>
 <p>DP-SGD pairs with Poisson subsampling:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSubsampler</span>
@@ -2659,7 +2660,7 @@ gradients.</p>
 <ul>
 <li><a href="../clipping/">Clipping</a> — fixed, AUTO-S, adaptive variants and
   per-group norms.</li>
-<li><a href="../noise/">Noise</a> — Gaussian, truncated Gaussian, when to choose
+<li><a href="../noise/">Noise</a> — Gaussian (optionally bounded), when to choose
   which.</li>
 <li><a href="../sampling/">Sampling</a> — Poisson sampler details and the
   truncated-Poisson trade-off.</li>

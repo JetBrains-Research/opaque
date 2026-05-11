@@ -892,30 +892,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Bounded Gaussian noise">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#truncated-renormalized" class="md-nav__link">
-    <span class="md-ellipsis">
-      Truncated (renormalized)
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#which-variant-to-use" class="md-nav__link">
-    <span class="md-ellipsis">
-      Which variant to use
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -2671,30 +2647,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Bounded Gaussian noise">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#truncated-renormalized" class="md-nav__link">
-    <span class="md-ellipsis">
-      Truncated (renormalized)
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#which-variant-to-use" class="md-nav__link">
-    <span class="md-ellipsis">
-      Which variant to use
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -2984,8 +2936,8 @@ zero noise. This is useful for toggling DP on and off without changing the
 training loop.</p>
 <h3 id="per-group-noise">Per-group noise<a class="headerlink" href="#per-group-noise" title="Permanent link">&para;</a></h3>
 <p>When using <a href="../clipping/#per-group-clipping">per-group clipping</a>,
-<code>gaussian_noise</code> and <code>truncated_gaussian_noise</code> use MSE-optimal allocation
-automatically.  To inspect the realized allocation, call
+<code>gaussian_noise</code> (bounded or not) uses MSE-optimal allocation automatically.
+To inspect the realized allocation, call
 <code>ClippedPytree.noise_stddev_for(...)</code> directly on the clipped output:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Default &#39;optimal&#39; allocation: PerGroup with σ_i = nm · √(C_i · Σⱼ C_j)</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">stddev</span> <span class="o">=</span> <span class="n">grads</span><span class="o">.</span><span class="n">noise_stddev_for</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">)</span>
@@ -3013,44 +2965,49 @@ when per-group clipping is active.</p>
 scale used for that step.</p>
 <h2 id="bounded-gaussian-noise">Bounded Gaussian noise<a class="headerlink" href="#bounded-gaussian-noise" title="Permanent link">&para;</a></h2>
 <p>Standard Gaussian noise has unbounded support, which means privatized outputs
-can land arbitrarily far from the input. Bounded Gaussian noise restricts the
-support to a finite interval, giving tighter privacy accounting because the
-worst-case divergence is limited.</p>
-<p>Opaque provides two variants that differ in how they handle the probability mass
-that falls outside the bounds:</p>
-<h3 id="truncated-renormalized">Truncated (renormalized)<a class="headerlink" href="#truncated-renormalized" title="Permanent link">&para;</a></h3>
-<p><code>truncated_gaussian_noise</code> draws from a Gaussian renormalized over the bounded
+can land arbitrarily far from the input.  Pass <code>bound</code> to <code>gaussian_noise</code>
+to restrict the per-coordinate support to a finite interval — the
+<em>bounded Gaussian mechanism</em> of Chen and Hale (2024).</p>
+<p><code>gaussian_noise(..., bound=...)</code> draws from a Gaussian renormalized over the
 interval. No probability mass sits at the boundaries — the density is smooth
-but slightly taller than the original Gaussian.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">truncated_gaussian_noise</span>
+but slightly taller than the original Gaussian.  <code>bound</code> accepts a positive
+scalar <code>B</code> (interpreted as <code>[-B, B]</code>) or an asymmetric <code>(low, high)</code>
+tuple/list with <code>low &lt;= 0 &lt;= high</code>.  Bounds are absolute (same units as
+the gradient / clip norm), not multiples of σ.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">truncated_gaussian_noise</span><span class="p">(</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">radius</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="p">)</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Symmetric bound [-2, 2]</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">bound</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="p">)</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="c1"># Asymmetric bound [-1, 4]</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>    <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>    <span class="n">bound</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">),</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="p">)</span>
 </code></pre></div>
-<p>The truncation uses an inverse-CDF method: for each gradient element, noise is
-sampled from a Gaussian centered on that element and truncated to the bounds.</p>
-<p>For high-dimensional tasks like model training, the truncated Gaussian
-converges to the standard Gaussian, so use <code>dpsgd_acc.gaussian(noise_multiplier)</code>
-for accounting.</p>
-<p><code>truncated_gaussian_noise</code> accepts the same paired-stream input as
-<code>gaussian_noise</code>: when a <code>SecondMomentClippingOutput</code> (from
+<p>The implementation uses an inverse-CDF method: for each gradient element,
+noise is sampled from a Gaussian centred on that element and truncated to
+the per-coordinate interval.</p>
+<p>For high-dimensional model training, the per-coordinate ε-DP analysis of the
+paper does not apply (gradients live under an ℓ₂-ball constraint, not a
+product of intervals); use <code>dpsgd_acc.gaussian(noise_multiplier)</code> for
+accounting and treat the bound as bounded-support post-processing on the
+standard (ε, δ)-Gaussian mechanism.</p>
+<p><code>gaussian_noise</code> (bounded or not) accepts the same paired-stream input:
+when a <code>SecondMomentClippingOutput</code> (from
 <code>clipped_grad(..., second_moment=True)</code>) flows in, the function returns
 a <code>SecondMomentNoiseOutput</code> with both streams noised under the joint
 sensitivity-proportional Mahalanobis allocation (scalar case:
 <code>σ¹ = nm·sqrt(Δ¹·S)</code>, <code>σ² = nm·sqrt(Δ²·S)</code>, <code>S = Δ¹+Δ²</code>; with
 :class:<code>~opaque.types.PerGroup</code> bounds, <code>S</code> sums <code>Δ¹_g+Δ²_g</code> over
-groups).  Each
-stream is sampled from its own truncated Gaussian with bounds scaled to
-its own <code>radius * stddev</code>.</p>
-<h3 id="which-variant-to-use">Which variant to use<a class="headerlink" href="#which-variant-to-use" title="Permanent link">&para;</a></h3>
-<p>The truncated Gaussian provides bounded support, which can be useful when
-gradient bounds are important for downstream optimization. For privacy
-accounting, use <code>dpsgd_acc.gaussian()</code> regardless of the noise variant.</p>
+groups).  Each stream is independently sampled with the same <code>bound</code>.</p>
 <h2 id="matrix-factorization-noise-dp-ftrl">Matrix-factorization noise (DP-FTRL)<a class="headerlink" href="#matrix-factorization-noise-dp-ftrl" title="Permanent link">&para;</a></h2>
 <p>Standard Gaussian noise is independent across training steps. Matrix-
 factorization (MF) noise introduces correlations between steps so that noise
@@ -3168,7 +3125,7 @@ the gradients (e.g., the model parameters).</p>
 <p><code>mf_noise</code> accepts <code>ClippedPytree</code> metadata where <code>max_norm</code> is a
 <code>PerGroup</code> (from <code>opaque.dpsgd.clipping.per_group</code>), not only a scalar. The
 per-leaf IID noise scale follows the same MSE-optimal Mahalanobis allocation
-as <code>gaussian_noise</code> / <code>truncated_gaussian_noise</code> on DP-SGD: no extra privacy
+as <code>gaussian_noise</code> (bounded or not) on DP-SGD: no extra privacy
 cost versus scalar clipping at the same <code>noise_multiplier</code>, and the MF
 Gaussian accountant is unchanged. Trainable parameters must be a <strong>flat</strong>
 <code>dict[str, torch.Tensor]</code> (as with <code>make_functional(..., partition_trainable=True)</code>)

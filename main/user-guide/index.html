@@ -2566,9 +2566,9 @@ stitches them.</p>
 <li><strong><a href="clipping/">Per-Example Gradient Clipping</a></strong> — <code>clipped_grad</code>,
   <code>auto_clipped_grad</code>, <code>adaptive_clipped_grad</code> (DP-SGD-only),
   microbatching, per-group clipping.</li>
-<li><strong><a href="noise/">Noise Addition</a></strong> — <code>gaussian_noise</code> /
-  <code>truncated_gaussian_noise</code> (DP-SGD); <code>mf_noise</code> with strategy
-  factories (DP-FTRL).</li>
+<li><strong><a href="noise/">Noise Addition</a></strong> — <code>gaussian_noise</code> (optional
+  <code>bound</code> for the bounded Gaussian mechanism) (DP-SGD); <code>mf_noise</code>
+  with strategy factories (DP-FTRL).</li>
 <li><strong><a href="accounting/">Privacy Accounting</a></strong> — Composable <code>DpProcess</code>
   objects, privacy metrics, calibration, the <code>Accountant</code> helper.</li>
 <li><strong><a href="sampling/">Sampling &amp; Microbatching</a></strong> — Poisson, truncated

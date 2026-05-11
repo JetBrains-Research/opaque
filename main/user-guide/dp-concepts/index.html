@@ -3205,9 +3205,10 @@ converge to a worse solution or not converge at all.</p>
   (smaller <span class="arithmatex">\(q\)</span>) and more gradient signal per unit of noise. The total noise added
   per step is <span class="arithmatex">\(\sigma \cdot C\)</span> regardless of batch size, but it is averaged over
   more examples. Physical batch sizes of 1000+ are common in DP training.</li>
-<li><strong>Use bounded Gaussian mechanisms.</strong> Rectified and truncated Gaussian noise
-  provide tighter privacy accounting at the same noise level as standard Gaussian.
-  See <a href="../../mechanisms/">Mechanisms</a> for the privacy ordering.</li>
+<li><strong>Use the bounded Gaussian mechanism.</strong> <code>gaussian_noise(..., bound=...)</code>
+  confines the per-coordinate output to a finite interval, which can improve
+  optimizer behaviour with no privacy-accounting change at training scale.
+  See <a href="../../mechanisms/">Mechanisms</a>.</li>
 <li><strong>Use correlated noise (DP-FTRL).</strong> Matrix factorization mechanisms (BandMF,
   BLT) inject correlated noise that partially cancels across steps,
   reducing the effective noise on cumulative model updates.</li>
@@ -3241,14 +3242,13 @@ often an optimal number of steps that balances convergence with noise level.</p>
 <p>The choice of noise mechanism affects both the privacy guarantee and the noise
 impact on model quality.</p>
 <h3 id="independent-noise-dp-sgd">Independent noise (DP-SGD)<a class="headerlink" href="#independent-noise-dp-sgd" title="Permanent link">&para;</a></h3>
-<p>Standard DP-SGD adds independent noise at each training step. Two Gaussian
-variants are available:</p>
-<div class="arithmatex">\[\\text{Truncated} \\leq \\text{Gaussian}\]</div>
-<p>The truncated Gaussian mechanism adds bounded noise (clamped to
-<span class="arithmatex">\([-R\sigma, R\sigma]\)</span>), which gives tighter privacy accounting than
-unbounded Gaussian noise. The privacy improvement is free — the noise
-magnitude is identical. See <a href="../../mechanisms/">Mechanisms</a> for the
-mathematical details.</p>
+<p>Standard DP-SGD adds independent noise at each training step.
+<code>gaussian_noise(..., bound=...)</code> further confines the per-coordinate output
+to a finite interval (the <em>bounded Gaussian mechanism</em> of Chen and Hale,
+2024).  At training scale the per-coordinate ε-DP analysis does not apply
+(gradients live under an ℓ₂-ball constraint, not a product of intervals);
+accounting is the standard (ε, δ)-Gaussian.  See
+<a href="../../mechanisms/">Mechanisms</a> for the mathematical details.</p>
 <h3 id="correlated-noise-dp-ftrl">Correlated noise (DP-FTRL)<a class="headerlink" href="#correlated-noise-dp-ftrl" title="Permanent link">&para;</a></h3>
 <p>Matrix factorization (MF) mechanisms add <em>correlated</em> noise across training
 steps. Instead of independent noise <span class="arithmatex">\(z_t\)</span> at each step, the noise is
