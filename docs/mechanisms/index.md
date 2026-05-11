@@ -138,10 +138,3 @@ for name, proc in [("Gaussian", gauss), ("BandMF", band), ("λCGD", lcgd)]:
     print(f"{name:12s}  ε = {proc.epsilon_at(1e-5):.4f}")
 ```
 
-## Building your own
-
-If the mechanism you need isn't one of the above — a new noise
-distribution, a custom sensitivity oracle, a new accounting
-primitive — see [Extending Opaque](../extending/index.md) for the
-contributor-facing recipe.
-

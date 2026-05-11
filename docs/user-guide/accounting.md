@@ -526,7 +526,3 @@ eps = training.epsilon_at(delta=1e-5, discretization=1e-5)
 
 See [Accounting API Reference](../reference/accounting.md) for complete function
 signatures and return types.
-
-For the contributor view — when an extension needs to add a new
-`DpProcess` subclass (and when it doesn't) — see
-[Adding a new mechanism family](../extending/new-mechanism.md).

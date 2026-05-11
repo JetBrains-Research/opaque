@@ -62,12 +62,13 @@ def test_dp_ftrl_guide_uses_dpftrl_only() -> None:
 
 
 def test_user_facing_docs_do_not_leak_internal_namespace() -> None:
-    """``opaque.api.*`` paths only appear under ``docs/extending/``.
+    """``opaque.api.*`` paths never appear in user-facing docs.
 
     Mentions of the literal token ``opaque.api.`` in prose — like
-    "the ``opaque.api.*`` contributor surface" — are forbidden
-    everywhere except ``docs/extending/`` (where they're documented
-    as the contributor entry point).
+    "the ``opaque.api.*`` contributor surface" — are forbidden in
+    user-facing docs. The internal namespace is reserved for
+    contributor-only use; the public surface is the ``opaque.<concern>``
+    façades documented in the user guide and reference pages.
     """
     docs_dir = REPO_ROOT / "docs"
     forbidden_subdirs = (
@@ -91,7 +92,8 @@ def test_user_facing_docs_do_not_leak_internal_namespace() -> None:
 
     assert not violations, (
         "User-facing docs must not reference concrete ``opaque.api.*`` "
-        "paths — the contributor namespace is documented only under "
-        "``docs/extending/``. Move references in:\n"
+        "paths — the internal namespace is contributor-only and must "
+        "not leak into user-facing documentation. Move or remove "
+        "references in:\n"
         + "\n".join(f"  - {v}" for v in sorted(violations))
     )

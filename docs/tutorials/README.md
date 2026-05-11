@@ -5,11 +5,7 @@ self-contained: you build something concrete and see it work.
 
 For conceptual explanations, see the [User Guide](../user-guide/index.md).
 For complete function signatures, see the
-[API Reference](../reference/index.md). For the contributor surface
-— wheel layout, façade rules, custom serializer / sync handlers,
-worked walkthrough — see
-[Extending Opaque](../extending/index.md) and especially
-[Adding a new mechanism family](../extending/new-mechanism.md).
+[API Reference](../reference/index.md).
 
 ## DP-SGD track
 
@@ -44,12 +40,6 @@ Concerns that apply to either stack.
 | -------- | ---- |
 | [Privacy Auditing](privacy_auditing.ipynb) | Validate privacy guarantees empirically with one-run / coin-flip auditing. |
 | [Distributed Training](distributed_training.ipynb) | Multi-GPU DP training under DDP — synchronized noise, sharded sampling. |
-
-Contributor-facing material — wheel layout, façade rules, custom
-serializers, sync handlers, worked walkthrough of a new mechanism —
-lives in [Extending Opaque](../extending/index.md). It's intentionally
-outside the tutorials track: it documents `opaque.api.*` paths that
-user-facing code shouldn't touch.
 
 ## Running the tutorials
 

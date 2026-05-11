@@ -144,15 +144,6 @@ nav:
     - Utilities: reference/utilities.md
     - Optimizers: reference/optimizers.md
     - Schedules: reference/schedules.md
-  - Extending Opaque:
-    - Overview: extending/index.md
-    - Adding a new mechanism family: extending/new-mechanism.md
-    - Composition: extending/composition.md
-    - Upstream integration: extending/upstream-integration.md
-    - Clipping fun helpers: extending/clipping-fun.md
-    - Serialization registry: extending/serialization.md
-    - Distributed sync: extending/distributed-sync.md
-
 extra:
   social:
     - icon: fontawesome/brands/github
