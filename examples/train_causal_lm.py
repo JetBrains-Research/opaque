@@ -510,6 +510,12 @@ def parse_args():
         default=164,
         help="Number of HumanEval problems to evaluate (default: 164 = all)",
     )
+    train_group.add_argument(
+        "--eval-mbpp",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Run MBPP+ evaluation after training (requires --output-dir)",
+    )
 
     lora_group = parser.add_argument_group("lora", "LoRA adapter settings")
     lora_group.add_argument(
@@ -2359,18 +2365,23 @@ def main():
         tokenizer.save_pretrained(args.output_dir)
         print(f"Saved adapter + tokenizer to {args.output_dir}")
 
-        if args.eval_humaneval:
+        if args.eval_humaneval or args.eval_mbpp:
+            # Merge the adapter once and reuse for all downstream evals.
+            # Cast to float32 first — merge_and_unload fails with bfloat16 tensors.
+            merged = None
+            try:
+                peft_model = peft_model.float()
+                merged = peft_model.merge_and_unload()
+                merged = merged.to(device).to(torch.bfloat16)
+            except Exception as e:
+                print(f"Adapter merge failed (skipping downstream evals): {e}")
+
+        if args.eval_humaneval and merged is not None:
             print("\n" + "=" * 60)
             print("Running HumanEval evaluation...")
             print("=" * 60)
             try:
                 from lora_privacy.evaluation.code_eval import evaluate_humaneval
-
-                # Merge adapter for faster inference
-                # Cast to float32 first — merge_and_unload fails with bfloat16 tensors
-                peft_model = peft_model.float()
-                merged = peft_model.merge_and_unload()
-                merged = merged.to(device).to(torch.bfloat16)
 
                 results = evaluate_humaneval(
                     model=merged,
@@ -2385,6 +2396,27 @@ def main():
                         wandb.log({f"downstream/{k}": v}, step=global_step)
             except Exception as e:
                 print(f"HumanEval evaluation failed: {e}")
+
+        if args.eval_mbpp and merged is not None:
+            print("\n" + "=" * 60)
+            print("Running MBPP+ evaluation...")
+            print("=" * 60)
+            try:
+                from lora_privacy.evaluation.code_eval import evaluate_mbpp
+
+                results = evaluate_mbpp(
+                    model=merged,
+                    tokenizer=tokenizer,
+                    batch_size=args.eval_batch_size or 4,
+                    max_new_tokens=256,
+                )
+                print(f"\nMBPP+ Results:")
+                for k, v in results.items():
+                    print(f"  {k}: {v:.4f}")
+                    if use_wandb:
+                        wandb.log({f"downstream/{k}": v}, step=global_step)
+            except Exception as e:
+                print(f"MBPP evaluation failed: {e}")
 
     if use_wandb:
         wandb.finish()
