@@ -521,9 +521,7 @@ _AMPLIFICATIONS: dict[str, tuple[Callable[..., DpFtrlProcess], bool]] = {
 # Inner mechanism name → factory() -> mechanism dataclass.
 _MECHANISMS: dict[str, Callable[[], object]] = {
     "IdentityMf": lambda: ftrl_acc.mf_gaussian(1.0, identity_strategy()),
-    "BandMf": lambda: ftrl_acc.mf_gaussian(
-        1.0, band_mf_strategy(n_steps=16, bands=4)
-    ),
+    "BandMf": lambda: ftrl_acc.mf_gaussian(1.0, band_mf_strategy(n_steps=16, bands=4)),
     "Blt": lambda: ftrl_acc.mf_gaussian(
         1.0,
         blt_strategy(n_steps=16, min_sep=4, max_participations=4),

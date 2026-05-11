@@ -141,9 +141,7 @@ def _load_mf_gaussian(_template: Any, sd: dict[str, Any]) -> MfGaussian:
 def _register_mf_gaussian_serializer() -> None:
     from opaque.serialization import register_serializer
 
-    register_serializer(
-        MfGaussian, _serialize_mf_gaussian, _load_mf_gaussian
-    )
+    register_serializer(MfGaussian, _serialize_mf_gaussian, _load_mf_gaussian)
 
 
 _register_mf_gaussian_serializer()
