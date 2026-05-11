@@ -148,7 +148,7 @@ def _run_dp_step(model, ids, mask, lbls, *, noise_kind: str, k):
     elif noise_kind == "dpftrl":
         strategy = identity_strategy()
         noise_fn, state = mf_gaussian_noise(
-            pooled, strategy, noise_multiplier=1.0, key=k,
+            pooled, strategy, n_steps=1, noise_multiplier=1.0, key=k,
         )
     else:
         raise ValueError(f"unknown noise_kind={noise_kind!r}")

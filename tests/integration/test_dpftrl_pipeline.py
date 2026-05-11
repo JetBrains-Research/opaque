@@ -98,7 +98,7 @@ def _run_dpftrl_step(model, input_ids, attention_mask, labels):
 
     strategy = identity_strategy()
     noise_fn, noise_state = mf_gaussian_noise(
-        grads, strategy, noise_multiplier=1.0, key=key(0),
+        grads, strategy, n_steps=1, noise_multiplier=1.0, key=key(0),
     )
     noised, _ = noise_fn(grads, noise_state)
 
