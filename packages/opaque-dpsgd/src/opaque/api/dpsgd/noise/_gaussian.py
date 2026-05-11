@@ -1,7 +1,10 @@
 """Gaussian noise generation for differential privacy.
 
-This module provides a higher-order function for adding calibrated Gaussian noise
-to clipped DP query values.
+This module provides a higher-order function for adding calibrated Gaussian
+noise to clipped DP query values, optionally bounded to a closed interval
+following the *bounded Gaussian mechanism* of Chen and Hale, "The Bounded
+Gaussian Mechanism for Differential Privacy," J. Privacy and Confidentiality,
+14(1), 2024 (https://arxiv.org/abs/2211.17230).
 
 The API returns ``(noise_fn, state)`` where state is always immutable:
 
@@ -16,6 +19,14 @@ Per-step sensitivity flows through the input ``ClippedPytree.max_norm`` metadata
 and the returned ``NoisedPytree`` carries the realized ``noise_stddev`` for
 downstream optimizers.
 
+Pass ``bound=B`` (or ``bound=(low, high)``) to confine the per-coordinate
+output to ``[-B, B]`` (or ``[low, high]``); the noise is sampled from a
+Gaussian renormalized over that interval via the inverse-CDF method.  At
+training scale the per-coordinate analysis of the paper's bounded mechanism
+does not apply (gradients live under an ``ℓ2``-ball constraint, not a product
+of intervals), so the privacy accounting is the standard
+``(ε, δ)``-Gaussian — bounding only modifies the noise distribution.
+
 The noise function is **purely local** — it uses exactly the key you provide.
 For synchronized noise in distributed training, pass the same key on every rank.
 For independent noise, derive a per-rank key with ``fold_in(key, rank)``.
@@ -24,6 +35,7 @@ For independent noise, derive a per-rank key with ``fold_in(key, rank)``.
 from __future__ import annotations
 
 import dataclasses
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -47,6 +59,9 @@ from opaque.api.engine.noise_allocation import (
     per_group_noise_stddev,
     resolve_paired_clipped,
 )
+
+
+_SQRT2 = math.sqrt(2.0)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -92,10 +107,47 @@ def _resolve_noise_multiplier(noise_multiplier: float | None) -> float:
     return multiplier
 
 
+def _resolve_bound(
+    bound: float | tuple[float, float] | list[float] | None,
+) -> tuple[float, float] | None:
+    """Normalize the user-facing ``bound`` argument to ``(low, high)`` or None.
+
+    Accepts ``None`` (unbounded), a positive scalar ``B`` interpreted as the
+    symmetric interval ``[-B, B]``, or a 2-tuple/2-list ``(low, high)`` with
+    ``low < high``.  Bounds must straddle zero — the support has to contain
+    the unbiased mechanism centre — so ``low <= 0 <= high`` is required.
+    """
+    if bound is None:
+        return None
+    if isinstance(bound, (tuple, list)):
+        if len(bound) != 2:
+            raise ValueError(
+                f"bound must be a 2-tuple (low, high) when given a sequence, "
+                f"got length {len(bound)}"
+            )
+        low, high = float(bound[0]), float(bound[1])
+    else:
+        b = float(bound)
+        if b <= 0:
+            raise ValueError(
+                f"scalar bound must be positive (interpreted as [-B, B]), got {b}"
+            )
+        low, high = -b, b
+    if not low < high:
+        raise ValueError(f"bound must satisfy low < high, got ({low}, {high})")
+    if not (low <= 0.0 <= high):
+        raise ValueError(
+            "bound must straddle zero (low <= 0 <= high) so the support "
+            f"contains the unbiased mechanism centre, got ({low}, {high})"
+        )
+    return low, high
+
+
 def gaussian_noise(
     *,
     noise_multiplier: float,
     key: RngKey,
+    bound: float | tuple[float, float] | list[float] | None = None,
     compute_dtype: torch.dtype = torch.float32,
 ) -> tuple[
     Callable[..., tuple[Any, GaussianNoiseState]],
@@ -109,6 +161,10 @@ def gaussian_noise(
     ``noise_multiplier * clipped.max_norm``.  The output is a
     :class:`opaque.types.NoisedPytree` carrying that realized
     ``noise_stddev`` metadata.
+
+    When ``bound`` is set, the output is sampled from a Gaussian renormalized
+    over the per-coordinate interval and clamped to it — the *bounded
+    Gaussian mechanism* of Chen and Hale (2024).
 
     The noise function uses exactly the ``key`` you provide — no auto-detection
     of distributed state. For synchronized noise in DDP, pass the same key on
@@ -124,14 +180,19 @@ def gaussian_noise(
         key: Explicit RNG key for deterministic, functional randomness.
             Same key on all ranks → same noise (synchronized).
             ``fold_in(key, rank)`` → independent noise per rank.
-        compute_dtype: Internal dtype for ``torch.randn`` and the
-            scale-and-add arithmetic.  Defaults to ``torch.float32`` because
-            the Gaussian-mechanism privacy guarantee requires sampling from a
-            true Gaussian — ``torch.randn(dtype=torch.bfloat16)`` samples
-            from a coarsely-discretized lattice that does not satisfy the
-            standard analysis.  The type-stable boundary is preserved: the
-            input's dtype is matched on output (input upcast to
-            ``compute_dtype``, noise added, downcast at return).
+        bound: Optional per-coordinate output bound.  ``None`` (default) ⇒
+            unbounded standard Gaussian.  A positive scalar ``B`` ⇒ symmetric
+            interval ``[-B, B]``.  A ``(low, high)`` tuple/list ⇒ asymmetric
+            interval; must satisfy ``low <= 0 <= high``.  Units are absolute
+            (same scale as the gradient / clip norm), not multiples of σ.
+        compute_dtype: Internal dtype for uniform sampling and the
+            inverse-CDF arithmetic.  Defaults to ``torch.float32`` because the
+            Gaussian-mechanism privacy guarantee requires sampling from a
+            true Gaussian — sampling uniforms in ``torch.bfloat16`` produces
+            a coarsely-discretized lattice that does not satisfy the standard
+            analysis.  The type-stable boundary is preserved: the input's
+            dtype is matched on output (input upcast to ``compute_dtype``,
+            noise added, downcast at return).
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -149,14 +210,23 @@ def gaussian_noise(
         >>> grads = torch.zeros(10)
         >>> noisy_grads, state = noise_fn(clipped(grads, max_norm=1.0), state)
 
-    Example (distributed — independent noise per rank):
-        >>> from opaque.random import key, fold_in
-        >>> rank = torch.distributed.get_rank()
+    Example (bounded output — symmetric ``[-3, 3]``):
         >>> noise_fn, state = gaussian_noise(
-        ...     noise_multiplier=1.1, key=fold_in(key(42), rank)
+        ...     noise_multiplier=1.0, bound=3.0, key=key(42),
         ... )
+
+    Example (bounded output — asymmetric ``[0, 10]``):
+        >>> noise_fn, state = gaussian_noise(
+        ...     noise_multiplier=1.0, bound=(0.0, 10.0), key=key(42),
+        ... )
+
+    References:
+        Bo Chen and Matthew Hale, "The Bounded Gaussian Mechanism for
+        Differential Privacy," J. Privacy and Confidentiality, 14(1), 2024.
+        https://arxiv.org/abs/2211.17230
     """
     resolved_noise_multiplier = _resolve_noise_multiplier(noise_multiplier)
+    resolved_bound = _resolve_bound(bound)
 
     if not isinstance(key, RngKey):
         raise TypeError(f"key must be RngKey, got {type(key)}")
@@ -166,38 +236,71 @@ def gaussian_noise(
         _rng_key=key,
     )
 
-    def _add_noise(tensor: torch.Tensor, std: float, generator) -> torch.Tensor:
-        """Sample noise in compute_dtype, add, downcast to input dtype."""
-        noise = torch.randn(
-            tensor.shape,
-            dtype=compute_dtype,
-            generator=generator,
-        ).to(device=tensor.device)
-        if tensor.dtype == compute_dtype:
-            return tensor + noise * std
-        # Type-stable boundary: upcast input, add in compute_dtype, downcast.
-        return (tensor.to(compute_dtype) + noise * std).to(dtype=tensor.dtype)
+    def _sample(
+        center: torch.Tensor, std: float, generator: torch.Generator
+    ) -> torch.Tensor:
+        """Sample N(center, std²) by inverse CDF, optionally truncated.
+
+        ``compute_dtype`` upcast/downcast preserves the type-stable boundary;
+        uniforms are drawn on the CPU generator and moved to the input device.
+        """
+        in_dtype = center.dtype
+        device = center.device
+
+        if std == 0:
+            if resolved_bound is None:
+                return center
+            low, high = resolved_bound
+            return torch.clamp(center, min=low, max=high)
+
+        u = torch.rand(center.shape, dtype=compute_dtype, generator=generator).to(
+            device=device
+        )
+
+        if in_dtype != compute_dtype:
+            center_c = center.to(compute_dtype)
+        else:
+            center_c = center
+
+        # Clamp ``u`` away from 0 and 1 so ``2u-1`` never reaches ±1 and
+        # ``erfinv`` can't return ±inf.  ``finfo.tiny`` (denormal min) is
+        # below ``compute_dtype`` machine eps, so ``1 - tiny`` rounds back to
+        # ``1.0`` and the upper clamp would be a no-op — use ``finfo.eps``.
+        eps = torch.finfo(compute_dtype).eps
+        if resolved_bound is None:
+            # Unbounded N(0, 1) via inverse CDF: μ + σ √2 erfinv(2u - 1)
+            u = torch.clamp(u, min=eps, max=1.0 - eps)
+            sample = center_c + std * _SQRT2 * torch.erfinv(2.0 * u - 1.0)
+        else:
+            low, high = resolved_bound
+            z_low = (low - center_c) / std
+            z_high = (high - center_c) / std
+            alpha = 0.5 * (1.0 + torch.erf(z_low / _SQRT2))
+            beta = 0.5 * (1.0 + torch.erf(z_high / _SQRT2))
+            u = alpha + u * (beta - alpha)
+            u = torch.clamp(u, min=eps, max=1.0 - eps)
+            sample = center_c + std * _SQRT2 * torch.erfinv(2.0 * u - 1.0)
+            sample = torch.clamp(sample, min=low, max=high)
+
+        return sample.to(dtype=in_dtype) if in_dtype != compute_dtype else sample
 
     def _add_noise_tree(grads, effective_stddev, generator):
         _validate_noise_stddev(effective_stddev)
 
         # Per-group σ: ClippedPytree.pytree must be a flat dict[path_key, Tensor].
         if isinstance(effective_stddev, PerGroup):
-            if all(v == 0 for v in effective_stddev.values.values()):
-                return grads
-
+            if not isinstance(grads, dict):
+                raise TypeError(
+                    "gaussian_noise with PerGroup stddev requires "
+                    "ClippedPytree.pytree to be a dict[str, torch.Tensor]."
+                )
             noised = {}
             for param_key, tensor in grads.items():
                 group_std = effective_stddev.for_key(param_key)
-                noised[param_key] = _add_noise(tensor, group_std, generator)
-
+                noised[param_key] = _sample(tensor, group_std, generator)
             return noised
 
-        # Global (scalar) noise path
-        if effective_stddev == 0:
-            return grads
-
-        return tree_map(lambda t: _add_noise(t, effective_stddev, generator), grads)
+        return tree_map(lambda t: _sample(t, effective_stddev, generator), grads)
 
     def _clipped_stddev(clipped: ClippedPytree) -> float | PerGroup:
         if isinstance(clipped.max_norm, PerGroup):

@@ -74,7 +74,6 @@ from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.distributed import sync
 from opaque.distributed.gradients import sum_gradients_
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.noise import truncated_gaussian_noise
 from opaque.profiling import (
     StepTimer,
     TrainingProfiler,
@@ -570,16 +569,19 @@ def parse_args():
     dp_group.add_argument(
         "--noise-mechanism",
         type=str,
-        choices=["gaussian", "truncated_gaussian"],
+        choices=["gaussian", "bounded_gaussian"],
         default="gaussian",
-        help="Noise mechanism: gaussian (standard, unclipped) "
-        "or truncated_gaussian (renormalized, clipped support)",
+        help="Noise mechanism: gaussian (standard, unbounded support) "
+        "or bounded_gaussian (Chen and Hale, 2024; renormalized density on a "
+        "per-coordinate interval).",
     )
     dp_group.add_argument(
-        "--noise-radius",
+        "--noise-bound",
         type=float,
-        default=3.0,
-        help="Support half-width in sigma units for rectified/truncated Gaussian (ignored for standard gaussian)",
+        default=1.0,
+        help="Symmetric absolute bound B for bounded_gaussian (per-coordinate "
+        "support [-B, B]; same units as the gradient / clip norm). Ignored "
+        "for standard gaussian.",
     )
     dp_group.add_argument(
         "--second-moment",
@@ -1232,7 +1234,7 @@ def main():
         print(f"  Clip norm: {clip_norm}")
     print(f"  Noise mechanism: {args.noise_mechanism}")
     if args.noise_mechanism != "gaussian":
-        print(f"  Noise radius: {args.noise_radius}σ")
+        print(f"  Noise bound: ±{args.noise_bound}")
     print(f"  Microbatch size: {args.microbatch_size}")
     print(f"  Clipping mode: {args.clipping_mode}")
     if args.clipping_mode == "auto":
@@ -1312,12 +1314,14 @@ def main():
 
     # Noise injection — bind mechanism-specific parameters once.
     # Chain: base mechanism → adaclip (optional) → amplification.
-    # Truncated Gaussian noise provides clipped support but converges to
-    # Gaussian for high-dimensional tasks, so we use dpsgd_acc.gaussian() for accounting.
+    # Bounded Gaussian noise (Chen and Hale, 2024) confines per-coordinate
+    # support but accounting collapses to ordinary Gaussian at training
+    # scale (ℓ₂-ball clip, not a product of intervals), so we use
+    # dpsgd_acc.gaussian() for accounting either way.
     _num_groups = len(clip_norm.values) if isinstance(clip_norm, PerGroup) else 1
     if args.noise_multiplier == 0:
         mechanism = lambda nm: acc.nonprivate()
-    elif args.noise_mechanism == "truncated_gaussian":
+    elif args.noise_mechanism == "bounded_gaussian":
         mechanism = dpsgd_acc.gaussian
     else:
         mechanism = dpsgd_acc.gaussian
@@ -1362,8 +1366,8 @@ def main():
         if use_parallel_poisson:
             print(f"  Accounting: parallel_poisson (world_size={world_size})")
         print(f"  Noise mechanism: {args.noise_mechanism}")
-        if args.noise_mechanism == "truncated_gaussian":
-            print(f"  Noise radius: {args.noise_radius}σ")
+        if args.noise_mechanism == "bounded_gaussian":
+            print(f"  Noise bound: ±{args.noise_bound}")
         if use_second_moment:
             _log_private_second_moment()
         print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
@@ -1524,10 +1528,14 @@ def main():
     # Noise functions consume ClippedPytree metadata directly and return
     # NoisedPytree updates carrying the realized per-step stddev.
     initial_bound = clip_norm / args.batch_size
-    if args.noise_mechanism == "truncated_gaussian" and noise_multiplier != 0:
-        noise_fn, noise_state = truncated_gaussian_noise(
+    if args.noise_mechanism == "bounded_gaussian":
+        # Pass ``bound`` unconditionally — at ``noise_multiplier=0`` the
+        # bounded path clamps the input to the interval (vs. the unbounded
+        # path which returns it unchanged), so the mechanism stays
+        # consistent for the user's chosen flag.
+        noise_fn, noise_state = gaussian_noise(
             noise_multiplier=noise_multiplier,
-            radius=args.noise_radius,
+            bound=args.noise_bound,
             key=key(args.seed),
         )
     else:

@@ -41,7 +41,7 @@ class AdaClip(DpProcess):
     def effective_noise_multiplier(self) -> float:
         """Noise multiplier adjusted for the quantile estimator's privacy cost.
 
-        Exact for Gaussian ``inner``; conservative for truncated Gaussian.
+        Exact for Gaussian ``inner``; conservative for bounded Gaussian.
         Returns ``0.0`` for :class:`NonPrivate` inner (no noise).
 
         When ``num_groups > 1``, the effective noise multiplier is lower

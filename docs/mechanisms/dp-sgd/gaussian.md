@@ -19,8 +19,8 @@ noise multiplier.
 
 **Limitation**: Unbounded support means the worst-case privacy loss is
 technically infinite; the $\delta$ parameter bounds the probability of
-extreme privacy loss. The bounded variants (rectified, truncated) eliminate
-this tail risk.
+extreme privacy loss. The bounded variant (`gaussian_noise(bound=...)`)
+eliminates this tail risk.
 
 ## Mathematics
 
@@ -167,25 +167,33 @@ print(f"σ/Δ = {noise_multiplier:.4f}, achieved ε = {result.achieved:.4f}")
 
 ## Bounded noise variant
 
-Opaque also provides `truncated_gaussian_noise()`, which samples from a
-Gaussian truncated to $[-R\sigma, R\sigma]$ with renormalized density. This
-gives bounded support while adding negligibly more noise than the standard
-Gaussian for typical radius values ($R \geq 3$). For high-dimensional
-tasks like model training, the truncated Gaussian converges to the standard
-Gaussian, so use `dpsgd_acc.gaussian()` for accounting.
+Pass ``bound=B`` (or ``bound=(low, high)``) to `gaussian_noise()` to sample
+from a Gaussian renormalized over $[-B, B]$ (or $[\text{low}, \text{high}]$)
+per coordinate — the *bounded Gaussian mechanism* of Chen and Hale (2024).
+Bounds are absolute (same scale as the gradient / clip norm), not multiples
+of $\sigma$.  At training scale the paper's per-coordinate $\varepsilon$-DP
+analysis does not apply — gradients live under an $\ell_2$-ball constraint,
+not a product of intervals — so use `dpsgd_acc.gaussian()` for accounting and
+treat the bound as bounded-support post-processing on the standard
+$(\varepsilon, \delta)$-Gaussian mechanism.
 
 ```python
-from opaque.dpsgd.noise import truncated_gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 import opaque.accounting as acc
 
-# Noise injection: bounded support
-noise_fn, noise_state = truncated_gaussian_noise(
-  noise_multiplier=noise_multiplier, radius=3.0, key=key(42),
+# Noise injection: bounded support, symmetric absolute bound
+noise_fn, noise_state = gaussian_noise(
+  noise_multiplier=noise_multiplier, bound=3.0, key=key(42),
 )
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 
-# Accounting
+# Asymmetric bound:
+noise_fn, noise_state = gaussian_noise(
+  noise_multiplier=noise_multiplier, bound=(-1.0, 4.0), key=key(42),
+)
+
+# Accounting (unchanged from the unbounded mechanism)
 step = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate=0.01)
 training = step * 1000
 eps = training.epsilon_at(delta=1e-5)

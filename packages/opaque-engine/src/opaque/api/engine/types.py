@@ -153,7 +153,7 @@ class ClipState(ABC):
 class NoiseState(ABC):
     """Base class for noise state.
 
-    All noise functions (Gaussian, truncated Gaussian, MF) return a
+    All noise functions (Gaussian, optionally bounded; MF) return a
     state object that inherits from this class, providing a unified
     interface for step tracking and RNG key management.
 

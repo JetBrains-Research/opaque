@@ -14,9 +14,9 @@ Opaque provides several noise mechanisms:
 
 ### Independent Noise (DP-SGD)
 
-- **`gaussian_noise()`** — Standard (unbounded) Gaussian noise. The default for most DP-SGD workflows.
-- **`truncated_gaussian_noise()`** — Bounded Gaussian noise (renormalized density). The tail mass
-  is redistributed over the bounded interval — no point masses at the boundaries.
+- **`gaussian_noise()`** — Gaussian noise; pass ``bound=B`` (or
+  ``bound=(low, high)``) for the bounded Gaussian mechanism (renormalized
+  density on the interval — no point masses at the boundaries).
 
 ### Correlated Noise (DP-FTRL / Matrix Factorization)
 
@@ -50,8 +50,8 @@ Use `sync()` from `opaque.distributed` to validate noise state consistency
 across ranks. It auto-dispatches based on type:
 
 - **`sync(GaussianNoiseState)`** — Validate RNG key and step counter match across ranks.
-  Rectified and truncated Gaussian noise also return `GaussianNoiseState`,
-  so `sync()` handles them automatically.
+  The bounded Gaussian path (`gaussian_noise(..., bound=...)`) also returns
+  `GaussianNoiseState`, so `sync()` handles it automatically.
 - **`sync(MFNoiseState)`** — Validate MF noise state matches across ranks.
 
 **See also**: [Noise Addition User Guide](../user-guide/noise.md)
@@ -59,10 +59,9 @@ across ranks. It auto-dispatches based on type:
 ## Paired second-moment release
 
 When `clipped_grad(..., second_moment=True)` produces a
-`SecondMomentClippingOutput`, both `gaussian_noise` /
-`truncated_gaussian_noise` (DP-SGD) and `mf_noise(..., second_moment_strategy=...)`
-(DP-FTRL) consume it and emit a `SecondMomentNoiseOutput` with paired noise
-on both streams.
+`SecondMomentClippingOutput`, both `gaussian_noise` (DP-SGD; bounded or not)
+and `mf_noise(..., second_moment_strategy=...)` (DP-FTRL) consume it and
+emit a `SecondMomentNoiseOutput` with paired noise on both streams.
 
 The runtime σ allocation is **sensitivity-proportional** and works
 identically for scalar `max_norm` and per-group `PerGroup` `max_norm`. For
@@ -99,18 +98,15 @@ MSE-optimal allocation from :meth:`ClippedPytree.noise_stddev_for` (same
 Mahalanobis allocation as `gaussian_noise`). Trainable gradients must be a
 flat `dict[str, Tensor]` so each leaf maps to a group.
 
-## Standard Gaussian
+## Gaussian (optionally bounded)
+
+`gaussian_noise` accepts an optional ``bound`` argument: ``bound=B`` for the
+symmetric interval ``[-B, B]`` or ``bound=(low, high)`` for an asymmetric
+one (with ``low <= 0 <= high``).  The per-coordinate sample is then drawn
+from a Gaussian renormalized over the interval (Chen and Hale, 2024).
+Bounds are absolute, in the same units as the gradient / clip norm.
 
 ::: opaque.dpsgd.noise.gaussian_noise
-
-## Bounded Gaussian — Truncated (renormalized)
-
-`truncated_gaussian_noise` consumes the same `SecondMomentClippingOutput`
-inputs as `gaussian_noise` and uses the same sensitivity-proportional joint
-allocation; the only difference is that the per-coordinate noise sample is
-drawn from a truncated normal of half-width `radius·σ`.
-
-::: opaque.dpsgd.noise.truncated_gaussian_noise
 
 ## Matrix Factorization Noise
 
