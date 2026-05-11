@@ -222,6 +222,51 @@ ckpt = {
 torch.save(state_dict(ckpt), "step.pt")
 ```
 
+## Empirical evidence
+
+How `--per-group-clipping`, `--clipping-mode auto`, and
+`--second-moment` behave under MF noise, distilled from end-to-end
+DP fine-tuning runs:
+
+1. **The `√(1+C)` σ inflation from joint Mahalanobis allocation is
+   mechanism-agnostic.** With `--second-moment` on, the first-moment
+   stream picks up the same `√(1+C)` factor under MF as under
+   per-step Gaussian — the formula does not depend on the strategy
+   matrix. The clipping-guide recommendation to pick `C` as small as
+   the optimizer tolerates carries over unchanged.
+
+2. **`--per-group-clipping` × MF pays off on heterogeneous
+   workloads.** When one parameter group's gradients sit an order of
+   magnitude below the rest, `Cᵢ` matched to per-group typical
+   magnitudes recovers a small eval-loss improvement over scalar
+   clipping at the same joint budget. Setting `Cᵢ` substantially
+   below the per-group typical magnitudes (e.g. half of the per-group
+   median) is worse than scalar — clipping bias dominates the
+   noise-redistribution benefit. The operational sweet spot is `Cᵢ`
+   near per-group typical gradient magnitudes.
+
+3. **`--clipping-mode auto` composes with MF unchanged.** AUTO-S's
+   per-record sensitivity bound `sup ‖R · g / (‖g‖ + γ)‖ ≤ R` is
+   constant in the input — exactly the invariant MF accounting
+   requires — and the joint Mahalanobis allocation works the same
+   with AUTO-S as with fixed clipping. On the workloads we've
+   measured AUTO-S matches or slightly beats fixed clipping at the
+   same `R`, with no need to retune `R` per workload.
+
+4. **`--second-moment` math is correct under MF, but Adam-family
+   optimizer stability is workload-dependent.** The σ_first inflation
+   matches the predicted `√(1+C)` to within measurement noise. The
+   destabilisation risk comes from the v update: when per-coordinate
+   gradient signal is small relative to σ_second (common when some
+   parameter groups have very small gradients), Adam's
+   per-coordinate scaling can accumulate bias and the average
+   gradient norm grows across training. Watch for a climbing
+   `train/clip_rate` and growing `train/grad_norm_mean` in early
+   steps. Mitigations: lower the learning rate (a ~3× drop is
+   sometimes enough), and/or use `--per-group-clipping` to scope `C`
+   per group so the per-group σ on small-gradient groups doesn't
+   dominate the v signal there.
+
 ## Runnable references
 
 - [`examples/train_dp_ftrl.py`](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dp_ftrl.py)
