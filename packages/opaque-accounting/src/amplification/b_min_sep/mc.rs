@@ -8,7 +8,7 @@
 //!
 //! where `f_i` is the backward recursion on iteration index (1-based in the paper).
 //! Privacy loss samples: `L_remove = ln(P/Q)`, `L_add = -ln(P/Q)` with `y ~ Q`,
-//! matching the asymmetric Monte Carlo pattern used by [`super::balls_in_bins::monte_carlo::bnb_mc_pld`].
+//! matching the asymmetric Monte Carlo pattern used by [`crate::amplification::balls_in_bins::bnb_mc_pld`].
 
 use crate::amplification::balls_in_bins::monte_carlo::samples_to_pmf;
 use crate::discretization::DiscretizationConfig;
@@ -324,7 +324,7 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
 /// * `strategy_coef` — first column of strategy matrix `C` (length = bandwidth).
 /// * `n_steps` — number of iterations `n`.
 /// * `p` — per-iteration inclusion probability `p` in Algorithm 2 (not `p_0`).
-/// * `sigma` — raw noise multiplier σ (same units as [`super::bnb_mc_pld`]).
+/// * `sigma` — raw noise multiplier σ (same units as [`crate::amplification::bnb_mc_pld`]).
 /// * `config` — discretization configuration (includes `num_mc_samples` and `seed`).
 pub fn bandmf_b_min_sep_warm_mc_pld(
     strategy_coef: &[f64],

@@ -11,9 +11,7 @@ use crate::discretization::DiscretizationConfig;
 use crate::error::{PldError, Result};
 use crate::pld::PrivacyLossDistribution;
 
-use super::b_min_sep_mc::{
-    bandmf_b_min_sep_pld_from_transcripts, bandmf_b_min_sep_prepare_transcripts,
-};
+use super::mc::{bandmf_b_min_sep_pld_from_transcripts, bandmf_b_min_sep_prepare_transcripts};
 
 /// One prepared Monte Carlo corpus.
 pub struct BMinSepTranscriptCorpus {

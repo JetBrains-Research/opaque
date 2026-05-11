@@ -1,8 +1,7 @@
 """Differential privacy accounting using Privacy Loss Distributions (PLD).
 
 Cross-cutting accounting surface — composition, calibration, generic
-mechanisms (``identity``, ``nonprivate``, ``eps_delta``), shared
-transformations.
+mechanisms (``identity``, ``nonprivate``, ``eps_delta``).
 
 Algorithm-specific factories live in their respective packages
 (``opaque-dpsgd`` / ``opaque-dpftrl``):
@@ -48,7 +47,6 @@ from opaque.api.accounting.core import (
     repeat,
     risk_budget,
     set_discretization,
-    transformations,
 )
 
 __all__ = [
@@ -59,7 +57,6 @@ __all__ = [
     "composition",
     "discretization",
     "mechanisms",
-    "transformations",
     # Accountant
     "Accountant",
     # Discretization

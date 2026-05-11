@@ -5,23 +5,21 @@
 //! - [`poisson_gaussian_pld`] — Poisson-subsampled Gaussian
 //! - [`truncated_poisson_gaussian_pld`] — Truncated Poisson-subsampled Gaussian
 //! - [`parallel_poisson_gaussian_pld`] — Parallel Poisson Gaussian (gradient accumulation or parallel workers)
+//! - [`bandmf_b_min_sep_warm_mc_pld`] — BandMF + warm-start b-min-sep subsampling (MC); transcript registry for calibration reuse
 //! - [`bnb_mc_pld`] — Balls-in-Bins Monte Carlo for correlated-noise matrix
 //!   mechanisms (BLT/λCGD/BISR/BSR).  Independent-noise BnB collapses to
 //!   `poisson_gaussian_pld` composed; use that directly for Gaussian/AdaClip.
 
-mod b_min_sep_mc;
-mod b_min_sep_registry;
+mod b_min_sep;
 pub mod balls_in_bins;
 mod parallel_poisson;
 pub(crate) mod poisson;
 mod truncated_poisson;
 
-pub use b_min_sep_mc::{
+pub use b_min_sep::{
     bandmf_b_min_sep_pld_from_transcripts, bandmf_b_min_sep_prepare_transcripts,
-    bandmf_b_min_sep_warm_mc_pld,
-};
-pub use b_min_sep_registry::{
-    drop_b_min_sep_transcript_handle, pld_from_transcript_handle, register_b_min_sep_transcripts,
+    bandmf_b_min_sep_warm_mc_pld, drop_b_min_sep_transcript_handle, pld_from_transcript_handle,
+    register_b_min_sep_transcripts,
 };
 pub use balls_in_bins::{bnb_mc_pld, bnb_mc_pld_identity};
 pub use parallel_poisson::parallel_poisson_gaussian_pld;
