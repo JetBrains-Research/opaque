@@ -2099,9 +2099,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#opaque.dpftrl.noise.identity_strategy" class="md-nav__link">
+  <a href="#opaque.dpftrl.noise.identity_mf_strategy" class="md-nav__link">
     <span class="md-ellipsis">
-      identity_strategy
+      identity_mf_strategy
     </span>
   </a>
   
@@ -2736,9 +2736,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#opaque.dpftrl.noise.identity_strategy" class="md-nav__link">
+  <a href="#opaque.dpftrl.noise.identity_mf_strategy" class="md-nav__link">
     <span class="md-ellipsis">
-      identity_strategy
+      identity_mf_strategy
     </span>
   </a>
   
@@ -2868,7 +2868,7 @@ noise obscures individual contributions, providing the actual privacy guarantee.
 <li><strong><code>blt_strategy()</code></strong> — Buffered Linear Toeplitz (BLT) correlated noise</li>
 <li><strong><code>lambda_cgd_strategy()</code></strong> — DP-λCGD correlated noise (PRNG replay, zero extra memory)</li>
 <li><strong><code>bisr_strategy()</code></strong> — BISR (Banded Inverse Square Root) correlated noise</li>
-<li><strong><code>identity_strategy()</code></strong> — Identity (DP-SGD via MF API, easy to swap)</li>
+<li><strong><code>identity_mf_strategy()</code></strong> — Identity (DP-SGD via MF API, easy to swap)</li>
 </ul>
 <p>All noise functions return <code>(noise_fn, state)</code> where <code>noise_fn(grads, state) -&gt; (noisy_grads, new_state)</code>.
 When private second moments are enabled, the noisy value is a
@@ -5344,10 +5344,10 @@ coefficient recovery. Builds a StreamingMatrix for noise generation.</p>
 <div class="doc doc-object doc-function">
 
 
-<h4 id="opaque.dpftrl.noise.identity_strategy" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">identity_strategy</span><span class="p">()</span></code>
+<h4 id="opaque.dpftrl.noise.identity_mf_strategy" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">identity_mf_strategy</span><span class="p">()</span></code>
 
-<a href="#opaque.dpftrl.noise.identity_strategy" class="headerlink" title="Permanent link">&para;</a></h4>
+<a href="#opaque.dpftrl.noise.identity_mf_strategy" class="headerlink" title="Permanent link">&para;</a></h4>
 
 
     <div class="doc doc-contents first">
@@ -5366,11 +5366,11 @@ coefficient recovery. Builds a StreamingMatrix for noise generation.</p>
       <tbody>
           <tr class="doc-section-item">
 <td><code>An</code></td>            <td>
-                  <code><span title="opaque.api.dpftrl.noise._identity.IdentityStrategy">IdentityStrategy</span></code>
+                  <code><span title="opaque.api.dpftrl.noise._identity.IdentityMfStrategy">IdentityMfStrategy</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>class:<code>IdentityStrategy</code> for use with :func:<code>mf_noise</code>.</p>
+                <p>class:<code>IdentityMfStrategy</code> for use with :func:<code>mf_noise</code>.</p>
               </div>
             </td>
           </tr>
@@ -5384,10 +5384,10 @@ coefficient recovery. Builds a StreamingMatrix for noise generation.</p>
 <blockquote>
 <blockquote>
 <p>from opaque.types import clipped
-from opaque.api.dpftrl.noise import mf_noise, identity_strategy
+from opaque.api.dpftrl.noise import mf_noise, identity_mf_strategy
 from opaque.random import key
 noise_fn, state = mf_noise(
-...     template, identity_strategy(), noise_multiplier=1.0, key=key(42)
+...     template, identity_mf_strategy(), noise_multiplier=1.0, key=key(42)
 ... )
 noised, state = noise_fn(clipped(grads, max_norm=1.0), state)</p>
 </blockquote>
@@ -5412,22 +5412,22 @@ noised, state = noise_fn(clipped(grads, max_norm=1.0), state)</p>
 <span class="normal"><a href="#__codelineno-0-35">35</a></span>
 <span class="normal"><a href="#__codelineno-0-36">36</a></span>
 <span class="normal"><a href="#__codelineno-0-37">37</a></span>
-<span class="normal"><a href="#__codelineno-0-38">38</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-23" name="__codelineno-0-23"></a><span class="k">def</span><span class="w"> </span><span class="nf">identity_strategy</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">IdentityStrategy</span><span class="p">:</span>
+<span class="normal"><a href="#__codelineno-0-38">38</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-23" name="__codelineno-0-23"></a><span class="k">def</span><span class="w"> </span><span class="nf">identity_mf_strategy</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">IdentityMfStrategy</span><span class="p">:</span>
 <a id="__codelineno-0-24" name="__codelineno-0-24"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Create an identity (DP-SGD) noise strategy.</span>
 <a id="__codelineno-0-25" name="__codelineno-0-25"></a>
 <a id="__codelineno-0-26" name="__codelineno-0-26"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-27" name="__codelineno-0-27"></a><span class="sd">        An :class:`IdentityStrategy` for use with :func:`mf_noise`.</span>
+<a id="__codelineno-0-27" name="__codelineno-0-27"></a><span class="sd">        An :class:`IdentityMfStrategy` for use with :func:`mf_noise`.</span>
 <a id="__codelineno-0-28" name="__codelineno-0-28"></a>
 <a id="__codelineno-0-29" name="__codelineno-0-29"></a><span class="sd">    Example:</span>
 <a id="__codelineno-0-30" name="__codelineno-0-30"></a><span class="sd">        &gt;&gt;&gt; from opaque.types import clipped</span>
-<a id="__codelineno-0-31" name="__codelineno-0-31"></a><span class="sd">        &gt;&gt;&gt; from opaque.api.dpftrl.noise import mf_noise, identity_strategy</span>
+<a id="__codelineno-0-31" name="__codelineno-0-31"></a><span class="sd">        &gt;&gt;&gt; from opaque.api.dpftrl.noise import mf_noise, identity_mf_strategy</span>
 <a id="__codelineno-0-32" name="__codelineno-0-32"></a><span class="sd">        &gt;&gt;&gt; from opaque.random import key</span>
 <a id="__codelineno-0-33" name="__codelineno-0-33"></a><span class="sd">        &gt;&gt;&gt; noise_fn, state = mf_noise(</span>
-<a id="__codelineno-0-34" name="__codelineno-0-34"></a><span class="sd">        ...     template, identity_strategy(), noise_multiplier=1.0, key=key(42)</span>
+<a id="__codelineno-0-34" name="__codelineno-0-34"></a><span class="sd">        ...     template, identity_mf_strategy(), noise_multiplier=1.0, key=key(42)</span>
 <a id="__codelineno-0-35" name="__codelineno-0-35"></a><span class="sd">        ... )</span>
 <a id="__codelineno-0-36" name="__codelineno-0-36"></a><span class="sd">        &gt;&gt;&gt; noised, state = noise_fn(clipped(grads, max_norm=1.0), state)</span>
 <a id="__codelineno-0-37" name="__codelineno-0-37"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-38" name="__codelineno-0-38"></a>    <span class="k">return</span> <span class="n">IdentityStrategy</span><span class="p">()</span>
+<a id="__codelineno-0-38" name="__codelineno-0-38"></a>    <span class="k">return</span> <span class="n">IdentityMfStrategy</span><span class="p">()</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>

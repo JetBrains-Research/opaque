@@ -2894,7 +2894,7 @@ coefficients.</p>
 <p>BandMF uses <code>opaque.dpftrl.sampling.CyclicPoissonSampler</code> with <code>bands</code> matching the
 strategy so participation lines up with the noise.  The same class with
 <code>bands=1</code> gives plain Poisson on the full dataset each step for an identity MF
-baseline (<code>mf_identity</code> / <code>identity_strategy</code>):</p>
+baseline (<code>identity_mf</code> / <code>identity_mf_strategy</code>):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">CyclicPoissonSampler</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>

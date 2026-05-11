@@ -2984,7 +2984,7 @@ factories live next to its runtime:</p>
 </tr>
 <tr>
 <td><code>opaque.dpftrl.accounting</code></td>
-<td>DP-FTRL factories — <code>band_mf</code>, <code>blt</code>, <code>bisr</code>, <code>bsr</code>, <code>lambda_cgd</code>, <code>mf_identity</code>, <code>poisson</code> (cyclic when <code>bands &gt; 1</code>, plain when <code>bands == 1</code>, parameterized by <code>n_steps</code>), <code>b_min_sep</code>, <code>balls_in_bins</code>.</td>
+<td>DP-FTRL factories — <code>band_mf</code>, <code>blt</code>, <code>bisr</code>, <code>bsr</code>, <code>lambda_cgd</code>, <code>identity_mf</code>, <code>poisson</code> (cyclic when <code>bands &gt; 1</code>, plain when <code>bands == 1</code>, parameterized by <code>n_steps</code>), <code>b_min_sep</code>, <code>balls_in_bins</code>.</td>
 <td><code>opaque-dpftrl</code></td>
 </tr>
 </tbody>
@@ -3249,7 +3249,7 @@ when the inner is <code>IdentityMf</code> or <code>BandMf</code> with <code>band
 privacy cost across all <code>n_steps</code> rounds (must be a positive multiple of
 <code>num_bins</code>; per-bin participation count is <code>n_steps // num_bins</code>). Do NOT
 compose further externally.</p>
-<p>Used with DP-λCGD, BISR, BLT (with Gram matrix), <code>mf_identity</code>, and
+<p>Used with DP-λCGD, BISR, BLT (with Gram matrix), <code>identity_mf</code>, and
 Gaussian mechanisms.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span>
 <a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>    <span class="n">lambda_</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="n">total_steps</span><span class="p">,</span>
