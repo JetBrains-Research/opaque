@@ -25,10 +25,10 @@ given extension touches depend on which shape it is.
 
 | Kind | What it adds | Nearest in-tree precedent | Seams it touches |
 |---|---|---|---|
-| **Noise mechanism** | A new way of privatising a `ClippedPytree` | `opaque.dpsgd.gaussian`, `opaque.dpftrl.mf_noise` | state class + serializer + sync, façade, usually an accounting factory |
-| **Clipping rule** | A new sensitivity-control rule applied to per-example gradients | Fixed clipping, AUTO-S, adaptive | `clipping_fun` builders or a fresh impl, state class + serializer + sync, façade |
+| **Noise mechanism** | A new way of privatising a `ClippedPytree` | `opaque.dpsgd.noise.gaussian_noise`, `opaque.dpftrl.noise.mf_noise` | state class + serializer + sync, façade, usually an accounting factory |
+| **Clipping rule** | A new sensitivity-control rule applied to per-example gradients | `opaque.dpsgd.clipping.clipped_grad`, `auto_clipped_grad`, `adaptive_clipped_grad` | `clipping_fun` builders or a fresh impl, state class + serializer + sync, façade |
 | **Sensitivity oracle** | A bound on per-record contribution that comes from architecture, not from a norm computation | (none in-tree today; opaque-lipschitz is the illustrative example) | builder that emits `ClippedPytree(max_norm=R)`, façade; usually *no* new accounting primitive |
-| **Accounting primitive** | A new `DpProcess` subclass with PLD machinery and amplification adapters | `opaque.dpsgd.gaussian`, `opaque.dpftrl.mf`, `opaque.dpftrl.lambda_cgd` | `DpProcess` subclass (auto-registers), serializer, amplification adapters |
+| **Accounting primitive** | A new `DpProcess` subclass with PLD machinery and amplification adapters | `opaque.dpsgd.accounting.gaussian`, `opaque.dpftrl.accounting.band_mf`, `opaque.dpftrl.accounting.lambda_cgd` | `DpProcess` subclass (auto-registers), serializer, amplification adapters |
 | **Stack of model modifiers** | A wheel that rewrites or wraps user models to enable DP training (vmap-safety, hook surgery) | `opaque-patches`, `opaque-optimizers`, `opaque-transformers` | impl tree + façade; usually no privacy-account interaction |
 
 The first four are all covered by [Adding a new mechanism family](new-mechanism.md);

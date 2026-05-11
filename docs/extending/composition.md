@@ -67,14 +67,17 @@ preserves it on each output. Things to know:
 `PerGroup` carries pre-resolved (parameter-key → group-name) and
 (group-name → value) mappings, with the arithmetic to flow
 naturally through the pipeline. When a per-group `max_norm` reaches
-a Gaussian noise mechanism, the mechanism today uses
+a Gaussian noise mechanism, the mechanism today applies the
+MSE-optimal Mahalanobis allocation
+`σᵢ = noise_multiplier · √(Cᵢ · ΣⱼCⱼ)` directly (see
+`per_group_noise_stddev` in `opaque/api/engine/noise_allocation.py`).
+The same σ values are available as a preview via
 `ClippedPytree.noise_stddev_for(noise_multiplier=…, allocation="optimal")`
-to compute the per-group stddev. With `allocation="optimal"` (the
-default), the per-group stddev follows the MSE-optimal Mahalanobis
-allocation `σᵢ = noise_multiplier · √(Cᵢ · ΣⱼCⱼ)`, and the privacy
-accounting stays `gaussian(noise_multiplier)` — there is no
-composition penalty for the per-group allocation because the
-Mahalanobis constraint is satisfied with equality.
+on the input — useful when you want to see what the mechanism will
+apply without actually running it. The privacy accounting stays
+`gaussian(noise_multiplier)` either way: there is no composition
+penalty for the per-group allocation because the Mahalanobis
+constraint is satisfied with equality.
 
 For the user-facing treatment of the same idea, see the per-group
 discussion in [Per-Example Gradient Clipping](../user-guide/clipping.md);
@@ -162,7 +165,7 @@ primitive" in [Adding a new mechanism family](new-mechanism.md).
 
 - [Adding a new mechanism family](new-mechanism.md) — the broader
   recipe.
-- [`opaque.types`](../reference/utilities.md) — full reference for
+- [`opaque.types` (Pytree Wrappers)](../reference/clipping.md#pytree-wrappers) — full reference for
   the types described here.
 - [Per-Example Gradient Clipping](../user-guide/clipping.md) — the
   user-facing treatment of `PerGroup`.

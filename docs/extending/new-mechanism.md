@@ -177,10 +177,14 @@ three, today you can reuse the existing primitives:
    max_norm` for Gaussian, or the analogous expression for MF.
 3. `max_norm` is constant across the run (per Composition above).
 
-If all three hold, reuse `opaque.dpsgd.accounting.gaussian(nm)` or
-`opaque.dpftrl.accounting.mf` rather than defining a new process.
+If all three hold, reuse `opaque.dpsgd.accounting.gaussian(nm)` for
+DP-SGD or — for DP-FTRL — pick the strategy-specific factory that
+matches your mechanism (`opaque.dpftrl.accounting.band_mf`,
+`blt`, `bisr`, `bsr`, `identity_mf`, or `lambda_cgd`) plus the
+matching amplification factory (`poisson`, `b_min_sep`, or
+`balls_in_bins`), rather than defining a new process.
 Most *clipping-rule* and *sensitivity-oracle* extensions land here:
-the privacy bookkeeping is the same Gaussian/MF story, only the
+the privacy bookkeeping is the same Gaussian / MF story, only the
 sensitivity source changes. As an illustration, a Lipschitz-layer
 wheel — where `max_norm` comes from the architecture rather than
 from a norm computation — would typically reuse
@@ -202,7 +206,7 @@ this step. Today there are five in-tree:
 | `ClippedGradAux` | `clipped_grad` | `opaque/api/engine/clipping/_clipped_grad.py:25` |
 | `AutoClippedFunAux` | `auto_clipped_fun` | `opaque/api/engine/clipping/_auto.py:47` |
 | `AutoClippedGradAux` | `auto_clipped_grad` | `opaque/api/engine/clipping/_auto.py:64` |
-| `AdaptiveClippedGradAux` | `clipped_grad` (adaptive) | `opaque/api/dpsgd/clipping/_adaptive.py:30` |
+| `AdaptiveClippedGradAux` | `adaptive_clipped_grad` | `opaque/api/dpsgd/clipping/_adaptive.py:30` |
 
 The convention they share, and which a new extension is expected
 to follow:
@@ -211,10 +215,14 @@ to follow:
   in place of) the privatised output. Diagnostics and telemetry
   belong here; never on the `ClippedPytree` itself, whose metadata
   is part of the privacy contract.
-- For per-sample clipping, the field names `pre_clip_norms`,
-  `post_clip_norms`, and `clipping_rate` are reused where
-  applicable, so downstream telemetry code can consume them
-  uniformly.
+- For per-sample clipping, the field names follow a small uniform
+  convention that downstream telemetry can consume across mechanism
+  families: gradient-flavoured Aux types (`ClippedGradAux` and
+  subclasses) use `grad_norms` / `clipped_grad_norms` for the
+  per-example pre- and post-clip L2 norms; function-flavoured Aux
+  types (`ClippedFunAux` and subclasses) use `norms` /
+  `clipped_norms`. Both flavours share `clipping_rate` and the
+  per-group breakdown `group_norms` where applicable.
 - If the Aux needs cross-rank reduction (norms averaged across
   ranks for logging), register a sync handler keyed on the Aux
   type itself — see

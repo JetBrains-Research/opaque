@@ -135,7 +135,7 @@ clipping invariant exactly (no double-clipping).
 
 - [`opaque.dpsgd.clipping`](../reference/clipping.md) — the high-level
   `clipped_grad` surface.
-- [`opaque.types`](../reference/utilities.md) — `ClippedPytree`,
+- [`opaque.types` (Pytree Wrappers)](../reference/clipping.md#pytree-wrappers) — `ClippedPytree`,
   `NoisedPytree`, `PerGroup`.
 - [Composition](composition.md) — what your output needs to be so
   it flows downstream.
