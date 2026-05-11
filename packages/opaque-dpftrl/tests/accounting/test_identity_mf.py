@@ -20,7 +20,7 @@ _DELTA = 1e-5
 # ---------------------------------------------------------------------------
 
 
-class TestMfIdentityMechanism:
+class TestIdentityMfMechanism:
     def test_factory_returns_identity_mf(self):
         proc = ftrl_acc.identity_mf(1.0)
         assert isinstance(proc, IdentityMf)
