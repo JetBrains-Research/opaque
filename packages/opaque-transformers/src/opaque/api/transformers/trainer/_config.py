@@ -330,20 +330,6 @@ class DPTrainingArguments:
     sampling_mode: str = "poisson"
     sampling_kwargs: dict[str, Any] | str = field(default_factory=dict)
 
-    # ---- DDP rank-data policy (HF-style ``ddp_`` prefix) -----------------
-    # Selects how the training dataset is distributed across DDP ranks.
-    # ``"per_rank"`` (default): each rank operates on a contiguous, disjoint
-    # shard (``opaque.distributed.local_shard``); the Poisson sampler runs
-    # locally on the shard with the same epoch-folded key on every rank, so
-    # the *local* sample rate equals the *global* sample rate. Privacy
-    # accountant uses the regular Poisson mechanism. Centralized DP-SGD;
-    # mirrors HF's ``DistributedSampler`` rank-data semantics.
-    # ``"global"``: every rank sees the full dataset and runs an
-    # independent Poisson draw via ``fold_in(epoch_key, rank)``; unique
-    # examples may appear on multiple ranks per step. Privacy accountant
-    # switches to ``acc.parallel_poisson(..., num_workers=world_size)``.
-    ddp_shard: str = "per_rank"
-
     # ---- Noise-multiplier calibration to ε (search bounds + tolerance) ---
     noise_calibration_kwargs: dict[str, Any] | str = field(default_factory=dict)
 
@@ -416,20 +402,6 @@ class DPTrainingArguments:
             _pnkw = dict(self.privacy_noise_mechanism_kwargs)
             _pnkw.setdefault("bound", self.privacy_noise_radius)
             self.privacy_noise_mechanism_kwargs = _pnkw
-        if self.sampling_mode == "truncated_poisson":
-            warnings.warn(
-                "sampling_mode='truncated_poisson' is deprecated; use "
-                "sampling_mode='poisson' with sampling_kwargs "
-                "truncated_batch_size or max_batch_size.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            _sk = dict(self.sampling_kwargs) if isinstance(self.sampling_kwargs, dict) else {}
-            if "truncated_batch_size" not in _sk and "max_batch_size" not in _sk:
-                _sk["truncated_batch_size"] = self.expected_batch_size
-            self.sampling_kwargs = _sk
-            self.sampling_mode = "poisson"
-
         # --- 2. Strategy enum coercion --------------------------------------
         # Round-trip through ``.value`` so the field stays a plain string
         # downstream.  HF's ``ExplicitEnum`` instances compare equal to
@@ -742,20 +714,6 @@ class DPTrainingArguments:
                 "runtime stack that is not covered by Opaque first-class CI. "
                 "Launch with an initialized process group on compatible hardware.",
                 self.ddp_backend,
-            )
-
-        # ``ddp_shard`` rank-data policy gate.
-        if self.ddp_shard not in ("per_rank", "global"):
-            raise ValueError(
-                f"ddp_shard must be 'per_rank' or 'global'; got {self.ddp_shard!r}."
-            )
-        # ``"global"`` only meaningful for world_size > 1.
-        if self.ddp_shard == "global" and self.world_size <= 1:
-            raise ValueError(
-                "ddp_shard='global' requires world_size > 1; on a single "
-                "process it has identical data semantics to 'per_rank' but "
-                "would invoke acc.parallel_poisson which over-charges ε.  "
-                "Set ddp_shard='per_rank' (the default)."
             )
 
         # Idempotency sentinel.
