@@ -6,6 +6,19 @@ file is a thin shell over that polymorphism, the engine's input
 validation, and the second-moment dispatch — all heavy lifting lives in
 :mod:`_engine`, :mod:`_second_moment`, :mod:`_distributed`, and the
 per-strategy files.
+
+Realized per-step σ (bug fix): under correlated MF noise the actual
+per-coordinate noise variance at step ``t`` is
+``base_σ² · ‖row_t(C^-1)‖²``, not ``base_σ²``.  The factory
+precomputes the per-step row-L2 of the streaming matrix at noise
+function build time and publishes
+``noise_stddev = base_σ · row_l2(t)`` on each :class:`NoisedPytree`,
+so Adam-family optimizers' ``noise_bias_correction`` EMA subtracts the
+true variance contribution.  ``row_l2_at`` is a callable returned by
+each strategy's noise builder; :class:`IdentityStrategy` returns ``1``
+at every step (MF noise reduces to iid DP-SGD), λ-CGD computes its
+closed-form column factor, and streaming-matrix strategies precompute
+``streaming.row_norms_squared(n_steps).sqrt()`` once.
 """
 
 from __future__ import annotations
@@ -28,6 +41,7 @@ from ._engine import (
     _resolve_noise_multiplier,
     _validate_constant_max_norm,
 )
+from ._identity import IdentityStrategy
 from ._lambda_cgd import LambdaCgdStrategy, _make_lambda_cgd_noise
 from ._second_moment import SecondMomentMFNoiseState, make_second_moment_mf_noise
 
@@ -106,7 +120,7 @@ def mf_gaussian_noise(
             dtype=dtype,
         )
 
-    raw_noise_fn, raw_state = _make_raw_mf_noise(
+    raw_noise_fn, raw_state, row_l2_at = _make_raw_mf_noise(
         grad_template,
         strategy,
         n_steps=n_steps,
@@ -140,12 +154,19 @@ def mf_gaussian_noise(
             st,
             stddev=base_stddev,
         )
+        # Realized per-step σ = base σ · ‖row_t(C^-1)‖.  ``base_stddev``
+        # is scalar or :class:`PerGroup`; both broadcast with the scalar
+        # ``row_l2`` via ``PerGroup.__mul__`` / float multiplication.
+        # Step we just applied noise to is ``st._step_counter`` (the
+        # pre-increment value); ``raw_noise_fn`` advances counter inside.
+        row_l2 = row_l2_at(st._step_counter)
+        realized_stddev = base_stddev * row_l2
         sync_fp = mf_per_group_sync_fingerprint_for_latch(st, max_norm)
         return (
             NoisedPytree(
                 pytree=noisy_tree,
                 max_norm=clipped_grads.max_norm,
-                noise_stddev=base_stddev,
+                noise_stddev=realized_stddev,
             ),
             replace(
                 new_state,
@@ -166,13 +187,24 @@ def _make_raw_mf_noise(
     max_participations: int | None,
     key: RngKey,
     dtype: torch.dtype | None,
-) -> tuple[Callable[..., tuple[Any, MFNoiseState]], MFNoiseState]:
-    """Build the underlying noise function from the strategy's streaming matrix.
+) -> tuple[
+    Callable[..., tuple[Any, MFNoiseState]],
+    MFNoiseState,
+    Callable[[int], float],
+]:
+    """Build the underlying noise function + per-step row-L2 lookup.
 
     LambdaCgdStrategy uses PRNG replay rather than a streaming matrix —
     it is the one isinstance check left because the noise primitive
     differs.  Every other strategy goes through the polymorphic
     ``streaming_matrix(...)`` surface.
+
+    The third return value, ``row_l2_at(step) -> float``, exposes the
+    per-step L2 norm of ``C^{-1}``'s row so the wrapping factory can
+    publish realized σ on :class:`NoisedPytree.noise_stddev`.
+    Identity: constant 1.  Streaming matrix: precomputed via
+    ``streaming.row_norms_squared(n_steps)`` once at build time.  λ-CGD:
+    closed-form via :func:`_lambda_cgd_row_l2`.
     """
     if isinstance(strategy, LambdaCgdStrategy):
         return _make_lambda_cgd_noise(
@@ -187,12 +219,33 @@ def _make_raw_mf_noise(
         min_sep=min_sep,
         max_participations=max_participations,
     )
-    return _matrix_factorization_noise(
+    noise_fn, state = _matrix_factorization_noise(
         grad_template,
         streaming,
         key=key,
         dtype=dtype,
     )
+    if isinstance(strategy, IdentityStrategy):
+        # C^{-1} is the identity, every row has L2 = 1; skip the
+        # ``row_norms_squared`` precomputation (it would walk n unit
+        # vectors only to return all-ones).
+        def row_l2_at(_step: int) -> float:
+            return 1.0
+    else:
+        # Materialize ``[‖row_0‖, ..., ‖row_{n-1}‖]`` once.  Cost is
+        # O(n²) for generic streaming matrices (the implementation
+        # walks unit-vector probes — see
+        # :meth:`StreamingMatrix.row_norms_squared`); for training
+        # horizons up to ~10⁴ steps the one-time build is sub-second.
+        # Per-strategy closed-form fast paths could replace this if
+        # larger horizons become a bottleneck.
+        row_norms = streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()
+
+        def row_l2_at(step: int) -> float:
+            idx = min(step, row_norms.shape[0] - 1)
+            return float(row_norms[idx])
+
+    return noise_fn, state, row_l2_at
 
 
 __all__ = ["mf_gaussian_noise"]

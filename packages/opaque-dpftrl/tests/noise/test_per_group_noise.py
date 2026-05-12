@@ -37,8 +37,24 @@ def _max_column_norm(strategy, *, n_steps: int) -> float:
     return strategy.sensitivity(n_steps=n_steps, min_sep=n_steps, max_participations=1)
 
 
+def _row_l2_at_zero(strategy, *, n_steps: int, min_sep: int = 1) -> float:
+    """First-step ``‖row_0(C^-1)‖`` — used to back out base σ from the
+    realized σ that :class:`NoisedPytree.noise_stddev` now publishes.
+    """
+    streaming = strategy.streaming_matrix(
+        n_steps=n_steps, min_sep=min_sep, max_participations=1
+    )
+    return float(streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()[0])
+
+
 def _assert_per_group_stddev_matches_expected(grad_template, *, key_seed: int) -> None:
-    strategy = band_mf_strategy(bands=4, momentum=0.9)
+    # Identity strategy has row L2 ≡ 1, so the realized per-step σ
+    # published on NoisedPytree.noise_stddev equals the base σ from
+    # ``per_group_noise_stddev(pg, nm)`` exactly.  For correlated MF the
+    # realized σ also folds in ``‖row_t(C^-1)‖`` — exercised by the
+    # streaming-matrix-aware tests below.  This test pins the per-group
+    # base-σ pass-through; Identity isolates that path.
+    strategy = identity_strategy()
     nm = 1.5
     noise_fn, state = mf_gaussian_noise(
         grad_template,
@@ -270,8 +286,13 @@ class TestMfNoisePerGroupPairedStream:
         out, _ = noise_fn(paired, state)
         assert isinstance(out.noisy_grads.noise_stddev, PerGroup)
         assert isinstance(out.noisy_squared_grads.noise_stddev, PerGroup)
-        # Joint Mahalanobis on encoded sensitivities equals (c1 / nm)²
+        # Joint Mahalanobis on encoded sensitivities equals (c1 / nm)².
+        # The published ``noise_stddev`` is the per-step *realized* σ
+        # (= base σ · ‖row_t(C^-1)‖); divide each stream's row_l2 out to
+        # recover base σ for the joint-PLD calibration identity.
         c2 = _max_column_norm(second, n_steps=n_steps)
+        first_row_l2 = _row_l2_at_zero(strategy, n_steps=n_steps)
+        second_row_l2 = _row_l2_at_zero(second, n_steps=n_steps)
         s1 = out.noisy_grads.noise_stddev
         s2 = out.noisy_squared_grads.noise_stddev
         mahal = 0.0
@@ -280,9 +301,9 @@ class TestMfNoisePerGroupPairedStream:
             b2 = sq_pg.for_key(param_key)
             d1 = b1 * c1
             d2 = b2 * c2
-            mahal += (d1 / s1.for_key(param_key)) ** 2 + (
-                d2 / s2.for_key(param_key)
-            ) ** 2
+            base_s1 = s1.for_key(param_key) / first_row_l2
+            base_s2 = s2.for_key(param_key) / second_row_l2
+            mahal += (d1 / base_s1) ** 2 + (d2 / base_s2) ** 2
         assert mahal == pytest.approx((c1 / nm) ** 2, rel=1e-9)
 
 
@@ -314,11 +335,15 @@ class TestMfNoisePerGroupMahalanobisSingleStream:
         out, _ = noise_fn(grads, state)
         sigma = out.noise_stddev
         assert isinstance(sigma, PerGroup)
+        # ``noise_stddev`` is the realized per-step σ (= base σ · row_l2);
+        # divide row_l2 out to recover base σ for the calibration identity.
+        row_l2 = _row_l2_at_zero(strategy, n_steps=n_steps)
         acc = 0.0
         for param_key in ("w", "b"):
             b_g = pg.for_key(param_key)
             sens = b_g * c1
-            acc += (sens / sigma.for_key(param_key)) ** 2
+            base_sigma = sigma.for_key(param_key) / row_l2
+            acc += (sens / base_sigma) ** 2
         assert acc == pytest.approx((c1 / nm) ** 2, rel=1e-9)
 
     def test_pld_match_per_group_single_stream(self, grad_template):
@@ -379,11 +404,14 @@ class TestPerGroupPairedWithClippedGradAndMf:
         assert isinstance(pg1, PerGroup)
         sq1 = paired.squared_grads.max_norm
         assert isinstance(sq1, PerGroup)
+        # Recover base σ from realized σ (= base · row_l2) per stream.
+        first_row_l2 = _row_l2_at_zero(strategy, n_steps=n_steps)
+        second_row_l2 = _row_l2_at_zero(second, n_steps=n_steps)
         mahal = 0.0
         for param_key in ("w", "b"):
             d1 = pg1.for_key(param_key) * c1
             d2 = sq1.for_key(param_key) * c2
-            mahal += (d1 / s1.for_key(param_key)) ** 2 + (
-                d2 / s2.for_key(param_key)
-            ) ** 2
+            base_s1 = s1.for_key(param_key) / first_row_l2
+            base_s2 = s2.for_key(param_key) / second_row_l2
+            mahal += (d1 / base_s1) ** 2 + (d2 / base_s2) ** 2
         assert mahal == pytest.approx((c1 / nm) ** 2, rel=1e-8)

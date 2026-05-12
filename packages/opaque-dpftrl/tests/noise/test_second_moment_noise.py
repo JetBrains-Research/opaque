@@ -34,6 +34,16 @@ def _max_column_norm(strategy, *, n_steps: int) -> float:
     return strategy.sensitivity(n_steps=n_steps, min_sep=n_steps, max_participations=1)
 
 
+def _row_l2_at_zero(strategy, *, n_steps: int, min_sep: int = 1) -> float:
+    """First-step ``‖row_0(C^-1)‖`` — used to back out base σ from the
+    realized σ that :class:`NoisedPytree.noise_stddev` now publishes.
+    """
+    streaming = strategy.streaming_matrix(
+        n_steps=n_steps, min_sep=min_sep, max_participations=1
+    )
+    return float(streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()[0])
+
+
 def _paired(grads):
     """Build a SecondMomentClippingOutput directly from raw grads.
 
@@ -138,12 +148,16 @@ class TestSecondMomentMFNoiseMatchesMfGaussianPld:
         grads = {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
         out, _ = noise_fn(_paired(grads), state)
 
-        sigma_first = out.noisy_grads.noise_stddev
-        sigma_second = out.noisy_squared_grads.noise_stddev
+        # ``noise_stddev`` is realized σ (= base · row_l2); recover base
+        # σ to check the joint-PLD calibration identity.
+        first_row_l2 = _row_l2_at_zero(strategy, n_steps=50, min_sep=50)
+        second_row_l2 = _row_l2_at_zero(second_strategy, n_steps=50, min_sep=50)
+        base_sigma_first = out.noisy_grads.noise_stddev / first_row_l2
+        base_sigma_second = out.noisy_squared_grads.noise_stddev / second_row_l2
         # Encoded per-record sensitivities.
         delta1 = _SENSITIVITY * c1
         delta2 = (_SENSITIVITY**2) * c2
-        mahal = (delta1 / sigma_first) ** 2 + (delta2 / sigma_second) ** 2
+        mahal = (delta1 / base_sigma_first) ** 2 + (delta2 / base_sigma_second) ** 2
 
         # Target: the joint PLD must equal MfGaussian(nm, c1) PLD =
         # gaussian_pld(nm / c1), i.e. effective multiplier nm / c1, i.e.
@@ -183,8 +197,11 @@ class TestSecondMomentMFNoiseMatchesMfGaussianPld:
         out, _ = noise_fn(paired, state)
         # Single-stream MF runtime σ on the noise tensor for ζ=small_zeta is
         # nm·ζ; the paired σ_first should converge to that as Δ²/Δ¹ → 0.
+        # Recover base σ from realized σ (= base · row_l2) for the comparison.
+        first_row_l2 = _row_l2_at_zero(strategy, n_steps=50, min_sep=50)
+        base_sigma_first = out.noisy_grads.noise_stddev / first_row_l2
         single_sigma = nm * small_zeta
-        assert out.noisy_grads.noise_stddev == pytest.approx(single_sigma, rel=1e-3)
+        assert base_sigma_first == pytest.approx(single_sigma, rel=1e-3)
 
 
 class TestPairedPerGroupMahalanobis:
@@ -226,13 +243,16 @@ class TestPairedPerGroupMahalanobis:
         s2 = out.noisy_squared_grads.noise_stddev
         assert isinstance(s1, PerGroup)
         assert isinstance(s2, PerGroup)
+        # Recover base σ from realized σ (= base · row_l2) per stream.
+        first_row_l2 = _row_l2_at_zero(strategy, n_steps=50, min_sep=50)
+        second_row_l2 = _row_l2_at_zero(second_strategy, n_steps=50, min_sep=50)
         mahal = 0.0
         for param_key in ("w", "b"):
             d1 = pg.for_key(param_key) * c1
             d2 = sq_pg.for_key(param_key) * c2
-            mahal += (d1 / s1.for_key(param_key)) ** 2 + (
-                d2 / s2.for_key(param_key)
-            ) ** 2
+            base_s1 = s1.for_key(param_key) / first_row_l2
+            base_s2 = s2.for_key(param_key) / second_row_l2
+            mahal += (d1 / base_s1) ** 2 + (d2 / base_s2) ** 2
         assert mahal == pytest.approx((c1 / nm) ** 2, rel=1e-9)
 
 

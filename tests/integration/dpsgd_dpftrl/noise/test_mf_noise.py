@@ -270,14 +270,21 @@ class TestMfNoise:
 
     def test_band_mf_noise(self):
         s = band_mf_strategy(bands=10, momentum=0.95)
+        n_steps = 50
         nf, ns = mf_gaussian_noise(
-            self.grad, s, n_steps=50, noise_multiplier=1.0, key=key(42)
+            self.grad, s, n_steps=n_steps, noise_multiplier=1.0, key=key(42)
         )
         noised, ns2 = nf(self._clipped_grad(), ns)
         assert ns2._step_counter == 1
         assert isinstance(noised, NoisedPytree)
         assert noised.max_norm == pytest.approx(1.0)
-        assert noised.noise_stddev == pytest.approx(1.0)
+        # ``noise_stddev`` is the per-step *realized* σ (= base σ ·
+        # ‖row_t(C^-1)‖) — see the bug-fix tests in
+        # ``packages/opaque-dpftrl/tests/noise/test_realized_stddev.py``.
+        # For BandMF the row_l2 differs from 1; recover base σ and check.
+        streaming = s.streaming_matrix(n_steps=n_steps, min_sep=1, max_participations=n_steps)
+        row_l2 = float(streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()[0])
+        assert float(noised.noise_stddev) == pytest.approx(row_l2, rel=1e-9)
         assert "w" in noised.pytree
         assert noised.pytree["w"].shape == self.grad["w"].shape
 

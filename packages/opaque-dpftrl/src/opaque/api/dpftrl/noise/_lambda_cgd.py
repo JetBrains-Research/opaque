@@ -133,6 +133,26 @@ def lambda_cgd_strategy(
 # ---------------------------------------------------------------------------
 
 
+def _lambda_cgd_row_l2(strategy: LambdaCgdStrategy, n_steps: int, step: int) -> float:
+    """Per-step row L2 norm of the λ-CGD effective C^{-1}.
+
+    The realized per-coordinate noise at step ``t`` is
+    ``base_σ · row_l2(t)`` (post-normalization when ``normalized=True``).
+    At step 0 there is no previous-step term so the factor is just the
+    optional column-norm multiplier; at step t≥1 the unnormalized factor
+    is ``sqrt(1 + λ²)`` from ``z_t − λ z_{t−1}``.
+    """
+    lam = strategy.lambda_
+    col = (
+        _column_norm(lam, n_steps, min(step, n_steps - 1))
+        if strategy.normalized
+        else 1.0
+    )
+    if step == 0 or lam == 0.0:
+        return col
+    return col * math.sqrt(1.0 + lam * lam)
+
+
 def _make_lambda_cgd_noise(
     grad_template: Any,
     strategy: LambdaCgdStrategy,
@@ -143,8 +163,16 @@ def _make_lambda_cgd_noise(
 ) -> tuple[
     Callable[..., tuple[Any, MFNoiseState]],
     MFNoiseState,
+    Callable[[int], float],
 ]:
-    """DP-lambda-CGD noise via PRNG replay (zero extra memory)."""
+    """DP-lambda-CGD noise via PRNG replay (zero extra memory).
+
+    Returns ``(noise_fn, state, row_l2_at)`` where ``row_l2_at(step)``
+    gives ``‖row_t(C^{-1})‖`` so the wrapping :func:`mf_gaussian_noise`
+    factory can publish the realized per-step σ on
+    :class:`NoisedPytree.noise_stddev` (= ``base_σ · row_l2_at(step)``).
+    Adam-family bias correction reads that realized σ.
+    """
     lambda_ = strategy.lambda_
     normalized = strategy.normalized
 
@@ -205,7 +233,10 @@ def _make_lambda_cgd_noise(
         )
         return noisy_grads, new_state
 
-    return noise_fn, state
+    def row_l2_at(step: int) -> float:
+        return _lambda_cgd_row_l2(strategy, n_steps, step)
+
+    return noise_fn, state, row_l2_at
 
 
 __all__ = ["LambdaCgdStrategy", "lambda_cgd_strategy"]

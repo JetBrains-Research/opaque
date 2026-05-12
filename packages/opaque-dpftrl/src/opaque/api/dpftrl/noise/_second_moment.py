@@ -77,7 +77,7 @@ def make_second_moment_mf_noise(
     from ._distributed import mf_per_group_sync_fingerprint_for_latch
     from ._mf_gaussian_noise import _make_raw_mf_noise
 
-    first_fn, first_state = _make_raw_mf_noise(
+    first_fn, first_state, first_row_l2_at = _make_raw_mf_noise(
         grad_template,
         first_strategy,
         n_steps=n_steps,
@@ -86,7 +86,7 @@ def make_second_moment_mf_noise(
         key=rng_fold_in(key, 0),
         dtype=dtype,
     )
-    second_fn, second_state = _make_raw_mf_noise(
+    second_fn, second_state, second_row_l2_at = _make_raw_mf_noise(
         grad_template,
         second_strategy,
         n_steps=n_steps,
@@ -149,6 +149,12 @@ def make_second_moment_mf_noise(
             st._second_state,
             stddev=second_stddev,
         )
+        # Realized per-step σ on each stream = base σ · ‖row_t(C^-1)‖.
+        # The streams share the same step counter (advanced inside each
+        # ``*_fn`` above); read off the pre-increment step.
+        step = st._first_state._step_counter
+        first_realized_stddev = first_stddev * first_row_l2_at(step)
+        second_realized_stddev = second_stddev * second_row_l2_at(step)
         sync_fp_first = mf_per_group_sync_fingerprint_for_latch(
             st._first_state, max_norm
         )
@@ -160,12 +166,12 @@ def make_second_moment_mf_noise(
                 NoisedPytree(
                     pytree=noisy_grads,
                     max_norm=first_clipped.max_norm,
-                    noise_stddev=first_stddev,
+                    noise_stddev=first_realized_stddev,
                 ),
                 NoisedPytree(
                     pytree=noisy_squared,
                     max_norm=second_clipped.max_norm,
-                    noise_stddev=second_stddev,
+                    noise_stddev=second_realized_stddev,
                 ),
             ),
             SecondMomentMFNoiseState(

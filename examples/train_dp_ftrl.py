@@ -394,11 +394,12 @@ def parse_args():
             "``adafactor`` / ``rmsprop`` / ``adagrad`` are second-moment-"
             "only optimizers (no first-moment EMA, so the MF workload is "
             "the identity — equivalent in noise structure to DP-SGD; the "
-            "MF correlation is wasted unless paired with `--mechanism "
-            "identity`).  ``noise_bias_correction`` is unsound under "
-            "correlated MF noise (the optimizer would see the base σ, not "
-            "the per-step realized σ from the streaming matrix), so the "
-            "factories are built with ``noise_bias_correction=False``."
+            "MF correlation is wasted unless paired with ``--mechanism "
+            "identity``).  ``--noise-bias-correction`` is plumbed through "
+            "for the optimizers that support it; under MF noise the "
+            "optimizer reads the per-step *realized* σ from "
+            "``NoisedPytree.noise_stddev`` so the second-moment EMA "
+            "debias is correct for every strategy."
         ),
     )
     train_g.add_argument(
@@ -428,6 +429,23 @@ def parse_args():
         default=0.0,
         help="Optimizer weight decay: sgd L2-style coefficient, or "
         "adamw decoupled WD (default 0).",
+    )
+    train_g.add_argument(
+        "--noise-bias-correction",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Enable DP noise-variance bias correction on optimizers that "
+            "support it (adam/adamw/ademamix/rmsprop/adagrad/adafactor).  "
+            "Silently ignored on sgd/lion.  Under MF noise the optimizer "
+            "now reads the per-step *realized* σ "
+            "(= base σ · ‖row_t(C^-1)‖) from ``NoisedPytree.noise_stddev`` "
+            "(see ``test_realized_stddev.py`` for the bug fix) so the "
+            "second-moment EMA debias is correct for every MF strategy.  "
+            "Off by default; flip to ``--noise-bias-correction`` when the "
+            "training-time gradient distribution justifies it (see "
+            "docs/user-guide/optimizers.md)."
+        ),
     )
     train_g.add_argument(
         "--beta1",
@@ -1438,7 +1456,7 @@ def main():
             betas=(args.beta1, args.beta2),
             eps=args.adam_eps,
             weight_decay=args.weight_decay,
-            noise_bias_correction=False,
+            noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "adamw":
         from opaque.optimizers import adamw
@@ -1450,7 +1468,7 @@ def main():
             betas=(args.beta1, args.beta2),
             eps=args.adam_eps,
             weight_decay=args.weight_decay,
-            noise_bias_correction=False,
+            noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "ademamix":
         from opaque.optimizers import ademamix
@@ -1463,7 +1481,7 @@ def main():
             alpha=5.0,
             eps=args.adam_eps,
             weight_decay=args.weight_decay,
-            noise_bias_correction=False,
+            noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "lion":
         from opaque.optimizers import lion
@@ -1479,7 +1497,7 @@ def main():
         optimizer = adafactor(
             lr=lr_callable,
             weight_decay=args.weight_decay,
-            noise_bias_correction=False,
+            noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "rmsprop":
         from opaque.optimizers import rmsprop
@@ -1487,7 +1505,7 @@ def main():
         optimizer = rmsprop(
             lr=lr_callable,
             weight_decay=args.weight_decay,
-            noise_bias_correction=False,
+            noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "adagrad":
         from opaque.optimizers import adagrad
@@ -1495,7 +1513,7 @@ def main():
         optimizer = adagrad(
             lr=lr_callable,
             weight_decay=args.weight_decay,
-            noise_bias_correction=False,
+            noise_bias_correction=args.noise_bias_correction,
         )
     else:
         raise ValueError(f"Unknown optimizer: {args.optimizer}")

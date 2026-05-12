@@ -104,6 +104,29 @@ def _make_strategy(name: str):
 _NOISE_PART = dict(n_steps=N_STEPS, min_sep=1, max_participations=1)
 
 
+def _row_l2_at_zero(strategy, *, n_steps, min_sep=1, max_participations=None) -> float:
+    """First-step ``‖row_0(C^-1)‖`` — used to back out base σ from the
+    realized σ that :class:`NoisedPytree.noise_stddev` publishes.
+
+    Identity / λ-CGD step-0 / λ=0 cases all return 1.  λ-CGD has a
+    PRNG-replay path (no ``streaming_matrix``); we synthesize the
+    expected factor from the strategy's closed-form column norm.
+    """
+    from opaque.dpftrl.noise.types import IdentityStrategy, LambdaCgdStrategy
+
+    if isinstance(strategy, IdentityStrategy):
+        return 1.0
+    if isinstance(strategy, LambdaCgdStrategy):
+        from opaque.api.dpftrl.noise._lambda_cgd import _column_norm
+
+        col = _column_norm(strategy.lambda_, n_steps, 0) if strategy.normalized else 1.0
+        return col  # step-0 short-circuit: no z_{t-1} term so no sqrt(1+λ²) factor
+    streaming = strategy.streaming_matrix(
+        n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
+    )
+    return float(streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()[0])
+
+
 _ALL_STRATEGY_NAMES = ("identity", "band_mf", "blt", "bisr", "bsr", "lambda_cgd")
 
 
@@ -141,7 +164,15 @@ class TestScalarAutoSxMf:
     """Scalar AUTO-S × ``mf_gaussian_noise`` for every MF strategy."""
 
     def test_constant_max_norm_latch_passes(self, strategy_name):
-        """``_validate_constant_max_norm`` never fires across many steps."""
+        """``_validate_constant_max_norm`` never fires across many steps.
+
+        Under MF noise the per-step *realized* σ on ``NoisedPytree`` is
+        ``base_σ · ‖row_t(C^-1)‖`` and varies by step (that's the whole
+        point of MF — and why Adam BC needs it).  This test only pins
+        the latch contract: ``max_norm`` stays constant across calls so
+        the dispatcher never raises.  Per-step σ variation is exercised
+        by ``packages/opaque-dpftrl/tests/noise/test_realized_stddev.py``.
+        """
         torch.manual_seed(0)
         params = torch.randn(N_FEATURES)
         grad_fn, clip_state = auto_clipped_grad(
@@ -159,7 +190,6 @@ class TestScalarAutoSxMf:
             key=key(7),
         )
         seen_max_norms: list[float] = []
-        seen_stddevs: list[float] = []
         for step in range(N_STEPS):
             scale = 100.0 if step % 2 == 0 else 0.001
             x = torch.randn(BATCH_SIZE, N_FEATURES) * scale
@@ -169,12 +199,15 @@ class TestScalarAutoSxMf:
             seen_max_norms.append(float(grads.max_norm))
             noised, noise_state = noise_fn(grads, noise_state)
             assert isinstance(noised, NoisedPytree)
-            seen_stddevs.append(float(noised.noise_stddev))
+            assert float(noised.noise_stddev) > 0
         assert all(m == seen_max_norms[0] for m in seen_max_norms)
-        assert all(s == seen_stddevs[0] for s in seen_stddevs)
 
     def test_max_norm_and_stddev_match_calibration(self, strategy_name):
-        """``noise_stddev = noise_multiplier · R / batch_size`` exactly."""
+        """Base σ = ``noise_multiplier · R / batch_size``; realized σ on
+        ``NoisedPytree.noise_stddev`` is ``base_σ · ‖row_0(C^-1)‖`` —
+        recover base σ by dividing out the row-L2 factor.  For Identity
+        and step-0 λ-CGD the factor is 1 so realized == base; for the
+        correlated MF strategies it differs."""
         torch.manual_seed(0)
         params = torch.randn(N_FEATURES)
         grad_fn, clip_state = auto_clipped_grad(
@@ -184,9 +217,10 @@ class TestScalarAutoSxMf:
             R=R,
             normalize_by=BATCH_SIZE,
         )
+        strategy = _make_strategy(strategy_name)
         noise_fn, noise_state = mf_gaussian_noise(
             params,
-            _make_strategy(strategy_name),
+            strategy,
             **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(11),
@@ -196,10 +230,14 @@ class TestScalarAutoSxMf:
         grads, _ = grad_fn(params, x, y, state=clip_state)
         noised, _ = noise_fn(grads, noise_state)
         expected_max_norm = R / BATCH_SIZE
-        expected_stddev = NOISE_MULTIPLIER * expected_max_norm
+        expected_base_sigma = NOISE_MULTIPLIER * expected_max_norm
         assert float(grads.max_norm) == pytest.approx(expected_max_norm, abs=1e-9)
         assert float(noised.max_norm) == pytest.approx(expected_max_norm, abs=1e-9)
-        assert float(noised.noise_stddev) == pytest.approx(expected_stddev, abs=1e-9)
+        # Compute the strategy's row-0 L2 factor analytically and back
+        # out base σ from realized σ for the calibration check.
+        row_l2 = _row_l2_at_zero(strategy, **_NOISE_PART)
+        base_sigma = float(noised.noise_stddev) / row_l2
+        assert base_sigma == pytest.approx(expected_base_sigma, abs=1e-9)
 
     def test_equivalent_to_fixed_clipping_at_same_R(self, strategy_name):
         """AUTO-S(R) and ``clipped_grad(C=R)`` deliver identical calibration."""
