@@ -48,7 +48,8 @@ class TestBandMfStrategy:
     def test_with_lr_schedule(self):
         lr = torch.ones(_N_STEPS, dtype=torch.float64) * 0.01
         lr[:10] = torch.linspace(0.001, 0.01, 10)
-        s = band_mf_strategy(bands=_BANDS, momentum=0.95, lr_schedule=lr)
+        schedule = lambda t: float(lr[t])  # noqa: E731 — Schedule callable
+        s = band_mf_strategy(bands=_BANDS, momentum=0.95, lr_schedule=schedule)
         assert s.sensitivity(**_full_part()) == pytest.approx(1.0, abs=1e-6)
 
 
