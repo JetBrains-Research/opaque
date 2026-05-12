@@ -1244,17 +1244,21 @@ def main():
         print(f"\nCreating MF noise (β={args.momentum})...")
     t0 = time.time()
 
-    # Participation context for the noise side: mirror the amplifier's
-    # accounting horizon so the streaming matrix matches the calibrated PLD.
-    # BandMF / Identity ignore ``min_sep`` and ``max_participations`` (their
-    # workload is band-internal / trivial); BLT-family read them.
-    noise_n_steps = total_steps
-    if args.mechanism in ("blt", "bsr", "bisr", "lambda_cgd"):
-        noise_min_sep = expected_steps_per_epoch
-        noise_max_part = args.num_epochs
-    else:
+    # Participation context for the noise side: pull straight off the
+    # wrapping amplifier so the streaming matrix tracks the calibrated PLD
+    # (the :class:`opaque.dpftrl.accounting.amplification.types.MfAmplification`
+    # Protocol guarantees every amplifier exposes ``n_steps`` / ``min_sep``
+    # / ``max_participations``, including the degenerate-limit values for
+    # bare-Poisson Identity).
+    if args.mechanism == "none":
+        noise_n_steps = total_steps
         noise_min_sep = 1
         noise_max_part = total_steps
+    else:
+        _amp = acct_mechanism(noise_multiplier)
+        noise_n_steps = _amp.n_steps
+        noise_min_sep = _amp.min_sep
+        noise_max_part = _amp.max_participations
 
     if use_second_moment and args.mechanism not in ("identity", "none"):
         second_strategy = _make_strategy(

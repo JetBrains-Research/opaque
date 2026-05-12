@@ -20,8 +20,9 @@ calibrated against `n_steps` once.
 The simplest case (sensitivity 1, no correlation) is the
 **identity strategy** — exposed via
 `opaque.dpftrl.noise.identity_strategy()` paired with
-`opaque.dpftrl.accounting.identity_mf`. Useful as a sanity check or
-when comparing against vanilla DP-SGD on equal footing.
+`opaque.dpftrl.accounting.mf_gaussian(nm, identity_strategy())`.  Useful
+as a sanity check or when comparing against vanilla DP-SGD on equal
+footing.
 
 ## Pairing with sampling
 

@@ -7,14 +7,15 @@ Binomial on that group's size.  That rotating participation pattern pairs with
 correlated MF noise (e.g. BandMF).
 
 If ``bands == 1`` there is a single group covering the whole dataset, so every
-step is ordinary Poisson subsampling—use this with ``identity_strategy`` /
-``identity_mf`` and ``ftrl_acc.poisson``.  If ``bands > 1``, set ``bands`` to
-match ``band_mf_strategy`` / ``BandMf``.
+step is ordinary Poisson subsampling — use this with ``identity_strategy()``
+inside ``ftrl_acc.mf_gaussian(nm, identity_strategy())`` and
+``ftrl_acc.poisson(...)``.  If ``bands > 1``, set ``bands`` to match the
+strategy you wrap in ``ftrl_acc.mf_gaussian(nm, band_mf_strategy(bands=...))``.
 
 Optional ``truncated_batch_size`` caps the realised per-step batch.  Pair with
 ``ftrl_acc.poisson(..., truncated_batch_size=, dataset_size=)`` so the
-accounting matches the runtime cap; that combination is only supported for
-``IdentityMf`` (``bands == 1``).
+accounting matches the runtime cap; that combination is only supported for the
+identity strategy (``bands == 1``).
 
 For distributed training, shard the dataset before constructing the
 sampler with ``opaque.distributed.local_shard`` and derive a per-rank

@@ -239,7 +239,8 @@ grad_fn, clip_state = auto_clipped_grad(
 )
 noise_fn, noise_state = mf_gaussian_noise(
     params,
-    band_mf_strategy(n_steps=num_steps, bands=4),
+    band_mf_strategy(bands=4),
+    n_steps=num_steps,
     noise_multiplier=noise_multiplier, key=key(0),
 )
 
@@ -270,10 +271,11 @@ All strategies are created by factory functions and passed to `mf_gaussian_noise
 from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.random import key
 
-strategy = band_mf_strategy(n_steps=1000, bands=10)
+strategy = band_mf_strategy(bands=10)
 noise_fn, noise_state = mf_gaussian_noise(
     grad_template=params,
     strategy=strategy,
+    n_steps=1000,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -308,12 +310,13 @@ for adaptive optimizers:
 from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.random import key
 
-strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.9)
-second_strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.999)
+strategy = band_mf_strategy(bands=10, momentum=0.9)
+second_strategy = band_mf_strategy(bands=10, momentum=0.999)
 
 noise_fn, noise_state = mf_gaussian_noise(
     params,
     strategy,
+    n_steps=1000,
     noise_multiplier=noise_multiplier,
     key=key(42),
     second_moment_strategy=second_strategy,

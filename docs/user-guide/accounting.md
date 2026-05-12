@@ -214,8 +214,8 @@ truth.
 from opaque.dpftrl.noise import band_mf_strategy
 import opaque.dpftrl.accounting as dpftrl_acc
 
-# Strategy computes sensitivity and coefficients internally
-strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.95)
+# Strategy is a recipe; the amplifier supplies the horizon at PLD time.
+strategy = band_mf_strategy(bands=10, momentum=0.95)
 
 proc = dpftrl_acc.poisson(
     dpftrl_acc.mf_gaussian(1.0, strategy),
@@ -225,15 +225,16 @@ proc = dpftrl_acc.poisson(
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-### `dpftrl_acc.mf_gaussian(noise_multiplier, BandMfStrategy(sensitivity, coefficients))`
+### `dpftrl_acc.mf_gaussian(noise_multiplier, strategy)`
 
-BandMF mechanism for Poisson and b-min-sep amplification. Takes
-`sensitivity` and `coefficients` from a `band_mf_strategy()`. Band
-width is `len(coefficients)`; `coefficients` must be non-empty.
+Single MF Gaussian mechanism wrapping a strategy recipe.  The strategy
+carries only static workload knobs (e.g. `bands`, `momentum`); horizon
+(`n_steps`, `min_sep`, `max_participations`) is supplied by the
+surrounding amplification factory at PLD time.
 
 ```python
-strategy = band_mf_strategy(n_steps=1000, bands=10)
-proc = dpftrl_acc.mf_gaussian(1.0, strategy)
+strategy = band_mf_strategy(bands=10)
+proc = dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1000)  # bare use
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
@@ -242,10 +243,10 @@ For subsampling amplification, wrap with `dpftrl_acc.poisson(..., n_steps=...)`
 
 ### Correlated MF mechanisms (BLT, λCGD, BISR, BSR)
 
-Correlated MF mechanisms are built via the strategy's `as_mechanism`
-helper — the strategy already holds every structural parameter (sensitivity,
-Gram matrix, coefficients, min_sep, max_participations), so the user supplies
-only the noise multiplier:
+Correlated MF mechanisms use the same `dpftrl_acc.mf_gaussian(noise_multiplier,
+strategy)` factory — the strategy carries the static workload knobs and
+the amplifier supplies the participation context.  Wrap in
+`dpftrl_acc.balls_in_bins(...)` (BnB) for the full PLD:
 
 ```python
 strategy = blt_strategy(

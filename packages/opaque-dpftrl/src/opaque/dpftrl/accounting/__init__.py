@@ -45,7 +45,7 @@ Example::
     import opaque.dpftrl.accounting as ftrl_acc
     from opaque.dpftrl.noise import band_mf_strategy, blt_strategy
 
-    band_s = band_mf_strategy(n_steps=1000, bands=10)
+    band_s = band_mf_strategy(bands=10)
     step = ftrl_acc.poisson(
         ftrl_acc.mf_gaussian(1.0, band_s), sample_rate=0.01, n_steps=1000,
     )

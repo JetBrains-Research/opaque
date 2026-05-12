@@ -132,12 +132,12 @@ so the within-step batch size is Binomial.  Training steps therefore advance a
 fixed rotation over which group is active, while inclusion inside the active
 group stays Poisson-style.
 
-For an identity MF baseline (``identity_strategy`` / ``identity_mf``), use
-``bands=1`` so the lone group is the full dataset and every step is plain
-Poisson on all examples, matching whole-process ``dpftrl_acc.poisson`` with an
-``IdentityMf`` inner.  For BandMF, set ``bands`` to the same count as in
-``band_mf_strategy`` / ``BandMf`` so participation matches correlated
-``mf_gaussian_noise``.
+For an identity MF baseline (``identity_strategy()``), use ``bands=1`` so the
+lone group is the full dataset and every step is plain Poisson on all
+examples, matching whole-process ``dpftrl_acc.poisson`` over
+``dpftrl_acc.mf_gaussian(nm, identity_strategy())``.  For BandMF, set
+``bands`` to the same count as in ``band_mf_strategy(bands=...)`` so
+participation matches correlated ``mf_gaussian_noise``.
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
