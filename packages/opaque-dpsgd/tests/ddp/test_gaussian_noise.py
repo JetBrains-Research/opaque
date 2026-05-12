@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import pytest
 import torch
-import torch.distributed as dist
 
+from dpsgd_ddp_helpers import _spawn, _worker_shared_noise_is_deterministic
 from opaque.types import clipped
 
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
-
-from ._ddp_helpers import _cleanup_ddp, _setup_ddp, _spawn
 
 
 def _noise_raw(noise_fn, grads, state):
@@ -208,30 +206,6 @@ class TestNoiseCalibration:
         noise = noised - grad
         assert abs(noise.mean().item()) < 0.1
         assert abs(noise.std().item() - stddev) < 0.1
-
-
-def _worker_shared_noise_is_deterministic(
-    rank: int, world_size: int, port: int
-) -> None:
-    _setup_ddp(rank, world_size, port)
-    try:
-        device = torch.device(f"cuda:{rank}")
-        grads = {
-            "weight": torch.zeros(10, 5, device=device),
-            "bias": torch.zeros(5, device=device),
-        }
-        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
-        noised, _ = noise_fn(clipped(grads, max_norm=1.0), state)
-
-        gathered = [
-            torch.zeros_like(noised.pytree["weight"]) for _ in range(world_size)
-        ]
-        dist.all_gather(gathered, noised.pytree["weight"])
-        if rank == 0:
-            for other in gathered[1:]:
-                assert torch.equal(gathered[0], other)
-    finally:
-        _cleanup_ddp()
 
 
 @pytest.mark.cuda

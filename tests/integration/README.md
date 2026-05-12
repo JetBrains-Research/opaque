@@ -44,7 +44,7 @@ test" — it's still a DP-pipeline test.
 - **`slow`**: integration tests that download a model from HF Hub on
   first run; excluded from the PR gate, run on push to main.
 - **`cuda`**: distributed / multi-GPU tests; auto-skip on hosts without
-  CUDA. Wheel-local distributed suites under `packages/*/tests/distributed/`
+  CUDA. Wheel-local distributed suites under `packages/*/tests/ddp/`
   use this marker.
 
 ## Discovery
