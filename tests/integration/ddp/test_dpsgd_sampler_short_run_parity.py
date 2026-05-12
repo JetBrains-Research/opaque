@@ -7,9 +7,10 @@ key, exercising the bit-exact algebraic identity
 test runs a real :class:`opaque.dpsgd.sampling.PoissonSampler` on each
 rank with ``fold_in(key(seed), rank)``.  The set of training examples
 seen at each step diverges between 1-GPU and 2-GPU, so the trajectories
-intentionally drift.  A 5% bound on the final eval loss gives room for
-sampler-induced trajectory drift while still catching real bugs (missing
-gradient reduction, wrong noise scaling, mis-keyed sampler, etc.).
+intentionally drift.  A 2% bound on the final eval loss gives ~4×
+headroom over the observed drift while still catching real bugs
+(missing gradient reduction, wrong noise scaling, mis-keyed sampler,
+etc.).
 
 This is the test that mirrors what the Cadence single-vs-multi-GPU
 ``train_causal_lm`` W&B comparison checks at production scale.
@@ -251,13 +252,14 @@ def _run(world_size: int) -> float:
 def test_dpsgd_sampler_short_run_1_vs_2_gpu_parity() -> None:
     # Real Poisson sampler with fold_in(seed, rank) on each rank — the
     # set of examples seen at each step differs between 1-GPU and 2-GPU,
-    # so eval loss trajectories drift.  5% bound = sampler-induced drift
+    # so eval loss trajectories drift.  2% bound = sampler-induced drift
     # over 30 steps must not exceed the noise floor of "still learning
-    # the same task."  See module docstring for the algebraic-identity
+    # the same task" (observed locally on 2× H100: ~0.47%, so ~4×
+    # headroom).  See module docstring for the algebraic-identity
     # companion that uses the *same* batch + noise key (bound = 1e-4).
     one = _run(1)
     two = _run(2)
     assert one > 0 and two > 0
     rel = abs(two - one) / one
     print(f"\nDP-SGD sampler parity: eval_1gpu={one:.6f}, eval_2gpu={two:.6f}, rel={rel:.4%}")
-    assert rel < 0.05, f"sampler-active eval relative delta {rel:.4f} exceeds 5%"
+    assert rel < 0.02, f"sampler-active eval relative delta {rel:.4f} exceeds 2%"
