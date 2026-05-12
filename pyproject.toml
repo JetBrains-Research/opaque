@@ -127,6 +127,7 @@ examples = [
   "jetbrains-cadence",        # Internal experiment registry
   "keyrings-alt>=5.0.0",      # Headless keyring backend (cadence login)
   "lora-privacy",             # Vendored LoRA-XS PEFT integration
+  "evalplus==0.3.1",          # HumanEval+/MBPP+ downstream eval (for --eval-humaneval/--eval-mbpp)
 ]
 
 # Documentation building
