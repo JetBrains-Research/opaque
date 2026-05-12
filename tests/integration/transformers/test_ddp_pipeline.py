@@ -6,7 +6,7 @@ rank, and runs a single DP step (clip → noise → cross-rank
 mechanisms. This is a one-step smoke — not a training run.
 
 Combines DDP × patches × Qwen2 × DP-SGD/DP-FTRL. Multi-GPU primitive
-coverage lives under ``packages/opaque-*/tests/distributed/``; this file
+coverage lives under ``packages/opaque-*/tests/ddp/``; this file
 verifies the user-facing pipeline holds together with HF-Hub model
 weights and the patches enabled.
 

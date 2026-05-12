@@ -140,7 +140,7 @@ def _run_single(strategy_name: str) -> dict[str, float]:
         pooled = sum_gradients(grads)
         if step == 0:
             noise_fn, noise_state = mf_gaussian_noise(
-                pooled,
+                pooled.pytree,
                 _strategy(strategy_name),
                 n_steps=16,
                 noise_multiplier=0.3,
@@ -237,7 +237,7 @@ def _worker_ddp_short(
             pooled = sum_gradients(grads)
             if step == 0:
                 noise_fn, noise_state = mf_gaussian_noise(
-                    pooled,
+                    pooled.pytree,
                     _strategy(strategy_name),
                     n_steps=16,
                     noise_multiplier=0.3,

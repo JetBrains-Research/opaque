@@ -2,7 +2,7 @@
 
 These tests focus on non-distributed behavior (when torch.distributed is not initialized).
 For actual multi-device distributed tests, see ``test_collectives.py`` and
-``test_profiler_sync.py`` in this folder.
+``test_profiler_sync.py`` in the ``ddp/`` folder.
 """
 
 import pytest
