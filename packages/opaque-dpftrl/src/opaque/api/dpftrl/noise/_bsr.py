@@ -12,7 +12,7 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 
 import torch
@@ -118,6 +118,9 @@ class BsrStrategy:
     bandwidth: int
     alpha: float
     beta: float
+    _gram_memo: dict[tuple[int, int, int | None], tuple[float, ...]] = field(
+        default_factory=dict, init=False, repr=False, compare=False, hash=False
+    )
 
     def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
         return _bsr_full_coefficients(self.bandwidth, self.alpha, self.beta, n_steps)
@@ -125,14 +128,21 @@ class BsrStrategy:
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> tuple[float, ...]:
+        key = (n_steps, min_sep, max_participations)
+        memo = self._gram_memo
+        hit = memo.get(key)
+        if hit is not None:
+            return hit
         band = list(
             _bsr_band_coefficients_cached(self.bandwidth, self.alpha, self.beta)
         )
-        return tuple(
+        out = tuple(
             _native().toeplitz_gram_matrix(
                 band, n_steps, min_sep, max_participations, False
             )
         )
+        memo[key] = out
+        return out
 
     def streaming_matrix(self, **_) -> StreamingMatrix:
         band = _bsr_band_coefficients_cached(self.bandwidth, self.alpha, self.beta)

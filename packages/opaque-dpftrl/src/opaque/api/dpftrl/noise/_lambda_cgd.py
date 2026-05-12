@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import torch
@@ -62,6 +62,9 @@ class LambdaCgdStrategy:
 
     lambda_: float
     normalized: bool = True
+    _gram_memo: dict[tuple[int, int, int | None], tuple[float, ...]] = field(
+        default_factory=dict, init=False, repr=False, compare=False, hash=False
+    )
 
     def __post_init__(self) -> None:
         if self.lambda_ < 0 or self.lambda_ >= 1.0:
@@ -76,11 +79,18 @@ class LambdaCgdStrategy:
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> tuple[float, ...]:
-        return tuple(
+        key = (n_steps, min_sep, max_participations)
+        memo = self._gram_memo
+        hit = memo.get(key)
+        if hit is not None:
+            return hit
+        out = tuple(
             _native().lambda_cgd_gram_matrix(
                 self.lambda_, n_steps, min_sep, max_participations, self.normalized
             )
         )
+        memo[key] = out
+        return out
 
     def streaming_matrix(self, **_) -> StreamingMatrix:
         # Lambda-CGD never materializes a streaming matrix — it uses
