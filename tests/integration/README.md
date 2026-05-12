@@ -12,17 +12,14 @@ These tests are **not** shipped inside any wheel's tarball.
 ```
 tests/integration/
 ├── README.md
-├── test_dpsgd_pipeline.py   — full DP-SGD step (clip → gaussian_noise → update)
-│                              on a patched LoRA model. Synthetic + Qwen2
-│                              variants in one file.
-├── test_dpftrl_pipeline.py  — full DP-FTRL step (clip → mf_gaussian_noise → update)
-│                              on a patched LoRA model. Synthetic + Qwen2.
-└── dpsgd_dpftrl/            — DP-SGD ↔ DP-FTRL cross-stack tests
-    ├── accounting/          — composing per-stack accountants and round-tripping
-    │                          mixed processes through opaque.serialization
-    ├── distributed/         — DDP + DP step. CUDA-marked.
-    └── noise/               — comparing band-MF / mf_gaussian_noise vs the DP-SGD
-                                Gaussian baseline on the same inputs
+├── accounting/              — cross-stack PLD / serialization accountants
+├── noise/                   — MF vs DP-SGD Gaussian noise comparisons
+└── transformers/            — HF-anchored LoRA pipelines (synthetic + Hub)
+    ├── test_dpsgd_pipeline.py
+    ├── test_dpftrl_pipeline.py
+    ├── test_ddp_pipeline.py
+    ├── test_dpsgd_short_run_parity.py   — slow + cuda (1 vs 2 GPU)
+    └── test_dpftrl_short_run_parity.py
 ```
 
 ## What lives here vs. in a wheel's `tests/`
@@ -47,7 +44,8 @@ test" — it's still a DP-pipeline test.
 - **`slow`**: integration tests that download a model from HF Hub on
   first run; excluded from the PR gate, run on push to main.
 - **`cuda`**: distributed / multi-GPU tests; auto-skip on hosts without
-  CUDA. The `dpsgd_dpftrl/distributed/` tests use this marker.
+  CUDA. Wheel-local distributed suites under `packages/*/tests/distributed/`
+  use this marker.
 
 ## Discovery
 
@@ -59,5 +57,7 @@ the suite or in isolation:
 uv run pytest tests/integration/                         # everything not slow / cuda
 uv run pytest tests/integration/ -m slow                 # slow tests (HF downloads)
 uv run pytest tests/integration/ -m cuda                 # CUDA tests (multi-GPU DDP)
-uv run pytest tests/integration/dpsgd_dpftrl/            # cross-stack only
+uv run pytest tests/integration/accounting/              # accounting cross-stack
+uv run pytest tests/integration/noise/                   # noise cross-stack
+uv run pytest tests/integration/transformers/            # HF pipeline + short runs
 ```
