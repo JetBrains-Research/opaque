@@ -50,14 +50,14 @@ USAGE:
   # Quick smoke test (~2 minutes, GPT-2 on ag_news)
   python examples/train_dp_ftrl.py --preset smoke
 
-  # BLT on Mellum (default mechanism, near-optimal correlated noise)
+  # BandMF + b-min-sep on Mellum (default mechanism: b=64, momentum=0.95)
   python examples/train_dp_ftrl.py --preset mellum-kstack
 
   # 4-GPU distributed run with torchrun (sharded, same global batch as 1-GPU)
   torchrun --nproc_per_node=4 examples/train_dp_ftrl.py --preset mellum-kstack
 
-  # BandMF with b=64 bands on Mellum
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism band_mf --bands 64
+  # BLT on Mellum (near-optimal correlated noise; heavier calibration solve)
+  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism blt
 
   # DP-λCGD with Balls-in-Bins sampling (bandwidth-2 correlated noise, λ=0.9)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism lambda_cgd --lambda_ 0.9
@@ -751,7 +751,8 @@ def parse_args():
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
         _set("bands", 64)
-        _set("mechanism", "blt")
+        _set("mechanism", "band_mf")
+        _set("band_mf_sampling", "b_min_sep")
         # ~5% of total steps as warmup; the preset's defaults give the same
         # number of steps as the old ``warmup_frac=0.05``.
         _set("lr_warmup_steps", 0)

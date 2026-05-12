@@ -2,7 +2,7 @@
 # mathematically equivalent to the single-GPU train_dp_ftrl
 # (mellum_kstack).yaml run at the same global batch with unchanged privacy
 # accounting):
-#   RUN_NAME="ftrl-blt-4gpu-sharded" uv run cadence execution start \
+#   RUN_NAME="ftrl-bandmf-b64-bminsep-4gpu-sharded" uv run cadence execution start \
 #     --preset ".cadence/configs/train_dp_ftrl (mellum_kstack_distributed).yaml" \
 #     -e EXTRA_ARGS="--max-steps 100"
 
