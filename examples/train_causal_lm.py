@@ -579,13 +579,15 @@ def parse_args():
     )
     dp_group.add_argument(
         "--second-moment",
-        type=str,
-        default="none",
-        choices=["none", "auto", "on"],
+        action=argparse.BooleanOptionalAction,
+        default=False,
         help="Private squared-gradient stream alongside gradients. "
-        "none (default) | auto (on for adam/adamw/ademamix/rmsprop/radam/"
-        "adadelta) | on. Joint noise allocation is sensitivity-proportional; "
-        "privacy accounting is gaussian(nm) — same as first-moment-only.",
+        "Off by default; pass ``--second-moment`` to enable.  Requires an "
+        "optimizer that consumes ``SecondMomentNoiseOutput`` "
+        "(adam/adamw/ademamix/rmsprop/radam/adadelta); incompatible "
+        "combinations are warned-and-disabled (not rejected).  Joint noise "
+        "allocation is sensitivity-proportional; privacy accounting is "
+        "gaussian(nm) — same as first-moment-only.",
     )
     dp_group.add_argument(
         "--per-group-clipping",
@@ -1236,21 +1238,22 @@ def main():
     print(f"  Epochs: {args.num_epochs}")
     print(f"  Expected total steps: ~{args.num_epochs * expected_steps_per_epoch}")
 
-    # Resolve --second-moment to a bool consumed by clipped_grad.
+    # Cross-flag validation for --second-moment: warn-and-disable on
+    # mismatch instead of raising.  The squared-gradient stream is
+    # auxiliary; silently dropping to single-stream noise on an
+    # incompatible optimizer beats failing the run outright.
     _SECOND_MOMENT_OPTIMIZERS = frozenset(
         {"adam", "adamw", "ademamix", "rmsprop", "radam", "adadelta"}
     )
-    if args.second_moment == "none":
-        use_second_moment = False
-    elif args.second_moment == "auto":
-        use_second_moment = args.optimizer in _SECOND_MOMENT_OPTIMIZERS
-    elif args.second_moment == "on":
-        use_second_moment = True
-    else:  # argparse choices guard, but keep an explicit branch for clarity
-        raise ValueError(
-            f"--second-moment must be 'none', 'auto', or 'on', "
-            f"got {args.second_moment!r}"
+    use_second_moment = bool(args.second_moment)
+    if use_second_moment and args.optimizer not in _SECOND_MOMENT_OPTIMIZERS:
+        print(
+            f"\nWARNING: --second-moment requires an optimizer that consumes "
+            f"SecondMomentNoiseOutput ({sorted(_SECOND_MOMENT_OPTIMIZERS)}); "
+            f"got --optimizer {args.optimizer!r}.  Disabling --second-moment "
+            f"for this run."
         )
+        use_second_moment = False
 
     # Create gradient function based on clipping mode.
     if args.clipping_mode == "adaptive":
