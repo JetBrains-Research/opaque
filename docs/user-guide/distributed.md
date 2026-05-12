@@ -304,7 +304,9 @@ See [API Reference](../reference/distributed.md) for full docstrings.
 
 - **DDP only.** FSDP, Tensor Parallel, and Pipeline Parallel are not
   supported.
-- **NCCL recommended.** Other backends (Gloo, MPI) are not tested.
+- **Backend support tiers.** First-class backends are NCCL, Gloo, and MPI.
+  Vendor/runtime-dependent backends require environment-specific stacks and are
+  not covered by default CI lanes.
 - **Single-node primarily.** Multi-node DDP should work but is not
   extensively tested.
 

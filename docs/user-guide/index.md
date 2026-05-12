@@ -65,6 +65,8 @@ stitches them.
   curve.
 - **[Distributed Training](distributed.md)** — DDP with synchronized
   noise and gradient aggregation.
+- **[Distributed DPTrainer](distributed-trainer.md)** — DDP setup and
+  `ddp_shard` behavior for `DPTrainer`.
 - **[HuggingFace Compatibility](huggingface.md)** — HuggingFace
   Transformers models with Opaque, LoRA, fused Triton kernels.
 - **[Memory Optimizations](memory-optimizations.md)** — Microbatching,

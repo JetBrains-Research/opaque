@@ -105,3 +105,6 @@ output.log
 
 # Claude Code session state
 .claude/
+
+# Hugging Face
+trainer_output/

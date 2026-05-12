@@ -1,0 +1,251 @@
+"""Checkpoint helpers for DPTrainer.
+
+Defines the on-disk layout (parallel to HuggingFace ``Trainer``), discovery and
+rotation utilities, an RNG snapshot helper, and the DP-runtime bundle stored
+under ``dp_runtime_state.pt``.  Clip / noise slices use
+:func:`opaque.serialization.state_dict`; resume merges them with the live
+training context via :func:`opaque.serialization.from_state_dict`.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import random
+import re
+import shutil
+from typing import Any
+
+import numpy as np
+import torch
+from transformers.trainer import TRAINER_STATE_NAME
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
+from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME
+
+from opaque.serialization import state_dict as opaque_state_dict
+from opaque.types import ClipState, NoiseState
+
+log = logging.getLogger(__name__)
+
+# Filename layout: ``training_args.bin`` matches HF's ``TRAINING_ARGS_NAME``.
+TRAINING_ARGS_NAME = "training_args.bin"
+DP_OPTIMIZER_NAME = "dp_optimizer.pt"
+DP_RUNTIME_STATE_NAME = "dp_runtime_state.pt"
+DP_ACCOUNTANT_NAME = "accountant.json"
+RNG_STATE_NAME = "rng_state.pth"
+
+DP_RUNTIME_BUNDLE_VERSION = 2
+
+_CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")
+
+__all__ = [
+    "PREFIX_CHECKPOINT_DIR",
+    "WEIGHTS_NAME",
+    "SAFE_WEIGHTS_NAME",
+    "DP_OPTIMIZER_NAME",
+    "TRAINING_ARGS_NAME",
+    "TRAINER_STATE_NAME",
+    "DP_RUNTIME_STATE_NAME",
+    "DP_ACCOUNTANT_NAME",
+    "DP_RUNTIME_BUNDLE_VERSION",
+    "RNG_STATE_NAME",
+    "parse_checkpoint_step",
+    "list_checkpoints",
+    "get_last_checkpoint",
+    "rotate_checkpoints",
+    "rng_state_path",
+    "snapshot_rng_state",
+    "restore_rng_state",
+    "save_dp_runtime_state",
+    "load_dp_runtime_state",
+]
+
+
+def rng_state_path(ckpt_dir: str, *, rank: int = 0, world_size: int = 1) -> str:
+    """Resolve the RNG-snapshot path for ``rank`` in a ``world_size``-process run."""
+    if world_size <= 1:
+        return os.path.join(ckpt_dir, RNG_STATE_NAME)
+    return os.path.join(ckpt_dir, f"rng_state_{int(rank)}.pth")
+
+
+# ---------------------------------------------------------------------------
+# Discovery
+# ---------------------------------------------------------------------------
+
+
+def parse_checkpoint_step(path: str) -> int | None:
+    """Extract the step number from a ``checkpoint-N`` directory name."""
+    m = _CHECKPOINT_RE.match(os.path.basename(path.rstrip(os.sep)))
+    return int(m.group(1)) if m is not None else None
+
+
+def list_checkpoints(folder: str) -> list[str]:
+    """Return ``checkpoint-N`` subdirectories of ``folder`` sorted by step ascending."""
+    if not os.path.isdir(folder):
+        return []
+    found: list[tuple[int, str]] = []
+    for name in os.listdir(folder):
+        full = os.path.join(folder, name)
+        if not os.path.isdir(full):
+            continue
+        step = parse_checkpoint_step(name)
+        if step is not None:
+            found.append((step, full))
+    return [path for _, path in sorted(found)]
+
+
+def get_last_checkpoint(folder: str) -> str | None:
+    """Return the ``checkpoint-N`` with the highest step, or ``None``."""
+    paths = list_checkpoints(folder)
+    return paths[-1] if paths else None
+
+
+# ---------------------------------------------------------------------------
+# Rotation
+# ---------------------------------------------------------------------------
+
+
+def rotate_checkpoints(
+    output_dir: str,
+    save_total_limit: int | None,
+    best_model_checkpoint: str | None = None,
+) -> None:
+    """Delete oldest checkpoints to honor ``save_total_limit``.
+
+    Always protects the most recent checkpoint and the best-model checkpoint
+    (when supplied). Effective keep count is
+    ``max(save_total_limit, len(protected))`` to avoid deleting either.
+    """
+    if save_total_limit is None or save_total_limit <= 0:
+        return
+
+    checkpoints = list_checkpoints(output_dir)
+    if len(checkpoints) <= save_total_limit:
+        return
+
+    protected: set[str] = {checkpoints[-1]}
+    if best_model_checkpoint is not None:
+        best_abs = os.path.abspath(best_model_checkpoint)
+        for path in checkpoints:
+            if os.path.abspath(path) == best_abs:
+                protected.add(path)
+                break
+
+    keep = max(save_total_limit, len(protected))
+    num_to_delete = max(0, len(checkpoints) - keep)
+    deleted = 0
+    for path in checkpoints:
+        if deleted >= num_to_delete:
+            break
+        if path in protected:
+            continue
+        log.info(
+            "Deleting older checkpoint %s due to save_total_limit=%d",
+            path,
+            save_total_limit,
+        )
+        shutil.rmtree(path, ignore_errors=True)
+        deleted += 1
+
+
+# ---------------------------------------------------------------------------
+# RNG snapshot
+# ---------------------------------------------------------------------------
+
+
+def snapshot_rng_state() -> dict[str, Any]:
+    """Capture python / numpy / torch CPU + per-CUDA-device + MPS RNG states."""
+    snap: dict[str, Any] = {
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+        "cpu": torch.get_rng_state(),
+    }
+    if torch.cuda.is_available():
+        snap["cuda"] = torch.cuda.random.get_rng_state_all()
+    if hasattr(torch, "mps") and torch.backends.mps.is_available():
+        snap["mps"] = torch.mps.get_rng_state()
+    return snap
+
+
+def restore_rng_state(snap: dict[str, Any]) -> None:
+    """Apply a previously captured RNG snapshot."""
+    random.setstate(snap["python"])
+    np.random.set_state(snap["numpy"])
+    torch.set_rng_state(snap["cpu"])
+    cuda_states = snap.get("cuda")
+    if cuda_states is not None and torch.cuda.is_available():
+        for i, st in enumerate(cuda_states):
+            if i < torch.cuda.device_count():
+                torch.cuda.set_rng_state(st, i)
+    mps_state = snap.get("mps")
+    if (
+        mps_state is not None
+        and hasattr(torch, "mps")
+        and torch.backends.mps.is_available()
+    ):
+        torch.mps.set_rng_state(mps_state)
+
+
+# ---------------------------------------------------------------------------
+# DP runtime bundle (clip_state + noise_state + scheduling + sampler state)
+# ---------------------------------------------------------------------------
+
+
+def save_dp_runtime_state(
+    path: str,
+    *,
+    clip_state: Any,
+    noise_state: Any,
+    sampler_state: dict[str, Any] | None,
+    sample_rate: float,
+    target_delta: float,
+    noise_multiplier: float,
+    expected_steps_per_epoch: int,
+    expected_batch_size: int,
+    total_steps: int,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Save the DP runtime bundle (everything under DP_RUNTIME_STATE_NAME)."""
+    if not isinstance(clip_state, ClipState):
+        raise TypeError(
+            f"clip_state must be a ClipState instance, got {type(clip_state).__name__}"
+        )
+    if not isinstance(noise_state, NoiseState):
+        raise TypeError(
+            f"noise_state must be a NoiseState instance, got {type(noise_state).__name__}"
+        )
+    payload: dict[str, Any] = {
+        "version": DP_RUNTIME_BUNDLE_VERSION,
+        "clip_state": opaque_state_dict(clip_state),
+        "noise_state": opaque_state_dict(noise_state),
+        "sampler_state": sampler_state,
+        "sample_rate": float(sample_rate),
+        "target_delta": float(target_delta),
+        "noise_multiplier": float(noise_multiplier),
+        "expected_steps_per_epoch": int(expected_steps_per_epoch),
+        "expected_batch_size": int(expected_batch_size),
+        "total_steps": int(total_steps),
+    }
+    if extra:
+        payload["extra"] = extra
+    torch.save(payload, path)
+
+
+def load_dp_runtime_state(path: str) -> dict[str, Any]:
+    """Load the raw DP runtime bundle from disk.
+
+    ``clip_state`` and ``noise_state`` are flat serialisation dicts; merge them
+    into live objects with :func:`opaque.serialization.from_state_dict` using
+    the templates produced by the current training setup.
+
+    ``weights_only=False`` is required for PyTorch 2.6+ defaults when tensors
+    appear in the bundle.
+    """
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    ver = int(payload["version"])
+    if ver != DP_RUNTIME_BUNDLE_VERSION:
+        raise ValueError(
+            f"unsupported dp_runtime_state bundle version {ver} "
+            f"(expected {DP_RUNTIME_BUNDLE_VERSION})"
+        )
+    return payload

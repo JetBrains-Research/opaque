@@ -38,8 +38,9 @@ for supported attention implementations.
 
 Opaque supports `torch.nn.parallel.DistributedDataParallel` (DDP). FSDP,
 Tensor Parallel, and Pipeline Parallel are not supported. Multi-node DDP
-should work but is not extensively tested. The NCCL backend is recommended;
-Gloo and MPI are not tested.
+should work but is not extensively tested. First-class distributed backends are
+NCCL, Gloo, and MPI. Vendor/runtime-specific backends require external stacks
+and are not covered by default CI.
 
 ## Kernel patching lives in `opaque.patches`
 
@@ -52,10 +53,11 @@ internal implementation details and should not be imported directly in user
 code.
 
 On CPU/MPS (or without Triton), Opaque falls back to non-kernel compatibility
-paths. To control patching behavior, use the `OPAQUE_SKIP_PYTORCH_PATCHES`,
-`OPAQUE_SKIP_TRANSFORMERS_PATCHES`, and `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES`
-environment variables. See
-[HuggingFace Compatibility](user-guide/huggingface.md#configuration).
+paths. For the performance / Triton stack, use `OPAQUE_SKIP_PYTORCH_PATCHES`
+and `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` (see
+[HuggingFace Compatibility](user-guide/huggingface.md#configuration)).
+`opaque.transformers` applies compat and optional kernel patches explicitly
+via `DPTrainer` / `patch_all()`, not via `OPAQUE_SKIP_TRANSFORMERS_PATCHES`.
 
 Advanced users can still call kernel wrappers directly via
 `opaque.patches.kernels`.

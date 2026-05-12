@@ -169,18 +169,23 @@ Everything else lives in the relevant package's
 
 ## Patching model (on-import)
 
-Importing `opaque.performance` or `opaque.transformers` automatically applies
-their respective patches. There is no top-level `opaque.patch_all()` —
-each sub-package owns its own patching. Disable selectively with
-sub-package-specific env vars set **before** the import:
+Importing `opaque.performance` applies its patches (HF Triton kernels,
+gradient-checkpointing shims) unless disabled with env vars set **before**
+import — see below.
+
+`opaque.transformers` does **not** mutate Hugging Face globals on import.
+Use `opaque.transformers.patch_all()` for global runtime compat (masking,
+collator, checkpoint hooks), or construct `opaque.transformers.trainer.DPTrainer`,
+which calls `opaque.patches.apply_runtime_patches(compat=True)` and
+`opaque.patches.apply_model_patches(model, compat=True, performance=use_liger_kernel)`
+(`use_liger_kernel` mirrors HF’s Liger-style performance flag).
 
 ```bash
-OPAQUE_SKIP_PYTORCH_PATCHES=all            # skip all opaque.performance patches
-OPAQUE_SKIP_TRANSFORMERS_PATCHES=all       # skip all opaque.transformers compat patches
-OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all # skip the HF kernel patches (performance side)
+OPAQUE_SKIP_PYTORCH_PATCHES=all              # skip all opaque.performance patches
+OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all  # skip HF kernel patches (opaque-patches performance side)
 ```
 
-Fine-grained variables also apply:
+Fine-grained variables also apply for the performance stack:
 `OPAQUE_SKIP_PYTORCH_CHECKPOINT_PATCHES`,
 `OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES`,
 `OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES`.
@@ -190,9 +195,8 @@ Patch layers:
 - `opaque.performance` — gradient-checkpointing for `torch.utils.checkpoint`
   + HF Triton kernel patches (SwiGLU, GeGLU, RoPE, fused CE, LoRA) via
   `opaque.performance.huggingface`.
-- `opaque.transformers` — compatibility-only (vmap-safe attention, KV cache,
-  Poisson-collator compat). Performance patches live in
-  `opaque.performance.huggingface`.
+- `opaque.transformers` / `opaque.patches` — DPTrainer applies runtime + model
+  compat explicitly; optional Triton kernels when `use_liger_kernel=True`.
 
 ## Key architectural notes
 
@@ -245,7 +249,7 @@ Three orthogonal markers, declared in the root `pyproject.toml`:
   clause conditionally).
 
 Gated HuggingFace models use `@requires_hf_auth` imported from
-`packages/opaque-transformers/tests/huggingface/_helpers.py`. It is a
+`packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. It is a
 `skipif(not has_hf_token())` mark, not a pytest marker. Set `HF_TOKEN`
 (or `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN`) to run them.
 
