@@ -27,6 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from opaque.api.accounting.core._base import DpProcess
+from opaque.api.accounting.core._native_cache import _clear_all_native_caches
 
 # Re-export budgets so ``from opaque.api.accounting.core.calibration import Budget``
 # and ``from opaque.accounting import calibration as cal; cal.epsilon_budget(...)``
@@ -142,6 +143,10 @@ def calibrate(
         ValueError: If budget evaluation returns inf or nan at the bounds
         Exception: If process() or budget.evaluate() raises an exception
 
+    Native LRU caches registered via :mod:`opaque.api.accounting.core._native_cache`
+    are cleared in ``finally`` so calibration probes do not retain Rust-backed
+    memory after the search completes (success, early exit, or exception).
+
     **Examples:**
 
     **Example 1: Standard (ε, δ)-DP**::
@@ -199,6 +204,27 @@ def calibrate(
     - *Not converging within max_iterations*
       → Increase tolerance or max_iterations; check that param changes actually affect metric
     """
+    try:
+        return _calibrate_impl(
+            budget,
+            process,
+            param_min,
+            param_max,
+            tolerance,
+            max_iterations,
+        )
+    finally:
+        _clear_all_native_caches()
+
+
+def _calibrate_impl(
+    budget: Budget,
+    process: Callable[[float], DpProcess],
+    param_min: float,
+    param_max: float,
+    tolerance: float,
+    max_iterations: int,
+) -> CalibrateResult:
     if param_min >= param_max:
         raise ValueError(f"param_min ({param_min}) must be < param_max ({param_max})")
 
