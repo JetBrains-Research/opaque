@@ -1,30 +1,42 @@
 # TRL Trainers on Opaque — Implementation Plan
 
-**Status:** Planning. Slow phased implementation.
-**Scope:** Add `opaque.transformers.trl.{SFTTrainer, DPOTrainer, KTOTrainer}` plus matching configs, faithful to TRL's interface, correct under DP-SGD. Includes a pre-phase that audits and ports any missing Opaque-patches kernels.
-**Branch:** `claude/add-trl-trainers-plan-nB07O` (this plan); implementation phases land on `claude/add-trl-trainers-nB07O` or per-phase sub-branches.
+**Status:** Planning. Slow phased implementation against a moving main.
+
+**Scope:**
+- A new package `opaque-alignment` providing functional, mechanism-agnostic primitives for DP-safe preference learning (losses, collators, dataset transforms, reference-model helpers, alignment metrics).
+- TRL-style class trainers `opaque.transformers.trl.{SFTTrainer, DPOTrainer, KTOTrainer}` plus matching configs, built on top of `DPTrainer` and consuming `opaque-alignment` primitives.
+- Functional examples (`examples/train_sft.py`, `train_dpo.py`, `train_kto.py`) as siblings of trainer-based examples (`train_*_trainer.py`), mirroring the existing `train_causal_lm.py` ↔ `train_causal_lm_trainer.py` pattern.
+
+**Branches:**
+- Planning (this doc): `claude/add-trl-trainers-plan-nB07O`.
+- Implementation phases: per-phase sub-branches off main once each phase is approved.
+- Coordinating dependency: the full `DPTrainer` implementation that TRL subclasses inherit from currently lives on `evgri243/hf-trainer-continuation`. Phase 0 of this plan blocks on (or co-merges with) that branch.
 
 ---
 
 ## Table of contents
 
 1. [Goals and non-goals](#1-goals-and-non-goals)
-2. [Background — what we found and what it changes](#2-background--what-we-found-and-what-it-changes)
-3. [Cross-cutting design decisions](#3-cross-cutting-design-decisions)
-4. [Phase −1 — Kernel parity pass (`opaque-patches`)](#4-phase-1--kernel-parity-pass-opaque-patches)
-5. [Phase 0 — DPTrainer foundational changes](#5-phase-0--dptrainer-foundational-changes)
-6. [Phase 0.5 — `opaque.distributed` extensions](#6-phase-05--opaquedistributed-extensions)
-7. [Phase 1 — SFTTrainer](#7-phase-1--sfttrainer)
-8. [Phase 2 — DPOTrainer](#8-phase-2--dpotrainer)
-9. [Phase 3 — KTOTrainer](#9-phase-3--ktotrainer)
-10. [Phase 4 — Advanced SFT data pipeline](#10-phase-4--advanced-sft-data-pipeline)
-11. [Phase 5 — Polish, examples, parity tests, docs](#11-phase-5--polish-examples-parity-tests-docs)
-12. [Roadmap beyond this plan](#12-roadmap-beyond-this-plan)
-13. [Risk register](#13-risk-register)
-14. [DP correctness checklist (used at every loss port)](#14-dp-correctness-checklist-used-at-every-loss-port)
-15. [Test strategy](#15-test-strategy)
-16. [References](#16-references)
-17. [Glossary](#17-glossary)
+2. [Repository context: post-refactor layout and the api/façade pattern](#2-repository-context-post-refactor-layout-and-the-apifaçade-pattern)
+3. [Architectural philosophy: two-layer split (`opaque-alignment` + `opaque.transformers.trl`)](#3-architectural-philosophy-two-layer-split-opaque-alignment--opaquetransformerstrl)
+4. [Cross-cutting design decisions](#4-cross-cutting-design-decisions)
+5. [`opaque-alignment` package design](#5-opaque-alignment-package-design)
+6. [`opaque.transformers.trl` package design](#6-opaquetransformerstrl-package-design)
+7. [Phase −1 — Kernel parity pass (`opaque-patches`)](#7-phase-1--kernel-parity-pass-opaque-patches)
+8. [Phase 0 — DPTrainer foundational changes](#8-phase-0--dptrainer-foundational-changes)
+9. [Phase 0.25 — `opaque-alignment` package skeleton](#9-phase-025--opaque-alignment-package-skeleton)
+10. [Phase 0.5 — `opaque.distributed` extensions](#10-phase-05--opaquedistributed-extensions)
+11. [Phase 1 — SFTTrainer + alignment primitives](#11-phase-1--sfttrainer--alignment-primitives)
+12. [Phase 2 — DPOTrainer + alignment primitives](#12-phase-2--dpotrainer--alignment-primitives)
+13. [Phase 3 — KTOTrainer + alignment primitives](#13-phase-3--ktotrainer--alignment-primitives)
+14. [Phase 4 — Advanced data pipeline](#14-phase-4--advanced-data-pipeline)
+15. [Phase 5 — Polish, examples, parity tests, docs](#15-phase-5--polish-examples-parity-tests-docs)
+16. [Roadmap beyond this plan](#16-roadmap-beyond-this-plan)
+17. [Risk register](#17-risk-register)
+18. [DP correctness checklist (used at every loss port)](#18-dp-correctness-checklist-used-at-every-loss-port)
+19. [Test strategy](#19-test-strategy)
+20. [References](#20-references)
+21. [Glossary](#21-glossary)
 
 ---
 
@@ -32,1156 +44,1112 @@
 
 ### 1.1 Goals
 
-- Three new trainers under `opaque.transformers.trl`: `SFTTrainer`, `DPOTrainer`, `KTOTrainer`, each TRL-faithful at the API level.
-- Matching configs `SFTConfig`, `DPOConfig`, `KTOConfig`, each extending `DPTrainingArguments` with TRL-parity fields.
-- Every TRL loss variant that is mathematically compatible with per-example DP-SGD lands in the appropriate phase. Variants that structurally violate per-example DP (e.g. `aot`, `aot_pair` which sort across the batch) are deliberately rejected with a documented reason.
-- Every TRL advanced feature that is mathematically compatible lands in some phase by the end of the plan. Features deliberately skipped (vision-language models) are documented.
-- Strong DP correctness story: per-example loss closures audited against the [DP correctness checklist](#14-dp-correctness-checklist-used-at-every-loss-port). No cross-example data-dependent quantities inside the per-example loss.
-- TRL numeric parity at `σ=0, C=∞` to within `1e-3` on representative batches.
+- **New package `opaque-alignment`** with functional, mechanism-agnostic primitives for preference learning. Pure functions (no hidden state, no subclassing), composable with `vmap(grad(...))` per Opaque's design philosophy. Mirrors the role `opaque-engine` plays for DP-SGD/DP-FTRL primitives.
+- **Three TRL-style trainers** under `opaque.transformers.trl`: `SFTTrainer`, `DPOTrainer`, `KTOTrainer`. Each thin orchestration over `DPTrainer` + `opaque-alignment` primitives.
+- **Matching configs** `SFTConfig`, `DPOConfig`, `KTOConfig` extending `DPTrainingArguments` with TRL-parity fields.
+- **Every TRL loss variant** that is mathematically compatible with per-example DP-SGD lands in the appropriate phase. Variants that structurally violate per-example DP (`aot`, `aot_pair` — cross-example batch sort) are deliberately rejected with a documented reason.
+- **Every TRL advanced feature** that is compatible lands in some phase by the end of the plan. Features deliberately skipped (vision-language models) are documented in §16.
+- **Strong DP-correctness story**: every per-example loss closure passes the checklist in §18. No cross-example data-dependent quantities inside the per-example loss (in particular, no `num_items_in_batch`-style global divisors — see §4.4).
+- **TRL numeric parity at `σ=0, C=∞`** to within `1e-3` on representative batches.
+- **Two example styles per method**: a functional `train_<method>.py` using primitives directly, and a `train_<method>_trainer.py` using the class wrapper.
 
 ### 1.2 Non-goals (this plan)
 
-- Vision / multimodal (VLM) trainers and collators — out of scope.
-- DeepSpeed, FSDP, Accelerate-driven multi-device — out of architectural reach for per-example DP-SGD.
-- Liger as a runtime dependency — Opaque reimplements equivalent kernels in `opaque-patches` (see [Phase −1](#4-phase-1--kernel-parity-pass-opaque-patches)).
-- TRL DPO/KTO loss variants whose math sorts or aggregates across batch (`aot`, `aot_pair`): rejected at init.
-- Mid-training mutation of the model's PEFT adapter set, embedding size, or tokenizer vocabulary (must happen before trainer construction).
-- DP-PPO / DP policy-gradient (paper arXiv:2501.19080) — trajectory-level DP is a fundamentally different design.
-
-### 1.3 Final-phase parity bar
-
-By the end of Phase 5:
-
-- Every TRL `SFTConfig`, `DPOConfig`, `KTOConfig` field has either (a) a matching Opaque field with documented semantics or (b) a deliberate-not-supported note with rationale (DP-incompatibility, VLM-only, etc.).
-- Every TRL loss type either ships or is rejected with rationale.
-- Every TRL behavioral feature either ships or is rejected with rationale.
-- A maintained parity table in this document lists current status of every TRL surface element.
+- **Vision / multimodal (VLM) trainers and collators** — out of scope.
+- **DeepSpeed, FSDP, Accelerate-driven multi-device** — out of architectural reach for per-example DP-SGD. Opaque has its own DDP layer.
+- **An `opaque.transformers.trl.X.accelerator` shim** — explicitly rejected; we expand `opaque.distributed` with functional primitives instead.
+- **Liger as a runtime dependency** — Opaque reimplements equivalent kernels in `opaque-patches` (see [Phase −1](#7-phase-1--kernel-parity-pass-opaque-patches)).
+- **TRL DPO/KTO loss variants whose math sorts or aggregates across the batch** (`aot`, `aot_pair`): rejected at init.
+- **Mid-training mutation** of the model's PEFT adapter set, embedding size, or tokenizer vocabulary (must happen before trainer construction).
+- **DP-PPO / DP policy-gradient** (arXiv:2501.19080) — trajectory-level DP is a fundamentally different design.
 
 ---
 
-## 2. Background — what we found and what it changes
+## 2. Repository context: post-refactor layout and the api/façade pattern
 
-### 2.1 Architectural facts about Opaque DPTrainer
+Main was substantially refactored. Plans written against the pre-refactor `opaque-core` layout (including earlier drafts of this doc) must be updated for two structural changes.
 
-These are properties of the existing code that constrain the plan:
+### 2.1 Package split
 
-- **Functional training path.** `_dp_trainer.py:1274` does `make_functional(model, partition_trainable=True)` → `(fmodel, trainable_params, frozen_params)`. The training-time forward is `fmodel(merged_params, **inputs)`. The bound `nn.Module` is used only at eval (when `self._ctx is None`).
-- **Per-example loss via `clipped_grad`.** `_dp_trainer.py:3037` defines `_build_per_example_loss(fmodel, frozen_params, batch_keys) → (per_example_loss_fn, batch_argnums)`. The closure runs inside `vmap(grad(...))` via `clipped_grad` (`opaque/clipping/_clipped_grad.py:74`).
-- **Normalization by `expected_batch_size`, not realized batch size.** `_dp_trainer.py:3689` calls `clipped_grad(..., normalize_by=expected_batch_size, ...)`. The realized Poisson batch size is private; only the public expectation enters the gradient scale.
-- **Compute_loss runs only at eval today.** Training uses `_build_per_example_loss`; `compute_loss` (`_dp_trainer.py:2054`) is invoked only from `prediction_step` / eval loop. This is the largest single gap from HF/TRL parity. Phase 0 fixes this.
-- **Poisson batch sampler.** `OpaqueEpochPoissonBatchSampler` / `OpaqueEpochTruncatedPoissonBatchSampler` (`_dp_trainer.py:3273-3293`). Each example sampled independently with probability `ctx.sample_rate`. Batches have variable realized size including 0 and 1.
-- **No `self.accelerator`.** DPTrainer talks to `opaque.distributed` directly. Phase 0.5 extends `opaque.distributed` with the small set of primitives TRL needs; we do not introduce an Accelerator shim.
-- **CPU activation offloading already implemented.** `_config.py:305` `cpu_offload_activations: bool` wraps the per-step gradient in `torch.autograd.graph.save_on_cpu(pin_memory=True)` (`_dp_trainer.py:1268-1270`). Needs a rename to `activation_offloading` for TRL parity.
-- **`opaque.optimizers` includes DP-AdamW.** `opaque.optimizers.adamw(noise_bias_correction=True)` at `_adam.py:235-251` implements the bias-corrected v-moment subtraction `v̂ = max(v/bc2 − φ̂, floor)`. This is mathematically the DP-AdamW recipe from arXiv:2505.08849. No new optimizer needed.
+`opaque-core` was retired and replaced by three packages:
 
-### 2.2 Architectural facts about `opaque-patches`
-
-- **Comprehensive fused-kernel coverage** with two-level `Opaque_Foo / _FooBackward` vmap-safe autograd.Functions: `opaque_cross_entropy_loss`, `opaque_linear_cross_entropy_loss`, `opaque_swiglu`, `opaque_geglu_exact`, `opaque_geglu_approx`, `opaque_rope`, `opaque_rope_qk`, `opaque_slow_rope`, `opaque_rms_norm`, `opaque_fused_add_rms_norm`, `opaque_lora_w`, `opaque_lora_qkv`, `opaque_lora_mlp`. Pure-PyTorch fallbacks for non-Triton environments.
-- **Wide architectural coverage** in `patches/transformers/models/`: Llama, Gemma/Gemma2/Gemma3, Qwen2/Qwen3, Mistral/Ministral, Phi3, Olmo2/Olmo3, GLM4, Granite, Cohere/Cohere2, SmolLM3, Exaone4.
-- **PEFT-aware kernel components** in `patches/peft/components/`: fused LoRA MLP, fused LoRA Linear, fused LoRA QKV.
-- **The DP-SGD-aware optimization** in `linear_cross_entropy.py:920-921`: skip `dC` (weight gradient) when `weight.requires_grad=False`. Saves ~⅓ of backward time for LoRA-frozen-base training.
-
-What this means for the plan: **the SFT/DPO/KTO trainers do not need to write any kernel code.** Setting `use_liger_kernel=True` in their configs routes through `_liger.apply_liger_kernel_via_opaque_patches` and the existing kernel coverage is inherited transparently — including inside vmap.
-
-### 2.3 Architectural facts about TRL
-
-These constrain how we mirror TRL behavior:
-
-- **`compute_loss` is the canonical override surface.** TRL subclasses override `compute_loss` for both training and eval. Opaque must support this contract.
-- **Reference model has multiple legitimate paths.** Explicit `ref_model=`, PEFT `disable_adapter` / `use_adapter`, precomputed logps cached as dataset columns, or auto-load a second copy from the same model path. All four are supported by TRL and we mirror.
-- **PEFT adapter toggling is module-flag based, not weight-swap based.** `model.disable_adapter()` flips `_disable_adapters` on each LoRA module; base weights are untouched. `torch.func.functional_call` doesn't capture or override these flags, so toggling them around a non-vmap'd forward is safe.
-- **KTO rotation is dataset-prep-time, not sampler-time.** `_get_kl_dataset` (`kto_trainer.py:83-90`) rotates `completion_ids` once, then `concatenate_datasets(axis=1)` produces a dataset where every row has both `completion_ids` and `KL_completion_ids`. Any sampler that preserves row identity (including Poisson) works; the only constraint is realized batch size ≥ 2.
-- **TRL collator emits `(2B, L)` for single-forward efficiency.** No semantic dependency — `(B, 2, L)` with two forwards is mathematically identical. The DP unit is the (chosen, rejected) pair, so `(B, 2, L)` is the natural fit.
-- **`num_items_in_batch` is a data-dependent batch-level quantity.** TRL uses it as a divisor in DFT loss and grad-accum scaling. Under DP, using it would leak information about the batch composition into the per-example gradient. We replace it with public quantities (per-example mask sums, `expected_batch_size`, or `args.max_length`) in every loss formula we port.
-
-### 2.4 DP-alignment papers — relevance summary
-
-| Paper | arXiv | Action |
+| Old distribution | New distribution(s) | What lives where |
 |---|---|---|
-| SquareχPO — first optimal-rate DP-DPO | 2505.21395 | Ships as `loss_type="squarechipo"` in Phase 2. |
-| DP-AdamW for alignment (+15% over prior baselines) | 2505.08849 | Already implemented as `adamw(noise_bias_correction=True)`. Default optimizer for DPO/KTO configs. |
-| Decoupled DP-RLHF (DP reward + non-DP PPO actor) | 2603.22563 | Roadmap example/recipe; no new trainer needed beyond a future DP reward trainer. |
-| DP-PolicyGradient (trajectory-level DP for RL) | 2501.19080 | Out of scope. |
-| Sample complexity of DP-PO (theory) | 2510.21060 | Informational only; cite in docs. |
+| `opaque-core` (clipping, functional, scheduling, distributed, optimizers, serialization, random, profiling) | `opaque-base`, `opaque-engine`, `opaque-optimizers` | `opaque-base`: serialization. `opaque-engine`: clipping, functional, scheduling, distributed, random, profiling. `opaque-optimizers`: functional DP-aware optimizers. |
 
-### 2.5 Liger / Unsloth — what's relevant
+Current distribution inventory:
 
-- **No FastDPOTrainer or FastKTOTrainer exists in Unsloth.** `unsloth/models/dpo.py` is an empty stub. Unsloth's "fast DPO" is just TRL+Liger underneath. Skip Unsloth integration entirely.
-- **Liger's chunked preference loss** (`LigerFusedLinearPreferenceBase` in `liger_kernel/chunked_loss/`) is the one pattern not yet in `opaque-patches`. Pure PyTorch, uses nested `torch.func.grad_and_value` inside `autograd.Function`. The pattern (chunk hidden states along seq dim, accumulate gradients in fp32 buffers, never materialize full `(B, T, V)` logits) is the right shape to port natively into `opaque-patches` as `Opaque_FusedLinearPreference / _FusedLinearPreferenceBackward`. Scheduled in Phase −1.
-- **Liger's RoPE / RMSNorm / SwiGLU / GeGLU / fused linear CE / LoRA kernels** are all already in `opaque-patches`. Phase −1 audit confirms no gaps in the per-layer surface for currently-supported architectures.
+- `opaque-base` — serialization, base contracts.
+- `opaque-engine` — clipping, functional, scheduling, random, profiling, distributed.
+- `opaque-optimizers` — functional optimizers (`adamw`, `adam`, `sgd`, `lion`, `ademamix`, `adafactor`, `adagrad`, `adadelta`, `radam`, `rmsprop`, `schedule_free`).
+- `opaque-dpsgd` — DP-SGD-specific noise, samplers, accounting integration.
+- `opaque-dpftrl` — DP-FTRL mechanisms (matrix factorization, BLT, BSR, BiSR, band-MF, λ-CGD), specialized samplers.
+- `opaque-patches` — HF Transformers compat patches + Triton kernels with vmap rules (the "Liger/Unsloth equivalent" reimplemented natively).
+- `opaque-transformers` — HF Trainer compatibility layer (`DPTrainer`). Currently an empty skeleton on main; the full implementation lives on `evgri243/hf-trainer-continuation`.
+- `opaque-accounting` — PLD privacy accounting (Rust via PyO3).
+- `opaque-auditing` — empirical privacy auditing.
+
+After this plan: `opaque-alignment` — functional primitives for preference learning.
+
+### 2.2 The api/façade pattern
+
+Every distribution now follows a strict separation of implementation namespace and public façade namespace:
+
+```
+packages/<dist>/src/opaque/
+├── api/<dist-suffix>/                 ← IMPLEMENTATION namespace (owned by this dist)
+│   └── <module>/
+│       ├── __init__.py
+│       ├── _private_impl.py
+│       └── public_types.py
+└── <module>/                          ← PUBLIC FAÇADE namespace (composes via PEP 420)
+    └── __init__.py                    ← `from opaque.api.<dist-suffix>.<module> import …`
+```
+
+Verified across the refactored packages:
+
+| Distribution | Owned impl namespace | Public façade(s) |
+|---|---|---|
+| `opaque-base` | `opaque.api.base.*` | `opaque.serialization` |
+| `opaque-engine` | `opaque.api.engine.*` | `opaque.clipping`, `opaque.functional`, `opaque.scheduling`, `opaque.random`, `opaque.profiling`, `opaque.distributed` |
+| `opaque-optimizers` | `opaque.api.optimizers.*` | `opaque.optimizers` |
+| `opaque-transformers` | `opaque.api.transformers.*` | `opaque.transformers` |
+
+Concrete example (`opaque-engine`):
+
+```python
+# packages/opaque-engine/src/opaque/clipping/__init__.py  — FAÇADE
+from opaque.api.engine.clipping._auto import auto_clipped_grad
+from opaque.api.engine.clipping._clipped_grad import clipped_grad
+from opaque.api.engine.clipping._per_group import per_group
+import opaque.api.engine.clipping._distributed  # noqa: F401  (side-effect: registers sync handlers)
+```
+
+Properties:
+
+- No `__init__.py` at `opaque/` or `opaque/api/` (PEP 420 namespace) — multiple distributions compose without collision.
+- Implementation modules can be reorganized within `opaque.api.<dist>.*` without breaking user imports, as long as the façade keeps re-exporting the public names.
+- Sub-distributions get a stable "owned implementation" namespace where they can freely add internals.
+
+### 2.3 Consequences for this plan
+
+- All references to "lives in `opaque-core`" must be re-resolved to the correct successor.
+- `opaque-alignment` adopts the same api/façade pattern.
+- The `DPTrainer` code I read at `packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py` (4656 LOC) does not currently exist on main; it lives on `evgri243/hf-trainer-continuation` and must merge before Phase 0 of this plan can land.
 
 ---
 
-## 3. Cross-cutting design decisions
+## 3. Architectural philosophy: two-layer split (`opaque-alignment` + `opaque.transformers.trl`)
 
-These hold across all phases. Each is binding once recorded here.
+### 3.1 The pattern Opaque already uses
 
-### 3.1 Package and module layout
+```
+DP primitives (functional, composable)              Class wrapper (orchestration)
+──────────────────────────────────────────          ─────────────────────────────────
+opaque-engine   (clipping, functional, …)       →   opaque.transformers.DPTrainer
+opaque-dpsgd    (noise, samplers, accounting)
+opaque-optimizers (adamw, sgd, …)
 
-- Public façade: `opaque.transformers.trl.{SFTTrainer, SFTConfig, DPOTrainer, DPOConfig, KTOTrainer, KTOConfig}`.
-- Implementation: `opaque.api.transformers.trl/` mirroring the existing `opaque.api.transformers.trainer/` split.
-- Internal modules grouped by concern (data collators, losses, logprob helpers, base mixin). Exact file layout is not load-bearing — the broader trainer rearrangement work will align it.
-- Tests under `packages/opaque-transformers/tests/opaque_transformers/trl/`.
-- Examples under `examples/`.
+examples/train_causal_lm.py        (functional)     examples/train_causal_lm_trainer.py  (DPTrainer)
+```
 
-### 3.2 No `self.accelerator`
+### 3.2 The same pattern, lifted one layer
 
-DPTrainer and the TRL subclasses never expose an Accelerator-shaped object. Where TRL code reads `self.accelerator.X`, the port replaces it with the equivalent `opaque.distributed.X` module function. New primitives needed by TRL are added to `opaque.distributed` in [Phase 0.5](#6-phase-05--opaquedistributed-extensions).
+```
+Alignment primitives (functional, composable)        Class wrapper (orchestration)
+──────────────────────────────────────────────       ──────────────────────────────────────────────
+opaque-alignment  (losses, collators, data,       →  opaque.transformers.trl.{SFT,DPO,KTO}Trainer
+                   reference, logprob, metrics,
+                   kernels)
 
-### 3.3 Reference-model strategy — all four TRL paths supported
+examples/train_dpo.py          (functional)          examples/train_dpo_trainer.py    (DPOTrainer)
+examples/train_sft.py          (functional)          examples/train_sft_trainer.py    (SFTTrainer)
+examples/train_kto.py          (functional)          examples/train_kto_trainer.py    (KTOTrainer)
+```
 
-For DPO and KTO. The path is selected from constructor arguments + config, in this priority:
+### 3.3 Why this split
+
+- **Researcher access**: comparing DP-DPO loss variants doesn't require subclassing `DPOTrainer`. Import `from opaque.alignment.losses.dpo import squarechipo, sigmoid`, write a 50-line training loop.
+- **Mechanism-agnosticism**: `opaque-alignment` depends only on `opaque-engine` + `opaque-base` + `opaque-patches`. It works with DP-SGD via `opaque-dpsgd` *or* with DP-FTRL via `opaque-dpftrl`. The mechanism is picked by the caller (trainer or example), not by the library.
+- **Thin trainers**: `DPOTrainer.compute_loss` becomes ~30 lines of orchestration; the loss math lives in one file with citable line numbers.
+- **Reuse for future trainers**: `RewardTrainer`, `ORPOTrainer`, `CPOTrainer`, `SimPOTrainer`, `GRPOTrainer` all reuse the same primitives — no copy-paste of loss math between trainer subclasses.
+- **Testing**: loss functions get unit-tested standalone; trainers get integration tests on top.
+
+### 3.4 What lives where
+
+| Concern | Lives in |
+|---|---|
+| Per-example loss math (DPO, KTO, IPO, SquareχPO, …) | `opaque.api.alignment.losses` |
+| `selective_log_softmax`, `sequence_logp`, completion-mask handling | `opaque.api.alignment.logprob` |
+| Preference data collators | `opaque.api.alignment.collators` |
+| Dataset transforms (prompt extraction, packing, chat templates, KTO rotation) | `opaque.api.alignment.data` |
+| Reference-logp precompute, PEFT-disable adapter context, TR-DPO EMA | `opaque.api.alignment.reference` |
+| Reward metrics, KL estimators, token accuracy | `opaque.api.alignment.metrics` |
+| Fused chunked-preference kernels (the Liger memory trick) | `opaque.api.patches.kernels` (base) + dispatcher in `opaque.api.alignment.losses` |
+| Trainer classes, configs, signature columns, log() override | `opaque.api.transformers.trl` |
+| DPTrainer generic features (compute_loss redirect, autocast ctx) | `opaque.api.transformers.trainer` (DPTrainer itself) |
+| Cross-rank reductions for metrics / precompute | `opaque.api.engine.distributed` (functional primitives, not Accelerator-shaped) |
+
+---
+
+## 4. Cross-cutting design decisions
+
+### 4.1 Reference-model strategy (DPO/KTO) — all four TRL paths supported
+
+TRL has three explicit paths plus an auto-load fallback. All four are DP-safe and all four land in this plan. The strategy is selected at trainer-init time based on user-provided arguments.
 
 | Path | Trigger | Implementation |
 |---|---|---|
-| **Precompute** | `args.precompute_ref_log_probs=True` | One-shot pass via `compute_ref_logprobs_for_dataset(...)` in subclass `__init__`, *before* `super().__init__()`. Adds `ref_chosen_logps` / `ref_rejected_logps` (DPO) or `reference_logps` / `reference_KL_logps` (KTO) as dataset columns. Collator picks them up. Vmap closure consumes them as constant tensor args. Cached on disk via `Hasher.hash((dataset._fingerprint, hash_module(ref_or_model), extra))`. |
-| **Explicit `ref_model=`** | User passes `ref_model` and `precompute=False` | Stored on `self.ref_model`. `disable_dropout_in_model(self.ref_model)` if `args.disable_dropout`. Per-batch ref forward under `torch.no_grad()` happens **outside vmap**, in `_prepare_inputs`. The resulting per-example logp tensors are injected back into the `inputs` dict and consumed in the vmap'd `compute_loss`. |
-| **PEFT `disable_adapter`** | `ref_model is None`, `is_peft_model(model)`, `precompute=False` | Per-batch ref forward under `torch.no_grad()`, wrapped in `with self.null_ref_context(): ...` which calls `model.disable_adapter()` (or `set_adapter("ref")` if a "ref" adapter has been added). Module flag toggle is invisible to `functional_call`'s param-dict capture; this is safe because the toggle happens entirely outside vmap. |
-| **Auto-load** | All three of the above false; not PEFT | Load a second copy of the model via `AutoModelForCausalLM.from_pretrained(get_config_model_id(self.model.config))`, treat as explicit ref_model. |
+| **Explicit `ref_model=`** | User passes `ref_model` | Stored, moved to device, `disable_dropout_in_model`. Per-batch ref forward under `torch.no_grad()` **outside** vmap, in `_prepare_inputs`. Logps passed as constant tensor args into the vmap closure. |
+| **PEFT `null_ref_context`** | `ref_model is None`, `is_peft_model(model)`, no precompute | Per-batch ref forward outside vmap, wrapped in `with self.null_ref_context(): ...`. Toggles PEFT adapter flag (instance attribute, not part of `state_dict()` — not captured by `functional_call`). Works cleanly because we toggle outside the vmap region. |
+| **Precompute** | `args.precompute_ref_log_probs=True` | One-shot pass via `opaque.alignment.reference.compute_ref_logprobs_for_dataset(...)` before training. Adds dataset columns (`ref_chosen_logps`, `ref_rejected_logps` for DPO; `reference_logps`, `reference_KL_logps` for KTO). Collator emits them. Vmap closure reads them as plain tensor args. Cached to `.npz` keyed on `(dataset._fingerprint, hash_module(ref_or_policy))`. |
+| **Auto-load** | All three above are absent and model is not PEFT | Load a second copy via `AutoModelForCausalLM.from_pretrained(get_config_model_id(self.model.config))`, treat as explicit `ref_model`. |
 
-DP semantics: in every path, ref logps are deterministic functions of `(example_data, public_ref_model_params)`. They contribute to the per-example loss as constants (no gradient flows through them). Per-example clipping covers the policy logp computation. The cache produced by the precompute path is itself private (it embeds training data) and must not be released outside the training process; standard care applies.
+**DP semantics.** In all four paths, ref logps enter the per-example loss as constant tensors that depend only on (training_data_i × ref_params). Reference parameters are public; training data is private. The privacy unit is "all computations dependent on example i, including its ref logp." Per-example clipping covers the policy gradient that depends on these constants. The cache file is itself private (do not commit, do not log, do not release).
 
-### 3.4 KTO under Poisson — TRL-faithful
+### 4.2 KTO sampler and KL term — TRL-faithful
 
-TRL's KTO rotation is implemented in dataset-prep, not sampler. We reproduce that exactly:
+TRL's KTO rotation happens at **dataset-prep time**, not at sampler time (`kto_trainer.py:609-623`):
 
-1. `_prepare_dataset` runs `dataset.map(_get_kl_dataset, batched=True, batch_size=args.per_device_train_batch_size, ...)` to produce a sister dataset with rotated `completion_ids`.
-2. `concatenate_datasets([base, kl], axis=1)` produces a single dataset where every row has both `completion_ids` and `KL_completion_ids`.
-3. The Poisson sampler picks rows. The rotation is already baked in; the sampler doesn't need to know.
-4. Constraint: realized Poisson batch size ≥ 2. TRL enforces this at config level (`per_device_train_batch_size > 1`). Under Poisson, individual realized batches may be smaller. **Behavior:** if realized batch size ≤ 1, the KL term contribution that step is set to 0 (mathematically equivalent to running `apo_zero_unpaired` on that step). Privacy unchanged because no cross-example dependency is introduced.
+1. `dataset.map(_get_kl_dataset, batched=True, batch_size=args.per_device_train_batch_size)` rotates `completion_ids` one position right within each map-batch.
+2. The rotated dataset is column-renamed `completion_ids → KL_completion_ids`.
+3. `concatenate_datasets([original, kl], axis=1)` produces a dataset where every row carries both `completion_ids` and `KL_completion_ids` (the rotated partner).
+4. TRL uses a `SequentialSampler` to preserve the within-batch pairing.
 
-We do not invent a self-pairing fallback (it is mathematically degenerate — the KL term collapses into the implied reward; see `kto_trainer.py:357`).
+Under Opaque's Poisson sampler, the rotation is already baked into the row, so any sampler that preserves row identity (Poisson does) works. The constraint is realized batch size ≥ 2 (TRL refuses at `<= 1` because rotation by 1 of a 1-element batch is identity, which collapses KL into the chosen log-ratio).
 
-### 3.5 DPO collator layout — `(B, 2, L)`
+**Adaptation for Poisson:** when a realized batch arrives with size ≤ 1, the KL term falls back to 0 (equivalent to running `apo_zero_unpaired` for that step). Privacy unchanged because the per-example loss remains independent. This is a documented degradation but does not require changing TRL's algorithm.
 
-The collator emits separate `chosen_input_ids` and `rejected_input_ids` tensors of shape `(B, L)` each. The vmap'd per-example loss closure does two `fmodel(...)` calls per example, one for chosen and one for rejected. Vmap auto-batches over `i`. No semantic loss vs TRL's `(2B, L)` layout — DP-SGD per-pair clipping captures both forwards.
+**Self-pair degeneracy guard:** add a runtime assertion in `_prepare_dataset` that the rotation produced a non-identity permutation, since dataset chunks of size 1 under `dataset.map(batch_size=N)` could produce identity rotations.
 
-### 3.6 `num_items_in_batch` is private under DP
+### 4.3 DPO collator layout — `(B, 2, L)`
 
-Any TRL loss formula that divides by `num_items_in_batch` (or any cross-example sum of `(labels != -100)`) is rewritten before porting:
+TRL uses `(2B, L)` with `[chosen..., rejected...]` concatenated along the batch dim, then `chunk(2, dim=0)` (`dpo_trainer.py:174,1189`). The reason is purely single-forward efficiency.
 
-| TRL formula | DP-correct rewrite |
-|---|---|
-| `(per_token_loss * mask).sum() / num_items_in_batch` (DFT) | `(per_token_loss * mask).sum() / mask.sum()` evaluated per-example inside the vmap closure |
-| HF Trainer's grad-accum loss scaling | Not applicable — Opaque reinterprets `gradient_accumulation_steps` as a sample-rate scaler |
-| Aggregations over `outputs.aux_loss` for MoE | Per-example reduction (each example contributes its own aux loss; clipped gradient handles the batch sum) |
+For DP-SGD, the privacy unit is the **pair** (chosen_i, rejected_i). The cleanest fit:
 
-The general rule: **the per-example loss closure must depend only on the example's own data, not on any aggregate of the batch.** The [DP correctness checklist](#14-dp-correctness-checklist-used-at-every-loss-port) enforces this at every loss port.
+- Collator emits `(B, ...)` tensors with `chosen_input_ids`, `chosen_attention_mask`, `chosen_completion_mask`, `rejected_input_ids`, `rejected_attention_mask`, `rejected_completion_mask` as separate keys.
+- Optional `ref_chosen_logps: (B,)`, `ref_rejected_logps: (B,)` when precomputed.
+- The per-example loss closure runs **two forwards per pair inside vmap**: `fmodel(merged, chosen_*)` and `fmodel(merged, rejected_*)`. Vmap auto-batches over the pair index.
 
-### 3.7 Loss variants we reject
+**Properties:** zero numeric difference vs `(2B, L)` (attention is per-row, no batch-norm in LLMs); slightly more kernel launches per step but irrelevant for per-pair DP-SGD where we have to per-example-clip anyway.
 
-Loss variants whose math depends on cross-example computation are rejected at config validation with a `ValueError`:
+### 4.4 `num_items_in_batch` is private — DP-correct normalization rules
 
-| Variant | Reason |
-|---|---|
-| `aot` | Sorts logratios across batch examples — breaks per-example DP. |
-| `aot_pair` | Same. |
-| Any future TRL loss that uses `torch.sort`, `topk`, or batch-aggregate divisors over the per-example values | Same. |
+TRL's `num_items_in_batch` is the sum of `(labels != -100)` across the global accumulated batch. Under DP-SGD this is a data-dependent batch-level quantity. Any loss that divides by it embeds private cross-example information in the gradient magnitude.
 
-Each rejection emits a docstring pointing at the closest DP-safe alternative (typically `apo_zero` or `apo_down` for AOT-family losses).
+**Per-example DP-SGD requires:** the per-example loss `L_i` must depend only on example `i`'s data. If `L_i = f_i / N` where `N = Σ_j (private function of example j)`, then `∇L_i = ∇f_i / N` carries data from `j ≠ i` into example `i`'s gradient. Breaks per-example independence → breaks DP accounting.
 
-### 3.8 Kernel layer — no new code in trainers
+**Audit rule for every loss port:** every divisor in the per-example loss closure must be one of:
 
-The TRL trainers set `use_liger_kernel=True` in their default configs (subject to user opt-out). The kernel acceleration routes through `_liger.apply_liger_kernel_via_opaque_patches` and inherits the full `opaque-patches` surface transparently. No kernel work in any trainer phase. Kernel gaps (vs current Liger) are handled in [Phase −1](#4-phase-1--kernel-parity-pass-opaque-patches).
+1. **Per-example computation** of example `i`'s data alone (e.g., `(labels_i != -100).sum()` for that example).
+2. **`expected_batch_size`** (public hyperparameter; Opaque already uses this for `clipped_grad(..., normalize_by=...)` at `_dp_trainer.py:3689`).
+3. **A public constant** from `args` (e.g., `args.max_length`, `args.beta`).
+4. **Dropped entirely** and the normalization left to `clipped_grad`'s `normalize_by=expected_batch_size`.
 
-### 3.9 Activation offloading
+**Loss-by-loss DP-correctness in TRL idioms:**
 
-Rename `cpu_offload_activations` → `activation_offloading` to match TRL convention. Old name kept as a deprecated alias for one release. No new behavior.
+| Loss / formula | TRL idiom | DP-correct rewrite |
+|---|---|---|
+| SFT NLL via `model(**inputs).loss` | per-example mean over non-ignored tokens (HF default) | OK — per-example mean is per-example data |
+| SFT DFT (`sft_trainer.py:788-802`) | `(per_token_loss * mask).sum() / num_items_in_batch` | Use per-example `mask.sum()` instead |
+| SFT MoE aux loss | `coef * aux_loss` (constant coefficient) | OK |
+| DPO sigmoid / IPO / hinge / robust / APO / etc. | per-pair scalar then `.mean()` over batch | OK — the batch `.mean()` happens *after* vmap'd per-example clipping; we drop it and rely on `normalize_by=expected_batch_size` |
+| DPO IPO normalized | `(chosen_avg − rejected_avg)` where `avg = logp / completion_len` | OK — `completion_len` is per-example, public ratio |
+| WPO weights | per-example `exp(mean_logps)` under `no_grad` | OK |
+| LD-DPO | per-example `shared_logp + α·tail_logp` decomposition | OK |
+| KTO chosen/rejected losses | per-example `1 - sigmoid(β·(...))` | OK |
+| KTO `kl = (KL_logps - ref_KL_logps).mean()` over batch | **PROBLEMATIC** — this is a batch-level mean | Inside the vmap'd per-example closure, this is `(KL_logp_i - ref_KL_logp_i)` per example. The "cross-batch mean" of TRL emerges naturally from the per-example clipped gradient sum. **Verify during port.** |
+| `cat(desirable_weight * chosen, undesirable_weight * rejected).nanmean()` (KTO) | `.nanmean()` over batch | The per-example loss is `desirable_weight * chosen_i OR undesirable_weight * rejected_i` (one or the other based on label). Drop the `.mean()`; rely on `normalize_by=expected_batch_size`. |
+| `aot` / `aot_pair` (DPO) | sorts `logratios` across batch, applies sigmoid to sorted delta | **REJECTED** — sort-across-batch fundamentally breaks per-example DP |
 
-### 3.10 PEFT-as-reference handling
+**Validation:** every loss closure that lands gets a "DP-purity" unit test: replace one example's data with NaN; verify only that row's gradient is affected. See §19.5.
 
-Supported (see [§3.3 path 3](#33-reference-model-strategy--all-four-trl-paths-supported)). Constraint: the ref forward must happen outside vmap. Adapter toggle inside vmap is undefined under `torch.func.functional_call` because module instance flags are not part of the param dict.
+### 4.5 PEFT integration
 
-### 3.11 DP-AdamW
+- **Adapter clone for reference policy** (TRL pattern at `dpo_trainer.py:592-600`): `model.add_adapter("ref", model.peft_config["default"])` then copy `.default.` LoRA params into `.ref.`. Done *before* trainer construction; the resulting "ref" adapter is frozen.
+- **`null_ref_context`** (`opaque.alignment.reference._adapter`): `@contextmanager` that:
+  - If `model` is PEFT and has `"ref"` adapter: `model.set_adapter("ref")`, restore on exit.
+  - Else if `model` is PEFT and only `"default"`: `model.disable_adapter()`.
+  - Else: no-op.
+- **Functional-call interaction:** PEFT's `_disable_adapters` / `active_adapter` flags are **instance attributes**, not in `state_dict()`. `functional_call(model, captured_params, ...)` does not capture these flags. Therefore toggling adapters **outside** the vmap region (in `_prepare_inputs` or `compute_loss`'s eager branch) is safe; toggling them **inside** a vmap'd `functional_call` is undefined and forbidden.
+- **`make_functional` + PEFT:** trainable params = LoRA adapter tensors (`requires_grad=True`); frozen params = base model weights. Verified compatible by existing SFT path.
+- **QLoRA bf16 promotion:** mirror TRL — after `get_peft_model`, cast `param.requires_grad` params to bf16 if model is 4-bit/8-bit loaded.
+- **`merge_and_unload`:** must run *before* trainer construction (mutates base weights). Document.
 
-Already implemented in `opaque.optimizers.adamw(noise_bias_correction=True)` per `_adam.py:235-251`. The TRL trainer configs default `optim="adamw"` and `optim_args="noise_bias_correction=True"`. No new optimizer.
+### 4.6 Loss-type coverage
 
-### 3.12 Vocab / tokenizer mismatch between policy and reference
+**SFT loss types** (per `OpaqueSFTConfig.loss_type`):
 
-HF and TRL silently trust the user. Opaque is stricter:
+| Loss type | Phase | DP-correctness work |
+|---|---|---|
+| `nll` (default HF CE via `model(**inputs).loss`) | 1 | none (per-example mean) |
+| `dft` (token-weighted detached CE) | 1 | rewrite `/ num_items_in_batch` to per-example `/ mask.sum()` |
+| `chunked_nll` (logits never materialized) | 4 | implement via Opaque's existing `opaque_linear_cross_entropy_loss` (already vmap-safe; never materializes `(B, T, V)`) — cleaner than TRL's monkey-patch |
 
-- At `__init__`, if `ref_model is not None`, assert `policy.config.vocab_size == ref_model.config.vocab_size`. Raise `ValueError` on mismatch.
-- For precomputed logps loaded from cache, assert the cache fingerprint includes `policy.config.vocab_size`. Mismatched cache → re-precompute.
-- Tokenizer divergence is not directly verified (no canonical tokenizer hash), but the vocab-size check catches the common failure mode.
+**DPO loss types** (per `OpaqueDPOConfig.loss_type` — list, supports MPO):
 
-### 3.13 Dataset preprocessing — pre-init, not post-init
+| Loss type | Phase | DP-correctness work |
+|---|---|---|
+| `sigmoid` (vanilla DPO) | 2 | none |
+| `ipo` | 2 | use per-example `completion_len` |
+| `hinge` | 2 | none |
+| `robust` (label-smoothed) | 2 | none |
+| `apo_zero` | 2 | none |
+| `apo_down` | 2 | none |
+| `exo_pair` (EXO) | 2 | none |
+| `nca_pair` (NCA) | 2 | none |
+| `bco_pair` (BCO) | 2 | none |
+| `sppo_hard` (SPPO) | 2 | none |
+| `discopop` (DiscoPOP) | 2 | none |
+| `sft` (CE on chosen completion) | 2 | per-example |
+| `sigmoid_norm` (length-normalized) | 2 | use per-example `completion_len` |
+| **`squarechipo`** (arXiv:2505.21395, first optimal-rate DP-DPO) | 2 | none |
+| `aot`, `aot_pair`, `aot_unpaired` | — | **REJECTED**: sort across batch |
 
-TRL writes `self.train_dataset = preprocessed` after `super().__init__()`. We instead preprocess before super:
+**KTO loss types** (per `OpaqueKTOConfig.loss_type`):
+
+| Loss type | Phase | DP-correctness work |
+|---|---|---|
+| `kto` | 3 | verify per-example KL term |
+| `apo_zero_unpaired` (no KL term) | 3 | none |
+
+**Cross-DPO features** (all Phase 2):
+
+- f-divergence variants (`reverse_kl` default, `forward_kl`, `js_divergence`, `alpha_divergence`)
+- MPO (`loss_type=list`, `loss_weights=list`) — trivial loop
+- WPO (`use_weighting=True`) — incompatible with `aot*` (which we reject anyway)
+- LD-DPO (`ld_alpha`) — per-example shared/tail decomposition
+- TR-DPO (`SyncRefModelCallback`) — `TrainerCallback` firing `on_step_end` doing `ref ← (1−α)·ref + α·policy` EMA. Incompatible with PEFT and `precompute_ref_log_probs` (TRL precedent).
+
+### 4.7 Optimizer integration — DP-AdamW already implemented
+
+`opaque.optimizers.adamw(noise_bias_correction=True)` implements the DP-AdamW recipe from arXiv:2505.08849 verbatim. The v-moment correction `ṽ_t = max(v_t - (1 - β₂^t)σ², 0)` is the formula at `packages/opaque-optimizers/src/opaque/api/optimizers/_adam.py` (per the audit). Headline TRL recipe is `optim="adamw"` + `optim_args="noise_bias_correction=True"` in trainer configs. No new optimizer needed.
+
+### 4.8 Kernel optimization — already covered
+
+`opaque-patches` provides vmap-safe two-level (`Opaque_Foo / _FooBackward`) autograd.Function wrappers for:
+
+- `opaque_cross_entropy_loss` — fused softmax+CE
+- `opaque_linear_cross_entropy_loss` — fused linear+CE; never materializes `(B, T, V)`; with DP-aware `dC` skip when weight is frozen
+- `opaque_swiglu`, `opaque_geglu_exact`, `opaque_geglu_approx`
+- `opaque_rope`, `opaque_rope_qk`, `opaque_slow_rope`
+- `opaque_rms_norm`, `opaque_fused_add_rms_norm`
+- `opaque_lora_w`, `opaque_lora_qkv`, `opaque_lora_mlp`
+
+Architectural coverage: Llama, Gemma/2/3, Qwen2/3, Mistral/Ministral, Olmo2/3, Phi3, GLM4, Granite, Cohere/2, SmolLM3, Exaone4 (`packages/opaque-patches/src/opaque/patches/transformers/models/`).
+
+**The remaining gap is Liger's chunked preference loss pattern** (`LigerFusedLinearPreferenceBase`) — the alignment-specific chunked loop that avoids materializing per-chunk logits during DPO/KTO/ORPO/CPO/SimPO. Phase −1 addresses this.
+
+### 4.9 No `self.accelerator` shim
+
+Opaque deliberately doesn't use Accelerator. Rather than mimic its API, we **expand `opaque.distributed`** with the small set of functional primitives TRL needs (`gather_for_metrics`, `is_main_process`, `wait_for_everyone`). At port time, TRL idioms `self.accelerator.X(...)` get rewritten to `opaque.distributed.X(...)`. TRL guards like `if self.is_deepspeed_enabled` / `is_fsdp_enabled` get deleted (always False under DP).
+
+### 4.10 No mutable dataset setters
+
+Subclass `__init__` preprocesses the dataset (tokenize + ref-logp precompute) **before** calling `super().__init__()`, passing the preprocessed dataset in. No need to expose post-init setters on `train_dataset` / `eval_dataset`. Verified: only `args`, `processing_class`, `ref_model`, and `data_collator` are needed for preprocessing — all settable before super.
+
+### 4.11 No `model_accepts_loss_kwargs` flag
+
+The flag exists in HF Trainer to gate `num_items_in_batch` injection for grad-accum loss scaling. Under Opaque, `gradient_accumulation_steps` is reinterpreted as a Poisson sample-rate scaler; HF's grad-accum scaling path doesn't run. Flag is irrelevant.
+
+### 4.12 Rename: `cpu_offload_activations` → `activation_offloading`
+
+Existing arg at `_config.py:305` (wired at `_dp_trainer.py:1268-1270` via `torch.autograd.graph.save_on_cpu(pin_memory=True)`) is the same feature as TRL's `args.activation_offloading`. Rename for parity; keep `cpu_offload_activations` as a deprecated alias for one release.
+
+---
+
+## 5. `opaque-alignment` package design
+
+### 5.1 Module layout (api/façade pattern)
+
+```
+packages/opaque-alignment/
+├── pyproject.toml
+├── README.md
+└── src/opaque/
+    ├── api/
+    │   └── alignment/                          ← IMPLEMENTATION
+    │       ├── __init__.py
+    │       ├── losses/
+    │       │   ├── __init__.py
+    │       │   ├── _dpo.py                     # sigmoid, ipo, hinge, robust,
+    │       │   │                               #   apo_zero, apo_down, exo_pair,
+    │       │   │                               #   nca_pair, bco_pair, sppo_hard,
+    │       │   │                               #   discopop, sft, sigmoid_norm,
+    │       │   │                               #   squarechipo + LOSSES dict
+    │       │   ├── _kto.py                     # kto, apo_zero_unpaired + LOSSES dict
+    │       │   ├── _f_divergence.py            # reverse_kl, forward_kl, js, alpha
+    │       │   ├── _mpo.py                     # combinator for multi-loss
+    │       │   ├── _wpo.py                     # WPO per-example weight fn
+    │       │   ├── _ld_dpo.py                  # shared/tail logp decomposition
+    │       │   └── _fused.py                   # kernel-accelerated dispatchers
+    │       │                                   #   wrapping opaque-patches base kernels
+    │       ├── collators/
+    │       │   ├── __init__.py
+    │       │   ├── _language_modeling.py       # SFT collator (+ completion_mask, assistant_mask)
+    │       │   ├── _preference.py              # DPO collator with (B, 2, L) layout
+    │       │   └── _unpaired_preference.py     # KTO collator
+    │       ├── data/
+    │       │   ├── __init__.py
+    │       │   ├── _prompt.py                  # extract_prompt
+    │       │   ├── _packing.py                 # _pack_bfd, _pack_wrapped, _pack_bfd_split
+    │       │   ├── _chat_template.py           # clone_chat_template, get_training_chat_template
+    │       │   └── _kto_rotation.py            # _get_kl_dataset + concatenate_datasets glue
+    │       ├── reference/
+    │       │   ├── __init__.py
+    │       │   ├── _precompute.py              # compute_ref_logprobs_for_dataset (cached)
+    │       │   ├── _adapter.py                 # null_ref_context, with_disabled_adapter
+    │       │   └── _sync.py                    # EMA update for TR-DPO
+    │       ├── logprob.py                      # selective_log_softmax, sequence_logp, get_batch_logps
+    │       └── metrics.py                      # reward metrics, KL estimator helpers
+    └── alignment/                              ← PUBLIC FAÇADE
+        ├── __init__.py                         # headline re-exports
+        ├── losses/__init__.py                  # re-exports from opaque.api.alignment.losses
+        ├── collators/__init__.py
+        ├── data/__init__.py
+        ├── reference/__init__.py
+        ├── logprob.py                          # re-exports
+        └── metrics.py                          # re-exports
+```
+
+### 5.2 Dependency pin (mechanism-agnostic)
+
+```toml
+# packages/opaque-alignment/pyproject.toml
+[project]
+name = "opaque-alignment"
+dynamic = ["version"]
+description = "Functional primitives for DP-safe preference learning (DPO, KTO, SFT)"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "torch>=2.10.0",
+    "transformers>=4.57.0,<5",
+    "datasets>=2.0.0",
+    "peft>=0.18.0",
+    "opaque-engine",         # clipping, functional, distributed primitives
+    "opaque-base",           # serialization (for ref-logp cache state)
+    "opaque-patches",        # fused preference kernels
+    # NO opaque-dpsgd, NO opaque-dpftrl, NO opaque-optimizers
+    # — mechanism + optimizer are chosen by the caller (trainer or example)
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["opaque.alignment*", "opaque.api.alignment*"]
+namespaces = true
+```
+
+### 5.3 Top-level public surface
 
 ```python
-def __init__(self, model, ref_model, args, train_dataset, ...):
-    self.args = args
-    self.processing_class = processing_class
-    self.ref_model = ref_model
-    train_dataset = self._prepare_dataset(train_dataset, ...)
-    if args.precompute_ref_log_probs:
-        train_dataset = self._precompute_ref_logps(train_dataset)
-    super().__init__(model=model, args=args, train_dataset=train_dataset, ...)
+# opaque/alignment/__init__.py
+from opaque.alignment.logprob import (
+    sequence_logp, selective_log_softmax, get_batch_logps,
+)
+from opaque.alignment.losses import (
+    DPO_LOSSES, KTO_LOSSES,
+    f_divergence_remap, mpo_combine, wpo_weights, ld_dpo_split,
+)
+from opaque.alignment.collators import (
+    DataCollatorForLanguageModeling,
+    DataCollatorForPreference,
+    DataCollatorForUnpairedPreference,
+)
+from opaque.alignment.data import (
+    extract_prompt, pack_bfd, pack_wrapped, pack_bfd_split,
+    clone_chat_template, get_training_chat_template,
+    rotate_kto_completions,
+)
+from opaque.alignment.reference import (
+    compute_ref_logprobs_for_dataset, null_ref_context, ema_update_reference,
+)
+from opaque.alignment.metrics import reward_metrics, kl_estimator
 ```
 
-This avoids needing mutable `train_dataset` / `eval_dataset` setters on DPTrainer.
+### 5.4 Functional examples (parallel to `train_causal_lm.py`)
 
-### 3.14 `compute_loss` is the override surface
+The `examples/train_dpo.py` skeleton (full file in Phase 2):
 
-Both training and eval go through `compute_loss(model, inputs, return_outputs, num_items_in_batch)`. At training, `model` is `fmodel` (a `Callable` accepting merged params dict) and the closure runs inside `vmap(grad(...))`; at eval, `model` is the bound `nn.Module` and the closure runs in full Python latitude. Subclasses detect via `self._ctx is not None` (training) vs `is None` (eval).
+```python
+# Setup
+model, tokenizer = load_model_and_tokenizer(...)
+ref_model = load_model(...)
+fmodel, trainable, frozen = make_functional(model, partition_trainable=True)
 
-This is the load-bearing Phase 0 change ([§5.2](#52-route-training-time-loss-through-self-compute_loss)).
+# Preprocess + precompute ref logps (functional, cached)
+from opaque.alignment import (
+    DataCollatorForPreference, compute_ref_logprobs_for_dataset, sequence_logp,
+)
+from opaque.alignment.losses import dpo_sigmoid
 
-### 3.15 Examples use code datasets
+dataset = preprocess_preference(raw_dataset, tokenizer, max_length=1024)
+dataset = compute_ref_logprobs_for_dataset(
+    dataset, ref_model, collator=DataCollatorForPreference(...),
+    cache_key=("dpo", "ref"),
+    output_columns=("ref_chosen_logps", "ref_rejected_logps"),
+)
 
-Per project context (JetBrains/Opaque): SFT/DPO/KTO examples use code-domain datasets. Candidates:
+# Per-example loss (uses primitives directly)
+def per_example_loss(
+    trainable_params,
+    chosen_input_ids, chosen_attention_mask, chosen_completion_mask,
+    rejected_input_ids, rejected_attention_mask, rejected_completion_mask,
+    ref_chosen_logps, ref_rejected_logps,
+):
+    merged = {**frozen, **trainable_params}
+    chosen_out = fmodel(merged, input_ids=chosen_input_ids,
+                                 attention_mask=chosen_attention_mask)
+    rejected_out = fmodel(merged, input_ids=rejected_input_ids,
+                                   attention_mask=rejected_attention_mask)
+    chosen_logp = sequence_logp(chosen_out.logits, chosen_input_ids, chosen_completion_mask)
+    rejected_logp = sequence_logp(rejected_out.logits, rejected_input_ids, rejected_completion_mask)
+    delta = (chosen_logp - ref_chosen_logps) - (rejected_logp - ref_rejected_logps)
+    return dpo_sigmoid(beta=0.1, delta=delta)
 
-- SFT: `JetBrains/KExercises`, `bigcode/the-stack-smol`, `HuggingFaceH4/CodeAlpaca_20K`.
-- DPO: a code-leaning preference dataset (TBD at example-PR time).
-- KTO: a code-labeled binary preference dataset (TBD at example-PR time).
+# DP-SGD glue (mechanism choice happens here — could swap to DP-FTRL)
+from opaque.clipping import clipped_grad
+from opaque.dpsgd.noise import gaussian_noise          # ← user picks mechanism
+from opaque.dpsgd.sampling import OpaqueEpochPoissonBatchSampler
+from opaque.optimizers import adamw
+
+grad_fn, clip_state = clipped_grad(
+    per_example_loss, ..., normalize_by=expected_batch_size,
+)
+noise_fn, noise_state = gaussian_noise(...)
+opt = adamw(noise_bias_correction=True)
+opt_state = opt.init(trainable)
+
+# Loop (identical pattern to train_causal_lm.py)
+for batch in dataloader:
+    (grads, aux), clip_state = grad_fn(trainable, *batch_args, state=clip_state)
+    noised, noise_state = noise_fn(grads, noise_state)
+    updates, opt_state = opt.update(noised, opt_state)
+    trainable = apply_updates(trainable, updates)
+```
+
+### 5.5 Why mechanism-agnostic matters
+
+A researcher running DP-FTRL DPO replaces three imports:
+
+```python
+# DP-FTRL variant — everything else unchanged
+from opaque.dpftrl.matrix_factorization import band_mf
+from opaque.dpftrl.sampling import b_min_sep_sampler
+# …
+noise_fn, noise_state = band_mf(...)
+```
+
+The alignment primitives (`dpo_sigmoid`, `sequence_logp`, `DataCollatorForPreference`, `compute_ref_logprobs_for_dataset`) don't care which mechanism is plugged in. This is the same separation `opaque-engine` already provides for DP-SGD primitives.
 
 ---
 
-## 4. Phase −1 — Kernel parity pass (`opaque-patches`)
+## 6. `opaque.transformers.trl` package design
 
-**Workstream:** `opaque-patches`. **Independent of the trainer phases; can run in parallel.**
+### 6.1 Module layout
 
-**Goal:** Audit current `opaque-patches` against current Liger and Unsloth heads, identify and port any missing fused kernels, kwargs, or fused-loss variants that benefit alignment training.
+Lives inside `opaque-transformers` distribution, following the api/façade pattern:
 
-### 4.1 Audit deliverables
+```
+packages/opaque-transformers/src/opaque/
+├── api/
+│   └── transformers/
+│       ├── trainer/                      ← (existing, lives on hf-trainer-continuation)
+│       │   └── _dp_trainer.py            ←   DPTrainer
+│       └── trl/                          ← NEW
+│           ├── __init__.py
+│           ├── _sft_trainer.py
+│           ├── _sft_config.py
+│           ├── _dpo_trainer.py
+│           ├── _dpo_config.py
+│           ├── _kto_trainer.py
+│           ├── _kto_config.py
+│           ├── _rlhf_mixin.py            ← shared trainer plumbing
+│           └── _callbacks.py             ← SyncRefModelCallback (TR-DPO)
+└── transformers/
+    ├── __init__.py                       ← existing façade (DPTrainer re-export)
+    └── trl/                              ← NEW FAÇADE
+        └── __init__.py                   ← from opaque.api.transformers.trl import …
+```
 
-A maintained comparison table:
+### 6.2 Trainer responsibilities
 
-| Component | Opaque-patches | Liger (HEAD) | Unsloth (HEAD) | Status / action |
-|---|---|---|---|---|
-| RoPE (Q-only, QK-fused, slow) | ✅ | ✅ | ✅ | confirm parity on new arches |
-| RMSNorm, fused-add-RMSNorm | ✅ | ✅ | ✅ | confirm parity |
-| SwiGLU, GeGLU (exact + approx) | ✅ | ✅ (SwiGLU; GeGLU?) | ✅ | confirm |
-| LayerNorm (vs RMSNorm) | ? | ✅ | ✅ | port if missing |
-| Cross-entropy (fused) | ✅ | ✅ | ✅ | confirm kwargs parity: `softcap`, `logit_scaling`, `label_smoothing`, `reduction`, `z-loss` |
-| Linear cross-entropy (fused, chunked) | ✅ | ✅ | ✅ | confirm kwargs; verify `use_token_scaling`, `return_token_accuracy` paths |
-| LoRA-W, LoRA-QKV, LoRA-MLP (fused) | ✅ | ❌ | ✅ | confirm parity |
-| **Chunked fused preference loss** (`LigerFusedLinearPreferenceBase`) | ❌ | ✅ | ❌ | **port natively in Phase −1.b** |
-| Chunked unpaired preference loss (KTO base) | ❌ | ✅ | ❌ | port in Phase −1.b |
-| Chunked PPO/GRPO base | ❌ | ✅ | (partial, `UnslothEfficientGRPO`) | optional; port if useful for future GRPO |
-| Per-arch model patches (Llama, Gemma1/2/3, Qwen2/3, Mistral, Phi3, Olmo2/3, GLM4, Granite, Cohere1/2, SmolLM3, Exaone4) | ✅ | ✅ + Gemma4, Qwen3.5, GPT-OSS, Llama4 | varies | port missing arches |
+Trainers are *thin orchestration*. Their job:
 
-### 4.2 Phase −1.a — Audit (1 day)
+1. **Resolve args** to the appropriate config dataclass.
+2. **Load model** from str via `AutoModelForCausalLM.from_pretrained` if needed; PEFT wrap; QLoRA bf16 promotion.
+3. **Load processing class** (tokenizer / processor); default pad_token.
+4. **Pick a default data collator** from `opaque.alignment.collators`.
+5. **Preprocess dataset** via `opaque.alignment.data` helpers + own `_prepare_dataset` method.
+6. **Precompute reference logps** (if requested) via `opaque.alignment.reference.compute_ref_logprobs_for_dataset`.
+7. **Implement `compute_loss`** by orchestrating primitives from `opaque.alignment.losses` and `opaque.alignment.logprob`.
+8. **Override `prediction_step`** for DPO/KTO (force `compute_loss` at eval to log reward metrics).
+9. **Override `log`** to drain `self._metrics["train"|"eval"]` into the logs dict (the `_metrics` accumulator lives on the `RLHFMixin`).
+10. **Override `_default_signature_columns`** with the appropriate fixed list.
 
-- Produce the table above with concrete file:line and version-pin citations.
-- Identify each gap. For each: (Opaque has? / Liger has? / Unsloth has? / blocker?).
-- Output: `docs/development/opaque-patches-parity.md` maintained alongside this plan.
+### 6.3 Dependency pin
 
-### 4.3 Phase −1.b — Port chunked preference loss (2–3 days)
+```toml
+# packages/opaque-transformers/pyproject.toml — added pin
+dependencies = [
+    # ... existing pins ...
+    "opaque-alignment",                  # new — primitives layer
+]
+```
 
-The headline gap. `LigerFusedLinearPreferenceBase` chunks `(2B, T, H)` hidden states along the seq dim into pieces; per chunk, computes `logits = chunk @ lm_head.T`, log-softmax, gathers per-token logps for chosen/rejected; calls `torch.func.grad_and_value(compute_loss, ...)` to get `grad_input + grad_weight + grad_bias`; accumulates in fp32 buffers; only the accumulated grads survive past the chunk loop.
+### 6.4 Inheritance
 
-Port natively as `opaque.patches.kernels.fused_linear_preference.Opaque_FusedLinearPreference` + `_FusedLinearPreferenceBackward`, both with explicit `vmap` rules matching the existing two-level pattern (e.g. `linear_cross_entropy.py:868,944`).
+```python
+class OpaqueSFTTrainer(DPTrainer, RLHFMixin):
+    def __init__(self, model, args=None, ...):
+        # 1-7 above
+        super().__init__(...)
 
-Then expose per-algorithm wrappers in the same module: `opaque_fused_linear_dpo_loss(...)`, `opaque_fused_linear_cpo_loss(...)`, `opaque_fused_linear_orpo_loss(...)`, `opaque_fused_linear_simpo_loss(...)`, `opaque_fused_linear_kto_loss(...)`.
+    def _default_signature_columns(self):
+        return ["input_ids", "labels", "attention_mask", "completion_mask", "assistant_masks"]
 
-The Opaque port additionally bakes in the [DP correctness checklist](#14-dp-correctness-checklist-used-at-every-loss-port) (no cross-example divisors). At call time from `DPOTrainer.compute_loss`, the kernel sees per-example inputs (via vmap) and computes a per-example scalar.
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        # Orchestrates opaque.alignment.losses.sft.* and opaque.alignment.logprob.*
+        ...
+```
 
-### 4.4 Phase −1.c — Port other gaps from the audit (variable)
-
-For each gap surfaced by Phase −1.a, port natively to `opaque-patches/kernels/` with the same `Opaque_Foo / _FooBackward` + vmap-rule pattern. Per-arch model patches go to `opaque-patches/transformers/models/`.
-
-### 4.5 Phase −1 acceptance
-
-- All P-1 audit gaps either ported or documented as "not relevant / not portable / wait-and-see".
-- Existing `opaque-patches` tests pass; new kernel tests added per port.
-- DPOTrainer (Phase 2) can opt into `opaque_fused_linear_dpo_loss` once landed (default off until measurement; on by default once benched).
+Same pattern for DPO and KTO.
 
 ---
 
-## 5. Phase 0 — DPTrainer foundational changes
+## 7. Phase −1 — Kernel parity pass (`opaque-patches`)
 
-**Workstream:** `opaque-transformers`. **Goal:** add the minimum scaffolding in DPTrainer that the TRL subclasses need, *without* polluting DPTrainer with TRL-specific concepts.
+**Goal:** audit `opaque-patches`'s kernel coverage against current Liger and Unsloth, port any missing kernels or kwargs *natively* (not by depending on Liger/Unsloth at runtime).
 
-The guiding principle: **DPTrainer mirrors `transformers.Trainer`; the TRL subclasses mirror `trl.SFTTrainer/DPOTrainer/KTOTrainer`.** Anything TRL-specific (ref-model precompute, `null_ref_context`, RLHF metrics dict) lives in the TRL subnamespace.
+### 7.1 Audit deliverables
 
-### 5.1 Audit current DPTrainer parity vs HF Trainer
+1. **Comparison table** — every Liger kernel × every Unsloth kernel × every `opaque-patches` kernel, with status `(present|missing|partial)`.
+2. **Per-architecture coverage matrix** — which models have full kernel routing (RoPE + RMSNorm + SwiGLU + LCE) in opaque-patches vs in Liger.
+3. **Kwarg parity** — flag any per-kernel kwarg present in Liger/Unsloth but missing in opaque-patches (e.g., `softcap`, `logit_scaling`, `label_smoothing`, `lse_square_scale`/z-loss, `accum_dtype`).
 
-Maintain a parity table in `docs/development/dptrainer-hf-parity.md` (separate doc) with the methods, attributes, and config fields HF Trainer exposes. Items marked **present-different** or **missing** are the items Phase 0 either reconciles or documents as intentional deviation.
+### 7.2 Headline target: chunked preference loss
 
-This is reference material, not a Phase 0 deliverable itself. The parity table is maintained as the trainer evolves.
+Liger's `LigerFusedLinearPreferenceBase` (pure PyTorch, nested `torch.func.grad_and_value` inside `autograd.Function`) is the one alignment-specific Liger trick not yet in `opaque-patches`. The win is ~80% peak-memory reduction for DPO/CPO/ORPO/SimPO by chunking the logits computation.
 
-### 5.2 Route training-time loss through `self.compute_loss`
+**Port plan:** reconstruct natively as `Opaque_FusedLinearPreference / _FusedLinearPreferenceBackward` in `packages/opaque-patches/src/opaque/api/patches/kernels/fused_linear_preference.py`, following the existing two-level pattern with explicit `vmap` rules. The base kernel is algorithm-agnostic; per-algorithm dispatchers (`opaque_fused_linear_dpo_loss`, `opaque_fused_linear_kto_loss`, etc.) wrap it and live in `opaque.api.alignment.losses._fused`.
 
-**Most consequential change in Phase 0.** Today the per-example loss closure built by `_build_per_example_loss` (`_dp_trainer.py:3037-3175`) hard-codes `output = fmodel(merged, **kwargs); loss = output.loss`. Subclasses overriding `compute_loss` are ignored at training time.
+### 7.3 Effort
 
-Change: the closure delegates to `self.compute_loss(fmodel, kwargs, return_outputs=False, num_items_in_batch=None)`. Default `compute_loss` keeps the current behavior (read `output.loss` from `model(**inputs)`), preserving observable semantics.
+**M (1–2 days)** for the audit + comparison table.
+**L (3–5 days)** for the chunked preference base + first algorithm dispatcher (DPO).
+**M per additional algorithm** (KTO, ORPO, CPO, SimPO) once the base is in place.
 
-Constraints documented on `compute_loss`:
+Phase −1 runs in parallel with Phase 0 and can land independently.
 
-- At training (`self._ctx is not None`), `model` is `fmodel` (a `Callable(params, **inputs)`) and the call site is inside `vmap(grad(...))`. Constraints: no `nn.Module` state mutation, no `torch.no_grad()` toggling on captured module instance attributes, no `.item()` calls on shape-dependent tensors. Inputs arrive vmap-stripped (batch dim removed); `_VMAP_BATCH_UNSQUEEZE_KEYS` re-adds them for standard kwargs.
-- At eval (`self._ctx is None`), `model` is the bound `nn.Module`; full latitude.
-- Subclasses MUST NOT divide by any cross-example aggregate (e.g. `num_items_in_batch`); see [DP correctness checklist](#14-dp-correctness-checklist-used-at-every-loss-port).
-- Return value is a scalar loss tensor (no division by `expected_batch_size` — `clipped_grad` does that via `normalize_by`).
+---
 
-### 5.3 Smaller DPTrainer hooks
+## 8. Phase 0 — DPTrainer foundational changes
 
-Land alongside §5.2:
+**Prerequisite:** merge `evgri243/hf-trainer-continuation` into main so DPTrainer exists in the new repo layout.
 
-| Hook | Purpose | Implementation |
-|---|---|---|
-| `compute_loss_context_manager()` | HF parity; used by `prediction_step` in subclasses | Return `torch.autocast(device_type, dtype=self._amp_dtype)` when set, else `contextlib.nullcontext()`. |
-| `_default_signature_columns()` | Subclass-override hook for fixed column lists | Default returns `None` → use HF's introspection. Subclass returns hard-coded list. `_set_signature_columns_if_needed` consults this first. |
-| `_extra_forward_kwargs` allowlist | Allow subclass to inject kwargs not in `forward()` signature (e.g. Liger `skip_logits`, `use_token_scaling`) without `remove_unused_columns` stripping them | Subclass-overridable set; `_set_signature_columns_if_needed` adds to the allowlist. |
-| `activation_offloading` arg (rename) | TRL parity | Add to `DPTrainingArguments`, deprecate `cpu_offload_activations` for one release. |
+### 8.1 Training-time `compute_loss` redirect — load-bearing
 
-### 5.4 What Phase 0 does NOT touch
+Today `_build_per_example_loss` (`_dp_trainer.py:3037` on hf-trainer-continuation) hard-codes `model(**inputs).loss` extraction. Subclass `compute_loss` overrides are silently ignored at training time.
 
-These belong in the TRL subnamespace, not DPTrainer:
+**Fix:** refactor so the per-example loss closure delegates to `self.compute_loss(fmodel, kwargs, return_outputs=False, num_items_in_batch=None)`. Default `compute_loss` keeps its current `outputs.loss` behavior. Subclasses now override `compute_loss` once and it takes effect in both training and eval.
 
-- `compute_ref_logprobs_for_dataset` — TRL mixin (`opaque.api.transformers.trl._base`).
-- `null_ref_context` — TRL mixin.
-- Per-mode `_metrics: dict[Literal["train","eval"], defaultdict[str, list]]` accumulator + log-drain logic — TRL mixin.
-- Any reference-model state attribute (`self.ref_model`) — DPO/KTO subclass attribute.
+**Constraints made explicit in DPTrainer docs:**
 
-This matches HF's separation: HF Trainer is RLHF-agnostic; TRL adds the RLHF concepts in its own package.
+- `compute_loss` runs *inside* `vmap(grad(...))` at train time. No `nn.Module` state mutation, no `torch.no_grad()` on captured module instance attributes, no `.item()` on dynamic shapes.
+- At eval time (`self._ctx is None`), runs on bound `nn.Module`; full Python latitude.
+- `model` arg is `fmodel` (callable taking merged params dict) during training, `self._model` during eval. Subclasses switch behavior via `self._ctx is not None`.
 
-### 5.5 What Phase 0 does NOT need (rejected from prior drafts)
+### 8.2 Smaller hooks
 
-| Item | Reason |
+| Hook | Purpose |
 |---|---|
-| `self.accelerator` shim | Opaque deliberately avoids Accelerator parallels. TRL idioms are rewritten to use `opaque.distributed` at port time. |
-| Mutable `train_dataset` / `eval_dataset` setters | Subclasses preprocess before `super().__init__()`. |
-| `model_accepts_loss_kwargs` flag | Opaque doesn't run HF's grad-accum loss scaling path. Flag is irrelevant. |
-| Generic ref-logprob precompute helper | Lives in TRL mixin per §5.4. |
-| Generic `null_ref_context` | Lives in TRL mixin per §5.4. |
+| `compute_loss_context_manager()` | Returns `torch.autocast(...)` when `self._amp_dtype` set, else `nullcontext()`. HF parity. Used by DPO `prediction_step`. |
+| `_default_signature_columns() -> list[str]` | Subclass override hook (vs monkey-patching `_set_signature_columns_if_needed`). Empty by default. |
+| `_extra_forward_kwargs: set[str]` | Allowlist of kwarg names that bypass `remove_unused_columns` filtering. For TRL Liger flags (`skip_logits`, `return_token_accuracy`, `use_token_scaling`). |
+| `_default_collator` factory hook | Subclass-overridable factory for a default collator when user doesn't pass one. |
 
-### 5.6 Phase 0 acceptance
+### 8.3 Rename
 
-- Existing DPTrainer tests still pass.
-- New test: a `DPTrainer` subclass overriding `compute_loss` is shown to drive training (per-example loss observably equal to the override's output).
-- New test: `compute_loss_context_manager()` returns autocast when `bf16=True`, nullcontext otherwise.
-- New test: `_default_signature_columns()` subclass override is consulted by `_set_signature_columns_if_needed`.
-- `activation_offloading` arg works; `cpu_offload_activations` emits deprecation warning but still works.
+`cpu_offload_activations` → `activation_offloading` (keep old name as deprecated alias for one release).
 
----
+### 8.4 Phase 0 deliverables
 
-## 6. Phase 0.5 — `opaque.distributed` extensions
+- Patches to `packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py` and `_config.py`.
+- New tests in `tests/opaque_transformers/test_dp_trainer_subclass_compute_loss.py`:
+  - Construct DPTrainer with a `compute_loss` override.
+  - Confirm the override drives training (not just eval).
+  - Confirm `_default_signature_columns` is honored.
+  - Confirm `_extra_forward_kwargs` bypasses column filtering.
+- No new public API in `opaque.transformers.trl` yet. Phase 0 is internal-facing.
 
-**Workstream:** `opaque-core`. **Goal:** expose the small set of distributed primitives TRL needs, as module functions in `opaque.distributed`, not under an Accelerator shim.
-
-### 6.1 New / confirmed primitives
-
-| Function | Purpose | Notes |
-|---|---|---|
-| `opaque.distributed.gather_for_metrics(tensor)` | Gather across ranks, deduplicating distributed-sampler padding | In DP-Poisson setting there's no padding, but parity matters |
-| `opaque.distributed.is_main_process()` | True on rank 0 | exists? confirm |
-| `opaque.distributed.is_local_main_process()` | True on local rank 0 | confirm |
-| `opaque.distributed.wait_for_everyone()` | Barrier | exists as `barrier()`; add alias for TRL parity |
-| `opaque.distributed.num_processes()` | World size | confirm |
-| `opaque.distributed.process_index()` | Global rank | confirm |
-| `opaque.distributed.local_process_index()` | Local rank | confirm |
-
-If `opaque.distributed` already has these under different names, add aliases. If they're class methods on `DDPState`, surface as module functions.
-
-### 6.2 No Accelerator-shaped API
-
-These are module-level functions, used as `from opaque.distributed import gather_for_metrics; x = gather_for_metrics(x)`. No `self.accelerator` aggregator.
-
-### 6.3 Phase 0.5 acceptance
-
-- All seven primitives importable from `opaque.distributed`.
-- Behavior verified on single-process and DDP fixtures (existing test patterns).
+**Effort: M (3–4 days).**
 
 ---
 
-## 7. Phase 1 — SFTTrainer
+## 9. Phase 0.25 — `opaque-alignment` package skeleton
 
-**Workstream:** `opaque-transformers/trl`. **Estimated effort:** ~5 days.
+### 9.1 Deliverables
 
-### 7.1 Module layout
+- New directory `packages/opaque-alignment/` with `pyproject.toml`, `README.md`, `src/opaque/api/alignment/`, `src/opaque/alignment/`.
+- Empty `__init__.py` everywhere (the façade re-exports come in Phase 1–3 as primitives land).
+- `pyproject.toml` per §5.2 (mechanism-agnostic deps).
+- Register in workspace `Cargo.toml` / `uv.lock`.
+- Add `opaque-alignment` to the all-packages tests / lints / smoke imports.
+- CI matrix entry for `pytest packages/opaque-alignment/tests/`.
+- README documenting the api/façade pattern, functional-primitives philosophy, mechanism-agnostic posture, and pointer to `examples/train_dpo.py`.
 
-```
-opaque/api/transformers/trl/
-├── __init__.py
-├── _base.py                  # RLHFMixin: ref helpers, metrics dict, null_ref_context
-├── _data/
-│   ├── language_modeling.py  # DataCollatorForLanguageModeling
-│   └── ...                   # preference, unpaired-preference in later phases
-├── _losses/
-│   ├── sft.py                # nll, dft, MoE aux
-│   └── ...                   # dpo, kto in later phases
-├── _logprob.py               # selective_log_softmax, get_batch_logps
-├── _sft_trainer.py
-└── _sft_config.py
+### 9.2 Smoke test
 
-opaque/transformers/trl/__init__.py  # public re-exports
+```python
+# packages/opaque-alignment/tests/test_import.py
+def test_namespace_composes():
+    import opaque.alignment  # noqa: F401
+    import opaque.api.alignment  # noqa: F401
 ```
 
-Exact file layout will be adjusted during the broader trainer rearrangement; module names are not load-bearing.
+**Effort: S (≤ 1 day).**
 
-### 7.2 `SFTConfig`
+---
+
+## 10. Phase 0.5 — `opaque.distributed` extensions
+
+### 10.1 New functional primitives
+
+Add to `packages/opaque-engine/src/opaque/api/engine/distributed/`:
+
+| Function | Purpose |
+|---|---|
+| `gather_for_metrics(tensor: Tensor) -> Tensor` | All-gather across ranks; in DP context, duplicates from sampling aren't an issue. |
+| `is_main_process() -> bool` | Rank-0 check. Wraps existing `DDPState`. |
+| `wait_for_everyone() -> None` | Existing `barrier()` exposed at module level. |
+| `num_processes() -> int` | World size. |
+| `process_index() -> int` | Local rank. |
+
+These are pure module functions, not class methods. Re-exported at `opaque.distributed.*`. TRL idioms get rewritten at port time:
+
+```python
+# TRL source                              # Opaque rewrite
+self.accelerator.gather_for_metrics(x) →  gather_for_metrics(x)
+self.accelerator.is_main_process       →  is_main_process()
+self.accelerator.wait_for_everyone()   →  wait_for_everyone()
+```
+
+### 10.2 Effort
+
+**S (1–2 days)** including tests.
+
+Phase 0.5 can run in parallel with Phase 0 and Phase 0.25.
+
+---
+
+## 11. Phase 1 — SFTTrainer + alignment primitives
+
+### 11.1 `opaque-alignment` primitives landing in Phase 1
+
+- `opaque/api/alignment/logprob.py` — `selective_log_softmax`, `sequence_logp`, `get_batch_logps`.
+- `opaque/api/alignment/losses/_sft.py` — `nll_loss` (per-example, mean over non-ignored tokens) and `dft_loss` (per-example, detached softmax weighting; DP-corrected divisor).
+- `opaque/api/alignment/collators/_language_modeling.py` — `DataCollatorForLanguageModeling` with `completion_mask` and `assistant_masks` support.
+- `opaque/api/alignment/data/_prompt.py` — `extract_prompt`.
+- `opaque/api/alignment/data/_chat_template.py` — `apply_chat_template` glue + `get_training_chat_template` for `{% generation %}`-tagged templates. **No** `clone_chat_template` with embedding resize yet (Phase 4).
+- `opaque/api/alignment/metrics.py` — `entropy_from_logits`, `mean_token_accuracy`, `num_tokens` aggregator.
+
+### 11.2 `OpaqueSFTConfig` (`_sft_config.py`)
 
 Extends `DPTrainingArguments`:
 
-| Field | Default | Phase | Notes |
-|---|---|---|---|
-| `dataset_text_field` | `"text"` | 1 | |
-| `dataset_kwargs` | `None` | 1 | supports `{"skip_prepare_dataset": bool}` |
-| `dataset_num_proc` | `None` | 1 | |
-| `max_length` | `1024` | 1 | |
-| `truncation_mode` | `"keep_start"` | 1 | `"keep_end"` deprecated per TRL |
-| `shuffle_dataset` | `False` | 1 | DP path ignores; Poisson sampler. Documented. |
-| `eos_token` | `None` | 1 | optional override |
-| `loss_type` | `"nll"` | 1 (nll, dft); 4 (chunked_nll) | `"nll"` \| `"dft"` \| `"chunked_nll"` |
-| `completion_only_loss` | `None` | 1 | auto-detect from sample schema |
-| `assistant_only_loss` | `False` | 1 (consume) / 4 (template auto-insert) | requires `{% generation %}` template at consume time |
-| `chat_template_path` | `None` | 4 | clone_chat_template + embedding resize |
-| `formatting_func` | `None` | 1 | optional callable transforming rows |
-| `model_init_kwargs` | `None` | 1 | from_pretrained kwargs |
-| `activation_offloading` | `False` | 1 | uses Phase 0 rename |
-| `packing` | `False` | 4 | requires FlexAttention / FA2 / SDPA-masked |
-| `packing_strategy` | `"bfd"` | 4 | `bfd` \| `bfd_split` \| `wrapped` |
-| `padding_free` | `False` | 4 | requires FA2 / FlexAttention |
-| `pad_to_multiple_of` | `None` | 1 | |
-| `eval_packing` | `None` | 4 | defaults to `packing` |
-| `pad_token` | `None` | — | deprecated per TRL |
-
-Defaults differ from `DPTrainingArguments`:
-
-- `learning_rate = 2e-5` (TRL SFT default).
-- `optim = "adamw"`, `optim_args = "noise_bias_correction=True"` (DP-AdamW default).
-- `use_liger_kernel = True` (transparently routes to `opaque-patches`).
-- `bf16 = True` if available.
-
-### 7.3 `SFTTrainer`
-
-```python
-class SFTTrainer(DPTrainer, RLHFMixin):
-    def __init__(
-        self,
-        model: str | PreTrainedModel | PeftModel,
-        args: SFTConfig | TrainingArguments | None = None,
-        data_collator: DataCollator | None = None,
-        train_dataset: Dataset | IterableDataset | None = None,
-        eval_dataset: Dataset | IterableDataset | dict | None = None,
-        processing_class: PreTrainedTokenizerBase | ProcessorMixin | None = None,
-        compute_loss_func: Callable | None = None,
-        compute_metrics: Callable | None = None,
-        callbacks: list[TrainerCallback] | None = None,
-        optimizers: tuple[Optimizer | None, LambdaLR | None] = (None, None),
-        optimizer_cls_and_kwargs: tuple[type[Optimizer], dict[str, Any]] | None = None,
-        preprocess_logits_for_metrics: Callable | None = None,
-        peft_config: PeftConfig | None = None,
-        formatting_func: Callable[[dict], str] | None = None,
-    ):
-        args = self._resolve_args(args)
-        # IterableDataset guard documented but no dispatch_batches toggle needed (no Accelerate)
-        model = self._load_model(model, args.model_init_kwargs)
-        processing_class = self._load_processing_class(processing_class, model)
-        if peft_config is not None:
-            model = self._wrap_peft(model, peft_config, args)
-        train_dataset = self._prepare_dataset(train_dataset, processing_class, args, "training", formatting_func)
-        eval_dataset = self._prepare_eval_dataset(eval_dataset, processing_class, args, formatting_func)
-        data_collator = data_collator or self._default_collator(processing_class, args)
-        super().__init__(
-            model=model, args=args, data_collator=data_collator,
-            train_dataset=train_dataset, eval_dataset=eval_dataset,
-            processing_class=processing_class,
-            compute_loss_func=compute_loss_func, compute_metrics=compute_metrics,
-            callbacks=callbacks, optimizers=optimizers,
-            optimizer_cls_and_kwargs=optimizer_cls_and_kwargs,
-            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
-        )
-        self._init_metrics()
-        if hasattr(self.model, "add_model_tags"):
-            self.model.add_model_tags(["opaque-sft"])
-
-    def _default_signature_columns(self):
-        return ["input_ids", "labels", "attention_mask",
-                "completion_mask", "assistant_masks", "position_ids", "seq_lengths"]
-
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        # DP-safe: never divide by num_items_in_batch.
-        if self.args.loss_type == "nll":
-            return self._nll_loss(model, inputs, return_outputs)
-        elif self.args.loss_type == "dft":
-            return self._dft_loss(model, inputs, return_outputs)
-        elif self.args.loss_type == "chunked_nll":
-            return self._chunked_nll_loss(model, inputs, return_outputs)   # Phase 4
-        else:
-            raise ValueError(f"Unknown loss_type: {self.args.loss_type}")
-
-    def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
-        inputs["_prediction_loss_only"] = prediction_loss_only
-        return super().prediction_step(model, inputs, prediction_loss_only, ignore_keys=ignore_keys)
-```
-
-### 7.4 SFT loss functions
-
-Each is a pure function, no module state, vmap-safe. Located in `_losses/sft.py`.
-
-- `nll_loss`: `model(**inputs).loss` from HF's `LOSS_MAPPING` (cross-entropy with `ignore_index=-100`). HF returns per-example mean over non-ignored tokens — DP-safe.
-- `dft_loss`: per-example detached entropy-weighted CE. **DP rewrite of TRL's formula:**
-    ```
-    logprobs = selective_log_softmax(shift_logits, shift_labels)
-    per_token_loss = -logprobs.exp().detach() * logprobs * mask  # mask = (shift_labels != -100)
-    return per_token_loss.sum() / mask.sum()  # per-example self-normalization
-    ```
-    Replaces TRL's `/ num_items_in_batch` divisor.
-- MoE aux loss: when `model.config.output_router_logits` is set, add `coef * outputs.aux_loss` per-example. Outputs the per-example aux loss; per-example clipping handles the batch sum.
-
-### 7.5 Data collator — `DataCollatorForLanguageModeling`
-
-Ported from TRL. Output keys: `input_ids`, `labels`, `attention_mask`, optional `completion_mask` (when `completion_only_loss`), optional `assistant_masks` (when `assistant_only_loss`).
-
-Labels padded with `-100`. Padding positions and (if applicable) non-completion / non-assistant positions all forced to `-100`.
-
-Deterministic key set across batches — verified by Phase 0 `_discover_batch_keys` check.
-
-### 7.6 Phase 1 features
-
-| TRL feature | Phase | Implementation note |
+| Field | Default | Phase |
 |---|---|---|
-| `loss_type="nll"` | 1 | HF default CE via model.loss |
-| `loss_type="dft"` | 1 | DP-rewritten formula (per-example self-normalization) |
-| `loss_type="chunked_nll"` | 4 | Routes through `opaque_linear_cross_entropy_loss` (already in patches); no monkey-patch needed |
-| `completion_only_loss` | 1 | Label masking with `-100` |
-| `assistant_only_loss` (consume) | 1 | Reads `assistant_masks` from collator; masks labels |
-| `assistant_only_loss` (auto-template-insert) | 4 | `get_training_chat_template` injects `{% generation %}` markers |
-| MoE aux loss | 1 | Per-example aux loss |
-| `formatting_func` | 1 | Trivial dataset.map wrapper |
-| `chat_template_path` (clone + resize embeddings) | 4 | `clone_chat_template`; resize embeddings before make_functional |
-| `packing` (BFD, BFD-split, wrapped) | 4 | Requires FlexAttention or SDPA-masked |
-| `padding_free` | 4 | Requires FA2 / FlexAttention |
-| VLM | — | Out of scope |
-| `activation_offloading` | 1 | Reuses Phase 0 rename |
+| `dataset_text_field` | `"text"` | 1 |
+| `dataset_kwargs` | `None` | 1 |
+| `dataset_num_proc` | `None` | 1 |
+| `max_length` | `1024` | 1 |
+| `truncation_mode` | `"keep_start"` | 1 |
+| `eos_token` | `None` | 1 |
+| `loss_type` | `"nll"` | 1 (`"nll"`, `"dft"`); 4 (`"chunked_nll"`) |
+| `completion_only_loss` | `None` (auto) | 1 |
+| `assistant_only_loss` | `False` | 1 (consume `{% generation %}` mask only; template *insertion* deferred to 4) |
+| `chat_template_path` | `None` | 4 |
+| `formatting_func` | `None` | 1 |
+| `model_init_kwargs` | `None` | 1 |
+| `activation_offloading` | `False` | 4 |
+| `packing` | `False` | 4 |
+| `packing_strategy` | `"bfd"` | 4 |
+| `padding_free` | `False` | 4 |
+| `pad_to_multiple_of` | `None` | 1 |
 
-### 7.7 Phase 1 tests
+### 11.3 `OpaqueSFTTrainer` (`_sft_trainer.py`)
 
-- Construct with str model, with `PreTrainedModel`, with PEFT.
-- `loss_type="nll"`: 2-step training run on tiny Qwen2 + dummy text.
-- `loss_type="dft"`: same.
-- `completion_only_loss=True`: dataset with `prompt` / `completion` columns; assert per-example loss masks prompt tokens.
-- TRL numeric parity: load TRL `SFTTrainer` with `learning_rate=0, weight_decay=0`; load ours with `noise_multiplier=0, clipping_norm=∞`; assert per-batch loss matches within `1e-3`.
-- DP-purity test: replace example `i`'s data with NaN; assert only example `i`'s gradient is NaN.
+- `__init__`: model load, tokenizer load, optional PEFT wrap, QLoRA bf16, `_prepare_dataset` (uses `extract_prompt` + tokenize + completion-mask + optional assistant-mask), default collator = `DataCollatorForLanguageModeling`, `super().__init__()`.
+- `_default_signature_columns`: `["input_ids", "labels", "attention_mask", "completion_mask", "assistant_masks"]`.
+- `compute_loss`: dispatches on `loss_type`:
+  - `"nll"`: `nll_loss(model, inputs)` from `opaque.alignment.losses.sft`. At train (model = fmodel) returns scalar per example; at eval (model = bound) returns batch mean.
+  - `"dft"`: `dft_loss(model, inputs)` with per-example token-count divisor.
+- Eval-time path: computes `entropy_from_logits`, `mean_token_accuracy`, `num_tokens`; pushes into `self._metrics["eval"]`.
+- `log` override (from `RLHFMixin`): drains `_metrics[mode]` and merges into logs.
 
----
+### 11.4 Examples
 
-## 8. Phase 2 — DPOTrainer
+- `examples/train_sft.py` — functional, hand-rolled loop over alignment primitives.
+- `examples/train_sft_trainer.py` — class-based via `OpaqueSFTTrainer`.
 
-**Workstream:** `opaque-transformers/trl`. **Estimated effort:** ~7 days. **Heaviest phase.**
+### 11.5 Phase 1 tests
 
-### 8.1 `DPOConfig`
+- Loss-fn unit tests for `nll_loss`, `dft_loss` (vs hand-computed reference).
+- Closure test: vmap'd per-example SFT loss over 4 examples → finite gradients.
+- Trainer contract test: 2 training steps, eval, save_pretrained.
+- TRL parity test: `OpaqueSFTTrainer(σ=0, C=∞)` vs `trl.SFTTrainer` on identical batch → loss within `1e-3`.
 
-Extends `DPTrainingArguments`. Full TRL parity:
-
-| Field | Default | Phase | Notes |
-|---|---|---|---|
-| `beta` | `0.1` | 2 | |
-| `loss_type` | `["sigmoid"]` | 2 | list to support MPO |
-| `loss_weights` | `None` | 2 | equal weights if None |
-| `label_smoothing` | `0.0` | 2 | Robust-DPO / EXO knob |
-| `ld_alpha` | `None` | 2 | LD-DPO tail discount |
-| `f_divergence_type` | `"reverse_kl"` | 2 | `forward_kl`/`js_divergence`/`alpha_divergence` |
-| `f_alpha_divergence_coef` | `0.5` | 2 | |
-| `use_weighting` | `False` | 2 | WPO |
-| `discopop_tau` | `0.05` | 2 | DiscoPOP |
-| `precompute_ref_log_probs` | `False` | 2 | |
-| `precompute_ref_batch_size` | `None` | 2 | defaults to per_device batch size |
-| `disable_dropout` | `True` | 2 | applied to policy + ref |
-| `sync_ref_model` | `False` | 2 | TR-DPO |
-| `ref_model_mixup_alpha` | `0.6` | 2 | |
-| `ref_model_sync_steps` | `512` | 2 | |
-| `max_length` | `1024` | 2 | |
-| `max_prompt_length` | `512` | 2 | |
-| `truncation_mode` | `"keep_start"` | 2 | |
-| `padding_free` | `False` | — | currently disabled in TRL; defer |
-| `pad_to_multiple_of` | `None` | 2 | |
-| `dataset_num_proc` | `None` | 2 | |
-
-Defaults differ from `DPTrainingArguments`:
-
-- `learning_rate = 1e-6` (TRL DPO default).
-- `optim = "adamw"`, `optim_args = "noise_bias_correction=True"`.
-- `use_liger_kernel = True`.
-- `bf16 = True` if available.
-
-### 8.2 `DPOTrainer.__init__`
-
-```python
-class DPOTrainer(DPTrainer, RLHFMixin):
-    def __init__(
-        self,
-        model: str | PreTrainedModel | PeftModel,
-        ref_model: PreTrainedModel | None = None,
-        args: DPOConfig | None = None,
-        data_collator: DataCollator | None = None,
-        train_dataset: Dataset | IterableDataset | None = None,
-        eval_dataset: ... = None,
-        processing_class: PreTrainedTokenizerBase | None = None,
-        compute_metrics: Callable | None = None,
-        callbacks: list[TrainerCallback] | None = None,
-        optimizers: tuple[Optimizer | None, LambdaLR | None] = (None, None),
-        peft_config: PeftConfig | None = None,
-    ):
-        args = self._resolve_args(args)
-        model = self._load_model(model, args.model_init_kwargs)
-        processing_class = self._load_processing_class(processing_class, model)
-        if peft_config is not None:
-            model = self._wrap_peft(model, peft_config, args)
-            # If PEFT already and ref_model is None and no precompute, clone "ref" adapter
-            if ref_model is None and not args.precompute_ref_log_probs:
-                self._setup_ref_adapter(model, peft_config)
-        # Vocab-size guard
-        if ref_model is not None:
-            self._assert_vocab_compatible(model, ref_model)
-        # Disable dropout on both
-        if args.disable_dropout:
-            disable_dropout_in_model(model)
-            if ref_model is not None:
-                disable_dropout_in_model(ref_model)
-        # Reference model resolution
-        if ref_model is None and not is_peft_model(model) and not args.precompute_ref_log_probs:
-            ref_model = self._auto_load_ref_model(model)
-        self.ref_model = ref_model
-        # Tokenize prompt+chosen+rejected into prompt_ids, chosen_ids, rejected_ids
-        train_dataset = self._prepare_dataset(train_dataset, processing_class, args, "training")
-        eval_dataset = self._prepare_eval_dataset(eval_dataset, processing_class, args)
-        # Precompute reference logps if requested
-        if args.precompute_ref_log_probs:
-            train_dataset = self._precompute_ref_logps(train_dataset, "training")
-            if eval_dataset is not None:
-                eval_dataset = self._precompute_ref_logps(eval_dataset, "eval")
-        data_collator = data_collator or DataCollatorForPreference(...)
-        super().__init__(
-            model=model, args=args, data_collator=data_collator,
-            train_dataset=train_dataset, eval_dataset=eval_dataset,
-            processing_class=processing_class,
-            compute_metrics=compute_metrics, callbacks=callbacks, optimizers=optimizers,
-        )
-        # Place ref_model on device (no Accelerator.prepare; just .to(device).eval())
-        if self.ref_model is not None:
-            self.ref_model = self.ref_model.to(self._device).eval()
-            for p in self.ref_model.parameters():
-                p.requires_grad_(False)
-        # TR-DPO callback wiring
-        if args.sync_ref_model:
-            self._assert_tr_dpo_compatible(args, peft_config)
-            self.add_callback(SyncRefModelCallback(ref_model=self.ref_model, args=args))
-        self._init_metrics()
-        if hasattr(self.model, "add_model_tags"):
-            self.model.add_model_tags(["opaque-dpo"])
-```
-
-### 8.3 Reference logp paths in `_prepare_inputs` and `compute_loss`
-
-If logps were precomputed, the collator emits `ref_chosen_logps` / `ref_rejected_logps` as tensor columns and they arrive in `inputs`. Done.
-
-If live (explicit ref_model or PEFT-disable), `_prepare_inputs` runs the ref forward outside vmap:
-
-```python
-def _prepare_inputs(self, inputs):
-    inputs = super()._prepare_inputs(inputs)
-    if self._ctx is not None and self._needs_live_ref(inputs):
-        with torch.no_grad(), self.null_ref_context():
-            ref_chosen, ref_rejected = self._eager_ref_logps(inputs)
-        inputs["ref_chosen_logps"] = ref_chosen
-        inputs["ref_rejected_logps"] = ref_rejected
-    return inputs
-```
-
-`null_ref_context` toggles to ref adapter (or disables adapter) when PEFT, no-op otherwise. The ref forward uses `self.ref_model` (explicit case) or `self.model` (PEFT-disable case).
-
-### 8.4 `DPOTrainer.compute_loss`
-
-Vmap-safe, no cross-example divisors:
-
-```python
-def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-    # Policy forwards — two per pair, inside vmap closure at train time
-    chosen_out = model(input_ids=inputs["chosen_input_ids"],
-                       attention_mask=inputs["chosen_attention_mask"])
-    rejected_out = model(input_ids=inputs["rejected_input_ids"],
-                         attention_mask=inputs["rejected_attention_mask"])
-    chosen_logps = self._seq_logps(chosen_out.logits,
-                                    inputs["chosen_input_ids"],
-                                    inputs["chosen_completion_mask"],
-                                    ld_alpha=self.args.ld_alpha)
-    rejected_logps = self._seq_logps(rejected_out.logits,
-                                      inputs["rejected_input_ids"],
-                                      inputs["rejected_completion_mask"],
-                                      ld_alpha=self.args.ld_alpha)
-    # Reference logps from inputs (precomputed or set by _prepare_inputs)
-    ref_chosen = inputs["ref_chosen_logps"]
-    ref_rejected = inputs["ref_rejected_logps"]
-
-    chosen_logratios = chosen_logps - ref_chosen
-    rejected_logratios = rejected_logps - ref_rejected
-
-    # f-divergence remap
-    chosen_scores, rejected_scores = self._f_divergence_remap(
-        chosen_logratios, rejected_logratios)
-    delta = chosen_scores - rejected_scores
-
-    # Loss-type dispatch (MPO: list + weights, per-example losses)
-    loss = sum(
-        w * _DPO_LOSSES[lt](
-            delta, chosen_logratios, rejected_logratios,
-            beta=self.args.beta,
-            label_smoothing=self.args.label_smoothing,
-            discopop_tau=self.args.discopop_tau,
-        )
-        for lt, w in zip(self.args.loss_type, self.args.loss_weights)
-    )
-
-    # WPO weighting (per-example)
-    if self.args.use_weighting:
-        loss = loss * self._wpo_weights_per_example(chosen_out, rejected_out, inputs)
-
-    # Per-example metrics into self._metrics
-    self._log_dpo_metrics(chosen_logratios, rejected_logratios, chosen_out, rejected_out)
-
-    if return_outputs:
-        return loss, {"chosen_out": chosen_out, "rejected_out": rejected_out}
-    return loss
-```
-
-Each `_DPO_LOSSES[lt]` returns a per-example scalar (no batch aggregation inside).
-
-### 8.5 DPO loss variants (Phase 2)
-
-| `loss_type` | Math (per example) | Phase | Notes |
-|---|---|---|---|
-| `sigmoid` | `−logσ(βΔ)` | 2 | standard DPO |
-| `hinge` | `relu(1 − βΔ)` | 2 | |
-| `ipo` | `((chosen_avg − rejected_avg) − 1/(2β))²`, avg = logp / completion_len | 2 | per-example length normalization |
-| `robust` | `(−(1−ε)logσ(βΔ) + ε·logσ(−βΔ))/(1−2ε)`, ε = `label_smoothing` | 2 | |
-| `exo_pair` | `qw·(log qw − log(1−ε)) + ql·(log ql − log ε)` | 2 | EXO |
-| `nca_pair` | `−logσ(β·chosen) − 0.5·(logσ(−β·chosen) + logσ(−β·rejected))` | 2 | NCA |
-| `bco_pair` | `−logσ(β·chosen) − logσ(−β·rejected)` | 2 | BCO |
-| `sppo_hard` | `(chosen − 0.5/β)² + (rejected + 0.5/β)²` | 2 | SPPO |
-| `apo_zero` | `(1 − σ(β·chosen)) + σ(β·rejected)` | 2 | APO |
-| `apo_down` | `σ(β·chosen) + (1 − σ(βΔ))` | 2 | APO |
-| `discopop` | logistic/exp blend at temperature `τ` | 2 | DiscoPOP |
-| `sft` | CE on chosen completion tokens | 2 | for MPO blend |
-| **`squarechipo`** | `0.5 · (σ(βΔ) − 1)²` | 2 | arXiv:2505.21395; first optimal-rate DP-DPO |
-| `sigmoid_norm` | sigmoid using length-normalized scores | 2 | |
-| ~~`aot`~~ | rejected | — | Sorts across batch; breaks DP |
-| ~~`aot_pair`~~ | rejected | — | Same |
-
-### 8.6 f-divergence variants (Phase 2)
-
-5 LOC each:
-
-- `reverse_kl` (default): identity.
-- `forward_kl`: `score = −exp(−logratio)`.
-- `js_divergence`: `score = logsigmoid(logratio)`.
-- `alpha_divergence`: `score = exp((α−1)·logratio) / (α−1)` with bf16/fp16 clamp.
-
-### 8.7 MPO, WPO, LD-DPO
-
-- **MPO** (`loss_type=list`, `loss_weights=list`): summation loop in `compute_loss`. Validate `len(loss_weights) == len(loss_type)` in `DPOConfig.__post_init__`.
-- **WPO** (`use_weighting=True`): per-example weight computed under `torch.no_grad()` from chosen/rejected logits and completion mask. Multiplies per-example loss. Refuses combination with `aot`/`aot_pair` (moot since those are rejected entirely).
-- **LD-DPO** (`ld_alpha`): logp decomposition into shared prefix vs tail. Applied to both policy and reference logps. ~15 LOC.
-
-### 8.8 TR-DPO (SyncRefModelCallback)
-
-`TrainerCallback` firing `on_step_end` at `state.global_step % args.ref_model_sync_steps == 0`. EMA update: `ref.param ← (1 − α) · ref.param + α · policy.param`. Iterates `zip(ref_model.parameters(), self.model.parameters())`.
-
-Compatibility constraints (TRL precedent):
-
-- Incompatible with PEFT (raise at `__init__`).
-- Incompatible with `precompute_ref_log_probs=True` (raise at `__init__`).
-
-### 8.9 `DPOTrainer.prediction_step`
-
-```python
-def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
-    inputs = self._prepare_inputs(inputs)
-    with torch.no_grad(), self.compute_loss_context_manager():
-        if prediction_loss_only:
-            loss = self.compute_loss(model, inputs, return_outputs=False)
-            logits, labels = None, None
-        else:
-            loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
-            logits = outputs["chosen_out"].logits
-            labels = inputs["chosen_input_ids"]
-    return loss, logits, labels
-```
-
-Forces `compute_loss` at eval to get reward metrics (TRL precedent).
-
-### 8.10 Phase 2 tests
-
-- Construct with all four ref-model paths (precompute, explicit, PEFT-disable, auto-load).
-- Each ref-model path: 2-step training run.
-- `loss_type=["sigmoid"]`: TRL numeric parity.
-- Each loss variant: smoke test.
-- Each f-divergence variant: smoke test.
-- MPO `loss_type=["sigmoid", "sft"]`, `loss_weights=[0.5, 0.5]`: smoke.
-- WPO: smoke.
-- LD-DPO: smoke with `ld_alpha=0.5`.
-- TR-DPO: smoke; assert ref params change after `ref_model_sync_steps`.
-- Precompute path: assert cache hit on re-run.
-- Reward metrics (`rewards/chosen`, `rewards/rejected`, `rewards/accuracies`, `rewards/margins`, `logps/chosen`, `logps/rejected`) appear in log history.
-- DP-purity test on each loss variant.
-- Vocab-mismatch test: assert ValueError.
+**Effort: M (4–5 days).**
 
 ---
 
-## 9. Phase 3 — KTOTrainer
+## 12. Phase 2 — DPOTrainer + alignment primitives
 
-**Workstream:** `opaque-transformers/trl`. **Estimated effort:** ~4 days.
+The heaviest phase. All advanced DPO features land here (except chunked preference kernel, which is Phase −1).
 
-### 9.1 `KTOConfig`
+### 12.1 `opaque-alignment` primitives landing in Phase 2
 
-| Field | Default | Phase | Notes |
-|---|---|---|---|
-| `beta` | `0.1` | 3 | |
-| `loss_type` | `"kto"` | 3 | `"kto"` or `"apo_zero_unpaired"` |
-| `desirable_weight` | `1.0` | 3 | |
-| `undesirable_weight` | `1.0` | 3 | |
-| `precompute_ref_log_probs` | `False` | 3 | |
-| `precompute_ref_batch_size` | `None` | 3 | |
-| `disable_dropout` | `True` | 3 | |
-| `max_length` | `1024` | 3 | |
-| `model_init_kwargs` | `None` | 3 | |
-| `dataset_num_proc` | `None` | 3 | |
+- `opaque/api/alignment/losses/_dpo.py` — all 13 DP-safe variants + `LOSSES` dict:
+  - `sigmoid`, `ipo`, `hinge`, `robust`, `apo_zero`, `apo_down`, `exo_pair`, `nca_pair`, `bco_pair`, `sppo_hard`, `discopop`, `sft`, `sigmoid_norm`, `squarechipo`.
+- `opaque/api/alignment/losses/_f_divergence.py` — `reverse_kl`, `forward_kl`, `js_divergence`, `alpha_divergence`.
+- `opaque/api/alignment/losses/_mpo.py` — `mpo_combine(losses, weights)` combinator.
+- `opaque/api/alignment/losses/_wpo.py` — `wpo_weights(...)` per-example weight fn (under `no_grad`).
+- `opaque/api/alignment/losses/_ld_dpo.py` — `ld_dpo_split(per_token_logps, mask, alpha)`.
+- `opaque/api/alignment/collators/_preference.py` — `DataCollatorForPreference` with `(B, 2, L)` layout per §4.3.
+- `opaque/api/alignment/reference/_precompute.py` — `compute_ref_logprobs_for_dataset(dataset, ref_model, collator, ..., cache_key, output_columns)` with `.npz` caching.
+- `opaque/api/alignment/reference/_adapter.py` — `null_ref_context(model)` context manager.
+- `opaque/api/alignment/reference/_sync.py` — `ema_update_reference(ref_params, policy_params, alpha)` functional EMA.
+- `opaque/api/alignment/metrics.py` — `reward_metrics(chosen_logratios, rejected_logratios, beta) -> dict`.
 
-Defaults differ from `DPTrainingArguments`:
+### 12.2 `OpaqueDPOConfig`
 
-- `learning_rate = 1e-6`.
-- `optim = "adamw"`, `optim_args = "noise_bias_correction=True"`.
-- `use_liger_kernel = True`.
-- `bf16 = True` if available.
+| Field | Default |
+|---|---|
+| `beta` | `0.1` |
+| `loss_type` | `["sigmoid"]` (list, supports MPO) |
+| `loss_weights` | `None` (equal weights) |
+| `label_smoothing` | `0.0` |
+| `ld_alpha` | `None` |
+| `f_divergence_type` | `"reverse_kl"` |
+| `f_alpha_divergence_coef` | `0.5` |
+| `use_weighting` | `False` (WPO) |
+| `discopop_tau` | `0.05` |
+| `precompute_ref_log_probs` | `False` |
+| `precompute_ref_batch_size` | `None` |
+| `disable_dropout` | `True` |
+| `sync_ref_model` | `False` (TR-DPO) |
+| `ref_model_mixup_alpha` | `0.6` |
+| `ref_model_sync_steps` | `512` |
+| `max_length` | `1024` |
+| `max_prompt_length` | `512` |
+| `truncation_mode` | `"keep_start"` |
+| `pad_to_multiple_of` | `None` |
+| `dataset_num_proc` | `None` |
 
-### 9.2 `KTOTrainer.__init__`
+### 12.3 `OpaqueDPOTrainer`
 
-Parallel to `DPOTrainer.__init__` with deltas:
+- `__init__`: model + ref_model resolution per §4.1 (four paths), tokenizer, PEFT wrap (with QLoRA bf16 + ref-adapter clone if applicable), `_prepare_dataset`, optional `_precompute_ref_logps` via `opaque.alignment.reference.compute_ref_logprobs_for_dataset`. Reject `aot`/`aot_pair` at init.
+- `_prepare_inputs` override: live-ref path computes ref logps under `torch.no_grad()` with `null_ref_context` *outside* vmap, injects into inputs.
+- `compute_loss`: orchestrates `sequence_logp` × 2 (chosen + rejected forwards), `ld_dpo_split` if `ld_alpha`, `f_divergence_remap`, dispatch through `DPO_LOSSES` × `loss_weights`, optional `wpo_weights` multiplication.
+- `prediction_step` override: force `compute_loss` at eval to log reward metrics (no labels otherwise).
+- TR-DPO: `SyncRefModelCallback` registered when `sync_ref_model=True`. Uses `ema_update_reference` on the captured ref-params dict, not on a bound module.
 
-- `_prepare_dataset`:
-    1. Extract prompt.
-    2. If dataset has `chosen`/`rejected` columns: `unpair_preference_dataset` → split into two rows per pair, label `True`/`False`.
-    3. Add EOS.
-    4. Tokenize.
-    5. If `calculate_KL = (loss_type != "apo_zero_unpaired")`: build KL dataset via `dataset.map(_get_kl_dataset, batched=True, batch_size=per_device_train_batch_size)`. Then `concatenate_datasets([base, kl], axis=1)` to attach `KL_completion_ids`.
-- Desirability balance check: compute `(num_desirable, num_undesirable)`; warn if `(desirable_weight, undesirable_weight)` is far from the recommended ratio per the KTO paper (Eq. 8).
-- Precompute `reference_logps` and (if `calculate_KL`) `reference_KL_logps` if `precompute_ref_log_probs=True`.
-- Default collator = `DataCollatorForUnpairedPreference`.
+### 12.4 Examples
 
-### 9.3 `KTOTrainer.compute_loss`
+- `examples/train_dpo.py` — functional with `dpo_sigmoid` directly.
+- `examples/train_dpo_trainer.py` — class-based via `OpaqueDPOTrainer`.
 
-Vmap-safe, per-example math:
+### 12.5 Phase 2 tests
 
-```python
-def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-    # Forward completion under model (gradient flows)
-    completion_logits = model(input_ids=inputs["completion_input_ids"],
-                              attention_mask=inputs["completion_attention_mask"]).logits
-    completion_logps = get_batch_logps(completion_logits, inputs["completion_labels"])
+- Loss-fn unit tests for all 14 variants + 4 f-divergence remaps + MPO combinator.
+- Closure test: vmap'd per-example DPO loss across 4 pairs → finite gradients.
+- DP-purity test: NaN-one-example → only that row's grad affected.
+- Trainer contract test (one per ref-model path): construct, train 2 steps, eval, save.
+- TR-DPO callback test: ref params change after `ref_model_sync_steps`.
+- TRL parity test on all loss variants at `σ=0, C=∞`.
 
-    # KL completion under model (no_grad — KL is detached statistic for policy)
-    if self.args.loss_type == "kto":
-        with torch.no_grad():
-            kl_logits = model(input_ids=inputs["KL_completion_input_ids"],
-                              attention_mask=inputs["KL_completion_attention_mask"]).logits
-        kl_logps = get_batch_logps(kl_logits, inputs["KL_completion_labels"])
-        kl_per_example = (kl_logps - inputs["reference_KL_logps"]).clamp(min=0).detach()
-    else:  # apo_zero_unpaired
-        kl_per_example = 0.0
-
-    logratios = completion_logps - inputs["reference_logps"]
-
-    # Branch on label (use torch.where, not Python if — vmap-safe)
-    label = inputs["label"]  # bool per example
-    if self.args.loss_type == "kto":
-        chosen_loss   = 1 - torch.sigmoid(self.args.beta * (logratios - kl_per_example))
-        rejected_loss = 1 - torch.sigmoid(self.args.beta * (kl_per_example - logratios))
-    elif self.args.loss_type == "apo_zero_unpaired":
-        chosen_loss   = 1 - torch.sigmoid(self.args.beta * logratios)
-        rejected_loss = torch.sigmoid(self.args.beta * logratios)
-
-    per_example_loss = torch.where(
-        label,
-        self.args.desirable_weight * chosen_loss,
-        self.args.undesirable_weight * rejected_loss,
-    )
-
-    self._log_kto_metrics(logratios, kl_per_example, label, completion_logits)
-
-    return per_example_loss
-```
-
-The cross-batch mean in TRL's KL math is realized as a vmap reduction across the gradient sum, not inside the per-example closure.
-
-### 9.4 KTO under variable Poisson batch size
-
-- Normal path: realized batch size ≥ 2. Rotation is well-defined; loss runs.
-- Edge case: realized batch size ≤ 1. The KL term contribution for that step is set to 0 (mathematically equivalent to running `apo_zero_unpaired` for that step). Privacy unchanged. Logged as a warning when frequency exceeds a threshold.
-
-### 9.5 Data collator — `DataCollatorForUnpairedPreference`
-
-Output keys: `completion_input_ids`, `completion_attention_mask`, `completion_labels`, optionally `KL_completion_input_ids` / `KL_completion_attention_mask` / `KL_completion_labels` (when `calculate_KL`), optional `reference_logps` and `reference_KL_logps`, plus `label` (bool).
-
-`completion_labels` masks prompt positions with `-100`.
-
-### 9.6 Phase 3 tests
-
-- Construct with paired and unpaired datasets.
-- `loss_type="kto"`: smoke, TRL parity at `σ=0, C=∞`.
-- `loss_type="apo_zero_unpaired"`: smoke.
-- Rotation correctness: `KL_completion_ids != completion_ids` after `_prepare_dataset`.
-- Batch-0 and batch-1 Poisson steps: KL term falls back to 0, no crash, training continues.
-- Reward + KL metrics in log history.
-- DP-purity test.
+**Effort: L (6–8 days).**
 
 ---
 
-## 10. Phase 4 — Advanced SFT data pipeline
+## 13. Phase 3 — KTOTrainer + alignment primitives
 
-**Workstream:** `opaque-transformers/trl`. **Estimated effort:** ~5 days.
+### 13.1 `opaque-alignment` primitives landing in Phase 3
 
-Data-pipeline-heavy features for SFT, separated for review tractability.
+- `opaque/api/alignment/losses/_kto.py` — `kto`, `apo_zero_unpaired` + `LOSSES` dict.
+- `opaque/api/alignment/collators/_unpaired_preference.py` — `DataCollatorForUnpairedPreference`.
+- `opaque/api/alignment/data/_kto_rotation.py` — `rotate_kto_completions(dataset, batch_size, seed)` = `_get_kl_dataset` + `concatenate_datasets(axis=1)`.
+- Extension to `compute_ref_logprobs_for_dataset` to emit `reference_KL_logps` when KL is enabled.
 
-### 10.1 Packing
+### 13.2 `OpaqueKTOConfig`
 
-- Port `_pack_bfd` (segment-tree best-fit, ~90 LOC) and `_pack_wrapped` (~15 LOC) from `trl/data_utils.py`.
-- `packing_strategy ∈ {"bfd", "bfd_split", "wrapped"}`.
-- Generates `seq_lengths` column.
-- Collator generates `position_ids` with per-doc restarts.
-- **Attention backend dependency:**
-    | Backend | Available | Note |
-    |---|---|---|
-    | FlashAttention2 (`flash-attn` package) | optional dep | uses `cu_seq_lens` from `position_ids` |
-    | FlexAttention (PyTorch ≥ 2.5 native) | preferred | score-mod for per-doc block-diagonal mask |
-    | SDPA with explicit 4D block-diagonal mask | always | works but defeats flash kernel speed |
+| Field | Default |
+|---|---|
+| `beta` | `0.1` |
+| `loss_type` | `"kto"` |
+| `desirable_weight` | `1.0` |
+| `undesirable_weight` | `1.0` |
+| `precompute_ref_log_probs` | `False` |
+| `precompute_ref_batch_size` | `None` |
+| `disable_dropout` | `True` |
+| `max_length` | `1024` |
+| `model_init_kwargs` | `None` |
+| `dataset_num_proc` | `None` |
 
-  Detection at runtime; auto-select the best available. Document. **Phase 4 subquestion:** verify FlexAttention composes with `torch.func.vmap` before defaulting to it.
+### 13.3 `OpaqueKTOTrainer`
 
-### 10.2 Padding-free
+- `_prepare_dataset`: extract prompt → `unpair_preference_dataset` if needed → tokenize → if `calculate_KL`: `rotate_kto_completions(...)` → assert non-identity rotation.
+- `compute_loss`:
+  1. Forward `completion_input_ids` → `completion_logps` via `sequence_logp`.
+  2. Forward `KL_completion_input_ids` under `torch.no_grad()` → `KL_logps`.
+  3. Read ref logps from `inputs` (precomputed) or compute live (via `_prepare_inputs` + `null_ref_context`).
+  4. `chosen_logratios` / `rejected_logratios` split by `label`.
+  5. Compute KL per-example (not batch-mean — that emerges from the per-example gradient sum after vmap).
+  6. Dispatch through `KTO_LOSSES`.
+  7. Apply `desirable_weight` / `undesirable_weight`.
+  8. Per-example loss returned.
+- Skip-KL fallback when realized batch size ≤ 1 (Poisson edge case): set `kl=0` for that step.
 
-- Flatten all sequences in a batch into one row with per-doc `position_ids` restarts.
-- Same attention backend dependency as packing.
-- ~30 LOC in collator.
+### 13.4 Examples
 
-### 10.3 Chunked NLL — via `opaque_linear_cross_entropy_loss`
+- `examples/train_kto.py` — functional.
+- `examples/train_kto_trainer.py` — class-based.
 
-The Opaque path is cleaner than TRL's monkey-patch:
+### 13.5 Phase 3 tests
 
-- `SFTConfig.loss_type = "chunked_nll"` routes `compute_loss` to call `opaque_linear_cross_entropy_loss(hidden_states, lm_head.weight, labels, ignore_index=-100, label_smoothing=args.label_smoothing_factor)`.
-- The Opaque kernel already chunks the matmul and never materializes full `(B, T, V)` logits — same memory benefit as TRL's `_chunked_cross_entropy_loss`.
-- No `model.forward` monkey-patch.
-- DP-SGD-aware: `dC` is skipped when `lm_head.weight.requires_grad=False` (LoRA-frozen-base case).
+- Loss-fn unit tests for `kto`, `apo_zero_unpaired`.
+- Rotation correctness test (assert non-identity permutation after `dataset.map`).
+- Trainer contract test with mixed labels.
+- TRL parity at `σ=0, C=∞`.
 
-### 10.4 Chat template cloning with embedding resize
-
-- Port `clone_chat_template` from `trl/chat_template_utils.py`.
-- Calls `model.resize_token_embeddings(new_num_tokens=..., pad_to_multiple_of=64)` if new tokens added.
-- **Order constraint:** must run before `super().__init__()` (which captures the model via `make_functional`). Document.
-- If PEFT and `added_tokens` non-empty: mutate `peft_config` to include `trainable_token_indices["embed_tokens"]` and `modules_to_save=["lm_head"]` (TRL precedent).
-
-### 10.5 Assistant-only loss with template auto-insertion
-
-If chat template lacks `{% generation %}` markers and `assistant_only_loss=True`, call `get_training_chat_template` to inject markers. Affects the tokenizer / processing_class only; no model mutation.
-
-### 10.6 Activation offloading hook wiring
-
-The DPTrainingArguments field already exists ([§5.3](#53-smaller-dptrainer-hooks) rename). Phase 4 confirms the offload context composes with `functional_call` under vmap. Add a regression test.
-
-### 10.7 Phase 4 tests
-
-- Packing: BFD on synthetic variable-length dataset; verify pack density and per-doc position_ids.
-- `padding_free`: end-to-end with FlexAttention (skip on CPU/MPS).
-- `chunked_nll`: assert peak memory < `(B, T, V)` materialization on a vocab-100k fixture.
-- `clone_chat_template`: assert embeddings grew and new tokens are usable.
+**Effort: M–L (4–6 days).**
 
 ---
 
-## 11. Phase 5 — Polish, examples, parity tests, docs
+## 14. Phase 4 — Advanced data pipeline
 
-**Workstream:** `opaque-transformers/trl`. **Estimated effort:** ~3 days.
+These are workstreams independent of loss math; separated to keep Phases 1–3 reviewable.
 
-### 11.1 Examples (code datasets)
+### 14.1 SFT packing — `bfd`, `bfd_split`, `wrapped`
 
-- `examples/train_sft_trainer.py` — SFT on `JetBrains/KExercises` or `bigcode/the-stack-smol`.
-- `examples/train_dpo_trainer.py` — DPO on a code preference dataset (TBD).
-- `examples/train_kto_trainer.py` — KTO on a binary-labeled code dataset (TBD).
+- `opaque.alignment.data._packing`: port `_pack_bfd` (segment-tree best-fit, ~90 LOC), `_pack_wrapped` (~15 LOC), `_pack_bfd_split` (~25 LOC).
+- Generates `seq_lengths` column for `DataCollatorForLanguageModeling.get_position_ids_from_packed_seq_lengths`.
+- **Attention requirements:** packing produces `position_ids` with per-doc restarts. The cross-doc attention blocking requires either:
+  - **FlashAttention2** via `cu_seq_lens` — fastest, but requires `flash-attn` dep we don't have.
+  - **FlexAttention** — PyTorch 2.5+ native, no extra dep, supports arbitrary score mods.
+  - **SDPA with explicit block-diagonal 4D mask** — slowest but always works; defeats flash speed.
+- **Open question:** does `torch.nn.functional.flex_attention` compose with `torch.func.vmap`? Phase 4 includes a fixture test. If yes, FlexAttention is the path. If no, fall back to SDPA-with-mask and accept the perf hit.
 
-Each example mirrors the structure of `examples/train_causal_lm_trainer.py` (preset modes, logging, W&B integration optional).
+### 14.2 SFT `padding_free`
 
-### 11.2 TRL parity numerics test
+- Flatten batch into one row; rely on `position_ids` restart for doc separation.
+- Same attention requirement as packing.
+
+### 14.3 SFT `chunked_nll` via Opaque LCE
+
+**Better than TRL's implementation.** TRL monkey-patches `model.forward` and gradient-checkpoints per-chunk. Opaque already has `opaque_linear_cross_entropy_loss` (`packages/opaque-patches/.../linear_cross_entropy.py`) which never materializes `(B, T, V)` and is vmap-safe via the `Opaque_LinearCrossEntropyLoss / _LinearCEBackward` two-level pattern, including a DP-aware `dC` skip when the weight is frozen.
+
+**Implementation:** wire `loss_type="chunked_nll"` in `OpaqueSFTTrainer` to extract hidden states (skip `lm_head` in forward, possibly via the existing `_extra_forward_kwargs` allowlist or a small kernel adapter), then call `opaque_linear_cross_entropy_loss(hidden, lm_head.weight, labels, ...)`. No monkey-patching, no checkpoint trickery, no Liger dependency.
+
+### 14.4 SFT `clone_chat_template` with embedding resize
+
+- Port `clone_chat_template` from TRL (~210 LOC).
+- Mutations (`add_tokens`, `resize_token_embeddings`, `pad_to_multiple_of=64`) happen **before** trainer construction. Document.
+- PEFT case: mutate `peft_config.trainable_token_indices` + `modules_to_save = ["lm_head"]`.
+
+### 14.5 `activation_offloading`
+
+- Rename `cpu_offload_activations` → `activation_offloading` at DPTrainer level (Phase 0).
+- Verify existing ctx-manager composes with `functional_call` under vmap (Phase 4 fixture).
+
+### 14.6 Phase 4 tests
+
+- Packing density vs target (BFD test on synthetic data).
+- FlexAttention + vmap composition fixture.
+- `chunked_nll` peak-memory test (< `(B, T, V)` materialization).
+- `clone_chat_template` round-trip on a tokenizer.
+
+**Effort: L (5–7 days).**
+
+---
+
+## 15. Phase 5 — Polish, examples, parity tests, docs
+
+### 15.1 Examples
+
+Six total (two per method):
+
+- `examples/train_sft.py`, `train_sft_trainer.py` — code dataset (`bigcode/the-stack-smol` or `JetBrains/KExercises`).
+- `examples/train_dpo.py`, `train_dpo_trainer.py` — code-leaning preference set (e.g., `argilla/distilabel-intel-orca-dpo-pairs`).
+- `examples/train_kto.py`, `train_kto_trainer.py` — binary-labeled set.
+
+### 15.2 TRL parity test (the strong correctness gate)
 
 For each trainer:
 
-1. Load TRL's trainer (`SFTTrainer`/`DPOTrainer`/`KTOTrainer`) with identical model, tokenizer, dataset, optimizer state.
-2. Load Opaque trainer with `privacy_noise_multiplier=0.0`, `clipping_norm=float("inf")`.
-3. Run one forward+backward on the same batch.
+1. Load TRL + Opaque with identical model, tokenizer, dataset, optimizer state.
+2. Disable DP in Opaque (`privacy_noise_multiplier=0.0`, `clipping_norm=float("inf")`).
+3. Single forward + backward pass on each.
 4. Assert per-batch loss matches within `1e-3`.
-5. Assert reward metrics (DPO/KTO) match within `1e-4`.
+5. Assert reward metrics (DPO) match within `1e-4`.
 
-This is the strongest correctness gate available.
+### 15.3 DP regression
 
-### 11.3 DP regression test
+50-step run per trainer at `ε=10`, fixed seeds. Snapshot final loss; track for drift across PRs.
 
-Each trainer: train ~50 steps on tiny model + dataset, `ε=10`, fixed seeds. Snapshot final loss values. Track for drift across PRs.
+### 15.4 Docs
 
-### 11.4 DP-purity test framework
+- `docs/alignment/index.md` — package overview, functional philosophy, mechanism-agnostic posture.
+- `docs/alignment/losses.md` — per-loss reference (formula, paper, DP notes).
+- `docs/alignment/collators.md`.
+- `docs/alignment/recipes.md` — pointers to functional examples + scripted recipes (decoupled DP-RLHF lives here as a notebook).
+- `docs/trainers/sft.md`, `dpo.md`, `kto.md` — class-API docs, supported features, deferred features with paper-cited justification, ref-model path matrix.
 
-Per loss type:
-
-1. Construct a 4-example batch.
-2. Replace example `i`'s data with NaN.
-3. Compute per-example gradients via the vmap closure.
-4. Assert only example `i`'s gradient is NaN; others are finite.
-
-This catches any leaked cross-example dependency.
-
-### 11.5 Docs
-
-- `docs/trainers/sft.md` — usage, supported features, deferred features, DP knobs.
-- `docs/trainers/dpo.md` — same, plus the four ref-model paths table.
-- `docs/trainers/kto.md` — same, plus the KTO-under-Poisson note.
-- Maintain `docs/development/trl-parity.md` — table of every TRL surface element with current Opaque status.
+**Effort: M (3–4 days).**
 
 ---
 
-## 12. Roadmap beyond this plan
+## 16. Roadmap beyond this plan
 
-These are sibling workstreams, not subdivisions of the above:
+Sibling workstreams that become natural under the `opaque-alignment` + `opaque.transformers.trl` split:
 
 | Item | Effort | Rationale |
 |---|---|---|
-| `RewardTrainer` (DP RM) | M | `AutoModelForSequenceClassification` + pairwise BT loss. Direct DPTrainer subclass. Required for the decoupled DP-RLHF recipe. |
-| Decoupled DP-RLHF recipe (arXiv:2603.22563) | M | Notebook chaining `RewardTrainer` → vanilla TRL `PPOTrainer` (non-DP actor). No new trainer beyond a future DP reward trainer. |
-| `ORPOTrainer`, `CPOTrainer`, `SimPOTrainer` | M each | Same pattern as DPO; different loss heads. Each can call `opaque_fused_linear_*_loss` from Phase −1.b. |
-| `GRPOTrainer` | L | Trajectory-level; needs `old_logps`/`ref_logps` plumbing similar to DPO. Worth designing after DPO/KTO infrastructure lands. |
-| DP-PPO (arXiv:2501.19080) | L | Trust-region-coupled noise budget; fundamentally different. Skip until customer demand. |
-| Vision-language trainers | — | Out of scope. |
+| **`OpaqueRewardTrainer` (DP RM)** | M | Pairwise BT loss on `AutoModelForSequenceClassification`. Direct `DPTrainer` subclass using `opaque.alignment.losses` (add a `_reward.py` with the BT formula). Prerequisite for decoupled DP-RLHF (arXiv:2603.22563). |
+| **Decoupled DP-RLHF recipe** | M | Notebook chaining `OpaqueRewardTrainer` → vanilla `trl.PPOTrainer` (non-DP actor). Lives in `opaque.alignment.recipes`. |
+| **`OpaqueORPOTrainer`, `OpaqueCPOTrainer`, `OpaqueSimPOTrainer`** | M each | Different loss heads; thin trainer + new loss module. Pattern established by DPO. |
+| **`OpaqueGRPOTrainer`** | L | Trajectory-level — needs `old_logps` / `ref_logps` plumbing similar to DPO precompute. Worth designing once on top of completed infrastructure. |
+| **Liger native chunked-preference-loss port (full algorithm coverage)** | M (after Phase −1's base + DPO) | Add KTO, ORPO, CPO, SimPO dispatchers on the same `Opaque_FusedLinearPreference` base. |
+| **DP-PPO (arXiv:2501.19080)** | L | Trust-region-coupled noise budget; fundamentally different architecture. Defer until demand. |
+| **VLM trainers** | L+ | Out of scope this plan; revisit when vision-language models become a Opaque priority. |
+| **Alignment-specific eval harnesses** | M | `opaque.alignment.eval.{reward_bench, alpaca_eval, kl_drift}`. Pure functions over `(policy_model, ref_model, dataset)`. Notebook-friendly. |
+| **Recipe DSL** | L | `@register_recipe("sft+dpo")` for reproducible paper recipes (SquareχPO defaults, DP-AdamW + DPO, decoupled DP-RLHF). |
 
 ---
 
-## 13. Risk register
+## 17. Risk register
 
 | ID | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| R1 | TRL/HF protocol drift | M | L | Maintain `docs/development/trl-parity.md`; implement compatible additions over time. |
-| R2 | `_discover_batch_keys` ordering instability across collator runs | L | H | Phase 0 explicit determinism check: collator on 2 rows, assert key-tuple equality. |
-| R3 | PEFT mid-training mutations (e.g., `merge_and_unload`) | L | M | User-action only; documented constraint. |
+| R1 | Some HF/TRL protocols still missing post-Phase-5 | M | L | Maintain a parity table in `docs/trainers/`. Implement over time, gated only by "doesn't violate DP." |
+| R2 | `_discover_batch_keys` ordering instability across collator runs | L | H | Add explicit determinism check (collator on 2 rows, assert key-tuple equality). |
+| R3 | PEFT mid-training mutations (e.g., `merge_and_unload`) | L | M | User-action only; document constraint. Outside vmap is safe per TRL mechanics finding. |
 | R4 | `vmap(grad(...))` over `selective_log_softmax` produces wrong shapes for short sequences | M | H | Unit-test loss closure standalone vs TRL eager on 4–8 synthetic examples. |
-| R5 | Reference model + policy use different tokenizers/vocab sizes | L | H | Vocab-size assertion at `__init__`; raise on mismatch. |
-| R6 | KTO under Poisson — variance vs TRL | L | M | Match TRL approach (rotation at dataset-prep); fall back to KL=0 on batch ≤ 1 steps; document. |
-| R7 | Liger kernels break per-example loss path | — | — | Removed — `opaque-patches` kernels are designed for this; we never depend on Liger directly. |
-| R8 | DP-AdamW absent | — | — | Resolved — `adamw(noise_bias_correction=True)` IS DP-AdamW. |
-| R9 | DPTrainer eval-time vs train-time loss split | — | — | Phase 0 unifies them: subclass `compute_loss` drives both. |
-| R10 | Inventing shortcuts vs matching HF/TRL | M | M | Plan explicitly states HF/TRL semantics + DP adaptation per decision. |
-| R11 | Phase 0 `compute_loss` redirect breaks existing DPTrainer subclasses | L | H | Keep `_build_per_example_loss` as a power-user override surface; default delegates to `compute_loss`. Existing tests guard. |
-| R12 | Activation offloading composes badly with `functional_call` | L | M | Phase 4 fixture test before wiring. |
-| R13 | FlexAttention doesn't compose with `torch.func.vmap` | M | M | Verify in Phase 4; fall back to SDPA-with-4D-mask if so. |
-| R14 | Chunked preference loss port (Phase −1.b) is harder than estimated | M | M | Vmap-rule for the chunked autograd.Function is the main risk; budget 3 days, escalate if blocked. |
-| R15 | TRL evolves rapidly; pinned version drifts | M | L | Pin TRL version in parity tests; bump deliberately. |
-| R16 | `num_items_in_batch` slipped into a ported loss | M | H | DP-purity test framework (Phase 5) catches this automatically. |
-| R17 | Precomputed ref-logp cache leaks via on-disk file | L | M | Cache files documented as private; never commit; honor user's `output_dir` permissions. |
+| R5 | Reference / policy vocab mismatch silently corrupts loss | L | H | Validate `policy.config.vocab_size == ref_model.config.vocab_size` at init; raise. |
+| R6 | KTO variance under Poisson with rare small batches | L | M | Skip KL term when realized batch ≤ 1 (per §4.2). Document. |
+| R7 | DP-purity violation slips through (data-dependent cross-example divisor) | M | H | Mandatory DP-purity test (§19.5) for every loss closure. NaN one example, assert only that row's grad changes. |
+| R8 | DP-AdamW formula drift vs paper | L | L | `opaque.optimizers.adamw(noise_bias_correction=True)` already matches arXiv:2505.08849. Treated as audit done. |
+| R9 | `compute_loss` redirect (Phase 0.1) breaks existing DPTrainer subclasses | L | H | Keep `_build_per_example_loss` as an override surface; default delegates to `compute_loss`. Existing tests unchanged. |
+| R10 | FlexAttention + vmap composition broken | M | M | Phase 4 fixture test. Fallback: SDPA + 4D block mask (slower). |
+| R11 | DPTrainer hf-trainer-continuation merge slips | M | H | Plan Phase 0 in parallel; the changes are small enough that they can be re-applied on top of whatever lands. |
+| R12 | Chunked preference kernel port (Phase −1) takes longer than estimated | M | L | Optional optimization; SFT/DPO/KTO ship without it via standard `opaque_linear_cross_entropy_loss`. |
 
 ---
 
-## 14. DP correctness checklist (used at every loss port)
+## 18. DP correctness checklist (used at every loss port)
 
-Every ported loss formula MUST pass this checklist before being accepted:
+Apply to every per-example loss closure before it lands in `opaque.alignment.losses.*`:
 
-1. **No cross-example divisors.** The per-example loss closure may not divide by any quantity computed from data of examples other than the one being processed. Disallowed quantities include `num_items_in_batch`, `(labels != -100).sum()` over the batch, any reduction of `batch_size_dim` inside the closure.
-2. **No `.item()` on data-dependent tensors.** Forces host sync and reveals batch composition.
-3. **No `torch.sort` / `torch.topk` / `torch.argsort` over a batch axis.** Breaks per-example independence.
-4. **No in-place mutation of tensors shared across the batch.** Inside vmap, the batch axis is hidden; in-place writes corrupt other examples.
-5. **No conditional control flow keyed on data-dependent batch shapes.** Use `torch.where` instead of Python `if` on tensor comparisons.
-6. **Reference model output enters as a constant.** Never as a graph leaf with `requires_grad=True`.
-7. **Normalization happens via `clipped_grad`'s `normalize_by=expected_batch_size`**, not by hand inside the closure.
-8. **DP-purity test passes.** Replace example `i`'s data with NaN; assert only example `i`'s per-example loss is NaN; others are finite.
-
-Each loss type in `_losses/*.py` carries a comment block citing which items it satisfies and why.
+- [ ] **No divisor that aggregates across the batch.** Specifically, no `num_items_in_batch`, no `batch_size`, no global token count. Allowed: per-example `mask.sum()`, `args.max_length`, `expected_batch_size`, or drop and let `clipped_grad` normalize.
+- [ ] **No data-dependent computation that crosses examples.** Sorts, ranks, top-k, percentile — all forbidden (this is the `aot` family's failure mode).
+- [ ] **No PEFT adapter toggling inside the closure.** Allowed only in `_prepare_inputs` pre-vmap.
+- [ ] **No `torch.no_grad()` on module state.** Allowed: `torch.no_grad()` on tensor-only computations inside the closure (e.g., detached metric assembly).
+- [ ] **No `.item()` on dynamic-shape tensors.** Breaks vmap.
+- [ ] **No in-place mutation of input tensors.** Forbidden under vmap.
+- [ ] **NaN-injection test passes.** Replace one example's input with NaN; only that example's gradient is affected (verifiable post-clipping).
+- [ ] **`σ=0, C=∞` matches TRL eager.** Numeric within `1e-3` on synthetic batches.
 
 ---
 
-## 15. Test strategy
+## 19. Test strategy
 
-Four tiers:
+### 19.1 Unit tests (per loss function in `opaque.api.alignment.losses`)
 
-### 15.1 Unit tests (per loss function)
+~10 tests per loss variant against hand-computed reference. Pure, no model.
 
-`tests/opaque_transformers/trl/test_dpo_losses.py`, etc. Each loss function called with hand-crafted inputs (`chosen=1.0, rejected=0.0, β=0.5`), expected scalar verified.
+### 19.2 Closure tests
 
-### 15.2 Loss-closure tests (per trainer)
+Build `_build_per_example_loss`, call on a 4-example synthetic batch, verify shape, finite non-zero gradient w.r.t. `trainable_params`. No full training loop.
 
-`tests/opaque_transformers/trl/test_dpo_closure.py`, etc. Build `compute_loss`, call on a 4-example synthetic batch, verify per-example gradient w.r.t. trainable params is finite and non-zero.
+### 19.3 Trainer contract tests (mirror existing `test_trainer_contract.py` pattern)
 
-### 15.3 Trainer-contract tests (per trainer)
+Per trainer: construct, 2 training steps on tiny model + dataset, evaluate, save/load.
 
-`tests/opaque_transformers/trl/test_dpo_trainer_contract.py`, etc. Mirror the existing `test_trainer_contract.py` pattern:
+### 19.4 TRL parity test (per trainer per loss type)
 
-- Construct with tiny Qwen2 (2 hidden layers) + LoRA + tiny dataset, CPU, `privacy_target_epsilon=10.0`, `privacy_noise_multiplier=1.0`.
-- Run 2 training steps.
-- Run `evaluate()`.
-- `save_model(tmp_path)`, reload, verify state dict.
+Disable DP on Opaque side (`σ=0, C=∞`); compare per-batch loss to TRL within `1e-3` on the same first batch.
 
-### 15.4 TRL parity tests (per trainer, GPU-required, marked slow)
+### 19.5 DP-purity test (per loss closure)
 
-Phase 5 deliverable. Side-by-side numerics with TRL at `σ=0, C=∞`.
+Replace one example's data with NaN; verify only that row's gradient is affected (after clipping). Catches accidental cross-example divisors.
 
-### 15.5 DP-purity tests (per loss type)
+### 19.6 DP regression (per trainer)
 
-Phase 5 deliverable. NaN-injection test framework asserts no cross-example dependency.
-
-### 15.6 Test fixtures
-
-- `tests/opaque_transformers/trl/conftest.py`: tiny Qwen2 config (2 layers), tiny tokenizer, tiny preference dataset (10 examples), tiny unpaired-preference dataset.
-- Mark GPU-required tests with `@pytest.mark.cuda`.
+50 steps at `ε=10`, fixed seeds; snapshot final loss; track for drift.
 
 ---
 
-## 16. References
+## 20. References
 
-### Opaque (verified at this branch)
+### Opaque codebase (post-refactor, current main)
 
-- `packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py:3037-3175` — `_build_per_example_loss` (Phase 0.2 redirect target)
-- `packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py:2054` — current `compute_loss` (eval-only today)
-- `packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py:3689` — `clipped_grad(..., normalize_by=expected_batch_size)`
-- `packages/opaque-transformers/src/opaque/api/transformers/trainer/_config.py:305` — `cpu_offload_activations` (Phase 0 rename)
-- `packages/opaque-transformers/src/opaque/api/transformers/trainer/_config.py:784` — `expected_batch_size` property
-- `packages/opaque-core/src/opaque/optimizers/_adam.py:235-251` — DP-AdamW (`noise_bias_correction=True`)
-- `packages/opaque-core/src/opaque/clipping/_clipped_grad.py:74` — `clipped_grad` API
-- `packages/opaque-core/src/opaque/functional/__init__.py:58` — `make_functional`
-- `packages/opaque-patches/src/opaque/patches/kernels/linear_cross_entropy.py:868,944` — vmap-safe fused LCE
-- `packages/opaque-patches/src/opaque/patches/kernels/{swiglu,geglu,rope_embedding,rms_norm,lora}.py` — all two-level vmap-safe
-- `AGENTS.md` — namespace contract, kernel pattern, patching model
+- `packages/opaque-engine/src/opaque/api/engine/clipping/_clipped_grad.py` — `clipped_grad`, the per-example DP primitive.
+- `packages/opaque-engine/src/opaque/api/engine/functional/` — `make_functional`, `with_batch_dim`.
+- `packages/opaque-engine/src/opaque/api/engine/distributed/` — DDP plumbing (extension target for Phase 0.5).
+- `packages/opaque-optimizers/src/opaque/api/optimizers/_adam.py` — DP-AdamW (`noise_bias_correction=True`).
+- `packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py` — fused linear CE with vmap rules (the chunked-NLL replacement).
+- `packages/opaque-patches/src/opaque/api/patches/kernels/{swiglu,geglu,rope_embedding,rms_norm,lora,fused_add_rms_norm}.py` — kernel coverage.
 
-### TRL (clone at /tmp/trl_src, v1.5.0.dev0 at audit time)
+### Opaque codebase (hf-trainer-continuation branch — DPTrainer)
 
-- `trl/trainer/sft_trainer.py` — SFT
-- `trl/trainer/dpo_trainer.py` — DPO
-- `trl/experimental/kto/kto_trainer.py` — KTO (moved to experimental in 1.5)
-- `trl/trainer/utils.py:1056-1093` — `use_adapter`
-- `trl/data_utils.py:686-789` — packing (BFD + wrapped)
-- `trl/chat_template_utils.py:28-119` — `clone_chat_template`
+- `packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py:3037` — `_build_per_example_loss` (Phase 0.1 redirect target).
+- `packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py:2054` — `compute_loss` (currently eval-only).
+- `packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py:3689` — `clipped_grad(..., normalize_by=expected_batch_size)`.
+- `packages/opaque-transformers/src/opaque/api/transformers/trainer/_config.py:305` — `cpu_offload_activations` (rename target).
 
-### HF Transformers (clone at /tmp/transformers_src, 5.8.0.dev0 at audit time)
+### TRL (analyzed at `/tmp/trl_src`, v1.5.0.dev0)
 
-- `src/transformers/trainer.py:362,1870,1941,2883,3039` — `Trainer.__init__`, `training_step`, `compute_loss`, `prediction_step`, `_save_checkpoint`
+- `trl/trainer/sft_trainer.py:104-339,480-489,788-802,1302-1303` — chunked_nll, padding_free, DFT, activation offloading.
+- `trl/trainer/dpo_trainer.py:763-797,799-816,976-994,1000-1084,1086-1474,1167,1189,1224-1252,1257-1402,1389-1400,1502-1521,1075-1188` — ref-model paths, TR-DPO, signature columns, precompute, full compute_loss + loss dispatch + WPO + LD-DPO.
+- `trl/trainer/dpo_trainer.py:152-211` — `DataCollatorForPreference`.
+- `trl/experimental/kto/kto_trainer.py:83-90,354-358,609-623,653-661,711-810,875-887,1173-1178` — KTO rotation, KL guard, null_ref_context, get_batch_logps, kto_loss math, sampler.
+- `trl/trainer/utils.py:1056-1093` — `use_adapter` context manager.
+- `trl/data_utils.py:686-789` — packing (BFD + wrapped).
+- `trl/chat_template_utils.py:28-119` — `clone_chat_template`.
 
-### Liger / Unsloth (clones at /tmp/liger, /tmp/unsloth, /tmp/unsloth_zoo at audit time)
+### HF Transformers (analyzed at `/tmp/transformers_src`, 5.8.0.dev0)
 
-- `liger_kernel/chunked_loss/fused_linear_preference.py` — chunked preference base (Phase −1.b port target)
-- `liger_kernel/chunked_loss/{dpo,kto,cpo,orpo,simpo,grpo}_loss.py` — per-algorithm losses
-- `liger_kernel/transformers/monkey_patch.py:3411` — `_apply_liger_kernel`
-- `unsloth/models/dpo.py` — empty stub (no FastDPOTrainer exists)
+- `src/transformers/trainer.py:362,1870,1941,2883,3039` — `Trainer.__init__`, `training_step`, `compute_loss`, `prediction_step`, `_save_checkpoint`.
 
-### DP-alignment papers
+### Liger / Unsloth (analyzed at `/tmp/liger`, `/tmp/unsloth`, `/tmp/unsloth_zoo`)
 
-- arXiv:2505.21395 — SquareχPO (Phase 2 `loss_type="squarechipo"`)
-- arXiv:2505.08849 — DP-AdamW (already implemented in `opaque.optimizers.adamw`)
-- arXiv:2603.22563 — Decoupled DP-RLHF (roadmap recipe)
-- arXiv:2501.19080 — DP-PolicyGradient (out of scope)
-- arXiv:2510.21060 — Sample-complexity theory (informational)
+- `liger_kernel/chunked_loss/fused_linear_preference.py` — chunked preference base (~80% memory reduction; Phase −1 port target).
+- `liger_kernel/chunked_loss/{dpo,kto,cpo,orpo,simpo,grpo}_loss.py` — per-algorithm losses.
+- `liger_kernel/transformers/monkey_patch.py:3411` — `_apply_liger_kernel` per-architecture dispatch (already mirrored in `opaque-patches`).
+- `unsloth/models/dpo.py` — empty stub (no `FastDPOTrainer` exists; their "fast DPO" is TRL+Liger underneath).
+- `unsloth_zoo/rl_replacements.py:549` — `UnslothEfficientGRPO` (not adoptable; incompatible with DP-SGD).
+
+### DP-alignment papers (status against this plan)
+
+- **arXiv:2505.21395** — SquareχPO (first optimal-rate DP-DPO). Lands as `loss_type="squarechipo"` in Phase 2.
+- **arXiv:2505.08849** — DP-AdamW (+15% over prior baselines at ε∈[2,5]). Already implemented as `opaque.optimizers.adamw(noise_bias_correction=True)`.
+- **arXiv:2603.22563** — Decoupled DP-RLHF. Roadmap recipe; built on `OpaqueRewardTrainer` (post-plan).
+- **arXiv:2501.19080** — DP-PolicyGradient. Out of scope; trajectory-level DP is a different design.
+- **arXiv:2510.21060** — Sample-complexity theory. Informational; cite in docs.
 
 ---
 
-## 17. Glossary
+## 21. Glossary
 
-- **DP-SGD** — Differentially Private Stochastic Gradient Descent: per-example gradient clipping + Gaussian noise on the aggregated gradient.
-- **Per-example loss closure** — the function passed to `clipped_grad`, run inside `vmap(grad(...))`. Must depend only on a single example's data.
-- **Poisson sampling** — each example included in each batch with independent probability `q`. Realized batch size is `Binomial(N, q)`-distributed.
-- **Reference model** — frozen policy used to compute log-prob baseline in DPO/KTO/etc.
-- **PEFT adapter** — a LoRA / prompt-tuning / etc. attachment to a frozen base model. Toggleable via `disable_adapter` / `set_adapter`.
-- **`functional_call`** — `torch.func.functional_call`; substitutes named params at forward time without mutating the module.
-- **Vmap-safe** — code that produces correct results under `torch.func.vmap`: no in-place mutation, no `.item()`, no module state changes, no Python control flow on data-dependent tensor shapes.
-- **MPO / WPO / LD-DPO / TR-DPO / EXO / NCA / BCO / SPPO / APO / DiscoPOP / SquareχPO** — DPO loss variants; see [Phase 2 table](#85-dpo-loss-variants-phase-2).
-- **`expected_batch_size`** — public hyperparameter; the expectation of the realized Poisson batch size. Used for gradient normalization to keep the divisor data-independent.
+- **DP-SGD** — Differentially Private Stochastic Gradient Descent. Per-example clip then aggregate, then add calibrated Gaussian noise. The standard "private SGD" mechanism.
+- **DP-FTRL** — DP Follow-The-Regularized-Leader. Uses matrix factorization to correlate noise across steps; tighter privacy for the same utility under streaming / fixed-pass training. Opaque ships both mechanisms; `opaque-alignment` is mechanism-agnostic.
+- **api/façade pattern** — Opaque's package layout where each distribution `<dist>` owns the implementation namespace `opaque.api.<dist-suffix>.*` and exposes a thin re-exporting façade at `opaque.<module>.*`.
+- **functional model** — A model exposed as a callable taking `(params_dict, *args, **kwargs)`; obtained via `opaque.functional.make_functional(model, partition_trainable=True)`. Composes with `torch.func.vmap`/`grad`.
+- **per-example clipping** — Bounding the L2 norm of each example's gradient to `C` before aggregation; gives a constant L2 sensitivity used by privacy accounting. Realized via `opaque.clipping.clipped_grad`.
+- **`null_ref_context`** — Context manager that disables PEFT adapters (or activates a `"ref"` adapter) so a single model can serve as both policy and reference. Toggles instance attributes (`_disable_adapters`, `active_adapter`), not `state_dict()` entries. Safe outside vmap, forbidden inside vmap.
+- **MPO** — Multi-loss DPO; `loss_type` is a list of variant names with corresponding `loss_weights`.
+- **TR-DPO** — Trust-region DPO; reference parameters EMA-track the policy parameters at fixed step intervals.
+- **WPO** — Weighted Preference Optimization; per-pair weight derived from the policy's marginal logp.
+- **LD-DPO** — Length-Decoupled DPO; decomposes per-token logps into a shared prefix and a tail, weights the tail by `ld_alpha`.
+- **SquareχPO** — Square chi-squared Preference Optimization; loss `0.5·(σ(βΔ) − 1)²`. First optimal-rate DP-DPO.
+- **DP-purity** — Property of a per-example loss closure: its output for example `i` depends only on example `i`'s data. Required for per-example clipping to give a correct privacy bound.
