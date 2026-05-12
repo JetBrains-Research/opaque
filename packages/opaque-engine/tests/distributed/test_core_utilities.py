@@ -1,7 +1,8 @@
 """Tests for opaque.distributed core utilities.
 
 These tests focus on non-distributed behavior (when torch.distributed is not initialized).
-For actual multi-device distributed tests, see test_ddp_integration.py.
+For actual multi-device distributed tests, see ``test_collectives.py`` and
+``test_profiler_sync.py`` in this folder.
 """
 
 import pytest
