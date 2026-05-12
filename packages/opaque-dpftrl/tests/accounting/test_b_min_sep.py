@@ -41,10 +41,7 @@ def test_transcript_cache_reuses_same_handle():
 
 def _drain_cache(tc) -> None:
     """Drop any leftover native handles so tests start from a clean slate."""
-    with tc._lock:
-        while tc._cache:
-            _k, h = tc._cache.popitem(last=False)
-            tc._native.drop_b_min_sep_transcript_corpus(h)
+    tc._cache.clear()
 
 
 def test_transcript_cache_evicts_lru(monkeypatch):
@@ -54,23 +51,23 @@ def test_transcript_cache_evicts_lru(monkeypatch):
     )
 
     monkeypatch.delenv("OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES", raising=False)
-    monkeypatch.setattr(tc, "_MAX_ENTRIES", 2)
+    monkeypatch.setattr(tc._cache, "_max_entries", 2)
     _drain_cache(tc)
 
     calls: list[tuple[str, int]] = []
-    orig_drop = tc._native.drop_b_min_sep_transcript_corpus
     orig_register = tc._native.register_b_min_sep_transcript_corpus
+    orig_destructor = tc._cache._destructor
 
-    def tracking_drop(handle: int) -> None:
+    def tracking_destructor(handle: int) -> None:
         calls.append(("drop", handle))
-        orig_drop(handle)
+        orig_destructor(handle)
 
     def tracking_register(*args, **kwargs) -> int:
         hid = orig_register(*args, **kwargs)
         calls.append(("register", hid))
         return hid
 
-    monkeypatch.setattr(tc._native, "drop_b_min_sep_transcript_corpus", tracking_drop)
+    monkeypatch.setattr(tc._cache, "_destructor", tracking_destructor)
     monkeypatch.setattr(
         tc._native, "register_b_min_sep_transcript_corpus", tracking_register
     )
@@ -108,29 +105,24 @@ def test_transcript_cache_evicts_for_byte_cap(monkeypatch):
         _transcript_cache as tc,
     )
 
-    monkeypatch.setattr(tc, "_MAX_ENTRIES", 16)
+    monkeypatch.setattr(tc._cache, "_max_entries", 16)
+    monkeypatch.setattr(tc._cache, "_max_bytes", 3 * 64 * 10 * 8)
     _drain_cache(tc)
 
-    # Each entry is 3 * 64 * 10 * 8 = 15360 bytes; budget fits exactly one.
-    monkeypatch.setenv(
-        "OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES",
-        str(tc._estimate_raw_bytes(64, 10)),
-    )
-
     calls: list[tuple[str, int]] = []
-    orig_drop = tc._native.drop_b_min_sep_transcript_corpus
     orig_register = tc._native.register_b_min_sep_transcript_corpus
+    orig_destructor = tc._cache._destructor
 
-    def tracking_drop(handle: int) -> None:
+    def tracking_destructor(handle: int) -> None:
         calls.append(("drop", handle))
-        orig_drop(handle)
+        orig_destructor(handle)
 
     def tracking_register(*args, **kwargs) -> int:
         hid = orig_register(*args, **kwargs)
         calls.append(("register", hid))
         return hid
 
-    monkeypatch.setattr(tc._native, "drop_b_min_sep_transcript_corpus", tracking_drop)
+    monkeypatch.setattr(tc._cache, "_destructor", tracking_destructor)
     monkeypatch.setattr(
         tc._native, "register_b_min_sep_transcript_corpus", tracking_register
     )
