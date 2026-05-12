@@ -1,7 +1,18 @@
-# Run example:
-# RUN_NAME="ftrl-bandmf-b10" uv run cadence execution start \
-#   --preset ".cadence/configs/train_dp_ftrl (mellum_kstack).yaml" \
-#   -e EXTRA_ARGS="--mechanism band_mf --bands 10"
+# Mellum + KStack, single GPU (H200).  Preset defaults: BandMF + b-min-sep
+# subsampling, bands=64, momentum=0.95 (same recipe as historical
+# ``ftrl-bandmf-b64-m095-bminsep`` W&B runs).  DP-SGD baseline lives in
+# ``train_causal_lm (mellum_kstack).yaml``.
+#
+# Quartet (submit all four for distributed vs single-GPU parity checks):
+#   1) causal single:  train_causal_lm (mellum_kstack).yaml
+#   2) causal 4-GPU:    train_causal_lm (mellum_kstack_distributed).yaml
+#   3) FTRL single:     this file
+#   4) FTRL 4-GPU:      train_dp_ftrl (mellum_kstack_distributed).yaml
+#
+# Run example (optional early stop):
+#   RUN_NAME="ftrl-bandmf-b64-bminsep-single" uv run cadence execution start \
+#     --preset ".cadence/configs/train_dp_ftrl (mellum_kstack).yaml" \
+#     -e EXTRA_ARGS="--max-steps 200"
 
 project_name: jbr-fed
 working_dir: "."

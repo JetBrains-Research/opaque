@@ -1,17 +1,20 @@
-# 4-GPU distributed DP-FTRL training (sharded — disjoint shard per rank;
-# mathematically equivalent to the single-GPU train_dp_ftrl
-# (mellum_kstack).yaml run at the same global batch with unchanged privacy
-# accounting):
-#   RUN_NAME="ftrl-bandmf-b64-bminsep-4gpu-sharded" uv run cadence execution start \
+# 4×A10G, sharded DDP — same global batch and privacy accounting as single-GPU
+# ``train_dp_ftrl (mellum_kstack).yaml``.  Preset = BandMF + b-min-sep, b=64.
+# Per-rank microbatch is lowered vs H200 to reduce vmap OOM on 24GB cards.
+#
+# Quartet: see header in ``train_dp_ftrl (mellum_kstack).yaml``.
+#
+# Run example:
+#   RUN_NAME="ftrl-bandmf-b64-bminsep-4gpu" uv run cadence execution start \
 #     --preset ".cadence/configs/train_dp_ftrl (mellum_kstack_distributed).yaml" \
-#     -e EXTRA_ARGS="--max-steps 100"
+#     -e EXTRA_ARGS="--max-steps 200"
 
 project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
     uv sync --group dev --group examples --all-packages --extra all  # "all" is a real extra in pyproject.toml
-    uv run torchrun --nproc_per_node=4 examples/train_dp_ftrl.py --preset mellum-kstack --gradient-checkpointing --microbatch-size 8 $EXTRA_ARGS
+    uv run torchrun --nproc_per_node=4 examples/train_dp_ftrl.py --preset mellum-kstack --gradient-checkpointing --microbatch-size 4 $EXTRA_ARGS
 provisioning:
   gpu_type: a10g
   gpu_count: 4
