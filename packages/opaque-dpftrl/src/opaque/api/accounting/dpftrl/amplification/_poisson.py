@@ -25,96 +25,14 @@ from dataclasses import dataclass
 from opaque.api.accounting.core import _native
 
 from opaque.api.accounting.core._base import Pld
-from opaque.api.accounting.core.discretization import DiscretizationConfig, get_discretization
+from opaque.api.accounting.core.discretization import get_discretization
 from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
-from opaque.api.dpftrl.noise._band_mf import BandMfStrategy, _band_mf_coefficients_cached, _lr_key
+from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
 from opaque.api.dpftrl.noise._identity import IdentityStrategy
 
 #: Mechanism types accepted by :func:`poisson`.
 _Inner = MfGaussian
-
-
-_DISC_FIELDS = (
-    "discretization",
-    "log_x_mass_truncation_bound",
-    "pessimistic_estimate",
-    "max_grid_size",
-    "tail_mass_truncation",
-    "num_mc_samples",
-    "seed",
-)
-
-
-def _pld_discretization_key(cfg: DiscretizationConfig) -> tuple:
-    return tuple(getattr(cfg, f) for f in _DISC_FIELDS)
-
-
-def _discretization_from_key(disc_key: tuple) -> DiscretizationConfig:
-    return DiscretizationConfig(**dict(zip(_DISC_FIELDS, disc_key, strict=True)))
-
-
-@functools.lru_cache(maxsize=4096)
-def _cyclic_poisson_bandmf_pld_cached(
-    noise_multiplier: float,
-    n_steps: int,
-    bands: int,
-    momentum: float,
-    lr_key: tuple[float, ...] | None,
-    sample_rate: float,
-    disc_key: tuple,
-) -> Pld:
-    """Module-global PLD cache — :meth:`CyclicPoisson.pld` used to be per-instance
-    ``lru_cache`` only, which is empty on every fresh ``DpProcess`` built during
-    :func:`opaque.accounting.calibration.calibrate` binary search."""
-    coefs = _band_mf_coefficients_cached(n_steps, bands, momentum, lr_key)
-    sensitivity = float(coefs.norm())
-    effective_nm = noise_multiplier / sensitivity
-    bands_i = int(bands)
-    num_groups = math.ceil(n_steps / bands_i) if bands_i > 0 else 0
-    native_cfg = _discretization_from_key(disc_key).to_native()
-    per_group_pld = _native.poisson_gaussian_pld(
-        effective_nm, sample_rate, native_cfg
-    )
-    return per_group_pld.self_compose(num_groups)
-
-
-@functools.lru_cache(maxsize=4096)
-def _cyclic_poisson_identity_plain_cached(
-    noise_multiplier: float,
-    n_steps: int,
-    sample_rate: float,
-    disc_key: tuple,
-) -> Pld:
-    effective_nm = float(noise_multiplier)
-    num_groups = int(n_steps)
-    native_cfg = _discretization_from_key(disc_key).to_native()
-    per_group_pld = _native.poisson_gaussian_pld(
-        effective_nm, sample_rate, native_cfg
-    )
-    return per_group_pld.self_compose(num_groups)
-
-
-@functools.lru_cache(maxsize=4096)
-def _cyclic_poisson_identity_truncated_cached(
-    noise_multiplier: float,
-    n_steps: int,
-    sample_rate: float,
-    truncated_batch_size: int,
-    dataset_size: int,
-    disc_key: tuple,
-) -> Pld:
-    effective_nm = float(noise_multiplier)
-    num_groups = int(n_steps)
-    native_cfg = _discretization_from_key(disc_key).to_native()
-    per_group_pld = _native.truncated_poisson_gaussian_pld(
-        effective_nm,
-        sample_rate,
-        truncated_batch_size,
-        dataset_size,
-        native_cfg,
-    )
-    return per_group_pld.self_compose(num_groups)
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,6 +125,7 @@ class CyclicPoisson(DpFtrlProcess):
                     "(truncated_batch_size=None) with BandMfStrategy."
                 )
 
+    @functools.lru_cache(maxsize=8)
     def pld(
         self,
         *,
@@ -221,45 +140,39 @@ class CyclicPoisson(DpFtrlProcess):
             pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
-        disc_key = _pld_discretization_key(config)
-        native_cfg = config.to_native()
 
         s = self.inner.strategy
-        if not isinstance(s, (BandMfStrategy, IdentityStrategy)):
+        if isinstance(s, BandMfStrategy):
+            sensitivity = s.sensitivity(n_steps=self.n_steps)
+            effective_nm = self.inner.noise_multiplier / sensitivity
+            bands = s.bands
+            num_groups = math.ceil(self.n_steps / bands) if bands > 0 else 0
+        elif isinstance(s, IdentityStrategy):
+            effective_nm = float(self.inner.noise_multiplier)
+            num_groups = int(self.n_steps)
+        else:
             raise TypeError(
                 "Poisson requires a BandMfStrategy or IdentityStrategy "
                 f"inner.strategy, got {type(s).__name__}."
             )
 
-        if self.inner.noise_multiplier == 0:
-            return _native.non_private_pld(native_cfg)
+        if effective_nm == 0:
+            return _native.non_private_pld(config.to_native())
 
-        if isinstance(s, BandMfStrategy):
-            return _cyclic_poisson_bandmf_pld_cached(
-                float(self.inner.noise_multiplier),
-                int(self.n_steps),
-                int(s.bands),
-                float(s.momentum),
-                _lr_key(s.lr_schedule),
-                float(self.sample_rate),
-                disc_key,
-            )
-
+        native_cfg = config.to_native()
         if self.truncated_batch_size is not None:
-            return _cyclic_poisson_identity_truncated_cached(
-                float(self.inner.noise_multiplier),
-                int(self.n_steps),
-                float(self.sample_rate),
-                int(self.truncated_batch_size),
-                int(self.dataset_size),  # type: ignore[arg-type]
-                disc_key,
+            per_group_pld = _native.truncated_poisson_gaussian_pld(
+                effective_nm,
+                self.sample_rate,
+                self.truncated_batch_size,
+                self.dataset_size,
+                native_cfg,
             )
-        return _cyclic_poisson_identity_plain_cached(
-            float(self.inner.noise_multiplier),
-            int(self.n_steps),
-            float(self.sample_rate),
-            disc_key,
-        )
+        else:
+            per_group_pld = _native.poisson_gaussian_pld(
+                effective_nm, self.sample_rate, native_cfg
+            )
+        return per_group_pld.self_compose(num_groups)
 
 
 def poisson(
