@@ -1652,6 +1652,14 @@ def main():
                 perf = profiler.current_metrics()
 
                 if use_wandb:
+                    # Resolve LR for the current step.  ``lr_for_opt`` may
+                    # be a scalar (constant LR) or a torchopt schedule
+                    # callable that takes a step index.
+                    current_lr = (
+                        float(lr_for_opt(global_step))
+                        if callable(lr_for_opt)
+                        else float(lr_for_opt)
+                    )
                     wb_metrics = {
                         "train/loss": avg_loss,
                         "train/batch_size": batch_size,
@@ -1660,6 +1668,7 @@ def main():
                         "train/grad_norm_mean": mean_grad_norm,
                         "train/clipped_grad_norm_mean": aux.clipped_grad_norms.mean().item(),
                         "train/noise_std": _effective(noise_stddev),
+                        "train/lr": current_lr,
                         "perf/step_time_sec": perf["step_time_sec"],
                         "perf/throughput_samples_per_sec": perf[
                             "throughput_samples_sec"
@@ -1684,6 +1693,10 @@ def main():
                             wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(
                                 1.0, float(batch_size)
                             )
+                            if isinstance(noise_stddev, PerGroup):
+                                wb_metrics[f"group/noise_std/{gname}"] = (
+                                    noise_stddev.values[gname]
+                                )
                     wandb.log(wb_metrics, step=global_step)
 
                 print(

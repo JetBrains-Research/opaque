@@ -1654,9 +1654,19 @@ def main():
             args.target_delta
         )
 
-    # Step-0 eval
+    # Step-0 eval — baseline before any training step.  Logs the calibrated
+    # values that downstream per-step metrics also report so the dashboard
+    # has continuous lines (no broken first-point).
     initial_eval_loss = eval_loss(trainable_params)
     initial_epsilon = epsilon_at_step(0)
+    initial_clipping_norm = (
+        clip_norm.effective if isinstance(clip_norm, PerGroup) else float(clip_norm)
+    )
+    initial_noise_std = noise_multiplier * (
+        clip_norm.effective / args.batch_size
+        if isinstance(clip_norm, PerGroup)
+        else float(clip_norm) / args.batch_size
+    )
     print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
     if use_wandb:
         wandb.log(
@@ -1664,6 +1674,8 @@ def main():
                 "eval/loss": initial_eval_loss,
                 "privacy/epsilon": initial_epsilon,
                 "train/lr": lr_schedule[0].item(),
+                "train/clipping_norm": initial_clipping_norm,
+                "train/noise_std": initial_noise_std,
             },
             step=0,
         )
@@ -1741,17 +1753,23 @@ def main():
                         ),
                         "train/clip_rate": clip_rate,
                         "train/grad_norm_mean": mean_grad_norm,
+                        "train/clipped_grad_norm_mean": (
+                            aux.clipped_grad_norms.mean().item()
+                            if getattr(aux, "clipped_grad_norms", None) is not None
+                            else 0.0
+                        ),
                         "train/noise_std": (
                             step_noise_stddev.effective
                             if isinstance(step_noise_stddev, PerGroup)
                             else step_noise_stddev
                         ),
                         "train/lr": lr_t,
-                        "train/momentum": args.momentum,
                         "perf/step_time_sec": perf["step_time_sec"],
                         "perf/throughput_samples_per_sec": perf[
                             "throughput_samples_sec"
                         ],
+                        "perf/allocated_gb": perf["memory_allocated_gb"],
+                        "perf/reserved_gb": perf["memory_reserved_gb"],
                         "perf/peak_gb": perf["memory_peak_gb"],
                     }
                     if (
@@ -1843,9 +1861,10 @@ def main():
         print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e}")
         print(f"  Noise multiplier: {noise_multiplier:.4f}")
         print(f"  Final ε: {final_epsilon:.4f}")
-
-        if use_wandb:
-            wandb.log({"privacy/epsilon_final": final_epsilon}, step=global_step)
+        # ``privacy/epsilon`` is logged at every eval step (see the
+        # per-eval block above), so the wandb timeline already shows the
+        # final ε at the last step.  No need to re-log a separate
+        # ``privacy/epsilon_final`` scalar.
 
     profiler, _ = profiler.mark("training_complete")
     print("\n" + profiler.final_summary())
