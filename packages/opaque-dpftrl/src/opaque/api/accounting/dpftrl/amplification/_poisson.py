@@ -25,10 +25,17 @@ from dataclasses import dataclass
 from opaque.api.accounting.core import _native
 
 from opaque.api.accounting.core._base import Pld
-from opaque.api.accounting.core.discretization import DiscretizationConfig, get_discretization
+from opaque.api.accounting.core.discretization import (
+    DiscretizationConfig,
+    get_discretization,
+)
 from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
-from opaque.api.dpftrl.noise._band_mf import BandMfStrategy, _band_mf_coefficients_cached, _lr_key
+from opaque.api.dpftrl.noise._band_mf import (
+    BandMfStrategy,
+    _band_mf_coefficients_cached,
+    _lr_key,
+)
 from opaque.api.dpftrl.noise._identity import IdentityStrategy
 
 #: Mechanism types accepted by :func:`poisson`.
@@ -73,9 +80,7 @@ def _cyclic_poisson_bandmf_pld_cached(
     bands_i = int(bands)
     num_groups = math.ceil(n_steps / bands_i) if bands_i > 0 else 0
     native_cfg = _discretization_from_key(disc_key).to_native()
-    per_group_pld = _native.poisson_gaussian_pld(
-        effective_nm, sample_rate, native_cfg
-    )
+    per_group_pld = _native.poisson_gaussian_pld(effective_nm, sample_rate, native_cfg)
     return per_group_pld.self_compose(num_groups)
 
 
@@ -89,9 +94,7 @@ def _cyclic_poisson_identity_plain_cached(
     effective_nm = float(noise_multiplier)
     num_groups = int(n_steps)
     native_cfg = _discretization_from_key(disc_key).to_native()
-    per_group_pld = _native.poisson_gaussian_pld(
-        effective_nm, sample_rate, native_cfg
-    )
+    per_group_pld = _native.poisson_gaussian_pld(effective_nm, sample_rate, native_cfg)
     return per_group_pld.self_compose(num_groups)
 
 
