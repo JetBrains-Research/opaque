@@ -318,6 +318,23 @@ groups. Instead of a single global L2 norm bound, each group is clipped
 independently. This can better match the natural gradient scale of different
 layers or module types (e.g., attention vs. MLP).
 
+**When to reach for it.** Per-group clipping is most useful when one or
+more parameter groups have substantially different gradient magnitudes
+than the rest — a freshly initialised classifier head over frozen
+pretrained layers, or a LoRA target whose gradients sit far below its
+siblings. With `Cᵢ` near per-group typical gradient magnitudes, the
+non-uniform `σᵢ ∝ √Cᵢ` noise allocation concentrates less noise on
+small-gradient groups without sacrificing much sensitivity on the
+dominant ones, and on heterogeneous workloads this recovers a small
+eval-loss improvement over scalar clipping at the same joint budget.
+Setting `Cᵢ` substantially tighter than the per-group typical magnitudes
+(e.g. half the per-group median) regresses below scalar — clipping bias
+dominates the noise-redistribution benefit. When groups are
+near-homogeneous the joint sensitivity `√(ΣCᵢ²)` is `√K`-times the per
+group bound, so uniform `Cᵢ = c` is strictly worse than scalar at `c`;
+either pick scalar or assign asymmetric `Cᵢ` that exploit the
+heterogeneity.
+
 ### Setup
 
 Use `per_group` to construct a `PerGroup` from parameter keys and substring
@@ -394,6 +411,18 @@ tensors keyed like your parameters, then use `noise_stddev_for` as above.
 The optimal allocation sets $\sigma_i \propto \sqrt{C_i}$ instead of a
 uniform σ.  Privacy accounting remains `gaussian(nm)` — the allocation
 satisfies the same Mahalanobis constraint, just with better MSE.
+
+The same joint allocation extends to a paired first/second-moment
+release (Adam-family optimizers via the private second-moment release).
+With a single shared noise multiplier, the first-moment σ picks up a
+$\sqrt{1+C}$ factor over the no-paired baseline (where `C` is the
+per-record clipping bound — scalar for `clipped_grad`, the joint
+`√(ΣCᵢ²)` for per-group). At `C=0.1` the inflation is +5%; at `C=1` it
+is +40%. Use the smallest `C` the optimizer tolerates when running with
+the paired release. The two compose: stacked, per-group clipping plus
+the paired release carry the same `C`-dependent σ cost as the paired
+release alone and the same per-group thresholding as per-group clipping
+alone — no additional accounting cost from the combination.
 
 ### Diagnostics
 
@@ -564,37 +593,6 @@ starting threshold for adaptive, sensitivity bound `R` for auto.
 - Adaptive (`adaptive_clipped_grad`): when you want the clip threshold to
   track a target quantile of gradient norms, at a small additional
   privacy cost for the quantile query.
-
-## Empirical evidence
-
-How `--second-moment` and `--per-group-clipping` interact with the
-choice of clip norm `C`, distilled from end-to-end DP fine-tuning runs
-at ε=3:
-
-1. **`--second-moment` redistributes σ in proportion to `C`.** Joint
-   Mahalanobis allocation between the first- and second-moment streams
-   keeps privacy accounting at `gaussian(nm)`, but the first-moment σ
-   picks up a $\sqrt{1+C}$ factor relative to running without
-   `--second-moment` at the same noise multiplier — roughly +5% at
-   `C=0.1`, +40% at `C=1`. Use the smallest `C` your optimizer
-   tolerates when `--second-moment` is on.
-
-2. **`--per-group-clipping` pays off when groups have heterogeneous
-   gradient norms.** PG noise is allocated non-uniformly,
-   `σᵢ ∝ √Cᵢ`, against a joint per-example sensitivity of
-   `√(ΣCᵢ²)`. A tight `Cᵢ` on a naturally-small-gradient group cuts
-   σ on that group's coordinates; setting all `Cᵢ = c` uniformly
-   leaves you with `√K` more per-group noise than scalar clipping at
-   `c` and gains nothing. Reach for PG when one group sits an order
-   of magnitude away from the rest on gradient norm — for example a
-   freshly initialised classifier head over frozen layers, or a
-   single LoRA target whose gradients are much smaller than its
-   siblings.
-
-3. **`--second-moment` and `--per-group-clipping` compose.** Stacked,
-   the two carry the same `C`-dependent σ cost as `--second-moment`
-   alone and the same per-group thresholding as `--per-group-clipping`
-   alone — no additional accounting cost from the combination.
 
 ## API reference
 

@@ -79,12 +79,6 @@ stitches them.
 - **[DP-FTRL mechanisms](../mechanisms/dp-ftrl/index.md)** — BandMF,
   BLT, BSR, BISR, λ-CGD strategies.
 
-### Extending
-
-- **[Extending Opaque](../extending/index.md)** — Plugging in a new
-  mechanism family, registering custom state types, the
-  `opaque.api.*` contributor surface.
-
 ### Reference
 
 - **[Known Limitations](../limitations.md)** — Flash Attention,

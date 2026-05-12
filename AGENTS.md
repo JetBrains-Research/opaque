@@ -309,8 +309,6 @@ OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all \
   - Concept reference (per-topic): `docs/user-guide/{clipping,noise,
     sampling,accounting,distributed,...}.md`.
   - API reference (public façades): `docs/reference/`.
-  - Contributor / extending guides (only place that documents
-    `opaque.api.*` paths): `docs/extending/`.
   - Mechanism reference (split per stack): `docs/mechanisms/{dp-sgd,
     dp-ftrl}/`.
   - Tutorials: `docs/tutorials/*.ipynb`.

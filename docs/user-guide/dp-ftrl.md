@@ -127,7 +127,27 @@ grad_fn, clip_state = clipped_grad(
 ```
 
 `auto_clipped_grad` (AUTO-S) is also available and compatible with
-DP-FTRL — its sensitivity bound is constant.
+DP-FTRL — its per-record sensitivity bound
+`sup ‖R · g / (‖g‖ + γ)‖ ≤ R` is constant in the input, satisfying
+the same invariant MF accounting requires of fixed clipping.
+
+**Choosing among the three.** Scalar `clipped_grad` is the right
+default. Reach for `per_group` clipping when one or more parameter
+groups have substantially different gradient magnitudes than the
+rest — a freshly initialised head on top of frozen pretrained
+layers, or a LoRA target whose gradients sit far below its
+siblings: the non-uniform `σᵢ ∝ √Cᵢ` noise allocation concentrates
+less noise on small-gradient groups without sacrificing much
+sensitivity on the dominant ones, and on heterogeneous workloads
+this recovers a small eval-loss improvement over scalar clipping
+at the same joint budget. Setting `Cᵢ` substantially tighter than
+the per-group typical magnitudes (e.g. half the per-group median)
+regresses below scalar — clipping bias dominates the
+noise-redistribution benefit, so target `Cᵢ` near per-group typical
+gradient magnitudes. Reach for `auto_clipped_grad` when you don't
+want to tune `R` per workload — on the workloads we've measured
+AUTO-S matches or slightly beats fixed clipping at the same `R`,
+with no per-workload tuning needed.
 
 ## 4. Noise
 
@@ -156,7 +176,18 @@ step must produce gradients with the same `max_norm` for the privacy
 claim to hold.
 
 For private second-moment estimation (Adam-style optimizers), pass
-`second_moment_strategy=...` — see [Optimizers](optimizers.md).
+`second_moment_strategy=...` — see [Optimizers](optimizers.md). The
+joint Mahalanobis allocation between the two streams keeps privacy
+accounting at the same `gaussian(nm)` shape as the first-moment-only
+release: with the same strategy used for both streams, the
+first-moment σ picks up exactly a `√(1+C)` factor over the no-paired
+baseline (where `C` is the per-record clipping bound — scalar for
+`clipped_grad`, `PerGroup` for per-group clipping; AUTO-S uses `R`
+for the same role). With distinct strategies for the two streams the
+inflation depends on the ratio of their column norms — see
+[Noise](noise.md). Either way, pick `C` as small as the optimizer
+tolerates when the paired release is on (cross-reference: the same
+guidance as in the [Clipping](clipping.md) empirical evidence).
 
 ## 5. Sampling
 
@@ -193,6 +224,20 @@ Private second-moment AdamW pairs with `mf_gaussian_noise(...,
 second_moment_strategy=...)` — the noise mechanism produces a
 `SecondMomentNoiseOutput` and the optimizer's DP-aware path consumes
 it. See [Optimizers](optimizers.md) for the full second-moment story.
+
+**Stability under the paired release.** The math holds under MF
+(the predicted σ_first inflation matches the formula referenced in
+[Noise](noise.md)), but Adam-family optimizer stability is
+workload-dependent. The destabilisation risk comes from the
+v update: when per-coordinate gradient signal is small relative to
+the second-stream σ — common when some parameter groups have very
+small gradients — Adam's per-coordinate scaling accumulates bias
+and the average gradient norm grows across training. Watch for a
+rising clipping rate and a growing per-step gradient norm in the
+early steps. Mitigations: lower the learning rate (a ~3× drop is
+sometimes enough), or use `per_group` clipping to scope `C` per
+group so the per-group σ on small-gradient groups doesn't dominate
+the v signal there.
 
 ## 7. End-to-end loop
 
