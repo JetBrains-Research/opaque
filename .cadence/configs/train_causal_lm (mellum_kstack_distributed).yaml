@@ -15,7 +15,7 @@ working_dir: "."
 cmd:
   - |-
     uv sync --group dev --group examples --all-packages --extra all  # "all" is a real extra in pyproject.toml
-    uv run torchrun --nproc_per_node=4 examples/train_causal_lm.py --preset mellum-kstack --gradient-checkpointing --microbatch-size 8 $EXTRA_ARGS
+    uv run torchrun --nproc_per_node=4 examples/train_causal_lm.py --preset mellum-kstack --gradient-checkpointing --microbatch-size 4 $EXTRA_ARGS
 provisioning:
   gpu_type: a10g
   gpu_count: 4
