@@ -53,6 +53,13 @@ USAGE:
   # BLT on Mellum (default mechanism, near-optimal correlated noise)
   python examples/train_dp_ftrl.py --preset mellum-kstack
 
+  # 4-GPU distributed run with torchrun (sharded, same global batch as 1-GPU)
+  torchrun --nproc_per_node=4 examples/train_dp_ftrl.py --preset mellum-kstack
+
+  # 4-GPU replicated-data mode with parallel Poisson (identity mechanism only)
+  torchrun --nproc_per_node=4 examples/train_dp_ftrl.py --preset mellum-kstack \\
+      --mechanism identity --no-shard
+
   # BandMF with b=64 bands on Mellum
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism band_mf --bands 64
 
@@ -105,6 +112,7 @@ import sys
 import time
 
 import torch
+import torch.distributed as dist
 from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
 from torch.utils.data import DataLoader
@@ -124,8 +132,14 @@ import torchopt
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.accounting import calibration as cal
+from opaque.distributed import local_shard, sync
+from opaque.distributed.gradients import sum_gradients_
 from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad, per_group
-from opaque.types import PerGroup, SecondMomentNoiseOutput
+from opaque.types import (
+    PerGroup,
+    SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
+)
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
@@ -169,13 +183,39 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 
-def _select_device() -> tuple[torch.device, str]:
+def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
+    """Select best available device with user-facing label."""
     if torch.cuda.is_available():
+        if local_rank is not None:
+            torch.cuda.set_device(local_rank)
+            device = torch.device(f"cuda:{local_rank}")
+            return device, torch.cuda.get_device_name(local_rank)
         device = torch.device("cuda")
         return device, torch.cuda.get_device_name(0)
     if torch.backends.mps.is_available():
         return torch.device("mps"), "Apple Silicon"
     return torch.device("cpu"), "CPU"
+
+
+def _init_distributed() -> tuple[bool, int, int, int]:
+    """Initialize torch.distributed when launched via torchrun."""
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    rank = int(os.environ.get("RANK", "0"))
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+
+    if world_size <= 1:
+        return False, 0, 1, 0
+
+    if not dist.is_initialized():
+        backend = "nccl" if torch.cuda.is_available() else "gloo"
+        dist.init_process_group(backend=backend, init_method="env://")
+
+    return True, rank, world_size, local_rank
+
+
+def _cleanup_distributed() -> None:
+    if dist.is_available() and dist.is_initialized():
+        dist.destroy_process_group()
 
 
 def _is_dtype_supported(device: torch.device, dtype: torch.dtype) -> bool:
@@ -520,6 +560,19 @@ def parse_args():
     # DP / MF mechanism
     dp_g = parser.add_argument_group("dp", "DP-FTRL mechanism and clipping")
     dp_g.add_argument(
+        "--shard",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Shard dataset across DDP ranks (default).  Each rank operates "
+        "on a disjoint slice and gradients are summed across ranks — "
+        "mathematically equivalent to a single-rank run with the same "
+        "global batch size and unchanged privacy accounting.  Use "
+        "--no-shard to replicate the full dataset on each rank with "
+        "per-rank Poisson sampling at sample_rate/world_size; this mode "
+        "currently supports only --mechanism identity (parallel-Poisson "
+        "accounting reuses the DP-SGD parallel_poisson PLD).",
+    )
+    dp_g.add_argument(
         "--mechanism",
         type=str,
         default="band_mf",
@@ -758,12 +811,16 @@ def parse_args():
 def main():
     args = parse_args()
 
-    print("=" * 80)
-    print("DP-FTRL Training (Matrix Factorization Noise)")
-    print("=" * 80)
+    is_ddp, rank, world_size, local_rank = _init_distributed()
+    is_main_process = rank == 0
+
+    if is_main_process:
+        print("=" * 80)
+        print("DP-FTRL Training (Matrix Factorization Noise)")
+        print("=" * 80)
 
     # --- W&B ---
-    use_wandb = wandb is not None and (not args.no_wandb)
+    use_wandb = wandb is not None and (not args.no_wandb) and is_main_process
     if use_wandb:
         if args.wandb_run_name is None:
             model_short = args.model_name.split("/")[-1]
@@ -784,8 +841,13 @@ def main():
         print(f"W&B initialized (mode: {os.environ.get('WANDB_MODE', 'online')})")
 
     # --- Device ---
-    device, device_name = _select_device()
-    print(f"\nDevice: {device} ({device_name})")
+    device, device_name = _select_device(local_rank if is_ddp else None)
+    if is_main_process:
+        print(f"\nDevice: {device} ({device_name})")
+        if is_ddp:
+            print(
+                f"Distributed mode: rank={rank}/{world_size}, local_rank={local_rank}"
+            )
 
     torch.manual_seed(args.seed)
 
@@ -909,8 +971,31 @@ def main():
     # BLT uses fixed iteration order (sequential DataLoader, drop_last=True),
     # so shuffle once to randomize which examples land in which batch.
     # λ-CGD and BISR use BnB sampling which randomizes assignment itself.
+    # Shuffle BEFORE sharding so every rank sees the same global order;
+    # local_shard then carves the deterministic contiguous slice.
     if args.mechanism == "blt":
         train_dataset = train_dataset.shuffle(seed=args.seed)
+
+    # --- Distributed data partitioning ---
+    # Two modes mirror train_causal_lm.py:
+    #   --shard (default): disjoint shard per rank.  Per-example Poisson
+    #     probability is unchanged so the per-step gradient distribution
+    #     equals the single-rank baseline at sample_rate batches summed
+    #     across ranks; the MF accountant stays identical to single rank.
+    #   --no-shard: replicated dataset, sample_rate / world_size per rank;
+    #     accounting uses parallel_poisson amplification.  Restricted to
+    #     --mechanism identity for now (the other MF amplifiers do not
+    #     yet have a derived parallel-worker PLD).
+    use_shard = is_ddp and args.shard
+    use_parallel = is_ddp and not args.shard
+    if use_parallel and args.mechanism not in ("identity", "none"):
+        raise ValueError(
+            f"--no-shard (replicated-data parallel mode) only supports "
+            f"--mechanism identity or none; got --mechanism {args.mechanism!r}. "
+            f"Use --shard (default) for correlated MF mechanisms."
+        )
+    if use_shard:
+        train_dataset = local_shard(train_dataset, rank=rank, world_size=world_size)
 
     eval_loader = DataLoader(
         eval_dataset,
@@ -921,8 +1006,29 @@ def main():
     )
 
     # --- Sampling ---
+    # ``sample_rate`` is the per-example global Poisson probability; the
+    # sharded path keeps it constant (disjoint shards mean each example
+    # is still drawn with probability ``sample_rate`` across ranks); the
+    # parallel path divides by ``world_size`` so the world-summed
+    # expected batch matches ``args.batch_size``.
     sample_rate = args.batch_size / global_train_size
+    if use_parallel:
+        sample_rate /= world_size
     expected_steps_per_epoch = global_train_size // args.batch_size
+    # In sharded mode the global expected batch is split across ranks,
+    # so the per-rank batch_size for non-Poisson samplers (BLT sequential
+    # and BnB) is reduced.  Poisson samplers handle this implicitly via
+    # ``sample_rate`` on the shard.
+    per_rank_batch_size = (
+        max(1, args.batch_size // world_size) if use_shard else args.batch_size
+    )
+
+    # Sampler keys fold in ``rank`` so each shard draws independent
+    # examples; in single-rank mode ``rank == 0`` and the keys reduce to
+    # the non-distributed values.  BnB / sequential samplers consume a
+    # base key that is similarly fold_in(seed, rank) so each shard gets
+    # its own deterministic partition.
+    base_sampler_key = fold_in(key(args.seed), rank) if is_ddp else key(args.seed)
 
     # Create sampler (or per-epoch sampler factory).
     # Static samplers (BnB, sequential) are created once and reused.
@@ -946,7 +1052,7 @@ def main():
                     bands=args.bands,
                     n_steps=expected_steps_per_epoch,
                     truncated_batch_size=args.truncated_batch_size,
-                    key=fold_in(key(args.seed), epoch),
+                    key=fold_in(base_sampler_key, epoch),
                 )
         else:
             if args.bands > 1 and p0 * (args.bands - 1) >= 1.0:
@@ -966,13 +1072,13 @@ def main():
                     bands=args.bands,
                     sampling_prob=p_bms,
                     n_steps=expected_steps_per_epoch,
-                    key=fold_in(key(args.seed), epoch),
+                    key=fold_in(base_sampler_key, epoch),
                 )
 
     elif args.mechanism == "blt":
         _blt_sampler = SequentialBatchSampler(
             train_dataset,
-            batch_size=args.batch_size,
+            batch_size=per_rank_batch_size,
         )
 
         def make_epoch_sampler(epoch):
@@ -981,12 +1087,15 @@ def main():
     elif args.mechanism in ("lambda_cgd", "bisr", "bsr"):
         # BnB sampler created once — the same fixed partition is reused every
         # epoch (required by BnB privacy accounting, Lemma 3.2 of
-        # Choquette-Choo et al. 2024).
+        # Choquette-Choo et al. 2024).  Under --shard each rank partitions
+        # its disjoint shard into the same number of bins; combined across
+        # ranks every global example still appears in exactly one bin so
+        # BnB privacy holds unchanged.
         _bnb_sampler = BallsInBinsSampler(
             train_dataset,
             num_bins=expected_steps_per_epoch,
             n_steps=expected_steps_per_epoch,
-            key=key(args.seed),
+            key=base_sampler_key,
         )
 
         def make_epoch_sampler(epoch):
@@ -1000,16 +1109,21 @@ def main():
                 sample_rate=sample_rate,
                 n_steps=expected_steps_per_epoch,
                 truncated_batch_size=args.truncated_batch_size,
-                key=fold_in(key(args.seed), epoch),
+                key=fold_in(base_sampler_key, epoch),
             )
 
-    print("\nSampling:")
-    print(f"  Mechanism: {args.mechanism}")
+    if is_main_process:
+        print("\nSampling:")
+        if is_ddp:
+            mode_label = "sharded" if use_shard else "parallel (replicated)"
+            print(f"  DDP mode: {mode_label} (world_size={world_size})")
+            if use_shard:
+                print(f"  Per-rank shard size: {len(train_dataset)}")
+                print(f"  Per-rank batch (non-Poisson): {per_rank_batch_size}")
+        print(f"  Mechanism: {args.mechanism}")
     if args.mechanism == "band_mf":
         if args.band_mf_sampling == "poisson":
-            print(
-                f"  Sampler: poisson (bands={args.bands}, q={sampling_prob:.6f})"
-            )
+            print(f"  Sampler: poisson (bands={args.bands}, q={sampling_prob:.6f})")
         else:
             print(
                 f"  Sampler: b_min_sep (bands={args.bands}, p_0={p0:.6f}, p={p_bms:.6f})"
@@ -1309,19 +1423,39 @@ def main():
                 n_steps=expected_steps_per_epoch * args.num_epochs,
             )
     elif args.mechanism == "identity":
+        if use_parallel:
+            # Replicated-data parallel-Poisson Identity reuses the
+            # DP-SGD parallel_poisson PLD: the MF identity strategy emits
+            # i.i.d. Gaussian noise so the per-step PLD is identical to
+            # the DP-SGD Gaussian PLD under parallel-worker Poisson
+            # sampling.  We surface it via :mod:`opaque.dpsgd.accounting`
+            # locally (avoids forcing dpftrl accounting to add a
+            # parallel-worker amplifier just for this one mechanism).
+            import opaque.dpsgd.accounting as dpsgd_acc
 
-        def acct_mechanism(nm):
-            return dpftrl_acc.poisson(
-                dpftrl_acc.mf_gaussian(nm, identity_strategy()),
-                sample_rate=sample_rate,
-                n_steps=total_steps,
-                truncated_batch_size=args.truncated_batch_size,
-                dataset_size=(
-                    global_train_size
-                    if args.truncated_batch_size is not None
-                    else None
-                ),
-            )
+            def _parallel_step(nm):
+                return dpsgd_acc.parallel_poisson(
+                    dpsgd_acc.gaussian(nm),
+                    sample_rate=sample_rate,
+                    num_workers=world_size,
+                )
+
+            def acct_mechanism(nm):
+                return _parallel_step(nm) * total_steps
+        else:
+
+            def acct_mechanism(nm):
+                return dpftrl_acc.poisson(
+                    dpftrl_acc.mf_gaussian(nm, identity_strategy()),
+                    sample_rate=sample_rate,
+                    n_steps=total_steps,
+                    truncated_batch_size=args.truncated_batch_size,
+                    dataset_size=(
+                        global_train_size
+                        if args.truncated_batch_size is not None
+                        else None
+                    ),
+                )
     elif args.mechanism == "none":
 
         def acct_mechanism(nm):
@@ -1385,6 +1519,16 @@ def main():
     # / ``max_participations``, including the degenerate-limit values for
     # bare-Poisson Identity).
     if args.mechanism == "none":
+        noise_n_steps = total_steps
+        noise_min_sep = 1
+        noise_max_part = total_steps
+    elif use_parallel:
+        # parallel-identity acct_mechanism returns a Composition of the
+        # parallel_poisson per-step amplifier and so does not expose
+        # ``.n_steps`` / ``.min_sep`` / ``.max_participations``.  Identity
+        # strategy emits i.i.d. Gaussian noise, so the underlying
+        # streaming matrix is the degenerate ``I`` and these values only
+        # gate length-checks on the noise side.
         noise_n_steps = total_steps
         noise_min_sep = 1
         noise_max_part = total_steps
@@ -1638,16 +1782,25 @@ def main():
     profiler, _ = profiler.mark("training_start")
     print_memory(device, "Before training")
 
-    # Per-eval epsilon reporting.  Every ``acct_mechanism`` branch above
-    # returns a :class:`DpFtrlProcess` (whole-process amplifier wrapping
-    # the MF mechanism), so ``approx_at_step(K)`` is always available —
-    # it returns an upper bound on the privacy cost at step K, rounded
-    # up to the amplifier's atomic_unit (one full epoch / one band).
+    # Per-eval epsilon reporting.  In single-rank / sharded mode every
+    # ``acct_mechanism`` branch returns a :class:`DpFtrlProcess` whose
+    # ``approx_at_step(K)`` upper-bounds the privacy cost at step K
+    # (rounded up to the amplifier's atomic_unit — one full epoch or
+    # one band).  Parallel-identity mode composes the parallel_poisson
+    # per-step PLD directly: K-step privacy is ``(per_step * K).epsilon_at(δ)``.
     def epsilon_at_step(step: int) -> float:
         if args.mechanism == "none":
             return 0.0
-        return acct_mechanism(noise_multiplier).approx_at_step(step).epsilon_at(
-            args.target_delta
+        if use_parallel:
+            if step == 0:
+                return 0.0
+            return (_parallel_step(noise_multiplier) * step).epsilon_at(
+                args.target_delta
+            )
+        return (
+            acct_mechanism(noise_multiplier)
+            .approx_at_step(step)
+            .epsilon_at(args.target_delta)
         )
 
     # Step-0 eval — baseline before any training step.  Logs the calibrated
@@ -1708,7 +1861,22 @@ def main():
                 # ``--second-moment`` is on (clipped_grad produced both
                 # streams per-example), or a single ``ClippedPytree``
                 # otherwise — the noise function dispatches polymorphically.
+                if is_ddp:
+                    clip_state, aux = sync(clip_state, aux)
+                    if isinstance(grads, SecondMomentClippingOutput):
+                        sum_gradients_(grads.grads)
+                        sum_gradients_(grads.squared_grads)
+                    else:
+                        sum_gradients_(grads)
                 noisy_grads, noise_state = noise_fn(grads, noise_state)
+                # All ranks generate identical noise from the same seed
+                # (no rank-fold in the noise key) so the per-rank
+                # ``noisy_grads`` already agree.  ``sync(noise_state)``
+                # is a cheap cross-rank consistency check on the
+                # internal step counter and latched sensitivity bound —
+                # see :mod:`opaque.dpftrl.noise._distributed`.
+                if is_ddp and not isinstance(noisy_grads, SecondMomentNoiseOutput):
+                    noise_state = sync(noise_state)
                 if isinstance(noisy_grads, SecondMomentNoiseOutput):
                     step_noise_stddev = noisy_grads.noisy_grads.noise_stddev
                 else:
@@ -1801,9 +1969,7 @@ def main():
             if global_step % args.eval_steps == 0:
                 current_eval_loss = eval_loss(trainable_params)
                 epsilon = epsilon_at_step(global_step)
-                print(
-                    f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
-                )
+                print(f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}")
                 if use_wandb:
                     wandb.log(
                         {
@@ -1863,11 +2029,16 @@ def main():
         # ``privacy/epsilon_final`` scalar.
 
     profiler, _ = profiler.mark("training_complete")
-    print("\n" + profiler.final_summary())
-    print("\n" + profiler.checkpoint_summary())
+    summary_profiler = sync(profiler) if is_ddp else profiler
+    print("\n" + summary_profiler.final_summary())
+    print("\n" + summary_profiler.checkpoint_summary())
 
     if use_wandb:
         wandb.finish()
+
+    if is_ddp:
+        dist.barrier(device_ids=[local_rank])
+        _cleanup_distributed()
 
     return 0
 

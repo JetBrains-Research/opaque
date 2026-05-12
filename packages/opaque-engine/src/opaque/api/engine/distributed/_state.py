@@ -242,12 +242,15 @@ def _ensure_builtin_sync_types_loaded() -> None:
     """Import internal registrations the first time a dispatch misses.
 
     Clipping registers itself synchronously; the performance profiler is
-    a soft dependency — missing it must not break ``sync()``.
+    a soft dependency — missing it must not break ``sync()``.  Profiling
+    registers ``TrainingProfiler`` at the impl path; importing through
+    the façade would require an extra side-effect import there, so we
+    target the impl module directly.
     """
     import opaque.api.engine.clipping._distributed  # noqa: F401
 
     try:
-        import opaque.profiling._distributed  # noqa: F401
+        import opaque.api.engine.profiling._distributed  # noqa: F401
     except ImportError:
         pass
 
