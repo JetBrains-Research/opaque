@@ -2891,7 +2891,7 @@ probability <span class="arithmatex">\(q\)</span>), the effective noise multipli
 <tr>
 <td><strong>Cyclic Poisson (DP-FTRL)</strong></td>
 <td><code>opaque.dpftrl.sampling.CyclicPoissonSampler</code>: <code>bands</code> disjoint groups, step <code>i</code> uses group <code>i % bands</code>, inclusion prob. <code>q</code> per eligible example. <code>bands=1</code> is identity (full data each step); larger <code>bands</code> match BandMF-style rotation.</td>
-<td><code>mf_noise</code> + <code>dpftrl_acc.poisson</code> (whole-process accountant).</td>
+<td><code>mf_gaussian_noise</code> + <code>dpftrl_acc.poisson</code> (whole-process accountant).</td>
 </tr>
 </tbody>
 </table>

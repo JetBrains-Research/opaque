@@ -4573,7 +4573,7 @@ a constant independent of the input data.  Per-step Gaussian noise
 each step; PLD composition does not require <code>max_norm</code> to be
 identical across steps when the accountant models step-varying
 sensitivity (for example adaptive clipping with <code>adaclip</code>).
-<code>mf_noise</code>'s matrix-factorization correlated noise <em>does</em> require
+<code>mf_gaussian_noise</code>'s matrix-factorization correlated noise <em>does</em> require
 <code>max_norm</code> to stay fixed for the whole run — the dispatcher latches
 the first-call bound — and AUTO-S satisfies that because <code>R</code> and
 <code>normalize_by</code> do not drift.  AUTO-S scaling is per-example and adds
@@ -4602,7 +4602,7 @@ grads, state = grad_fn(params, batch_x, batch_y, state=state)</p>
 </blockquote>
 </blockquote>
 </details>        <p>The returned <code>ClippedPytree</code> carries <code>max_norm = R / normalize_by</code>
-(constant across steps), so it composes with <code>mf_noise</code> (DP-FTRL)
+(constant across steps), so it composes with <code>mf_gaussian_noise</code> (DP-FTRL)
 and <code>gaussian_noise</code> (DP-SGD) the same way <code>clipped_grad</code> does at
 the same bound.</p>
 
@@ -4824,7 +4824,7 @@ Private Deep Learning Made Easier and Stronger."  NeurIPS 2023.</p>
 <a id="__codelineno-0-261" name="__codelineno-0-261"></a><span class="sd">        each step; PLD composition does not require ``max_norm`` to be</span>
 <a id="__codelineno-0-262" name="__codelineno-0-262"></a><span class="sd">        identical across steps when the accountant models step-varying</span>
 <a id="__codelineno-0-263" name="__codelineno-0-263"></a><span class="sd">        sensitivity (for example adaptive clipping with ``adaclip``).</span>
-<a id="__codelineno-0-264" name="__codelineno-0-264"></a><span class="sd">        ``mf_noise``&#39;s matrix-factorization correlated noise *does* require</span>
+<a id="__codelineno-0-264" name="__codelineno-0-264"></a><span class="sd">        ``mf_gaussian_noise``&#39;s matrix-factorization correlated noise *does* require</span>
 <a id="__codelineno-0-265" name="__codelineno-0-265"></a><span class="sd">        ``max_norm`` to stay fixed for the whole run — the dispatcher latches</span>
 <a id="__codelineno-0-266" name="__codelineno-0-266"></a><span class="sd">        the first-call bound — and AUTO-S satisfies that because ``R`` and</span>
 <a id="__codelineno-0-267" name="__codelineno-0-267"></a><span class="sd">        ``normalize_by`` do not drift.  AUTO-S scaling is per-example and adds</span>
@@ -4846,7 +4846,7 @@ Private Deep Learning Made Easier and Stronger."  NeurIPS 2023.</p>
 <a id="__codelineno-0-283" name="__codelineno-0-283"></a><span class="sd">        &gt;&gt;&gt; grads, state = grad_fn(params, batch_x, batch_y, state=state)</span>
 <a id="__codelineno-0-284" name="__codelineno-0-284"></a>
 <a id="__codelineno-0-285" name="__codelineno-0-285"></a><span class="sd">    The returned ``ClippedPytree`` carries ``max_norm = R / normalize_by``</span>
-<a id="__codelineno-0-286" name="__codelineno-0-286"></a><span class="sd">    (constant across steps), so it composes with ``mf_noise`` (DP-FTRL)</span>
+<a id="__codelineno-0-286" name="__codelineno-0-286"></a><span class="sd">    (constant across steps), so it composes with ``mf_gaussian_noise`` (DP-FTRL)</span>
 <a id="__codelineno-0-287" name="__codelineno-0-287"></a><span class="sd">    and ``gaussian_noise`` (DP-SGD) the same way ``clipped_grad`` does at</span>
 <a id="__codelineno-0-288" name="__codelineno-0-288"></a><span class="sd">    the same bound.</span>
 <a id="__codelineno-0-289" name="__codelineno-0-289"></a>
@@ -6364,7 +6364,7 @@ each group is scaled independently.</p>
 output with respect to the batch arguments is the returned
 <code>ClippedPytree.max_norm</code> metadata.  The bound is constant and
 data-independent, so per-step Gaussian calibration is correct.
-<code>mf_noise</code> additionally requires that <code>max_norm</code> not drift across
+<code>mf_gaussian_noise</code> additionally requires that <code>max_norm</code> not drift across
 steps; AUTO-S satisfies that latch because <code>R</code> and <code>normalize_by</code>
 are fixed.</p>
 </details>
@@ -6499,7 +6499,7 @@ are fixed.</p>
 <a id="__codelineno-0-147" name="__codelineno-0-147"></a><span class="sd">        output with respect to the batch arguments is the returned</span>
 <a id="__codelineno-0-148" name="__codelineno-0-148"></a><span class="sd">        ``ClippedPytree.max_norm`` metadata.  The bound is constant and</span>
 <a id="__codelineno-0-149" name="__codelineno-0-149"></a><span class="sd">        data-independent, so per-step Gaussian calibration is correct.</span>
-<a id="__codelineno-0-150" name="__codelineno-0-150"></a><span class="sd">        ``mf_noise`` additionally requires that ``max_norm`` not drift across</span>
+<a id="__codelineno-0-150" name="__codelineno-0-150"></a><span class="sd">        ``mf_gaussian_noise`` additionally requires that ``max_norm`` not drift across</span>
 <a id="__codelineno-0-151" name="__codelineno-0-151"></a><span class="sd">        steps; AUTO-S satisfies that latch because ``R`` and ``normalize_by``</span>
 <a id="__codelineno-0-152" name="__codelineno-0-152"></a><span class="sd">        are fixed.</span>
 <a id="__codelineno-0-153" name="__codelineno-0-153"></a><span class="sd">    &quot;&quot;&quot;</span>
@@ -7200,7 +7200,7 @@ to clip each per-example output to a maximum L2 norm, then sums the clipped outp
 or :class:<code>SecondMomentClippingOutput</code> (paired-stream when
 <code>second_moment=True</code>), carrying the post-normalization
 <code>max_norm</code> for downstream noise calibration.  The bound is part of
-the contract: consumers (<code>gaussian_noise</code>, <code>mf_noise</code>) read it
+the contract: consumers (<code>gaussian_noise</code>, <code>mf_gaussian_noise</code>) read it
 directly without the caller threading a separate <code>sensitivity</code>
 argument.  Unwrap to a raw pytree via <code>.pytree</code> if you need the
 summed values without metadata.</p>
@@ -7792,7 +7792,7 @@ controls the <em>output</em> dtype).</p>
 <a id="__codelineno-0-308" name="__codelineno-0-308"></a><span class="sd">    or :class:`SecondMomentClippingOutput` (paired-stream when</span>
 <a id="__codelineno-0-309" name="__codelineno-0-309"></a><span class="sd">    ``second_moment=True``), carrying the post-normalization</span>
 <a id="__codelineno-0-310" name="__codelineno-0-310"></a><span class="sd">    ``max_norm`` for downstream noise calibration.  The bound is part of</span>
-<a id="__codelineno-0-311" name="__codelineno-0-311"></a><span class="sd">    the contract: consumers (``gaussian_noise``, ``mf_noise``) read it</span>
+<a id="__codelineno-0-311" name="__codelineno-0-311"></a><span class="sd">    the contract: consumers (``gaussian_noise``, ``mf_gaussian_noise``) read it</span>
 <a id="__codelineno-0-312" name="__codelineno-0-312"></a><span class="sd">    directly without the caller threading a separate ``sensitivity``</span>
 <a id="__codelineno-0-313" name="__codelineno-0-313"></a><span class="sd">    argument.  Unwrap to a raw pytree via ``.pytree`` if you need the</span>
 <a id="__codelineno-0-314" name="__codelineno-0-314"></a><span class="sd">    summed values without metadata.</span>
@@ -9056,7 +9056,7 @@ a constant independent of the input data.  Per-step Gaussian noise
 each step; PLD composition does not require <code>max_norm</code> to be
 identical across steps when the accountant models step-varying
 sensitivity (for example adaptive clipping with <code>adaclip</code>).
-<code>mf_noise</code>'s matrix-factorization correlated noise <em>does</em> require
+<code>mf_gaussian_noise</code>'s matrix-factorization correlated noise <em>does</em> require
 <code>max_norm</code> to stay fixed for the whole run — the dispatcher latches
 the first-call bound — and AUTO-S satisfies that because <code>R</code> and
 <code>normalize_by</code> do not drift.  AUTO-S scaling is per-example and adds
@@ -9085,7 +9085,7 @@ grads, state = grad_fn(params, batch_x, batch_y, state=state)</p>
 </blockquote>
 </blockquote>
 </details>        <p>The returned <code>ClippedPytree</code> carries <code>max_norm = R / normalize_by</code>
-(constant across steps), so it composes with <code>mf_noise</code> (DP-FTRL)
+(constant across steps), so it composes with <code>mf_gaussian_noise</code> (DP-FTRL)
 and <code>gaussian_noise</code> (DP-SGD) the same way <code>clipped_grad</code> does at
 the same bound.</p>
 
@@ -9307,7 +9307,7 @@ Private Deep Learning Made Easier and Stronger."  NeurIPS 2023.</p>
 <a id="__codelineno-0-261" name="__codelineno-0-261"></a><span class="sd">        each step; PLD composition does not require ``max_norm`` to be</span>
 <a id="__codelineno-0-262" name="__codelineno-0-262"></a><span class="sd">        identical across steps when the accountant models step-varying</span>
 <a id="__codelineno-0-263" name="__codelineno-0-263"></a><span class="sd">        sensitivity (for example adaptive clipping with ``adaclip``).</span>
-<a id="__codelineno-0-264" name="__codelineno-0-264"></a><span class="sd">        ``mf_noise``&#39;s matrix-factorization correlated noise *does* require</span>
+<a id="__codelineno-0-264" name="__codelineno-0-264"></a><span class="sd">        ``mf_gaussian_noise``&#39;s matrix-factorization correlated noise *does* require</span>
 <a id="__codelineno-0-265" name="__codelineno-0-265"></a><span class="sd">        ``max_norm`` to stay fixed for the whole run — the dispatcher latches</span>
 <a id="__codelineno-0-266" name="__codelineno-0-266"></a><span class="sd">        the first-call bound — and AUTO-S satisfies that because ``R`` and</span>
 <a id="__codelineno-0-267" name="__codelineno-0-267"></a><span class="sd">        ``normalize_by`` do not drift.  AUTO-S scaling is per-example and adds</span>
@@ -9329,7 +9329,7 @@ Private Deep Learning Made Easier and Stronger."  NeurIPS 2023.</p>
 <a id="__codelineno-0-283" name="__codelineno-0-283"></a><span class="sd">        &gt;&gt;&gt; grads, state = grad_fn(params, batch_x, batch_y, state=state)</span>
 <a id="__codelineno-0-284" name="__codelineno-0-284"></a>
 <a id="__codelineno-0-285" name="__codelineno-0-285"></a><span class="sd">    The returned ``ClippedPytree`` carries ``max_norm = R / normalize_by``</span>
-<a id="__codelineno-0-286" name="__codelineno-0-286"></a><span class="sd">    (constant across steps), so it composes with ``mf_noise`` (DP-FTRL)</span>
+<a id="__codelineno-0-286" name="__codelineno-0-286"></a><span class="sd">    (constant across steps), so it composes with ``mf_gaussian_noise`` (DP-FTRL)</span>
 <a id="__codelineno-0-287" name="__codelineno-0-287"></a><span class="sd">    and ``gaussian_noise`` (DP-SGD) the same way ``clipped_grad`` does at</span>
 <a id="__codelineno-0-288" name="__codelineno-0-288"></a><span class="sd">    the same bound.</span>
 <a id="__codelineno-0-289" name="__codelineno-0-289"></a>
@@ -10847,7 +10847,7 @@ each group is scaled independently.</p>
 output with respect to the batch arguments is the returned
 <code>ClippedPytree.max_norm</code> metadata.  The bound is constant and
 data-independent, so per-step Gaussian calibration is correct.
-<code>mf_noise</code> additionally requires that <code>max_norm</code> not drift across
+<code>mf_gaussian_noise</code> additionally requires that <code>max_norm</code> not drift across
 steps; AUTO-S satisfies that latch because <code>R</code> and <code>normalize_by</code>
 are fixed.</p>
 </details>
@@ -10982,7 +10982,7 @@ are fixed.</p>
 <a id="__codelineno-0-147" name="__codelineno-0-147"></a><span class="sd">        output with respect to the batch arguments is the returned</span>
 <a id="__codelineno-0-148" name="__codelineno-0-148"></a><span class="sd">        ``ClippedPytree.max_norm`` metadata.  The bound is constant and</span>
 <a id="__codelineno-0-149" name="__codelineno-0-149"></a><span class="sd">        data-independent, so per-step Gaussian calibration is correct.</span>
-<a id="__codelineno-0-150" name="__codelineno-0-150"></a><span class="sd">        ``mf_noise`` additionally requires that ``max_norm`` not drift across</span>
+<a id="__codelineno-0-150" name="__codelineno-0-150"></a><span class="sd">        ``mf_gaussian_noise`` additionally requires that ``max_norm`` not drift across</span>
 <a id="__codelineno-0-151" name="__codelineno-0-151"></a><span class="sd">        steps; AUTO-S satisfies that latch because ``R`` and ``normalize_by``</span>
 <a id="__codelineno-0-152" name="__codelineno-0-152"></a><span class="sd">        are fixed.</span>
 <a id="__codelineno-0-153" name="__codelineno-0-153"></a><span class="sd">    &quot;&quot;&quot;</span>
@@ -11683,7 +11683,7 @@ to clip each per-example output to a maximum L2 norm, then sums the clipped outp
 or :class:<code>SecondMomentClippingOutput</code> (paired-stream when
 <code>second_moment=True</code>), carrying the post-normalization
 <code>max_norm</code> for downstream noise calibration.  The bound is part of
-the contract: consumers (<code>gaussian_noise</code>, <code>mf_noise</code>) read it
+the contract: consumers (<code>gaussian_noise</code>, <code>mf_gaussian_noise</code>) read it
 directly without the caller threading a separate <code>sensitivity</code>
 argument.  Unwrap to a raw pytree via <code>.pytree</code> if you need the
 summed values without metadata.</p>
@@ -12275,7 +12275,7 @@ controls the <em>output</em> dtype).</p>
 <a id="__codelineno-0-308" name="__codelineno-0-308"></a><span class="sd">    or :class:`SecondMomentClippingOutput` (paired-stream when</span>
 <a id="__codelineno-0-309" name="__codelineno-0-309"></a><span class="sd">    ``second_moment=True``), carrying the post-normalization</span>
 <a id="__codelineno-0-310" name="__codelineno-0-310"></a><span class="sd">    ``max_norm`` for downstream noise calibration.  The bound is part of</span>
-<a id="__codelineno-0-311" name="__codelineno-0-311"></a><span class="sd">    the contract: consumers (``gaussian_noise``, ``mf_noise``) read it</span>
+<a id="__codelineno-0-311" name="__codelineno-0-311"></a><span class="sd">    the contract: consumers (``gaussian_noise``, ``mf_gaussian_noise``) read it</span>
 <a id="__codelineno-0-312" name="__codelineno-0-312"></a><span class="sd">    directly without the caller threading a separate ``sensitivity``</span>
 <a id="__codelineno-0-313" name="__codelineno-0-313"></a><span class="sd">    argument.  Unwrap to a raw pytree via ``.pytree`` if you need the</span>
 <a id="__codelineno-0-314" name="__codelineno-0-314"></a><span class="sd">    summed values without metadata.</span>

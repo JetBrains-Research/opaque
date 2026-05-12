@@ -2746,9 +2746,9 @@ training steps via matrix factorization. Compared to DP-SGD
 trade-off on cumulative updates, at the cost of fixing the training
 length up front and committing to a strategy at calibration time.</p>
 <p><strong>Prerequisites:</strong> <a href="dp_sgd_training.ipynb">DP-SGD Training</a>.</p>
-<p><strong>Components exercised:</strong> <code>band_mf_strategy</code>, <code>mf_noise</code>,
+<p><strong>Components exercised:</strong> <code>band_mf_strategy</code>, <code>mf_gaussian_noise</code>,
 <code>opaque.dpftrl.clipping.clipped_grad</code>, <code>dpftrl_acc.poisson</code> +
-<code>dpftrl_acc.band_mf</code>, <code>acc.calibrate</code>.</p>
+<code>dpftrl_acc.mf_gaussian</code>, <code>acc.calibrate</code>.</p>
 </div>
 </div>
 </div>
@@ -2758,7 +2758,7 @@ length up front and committing to a strategy at calibration time.</p>
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [1]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="CodeMirror cm-s-jupyter">
 <div class="zeroclipboard-container">
 <clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-1">
@@ -2780,7 +2780,7 @@ length up front and committing to a strategy at calibration time.</p>
 <span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpftrl.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpftrl_acc</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span><span class="p">,</span> <span class="n">mf_noise</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span><span class="p">,</span> <span class="n">mf_gaussian_noise</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_functional</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 
@@ -2796,7 +2796,7 @@ import torch.nn.functional as F
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.dpftrl.clipping import clipped_grad
-from opaque.dpftrl.noise import band_mf_strategy, mf_noise
+from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
 from opaque.functional import make_functional
 from opaque.random import key
 
@@ -2955,18 +2955,18 @@ Sensitivity: 1.0000
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h2 id="2-calibration">2. Calibration<a class="anchor-link" href="#2-calibration">¶</a></h2><p>Wrap the strategy into a <code>DpProcess</code> describing the full run, then
 solve for the noise multiplier that achieves the target ε. The same
-strategy object goes into <code>mf_noise</code> later — that's how DP correctness
+strategy object goes into <code>mf_gaussian_noise</code> later — that's how DP correctness
 is preserved.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell">
-<div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=cell-7">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=cell-7">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [4]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="CodeMirror cm-s-jupyter">
 <div class="zeroclipboard-container">
 <clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-4">
@@ -2985,11 +2985,7 @@ is preserved.</p>
 <span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
     <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="n">target_epsilon</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="n">target_delta</span><span class="p">),</span>
     <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
-        <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span>
-            <span class="n">nm</span><span class="p">,</span>
-            <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
-            <span class="n">coefficients</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">coefficients</span><span class="p">,</span>
-        <span class="p">),</span>
+        <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">,</span> <span class="n">strategy</span><span class="p">),</span>
         <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
         <span class="n">n_steps</span><span class="o">=</span><span class="n">n_steps</span><span class="p">,</span>
     <span class="p">),</span>
@@ -3005,11 +3001,7 @@ target_delta = 1e-5
 result = acc.calibrate(
     acc.epsilon_budget(target_epsilon, delta=target_delta),
     lambda nm: dpftrl_acc.poisson(
-        dpftrl_acc.band_mf(
-            nm,
-            sensitivity=strategy.sensitivity,
-            coefficients=strategy.coefficients,
-        ),
+        dpftrl_acc.mf_gaussian(nm, strategy),
         sample_rate=sample_rate,
         n_steps=n_steps,
     ),
@@ -3018,19 +3010,6 @@ result = acc.calibrate(
 )
 noise_multiplier = result.param
 print(f"Calibrated noise multiplier: {noise_multiplier:.4f}")</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Calibrated noise multiplier: 0.7757
-</pre>
 </div>
 </div>
 </div>
@@ -3094,7 +3073,7 @@ def loss_fn(params, x, y):
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h2 id="4-clipped-gradient-and-mf-noise">4. Clipped gradient and MF noise<a class="anchor-link" href="#4-clipped-gradient-and-mf-noise">¶</a></h2><p>Clipping comes from <code>opaque.dpftrl.clipping</code> (same engine primitive,
-stack-context-correct path). <code>mf_noise</code> takes the parameter template
+stack-context-correct path). <code>mf_gaussian_noise</code> takes the parameter template
 so it can pre-allocate streaming-matrix state with the right shapes;
 the per-step contribution bound is fixed at construction time and
 must stay constant across the run.</p>
@@ -3130,11 +3109,11 @@ must stay constant across the run.</p>
     <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="c1"># `mf_noise` reads structure from a parameter template. The per-step</span>
+<span class="c1"># `mf_gaussian_noise` reads structure from a parameter template. The per-step</span>
 <span class="c1"># contribution bound is `clipping_norm × noise_multiplier`, latched on</span>
 <span class="c1"># the first noised step and required to stay constant for the rest of</span>
 <span class="c1"># the run — that's why adaptive clipping isn't compatible with DP-FTRL.</span>
-<span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">mf_noise</span><span class="p">(</span>
+<span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">mf_gaussian_noise</span><span class="p">(</span>
     <span class="n">params</span><span class="p">,</span>
     <span class="n">strategy</span><span class="p">,</span>
     <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span>
@@ -3155,11 +3134,11 @@ grad_fn, clip_state = clipped_grad(
     normalize_by=batch_size,
 )
 
-# `mf_noise` reads structure from a parameter template. The per-step
+# `mf_gaussian_noise` reads structure from a parameter template. The per-step
 # contribution bound is `clipping_norm × noise_multiplier`, latched on
 # the first noised step and required to stay constant for the rest of
 # the run — that's why adaptive clipping isn't compatible with DP-FTRL.
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     params,
     strategy,
     noise_multiplier=noise_multiplier,
@@ -3203,13 +3182,13 @@ updates.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell">
-<div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=cell-13">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=cell-13">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [7]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="CodeMirror cm-s-jupyter">
 <div class="zeroclipboard-container">
 <clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-7">
@@ -3242,11 +3221,7 @@ updates.</p>
 
 <span class="c1"># Whole-process accounting: ε is computed once at the end, not per step.</span>
 <span class="n">process</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
-    <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span>
-        <span class="n">noise_multiplier</span><span class="p">,</span>
-        <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
-        <span class="n">coefficients</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">coefficients</span><span class="p">,</span>
-    <span class="p">),</span>
+    <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">strategy</span><span class="p">),</span>
     <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
     <span class="n">n_steps</span><span class="o">=</span><span class="n">n_steps</span><span class="p">,</span>
 <span class="p">)</span>
@@ -3273,65 +3248,12 @@ for step in range(n_steps):
 
 # Whole-process accounting: ε is computed once at the end, not per step.
 process = dpftrl_acc.poisson(
-    dpftrl_acc.band_mf(
-        noise_multiplier,
-        sensitivity=strategy.sensitivity,
-        coefficients=strategy.coefficients,
-    ),
+    dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
     sample_rate=sample_rate,
     n_steps=n_steps,
 )
 final_eps = process.epsilon_at(target_delta)
 print(f"\nFinal privacy: (epsilon={final_eps:.2f}, delta={target_delta})")</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Step    1/500  loss=0.7778
-Step   50/500  loss=0.3578
-</pre>
-</div>
-</div>
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Step  100/500  loss=0.2498
-Step  150/500  loss=0.2811
-</pre>
-</div>
-</div>
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Step  200/500  loss=0.2097
-Step  250/500  loss=0.2078
-</pre>
-</div>
-</div>
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Step  300/500  loss=0.1625
-Step  350/500  loss=0.1945
-</pre>
-</div>
-</div>
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Step  400/500  loss=0.1853
-Step  450/500  loss=0.1874
-Step  500/500  loss=0.1125
-
-Final privacy: (epsilon=3.00, delta=1e-05)
-</pre>
 </div>
 </div>
 </div>
@@ -3418,7 +3340,7 @@ the alternatives) commits to the training length and bandwidth.</li>
 <li><strong>Single-shot accounting.</strong> The amplification factory takes
 <code>n_steps</code> — the privacy guarantee is computed once for the whole
 run, not composed step by step.</li>
-<li><strong>Correlated noise.</strong> <code>mf_noise</code> produces noise correlated
+<li><strong>Correlated noise.</strong> <code>mf_gaussian_noise</code> produces noise correlated
 through the streaming matrix; cumulative updates see partial
 cancellation.</li>
 </ol>
