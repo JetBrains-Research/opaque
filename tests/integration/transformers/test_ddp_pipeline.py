@@ -5,9 +5,8 @@ rank, and runs a single DP step (clip → noise → cross-rank
 ``sum_gradients`` → manual update) under both DP-SGD and DP-FTRL noise
 mechanisms. This is a one-step smoke — not a training run.
 
-Combines DDP × patches × Qwen2 × DP-SGD/DP-FTRL. The synthetic
-DDP tests in ``dpsgd_dpftrl/distributed/test_ddp_integration.py`` cover
-the cross-rank correctness of the primitives in isolation; this file
+Combines DDP × patches × Qwen2 × DP-SGD/DP-FTRL. Multi-GPU primitive
+coverage lives under ``packages/opaque-*/tests/distributed/``; this file
 verifies the user-facing pipeline holds together with HF-Hub model
 weights and the patches enabled.
 
@@ -83,7 +82,8 @@ def _build_patched_qwen2_lora(device: torch.device):
     config.num_hidden_layers = 2
     model = AutoModelForCausalLM.from_config(config).to(device)
     lora = LoraConfig(
-        r=4, lora_alpha=8,
+        r=4,
+        lora_alpha=8,
         target_modules=["q_proj", "v_proj"],
         lora_dropout=0.0,
     )
@@ -116,7 +116,10 @@ def _tokenize(device: torch.device, rank: int, world_size: int):
     shard = corpus[rank::world_size][:2]
     inputs = tokenizer(
         shard,
-        return_tensors="pt", padding=True, max_length=16, truncation=True,
+        return_tensors="pt",
+        padding=True,
+        max_length=16,
+        truncation=True,
     ).to(device)
     return inputs["input_ids"], inputs["attention_mask"], inputs["input_ids"].clone()
 
@@ -136,9 +139,7 @@ def _run_dp_step(model, ids, mask, lbls, *, noise_kind: str, k):
         batch_argnums=(2, 3, 4),
         clipping_norm=1.0,
     )
-    local_grads, _ = grad_fn(
-        trainable, frozen, ids, mask, lbls, state=clip_state
-    )
+    local_grads, _ = grad_fn(trainable, frozen, ids, mask, lbls, state=clip_state)
 
     # Cross-rank sum of clipped per-example gradients.
     pooled = sum_gradients(local_grads)
@@ -148,7 +149,11 @@ def _run_dp_step(model, ids, mask, lbls, *, noise_kind: str, k):
     elif noise_kind == "dpftrl":
         strategy = identity_strategy()
         noise_fn, state = mf_gaussian_noise(
-            pooled, strategy, n_steps=1, noise_multiplier=1.0, key=k,
+            pooled,
+            strategy,
+            n_steps=1,
+            noise_multiplier=1.0,
+            key=k,
         )
     else:
         raise ValueError(f"unknown noise_kind={noise_kind!r}")
@@ -174,7 +179,12 @@ def _worker_dpsgd(rank: int, world_size: int, port: int) -> None:
 
         # Same seed across ranks — identical noise draw, deterministic test.
         trainable, noised = _run_dp_step(
-            model, ids, mask, lbls, noise_kind="dpsgd", k=key(0),
+            model,
+            ids,
+            mask,
+            lbls,
+            noise_kind="dpsgd",
+            k=key(0),
         )
         # batch_size is the *aggregated* batch across ranks
         _assert_finite_step(trainable, noised, batch_size=ids.shape[0] * world_size)
@@ -190,7 +200,12 @@ def _worker_dpftrl(rank: int, world_size: int, port: int) -> None:
         ids, mask, lbls = _tokenize(device, rank, world_size)
 
         trainable, noised = _run_dp_step(
-            model, ids, mask, lbls, noise_kind="dpftrl", k=fold_in(key(0), 1),
+            model,
+            ids,
+            mask,
+            lbls,
+            noise_kind="dpftrl",
+            k=fold_in(key(0), 1),
         )
         _assert_finite_step(trainable, noised, batch_size=ids.shape[0] * world_size)
     finally:
