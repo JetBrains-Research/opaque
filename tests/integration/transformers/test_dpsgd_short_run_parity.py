@@ -257,8 +257,16 @@ def _run(world_size: int) -> dict[str, float]:
 
 
 def test_dpsgd_short_run_1_vs_2_gpu_parity() -> None:
+    # Algebraic-identity parity: both runs slice the *same* fixed batch and
+    # use the *same* fixed noise key, so per-record clipping + sum_gradients
+    # + replicated noise must agree to FP32 summation-order precision over
+    # the 5-step rollout.  Tolerance ~1e-4 leaves ample headroom over the
+    # observed ~0% drift while still catching real bugs (missing reduce,
+    # wrong noise scaling, sampler-keying error).  Sampler-induced
+    # trajectory drift between ranks is covered by
+    # ``tests/integration/ddp/test_dpsgd_sampler_short_run_parity.py``.
     one = _run(1)
     two = _run(2)
     assert one["eval_loss"] > 0 and two["eval_loss"] > 0
     rel = abs(two["eval_loss"] - one["eval_loss"]) / one["eval_loss"]
-    assert rel < 0.05, f"eval relative delta {rel:.4f} exceeds 5%"
+    assert rel < 1e-4, f"eval relative delta {rel:.2e} exceeds 1e-4"
