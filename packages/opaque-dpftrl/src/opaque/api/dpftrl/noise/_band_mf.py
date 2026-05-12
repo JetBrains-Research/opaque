@@ -2,7 +2,9 @@
 
 Computes optimized banded Toeplitz coefficients on demand from the
 strategy's recipe (``bands``, ``momentum``, ``lr_schedule``) and the
-amplifier-supplied ``n_steps``.
+amplifier-supplied ``n_steps``.  ``lr_schedule`` is an
+:data:`opaque.scheduling.Schedule` (``Callable[[int], float]``) materialised
+to a tensor at workload-coefficient build time.
 
 References:
     - BandMF: https://arxiv.org/abs/2306.08153
@@ -17,6 +19,7 @@ from functools import lru_cache
 import torch
 
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
+from opaque.api.engine.scheduling.types import Schedule
 
 from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import inverse_as_streaming_matrix
@@ -67,8 +70,9 @@ def _momentum_workload_coef(
 # ---------------------------------------------------------------------------
 
 
-def _lr_key(lr_schedule: torch.Tensor | None) -> tuple[float, ...] | None:
-    return None if lr_schedule is None else tuple(lr_schedule.tolist())
+def _lr_key(lr_schedule: Schedule | None, n: int) -> tuple[float, ...] | None:
+    """Materialise the schedule at ``[0, n)`` for use as an ``lru_cache`` key."""
+    return None if lr_schedule is None else tuple(float(lr_schedule(t)) for t in range(n))
 
 
 @lru_cache(maxsize=32)
@@ -106,11 +110,11 @@ class BandMfStrategy:
 
     bands: int
     momentum: float = 1.0
-    lr_schedule: torch.Tensor | None = field(default=None, compare=False)
+    lr_schedule: Schedule | None = field(default=None, compare=False)
 
     def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
         return _band_mf_coefficients_cached(
-            n_steps, self.bands, self.momentum, _lr_key(self.lr_schedule)
+            n_steps, self.bands, self.momentum, _lr_key(self.lr_schedule, n_steps)
         )
 
     def gram_matrix(self, **_) -> tuple[float, ...]:
@@ -133,7 +137,7 @@ def band_mf_strategy(
     *,
     bands: int,
     momentum: float = 1.0,
-    lr_schedule: torch.Tensor | None = None,
+    lr_schedule: Schedule | None = None,
 ) -> BandMfStrategy:
     """Create a BandMF strategy recipe.
 
@@ -144,8 +148,9 @@ def band_mf_strategy(
     Args:
         bands: Number of bands in the Toeplitz matrix (>= 1).
         momentum: Polyak momentum coefficient (default 1.0 = prefix-sum).
-        lr_schedule: Optional per-step learning rates (length must match
-            the amplifier's ``n_steps`` at use time).
+        lr_schedule: Optional :data:`opaque.scheduling.Schedule`
+            (``Callable[[int], float]``).  Materialised at ``[0, n_steps)``
+            when the strategy first sees the amplifier's ``n_steps``.
 
     Returns:
         A :class:`BandMfStrategy` recipe.
@@ -155,11 +160,7 @@ def band_mf_strategy(
     return BandMfStrategy(
         bands=bands,
         momentum=momentum,
-        lr_schedule=(
-            torch.as_tensor(lr_schedule, dtype=torch.float64).clone()
-            if lr_schedule is not None
-            else None
-        ),
+        lr_schedule=lr_schedule,
     )
 
 

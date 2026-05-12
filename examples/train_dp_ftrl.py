@@ -148,6 +148,7 @@ from opaque.scheduling import (
     linear_schedule,
     with_warmup,
 )
+from opaque.scheduling.types import Schedule
 from opaque.functional import empty_collate
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
@@ -250,14 +251,14 @@ def make_lr_schedule(
     kind: str = "none",
     min_ratio: float = 0.0,
     warmup_steps: int = 0,
-) -> torch.Tensor:
-    """Materialize an LR schedule as a per-step tensor.
+) -> Schedule:
+    """Build an :data:`opaque.scheduling.Schedule` callable.
 
-    The same tensor is fed both to the torchopt optimizer (via a
-    ``lambda step: lr_schedule[step].item()`` callable) and to the MF
-    noise strategy's ``lr_schedule`` argument (for BandMF / BLT — see
+    The same callable is handed both to the torchopt optimizer (via
+    ``scale_by_schedule`` machinery) and to the MF noise strategy's
+    ``lr_schedule`` argument (for BandMF / BLT — see
     :func:`opaque.dpftrl.noise._band_mf._momentum_workload_coef`).  Both
-    consumers see identical per-step LRs.
+    consumers query identical per-step LRs.
 
     Args:
         base_lr: Peak learning rate.
@@ -270,9 +271,8 @@ def make_lr_schedule(
             (any kind).
 
     Returns:
-        Tensor of shape [total_steps] with per-step learning rates,
-        ``float64`` for downstream numerical stability in the MF workload
-        optimization.
+        A ``Callable[[int], float]`` returning the LR at any non-negative
+        step.
     """
     if not 0.0 <= min_ratio <= 1.0:
         raise ValueError(f"min_ratio must be in [0, 1], got {min_ratio}")
@@ -307,11 +307,7 @@ def make_lr_schedule(
     else:
         raise ValueError(f"Unknown LR schedule kind: {kind!r}")
 
-    schedule_fn = (
-        with_warmup(base, transition_steps=warmup) if warmup > 0 else base
-    )
-    values = [float(schedule_fn(step)) for step in range(total_steps)]
-    return torch.tensor(values, dtype=torch.float64)
+    return with_warmup(base, transition_steps=warmup) if warmup > 0 else base
 
 
 # ---------------------------------------------------------------------------
@@ -1432,7 +1428,7 @@ def main():
         )
     print(f"  Noise function created in {time.time() - t0:.1f}s")
 
-    lr_callable = lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item()  # noqa: E731
+    lr_callable = lr_schedule
 
     # ``noise_bias_correction`` is unsound under correlated MF noise: the
     # optimizer's BC reads ``NoisedPytree.noise_stddev`` (the base σ fed to
@@ -1673,7 +1669,7 @@ def main():
             {
                 "eval/loss": initial_eval_loss,
                 "privacy/epsilon": initial_epsilon,
-                "train/lr": lr_schedule[0].item(),
+                "train/lr": float(lr_schedule(0)),
                 "train/clipping_norm": initial_clipping_norm,
                 "train/noise_std": initial_noise_std,
             },
@@ -1697,7 +1693,7 @@ def main():
             (input_ids,) = batch
             batch_size = len(input_ids)
 
-            lr_t = lr_schedule[min(global_step, len(lr_schedule) - 1)].item()
+            lr_t = float(lr_schedule(global_step))
 
             step_timer = StepTimer(device, batch_size=batch_size)
             with step_timer:
