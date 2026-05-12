@@ -279,10 +279,11 @@ def _worker_mf_shared_noise(rank: int, world_size: int, port: int) -> None:
             key=key(0),
         )
         grads = {"weight": torch.zeros(4, device=device)}
-        noised, _ = noise_fn(grads, state)
+        noised, _ = noise_fn(clipped(grads, max_norm=1.0), state)
 
-        gathered = [torch.zeros_like(noised["weight"]) for _ in range(world_size)]
-        dist.all_gather(gathered, noised["weight"])
+        w = noised.pytree["weight"]
+        gathered = [torch.zeros_like(w) for _ in range(world_size)]
+        dist.all_gather(gathered, w)
         if rank == 0:
             for other in gathered[1:]:
                 assert torch.allclose(gathered[0], other)
