@@ -1224,10 +1224,21 @@ def main():
         else float(clip_norm) / args.batch_size
     )
 
-    # --- Total steps & LR schedule ---
+    # --- Training horizon, LR schedule ---
+    # ``total_steps`` is the full training horizon (``num_epochs *
+    # steps_per_epoch``).  ``--max-steps`` is an early-termination knob
+    # (semantically "stop at step N"), NOT a horizon override: every
+    # privacy / accounting / strategy object below is sized against the
+    # full horizon so calibration, MF workload coefficients, and the LR
+    # schedule all describe the same un-truncated training run.  Only
+    # the inner ``for`` loop terminates early when ``global_step >=
+    # args.max_steps``.
     total_steps = args.num_epochs * expected_steps_per_epoch
-    if args.max_steps is not None:
-        total_steps = min(total_steps, args.max_steps)
+    stop_at_step = (
+        min(total_steps, args.max_steps)
+        if args.max_steps is not None
+        else total_steps
+    )
 
     lr_schedule = make_lr_schedule(
         args.learning_rate,
@@ -1266,6 +1277,8 @@ def main():
         print(f"\nLR schedule: constant {args.learning_rate} (no warmup)")
     print(f"  Peak LR: {args.learning_rate}")
     print(f"  Total steps: {total_steps}")
+    if stop_at_step < total_steps:
+        print(f"  Early stop at step: {stop_at_step} (--max-steps)")
 
     # --- Privacy calibration (single-shot) ---
     if args.target_delta is None:
@@ -1383,7 +1396,7 @@ def main():
             return dpftrl_acc.balls_in_bins(
                 dpftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
-                n_steps=expected_steps_per_epoch * args.num_epochs,
+                n_steps=total_steps,
             )
     elif args.mechanism == "lambda_cgd" and strategy is not None:
 
@@ -1391,7 +1404,7 @@ def main():
             return dpftrl_acc.balls_in_bins(
                 dpftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
-                n_steps=expected_steps_per_epoch * args.num_epochs,
+                n_steps=total_steps,
             )
     elif args.mechanism == "bisr" and strategy is not None:
 
@@ -1399,7 +1412,7 @@ def main():
             return dpftrl_acc.balls_in_bins(
                 dpftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
-                n_steps=expected_steps_per_epoch * args.num_epochs,
+                n_steps=total_steps,
             )
     elif args.mechanism == "bsr" and strategy is not None:
 
@@ -1407,7 +1420,7 @@ def main():
             return dpftrl_acc.balls_in_bins(
                 dpftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
-                n_steps=expected_steps_per_epoch * args.num_epochs,
+                n_steps=total_steps,
             )
     elif args.mechanism == "identity":
 
@@ -1789,7 +1802,7 @@ def main():
         )
 
         for step_idx, batch in enumerate(epoch_loader):
-            if args.max_steps is not None and global_step >= args.max_steps:
+            if global_step >= stop_at_step:
                 break
 
             (input_ids,) = batch
@@ -1928,8 +1941,9 @@ def main():
                         step=global_step,
                     )
 
-        if args.max_steps is not None and global_step >= args.max_steps:
-            print(f"\nReached max_steps={args.max_steps}, stopping.")
+        if global_step >= stop_at_step:
+            if args.max_steps is not None:
+                print(f"\nReached --max-steps={args.max_steps}, stopping.")
             break
 
     # ===================================================================
