@@ -156,7 +156,7 @@ uv run pytest -m slow
 ```
 
 Gated HuggingFace models use the `@requires_hf_auth` skipif helper from
-`packages/opaque-transformers/tests/huggingface/_helpers.py`. Set
+`packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. Set
 `HF_TOKEN` / `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN` to run
 those tests; otherwise they skip automatically.
 

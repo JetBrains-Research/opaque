@@ -479,6 +479,66 @@ fmodel, trainable, frozen = make_functional(model, partition_trainable=True)
 The noise key must be identical across ranks so that each rank adds the same
 noise after `sum_gradients`. See [Distributed Training](distributed.md).
 
+For `DPTrainer`-specific distributed arguments, eval behavior, and Hub rank
+gating, see [Distributed DPTrainer](distributed-trainer.md).
+
+## Hyperparameter search
+
+`DPTrainer.hyperparameter_search` mirrors `transformers.Trainer.hyperparameter_search`
+and supports three backends: Optuna, W&B sweeps, and Ray Tune. Each backend
+is opt-in via a per-package extra; `opaque-transformers` itself does not
+require any of them at install time.
+
+```bash
+pip install opaque-transformers[optuna-hpo]   # backend="optuna"
+pip install opaque-transformers[wandb-hpo]    # backend="wandb"
+pip install opaque-transformers[ray-hpo]      # backend="ray"
+pip install opaque-transformers[hpo]          # all three
+```
+
+```python
+from opaque.transformers.trainer import DPTrainer
+
+def model_init(trial=None):
+    return AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8B")
+
+trainer = DPTrainer(
+    model_init=model_init,
+    args=args,
+    train_dataset=train_ds,
+    eval_dataset=eval_ds,
+)
+
+best = trainer.hyperparameter_search(
+    backend="ray",
+    n_trials=8,
+    direction="minimize",
+    hp_space=lambda _: {"learning_rate": tune.loguniform(1e-6, 1e-4)},
+    resources_per_trial={"cpu": 1, "gpu": 1},
+)
+```
+
+Behavior matches HF's contract: `BestRun` is returned, the Ray
+`ExperimentAnalysis` object is exposed via `BestRun.run_summary`, and
+`RAY_SCOPE` controls best-trial selection
+(`"last"` / `"all"` / `"avg"` / `"last-5-avg"` / `"last-10-avg"`). Ray
+trials are launched via `tune.with_parameters(_objective, local_trainer=trainer)`,
+so each actor reconstructs its model through `model_init(trial)` and
+writes a complete DP-aware checkpoint (`accountant.json`,
+`trainer_state.json`, `dp_runtime_state.pt`, `dp_optimizer.pt`,
+`rng_state.pth`) under Ray's per-trial storage.
+
+For distributed runs, backend behavior follows HF support boundaries:
+Optuna uses rank-0 trial creation with broadcasted trial objects, while
+Ray and W&B follow their native controller/agent execution paths.
+
+**Privacy interpretation.** Each trial reports its own ε / δ via
+`accountant.json`; the sweep itself does not compose privacy across
+trials. An adaptive sweep over private data is itself an adaptive use
+of the dataset's privacy budget — Phase 12 deliberately surfaces only
+per-trial accounting and does not silently introduce sweep-level
+composition.
+
 ## Troubleshooting
 
 **"vmap over _NoopSaveInputs" error:** This should not occur if `import opaque`
