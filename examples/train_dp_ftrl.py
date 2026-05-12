@@ -56,10 +56,6 @@ USAGE:
   # 4-GPU distributed run with torchrun (sharded, same global batch as 1-GPU)
   torchrun --nproc_per_node=4 examples/train_dp_ftrl.py --preset mellum-kstack
 
-  # 4-GPU replicated-data mode with parallel Poisson (identity mechanism only)
-  torchrun --nproc_per_node=4 examples/train_dp_ftrl.py --preset mellum-kstack \\
-      --mechanism identity --no-shard
-
   # BandMF with b=64 bands on Mellum
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism band_mf --bands 64
 
@@ -560,19 +556,6 @@ def parse_args():
     # DP / MF mechanism
     dp_g = parser.add_argument_group("dp", "DP-FTRL mechanism and clipping")
     dp_g.add_argument(
-        "--shard",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Shard dataset across DDP ranks (default).  Each rank operates "
-        "on a disjoint slice and gradients are summed across ranks — "
-        "mathematically equivalent to a single-rank run with the same "
-        "global batch size and unchanged privacy accounting.  Use "
-        "--no-shard to replicate the full dataset on each rank with "
-        "per-rank Poisson sampling at sample_rate/world_size; this mode "
-        "currently supports only --mechanism identity (parallel-Poisson "
-        "accounting reuses the DP-SGD parallel_poisson PLD).",
-    )
-    dp_g.add_argument(
         "--mechanism",
         type=str,
         default="band_mf",
@@ -977,24 +960,16 @@ def main():
         train_dataset = train_dataset.shuffle(seed=args.seed)
 
     # --- Distributed data partitioning ---
-    # Two modes mirror train_causal_lm.py:
-    #   --shard (default): disjoint shard per rank.  Per-example Poisson
-    #     probability is unchanged so the per-step gradient distribution
-    #     equals the single-rank baseline at sample_rate batches summed
-    #     across ranks; the MF accountant stays identical to single rank.
-    #   --no-shard: replicated dataset, sample_rate / world_size per rank;
-    #     accounting uses parallel_poisson amplification.  Restricted to
-    #     --mechanism identity for now (the other MF amplifiers do not
-    #     yet have a derived parallel-worker PLD).
-    use_shard = is_ddp and args.shard
-    use_parallel = is_ddp and not args.shard
-    if use_parallel and args.mechanism not in ("identity", "none"):
-        raise ValueError(
-            f"--no-shard (replicated-data parallel mode) only supports "
-            f"--mechanism identity or none; got --mechanism {args.mechanism!r}. "
-            f"Use --shard (default) for correlated MF mechanisms."
-        )
-    if use_shard:
+    # DDP uses disjoint shards per rank.  Per-example Poisson probability is
+    # unchanged: each example lives on exactly one rank and is still drawn
+    # with probability ``sample_rate`` globally; summing gradients across
+    # ranks recovers the single-rank gradient distribution and the MF
+    # accountant stays identical to single rank.  Replicated-data /
+    # parallel-Poisson accounting is *not* supported here because the
+    # correlated MF amplifiers (BLT, BSR, BiSR, BandMF, λ-CGD) don't have
+    # a derived parallel-worker PLD — the variety of DP-FTRL samplers
+    # doesn't fit the DP-SGD parallel-Poisson pattern.
+    if is_ddp:
         # Trim to a multiple of ``world_size`` so every shard has identical
         # length.  This avoids two distributed pitfalls: (a) the last rank
         # otherwise gets the remainder and ``SequentialBatchSampler`` (BLT)
@@ -1017,21 +992,17 @@ def main():
     )
 
     # --- Sampling ---
-    # ``sample_rate`` is the per-example global Poisson probability; the
-    # sharded path keeps it constant (disjoint shards mean each example
-    # is still drawn with probability ``sample_rate`` across ranks); the
-    # parallel path divides by ``world_size`` so the world-summed
-    # expected batch matches ``args.batch_size``.
+    # ``sample_rate`` is the per-example global Poisson probability and is
+    # unchanged under DDP: disjoint shards mean each example is still drawn
+    # with probability ``sample_rate`` across ranks.
     sample_rate = args.batch_size / global_train_size
-    if use_parallel:
-        sample_rate /= world_size
     expected_steps_per_epoch = global_train_size // args.batch_size
-    # In sharded mode the global expected batch is split across ranks,
-    # so the per-rank batch_size for non-Poisson samplers (BLT sequential
-    # and BnB) is reduced.  Poisson samplers handle this implicitly via
-    # ``sample_rate`` on the shard.
+    # The global expected batch is split across ranks, so the per-rank
+    # batch_size for non-Poisson samplers (BLT sequential and BnB) is
+    # reduced.  Poisson samplers handle this implicitly via ``sample_rate``
+    # on the shard.
     per_rank_batch_size = (
-        max(1, args.batch_size // world_size) if use_shard else args.batch_size
+        max(1, args.batch_size // world_size) if is_ddp else args.batch_size
     )
 
     # Sampler keys fold in ``rank`` so each shard draws independent
@@ -1098,7 +1069,7 @@ def main():
     elif args.mechanism in ("lambda_cgd", "bisr", "bsr"):
         # BnB sampler created once — the same fixed partition is reused every
         # epoch (required by BnB privacy accounting, Lemma 3.2 of
-        # Choquette-Choo et al. 2024).  Under --shard each rank partitions
+        # Choquette-Choo et al. 2024).  Under DDP each rank partitions
         # its disjoint shard into the same number of bins; combined across
         # ranks every global example still appears in exactly one bin so
         # BnB privacy holds unchanged.  We deliberately use the un-folded
@@ -1132,11 +1103,9 @@ def main():
     if is_main_process:
         print("\nSampling:")
         if is_ddp:
-            mode_label = "sharded" if use_shard else "parallel (replicated)"
-            print(f"  DDP mode: {mode_label} (world_size={world_size})")
-            if use_shard:
-                print(f"  Per-rank shard size: {len(train_dataset)}")
-                print(f"  Per-rank batch (non-Poisson): {per_rank_batch_size}")
+            print(f"  DDP mode: sharded (world_size={world_size})")
+            print(f"  Per-rank shard size: {len(train_dataset)}")
+            print(f"  Per-rank batch (non-Poisson): {per_rank_batch_size}")
         print(f"  Mechanism: {args.mechanism}")
         if args.mechanism == "band_mf":
             if args.band_mf_sampling == "poisson":
@@ -1441,39 +1410,19 @@ def main():
                 n_steps=expected_steps_per_epoch * args.num_epochs,
             )
     elif args.mechanism == "identity":
-        if use_parallel:
-            # Replicated-data parallel-Poisson Identity reuses the
-            # DP-SGD parallel_poisson PLD: the MF identity strategy emits
-            # i.i.d. Gaussian noise so the per-step PLD is identical to
-            # the DP-SGD Gaussian PLD under parallel-worker Poisson
-            # sampling.  We surface it via :mod:`opaque.dpsgd.accounting`
-            # locally (avoids forcing dpftrl accounting to add a
-            # parallel-worker amplifier just for this one mechanism).
-            import opaque.dpsgd.accounting as dpsgd_acc
 
-            def _parallel_step(nm):
-                return dpsgd_acc.parallel_poisson(
-                    dpsgd_acc.gaussian(nm),
-                    sample_rate=sample_rate,
-                    num_workers=world_size,
-                )
-
-            def acct_mechanism(nm):
-                return _parallel_step(nm) * total_steps
-        else:
-
-            def acct_mechanism(nm):
-                return dpftrl_acc.poisson(
-                    dpftrl_acc.mf_gaussian(nm, identity_strategy()),
-                    sample_rate=sample_rate,
-                    n_steps=total_steps,
-                    truncated_batch_size=args.truncated_batch_size,
-                    dataset_size=(
-                        global_train_size
-                        if args.truncated_batch_size is not None
-                        else None
-                    ),
-                )
+        def acct_mechanism(nm):
+            return dpftrl_acc.poisson(
+                dpftrl_acc.mf_gaussian(nm, identity_strategy()),
+                sample_rate=sample_rate,
+                n_steps=total_steps,
+                truncated_batch_size=args.truncated_batch_size,
+                dataset_size=(
+                    global_train_size
+                    if args.truncated_batch_size is not None
+                    else None
+                ),
+            )
     elif args.mechanism == "none":
 
         def acct_mechanism(nm):
@@ -1537,16 +1486,6 @@ def main():
     # / ``max_participations``, including the degenerate-limit values for
     # bare-Poisson Identity).
     if args.mechanism == "none":
-        noise_n_steps = total_steps
-        noise_min_sep = 1
-        noise_max_part = total_steps
-    elif use_parallel:
-        # parallel-identity acct_mechanism returns a Composition of the
-        # parallel_poisson per-step amplifier and so does not expose
-        # ``.n_steps`` / ``.min_sep`` / ``.max_participations``.  Identity
-        # strategy emits i.i.d. Gaussian noise, so the underlying
-        # streaming matrix is the degenerate ``I`` and these values only
-        # gate length-checks on the noise side.
         noise_n_steps = total_steps
         noise_min_sep = 1
         noise_max_part = total_steps
@@ -1800,21 +1739,13 @@ def main():
     profiler, _ = profiler.mark("training_start")
     print_memory(device, "Before training")
 
-    # Per-eval epsilon reporting.  In single-rank / sharded mode every
-    # ``acct_mechanism`` branch returns a :class:`DpFtrlProcess` whose
-    # ``approx_at_step(K)`` upper-bounds the privacy cost at step K
-    # (rounded up to the amplifier's atomic_unit — one full epoch or
-    # one band).  Parallel-identity mode composes the parallel_poisson
-    # per-step PLD directly: K-step privacy is ``(per_step * K).epsilon_at(δ)``.
+    # Per-eval epsilon reporting.  Every ``acct_mechanism`` branch returns
+    # a :class:`DpFtrlProcess` whose ``approx_at_step(K)`` upper-bounds the
+    # privacy cost at step K (rounded up to the amplifier's atomic_unit —
+    # one full epoch or one band).
     def epsilon_at_step(step: int) -> float:
         if args.mechanism == "none":
             return 0.0
-        if use_parallel:
-            if step == 0:
-                return 0.0
-            return (_parallel_step(noise_multiplier) * step).epsilon_at(
-                args.target_delta
-            )
         return (
             acct_mechanism(noise_multiplier)
             .approx_at_step(step)

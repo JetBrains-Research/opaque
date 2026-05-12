@@ -1,18 +1,10 @@
-# 4-GPU distributed DP-FTRL training.
-#
-# Sharded baseline (default --shard) — mathematically equivalent to the
-# single-GPU train_dp_ftrl (mellum_kstack).yaml run (same global batch,
-# unchanged privacy accounting):
+# 4-GPU distributed DP-FTRL training (sharded — disjoint shard per rank;
+# mathematically equivalent to the single-GPU train_dp_ftrl
+# (mellum_kstack).yaml run at the same global batch with unchanged privacy
+# accounting):
 #   RUN_NAME="ftrl-blt-4gpu-sharded" uv run cadence execution start \
 #     --preset ".cadence/configs/train_dp_ftrl (mellum_kstack_distributed).yaml" \
 #     -e EXTRA_ARGS="--max-steps 100"
-#
-# Replicated-data parallel Poisson (--no-shard, identity mechanism only;
-# sample_rate auto-divided by world_size, uses DP-SGD parallel_poisson
-# PLD via the local cross-import):
-#   RUN_NAME="ftrl-identity-4gpu-parallel" uv run cadence execution start \
-#     --preset ".cadence/configs/train_dp_ftrl (mellum_kstack_distributed).yaml" \
-#     -e EXTRA_ARGS="--mechanism identity --no-shard --max-steps 100"
 
 project_name: jbr-fed
 working_dir: "."
