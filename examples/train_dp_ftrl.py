@@ -252,7 +252,7 @@ def make_lr_schedule(
     min_ratio: float = 0.0,
     warmup_steps: int = 0,
 ) -> Schedule:
-    """Build an :data:`opaque.scheduling.Schedule` callable.
+    """Build an :data:`opaque.scheduling.types.Schedule` callable.
 
     The same callable is handed both to the torchopt optimizer (via
     ``scale_by_schedule`` machinery) and to the MF noise strategy's

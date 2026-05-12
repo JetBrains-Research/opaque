@@ -1,6 +1,6 @@
 """Tests for ``Schedule`` callable acceptance on BandMF / BLT strategies.
 
-The strategy factories accept :data:`opaque.scheduling.Schedule`
+The strategy factories accept :data:`opaque.scheduling.types.Schedule`
 (``Callable[[int], float]``) for ``lr_schedule`` — materialised lazily
 at the amplifier-supplied ``n_steps`` and used as the cache key.  A
 constant schedule must coincide with no schedule; a non-constant
@@ -10,6 +10,7 @@ callable has no portable representation.
 """
 
 import pytest
+import torch
 
 from opaque.api.dpftrl.noise._band_mf import _band_mf_coefficients_cached
 from opaque.dpftrl.noise import band_mf_strategy, blt_strategy
@@ -24,8 +25,9 @@ class TestBandMfLrScheduleCallable:
     def test_constant_callable_matches_no_schedule(self):
         s_none = band_mf_strategy(bands=4)
         s_const = band_mf_strategy(bands=4, lr_schedule=lambda _t: 1.0)
-        assert s_const.coefficients(n_steps=_PART["n_steps"]).equal(
-            s_none.coefficients(n_steps=_PART["n_steps"])
+        torch.testing.assert_close(
+            s_const.coefficients(n_steps=_PART["n_steps"]),
+            s_none.coefficients(n_steps=_PART["n_steps"]),
         )
 
     def test_non_constant_schedule_changes_coefficients(self):
@@ -33,7 +35,7 @@ class TestBandMfLrScheduleCallable:
         s_ramp = band_mf_strategy(bands=4, lr_schedule=lambda t: 1.0 + 0.01 * t)
         coefs_const = s_const.coefficients(n_steps=_PART["n_steps"])
         coefs_ramp = s_ramp.coefficients(n_steps=_PART["n_steps"])
-        assert not coefs_const.equal(coefs_ramp)
+        assert not torch.allclose(coefs_const, coefs_ramp)
 
     def test_cache_hits_on_functionally_equal_callables(self):
         _band_mf_coefficients_cached.cache_clear()
@@ -68,9 +70,9 @@ class TestBltLrScheduleCallable:
     def test_constant_callable_matches_no_schedule(self):
         s_none = blt_strategy(max_buffers=3)
         s_const = blt_strategy(max_buffers=3, lr_schedule=lambda _t: 1.0)
-        c_none = s_none.coefficients(**_PART)
-        c_const = s_const.coefficients(**_PART)
-        assert c_const.equal(c_none)
+        torch.testing.assert_close(
+            s_const.coefficients(**_PART), s_none.coefficients(**_PART)
+        )
 
     def test_callable_schedule_not_serialisable(self):
         s = blt_strategy(max_buffers=3, lr_schedule=lambda _t: 0.1)

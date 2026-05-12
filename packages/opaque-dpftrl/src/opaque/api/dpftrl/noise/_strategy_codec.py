@@ -65,7 +65,7 @@ def _factory_name_for(cls_name: str) -> str:
 def _to_wire(value: Any) -> Any:
     """Coerce a single field value to a JSON/state-dict-friendly form.
 
-    Callables (e.g. an :data:`opaque.scheduling.Schedule` ``lr_schedule``)
+    Callables (e.g. an :data:`opaque.scheduling.types.Schedule` ``lr_schedule``)
     are recipe inputs that cannot be round-tripped through serialization —
     pass them in fresh when reconstructing the strategy.
     """

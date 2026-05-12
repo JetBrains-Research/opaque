@@ -3,7 +3,7 @@
 Computes optimized banded Toeplitz coefficients on demand from the
 strategy's recipe (``bands``, ``momentum``, ``lr_schedule``) and the
 amplifier-supplied ``n_steps``.  ``lr_schedule`` is an
-:data:`opaque.scheduling.Schedule` (``Callable[[int], float]``) materialised
+:data:`opaque.scheduling.types.Schedule` (``Callable[[int], float]``) materialised
 to a tensor at workload-coefficient build time.
 
 References:
@@ -150,7 +150,7 @@ def band_mf_strategy(
     Args:
         bands: Number of bands in the Toeplitz matrix (>= 1).
         momentum: Polyak momentum coefficient (default 1.0 = prefix-sum).
-        lr_schedule: Optional :data:`opaque.scheduling.Schedule`
+        lr_schedule: Optional :data:`opaque.scheduling.types.Schedule`
             (``Callable[[int], float]``).  Materialised at ``[0, n_steps)``
             when the strategy first sees the amplifier's ``n_steps``.
 

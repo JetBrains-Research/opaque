@@ -5,7 +5,7 @@ Computes optimized BLT parameters on demand from the strategy's recipe
 amplifier-supplied ``(n_steps, min_sep, max_participations)``.  The
 L-BFGS optimization is cached so a given recipe + amplification context
 runs the optimizer once across all (accounting + noise) consumers.
-``lr_schedule`` is an :data:`opaque.scheduling.Schedule`
+``lr_schedule`` is an :data:`opaque.scheduling.types.Schedule`
 (``Callable[[int], float]``) materialised to a tensor at workload-coefficient
 build time.
 
@@ -172,7 +172,7 @@ def blt_strategy(
     Args:
         max_buffers: Maximum BLT buffer count for the optimizer (default 10).
         momentum: Polyak momentum (default 1.0 = prefix-sum workload).
-        lr_schedule: Optional :data:`opaque.scheduling.Schedule`
+        lr_schedule: Optional :data:`opaque.scheduling.types.Schedule`
             (``Callable[[int], float]``).  Materialised at ``[0, n_steps)``
             when the strategy first sees the amplifier's ``n_steps``.
 
