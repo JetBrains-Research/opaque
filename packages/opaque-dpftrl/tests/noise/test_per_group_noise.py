@@ -1,4 +1,4 @@
-"""Tests for mf_noise with PerGroup clipping bounds."""
+"""Tests for mf_gaussian_noise with PerGroup clipping bounds."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ from opaque.dpftrl.noise import (
     bisr_strategy,
     blt_strategy,
     bsr_strategy,
-    identity_mf_strategy,
+    identity_strategy,
     lambda_cgd_strategy,
-    mf_noise,
+    mf_gaussian_noise,
 )
 from opaque.api.dpftrl.noise._distributed import fingerprint_per_group_max_norm
 from opaque.random import key
@@ -32,12 +32,34 @@ def _make_pg_two_groups() -> PerGroup:
     )
 
 
+def _max_column_norm(strategy, *, n_steps: int) -> float:
+    """Strategy's single-participation sensitivity = ``‖C‖_{1→2}``."""
+    return strategy.sensitivity(n_steps=n_steps, min_sep=n_steps, max_participations=1)
+
+
+def _row_l2_at_zero(strategy, *, n_steps: int, min_sep: int = 1) -> float:
+    """First-step ``‖row_0(C^-1)‖`` — used to back out base σ from the
+    realized σ that :class:`NoisedPytree.noise_stddev` now publishes.
+    """
+    streaming = strategy.streaming_matrix(
+        n_steps=n_steps, min_sep=min_sep, max_participations=1
+    )
+    return float(streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()[0])
+
+
 def _assert_per_group_stddev_matches_expected(grad_template, *, key_seed: int) -> None:
-    strategy = band_mf_strategy(n_steps=20, bands=4, momentum=0.9)
+    # Identity strategy has row L2 ≡ 1, so the realized per-step σ
+    # published on NoisedPytree.noise_stddev equals the base σ from
+    # ``per_group_noise_stddev(pg, nm)`` exactly.  For correlated MF the
+    # realized σ also folds in ``‖row_t(C^-1)‖`` — exercised by the
+    # streaming-matrix-aware tests below.  This test pins the per-group
+    # base-σ pass-through; Identity isolates that path.
+    strategy = identity_strategy()
     nm = 1.5
-    noise_fn, state = mf_noise(
+    noise_fn, state = mf_gaussian_noise(
         grad_template,
         strategy,
+        n_steps=20,
         noise_multiplier=nm,
         key=key(key_seed),
     )
@@ -65,10 +87,11 @@ class TestMfNoisePerGroupSingleStream:
         _assert_per_group_stddev_matches_expected(grad_template, key_seed=701)
 
     def test_mlp_group_has_larger_noise_stddev_than_attn(self, grad_template):
-        strategy = identity_mf_strategy()
-        noise_fn, state = mf_noise(
+        strategy = identity_strategy()
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=20,
             noise_multiplier=1.0,
             key=key(42),
         )
@@ -81,10 +104,11 @@ class TestMfNoisePerGroupSingleStream:
         assert s_mlp == pytest.approx(s_attn * math.sqrt(2.0), rel=1e-9)
 
     def test_constant_max_norm_latch_pergroup_mismatch(self, grad_template):
-        strategy = band_mf_strategy(n_steps=10, bands=3, momentum=0.9)
-        noise_fn, state = mf_noise(
+        strategy = band_mf_strategy(bands=3, momentum=0.9)
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=10,
             noise_multiplier=1.0,
             key=key(0),
         )
@@ -107,10 +131,11 @@ class TestMfNoisePerGroupSingleStream:
             )
 
     def test_constant_max_norm_latch_kind_mismatch(self, grad_template):
-        strategy = band_mf_strategy(n_steps=10, bands=3, momentum=0.9)
-        noise_fn, state = mf_noise(
+        strategy = band_mf_strategy(bands=3, momentum=0.9)
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=10,
             noise_multiplier=1.0,
             key=key(1),
         )
@@ -129,10 +154,11 @@ class TestMfNoisePerGroupSingleStream:
             )
 
     def test_per_group_non_dict_grads_raises(self, grad_template):
-        strategy = identity_mf_strategy()
-        noise_fn, state = mf_noise(
+        strategy = identity_strategy()
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=5,
             noise_multiplier=1.0,
             key=key(2),
         )
@@ -145,21 +171,22 @@ class TestMfNoisePerGroupSingleStream:
     @pytest.mark.parametrize(
         "make_strategy",
         [
-            lambda: band_mf_strategy(n_steps=15, bands=3, momentum=0.9),
-            lambda: blt_strategy(n_steps=15, min_sep=15, momentum=0.9),
-            lambda: bisr_strategy(bandwidth=3, n_steps=15, min_sep=15, momentum=0.9),
-            lambda: bsr_strategy(
-                bandwidth=4, n_steps=15, min_sep=15, alpha=1.0, beta=0.9
-            ),
-            lambda: lambda_cgd_strategy(0.85, n_steps=15, min_sep=15),
-            lambda: identity_mf_strategy(),
+            lambda: band_mf_strategy(bands=3, momentum=0.9),
+            lambda: blt_strategy(momentum=0.9),
+            lambda: bisr_strategy(bandwidth=3, momentum=0.9),
+            lambda: bsr_strategy(bandwidth=4, alpha=1.0, beta=0.9),
+            lambda: lambda_cgd_strategy(lambda_=0.85),
+            lambda: identity_strategy(),
         ],
     )
     def test_per_group_runs_all_strategies(self, grad_template, make_strategy):
         strategy = make_strategy()
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=15,
+            min_sep=15,
+            max_participations=1,
             noise_multiplier=0.8,
             key=key(99),
         )
@@ -174,10 +201,11 @@ class TestMfNoisePerGroupSingleStream:
 
     def test_constant_max_norm_latch_pergroup(self, grad_template):
         """Identical ``PerGroup`` across calls keeps the latch happy."""
-        strategy = band_mf_strategy(n_steps=10, bands=3, momentum=0.9)
-        noise_fn, state = mf_noise(
+        strategy = band_mf_strategy(bands=3, momentum=0.9)
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=10,
             noise_multiplier=1.0,
             key=key(3),
         )
@@ -231,13 +259,15 @@ class TestMfNoisePerGroupPairedStream:
         return {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
 
     def test_paired_returns_per_group_stddevs(self, grad_template):
-        strategy = band_mf_strategy(n_steps=20, bands=4, momentum=0.9)
-        second = band_mf_strategy(n_steps=20, bands=4, momentum=0.99)
+        n_steps = 20
+        strategy = band_mf_strategy(bands=4, momentum=0.9)
+        second = band_mf_strategy(bands=4, momentum=0.99)
         nm = 1.2
-        c1 = float(strategy._max_column_norm)
-        noise_fn, state = mf_noise(
+        c1 = _max_column_norm(strategy, n_steps=n_steps)
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=n_steps,
             noise_multiplier=nm,
             key=key(11),
             second_moment_strategy=second,
@@ -256,8 +286,13 @@ class TestMfNoisePerGroupPairedStream:
         out, _ = noise_fn(paired, state)
         assert isinstance(out.noisy_grads.noise_stddev, PerGroup)
         assert isinstance(out.noisy_squared_grads.noise_stddev, PerGroup)
-        # Joint Mahalanobis on encoded sensitivities equals (c1 / nm)²
-        c2 = float(second._max_column_norm)
+        # Joint Mahalanobis on encoded sensitivities equals (c1 / nm)².
+        # The published ``noise_stddev`` is the per-step *realized* σ
+        # (= base σ · ‖row_t(C^-1)‖); divide each stream's row_l2 out to
+        # recover base σ for the joint-PLD calibration identity.
+        c2 = _max_column_norm(second, n_steps=n_steps)
+        first_row_l2 = _row_l2_at_zero(strategy, n_steps=n_steps)
+        second_row_l2 = _row_l2_at_zero(second, n_steps=n_steps)
         s1 = out.noisy_grads.noise_stddev
         s2 = out.noisy_squared_grads.noise_stddev
         mahal = 0.0
@@ -266,9 +301,9 @@ class TestMfNoisePerGroupPairedStream:
             b2 = sq_pg.for_key(param_key)
             d1 = b1 * c1
             d2 = b2 * c2
-            mahal += (d1 / s1.for_key(param_key)) ** 2 + (
-                d2 / s2.for_key(param_key)
-            ) ** 2
+            base_s1 = s1.for_key(param_key) / first_row_l2
+            base_s2 = s2.for_key(param_key) / second_row_l2
+            mahal += (d1 / base_s1) ** 2 + (d2 / base_s2) ** 2
         assert mahal == pytest.approx((c1 / nm) ** 2, rel=1e-9)
 
 
@@ -280,12 +315,14 @@ class TestMfNoisePerGroupMahalanobisSingleStream:
         return {"w": torch.zeros(3), "b": torch.zeros(3)}
 
     def test_mahalanobis_equals_c1_over_nm_squared(self, grad_template):
-        strategy = band_mf_strategy(n_steps=12, bands=3, momentum=0.9)
+        n_steps = 12
+        strategy = band_mf_strategy(bands=3, momentum=0.9)
         nm = 0.75
-        c1 = float(strategy._max_column_norm)
-        noise_fn, state = mf_noise(
+        c1 = _max_column_norm(strategy, n_steps=n_steps)
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=n_steps,
             noise_multiplier=nm,
             key=key(5),
         )
@@ -298,11 +335,15 @@ class TestMfNoisePerGroupMahalanobisSingleStream:
         out, _ = noise_fn(grads, state)
         sigma = out.noise_stddev
         assert isinstance(sigma, PerGroup)
+        # ``noise_stddev`` is the realized per-step σ (= base σ · row_l2);
+        # divide row_l2 out to recover base σ for the calibration identity.
+        row_l2 = _row_l2_at_zero(strategy, n_steps=n_steps)
         acc = 0.0
         for param_key in ("w", "b"):
             b_g = pg.for_key(param_key)
             sens = b_g * c1
-            acc += (sens / sigma.for_key(param_key)) ** 2
+            base_sigma = sigma.for_key(param_key) / row_l2
+            acc += (sens / base_sigma) ** 2
         assert acc == pytest.approx((c1 / nm) ** 2, rel=1e-9)
 
     def test_pld_match_per_group_single_stream(self, grad_template):
@@ -312,7 +353,7 @@ class TestMfNoisePerGroupMahalanobisSingleStream:
 
 
 class TestPerGroupPairedWithClippedGradAndMf:
-    """End-to-end: ``clipped_grad(..., second_moment=True, PerGroup)`` → ``mf_noise``."""
+    """End-to-end: ``clipped_grad(..., second_moment=True, PerGroup)`` → ``mf_gaussian_noise``."""
 
     def test_per_group_paired_with_mf(self):
         torch.manual_seed(0)
@@ -339,15 +380,17 @@ class TestPerGroupPairedWithClippedGradAndMf:
         paired, clip_state = grad_fn(params, x, y, state=clip_state)
         assert isinstance(paired, SecondMomentClippingOutput)
 
+        n_steps = 40
         grad_template = {"w": torch.zeros(3), "b": torch.zeros(())}
-        strategy = band_mf_strategy(n_steps=40, bands=4, momentum=0.9)
-        second = band_mf_strategy(n_steps=40, bands=4, momentum=0.99)
+        strategy = band_mf_strategy(bands=4, momentum=0.9)
+        second = band_mf_strategy(bands=4, momentum=0.99)
         nm = 1.0
-        c1 = float(strategy._max_column_norm)
-        c2 = float(second._max_column_norm)
-        noise_fn, noise_state = mf_noise(
+        c1 = _max_column_norm(strategy, n_steps=n_steps)
+        c2 = _max_column_norm(second, n_steps=n_steps)
+        noise_fn, noise_state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=n_steps,
             noise_multiplier=nm,
             key=key(2026),
             second_moment_strategy=second,
@@ -361,11 +404,14 @@ class TestPerGroupPairedWithClippedGradAndMf:
         assert isinstance(pg1, PerGroup)
         sq1 = paired.squared_grads.max_norm
         assert isinstance(sq1, PerGroup)
+        # Recover base σ from realized σ (= base · row_l2) per stream.
+        first_row_l2 = _row_l2_at_zero(strategy, n_steps=n_steps)
+        second_row_l2 = _row_l2_at_zero(second, n_steps=n_steps)
         mahal = 0.0
         for param_key in ("w", "b"):
             d1 = pg1.for_key(param_key) * c1
             d2 = sq1.for_key(param_key) * c2
-            mahal += (d1 / s1.for_key(param_key)) ** 2 + (
-                d2 / s2.for_key(param_key)
-            ) ** 2
+            base_s1 = s1.for_key(param_key) / first_row_l2
+            base_s2 = s2.for_key(param_key) / second_row_l2
+            mahal += (d1 / base_s1) ** 2 + (d2 / base_s2) ** 2
         assert mahal == pytest.approx((c1 / nm) ** 2, rel=1e-8)

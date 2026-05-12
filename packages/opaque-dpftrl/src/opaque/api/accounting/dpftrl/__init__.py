@@ -5,22 +5,10 @@ from opaque.api.accounting.dpftrl.amplification import (
     balls_in_bins,
     poisson,
 )
-from opaque.api.accounting.dpftrl.mechanisms import (
-    band_mf,
-    bisr,
-    blt,
-    bsr,
-    identity_mf,
-    lambda_cgd,
-)
+from opaque.api.accounting.dpftrl.mechanisms import mf_gaussian
 
 __all__ = [
-    "band_mf",
-    "blt",
-    "bisr",
-    "bsr",
-    "identity_mf",
-    "lambda_cgd",
+    "mf_gaussian",
     "poisson",
     "b_min_sep",
     "balls_in_bins",

@@ -1,10 +1,11 @@
-"""DP-FTRL accounting mechanism factories impl (matrix factorization)."""
+"""DP-FTRL accounting mechanism factories impl (matrix factorization).
 
-from opaque.api.accounting.dpftrl.mechanisms._band_mf import band_mf
-from opaque.api.accounting.dpftrl.mechanisms._bisr import bisr
-from opaque.api.accounting.dpftrl.mechanisms._blt import blt
-from opaque.api.accounting.dpftrl.mechanisms._bsr import bsr
-from opaque.api.accounting.dpftrl.mechanisms._identity import identity_mf
-from opaque.api.accounting.dpftrl.mechanisms._lambda_cgd import lambda_cgd
+A single ``mf_gaussian(nm, strategy)`` factory builds the accounting
+mechanism for any MF strategy — the strategy carries the structural data
+(sensitivity, Gram, coefficients) and the amplifications dispatch on
+``type(strategy)`` at PLD time.
+"""
 
-__all__ = ["band_mf", "blt", "bisr", "bsr", "identity_mf", "lambda_cgd"]
+from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import mf_gaussian
+
+__all__ = ["mf_gaussian"]

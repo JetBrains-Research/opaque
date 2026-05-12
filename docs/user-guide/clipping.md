@@ -500,19 +500,19 @@ Because the per-record sensitivity bound `R` is constant and
 data-independent, AUTO-S satisfies the constant per-step sensitivity
 assumption that matrix-factorization privacy proofs rely on. The
 returned `ClippedPytree.max_norm` is the same value (`R / normalize_by`)
-on every step, so it flows through `mf_noise` exactly like fixed clipping
+on every step, so it flows through `mf_gaussian_noise` exactly like fixed clipping
 does:
 
 ```python
 from opaque.dpsgd.clipping import auto_clipped_grad
-from opaque.dpftrl import band_mf_strategy, mf_noise
+from opaque.dpftrl import band_mf_strategy, mf_gaussian_noise
 from opaque.random import key
 
 grad_fn, clip_state = auto_clipped_grad(
     loss_fn, argnums=0, batch_argnums=(1, 2),
     R=1.0, normalize_by=batch_size,
 )
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     params,
     band_mf_strategy(n_steps=num_steps, bands=4),
     noise_multiplier=noise_multiplier,
@@ -525,7 +525,7 @@ for batch_x, batch_y in dataloader:
     # ... optimizer step
 ```
 
-`adaptive_clipped_grad`, by contrast, *cannot* be used with `mf_noise`:
+`adaptive_clipped_grad`, by contrast, *cannot* be used with `mf_gaussian_noise`:
 its threshold drifts across steps and the dispatcher's
 `_validate_constant_max_norm` latch (rightly) rejects the resulting
 varying `max_norm`.

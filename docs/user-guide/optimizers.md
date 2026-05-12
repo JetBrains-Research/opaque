@@ -202,7 +202,7 @@ under add/remove DP, but the optimizer-side cost is trivial: just
 substitute the privatized stream in the v-update.
 
 This mode requires an MF noise mechanism with
-`mf_noise(..., second_moment_strategy=...)`, so it
+`mf_gaussian_noise(..., second_moment_strategy=...)`, so it
 applies to **DP-FTRL** training, not standard DP-SGD with i.i.d. Gaussian
 noise.
 
@@ -276,7 +276,7 @@ above.
 ## AdamW With Private Second Moments
 
 ```python
-from opaque.dpftrl.noise import band_mf_strategy, mf_noise
+from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
 from opaque.optimizers import adamw
 
 # Strategy: momentum=beta1 (Adam's first moment workload)
@@ -284,7 +284,7 @@ strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.9)
 second_strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.999)
 
 # Noise: passing second_moment_strategy creates two MF streams (g, g²).
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     grad_template, strategy,
     noise_multiplier=noise_multiplier,
     key=key(42),
@@ -317,7 +317,8 @@ is sensitivity-proportional, so the joint Mahalanobis budget collapses to
 a single sensitivity-1 Gaussian release at the same noise multiplier.
 
 ```python
-mechanism = dpftrl_acc.band_mf(nm, sensitivity=S, coefficients=coeffs)
+strategy = band_mf_strategy(n_steps=n, bands=bands)
+mechanism = dpftrl_acc.mf_gaussian(nm, strategy)
 process = dpftrl_acc.poisson(mechanism, sample_rate=q, n_steps=n)
 ```
 
@@ -333,7 +334,7 @@ contributes no extra threshold-quantile cost.
 python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --mechanism blt --second-moment
 ```
 
-Works with MF mechanisms supported by `mf_noise`: `band_mf`, `blt`,
+Works with MF mechanisms supported by `mf_gaussian_noise`: `band_mf`, `blt`,
 `bisr`, `bsr`, and `lambda_cgd`.  In second-moment mode, pass
 `second_moment_strategy` explicitly.
 

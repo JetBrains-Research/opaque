@@ -33,7 +33,7 @@ separate:
 1. **DP correctness** — the privacy guarantee applies to the
    randomized algorithm you actually run. As long as the accounting
    uses the same sensitivity (and Gram matrix when needed) as the
-   strategy passed to `mf_noise`, and the sampler matches the
+   strategy passed to `mf_gaussian_noise`, and the sampler matches the
    amplification analysis, the DP statement is valid.
 2. **Workload fidelity / utility** — strategies are designed for a
    workload model (Polyak momentum, constant LR, exponential decay).
@@ -56,7 +56,7 @@ from opaque.dpftrl.noise import (
     bisr_strategy,       # banded inverse square root
     bsr_strategy,        # banded square root, closed-form
     lambda_cgd_strategy, # PRNG replay, O(1) memory
-    identity_mf_strategy,   # no correlation; baseline
+    identity_strategy,   # no correlation; baseline
 )
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
@@ -75,17 +75,13 @@ sensitivity / Gram matrix:
 import opaque.accounting as acc                  # cross-cutting
 import opaque.dpftrl.accounting as dpftrl_acc    # DP-FTRL factories
 
-# Same strategy that will go into mf_noise below.
+# Same strategy that will go into mf_gaussian_noise below.
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
     lambda nm: dpftrl_acc.poisson(
-        dpftrl_acc.band_mf(
-            nm,
-            sensitivity=strategy.sensitivity,
-            coefficients=strategy.coefficients,
-        ),
+        dpftrl_acc.mf_gaussian(nm, strategy),
         sample_rate=0.01,
         n_steps=1000,
     ),
@@ -105,7 +101,7 @@ Three amplification factories under
 
 Each amplification factory wraps a mechanism into a single
 `DpProcess` describing the full training run. **Always pass the same
-strategy object** into `mf_noise` and the accounting factory — that's
+strategy object** into `mf_gaussian_noise` and the accounting factory — that's
 how DP correctness is preserved.
 
 ## 3. Clipping
@@ -155,17 +151,17 @@ with no per-workload tuning needed.
 
 ## 4. Noise
 
-`opaque.dpftrl.noise.mf_noise` injects correlated noise:
+`opaque.dpftrl.noise.mf_gaussian_noise` injects correlated noise:
 
 ```python
-from opaque.dpftrl.noise import mf_noise
+from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.random import key
 
 # grad_template is the structure of clipped_grad's output —
 # typically a ClippedPytree from a single warm-up call.
 warmup_grads, _ = grad_fn(params, warmup_batch, state=clip_state)
 
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     warmup_grads,
     strategy,                       # same object you used in accounting
     noise_multiplier=noise_multiplier,
@@ -173,7 +169,7 @@ noise_fn, noise_state = mf_noise(
 )
 ```
 
-`mf_noise` reads the per-step contribution bound from the
+`mf_gaussian_noise` reads the per-step contribution bound from the
 `ClippedPytree` input on the **first call** and latches it for the
 rest of the run. The bound is `noise_multiplier × max_norm`, so each
 step must produce gradients with the same `max_norm` for the privacy
@@ -224,7 +220,7 @@ optimizer = adamw(lr=1e-3, noise_bias_correction=True)
 opt_state = optimizer.init(params)
 ```
 
-Private second-moment AdamW pairs with `mf_noise(...,
+Private second-moment AdamW pairs with `mf_gaussian_noise(...,
 second_moment_strategy=...)` — the noise mechanism produces a
 `SecondMomentNoiseOutput` and the optimizer's DP-aware path consumes
 it. See [Optimizers](optimizers.md) for the full second-moment story.
@@ -279,7 +275,7 @@ torch.save(state_dict(ckpt), "step.pt")
 
 - [Clipping](clipping.md) — fixed and AUTO-S variants
   (adaptive is DP-SGD-only).
-- [Noise](noise.md) — `mf_noise` shape, strategy types,
+- [Noise](noise.md) — `mf_gaussian_noise` shape, strategy types,
   per-step bound latching.
 - [Sampling](sampling.md) — DP-FTRL sampler family.
 - [Accounting](accounting.md) — `DpProcess`, the

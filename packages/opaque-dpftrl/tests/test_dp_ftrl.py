@@ -7,12 +7,12 @@ from torch.utils.data import TensorDataset
 
 from opaque.types import clipped
 
-from opaque.dpftrl.noise import mf_noise
+from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
     blt_strategy,
-    identity_mf_strategy,
+    identity_strategy,
     lambda_cgd_strategy,
 )
 from opaque.api.dpftrl.noise._engine import _matrix_factorization_noise
@@ -33,7 +33,7 @@ def _engine_train_loop(
     The engine returns a noise_fn that takes the per-call ``stddev`` directly
     on a raw gradient pytree.  Used by tests that exercise
     :func:`_matrix_factorization_noise` directly rather than the
-    :func:`mf_noise` dispatcher.
+    :func:`mf_gaussian_noise` dispatcher.
     """
     params = list(model.parameters())
 
@@ -57,7 +57,7 @@ def _engine_train_loop(
 def _mf_train_loop(
     model, optimizer, noise_fn, state, x_data, y_data, steps, *, max_norm
 ):
-    """Run a DP-FTRL training loop through the :func:`mf_noise` dispatcher.
+    """Run a DP-FTRL training loop through the :func:`mf_gaussian_noise` dispatcher.
 
     Wraps gradients as :class:`ClippedPytree`, applies the dispatcher's
     noise_fn, and unwraps the resulting :class:`NoisedPytree`.
@@ -331,15 +331,13 @@ class TestBLTWithBnB:
         model = nn.Linear(dim, 1, bias=False)
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=momentum)
 
-        strategy = blt_strategy(
+        strategy = blt_strategy(momentum=momentum)
+        noise_fn, noise_state = mf_gaussian_noise(
+            self._make_template(model),
+            strategy,
             n_steps=total_steps,
             min_sep=steps_per_epoch,
             max_participations=num_epochs,
-            momentum=momentum,
-        )
-        noise_fn, noise_state = mf_noise(
-            self._make_template(model),
-            strategy,
             noise_multiplier=1.0,
             key=key(42),
         )
@@ -440,7 +438,7 @@ class TestBLTWithBnB:
 
 
 class TestMfNoiseStrategies:
-    """End-to-end tests: each strategy trains a simple model via mf_noise()."""
+    """End-to-end tests: each strategy trains a simple model via mf_gaussian_noise()."""
 
     def _setup(self, steps=50, seed=0):
         torch.manual_seed(seed)
@@ -452,38 +450,51 @@ class TestMfNoiseStrategies:
         return model, opt, template, x, y
 
     @pytest.mark.parametrize(
-        "strategy_factory",
+        "strategy_factory,kwargs",
         [
-            pytest.param(lambda: identity_mf_strategy(), id="identity"),
             pytest.param(
-                lambda: band_mf_strategy(n_steps=50, bands=10, momentum=0.0),
+                lambda: identity_strategy(),
+                dict(n_steps=50, min_sep=1, max_participations=1),
+                id="identity",
+            ),
+            pytest.param(
+                lambda: band_mf_strategy(bands=10, momentum=0.0),
+                dict(n_steps=50, min_sep=1, max_participations=1),
                 id="band_mf",
             ),
             pytest.param(
-                lambda: lambda_cgd_strategy(
-                    0.9, n_steps=50, min_sep=1, max_participations=1
-                ),
+                lambda: lambda_cgd_strategy(lambda_=0.9),
+                dict(n_steps=50, min_sep=1, max_participations=1),
                 id="lambda_cgd",
             ),
             pytest.param(
-                lambda: bisr_strategy(
-                    bandwidth=4, n_steps=50, min_sep=10, max_participations=5
-                ),
+                lambda: bisr_strategy(bandwidth=4),
+                dict(n_steps=50, min_sep=10, max_participations=5),
                 id="bisr",
             ),
         ],
     )
-    def test_strategy_trains(self, strategy_factory):
+    def test_strategy_trains(self, strategy_factory, kwargs):
         model, opt, tmpl, x, y = self._setup()
-        nf, ns = mf_noise(tmpl, strategy_factory(), noise_multiplier=1.0, key=key(42))
+        nf, ns = mf_gaussian_noise(
+            tmpl,
+            strategy_factory(),
+            noise_multiplier=1.0,
+            key=key(42),
+            **kwargs,
+        )
         losses = _mf_train_loop(model, opt, nf, ns, x, y, steps=50, max_norm=0.1)
         assert losses[-1] < losses[0]
 
     def test_identity_matches_raw_engine(self):
-        """identity_mf_strategy via mf_noise gives same noise as _matrix_factorization_noise + identity()."""
+        """identity_strategy via mf_gaussian_noise gives same noise as _matrix_factorization_noise + identity()."""
         tmpl = {"w": torch.zeros(10)}
-        nf1, ns1 = mf_noise(
-            tmpl, identity_mf_strategy(), noise_multiplier=1.0, key=key(42)
+        nf1, ns1 = mf_gaussian_noise(
+            tmpl,
+            identity_strategy(),
+            n_steps=10,
+            noise_multiplier=1.0,
+            key=key(42),
         )
         nf2, ns2 = _matrix_factorization_noise(tmpl, identity(), key=key(42))
 

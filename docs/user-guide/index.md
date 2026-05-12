@@ -45,7 +45,7 @@ stitches them.
   `auto_clipped_grad`, `adaptive_clipped_grad` (DP-SGD-only),
   microbatching, per-group clipping.
 - **[Noise Addition](noise.md)** — `gaussian_noise` (optional
-  ``bound`` for the bounded Gaussian mechanism) (DP-SGD); `mf_noise`
+  ``bound`` for the bounded Gaussian mechanism) (DP-SGD); `mf_gaussian_noise`
   with strategy factories (DP-FTRL).
 - **[Privacy Accounting](accounting.md)** — Composable `DpProcess`
   objects, privacy metrics, calibration, the `Accountant` helper.

@@ -1,9 +1,8 @@
 """BandMF strategy — banded Toeplitz MF mechanism.
 
-Computes optimized banded Toeplitz coefficients and wraps their
-sensitivity / streaming matrix into a frozen strategy dataclass.
-
-Use ``mf_noise(band_mf_strategy(...), ...)`` to create the noise function.
+Computes optimized banded Toeplitz coefficients on demand from the
+strategy's recipe (``bands``, ``momentum``, ``lr_schedule``) and the
+amplifier-supplied ``n_steps``.
 
 References:
     - BandMF: https://arxiv.org/abs/2306.08153
@@ -11,11 +10,13 @@ References:
 
 from __future__ import annotations
 
-import math
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import lru_cache
 
 import torch
+
+from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 
 from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import inverse_as_streaming_matrix
@@ -32,23 +33,6 @@ def _momentum_workload_coef(
     For momentum β and per-step learning rates η_t, the workload matrix W
     has entries W[t,s] = η_t · β^{t-s} for s ≤ t.  The Toeplitz
     coefficients are [η_0, η_1·β, η_2·β², ...].
-
-    When ``lr_schedule=None``, assumes constant η=1 everywhere (the
-    original behavior).
-
-    Special cases:
-        β = 0.0 → [η_0, 0, 0, ...] (identity workload)
-        β = 0.95, lr=None → [1, 0.95, 0.9025, ...] (momentum-SGD)
-        β = 1.0, lr=None → [1, 1, 1, ...] (prefix-sum workload, true FTRL)
-
-    Args:
-        momentum: Polyak momentum β (must be >= 0).
-        n: Number of steps.
-        lr_schedule: Optional per-step learning rates, shape [n].
-            If None, assumes constant LR (implicit η=1).
-
-    Raises:
-        ValueError: If momentum < 0 or lr_schedule has wrong length.
     """
     if momentum < 0:
         raise ValueError(f"momentum must be >= 0, got {momentum}")
@@ -78,7 +62,30 @@ def _momentum_workload_coef(
     return base
 
 
-__all__ = ["BandMfStrategy", "band_mf_strategy"]
+# ---------------------------------------------------------------------------
+# Cached coefficient computation
+# ---------------------------------------------------------------------------
+
+
+def _lr_key(lr_schedule: torch.Tensor | None) -> tuple[float, ...] | None:
+    return None if lr_schedule is None else tuple(lr_schedule.tolist())
+
+
+@lru_cache(maxsize=32)
+def _band_mf_coefficients_cached(
+    n_steps: int,
+    bands: int,
+    momentum: float,
+    lr_key: tuple[float, ...] | None,
+) -> torch.Tensor:
+    """Run the BandMF Toeplitz optimization for the given recipe + horizon."""
+    if n_steps < 1:
+        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+    if bands < 1 or bands > n_steps:
+        raise ValueError(f"bands must be in [1, n_steps={n_steps}], got {bands}")
+    lr = torch.tensor(lr_key, dtype=torch.float64) if lr_key is not None else None
+    workload_coef = _momentum_workload_coef(momentum, n_steps, lr_schedule=lr)
+    return optimize_toeplitz(n_steps, bands, workload_coef=workload_coef)
 
 
 # ---------------------------------------------------------------------------
@@ -86,75 +93,74 @@ __all__ = ["BandMfStrategy", "band_mf_strategy"]
 # ---------------------------------------------------------------------------
 
 
+@register_strategy
 @dataclass(frozen=True, slots=True)
 class BandMfStrategy:
-    """BandMF banded Toeplitz strategy.
+    """BandMF banded Toeplitz strategy — recipe only.
 
-    BandMF uses cyclic Poisson amplification (not BnB), so
-    ``gram_matrix`` is always ``None``.
+    All derived data (coefficients, sensitivity, streaming matrix) is
+    computed on demand via the strategy methods, keyed on the
+    amplifier-supplied ``n_steps``.  No gram matrix: BandMF uses cyclic
+    Poisson / b-min-sep amplification, not BnB.
     """
 
-    sensitivity: float
-    coefficients: tuple[float, ...]
-    gram_matrix: None = None
-    _streaming_matrix: StreamingMatrix | None = None
-    _n_steps: int = 0
-    _bands: int = 0
-    _lr_schedule: torch.Tensor | None = None
+    bands: int
+    momentum: float = 1.0
+    lr_schedule: torch.Tensor | None = field(default=None, compare=False)
 
-    @property
-    def _max_column_norm(self) -> float:
-        """Max column L2 norm ‖C‖_{1→2} (equals sensitivity for BandMF)."""
-        return self.sensitivity
+    def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
+        return _band_mf_coefficients_cached(
+            n_steps, self.bands, self.momentum, _lr_key(self.lr_schedule)
+        )
 
-    @property
-    def num_groups(self) -> int:
-        """Number of independent cyclic groups: ceil(n_steps / bands)."""
-        return math.ceil(self._n_steps / self._bands) if self._bands > 0 else 0
+    def gram_matrix(self, **_) -> tuple[float, ...]:
+        # BandMF uses Poisson / b-min-sep amplification, not BnB.
+        raise NotImplementedError(
+            "BandMfStrategy does not provide a gram matrix (uses Poisson / "
+            "b-min-sep amplification, not BnB)."
+        )
+
+    def streaming_matrix(self, *, n_steps: int, **_) -> StreamingMatrix:
+        coefs = self.coefficients(n_steps=n_steps)
+        return inverse_as_streaming_matrix(coefs)
+
+    def sensitivity(self, *, n_steps: int, **_) -> float:
+        coefs = self.coefficients(n_steps=n_steps)
+        return float(coefs.norm())
 
 
 def band_mf_strategy(
-    n_steps: int,
-    bands: int,
     *,
+    bands: int,
     momentum: float = 1.0,
     lr_schedule: torch.Tensor | None = None,
 ) -> BandMfStrategy:
-    """Create a BandMF strategy by optimizing banded Toeplitz coefficients.
+    """Create a BandMF strategy recipe.
 
-    BandMF uses cyclic Poisson amplification, not BnB, so ``gram_matrix``
-    is always ``None``.
+    The factory only validates static recipe knobs.  The Toeplitz
+    optimization happens lazily when a strategy method is first called
+    with an amplifier-supplied ``n_steps``.
 
     Args:
-        n_steps: Number of training iterations.
-        bands: Number of bands in the Toeplitz matrix.
+        bands: Number of bands in the Toeplitz matrix (>= 1).
         momentum: Polyak momentum coefficient (default 1.0 = prefix-sum).
-        lr_schedule: Optional per-step learning rates, shape [n_steps].
+        lr_schedule: Optional per-step learning rates (length must match
+            the amplifier's ``n_steps`` at use time).
 
     Returns:
-        A :class:`BandMfStrategy` with optimized coefficients.
+        A :class:`BandMfStrategy` recipe.
     """
-    if n_steps < 1:
-        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
-    if bands < 1 or bands > n_steps:
-        raise ValueError(f"bands must be in [1, n_steps={n_steps}], got {bands}")
-
-    workload_coef = _momentum_workload_coef(momentum, n_steps, lr_schedule=lr_schedule)
-    coefs = optimize_toeplitz(n_steps, bands, workload_coef=workload_coef)
-
-    sensitivity = float(coefs.norm())
-    coefficients = tuple(coefs.tolist())
-    streaming = inverse_as_streaming_matrix(coefs)
-
+    if bands < 1:
+        raise ValueError(f"bands must be >= 1, got {bands}")
     return BandMfStrategy(
-        sensitivity=sensitivity,
-        coefficients=coefficients,
-        _streaming_matrix=streaming,
-        _n_steps=n_steps,
-        _bands=bands,
-        _lr_schedule=(
+        bands=bands,
+        momentum=momentum,
+        lr_schedule=(
             torch.as_tensor(lr_schedule, dtype=torch.float64).clone()
             if lr_schedule is not None
             else None
         ),
     )
+
+
+__all__ = ["BandMfStrategy", "band_mf_strategy"]

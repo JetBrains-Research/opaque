@@ -23,7 +23,7 @@ from opaque.api.accounting.core._budgets import (
     EpsilonBudget,
     RiskBudget,
 )
-from opaque.api.accounting.core._process_flat import _load_dp_process
+from opaque.api.accounting.core._process_codec import _load_dp_process
 from opaque.api.accounting.core.mechanisms.types import Identity
 
 __all__ = ["Accountant"]
@@ -196,26 +196,21 @@ class Accountant:
 def _accountant_state_dict(acct: Accountant) -> dict[str, Any]:
     from opaque.serialization import state_dict as opaque_state_dict
 
-    out: dict[str, Any] = {}
-    proc_flat = opaque_state_dict(acct._process)
-    for k, v in proc_flat.items():
-        out[f"process.{k}"] = v
+    out: dict[str, Any] = {"process": dict(opaque_state_dict(acct._process))}
     if acct._budget is not None:
         b = acct._budget
-        out["budget.type"] = type(b).__name__
-        for f in dataclasses.fields(b):
-            out[f"budget.{f.name}"] = getattr(b, f.name)
+        out["budget"] = {"type": type(b).__name__} | {
+            f.name: getattr(b, f.name) for f in dataclasses.fields(b)
+        }
     return out
 
 
 def _accountant_from_state_dict(state: dict[str, Any]) -> Accountant:
     budget = None
-    if any(k.startswith("budget.") for k in state):
-        bflat = {k[7:]: v for k, v in state.items() if k.startswith("budget.")}
-        budget = _deserialize_budget(bflat)
+    if "budget" in state:
+        budget = _deserialize_budget(dict(state["budget"]))
     acct = Accountant(budget=budget)
-    proc_flat = {k[8:]: v for k, v in state.items() if k.startswith("process.")}
-    acct._process = _load_dp_process(dict(proc_flat))
+    acct._process = _load_dp_process(dict(state["process"]))
     return acct
 
 

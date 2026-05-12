@@ -15,13 +15,13 @@ tests/integration/
 ├── test_dpsgd_pipeline.py   — full DP-SGD step (clip → gaussian_noise → update)
 │                              on a patched LoRA model. Synthetic + Qwen2
 │                              variants in one file.
-├── test_dpftrl_pipeline.py  — full DP-FTRL step (clip → mf_noise → update)
+├── test_dpftrl_pipeline.py  — full DP-FTRL step (clip → mf_gaussian_noise → update)
 │                              on a patched LoRA model. Synthetic + Qwen2.
 └── dpsgd_dpftrl/            — DP-SGD ↔ DP-FTRL cross-stack tests
     ├── accounting/          — composing per-stack accountants and round-tripping
     │                          mixed processes through opaque.serialization
     ├── distributed/         — DDP + DP step. CUDA-marked.
-    └── noise/               — comparing band-MF / mf_noise vs the DP-SGD
+    └── noise/               — comparing band-MF / mf_gaussian_noise vs the DP-SGD
                                 Gaussian baseline on the same inputs
 ```
 

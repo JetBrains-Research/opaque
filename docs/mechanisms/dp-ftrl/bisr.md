@@ -31,13 +31,11 @@ strategy = bisr_strategy(
     momentum=0.9,
 )
 
-# 2. Build accounting mechanism from strategy-derived quantities
+# 2. Build accounting mechanism via strategy.as_mechanism
 training = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.bisr(noise_multiplier,
-                  sensitivity=strategy.sensitivity,
-                  gram_matrix=strategy.gram_matrix),
+    ftrl_acc.mf_gaussian(noise_multiplier, strategy),
     num_bins=steps_per_epoch,
-    num_epochs=num_epochs,
+    n_steps=steps_per_epoch * num_epochs,
 )
 eps = training.epsilon_at(1e-5)
 ```
@@ -77,7 +75,7 @@ enter sensitivity or Gram matrix computation).
 ## Noise generation
 
 ```python
-from opaque.dpftrl.noise import mf_noise, bisr_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, bisr_strategy
 from opaque.random import key
 
 strategy = bisr_strategy(
@@ -87,7 +85,7 @@ strategy = bisr_strategy(
     max_participations=num_epochs,
     momentum=0.9,
 )
-noise_fn, state = mf_noise(
+noise_fn, state = mf_gaussian_noise(
     grad_template, strategy,
     noise_multiplier=noise_multiplier,
     key=key(seed),

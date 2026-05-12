@@ -1,6 +1,6 @@
-"""Identity noise strategy — independent Gaussian noise (DP-SGD via MF API).
+"""Identity MF strategy — uncorrelated noise baseline (DP-SGD via MF API).
 
-Use ``mf_noise(template, identity_mf_strategy(), ...)`` for standard DP-SGD
+Use ``mf_gaussian_noise(template, identity_strategy(), ...)`` for standard DP-SGD
 with independent noise at each step.
 """
 
@@ -8,34 +8,46 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import torch
 
-@dataclass(frozen=True)
-class IdentityMfStrategy:
-    """Identity (DP-SGD) strategy — independent noise at each step.
+from opaque.api.dpftrl.noise._strategy_codec import register_strategy
+from opaque.api.dpftrl.noise._streaming_matrix import StreamingMatrix, identity
 
-    The identity matrix has column norms of 1, so ``sensitivity = 1.0``.
+
+@register_strategy
+@dataclass(frozen=True, slots=True)
+class IdentityStrategy:
+    """Identity (uncorrelated) MF strategy — independent noise per step.
+
+    Encoder ``C = I``: sensitivity ≡ 1 for any horizon; streaming matrix
+    is the identity; gram matrix isn't read (the BnB Identity path uses
+    a dedicated native primitive that exploits ``G = num_epochs · I_b``).
     """
 
-    sensitivity: float = 1.0
-    _max_column_norm: float = 1.0
+    def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
+        # First column of the n × n identity matrix.
+        c = torch.zeros(n_steps, dtype=torch.float64)
+        c[0] = 1.0
+        return c
+
+    def gram_matrix(self, **_) -> tuple[float, ...]:
+        # The BnB Identity path uses ``bnb_mc_pld_identity`` (exploits
+        # ``G = num_epochs · I_b``); this method shouldn't be called.
+        raise NotImplementedError(
+            "IdentityStrategy does not materialize a gram matrix; BnB Identity "
+            "uses ``bnb_mc_pld_identity`` directly."
+        )
+
+    def streaming_matrix(self, **_) -> StreamingMatrix:
+        return identity()
+
+    def sensitivity(self, **_) -> float:
+        return 1.0
 
 
-def identity_mf_strategy() -> IdentityMfStrategy:
-    """Create an identity (DP-SGD) noise strategy.
-
-    Returns:
-        An :class:`IdentityMfStrategy` for use with :func:`mf_noise`.
-
-    Example:
-        >>> from opaque.types import clipped
-        >>> from opaque.api.dpftrl.noise import mf_noise, identity_mf_strategy
-        >>> from opaque.random import key
-        >>> noise_fn, state = mf_noise(
-        ...     template, identity_mf_strategy(), noise_multiplier=1.0, key=key(42)
-        ... )
-        >>> noised, state = noise_fn(clipped(grads, max_norm=1.0), state)
-    """
-    return IdentityMfStrategy()
+def identity_strategy() -> IdentityStrategy:
+    """Create an identity (DP-SGD) noise strategy."""
+    return IdentityStrategy()
 
 
-__all__ = ["IdentityMfStrategy", "identity_mf_strategy"]
+__all__ = ["IdentityStrategy", "identity_strategy"]

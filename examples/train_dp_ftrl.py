@@ -131,9 +131,9 @@ from opaque.dpftrl.noise import (
     bisr_strategy,
     bsr_strategy,
     blt_strategy,
-    identity_mf_strategy,
+    identity_strategy,
     lambda_cgd_strategy,
-    mf_noise,
+    mf_gaussian_noise,
 )
 from opaque.profiling import (
     StepTimer,
@@ -142,6 +142,12 @@ from opaque.profiling import (
     reset_peak_memory,
 )
 from opaque.random import key, fold_in
+from opaque.scheduling import (
+    cosine_schedule,
+    inverse_sqrt_schedule,
+    linear_schedule,
+    with_warmup,
+)
 from opaque.functional import empty_collate
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
@@ -240,30 +246,72 @@ def _load_streaming_subset(
 def make_lr_schedule(
     base_lr: float,
     total_steps: int,
-    warmup_frac: float = 0.0,
+    *,
+    kind: str = "none",
+    min_ratio: float = 0.0,
+    warmup_steps: int = 0,
 ) -> torch.Tensor:
-    """Create a predetermined LR schedule: optional linear warmup → constant.
+    """Materialize an LR schedule as a per-step tensor.
+
+    The same tensor is fed both to the torchopt optimizer (via a
+    ``lambda step: lr_schedule[step].item()`` callable) and to the MF
+    noise strategy's ``lr_schedule`` argument (for BandMF / BLT — see
+    :func:`opaque.dpftrl.noise._band_mf._momentum_workload_coef`).  Both
+    consumers see identical per-step LRs.
 
     Args:
         base_lr: Peak learning rate.
         total_steps: Total number of training steps.
-        warmup_frac: Fraction of steps for linear warmup (0→base_lr). Default 0
-            (constant schedule at base_lr).
+        kind: Decay curve — ``none`` (constant), ``cosine``, ``linear``,
+            ``sqrt`` (inverse-sqrt).
+        min_ratio: Floor LR as a fraction of peak (cosine / linear only;
+            sqrt decays to zero asymptotically).  Must be in [0, 1].
+        warmup_steps: Linear warmup from 0 → peak LR over this many steps
+            (any kind).
 
     Returns:
-        Tensor of shape [total_steps] with per-step learning rates.
+        Tensor of shape [total_steps] with per-step learning rates,
+        ``float64`` for downstream numerical stability in the MF workload
+        optimization.
     """
-    warmup_steps = int(total_steps * warmup_frac)
+    if not 0.0 <= min_ratio <= 1.0:
+        raise ValueError(f"min_ratio must be in [0, 1], got {min_ratio}")
+    warmup = max(0, int(warmup_steps))
+    decay_span = max(1, total_steps - warmup)
+    lr_min = base_lr * min_ratio
 
-    schedule = torch.ones(total_steps, dtype=torch.float64)
-
-    # Linear warmup: 0 → 1
-    if warmup_steps > 0:
-        schedule[:warmup_steps] = torch.linspace(
-            0.0, 1.0, warmup_steps, dtype=torch.float64
+    if kind == "cosine":
+        base = cosine_schedule(
+            init_value=base_lr,
+            end_value=lr_min,
+            transition_steps=decay_span,
+            transition_begin=warmup,
         )
+    elif kind == "linear":
+        base = linear_schedule(
+            init_value=base_lr,
+            end_value=lr_min,
+            transition_steps=decay_span,
+            transition_begin=warmup,
+        )
+    elif kind == "sqrt":
+        # Inverse-sqrt timescale defaults to warmup when set, otherwise
+        # to the full run.
+        base = inverse_sqrt_schedule(
+            init_value=base_lr,
+            transition_steps=warmup if warmup > 0 else max(1, total_steps),
+            transition_begin=warmup,
+        )
+    elif kind == "none":
+        base = lambda _step: base_lr  # noqa: E731
+    else:
+        raise ValueError(f"Unknown LR schedule kind: {kind!r}")
 
-    return (schedule * base_lr).to(torch.float32)
+    schedule_fn = (
+        with_warmup(base, transition_steps=warmup) if warmup > 0 else base
+    )
+    values = [float(schedule_fn(step)) for step in range(total_steps)]
+    return torch.tensor(values, dtype=torch.float64)
 
 
 # ---------------------------------------------------------------------------
@@ -324,15 +372,34 @@ def parse_args():
     train_g.add_argument(
         "--optimizer",
         type=str,
-        choices=["sgd", "adamw", "ademamix", "lion"],
+        choices=[
+            "sgd",
+            "adam",
+            "adamw",
+            "ademamix",
+            "lion",
+            "adafactor",
+            "rmsprop",
+            "adagrad",
+        ],
         default="sgd",
         help=(
-            "Optimizer.  ``sgd`` is the canonical DP-FTRL baseline "
-            "(sgd, Polyak momentum).  ``adamw`` and ``ademamix`` "
-            "are Adam-family adaptive optimizers; pair with ``--second-moment`` to "
-            "activate a private squared-gradient stream.  ``lion`` "
-            "is sign-of-momentum; works under MF noise but has no v so "
-            "``--second-moment`` is rejected for it."
+            "Optimizer.  ``sgd`` is the canonical DP-FTRL baseline (sgd, "
+            "Polyak momentum).  ``adam`` / ``adamw`` / ``ademamix`` are "
+            "Adam-family adaptive optimizers; pair with ``--second-moment`` "
+            "to activate a private squared-gradient stream (``adamw`` / "
+            "``ademamix`` only — the others fall back to single-stream).  "
+            "``lion`` is sign-of-momentum; works under MF noise but has "
+            "no ``v`` so ``--second-moment`` is auto-disabled.  "
+            "``adafactor`` / ``rmsprop`` / ``adagrad`` are second-moment-"
+            "only optimizers (no first-moment EMA, so the MF workload is "
+            "the identity — equivalent in noise structure to DP-SGD; the "
+            "MF correlation is wasted unless paired with ``--mechanism "
+            "identity``).  ``--noise-bias-correction`` is plumbed through "
+            "for the optimizers that support it; under MF noise the "
+            "optimizer reads the per-step *realized* σ from "
+            "``NoisedPytree.noise_stddev`` so the second-moment EMA "
+            "debias is correct for every strategy."
         ),
     )
     train_g.add_argument(
@@ -340,7 +407,7 @@ def parse_args():
         action=argparse.BooleanOptionalAction,
         default=False,
         help=(
-            "Activate private second-moment noise: ``mf_noise`` produces a "
+            "Activate private second-moment noise: ``mf_gaussian_noise`` produces a "
             "privately-estimated ``g²`` stream alongside noised gradients, "
             "and Opaque optimizers consume it automatically.  Joint noise "
             "uses sensitivity-proportional Mahalanobis allocation: privacy "
@@ -364,6 +431,23 @@ def parse_args():
         "adamw decoupled WD (default 0).",
     )
     train_g.add_argument(
+        "--noise-bias-correction",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Enable DP noise-variance bias correction on optimizers that "
+            "support it (adam/adamw/ademamix/rmsprop/adagrad/adafactor).  "
+            "Silently ignored on sgd/lion.  Under MF noise the optimizer "
+            "now reads the per-step *realized* σ "
+            "(= base σ · ‖row_t(C^-1)‖) from ``NoisedPytree.noise_stddev`` "
+            "(see ``test_realized_stddev.py`` for the bug fix) so the "
+            "second-moment EMA debias is correct for every MF strategy.  "
+            "Off by default; flip to ``--noise-bias-correction`` when the "
+            "training-time gradient distribution justifies it (see "
+            "docs/user-guide/optimizers.md)."
+        ),
+    )
+    train_g.add_argument(
         "--beta1",
         type=float,
         default=0.9,
@@ -382,10 +466,41 @@ def parse_args():
         help="Adam epsilon (default: 1e-8). Ignored for --optimizer sgd.",
     )
     train_g.add_argument(
-        "--warmup-frac",
+        "--lr-schedule",
+        type=str,
+        choices=["none", "cosine", "linear", "sqrt"],
+        default="none",
+        help=(
+            "LR decay curve applied to ``--learning-rate``.  ``cosine`` "
+            "decays smoothly from peak to ``--learning-rate * "
+            "--lr-min-ratio``; ``linear`` decays linearly to the same "
+            "floor; ``sqrt`` decays as inverse-sqrt (Adagrad-mimic).  "
+            "Default ``none`` keeps the LR constant.  Only ``band_mf`` / "
+            "``blt`` mechanisms model the schedule in their noise "
+            "correlation; for ``bsr`` / ``bisr`` / ``lambda_cgd`` / "
+            "``identity`` / ``none`` the optimizer-side schedule is "
+            "applied but the noise stays tuned for the constant-LR "
+            "workload — privacy still holds, utility may be suboptimal "
+            "(startup warning is printed)."
+        ),
+    )
+    train_g.add_argument(
+        "--lr-min-ratio",
         type=float,
         default=0.0,
-        help="LR warmup fraction of total steps, 0→peak LR linearly (default: 0 = constant LR)",
+        help=(
+            "Floor LR as a fraction of peak for cosine/linear schedules "
+            "(default 0 = decay to zero)."
+        ),
+    )
+    train_g.add_argument(
+        "--lr-warmup-steps",
+        type=int,
+        default=0,
+        help=(
+            "Linear warmup from 0 to peak LR over this many steps "
+            "(applied to any schedule)."
+        ),
     )
     train_g.add_argument("--log-steps", type=int, default=1)
     train_g.add_argument("--eval-steps", type=int, default=10)
@@ -444,7 +559,7 @@ def parse_args():
         "for --preset smoke GPT-2 LoRA, or q_proj=0.5 fallback=1.0 for Mellum presets). "
         "Each trainable param must match exactly one pattern substring. "
         "Use 'fallback=NORM' as catch-all.  Incompatible with adaptive clipping; "
-        "MF ``mf_noise`` uses the same Mahalanobis allocation as DP-SGD Gaussian.",
+        "MF ``mf_gaussian_noise`` uses the same Mahalanobis allocation as DP-SGD Gaussian.",
     )
     dp_g.add_argument("--microbatch-size", type=int, default=None)
     dp_g.add_argument(
@@ -605,7 +720,9 @@ def parse_args():
         _set("microbatch_size", 16)
         _set("bands", 64)
         _set("mechanism", "blt")
-        _set("warmup_frac", 0.05)
+        # ~5% of total steps as warmup; the preset's defaults give the same
+        # number of steps as the old ``warmup_frac=0.05``.
+        _set("lr_warmup_steps", 0)
     if args.microbatch_size == 0:
         args.microbatch_size = None
     if args.eval_batch_size is None:
@@ -1018,12 +1135,35 @@ def main():
     lr_schedule = make_lr_schedule(
         args.learning_rate,
         total_steps,
-        warmup_frac=args.warmup_frac,
+        kind=args.lr_schedule,
+        min_ratio=args.lr_min_ratio,
+        warmup_steps=args.lr_warmup_steps,
     )
 
-    if args.warmup_frac > 0:
+    # ``band_mf`` / ``blt`` consume ``lr_schedule`` in their MF workload;
+    # ``identity`` / ``none`` have no MF correlation at all and don't care;
+    # ``bsr`` / ``bisr`` / ``lambda_cgd`` have correlation that ignores LR
+    # shaping — using a non-constant LR there silently degrades utility
+    # (privacy still holds).  Warn for that latter set only.
+    _LR_SCHEDULE_OBLIVIOUS_BUT_CORRELATED = frozenset({"bsr", "bisr", "lambda_cgd"})
+    schedule_active = args.lr_schedule != "none" or args.lr_warmup_steps > 0
+    if schedule_active and args.mechanism in _LR_SCHEDULE_OBLIVIOUS_BUT_CORRELATED:
         print(
-            f"\nLR schedule: linear warmup {args.warmup_frac:.0%} of steps → constant {args.learning_rate}"
+            f"\nWARNING: --lr-schedule={args.lr_schedule!r} / "
+            f"--lr-warmup-steps={args.lr_warmup_steps} requested with "
+            f"--mechanism {args.mechanism!r}, whose noise correlation "
+            f"does not model an LR schedule.  The optimizer-side schedule "
+            f"is still applied, but the MF noise stays tuned for the "
+            f"constant-LR workload.  Privacy holds; utility may be "
+            f"suboptimal.  Switch to --mechanism band_mf|blt for "
+            f"schedule-aware noise."
+        )
+
+    if schedule_active:
+        print(
+            f"\nLR schedule: {args.lr_schedule} (peak={args.learning_rate}, "
+            f"min={args.learning_rate * args.lr_min_ratio:g}, "
+            f"warmup={args.lr_warmup_steps}, total={total_steps})"
         )
     else:
         print(f"\nLR schedule: constant {args.learning_rate} (no warmup)")
@@ -1043,79 +1183,77 @@ def main():
     #   ``use_second_moment`` (= ``args.second_moment``): switch from
     #     single-stream MF noise to private first+second moment noise.
     #     Requires the optimizer to consume ``SecondMomentNoiseOutput``.
-    is_adam_family = args.optimizer in ("adamw", "ademamix", "lion")
+    # "Adam-family" here = optimizer has a first-moment EMA at β₁; drives
+    # the MF workload momentum.  ``adafactor`` / ``rmsprop`` / ``adagrad``
+    # have only a second-moment accumulator and run on raw gradients in
+    # the first-moment slot, so the MF workload momentum stays at 0
+    # (configurable via ``--momentum``).
+    is_adam_family = args.optimizer in ("adam", "adamw", "ademamix", "lion")
     use_second_moment = args.second_moment
 
-    if use_second_moment and args.optimizer not in ("adamw", "ademamix"):
-        raise ValueError(
-            f"--second-moment requires an Adam-family optimizer with a second moment "
-            f"to consume the paired ``SecondMomentNoiseOutput`` stream "
-            f"(``adamw`` or ``ademamix``); got --optimizer {args.optimizer}.  "
-            f"Run without --second-moment, or switch optimizer."
+    # Cross-flag validation: warn-and-disable on mismatch instead of raising.
+    # The ``--second-moment`` knob is auxiliary (it enables a paired-stream
+    # release), so silently degrading to single-stream noise on an
+    # incompatible optimizer / mechanism beats failing the run outright.
+    _SECOND_MOMENT_OPTIMIZERS = frozenset({"adamw", "ademamix"})
+    if use_second_moment and args.optimizer not in _SECOND_MOMENT_OPTIMIZERS:
+        print(
+            f"\nWARNING: --second-moment requires an Adam-family optimizer "
+            f"that consumes ``SecondMomentNoiseOutput`` "
+            f"({sorted(_SECOND_MOMENT_OPTIMIZERS)}); got --optimizer "
+            f"{args.optimizer!r}.  Disabling --second-moment for this run."
         )
+        use_second_moment = False
     if use_second_moment and args.mechanism in ("identity", "none"):
-        raise ValueError(
-            "--second-moment requires a correlated MF mechanism, not identity/none."
+        print(
+            f"\nWARNING: --second-moment requires a correlated MF mechanism "
+            f"to share the squared-stream Mahalanobis budget; got "
+            f"--mechanism {args.mechanism!r}.  Disabling --second-moment "
+            f"for this run."
         )
+        use_second_moment = False
 
     def _workload_momentum() -> float:
         """Workload momentum for the primary (first moment) strategy."""
         return args.beta1 if is_adam_family else args.momentum
 
     def _make_strategy(momentum_override=None, lr_sched=None):
-        """Build a strategy for the selected mechanism with given workload momentum."""
+        """Build a strategy recipe for the selected mechanism.
+
+        Strategies are recipes — horizon (``n_steps``), ``min_sep`` and
+        ``max_participations`` are owned by the wrapping amplifier and
+        the noise factory, not the strategy.  Only ``band_mf`` and
+        ``blt`` model an LR schedule in their workload; for the others
+        the ``lr_sched`` arg is ignored (the user is warned at startup).
+        """
         mom = (
             momentum_override if momentum_override is not None else _workload_momentum()
         )
         if args.mechanism == "band_mf":
             return band_mf_strategy(
-                n_steps=total_steps,
-                bands=args.bands,
-                momentum=mom,
-                lr_schedule=lr_sched,
+                bands=args.bands, momentum=mom, lr_schedule=lr_sched
             )
         elif args.mechanism == "blt":
             return blt_strategy(
-                n_steps=total_steps,
-                min_sep=expected_steps_per_epoch,
-                max_participations=args.num_epochs,
-                max_buffers=args.max_buffers,
-                momentum=mom,
-                lr_schedule=lr_sched,
+                max_buffers=args.max_buffers, momentum=mom, lr_schedule=lr_sched
             )
         elif args.mechanism == "lambda_cgd":
-            return lambda_cgd_strategy(
-                lambda_=args.lambda_,
-                n_steps=total_steps,
-                min_sep=expected_steps_per_epoch,
-                max_participations=args.num_epochs,
-            )
+            return lambda_cgd_strategy(lambda_=args.lambda_)
         elif args.mechanism == "bisr":
-            return bisr_strategy(
-                bandwidth=args.bisr_bandwidth,
-                n_steps=total_steps,
-                min_sep=expected_steps_per_epoch,
-                max_participations=args.num_epochs,
-                momentum=mom,
-            )
+            return bisr_strategy(bandwidth=args.bisr_bandwidth, momentum=mom)
         elif args.mechanism == "bsr":
             return bsr_strategy(
-                bandwidth=args.bsr_bandwidth,
-                n_steps=total_steps,
-                min_sep=expected_steps_per_epoch,
-                max_participations=args.num_epochs,
-                alpha=args.bsr_alpha,
-                beta=mom,
+                bandwidth=args.bsr_bandwidth, alpha=args.bsr_alpha, beta=mom
             )
         elif args.mechanism == "identity":
-            return identity_mf_strategy()
+            return identity_strategy()
         else:
             return None
 
     strategy = _make_strategy(lr_sched=lr_schedule)
 
     # No paired-stream wrap on the accountant: the joint Mahalanobis
-    # allocation in :func:`mf_noise` makes the paired-release PLD
+    # allocation in :func:`mf_gaussian_noise` makes the paired-release PLD
     # identical to the first-moment-only release at the same noise
     # multiplier.
 
@@ -1124,11 +1262,7 @@ def main():
     if args.mechanism == "band_mf" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = dpftrl_acc.band_mf(
-                nm,
-                sensitivity=strategy.sensitivity,
-                coefficients=strategy.coefficients,
-            )
+            mechanism = dpftrl_acc.mf_gaussian(nm, strategy)
             if args.band_mf_sampling == "poisson":
                 return dpftrl_acc.poisson(
                     mechanism,
@@ -1149,43 +1283,32 @@ def main():
     elif args.mechanism == "blt" and strategy is not None:
 
         def acct_mechanism(nm):
-            return dpftrl_acc.blt(nm, sensitivity=strategy.sensitivity)
+            return dpftrl_acc.balls_in_bins(
+                dpftrl_acc.mf_gaussian(nm, strategy),
+                num_bins=expected_steps_per_epoch,
+                n_steps=expected_steps_per_epoch * args.num_epochs,
+            )
     elif args.mechanism == "lambda_cgd" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = dpftrl_acc.lambda_cgd(
-                nm,
-                sensitivity=strategy.sensitivity,
-                gram_matrix=strategy.gram_matrix,
-            )
             return dpftrl_acc.balls_in_bins(
-                mechanism,
+                dpftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
             )
     elif args.mechanism == "bisr" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = dpftrl_acc.bisr(
-                nm,
-                sensitivity=strategy.sensitivity,
-                gram_matrix=strategy.gram_matrix,
-            )
             return dpftrl_acc.balls_in_bins(
-                mechanism,
+                dpftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
             )
     elif args.mechanism == "bsr" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = dpftrl_acc.bsr(
-                nm,
-                sensitivity=strategy.sensitivity,
-                gram_matrix=strategy.gram_matrix,
-            )
             return dpftrl_acc.balls_in_bins(
-                mechanism,
+                dpftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
             )
@@ -1193,7 +1316,7 @@ def main():
 
         def acct_mechanism(nm):
             return dpftrl_acc.poisson(
-                dpftrl_acc.identity_mf(nm),
+                dpftrl_acc.mf_gaussian(nm, identity_strategy()),
                 sample_rate=sample_rate,
                 n_steps=total_steps,
                 truncated_batch_size=args.truncated_batch_size,
@@ -1259,28 +1382,51 @@ def main():
         print(f"\nCreating MF noise (β={args.momentum})...")
     t0 = time.time()
 
+    # Participation context for the noise side: pull straight off the
+    # wrapping amplifier so the streaming matrix tracks the calibrated PLD
+    # (the :class:`opaque.dpftrl.accounting.amplification.types.MfAmplification`
+    # Protocol guarantees every amplifier exposes ``n_steps`` / ``min_sep``
+    # / ``max_participations``, including the degenerate-limit values for
+    # bare-Poisson Identity).
+    if args.mechanism == "none":
+        noise_n_steps = total_steps
+        noise_min_sep = 1
+        noise_max_part = total_steps
+    else:
+        _amp = acct_mechanism(noise_multiplier)
+        noise_n_steps = _amp.n_steps
+        noise_min_sep = _amp.min_sep
+        noise_max_part = _amp.max_participations
+
     if use_second_moment and args.mechanism not in ("identity", "none"):
         second_strategy = _make_strategy(
             momentum_override=args.beta2, lr_sched=lr_schedule
         )
-        noise_fn, noise_state = mf_noise(
+        noise_fn, noise_state = mf_gaussian_noise(
             trainable_params,
             strategy,
+            n_steps=noise_n_steps,
+            min_sep=noise_min_sep,
+            max_participations=noise_max_part,
             noise_multiplier=noise_multiplier,
             key=key(args.seed),
             second_moment_strategy=second_strategy,
         )
     elif args.mechanism in ("identity", "none"):
-        noise_fn, noise_state = mf_noise(
+        noise_fn, noise_state = mf_gaussian_noise(
             trainable_params,
-            identity_mf_strategy(),
+            identity_strategy(),
+            n_steps=noise_n_steps,
             noise_multiplier=noise_multiplier,
             key=key(args.seed),
         )
     else:
-        noise_fn, noise_state = mf_noise(
+        noise_fn, noise_state = mf_gaussian_noise(
             trainable_params,
             strategy,
+            n_steps=noise_n_steps,
+            min_sep=noise_min_sep,
+            max_participations=noise_max_part,
             noise_multiplier=noise_multiplier,
             key=key(args.seed),
         )
@@ -1288,6 +1434,12 @@ def main():
 
     lr_callable = lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item()  # noqa: E731
 
+    # ``noise_bias_correction`` is unsound under correlated MF noise: the
+    # optimizer's BC reads ``NoisedPytree.noise_stddev`` (the base σ fed to
+    # the streaming matrix) and treats it as the per-coordinate per-step
+    # variance, but realized per-step variance is ``base_σ² · ‖row_t(C^-1)‖²``
+    # — which varies by t for any non-Identity strategy.  Force the BC-aware
+    # constructors to disable BC; the math becomes a no-op for the BC path.
     if args.optimizer == "sgd":
         from opaque.optimizers import sgd
 
@@ -1295,6 +1447,16 @@ def main():
             lr=lr_callable,
             momentum=args.momentum,
             weight_decay=args.weight_decay,
+        )
+    elif args.optimizer == "adam":
+        from opaque.optimizers import adam
+
+        optimizer = adam(
+            lr=lr_callable,
+            betas=(args.beta1, args.beta2),
+            eps=args.adam_eps,
+            weight_decay=args.weight_decay,
+            noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "adamw":
         from opaque.optimizers import adamw
@@ -1306,6 +1468,7 @@ def main():
             betas=(args.beta1, args.beta2),
             eps=args.adam_eps,
             weight_decay=args.weight_decay,
+            noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "ademamix":
         from opaque.optimizers import ademamix
@@ -1318,6 +1481,7 @@ def main():
             alpha=5.0,
             eps=args.adam_eps,
             weight_decay=args.weight_decay,
+            noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "lion":
         from opaque.optimizers import lion
@@ -1326,6 +1490,30 @@ def main():
             lr=lr_callable,
             betas=(args.beta1, args.beta2),
             weight_decay=args.weight_decay,
+        )
+    elif args.optimizer == "adafactor":
+        from opaque.optimizers import adafactor
+
+        optimizer = adafactor(
+            lr=lr_callable,
+            weight_decay=args.weight_decay,
+            noise_bias_correction=args.noise_bias_correction,
+        )
+    elif args.optimizer == "rmsprop":
+        from opaque.optimizers import rmsprop
+
+        optimizer = rmsprop(
+            lr=lr_callable,
+            weight_decay=args.weight_decay,
+            noise_bias_correction=args.noise_bias_correction,
+        )
+    elif args.optimizer == "adagrad":
+        from opaque.optimizers import adagrad
+
+        optimizer = adagrad(
+            lr=lr_callable,
+            weight_decay=args.weight_decay,
+            noise_bias_correction=args.noise_bias_correction,
         )
     else:
         raise ValueError(f"Unknown optimizer: {args.optimizer}")
@@ -1338,7 +1526,7 @@ def main():
 
             def identity_acct(nm):
                 return dpftrl_acc.poisson(
-                    dpftrl_acc.identity_mf(nm),
+                    dpftrl_acc.mf_gaussian(nm, identity_strategy()),
                     sample_rate=sample_rate,
                     n_steps=total_steps,
                 )
@@ -1454,12 +1642,42 @@ def main():
     profiler, _ = profiler.mark("training_start")
     print_memory(device, "Before training")
 
-    # Step-0 eval
+    # Per-eval epsilon reporting.  Every ``acct_mechanism`` branch above
+    # returns a :class:`DpFtrlProcess` (whole-process amplifier wrapping
+    # the MF mechanism), so ``approx_at_step(K)`` is always available —
+    # it returns an upper bound on the privacy cost at step K, rounded
+    # up to the amplifier's atomic_unit (one full epoch / one band).
+    def epsilon_at_step(step: int) -> float:
+        if args.mechanism == "none":
+            return 0.0
+        return acct_mechanism(noise_multiplier).approx_at_step(step).epsilon_at(
+            args.target_delta
+        )
+
+    # Step-0 eval — baseline before any training step.  Logs the calibrated
+    # values that downstream per-step metrics also report so the dashboard
+    # has continuous lines (no broken first-point).
     initial_eval_loss = eval_loss(trainable_params)
-    print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}")
+    initial_epsilon = epsilon_at_step(0)
+    initial_clipping_norm = (
+        clip_norm.effective if isinstance(clip_norm, PerGroup) else float(clip_norm)
+    )
+    initial_noise_std = noise_multiplier * (
+        clip_norm.effective / args.batch_size
+        if isinstance(clip_norm, PerGroup)
+        else float(clip_norm) / args.batch_size
+    )
+    print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
     if use_wandb:
         wandb.log(
-            {"eval/loss": initial_eval_loss, "train/lr": lr_schedule[0].item()}, step=0
+            {
+                "eval/loss": initial_eval_loss,
+                "privacy/epsilon": initial_epsilon,
+                "train/lr": lr_schedule[0].item(),
+                "train/clipping_norm": initial_clipping_norm,
+                "train/noise_std": initial_noise_std,
+            },
+            step=0,
         )
 
     for epoch in range(args.num_epochs):
@@ -1535,17 +1753,23 @@ def main():
                         ),
                         "train/clip_rate": clip_rate,
                         "train/grad_norm_mean": mean_grad_norm,
+                        "train/clipped_grad_norm_mean": (
+                            aux.clipped_grad_norms.mean().item()
+                            if getattr(aux, "clipped_grad_norms", None) is not None
+                            else 0.0
+                        ),
                         "train/noise_std": (
                             step_noise_stddev.effective
                             if isinstance(step_noise_stddev, PerGroup)
                             else step_noise_stddev
                         ),
                         "train/lr": lr_t,
-                        "train/momentum": args.momentum,
                         "perf/step_time_sec": perf["step_time_sec"],
                         "perf/throughput_samples_per_sec": perf[
                             "throughput_samples_sec"
                         ],
+                        "perf/allocated_gb": perf["memory_allocated_gb"],
+                        "perf/reserved_gb": perf["memory_reserved_gb"],
                         "perf/peak_gb": perf["memory_peak_gb"],
                     }
                     if (
@@ -1580,9 +1804,18 @@ def main():
             # --- Eval ---
             if global_step % args.eval_steps == 0:
                 current_eval_loss = eval_loss(trainable_params)
-                print(f"  → Eval: loss={current_eval_loss:.4f}")
+                epsilon = epsilon_at_step(global_step)
+                print(
+                    f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
+                )
                 if use_wandb:
-                    wandb.log({"eval/loss": current_eval_loss}, step=global_step)
+                    wandb.log(
+                        {
+                            "eval/loss": current_eval_loss,
+                            "privacy/epsilon": epsilon,
+                        },
+                        step=global_step,
+                    )
 
         if args.max_steps is not None and global_step >= args.max_steps:
             print(f"\nReached max_steps={args.max_steps}, stopping.")
@@ -1628,9 +1861,10 @@ def main():
         print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e}")
         print(f"  Noise multiplier: {noise_multiplier:.4f}")
         print(f"  Final ε: {final_epsilon:.4f}")
-
-        if use_wandb:
-            wandb.log({"privacy/epsilon_final": final_epsilon}, step=global_step)
+        # ``privacy/epsilon`` is logged at every eval step (see the
+        # per-eval block above), so the wandb timeline already shows the
+        # final ε at the last step.  No need to re-log a separate
+        # ``privacy/epsilon_final`` scalar.
 
     profiler, _ = profiler.mark("training_complete")
     print("\n" + profiler.final_summary())

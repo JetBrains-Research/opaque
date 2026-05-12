@@ -5,7 +5,7 @@ from opaque.api.dpftrl.noise.types import (
     BisrStrategy,
     BltStrategy,
     BsrStrategy,
-    IdentityMfStrategy,
+    IdentityStrategy,
     LambdaCgdStrategy,
     MFNoiseState,
     MfStrategy,
@@ -20,6 +20,6 @@ __all__ = [
     "BisrStrategy",
     "BltStrategy",
     "BsrStrategy",
-    "IdentityMfStrategy",
+    "IdentityStrategy",
     "LambdaCgdStrategy",
 ]

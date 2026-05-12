@@ -1,7 +1,7 @@
-"""DP-FTRL end-to-end integration: clip → ``mf_noise`` → manual update.
+"""DP-FTRL end-to-end integration: clip → ``mf_gaussian_noise`` → manual update.
 
 Mirror of ``test_dpsgd_pipeline.py`` for DP-FTRL — uses
-``opaque.dpftrl.noise.mf_noise`` with the identity strategy (the
+``opaque.dpftrl.noise.mf_gaussian_noise`` with the identity strategy (the
 simplest correlated-noise case). Patches are part of normal framework
 usage and apply throughout.
 
@@ -29,7 +29,7 @@ from transformers import (  # noqa: E402
 )
 
 from opaque.api.engine.clipping import clipped_grad
-from opaque.dpftrl.noise import identity_mf_strategy, mf_noise
+from opaque.dpftrl.noise import identity_strategy, mf_gaussian_noise
 from opaque.functional import make_functional
 from opaque.patches import apply_model_patches
 from opaque.random import key
@@ -96,9 +96,9 @@ def _run_dpftrl_step(model, input_ids, attention_mask, labels):
         trainable, frozen, input_ids, attention_mask, labels, state=clip_state
     )
 
-    strategy = identity_mf_strategy()
-    noise_fn, noise_state = mf_noise(
-        grads, strategy, noise_multiplier=1.0, key=key(0),
+    strategy = identity_strategy()
+    noise_fn, noise_state = mf_gaussian_noise(
+        grads, strategy, n_steps=1, noise_multiplier=1.0, key=key(0),
     )
     noised, _ = noise_fn(grads, noise_state)
 

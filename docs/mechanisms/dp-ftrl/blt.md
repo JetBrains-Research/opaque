@@ -116,12 +116,12 @@ If you need subsampling amplification with correlated noise, use
 ### Noise injection
 
 ```python
-from opaque.dpftrl.noise import mf_noise, blt_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, blt_strategy
 from opaque.random import key
 
 # Single participation
 strategy = blt_strategy(n_steps=10000, min_sep=1, max_buffers=10)
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     grad_template=params,
     strategy=strategy,
     noise_multiplier=noise_multiplier,
@@ -139,7 +139,7 @@ for step in range(10000):
 strategy = blt_strategy(
     n_steps=5000, min_sep=100, max_participations=5,
 )
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     grad_template=params,
     strategy=strategy,
     noise_multiplier=noise_multiplier,
@@ -162,22 +162,21 @@ strategy = blt_strategy(
 )
 
 # Unamplified BLT
-proc = dpftrl_acc.blt(1.0, sensitivity=strategy.sensitivity)
+proc = ftrl_acc.mf_gaussian(1.0, strategy)
 eps = proc.epsilon_at(delta=1e-5)
 
 # With Balls-in-Bins amplification (recommended)
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.blt(1.0, sensitivity=strategy.sensitivity,
-                 gram_matrix=strategy.gram_matrix),
-    num_bins=100, num_epochs=5,
+    ftrl_acc.mf_gaussian(1.0, strategy),
+    num_bins=100, n_steps=500,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
 !!! note
-    Always use `strategy.sensitivity` and `strategy.gram_matrix` rather than
-    hardcoded values. The strategy computes these from the optimized BLT
-    parameters and the participation pattern.
+    `ftrl_acc.mf_gaussian(nm, strategy)` populates every structural field
+    (sensitivity, Gram matrix, coefficients, min_sep, max_participations)
+    from the optimized BLT parameters and the participation pattern.
 
 ## Parameter guide
 

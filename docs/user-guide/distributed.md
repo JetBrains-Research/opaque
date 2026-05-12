@@ -239,7 +239,7 @@ epsilon = training.epsilon_at(delta=1e-5)
 
 ## Optimizer state synchronization
 
-For correlated noise mechanisms (`mf_noise` with any MF strategy), each
+For correlated noise mechanisms (`mf_gaussian_noise` with any MF strategy), each
 device must generate the same correlated noise stream. Pass the same
 `key=key(seed)` on every rank.
 

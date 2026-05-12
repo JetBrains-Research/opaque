@@ -11,30 +11,19 @@ from __future__ import annotations
 import subprocess
 import sys
 
-
 _HEADLINE = (
-    "band_mf",
-    "blt",
-    "bisr",
-    "bsr",
-    "lambda_cgd",
-    "identity_mf",
+    "mf_gaussian",
     "poisson",
     "b_min_sep",
     "balls_in_bins",
 )
 
 _TYPES = (
-    "BandMf",
-    "Blt",
-    "Bisr",
-    "Bsr",
-    "LambdaCgd",
-    "IdentityMf",
     "MfGaussian",
     "CyclicPoisson",
     "BMinSep",
     "BallsInBins",
+    "DpFtrlProcess",
 )
 
 
@@ -66,9 +55,11 @@ class TestEndToEndCalibration:
     def test_band_mf_poisson(self):
         import math
         import opaque.dpftrl.accounting as ftrl_acc
+        from opaque.dpftrl.noise import band_mf_strategy
 
+        strategy = band_mf_strategy(bands=2)
         proc = ftrl_acc.poisson(
-            ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0, 0.5)),
+            ftrl_acc.mf_gaussian(1.0, strategy),
             sample_rate=0.01,
             n_steps=20,
         )
@@ -78,9 +69,12 @@ class TestEndToEndCalibration:
     def test_blt_standalone(self):
         import math
         import opaque.dpftrl.accounting as ftrl_acc
+        from opaque.dpftrl.noise import blt_strategy
 
-        proc = ftrl_acc.blt(1.0, sensitivity=1.0)
-        eps = proc.epsilon_at(1e-5)
+        s = blt_strategy(momentum=1.0)
+        eps = ftrl_acc.mf_gaussian(
+            1.0, s, n_steps=10, min_sep=10, max_participations=1
+        ).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 

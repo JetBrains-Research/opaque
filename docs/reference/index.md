@@ -39,8 +39,8 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 - **[Noise](noise.md)**: Noise injection for DP
   - `gaussian_noise()` - Gaussian noise (pass ``bound=...`` for the bounded Gaussian mechanism)
-  - `mf_noise()` - Correlated noise dispatcher (DP-FTRL)
-  - Strategy factories: `band_mf_strategy()`, `blt_strategy()`, `lambda_cgd_strategy()`, `bisr_strategy()`, `identity_mf_strategy()`
+  - `mf_gaussian_noise()` - Correlated noise dispatcher (DP-FTRL)
+  - Strategy factories: `band_mf_strategy()`, `blt_strategy()`, `lambda_cgd_strategy()`, `bisr_strategy()`, `identity_strategy()`
 
 - **[Accounting](accounting.md)**: Privacy budget tracking
   - `gaussian()`, `adaclip()` — DP-SGD mechanisms (also via `opaque.dpsgd.accounting`)
@@ -130,12 +130,12 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | Function                       | Purpose                                      | User Guide                      |
 |--------------------------------|----------------------------------------------|---------------------------------|
 | `gaussian_noise()`                   | Gaussian noise; pass ``bound=...`` for the bounded Gaussian mechanism (renormalized density) | [Guide](../user-guide/noise.md#bounded-gaussian-noise) |
-| `mf_noise()`                         | Correlated noise dispatcher (DP-FTRL)        | [Guide](../user-guide/noise.md#matrix-factorization-noise-dp-ftrl) |
+| `mf_gaussian_noise()`                         | Correlated noise dispatcher (DP-FTRL)        | [Guide](../user-guide/noise.md#matrix-factorization-noise-dp-ftrl) |
 | `band_mf_strategy()`                | BandMF banded Toeplitz strategy              | [Guide](../user-guide/noise.md#band_mf_strategy) |
 | `blt_strategy()`                     | BLT buffered Toeplitz strategy               | [Guide](../user-guide/noise.md#blt_strategy) |
 | `lambda_cgd_strategy()`              | DP-λCGD PRNG-replay strategy                 | [Guide](../user-guide/noise.md#lambda_cgd_strategy) |
 | `bisr_strategy()`                    | BISR banded inverse sqrt strategy            | [Guide](../user-guide/noise.md#bisr_strategy) |
-| `identity_mf_strategy()`                | Identity (DP-SGD via MF API)                 | [Guide](../user-guide/noise.md#identity_mf_strategy) |
+| `identity_strategy()`                | Identity (DP-SGD via MF API)                 | [Guide](../user-guide/noise.md#identity_strategy) |
 
 ### Accounting (Mechanisms)
 

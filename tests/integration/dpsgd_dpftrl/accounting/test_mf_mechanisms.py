@@ -1,4 +1,11 @@
-"""Tests for MF accounting mechanisms — BandMf, Blt, Poisson (FTRL)."""
+"""Tests for MF accounting — single ``MfGaussian(nm, strategy)`` mechanism.
+
+The MF accounting layer collapses to one DpProcess class, ``MfGaussian``,
+parameterised by ``noise_multiplier`` and a strategy from
+``opaque.dpftrl.noise``.  These tests cover the dataclass surface,
+amplification dispatch via the strategy's polymorphic methods, and
+composition with other DpProcess nodes.
+"""
 
 import math
 from dataclasses import FrozenInstanceError
@@ -7,200 +14,187 @@ import pytest
 
 import opaque.dpsgd.accounting as dpsgd_acc
 import opaque.dpftrl.accounting as ftrl_acc
-from opaque.dpftrl.accounting.amplification.types import CyclicPoisson
 from opaque.api.accounting.core._base import DpProcess
-from opaque.dpftrl.accounting.mechanisms.types import BandMf, Blt
+from opaque.dpftrl.accounting.amplification.types import CyclicPoisson
+from opaque.dpftrl.accounting.types import MfGaussian
+from opaque.dpftrl.noise import band_mf_strategy, blt_strategy, identity_strategy
 
 
-# ── BandMf dataclass tests ──────────────────────────────────────────
+# ── MfGaussian(BandMfStrategy) — banded-Toeplitz path ────────────────────
 
 
-class TestBandMfDataclass:
-    """BandMf frozen dataclass."""
+def _band(nm: float = 1.0, *, n_steps: int = 20, bands: int = 2) -> MfGaussian:
+    return ftrl_acc.mf_gaussian(
+        nm, band_mf_strategy(bands=bands), n_steps=n_steps
+    )
 
-    def test_fields(self):
-        proc = BandMf(1.0, 1.0, coefficients=(0.9, 0.1))
+
+class TestBandMfGaussian:
+    """``MfGaussian`` wrapping a ``BandMfStrategy`` behaves like a frozen DP process."""
+
+    def test_fields_via_strategy(self):
+        proc = _band(1.0, bands=2)
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.sensitivity == pytest.approx(1.0)
-        assert proc.coefficients == (0.9, 0.1)
-        assert proc.bands == 2
+        assert proc.strategy.sensitivity(n_steps=20) == pytest.approx(1.0, abs=1e-6)
+        assert len(proc.strategy.coefficients(n_steps=20)) == proc.strategy.bands
+        assert proc.strategy.bands == 2
 
     def test_frozen(self):
-        proc = BandMf(1.0, 1.0, coefficients=(0.9, 0.1))
+        proc = _band()
         with pytest.raises(FrozenInstanceError):
             proc.noise_multiplier = 2.0  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        assert isinstance(BandMf(1.0, 1.0, coefficients=(1.0,)), DpProcess)
+        assert isinstance(_band(), DpProcess)
 
     def test_equality(self):
-        assert BandMf(1.0, 1.0, (0.9, 0.1)) == BandMf(1.0, 1.0, (0.9, 0.1))
-        assert BandMf(1.0, 1.0, (0.9, 0.1)) != BandMf(1.0, 1.0, (0.5, 0.5))
+        # Same parameters → same strategy → same MfGaussian.
+        assert _band(1.0, n_steps=20, bands=2) == _band(1.0, n_steps=20, bands=2)
+        assert _band(1.0, n_steps=20, bands=2) != _band(1.0, n_steps=20, bands=4)
 
     @pytest.mark.slow
     def test_pld_returns_valid(self):
-        proc = BandMf(1.0, 1.0, coefficients=(1.0,))
+        proc = _band(1.0, n_steps=20, bands=1)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
-class TestBandMfConstructor:
-    """ftrl_acc.band_mf() returns BandMf."""
-
-    def test_returns_correct_type(self):
-        proc = ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(0.9, 0.1))
-        assert isinstance(proc, BandMf)
-        assert proc.bands == 2
-
-
-# ── Poisson (FTRL) tests ────────────────────────────────────────────
+# ── CyclicPoisson(MfGaussian(BandMfStrategy)) ────────────────────────────
 
 
 class TestFtrlPoissonDataclass:
-    """opaque.dpftrl.accounting CyclicPoisson frozen dataclass."""
+    """``CyclicPoisson`` over ``MfGaussian`` frozen dataclass."""
 
     def test_fields(self):
-        inner = BandMf(1.0, 1.0, coefficients=(0.9, 0.1))
-        proc = CyclicPoisson(inner, 0.01, n_steps=100)
+        inner = _band(1.0, n_steps=100, bands=2)
+        proc = CyclicPoisson(inner=inner, sample_rate=0.01, n_steps=100)
         assert proc.inner is inner
         assert proc.sample_rate == pytest.approx(0.01)
         assert proc.n_steps == 100
 
     def test_frozen(self):
-        proc = CyclicPoisson(BandMf(1.0, 1.0, coefficients=(1.0,)), 0.01, n_steps=20)
+        proc = CyclicPoisson(
+            inner=_band(1.0, n_steps=20, bands=1), sample_rate=0.01, n_steps=20
+        )
         with pytest.raises(FrozenInstanceError):
             proc.sample_rate = 0.5  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        proc = CyclicPoisson(BandMf(1.0, 1.0, coefficients=(1.0,)), 0.01, n_steps=20)
+        proc = CyclicPoisson(
+            inner=_band(1.0, n_steps=20, bands=1), sample_rate=0.01, n_steps=20
+        )
         assert isinstance(proc, DpProcess)
 
     def test_pld_returns_valid(self):
         proc = ftrl_acc.poisson(
-            ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0,)),
-            sample_rate=0.01,
-            n_steps=20,
+            _band(1.0, n_steps=20, bands=1), sample_rate=0.01, n_steps=20
         )
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_matches_manual_poisson_composition(self):
         """poisson(BandMf(bands=1)) should match poisson(gaussian(nm/S)) * n_steps."""
-        nm, sensitivity, n_steps, rate = 1.0, 1.0, 20, 0.01
+        n_steps, rate = 20, 0.01
+        strategy = band_mf_strategy(bands=1)
+        nm = 1.0
         proc = ftrl_acc.poisson(
-            ftrl_acc.band_mf(nm, sensitivity=sensitivity, coefficients=(1.0,)),
+            ftrl_acc.mf_gaussian(nm, strategy),
             sample_rate=rate,
             n_steps=n_steps,
         )
 
-        manual = dpsgd_acc.poisson(dpsgd_acc.gaussian(nm / sensitivity), rate) * n_steps
+        sens = strategy.sensitivity(n_steps=n_steps)
+        manual = (
+            dpsgd_acc.poisson(dpsgd_acc.gaussian(nm / sens), rate) * n_steps
+        )
 
-        eps_proc = proc.epsilon_at(1e-5)
-        eps_manual = manual.epsilon_at(1e-5)
-        assert eps_proc == pytest.approx(eps_manual, rel=1e-6)
+        assert proc.epsilon_at(1e-5) == pytest.approx(manual.epsilon_at(1e-5), rel=1e-6)
 
     def test_more_steps_higher_epsilon(self):
-        """More n_steps → more composition → higher epsilon."""
         eps_small = ftrl_acc.poisson(
-            ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0,)),
-            sample_rate=0.01,
-            n_steps=2,
+            _band(1.0, n_steps=2, bands=1), sample_rate=0.01, n_steps=2
         ).epsilon_at(1e-5)
         eps_large = ftrl_acc.poisson(
-            ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0,)),
-            sample_rate=0.01,
-            n_steps=20,
+            _band(1.0, n_steps=20, bands=1), sample_rate=0.01, n_steps=20
         ).epsilon_at(1e-5)
         assert eps_small < eps_large
 
 
 class TestFtrlPoissonConstructor:
-    """ftrl_acc.poisson() validates and returns Poisson."""
+    """ftrl_acc.poisson() validates and returns CyclicPoisson."""
 
     def test_returns_correct_type(self):
         proc = ftrl_acc.poisson(
-            ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0,)),
-            sample_rate=0.01,
-            n_steps=20,
+            _band(1.0, n_steps=20, bands=1), sample_rate=0.01, n_steps=20
         )
         assert isinstance(proc, CyclicPoisson)
 
     def test_rejects_unsupported_inner(self):
-        with pytest.raises(TypeError, match="BandMf or IdentityMf"):
+        with pytest.raises(TypeError):
             ftrl_acc.poisson(dpsgd_acc.gaussian(1.0), 0.01, n_steps=20)  # type: ignore[arg-type]
 
     def test_rejects_bad_sample_rate(self):
-        inner = ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0,))
+        inner = _band(1.0, n_steps=10, bands=1)
         with pytest.raises(ValueError):
             ftrl_acc.poisson(inner, 0.0, n_steps=10)
         with pytest.raises(ValueError):
             ftrl_acc.poisson(inner, 1.5, n_steps=10)
 
 
-# ── Blt tests ────────────────────────────────────────────────────────
+# ── MfGaussian(BltStrategy) — built via blt_strategy ──────────────────
 
 
-class TestBltDataclass:
-    """Blt frozen dataclass."""
+class TestBltMfGaussian:
+    """``MfGaussian`` wrapping a ``BltStrategy``."""
+
+    def _blt(self, noise_multiplier: float = 1.0):
+        s = blt_strategy(momentum=1.0)
+        return ftrl_acc.mf_gaussian(
+            noise_multiplier, s, n_steps=10, min_sep=10, max_participations=1
+        )
 
     def test_fields(self):
-        proc = Blt(1.0, 1.0, gram_matrix=(0.1, 0.2))
+        proc = self._blt(1.0)
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.sensitivity == pytest.approx(1.0)
-        assert proc.gram_matrix == (0.1, 0.2)
+        assert proc.strategy.sensitivity(
+            n_steps=10, min_sep=10, max_participations=1
+        ) > 0
+        assert isinstance(
+            proc.strategy.gram_matrix(n_steps=10, min_sep=10, max_participations=1),
+            tuple,
+        )
 
     def test_frozen(self):
-        proc = Blt(1.0, 1.0)
+        proc = self._blt()
         with pytest.raises(FrozenInstanceError):
             proc.noise_multiplier = 2.0  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        assert isinstance(Blt(1.0, 1.0), DpProcess)
+        assert isinstance(self._blt(), DpProcess)
 
     def test_pld_returns_valid(self):
-        proc = ftrl_acc.blt(1.0, sensitivity=1.0)
-        eps = proc.epsilon_at(1e-5)
+        eps = self._blt().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
-
-
-class TestBltConstructor:
-    """ftrl_acc.blt() returns Blt."""
-
-    def test_returns_correct_type(self):
-        proc = ftrl_acc.blt(1.0, sensitivity=1.0)
-        assert isinstance(proc, Blt)
-
-    def test_gram_matrix_default_empty(self):
-        proc = ftrl_acc.blt(1.0, sensitivity=1.0)
-        assert proc.gram_matrix == ()
 
 
 # ── Composition tests ───────────────────────────────────────────────
 
 
 class TestMfComposition:
-    """MF mechanisms compose with other DpProcess nodes."""
+    """MfGaussian mechanisms compose with other DpProcess nodes."""
 
     def test_band_mf_composes_with_gaussian(self):
-        """BandMf | Gaussian works."""
-        proc = ftrl_acc.band_mf(
-            1.0, sensitivity=1.0, coefficients=(1.0,)
-        ) | dpsgd_acc.gaussian(1.0)
+        proc = _band(1.0, n_steps=10, bands=1) | dpsgd_acc.gaussian(1.0)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_poisson_composes_with_gaussian(self):
-        """Poisson | Gaussian works."""
-        inner = ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0,))
+        inner = _band(1.0, n_steps=20, bands=1)
         proc = ftrl_acc.poisson(inner, 0.01, n_steps=20) | dpsgd_acc.gaussian(1.0)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
-    def test_class_tree_visible(self):
-        """The composition tree preserves class types for debugging."""
-        inner = ftrl_acc.band_mf(1.0, sensitivity=1.0, coefficients=(1.0,))
-        proc = ftrl_acc.poisson(inner, 0.01, n_steps=20)
-
-        assert isinstance(proc, CyclicPoisson)
-        assert isinstance(proc.inner, BandMf)
-        assert proc.inner.bands == 1
+    def test_identity_strategy_composes_with_gaussian(self):
+        proc = ftrl_acc.mf_gaussian(1.0, identity_strategy()) | dpsgd_acc.gaussian(1.0)
+        eps = proc.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0

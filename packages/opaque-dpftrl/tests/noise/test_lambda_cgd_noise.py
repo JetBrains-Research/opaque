@@ -9,25 +9,27 @@ from opaque.types import clipped
 from opaque.types import NoisedPytree
 
 from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
-from opaque.dpftrl.noise import mf_noise
+from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.random import key
 
 
 def _make_noise(template, n_steps=100, lambda_=0.9, normalized=True, seed=42):
-    """Helper: create lambda-CGD noise via the strategy + mf_noise API.
+    """Helper: create lambda-CGD noise via the strategy + mf_gaussian_noise API.
 
     Uses ``noise_multiplier=1.0`` so realized stddev equals each call's
     ``ClippedPytree.max_norm``; tests pass ``max_norm=1.0`` to recover the
     historical ``stddev=1.0`` semantics.
     """
-    strategy = lambda_cgd_strategy(
-        lambda_,
+    strategy = lambda_cgd_strategy(lambda_=lambda_, normalized=normalized)
+    return mf_gaussian_noise(
+        template,
+        strategy,
         n_steps=n_steps,
         min_sep=1,
         max_participations=1,
-        normalized=normalized,
+        noise_multiplier=1.0,
+        key=key(seed),
     )
-    return mf_noise(template, strategy, noise_multiplier=1.0, key=key(seed))
 
 
 def _call(noise_fn, grad_pytree, state, *, max_norm=1.0):
@@ -141,9 +143,9 @@ class TestLambdaCgdNoise:
 
     def test_rejects_invalid_lambda(self):
         with pytest.raises(ValueError):
-            lambda_cgd_strategy(-0.1, n_steps=100, min_sep=1)
+            lambda_cgd_strategy(lambda_=-0.1)
         with pytest.raises(ValueError):
-            lambda_cgd_strategy(1.0, n_steps=100, min_sep=1)
+            lambda_cgd_strategy(lambda_=1.0)
 
     def test_prng_replay_correctness(self):
         """Verify the PRNG replay: step 1's z_prev should equal step 0's z_current."""
@@ -167,59 +169,58 @@ class TestLambdaCgdNoise:
         torch.testing.assert_close(step1_corr["w"], expected, atol=1e-6, rtol=1e-6)
 
 
+_PARTICIPATION = dict(n_steps=100, min_sep=25, max_participations=4)
+
+
 class TestLambdaCgdStrategy:
     def test_returns_correct_type(self):
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
+        s = lambda_cgd_strategy(lambda_=0.9)
         assert isinstance(s, LambdaCgdStrategy)
 
     def test_sensitivity_positive(self):
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        assert s.sensitivity > 0
+        s = lambda_cgd_strategy(lambda_=0.9)
+        assert s.sensitivity(**_PARTICIPATION) > 0
 
     def test_gram_matrix_present(self):
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        assert s.gram_matrix is not None
-        assert len(s.gram_matrix) == 25 * 25
+        s = lambda_cgd_strategy(lambda_=0.9)
+        gram = s.gram_matrix(**_PARTICIPATION)
+        assert gram is not None
+        assert len(gram) == 25 * 25
 
     def test_normalized_single_participation_sensitivity_one(self):
         """Normalized + single participation -> sensitivity = 1.0."""
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=1, max_participations=1)
-        assert s.sensitivity == pytest.approx(1.0, abs=1e-6)
+        s = lambda_cgd_strategy(lambda_=0.9)
+        assert s.sensitivity(
+            n_steps=100, min_sep=1, max_participations=1
+        ) == pytest.approx(1.0, abs=1e-6)
 
     def test_momentum_not_accepted(self):
         """lambda_cgd_strategy does not accept momentum (use bisr_strategy for that)."""
         with pytest.raises(TypeError):
-            lambda_cgd_strategy(
-                0.5, n_steps=100, min_sep=25, max_participations=4, momentum=0.95
-            )
+            lambda_cgd_strategy(lambda_=0.5, momentum=0.95)
 
     def test_unnormalized(self):
-        s = lambda_cgd_strategy(
-            0.9, n_steps=100, min_sep=25, max_participations=4, normalized=False
-        )
-        assert s.sensitivity > 0
+        s = lambda_cgd_strategy(lambda_=0.9, normalized=False)
+        assert s.sensitivity(**_PARTICIPATION) > 0
 
     def test_internal_fields(self):
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        assert s._lambda == pytest.approx(0.9)
-        assert s._n_steps == 100
-        assert s._normalized is True
+        s = lambda_cgd_strategy(lambda_=0.9)
+        assert s.lambda_ == pytest.approx(0.9)
+        assert s.normalized is True
 
 
 class TestLambdaCgdPld:
     delta = 1e-5
 
     def test_lambda_cgd_pld(self):
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
-        eps = ftrl_acc.lambda_cgd(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
+        s = lambda_cgd_strategy(lambda_=0.9)
+        eps = ftrl_acc.mf_gaussian(1.0, s, **_PARTICIPATION).epsilon_at(self.delta)
         assert eps > 0
 
     def test_lambda_cgd_bnb(self):
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
+        s = lambda_cgd_strategy(lambda_=0.9)
         eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.lambda_cgd(
-                1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix
-            ),
+            ftrl_acc.mf_gaussian(1.0, s),
             num_bins=25,
             n_steps=100,
         ).epsilon_at(self.delta)

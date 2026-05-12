@@ -5,7 +5,7 @@ matrix factorization. Instead of adding independent Gaussian noise at
 each step (standard DP-SGD), these mechanisms add correlated noise that
 achieves better utility at the same privacy budget.
 
-The user-facing entry point is ``mf_noise`` (in ``opaque.noise``).
+The user-facing entry point is ``mf_gaussian_noise`` (in ``opaque.noise``).
 Internally, strategy modules (``band_mf``, ``blt``, etc.)
 call ``_matrix_factorization_noise`` which returns ``(noise_fn, state)``.
 
@@ -185,7 +185,7 @@ def _matrix_factorization_noise(
     """Internal: create ``(noise_fn, state)`` from a noising matrix.
 
     This is the engine that all strategy modules call. Users
-    should use ``mf_noise`` (or a strategy wrapper) instead.
+    should use ``mf_gaussian_noise`` (or a strategy wrapper) instead.
 
     Args:
         grad_template: Pytree with the same structure/shapes as gradients.
@@ -332,6 +332,77 @@ def _streaming_mf_noise(
         return noisy_grads, new_state
 
     return noise_fn, state
+
+
+# ---- Input validation helpers shared by mf_gaussian_noise + second-moment ----
+
+
+def _resolve_noise_multiplier(noise_multiplier: float) -> float:
+    multiplier = float(noise_multiplier)
+    if multiplier < 0:
+        raise ValueError(
+            f"noise_multiplier must be non-negative, got {noise_multiplier}"
+        )
+    return multiplier
+
+
+def _expect_clipped(value: Any, *, op: str):
+    """Reject NoisedPytree or non-ClippedPytree inputs to the noise function."""
+    from opaque.types import ClippedPytree, NoisedPytree
+
+    if isinstance(value, NoisedPytree):
+        raise TypeError(
+            f"{op} expects ClippedPytree inputs, not NoisedPytree values that "
+            "have already passed through a noise mechanism."
+        )
+    if not isinstance(value, ClippedPytree):
+        raise TypeError(
+            f"{op} expects ClippedPytree inputs. Wrap manual values with "
+            "opaque.types.clipped(...)."
+        )
+    return value
+
+
+def _validate_constant_max_norm(
+    grads,
+    first_max_norm: float | PerGroup | None,
+    *,
+    op: str,
+) -> float | PerGroup:
+    """Latch the per-step max_norm and reject changes across calls.
+
+    MF privacy analyses calibrate noise from a sensitivity that is constant
+    across the sequence.  Fixed clipping
+    (:func:`opaque.dpftrl.clipping.clipped_grad`) and AUTO-S clipping
+    (:func:`opaque.dpftrl.clipping.auto_clipped_grad`) both produce a
+    constant ``ClippedPytree.max_norm`` and pass this latch.  Adaptive
+    clipping (:func:`opaque.dpsgd.clipping.adaptive_clipped_grad`) varies
+    its threshold across steps, which breaks the proof; the factory
+    latches the first-call max_norm in the state and rejects any
+    subsequent call whose max_norm differs.
+    """
+    max_norm = grads.max_norm
+    if isinstance(max_norm, PerGroup):
+        for group_name, value in max_norm.values.items():
+            if value < 0:
+                raise ValueError(
+                    f"ClippedPytree max_norm must be non-negative for all groups, "
+                    f"got {value} for group '{group_name}'."
+                )
+    else:
+        if float(max_norm) < 0:
+            raise ValueError(
+                f"ClippedPytree max_norm must be non-negative, got {grads.max_norm}"
+            )
+    if first_max_norm is not None and max_norm != first_max_norm:
+        raise ValueError(
+            f"{op} saw a varying ClippedPytree.max_norm across calls "
+            f"(first={first_max_norm}, now={max_norm}). MF privacy proofs "
+            "assume a constant per-step sensitivity; this is satisfied by "
+            "fixed and AUTO-S clipping but not by adaptive clipping, which "
+            "is therefore unsupported with MF noise."
+        )
+    return max_norm
 
 
 # ---- Distributed state validation ----

@@ -36,6 +36,7 @@ be reduced to cheaper operations using structural equality (``==``):
 
 from __future__ import annotations
 
+import dataclasses
 from abc import ABC, abstractmethod
 from typing import TypeAlias
 
@@ -52,15 +53,15 @@ _PROCESS_REGISTRY: dict[str, type[DpProcess]] = {}
 
 def _register_dp_process_with_serialization(cls) -> None:
     """Hook each concrete process into :mod:`opaque.serialization`."""
-    from opaque.api.accounting.core._process_flat import (
-        _flat_dp_process_state,
+    from opaque.api.accounting.core._process_codec import (
         _load_dp_process,
+        _serialize_dp_process,
     )
     from opaque.serialization import register_serializer
 
     register_serializer(
         cls,
-        lambda obj: _flat_dp_process_state(obj, ""),
+        lambda obj: _serialize_dp_process(obj),
         lambda _template, sd: _load_dp_process(dict(sd)),
     )
 
@@ -88,8 +89,15 @@ class DpProcess(ABC):
     """
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        """Auto-register subclass in the global DpProcess registry."""
+        """Auto-register concrete dataclass subclasses in the global registry.
+
+        Skips abstract intermediates (``DpFtrlProcess`` etc.) that aren't
+        dataclasses — they have no fields to serialize and can't be
+        instantiated anyway.
+        """
         super().__init_subclass__(**kwargs)
+        if not dataclasses.is_dataclass(cls):
+            return
         _PROCESS_REGISTRY[cls.__name__] = cls
         _register_dp_process_with_serialization(cls)
 

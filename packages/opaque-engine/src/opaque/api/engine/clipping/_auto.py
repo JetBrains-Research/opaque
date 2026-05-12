@@ -18,7 +18,7 @@ construction and data-independent (``\\sup_g \\lVert\\tilde g\\rVert \\le R``
 holds uniformly), so each ``ClippedPytree`` carries a ``max_norm`` that
 does not depend on the batch — the correct per-step sensitivity for
 ``gaussian_noise`` and other per-step Gaussian mechanisms.  DP-FTRL's
-``mf_noise`` additionally requires that ``max_norm`` stay *unchanged
+``mf_gaussian_noise`` additionally requires that ``max_norm`` stay *unchanged
 across training steps* (the dispatcher latches the first call for the
 matrix-factorization privacy proof); AUTO-S satisfies that latch because
 ``R`` and ``normalize_by`` are fixed, unlike adaptive clipping.  Privacy
@@ -147,7 +147,7 @@ def auto_clipped_fun(
         output with respect to the batch arguments is the returned
         ``ClippedPytree.max_norm`` metadata.  The bound is constant and
         data-independent, so per-step Gaussian calibration is correct.
-        ``mf_noise`` additionally requires that ``max_norm`` not drift across
+        ``mf_gaussian_noise`` additionally requires that ``max_norm`` not drift across
         steps; AUTO-S satisfies that latch because ``R`` and ``normalize_by``
         are fixed.
     """
@@ -261,7 +261,7 @@ def auto_clipped_grad(
         each step; PLD composition does not require ``max_norm`` to be
         identical across steps when the accountant models step-varying
         sensitivity (for example adaptive clipping with ``adaclip``).
-        ``mf_noise``'s matrix-factorization correlated noise *does* require
+        ``mf_gaussian_noise``'s matrix-factorization correlated noise *does* require
         ``max_norm`` to stay fixed for the whole run — the dispatcher latches
         the first-call bound — and AUTO-S satisfies that because ``R`` and
         ``normalize_by`` do not drift.  AUTO-S scaling is per-example and adds
@@ -283,7 +283,7 @@ def auto_clipped_grad(
         >>> grads, state = grad_fn(params, batch_x, batch_y, state=state)
 
     The returned ``ClippedPytree`` carries ``max_norm = R / normalize_by``
-    (constant across steps), so it composes with ``mf_noise`` (DP-FTRL)
+    (constant across steps), so it composes with ``mf_gaussian_noise`` (DP-FTRL)
     and ``gaussian_noise`` (DP-SGD) the same way ``clipped_grad`` does at
     the same bound.
 

@@ -101,11 +101,7 @@ from opaque.dpftrl.noise import band_mf_strategy
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.band_mf(
-        1.0,
-        sensitivity=strategy.sensitivity,
-        coefficients=strategy.coefficients,
-    ),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -151,7 +147,7 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 
 !!! note
     The `dpftrl_acc.band_mf()` API takes pre-computed sensitivity and group count
-    from the noise strategy. For end-to-end usage, `mf_noise()` +
+    from the noise strategy. For end-to-end usage, `mf_gaussian_noise()` +
     `band_mf_strategy()` computes these automatically.
 
 ## Assumptions and limitations
@@ -165,11 +161,11 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 ### Noise injection
 
 ```python
-from opaque.dpftrl.noise import mf_noise, band_mf_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     grad_template=params,
     strategy=strategy,
     noise_multiplier=noise_multiplier,
@@ -196,11 +192,7 @@ strategy = band_mf_strategy(n_steps=1000, bands=10)
 
 # BandMF with Poisson amplification (recommended)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.band_mf(
-        1.0,
-        sensitivity=strategy.sensitivity,
-        coefficients=strategy.coefficients,
-    ),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -217,7 +209,7 @@ eps = proc.epsilon_at(delta=1e-5)
 BandMF uses `opaque.dpftrl.sampling.CyclicPoissonSampler` with ``bands`` matching the
 strategy so participation lines up with the noise.  The same class with
 ``bands=1`` gives plain Poisson on the full dataset each step for an identity MF
-baseline (``identity_mf`` / ``identity_mf_strategy``):
+baseline (``identity_mf`` / ``identity_strategy``):
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
@@ -237,7 +229,7 @@ BandMF training (``bands`` matches ``band_mf_strategy``):
 ```python
 import torch
 from opaque.dpftrl.clipping import clipped_grad
-from opaque.dpftrl.noise import mf_noise, band_mf_strategy
+from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.random import key, split
 
@@ -251,7 +243,7 @@ grad_fn, clip_state = clipped_grad(
     normalize_by=batch_size,
 )
 strategy = band_mf_strategy(n_steps, bands)
-noise_fn, noise_state = mf_noise(
+noise_fn, noise_state = mf_gaussian_noise(
     params, strategy,
     noise_multiplier=result.param,
     key=key_noise,

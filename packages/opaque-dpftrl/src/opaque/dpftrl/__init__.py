@@ -15,7 +15,7 @@ Functional optimizers (including the universal ``adamw`` that consumes
 private ``noisy_squared_grads`` streams) live in :mod:`opaque.optimizers`.
 
 Strategy and noise-state dataclasses (``BandMfStrategy``, ``BltStrategy``,
-``BisrStrategy``, ``BsrStrategy``, ``IdentityMfStrategy``,
+``BisrStrategy``, ``BsrStrategy``, ``IdentityStrategy``,
 ``LambdaCgdStrategy``, ``MfStrategy``, ``MFNoiseState``,
 ``SecondMomentMFNoiseState``) live in :mod:`opaque.dpftrl.noise.types`.
 The cross-cutting ``SecondMomentNoiseOutput`` lives in :mod:`opaque.types`.
@@ -39,9 +39,9 @@ from opaque.dpftrl.noise import (
     bisr_strategy,
     blt_strategy,
     bsr_strategy,
-    identity_mf_strategy,
+    identity_strategy,
     lambda_cgd_strategy,
-    mf_noise,
+    mf_gaussian_noise,
 )
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
@@ -89,13 +89,13 @@ __all__ = [
     "auto_clipped_grad",
     "per_group",
     # Dispatchers
-    "mf_noise",
+    "mf_gaussian_noise",
     # Strategy factories
     "band_mf_strategy",
     "bisr_strategy",
     "bsr_strategy",
     "blt_strategy",
-    "identity_mf_strategy",
+    "identity_strategy",
     "lambda_cgd_strategy",
     # Samplers
     "BallsInBinsSampler",

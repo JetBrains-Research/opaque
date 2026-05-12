@@ -4,6 +4,7 @@ import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.accounting.dpftrl.amplification._b_min_sep import (
     _participation_p_from_per_example_rate,
 )
+from opaque.dpftrl.noise import band_mf_strategy
 
 
 def test_p_conversion():
@@ -15,8 +16,8 @@ def test_p_conversion():
 
 
 def test_b_min_sep_smoke_pld():
-    coef = (0.8**0.5, 0.2**0.5, 0.0, 0.0)
-    inner = ftrl_acc.band_mf(1.0, sensitivity=0.5, coefficients=coef)
+    strategy = band_mf_strategy(bands=4)
+    inner = ftrl_acc.mf_gaussian(1.0, strategy)
     proc = ftrl_acc.b_min_sep(
         inner,
         n_steps=40,
@@ -147,19 +148,29 @@ def test_transcript_cache_evicts_for_byte_cap(monkeypatch):
 
 
 def test_b_min_sep_stricter_than_mf_only():
-    """Subsampling should lower ε at fixed σ vs unamplified BandMF PLD."""
+    """Subsampling should lower ε at fixed σ vs unamplified BandMF PLD.
+
+    Uses a low ``p0`` so subsampling amplification dominates over the
+    multi-group composition cost of unamplified MF.
+    """
     from opaque.api.accounting.core import _native as native
     from opaque.api.accounting.core.discretization import get_discretization
 
-    coef = (1.0, 0.0, 0.0)
-    inner = ftrl_acc.band_mf(1.0, sensitivity=0.7, coefficients=coef)
+    strategy = band_mf_strategy(bands=5)
+    # Use a low-noise / low-sample-rate regime where b-min-sep amplification
+    # strictly beats unamplified composition.
+    inner = ftrl_acc.mf_gaussian(1.0, strategy)
     bms = ftrl_acc.b_min_sep(
         inner,
-        n_steps=20,
-        p0=0.1,
+        n_steps=50,
+        p0=0.01,
     )
     cfg = get_discretization()
-    pld_mf = native.mf_gaussian_pld(1.0, 0.7, cfg.to_native())
+    pld_mf = native.mf_gaussian_pld(
+        1.0,
+        strategy.sensitivity(n_steps=50, min_sep=50, max_participations=1),
+        cfg.to_native(),
+    )
     eps_mf = pld_mf.epsilon_at(1e-3)
     eps_bms = bms.pld(num_mc_samples=8000, seed=1).epsilon_at(1e-3)
     assert eps_bms < eps_mf

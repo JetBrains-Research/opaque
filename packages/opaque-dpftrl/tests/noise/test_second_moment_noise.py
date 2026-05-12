@@ -18,15 +18,30 @@ from opaque.dpftrl.noise import (
     bisr_strategy,
     bsr_strategy,
     blt_strategy,
-    identity_mf_strategy,
+    identity_strategy,
     lambda_cgd_strategy,
-    mf_noise,
+    mf_gaussian_noise,
 )
 from opaque.dpftrl.noise.types import SecondMomentMFNoiseState
 from opaque.random import key
 
 
 _SENSITIVITY = 0.1
+
+
+def _max_column_norm(strategy, *, n_steps: int) -> float:
+    """Strategy's single-participation sensitivity = ``‖C‖_{1→2}``."""
+    return strategy.sensitivity(n_steps=n_steps, min_sep=n_steps, max_participations=1)
+
+
+def _row_l2_at_zero(strategy, *, n_steps: int, min_sep: int = 1) -> float:
+    """First-step ``‖row_0(C^-1)‖`` — used to back out base σ from the
+    realized σ that :class:`NoisedPytree.noise_stddev` now publishes.
+    """
+    streaming = strategy.streaming_matrix(
+        n_steps=n_steps, min_sep=min_sep, max_participations=1
+    )
+    return float(streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()[0])
 
 
 def _paired(grads):
@@ -50,7 +65,7 @@ def _clipped(grads):
 
 
 class TestSecondMomentCalibration:
-    """``mf_noise`` consumes ``paired_noise_stddevs`` for σ allocation.
+    """``mf_gaussian_noise`` consumes ``paired_noise_stddevs`` for σ allocation.
 
     The strategy norms enter as multipliers on the per-record bounds:
     ``Δ¹ = ζ · ‖C₁‖``, ``Δ² = ζ² · ‖C₂‖``.  These tests pin the closed
@@ -115,14 +130,17 @@ class TestSecondMomentMFNoiseMatchesMfGaussianPld:
         # normalises to ‖C‖ ≈ 1 (1.0 - O(eps) on x86 Linux but exactly 1.0
         # on Apple Silicon), so it's a poor regression target for the
         # ``nm / c1`` scaling fix this test guards.
-        strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.9)
-        second_strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.99)
-        c1 = float(strategy._max_column_norm)
-        c2 = float(second_strategy._max_column_norm)
+        strategy = blt_strategy(momentum=0.9)
+        second_strategy = blt_strategy(momentum=0.99)
+        c1 = _max_column_norm(strategy, n_steps=50)
+        c2 = _max_column_norm(second_strategy, n_steps=50)
 
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=nm,
             key=key(42),
             second_moment_strategy=second_strategy,
@@ -130,12 +148,16 @@ class TestSecondMomentMFNoiseMatchesMfGaussianPld:
         grads = {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
         out, _ = noise_fn(_paired(grads), state)
 
-        sigma_first = out.noisy_grads.noise_stddev
-        sigma_second = out.noisy_squared_grads.noise_stddev
+        # ``noise_stddev`` is realized σ (= base · row_l2); recover base
+        # σ to check the joint-PLD calibration identity.
+        first_row_l2 = _row_l2_at_zero(strategy, n_steps=50, min_sep=50)
+        second_row_l2 = _row_l2_at_zero(second_strategy, n_steps=50, min_sep=50)
+        base_sigma_first = out.noisy_grads.noise_stddev / first_row_l2
+        base_sigma_second = out.noisy_squared_grads.noise_stddev / second_row_l2
         # Encoded per-record sensitivities.
         delta1 = _SENSITIVITY * c1
         delta2 = (_SENSITIVITY**2) * c2
-        mahal = (delta1 / sigma_first) ** 2 + (delta2 / sigma_second) ** 2
+        mahal = (delta1 / base_sigma_first) ** 2 + (delta2 / base_sigma_second) ** 2
 
         # Target: the joint PLD must equal MfGaussian(nm, c1) PLD =
         # gaussian_pld(nm / c1), i.e. effective multiplier nm / c1, i.e.
@@ -149,8 +171,8 @@ class TestSecondMomentMFNoiseMatchesMfGaussianPld:
         self, grad_template
     ):
         """As Δ² / Δ¹ → 0, σ_first → single-stream MF σ = nm·ζ."""
-        strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.9)
-        second_strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.99)
+        strategy = blt_strategy(momentum=0.9)
+        second_strategy = blt_strategy(momentum=0.99)
         nm = 1.0
         # Build a paired input where the squared-stream sensitivity is
         # effectively negligible relative to the first.
@@ -162,9 +184,12 @@ class TestSecondMomentMFNoiseMatchesMfGaussianPld:
         paired = SecondMomentClippingOutput(
             grads=first_clipped, squared_grads=sq_clipped
         )
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=nm,
             key=key(42),
             second_moment_strategy=second_strategy,
@@ -172,8 +197,11 @@ class TestSecondMomentMFNoiseMatchesMfGaussianPld:
         out, _ = noise_fn(paired, state)
         # Single-stream MF runtime σ on the noise tensor for ζ=small_zeta is
         # nm·ζ; the paired σ_first should converge to that as Δ²/Δ¹ → 0.
+        # Recover base σ from realized σ (= base · row_l2) for the comparison.
+        first_row_l2 = _row_l2_at_zero(strategy, n_steps=50, min_sep=50)
+        base_sigma_first = out.noisy_grads.noise_stddev / first_row_l2
         single_sigma = nm * small_zeta
-        assert out.noisy_grads.noise_stddev == pytest.approx(single_sigma, rel=1e-3)
+        assert base_sigma_first == pytest.approx(single_sigma, rel=1e-3)
 
 
 class TestPairedPerGroupMahalanobis:
@@ -184,11 +212,11 @@ class TestPairedPerGroupMahalanobis:
         return {"w": torch.zeros(3, 2), "b": torch.zeros(3)}
 
     def test_joint_budget_with_per_group_bounds(self, grad_template):
-        strategy = band_mf_strategy(n_steps=25, bands=4, momentum=0.9)
-        second_strategy = band_mf_strategy(n_steps=25, bands=4, momentum=0.99)
+        strategy = band_mf_strategy(bands=4, momentum=0.9)
+        second_strategy = band_mf_strategy(bands=4, momentum=0.99)
         nm = 1.1
-        c1 = float(strategy._max_column_norm)
-        c2 = float(second_strategy._max_column_norm)
+        c1 = _max_column_norm(strategy, n_steps=50)
+        c2 = _max_column_norm(second_strategy, n_steps=50)
         z = 0.04
         pg = PerGroup(
             groups={"w": "a", "b": "b"},
@@ -200,9 +228,12 @@ class TestPairedPerGroupMahalanobis:
             grads=clipped({"w": torch.ones(3, 2), "b": torch.ones(3)}, max_norm=pg),
             squared_grads=clipped(sq, max_norm=sq_pg),
         )
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=nm,
             key=key(123),
             second_moment_strategy=second_strategy,
@@ -212,13 +243,16 @@ class TestPairedPerGroupMahalanobis:
         s2 = out.noisy_squared_grads.noise_stddev
         assert isinstance(s1, PerGroup)
         assert isinstance(s2, PerGroup)
+        # Recover base σ from realized σ (= base · row_l2) per stream.
+        first_row_l2 = _row_l2_at_zero(strategy, n_steps=50, min_sep=50)
+        second_row_l2 = _row_l2_at_zero(second_strategy, n_steps=50, min_sep=50)
         mahal = 0.0
         for param_key in ("w", "b"):
             d1 = pg.for_key(param_key) * c1
             d2 = sq_pg.for_key(param_key) * c2
-            mahal += (d1 / s1.for_key(param_key)) ** 2 + (
-                d2 / s2.for_key(param_key)
-            ) ** 2
+            base_s1 = s1.for_key(param_key) / first_row_l2
+            base_s2 = s2.for_key(param_key) / second_row_l2
+            mahal += (d1 / base_s1) ** 2 + (d2 / base_s2) ** 2
         assert mahal == pytest.approx((c1 / nm) ** 2, rel=1e-9)
 
 
@@ -228,11 +262,14 @@ class TestSecondMomentMFNoise:
         return {"w": torch.zeros(4, 3), "b": torch.zeros(4)}
 
     def test_returns_correct_types(self, grad_template):
-        strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
-        second_strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.99)
-        noise_fn, state = mf_noise(
+        strategy = band_mf_strategy(bands=5, momentum=0.9)
+        second_strategy = band_mf_strategy(bands=5, momentum=0.99)
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=1.0,
             key=key(42),
             second_moment_strategy=second_strategy,
@@ -247,11 +284,14 @@ class TestSecondMomentMFNoise:
         assert isinstance(new_state, SecondMomentMFNoiseState)
 
     def test_output_shapes_match_input(self, grad_template):
-        strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
-        second_strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.99)
-        noise_fn, state = mf_noise(
+        strategy = band_mf_strategy(bands=5, momentum=0.9)
+        second_strategy = band_mf_strategy(bands=5, momentum=0.99)
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=1.0,
             key=key(42),
             second_moment_strategy=second_strategy,
@@ -264,11 +304,14 @@ class TestSecondMomentMFNoise:
         assert output.noisy_squared_grads.pytree["b"].shape == (4,)
 
     def test_tuple_unpacking(self, grad_template):
-        strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
-        second_strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.99)
-        noise_fn, state = mf_noise(
+        strategy = band_mf_strategy(bands=5, momentum=0.9)
+        second_strategy = band_mf_strategy(bands=5, momentum=0.99)
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=1.0,
             key=key(42),
             second_moment_strategy=second_strategy,
@@ -279,11 +322,14 @@ class TestSecondMomentMFNoise:
         assert isinstance(noisy_sq, NoisedPytree)
 
     def test_step_counter_increments(self, grad_template):
-        strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
-        second_strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.99)
-        noise_fn, state = mf_noise(
+        strategy = band_mf_strategy(bands=5, momentum=0.9)
+        second_strategy = band_mf_strategy(bands=5, momentum=0.99)
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=1.0,
             key=key(42),
             second_moment_strategy=second_strategy,
@@ -296,22 +342,28 @@ class TestSecondMomentMFNoise:
         assert state._step_counter == 2
 
     def test_deterministic_with_same_key(self, grad_template):
-        strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
-        second_strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.99)
+        strategy = band_mf_strategy(bands=5, momentum=0.9)
+        second_strategy = band_mf_strategy(bands=5, momentum=0.99)
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
 
-        noise_fn1, state1 = mf_noise(
+        noise_fn1, state1 = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=1.0,
             key=key(42),
             second_moment_strategy=second_strategy,
         )
         output1, _ = noise_fn1(_paired(grads), state1)
 
-        noise_fn2, state2 = mf_noise(
+        noise_fn2, state2 = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=1.0,
             key=key(42),
             second_moment_strategy=second_strategy,
@@ -327,22 +379,28 @@ class TestSecondMomentMFNoise:
         )
 
     def test_different_keys_give_different_noise(self, grad_template):
-        strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
-        second_strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.99)
+        strategy = band_mf_strategy(bands=5, momentum=0.9)
+        second_strategy = band_mf_strategy(bands=5, momentum=0.99)
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
 
-        noise_fn1, state1 = mf_noise(
+        noise_fn1, state1 = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=1.0,
             key=key(42),
             second_moment_strategy=second_strategy,
         )
         output1, _ = noise_fn1(_paired(grads), state1)
 
-        noise_fn2, state2 = mf_noise(
+        noise_fn2, state2 = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=1.0,
             key=key(99),
             second_moment_strategy=second_strategy,
@@ -356,38 +414,27 @@ class TestSecondMomentMFNoise:
     @pytest.mark.parametrize("mechanism", ["band_mf", "blt", "bisr", "bsr", "identity"])
     def test_works_with_supported_mechanisms(self, grad_template, mechanism):
         if mechanism == "band_mf":
-            strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
-            second_strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.99)
+            strategy = band_mf_strategy(bands=5, momentum=0.9)
+            second_strategy = band_mf_strategy(bands=5, momentum=0.99)
         elif mechanism == "blt":
-            strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.9)
-            second_strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.99)
+            strategy = blt_strategy(momentum=0.9)
+            second_strategy = blt_strategy(momentum=0.99)
         elif mechanism == "bisr":
-            strategy = bisr_strategy(bandwidth=4, n_steps=50, min_sep=50, momentum=0.9)
-            second_strategy = bisr_strategy(
-                bandwidth=4, n_steps=50, min_sep=50, momentum=0.99
-            )
+            strategy = bisr_strategy(bandwidth=4, momentum=0.9)
+            second_strategy = bisr_strategy(bandwidth=4, momentum=0.99)
         elif mechanism == "bsr":
-            strategy = bsr_strategy(
-                bandwidth=4,
-                n_steps=50,
-                min_sep=50,
-                alpha=1.0,
-                beta=0.9,
-            )
-            second_strategy = bsr_strategy(
-                bandwidth=4,
-                n_steps=50,
-                min_sep=50,
-                alpha=1.0,
-                beta=0.99,
-            )
+            strategy = bsr_strategy(bandwidth=4, alpha=1.0, beta=0.9)
+            second_strategy = bsr_strategy(bandwidth=4, alpha=1.0, beta=0.99)
         elif mechanism == "identity":
-            strategy = identity_mf_strategy()
-            second_strategy = identity_mf_strategy()
+            strategy = identity_strategy()
+            second_strategy = identity_strategy()
 
-        noise_fn, state = mf_noise(
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=1.0,
             key=key(42),
             second_moment_strategy=second_strategy,
@@ -399,11 +446,14 @@ class TestSecondMomentMFNoise:
         assert isinstance(new_state, SecondMomentMFNoiseState)
 
     def test_paired_input_requires_second_moment_strategy(self, grad_template):
-        """Single-stream mf_noise rejects paired-stream input."""
-        strategy = lambda_cgd_strategy(0.9, n_steps=50, min_sep=50)
-        noise_fn, state = mf_noise(
+        """Single-stream mf_gaussian_noise rejects paired-stream input."""
+        strategy = lambda_cgd_strategy(lambda_=0.9)
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=1.0,
             key=key(42),
         )
@@ -414,12 +464,15 @@ class TestSecondMomentMFNoise:
     def test_single_input_rejected_when_second_moment_strategy_supplied(
         self, grad_template
     ):
-        """Paired-stream mf_noise rejects single-stream input."""
-        strategy = lambda_cgd_strategy(0.9, n_steps=50, min_sep=50)
-        second_strategy = lambda_cgd_strategy(0.999, n_steps=50, min_sep=50)
-        noise_fn, state = mf_noise(
+        """Paired-stream mf_gaussian_noise rejects single-stream input."""
+        strategy = lambda_cgd_strategy(lambda_=0.9)
+        second_strategy = lambda_cgd_strategy(lambda_=0.999)
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=1.0,
             key=key(42),
             second_moment_strategy=second_strategy,
@@ -429,11 +482,14 @@ class TestSecondMomentMFNoise:
             noise_fn(_clipped(grads), state)
 
     def test_lambda_cgd_accepts_explicit_second_strategy(self, grad_template):
-        strategy = lambda_cgd_strategy(0.9, n_steps=50, min_sep=50)
-        second_strategy = lambda_cgd_strategy(0.999, n_steps=50, min_sep=50)
-        noise_fn, state = mf_noise(
+        strategy = lambda_cgd_strategy(lambda_=0.9)
+        second_strategy = lambda_cgd_strategy(lambda_=0.999)
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=1.0,
             key=key(42),
             second_moment_strategy=second_strategy,
@@ -443,11 +499,14 @@ class TestSecondMomentMFNoise:
         assert output.noisy_squared_grads.pytree["w"].shape == (4, 3)
 
     def test_squared_grads_are_noised_not_raw(self, grad_template):
-        strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
-        second_strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.99)
-        noise_fn, state = mf_noise(
+        strategy = band_mf_strategy(bands=5, momentum=0.9)
+        second_strategy = band_mf_strategy(bands=5, momentum=0.99)
+        noise_fn, state = mf_gaussian_noise(
             grad_template,
             strategy,
+            n_steps=50,
+            min_sep=50,
+            max_participations=1,
             noise_multiplier=1.0,
             key=key(42),
             second_moment_strategy=second_strategy,
