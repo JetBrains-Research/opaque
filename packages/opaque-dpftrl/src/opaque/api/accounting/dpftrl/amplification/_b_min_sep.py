@@ -68,8 +68,13 @@ class BMinSep(DpFtrlProcess):
 
     @property
     def max_participations(self) -> int:
-        # At most one participation per ``bands`` rounds across ``n_steps``.
-        return self.n_steps // self.inner.strategy.bands
+        # At most one participation per ``bands``-row window across
+        # ``n_steps``.  Use ``ceil(n_steps / bands)``: a window starts at the
+        # first user contribution and may extend past ``n_steps`` mid-window,
+        # so the worst case is ``ceil`` not ``floor`` (e.g. bands=4,
+        # n_steps=10 yields 3, not 2).
+        bands = self.inner.strategy.bands
+        return (self.n_steps + bands - 1) // bands
 
     @functools.lru_cache(maxsize=8)
     def pld(

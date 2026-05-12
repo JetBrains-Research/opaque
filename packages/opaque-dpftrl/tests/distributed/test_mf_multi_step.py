@@ -74,6 +74,7 @@ def _worker_identity_mf_three_steps(rank: int, world_size: int, port: int) -> No
         noise_fn, state = mf_gaussian_noise(
             grad_template,
             identity_strategy(),
+            n_steps=3,
             noise_multiplier=1.0,
             key=rng_key(0),
         )

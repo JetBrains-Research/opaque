@@ -1244,6 +1244,18 @@ def main():
         print(f"\nCreating MF noise (β={args.momentum})...")
     t0 = time.time()
 
+    # Participation context for the noise side: mirror the amplifier's
+    # accounting horizon so the streaming matrix matches the calibrated PLD.
+    # BandMF / Identity ignore ``min_sep`` and ``max_participations`` (their
+    # workload is band-internal / trivial); BLT-family read them.
+    noise_n_steps = total_steps
+    if args.mechanism in ("blt", "bsr", "bisr", "lambda_cgd"):
+        noise_min_sep = expected_steps_per_epoch
+        noise_max_part = args.num_epochs
+    else:
+        noise_min_sep = 1
+        noise_max_part = total_steps
+
     if use_second_moment and args.mechanism not in ("identity", "none"):
         second_strategy = _make_strategy(
             momentum_override=args.beta2, lr_sched=lr_schedule
@@ -1251,6 +1263,9 @@ def main():
         noise_fn, noise_state = mf_gaussian_noise(
             trainable_params,
             strategy,
+            n_steps=noise_n_steps,
+            min_sep=noise_min_sep,
+            max_participations=noise_max_part,
             noise_multiplier=noise_multiplier,
             key=key(args.seed),
             second_moment_strategy=second_strategy,
@@ -1259,6 +1274,7 @@ def main():
         noise_fn, noise_state = mf_gaussian_noise(
             trainable_params,
             identity_strategy(),
+            n_steps=noise_n_steps,
             noise_multiplier=noise_multiplier,
             key=key(args.seed),
         )
@@ -1266,6 +1282,9 @@ def main():
         noise_fn, noise_state = mf_gaussian_noise(
             trainable_params,
             strategy,
+            n_steps=noise_n_steps,
+            min_sep=noise_min_sep,
+            max_participations=noise_max_part,
             noise_multiplier=noise_multiplier,
             key=key(args.seed),
         )

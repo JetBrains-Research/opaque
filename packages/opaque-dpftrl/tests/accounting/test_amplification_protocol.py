@@ -63,7 +63,7 @@ def test_b_min_sep_formulas():
     )
     assert proc.n_steps == 80
     assert proc.min_sep == 8  # = bands
-    assert proc.max_participations == 10  # n_steps // bands
+    assert proc.max_participations == 10  # ceil(n_steps / bands) = 10
 
 
 def test_cyclic_poisson_degenerate_limits():
