@@ -38,8 +38,17 @@ from opaque.random import key
 from opaque.types import clipped
 
 
-def _step(strategy, *, n_steps, min_sep=1, max_participations=None, max_norm=1.0,
-          nm=1.0, seed=0, n_calls=1):
+def _step(
+    strategy,
+    *,
+    n_steps,
+    min_sep=1,
+    max_participations=None,
+    max_norm=1.0,
+    nm=1.0,
+    seed=0,
+    n_calls=1,
+):
     """Run noise_fn for ``n_calls`` steps; return the realized σ at each step."""
     template = {"w": torch.zeros(8)}
     noise_fn, state = mf_gaussian_noise(
@@ -97,10 +106,22 @@ class TestStreamingMatrixRealizedSigma:
     @pytest.mark.parametrize(
         "make_strategy,part",
         [
-            (lambda: band_mf_strategy(bands=4, momentum=0.9), dict(n_steps=20, min_sep=1, max_participations=20)),
-            (lambda: blt_strategy(momentum=0.9), dict(n_steps=20, min_sep=4, max_participations=5)),
-            (lambda: bisr_strategy(bandwidth=4, momentum=0.5), dict(n_steps=20, min_sep=4, max_participations=5)),
-            (lambda: bsr_strategy(bandwidth=4, alpha=1.0, beta=0.5), dict(n_steps=20, min_sep=4, max_participations=5)),
+            (
+                lambda: band_mf_strategy(bands=4, momentum=0.9),
+                dict(n_steps=20, min_sep=1, max_participations=20),
+            ),
+            (
+                lambda: blt_strategy(momentum=0.9),
+                dict(n_steps=20, min_sep=4, max_participations=5),
+            ),
+            (
+                lambda: bisr_strategy(bandwidth=4, momentum=0.5),
+                dict(n_steps=20, min_sep=4, max_participations=5),
+            ),
+            (
+                lambda: bsr_strategy(bandwidth=4, alpha=1.0, beta=0.5),
+                dict(n_steps=20, min_sep=4, max_participations=5),
+            ),
         ],
         ids=["band_mf", "blt", "bisr", "bsr"],
     )
@@ -136,8 +157,15 @@ class TestLambdaCgdRealizedSigma:
         strategy = lambda_cgd_strategy(lambda_=lam, normalized=True)
         d_0 = _column_norm(lam, n_steps, 0)
         nm, max_norm = 1.5, 0.4
-        sigmas = _step(strategy, n_steps=n_steps, min_sep=1, max_participations=1,
-                       nm=nm, max_norm=max_norm, n_calls=1)
+        sigmas = _step(
+            strategy,
+            n_steps=n_steps,
+            min_sep=1,
+            max_participations=1,
+            nm=nm,
+            max_norm=max_norm,
+            n_calls=1,
+        )
         assert sigmas[0] == pytest.approx(nm * max_norm * d_0, rel=1e-12)
 
     def test_normalized_step_one(self):
@@ -146,8 +174,15 @@ class TestLambdaCgdRealizedSigma:
         n_steps = 30
         strategy = lambda_cgd_strategy(lambda_=lam, normalized=True)
         nm, max_norm = 1.5, 0.4
-        sigmas = _step(strategy, n_steps=n_steps, min_sep=1, max_participations=1,
-                       nm=nm, max_norm=max_norm, n_calls=2)
+        sigmas = _step(
+            strategy,
+            n_steps=n_steps,
+            min_sep=1,
+            max_participations=1,
+            nm=nm,
+            max_norm=max_norm,
+            n_calls=2,
+        )
         d_1 = _column_norm(lam, n_steps, 1)
         expected = nm * max_norm * math.sqrt(1.0 + lam * lam) * d_1
         assert sigmas[1] == pytest.approx(expected, rel=1e-12)
@@ -157,8 +192,15 @@ class TestLambdaCgdRealizedSigma:
         lam = 0.5
         strategy = lambda_cgd_strategy(lambda_=lam, normalized=False)
         nm, max_norm = 1.0, 1.0
-        sigmas = _step(strategy, n_steps=20, min_sep=1, max_participations=1,
-                       nm=nm, max_norm=max_norm, n_calls=2)
+        sigmas = _step(
+            strategy,
+            n_steps=20,
+            min_sep=1,
+            max_participations=1,
+            nm=nm,
+            max_norm=max_norm,
+            n_calls=2,
+        )
         # Step 0: just base σ (no previous-step term).
         assert sigmas[0] == pytest.approx(nm * max_norm, rel=1e-12)
         # Step 1: base σ · sqrt(1 + λ²).
@@ -170,7 +212,14 @@ class TestLambdaCgdRealizedSigma:
         """λ=0 ⇒ no correlation; realized σ = base σ regardless of step."""
         strategy = lambda_cgd_strategy(lambda_=0.0, normalized=False)
         nm, max_norm = 1.2, 0.8
-        sigmas = _step(strategy, n_steps=20, min_sep=1, max_participations=1,
-                       nm=nm, max_norm=max_norm, n_calls=3)
+        sigmas = _step(
+            strategy,
+            n_steps=20,
+            min_sep=1,
+            max_participations=1,
+            nm=nm,
+            max_norm=max_norm,
+            n_calls=3,
+        )
         for s in sigmas:
             assert s == pytest.approx(nm * max_norm, rel=1e-12)
