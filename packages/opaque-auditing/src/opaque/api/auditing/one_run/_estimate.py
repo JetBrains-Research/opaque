@@ -1,11 +1,19 @@
-"""One-run privacy audit estimator (Steinke et al. 2023).
+"""One-run privacy audit estimator.
 
 The ``one_run()`` function precomputes the Pareto-optimal threshold
 structure from canary scores and returns a frozen ``OneRunEstimate``
 that holds all precomputed state. Query methods on the estimate
 (``epsilon_at``, ``beta_at``, etc.) dispatch into that state.
 
+``epsilon_at()`` uses the tight (ε,δ)-DP order-statistics bound from
+Xiang, Chen & Kerkouche (2025) — mechanism-agnostic and strictly
+tighter than the previous Steinke et al. (2023) bound.
+
+``epsilon_at_gaussian()`` uses the full Gaussian f-DP order-statistics
+bound — tightest possible for DP-SGD with Gaussian noise.
+
 References:
+    - Xiang, Chen, Kerkouche (2025), https://arxiv.org/abs/2509.08704
     - Steinke, Nasr, Jagielski (2023), https://arxiv.org/abs/2305.08846
     - Carlini et al. (2022), https://arxiv.org/abs/2112.03570
 """
@@ -18,6 +26,11 @@ import numpy as np
 import scipy.stats
 
 from opaque.api.auditing._coin_flip import CoinFlip
+from opaque.api.auditing._gaussian_trade_off import gaussian_to_eps_delta
+from opaque.api.auditing._xiang import (
+    xiang_p_value_eps_delta,
+    xiang_p_value_gaussian,
+)
 from opaque.api.auditing.one_run._roc import get_tn_fn_counts, tpr_at_given_fpr
 from opaque.api.auditing.one_run._stats import (
     epsilon_one_run_search,
@@ -107,7 +120,38 @@ class OneRunEstimate:
         )
 
     # ------------------------------------------------------------------
-    # Epsilon estimation
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _best_r_u(
+        self, threshold: float | None = None,
+    ) -> tuple[int, int]:
+        """Compute (r, u) for the Xiang order-statistics test.
+
+        r is the number of released guesses (always m = n_in + n_out),
+        u is the number of errors (m minus the number of correct guesses).
+
+        If ``threshold`` is given, compute accuracy at that threshold.
+        Otherwise, find the Pareto-optimal threshold maximising
+        TP + TN (total correct guesses).
+
+        Returns:
+            ``(r, u)`` tuple.
+        """
+        m = self.n_in + self.n_out
+
+        if threshold is not None:
+            tp = int(np.sum(self.in_scores >= threshold))
+            tn = int(np.sum(self.out_scores < threshold))
+            return m, m - (tp + tn)
+
+        # Vectorised search over Pareto-optimal thresholds
+        correct = (self.n_in - self.fn_counts) + self.tn_counts
+        best_c = int(np.max(correct))
+        return m, m - best_c
+
+    # ------------------------------------------------------------------
+    # Epsilon estimation — (ε,δ)-DP Xiang (default)
     # ------------------------------------------------------------------
 
     def epsilon_at(
@@ -119,23 +163,138 @@ class OneRunEstimate:
         eps_max: float = 20.0,
         tol: float = 1e-4,
     ) -> float:
-        """Epsilon lower bound using the one-run method (Steinke et al. 2023).
+        """Epsilon lower bound using (ε,δ)-DP Xiang bound (order statistics).
 
-        Uses a likelihood-ratio test tailored for DP auditing. For each
-        Pareto-optimal threshold, tries positive-only, negative-only,
-        and two-sided guesses per Algorithm 1 of the paper, with
-        Bonferroni correction over all thresholds and variants.
+        Mechanism-agnostic: valid for any DP mechanism. Strictly tighter
+        than the Steinke et al. (2023) bound for all δ ≥ 0.
+
+        For the tightest bound on Gaussian mechanisms (DP-SGD), use
+        :meth:`epsilon_at_gaussian` instead.
+
+        .. versionchanged:: 0.5.0
+            Replaced the Steinke et al. (2023) Bonferroni search with the
+            Xiang et al. (2025) order-statistics bound.  The previous
+            implementation is preserved as ``_epsilon_at_steinke()``.
 
         Args:
             delta: DP delta parameter. Default: 0 (pure DP).
             significance: Allowed failure probability (1 - confidence).
-            threshold: If provided, use this specific threshold instead
-                of searching over all Pareto-optimal thresholds.
-            eps_max: Maximum epsilon to search. Default: 20.0.
+            threshold: If provided, compute accuracy at this specific
+                score threshold. Otherwise, use the Pareto-optimal
+                threshold that maximises total accuracy (TP + TN).
+            eps_max: Initial upper bound for epsilon search. Auto-expanded
+                if needed.
             tol: Binary search tolerance. Default: 1e-4.
 
         Returns:
             Epsilon lower bound at the specified confidence level.
+        """
+        validate_significance(significance)
+        validate_delta(delta)
+
+        r, u = self._best_r_u(threshold)
+
+        # Auto-expand search range
+        while xiang_p_value_eps_delta(r, u, eps_max, delta) < significance:
+            eps_max *= 2
+
+        # Binary search: find largest eps where p-value < significance
+        eps_lo, eps_hi = 0.0, eps_max
+        while eps_hi - eps_lo > tol:
+            eps_mid = (eps_lo + eps_hi) / 2.0
+            if xiang_p_value_eps_delta(r, u, eps_mid, delta) < significance:
+                eps_lo = eps_mid
+            else:
+                eps_hi = eps_mid
+
+        return eps_lo
+
+    # ------------------------------------------------------------------
+    # Epsilon estimation — Gaussian Xiang (tightest for DP-SGD)
+    # ------------------------------------------------------------------
+
+    def epsilon_at_gaussian(
+        self,
+        *,
+        delta: float,
+        significance: float = 0.05,
+        threshold: float | None = None,
+        mu_max: float = 20.0,
+        tol: float = 0.01,
+        grid_size: int = 10_000,
+    ) -> float:
+        """Epsilon lower bound using Gaussian f-DP (tightest for DP-SGD).
+
+        Uses Xiang et al.'s full order-statistics bound with the
+        Gaussian (μ-GDP) trade-off function. Significantly tighter than
+        :meth:`epsilon_at` for mechanisms satisfying Gaussian DP (e.g.
+        DP-SGD with Gaussian noise).
+
+        Only valid for Gaussian mechanisms. For general mechanisms, use
+        :meth:`epsilon_at` instead.
+
+        Args:
+            delta: DP delta parameter. Required; must be > 0 since
+                Gaussian DP cannot satisfy pure DP.
+            significance: Allowed failure probability (1 - confidence).
+            threshold: If provided, compute accuracy at this specific
+                score threshold. Otherwise, use the Pareto-optimal
+                threshold that maximises total accuracy (TP + TN).
+            mu_max: Initial upper bound for μ search. Auto-expanded
+                if needed.
+            tol: Binary search tolerance for μ. Default: 0.01.
+            grid_size: Grid points for numerical integration.
+
+        Returns:
+            Epsilon lower bound at the specified confidence level.
+
+        Raises:
+            ValueError: If delta ≤ 0.
+        """
+        if delta <= 0:
+            raise ValueError(
+                "Gaussian trade-off auditing requires delta > 0. "
+                "Use epsilon_at() for pure DP (delta = 0) auditing."
+            )
+        validate_delta(delta)
+        validate_significance(significance)
+
+        m = self.n_in + self.n_out
+        r, u = self._best_r_u(threshold)
+
+        # Auto-expand search range
+        while xiang_p_value_gaussian(m, r, u, mu_max, grid_size) < significance:
+            mu_max *= 2
+
+        # Binary search: find largest mu where p-value < significance
+        mu_lo, mu_hi = 0.0, mu_max
+        while mu_hi - mu_lo > tol:
+            mu_mid = (mu_lo + mu_hi) / 2.0
+            if xiang_p_value_gaussian(m, r, u, mu_mid, grid_size) < significance:
+                mu_lo = mu_mid
+            else:
+                mu_hi = mu_mid
+
+        return gaussian_to_eps_delta(mu_lo, delta)
+
+    # ------------------------------------------------------------------
+    # Epsilon estimation — Steinke (preserved for comparison)
+    # ------------------------------------------------------------------
+
+    def _epsilon_at_steinke(
+        self,
+        *,
+        delta: float = 0.0,
+        significance: float = 0.05,
+        threshold: float | None = None,
+        eps_max: float = 20.0,
+        tol: float = 1e-4,
+    ) -> float:
+        """Epsilon lower bound using Steinke et al. (2023).
+
+        Preserved for backward compatibility and research comparisons.
+        Uses the likelihood-ratio test with Bonferroni correction over
+        thresholds and variants.
         """
         validate_significance(significance)
         validate_delta(delta)
@@ -146,10 +305,9 @@ class OneRunEstimate:
             tp = int(np.sum(self.in_scores >= threshold))
             fp = int(np.sum(self.out_scores >= threshold))
             tn = int(np.sum(self.out_scores < threshold))
-
-            # Bonferroni over the three variants (positive-only, negative-only, two-sided)
-            sig_corrected = significance / 3.0
             fn = int(np.sum(self.in_scores < threshold))
+
+            sig_corrected = significance / 3.0
 
             eps_pos = epsilon_one_run_search(
                 tp + fp, tp, m, sig_corrected, delta, eps_max, tol
