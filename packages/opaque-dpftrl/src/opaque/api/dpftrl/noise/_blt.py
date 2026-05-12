@@ -47,7 +47,9 @@ def _native():
 
 def _lr_key(lr_schedule: Schedule | None, n: int) -> tuple[float, ...] | None:
     """Materialise the schedule at ``[0, n)`` for use as an ``lru_cache`` key."""
-    return None if lr_schedule is None else tuple(float(lr_schedule(t)) for t in range(n))
+    return (
+        None if lr_schedule is None else tuple(float(lr_schedule(t)) for t in range(n))
+    )
 
 
 @lru_cache(maxsize=32)
