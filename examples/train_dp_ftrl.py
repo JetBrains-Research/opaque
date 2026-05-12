@@ -1145,12 +1145,16 @@ def main():
     elif args.mechanism == "blt" and strategy is not None:
 
         def acct_mechanism(nm):
-            return ftrl_acc.mf_gaussian(nm, strategy)
+            return dpftrl_acc.balls_in_bins(
+                dpftrl_acc.mf_gaussian(nm, strategy),
+                num_bins=expected_steps_per_epoch,
+                n_steps=expected_steps_per_epoch * args.num_epochs,
+            )
     elif args.mechanism == "lambda_cgd" and strategy is not None:
 
         def acct_mechanism(nm):
             return dpftrl_acc.balls_in_bins(
-                ftrl_acc.mf_gaussian(nm, strategy),
+                dpftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
             )
@@ -1158,7 +1162,7 @@ def main():
 
         def acct_mechanism(nm):
             return dpftrl_acc.balls_in_bins(
-                ftrl_acc.mf_gaussian(nm, strategy),
+                dpftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
             )
@@ -1166,7 +1170,7 @@ def main():
 
         def acct_mechanism(nm):
             return dpftrl_acc.balls_in_bins(
-                ftrl_acc.mf_gaussian(nm, strategy),
+                dpftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
                 n_steps=expected_steps_per_epoch * args.num_epochs,
             )
@@ -1435,12 +1439,30 @@ def main():
     profiler, _ = profiler.mark("training_start")
     print_memory(device, "Before training")
 
+    # Per-eval epsilon reporting.  Every ``acct_mechanism`` branch above
+    # returns a :class:`DpFtrlProcess` (whole-process amplifier wrapping
+    # the MF mechanism), so ``approx_at_step(K)`` is always available —
+    # it returns an upper bound on the privacy cost at step K, rounded
+    # up to the amplifier's atomic_unit (one full epoch / one band).
+    def epsilon_at_step(step: int) -> float:
+        if args.mechanism == "none":
+            return 0.0
+        return acct_mechanism(noise_multiplier).approx_at_step(step).epsilon_at(
+            args.target_delta
+        )
+
     # Step-0 eval
     initial_eval_loss = eval_loss(trainable_params)
-    print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}")
+    initial_epsilon = epsilon_at_step(0)
+    print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
     if use_wandb:
         wandb.log(
-            {"eval/loss": initial_eval_loss, "train/lr": lr_schedule[0].item()}, step=0
+            {
+                "eval/loss": initial_eval_loss,
+                "privacy/epsilon": initial_epsilon,
+                "train/lr": lr_schedule[0].item(),
+            },
+            step=0,
         )
 
     for epoch in range(args.num_epochs):
@@ -1561,9 +1583,18 @@ def main():
             # --- Eval ---
             if global_step % args.eval_steps == 0:
                 current_eval_loss = eval_loss(trainable_params)
-                print(f"  → Eval: loss={current_eval_loss:.4f}")
+                epsilon = epsilon_at_step(global_step)
+                print(
+                    f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
+                )
                 if use_wandb:
-                    wandb.log({"eval/loss": current_eval_loss}, step=global_step)
+                    wandb.log(
+                        {
+                            "eval/loss": current_eval_loss,
+                            "privacy/epsilon": epsilon,
+                        },
+                        step=global_step,
+                    )
 
         if args.max_steps is not None and global_step >= args.max_steps:
             print(f"\nReached max_steps={args.max_steps}, stopping.")
