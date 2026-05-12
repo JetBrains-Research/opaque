@@ -9,22 +9,19 @@ from collections import OrderedDict
 from opaque.api.accounting.core import _native
 
 
-_HARD_CAP_BYTES = 96 * 1024 * 1024 * 1024
-
-
 def _max_registry_bytes() -> int:
-    """Upper bound for registering one corpus (raw f64 storage ~3×S×n×8 bytes).
+    """Hard cap on total bytes held in the in-process LRU (sum of corpora).
 
-    Default 4 GiB fits small horizons.  Long DP-FTRL runs (large ``n_steps`` ×
-    ``num_mc_samples``) need a larger working set so :func:`get_handle_or_none`
-    can register a transcript at all — otherwise every noise-calibration probe
-    rebuilds a fresh Monte Carlo corpus (very slow).  See
-    :func:`_effective_registry_budget` which bumps the allowance up to this
-    corpus size (capped at ``_HARD_CAP_BYTES``) when the configured cap is too
-    small.
+    Each corpus needs roughly ``3 * num_mc_samples * n_steps * 8`` bytes of
+    raw ``f64`` storage in Rust.  Default 4 GiB fits modest horizons; raise
+    ``OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES`` on large-GPU hosts when
+    noise calibration reuses the same transcript across σ probes.
 
-    Set ``OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES`` to cap lower on small
-    VMs, or ``0`` to disable transcript reuse (always one-shot MC).
+    Set to ``0`` to disable transcript reuse (always one-shot warm MC).
+
+    The native ``register_b_min_sep_transcripts`` entry point does not
+    duplicate this budget — Python evicts LRU entries until the new corpus
+    fits, so Rust never needs a second conflicting gate.
     """
     raw = os.environ.get("OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES", "")
     if raw.strip():
@@ -46,22 +43,6 @@ def _estimate_raw_bytes(num_mc_samples: int, n_steps: int) -> int:
     return 3 * num_mc_samples * n_steps * 8
 
 
-def _effective_registry_budget(requested_nbytes: int) -> int:
-    """Bytes we are willing to spend to hold *this* transcript once.
-
-    Noise calibration calls :func:`get_handle_or_none` with identical
-    ``(coefs, n_steps, p, S, seed)`` while varying only ``σ``; reusing the
-    registered corpus is critical.  When the raw corpus exceeds the
-    user-configured cap (default 4 GiB) but still fits under
-    ``_HARD_CAP_BYTES``, bump the budget for this registration attempt so
-    large-horizon jobs do not silently fall back to per-σ one-shot MC.
-    """
-    configured = _max_registry_bytes()
-    if configured == 0:
-        return 0
-    return min(_HARD_CAP_BYTES, max(configured, requested_nbytes))
-
-
 def get_handle_or_none(
     strategy_coef: tuple[float, ...],
     n_steps: int,
@@ -70,10 +51,10 @@ def get_handle_or_none(
     mc_seed: int,
 ) -> int | None:
     """Return a Rust corpus handle for reuse, or None to use one-shot MC."""
-    if _max_registry_bytes() == 0:
+    max_b = _max_registry_bytes()
+    if max_b == 0:
         return None
     nbytes = _estimate_raw_bytes(num_mc_samples, n_steps)
-    max_b = _effective_registry_budget(nbytes)
     if nbytes > max_b:
         return None
 

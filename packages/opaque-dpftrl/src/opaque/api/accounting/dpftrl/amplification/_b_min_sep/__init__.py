@@ -23,7 +23,7 @@ from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
 
-from ._b_min_sep_transcript_cache import get_handle_or_none
+from ._transcript_cache import get_handle_or_none
 
 _Inner = MfGaussian
 

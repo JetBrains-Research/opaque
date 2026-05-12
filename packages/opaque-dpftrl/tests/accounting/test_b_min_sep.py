@@ -29,7 +29,7 @@ def test_b_min_sep_smoke_pld():
 
 def test_transcript_cache_reuses_same_handle():
     """Repeated cache lookup returns the same Rust corpus handle."""
-    from opaque.api.accounting.dpftrl.amplification._b_min_sep_transcript_cache import (
+    from opaque.api.accounting.dpftrl.amplification._b_min_sep._transcript_cache import (
         get_handle_or_none,
     )
 
@@ -49,8 +49,8 @@ def _drain_cache(tc) -> None:
 
 def test_transcript_cache_evicts_lru(monkeypatch):
     """Cache caps entries and drops LRU native handle *before* registering new."""
-    from opaque.api.accounting.dpftrl.amplification import (
-        _b_min_sep_transcript_cache as tc,
+    from opaque.api.accounting.dpftrl.amplification._b_min_sep import (
+        _transcript_cache as tc,
     )
 
     monkeypatch.delenv("OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES", raising=False)
@@ -104,8 +104,8 @@ def test_transcript_cache_evicts_lru(monkeypatch):
 
 def test_transcript_cache_evicts_for_byte_cap(monkeypatch):
     """Byte budget forces eviction even when entry count is below the cap."""
-    from opaque.api.accounting.dpftrl.amplification import (
-        _b_min_sep_transcript_cache as tc,
+    from opaque.api.accounting.dpftrl.amplification._b_min_sep import (
+        _transcript_cache as tc,
     )
 
     monkeypatch.setattr(tc, "_MAX_ENTRIES", 16)

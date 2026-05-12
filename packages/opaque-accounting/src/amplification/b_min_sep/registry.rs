@@ -30,18 +30,11 @@ fn registry() -> &'static Mutex<HashMap<u64, Arc<BMinSepTranscriptCorpus>>> {
     R.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn max_registry_bytes() -> usize {
-    std::env::var("OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(4 * 1024 * 1024 * 1024) // 4 GiB — fits realistic n×S (~2.4 GiB raw)
-}
-
 fn coef_matches(a: &[f64], b: &[f64]) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x == y)
 }
 
-/// Allocate transcripts and register them. Returns handle `> 0`, or error if over budget / invalid.
+/// Allocate transcripts and register them. Returns handle `> 0`, or error if invalid.
 pub fn register_b_min_sep_transcripts(
     strategy_coef: &[f64],
     n_steps: usize,
@@ -49,18 +42,8 @@ pub fn register_b_min_sep_transcripts(
     num_samples: usize,
     seed: u64,
 ) -> Result<u64> {
-    let nbytes = 3usize
-        .saturating_mul(num_samples)
-        .saturating_mul(n_steps)
-        .saturating_mul(8);
-    if nbytes > max_registry_bytes() {
-        return Err(PldError::InvalidParameter(format!(
-            "b-min-sep transcript corpus (~{nbytes} bytes) exceeds \
-             OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES ({}); \
-             increase the env var or reduce num_mc_samples / n_steps",
-            max_registry_bytes()
-        )));
-    }
+    // Byte budget and LRU eviction live in Python (`_transcript_cache`); this
+    // registry only stores corpora whose handles are still reachable.
 
     let (remove_x, remove_zeta, add_eta) =
         bandmf_b_min_sep_prepare_transcripts(strategy_coef, n_steps, p, num_samples, seed)?;
