@@ -995,6 +995,17 @@ def main():
             f"Use --shard (default) for correlated MF mechanisms."
         )
     if use_shard:
+        # Trim to a multiple of ``world_size`` so every shard has identical
+        # length.  This avoids two distributed pitfalls: (a) the last rank
+        # otherwise gets the remainder and ``SequentialBatchSampler`` (BLT)
+        # can yield one more batch there, deadlocking the cross-rank
+        # ``sync()`` / ``sum_gradients_()`` collectives; and (b)
+        # ``BallsInBinsSampler`` would have systematically different bin
+        # counts on the larger shard.  Dropping at most ``world_size - 1``
+        # examples is privacy-irrelevant (those examples never participate).
+        trimmed_size = (len(train_dataset) // world_size) * world_size
+        if trimmed_size < len(train_dataset):
+            train_dataset = train_dataset.select(range(trimmed_size))
         train_dataset = local_shard(train_dataset, rank=rank, world_size=world_size)
 
     eval_loader = DataLoader(
@@ -1090,12 +1101,18 @@ def main():
         # Choquette-Choo et al. 2024).  Under --shard each rank partitions
         # its disjoint shard into the same number of bins; combined across
         # ranks every global example still appears in exactly one bin so
-        # BnB privacy holds unchanged.
+        # BnB privacy holds unchanged.  We deliberately use the un-folded
+        # ``key(args.seed)`` (rather than ``base_sampler_key``, which is
+        # rank-folded for randomized samplers): together with the equal
+        # shard sizes guaranteed above this gives every rank the same
+        # empty/non-empty bin pattern within its local index space, so
+        # all ranks yield an identical number of batches and the
+        # cross-rank collectives in the training loop stay in lockstep.
         _bnb_sampler = BallsInBinsSampler(
             train_dataset,
             num_bins=expected_steps_per_epoch,
             n_steps=expected_steps_per_epoch,
-            key=base_sampler_key,
+            key=key(args.seed),
         )
 
         def make_epoch_sampler(epoch):
@@ -1121,43 +1138,44 @@ def main():
                 print(f"  Per-rank shard size: {len(train_dataset)}")
                 print(f"  Per-rank batch (non-Poisson): {per_rank_batch_size}")
         print(f"  Mechanism: {args.mechanism}")
-    if args.mechanism == "band_mf":
-        if args.band_mf_sampling == "poisson":
-            print(f"  Sampler: poisson (bands={args.bands}, q={sampling_prob:.6f})")
-        else:
+        if args.mechanism == "band_mf":
+            if args.band_mf_sampling == "poisson":
+                print(f"  Sampler: poisson (bands={args.bands}, q={sampling_prob:.6f})")
+            else:
+                print(
+                    f"  Sampler: b_min_sep (bands={args.bands}, p_0={p0:.6f}, p={p_bms:.6f})"
+                )
+        elif args.mechanism == "blt":
+            print("  Sampler: sequential (fixed order, drop_last=True)")
+            print(f"  min_sep: {expected_steps_per_epoch} (= steps/epoch)")
+            print(f"  max_participations: {args.num_epochs}")
+        elif args.mechanism == "lambda_cgd":
             print(
-                f"  Sampler: b_min_sep (bands={args.bands}, p_0={p0:.6f}, p={p_bms:.6f})"
+                f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
             )
-    elif args.mechanism == "blt":
-        print("  Sampler: sequential (fixed order, drop_last=True)")
-        print(f"  min_sep: {expected_steps_per_epoch} (= steps/epoch)")
-        print(f"  max_participations: {args.num_epochs}")
-    elif args.mechanism == "lambda_cgd":
-        print(
-            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
-        )
-        print(f"  DP-λCGD: λ={args.lambda_}")
-    elif args.mechanism == "bisr":
-        print(
-            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
-        )
-        print(f"  BISR bandwidth: {args.bisr_bandwidth}")
-    elif args.mechanism == "bsr":
-        print(
-            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
-        )
-        print(f"  BSR bandwidth: {args.bsr_bandwidth} (closed-form coefficients)")
-    else:
-        print(f"  Sampler: poisson (q={sample_rate:.6f})")
-    print(f"  Expected batch size: {args.batch_size}")
-    print(f"  Expected steps/epoch: {expected_steps_per_epoch}")
+            print(f"  DP-λCGD: λ={args.lambda_}")
+        elif args.mechanism == "bisr":
+            print(
+                f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
+            )
+            print(f"  BISR bandwidth: {args.bisr_bandwidth}")
+        elif args.mechanism == "bsr":
+            print(
+                f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
+            )
+            print(f"  BSR bandwidth: {args.bsr_bandwidth} (closed-form coefficients)")
+        else:
+            print(f"  Sampler: poisson (q={sample_rate:.6f})")
+        print(f"  Expected batch size: {args.batch_size}")
+        print(f"  Expected steps/epoch: {expected_steps_per_epoch}")
 
     # --- Gradient checkpointing ---
     if args.gradient_checkpointing:
         model.gradient_checkpointing_enable(
             gradient_checkpointing_kwargs={"use_reentrant": False}
         )
-        print("\nGradient checkpointing: enabled")
+        if is_main_process:
+            print("\nGradient checkpointing: enabled")
 
     offload_ctx = (
         torch.autograd.graph.save_on_cpu(pin_memory=True)
