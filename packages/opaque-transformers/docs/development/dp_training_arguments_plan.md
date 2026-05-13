@@ -841,6 +841,12 @@ optimizers. Land it before declaring Phase 10c done.
 
 ### Rank-data policy — the central decision
 
+> **Update**: the `ddp_shard='global'` / parallel-Poisson opt-in below was
+> removed from the trainer (see `refactor!(transformers): drop ddp_shard='global'`).
+> DP-SGD under DDP is now sharded-only: `local_shard` of the dataset, shared
+> per-epoch key on every rank, regular `acc.poisson(...)` at the global rate.
+> The rest of this section is kept as historical design rationale.
+
 DPTrainer needs to commit to a default rank-data policy and offer the other
 as an opt-in. Both are valid DP-SGD; they differ in sample-rate accounting.
 
@@ -1376,7 +1382,7 @@ available.
 | **9.5: Runtime/HPO hardening** | unsupported runtime tables, optimizer rejection surface, Ray rejection, callback isolation | Boundary surface | `_config.py`, `_hpo.py`, tests — **implemented** |
 | **10 (prereq): opaque-core sync registrations** | optimizer/schedule state types missing from `register_sync_type` registry | Cross-package surface | new `opaque/optimizers/distributed.py` (+ extend `_ensure_builtin_sync_types_loaded`), tests in `opaque-core/tests/distributed/` — **implemented** |
 | **10a: DDP foundation** | local_rank, ddp_backend, ddp_timeout, log_on_each_node, save_on_each_node, log_level_replica, process gates | Runtime surface | new `_distributed.py`, `__init__.py` (process helpers + save/log/hub gates + per-rank RNG paths), `_config.py` (NCCL-only validation, `LOCAL_RANK`-aware device pick) — **implemented** |
-| **10b: Distributed sampling/accounting** | `dp_shard` (`per_rank` default vs `global` opt-in), `local_shard`, `parallel_poisson` accounting, rank-folded sampler key, per-rank RNG snapshots | Mechanism surface | `__init__.py` (sampler construction, accountant branch, sample-rate split), `_dataloader.py` (rank+rank_fold), `_config.py` (dp_shard field+validation) — **implemented** |
+| **10b: Distributed sampling/accounting** | `local_shard` of the dataset, shared per-epoch sampler key on every rank, regular `acc.poisson` at the global rate, per-rank RNG snapshots | Mechanism surface | `__init__.py` (sampler construction, accountant), `_dataloader.py`, `_config.py` — **implemented** (the `ddp_shard='global'` / `parallel_poisson` opt-in originally landed here was later removed) |
 | **10c: Distributed step/eval** | step-level `sum_gradients_(grads)` + `sync(clip_state, aux)` + post-AllReduce fp16 finite-check, eval-shard + `gather_pytree` inside `finalize`, cluster-wide `total_loss` / `total_samples` reduction, promote `eval_use_gather_object` + `average_tokens_across_devices` out of rejection table | 6 | `__init__.py` (training_step, evaluation_loop, get_eval_dataloader, token counter), `_eval.py` (gather inside finalize), `_config.py` (table edits) — **implemented** |
 | **10d: Tests, examples, docs** | `tests/distributed/` (5 scenarios via subprocess runner), `docs/user-guide/distributed-trainer.md` | Coverage surface | new test runner + 5 pytest scenarios + new user-guide page — **implemented** (CI smoke-test on 4× H100) |
 | **11a: Compile/kernels** | torch_compile, torch_compile_backend, torch_compile_mode, use_liger_kernel, liger_kernel_config, jit_mode_eval | 6 | `__init__.py`, optional `_compile.py` — **planned** |
