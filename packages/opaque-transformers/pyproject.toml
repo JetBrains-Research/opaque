@@ -23,23 +23,6 @@ dependencies = [
     "opaque-optimizers",
 ]
 
-[project.optional-dependencies]
-# Per-backend HPO extras. Each lazy-imports inside ``DPTrainer.hyperparameter_search``.
-optuna-hpo = [
-    "optuna>=3.0",
-]
-wandb-hpo = [
-    "wandb>=0.16.0",
-]
-ray-hpo = [
-    "ray[tune]>=2.7,<3",
-]
-hpo = [
-    "optuna>=3.0",
-    "wandb>=0.16.0",
-    "ray[tune]>=2.7,<3",
-]
-
 [tool.setuptools]
 package-dir = { "" = "src" }
 

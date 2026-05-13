@@ -10,7 +10,6 @@ from transformers.trainer_callback import DefaultFlowCallback, TrainerCallback
 
 import opaque.api.transformers.trainer._callback as callback_module
 import opaque.api.transformers.trainer._checkpoint as ckpt
-import opaque.api.transformers.trainer._hpo as hpo_module
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 
@@ -452,107 +451,6 @@ def test_artifact_callback_save_only_model_still_sees_privacy_metadata(
     assert ckpt.DP_RUNTIME_STATE_NAME not in files
     assert ckpt.DP_OPTIMIZER_NAME not in files
     assert ckpt.RNG_STATE_NAME not in files
-
-
-def test_reporting_callbacks_are_trial_scoped_for_direct_dict_trials(
-    tmp_path, monkeypatch
-):
-    records = []
-
-    class ReportingCallback(TrainerCallback):
-        def on_train_begin(self, args, state, control, **kwargs):
-            records.append(
-                {
-                    "event": "train_begin",
-                    "state_id": id(state),
-                    "handler_state_id": id(trainer.callback_handler.state),
-                    "trial_name": state.trial_name,
-                    "trial_params": dict(state.trial_params or {}),
-                    "optimizer": kwargs["optimizer"],
-                    "lr_scheduler": kwargs["lr_scheduler"],
-                }
-            )
-
-        def on_log(self, args, state, control, logs=None, **kwargs):
-            if "privacy_clip_rate" in (logs or {}):
-                records.append(
-                    {
-                        "event": "log",
-                        "trial_name": state.trial_name,
-                        "output_dir": args.output_dir,
-                        "state_id": id(state),
-                    }
-                )
-
-    def fake_reporting_callbacks(report_to):
-        assert report_to == ["wandb"]
-        return [ReportingCallback]
-
-    monkeypatch.setattr(
-        callback_module,
-        "get_reporting_integration_callbacks",
-        fake_reporting_callbacks,
-    )
-
-    def model_init(trial=None):
-        return _LossModel()
-
-    trainer = DPTrainer(
-        model_init=model_init,
-        args=_args(tmp_path, report_to="wandb", save_strategy="no"),
-        train_dataset=_dataset(),
-    )
-
-    trainer.train(trial={"run_id": "first", "learning_rate": 0.01})
-    trainer.train(trial={"run_id": "second", "learning_rate": 0.02})
-
-    begin_records = [record for record in records if record["event"] == "train_begin"]
-    assert [record["trial_name"] for record in begin_records] == [
-        "run-first",
-        "run-second",
-    ]
-    assert [record["trial_params"]["learning_rate"] for record in begin_records] == [
-        0.01,
-        0.02,
-    ]
-    assert begin_records[0]["state_id"] != begin_records[1]["state_id"]
-    assert begin_records[0]["state_id"] == begin_records[0]["handler_state_id"]
-    assert begin_records[1]["state_id"] == begin_records[1]["handler_state_id"]
-    assert all(record["optimizer"] is None for record in begin_records)
-    assert all(record["lr_scheduler"] is None for record in begin_records)
-
-    log_records = [record for record in records if record["event"] == "log"]
-    assert [record["trial_name"] for record in log_records] == [
-        "run-first",
-        "run-second",
-    ]
-    assert {record["output_dir"] for record in log_records} == {str(tmp_path)}
-
-
-def test_wandb_hpo_callback_registration_is_idempotent(monkeypatch, tmp_path):
-    import transformers.integrations as integrations
-
-    class WandbCallback(TrainerCallback):
-        pass
-
-    monkeypatch.setattr(integrations, "WandbCallback", WandbCallback)
-
-    trainer = DPTrainer(
-        model=_LossModel(),
-        args=_args(tmp_path, report_to="none"),
-        train_dataset=_dataset(),
-        callbacks=[WandbCallback()],
-    )
-
-    hpo_module._maybe_add_wandb_callback(trainer)
-    hpo_module._maybe_add_wandb_callback(trainer)
-
-    callbacks = [
-        callback
-        for callback in trainer.callback_handler.callbacks
-        if isinstance(callback, WandbCallback)
-    ]
-    assert len(callbacks) == 1
 
 
 def test_tensorboard_callback_smoke_logs_without_optimizer_or_scheduler(tmp_path):

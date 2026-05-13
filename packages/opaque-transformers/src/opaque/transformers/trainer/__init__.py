@@ -10,7 +10,6 @@ from opaque.api.transformers.trainer import (
     TrainingArguments,
     PredictionOutput,
     TrainOutput,
-    default_dp_hp_backend,
 )
 
 __all__ = [
@@ -18,5 +17,4 @@ __all__ = [
     "TrainingArguments",
     "PredictionOutput",
     "TrainOutput",
-    "default_dp_hp_backend",
 ]

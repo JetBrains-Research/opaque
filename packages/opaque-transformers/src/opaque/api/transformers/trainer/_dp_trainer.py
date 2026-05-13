@@ -51,8 +51,6 @@ from opaque.serialization import (
 )
 from . import _checkpoint as ckpt
 from . import _distributed
-from . import _hpo
-from . import _hub
 from ._dataloader import OpaqueEpochPoissonBatchSampler
 from . import _eval
 from ._callback import build_callback_handler
@@ -86,17 +84,13 @@ from transformers.trainer_utils import (
 from transformers.data.data_collator import default_data_collator
 from transformers.trainer_callback import TrainerCallback, TrainerControl
 from transformers.trainer_utils import PredictionOutput, seed_worker
-from transformers.trainer_utils import HPSearchBackend
 from transformers.utils import can_return_loss, find_labels
-
-default_dp_hp_backend = _hpo.default_dp_hp_backend
 
 __all__ = [
     "DPTrainer",
     "TrainingArguments",
     "PredictionOutput",
     "TrainOutput",
-    "default_dp_hp_backend",
 ]
 
 log = logging.getLogger(__name__)
@@ -290,14 +284,6 @@ class DPTrainer:
         self.args = args
         self._processing_class = processing_class
         self._base_callbacks: list[Any] = list(callbacks) if callbacks else []
-        self.hp_search_backend: HPSearchBackend | None = None
-        self.hp_space: Callable[[Any], dict[str, Any]] | None = None
-        self.hp_name: Callable[[Any], str] | None = None
-        self.compute_objective: Callable[[dict[str, float]], Any] | None = None
-        self.objective: Any = None
-        self._trial: Any | None = None
-        self._trial_output_dir: str | None = None
-        self._trial_run_counter = 0
         self.is_in_train = False
         # HF parity: when no collator is given, use
         # ``DataCollatorWithPadding`` for tokenizer / sequence-feature
@@ -398,10 +384,6 @@ class DPTrainer:
 
         # Functional state (populated by _setup_training, used by evaluate)
         self._ctx: _TrainingContext | None = None
-        # Populated in ``_train_once``'s ``finally`` after each run so
-        # ``_tune_save_checkpoint`` can serialize DP state after ``train()``
-        # returns (``self._ctx`` is cleared before Ray's objective continues).
-        self._last_train_ctx_for_tune: _TrainingContext | None = None
         self._train_dataloader: DataLoader | None = None
         self._eval_dataloader: DataLoader | None = None
         self._signature_columns: list[str] | None = None
@@ -499,14 +481,6 @@ class DPTrainer:
 
             # Keep a strong reference: the debug object owns module hooks.
             self._debug_underflow_overflow = DebugUnderflowOverflow(self._model)
-
-        # Hub integration (Phase 8).  ``hub_model_id`` and ``push_in_progress``
-        # mirror the same-named attributes on HF Trainer so Hub callbacks and
-        # ``_hub`` helpers can access them uniformly.
-        self.hub_model_id: str | None = None
-        self.push_in_progress: Any = None
-        if args.push_to_hub:
-            _hub.init_hf_repo(self)
 
         # Warn (don't raise) when output_dir is non-empty and overwrite is off
         # — user might be intending to resume.
@@ -634,40 +608,6 @@ class DPTrainer:
             raise RuntimeError("model_init should not return None.")
         return model
 
-    def hyperparameter_search(
-        self,
-        hp_space: Callable[[Any], dict[str, Any]] | None = None,
-        compute_objective: Callable[[dict[str, float]], float] | None = None,
-        n_trials: int = 20,
-        direction: str | list[str] = "minimize",
-        backend: str | HPSearchBackend | None = None,
-        hp_name: Callable[[Any], str] | None = None,
-        **kwargs: Any,
-    ) -> Any:
-        """Run HF-compatible hyperparameter search.
-
-        Supports ``backend="optuna"``, ``"wandb"``, and ``"ray"`` (SigOpt is
-        not implemented).  When ``backend`` is ``None``, the first installed
-        backend is chosen in HuggingFace order among those three: Optuna,
-        Ray Tune, then W&B — mirroring ``transformers``'s
-        ``default_hp_search_backend`` with SigOpt skipped.
-
-        Ray Tune forwards extra ``kwargs`` to ``ray.tune.run``; default
-        ``resources_per_trial`` and ``progress_reporter`` match HF's
-        ``run_hp_search_ray``.  ``trainer.args._n_gpu`` is updated from
-        ``resources_per_trial['gpu']`` for per-trial device visibility.
-        """
-        return _hpo.hyperparameter_search(
-            self,
-            hp_space=hp_space,
-            compute_objective=compute_objective,
-            n_trials=n_trials,
-            direction=direction,
-            backend=backend,
-            hp_name=hp_name,
-            **kwargs,
-        )
-
     def _reset_state_for_new_run(self) -> None:
         self.state = DPTrainerState()
         self.state.max_steps = self._predict_total_steps()
@@ -788,215 +728,8 @@ class DPTrainer:
             self._label_names = list(discovered) if discovered else ["labels"]
         self._can_return_loss = can_return_loss(self._model.__class__)
 
-    def _rebuild_callback_handler_for_run(self) -> None:
-        self._callback_handler = build_callback_handler(
-            args=self.args,
-            model=self._model,
-            processing_class=self._processing_class,
-            callbacks=self._base_callbacks,
-        )
-        self._callback_handler.state = self.state
-        self._callback_handler.train_dataloader = None
-        self._callback_handler.eval_dataloader = None
-
-    def _hp_search_setup(self, trial: Any | None) -> None:
-        """Apply hyperparameter values from an HF-style trial object."""
-        self._trial = trial
-        if trial is None:
-            return
-        params: dict[str, Any]
-        if self.hp_search_backend == HPSearchBackend.OPTUNA:
-            if self.hp_space is None:
-                params = dict(getattr(trial, "params", {}))
-            else:
-                params = dict(self.hp_space(trial))
-        elif self.hp_search_backend == HPSearchBackend.RAY:
-            params = dict(trial)
-            params.pop("wandb", None)
-        elif isinstance(trial, Mapping):
-            params = dict(trial)
-        elif hasattr(trial, "assignments"):
-            params = {
-                k: int(v) if isinstance(v, str) else v
-                for k, v in trial.assignments.items()
-            }
-        else:
-            params = dict(getattr(trial, "params", {}))
-
-        for key_name, value in params.items():
-            if key_name in {"assignments", "metric", "run_id", "wandb"}:
-                continue
-            if not hasattr(self.args, key_name):
-                log.warning(
-                    "Trying to set %s in the hyperparameter search but there is no "
-                    "corresponding field in `TrainingArguments`.",
-                    key_name,
-                )
-                continue
-            old_value = getattr(self.args, key_name, None)
-            if old_value is not None:
-                value = type(old_value)(value)
-            setattr(self.args, key_name, value)
-
-        self.state.trial_params = params
-        trial_output_dir = self._get_output_dir(trial)
-        self.state.trial_name = (
-            os.path.basename(trial_output_dir) if trial_output_dir is not None else None
-        )
-        if self.hp_search_backend == HPSearchBackend.OPTUNA:
-            log.info("Trial: %s", getattr(trial, "params", params))
-        elif self.hp_search_backend == HPSearchBackend.RAY:
-            log.info("RAY trial: %s", params)
-
-    def _report_to_hp_search(
-        self,
-        trial: Any | None,
-        step: int,
-        metrics: dict[str, float],
-    ) -> None:
-        if self.hp_search_backend is None or trial is None:
-            return
-        if self.compute_objective is None:
-            return
-        metrics_copy = dict(metrics)
-        self.objective = self.compute_objective(metrics_copy)
-        if self.hp_search_backend == HPSearchBackend.OPTUNA:
-            optuna = importlib.import_module("optuna")
-
-            study = getattr(trial, "study", None)
-            if study is not None and not _hpo.is_multi_objective_study(study):
-                trial.report(self.objective, step)
-                if trial.should_prune():
-                    self._control = self._callback_handler.on_train_end(
-                        self.args,
-                        self.state,
-                        self._control,
-                    )
-                    raise optuna.TrialPruned()
-        elif self.hp_search_backend == HPSearchBackend.RAY:
-            import ray
-
-            _, _Checkpoint, _report = _hpo._ray_hp_checkpoint_api(ray)
-            with tempfile.TemporaryDirectory() as temp_dir:
-                checkpoint = None
-                if self._control.should_save:
-                    self._tune_save_checkpoint(checkpoint_dir=temp_dir)
-                    checkpoint = _Checkpoint.from_directory(temp_dir)
-                metrics_copy["objective"] = self.objective
-                _report(metrics_copy, checkpoint=checkpoint)
-
-    def _get_output_dir(self, trial: Any | None = None) -> str | None:
-        if trial is None:
-            return self.args.output_dir
-        if self.args.output_dir is None:
-            return None
-        if self.hp_search_backend == HPSearchBackend.OPTUNA:
-            run_id = getattr(trial, "number", self._trial_run_counter)
-        elif self.hp_search_backend == HPSearchBackend.RAY:
-            import ray
-
-            run_id = _hpo._ray_hp_trial_id(ray)
-        elif isinstance(trial, Mapping):
-            run_id = trial.get("run_id", self._trial_run_counter)
-        else:
-            run_id = getattr(trial, "id", self._trial_run_counter)
-        run_name = self.hp_name(trial) if self.hp_name is not None else f"run-{run_id}"
-        return os.path.join(self.args.output_dir, run_name)
-
     def _effective_output_dir(self) -> str | None:
-        return self._trial_output_dir or self.args.output_dir
-
-    def _prepare_hpo_trial(self, trial: Any) -> None:
-        if self.model_init is None:
-            raise RuntimeError(
-                "To use hyperparameter search, pass a `model_init` function to DPTrainer "
-                "so each trial starts from a freshly initialized model."
-            )
-        self._trial_run_counter += 1
-        self._reset_state_for_new_run()
-        self._hp_search_setup(trial)
-        self.state.max_steps = self._predict_total_steps()
-        self.state.compute_steps(self.args, self.state.max_steps)
-        self._trial_output_dir = self._get_output_dir(trial)
-        if self._trial_output_dir is None:
-            raise ValueError(
-                "Hyperparameter search requires args.output_dir to be set."
-            )
-        os.makedirs(self._trial_output_dir, exist_ok=True)
-        enable_full_determinism(
-            self.args.seed
-        ) if self.args.full_determinism else set_seed(self.args.seed)
-        self.model = self.call_model_init(trial)
-        self._signature_columns = None
-        self._signature_columns_unavailable = False
-        self._refresh_label_contract_for_model()
-        self._place_model_for_current_args()
-        self._rebuild_callback_handler_for_run()
-
-    # ------------------------------------------------------------------
-    # Hub API (Phase 8)
-    # ------------------------------------------------------------------
-
-    def init_hf_repo(self, token: str | None = None) -> None:
-        """Create (or validate) the HF Hub repo and populate ``self.hub_model_id``.
-
-        Mirrors ``Trainer.init_hf_repo``.
-        """
-        _hub.init_hf_repo(self, token=token)
-
-    def push_to_hub(
-        self,
-        commit_message: str | None = "End of training",
-        blocking: bool = True,
-        token: str | None = None,
-        revision: str | None = None,
-        **kwargs: Any,
-    ) -> Any:
-        """Upload the model to the HF Hub.
-
-        Mirrors ``Trainer.push_to_hub``.  Restores in-memory params, writes the
-        model card, then uploads ``args.output_dir`` via
-        ``huggingface_hub.upload_folder``.
-        """
-        return _hub.push_to_hub(
-            self,
-            commit_message=commit_message,
-            blocking=blocking,
-            token=token,
-            revision=revision,
-            **kwargs,
-        )
-
-    def create_model_card(
-        self,
-        language: str | None = None,
-        license: str | None = None,  # noqa: A002
-        tags: str | list[str] | None = None,
-        model_name: str | None = None,
-        finetuned_from: str | None = None,
-        tasks: str | list[str] | None = None,
-        dataset_tags: str | list[str] | None = None,
-        dataset: str | list[str] | None = None,
-        dataset_args: str | list[str] | None = None,
-    ) -> None:
-        """Write ``README.md`` to ``args.output_dir`` with HF model card + DP section.
-
-        Mirrors ``Trainer.create_model_card`` with Opaque-specific additions:
-        ``differential-privacy`` + ``opaque`` tags, and a ``## Privacy budget``
-        section listing ε, δ, noise multiplier, and clipping norm.
-        """
-        _hub.create_model_card(
-            self,
-            language=language,
-            license=license,
-            tags=tags,
-            model_name=model_name,
-            finetuned_from=finetuned_from,
-            tasks=tasks,
-            dataset_tags=dataset_tags,
-            dataset=dataset,
-            dataset_args=dataset_args,
-        )
+        return self.args.output_dir
 
     # ------------------------------------------------------------------
     # train() → _setup_training() → _inner_training_loop()
@@ -1005,7 +738,6 @@ class DPTrainer:
     def train(
         self,
         resume_from_checkpoint: str | bool | None = None,
-        trial: Any | None = None,
         ignore_keys_for_eval: list[str] | None = None,
         **kwargs: Any,
     ) -> TrainOutput:
@@ -1063,38 +795,18 @@ class DPTrainer:
             )
         _disable_tokenizers_parallelism_before_fork()
 
-        previous_trial = self._trial
-        previous_trial_output_dir = self._trial_output_dir
-        if trial is not None:
-            self._prepare_hpo_trial(trial)
-
         self.is_in_train = True
         try:
-            # HF parity: suppress Hub upload progress bars during training so they
-            # don't pollute stdout.  Only active when push_to_hub=True.
-            if self.args.push_to_hub:
-                import huggingface_hub.utils as _hh_utils
-
-                _hh_utils.disable_progress_bars()
-                try:
-                    return self._train_dispatch(
-                        resume_from_checkpoint, ignore_keys_for_eval
-                    )
-                finally:
-                    _hh_utils.enable_progress_bars()
             return self._train_dispatch(resume_from_checkpoint, ignore_keys_for_eval)
         finally:
             self.is_in_train = False
-            if trial is not None:
-                self._trial = previous_trial
-                self._trial_output_dir = previous_trial_output_dir
 
     def _train_dispatch(
         self,
         resume_from_checkpoint: str | bool | None,
         ignore_keys_for_eval: list[str] | None,
     ) -> "TrainOutput":
-        """Inner dispatch; separated so the push_to_hub progress-bar wrapper is clean."""
+        """Inner dispatch."""
         if self._train_dataset is None:
             raise ValueError("DPTrainer.train() requires a train_dataset.")
         if not self.args.auto_find_microbatch_size:
@@ -1852,11 +1564,6 @@ class DPTrainer:
         )
         self.log(metrics, start_time=self._train_start_time)
         self._refresh_final_checkpoint_state(global_step)
-
-        # Hub push at end of training (Phase 8).
-        if self.args.push_to_hub:
-            _hub._finish_current_push(self)
-            _hub.push_to_hub(self, commit_message="End of training")
 
         self._control = self._callback_handler.on_train_end(
             self.args, self.state, self._control
@@ -2855,7 +2562,6 @@ class DPTrainer:
             self._control,
             metrics=metrics,
         )
-        self._report_to_hp_search(self._trial, self.state.global_step, metrics)
 
     # ------------------------------------------------------------------
     # Data loading
@@ -4096,7 +3802,6 @@ class DPTrainer:
     def save_model(
         self,
         output_dir: str | None = None,
-        _internal_call: bool = False,
     ) -> None:
         """Restore in-memory params into the model and call ``model.save_pretrained``.
 
@@ -4104,9 +3809,6 @@ class DPTrainer:
 
         Args:
             output_dir: Directory to save to.  Defaults to ``args.output_dir``.
-            _internal_call: When ``True``, suppresses the user-triggered
-                ``push_to_hub`` call (used by ``push_to_hub`` itself to
-                avoid infinite recursion, mirroring HF parity).
         """
         a = self.args
         target = output_dir or self._effective_output_dir()
@@ -4118,12 +3820,6 @@ class DPTrainer:
             os.makedirs(target, exist_ok=True)
             self._save_model_artifacts(target)
             self._save_training_args(target)
-
-            # HF parity: push to Hub when user calls save_model() explicitly.
-            if a.push_to_hub and not _internal_call:
-                _hub.push_to_hub(
-                    self, commit_message="Model save", revision=a.hub_revision
-                )
         # Barrier so non-saving ranks don't proceed before the save lands.
         _distributed.barrier(self._ddp)
 
@@ -4202,61 +3898,10 @@ class DPTrainer:
             self._control = self._callback_handler.on_save(
                 self.args, self.state, self._control
             )
-            # Hub push after checkpoint (Phase 8).
-            if self.args.push_to_hub:
-                _hub._push_from_checkpoint(self, ckpt_dir)
 
         # Final barrier so all ranks see post-save state consistently before
         # any continues into the next training step / eval / rotation.
         _distributed.barrier(self._ddp)
-        return ckpt_dir
-
-    def _tune_save_checkpoint(self, checkpoint_dir: str) -> str:
-        """Write a Ray-Tune-bound DP checkpoint into ``checkpoint_dir``.
-
-        DP analogue of ``transformers.Trainer._tune_save_checkpoint``.  Ray
-        passes a temp directory and expects the trainer to deposit a
-        complete, self-resumable snapshot under
-        ``checkpoint_dir/checkpoint-<global_step>/``.  Unlike
-        :meth:`_save_checkpoint`, this path bypasses
-        ``save_strategy``-driven rotation: Ray manages retention via
-        ``keep_checkpoints_num`` / ``checkpoint_score_attr``.
-
-        Always writes the full resumability set (model + accountant +
-        trainer state + DP runtime + RNG + optimizer); ``save_only_model``
-        is intentionally ignored here because Ray expects checkpoints to
-        be complete enough to resume a trial after eviction.
-        """
-        legacy = self._last_train_ctx_for_tune
-        ctx = self._ctx if self._ctx is not None else legacy
-        if ctx is None:
-            raise RuntimeError(
-                "_tune_save_checkpoint requires a completed training context "
-                "(self._ctx and self._last_train_ctx_for_tune are both unset)."
-            )
-        used_legacy = self._ctx is None and legacy is not None
-
-        step = self.state.global_step
-        ckpt_dir = os.path.join(checkpoint_dir, f"{ckpt.PREFIX_CHECKPOINT_DIR}-{step}")
-        os.makedirs(ckpt_dir, exist_ok=True)
-
-        self._restore_params(ctx.trainable_params)
-        self._save_model_artifacts(ckpt_dir)
-
-        # HF parity: refresh ``TrainerControl`` callback state before
-        # serializing, so a Ray-restored trainer sees the same control
-        # flags as the original one.
-        self.state.stateful_callbacks = dict(self.state.stateful_callbacks or {})
-        self.state.stateful_callbacks["TrainerControl"] = self._control.state()
-
-        self._save_trainer_state(ckpt_dir)
-        self._save_training_args(ckpt_dir)
-        self._save_accountant(ckpt_dir, ctx)
-        self._save_optimizer(ckpt_dir, ctx)
-        self._save_dp_runtime(ckpt_dir, ctx)
-        self._save_rng_state(ckpt_dir)
-        if used_legacy:
-            self._last_train_ctx_for_tune = None
         return ckpt_dir
 
     def _save_model_artifacts(self, output_dir: str) -> None:

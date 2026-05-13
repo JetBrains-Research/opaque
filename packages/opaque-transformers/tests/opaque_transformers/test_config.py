@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import pytest
 from transformers.debug_utils import DebugOption
-from transformers.trainer_utils import HubStrategy
 
 from opaque.transformers.trainer import TrainingArguments
 from opaque.api.transformers.trainer._config import _DP_OPTIMIZERS
@@ -152,10 +151,6 @@ class TestStrategyCoercion:
 
 
 class TestHFFieldNormalization:
-    def test_hub_strategy_coerces_to_enum(self):
-        args = TrainingArguments(hub_strategy="end")
-        assert args.hub_strategy == HubStrategy.END
-
     def test_debug_string_coerces_to_debug_options(self):
         args = TrainingArguments(debug="underflow_overflow")
         assert args.debug == [DebugOption.UNDERFLOW_OVERFLOW]

@@ -142,13 +142,6 @@ def test_batch_eval_metrics_runs_cluster_wide(tmp_path) -> None:
     _run_ddp("batch_eval_metrics", world_size=2, output_dir=str(tmp_path))
 
 
-@pytest.mark.cuda
-@pytest.mark.slow
-def test_push_to_hub_init_is_world_rank_zero_only(tmp_path) -> None:
-    _skip_if_no_multi_gpu()
-    _run_ddp("hub_rank_zero_init", world_size=2, output_dir=str(tmp_path))
-
-
 @pytest.mark.slow
 def test_gloo_rank_gating_and_worker_seed(tmp_path) -> None:
     _run_ddp(

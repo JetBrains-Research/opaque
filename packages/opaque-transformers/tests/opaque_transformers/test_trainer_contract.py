@@ -198,30 +198,23 @@ def test_public_save_model_writes_training_args(tmp_path):
     assert os.path.exists(tmp_path / "training_args.bin")
 
 
-def test_hpo_public_method_signatures_match_hf_shape():
+def test_train_signature_keeps_hf_subset():
+    """``train()`` keeps the HF-compatible subset of parameter names.
+
+    HPO was removed; ``trial`` is no longer accepted. ``hyperparameter_search``
+    no longer exists.
+    """
     from transformers import Trainer
 
     trainer_train = inspect.signature(Trainer.train)
     dp_train = inspect.signature(DPTrainer.train)
-    for name in ["resume_from_checkpoint", "trial", "ignore_keys_for_eval"]:
+    for name in ["resume_from_checkpoint", "ignore_keys_for_eval"]:
         assert name in dp_train.parameters
         assert name in trainer_train.parameters
     assert any(
         p.kind is inspect.Parameter.VAR_KEYWORD for p in dp_train.parameters.values()
     )
-
-    trainer_hpo = inspect.signature(Trainer.hyperparameter_search)
-    dp_hpo = inspect.signature(DPTrainer.hyperparameter_search)
-    for name in [
-        "hp_space",
-        "compute_objective",
-        "n_trials",
-        "direction",
-        "backend",
-        "hp_name",
-    ]:
-        assert name in dp_hpo.parameters
-        assert name in trainer_hpo.parameters
+    assert not hasattr(DPTrainer, "hyperparameter_search")
 
 
 def test_process_helpers_are_single_process_true(tmp_path):

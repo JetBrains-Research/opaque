@@ -69,7 +69,6 @@ from typing import Any
 import torch
 from transformers.debug_utils import DebugOption
 from transformers.trainer_utils import (
-    HubStrategy,
     IntervalStrategy,
     SaveStrategy,
     SchedulerType,
@@ -261,17 +260,6 @@ class TrainingArguments:
     label_smoothing_factor: float = 0.0
 
     # =================================================================
-    # Hub
-    # =================================================================
-    push_to_hub: bool = False
-    hub_model_id: str | None = None
-    hub_strategy: HubStrategy | str = "every_save"
-    hub_token: str | None = None
-    hub_private_repo: bool | None = None
-    hub_always_push: bool = False
-    hub_revision: str | None = None
-
-    # =================================================================
     # Reporting
     # =================================================================
     report_to: str | list[str] | None = None
@@ -298,7 +286,6 @@ class TrainingArguments:
     include_num_input_tokens_seen: bool | str = False
     debug: list | str | None = ""
     resume_from_checkpoint: str | None = None
-    hp_name: str | None = None  # HPO surface; backend dispatch in _hpo.py
 
     # =================================================================
     # Generic memory optimization (DP-shaped, not DP-specific)
@@ -409,7 +396,6 @@ class TrainingArguments:
         self.eval_strategy = IntervalStrategy(self.eval_strategy).value
         self.logging_strategy = IntervalStrategy(self.logging_strategy).value
         self.save_strategy = SaveStrategy(self.save_strategy).value
-        self.hub_strategy = HubStrategy(self.hub_strategy)
         # Keep as the SchedulerType enum (not .value) so HF utilities that
         # call ``trainer.args.lr_scheduler_type.value`` work correctly.
         self.lr_scheduler_type = SchedulerType(self.lr_scheduler_type)
@@ -635,7 +621,7 @@ class TrainingArguments:
         _resolve_optimizer_name(self.optim)
 
         # --- 11. clipping_norm (DP per-example clip, optional per-group dict) ---
-        self.clipping_norm = _coerce_max_grad_norm(self.clipping_norm)
+        self.clipping_norm = _coerce_clipping_norm(self.clipping_norm)
 
         # --- 11b. DP mechanism / clipping / sampling surfaces ---------------
         if self.clipping_mode not in ("fixed", "adaptive", "auto"):
@@ -817,7 +803,7 @@ def _convert_str_dict(value: Any) -> Any:
     return value
 
 
-def _coerce_max_grad_norm(value: Any) -> float | dict[str, float]:
+def _coerce_clipping_norm(value: Any) -> float | dict[str, float]:
     """Normalize ``clipping_norm``: positive scalar or per-group dict."""
     if isinstance(value, bool):
         raise TypeError("clipping_norm must not be a boolean")
@@ -830,7 +816,7 @@ def _coerce_max_grad_norm(value: Any) -> float | dict[str, float]:
                     "clipping_norm JSON must be an object mapping strings to "
                     f"numbers; got {type(loaded).__name__}"
                 )
-            return _coerce_max_grad_norm(_convert_str_dict(loaded))
+            return _coerce_clipping_norm(_convert_str_dict(loaded))
         try:
             value = float(stripped)
         except ValueError as exc:

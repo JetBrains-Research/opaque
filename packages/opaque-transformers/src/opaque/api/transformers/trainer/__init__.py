@@ -9,12 +9,11 @@ from __future__ import annotations
 from transformers.trainer_utils import PredictionOutput
 
 from ._config import TrainingArguments
-from ._dp_trainer import DPTrainer, TrainOutput, default_dp_hp_backend
+from ._dp_trainer import DPTrainer, TrainOutput
 
 __all__ = [
     "DPTrainer",
     "TrainingArguments",
     "PredictionOutput",
     "TrainOutput",
-    "default_dp_hp_backend",
 ]

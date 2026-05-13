@@ -313,56 +313,6 @@ def scenario_batch_eval_metrics(
         assert int(metrics["eval_seen"]) == len(eval_ds), metrics
 
 
-def scenario_hub_rank_zero_init(
-    rank: int, world_size: int, output_dir: str, **_
-) -> None:
-    """Verify Hub init calls are world-rank-zero only under DDP."""
-    import opaque.api.transformers.trainer._hub as _hub
-
-    cfg = TinyConfig()
-    model = TinyForCausalLM(cfg)
-
-    class _Repo:
-        def __init__(self, repo_id: str):
-            self.repo_id = repo_id
-
-    calls = {"create_repo": 0}
-    original_require_hub = _hub._require_hub
-    original_create_repo = _hub._create_repo
-
-    def fake_create_repo(repo_name: str, *, token: str | None, private: bool | None):
-        calls["create_repo"] += 1
-        return _Repo(repo_id=f"opaque/{repo_name}")
-
-    _hub._require_hub = lambda: None
-    _hub._create_repo = fake_create_repo
-    try:
-        args = TrainingArguments(
-            output_dir=output_dir,
-            per_device_train_batch_size=2,
-            max_steps=1,
-            save_strategy="no",
-            report_to=[],
-            push_to_hub=True,
-            hub_model_id="opaque-ddp-test",
-        )
-        _ = DPTrainer(
-            model=model,
-            args=args,
-            train_dataset=TinyDataset(8, 4, cfg.vocab_size),
-            data_collator=_collate,
-        )
-    finally:
-        _hub._require_hub = original_require_hub
-        _hub._create_repo = original_create_repo
-
-    gathered: list[dict[str, int]] = [None] * world_size
-    dist.all_gather_object(gathered, calls)
-    if rank == 0:
-        total = sum(item["create_repo"] for item in gathered)
-        assert total == 1, f"expected exactly one create_repo call, got {gathered}"
-
-
 def scenario_rank_gating_and_worker_seed(
     rank: int, world_size: int, output_dir: str, **_
 ) -> None:
@@ -474,7 +424,6 @@ SCENARIOS = {
     "per_rank_partition": scenario_per_rank_partition,
     "eval_gather": scenario_eval_gather,
     "batch_eval_metrics": scenario_batch_eval_metrics,
-    "hub_rank_zero_init": scenario_hub_rank_zero_init,
     "rank_gating_and_worker_seed": scenario_rank_gating_and_worker_seed,
     "gather_paths": scenario_gather_paths,
     "env_backend_diagnostic": scenario_env_backend_diagnostic,

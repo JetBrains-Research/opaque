@@ -22,7 +22,6 @@ from opaque.api.transformers.trainer import (
     TrainingArguments,
     PredictionOutput,
     TrainOutput,
-    default_dp_hp_backend,
 )
 
 try:
@@ -36,7 +35,6 @@ __all__ = [
     "TrainingArguments",
     "PredictionOutput",
     "TrainOutput",
-    "default_dp_hp_backend",
     "is_patched",
     "is_vmap_patched",
     "patch_all",
