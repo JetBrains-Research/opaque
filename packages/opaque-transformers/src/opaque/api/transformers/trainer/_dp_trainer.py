@@ -3296,14 +3296,26 @@ class DPTrainer:
         # (``opaque.distributed.local_shard``); the Poisson sampler runs
         # with the same epoch-keyed RNG on every rank so the union of
         # per-rank batches is a single global Poisson draw at the user's
-        # ``expected_batch_size`` rate.
+        # ``expected_batch_size`` rate.  We trim the dataset to a multiple
+        # of ``world_size`` first so every rank gets an equal shard —
+        # ``local_shard`` otherwise hands the remainder to the last rank,
+        # which is harmless for Poisson sampling but desynchronises the
+        # batch count per epoch for fixed-order samplers (BLT-style
+        # sequential, BnB) that downstream FTRL integrations will hand to
+        # ``get_train_dataloader``.
         if self._ddp.world_size > 1:
+            from torch.utils.data import Subset
+
             from opaque.distributed import local_shard
 
+            world_size = self._ddp.world_size
+            trim_to = (len(dataset) // world_size) * world_size
+            if trim_to < len(dataset):
+                dataset = Subset(dataset, range(trim_to))
             dataset = local_shard(
                 dataset,
                 rank=self._ddp.rank,
-                world_size=self._ddp.world_size,
+                world_size=world_size,
             )
 
         sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
