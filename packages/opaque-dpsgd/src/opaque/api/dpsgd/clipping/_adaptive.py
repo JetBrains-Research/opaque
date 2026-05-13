@@ -143,6 +143,7 @@ def adaptive_clipped_grad(
     fraction_noise_std: float = _DEFAULT_FRACTION_NOISE_STD,
     key: RngKey,
     return_aux: bool = False,
+    pre_clipping_transform: Callable = lambda x: x,
     **clipped_grad_kwargs: Any,
 ) -> tuple[Callable, AdaptiveClipState]:
     """Create function for adaptive gradient clipping with explicit state-passing.
@@ -167,6 +168,15 @@ def adaptive_clipped_grad(
         key: RNG key for quantile noise generation.
         return_aux: If True, return per-example aux with loss values,
             gradient norms, and clipping rate.
+        pre_clipping_transform: Optional per-example transform applied
+            inside ``vmap``, **before** the clip-norm computation that
+            feeds the adaptive quantile tracker. Same contract as
+            :func:`~opaque.api.engine.clipping.clipped_grad`: consumes
+            the gradient pytree for a single example and returns a new
+            pytree. Does not affect the L2 sensitivity guarantee. The
+            canonical use is fp16 loss-scaling — divide the per-example
+            gradient by ``loss_scaler.scale`` here so the quantile
+            tracker sees unscaled norms. Default is the identity.
         **clipped_grad_kwargs: Passed to ``clipped_grad()``
             (``batch_argnums``, ``normalize_by``, etc).
 
@@ -404,6 +414,7 @@ def adaptive_clipped_grad(
                 clipping_norm=state._next_clipping_norm,
                 return_aux=user_wants_return_aux,
                 _force_grad_norms=not user_wants_return_aux,
+                pre_clipping_transform=pre_clipping_transform,
                 **clipped_grad_kwargs,
             ),
         )
