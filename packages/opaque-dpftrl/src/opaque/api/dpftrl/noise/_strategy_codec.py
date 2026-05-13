@@ -63,11 +63,23 @@ def _factory_name_for(cls_name: str) -> str:
 
 
 def _to_wire(value: Any) -> Any:
-    """Coerce a single field value to a JSON/state-dict-friendly form."""
+    """Coerce a single field value to a JSON/state-dict-friendly form.
+
+    Callables (e.g. an :data:`opaque.scheduling.types.Schedule` ``lr_schedule``)
+    are recipe inputs that cannot be round-tripped through serialization —
+    pass them in fresh when reconstructing the strategy.
+    """
     if isinstance(value, torch.Tensor):
         return value.detach().cpu().tolist()
     if isinstance(value, tuple):
         return list(value)
+    if callable(value) and not isinstance(value, type):
+        raise TypeError(
+            "Cannot serialize a callable strategy field "
+            f"(type={type(value).__name__}).  Schedules and other callable "
+            "recipe inputs must be re-supplied to the strategy factory "
+            "after deserialization."
+        )
     return value
 
 
