@@ -74,7 +74,6 @@ from transformers import (
     enable_full_determinism,
     set_seed,
 )
-from transformers.trainer import _is_peft_model
 from transformers.trainer_utils import RemoveColumnsCollator
 from transformers.trainer_utils import (
     TrainerMemoryTracker,
@@ -124,6 +123,19 @@ def _callback_matches(
             return candidate is target
         return isinstance(candidate, target)
     return candidate is target
+
+
+def _is_peft_model(model: Any) -> bool:
+    """Whether ``model`` is a PEFT-wrapped model.
+
+    Local reimplementation of HF's private ``transformers.trainer._is_peft_model``
+    so we don't import private API. Returns ``False`` when ``peft`` is not installed.
+    """
+    try:
+        from peft import PeftMixedModel, PeftModel
+    except ImportError:
+        return False
+    return isinstance(model, (PeftModel, PeftMixedModel))
 
 
 def _disable_tokenizers_parallelism_before_fork() -> None:
@@ -360,7 +372,7 @@ class DPTrainer:
         # pick so every subsequent setup site (sampler, checkpoint, hub,
         # logging) can read the same snapshot.  Single-process is the trivial
         # case (rank=0, world=1, is_distributed=False).
-        self._ddp = _distributed.resolve_ddp_state(self._device)
+        self._ddp = _distributed.resolve_ddp_state(self._device, self.args)
         _distributed.validate_ddp_backend(self.args, self._ddp)
         # HF parity (``Trainer._wrap_model``): place the model on the
         # resolved device.  ``model.to`` is a no-op when the model is
@@ -384,6 +396,12 @@ class DPTrainer:
 
         # Functional state (populated by _setup_training, used by evaluate)
         self._ctx: _TrainingContext | None = None
+        # Privacy accountant lives at the trainer level so ``save_model()``
+        # can write ``accountant.json`` after training finishes.  The
+        # ``_setup_training`` finally block copies the live accountant
+        # off the per-run context into this slot; checkpoint loads
+        # restore directly into it.
+        self._accountant: "Accountant | None" = None
         self._train_dataloader: DataLoader | None = None
         self._eval_dataloader: DataLoader | None = None
         self._signature_columns: list[str] | None = None
@@ -630,7 +648,7 @@ class DPTrainer:
             raise ValueError(
                 f"DPTrainer only supports cpu, cuda, and mps devices; got device={self._device!r}."
             )
-        self._ddp = _distributed.resolve_ddp_state(self._device)
+        self._ddp = _distributed.resolve_ddp_state(self._device, self.args)
         _distributed.validate_ddp_backend(self.args, self._ddp)
         self._model.to(self._device)
         # Re-resolve precision after placing the model on a different
@@ -916,7 +934,9 @@ class DPTrainer:
             )
         finally:
             self._restore_params(ctx.trainable_params)
-            self._last_train_ctx_for_tune = ctx
+            # Promote accountant to trainer-level so save_model() can write
+            # ``accountant.json`` after train() returns.
+            self._accountant = ctx.accounting
             self._ctx = None
             self._train_dataloader = None
             self._eval_dataloader = None
@@ -3820,6 +3840,20 @@ class DPTrainer:
             os.makedirs(target, exist_ok=True)
             self._save_model_artifacts(target)
             self._save_training_args(target)
+            # Privacy provenance travels with every saved model.  Use the
+            # live ``_ctx`` accountant when training is mid-flight (most up
+            # to date), otherwise the trainer-level slot populated by the
+            # ``_setup_training`` finally block.
+            accountant = (
+                self._ctx.accounting if self._ctx is not None else self._accountant
+            )
+            if accountant is not None:
+                self._save_accountant(target, accountant)
+            else:
+                log.info(
+                    "save_model called before any training run; "
+                    "no accountant to serialise (model only)."
+                )
         # Barrier so non-saving ranks don't proceed before the save lands.
         _distributed.barrier(self._ddp)
 
@@ -3873,7 +3907,7 @@ class DPTrainer:
 
             self._save_trainer_state(ckpt_dir)
             self._save_training_args(ckpt_dir)
-            self._save_accountant(ckpt_dir, ctx)
+            self._save_accountant(ckpt_dir, ctx.accounting)
             if not a.save_only_model:
                 self._save_optimizer(ckpt_dir, ctx)
                 self._save_dp_runtime(ckpt_dir, ctx)
@@ -3961,10 +3995,10 @@ class DPTrainer:
             extra=extra,
         )
 
-    def _save_accountant(self, ckpt_dir: str, ctx: "_TrainingContext") -> None:
+    def _save_accountant(self, ckpt_dir: str, accountant: "Accountant") -> None:
         path = os.path.join(ckpt_dir, ckpt.DP_ACCOUNTANT_NAME)
         with open(path, "w") as f:
-            json.dump(opaque_state_dict(ctx.accounting), f, indent=2)
+            json.dump(opaque_state_dict(accountant), f, indent=2)
 
     def _save_rng_state(self, ckpt_dir: str) -> None:
         """Snapshot this rank's Python/NumPy/torch RNG state to disk.

@@ -1,44 +1,90 @@
-"""DP trainer state — re-export of HF ``TrainerState``.
+"""DP trainer state — standalone dataclass for :class:`DPTrainer`.
 
-Inherits HF's full ``TrainerState`` field surface and methods
-(``compute_steps`` / ``save_to_json`` / ``load_from_json`` /
-``init_training_references``).  Adds dict-based :meth:`to_json` /
-:meth:`from_json` used by the trainer's checkpoint plumbing — HF's
-``save_to_json`` / ``load_from_json`` are file-based and strict on
-unknown keys; :meth:`from_json` filters unknown keys so checkpoints
-written by a future version remain readable.
+Mirrors HF :class:`transformers.TrainerState`'s field *names* for the
+fields we use (so HF reporting callbacks duck-typing
+``state.global_step``, ``state.epoch``, ``state.log_history`` keep
+working unchanged) without inheriting from it. The field surface is
+the subset we actually use, plus DPTrainer-specific privacy bookkeeping
+and an explicit serialisation ``version``.
 
-Schema divergence vs HF: ``trainer_state.json`` written by DPTrainer may include
-privacy telemetry keys in ``log_history`` that trip HF's strict
-:meth:`transformers.TrainerState.load_from_json`.  Use :meth:`from_json`.
+Dropped vs HF:
+
+- ``total_flos`` — FLOP counter never written by the DP path.
+- ``is_hyper_param_search``, ``trial_name``, ``trial_params`` — HPO
+  was removed in Phase C.
+
+Schema divergence: ``trainer_state.json`` written by DPTrainer may
+include privacy telemetry keys in ``log_history``. HF's strict
+:meth:`transformers.TrainerState.load_from_json` would reject; ours
+filters unknown top-level keys (forward compat).
 """
 
 from __future__ import annotations
 
 import dataclasses
+import math
 from typing import Any
 
 from transformers.trainer_callback import TrainerControl as DPTrainerControl
-from transformers.trainer_callback import TrainerState
 
 __all__ = ["DPTrainerControl", "DPTrainerState"]
 
 
-@dataclasses.dataclass
-class DPTrainerState(TrainerState):
-    """Trainer state for DPTrainer (subclass of HF ``TrainerState``).
+_STATE_VERSION = 1
 
-    Adds run-resolved privacy bookkeeping populated by :class:`DPTrainer`
-    during ``_setup_training`` (so callbacks and tooling can read stable
-    values from ``state`` rather than mutable ``args`` fields).
+
+@dataclasses.dataclass
+class DPTrainerState:
+    """Trainer state for DPTrainer (standalone; not a ``TrainerState`` subclass).
+
+    HF callbacks (TensorBoard, WandB, EarlyStoppingCallback, …) read
+    ``state.global_step``, ``state.epoch``, ``state.log_history`` etc.
+    via attribute access — not ``isinstance(state, TrainerState)`` —
+    so duck-typing parity is preserved by keeping the field names.
     """
 
+    # HF-named fields we use (parity for callbacks)
+    epoch: float = 0.0
+    global_step: int = 0
+    max_steps: int = 0
+    logging_steps: float = 500
+    eval_steps: float | None = 500
+    save_steps: int = 500
+    train_batch_size: int | None = None
+    num_train_epochs: int = 0
+    num_input_tokens_seen: int = 0
+    log_history: list[dict[str, float]] = dataclasses.field(default_factory=list)
+    best_metric: float | None = None
+    best_global_step: int | None = None
+    best_model_checkpoint: str | None = None
+    is_local_process_zero: bool = True
+    is_world_process_zero: bool = True
+    stateful_callbacks: dict[str, Any] = dataclasses.field(default_factory=dict)
+
+    # DPTrainer-specific privacy bookkeeping
     privacy_resolved_delta: float | None = None
     privacy_resolved_noise_multiplier: float | None = None
     privacy_noise_multiplier_source: str | None = None
     privacy_sample_rate: float | None = None
     privacy_expected_batch_size: int | None = None
     privacy_total_steps: int | None = None
+
+    # Serialisation version; bumped on schema changes.
+    version: int = _STATE_VERSION
+
+    def compute_steps(self, args: Any, max_steps: int) -> None:
+        """Resolve absolute step counts for logging/eval/save.
+
+        HF parity: fractional values < 1 are interpreted as fractions of
+        ``max_steps`` and rounded up; ``None`` is left alone.
+        """
+        for kind in ("logging", "eval", "save"):
+            num_steps = getattr(args, f"{kind}_steps", None)
+            if num_steps is None:
+                continue
+            if num_steps < 1:
+                num_steps = math.ceil(max_steps * num_steps)
+            setattr(self, f"{kind}_steps", num_steps)
 
     def to_json(self) -> dict[str, Any]:
         """Return a JSON-compatible dict for ``trainer_state.json``."""
@@ -48,10 +94,16 @@ class DPTrainerState(TrainerState):
     def from_json(cls, data: dict[str, Any]) -> "DPTrainerState":
         """Reconstruct from a dict loaded from ``trainer_state.json``.
 
-        Unknown keys are ignored so checkpoints written by a future
-        version of the trainer can still be loaded by older code (lossy
-        but tolerant).
+        Unknown keys are filtered (forward-compat with newer writers).
+        Missing ``version`` is tolerated and treated as legacy v0;
+        a version greater than our own raises ``ValueError``.
         """
+        version = data.get("version")
+        if version is not None and version > _STATE_VERSION:
+            raise ValueError(
+                f"checkpoint trainer_state.json version {version} is not "
+                f"supported by this DPTrainer (expected <= {_STATE_VERSION})."
+            )
         known = {f.name for f in dataclasses.fields(cls)}
         return cls(**{k: v for k, v in data.items() if k in known})
 

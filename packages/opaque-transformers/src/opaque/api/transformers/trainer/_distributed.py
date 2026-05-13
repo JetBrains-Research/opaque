@@ -72,14 +72,39 @@ class DDPState:
         return self.local_rank == 0
 
 
-def resolve_ddp_state(device: torch.device) -> DDPState:
+def resolve_ddp_state(device: torch.device, args: Any | None = None) -> DDPState:
     """Build a :class:`DDPState` for the current process.
 
     If ``torch.distributed`` has been initialised, the rank/world fields
-    come from the live process group. Otherwise we fall back to env vars
-    (so a 1-rank ``torchrun`` smoke test still reports
-    ``world_size==1`` rather than guessing from ``LOCAL_RANK``).
+    come from the live process group. Otherwise:
+    - When ``WORLD_SIZE > 1`` and ``args`` is provided, auto-initialise
+      ``torch.distributed`` using ``args.ddp_backend`` (defaulting to
+      ``nccl`` on CUDA, ``gloo`` elsewhere) and ``args.ddp_timeout``.
+      This mirrors HF Trainer's eager init via Accelerate, without us
+      depending on Accelerate.
+    - Otherwise (single-process), fall back to env vars so a 1-rank
+      ``torchrun`` smoke test still reports ``world_size==1``.
     """
+    if not is_distributed() and args is not None:
+        env_world = int(os.environ.get("WORLD_SIZE", "1"))
+        if env_world > 1:
+            backend = getattr(args, "ddp_backend", None) or (
+                "nccl" if torch.cuda.is_available() else "gloo"
+            )
+            timeout_seconds = int(getattr(args, "ddp_timeout", 1800))
+            from datetime import timedelta as _td
+            import logging as _logging
+
+            torch.distributed.init_process_group(
+                backend=backend, timeout=_td(seconds=timeout_seconds)
+            )
+            _logging.getLogger(__name__).info(
+                "Auto-initialised torch.distributed (backend=%s, world_size=%d, rank=%d)",
+                backend,
+                torch.distributed.get_world_size(),
+                torch.distributed.get_rank(),
+            )
+
     if is_distributed():
         rank = get_rank()
         world_size = get_world_size()

@@ -893,7 +893,7 @@ class TestDPTrainerCheckpointing:
         assert restored.global_step == 2
 
     def test_save_model_public_api(self, gpt2_with_lora, tiny_lm_dataset, tmp_path):
-        """save_model() writes weights to a directory after training."""
+        """save_model() writes weights, training args, and accountant.json."""
         model, tokenizer = gpt2_with_lora
         out = tmp_path / "final"
         trainer = DPTrainer(
@@ -909,6 +909,8 @@ class TestDPTrainerCheckpointing:
             out / "adapter_model.safetensors"
         ).exists()
         assert (out / "config.json").exists() or (out / "adapter_config.json").exists()
+        # Privacy provenance travels with the saved model.
+        assert (out / "accountant.json").exists()
 
     # ------------------------------------------------------------------
     # Phase 2b: best-model tracking

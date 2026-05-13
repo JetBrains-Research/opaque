@@ -224,6 +224,9 @@ class TrainingArguments:
     # Distributed backend policy for current Opaque support surface.
     # Keep this aligned with tested/runtime-supported backend matrix.
     ddp_backend: str | None = None
+    # Timeout (seconds) for the auto ``init_process_group`` call made by
+    # ``resolve_ddp_state`` when ``WORLD_SIZE > 1``. Matches HF default.
+    ddp_timeout: int = 1800
 
     # =================================================================
     # Evaluation

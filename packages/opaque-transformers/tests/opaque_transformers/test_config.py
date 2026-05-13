@@ -201,7 +201,6 @@ class TestUnknownKwargs:
             {"deepspeed": "ds_config.json"},
             {"optim_target_modules": ["q_proj"]},
             {"ddp_find_unused_parameters": True},
-            {"ddp_timeout": 3600},
             {"unknown_knob_for_test_only": 1},
         ],
     )
