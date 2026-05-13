@@ -198,7 +198,7 @@ def scenario_runtime_foundation(
 
 
 def scenario_per_rank_partition(rank: int, world_size: int, **_) -> None:
-    """Verify ``ddp_shard='per_rank'`` partitions the dataset across ranks.
+    """Verify ``local_shard`` partitions the dataset across ranks.
 
     Build a sampler with seed S; collect all indices yielded across one
     epoch; gather to rank 0; assert disjoint and union = range(N).
@@ -222,39 +222,6 @@ def scenario_per_rank_partition(rank: int, world_size: int, **_) -> None:
         assert flat == list(range(full_n)), (
             f"shards do not partition range({full_n}): {flat[:10]}…"
         )
-
-
-def scenario_global_mode_independent(rank: int, world_size: int, **_) -> None:
-    """Verify ``ddp_shard='global'`` produces *different* per-rank streams."""
-    from opaque.api.transformers.trainer._dataloader import OpaqueEpochPoissonBatchSampler
-
-    full_n = 64
-    seq = 8
-    cfg = TinyConfig()
-    full_ds = TinyDataset(n=full_n, seq_len=seq, vocab=cfg.vocab_size)
-
-    sampler = OpaqueEpochPoissonBatchSampler(
-        dataset=full_ds,
-        sample_rate=0.1,
-        num_iterations=4,
-        seed=42,
-        rank=rank,
-        rank_fold=True,
-    )
-    indices_local = [list(b) for b in sampler]
-
-    # Collect all ranks' index lists; assert they differ between ranks.
-    gathered: list = [None] * world_size
-    dist.all_gather_object(gathered, indices_local)
-    if rank == 0:
-        # Compare rank 0's batches with every other rank's.  At least one
-        # batch must differ — independent Poisson draws should not all
-        # collide.
-        for r_other in range(1, world_size):
-            assert gathered[0] != gathered[r_other], (
-                f"rank 0 and rank {r_other} produced identical batches; "
-                "rank-folded keys are not independent"
-            )
 
 
 def scenario_eval_gather(rank: int, world_size: int, output_dir: str, **_) -> None:
@@ -344,76 +311,6 @@ def scenario_batch_eval_metrics(
     metrics = trainer.evaluate()
     if rank == 0:
         assert int(metrics["eval_seen"]) == len(eval_ds), metrics
-
-
-def scenario_accountant_modes(rank: int, world_size: int, output_dir: str, **_) -> None:
-    """Verify accountant branch uses poisson vs parallel_poisson by ddp_shard."""
-    cfg = TinyConfig(vocab_size=32, hidden_size=8)
-    train_ds = TinyDataset(n=32, seq_len=4, vocab=cfg.vocab_size)
-
-    def _trainer(ddp_shard: str) -> DPTrainer:
-        args = DPTrainingArguments(
-            output_dir=output_dir,
-            per_device_train_batch_size=4,
-            max_steps=1,
-            save_strategy="no",
-            report_to=[],
-            ddp_shard=ddp_shard,
-        )
-        model = TinyForCausalLM(cfg)
-        return DPTrainer(
-            model=model,
-            args=args,
-            train_dataset=train_ds,
-            data_collator=_collate,
-        )
-
-    import opaque.dpsgd.accounting as dpsgd_acc_mod
-
-    original_parallel = dpsgd_acc_mod.parallel_poisson
-    original_poisson = dpsgd_acc_mod.poisson
-    calls = {"parallel": 0, "poisson": 0}
-
-    def wrapped_parallel(*args, **kwargs):
-        calls["parallel"] += 1
-        return original_parallel(*args, **kwargs)
-
-    def wrapped_poisson(*args, **kwargs):
-        calls["poisson"] += 1
-        return original_poisson(*args, **kwargs)
-
-    dpsgd_acc_mod.parallel_poisson = wrapped_parallel
-    dpsgd_acc_mod.poisson = wrapped_poisson
-    try:
-        trainer_per_rank = _trainer("per_rank")
-        mech_per_rank = trainer_per_rank._build_mechanism(
-            trainer_per_rank.args,
-            expected_batch_size=4,
-            sample_rate=0.1,
-            clip_norm=1.0,
-            dataset_size=len(train_ds),
-        )
-        _ = mech_per_rank(1.1)
-        assert calls["poisson"] >= 1
-        assert calls["parallel"] == 0
-
-        calls["parallel"] = 0
-        calls["poisson"] = 0
-
-        trainer_global = _trainer("global")
-        mech_global = trainer_global._build_mechanism(
-            trainer_global.args,
-            expected_batch_size=4,
-            sample_rate=0.1,
-            clip_norm=1.0,
-            dataset_size=len(train_ds),
-        )
-        _ = mech_global(1.1)
-        assert calls["parallel"] >= 1
-        assert calls["poisson"] == 0
-    finally:
-        dpsgd_acc_mod.parallel_poisson = original_parallel
-        dpsgd_acc_mod.poisson = original_poisson
 
 
 def scenario_hub_rank_zero_init(
@@ -575,10 +472,8 @@ def scenario_env_backend_diagnostic(output_dir: str, **_) -> None:
 SCENARIOS = {
     "runtime_foundation": scenario_runtime_foundation,
     "per_rank_partition": scenario_per_rank_partition,
-    "global_mode_independent": scenario_global_mode_independent,
     "eval_gather": scenario_eval_gather,
     "batch_eval_metrics": scenario_batch_eval_metrics,
-    "accountant_modes": scenario_accountant_modes,
     "hub_rank_zero_init": scenario_hub_rank_zero_init,
     "rank_gating_and_worker_seed": scenario_rank_gating_and_worker_seed,
     "gather_paths": scenario_gather_paths,

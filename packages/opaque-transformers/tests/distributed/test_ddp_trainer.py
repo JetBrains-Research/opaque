@@ -130,13 +130,6 @@ def test_per_rank_shards_partition_dataset() -> None:
 
 @pytest.mark.cuda
 @pytest.mark.slow
-def test_global_mode_produces_independent_streams() -> None:
-    _skip_if_no_multi_gpu()
-    _run_ddp("global_mode_independent", world_size=2)
-
-
-@pytest.mark.cuda
-@pytest.mark.slow
 def test_eval_gather_returns_cluster_wide_predictions(tmp_path) -> None:
     _skip_if_no_multi_gpu()
     _run_ddp("eval_gather", world_size=2, output_dir=str(tmp_path))
@@ -147,13 +140,6 @@ def test_eval_gather_returns_cluster_wide_predictions(tmp_path) -> None:
 def test_batch_eval_metrics_runs_cluster_wide(tmp_path) -> None:
     _skip_if_no_multi_gpu()
     _run_ddp("batch_eval_metrics", world_size=2, output_dir=str(tmp_path))
-
-
-@pytest.mark.cuda
-@pytest.mark.slow
-def test_accountant_mode_switches_by_ddp_shard(tmp_path) -> None:
-    _skip_if_no_multi_gpu()
-    _run_ddp("accountant_modes", world_size=2, output_dir=str(tmp_path))
 
 
 @pytest.mark.cuda

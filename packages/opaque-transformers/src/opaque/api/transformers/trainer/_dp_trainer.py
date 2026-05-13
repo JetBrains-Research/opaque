@@ -1343,24 +1343,13 @@ class DPTrainer:
                 "at least one example to build the per-example loss surface "
                 "and calibrate Poisson sampling."
             )
-        # Phase 10b: rank-local sample rate.  The user's
-        # ``expected_batch_size`` is always the *global* (cluster-wide)
-        # expected Poisson round size.  We split it across ranks the same
-        # way for both ``ddp_shard`` modes so each rank computes a local
-        # batch of size ≈ ``expected_batch_size/world``:
-        #
-        # - ``per_rank``: shard the dataset (``local_shard``) and run
-        #   Poisson on the shard at rate ``expected_batch_size/|D|``;
-        #   because the shard size is ≈ ``|D|/world`` the *local* rate
-        #   equals the *global* rate by construction.  The accountant
-        #   uses regular ``acc.poisson`` over the global rate.
-        # - ``global``: every rank sees the full dataset.  Local rate is
-        #   ``expected_batch_size/(world*|D|)``; the accountant uses
-        #   ``acc.parallel_poisson(local_rate, num_workers=world)`` to
-        #   charge the duplication penalty.
+        # Rank-local sample rate.  The user's ``expected_batch_size`` is the
+        # *global* (cluster-wide) expected Poisson round size.  Under DDP we
+        # shard the dataset (``opaque.distributed.local_shard``) and run the
+        # Poisson sampler on each shard with the same epoch-folded key, so
+        # the *local* rate equals the *global* rate by construction.  The
+        # accountant uses regular ``acc.poisson`` over the global rate.
         sample_rate = expected_batch_size / dataset_size
-        if a.ddp_shard == "global" and self._ddp.world_size > 1:
-            sample_rate = sample_rate / self._ddp.world_size
         if sample_rate > 1.0:
             raise ValueError(
                 "DPTrainer requires expected_batch_size <= len(train_dataset) "
@@ -3303,26 +3292,19 @@ class DPTrainer:
         collate_fn = self._resolve_collate_fn(base_collator)
         collate_fn = self._maybe_prime_collate(collate_fn, dataset)
 
-        # Phase 10b: apply the rank-data policy.  ``per_rank`` shards the
-        # dataset (each rank operates on a disjoint slice) and runs the
-        # sampler with the same epoch-keyed RNG on every rank — together
-        # with the local shard, that produces disjoint per-rank batches at
-        # the global Poisson rate.  ``global`` keeps the full dataset
-        # visible and folds rank into the sampler key so every rank draws
-        # an independent stream; the accountant pays the parallel-Poisson
-        # premium.
-        rank_fold = False
+        # Under DDP each rank operates on a disjoint shard of the dataset
+        # (``opaque.distributed.local_shard``); the Poisson sampler runs
+        # with the same epoch-keyed RNG on every rank so the union of
+        # per-rank batches is a single global Poisson draw at the user's
+        # ``expected_batch_size`` rate.
         if self._ddp.world_size > 1:
-            if a.ddp_shard == "per_rank":
-                from opaque.distributed import local_shard
+            from opaque.distributed import local_shard
 
-                dataset = local_shard(
-                    dataset,
-                    rank=self._ddp.rank,
-                    world_size=self._ddp.world_size,
-                )
-            elif a.ddp_shard == "global":
-                rank_fold = True
+            dataset = local_shard(
+                dataset,
+                rank=self._ddp.rank,
+                world_size=self._ddp.world_size,
+            )
 
         sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
         tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
@@ -3333,8 +3315,6 @@ class DPTrainer:
             sample_rate=ctx.sample_rate,
             num_iterations=ctx.expected_steps_per_epoch,
             seed=a.data_seed if a.data_seed is not None else a.seed,
-            rank=self._ddp.rank,
-            rank_fold=rank_fold,
             truncated_batch_size=truncated_batch_size,
         )
         ctx.current_sampler = sampler
@@ -3746,12 +3726,9 @@ class DPTrainer:
     ):
         """Build the privacy accounting mechanism chain.
 
-        Under ``ddp_shard='global'`` with ``world_size > 1`` the Poisson
-        amplification is replaced with ``dpsgd_acc.parallel_poisson`` to charge
-        the duplication penalty introduced by independent per-rank
-        sampling over the full dataset.  ``per_rank`` mode keeps the
-        regular ``acc.poisson`` because the shards are disjoint — each
-        example appears in exactly one rank's draws per step.
+        The Poisson amplification covers both plain Poisson sampling and
+        the truncated variant: ``dpsgd_acc.poisson`` dispatches internally
+        when ``truncated_batch_size`` / ``dataset_size`` are supplied.
         """
         num_groups = len(clip_norm.values) if hasattr(clip_norm, "values") else 1
 
@@ -3767,26 +3744,11 @@ class DPTrainer:
                 )
 
         _unamplified = base
-        use_parallel_poisson = a.ddp_shard == "global" and self._ddp.world_size > 1
         sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
         tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
         tb_cap = int(tb_raw) if tb_raw is not None else None
 
-        if use_parallel_poisson:
-            if tb_cap is not None:
-                raise ValueError(
-                    "sampling_kwargs truncated_batch_size / max_batch_size with "
-                    "ddp_shard='global' is not supported: parallel-Poisson "
-                    "accounting does not cover truncated Poisson. Use "
-                    "ddp_shard='per_rank' or remove the batch cap."
-                )
-            world = self._ddp.world_size
-
-            def mechanism(nm, _u=_unamplified, _world=world):
-                return dpsgd_acc.parallel_poisson(
-                    _u(nm), sample_rate=sample_rate, num_workers=_world
-                )
-        elif tb_cap is not None:
+        if tb_cap is not None:
 
             def mechanism(
                 nm,
