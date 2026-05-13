@@ -2197,7 +2197,6 @@ transformers = [
 [package.dev-dependencies]
 dev = [
     { name = "dp-accounting" },
-    { name = "opaque-transformers" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "riskcal" },
@@ -2244,7 +2243,6 @@ provides-extras = ["auditing", "dpftrl", "transformers", "all"]
 [package.metadata.requires-dev]
 dev = [
     { name = "dp-accounting", specifier = ">=0.4.4" },
-    { name = "opaque-transformers", extras = ["hpo"], editable = "packages/opaque-transformers" },
     { name = "pytest", specifier = ">=7.0.0" },
     { name = "pytest-cov", specifier = ">=4.0.0" },
     { name = "riskcal", specifier = ">=1.2.0" },

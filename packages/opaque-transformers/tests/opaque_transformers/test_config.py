@@ -21,7 +21,6 @@ from transformers.debug_utils import DebugOption
 
 from opaque.transformers.trainer import TrainingArguments
 from opaque.api.transformers.trainer._config import _DP_OPTIMIZERS
-from opaque.api.transformers.trainer._optim import _DP_OPTIMIZER_UNSUPPORTED
 
 
 class TestLegacyAliases:
@@ -234,14 +233,26 @@ class TestOptimizerSupportSurface:
         args = TrainingArguments(optim=optim)
         assert args.optim == optim
 
-    @pytest.mark.parametrize("optim,reason", _DP_OPTIMIZER_UNSUPPORTED.items())
-    def test_unsupported_hf_optimizers_raise_with_redirect(self, optim, reason):
+    @pytest.mark.parametrize(
+        "optim",
+        [
+            "adamw_torch_xla",
+            "adamw_apex_fused",
+            "adamw_bnb_8bit",
+            "paged_adamw_32bit",
+            "galore_adamw",
+            "lomo",
+            "grokadamw",
+            "stable_adamw",
+        ],
+    )
+    def test_unsupported_optimizers_raise_with_supported_list(self, optim):
         with pytest.raises(ValueError) as exc_info:
             TrainingArguments(optim=optim)
         message = str(exc_info.value)
         assert optim in message
-        assert "Supported optimizers" in message
-        assert reason.split(".", maxsplit=1)[0] in message
+        # Whitelist error lists the supported set.
+        assert "expected one of" in message
 
 
 class TestDoEvalAutoFlip:

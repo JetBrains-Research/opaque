@@ -92,94 +92,6 @@ _HF_ALIASES: dict[str, tuple[str, dict[str, Any]]] = {
     "schedule_free_radam": ("schedule_free", {"base": "radam"}),
 }
 
-# ---------------------------------------------------------------------------
-# Hard rejections — names with no DP-aware equivalent
-# ---------------------------------------------------------------------------
-
-# These remain rejected even after the alias layer.  Keep messages
-# specific (point at the redirection or explain the impossibility) so
-# users know what to switch to.
-_DP_OPTIMIZER_UNSUPPORTED: dict[str, str] = {
-    # XLA / NPU paths — Opaque vmap targets CUDA/CPU only.
-    "adamw_torch_xla": (
-        "torch_xla AdamW is not supported (Opaque vmap targets CUDA/CPU); "
-        "pass optim='adamw'."
-    ),
-    "adamw_torch_npu_fused": (
-        "Ascend NPU optimizers are not supported; pass optim='adamw'."
-    ),
-    # Apex / 4-bit / 8-bit AdamW — quantized state cannot be vmapped
-    # cleanly.
-    "adamw_apex_fused": (
-        "APEX fused AdamW is not supported under DP-SGD; pass optim='adamw'."
-    ),
-    "adamw_anyprecision": (
-        "AnyPrecision AdamW is not supported under DP-SGD; pass optim='adamw'."
-    ),
-    "adamw_bnb_8bit": "8-bit quantized optimizers are not supported under DP-SGD.",
-    "adamw_8bit": "8-bit AdamW is not supported under DP-SGD.",
-    "adamw_torch_4bit": "4-bit AdamW is not supported under DP-SGD.",
-    "adamw_torch_8bit": "8-bit torch.optim.AdamW is not supported under DP-SGD.",
-    "ademamix_8bit": "8-bit AdEMAMix is not supported.",
-    "lion_8bit": "8-bit Lion is not supported.",
-    # bnb / paged variants — quantization / paging interact with DP
-    # state in unsupported ways.
-    "paged_adamw_32bit": "Paged optimizers (bitsandbytes) are not supported.",
-    "paged_adamw_8bit": "Paged 8-bit AdamW is not supported.",
-    "paged_ademamix_32bit": "Paged AdEMAMix is not supported.",
-    "paged_ademamix_8bit": "Paged 8-bit AdEMAMix is not supported.",
-    "paged_lion_32bit": "Paged Lion is not supported.",
-    "paged_lion_8bit": "Paged 8-bit Lion is not supported.",
-    "rmsprop_bnb": (
-        "bitsandbytes RMSprop is not supported; pass optim='rmsprop' "
-        "for the opaque RMSprop factory."
-    ),
-    "rmsprop_bnb_8bit": (
-        "8-bit RMSprop (bitsandbytes) is not supported; pass optim='rmsprop'."
-    ),
-    "rmsprop_bnb_32bit": (
-        "bitsandbytes 32-bit RMSprop is not supported; pass optim='rmsprop'."
-    ),
-    # Out-of-scope optimizer families.
-    "galore_adamw": "GaLore optimizers are not supported under DP-SGD.",
-    "galore_adamw_8bit": "GaLore 8-bit AdamW is not supported under DP-SGD.",
-    "galore_adafactor": "GaLore Adafactor is not supported under DP-SGD.",
-    "galore_adamw_layerwise": (
-        "GaLore layer-wise AdamW is not supported under DP-SGD."
-    ),
-    "galore_adamw_8bit_layerwise": (
-        "GaLore layer-wise 8-bit AdamW is not supported under DP-SGD."
-    ),
-    "galore_adafactor_layerwise": (
-        "GaLore layer-wise Adafactor is not supported under DP-SGD."
-    ),
-    "lomo": "LOMO is not supported under DP-SGD.",
-    "adalomo": "AdaLOMO is not supported under DP-SGD.",
-    "grokadamw": "GrokAdamW is not supported under DP-SGD.",
-    "adamax": (
-        "Adamax structurally misbehaves under DP: the half-normal noise "
-        "mean is permanently absorbed by the max-norm denominator.  "
-        "Pass optim='adamw' instead."
-    ),
-    "apollo_adamw": "APOLLO AdamW is not supported under DP-SGD.",
-    "apollo_adamw_layerwise": (
-        "APOLLO layer-wise AdamW is not supported under DP-SGD."
-    ),
-    "stable_adamw": (
-        "StableAdamW maps onto opaque.optimizers.adamw with "
-        "update_rms_clip=1.0; pass optim='adamw' with "
-        "optim_args='update_rms_clip=1.0' (adjust the threshold as needed)."
-    ),
-    "schedule_free_adamw": (
-        "schedule_free_adamw maps onto opaque.optimizers.schedule_free; "
-        "pass optim='schedule_free' with optim_args='base=adamw'."
-    ),
-    "schedule_free_sgd": (
-        "schedule_free_sgd maps onto opaque.optimizers.schedule_free; "
-        "pass optim='schedule_free' with optim_args='base=sgd'."
-    ),
-}
-
 
 def supported_names() -> tuple[str, ...]:
     """Sorted union of canonical opaque names + HF aliases."""
@@ -199,9 +111,10 @@ def normalize_optim(optim: Any) -> str:
 def resolve_optimizer_name(optim: Any) -> tuple[str, dict[str, Any]]:
     """Resolve user-supplied ``optim`` to ``(canonical_name, base_kwargs)``.
 
-    Raises ``ValueError`` for names in :data:`_DP_OPTIMIZER_UNSUPPORTED`
-    with the redirect message attached, or for any name that's neither
-    canonical nor an alias.
+    Whitelist-based: only canonical opaque names and the HF aliases we
+    explicitly translate are accepted. Anything else raises ``ValueError``
+    pointing at the supported set. No per-name redirection messages — the
+    error lists the whole supported surface so users see their options.
     """
     name = normalize_optim(optim)
     if name in _OPAQUE_FACTORIES:
@@ -209,12 +122,6 @@ def resolve_optimizer_name(optim: Any) -> tuple[str, dict[str, Any]]:
     if name in _HF_ALIASES:
         canonical, base = _HF_ALIASES[name]
         return canonical, dict(base)
-    if name in _DP_OPTIMIZER_UNSUPPORTED:
-        raise ValueError(
-            f"optim={optim!r} is not supported by DPTrainer: "
-            f"{_DP_OPTIMIZER_UNSUPPORTED[name]}  "
-            f"Supported optimizers: {supported_names()}."
-        )
     raise ValueError(
         f"optim={optim!r} is not supported by DPTrainer; "
         f"expected one of {supported_names()}."
