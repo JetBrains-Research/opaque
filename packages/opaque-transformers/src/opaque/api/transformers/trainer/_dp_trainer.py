@@ -116,6 +116,22 @@ _VMAP_BATCH_UNSQUEEZE_KEYS: frozenset[str] = frozenset(
 )
 
 
+def _callback_matches(
+    candidate: type[TrainerCallback] | TrainerCallback,
+    target: type[TrainerCallback] | TrainerCallback,
+) -> bool:
+    """Whether ``candidate`` should be removed when removing ``target``.
+
+    Class targets match by ``isinstance`` (so passing the class removes the
+    first instance of that class); instance targets match by identity.
+    """
+    if isinstance(target, type):
+        if isinstance(candidate, type):
+            return candidate is target
+        return isinstance(candidate, target)
+    return candidate is target
+
+
 def _disable_tokenizers_parallelism_before_fork() -> None:
     """Avoid HuggingFace tokenizers fork warnings from reporting integrations."""
     if "TOKENIZERS_PARALLELISM" in os.environ:
@@ -283,12 +299,11 @@ class DPTrainer:
         self._trial_output_dir: str | None = None
         self._trial_run_counter = 0
         self.is_in_train = False
-        self.current_flos = 0.0
         # HF parity: when no collator is given, use
         # ``DataCollatorWithPadding`` for tokenizer / sequence-feature
         # processors and ``default_data_collator`` otherwise.  The
         # DataLoader collator stays CPU-only; tensors are moved to the
-        # trainer device in ``_prepare_inputs`` on the main process.
+        # trainer device in ``_prepare_input`` on the main process.
         default_collator = (
             DataCollatorWithPadding(processing_class)
             if processing_class is not None
@@ -525,15 +540,6 @@ class DPTrainer:
         return self._processing_class
 
     @property
-    def tokenizer(self) -> PreTrainedTokenizerBase | None:
-        warnings.warn(
-            "`trainer.tokenizer` is deprecated; use `trainer.processing_class` instead.",
-            FutureWarning,
-            stacklevel=2,
-        )
-        return self._processing_class
-
-    @property
     def data_collator(self) -> Callable:
         return self._data_collator
 
@@ -589,7 +595,7 @@ class DPTrainer:
         self._base_callbacks = [
             cb
             for cb in self._base_callbacks
-            if not self._callback_matches(cb, callback)
+            if not _callback_matches(cb, callback)
         ]
 
     def pop_callback(
@@ -601,7 +607,7 @@ class DPTrainer:
         self._base_callbacks = [
             cb
             for cb in self._base_callbacks
-            if not self._callback_matches(cb, callback)
+            if not _callback_matches(cb, callback)
         ]
         return popped
 
@@ -611,12 +617,6 @@ class DPTrainer:
 
     def is_world_process_zero(self) -> bool:
         """Whether this is the world-rank-0 process (HF parity)."""
-        return self._ddp.is_world_zero
-
-    def _is_local_process_zero(self) -> bool:
-        return self._ddp.is_local_zero
-
-    def _is_world_process_zero(self) -> bool:
         return self._ddp.is_world_zero
 
     def call_model_init(self, trial: Any | None = None) -> PreTrainedModel:
@@ -667,17 +667,6 @@ class DPTrainer:
             hp_name=hp_name,
             **kwargs,
         )
-
-    def _callback_matches(
-        self,
-        candidate: type[TrainerCallback] | TrainerCallback,
-        target: type[TrainerCallback] | TrainerCallback,
-    ) -> bool:
-        if isinstance(target, type):
-            if isinstance(candidate, type):
-                return candidate is target
-            return isinstance(candidate, target)
-        return candidate is target
 
     def _reset_state_for_new_run(self) -> None:
         self.state = DPTrainerState()
@@ -1646,7 +1635,7 @@ class DPTrainer:
                     ctx.current_sampler.load_state_dict(saved_sampler_state)
 
             for step_idx, batch in enumerate(epoch_loader):
-                batch = self._prepare_inputs(batch)
+                batch = self._prepare_input(batch)
                 batch_size = _eval.find_batch_size(batch) or 0
 
                 self._control = self._callback_handler.on_step_begin(
@@ -1904,7 +1893,7 @@ class DPTrainer:
                 "training_step called outside an active training run; "
                 "DPTrainer's functional context is not initialised."
             )
-        inputs = self._prepare_inputs(inputs)
+        inputs = self._prepare_input(inputs)
         # Positional batch tensors in the order discovered at
         # ``_setup_training`` time.  Matches the ``batch_argnums`` the
         # loss builder published, so ``vmap`` batches correctly.
@@ -2213,7 +2202,7 @@ class DPTrainer:
             return_loss = self._can_return_loss
         loss_without_labels = not label_keys and bool(return_loss)
 
-        inputs = self._prepare_inputs(inputs)
+        inputs = self._prepare_input(inputs)
         # Split the batch into ``label_kwargs`` and model inputs.  Labels are
         # captured before ``compute_loss`` because user loss functions may pop
         # or otherwise consume them.
@@ -2807,43 +2796,6 @@ class DPTrainer:
         os.makedirs(output_dir, exist_ok=True)
         self._save_trainer_state(output_dir)
 
-    def get_test_dataloader(self, test_dataset: Dataset) -> DataLoader:
-        """HF-compatible alias for prediction/test dataloaders."""
-        return self.get_eval_dataloader(test_dataset)
-
-    def num_examples(self, dataloader: DataLoader) -> int:
-        """Return the number of examples represented by a dataloader."""
-        dataset = getattr(dataloader, "dataset", None)
-        if dataset is not None:
-            try:
-                return len(dataset)
-            except TypeError:
-                pass
-        return len(dataloader) * int(getattr(dataloader, "batch_size", 1) or 1)
-
-    def num_tokens(self, dataloader: DataLoader, max_steps: int | None = None) -> int:
-        """Estimate input-token count by iterating over a dataloader."""
-        main_input_name = getattr(self._model, "main_input_name", "input_ids")
-        total = 0
-        for step, batch in enumerate(dataloader):
-            if max_steps is not None and step >= max_steps:
-                break
-            if isinstance(batch, Mapping) and main_input_name in batch:
-                value = batch[main_input_name]
-                if isinstance(value, Tensor):
-                    total += int(value.numel())
-        return total
-
-    def floating_point_ops(self, inputs: dict[str, Any]) -> int:
-        """Return model FLOPs when the wrapped model exposes HF's helper."""
-        if hasattr(self._model, "floating_point_ops"):
-            return int(self._model.floating_point_ops(inputs))
-        return 0
-
-    def store_flos(self) -> None:
-        self.state.total_flos += self.current_flos
-        self.current_flos = 0.0
-
     def _run_evaluation_loop(
         self,
         dataset: Dataset,
@@ -2930,7 +2882,7 @@ class DPTrainer:
         collators that assume ``examples[0]`` exists.
 
         The collator is deliberately CPU-only so DataLoader workers never touch
-        CUDA/MPS; tensors move to ``self._device`` in ``_prepare_inputs`` on the
+        CUDA/MPS; tensors move to ``self._device`` in ``_prepare_input`` on the
         main process.
         """
         from opaque.functional import empty_collate
@@ -2975,9 +2927,6 @@ class DPTrainer:
             return [self._prepare_input(v) for v in value]
         return value
 
-    def _prepare_inputs(self, inputs: Any) -> Any:
-        """Prepare a collated batch for model execution."""
-        return self._prepare_input(inputs)
 
     def _set_signature_columns_if_needed(self) -> None:
         if self._signature_columns is not None or self._signature_columns_unavailable:

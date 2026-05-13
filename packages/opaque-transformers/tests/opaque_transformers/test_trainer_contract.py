@@ -229,5 +229,3 @@ def test_process_helpers_are_single_process_true(tmp_path):
 
     assert trainer.is_world_process_zero()
     assert trainer.is_local_process_zero()
-    assert trainer._is_world_process_zero()
-    assert trainer._is_local_process_zero()
