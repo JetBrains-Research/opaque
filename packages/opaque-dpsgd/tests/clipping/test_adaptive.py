@@ -510,9 +510,9 @@ class TestAdaptiveClippedGrad:
             learning_rate=0.2,
             key=key(0),
             batch_argnums=(1, 2),
-            pre_clipping_transform=lambda g: tuple(t / scale for t in g)
-            if isinstance(g, tuple)
-            else g / scale,
+            pre_clipping_transform=lambda g: (
+                tuple(t / scale for t in g) if isinstance(g, tuple) else g / scale
+            ),
         )
         _, state_scaled_after = grad_fn_scaled(
             params, batch_x, batch_y, state=state_scaled
