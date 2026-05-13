@@ -341,7 +341,6 @@ class TestDPTrainerPhase7Flags:
         trainer = DPTrainer(
             model=model,
             args=_default_args(
-                do_train=False,
                 max_steps=2,
                 eval_strategy="no",
             ),
@@ -376,7 +375,7 @@ class TestDPTrainerPhase7Flags:
         model, tokenizer = gpt2_with_lora
         trainer = DPTrainer(
             model=model,
-            args=_default_args(eval_strategy="no", do_predict=False),
+            args=_default_args(eval_strategy="no"),
             processing_class=tokenizer,
             train_dataset=tiny_lm_dataset,
             eval_dataset=tiny_lm_dataset,
@@ -1252,16 +1251,14 @@ class TestDPTrainerCheckpointing:
         model, tokenizer = gpt2_with_lora
 
         from transformers import TrainerCallback
+        from transformers.trainer_callback import ExportableState
 
-        class StatefulCallback(TrainerCallback):
+        class StatefulCallback(TrainerCallback, ExportableState):
             def __init__(self):
                 self.value = 0
 
-            def state_dict(self):
-                return {"value": self.value}
-
-            def load_state_dict(self, state):
-                self.value = state["value"]
+            def state(self):
+                return {"args": {}, "attributes": {"value": self.value}}
 
             def on_log(self, args, state, control, logs=None, **kwargs):
                 self.value += 1
@@ -1276,11 +1273,12 @@ class TestDPTrainerCheckpointing:
             callbacks=[cb],
         )
         trainer1.train()
-        # The trainer should have written the callback's state_dict into the JSON.
+        # The trainer writes the callback's ExportableState payload into the JSON.
         with open(tmp_path / "checkpoint-2" / "trainer_state.json") as f:
             ts = json.load(f)
         assert ts.get("stateful_callbacks", {}).get("StatefulCallback") == {
-            "value": cb.value
+            "args": {},
+            "attributes": {"value": cb.value},
         }
         saved_value = cb.value
         assert saved_value > 0  # received at least one on_log
@@ -1804,23 +1802,6 @@ class TestDPTrainerEvalMetrics:
                 train_dataset=tiny_lm_dataset,
                 eval_dataset=tiny_lm_dataset,
             )
-
-    def test_deprecated_include_inputs_for_metrics_warns_and_folds(self):
-        """The deprecated alias is folded into ``include_for_metrics`` with a
-        ``FutureWarning`` (HF parity — HF's own ``__post_init__`` does the
-        same)."""
-        import warnings
-
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            args = DPTrainingArguments(include_inputs_for_metrics=True)
-        assert "inputs" in args.include_for_metrics
-        assert any(
-            issubclass(w.category, FutureWarning)
-            and "include_inputs_for_metrics" in str(w.message)
-            for w in caught
-        )
-
 
 # ---------------------------------------------------------------------------
 # Phase 3 — end-to-end integration & parity

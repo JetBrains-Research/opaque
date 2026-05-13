@@ -1876,7 +1876,6 @@ class DPTrainer:
         self,
         model: Any,
         inputs: dict[str, Tensor],
-        num_items_in_batch: int | None = None,
     ) -> dict[str, Any]:
         """One DP-SGD step: clipped grad → noise → optimizer update.
 
@@ -1884,8 +1883,7 @@ class DPTrainer:
         subclass-override compatibility but the actual forward goes
         through the functional fmodel held on ``self._ctx`` (the model
         is mutated in place by the trainer's training-context wiring,
-        so passing it through is redundant).  ``num_items_in_batch`` is
-        accepted for HF parity and currently unused by the DP path.
+        so passing it through is redundant).
         """
         ctx = self._ctx
         if ctx is None:
@@ -4347,26 +4345,15 @@ class DPTrainer:
 
         Round-trips through ``DPTrainerState.to_json`` / ``from_json``.
         Callback state is collected via HF's ``ExportableState`` protocol
-        when available (the modern shape ``{"args": {...}, "attributes":
-        {...}}`` produced by ``cb.state()``); callbacks implementing the
-        legacy ``state_dict()`` method fall back to that.
+        (modern shape ``{"args": {...}, "attributes": {...}}`` produced
+        by ``cb.state()``); callbacks that don't implement ``state()`` are
+        skipped.
         """
-        # Refresh stateful_callbacks from any callback that opts in.
-        # ``ExportableState`` (HF's protocol; e.g. ``EarlyStoppingCallback``,
-        # ``TrainerControl``) is preferred — its ``state()`` produces a
-        # round-trippable ``{"args": ..., "attributes": ...}`` dict.
         cb_states: dict[str, Any] = {}
         for cb in self._callback_handler.callbacks:
-            if hasattr(cb, "state") and callable(getattr(cb, "state")):
-                try:
-                    cb_states[type(cb).__name__] = cb.state()
-                    continue
-                except (TypeError, AttributeError):
-                    # Some callables named ``state`` aren't ExportableState
-                    # — fall through to the state_dict path.
-                    pass
-            if hasattr(cb, "state_dict"):
-                cb_states[type(cb).__name__] = cb.state_dict()
+            state_fn = getattr(cb, "state", None)
+            if callable(state_fn):
+                cb_states[type(cb).__name__] = state_fn()
         self.state.stateful_callbacks = cb_states
 
         payload = self.state.to_json()
@@ -4574,17 +4561,11 @@ class DPTrainer:
         """Restore each callback's state when ``restore_callback_states_from_checkpoint`` is set.
 
         Reads from ``self.state.stateful_callbacks`` — the dataclass field
-        populated by ``DPTrainerState.from_json`` during resume.
-
-        Dual-schema dispatch:
-
-        - When the saved payload has shape ``{"args": {...}, "attributes":
-          {...}}`` the callback uses HF's ``ExportableState`` protocol;
-          we set the saved attributes back onto the live instance so the
-          callback's identity is preserved (``EarlyStoppingCallback``
-          parity, ``trainer.py:3666``).
-        - Otherwise the saved payload is treated as a legacy
-          ``state_dict`` mapping and restored via ``cb.load_state_dict``.
+        populated by ``DPTrainerState.from_json`` during resume.  The
+        payload uses HF's ``ExportableState`` shape ``{"args": {...},
+        "attributes": {...}}``; saved attributes are set back onto the
+        live callback instance so its identity is preserved
+        (``EarlyStoppingCallback`` parity).
         """
         if not self.args.restore_callback_states_from_checkpoint:
             return
@@ -4594,18 +4575,9 @@ class DPTrainer:
             if name not in cb_states:
                 continue
             payload = cb_states[name]
-            # ExportableState shape: ``{"args": {...}, "attributes": {...}}``.
-            if isinstance(payload, dict) and set(payload.keys()) >= {
-                "args",
-                "attributes",
-            }:
-                attrs = payload.get("attributes") or {}
-                for key, value in attrs.items():
-                    setattr(cb, key, value)
-                continue
-            # Legacy state_dict path.
-            if hasattr(cb, "load_state_dict"):
-                cb.load_state_dict(payload)
+            attrs = payload.get("attributes") or {} if isinstance(payload, dict) else {}
+            for key, value in attrs.items():
+                setattr(cb, key, value)
 
     def _warn_on_arg_drift(self, payload: dict[str, Any]) -> None:
         """Surface drift between the saved checkpoint and current ``args``.

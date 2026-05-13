@@ -21,7 +21,7 @@ from typing import Any
 from transformers.trainer_callback import TrainerControl as DPTrainerControl
 from transformers.trainer_callback import TrainerState
 
-__all__ = ["DPTrainerArgs", "DPTrainerControl", "DPTrainerState"]
+__all__ = ["DPTrainerControl", "DPTrainerState"]
 
 
 @dataclasses.dataclass
@@ -54,26 +54,6 @@ class DPTrainerState(TrainerState):
         """
         known = {f.name for f in dataclasses.fields(cls)}
         return cls(**{k: v for k, v in data.items() if k in known})
-
-
-@dataclasses.dataclass
-class DPTrainerArgs:
-    """Minimal args object exposing fields that NES callbacks read.
-
-    NES callbacks access ``args.per_device_eval_batch_size``,
-    ``args.logging_steps``, ``args.eval_steps``, ``args.packing``, and
-    ``args.eval_packing``.
-    """
-
-    per_device_eval_batch_size: int = 8
-    per_device_train_batch_size: int = 16
-    logging_steps: int = 1
-    eval_steps: int = 100
-    packing: bool = False
-    eval_packing: bool | None = None
-    dataset_num_proc: int | None = None
-    output_dir: str = ""
-    report_to: str | list[str] | None = None
 
 
 # ``DPTrainerControl`` is a direct re-export of HF's ``TrainerControl``.

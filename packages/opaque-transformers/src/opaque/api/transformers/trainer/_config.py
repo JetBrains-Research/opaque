@@ -140,9 +140,7 @@ class DPTrainingArguments:
     # =================================================================
     output_dir: str | None = None
     overwrite_output_dir: bool = False
-    do_train: bool = False
     do_eval: bool = False
-    do_predict: bool = False
 
     # =================================================================
     # Batch sizes
@@ -235,7 +233,6 @@ class DPTrainingArguments:
     batch_eval_metrics: bool = False
     prediction_loss_only: bool = False
     include_for_metrics: list[str] = field(default_factory=list)
-    include_inputs_for_metrics: bool = False  # deprecated alias
     eval_use_gather_object: bool = False
     average_tokens_across_devices: bool = True
     metric_for_best_model: str | None = None
@@ -630,20 +627,7 @@ class DPTrainingArguments:
                 "'max-autotune-no-cudagraphs'."
             )
 
-        # --- 9. include_inputs_for_metrics deprecated alias ----------------
-        if self.include_inputs_for_metrics:
-            warnings.warn(
-                "Using `include_inputs_for_metrics` is deprecated and will "
-                "be removed in version 5 of HuggingFace Transformers.  "
-                "Please use `include_for_metrics=['inputs']` instead.",
-                FutureWarning,
-                stacklevel=2,
-            )
-            if "inputs" not in self.include_for_metrics:
-                self.include_for_metrics.append("inputs")
-            self.include_inputs_for_metrics = False
-
-        # --- 10. Optimizer name validation ---------------------------------
+        # --- 9. Optimizer name validation ----------------------------------
         # Validation/alias normalization is centralized in ``_optim``.
         _resolve_optimizer_name(self.optim)
 
