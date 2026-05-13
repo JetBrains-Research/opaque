@@ -23,7 +23,7 @@ import pytest
 import torch
 from transformers.training_args import OptimizerNames
 
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.api.transformers.trainer._optim import (
     build_optimizer,
     canonical_optimizer_names,
@@ -31,7 +31,7 @@ from opaque.api.transformers.trainer._optim import (
 from opaque.api.transformers.trainer._scheduler import parse_optim_args
 
 
-def _args(tmp_path, **overrides) -> DPTrainingArguments:
+def _args(tmp_path, **overrides) -> TrainingArguments:
     """Optimizer-test args (CPU-pinned, σ=0 for bit-comparable runs)."""
     defaults = dict(
         output_dir=str(tmp_path),
@@ -43,13 +43,13 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
         eval_strategy="no",
         privacy_target_epsilon=10.0,
         privacy_noise_multiplier=0.0,
-        max_grad_norm=1.0,
+        clipping_norm=1.0,
         learning_rate=1e-2,
         seed=42,
         use_cpu=True,
     )
     defaults.update(overrides)
-    return DPTrainingArguments(**defaults)
+    return TrainingArguments(**defaults)
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +165,7 @@ SUPPORTED_OPTIMIZERS = (
 
 
 class TestSupportedOptimizersConstruct:
-    """All torchopt-backed names accepted by ``DPTrainingArguments``."""
+    """All torchopt-backed names accepted by ``TrainingArguments``."""
 
     @pytest.mark.parametrize("name", SUPPORTED_OPTIMIZERS)
     def test_native_name_constructs(self, tmp_path, name):

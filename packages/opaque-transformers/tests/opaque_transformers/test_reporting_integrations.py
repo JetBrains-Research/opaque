@@ -11,7 +11,7 @@ from transformers.trainer_callback import DefaultFlowCallback, TrainerCallback
 import opaque.api.transformers.trainer._callback as callback_module
 import opaque.api.transformers.trainer._checkpoint as ckpt
 import opaque.api.transformers.trainer._hpo as hpo_module
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 
 class _LossModel(torch.nn.Module):
@@ -48,13 +48,12 @@ def _dataset() -> list[dict[str, torch.Tensor]]:
     ]
 
 
-def _args(tmp_path, **overrides) -> DPTrainingArguments:
+def _args(tmp_path, **overrides) -> TrainingArguments:
     defaults = dict(
         output_dir=str(tmp_path),
         use_cpu=True,
         per_device_train_batch_size=7,
         per_device_eval_batch_size=7,
-        gradient_accumulation_steps=1,
         max_steps=1,
         num_train_epochs=1,
         learning_rate=1e-3,
@@ -63,13 +62,13 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
         logging_steps=1,
         save_strategy="steps",
         save_steps=1,
-        max_grad_norm=1.0,
+        clipping_norm=1.0,
         privacy_target_epsilon=10.0,
         privacy_noise_multiplier=1.0,
         remove_unused_columns=True,
     )
     defaults.update(overrides)
-    return DPTrainingArguments(**defaults)
+    return TrainingArguments(**defaults)
 
 
 def _has_model_weights(checkpoint_dir: str) -> bool:
@@ -260,7 +259,7 @@ def test_reporting_callbacks_receive_raw_per_group_privacy_logs(tmp_path, monkey
             tmp_path,
             report_to="wandb",
             save_strategy="no",
-            max_grad_norm={"fallback": 1.0, "linear": 1.0},
+            clipping_norm={"fallback": 1.0, "linear": 1.0},
         ),
         train_dataset=_dataset(),
     )
@@ -342,7 +341,7 @@ def test_wandb_reporting_callback_rewrites_privacy_logs(tmp_path, monkeypatch):
             tmp_path,
             report_to="wandb",
             save_strategy="no",
-            max_grad_norm={"fallback": 1.0, "linear": 1.0},
+            clipping_norm={"fallback": 1.0, "linear": 1.0},
         ),
         train_dataset=_dataset(),
     )

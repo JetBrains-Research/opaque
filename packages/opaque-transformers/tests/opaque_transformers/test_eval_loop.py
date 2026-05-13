@@ -29,7 +29,7 @@ from opaque.api.transformers.trainer._eval import (
 
 @dataclass
 class _Args:
-    """Minimal stand-in for DPTrainingArguments — only the fields helpers read."""
+    """Minimal stand-in for TrainingArguments — only the fields helpers read."""
 
     eval_strategy: str = "no"
     eval_delay: float = 0.0

@@ -11,7 +11,7 @@ from transformers.trainer_callback import DefaultFlowCallback, TrainerCallback
 
 import opaque.api.transformers.trainer._callback as callback_module
 import opaque.api.transformers.trainer._dp_trainer as trainer_impl
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 
 class _LogitsOnlyModel(torch.nn.Module):
@@ -39,7 +39,7 @@ class _UserCallback(TrainerCallback):
     pass
 
 
-def _args(tmp_path, **overrides) -> DPTrainingArguments:
+def _args(tmp_path, **overrides) -> TrainingArguments:
     defaults = dict(
         output_dir=str(tmp_path),
         save_strategy="no",
@@ -48,7 +48,7 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
         privacy_noise_multiplier=1.0,
     )
     defaults.update(overrides)
-    return DPTrainingArguments(**defaults)
+    return TrainingArguments(**defaults)
 
 
 def test_constructor_accepts_hf_positional_model_and_optional_datasets(tmp_path):

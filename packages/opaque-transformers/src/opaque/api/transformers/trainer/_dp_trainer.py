@@ -56,7 +56,7 @@ from . import _hub
 from ._dataloader import OpaqueEpochPoissonBatchSampler
 from . import _eval
 from ._callback import build_callback_handler
-from ._config import DPTrainingArguments
+from ._config import TrainingArguments
 from ._eval import EvalLoopOutput, EvalPrediction
 from ._precision import eval_dtype
 from ._scheduler import (
@@ -93,7 +93,7 @@ default_dp_hp_backend = _hpo.default_dp_hp_backend
 
 __all__ = [
     "DPTrainer",
-    "DPTrainingArguments",
+    "TrainingArguments",
     "PredictionOutput",
     "TrainOutput",
     "default_dp_hp_backend",
@@ -209,7 +209,7 @@ class DPTrainer:
     def __init__(
         self,
         model: PreTrainedModel | None = None,
-        args: DPTrainingArguments | None = None,
+        args: TrainingArguments | None = None,
         data_collator: Callable | None = None,
         train_dataset: Dataset | None = None,
         eval_dataset: Dataset | dict[str, Dataset] | None = None,
@@ -237,7 +237,7 @@ class DPTrainer:
             )
             processing_class = tokenizer
         if args is None:
-            args = DPTrainingArguments(output_dir="tmp_trainer")
+            args = TrainingArguments(output_dir="tmp_trainer")
         # HF parity (``Trainer.__init__``): seed Python / NumPy / torch
         # global RNGs from ``args.seed`` so non-DP randomness (model-
         # head init when missing weights are randomised, dataset
@@ -355,7 +355,7 @@ class DPTrainer:
             )
 
         # Resolve device via ``args.device`` (forwards to
-        # :meth:`DPTrainingArguments._setup_devices`, which honors
+        # :meth:`TrainingArguments._setup_devices`, which honors
         # ``use_cpu`` / ``use_mps_device`` / ``no_cuda`` and bypasses
         # Accelerate).  HF parity: the trainer's device source of truth
         # is the args, not whatever device the user happened to leave
@@ -383,7 +383,7 @@ class DPTrainer:
 
         # Explicit patch sites (no import-time mutation of HF globals):
         # 1) global runtime compat (masking / collator / checkpoint hooks)
-        # 2) ``apply_model_patches(..., compat=True, performance=use_liger_kernel)``
+        # 2) ``apply_model_patches(..., compat=True, performance=use_performance_kernels)``
         from opaque.api.transformers import _runtime_bootstrap as _opaque_rt
 
         _opaque_rt.apply_transformers_runtime_compat_patches()
@@ -699,7 +699,7 @@ class DPTrainer:
         self._apply_opaque_model_patches()
 
     def _apply_opaque_model_patches(self) -> None:
-        """``apply_model_patches(model, compat=True, performance=use_liger_kernel)``."""
+        """``apply_model_patches(model, compat=True, performance=use_performance_kernels)``."""
         try:
             from opaque.patches import apply_model_patches
         except ImportError:
@@ -707,16 +707,16 @@ class DPTrainer:
             return
 
         kwargs: dict[str, Any] = {}
-        liger = bool(self.args.use_liger_kernel)
-        if liger:
-            from ._liger import translate_liger_config
+        performance = bool(self.args.use_performance_kernels)
+        if performance:
+            from ._performance_kernels import translate_performance_kernels_config
 
-            kwargs.update(translate_liger_config(self._coerce_liger_kernel_config()))
+            kwargs.update(translate_performance_kernels_config(self._coerce_performance_kernels_config()))
 
-        apply_model_patches(self._model, compat=True, performance=liger, **kwargs)
+        apply_model_patches(self._model, compat=True, performance=performance, **kwargs)
 
-    def _coerce_liger_kernel_config(self) -> dict[str, Any] | None:
-        raw = self.args.liger_kernel_config
+    def _coerce_performance_kernels_config(self) -> dict[str, Any] | None:
+        raw = self.args.performance_kernels_config
         if raw is None:
             return None
         if isinstance(raw, str):
@@ -726,7 +726,7 @@ class DPTrainer:
             loaded = json.loads(stripped)
             if not isinstance(loaded, dict):
                 raise ValueError(
-                    "liger_kernel_config must decode to a JSON object when given as a string."
+                    "performance_kernels_config must decode to a JSON object when given as a string."
                 )
             return loaded
         return dict(raw)
@@ -829,7 +829,7 @@ class DPTrainer:
             if not hasattr(self.args, key_name):
                 log.warning(
                     "Trying to set %s in the hyperparameter search but there is no "
-                    "corresponding field in `DPTrainingArguments`.",
+                    "corresponding field in `TrainingArguments`.",
                     key_name,
                 )
                 continue
@@ -1097,7 +1097,7 @@ class DPTrainer:
         """Inner dispatch; separated so the push_to_hub progress-bar wrapper is clean."""
         if self._train_dataset is None:
             raise ValueError("DPTrainer.train() requires a train_dataset.")
-        if not self.args.auto_find_batch_size:
+        if not self.args.auto_find_microbatch_size:
             return self._train_once(
                 resume_from_checkpoint=resume_from_checkpoint,
                 microbatch_size_override=None,
@@ -1130,7 +1130,7 @@ class DPTrainer:
                     raise
 
                 log.warning(
-                    "auto_find_batch_size: OOM at microbatch_size=%d, retrying with microbatch_size=%d",
+                    "auto_find_microbatch_size: OOM at microbatch_size=%d, retrying with microbatch_size=%d",
                     current_microbatch_size,
                     next_microbatch_size,
                 )
@@ -1316,7 +1316,7 @@ class DPTrainer:
         # --- Sampling & step calculations ---
         # Logical batch (Poisson round size) drives DP accounting; physical
         # batch (per-device size) is the vmap chunk fed into clipping.
-        expected_batch_size = a.expected_batch_size
+        expected_batch_size = a.train_batch_size
         microbatch_size = (
             int(microbatch_size_override)
             if microbatch_size_override is not None
@@ -1374,8 +1374,8 @@ class DPTrainer:
         save_steps_resolved = self._resolve_save_steps_int(total_steps)
         self.state.save_steps = save_steps_resolved
 
-        # --- Clipping norm (scalar ``max_grad_norm`` or per-group dict) ---
-        mgn = a.max_grad_norm
+        # --- Clipping norm (scalar ``clipping_norm`` or per-group dict) ---
+        mgn = a.clipping_norm
         if isinstance(mgn, dict):
             from opaque.api.engine.clipping import per_group as per_group_clipper
 
@@ -1646,9 +1646,9 @@ class DPTrainer:
                 ctx.accounting |= ctx.mechanism(ctx.noise_multiplier)
 
                 # Training step: clip → noise → optimize.  DP-SGD has no
-                # substep concept — gradient_accumulation_steps is folded
-                # into the Poisson round size, so each iteration is a full
-                # optimizer step.  ``on_substep_end`` is therefore not fired.
+                # substep concept; each iteration is a full optimizer step
+                # over one Poisson-sampled logical batch.  ``on_substep_end``
+                # is therefore not fired.
                 step_result = self.training_step(self._model, batch)
 
                 global_step += 1
@@ -2991,7 +2991,7 @@ class DPTrainer:
                 f"({', '.join(signature_columns)}). The following columns have "
                 f"been ignored: [{', '.join(ignored_columns)}]. Please check the "
                 "dataset and model. You may need to set `remove_unused_columns=False` "
-                "in DPTrainingArguments."
+                "in TrainingArguments."
             )
         return dataset.remove_columns(ignored_columns)
 
@@ -3807,7 +3807,7 @@ class DPTrainer:
 
     # Allowed values for ``args.save_strategy``.  Inlined-validation
     # is in ``__init__`` (a previous ``_validate_save_args`` helper was
-    # collapsed once ``DPTrainingArguments.__post_init__`` became
+    # collapsed once ``TrainingArguments.__post_init__`` became
     # idempotent — the snapshot dance it performed is no longer
     # needed).
     _SAVE_STRATEGIES = ("no", "steps", "epoch", "best")
@@ -3859,7 +3859,7 @@ class DPTrainer:
         cadence resolution.
         """
         a = self.args
-        sample_rate = a.expected_batch_size / max(1, dataset_size)
+        sample_rate = a.train_batch_size / max(1, dataset_size)
         steps_per_epoch = math.ceil(1.0 / sample_rate)
         if a.max_steps > 0:
             total = a.max_steps
@@ -4311,7 +4311,7 @@ class DPTrainer:
             target_delta=ctx.target_delta,
             noise_multiplier=ctx.noise_multiplier,
             expected_steps_per_epoch=ctx.expected_steps_per_epoch,
-            expected_batch_size=int(self.args.expected_batch_size),
+            expected_batch_size=int(self.args.train_batch_size),
             total_steps=ctx.total_steps,
             extra=extra,
         )
@@ -4364,7 +4364,7 @@ class DPTrainer:
     def _save_training_args(self, ckpt_dir: str) -> None:
         # Filename matches HF's ``TRAINING_ARGS_NAME``; HF tooling that
         # ``torch.load(.../training_args.bin)`` accepts the bundled
-        # ``DPTrainingArguments`` because the dataclass is a strict
+        # ``TrainingArguments`` because the dataclass is a strict
         # superset of ``TrainingArguments``.
         torch.save(self.args, os.path.join(ckpt_dir, ckpt.TRAINING_ARGS_NAME))
 
@@ -4595,7 +4595,7 @@ class DPTrainer:
                 "sample_rate",
                 ctx.sample_rate
                 if ctx is not None
-                else a.expected_batch_size / max(1, len(self._train_dataset)),
+                else a.train_batch_size / max(1, len(self._train_dataset)),
             ),
             (
                 "target_delta",
@@ -4609,7 +4609,7 @@ class DPTrainer:
                 "total_steps",
                 ctx.total_steps if ctx is not None else self._predict_total_steps(),
             ),
-            ("expected_batch_size", int(a.expected_batch_size)),
+            ("expected_batch_size", int(a.train_batch_size)),
         ):
             saved = payload.get(arg_name)
             if saved is None or current is None:

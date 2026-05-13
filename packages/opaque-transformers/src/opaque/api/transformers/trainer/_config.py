@@ -1,6 +1,6 @@
 """DP training arguments — standalone dataclass for :class:`DPTrainer`.
 
-``DPTrainingArguments`` is a plain ``@dataclass`` (no
+``TrainingArguments`` is a plain ``@dataclass`` (no
 ``transformers.TrainingArguments`` inheritance). The field surface is the
 intersection of "what makes sense for DP-SGD" and "what HF utilities we
 use (modelcard, reporting callbacks, ``state.compute_steps``, ...) read
@@ -30,17 +30,18 @@ exposed via the Accelerate ``PartialState``:
 
 DP-correct invariants worth flagging:
 
-- ``max_grad_norm`` is the **per-example DP clipping bound** (Opaque
-  reuses HF's field name for parity with Trainer-shaped configs). Pass a
+- ``clipping_norm`` is the **per-example DP clipping bound**. Pass a
   positive scalar for a single global clip, or a ``dict`` / JSON object
   with a required ``"fallback"`` key (default clip) plus substring
   pattern keys for :func:`opaque.api.engine.clipping.per_group` semantics. Adaptive /
   auto clipping hyperparameters stay in ``clipping_mode`` and
   ``clipping_kwargs`` (not per-group norms).
-- ``gradient_accumulation_steps`` is reinterpreted as a Poisson-rate
-  scaler — the expected logical batch is
-  ``per_device_train_batch_size * gradient_accumulation_steps``. One
-  Poisson round = one DP-SGD step. Warning emitted when GA != 1.
+- ``per_device_train_batch_size`` is the **per-rank logical Poisson batch**
+  (HF parity at ``gradient_accumulation_steps=1``). One Poisson round =
+  one DP-SGD step. Cluster-wide logical batch is
+  ``per_device_train_batch_size * world_size`` (the ``train_batch_size``
+  HF property). Internal microbatch chunking under OOM retry never
+  changes the logical batch — privacy accounting is unaffected.
 - ``optim`` accepts the torchopt-backed names DPTrainer wires
   (``adam``, ``adamw``, ``adamw-bc``, ``sgd``, ``rmsprop``, ``adagrad``,
   ``adadelta``, ``adamax``, ``radam``); HF's ``OptimizerNames`` values
@@ -95,7 +96,7 @@ _DDP_BACKEND_ENV_DEPENDENT: tuple[str, ...] = ("xccl", "hccl", "cncl", "mccl")
 
 # JSON dict fields that may arrive as JSON strings via CLI (HF parity).
 _JSON_DICT_FIELDS: tuple[str, ...] = (
-    "liger_kernel_config",
+    "performance_kernels_config",
     "lr_scheduler_kwargs",
     "gradient_checkpointing_kwargs",
     "clipping_kwargs",
@@ -105,7 +106,7 @@ _JSON_DICT_FIELDS: tuple[str, ...] = (
 )
 
 # Optimizer surface is owned by ``_optim``; keep validation logic and
-# aliases in one place so ``DPTrainingArguments`` and optimizer factory
+# aliases in one place so ``TrainingArguments`` and optimizer factory
 # stay in sync.
 from ._optim import (  # noqa: E402
     resolve_optimizer_name as _resolve_optimizer_name,
@@ -116,7 +117,7 @@ _DP_OPTIMIZERS: tuple[str, ...] = _supported_optimizer_names()
 
 
 @dataclasses.dataclass
-class DPTrainingArguments:
+class TrainingArguments:
     """Standalone training arguments for :class:`DPTrainer`.
 
     Field surface mirrors HF ``TrainingArguments`` for the subset
@@ -125,14 +126,17 @@ class DPTrainingArguments:
 
     Batch-size contract (DP-correct interpretation):
 
-    - ``per_device_train_batch_size`` is the **physical** batch — the
-      microbatch that vmap consumes in one chunk.
-    - ``per_device_train_batch_size * gradient_accumulation_steps`` is
-      the **logical** batch — the expected size of one Poisson-sampled
-      round that defines a single DP-SGD step.
-    - Under DDP, the global expected batch is unchanged; per-rank batch
-      is ``expected_batch_size / world_size``. Privacy accounting drives
-      off the global expected batch.
+    - ``per_device_train_batch_size`` is the **per-rank logical Poisson
+      batch** — the expected size of the sample drawn on each rank for
+      one DP-SGD step. Matches HF semantics at ``gradient_accumulation_steps=1``.
+    - Cluster-wide logical batch is ``per_device_train_batch_size *
+      world_size`` (exposed as the HF property ``train_batch_size``).
+      The sample rate ``q = train_batch_size / N_total`` drives privacy
+      accounting.
+    - Internal microbatch chunking (only activated by
+      ``auto_find_microbatch_size`` on OOM retry) splits the per-rank
+      logical batch into smaller vmap calls. This never changes the
+      logical batch and is privacy-neutral.
     """
 
     # =================================================================
@@ -147,10 +151,9 @@ class DPTrainingArguments:
     # =================================================================
     per_device_train_batch_size: int = 8
     per_device_eval_batch_size: int = 8
-    gradient_accumulation_steps: int = 1
     eval_accumulation_steps: int | None = None
     eval_delay: float = 0.0
-    auto_find_batch_size: bool = False
+    auto_find_microbatch_size: bool = False
 
     # =================================================================
     # Optimizer / LR schedule
@@ -160,7 +163,7 @@ class DPTrainingArguments:
     adam_beta1: float = 0.9
     adam_beta2: float = 0.999
     adam_epsilon: float = 1e-8
-    max_grad_norm: float | dict[str, Any] | str = 1.0
+    clipping_norm: float | dict[str, Any] | str = 1.0
     optim: str = "adamw"
     optim_args: str | None = None
     lr_scheduler_type: SchedulerType | str = "linear"
@@ -282,8 +285,8 @@ class DPTrainingArguments:
     torch_compile: bool = False
     torch_compile_backend: str | None = None
     torch_compile_mode: str | None = None
-    use_liger_kernel: bool = False
-    liger_kernel_config: dict[str, Any] | str | None = None
+    use_performance_kernels: bool = False
+    performance_kernels_config: dict[str, Any] | str | None = None
 
     # =================================================================
     # Misc
@@ -339,7 +342,7 @@ class DPTrainingArguments:
 
         Idempotent: re-entry (e.g. via ``dataclasses.replace`` or a
         manual second call) short-circuits after the first successful
-        invocation, so the same ``DPTrainingArguments`` instance can be
+        invocation, so the same ``TrainingArguments`` instance can be
         reused — the dataclass output stays stable across constructions
         even though many fields are mutated in-place.
         """
@@ -631,8 +634,8 @@ class DPTrainingArguments:
         # Validation/alias normalization is centralized in ``_optim``.
         _resolve_optimizer_name(self.optim)
 
-        # --- 11. max_grad_norm (DP per-example clip, optional per-group dict) ---
-        self.max_grad_norm = _coerce_max_grad_norm(self.max_grad_norm)
+        # --- 11. clipping_norm (DP per-example clip, optional per-group dict) ---
+        self.clipping_norm = _coerce_max_grad_norm(self.clipping_norm)
 
         # --- 11b. DP mechanism / clipping / sampling surfaces ---------------
         if self.clipping_mode not in ("fixed", "adaptive", "auto"):
@@ -663,19 +666,7 @@ class DPTrainingArguments:
                     f'"loss" → "eval_loss").'
                 )
 
-        # --- 13. DP semantic-divergence warnings ---------------------------
-        if self.gradient_accumulation_steps != 1:
-            log.warning(
-                "DPTrainer reinterprets gradient_accumulation_steps=%d as a "
-                "Poisson sample-rate scaler (expected logical batch = "
-                "per_device_train_batch_size * gradient_accumulation_steps), "
-                "NOT as K serial backward passes per optimizer step.  This "
-                "differs from HF Trainer.  See "
-                "docs/development/dp_training_arguments_plan.md.",
-                self.gradient_accumulation_steps,
-            )
-
-        # --- 14. Distributed (DDP) defaults & validation -------------------
+        # --- 13. Distributed (DDP) defaults & validation -------------------
         # ``LOCAL_RANK`` env-var fallback for ``local_rank`` (HF parity).
         if self.local_rank == -1:
             self.local_rank = int(os.environ.get("LOCAL_RANK", -1))
@@ -754,15 +745,6 @@ class DPTrainingArguments:
         """Cluster-wide eval batch size (HF parity)."""
         return self.per_device_eval_batch_size * max(1, self.world_size)
 
-    @property
-    def expected_batch_size(self) -> int:
-        """Logical batch size — the expected Poisson-sampled round size.
-
-        ``per_device_train_batch_size * gradient_accumulation_steps``.
-        Drives the DP sample rate and per-step normalization.
-        """
-        return self.per_device_train_batch_size * self.gradient_accumulation_steps
-
     # =================================================================
     # Device resolution (bypasses Accelerate)
     # =================================================================
@@ -836,16 +818,16 @@ def _convert_str_dict(value: Any) -> Any:
 
 
 def _coerce_max_grad_norm(value: Any) -> float | dict[str, float]:
-    """Normalize ``max_grad_norm``: positive scalar or per-group dict."""
+    """Normalize ``clipping_norm``: positive scalar or per-group dict."""
     if isinstance(value, bool):
-        raise TypeError("max_grad_norm must not be a boolean")
+        raise TypeError("clipping_norm must not be a boolean")
     if isinstance(value, str):
         stripped = value.strip()
         if stripped.startswith("{"):
             loaded = json.loads(stripped)
             if not isinstance(loaded, dict):
                 raise ValueError(
-                    "max_grad_norm JSON must be an object mapping strings to "
+                    "clipping_norm JSON must be an object mapping strings to "
                     f"numbers; got {type(loaded).__name__}"
                 )
             return _coerce_max_grad_norm(_convert_str_dict(loaded))
@@ -853,14 +835,14 @@ def _coerce_max_grad_norm(value: Any) -> float | dict[str, float]:
             value = float(stripped)
         except ValueError as exc:
             raise ValueError(
-                "max_grad_norm must be a positive number or a JSON object with "
+                "clipping_norm must be a positive number or a JSON object with "
                 f"a 'fallback' key; got {value!r}"
             ) from exc
     if isinstance(value, (int, float)):
         out = float(value)
         if out <= 0.0:
             raise ValueError(
-                "max_grad_norm must be strictly positive for DP-SGD clipping; "
+                "clipping_norm must be strictly positive for DP-SGD clipping; "
                 f"got {out!r}."
             )
         return out
@@ -869,24 +851,24 @@ def _coerce_max_grad_norm(value: Any) -> float | dict[str, float]:
         for k, v in value.items():
             if not isinstance(k, str):
                 raise TypeError(
-                    "max_grad_norm dict keys must be str (pattern or 'fallback'); "
+                    "clipping_norm dict keys must be str (pattern or 'fallback'); "
                     f"got {type(k).__name__}"
                 )
             if isinstance(v, bool):
-                raise TypeError(f"max_grad_norm[{k!r}] must be numeric, not bool")
+                raise TypeError(f"clipping_norm[{k!r}] must be numeric, not bool")
             fv = float(v)
             if fv <= 0.0:
-                raise ValueError(f"max_grad_norm[{k!r}] must be > 0; got {v!r}")
+                raise ValueError(f"clipping_norm[{k!r}] must be > 0; got {v!r}")
             coerced[k] = fv
         if "fallback" not in coerced:
             raise ValueError(
-                "max_grad_norm dict must include a 'fallback' key with the "
+                "clipping_norm dict must include a 'fallback' key with the "
                 "default per-example clip bound"
             )
         if len(coerced) == 1:
             return coerced["fallback"]
         return coerced
     raise TypeError(
-        "max_grad_norm must be float, int, dict[str, float], or str; "
+        "clipping_norm must be float, int, dict[str, float], or str; "
         f"got {type(value).__name__}"
     )

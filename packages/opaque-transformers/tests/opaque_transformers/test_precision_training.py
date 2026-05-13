@@ -14,10 +14,10 @@ from __future__ import annotations
 import pytest
 import torch
 
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 
-def _args(tmp_path, **overrides) -> DPTrainingArguments:
+def _args(tmp_path, **overrides) -> TrainingArguments:
     defaults = dict(
         output_dir=str(tmp_path),
         per_device_train_batch_size=1,
@@ -29,7 +29,7 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
         privacy_noise_multiplier=1.0,
     )
     defaults.update(overrides)
-    return DPTrainingArguments(**defaults)
+    return TrainingArguments(**defaults)
 
 
 def _tiny_trainer(tmp_path, **arg_overrides) -> tuple[DPTrainer, torch.nn.Module]:

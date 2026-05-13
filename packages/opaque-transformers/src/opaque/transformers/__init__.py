@@ -3,7 +3,7 @@
 This module is a thin façade over the trainer implementation package shipped
 in the same wheel. Importing it does **not** mutate Hugging Face globals:
 :class:`~opaque.transformers.trainer.DPTrainer` applies runtime compat patches
-and ``apply_model_patches(..., compat=True, performance=use_liger_kernel)``
+and ``apply_model_patches(..., compat=True, performance=use_performance_kernels)``
 during construction. For scripts that use HF primitives without
 ``DPTrainer``, call :func:`patch_all` once for global runtime shims.
 """
@@ -19,7 +19,7 @@ from opaque.api.transformers._runtime_bootstrap import (
 )
 from opaque.api.transformers.trainer import (
     DPTrainer,
-    DPTrainingArguments,
+    TrainingArguments,
     PredictionOutput,
     TrainOutput,
     default_dp_hp_backend,
@@ -33,7 +33,7 @@ except PackageNotFoundError:
 __all__ = [
     "__version__",
     "DPTrainer",
-    "DPTrainingArguments",
+    "TrainingArguments",
     "PredictionOutput",
     "TrainOutput",
     "default_dp_hp_backend",

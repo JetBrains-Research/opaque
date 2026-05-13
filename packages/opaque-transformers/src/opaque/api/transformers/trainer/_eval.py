@@ -19,7 +19,7 @@ helpers used by the eval loop:
   expose ``{prefix}_runtime``, ``{prefix}_samples_per_second``,
   ``{prefix}_steps_per_second``.
 - :func:`validate_eval_args` — pure constructor-time validation of the
-  eval-related fields on :class:`DPTrainingArguments`.
+  eval-related fields on :class:`TrainingArguments`.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ from transformers.trainer_utils import (
 )
 
 if TYPE_CHECKING:
-    from ._config import DPTrainingArguments
+    from ._config import TrainingArguments
 
 
 __all__ = [
@@ -470,7 +470,7 @@ def _pad_and_concat(
 
 
 def should_run_eval_at_step(
-    args: "DPTrainingArguments",
+    args: "TrainingArguments",
     global_step: int,
     epoch: float,
     eval_steps_resolved: int,
@@ -609,7 +609,7 @@ _ALLOWED_INCLUDE_FOR_METRICS = frozenset({"inputs", "loss"})
 
 
 def validate_eval_args(
-    args: "DPTrainingArguments",
+    args: "TrainingArguments",
     compute_metrics: Callable | None,
 ) -> None:
     """Validate eval-related fields on ``args``.

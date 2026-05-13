@@ -1,4 +1,4 @@
-"""Lock-in tests for ``DPTrainingArguments._setup_devices``.
+"""Lock-in tests for ``TrainingArguments._setup_devices``.
 
 The device-resolution semantics already exist in
 ``opaque/huggingface/trainer/_config.py:_setup_devices`` — these tests
@@ -9,7 +9,7 @@ Covered:
 - Each ``(use_cpu, use_mps_device)`` combination resolves to the expected
   device on a CUDA-available host, an MPS-only host, and a CPU-only host.
 - ``_n_gpu`` is 0 for CPU/MPS, 1 for CUDA.
-- ``no_cuda`` is rejected (standalone ``DPTrainingArguments``; use ``use_cpu``).
+- ``no_cuda`` is rejected (standalone ``TrainingArguments``; use ``use_cpu``).
 - ``DPTrainer.__init__`` actually moves the model to the resolved device
   (HF parity: args wins over wherever the user pre-placed).
 """
@@ -21,7 +21,7 @@ from unittest.mock import patch
 import pytest
 import torch
 
-from opaque.api.transformers.trainer._config import DPTrainingArguments
+from opaque.api.transformers.trainer._config import TrainingArguments
 
 
 # ----------------------------------------------------------------------------
@@ -30,7 +30,7 @@ from opaque.api.transformers.trainer._config import DPTrainingArguments
 # ----------------------------------------------------------------------------
 
 
-def _args(**kwargs) -> DPTrainingArguments:
+def _args(**kwargs) -> TrainingArguments:
     defaults = dict(
         output_dir=None,
         privacy_target_epsilon=10.0,
@@ -38,7 +38,7 @@ def _args(**kwargs) -> DPTrainingArguments:
         save_strategy="no",
     )
     defaults.update(kwargs)
-    return DPTrainingArguments(**defaults)
+    return TrainingArguments(**defaults)
 
 
 # ----------------------------------------------------------------------------
@@ -101,7 +101,7 @@ def test_use_cpu_takes_precedence_over_use_mps_device(mock_cuda):
 
 
 # ----------------------------------------------------------------------------
-# ``no_cuda`` (HF deprecated alias) is not accepted on ``DPTrainingArguments``
+# ``no_cuda`` (HF deprecated alias) is not accepted on ``TrainingArguments``
 # ----------------------------------------------------------------------------
 
 

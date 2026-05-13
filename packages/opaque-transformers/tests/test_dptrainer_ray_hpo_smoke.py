@@ -14,7 +14,7 @@ import os
 import pytest
 import torch
 
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 
 class _LossModel(torch.nn.Module):
@@ -51,13 +51,12 @@ def _dataset() -> list[dict[str, torch.Tensor]]:
     ]
 
 
-def _args(tmp_path, **overrides) -> DPTrainingArguments:
+def _args(tmp_path, **overrides) -> TrainingArguments:
     defaults = dict(
         output_dir=str(tmp_path),
         use_cpu=True,
         per_device_train_batch_size=7,
         per_device_eval_batch_size=7,
-        gradient_accumulation_steps=1,
         max_steps=1,
         num_train_epochs=1,
         learning_rate=1e-3,
@@ -68,7 +67,7 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
         remove_unused_columns=True,
     )
     defaults.update(overrides)
-    return DPTrainingArguments(**defaults)
+    return TrainingArguments(**defaults)
 
 
 @pytest.mark.slow

@@ -6,9 +6,9 @@ Verifies the three foundations DPTrainer now wires:
   (model init, ``compute_metrics`` ``torch.randn`` calls, …) is
   reproducible run-to-run.
 - ``self._device = self.args.device`` (forwards to
-  :meth:`DPTrainingArguments._setup_devices`) so ``use_cpu`` /
+  :meth:`TrainingArguments._setup_devices`) so ``use_cpu`` /
   ``use_mps_device`` / ``no_cuda`` actually take effect.
-- ``DPTrainingArguments.__post_init__`` is idempotent so a single args
+- ``TrainingArguments.__post_init__`` is idempotent so a single args
   instance can be passed to multiple ``DPTrainer`` constructions
   (sweep parity).
 """
@@ -23,7 +23,7 @@ import torch
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 # ``_hf_shared`` is in the parent of ``validation/``; mirror the import
 # convention used by the sibling tests.
@@ -70,7 +70,7 @@ def _build_lora_model(base_model, seed: int = 42):
     return get_peft_model(base_model, lora_config)
 
 
-def _args(tmp_path, **overrides) -> DPTrainingArguments:
+def _args(tmp_path, **overrides) -> TrainingArguments:
     """Reproducibility-test args (CPU-pinned, deterministic).
 
     ``privacy_noise_multiplier=0.0`` is the canonical knob for asserting
@@ -89,13 +89,13 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
         eval_strategy="no",
         privacy_target_epsilon=10.0,
         privacy_noise_multiplier=0.0,
-        max_grad_norm=1.0,
+        clipping_norm=1.0,
         learning_rate=1e-3,
         seed=42,
         use_cpu=True,
     )
     defaults.update(overrides)
-    return DPTrainingArguments(**defaults)
+    return TrainingArguments(**defaults)
 
 
 def _train_two_steps(model, tokenizer, dataset, args) -> dict[str, torch.Tensor]:
@@ -323,11 +323,11 @@ class TestDeviceFlagEffect:
 
 
 class TestPostInitIdempotency:
-    """``DPTrainingArguments.__post_init__`` is safe to re-enter."""
+    """``TrainingArguments.__post_init__`` is safe to re-enter."""
 
     def test_manual_reentry_is_a_noop(self, tmp_path):
         """Calling ``__post_init__`` a second time leaves fields stable."""
-        a = DPTrainingArguments(
+        a = TrainingArguments(
             output_dir=str(tmp_path),
             use_cpu=True,
             logging_steps=2,
@@ -363,7 +363,7 @@ class TestPostInitIdempotency:
         gpt2_model_and_tokenizer,
         tmp_path,
     ):
-        """The same ``DPTrainingArguments`` instance constructs two trainers."""
+        """The same ``TrainingArguments`` instance constructs two trainers."""
         model_a, tokenizer = gpt2_model_and_tokenizer
         lora_a = _build_lora_model(model_a)
         ds = build_lm_dataset(["a", "b"], tokenizer, max_length=8)
@@ -407,10 +407,10 @@ class TestReportToRaises:
     @pytest.mark.parametrize("value", ["wandb", "tensorboard", "all", ["wandb"]])
     def test_non_default_report_to_no_longer_raises(self, value, tmp_path):
         # Phase 5b removed the ValueError; these values must construct cleanly.
-        DPTrainingArguments(output_dir=str(tmp_path), report_to=value)
+        TrainingArguments(output_dir=str(tmp_path), report_to=value)
 
     @pytest.mark.parametrize("value", [None, "none", [], ["none"]])
     def test_default_report_to_is_silent(self, value, tmp_path):
         # All four sentinels must construct without error.
-        args = DPTrainingArguments(output_dir=str(tmp_path), report_to=value)
+        args = TrainingArguments(output_dir=str(tmp_path), report_to=value)
         assert args.report_to == []

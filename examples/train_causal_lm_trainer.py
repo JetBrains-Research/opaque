@@ -39,7 +39,7 @@ from transformers import (
 )
 
 from opaque.transformers import is_patched as is_transformers_patched
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.transformers import is_patched as is_kernel_patched
 
 log = logging.getLogger(__name__)
@@ -274,7 +274,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="adam",
         choices=["sgd", "adam", "adamw", "adamw-bc"],
-        help="Torchopt-backed optimizer name passed to DPTrainingArguments.optim.",
+        help="Torchopt-backed optimizer name passed to TrainingArguments.optim.",
     )
     train_group.add_argument("--weight-decay", type=float, default=0.01)
     train_group.add_argument("--log-steps", type=int, default=1)
@@ -465,20 +465,15 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def _resolve_trainer_batching(args: argparse.Namespace) -> tuple[int, int]:
-    """Return physical batch size and DPTrainer GA preserving logical batch."""
-    if args.microbatch_size is None:
-        return args.batch_size, 1
-    if args.microbatch_size <= 0:
-        raise ValueError("--microbatch-size must be positive, or 0 for None.")
-    physical_batch = min(args.microbatch_size, args.batch_size)
-    if args.batch_size % physical_batch != 0:
-        raise ValueError(
-            "DPTrainer requires --microbatch-size to divide --batch-size so "
-            "gradient_accumulation_steps can preserve the expected Poisson batch. "
-            f"Got batch_size={args.batch_size}, microbatch_size={args.microbatch_size}."
-        )
-    return physical_batch, args.batch_size // physical_batch
+def _resolve_trainer_batching(args: argparse.Namespace) -> int:
+    """Return the per-rank logical Poisson batch.
+
+    DPTrainer no longer supports gradient accumulation; ``--batch-size``
+    is the per-rank logical batch (vmap chunk size = logical batch by
+    default; ``auto_find_microbatch_size`` may shrink the internal chunk
+    on OOM, but the logical batch is privacy-fixed).
+    """
+    return args.batch_size
 
 
 def _reject_distributed_runtime() -> None:
@@ -529,7 +524,7 @@ def main() -> int:
         device, device_label, dtype_name, torch_dtype, dtype_warning
     )
 
-    physical_batch_size, ga_steps = _resolve_trainer_batching(args)
+    per_rank_logical_batch = _resolve_trainer_batching(args)
     report_to = _configure_reporting(args)
 
     if args.sdpa_backend is not None and device.type == "cuda":
@@ -667,7 +662,7 @@ def main() -> int:
         )
 
     save_strategy = "steps" if args.save_steps is not None else "no"
-    training_args = DPTrainingArguments(
+    training_args = TrainingArguments(
         output_dir=args.output_dir,
         overwrite_output_dir=True,
         report_to=report_to,
@@ -681,9 +676,8 @@ def main() -> int:
         save_steps=args.save_steps or args.eval_steps,
         max_steps=args.max_steps if args.max_steps is not None else -1,
         num_train_epochs=args.num_epochs,
-        per_device_train_batch_size=physical_batch_size,
+        per_device_train_batch_size=per_rank_logical_batch,
         per_device_eval_batch_size=args.eval_batch_size,
-        gradient_accumulation_steps=ga_steps,
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
         optim=args.optimizer,
@@ -696,7 +690,7 @@ def main() -> int:
         gradient_checkpointing=args.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         cpu_offload_activations=args.cpu_offload,
-        auto_find_batch_size=args.auto_find_batch_size,
+        auto_find_microbatch_size=args.auto_find_microbatch_size,
         remove_unused_columns=True,
         include_tokens_per_second=True,
         include_num_input_tokens_seen="all",
@@ -709,7 +703,7 @@ def main() -> int:
             "tolerance": args.calibration_tolerance,
         },
         clipping_mode=args.clipping_mode,
-        max_grad_norm=(
+        clipping_norm=(
             {"fallback": float(args.clipping_norm), **dict(args.per_group_clipping)}
             if args.per_group_clipping
             else float(args.clipping_norm)
@@ -734,7 +728,7 @@ def main() -> int:
     print(f"  Optimizer: {training_args.optim}")
     print(f"  Learning rate: {training_args.learning_rate}")
     print(f"  Clipping mode: {training_args.clipping_mode}")
-    print(f"  Clip norm (max_grad_norm): {training_args.max_grad_norm}")
+    print(f"  Clip norm (clipping_norm): {training_args.clipping_norm}")
     print(f"  Noise mechanism: {training_args.privacy_noise_mechanism}")
     print(f"  Target epsilon: {training_args.privacy_target_epsilon}")
     print(f"  Target delta: {training_args.privacy_target_delta or 'auto'}")

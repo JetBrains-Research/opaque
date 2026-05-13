@@ -732,7 +732,7 @@ def _set_default_resources(trainer: Any, kwargs: dict[str, Any]) -> None:
     resources: dict[str, int] = {"cpu": 1}
     # HF ``run_hp_search_ray`` keys off ``trainer.args.n_gpu`` (Accelerate
     # populates it).  DPTrainer sets ``_n_gpu`` from device resolution in
-    # ``DPTrainingArguments._setup_devices`` — ``args.n_gpu`` reads that.
+    # ``TrainingArguments._setup_devices`` — ``args.n_gpu`` reads that.
     if int(getattr(trainer.args, "n_gpu", 0) or 0) > 0:
         resources["gpu"] = 1
     kwargs["resources_per_trial"] = resources

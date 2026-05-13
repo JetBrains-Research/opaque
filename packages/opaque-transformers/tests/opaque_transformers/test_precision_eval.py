@@ -15,11 +15,11 @@ from __future__ import annotations
 import pytest
 import torch
 
-from opaque.transformers.trainer import DPTrainingArguments
+from opaque.transformers.trainer import TrainingArguments
 from opaque.api.transformers.trainer._precision import eval_dtype
 
 
-def _args(**overrides) -> DPTrainingArguments:
+def _args(**overrides) -> TrainingArguments:
     defaults = dict(
         output_dir=None,
         save_strategy="no",
@@ -28,7 +28,7 @@ def _args(**overrides) -> DPTrainingArguments:
         use_cpu=True,
     )
     defaults.update(overrides)
-    return DPTrainingArguments(**defaults)
+    return TrainingArguments(**defaults)
 
 
 # ----------------------------------------------------------------------------

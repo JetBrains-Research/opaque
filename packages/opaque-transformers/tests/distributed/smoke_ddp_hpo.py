@@ -34,7 +34,7 @@ from torch.utils.data import Dataset
 from transformers import PreTrainedModel, PretrainedConfig
 from transformers.modeling_outputs import SequenceClassifierOutput
 
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 
 class TinyConfig(PretrainedConfig):
@@ -99,8 +99,8 @@ def _setup_dist() -> tuple[int, int]:
     return rank, world_size
 
 
-def _build_args(output_dir: str) -> DPTrainingArguments:
-    return DPTrainingArguments(
+def _build_args(output_dir: str) -> TrainingArguments:
+    return TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=4,
         per_device_eval_batch_size=4,

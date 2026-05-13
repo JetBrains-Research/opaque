@@ -30,7 +30,7 @@ from torch.utils.data import Dataset
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutput
 
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 
 class TinyConfig(PretrainedConfig):
@@ -144,7 +144,7 @@ def scenario_runtime_foundation(
     """Verify rank/world plumbing + checkpoint gating."""
     cfg = TinyConfig()
     model = TinyForCausalLM(cfg)
-    args = DPTrainingArguments(
+    args = TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=2,
         per_device_eval_batch_size=2,
@@ -228,7 +228,7 @@ def scenario_eval_gather(rank: int, world_size: int, output_dir: str, **_) -> No
     """Verify eval losses + predictions are cluster-wide after gather."""
     cfg = TinyConfig(vocab_size=32, hidden_size=8)
     model = TinyForCausalLM(cfg)
-    args = DPTrainingArguments(
+    args = TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=2,
         per_device_eval_batch_size=4,
@@ -272,7 +272,7 @@ def scenario_batch_eval_metrics(
     """Verify DDP ``batch_eval_metrics`` runs on gathered batch payloads."""
     cfg = TinyConfig(vocab_size=32, hidden_size=8)
     model = TinyForCausalLM(cfg)
-    args = DPTrainingArguments(
+    args = TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=2,
         per_device_eval_batch_size=4,
@@ -337,7 +337,7 @@ def scenario_hub_rank_zero_init(
     _hub._require_hub = lambda: None
     _hub._create_repo = fake_create_repo
     try:
-        args = DPTrainingArguments(
+        args = TrainingArguments(
             output_dir=output_dir,
             per_device_train_batch_size=2,
             max_steps=1,
@@ -369,7 +369,7 @@ def scenario_rank_gating_and_worker_seed(
     """Verify rank-gated logging/saving and worker seed rank wiring."""
     cfg = TinyConfig()
     model = TinyForCausalLM(cfg)
-    args = DPTrainingArguments(
+    args = TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=2,
         max_steps=1,
@@ -442,7 +442,7 @@ def scenario_env_backend_diagnostic(output_dir: str, **_) -> None:
     """Vendor backends are accepted by args but error on unavailable runtime."""
     cfg = TinyConfig()
     model = TinyForCausalLM(cfg)
-    args = DPTrainingArguments(
+    args = TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=2,
         max_steps=1,

@@ -8,7 +8,7 @@ Covers:
 - ``on_pre_optimizer_step`` exposes clipped+noised grads via
   ``kwargs["grads"]`` so DP-aware callbacks can compute group norms
   without touching ``param.grad``.
-- User-supplied ``DPTrainingArguments`` is never mutated (sweep parity).
+- User-supplied ``TrainingArguments`` is never mutated (sweep parity).
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ import torch
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainerCallback
 
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 from _hf_shared import build_lm_dataset  # noqa: E402
 
@@ -71,7 +71,7 @@ def tiny_dataset(small_model_and_tokenizer):
     )
 
 
-def _args(tmp_path, **overrides) -> DPTrainingArguments:
+def _args(tmp_path, **overrides) -> TrainingArguments:
     # ``use_cpu=True``: pin to CPU so the trainer's ``args.device``
     # resolves to CPU regardless of the host (the LoRA fixture creates
     # a CPU-resident model).
@@ -87,7 +87,7 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
         use_cpu=True,
     )
     defaults.update(overrides)
-    return DPTrainingArguments(**defaults)
+    return TrainingArguments(**defaults)
 
 
 # ---------------------------------------------------------------------------
@@ -339,12 +339,12 @@ class TestOptimizerHookKwargs:
 
 
 # ---------------------------------------------------------------------------
-# Args mutation hygiene — same DPTrainingArguments reusable across instances.
+# Args mutation hygiene — same TrainingArguments reusable across instances.
 # ---------------------------------------------------------------------------
 
 
 class TestArgsMutationHygiene:
-    """User-supplied ``DPTrainingArguments`` must not be mutated by DPTrainer."""
+    """User-supplied ``TrainingArguments`` must not be mutated by DPTrainer."""
 
     def test_args_unchanged_by_construction(self, lora_model, tiny_dataset, tmp_path):
         model, tokenizer = lora_model
@@ -388,7 +388,7 @@ class TestArgsMutationHygiene:
 
         # Second construction with the *same* args object must succeed and
         # leave args unchanged again.  This also exercises
-        # ``DPTrainingArguments.__post_init__`` idempotency: ``args``
+        # ``TrainingArguments.__post_init__`` idempotency: ``args``
         # has already been ``__post_init__``-d once at construction
         # time, so ``DPTrainer`` re-using it must not re-run the
         # mutating coercions.

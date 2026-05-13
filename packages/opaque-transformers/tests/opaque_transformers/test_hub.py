@@ -26,7 +26,7 @@ from unittest.mock import MagicMock, patch
 
 import torch
 
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 import opaque.api.transformers.trainer._hub as _hub
 
 
@@ -35,7 +35,7 @@ import opaque.api.transformers.trainer._hub as _hub
 # ---------------------------------------------------------------------------
 
 
-def _args(tmp_path, **overrides) -> DPTrainingArguments:
+def _args(tmp_path, **overrides) -> TrainingArguments:
     defaults = dict(
         output_dir=str(tmp_path),
         per_device_train_batch_size=1,
@@ -47,7 +47,7 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
         privacy_noise_multiplier=1.0,
     )
     defaults.update(overrides)
-    return DPTrainingArguments(**defaults)
+    return TrainingArguments(**defaults)
 
 
 def _tiny_trainer(tmp_path, **arg_overrides) -> DPTrainer:
@@ -398,7 +398,7 @@ class TestCreateModelCard:
                 tmp_path,
                 push_to_hub=True,
                 hub_model_id="org/repo",
-                max_grad_norm=1.0,
+                clipping_norm=1.0,
             )
         if log_history is not None:
             trainer.state.log_history = log_history
@@ -452,7 +452,7 @@ class TestCreateModelCard:
 
     def test_dp_section_clipping_norm(self, tmp_path):
         content = self._build_card(tmp_path)
-        assert "1.0" in content  # max_grad_norm=1.0
+        assert "1.0" in content  # clipping_norm=1.0
 
 
 def _tiny_trainer_with_hub(tmp_path) -> DPTrainer:
@@ -460,7 +460,7 @@ def _tiny_trainer_with_hub(tmp_path) -> DPTrainer:
     model_url.repo_id = "org/repo"
     with patch("opaque.api.transformers.trainer._hub._create_repo", return_value=model_url):
         return _tiny_trainer(
-            tmp_path, push_to_hub=True, hub_model_id="org/repo", max_grad_norm=1.0
+            tmp_path, push_to_hub=True, hub_model_id="org/repo", clipping_norm=1.0
         )
 
 

@@ -1,18 +1,21 @@
-"""HF ``use_liger_kernel`` / ``liger_kernel_config`` integration.
+"""``use_performance_kernels`` / ``performance_kernels_config`` integration.
 
-HF's ``Trainer.use_liger_kernel`` calls ``apply_liger_kernel(model, kernel_config)``
-which dispatches to per-model functions accepting per-component booleans
-(``rope``, ``rms_norm``, ``swiglu``, ``cross_entropy``,
-``fused_linear_cross_entropy``, ``geglu``, ``layer_norm``, …).
+When users set ``use_performance_kernels=True`` we apply opaque's
+vmap-safe high-performance kernels via ``opaque-patches``. The flag
+shape (per-component booleans like ``rope``, ``rms_norm``, ``swiglu``,
+``cross_entropy``, …) mirrors what HF accepts in
+``transformers.integrations.liger.apply_liger_kernel`` so configs port
+1:1, but the kernel implementations are ours (vmap-compatible
+reimplementations, not a Liger dependency).
 
-Opaque ships the same Triton kernels in ``opaque-patches`` under different
+Opaque ships the same fusion concepts under different
 flag names (``fuse_rope``, ``fuse_rms_norm``, ``fuse_swiglu``,
-``fuse_cross_entropy``).  This module translates the Liger key set to
-opaque's, keeping ``use_liger_kernel=True`` a drop-in flag for HF users.
+``fuse_cross_entropy``).  This module translates HF-shaped keys to
+opaque's flag names so HF-style configs are accepted unchanged.
 
 The translation table below is **temporary** — a follow-up PR will
-rename opaque's per-component flags to match Liger directly, at which
-point this becomes a pass-through.
+rename opaque's per-component flags to match the HF naming directly,
+at which point this becomes a pass-through.
 
 Notes on the mapping
 --------------------
@@ -36,7 +39,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-_LIGER_KEY_TO_OPAQUE: dict[str, str] = {
+_PERF_KERNEL_KEY_TO_OPAQUE: dict[str, str] = {
     "rope": "fuse_rope",
     "rms_norm": "fuse_rms_norm",
     "swiglu": "fuse_swiglu",
@@ -46,7 +49,7 @@ _LIGER_KEY_TO_OPAQUE: dict[str, str] = {
 }
 
 
-def translate_liger_config(cfg: dict[str, Any] | None) -> dict[str, bool]:
+def translate_performance_kernels_config(cfg: dict[str, Any] | None) -> dict[str, bool]:
     """Translate a Liger ``kernel_config`` dict to opaque-patches kwargs.
 
     Unknown keys are dropped with an INFO log; mapping collisions
@@ -58,10 +61,10 @@ def translate_liger_config(cfg: dict[str, Any] | None) -> dict[str, bool]:
     if not cfg:
         return out
     for key, value in cfg.items():
-        opaque_key = _LIGER_KEY_TO_OPAQUE.get(key)
+        opaque_key = _PERF_KERNEL_KEY_TO_OPAQUE.get(key)
         if opaque_key is None:
             log.info(
-                "liger_kernel_config: %r has no opaque-patches equivalent; ignored.",
+                "performance_kernels_config: %r has no opaque-patches equivalent; ignored.",
                 key,
             )
             continue
@@ -69,23 +72,24 @@ def translate_liger_config(cfg: dict[str, Any] | None) -> dict[str, bool]:
     return out
 
 
-def apply_liger_kernel_via_opaque_patches(
+def apply_performance_kernels_via_opaque_patches(
     model: Any,
     kernel_config: dict[str, Any] | None = None,
 ) -> None:
-    """Apply opaque-patches kernels using Liger-style configuration.
+    """Apply opaque-patches kernels using HF-shaped configuration.
 
-    Mirrors HF's :func:`transformers.integrations.liger.apply_liger_kernel`
-    contract: invoked once at ``__init__``-time when ``use_liger_kernel=True``,
-    mutates ``model`` in place.
+    Invoked once at ``__init__``-time when ``use_performance_kernels=True``;
+    mutates ``model`` in place. Config keys match the HF
+    :func:`transformers.integrations.liger.apply_liger_kernel` surface for
+    config portability.
 
     When ``kernel_config`` is ``None`` (HF default), this applies every
     supported kernel flag for the model family (full performance set) while
     keeping compat wrappers on.
 
     **DPTrainer** applies the same stack internally: compat-only by default,
-    and performance + translated ``liger_kernel_config`` when
-    ``use_liger_kernel=True`` — callers rarely need this function directly.
+    and performance + translated ``performance_kernels_config`` when
+    ``use_performance_kernels=True`` — callers rarely need this function directly.
     """
     from opaque.patches import apply_model_patches
 
@@ -93,11 +97,11 @@ def apply_liger_kernel_via_opaque_patches(
         model,
         performance=True,
         compat=True,
-        **translate_liger_config(kernel_config),
+        **translate_performance_kernels_config(kernel_config),
     )
 
 
 __all__ = [
-    "apply_liger_kernel_via_opaque_patches",
-    "translate_liger_config",
+    "apply_performance_kernels_via_opaque_patches",
+    "translate_performance_kernels_config",
 ]

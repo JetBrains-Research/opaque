@@ -1,6 +1,6 @@
 """HuggingFace-style LR scheduler dispatch for DPTrainer.
 
-Translates :attr:`DPTrainingArguments.lr_scheduler_type` plus
+Translates :attr:`TrainingArguments.lr_scheduler_type` plus
 ``lr_scheduler_kwargs`` into a ``Callable[[int], float]`` built from
 :mod:`opaque.scheduling` primitives.
 
@@ -123,7 +123,7 @@ def build_lr_schedule(
     # Tolerate ``None`` for callers that pre-date the
     # ``field(default_factory=dict)`` migration (HF parity:
     # ``TrainingArguments`` accepts JSON-string here too, but we don't —
-    # see ``DPTrainingArguments`` field docstring).
+    # see ``TrainingArguments`` field docstring).
     kwargs = dict(args.lr_scheduler_kwargs or {})
 
     if name in _DEFERRED:
@@ -489,7 +489,7 @@ def _build_plateau(
     ``mode`` defaults from ``metric_for_best_model`` when unset:
     ``"min"`` for ``*loss*`` metrics, ``"max"`` otherwise.
 
-    ``DPTrainingArguments.__post_init__`` defaults
+    ``TrainingArguments.__post_init__`` defaults
     ``metric_for_best_model="loss"`` whenever ``lr_scheduler_type ==
     "reduce_lr_on_plateau"``, so this builder always sees a
     non-``None`` metric name.

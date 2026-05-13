@@ -44,7 +44,7 @@ BASE_LR = 1e-3
 
 @dataclass
 class _Args:
-    """Minimal stand-in for DPTrainingArguments — only the fields the shim reads."""
+    """Minimal stand-in for TrainingArguments — only the fields the shim reads."""
 
     lr_scheduler_type: str = "linear"
     learning_rate: float = BASE_LR
@@ -413,7 +413,7 @@ class TestWarmupRatio:
 
 class TestErrors:
     def test_reduce_lr_on_plateau_defaults_metric_to_loss(self):
-        # HF parity: ``DPTrainingArguments.__post_init__`` defaults
+        # HF parity: ``TrainingArguments.__post_init__`` defaults
         # ``metric_for_best_model`` to ``"loss"`` whenever
         # ``lr_scheduler_type == "reduce_lr_on_plateau"``.  This stub
         # mirrors that contract: the builder accepts a default metric

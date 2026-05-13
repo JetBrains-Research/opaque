@@ -35,7 +35,7 @@ from torch import Tensor
 from transformers.trainer_utils import EvalPrediction
 from transformers.utils import ModelOutput
 
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments, TrainOutput
+from opaque.transformers.trainer import DPTrainer, TrainingArguments, TrainOutput
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -78,7 +78,7 @@ def tiny_dataset(gpt2_lora_and_tokenizer):
     )
 
 
-def _args(tmp_path, **overrides) -> DPTrainingArguments:
+def _args(tmp_path, **overrides) -> TrainingArguments:
     """CPU-pinned, σ=0 args for deterministic eval runs."""
     defaults: dict[str, Any] = dict(
         output_dir=str(tmp_path),
@@ -86,7 +86,7 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
         per_device_eval_batch_size=4,
         privacy_target_epsilon=10.0,
         privacy_noise_multiplier=0.0,
-        max_grad_norm=1.0,
+        clipping_norm=1.0,
         max_steps=1,
         num_train_epochs=1,
         logging_steps=1,
@@ -95,7 +95,7 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
         use_cpu=True,
     )
     defaults.update(overrides)
-    return DPTrainingArguments(**defaults)
+    return TrainingArguments(**defaults)
 
 
 class _TinyEvalModel(torch.nn.Module):
@@ -146,7 +146,7 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
             model=model,
             args=_args(
                 tmp_path,
-                auto_find_batch_size=True,
+                auto_find_microbatch_size=True,
                 per_device_train_batch_size=4,
             ),
             train_dataset=dataset,
@@ -198,7 +198,6 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
                 tmp_path,
                 max_steps=1,
                 per_device_train_batch_size=2,
-                gradient_accumulation_steps=1,
             ),
             train_dataset=dataset,
             eval_dataset=dataset,

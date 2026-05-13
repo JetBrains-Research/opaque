@@ -547,7 +547,7 @@ def _build_privacy_summary(trainer: "DPTrainer") -> dict[str, float | str]:
         delta = a.privacy_target_delta
 
     clipping_norm: float | str
-    cn = trainer._ctx.clip_norm if trainer._ctx is not None else a.max_grad_norm
+    cn = trainer._ctx.clip_norm if trainer._ctx is not None else a.clipping_norm
     if cn is None:
         clipping_norm = "unknown"
     elif hasattr(cn, "effective"):

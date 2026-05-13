@@ -27,7 +27,7 @@ import pytest
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.api.transformers.trainer._state import DPTrainerState
 
 from _hf_shared import build_lm_dataset  # noqa: E402
@@ -72,7 +72,7 @@ def tiny_dataset(small_model_and_tokenizer):
     )
 
 
-def _args(tmp_path, **overrides) -> DPTrainingArguments:
+def _args(tmp_path, **overrides) -> TrainingArguments:
     # ``use_cpu=True``: pin to CPU so the trainer's ``args.device``
     # resolves to CPU regardless of the host (LoRA fixtures are CPU).
     defaults: dict[str, Any] = dict(
@@ -87,7 +87,7 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
         use_cpu=True,
     )
     defaults.update(overrides)
-    return DPTrainingArguments(**defaults)
+    return TrainingArguments(**defaults)
 
 
 # ---------------------------------------------------------------------------
@@ -384,10 +384,8 @@ class TestArgDriftWarnings:
 
     The Stage-5 extension adds ``expected_batch_size`` to the drift
     surface so a user resuming with a different
-    ``per_device_train_batch_size`` (or
-    ``gradient_accumulation_steps``) sees the privacy-relevant
-    change rather than having it silently absorbed by the
-    ``sample_rate`` warning.
+    ``per_device_train_batch_size`` sees the privacy-relevant change
+    rather than having it silently absorbed by the ``sample_rate`` warning.
 
     Tested at the ``_warn_on_arg_drift`` boundary directly so the
     test doesn't drag in the full save/resume cycle (which is
@@ -413,7 +411,7 @@ class TestArgDriftWarnings:
             train_dataset=tiny_dataset,
             eval_dataset=tiny_dataset,
         )
-        live_eb = int(trainer.args.expected_batch_size)
+        live_eb = int(trainer.args.train_batch_size)
 
         # Synthesize a runtime payload with the *same* sample_rate /
         # noise_multiplier as the live config (no drift there) plus
@@ -422,7 +420,7 @@ class TestArgDriftWarnings:
         # ``expected_batch_size``.  The warning must fire on the new
         # field independently.
         payload: dict[str, Any] = {
-            "sample_rate": trainer.args.expected_batch_size / max(1, len(tiny_dataset)),
+            "sample_rate": trainer.args.train_batch_size / max(1, len(tiny_dataset)),
             "target_delta": None,
             "noise_multiplier": float(trainer.args.privacy_noise_multiplier),
             "total_steps": int(trainer.args.max_steps),
@@ -452,9 +450,9 @@ class TestArgDriftWarnings:
             train_dataset=tiny_dataset,
             eval_dataset=tiny_dataset,
         )
-        live_eb = int(trainer.args.expected_batch_size)
+        live_eb = int(trainer.args.train_batch_size)
         payload: dict[str, Any] = {
-            "sample_rate": trainer.args.expected_batch_size / max(1, len(tiny_dataset)),
+            "sample_rate": trainer.args.train_batch_size / max(1, len(tiny_dataset)),
             "target_delta": None,
             "noise_multiplier": float(trainer.args.privacy_noise_multiplier),
             "total_steps": int(trainer.args.max_steps),

@@ -1,4 +1,4 @@
-"""Trainer-level wiring for ``torch_compile``, ``use_liger_kernel``, and the
+"""Trainer-level wiring for ``torch_compile``, ``use_performance_kernels``, and the
 ``OpaqueLossScaler`` integration.
 
 These tests target the *plumbing* — Phase 11 features behave correctly when
@@ -17,7 +17,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.api.transformers.trainer._loss_scaler import OpaqueLossScaler
 
 
@@ -26,7 +26,7 @@ from opaque.api.transformers.trainer._loss_scaler import OpaqueLossScaler
 # ----------------------------------------------------------------------------
 
 
-def _args(tmp_path, **overrides) -> DPTrainingArguments:
+def _args(tmp_path, **overrides) -> TrainingArguments:
     defaults = dict(
         output_dir=str(tmp_path),
         per_device_train_batch_size=1,
@@ -38,7 +38,7 @@ def _args(tmp_path, **overrides) -> DPTrainingArguments:
         privacy_noise_multiplier=1.0,
     )
     defaults.update(overrides)
-    return DPTrainingArguments(**defaults)
+    return TrainingArguments(**defaults)
 
 
 def _tiny_trainer(tmp_path, **arg_overrides) -> tuple[DPTrainer, nn.Module]:
@@ -89,14 +89,14 @@ def test_torch_compile_invalid_mode_rejected_at_args(tmp_path):
 
 
 # ----------------------------------------------------------------------------
-# use_liger_kernel — wiring through to apply_model_patches
+# use_performance_kernels — wiring through to apply_model_patches
 # ----------------------------------------------------------------------------
 
 
-def test_use_liger_kernel_default_false_still_applies_compat_patches(
+def test_use_performance_kernels_default_false_still_applies_compat_patches(
     tmp_path, monkeypatch
 ):
-    """Without use_liger_kernel, DPTrainer still calls apply_model_patches with
+    """Without use_performance_kernels, DPTrainer still calls apply_model_patches with
     performance=False (compat-only); performance kernels stay off."""
     calls: list[dict] = []
 
@@ -105,33 +105,33 @@ def test_use_liger_kernel_default_false_still_applies_compat_patches(
 
     monkeypatch.setattr("opaque.patches.apply_model_patches", _spy)
 
-    _tiny_trainer(tmp_path)  # use_liger_kernel default is False
+    _tiny_trainer(tmp_path)  # use_performance_kernels default is False
     assert len(calls) == 1
     assert calls[0]["kwargs"]["performance"] is False
     assert calls[0]["kwargs"]["compat"] is True
 
 
-def test_use_liger_kernel_true_invokes_apply_model_patches(tmp_path, monkeypatch):
-    """use_liger_kernel=True calls apply_model_patches(model, performance=True,
+def test_use_performance_kernels_true_invokes_apply_model_patches(tmp_path, monkeypatch):
+    """use_performance_kernels=True calls apply_model_patches(model, performance=True,
     compat=True) once at __init__ time (HF parity)."""
     calls: list[dict] = []
 
     def _spy(model, **kwargs):
         calls.append({"model": model, "kwargs": kwargs})
 
-    # _liger.py imports apply_model_patches lazily inside the function body,
+    # _performance_kernels.py imports apply_model_patches lazily inside the function body,
     # so patch the source location rather than the consumer's module.
     monkeypatch.setattr("opaque.patches.apply_model_patches", _spy)
 
-    trainer, model = _tiny_trainer(tmp_path, use_liger_kernel=True)
+    trainer, model = _tiny_trainer(tmp_path, use_performance_kernels=True)
     assert len(calls) == 1
     assert calls[0]["model"] is model
     assert calls[0]["kwargs"]["performance"] is True
     assert calls[0]["kwargs"]["compat"] is True
 
 
-def test_liger_kernel_config_is_translated_at_init(tmp_path, monkeypatch):
-    """liger_kernel_config keys are translated to opaque-patches kwarg names
+def test_performance_kernels_config_is_translated_at_init(tmp_path, monkeypatch):
+    """performance_kernels_config keys are translated to opaque-patches kwarg names
     before being forwarded to apply_model_patches."""
     calls: list[dict] = []
 
@@ -142,8 +142,8 @@ def test_liger_kernel_config_is_translated_at_init(tmp_path, monkeypatch):
 
     _tiny_trainer(
         tmp_path,
-        use_liger_kernel=True,
-        liger_kernel_config={
+        use_performance_kernels=True,
+        performance_kernels_config={
             "rope": True,
             "rms_norm": True,
             "fused_linear_cross_entropy": True,

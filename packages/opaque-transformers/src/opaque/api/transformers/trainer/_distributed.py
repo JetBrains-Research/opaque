@@ -53,7 +53,7 @@ class DDPState:
     The ``device`` field is the device this rank's model parameters live
     on. For NCCL/CUDA, that's ``cuda:{local_rank}``; for the
     single-process / CPU path it's whatever
-    :class:`DPTrainingArguments._setup_devices` resolved.
+    :class:`TrainingArguments._setup_devices` resolved.
     """
 
     is_distributed: bool

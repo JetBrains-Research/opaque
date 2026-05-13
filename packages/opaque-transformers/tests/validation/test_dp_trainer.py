@@ -18,14 +18,14 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import TrainerCallback as _HFTrainerCallback
 from transformers.trainer_utils import PredictionOutput
 
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments, TrainOutput
+from opaque.transformers.trainer import DPTrainer, TrainingArguments, TrainOutput
 from opaque.api.transformers.trainer._state import DPTrainerState
 
 from _hf_shared import build_lm_dataset  # noqa: E402
 
 
-def _default_args(**overrides) -> DPTrainingArguments:
-    """Build DPTrainingArguments with test defaults.
+def _default_args(**overrides) -> TrainingArguments:
+    """Build TrainingArguments with test defaults.
 
     Pins ``use_cpu=True`` so the trainer's ``args.device`` resolves to
     CPU regardless of the host (MPS on macOS would otherwise pick up
@@ -35,13 +35,13 @@ def _default_args(**overrides) -> DPTrainingArguments:
     """
     defaults = dict(
         per_device_train_batch_size=4,
-        max_grad_norm=1.0,
+        clipping_norm=1.0,
         privacy_target_epsilon=10.0,
         privacy_noise_multiplier=1.0,
         use_cpu=True,
     )
     defaults.update(overrides)
-    return DPTrainingArguments(**defaults)
+    return TrainingArguments(**defaults)
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ class TestDPTrainerInit:
 
         assert trainer.model is model
         assert trainer.processing_class is tokenizer
-        assert isinstance(trainer.args, DPTrainingArguments)
+        assert isinstance(trainer.args, TrainingArguments)
 
     def test_get_train_dataloader(self, gpt2_with_lora, tiny_lm_dataset):
         model, tokenizer = gpt2_with_lora
@@ -150,7 +150,7 @@ class TestDPTrainerTrain:
         trainer = DPTrainer(
             model=model,
             args=_default_args(
-                max_grad_norm=1.0,
+                clipping_norm=1.0,
                 max_steps=3,
                 num_train_epochs=1,
                 learning_rate=1e-3,
@@ -412,7 +412,7 @@ class TestDPTrainerPhase7Flags:
         trainer = DPTrainer(
             model=model,
             args=_default_args(
-                auto_find_batch_size=True,
+                auto_find_microbatch_size=True,
                 per_device_train_batch_size=8,
                 eval_strategy="no",
             ),
@@ -450,7 +450,7 @@ class TestDPTrainerPhase7Flags:
         trainer = DPTrainer(
             model=model,
             args=_default_args(
-                auto_find_batch_size=True,
+                auto_find_microbatch_size=True,
                 per_device_train_batch_size=1,
                 eval_strategy="no",
             ),
@@ -470,10 +470,10 @@ class TestDPTrainerPhase7Flags:
             trainer.train()
 
     def test_past_index_is_rejected(self, tmp_path):
-        # ``past_index`` is not on the DPTrainingArguments surface; unknown
+        # ``past_index`` is not on the TrainingArguments surface; unknown
         # kwargs raise ``TypeError`` (louder HF-porting signal).
         with pytest.raises(TypeError, match="past_index"):
-            DPTrainingArguments(
+            TrainingArguments(
                 output_dir=str(tmp_path),
                 use_cpu=True,
                 past_index=1,
@@ -490,7 +490,7 @@ class TestDPTrainerAdaptiveClipping:
             model=model,
             args=_default_args(
                 clipping_mode="adaptive",
-                max_grad_norm=1.0,
+                clipping_norm=1.0,
                 max_steps=3,
                 eval_strategy="no",
                 logging_steps=999,
@@ -515,7 +515,7 @@ class TestDPTrainerLRScheduling:
         trainer = DPTrainer(
             model=model,
             args=_default_args(
-                max_grad_norm=1.0,
+                clipping_norm=1.0,
                 max_steps=3,
                 num_train_epochs=1,
                 learning_rate=1e-3,
@@ -548,7 +548,7 @@ class TestDPTrainerLRScheduling:
         trainer = DPTrainer(
             model=model,
             args=_default_args(
-                max_grad_norm=1.0,
+                clipping_norm=1.0,
                 max_steps=5,
                 num_train_epochs=1,
                 learning_rate=1e-3,
@@ -592,7 +592,7 @@ class TestDPTrainerLRScheduling:
         }
 
         common = dict(
-            max_grad_norm=1.0,
+            clipping_norm=1.0,
             max_steps=4,
             num_train_epochs=1,
             learning_rate=1e-3,
@@ -647,7 +647,7 @@ class TestDPTrainerCheckpointing:
 
     def _common_args(self, output_dir, **overrides):
         defaults = dict(
-            max_grad_norm=1.0,
+            clipping_norm=1.0,
             max_steps=4,
             num_train_epochs=1,
             learning_rate=1e-3,
@@ -919,7 +919,7 @@ class TestDPTrainerCheckpointing:
     ):
         # HF parity: ``load_best_model_at_end`` with mismatched
         # ``eval_strategy``/``save_strategy`` is rejected by
-        # ``DPTrainingArguments.__post_init__`` before the trainer
+        # ``TrainingArguments.__post_init__`` before the trainer
         # even constructs.  The error wording mirrors HF's exact phrasing.
         with pytest.raises(ValueError, match="save and eval strategy to match"):
             self._common_args(
@@ -934,7 +934,7 @@ class TestDPTrainerCheckpointing:
     ):
         # HF parity: omitting ``metric_for_best_model`` under
         # ``load_best_model_at_end`` is now silently filled with ``"loss"``
-        # by ``DPTrainingArguments.__post_init__`` (it used to raise).
+        # by ``TrainingArguments.__post_init__`` (it used to raise).
         model, tokenizer = gpt2_with_lora
         args = self._common_args(
             tmp_path,

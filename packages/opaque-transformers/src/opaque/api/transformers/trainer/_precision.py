@@ -15,13 +15,13 @@ from typing import TYPE_CHECKING, Iterator
 import torch
 
 if TYPE_CHECKING:
-    from ._config import DPTrainingArguments
+    from ._config import TrainingArguments
 
 
 @contextmanager
 def eval_dtype(
     model: torch.nn.Module,
-    args: "DPTrainingArguments",
+    args: "TrainingArguments",
     train_dtype: torch.dtype,
 ) -> Iterator[None]:
     """Cast ``model`` to the eval dtype for the duration of the context.
