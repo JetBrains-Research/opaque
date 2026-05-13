@@ -1,5 +1,31 @@
 # Phased DPTrainingArguments Implementation Plan
 
+> **Historical reference (pre-cleanup).** This document describes the
+> design as of the HF-parity build. It's preserved as the rationale
+> trail for individual decisions, but it is **out of date** with the
+> shipping field surface:
+>
+> - The class is renamed: `DPTrainingArguments` → `TrainingArguments`.
+> - `max_grad_norm` → `clipping_norm`; `auto_find_batch_size` →
+>   `auto_find_microbatch_size`; `use_liger_kernel` →
+>   `use_performance_kernels`; `liger_kernel_config` →
+>   `performance_kernels_config`.
+> - `gradient_accumulation_steps`, `do_train`, `do_predict`,
+>   `include_inputs_for_metrics`, all `hub_*` fields, `hp_name`, and
+>   the entire HPO + Hub surfaces are **removed**.
+> - `per_device_train_batch_size` is now the per-rank logical Poisson
+>   batch (no internal grad-accumulation knob); cluster-wide logical
+>   batch is `per_device_train_batch_size * world_size`
+>   (the HF `train_batch_size` property).
+> - `DPTrainerState` is now a standalone dataclass with an explicit
+>   `version: int` field; it does **not** inherit from HF's
+>   `TrainerState`.
+> - The privacy accountant lives at the trainer level
+>   (`self._accountant`); `save_model()` always writes
+>   `accountant.json` so privacy provenance travels with the model.
+>
+> The user-facing migration story lives in `docs/user-guide/huggingface.md`.
+
 ## Current state
 
 `DPTrainingArguments` declares ~80 HF-compatible fields + ~20 dp_ fields.

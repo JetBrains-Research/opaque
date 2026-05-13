@@ -12,7 +12,7 @@ the safe Hugging Face parity subset.
   `DataLoaderConfiguration` knobs that conflict with Poisson DP semantics.
 
 `DPTrainer` expects the process group to be initialized externally and then
-validates that runtime against `DPTrainingArguments.ddp_backend`.
+validates that runtime against `TrainingArguments.ddp_backend`.
 
 ## Backend matrix
 
@@ -33,7 +33,7 @@ torchrun --nproc-per-node=4 train_dp_trainer.py
 ```
 
 ```python
-args = DPTrainingArguments(
+args = TrainingArguments(
     output_dir="runs/ddp",
     per_device_train_batch_size=8,
     per_device_eval_batch_size=8,
@@ -62,7 +62,7 @@ args = DPTrainingArguments(
 
 ## DataLoader parity policy
 
-Safe parity fields kept in `DPTrainingArguments`:
+Safe parity fields kept in `TrainingArguments`:
 
 - `data_seed` (sampler trajectory control).
 - `dataloader_drop_last` (eval loader only).

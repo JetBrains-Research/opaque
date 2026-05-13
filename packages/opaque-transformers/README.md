@@ -10,10 +10,7 @@ Gemma(2), Granite, Cohere(2), and GPT-2.
 pip install opaque-transformers                 # patches only
 pip install "opaque-transformers[kernels]"      # + Triton fused kernels
 pip install "opaque-transformers[peft]"         # + PEFT / LoRA support
-pip install "opaque-transformers[hpo]"          # + Optuna, W&B, Ray Tune (DPTrainer HPO)
 ```
-
-For Ray Tune only, `opaque-transformers[ray-hpo]` is enough.
 
 Depends on `opaque-core`, `opaque-patches`, `opaque-dpsgd`, and `transformers>=4.57`.
 
@@ -36,7 +33,9 @@ assert hf.is_patched()
 ## Layout
 
 - **`opaque.api.transformers.trainer`** — DPTrainer implementation
-  (`_dp_trainer.py`, `_config.py`, `_hpo.py`, …).
+  (`_dp_trainer.py`, `_config.py`, `_state.py`, `_optim.py`,
+  `_scheduler.py`, `_checkpoint.py`, `_distributed.py`,
+  `_performance_kernels.py`, …).
 - **`opaque.transformers`** / **`opaque.transformers.trainer`** — thin
   re-export façades (same pattern as `opaque-engine`: `opaque.api.*` for
   implementation, `opaque.*` for stable imports).
