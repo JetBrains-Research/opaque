@@ -1190,17 +1190,28 @@ def main():
             f"  Reference scores: mean={audit_ref_scores.mean():.4f}, std={audit_ref_scores.std():.4f}"
         )
 
+    pad_token_id = tokenizer.pad_token_id
+
     def eval_loss(trainable):
-        """Compute eval loss using DataLoader."""
+        """Token-weighted CE over the eval set (pad tokens masked to ``-100``).
+
+        Returns ``float('nan')`` when the eval set has zero scoring tokens
+        (empty ``--num-eval-samples`` or all examples shorter than 2 tokens).
+        """
         with torch.no_grad():
             total_loss = 0.0
             total_tokens = 0
-
             for (input_ids,) in eval_loader:
-                loss = per_example_loss_fn(trainable, input_ids)
-                total_loss += loss.item() * len(input_ids)
-                total_tokens += len(input_ids)
-
+                labels = input_ids.clone()
+                labels[labels == pad_token_id] = -100
+                output = fmodel(merged_params(trainable), input_ids, labels=labels)
+                num_tokens = int((labels[..., 1:] != -100).sum().item())
+                if num_tokens == 0:
+                    continue
+                total_loss += output.loss.item() * num_tokens
+                total_tokens += num_tokens
+            if total_tokens == 0:
+                return float("nan")
             return total_loss / total_tokens
 
     # Build clipping norm (scalar or per-group)
@@ -1347,7 +1358,9 @@ def main():
             num_workers=world_size,
         )
     else:
-        mechanism = lambda nm: dpsgd_acc.poisson(_unamplified(nm), sample_rate=sample_rate)
+        mechanism = lambda nm: dpsgd_acc.poisson(
+            _unamplified(nm), sample_rate=sample_rate
+        )
 
     # Calibrate noise multiplier from target privacy budget.
     if args.noise_multiplier is not None:
@@ -1402,9 +1415,7 @@ def main():
     # (when set) only truncates training — the schedule is laid out over
     # the full planned epoch count, same as accounting.
     if not 0.0 <= args.lr_min_ratio <= 1.0:
-        raise ValueError(
-            f"--lr-min-ratio must be in [0, 1], got {args.lr_min_ratio}"
-        )
+        raise ValueError(f"--lr-min-ratio must be in [0, 1], got {args.lr_min_ratio}")
     peak_lr = args.learning_rate
     warmup = max(0, int(args.lr_warmup_steps))
     lr_min = peak_lr * args.lr_min_ratio
