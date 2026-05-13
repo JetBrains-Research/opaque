@@ -1190,17 +1190,34 @@ def main():
             f"  Reference scores: mean={audit_ref_scores.mean():.4f}, std={audit_ref_scores.std():.4f}"
         )
 
+    pad_token_id = tokenizer.pad_token_id
+
     def eval_loss(trainable):
-        """Compute eval loss using DataLoader."""
+        """Compute eval loss using DataLoader.
+
+        Eval defaults ``eval_batch_size`` to ``microbatch_size`` for memory
+        reasons.  HF's batch-mean loss over ``labels=input_ids`` (no padding
+        mask) would otherwise produce a metric that depends on the per-batch
+        padding-to-longest amount: smaller batches pad less, so they include
+        fewer trivial pad→pad positions in the average and report a
+        systematically higher loss than larger batches over the same model.
+
+        We mask pad tokens to ``-100`` so ``output.loss`` is a true CE mean
+        over the eval set's real tokens, then weight each batch by its real
+        token count.  The result is invariant to ``eval_batch_size``.
+        """
         with torch.no_grad():
             total_loss = 0.0
             total_tokens = 0
-
             for (input_ids,) in eval_loader:
-                loss = per_example_loss_fn(trainable, input_ids)
-                total_loss += loss.item() * len(input_ids)
-                total_tokens += len(input_ids)
-
+                labels = input_ids.clone()
+                labels[labels == pad_token_id] = -100
+                output = fmodel(merged_params(trainable), input_ids, labels=labels)
+                num_tokens = int((labels[..., 1:] != -100).sum().item())
+                if num_tokens == 0:
+                    continue
+                total_loss += output.loss.item() * num_tokens
+                total_tokens += num_tokens
             return total_loss / total_tokens
 
     # Build clipping norm (scalar or per-group)
