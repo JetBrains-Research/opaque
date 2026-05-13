@@ -808,7 +808,6 @@ class _LinearCEBackward(torch.autograd.Function):
 
         B_vmap = hidden_states.shape[0]
         D = hidden_states.shape[-1]
-        V = weight.shape[0]
 
         # Pre-shift and merge all samples into one flat batch
         h_shifted = hidden_states[..., :-1, :].contiguous()  # (B_vmap, ..., seq-1, D)
@@ -854,9 +853,15 @@ class _LinearCEBackward(torch.autograd.Function):
         de = de.reshape(B_vmap, tokens_per_sample, D)
 
         if dc is None:
-            dc = weight.new_zeros((B_vmap, V, D))
+            # ``weight`` is frozen (``compute_dc=False``) — the per-sample
+            # weight gradient is structurally all-zero.  Return a single
+            # (V, D) zero tensor with ``out_dim=None`` so vmap broadcasts it
+            # across the batch; allocating (B_vmap, V, D) here costs an
+            # extra ``B_vmap * V * D`` floats and OOMs Mellum-scale LoRA on
+            # 24 GB GPUs even at microbatch=4.
+            return (de, weight.new_zeros(weight.shape)), (0, None)
 
-        # dc is already (B_vmap, V, D) from per-sample kernel (or zeros if skipped)
+        # dc is (B_vmap, V, D) from per-sample kernel
         return (de, dc), (0, 0)
 
 
