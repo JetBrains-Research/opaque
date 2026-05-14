@@ -50,11 +50,14 @@ USAGE:
   # Quick smoke test (~2 minutes, GPT-2 on ag_news)
   python examples/train_dp_ftrl.py --preset smoke
 
-  # BLT on Mellum (default mechanism, near-optimal correlated noise)
+  # BandMF + b-min-sep on Mellum (default mechanism: b=64, momentum=0.95)
   python examples/train_dp_ftrl.py --preset mellum-kstack
 
-  # BandMF with b=64 bands on Mellum
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism band_mf --bands 64
+  # 4-GPU distributed run with torchrun (sharded, same global batch as 1-GPU)
+  torchrun --nproc_per_node=4 examples/train_dp_ftrl.py --preset mellum-kstack
+
+  # BLT on Mellum (near-optimal correlated noise; heavier calibration solve)
+  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism blt
 
   # DP-λCGD with Balls-in-Bins sampling (bandwidth-2 correlated noise, λ=0.9)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism lambda_cgd --lambda_ 0.9
@@ -105,6 +108,7 @@ import sys
 import time
 
 import torch
+import torch.distributed as dist
 from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
 from torch.utils.data import DataLoader
@@ -124,8 +128,14 @@ import torchopt
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.accounting import calibration as cal
+from opaque.distributed import local_shard, sync
+from opaque.distributed.gradients import sum_gradients_
 from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad, per_group
-from opaque.types import PerGroup, SecondMomentNoiseOutput
+from opaque.types import (
+    PerGroup,
+    SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
+)
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
@@ -169,13 +179,39 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 
-def _select_device() -> tuple[torch.device, str]:
+def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
+    """Select best available device with user-facing label."""
     if torch.cuda.is_available():
+        if local_rank is not None:
+            torch.cuda.set_device(local_rank)
+            device = torch.device(f"cuda:{local_rank}")
+            return device, torch.cuda.get_device_name(local_rank)
         device = torch.device("cuda")
         return device, torch.cuda.get_device_name(0)
     if torch.backends.mps.is_available():
         return torch.device("mps"), "Apple Silicon"
     return torch.device("cpu"), "CPU"
+
+
+def _init_distributed() -> tuple[bool, int, int, int]:
+    """Initialize torch.distributed when launched via torchrun."""
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    rank = int(os.environ.get("RANK", "0"))
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+
+    if world_size <= 1:
+        return False, 0, 1, 0
+
+    if not dist.is_initialized():
+        backend = "nccl" if torch.cuda.is_available() else "gloo"
+        dist.init_process_group(backend=backend, init_method="env://")
+
+    return True, rank, world_size, local_rank
+
+
+def _cleanup_distributed() -> None:
+    if dist.is_available() and dist.is_initialized():
+        dist.destroy_process_group()
 
 
 def _is_dtype_supported(device: torch.device, dtype: torch.dtype) -> bool:
@@ -715,7 +751,8 @@ def parse_args():
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
         _set("bands", 64)
-        _set("mechanism", "blt")
+        _set("mechanism", "band_mf")
+        _set("band_mf_sampling", "b_min_sep")
         # ~5% of total steps as warmup; the preset's defaults give the same
         # number of steps as the old ``warmup_frac=0.05``.
         _set("lr_warmup_steps", 0)
@@ -758,12 +795,16 @@ def parse_args():
 def main():
     args = parse_args()
 
-    print("=" * 80)
-    print("DP-FTRL Training (Matrix Factorization Noise)")
-    print("=" * 80)
+    is_ddp, rank, world_size, local_rank = _init_distributed()
+    is_main_process = rank == 0
+
+    if is_main_process:
+        print("=" * 80)
+        print("DP-FTRL Training (Matrix Factorization Noise)")
+        print("=" * 80)
 
     # --- W&B ---
-    use_wandb = wandb is not None and (not args.no_wandb)
+    use_wandb = wandb is not None and (not args.no_wandb) and is_main_process
     if use_wandb:
         if args.wandb_run_name is None:
             model_short = args.model_name.split("/")[-1]
@@ -784,8 +825,13 @@ def main():
         print(f"W&B initialized (mode: {os.environ.get('WANDB_MODE', 'online')})")
 
     # --- Device ---
-    device, device_name = _select_device()
-    print(f"\nDevice: {device} ({device_name})")
+    device, device_name = _select_device(local_rank if is_ddp else None)
+    if is_main_process:
+        print(f"\nDevice: {device} ({device_name})")
+        if is_ddp:
+            print(
+                f"Distributed mode: rank={rank}/{world_size}, local_rank={local_rank}"
+            )
 
     torch.manual_seed(args.seed)
 
@@ -909,8 +955,18 @@ def main():
     # BLT uses fixed iteration order (sequential DataLoader, drop_last=True),
     # so shuffle once to randomize which examples land in which batch.
     # λ-CGD and BISR use BnB sampling which randomizes assignment itself.
+    # Shuffle BEFORE sharding so every rank sees the same global order;
+    # local_shard then carves the deterministic contiguous slice.
     if args.mechanism == "blt":
         train_dataset = train_dataset.shuffle(seed=args.seed)
+
+    # Sharded DDP: trim to a multiple of ``world_size`` so every shard has
+    # equal length (keeps ``sync()`` / ``sum_gradients_()`` in lockstep).
+    if is_ddp:
+        trimmed_size = (len(train_dataset) // world_size) * world_size
+        if trimmed_size < len(train_dataset):
+            train_dataset = train_dataset.select(range(trimmed_size))
+        train_dataset = local_shard(train_dataset, rank=rank, world_size=world_size)
 
     eval_loader = DataLoader(
         eval_dataset,
@@ -921,8 +977,37 @@ def main():
     )
 
     # --- Sampling ---
+    # ``sample_rate`` is the per-example global Poisson probability and is
+    # unchanged under DDP: disjoint shards mean each example is still drawn
+    # with probability ``sample_rate`` across ranks.
     sample_rate = args.batch_size / global_train_size
     expected_steps_per_epoch = global_train_size // args.batch_size
+    # The global expected batch is split across ranks, so the per-rank
+    # batch_size for non-Poisson samplers (BLT sequential and BnB) is
+    # reduced.  Poisson samplers handle this implicitly via ``sample_rate``
+    # on the shard.
+    if is_ddp:
+        # BLT (SequentialBatchSampler) and BnB consume a fixed per-rank
+        # batch size; if ``--batch-size`` is not divisible by
+        # ``world_size`` we'd silently train on a different global batch
+        # than the one accounting / clipping / LR schedule were sized
+        # against.  Reject the run early instead of masking the drift.
+        if args.batch_size < world_size or args.batch_size % world_size != 0:
+            raise ValueError(
+                f"--batch-size ({args.batch_size}) must be a positive "
+                f"multiple of world_size ({world_size}) under DDP so the "
+                f"per-rank non-Poisson sampler reproduces the global batch."
+            )
+        per_rank_batch_size = args.batch_size // world_size
+    else:
+        per_rank_batch_size = args.batch_size
+
+    # Sampler keys fold in ``rank`` so each shard draws independent
+    # examples; in single-rank mode ``rank == 0`` and the keys reduce to
+    # the non-distributed values.  BnB / sequential samplers consume a
+    # base key that is similarly fold_in(seed, rank) so each shard gets
+    # its own deterministic partition.
+    base_sampler_key = fold_in(key(args.seed), rank) if is_ddp else key(args.seed)
 
     # Create sampler (or per-epoch sampler factory).
     # Static samplers (BnB, sequential) are created once and reused.
@@ -946,7 +1031,7 @@ def main():
                     bands=args.bands,
                     n_steps=expected_steps_per_epoch,
                     truncated_batch_size=args.truncated_batch_size,
-                    key=fold_in(key(args.seed), epoch),
+                    key=fold_in(base_sampler_key, epoch),
                 )
         else:
             if args.bands > 1 and p0 * (args.bands - 1) >= 1.0:
@@ -966,13 +1051,13 @@ def main():
                     bands=args.bands,
                     sampling_prob=p_bms,
                     n_steps=expected_steps_per_epoch,
-                    key=fold_in(key(args.seed), epoch),
+                    key=fold_in(base_sampler_key, epoch),
                 )
 
     elif args.mechanism == "blt":
         _blt_sampler = SequentialBatchSampler(
             train_dataset,
-            batch_size=args.batch_size,
+            batch_size=per_rank_batch_size,
         )
 
         def make_epoch_sampler(epoch):
@@ -981,7 +1066,16 @@ def main():
     elif args.mechanism in ("lambda_cgd", "bisr", "bsr"):
         # BnB sampler created once — the same fixed partition is reused every
         # epoch (required by BnB privacy accounting, Lemma 3.2 of
-        # Choquette-Choo et al. 2024).
+        # Choquette-Choo et al. 2024).  Under DDP each rank partitions
+        # its disjoint shard into the same number of bins; combined across
+        # ranks every global example still appears in exactly one bin so
+        # BnB privacy holds unchanged.  We deliberately use the un-folded
+        # ``key(args.seed)`` (rather than ``base_sampler_key``, which is
+        # rank-folded for randomized samplers): together with the equal
+        # shard sizes guaranteed above this gives every rank the same
+        # empty/non-empty bin pattern within its local index space, so
+        # all ranks yield an identical number of batches and the
+        # cross-rank collectives in the training loop stay in lockstep.
         _bnb_sampler = BallsInBinsSampler(
             train_dataset,
             num_bins=expected_steps_per_epoch,
@@ -1000,48 +1094,54 @@ def main():
                 sample_rate=sample_rate,
                 n_steps=expected_steps_per_epoch,
                 truncated_batch_size=args.truncated_batch_size,
-                key=fold_in(key(args.seed), epoch),
+                key=fold_in(base_sampler_key, epoch),
             )
 
-    print("\nSampling:")
-    print(f"  Mechanism: {args.mechanism}")
-    if args.mechanism == "band_mf":
-        if args.band_mf_sampling == "poisson":
-            print(f"  Sampler: poisson (bands={args.bands}, q={sampling_prob:.6f})")
-        else:
+    if is_main_process:
+        print("\nSampling:")
+        if is_ddp:
+            print(f"  DDP mode: sharded (world_size={world_size})")
+            print(f"  Per-rank shard size: {len(train_dataset)}")
+            print(f"  Per-rank batch (non-Poisson): {per_rank_batch_size}")
+        print(f"  Mechanism: {args.mechanism}")
+        if args.mechanism == "band_mf":
+            if args.band_mf_sampling == "poisson":
+                print(f"  Sampler: poisson (bands={args.bands}, q={sampling_prob:.6f})")
+            else:
+                print(
+                    f"  Sampler: b_min_sep (bands={args.bands}, p_0={p0:.6f}, p={p_bms:.6f})"
+                )
+        elif args.mechanism == "blt":
+            print("  Sampler: sequential (fixed order, drop_last=True)")
+            print(f"  min_sep: {expected_steps_per_epoch} (= steps/epoch)")
+            print(f"  max_participations: {args.num_epochs}")
+        elif args.mechanism == "lambda_cgd":
             print(
-                f"  Sampler: b_min_sep (bands={args.bands}, p_0={p0:.6f}, p={p_bms:.6f})"
+                f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
             )
-    elif args.mechanism == "blt":
-        print("  Sampler: sequential (fixed order, drop_last=True)")
-        print(f"  min_sep: {expected_steps_per_epoch} (= steps/epoch)")
-        print(f"  max_participations: {args.num_epochs}")
-    elif args.mechanism == "lambda_cgd":
-        print(
-            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
-        )
-        print(f"  DP-λCGD: λ={args.lambda_}")
-    elif args.mechanism == "bisr":
-        print(
-            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
-        )
-        print(f"  BISR bandwidth: {args.bisr_bandwidth}")
-    elif args.mechanism == "bsr":
-        print(
-            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
-        )
-        print(f"  BSR bandwidth: {args.bsr_bandwidth} (closed-form coefficients)")
-    else:
-        print(f"  Sampler: poisson (q={sample_rate:.6f})")
-    print(f"  Expected batch size: {args.batch_size}")
-    print(f"  Expected steps/epoch: {expected_steps_per_epoch}")
+            print(f"  DP-λCGD: λ={args.lambda_}")
+        elif args.mechanism == "bisr":
+            print(
+                f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
+            )
+            print(f"  BISR bandwidth: {args.bisr_bandwidth}")
+        elif args.mechanism == "bsr":
+            print(
+                f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
+            )
+            print(f"  BSR bandwidth: {args.bsr_bandwidth} (closed-form coefficients)")
+        else:
+            print(f"  Sampler: poisson (q={sample_rate:.6f})")
+        print(f"  Expected batch size: {args.batch_size}")
+        print(f"  Expected steps/epoch: {expected_steps_per_epoch}")
 
     # --- Gradient checkpointing ---
     if args.gradient_checkpointing:
         model.gradient_checkpointing_enable(
             gradient_checkpointing_kwargs={"use_reentrant": False}
         )
-        print("\nGradient checkpointing: enabled")
+        if is_main_process:
+            print("\nGradient checkpointing: enabled")
 
     offload_ctx = (
         torch.autograd.graph.save_on_cpu(pin_memory=True)
@@ -1135,10 +1235,19 @@ def main():
         else float(clip_norm) / args.batch_size
     )
 
-    # --- Total steps & LR schedule ---
+    # --- Training horizon, LR schedule ---
+    # ``total_steps`` is the full training horizon (``num_epochs *
+    # steps_per_epoch``).  ``--max-steps`` is an early-termination knob
+    # (semantically "stop at step N"), NOT a horizon override: every
+    # privacy / accounting / strategy object below is sized against the
+    # full horizon so calibration, MF workload coefficients, and the LR
+    # schedule all describe the same un-truncated training run.  Only
+    # the inner ``for`` loop terminates early when ``global_step >=
+    # args.max_steps``.
     total_steps = args.num_epochs * expected_steps_per_epoch
-    if args.max_steps is not None:
-        total_steps = min(total_steps, args.max_steps)
+    stop_at_step = (
+        min(total_steps, args.max_steps) if args.max_steps is not None else total_steps
+    )
 
     lr_schedule = make_lr_schedule(
         args.learning_rate,
@@ -1177,6 +1286,8 @@ def main():
         print(f"\nLR schedule: constant {args.learning_rate} (no warmup)")
     print(f"  Peak LR: {args.learning_rate}")
     print(f"  Total steps: {total_steps}")
+    if stop_at_step < total_steps:
+        print(f"  Early stop at step: {stop_at_step} (--max-steps)")
 
     # --- Privacy calibration (single-shot) ---
     if args.target_delta is None:
@@ -1294,7 +1405,7 @@ def main():
             return dpftrl_acc.balls_in_bins(
                 dpftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
-                n_steps=expected_steps_per_epoch * args.num_epochs,
+                n_steps=total_steps,
             )
     elif args.mechanism == "lambda_cgd" and strategy is not None:
 
@@ -1302,7 +1413,7 @@ def main():
             return dpftrl_acc.balls_in_bins(
                 dpftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
-                n_steps=expected_steps_per_epoch * args.num_epochs,
+                n_steps=total_steps,
             )
     elif args.mechanism == "bisr" and strategy is not None:
 
@@ -1310,7 +1421,7 @@ def main():
             return dpftrl_acc.balls_in_bins(
                 dpftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
-                n_steps=expected_steps_per_epoch * args.num_epochs,
+                n_steps=total_steps,
             )
     elif args.mechanism == "bsr" and strategy is not None:
 
@@ -1318,7 +1429,7 @@ def main():
             return dpftrl_acc.balls_in_bins(
                 dpftrl_acc.mf_gaussian(nm, strategy),
                 num_bins=expected_steps_per_epoch,
-                n_steps=expected_steps_per_epoch * args.num_epochs,
+                n_steps=total_steps,
             )
     elif args.mechanism == "identity":
 
@@ -1648,11 +1759,10 @@ def main():
     profiler, _ = profiler.mark("training_start")
     print_memory(device, "Before training")
 
-    # Per-eval epsilon reporting.  Every ``acct_mechanism`` branch above
-    # returns a :class:`DpFtrlProcess` (whole-process amplifier wrapping
-    # the MF mechanism), so ``approx_at_step(K)`` is always available —
-    # it returns an upper bound on the privacy cost at step K, rounded
-    # up to the amplifier's atomic_unit (one full epoch / one band).
+    # Per-eval epsilon reporting.  Every ``acct_mechanism`` branch returns
+    # a :class:`DpFtrlProcess` whose ``approx_at_step(K)`` upper-bounds the
+    # privacy cost at step K (rounded up to the amplifier's atomic_unit —
+    # one full epoch or one band).
     def epsilon_at_step(step: int) -> float:
         if args.mechanism == "none":
             return 0.0
@@ -1699,7 +1809,7 @@ def main():
         )
 
         for step_idx, batch in enumerate(epoch_loader):
-            if args.max_steps is not None and global_step >= args.max_steps:
+            if global_step >= stop_at_step:
                 break
 
             (input_ids,) = batch
@@ -1720,7 +1830,22 @@ def main():
                 # ``--second-moment`` is on (clipped_grad produced both
                 # streams per-example), or a single ``ClippedPytree``
                 # otherwise — the noise function dispatches polymorphically.
+                if is_ddp:
+                    clip_state, aux = sync(clip_state, aux)
+                    if isinstance(grads, SecondMomentClippingOutput):
+                        sum_gradients_(grads.grads)
+                        sum_gradients_(grads.squared_grads)
+                    else:
+                        sum_gradients_(grads)
                 noisy_grads, noise_state = noise_fn(grads, noise_state)
+                # All ranks generate identical noise from the same seed
+                # (no rank-fold in the noise key) so the per-rank
+                # ``noisy_grads`` already agree.  ``sync(noise_state)``
+                # is a cheap cross-rank consistency check on the
+                # internal step counter and latched sensitivity bound —
+                # see :mod:`opaque.dpftrl.noise._distributed`.
+                if is_ddp and not isinstance(noisy_grads, SecondMomentNoiseOutput):
+                    noise_state = sync(noise_state)
                 if isinstance(noisy_grads, SecondMomentNoiseOutput):
                     step_noise_stddev = noisy_grads.noisy_grads.noise_stddev
                 else:
@@ -1823,8 +1948,9 @@ def main():
                         step=global_step,
                     )
 
-        if args.max_steps is not None and global_step >= args.max_steps:
-            print(f"\nReached max_steps={args.max_steps}, stopping.")
+        if global_step >= stop_at_step:
+            if args.max_steps is not None:
+                print(f"\nReached --max-steps={args.max_steps}, stopping.")
             break
 
     # ===================================================================
@@ -1873,11 +1999,16 @@ def main():
         # ``privacy/epsilon_final`` scalar.
 
     profiler, _ = profiler.mark("training_complete")
-    print("\n" + profiler.final_summary())
-    print("\n" + profiler.checkpoint_summary())
+    summary_profiler = sync(profiler) if is_ddp else profiler
+    print("\n" + summary_profiler.final_summary())
+    print("\n" + summary_profiler.checkpoint_summary())
 
     if use_wandb:
         wandb.finish()
+
+    if is_ddp:
+        dist.barrier(device_ids=[local_rank])
+        _cleanup_distributed()
 
     return 0
 
