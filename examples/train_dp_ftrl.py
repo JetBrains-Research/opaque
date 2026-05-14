@@ -960,25 +960,9 @@ def main():
     if args.mechanism == "blt":
         train_dataset = train_dataset.shuffle(seed=args.seed)
 
-    # --- Distributed data partitioning ---
-    # DDP uses disjoint shards per rank.  Per-example Poisson probability is
-    # unchanged: each example lives on exactly one rank and is still drawn
-    # with probability ``sample_rate`` globally; summing gradients across
-    # ranks recovers the single-rank gradient distribution and the MF
-    # accountant stays identical to single rank.  Replicated-data /
-    # parallel-Poisson accounting is *not* supported here because the
-    # correlated MF amplifiers (BLT, BSR, BiSR, BandMF, λ-CGD) don't have
-    # a derived parallel-worker PLD — the variety of DP-FTRL samplers
-    # doesn't fit the DP-SGD parallel-Poisson pattern.
+    # Sharded DDP: trim to a multiple of ``world_size`` so every shard has
+    # equal length (keeps ``sync()`` / ``sum_gradients_()`` in lockstep).
     if is_ddp:
-        # Trim to a multiple of ``world_size`` so every shard has identical
-        # length.  This avoids two distributed pitfalls: (a) the last rank
-        # otherwise gets the remainder and ``SequentialBatchSampler`` (BLT)
-        # can yield one more batch there, deadlocking the cross-rank
-        # ``sync()`` / ``sum_gradients_()`` collectives; and (b)
-        # ``BallsInBinsSampler`` would have systematically different bin
-        # counts on the larger shard.  Dropping at most ``world_size - 1``
-        # examples is privacy-irrelevant (those examples never participate).
         trimmed_size = (len(train_dataset) // world_size) * world_size
         if trimmed_size < len(train_dataset):
             train_dataset = train_dataset.select(range(trimmed_size))
@@ -1176,19 +1160,7 @@ def main():
     pad_token_id = tokenizer.pad_token_id
 
     def eval_loss(trainable):
-        """Compute eval loss using DataLoader.
-
-        Eval defaults ``eval_batch_size`` to ``microbatch_size`` for memory
-        reasons.  HF's batch-mean loss over ``labels=input_ids`` (no padding
-        mask) would otherwise produce a metric that depends on the per-batch
-        padding-to-longest amount: smaller batches pad less, so they include
-        fewer trivial pad→pad positions in the average and report a
-        systematically higher loss than larger batches over the same model.
-
-        We mask pad tokens to ``-100`` so ``output.loss`` is a true CE mean
-        over the eval set's real tokens, then weight each batch by its real
-        token count.  The result is invariant to ``eval_batch_size``.
-        """
+        """Token-weighted CE over the eval set (pad tokens masked to ``-100``)."""
         with torch.no_grad():
             total_loss, total_tokens = 0.0, 0
             for (input_ids,) in eval_loader:

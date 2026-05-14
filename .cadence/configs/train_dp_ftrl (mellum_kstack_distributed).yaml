@@ -1,13 +1,7 @@
-# 4×A10G, sharded DDP — same global batch and privacy accounting as single-GPU
-# ``train_dp_ftrl (mellum_kstack).yaml``.  Preset = BandMF + b-min-sep, b=64.
-# Per-rank microbatch is lowered vs H200 to reduce vmap OOM on 24GB cards.
-#
-# Quartet: see header in ``train_dp_ftrl (mellum_kstack).yaml``.
-#
 # Run example:
-#   RUN_NAME="ftrl-bandmf-b64-bminsep-4gpu" uv run cadence execution start \
-#     --preset ".cadence/configs/train_dp_ftrl (mellum_kstack_distributed).yaml" \
-#     -e EXTRA_ARGS="--max-steps 200"
+# RUN_NAME="ftrl-bandmf-b10-4gpu" uv run cadence execution start \
+#   --preset ".cadence/configs/train_dp_ftrl (mellum_kstack_distributed).yaml" \
+#   -e EXTRA_ARGS="--mechanism band_mf --bands 10"
 
 project_name: jbr-fed
 working_dir: "."

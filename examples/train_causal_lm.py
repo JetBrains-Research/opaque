@@ -1193,19 +1193,7 @@ def main():
     pad_token_id = tokenizer.pad_token_id
 
     def eval_loss(trainable):
-        """Compute eval loss using DataLoader.
-
-        Eval defaults ``eval_batch_size`` to ``microbatch_size`` for memory
-        reasons.  HF's batch-mean loss over ``labels=input_ids`` (no padding
-        mask) would otherwise produce a metric that depends on the per-batch
-        padding-to-longest amount: smaller batches pad less, so they include
-        fewer trivial pad→pad positions in the average and report a
-        systematically higher loss than larger batches over the same model.
-
-        We mask pad tokens to ``-100`` so ``output.loss`` is a true CE mean
-        over the eval set's real tokens, then weight each batch by its real
-        token count.  The result is invariant to ``eval_batch_size``.
-        """
+        """Token-weighted CE over the eval set (pad tokens masked to ``-100``)."""
         with torch.no_grad():
             total_loss = 0.0
             total_tokens = 0
@@ -1364,7 +1352,9 @@ def main():
             num_workers=world_size,
         )
     else:
-        mechanism = lambda nm: dpsgd_acc.poisson(_unamplified(nm), sample_rate=sample_rate)
+        mechanism = lambda nm: dpsgd_acc.poisson(
+            _unamplified(nm), sample_rate=sample_rate
+        )
 
     # Calibrate noise multiplier from target privacy budget.
     if args.noise_multiplier is not None:
@@ -1419,9 +1409,7 @@ def main():
     # (when set) only truncates training — the schedule is laid out over
     # the full planned epoch count, same as accounting.
     if not 0.0 <= args.lr_min_ratio <= 1.0:
-        raise ValueError(
-            f"--lr-min-ratio must be in [0, 1], got {args.lr_min_ratio}"
-        )
+        raise ValueError(f"--lr-min-ratio must be in [0, 1], got {args.lr_min_ratio}")
     peak_lr = args.learning_rate
     warmup = max(0, int(args.lr_warmup_steps))
     lr_min = peak_lr * args.lr_min_ratio

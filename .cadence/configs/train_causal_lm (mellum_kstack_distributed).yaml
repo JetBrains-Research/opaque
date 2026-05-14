@@ -1,18 +1,14 @@
-# 4×A10G DDP (sharded by default).  DP-SGD path in ``train_causal_lm.py``.
-# Uses gradient checkpointing and microbatch 4 per rank to fit vmap on
-# 24GB GPUs; pair with single-GPU ``train_causal_lm (mellum_kstack).yaml``.
+# 4-GPU distributed training.
 #
-# Quartet: see header in ``train_dp_ftrl (mellum_kstack).yaml``.
-#
-# Sharded baseline:
-#   RUN_NAME="causal-mellum-kstack-4gpu" uv run cadence execution start \
+# Sharded baseline (default --shard):
+#   RUN_NAME="pp-sharded-4gpu" uv run cadence execution start \
 #     --preset ".cadence/configs/train_causal_lm (mellum_kstack_distributed).yaml" \
-#     -e EXTRA_ARGS="--max-steps 200"
+#     -e EXTRA_ARGS="--max-steps 100"
 #
-# Parallel Poisson (replicated data, ``--no-shard``):
-#   RUN_NAME="causal-pp-4gpu" uv run cadence execution start \
+# Parallel Poisson (--no-shard, sample_rate auto-divided by world_size):
+#   RUN_NAME="pp-parallel-4gpu" uv run cadence execution start \
 #     --preset ".cadence/configs/train_causal_lm (mellum_kstack_distributed).yaml" \
-#     -e EXTRA_ARGS="--no-shard --max-steps 200"
+#     -e EXTRA_ARGS="--no-shard --max-steps 100"
 
 project_name: jbr-fed
 working_dir: "."

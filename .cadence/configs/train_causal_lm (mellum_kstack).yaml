@@ -1,13 +1,7 @@
-# Mellum + KStack, single GPU (H200), DP-SGD / standard noise path
-# (``train_causal_lm.py`` — not BandMF; compare loss vs
-# ``train_dp_ftrl (mellum_kstack).yaml`` which uses BandMF + b-min-sep).
-#
-# Quartet: see header in ``train_dp_ftrl (mellum_kstack).yaml``.
-#
 # Run example:
-#   RUN_NAME="causal-mellum-kstack-single" uv run cadence execution start \
-#     --preset ".cadence/configs/train_causal_lm (mellum_kstack).yaml" \
-#     -e EXTRA_ARGS="--max-steps 200"
+# RUN_NAME="1-baseline" uv run cadence execution start \
+#   --preset ".cadence/configs/train_causal_lm (mellum_kstack).yaml" \
+#   -e EXTRA_ARGS="--max-steps 100"
 
 project_name: jbr-fed
 working_dir: "."
