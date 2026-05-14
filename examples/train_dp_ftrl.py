@@ -1644,7 +1644,11 @@ def main():
     # K-step PLD via ``proc.approx_at_step(K).pld()`` (strategy-aware,
     # not the K-fold composition of a single-step PLD).
     if args.mechanism == "none":
-        step_proc = acc.identity()
+        # ``mechanism == "none"`` means the absence of any privacy
+        # mechanism (no noise added) — ε=∞ is the correct accounting, not
+        # ε=0.  Use ``nonprivate`` to track that explicitly (matches
+        # train_causal_lm.py's noise_multiplier=0 branch).
+        step_proc = acc.nonprivate()
     else:
         step_proc = dpftrl_acc.per_step(acct_mechanism(noise_multiplier))
     accounting = Accountant()
@@ -1802,8 +1806,15 @@ def main():
             # --- Eval ---
             if global_step % args.eval_steps == 0:
                 current_eval_loss = eval_loss(trainable_params)
-                # Cache PLD before eval so it serves as opaque boundary.
-                accounting = acc.cached(accounting)
+                # Do NOT ``acc.cached(accounting)`` here: it would seal
+                # the current ``Repeated(per_step(proc), K)`` behind an
+                # opaque barrier, and subsequent ``|= step_proc`` would
+                # build ``Composed(Cached(K-step pld), Repeated(extra))``
+                # — composing the K-step and extra-step PLDs separately
+                # rather than calling ``proc.approx_at_step(K+extra)``.
+                # For correlated DP-FTRL strategies this loses tightness.
+                # ``Repeated.pld()``'s ``@lru_cache(maxsize=8)`` already
+                # caches the per-K query.
                 epsilon = accounting.epsilon_at(args.target_delta)
                 print(
                     f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"

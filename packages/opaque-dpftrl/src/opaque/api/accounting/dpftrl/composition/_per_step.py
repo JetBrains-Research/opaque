@@ -18,7 +18,7 @@ from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class PerStep(DpProcess):
     """One atomic step of a :class:`DpFtrlProcess`, composable with ``|`` / ``*``.
 
@@ -36,9 +36,25 @@ class PerStep(DpProcess):
     Heterogeneous mixing of ``PerStep`` instances with different
     underlying processes is rejected: the per-step PLD only makes sense
     relative to one whole-process accountant.
+
+    Equality is by object identity of :attr:`proc` (not structural
+    equality).  Some DP-FTRL strategies exclude privacy-relevant fields
+    from ``__eq__`` (e.g. ``BltStrategy.lr_schedule`` is ``compare=False``
+    yet shifts the coefficients used by accounting), so a structural
+    ``==`` could silently merge two distinct-by-privacy procs into one
+    :class:`Repeated` leaf and report an underestimate.  Identity
+    semantics force the trainer to thread one ``proc`` object through
+    every ``per_step(...)`` call, matching its actual single-process
+    accounting intent.
     """
 
     proc: DpFtrlProcess
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, PerStep) and other.proc is self.proc
+
+    def __hash__(self) -> int:
+        return hash((PerStep, id(self.proc)))
 
     @functools.lru_cache(maxsize=8)
     def pld(
@@ -73,11 +89,14 @@ class PerStep(DpProcess):
         )
 
     def __or__(self, other: DpProcess) -> DpProcess:
-        if isinstance(other, PerStep) and other.proc != self.proc:
+        if isinstance(other, PerStep) and other.proc is not self.proc:
             raise ValueError(
                 "PerStep cannot be composed with a PerStep wrapping a different "
                 "process; the per-step PLD is defined only relative to one "
-                "whole-process accountant."
+                "whole-process accountant.  Wrap the same ``proc`` object in "
+                "both calls — equality is by object identity to avoid silent "
+                "merges when strategies exclude privacy-relevant fields from "
+                "``__eq__`` (e.g. ``BltStrategy.lr_schedule``)."
             )
         # Explicit base call: zero-arg ``super()`` doesn't work in slotted
         # dataclasses (the @dataclass decorator rebuilds the class for slots,

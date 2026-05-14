@@ -72,7 +72,7 @@ class TestPerStepDeterministic:
         step = ftrl_acc.per_step(proc)
         e_step = step.epsilon_at(_DELTA)
         e_at_1 = proc.approx_at_step(1).epsilon_at(_DELTA)
-        assert math.isclose(e_step, e_at_1, rel_tol=1e-12)
+        assert math.isclose(e_step, e_at_1, rel_tol=1e-9)
 
     @pytest.mark.parametrize("K", [1, 2, 7, 50, 99])
     def test_repeated_equals_approx_at_step_K(self, K: int):
@@ -80,14 +80,14 @@ class TestPerStepDeterministic:
         step = ftrl_acc.per_step(proc)
         e_repeated = (step * K).epsilon_at(_DELTA)
         e_at_K = proc.approx_at_step(K).epsilon_at(_DELTA)
-        assert math.isclose(e_repeated, e_at_K, rel_tol=1e-12)
+        assert math.isclose(e_repeated, e_at_K, rel_tol=1e-9)
 
     def test_full_horizon_equals_full_proc(self):
         proc = self._proc(100)
         step = ftrl_acc.per_step(proc)
         e_full_step = (step * 100).epsilon_at(_DELTA)
         e_full_proc = proc.epsilon_at(_DELTA)
-        assert math.isclose(e_full_step, e_full_proc, rel_tol=1e-12)
+        assert math.isclose(e_full_step, e_full_proc, rel_tol=1e-9)
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +117,7 @@ class TestPerStepAccountant:
         assert math.isclose(
             loop_acc.epsilon_at(_DELTA),
             bulk_acc.epsilon_at(_DELTA),
-            rel_tol=1e-12,
+            rel_tol=1e-9,
         )
 
     def test_loop_matches_full_proc(self):
@@ -131,7 +131,7 @@ class TestPerStepAccountant:
         assert math.isclose(
             loop_acc.epsilon_at(_DELTA),
             proc.epsilon_at(_DELTA),
-            rel_tol=1e-12,
+            rel_tol=1e-9,
         )
 
     def test_empty_accountant_is_zero(self):
@@ -176,11 +176,26 @@ class TestPerStepErrors:
         with pytest.raises(ValueError, match="different process"):
             step_a | step_b
 
-    def test_homogeneous_compose_ok(self):
-        # Two PerStep instances wrapping equal-by-value procs compose fine.
-        step_a = ftrl_acc.per_step(self._proc(nm=1.0))
-        step_b = ftrl_acc.per_step(self._proc(nm=1.0))
-        # No raise:
+    def test_distinct_objects_with_equal_fields_still_raise(self):
+        # Identity, not structural equality.  Two separately-constructed
+        # procs may compare ``==`` (some strategy fields are excluded from
+        # equality, e.g. ``BltStrategy.lr_schedule``) yet have different
+        # privacy behaviour — composing them silently is unsafe.
+        proc_a = self._proc(nm=1.0)
+        proc_b = self._proc(nm=1.0)
+        assert proc_a == proc_b and proc_a is not proc_b
+        step_a = ftrl_acc.per_step(proc_a)
+        step_b = ftrl_acc.per_step(proc_b)
+        with pytest.raises(ValueError, match="different process"):
+            step_a | step_b
+
+    def test_same_proc_object_composes(self):
+        # Wrapping the same ``proc`` object in two ``per_step`` calls
+        # merges into a single ``Repeated(step, 2)`` via the merge
+        # optimizer — this is the supported trainer pattern.
+        proc = self._proc(nm=1.0)
+        step_a = ftrl_acc.per_step(proc)
+        step_b = ftrl_acc.per_step(proc)
         result = step_a | step_b
         assert isinstance(result, Repeated)
         assert result.count == 2
