@@ -194,8 +194,7 @@ def warmup_stable_decay(
         )
     if num_decay_steps <= 0:
         raise ValueError(
-            f"warmup_stable_decay requires num_decay_steps > 0; "
-            f"got {num_decay_steps}."
+            f"warmup_stable_decay requires num_decay_steps > 0; got {num_decay_steps}."
         )
 
     if isinstance(warmup_ramp, str):

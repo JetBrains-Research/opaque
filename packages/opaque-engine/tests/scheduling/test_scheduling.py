@@ -539,9 +539,7 @@ class TestWithWarmupInitValue:
 
     def test_floor_to_one_linear_interpolation(self):
         """``init_value + (1 - init_value) * progress`` shape at the midpoint."""
-        sched = with_warmup(
-            constant_schedule(1.0), transition_steps=10, init_value=0.2
-        )
+        sched = with_warmup(constant_schedule(1.0), transition_steps=10, init_value=0.2)
         # Midpoint factor = 0.2 + 0.8 * 0.5 = 0.6.
         assert sched(5) == pytest.approx(0.6)
 
