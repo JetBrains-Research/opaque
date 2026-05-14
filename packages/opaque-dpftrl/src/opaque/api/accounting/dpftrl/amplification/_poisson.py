@@ -18,16 +18,14 @@ References:
 
 from __future__ import annotations
 
-import dataclasses
 import functools
 import math
 from dataclasses import dataclass
 
 from opaque.api.accounting.core import _native
 
-from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core._base import Pld
 from opaque.api.accounting.core.discretization import get_discretization
-from opaque.api.accounting.core.mechanisms.types import Identity
 from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
@@ -99,38 +97,6 @@ class CyclicPoisson(DpFtrlProcess):
         # this on a CyclicPoisson.
         return self.n_steps
 
-    def approx_at_step(self, step: int) -> DpProcess:
-        """Process truncated to its first ``step`` rounds (rounded to an atomic unit).
-
-        Returns the *deployed-and-stopped-early* mechanism: the K-prefix
-        is a deterministic projection of the full N-step output of the
-        same banded Toeplitz strategy (Identity is the degenerate
-        ``bands=1`` case), so ``ε(approx_at_step(K)) ≤ ε(self)`` and is
-        monotone in K by the post-processing inequality.  On first
-        truncation the N-tuned BandMF coefficients are pinned via
-        ``coefficients_override``; Identity is horizon-independent so no
-        pinning is needed there.
-        """
-        if step <= 0:
-            return Identity()
-        if step >= self.n_steps:
-            return self
-        unit = self.atomic_unit
-        if unit < 1:
-            raise ValueError(
-                f"{type(self).__name__}.atomic_unit must be >= 1, got {unit}"
-            )
-        rounded = min(-(-step // unit) * unit, self.n_steps)
-        if rounded == self.n_steps:
-            return self
-        s = self.inner.strategy
-        if isinstance(s, BandMfStrategy) and s.coefficients_override is None:
-            pinned = tuple(s.coefficients(n_steps=self.n_steps).tolist())
-            new_s = dataclasses.replace(s, coefficients_override=pinned)
-            new_inner = dataclasses.replace(self.inner, strategy=new_s)
-            return dataclasses.replace(self, inner=new_inner, n_steps=rounded)
-        return dataclasses.replace(self, n_steps=rounded)
-
     def __post_init__(self):
         # Validate truncation pairing here (not only in the factory) so
         # direct construction and deserialization can't pass an unpaired
@@ -160,14 +126,28 @@ class CyclicPoisson(DpFtrlProcess):
                 )
 
     @functools.lru_cache(maxsize=8)
-    def pld(
+    def _pld_at_horizon(
         self,
+        n_steps: int,
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
         pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
+        """K-step Poisson-amplified PLD using N-tuned strategy quantities.
+
+        ``n_steps`` is rounded up to the next ``atomic_unit`` boundary
+        (1 for Identity, ``bands`` for BandMF; capped at ``self.n_steps``).
+        The BandMF sensitivity is read at ``self.n_steps`` (the N-tuned
+        deployed mechanism); ``n_steps`` only changes the per-group
+        ``self_compose`` count.  The per-group PLD factors exactly at
+        band boundaries, so the rounded result is an upper bound on the
+        K-step ε that is monotone in K (the post-processing inequality
+        on the K-prefix of the N-step output).
+        """
+        if n_steps <= 0 or n_steps > self.n_steps:
+            raise ValueError(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]")
         config = get_discretization(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
@@ -180,10 +160,11 @@ class CyclicPoisson(DpFtrlProcess):
             sensitivity = s.sensitivity(n_steps=self.n_steps)
             effective_nm = self.inner.noise_multiplier / sensitivity
             bands = s.bands
-            num_groups = math.ceil(self.n_steps / bands) if bands > 0 else 0
+            rounded = min(-(-n_steps // bands) * bands, self.n_steps)
+            num_groups = math.ceil(rounded / bands) if bands > 0 else 0
         elif isinstance(s, IdentityStrategy):
             effective_nm = float(self.inner.noise_multiplier)
-            num_groups = int(self.n_steps)
+            num_groups = int(n_steps)
         else:
             raise TypeError(
                 "Poisson requires a BandMfStrategy or IdentityStrategy "
@@ -207,6 +188,22 @@ class CyclicPoisson(DpFtrlProcess):
                 effective_nm, self.sample_rate, native_cfg
             )
         return per_group_pld.self_compose(num_groups)
+
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
+        return self._pld_at_horizon(
+            self.n_steps,
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        )
 
 
 def poisson(

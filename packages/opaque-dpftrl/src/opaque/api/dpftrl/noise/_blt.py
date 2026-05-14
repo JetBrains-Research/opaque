@@ -125,35 +125,15 @@ class BltStrategy:
     shape).  All derived quantities are computed via the strategy
     methods, keyed on the amplifier-supplied
     ``(n_steps, min_sep, max_participations)``.
-
-    Pinned coefficients.  ``coefficients_override`` carries the full
-    first column of an already-tuned Toeplitz strategy at some horizon
-    ``N``.  When set, accounting methods (:meth:`coefficients`,
-    :meth:`gram_matrix`, :meth:`sensitivity`) return the leading
-    ``n_steps``-slice instead of re-running L-BFGS — used by
-    ``approx_at_step`` on the matching amplifier to expose the
-    deployed-and-stopped-early mechanism, whose privacy bound is
-    :math:`\\le` the full-horizon bound by the post-processing
-    inequality.  ``streaming_matrix`` rejects pinned strategies because
-    the BLT buffer parameters are not recoverable from a Toeplitz first
-    column alone (pinned strategies are accounting-only).
     """
 
     max_buffers: int = 10
     momentum: float = 1.0
     lr_schedule: Schedule | None = field(default=None, compare=False)
-    coefficients_override: tuple[float, ...] | None = field(default=None)
 
     def _blt(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> BufferedToeplitz:
-        if self.coefficients_override is not None:
-            raise RuntimeError(
-                "BltStrategy is pinned (coefficients_override is set); BLT buffer "
-                "parameters are not recoverable from a Toeplitz first column.  "
-                "Pinned strategies are accounting-only — use the unpinned recipe "
-                "for noise generation / streaming_matrix."
-            )
         return _blt_optimize_cached(
             n_steps,
             min_sep,
@@ -166,15 +146,6 @@ class BltStrategy:
     def coefficients(
         self, *, n_steps: int, min_sep: int = 1, max_participations: int | None = None
     ) -> torch.Tensor:
-        if self.coefficients_override is not None:
-            override = self.coefficients_override
-            if n_steps > len(override):
-                raise ValueError(
-                    f"n_steps ({n_steps}) exceeds coefficients_override length "
-                    f"({len(override)}); pinned strategies cannot grow past the "
-                    "horizon they were pinned at."
-                )
-            return torch.tensor(override[:n_steps], dtype=torch.float64)
         blt = self._blt(
             n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
         )
@@ -183,11 +154,6 @@ class BltStrategy:
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> tuple[float, ...]:
-        if self.coefficients_override is not None:
-            coefs = tuple(self.coefficients_override[:n_steps])
-            return _toeplitz_gram_matrix_cached(
-                coefs, n_steps, min_sep, max_participations, True
-            )
         return _blt_gram_matrix_cached(
             n_steps,
             min_sep,
@@ -208,22 +174,6 @@ class BltStrategy:
     def sensitivity(
         self, *, n_steps: int, min_sep: int = 1, max_participations: int | None = None
     ) -> float:
-        if self.coefficients_override is not None:
-            coefs = self.coefficients(
-                n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
-            )
-            k = minsep_true_max_participations(
-                n=n_steps, min_sep=min_sep, max_participations=max_participations
-            )
-            if k == 1:
-                return float(coefs.norm())
-            sens_sq = _toeplitz_minsep_sensitivity_squared(
-                strategy_coef=coefs,
-                min_sep=min_sep,
-                max_participations=max_participations,
-                skip_checks=True,
-            )
-            return float(sens_sq.sqrt())
         blt = self._blt(
             n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
         )
@@ -247,7 +197,6 @@ def blt_strategy(
     max_buffers: int = 10,
     momentum: float = 1.0,
     lr_schedule: Schedule | None = None,
-    coefficients_override: tuple[float, ...] | None = None,
 ) -> BltStrategy:
     """Create a BLT (Buffered Linear Toeplitz) strategy recipe.
 
@@ -262,10 +211,6 @@ def blt_strategy(
         lr_schedule: Optional :data:`opaque.scheduling.types.Schedule`
             (``Callable[[int], float]``).  Materialised at ``[0, n_steps)``
             when the strategy first sees the amplifier's ``n_steps``.
-        coefficients_override: Optional pinned first-column coefficients
-            for the deployed Toeplitz strategy.  Used by ``approx_at_step``
-            on the matching amplifier; pinned strategies are accounting-only
-            (``streaming_matrix`` raises).
 
     Returns:
         A :class:`BltStrategy` recipe.
@@ -276,9 +221,6 @@ def blt_strategy(
         max_buffers=max_buffers,
         momentum=momentum,
         lr_schedule=lr_schedule,
-        coefficients_override=(
-            tuple(coefficients_override) if coefficients_override is not None else None
-        ),
     )
 
 

@@ -1,99 +1,83 @@
-"""DP-FTRL process base class — adds ``approx_at_step`` to whole-process accountants.
+"""DP-FTRL process base — whole-run accountant with a per-step PLD worker.
 
-Unlike DP-SGD where a per-step factory composes externally with
-``* num_steps``, every DP-FTRL accountant returns a process spanning
-the full training run.  ``DpFtrlProcess`` adds intermediate-step
-accounting on top of :class:`DpProcess`: ``process.approx_at_step(K)``
-returns a fresh :class:`DpProcess` representing the privacy budget for
-a fresh K-step run.
+DP-FTRL accountants describe whole training runs.  Unlike DP-SGD, where
+a per-step factory composes externally with ``* num_steps``, every
+DP-FTRL factory in :mod:`opaque.dpftrl.accounting` returns a
+:class:`DpProcess` spanning the full horizon ``n_steps``.
 
-Semantics.  ``approx_at_step(K)`` is **an upper bound** on the smooth
-ε-curve at K, and it reports the budget *for a fresh K-step run* —
-**not** the actual privacy cost of the original N-step process stopped
-at step K (which would generally be larger, since the original strategy
-is tuned for N steps).  Tight at K = G·atomic_unit; off-boundary it
-rounds K up to the next atomic-unit multiple.
+To compose a DP-FTRL accountant into the standard ``acc |= step``
+accountant loop, wrap it with :func:`opaque.dpftrl.accounting.per_step`
+— a thin adapter that exposes one step of the run as an algebraic atom.
+``Repeated(per_step(proc), K)`` materialises as the true K-step PLD via
+:meth:`DpFtrlProcess._pld_at_horizon`, which evaluates the deployed
+N-step mechanism on its first K rows of output (the post-processing
+inequality on the K-prefix projection gives
+``ε(K) ≤ ε(N)`` and monotonicity in K).
 
-Contract (sandwich form).  Let ``M = atomic_unit``, ``N = n_steps``,
-``G = K // M``, ``r = K - G·M``.  Implementations satisfy:
+Subclass contract:
 
-- ``ε(approx_at_step(0))         == 0`` (returns :class:`Identity`).
-- ``ε(approx_at_step(N))         == self.epsilon_at(δ)`` (returns ``self``).
-- ``K1 ≤ K2 ⇒ ε(approx_at_step(K1)) ≤ ε(approx_at_step(K2))`` (monotone).
-- ``ε(approx_at_step(G·M)) ≤ ε(approx_at_step(K)) ≤ ε(approx_at_step((G+1)·M))`` (sandwich).
-- ``ε(approx_at_step(K)) ≤ ε(self)`` for ``K ≤ N``.
-
-The default ``approx_at_step`` rounds ``K`` up to the next multiple of
-``atomic_unit`` and rebuilds the dataclass with the smaller ``n_steps``.
-This is exact when ``M`` divides ``K`` and an upper bound otherwise —
-within an atomic unit ``ε(K)`` plateaus, which trades strict ``<`` on
-the LHS of the sandwich for ``≤`` (still monotone).  Subclasses may
-override for tighter or per-inner behaviour.
+- Subclasses MUST be frozen dataclasses with an ``n_steps: int`` field.
+- Subclasses MUST implement :meth:`_pld_at_horizon` — the K-step PLD
+  using N-tuned strategy quantities — and inherit the default
+  :meth:`pld` which delegates ``_pld_at_horizon(self.n_steps)``.
+- Within an "atomic unit" (band, epoch, ...) the K-step ε plateaus at
+  the next-multiple boundary; ``_pld_at_horizon`` rounds up internally
+  and the upper-bounding semantics are preserved.
 """
 
 from __future__ import annotations
 
-import dataclasses
 from abc import abstractmethod
 
-from opaque.api.accounting.core._base import DpProcess
-from opaque.api.accounting.core.mechanisms.types import Identity
+from opaque.api.accounting.core._base import DpProcess, Pld
 
 __all__ = ["DpFtrlProcess"]
 
 
 class DpFtrlProcess(DpProcess):
-    """Whole-process accountant for DP-FTRL — exposes intermediate-step accounting.
+    """Whole-process accountant for DP-FTRL.
 
     Subclasses MUST be frozen dataclasses with an ``n_steps: int`` field
-    and implement :attr:`atomic_unit`.
+    and implement :meth:`_pld_at_horizon`.  ``pld()`` delegates to
+    ``_pld_at_horizon(self.n_steps)`` by default; subclasses with
+    extra mechanism-specific PLD knobs (Monte Carlo seed / sample count
+    on b-min-sep and balls-in-bins) override ``pld()`` to forward those
+    knobs to ``_pld_at_horizon``.
     """
 
     n_steps: int  # required dataclass field on every subclass
 
-    @property
     @abstractmethod
-    def atomic_unit(self) -> int:
-        """Step granularity at which ``pld()`` factors exactly.
+    def _pld_at_horizon(self, n_steps: int, **kwargs) -> Pld:
+        """K-step PLD using N-tuned strategy quantities (the "K-prefix" bound).
 
-        Within an atomic unit (band, epoch, ...) the default
-        ``approx_at_step`` rounds up — ``ε(K)`` plateaus until the next
-        multiple of ``atomic_unit``.  Implementations should pick the
-        largest unit that keeps the existing accountant correct after a
-        simple ``n_steps`` substitution (1 for per-step Identity-style;
-        ``bands`` for BandMF; ``num_bins`` for BallsInBins; etc.).
-        """
+        ``n_steps`` may be any positive integer ``≤ self.n_steps`` and
+        is rounded up to the implementation's natural granularity (one
+        band / one epoch / 1).  Strategy coefficients, sensitivity, and
+        gram-matrix data are evaluated at ``self.n_steps`` — the N-tuned
+        deployed mechanism — and ``n_steps`` only changes the number of
+        rows / compositions / epochs the privacy bound is evaluated on.
 
-    def approx_at_step(self, step: int) -> DpProcess:
-        """Process truncated to its first ``step`` of ``n_steps`` rounds.
-
-        ``step`` is rounded up to the nearest multiple of
-        :attr:`atomic_unit` and capped at ``n_steps``.  Returns
-        :class:`Identity` for ``step <= 0`` and ``self`` for
-        ``step >= n_steps``.
-
-        This is an **upper bound** on the smooth ε-curve at ``step`` and
-        reports the budget for a fresh K-step run, **not** the actual
-        privacy cost of the original N-step process stopped at step K.
-
-        Returns a fresh dataclass instance of the same concrete type
-        (so the full :class:`DpProcess` API — ``epsilon_at``, ``pld``,
-        composition operators ``|`` / ``*`` — works on the result), or
-        :class:`Identity` at the zero endpoint.
+        By the post-processing inequality on the K-prefix projection of
+        the N-step output stream,
+        ``ε(_pld_at_horizon(K)) ≤ ε(self)`` and is monotone in K.
 
         Raises:
-            ValueError: If ``atomic_unit`` is not positive.
+            ValueError: If ``n_steps`` is outside ``[1, self.n_steps]``.
         """
-        if step <= 0:
-            return Identity()
-        if step >= self.n_steps:
-            return self
-        unit = self.atomic_unit
-        if unit < 1:
-            raise ValueError(
-                f"{type(self).__name__}.atomic_unit must be >= 1, got {unit}"
-            )
-        rounded = min(-(-step // unit) * unit, self.n_steps)
-        if rounded == self.n_steps:
-            return self
-        return dataclasses.replace(self, n_steps=rounded)
+
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
+        return self._pld_at_horizon(
+            self.n_steps,
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        )

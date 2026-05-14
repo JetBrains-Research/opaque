@@ -127,7 +127,7 @@ import torchopt
 
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as dpftrl_acc
-from opaque.accounting import calibration as cal
+from opaque.accounting import Accountant, calibration as cal
 from opaque.distributed import local_shard, sync
 from opaque.distributed.gradients import sum_gradients_
 from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad, per_group
@@ -1256,9 +1256,7 @@ def main():
     # args.max_steps``.
     total_steps = args.num_epochs * expected_steps_per_epoch
     stop_at_step = (
-        min(total_steps, args.max_steps)
-        if args.max_steps is not None
-        else total_steps
+        min(total_steps, args.max_steps) if args.max_steps is not None else total_steps
     )
 
     lr_schedule = make_lr_schedule(
@@ -1452,9 +1450,7 @@ def main():
                 n_steps=total_steps,
                 truncated_batch_size=args.truncated_batch_size,
                 dataset_size=(
-                    global_train_size
-                    if args.truncated_batch_size is not None
-                    else None
+                    global_train_size if args.truncated_batch_size is not None else None
                 ),
             )
     elif args.mechanism == "none":
@@ -1773,24 +1769,22 @@ def main():
     profiler, _ = profiler.mark("training_start")
     print_memory(device, "Before training")
 
-    # Per-eval epsilon reporting.  Every ``acct_mechanism`` branch returns
-    # a :class:`DpFtrlProcess` whose ``approx_at_step(K)`` upper-bounds the
-    # privacy cost at step K (rounded up to the amplifier's atomic_unit —
-    # one full epoch or one band).
-    def epsilon_at_step(step: int) -> float:
-        if args.mechanism == "none":
-            return 0.0
-        return (
-            acct_mechanism(noise_multiplier)
-            .approx_at_step(step)
-            .epsilon_at(args.target_delta)
-        )
+    # Privacy accountant — same ``acc |= step`` idiom as the DP-SGD trainer.
+    # ``per_step`` wraps the whole-process DP-FTRL accountant so the
+    # :class:`Repeated` node ``step * K`` materialises as the true K-step
+    # PLD (strategy-aware K-prefix bound), not the K-fold composition of
+    # a single-step PLD.
+    if args.mechanism == "none":
+        step_proc = acc.identity()
+    else:
+        step_proc = dpftrl_acc.per_step(acct_mechanism(noise_multiplier))
+    accounting = Accountant()
 
     # Step-0 eval — baseline before any training step.  Logs the calibrated
     # values that downstream per-step metrics also report so the dashboard
     # has continuous lines (no broken first-point).
     initial_eval_loss = eval_loss(trainable_params)
-    initial_epsilon = epsilon_at_step(0)
+    initial_epsilon = accounting.epsilon_at(args.target_delta)
     initial_clipping_norm = (
         clip_norm.effective if isinstance(clip_norm, PerGroup) else float(clip_norm)
     )
@@ -1825,6 +1819,9 @@ def main():
         for step_idx, batch in enumerate(epoch_loader):
             if global_step >= stop_at_step:
                 break
+
+            # Accounting (data-independent, before execution).
+            accounting |= step_proc
 
             (input_ids,) = batch
             batch_size = len(input_ids)
@@ -1951,7 +1948,12 @@ def main():
             # --- Eval ---
             if global_step % args.eval_steps == 0:
                 current_eval_loss = eval_loss(trainable_params)
-                epsilon = epsilon_at_step(global_step)
+                # Cache PLD before eval so it serves as an opaque boundary
+                # for subsequent ``|`` calls — Repeated nodes from later
+                # steps merge into a fresh suffix instead of re-doing the
+                # full FFT each time.
+                accounting = acc.cached(accounting)
+                epsilon = accounting.epsilon_at(args.target_delta)
                 print(f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}")
                 if use_wandb:
                     wandb.log(

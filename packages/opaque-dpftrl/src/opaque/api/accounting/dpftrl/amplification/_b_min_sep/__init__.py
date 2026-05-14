@@ -12,15 +12,13 @@ participation rate ``p_0`` via ``p = p_0 / (1 - p_0 * (bands - 1))`` for
 
 from __future__ import annotations
 
-import dataclasses
 import functools
 from dataclasses import dataclass
 
 from opaque.api.accounting.core import _native
 
-from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core._base import Pld
 from opaque.api.accounting.core.discretization import get_discretization
-from opaque.api.accounting.core.mechanisms.types import Identity
 from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
@@ -78,43 +76,10 @@ class BMinSep(DpFtrlProcess):
         bands = self.inner.strategy.bands
         return (self.n_steps + bands - 1) // bands
 
-    def approx_at_step(self, step: int) -> DpProcess:
-        """Process truncated to its first ``step`` rounds (rounded to a band).
-
-        Returns the *deployed-and-stopped-early* mechanism: the K-prefix
-        is a deterministic projection (post-processing) of the full
-        N-step output of the same banded Toeplitz strategy ``C``, so
-        ``ε(approx_at_step(K)) ≤ ε(self)`` and is monotone in K by the
-        post-processing inequality.  Concretely, on first truncation the
-        N-tuned BandMF coefficients are pinned onto the inner
-        :class:`BandMfStrategy` via ``coefficients_override`` and only
-        ``n_steps`` is reduced; subsequent ``pld`` calls evaluate the
-        warm-start b-min-sep MC accountant on the leading K rows of the
-        *same* mechanism.
-        """
-        if step <= 0:
-            return Identity()
-        if step >= self.n_steps:
-            return self
-        unit = self.atomic_unit
-        if unit < 1:
-            raise ValueError(
-                f"{type(self).__name__}.atomic_unit must be >= 1, got {unit}"
-            )
-        rounded = min(-(-step // unit) * unit, self.n_steps)
-        if rounded == self.n_steps:
-            return self
-        s = self.inner.strategy
-        if isinstance(s, BandMfStrategy) and s.coefficients_override is None:
-            pinned = tuple(s.coefficients(n_steps=self.n_steps).tolist())
-            new_s = dataclasses.replace(s, coefficients_override=pinned)
-            new_inner = dataclasses.replace(self.inner, strategy=new_s)
-            return dataclasses.replace(self, inner=new_inner, n_steps=rounded)
-        return dataclasses.replace(self, n_steps=rounded)
-
     @functools.lru_cache(maxsize=8)
-    def pld(
+    def _pld_at_horizon(
         self,
+        n_steps: int,
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
@@ -123,16 +88,18 @@ class BMinSep(DpFtrlProcess):
         num_mc_samples: int | None = None,
         seed: int | None = None,
     ) -> Pld:
-        config = get_discretization(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-            num_mc_samples=num_mc_samples,
-            seed=seed,
-        )
-        native_cfg = config.to_native()
+        """K-step warm-start b-min-sep MC PLD using N-tuned coefficients.
 
+        ``n_steps`` is rounded up to the next ``bands`` boundary (capped at
+        ``self.n_steps``) — within an atomic band the PLD plateaus.  The
+        BandMF strategy coefficients and per-example sensitivity are
+        evaluated at ``self.n_steps`` (the N-tuned deployed mechanism);
+        ``n_steps`` controls only the warm-start MC transcript length.
+        The Rust sampler is prefix-stable under a fixed seed, so the
+        K-row evaluation is the post-processing projection of the
+        N-step output — ``ε(_pld_at_horizon(K)) ≤ ε(self)`` and is
+        monotone in K.
+        """
         s = self.inner.strategy
         if not isinstance(s, BandMfStrategy):
             raise TypeError(
@@ -144,34 +111,73 @@ class BMinSep(DpFtrlProcess):
             raise ValueError(
                 "BandMfStrategy inner must have non-empty coefficients (bands >= 1)."
             )
+        if n_steps <= 0 or n_steps > self.n_steps:
+            raise ValueError(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]")
+        rounded = min(-(-n_steps // bands) * bands, self.n_steps)
+
+        config = get_discretization(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+            num_mc_samples=num_mc_samples,
+            seed=seed,
+        )
+        native_cfg = config.to_native()
 
         coefs = s.coefficients(n_steps=self.n_steps).tolist()
         sensitivity = s.sensitivity(n_steps=self.n_steps)
         effective_nm = self.inner.noise_multiplier / sensitivity
         p = _participation_p_from_per_example_rate(self.p0, bands)
 
-        hid = get_handle_or_none(
-            tuple(coefs),
-            self.n_steps,
-            p,
-            config.num_mc_samples,
-            config.seed,
-        )
-        if hid is None:
-            return _native.bandmf_b_min_sep_warm_mc_pld(
-                coefs,
+        # Reuse the cached transcript handle when computing at the full
+        # horizon (the only K that matches the cached corpus key).  For
+        # K < N we fall through to a fresh one-shot MC; the Rust sampler
+        # is seed-stable so the K-row transcript matches the prefix of
+        # the N-row transcript at the same seed.
+        if rounded == self.n_steps:
+            hid = get_handle_or_none(
+                tuple(coefs),
                 self.n_steps,
                 p,
-                effective_nm,
-                native_cfg,
+                config.num_mc_samples,
+                config.seed,
             )
-        return _native.bandmf_b_min_sep_pld_from_transcript_handle(
-            hid,
+            if hid is not None:
+                return _native.bandmf_b_min_sep_pld_from_transcript_handle(
+                    hid,
+                    coefs,
+                    self.n_steps,
+                    p,
+                    effective_nm,
+                    native_cfg,
+                )
+        return _native.bandmf_b_min_sep_warm_mc_pld(
             coefs,
-            self.n_steps,
+            rounded,
             p,
             effective_nm,
             native_cfg,
+        )
+
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+        num_mc_samples: int | None = None,
+        seed: int | None = None,
+    ) -> Pld:
+        return self._pld_at_horizon(
+            self.n_steps,
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+            num_mc_samples=num_mc_samples,
+            seed=seed,
         )
 
 

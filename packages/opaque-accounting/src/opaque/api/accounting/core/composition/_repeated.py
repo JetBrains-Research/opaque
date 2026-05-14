@@ -27,9 +27,10 @@ class Repeated(DpProcess):
         pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
-        return self.inner.pld(
+        return self.inner.repeated_pld(
+            self.count,
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
-        ).self_compose(self.count)
+        )
