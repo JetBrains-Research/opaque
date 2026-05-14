@@ -328,6 +328,48 @@ def test_fp16_autocast_with_loss_scale_no_underflow():
 
 
 @_AUTOCAST_REQUIRES_CUDA
+def test_fp16_autocast_with_loss_scaler_primitive_matches_inline_lambda():
+    """Functional ``loss_scaler`` matches the inline-lambda baseline.
+
+    Pins down that promoting the loss-scale machinery from an inline lambda
+    to the ``opaque.precision.loss_scaler`` primitive does not change the
+    clipped gradient — i.e. the primitive really is just packaging the
+    same ``pre_clipping_transform`` shape, with the DP-critical
+    unscale-before-clip ordering preserved.
+    """
+    from opaque.precision import loss_scaler
+
+    torch.manual_seed(0)
+    model = _build_model().cuda()
+    x = torch.randn(5, 8, device="cuda")
+    y = torch.randn(5, 4, device="cuda")
+
+    g_inline = _step_with_autocast(model, x, y, loss_scale=128.0)
+
+    scaler, scaler_state = loss_scaler(init_scale=128.0)
+
+    fmodel, params = make_functional(model)
+
+    def loss_fn(p, xi, yi):
+        with torch.autocast(device_type="cuda", dtype=torch.float16):
+            pred = fmodel(p, xi.unsqueeze(0)).squeeze(0)
+            loss = ((pred - yi) ** 2).mean()
+        return scaler.scale_loss(loss, scaler_state)
+
+    grad_fn, clip_state = clipped_grad(
+        loss_fn,
+        argnums=0,
+        batch_argnums=(1, 2),
+        clipping_norm=1.0,
+        pre_clipping_transform=lambda g: scaler.unscale_grads(g, scaler_state),
+    )
+    g_primitive, _ = grad_fn(params, x, y, state=clip_state)
+
+    for a, b in zip(g_inline, g_primitive, strict=True):
+        torch.testing.assert_close(a, b, rtol=1e-6, atol=1e-6)
+
+
+@_AUTOCAST_REQUIRES_CUDA
 def test_fp16_autocast_full_pipeline_with_optimizer():
     """End-to-end: autocast → scaled-grad → clipped → noised → adamw step."""
     torch.manual_seed(0)
