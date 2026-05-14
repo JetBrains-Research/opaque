@@ -1,4 +1,4 @@
-"""Step-indexed schedules + warmup / restart composition."""
+"""Step-indexed schedules + warmup / restart / WSD composition."""
 
 from opaque.api.engine.scheduling import (
     constant_schedule,
@@ -8,6 +8,7 @@ from opaque.api.engine.scheduling import (
     linear_schedule,
     one_minus_sqrt_schedule,
     polynomial_schedule,
+    warmup_stable_decay,
     with_restarts,
     with_warmup,
 )
@@ -22,4 +23,5 @@ __all__ = [
     "one_minus_sqrt_schedule",
     "with_warmup",
     "with_restarts",
+    "warmup_stable_decay",
 ]
