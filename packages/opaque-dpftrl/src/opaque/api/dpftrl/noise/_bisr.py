@@ -29,6 +29,22 @@ def _native():
     return _n
 
 
+@lru_cache(maxsize=256)
+def _bisr_gram_matrix_cached(
+    inv: tuple[float, ...],
+    normalized: bool,
+    n_steps: int,
+    min_sep: int,
+    max_participations: int | None,
+) -> tuple[float, ...]:
+    """Gram sequence for BISR; cached across repeated σ / PLD probes."""
+    return tuple(
+        _native().bisr_gram_matrix(
+            list(inv), n_steps, min_sep, max_participations, normalized
+        )
+    )
+
+
 @lru_cache(maxsize=32)
 def _bisr_inverse_coefficients_cached(bandwidth: int, beta: float) -> tuple[float, ...]:
     """Compute BISR inverse square-root coefficients (Lemma 1, arxiv:2505.12128).
@@ -109,11 +125,12 @@ class BisrStrategy:
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> tuple[float, ...]:
-        inv = list(self._inv_coefs())
-        return tuple(
-            _native().bisr_gram_matrix(
-                inv, n_steps, min_sep, max_participations, self.normalized
-            )
+        return _bisr_gram_matrix_cached(
+            self._inv_coefs(),
+            self.normalized,
+            n_steps,
+            min_sep,
+            max_participations,
         )
 
     def streaming_matrix(self, *, n_steps: int, **_) -> StreamingMatrix:

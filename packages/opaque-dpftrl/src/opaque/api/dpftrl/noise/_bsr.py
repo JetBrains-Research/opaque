@@ -95,6 +95,24 @@ def _validate_bsr_hyperparams(bandwidth: int, alpha: float, beta: float) -> None
             )
 
 
+@lru_cache(maxsize=256)
+def _bsr_gram_matrix_cached(
+    bandwidth: int,
+    alpha: float,
+    beta: float,
+    n_steps: int,
+    min_sep: int,
+    max_participations: int | None,
+) -> tuple[float, ...]:
+    """Gram sequence for BSR; cached across repeated σ / PLD probes."""
+    band = list(_bsr_band_coefficients_cached(bandwidth, alpha, beta))
+    return tuple(
+        _native().toeplitz_gram_matrix(
+            band, n_steps, min_sep, max_participations, False
+        )
+    )
+
+
 def _bsr_full_coefficients(
     bandwidth: int, alpha: float, beta: float, n_steps: int
 ) -> torch.Tensor:
@@ -125,13 +143,13 @@ class BsrStrategy:
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> tuple[float, ...]:
-        band = list(
-            _bsr_band_coefficients_cached(self.bandwidth, self.alpha, self.beta)
-        )
-        return tuple(
-            _native().toeplitz_gram_matrix(
-                band, n_steps, min_sep, max_participations, False
-            )
+        return _bsr_gram_matrix_cached(
+            self.bandwidth,
+            self.alpha,
+            self.beta,
+            n_steps,
+            min_sep,
+            max_participations,
         )
 
     def streaming_matrix(self, **_) -> StreamingMatrix:

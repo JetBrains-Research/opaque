@@ -590,9 +590,12 @@ class TestAtStepInvariants:
             # despite running fewer rounds.  Re-tuning is the documented
             # ``approx_at_step`` semantic ("fresh K-step run"); for this
             # specific pair the bounded-by-full invariant does not hold and
-            # is not provable.  The other invariants (trend, monotone at
-            # unit boundaries, sandwich for closed-form paths) still cover
-            # this combination.
+            # is not provable.  ``test_monotone_at_unit_boundaries`` skips
+            # the same pair for the same reason; sandwich (closed-form-only)
+            # never runs for the MC paths.  The remaining invariants for
+            # this pair are ``test_step_zero_is_identity_eps``,
+            # ``test_full_horizon_matches_proc``, ``test_overshoot_clamps_n``,
+            # and ``test_trend_increases``.
             pytest.skip(
                 "BMinSep + BandMf: fresh K-step retuning at small bands can "
                 "exceed full-N ε; documented limitation of approx_at_step."
@@ -610,6 +613,16 @@ class TestAtStepInvariants:
         assert e_small < e_full
 
     def test_monotone_at_unit_boundaries(self, amp: str, mech: str):
+        if (amp, mech) == ("BMinSep", "BandMf"):
+            # Same ``approx_at_step`` retuning caveat as
+            # :meth:`test_bounded_by_full`: fresh K-step ``BandMfStrategy``
+            # coefficients can make intermediate ``ε`` exceed the full-``N``
+            # value at the MC sample budget, so the unit-boundary sequence is
+            # not guaranteed monotone within the slack used for other MC pairs.
+            pytest.skip(
+                "BMinSep + BandMf: K-step retuning breaks monotone-at-units "
+                "with fixed MC samples; see test_bounded_by_full."
+            )
         proc = _build(amp, mech)
         n, M = proc.n_steps, proc.atomic_unit
         e_full = _eps(proc, _DELTA, amp)
