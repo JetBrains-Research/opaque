@@ -40,7 +40,7 @@ import functools
 from dataclasses import dataclass
 
 from opaque.api.accounting.core import _native
-from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core._base import Pld
 from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._bisr import BisrStrategy
@@ -116,38 +116,10 @@ class BallsInBins(DpFtrlProcess):
         # the next epoch.
         return self.num_bins
 
-    def approx_at_step(self, step: int) -> DpProcess:
-        """Process truncated to its first ``step`` rounds (rounded up to an epoch).
-
-        Strategies are pure recipes — no per-horizon state to regenerate.
-        Just clamp ``n_steps`` to the next epoch boundary; the strategy's
-        polymorphic ``gram_matrix(...)`` / ``sensitivity(...)`` methods
-        rebuild for the new horizon on the next ``pld()`` call.
-
-        See :meth:`DpFtrlProcess.approx_at_step` for the upper-bound
-        semantics.
-        """
-        import dataclasses
-
-        from opaque.api.accounting.core.mechanisms.types import Identity
-
-        if step <= 0:
-            return Identity()
-        if step >= self.n_steps:
-            return self
-        unit = self.atomic_unit
-        if unit < 1:
-            raise ValueError(
-                f"{type(self).__name__}.atomic_unit must be >= 1, got {unit}"
-            )
-        rounded = min(-(-step // unit) * unit, self.n_steps)
-        if rounded == self.n_steps:
-            return self
-        return dataclasses.replace(self, n_steps=rounded)
-
     @functools.lru_cache(maxsize=8)
-    def pld(
+    def _pld_at_horizon(
         self,
+        n_steps: int,
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
@@ -156,7 +128,28 @@ class BallsInBins(DpFtrlProcess):
         num_mc_samples: int | None = None,
         seed: int | None = None,
     ) -> Pld:
+        """K-step BnB PLD using N-tuned strategy quantities.
+
+        ``n_steps`` is rounded up to the next epoch (multiple of
+        ``num_bins``; capped at ``self.n_steps``).  For horizon-
+        independent inners (Identity, BSR, BiSR, λ-CGD) the gram /
+        primitive is reparameterised by ``K_epochs = rounded // num_bins``.
+        For BLT (the only retuning inner) the N-tuned Toeplitz first
+        column is read at ``self.n_steps`` and the K-prefix gram is
+        built via the closed-form Toeplitz gram on those coefficients,
+        evaluated at participation context ``(K, num_bins, K_epochs)``.
+        In every case the K-prefix output is a deterministic projection
+        of the deployed N-step mechanism, so by post-processing
+        ``ε(_pld_at_horizon(K)) ≤ ε(self)`` and is monotone in K.
+        """
         from opaque.api.accounting.core.discretization import get_discretization
+
+        if n_steps <= 0 or n_steps > self.n_steps:
+            raise ValueError(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]")
+        rounded = min(-(-n_steps // self.num_bins) * self.num_bins, self.n_steps)
+        num_epochs_K = rounded // self.num_bins
+        min_sep_K = self.num_bins
+        max_participations_K = num_epochs_K
 
         config = get_discretization(
             discretization=discretization,
@@ -168,30 +161,77 @@ class BallsInBins(DpFtrlProcess):
         )
         native_cfg = config.to_native()
 
+        s = self.inner.strategy
+
         # Identity uses a dedicated MC primitive that exploits
         # ``G = num_epochs · I_b`` (Cholesky-free, IS on the shifted-bin
         # coordinate); all other strategies feed their gram into the
         # generic ``bnb_mc_pld``.
-        if isinstance(self.inner.strategy, IdentityStrategy):
+        if isinstance(s, IdentityStrategy):
             if self.inner.noise_multiplier == 0:
                 return _native.non_private_pld(native_cfg)
             return _native.bnb_mc_pld_identity(
                 self.num_bins,
-                self.num_epochs,
+                num_epochs_K,
                 float(self.inner.noise_multiplier),
                 _IDENTITY_IS_TILT,
                 native_cfg,
             )
-        gram = self.inner.strategy.gram_matrix(
-            n_steps=self.n_steps,
-            min_sep=self.min_sep,
-            max_participations=self.max_participations,
-        )
+
+        if isinstance(s, BltStrategy):
+            # BLT is the only retuning inner: re-running L-BFGS at K
+            # would yield a different mechanism, breaking post-processing
+            # monotonicity.  Pin the N-tuned Toeplitz first column and
+            # evaluate its K-prefix gram instead.
+            coefs = s.coefficients(
+                n_steps=self.n_steps,
+                min_sep=self.min_sep,
+                max_participations=self.max_participations,
+            )
+            pinned = list(coefs[:rounded].tolist())
+            gram = tuple(
+                _native.toeplitz_gram_matrix(
+                    pinned,
+                    rounded,
+                    min_sep_K,
+                    max_participations_K,
+                    True,
+                )
+            )
+        else:
+            # BSR / BiSR / λ-CGD are recipe-driven: ``gram_matrix(n_steps=K)``
+            # is a closed-form K-row gram of the *same* mechanism (no
+            # re-tuning), so post-processing applies directly.
+            gram = s.gram_matrix(
+                n_steps=rounded,
+                min_sep=min_sep_K,
+                max_participations=max_participations_K,
+            )
         return _native.bnb_mc_pld(
             list(gram),
             self.num_bins,
             self.inner.noise_multiplier,
             native_cfg,
+        )
+
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+        num_mc_samples: int | None = None,
+        seed: int | None = None,
+    ) -> Pld:
+        return self._pld_at_horizon(
+            self.n_steps,
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+            num_mc_samples=num_mc_samples,
+            seed=seed,
         )
 
 

@@ -57,7 +57,7 @@ class BMinSep(DpFtrlProcess):
         # b-min-sep enforces one user contribution per ``bands``-row window;
         # the warm-start MC handles arbitrary ``n_steps`` natively, but the
         # accounting-meaningful quantum is one band (one full participation
-        # period).  ``approx_at_step`` rounds up to a band boundary.
+        # period).  ``per_step(self) * K`` rounds K up to a band boundary.
         return self.inner.strategy.bands
 
     @property
@@ -77,8 +77,9 @@ class BMinSep(DpFtrlProcess):
         return (self.n_steps + bands - 1) // bands
 
     @functools.lru_cache(maxsize=8)
-    def pld(
+    def _pld_at_horizon(
         self,
+        n_steps: int,
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
@@ -87,16 +88,18 @@ class BMinSep(DpFtrlProcess):
         num_mc_samples: int | None = None,
         seed: int | None = None,
     ) -> Pld:
-        config = get_discretization(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-            num_mc_samples=num_mc_samples,
-            seed=seed,
-        )
-        native_cfg = config.to_native()
+        """K-step warm-start b-min-sep MC PLD using N-tuned coefficients.
 
+        ``n_steps`` is rounded up to the next ``bands`` boundary (capped at
+        ``self.n_steps``) — within an atomic band the PLD plateaus.  The
+        BandMF strategy coefficients and per-example sensitivity are
+        evaluated at ``self.n_steps`` (the N-tuned deployed mechanism);
+        ``n_steps`` controls only the warm-start MC transcript length.
+        The Rust sampler is prefix-stable under a fixed seed, so the
+        K-row evaluation is the post-processing projection of the
+        N-step output — ``ε(_pld_at_horizon(K)) ≤ ε(self)`` and is
+        monotone in K.
+        """
         s = self.inner.strategy
         if not isinstance(s, BandMfStrategy):
             raise TypeError(
@@ -108,39 +111,80 @@ class BMinSep(DpFtrlProcess):
             raise ValueError(
                 "BandMfStrategy inner must have non-empty coefficients (bands >= 1)."
             )
+        if n_steps <= 0 or n_steps > self.n_steps:
+            raise ValueError(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]")
+        rounded = min(-(-n_steps // bands) * bands, self.n_steps)
+
+        config = get_discretization(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+            num_mc_samples=num_mc_samples,
+            seed=seed,
+        )
+        native_cfg = config.to_native()
 
         coefs = s.coefficients(n_steps=self.n_steps).tolist()
         sensitivity = s.sensitivity(n_steps=self.n_steps)
         effective_nm = self.inner.noise_multiplier / sensitivity
         p = _participation_p_from_per_example_rate(self.p0, bands)
 
-        # Hold the transcript-cache lock around both the lookup and the
-        # use so a concurrent ``_clear_all_native_caches()`` (e.g. from
-        # ``calibrate(...)``'s finally clause running on another thread)
-        # cannot drop the corpus before the Rust call resolves it.
-        result = _with_transcript_handle(
-            tuple(coefs),
-            self.n_steps,
-            p,
-            config.num_mc_samples,
-            config.seed,
-            lambda hid: _native.bandmf_b_min_sep_pld_from_transcript_handle(
-                hid,
-                coefs,
+        # Reuse the cached transcript handle when computing at the full
+        # horizon (the only K that matches the cached corpus key).  For
+        # K < N we fall through to a fresh one-shot MC; the Rust sampler
+        # is seed-stable so the K-row transcript matches the prefix of
+        # the N-row transcript at the same seed.
+        #
+        # ``_with_transcript_handle`` holds the per-cache lock around
+        # both the lookup and the Rust call so a concurrent
+        # ``_clear_all_native_caches()`` (e.g. from ``calibrate()``'s
+        # finally clause on another thread) cannot drop the corpus
+        # mid-use; on cache-miss it returns ``None`` and we fall through.
+        if rounded == self.n_steps:
+            result = _with_transcript_handle(
+                tuple(coefs),
                 self.n_steps,
                 p,
-                effective_nm,
-                native_cfg,
-            ),
-        )
-        if result is not None:
-            return result
+                config.num_mc_samples,
+                config.seed,
+                lambda hid: _native.bandmf_b_min_sep_pld_from_transcript_handle(
+                    hid,
+                    coefs,
+                    self.n_steps,
+                    p,
+                    effective_nm,
+                    native_cfg,
+                ),
+            )
+            if result is not None:
+                return result
         return _native.bandmf_b_min_sep_warm_mc_pld(
             coefs,
-            self.n_steps,
+            rounded,
             p,
             effective_nm,
             native_cfg,
+        )
+
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+        num_mc_samples: int | None = None,
+        seed: int | None = None,
+    ) -> Pld:
+        return self._pld_at_horizon(
+            self.n_steps,
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+            num_mc_samples=num_mc_samples,
+            seed=seed,
         )
 
 
