@@ -133,7 +133,12 @@ class BallsInBins(DpFtrlProcess):
 
         if step <= 0:
             return Identity()
-        if step >= self.n_steps:
+        if step > self.n_steps:
+            raise ValueError(
+                f"step ({step}) exceeds n_steps ({self.n_steps}); "
+                f"{type(self).__name__} is undefined beyond its declared horizon."
+            )
+        if step == self.n_steps:
             return self
         unit = self.atomic_unit
         if unit < 1:

@@ -5,6 +5,7 @@ from opaque.api.accounting.dpftrl.amplification import (
     balls_in_bins,
     poisson,
 )
+from opaque.api.accounting.dpftrl.composition import per_step
 from opaque.api.accounting.dpftrl.mechanisms import mf_gaussian
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "poisson",
     "b_min_sep",
     "balls_in_bins",
+    "per_step",
 ]

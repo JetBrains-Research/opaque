@@ -257,6 +257,30 @@ class DpProcess(ABC):
         """
         return (self, 1)
 
+    def repeated_pld(
+        self,
+        count: int,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
+        """PLD for ``count`` independent applications of this process.
+
+        Default: ``self.pld(...).self_compose(count)``. Subclasses whose
+        K-fold behaviour is *not* the K-fold composition of a single-shot
+        PLD (e.g. DP-FTRL strategies, where K steps' joint PLD depends on
+        the strategy's correlation matrix) override this to compute the
+        true K-step PLD directly.
+        """
+        return self.pld(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        ).self_compose(count)
+
     def __mul__(self, count: int) -> DpProcess:
         """Repeat this process *count* times: ``step * 1000``.
 

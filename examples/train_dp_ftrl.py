@@ -123,7 +123,7 @@ import torchopt
 
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as dpftrl_acc
-from opaque.accounting import calibration as cal
+from opaque.accounting import Accountant, calibration as cal
 from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad, per_group
 from opaque.types import PerGroup, SecondMomentNoiseOutput
 from opaque.dpftrl.noise import (
@@ -1638,23 +1638,22 @@ def main():
     profiler, _ = profiler.mark("training_start")
     print_memory(device, "Before training")
 
-    # Per-eval epsilon reporting.  Every ``acct_mechanism`` branch above
-    # returns a :class:`DpFtrlProcess` (whole-process amplifier wrapping
-    # the MF mechanism), so ``approx_at_step(K)`` is always available —
-    # it returns an upper bound on the privacy cost at step K, rounded
-    # up to the amplifier's atomic_unit (one full epoch / one band).
-    def epsilon_at_step(step: int) -> float:
-        if args.mechanism == "none":
-            return 0.0
-        return acct_mechanism(noise_multiplier).approx_at_step(step).epsilon_at(
-            args.target_delta
-        )
+    # Privacy accountant — mirrors the DP-SGD trainer's ``acc |= step``
+    # idiom.  ``per_step`` wraps the whole-process DP-FTRL accountant so
+    # the :class:`Repeated` node ``step * K`` materialises as the true
+    # K-step PLD via ``proc.approx_at_step(K).pld()`` (strategy-aware,
+    # not the K-fold composition of a single-step PLD).
+    if args.mechanism == "none":
+        step_proc = acc.identity()
+    else:
+        step_proc = dpftrl_acc.per_step(acct_mechanism(noise_multiplier))
+    accounting = Accountant()
 
     # Step-0 eval — baseline before any training step.  Logs the calibrated
     # values that downstream per-step metrics also report so the dashboard
     # has continuous lines (no broken first-point).
     initial_eval_loss = eval_loss(trainable_params)
-    initial_epsilon = epsilon_at_step(0)
+    initial_epsilon = accounting.epsilon_at(args.target_delta)
     initial_clipping_norm = (
         clip_norm.effective if isinstance(clip_norm, PerGroup) else float(clip_norm)
     )
@@ -1689,6 +1688,9 @@ def main():
         for step_idx, batch in enumerate(epoch_loader):
             if args.max_steps is not None and global_step >= args.max_steps:
                 break
+
+            # Accounting (data-independent, before execution).
+            accounting |= step_proc
 
             (input_ids,) = batch
             batch_size = len(input_ids)
@@ -1800,7 +1802,9 @@ def main():
             # --- Eval ---
             if global_step % args.eval_steps == 0:
                 current_eval_loss = eval_loss(trainable_params)
-                epsilon = epsilon_at_step(global_step)
+                # Cache PLD before eval so it serves as opaque boundary.
+                accounting = acc.cached(accounting)
+                epsilon = accounting.epsilon_at(args.target_delta)
                 print(
                     f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
                 )

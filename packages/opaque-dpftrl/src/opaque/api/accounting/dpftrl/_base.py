@@ -68,9 +68,8 @@ class DpFtrlProcess(DpProcess):
         """Process truncated to its first ``step`` of ``n_steps`` rounds.
 
         ``step`` is rounded up to the nearest multiple of
-        :attr:`atomic_unit` and capped at ``n_steps``.  Returns
-        :class:`Identity` for ``step <= 0`` and ``self`` for
-        ``step >= n_steps``.
+        :attr:`atomic_unit`.  Returns :class:`Identity` for
+        ``step <= 0`` and ``self`` for ``step == n_steps``.
 
         This is an **upper bound** on the smooth ε-curve at ``step`` and
         reports the budget for a fresh K-step run, **not** the actual
@@ -82,11 +81,18 @@ class DpFtrlProcess(DpProcess):
         :class:`Identity` at the zero endpoint.
 
         Raises:
-            ValueError: If ``atomic_unit`` is not positive.
+            ValueError: If ``step > n_steps`` (the process is undefined
+                beyond its declared horizon) or :attr:`atomic_unit` is not
+                positive.
         """
         if step <= 0:
             return Identity()
-        if step >= self.n_steps:
+        if step > self.n_steps:
+            raise ValueError(
+                f"step ({step}) exceeds n_steps ({self.n_steps}); "
+                f"{type(self).__name__} is undefined beyond its declared horizon."
+            )
+        if step == self.n_steps:
             return self
         unit = self.atomic_unit
         if unit < 1:

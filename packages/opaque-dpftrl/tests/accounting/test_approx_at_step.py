@@ -71,9 +71,10 @@ class TestCyclicPoissonIdentity:
         proc = self._proc(100)
         assert proc.approx_at_step(100) is proc
 
-    def test_overshoot_step_returns_self(self):
+    def test_overshoot_step_raises(self):
         proc = self._proc(100)
-        assert proc.approx_at_step(10_000) is proc
+        with pytest.raises(ValueError, match="exceeds n_steps"):
+            proc.approx_at_step(10_000)
 
     def test_type_preserved(self):
         sub = self._proc().approx_at_step(50)
@@ -562,7 +563,11 @@ class TestAtStepInvariants:
     def test_full_step_returns_self(self, amp: str, mech: str):
         proc = _build(amp, mech)
         assert proc.approx_at_step(proc.n_steps) is proc
-        assert proc.approx_at_step(proc.n_steps + 10_000) is proc
+
+    def test_overshoot_step_raises(self, amp: str, mech: str):
+        proc = _build(amp, mech)
+        with pytest.raises(ValueError, match="exceeds n_steps"):
+            proc.approx_at_step(proc.n_steps + 10_000)
 
     def test_intermediate_type_preserved(self, amp: str, mech: str):
         proc = _build(amp, mech)
