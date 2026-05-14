@@ -1007,9 +1007,7 @@ def main():
     print(f"  Mechanism: {args.mechanism}")
     if args.mechanism == "band_mf":
         if args.band_mf_sampling == "poisson":
-            print(
-                f"  Sampler: poisson (bands={args.bands}, q={sampling_prob:.6f})"
-            )
+            print(f"  Sampler: poisson (bands={args.bands}, q={sampling_prob:.6f})")
         else:
             print(
                 f"  Sampler: b_min_sep (bands={args.bands}, p_0={p0:.6f}, p={p_bms:.6f})"
@@ -1071,14 +1069,28 @@ def main():
         output = fmodel(merged_params(trainable), input_ids, labels=input_ids)
         return output.loss
 
+    pad_token_id = tokenizer.pad_token_id
+
     def eval_loss(trainable):
+        """Token-weighted CE over the eval set (pad tokens masked to ``-100``).
+
+        Returns ``float('nan')`` when the eval set has zero scoring tokens
+        (empty ``--num-eval-samples`` or all examples shorter than 2 tokens).
+        """
         with torch.no_grad():
-            total_loss, total_count = 0.0, 0
+            total_loss, total_tokens = 0.0, 0
             for (input_ids,) in eval_loader:
-                loss = per_example_loss_fn(trainable, input_ids)
-                total_loss += loss.item() * len(input_ids)
-                total_count += len(input_ids)
-            return total_loss / total_count
+                labels = input_ids.clone()
+                labels[labels == pad_token_id] = -100
+                output = fmodel(merged_params(trainable), input_ids, labels=labels)
+                num_tokens = int((labels[..., 1:] != -100).sum().item())
+                if num_tokens == 0:
+                    continue
+                total_loss += output.loss.item() * num_tokens
+                total_tokens += num_tokens
+            if total_tokens == 0:
+                return float("nan")
+            return total_loss / total_tokens
 
     if args.per_group_clipping:
         clip_norm = per_group(
@@ -1317,9 +1329,7 @@ def main():
                 n_steps=total_steps,
                 truncated_batch_size=args.truncated_batch_size,
                 dataset_size=(
-                    global_train_size
-                    if args.truncated_batch_size is not None
-                    else None
+                    global_train_size if args.truncated_batch_size is not None else None
                 ),
             )
     elif args.mechanism == "none":
@@ -1646,8 +1656,10 @@ def main():
     def epsilon_at_step(step: int) -> float:
         if args.mechanism == "none":
             return 0.0
-        return acct_mechanism(noise_multiplier).approx_at_step(step).epsilon_at(
-            args.target_delta
+        return (
+            acct_mechanism(noise_multiplier)
+            .approx_at_step(step)
+            .epsilon_at(args.target_delta)
         )
 
     # Step-0 eval — baseline before any training step.  Logs the calibrated
@@ -1801,9 +1813,7 @@ def main():
             if global_step % args.eval_steps == 0:
                 current_eval_loss = eval_loss(trainable_params)
                 epsilon = epsilon_at_step(global_step)
-                print(
-                    f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
-                )
+                print(f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}")
                 if use_wandb:
                     wandb.log(
                         {
