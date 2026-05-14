@@ -52,11 +52,11 @@ import torch.distributed as dist
 import torchopt
 from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
+from lora_privacy.peft_lora_xs import LoraXSConfig
 
 from opaque.patches import apply_model_patches, apply_runtime_patches
 
 apply_runtime_patches()
-
 from torch.utils.data import DataLoader
 from transformers import (
     AutoConfig,
@@ -309,9 +309,21 @@ def parse_args():
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["custom", "smoke", "mellum-kstack", "qwen-7b-kstack"],
+        choices=[
+            "custom",
+            "smoke",
+            "mellum-kstack",
+            "qwen-7b-kstack",
+            "qwen-coder-kstack-lora",
+        ],
         default="smoke",
-        help="Apply preset configuration (custom=keep explicit args, smoke=quick test ~2min, mellum-kstack=Mellum-4b + KStack at ε=10 with adafactor @ 5e-5, qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at ε=3 with adafactor @ 5e-4).",
+        help=(
+            "Apply preset configuration (custom=keep explicit args, "
+            "smoke=quick test ~2min, mellum-kstack=Mellum-4b + KStack at ε=10 "
+            "with adafactor @ 5e-5, qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at "
+            "ε=3 with adafactor @ 5e-4, qwen-coder-kstack-lora=tuned vanilla LoRA "
+            "baseline for the same model/dataset with SGD)."
+        ),
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
@@ -489,8 +501,39 @@ def parse_args():
         default=False,
         help="Offload saved tensors to CPU via save_on_cpu (works with or without checkpointing)",
     )
+    train_group.add_argument(
+        "--warmup-steps",
+        type=int,
+        default=0,
+        help="Linear LR warmup steps (0 = no warmup)",
+    )
+    train_group.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Save model adapter to this directory after training (enables downstream eval)",
+    )
+    train_group.add_argument(
+        "--eval-humaneval",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Run HumanEval evaluation after training (requires --output-dir)",
+    )
+    train_group.add_argument(
+        "--eval-humaneval-n-samples",
+        type=int,
+        default=164,
+        help="Number of HumanEval problems to evaluate (default: 164 = all)",
+    )
 
     lora_group = parser.add_argument_group("lora", "LoRA adapter settings")
+    lora_group.add_argument(
+        "--lora-method",
+        type=str,
+        choices=["lora", "lora-xs"],
+        default="lora",
+        help="LoRA variant: lora (standard) or lora-xs (SVD factors + trainable r×r R matrix)",
+    )
     lora_group.add_argument("--lora-r", type=int, default=4, help="LoRA rank")
     lora_group.add_argument("--lora-alpha", type=int, default=8, help="LoRA alpha")
     lora_group.add_argument(
@@ -499,6 +542,64 @@ def parse_args():
         nargs="+",
         default=["c_attn", "c_proj"],
         help="Target module names for LoRA",
+    )
+    lora_group.add_argument(
+        "--lora-dora",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use DoRA (weight-decomposed LoRA). Only applies to --lora-method lora.",
+    )
+    lora_group.add_argument(
+        "--lora-rslora",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use rank-stabilized scaling (alpha/sqrt(r) instead of alpha/r). Only applies to --lora-method lora.",
+    )
+    lora_group.add_argument(
+        "--lora-init",
+        type=str,
+        default="default",
+        choices=["default", "gaussian", "pissa", "pissa_niter_4", "olora", "loftq"],
+        help="LoRA weight initialization strategy (default: Kaiming for A, zero for B). "
+        "Only applies to --lora-method lora.",
+    )
+    lora_group.add_argument(
+        "--lora-xs-sigma",
+        type=float,
+        default=1e-5,
+        help="LoRA-XS: R matrix init std N(0, sigma^2) (default: 1e-5)",
+    )
+    lora_group.add_argument(
+        "--lora-xs-orthonormal-a",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="LoRA-XS: use A=U^T without singular values (eliminates gradient amplification under DP-SGD)",
+    )
+    # LoRA-XSe: exploration via momentum SVD rotation
+    lora_group.add_argument(
+        "--lora-xse-p-e",
+        type=float,
+        default=0.0,
+        help=(
+            "LoRA-XSe exploration fraction (0 = plain LoRA-XS, 1/3 = default XSe). "
+            "Controls what fraction of the rank is re-randomized at each rotation. "
+            "Requires --optimizer sgd with --sgd-momentum > 0."
+        ),
+    )
+    lora_group.add_argument(
+        "--lora-xse-rotation-step-interval",
+        type=int,
+        default=None,
+        help=(
+            "Steps between rotations (default: auto from momentum = max(1, round(0.5/(1-β)))). "
+            "Only used when --lora-xse-p-e > 0."
+        ),
+    )
+    lora_group.add_argument(
+        "--sgd-momentum",
+        type=float,
+        default=0.0,
+        help="Momentum for --optimizer sgd (also used by xse_sgd). Default 0.0.",
     )
 
     dp_group = parser.add_argument_group("dp", "DP-SGD clipping and noise")
@@ -800,6 +901,43 @@ def parse_args():
             ],
         )
         _set("dtype", "bfloat16")
+    elif args.preset == "qwen-coder-kstack-lora":
+        # Tuned LoRA baseline for Qwen2.5-Coder-7B on KStack, ε=3.
+        # Sweep results: r=16 > r=8/24/32/48/64, lr=5e-2 > 2e-2/1e-2,
+        # mom=0.9 > 0.8/0.85/0.95/0.99, bs=192 > 128/256/384/512,
+        # warmup=0 > 5/10/20.
+        # Best eval: 0.3449 at step 520.
+        _set("model_name", "Qwen/Qwen2.5-Coder-7B")
+        _set("dataset", "JetBrains/KStack")
+        _set("dataset_text_field", "content")
+        _set("num_train_samples", 50000)
+        _set("num_eval_samples", 1000)
+        _set("num_epochs", 2)
+        _set("batch_size", 192)
+        _set("log_steps", 1)
+        _set("eval_steps", 10)
+        _set("target_epsilon", 3.0)
+        _set("learning_rate", 5e-2)
+        _set("lora_method", "lora")
+        _set("lora_r", 16)
+        _set("lora_alpha", 16)
+        _set("optimizer", "sgd")
+        _set("sgd_momentum", 0.9)
+        _set("max_seq_len", 1024)
+        _set(
+            "lora_modules",
+            [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+        )
+        _set("dtype", "bfloat16")
+        _set("microbatch_size", 16)
     elif args.preset == "custom":
         # Keep all user-provided/default CLI arguments unchanged.
         pass
@@ -842,10 +980,9 @@ def main():
     if args.audit_batch_size is None:
         args.audit_batch_size = args.microbatch_size or args.batch_size
 
-    if is_main_process:
-        print("=" * 80)
-        print("DP-SGD LoRA Training for Causal Language Models")
-        print("=" * 80)
+    print("=" * 80)
+    print("DP-SGD LoRA Training for Causal Language Models")
+    print("=" * 80)
 
     # Initialize wandb (enabled by default, offline if no credentials)
     use_wandb = (not args.no_wandb) and is_main_process
@@ -961,18 +1098,33 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
 
     # Apply LoRA
-    print("Applying LoRA...")
-    lora_config = LoraConfig(
-        r=args.lora_r,
-        lora_alpha=args.lora_alpha,
-        target_modules=args.lora_modules,
-        lora_dropout=0.0,
-        bias="none",
-        task_type="CAUSAL_LM",
-    )
+    print(f"Applying {args.lora_method}...")
+    if args.lora_method == "lora-xs":
+        lora_config = LoraXSConfig(
+            r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            target_modules=args.lora_modules,
+            lora_dropout=0.0,
+            sigma=args.lora_xs_sigma,
+            orthonormal_a=args.lora_xs_orthonormal_a,
+            task_type="CAUSAL_LM",
+        )
+    else:
+        lora_config = LoraConfig(
+            r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            target_modules=args.lora_modules,
+            lora_dropout=0.0,
+            bias="none",
+            task_type="CAUSAL_LM",
+            use_dora=args.lora_dora,
+            use_rslora=args.lora_rslora,
+            init_lora_weights=True if args.lora_init == "default" else args.lora_init,
+        )
     model = get_peft_model(model, lora_config)
     apply_model_patches(model)
     model.print_trainable_parameters()
+
     profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")
 
@@ -1221,6 +1373,7 @@ def main():
 
     # Setup optimizer
     print("\nSetting up DP-SGD training...")
+    print(f"  LoRA method: {args.lora_method}")
     print(f"  Optimizer: {args.optimizer}")
     print(f"  Learning rate: {args.learning_rate}")
     if isinstance(clip_norm, PerGroup):
@@ -1465,9 +1618,24 @@ def main():
             noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "sgd":
-        from opaque.optimizers import sgd
+        _use_xse = (
+            args.lora_method == "lora-xs"
+            and getattr(args, "lora_xse_p_e", 0.0) > 0
+        )
+        if _use_xse:
+            from lora_privacy.peft_lora_xs import xse_sgd
 
-        base_opt = sgd(lr=lr_for_opt, weight_decay=args.weight_decay)
+            base_opt = xse_sgd(
+                lr=args.learning_rate,
+                momentum=args.sgd_momentum,
+                p_e=args.lora_xse_p_e,
+                lora_alpha=args.lora_alpha,
+                rotation_step_interval=args.lora_xse_rotation_step_interval,
+            )
+        else:
+            from opaque.optimizers import sgd
+
+            base_opt = sgd(lr=lr_for_opt, weight_decay=args.weight_decay)
     elif args.optimizer == "adamw":
         from opaque.optimizers import adamw
 
@@ -1518,8 +1686,58 @@ def main():
     else:
         raise ValueError(f"Unknown optimizer: {args.optimizer}")
 
-    opt_state = base_opt.init(trainable_params)
+    _xse_active = (
+        args.optimizer == "sgd"
+        and args.lora_method == "lora-xs"
+        and getattr(args, "lora_xse_p_e", 0.0) > 0
+    )
+    if _xse_active:
+        opt_state = base_opt.init(trainable_params, frozen_params)
+    else:
+        opt_state = base_opt.init(trainable_params)
     accounting = Accountant()
+
+    # ---------- XSe diagnostic setup ----------
+    import re as _re
+
+    _R_KEY_RE_DIAG = _re.compile(
+        r"^(?P<prefix>.+)\.lora_xs_R\.(?P<adapter>[^.]+)\.weight$"
+    )
+    _xse_diag_layers: list[dict] = []
+    _xse_p_e = getattr(args, "lora_xse_p_e", 0.0)
+    if args.lora_method == "lora-xs":
+        import math as _math
+        import optree as _optree
+
+        _diag_leaves, _diag_treedef = _optree.tree_flatten(trainable_params)
+        _diag_flat_idx = _optree.tree_unflatten(
+            _diag_treedef, list(range(len(_diag_leaves)))
+        )
+        assert isinstance(_diag_flat_idx, dict)
+        for _r_key in trainable_params.keys():
+            _m = _R_KEY_RE_DIAG.match(_r_key)
+            if _m is None:
+                continue
+            _prefix = _m.group("prefix")
+            _r = trainable_params[_r_key].shape[0]
+            _r_e = int(_math.floor(_xse_p_e * _r))
+            _xse_diag_layers.append(
+                {
+                    "prefix": _prefix,
+                    "r_key": _r_key,
+                    "flat_index": _diag_flat_idx[_r_key],
+                    "r": _r,
+                    "r_e": _r_e,
+                    "r_keep": _r - _r_e,
+                }
+            )
+
+    # Per-step tracking for XSe continuous metrics.
+    _prev_r_explore_norm: dict[str, float] = {}  # r_key → previous ‖R[r_keep:,:]‖
+
+    # Ring buffer for trailing loss slope.
+    _loss_ring: list[float] = []
+    _LOSS_SLOPE_WINDOW = 20
 
     # Noise functions consume ClippedPytree metadata directly and return
     # NoisedPytree updates carrying the realized per-step stddev.
@@ -1621,9 +1839,17 @@ def main():
                 if is_ddp:
                     noise_state = sync(noise_state)
 
-                updates, opt_state = base_opt.update(
-                    noisy_grads, opt_state, params=trainable_params
-                )
+                if _xse_active:
+                    updates, opt_state, frozen_params = base_opt.update(
+                        noisy_grads,
+                        opt_state,
+                        params=trainable_params,
+                        frozen=frozen_params,
+                    )
+                else:
+                    updates, opt_state = base_opt.update(
+                        noisy_grads, opt_state, params=trainable_params
+                    )
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
 
             profiler = profiler.add_step(step_timer)
@@ -1642,6 +1868,11 @@ def main():
             clip_norms_history.append(_effective(step_clip_norm))
             clip_rates_history.append(clip_rate)
             last_clip_bound = step_clip_norm
+
+            # Trailing loss ring for slope-of-loss metric (see wandb block below).
+            _loss_ring.append(avg_loss)
+            if len(_loss_ring) > _LOSS_SLOPE_WINDOW:
+                _loss_ring.pop(0)
 
             global_step += 1
 
@@ -1677,6 +1908,217 @@ def main():
                         "perf/reserved_gb": perf["memory_reserved_gb"],
                         "perf/peak_gb": perf["memory_peak_gb"],
                     }
+                    # ---- Trailing loss slope ----
+                    if len(_loss_ring) >= 2:
+                        _slope_win = _loss_ring[-_LOSS_SLOPE_WINDOW:]
+                        _slope = (_slope_win[-1] - _slope_win[0]) / max(
+                            len(_slope_win) - 1, 1
+                        )
+                        wb_metrics["train/loss_slope"] = _slope
+
+                    # =============================================================
+                    # LoRA-XSe diagnostics
+                    # =============================================================
+                    if _xse_diag_layers:
+                        from lora_privacy.core.svd import _spectral_entropy, _svdvals
+
+                        # -- Per-layer aggregation --
+                        _r_frob_sum = 0.0
+                        _r_info_sum = 0.0
+                        _m_frob_sum = 0.0
+                        _m_info_sum = 0.0
+                        _r_keep_norm_sum = 0.0
+                        _r_explore_norm_sum = 0.0
+                        _m_keep_norm_sum = 0.0
+                        _m_explore_norm_sum = 0.0
+                        _r_explore_info_sum = 0.0
+                        _grad_explore_frac_sum = 0.0
+                        _grad_snr_sum = 0.0
+                        _m_explore_ratio_sum = 0.0
+                        _r_explore_growth_sum = 0.0
+                        _r_velocity_sum = 0.0
+                        _r_condition_sum = 0.0
+                        _r_block_coherence_sum = 0.0
+                        _n_layers = 0
+                        _n_explore_growth = 0
+
+                        _inner_state_for_diag = (
+                            opt_state.inner
+                            if hasattr(opt_state, "inner")
+                            else opt_state
+                        )
+                        _has_trace = (
+                            _inner_state_for_diag is not None
+                            and hasattr(_inner_state_for_diag[0], "trace")
+                            and _inner_state_for_diag[0].trace
+                        )
+
+                        for _li in _xse_diag_layers:
+                            _R = trainable_params[_li["r_key"]]
+                            _R_f = _R.detach().to(torch.float32)
+                            _r_svs = _svdvals(_R_f)
+                            _r_frob_sum += float(torch.linalg.norm(_R_f).item())
+                            _r_info_sum += _spectral_entropy(_r_svs)
+                            _n_layers += 1
+
+                            _r_keep = _li["r_keep"]
+                            _r_e = _li["r_e"]
+
+                            # R condition number: σ_max / σ_min
+                            _s_max = float(_r_svs[0].item())
+                            _s_min = float(_r_svs[-1].clamp(min=1e-12).item())
+                            _r_condition_sum += _s_max / _s_min
+
+                            # R velocity: ‖update‖ (how fast R is changing)
+                            _upd = updates.get(_li["r_key"])
+                            if _upd is not None:
+                                _r_velocity_sum += float(
+                                    torch.linalg.norm(_upd.detach().to(torch.float32)).item()
+                                )
+
+                            if _r_e > 0:
+                                _r_keep_norm_f = float(
+                                    torch.linalg.norm(_R_f[:_r_keep, :_r_keep]).item()
+                                )
+                                _r_explore_norm_f = float(
+                                    torch.linalg.norm(_R_f[_r_keep:, :]).item()
+                                )
+                                _r_keep_norm_sum += _r_keep_norm_f
+                                _r_explore_norm_sum += _r_explore_norm_f
+                                _explore_svs = _svdvals(_R_f[_r_keep:, _r_keep:])
+                                _r_explore_info_sum += _spectral_entropy(_explore_svs)
+
+                                # R block coherence: ‖R_kk‖ / ‖R‖
+                                _r_full_norm = float(torch.linalg.norm(_R_f).item())
+                                if _r_full_norm > 1e-12:
+                                    _r_block_coherence_sum += _r_keep_norm_f / _r_full_norm
+
+                                # R explore growth: Δ‖R[r_keep:,:]‖
+                                _rk = _li["r_key"]
+                                if _rk in _prev_r_explore_norm:
+                                    _r_explore_growth_sum += (
+                                        _r_explore_norm_f - _prev_r_explore_norm[_rk]
+                                    )
+                                    _n_explore_growth += 1
+                                _prev_r_explore_norm[_rk] = _r_explore_norm_f
+
+                            # Gradient-based metrics (from noisy DP gradient)
+                            _g = noisy_grads.get(_li["r_key"])
+                            if _g is not None:
+                                _g_f = _g.detach().to(torch.float32)
+                                _g_norm = float(torch.linalg.norm(_g_f).item())
+
+                                # grad_explore_frac: ‖g[r_keep:,:]‖ / ‖g‖
+                                if _r_e > 0 and _g_norm > 1e-12:
+                                    _g_explore = float(
+                                        torch.linalg.norm(_g_f[_r_keep:, :]).item()
+                                    )
+                                    _grad_explore_frac_sum += _g_explore / _g_norm
+
+                            if _has_trace:
+                                _m_R = _inner_state_for_diag[0].trace[
+                                    _li["flat_index"]
+                                ].to(torch.float32)
+                                _m_norm_f = float(torch.linalg.norm(_m_R).item())
+                                _m_frob_sum += _m_norm_f
+                                _m_info_sum += _spectral_entropy(
+                                    _svdvals(_m_R)
+                                )
+
+                                # Continuous m_explore_ratio: ‖m[r_keep:,:]‖/‖m[:r_keep,:]‖
+                                if _r_e > 0:
+                                    _m_keep_n = float(
+                                        torch.linalg.norm(_m_R[:_r_keep, :]).item()
+                                    )
+                                    _m_explore_n = float(
+                                        torch.linalg.norm(_m_R[_r_keep:, :]).item()
+                                    )
+                                    _m_keep_norm_sum += _m_keep_n
+                                    _m_explore_norm_sum += _m_explore_n
+                                    _m_explore_ratio_sum += (
+                                        _m_explore_n / max(_m_keep_n, 1e-12)
+                                    )
+
+                                # grad signal-to-noise: ‖m_R‖ / ‖g_R - m_R‖
+                                if _g is not None:
+                                    _g_f = _g.detach().to(torch.float32)
+                                    _residual = float(
+                                        torch.linalg.norm(_g_f - _m_R).item()
+                                    )
+                                    if _residual > 1e-12:
+                                        _grad_snr_sum += _m_norm_f / _residual
+
+                        # -- Continuous metrics (xs/) --
+                        wb_metrics["xs/r_norm"] = _r_frob_sum / _n_layers
+                        wb_metrics["xs/r_info"] = _r_info_sum / _n_layers
+                        wb_metrics["xs/r_condition"] = _r_condition_sum / _n_layers
+                        wb_metrics["xs/r_velocity"] = _r_velocity_sum / _n_layers
+                        if _has_trace:
+                            wb_metrics["xs/m_norm"] = _m_frob_sum / _n_layers
+                            wb_metrics["xs/m_info"] = _m_info_sum / _n_layers
+                            wb_metrics["xs/grad_snr"] = _grad_snr_sum / _n_layers
+                        if _xse_p_e > 0 and _n_layers > 0:
+                            wb_metrics["xs/r_keep_norm"] = _r_keep_norm_sum / _n_layers
+                            wb_metrics["xs/r_explore_norm"] = _r_explore_norm_sum / _n_layers
+                            wb_metrics["xs/r_explore_info"] = _r_explore_info_sum / _n_layers
+                            wb_metrics["xs/r_block_coherence"] = _r_block_coherence_sum / _n_layers
+                            wb_metrics["xs/grad_explore_frac"] = _grad_explore_frac_sum / _n_layers
+                            if _has_trace:
+                                wb_metrics["xs/m_keep_norm"] = _m_keep_norm_sum / _n_layers
+                                wb_metrics["xs/m_explore_norm"] = _m_explore_norm_sum / _n_layers
+                                wb_metrics["xs/m_explore_ratio"] = _m_explore_ratio_sum / _n_layers
+                            if _n_explore_growth > 0:
+                                wb_metrics["xs/r_explore_growth"] = (
+                                    _r_explore_growth_sum / _n_explore_growth
+                                )
+                        # Effective rank: exp(H * log(r)) where H is spectral entropy.
+                        if _n_layers > 0 and _xse_diag_layers:
+                            import math as _m2
+                            _avg_info = _r_info_sum / _n_layers
+                            _avg_r = sum(li["r"] for li in _xse_diag_layers) / _n_layers
+                            wb_metrics["xs/r_effective_rank"] = _m2.exp(
+                                _avg_info * _m2.log(max(_avg_r, 1))
+                            )
+
+                        # -- Rotation-event metrics (rotation/) --
+                        if _xse_active and getattr(opt_state, "last_diag", None):
+                            diag = opt_state.last_diag
+                            per_layer = diag.get("per_layer", {})
+                            if diag.get("rotated", False):
+                                _mean = lambda xs: sum(xs) / len(xs)
+                                def _agg(key):
+                                    vals = [e[key] for e in per_layer.values() if key in e]
+                                    return _mean(vals) if vals else None
+
+                                _v = _agg("r_norm_old")
+                                _vn = _agg("r_norm_new")
+                                if _v and _v > 1e-12:
+                                    wb_metrics["rotation/r_norm_growth"] = _vn / _v
+                                _v = _agg("subspace_sin")
+                                if _v is not None:
+                                    wb_metrics["rotation/r_subspace_angle"] = _v
+                                _v = _agg("m_norm_old")
+                                _vn = _agg("m_norm_new")
+                                if _v and _v > 1e-12:
+                                    wb_metrics["rotation/m_norm_growth"] = _vn / _v
+                                _v = _agg("spectral_gap")
+                                if _v is not None:
+                                    wb_metrics["rotation/spectral_gap"] = _v
+                                _v = _agg("projection_energy")
+                                if _v is not None:
+                                    wb_metrics["rotation/projection_energy"] = _v
+                                _v = _agg("explore_m_ratio")
+                                if _v is not None:
+                                    wb_metrics["rotation/explore_m_ratio"] = _v
+                                _v = _agg("promotion_count")
+                                if _v is not None:
+                                    wb_metrics["rotation/promotion_count"] = _v
+                                _v = _agg("energy_ratio")
+                                if _v is not None:
+                                    wb_metrics["rotation/energy_ratio"] = _v
+                                _v = _agg("r_cross_norm")
+                                if _v is not None:
+                                    wb_metrics["rotation/r_cross_norm"] = _v
                     # Per-group metrics under group/ section
                     if (
                         isinstance(step_clip_norm, PerGroup)
@@ -1825,6 +2267,44 @@ def main():
     summary_profiler = sync(profiler) if is_ddp else profiler
     print("\n" + summary_profiler.final_summary())
     print("\n" + summary_profiler.checkpoint_summary())
+
+    # Save model and run downstream evaluation
+    if args.output_dir and is_main_process:
+        from pathlib import Path
+        Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+        print(f"\nSaving adapter to {args.output_dir}...")
+        # Unwrap DP model to get the PEFT model
+        peft_model = model._module if hasattr(model, "_module") else model
+        peft_model.save_pretrained(args.output_dir)
+        tokenizer.save_pretrained(args.output_dir)
+        print(f"Saved adapter + tokenizer to {args.output_dir}")
+
+        if args.eval_humaneval:
+            print("\n" + "=" * 60)
+            print("Running HumanEval evaluation...")
+            print("=" * 60)
+            try:
+                from lora_privacy.evaluation.code_eval import evaluate_humaneval
+
+                # Merge adapter for faster inference
+                # Cast to float32 first — merge_and_unload fails with bfloat16 tensors
+                peft_model = peft_model.float()
+                merged = peft_model.merge_and_unload()
+                merged = merged.to(device).to(torch.bfloat16)
+
+                results = evaluate_humaneval(
+                    model=merged,
+                    tokenizer=tokenizer,
+                    batch_size=args.eval_batch_size or 4,
+                    max_new_tokens=256,
+                )
+                print(f"\nHumanEval Results:")
+                for k, v in results.items():
+                    print(f"  {k}: {v:.4f}")
+                    if use_wandb:
+                        wandb.log({f"downstream/{k}": v}, step=global_step)
+            except Exception as e:
+                print(f"HumanEval evaluation failed: {e}")
 
     if use_wandb:
         wandb.finish()

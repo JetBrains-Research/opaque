@@ -96,6 +96,10 @@ Cargo.lock
 # GitHub Agentic Workflows
 .github/aw/
 
+# Vendored dependencies (submodules)
+vendor/*
+!vendor/lora-privacy
+
 # Experiment tracking
 wandb/
 papers/
