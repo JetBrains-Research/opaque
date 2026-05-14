@@ -27,7 +27,10 @@ from typing import Any
 import torch
 
 from opaque.api.engine.distributed import is_distributed, register_sync_type
-from opaque.api.engine.distributed._state import assert_pytree_equal, assert_scalar_equal
+from opaque.api.engine.distributed._state import (
+    assert_pytree_equal,
+    assert_scalar_equal,
+)
 
 from ._adafactor import AdafactorState
 from ._adagrad import AdagradState
