@@ -954,6 +954,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Adding warmup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#non-zero-warmup-floor" class="md-nav__link">
+    <span class="md-ellipsis">
+      Non-zero warmup floor
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1002,6 +1017,24 @@
   <a href="#restarts" class="md-nav__link">
     <span class="md-ellipsis">
       Restarts
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#warmup-stable-decay-wsd" class="md-nav__link">
+    <span class="md-ellipsis">
+      Warmup-Stable-Decay (WSD)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mapping-from-transformers-schedule-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mapping from transformers schedule names
     </span>
   </a>
   
@@ -2288,6 +2321,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Adding warmup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#non-zero-warmup-floor" class="md-nav__link">
+    <span class="md-ellipsis">
+      Non-zero warmup floor
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2336,6 +2384,24 @@
   <a href="#restarts" class="md-nav__link">
     <span class="md-ellipsis">
       Restarts
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#warmup-stable-decay-wsd" class="md-nav__link">
+    <span class="md-ellipsis">
+      Warmup-Stable-Decay (WSD)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mapping-from-transformers-schedule-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mapping from transformers schedule names
     </span>
   </a>
   
@@ -2455,54 +2521,139 @@ or any <code>Callable[[float], float]</code> mapping <code>progress ∈ [0, 1]</
 factor in <code>[0, 1]</code> selects a different shape:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="n">decay</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">W</span><span class="p">,</span> <span class="n">ramp</span><span class="o">=</span><span class="s2">&quot;cosine&quot;</span><span class="p">)</span>
 </code></pre></div>
+<h3 id="non-zero-warmup-floor">Non-zero warmup floor<a class="headerlink" href="#non-zero-warmup-floor" title="Permanent link">&para;</a></h3>
+<p>The default warmup ramps from <code>0</code>.  Some optimizers (StableAdamW, for
+example) prefer a non-trivial first step; pass <code>init_value</code> to start
+the ramp at a fraction of the inner schedule's value instead of zero:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Ramp factor goes 0.1 → 1.0 over W steps, so the first step&#39;s LR</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># is 0.1 * decay(0) rather than 0.</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="n">decay</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">W</span><span class="p">,</span> <span class="n">init_value</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+</code></pre></div>
+<p><code>init_value=1.0</code> collapses to the inner schedule unchanged.</p>
 <h2 id="three-worked-examples">Three worked examples<a class="headerlink" href="#three-worked-examples" title="Permanent link">&para;</a></h2>
 <h3 id="linear-with-warmup">Linear with warmup<a class="headerlink" href="#linear-with-warmup" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">linear_schedule</span><span class="p">,</span> <span class="n">with_warmup</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">base_lr</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">N</span> <span class="o">=</span> <span class="mf">1e-3</span><span class="p">,</span> <span class="mi">500</span><span class="p">,</span> <span class="mi">10_000</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">decay</span> <span class="o">=</span> <span class="n">linear_schedule</span><span class="p">(</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">base_lr</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">N</span> <span class="o">-</span> <span class="n">W</span><span class="p">,</span> <span class="n">transition_begin</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="p">)</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="n">decay</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">W</span><span class="p">)</span>
-</code></pre></div>
-<h3 id="cosine-with-warmup">Cosine with warmup<a class="headerlink" href="#cosine-with-warmup" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">with_warmup</span><span class="p">,</span> <span class="n">cosine_schedule</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">linear_schedule</span><span class="p">,</span> <span class="n">with_warmup</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">base_lr</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">N</span> <span class="o">=</span> <span class="mf">1e-3</span><span class="p">,</span> <span class="mi">500</span><span class="p">,</span> <span class="mi">10_000</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">decay</span> <span class="o">=</span> <span class="n">cosine_schedule</span><span class="p">(</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">decay</span> <span class="o">=</span> <span class="n">linear_schedule</span><span class="p">(</span>
 <a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">base_lr</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">N</span> <span class="o">-</span> <span class="n">W</span><span class="p">,</span> <span class="n">transition_begin</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="p">)</span>
 <a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="n">decay</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">W</span><span class="p">)</span>
 </code></pre></div>
+<h3 id="cosine-with-warmup">Cosine with warmup<a class="headerlink" href="#cosine-with-warmup" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">with_warmup</span><span class="p">,</span> <span class="n">cosine_schedule</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">base_lr</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">N</span> <span class="o">=</span> <span class="mf">1e-3</span><span class="p">,</span> <span class="mi">500</span><span class="p">,</span> <span class="mi">10_000</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">decay</span> <span class="o">=</span> <span class="n">cosine_schedule</span><span class="p">(</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">base_lr</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">N</span> <span class="o">-</span> <span class="n">W</span><span class="p">,</span> <span class="n">transition_begin</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="p">)</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="n">decay</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">W</span><span class="p">)</span>
+</code></pre></div>
 <h3 id="constant-after-warmup">Constant after warmup<a class="headerlink" href="#constant-after-warmup" title="Permanent link">&para;</a></h3>
 <p><code>with_warmup</code> accepts a scalar <code>float</code> as shorthand for a constant
 schedule, so warm-up-then-plateau is a one-liner:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">with_warmup</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">with_warmup</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="restarts">Restarts<a class="headerlink" href="#restarts" title="Permanent link">&para;</a></h2>
 <p><a href="../../reference/schedules/#with_restarts"><code>with_restarts</code></a> replays a
 schedule <code>num_cycles</code> times over a window.  Combined with cosine you
 get SGDR (Loshchilov &amp; Hutter, 2017):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">cosine_schedule</span><span class="p">,</span> <span class="n">with_restarts</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">base_lr</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">k</span> <span class="o">=</span> <span class="mf">1e-3</span><span class="p">,</span> <span class="mi">4000</span><span class="p">,</span> <span class="mi">4</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">cycle_length</span> <span class="o">=</span> <span class="n">N</span> <span class="o">/</span> <span class="n">k</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>
-<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="n">inner</span> <span class="o">=</span> <span class="n">cosine_schedule</span><span class="p">(</span><span class="n">base_lr</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">cycle_length</span><span class="p">)</span>
-<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_restarts</span><span class="p">(</span><span class="n">inner</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">N</span><span class="p">,</span> <span class="n">num_cycles</span><span class="o">=</span><span class="n">k</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">cosine_schedule</span><span class="p">,</span> <span class="n">with_restarts</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="n">base_lr</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">k</span> <span class="o">=</span> <span class="mf">1e-3</span><span class="p">,</span> <span class="mi">4000</span><span class="p">,</span> <span class="mi">4</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">cycle_length</span> <span class="o">=</span> <span class="n">N</span> <span class="o">/</span> <span class="n">k</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="n">inner</span> <span class="o">=</span> <span class="n">cosine_schedule</span><span class="p">(</span><span class="n">base_lr</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">cycle_length</span><span class="p">)</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_restarts</span><span class="p">(</span><span class="n">inner</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">N</span><span class="p">,</span> <span class="n">num_cycles</span><span class="o">=</span><span class="n">k</span><span class="p">)</span>
 </code></pre></div>
 <p>Each cycle the schedule snaps back to <code>inner(0)</code> and runs the curve
 over its own <code>cycle_length</code>.  Composes with <code>with_warmup</code> the same
 way as any other decay.</p>
+<h2 id="warmup-stable-decay-wsd">Warmup-Stable-Decay (WSD)<a class="headerlink" href="#warmup-stable-decay-wsd" title="Permanent link">&para;</a></h2>
+<p><a href="../../reference/schedules/#warmup_stable_decay"><code>warmup_stable_decay</code></a>
+implements the three-phase schedule from Hägele et al. 2024
+("Scaling Laws and Compute-Optimal Training Beyond Fixed Training
+Durations") and the MiniCPM paper:</p>
+<ol>
+<li><strong>Warmup</strong> — ramp from <code>0</code> to <code>init_value</code> over <code>num_warmup_steps</code>.</li>
+<li><strong>Stable</strong> — constant at <code>init_value</code> for <code>num_stable_steps</code>.</li>
+<li><strong>Decay</strong> — drop from <code>init_value</code> to <code>end_value</code> over
+   <code>num_decay_steps</code> according to <code>decay_shape</code>.</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torchopt</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">warmup_stable_decay</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">warmup_stable_decay</span><span class="p">(</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="n">init_value</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span>                <span class="c1"># peak LR</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>    <span class="n">end_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>                  <span class="c1"># decay target (often 0.1 * init_value)</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="n">num_warmup_steps</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>    <span class="n">num_stable_steps</span><span class="o">=</span><span class="mi">8_000</span><span class="p">,</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>    <span class="n">num_decay_steps</span><span class="o">=</span><span class="mi">1_500</span><span class="p">,</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="c1"># decay_shape=&quot;1-sqrt&quot; by default — Hägele et al.&#39;s recommendation.</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="p">)</span>
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="n">opt</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="n">schedule</span><span class="p">)</span>
+</code></pre></div>
+<p>The stable middle plateau enables <strong>decay-only fine-tuning</strong>: resume
+from any checkpoint inside the stable region and run only the decay
+tail without re-training the warmup.  That makes WSD a natural fit
+for "anytime" training where the final compute budget isn't fixed up
+front.</p>
+<p><code>decay_shape</code> accepts <code>"1-sqrt"</code> (default — concave-down, fast initial
+drop then slow finish), <code>"linear"</code>, <code>"cosine"</code> (half-cosine from <code>init</code>
+to <code>end</code>), or a callable <code>f(progress) -&gt; factor in [0, 1]</code> mapping
+progress to the factor applied to <code>(init_value - end_value)</code>.</p>
+<h2 id="mapping-from-transformers-schedule-names">Mapping from <code>transformers</code> schedule names<a class="headerlink" href="#mapping-from-transformers-schedule-names" title="Permanent link">&para;</a></h2>
+<p><code>transformers</code> exposes a number of named cosine variants for
+historical reasons.  Opaque's <code>cosine_schedule</code> and the composition
+primitives subsume all of them; the table below shows the recipe for
+each.  No engine-side alias is needed — pass the equivalent
+construction directly.</p>
+<p>The HF schedules all include a <code>0 → base_lr</code> warmup over the first
+<code>W</code> steps.  Each Opaque recipe configures the inner cosine with
+<code>transition_begin=W</code> (so the cosine returns <code>init_value</code> during the
+warmup window) and wraps it with <code>with_warmup(..., transition_steps=W)</code>
+so that leading plateau is rescaled into the ramp.</p>
+<table>
+<thead>
+<tr>
+<th><code>transformers</code> name</th>
+<th>Opaque recipe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cosine</code></td>
+<td><code>with_warmup(cosine_schedule(base_lr, 0.0, transition_steps=N - W, transition_begin=W), transition_steps=W)</code></td>
+</tr>
+<tr>
+<td><code>cosine_with_min_lr</code></td>
+<td>Same as <code>cosine</code>, but pass <code>end_value=min_lr</code> (the second positional arg of <code>cosine_schedule</code>).</td>
+</tr>
+<tr>
+<td><code>cosine_with_restarts</code></td>
+<td><code>with_warmup(with_restarts(cosine_schedule(base_lr, 0.0, transition_steps=cycle_length), transition_steps=N - W, num_cycles=k, transition_begin=W), transition_steps=W)</code></td>
+</tr>
+<tr>
+<td><code>cosine_warmup_with_min_lr</code></td>
+<td><code>with_warmup(cosine_schedule(base_lr, min_lr, transition_steps=N - W, transition_begin=W), transition_steps=W)</code></td>
+</tr>
+<tr>
+<td><code>warmup_stable_decay</code></td>
+<td><a href="#warmup-stable-decay-wsd"><code>warmup_stable_decay(...)</code></a> — direct primitive.</td>
+</tr>
+</tbody>
+</table>
+<p>If your application doesn't use warmup (<code>W == 0</code>), drop the
+<code>with_warmup</code> wrapper and the <code>transition_begin=W</code> argument.</p>
 <h2 id="reading-the-current-lr">Reading the current LR<a class="headerlink" href="#reading-the-current-lr" title="Permanent link">&para;</a></h2>
 <p>Schedules are plain callables — <code>schedule(step)</code> returns the LR at
 any step:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="c1"># ... clipping, noise, update ...</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">100</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step=</span><span class="si">{</span><span class="n">step</span><span class="si">}</span><span class="s2">  lr=</span><span class="si">{</span><span class="n">schedule</span><span class="p">(</span><span class="n">step</span><span class="p">)</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>    <span class="c1"># ... clipping, noise, update ...</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">100</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step=</span><span class="si">{</span><span class="n">step</span><span class="si">}</span><span class="s2">  lr=</span><span class="si">{</span><span class="n">schedule</span><span class="p">(</span><span class="n">step</span><span class="p">)</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>The optimizer maintains its own counter inside <code>opt_state</code> (via
 <code>scale_by_neg_lr</code>), so calling <code>schedule(step)</code> for logging does

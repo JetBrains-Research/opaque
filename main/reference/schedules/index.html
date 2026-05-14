@@ -2193,6 +2193,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#warmup_stable_decay" class="md-nav__link">
+    <span class="md-ellipsis">
+      warmup_stable_decay
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       See Also
@@ -2334,6 +2343,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#warmup_stable_decay" class="md-nav__link">
+    <span class="md-ellipsis">
+      warmup_stable_decay
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       See Also
@@ -2374,7 +2392,8 @@ optimizer-state step counter — no manual <code>.step()</code> call.</p>
 <li>pure curves: <code>constant_schedule</code>, <code>linear_schedule</code>,
   <code>polynomial_schedule</code>, <code>exponential_schedule</code>, <code>cosine_schedule</code>,
   <code>inverse_sqrt_schedule</code>, <code>one_minus_sqrt_schedule</code>;</li>
-<li>composition primitives: <code>with_warmup</code>, <code>with_restarts</code>.</li>
+<li>composition primitives: <code>with_warmup</code>, <code>with_restarts</code>,
+  <code>warmup_stable_decay</code>.</li>
 </ul>
 <hr />
 <h2 id="composing-a-schedule">Composing a schedule<a class="headerlink" href="#composing-a-schedule" title="Permanent link">&para;</a></h2>
@@ -2550,11 +2569,13 @@ faster early than late.  Held at <code>end_value</code> after the transition.</p
 <a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>    <span class="n">transition_steps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
 <a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>    <span class="o">*</span><span class="p">,</span>
 <a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>    <span class="n">ramp</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">float</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;linear&quot;</span><span class="p">,</span>
-<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>    <span class="n">init_value</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span>
 </code></pre></div>
-<p>Multiply <code>schedule</code> by a 0 → 1 ramp over the first <code>transition_steps</code>
-steps; afterwards return <code>schedule(step)</code> unchanged.  A scalar
-<code>float</code> for <code>schedule</code> is treated as <code>constant_schedule(value)</code>.</p>
+<p>Multiply <code>schedule</code> by an <code>init_value → 1</code> ramp over the first
+<code>transition_steps</code> steps; afterwards return <code>schedule(step)</code> unchanged.
+A scalar <code>float</code> for <code>schedule</code> is treated as
+<code>constant_schedule(value)</code>.</p>
 <p>The <code>ramp</code> kwarg picks the warmup curve shape:</p>
 <ul>
 <li><code>"linear"</code> (default): <code>progress</code></li>
@@ -2563,6 +2584,14 @@ steps; afterwards return <code>schedule(step)</code> unchanged.  A scalar
 <li>a callable <code>f(progress)</code> taking progress in <code>[0, 1]</code> and returning
   a factor in <code>[0, 1]</code> — for any custom shape.</li>
 </ul>
+<p><code>init_value</code> (default <code>0.0</code>) is the starting factor for the ramp.
+The default produces a standard <code>0 → 1</code> warmup.  A positive value
+(must lie in <code>[0, 1]</code>) produces a <code>floor → 1</code> ramp that starts at
+<code>init_value * schedule(0)</code> instead of zero — useful when the
+optimizer needs a non-trivial step from the very first update (e.g.
+StableAdamW), or to match <code>warmup_lr_rate</code> semantics from HF's
+<code>cosine_warmup_with_min_lr</code>.  <code>init_value=1.0</code> collapses the wrapper
+to the inner schedule unchanged.</p>
 <p>All schedules in this module return <code>init_value</code> for
 <code>step &lt; transition_begin</code>, so configuring a decay with
 <code>transition_begin == transition_steps</code> of the warmup produces the
@@ -2608,9 +2637,12 @@ standard "warmup, then decay" shape:</p>
 <a id="__codelineno-16-17" name="__codelineno-16-17" href="#__codelineno-16-17"></a>
 <a id="__codelineno-16-18" name="__codelineno-16-18" href="#__codelineno-16-18"></a><span class="c1"># Warmup-then-constant via the float shorthand.</span>
 <a id="__codelineno-16-19" name="__codelineno-16-19" href="#__codelineno-16-19"></a><span class="n">sched</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="n">base_lr</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">W</span><span class="p">)</span>
+<a id="__codelineno-16-20" name="__codelineno-16-20" href="#__codelineno-16-20"></a>
+<a id="__codelineno-16-21" name="__codelineno-16-21" href="#__codelineno-16-21"></a><span class="c1"># Floor → 1 ramp (start at 0.1 * schedule(0)).</span>
+<a id="__codelineno-16-22" name="__codelineno-16-22" href="#__codelineno-16-22"></a><span class="n">sched</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="n">base_lr</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">W</span><span class="p">,</span> <span class="n">init_value</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
 </code></pre></div>
-<p>Raises <code>ValueError</code> if <code>transition_steps &lt;= 0</code> or <code>ramp</code> is an
-unknown string.</p>
+<p>Raises <code>ValueError</code> if <code>transition_steps &lt;= 0</code>, <code>ramp</code> is an
+unknown string, or <code>init_value</code> is outside <code>[0, 1]</code>.</p>
 <hr />
 <h2 id="with_restarts"><code>with_restarts</code><a class="headerlink" href="#with_restarts" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="n">with_restarts</span><span class="p">(</span>
@@ -2635,6 +2667,58 @@ cycle, returns <code>schedule(cycle_length)</code>.</p>
 <a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="n">sched</span> <span class="o">=</span> <span class="n">with_restarts</span><span class="p">(</span><span class="n">inner</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="mi">4000</span><span class="p">,</span> <span class="n">num_cycles</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
 </code></pre></div>
 <p>Raises <code>ValueError</code> if <code>num_cycles &lt;= 0</code> or <code>transition_steps &lt;= 0</code>.</p>
+<hr />
+<h2 id="warmup_stable_decay"><code>warmup_stable_decay</code><a class="headerlink" href="#warmup_stable_decay" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="n">warmup_stable_decay</span><span class="p">(</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>    <span class="n">init_value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>    <span class="n">end_value</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>    <span class="n">num_warmup_steps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>    <span class="n">num_stable_steps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>    <span class="n">num_decay_steps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>    <span class="n">warmup_ramp</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">float</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;linear&quot;</span><span class="p">,</span>
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>    <span class="n">decay_shape</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">float</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;1-sqrt&quot;</span><span class="p">,</span>
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span>
+</code></pre></div>
+<p>Three-phase <strong>W</strong>armup → <strong>S</strong>table → <strong>D</strong>ecay schedule (Hägele
+et al. 2024, MiniCPM).  Over
+<code>num_warmup_steps + num_stable_steps + num_decay_steps</code> total steps:</p>
+<ol>
+<li><code>[0, num_warmup_steps)</code> — ramp from <code>0</code> to <code>init_value</code>.</li>
+<li><code>[num_warmup_steps, num_warmup_steps + num_stable_steps)</code> —
+   constant at <code>init_value</code>.</li>
+<li><code>[num_warmup_steps + num_stable_steps, total)</code> — decay from
+   <code>init_value</code> down to <code>end_value</code> under <code>decay_shape</code>.</li>
+</ol>
+<p>Beyond <code>total</code> returns <code>end_value</code>.</p>
+<p><code>decay_shape</code> selects the decay curve:</p>
+<ul>
+<li><code>"1-sqrt"</code> (default — Hägele et al.'s recommendation):
+  <code>factor = 1 - sqrt(progress)</code>; concave-down, fast initial drop,
+  slow finish.</li>
+<li><code>"linear"</code>: <code>factor = 1 - progress</code>.</li>
+<li><code>"cosine"</code>: <code>factor = 0.5 * (1 + cos(pi * progress))</code>; half-cosine
+  from init to end.</li>
+<li>a callable <code>f(progress) -&gt; factor in [0, 1]</code> mapping progress
+  (where <code>0</code> is the start of decay and <code>1</code> is the end) to the
+  factor applied to <code>(init_value - end_value)</code>.</li>
+</ul>
+<p>The stable middle plateau enables <strong>decay-only fine-tuning</strong>: resume
+from any checkpoint inside the stable region and run only the decay
+tail without re-running the warmup.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">warmup_stable_decay</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">warmup_stable_decay</span><span class="p">(</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>    <span class="n">init_value</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span>
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>    <span class="n">end_value</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">,</span>                 <span class="c1"># min-lr floor</span>
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>    <span class="n">num_warmup_steps</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span>
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a>    <span class="n">num_stable_steps</span><span class="o">=</span><span class="mi">8_000</span><span class="p">,</span>
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>    <span class="n">num_decay_steps</span><span class="o">=</span><span class="mi">1_500</span><span class="p">,</span>
+<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a><span class="p">)</span>
+</code></pre></div>
+<p>Raises <code>ValueError</code> if <code>num_warmup_steps &lt;= 0</code>, <code>num_stable_steps &lt; 0</code>,
+<code>num_decay_steps &lt;= 0</code>, or if <code>warmup_ramp</code> / <code>decay_shape</code> is an
+unknown string.</p>
 <hr />
 <h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
