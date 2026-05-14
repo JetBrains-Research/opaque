@@ -12,7 +12,7 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import lru_cache
 
 import torch
@@ -95,6 +95,24 @@ def _validate_bsr_hyperparams(bandwidth: int, alpha: float, beta: float) -> None
             )
 
 
+@lru_cache(maxsize=256)
+def _bsr_gram_matrix_cached(
+    bandwidth: int,
+    alpha: float,
+    beta: float,
+    n_steps: int,
+    min_sep: int,
+    max_participations: int | None,
+) -> tuple[float, ...]:
+    """Gram sequence for BSR; cached across repeated σ / PLD probes."""
+    band = list(_bsr_band_coefficients_cached(bandwidth, alpha, beta))
+    return tuple(
+        _native().toeplitz_gram_matrix(
+            band, n_steps, min_sep, max_participations, False
+        )
+    )
+
+
 def _bsr_full_coefficients(
     bandwidth: int, alpha: float, beta: float, n_steps: int
 ) -> torch.Tensor:
@@ -118,9 +136,6 @@ class BsrStrategy:
     bandwidth: int
     alpha: float
     beta: float
-    _gram_memo: dict[tuple[int, int, int | None], tuple[float, ...]] = field(
-        default_factory=dict, init=False, repr=False, compare=False, hash=False
-    )
 
     def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
         return _bsr_full_coefficients(self.bandwidth, self.alpha, self.beta, n_steps)
@@ -128,21 +143,14 @@ class BsrStrategy:
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> tuple[float, ...]:
-        key = (n_steps, min_sep, max_participations)
-        memo = self._gram_memo
-        hit = memo.get(key)
-        if hit is not None:
-            return hit
-        band = list(
-            _bsr_band_coefficients_cached(self.bandwidth, self.alpha, self.beta)
+        return _bsr_gram_matrix_cached(
+            self.bandwidth,
+            self.alpha,
+            self.beta,
+            n_steps,
+            min_sep,
+            max_participations,
         )
-        out = tuple(
-            _native().toeplitz_gram_matrix(
-                band, n_steps, min_sep, max_participations, False
-            )
-        )
-        memo[key] = out
-        return out
 
     def streaming_matrix(self, **_) -> StreamingMatrix:
         band = _bsr_band_coefficients_cached(self.bandwidth, self.alpha, self.beta)

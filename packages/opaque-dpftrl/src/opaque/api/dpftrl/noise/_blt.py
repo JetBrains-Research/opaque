@@ -76,6 +76,36 @@ def _blt_optimize_cached(
     )
 
 
+@lru_cache(maxsize=256)
+def _blt_gram_matrix_cached(
+    n_steps: int,
+    min_sep: int,
+    max_participations: int | None,
+    max_buffers: int,
+    momentum: float,
+    lr_key: tuple[float, ...] | None,
+) -> tuple[float, ...]:
+    """BLT Gram sequence; cached across repeated σ / PLD probes (shares L-BFGS cache)."""
+    blt = _blt_optimize_cached(
+        n_steps,
+        min_sep,
+        max_participations,
+        max_buffers,
+        momentum,
+        lr_key,
+    )
+    coefs = _blt_toeplitz_coefs(blt, n_steps)
+    return tuple(
+        _native().toeplitz_gram_matrix(
+            coefs.tolist(),
+            n_steps,
+            min_sep,
+            max_participations,
+            True,
+        )
+    )
+
+
 @register_strategy
 @dataclass(frozen=True, slots=True)
 class BltStrategy:
@@ -90,10 +120,6 @@ class BltStrategy:
     max_buffers: int = 10
     momentum: float = 1.0
     lr_schedule: Schedule | None = field(default=None, compare=False)
-    # σ-independent; reused across ``balls_in_bins`` PLD probes (same strategy).
-    _gram_memo: dict[tuple[int, int, int | None], tuple[float, ...]] = field(
-        default_factory=dict, init=False, repr=False, compare=False, hash=False
-    )
 
     def _blt(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
@@ -118,25 +144,14 @@ class BltStrategy:
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> tuple[float, ...]:
-        key = (n_steps, min_sep, max_participations)
-        memo = self._gram_memo
-        hit = memo.get(key)
-        if hit is not None:
-            return hit
-        coefs = self.coefficients(
-            n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
+        return _blt_gram_matrix_cached(
+            n_steps,
+            min_sep,
+            max_participations,
+            self.max_buffers,
+            self.momentum,
+            _lr_key(self.lr_schedule, n_steps),
         )
-        out = tuple(
-            _native().toeplitz_gram_matrix(
-                coefs.tolist(),
-                n_steps,
-                min_sep,
-                max_participations,
-                True,
-            )
-        )
-        memo[key] = out
-        return out
 
     def streaming_matrix(
         self, *, n_steps: int, min_sep: int = 1, max_participations: int | None = None

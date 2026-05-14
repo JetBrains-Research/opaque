@@ -29,6 +29,22 @@ def _native():
     return _n
 
 
+@lru_cache(maxsize=256)
+def _bisr_gram_matrix_cached(
+    inv: tuple[float, ...],
+    normalized: bool,
+    n_steps: int,
+    min_sep: int,
+    max_participations: int | None,
+) -> tuple[float, ...]:
+    """Gram sequence for BISR; cached across repeated σ / PLD probes."""
+    return tuple(
+        _native().bisr_gram_matrix(
+            list(inv), n_steps, min_sep, max_participations, normalized
+        )
+    )
+
+
 @lru_cache(maxsize=32)
 def _bisr_inverse_coefficients_cached(bandwidth: int, beta: float) -> tuple[float, ...]:
     """Compute BISR inverse square-root coefficients (Lemma 1, arxiv:2505.12128).
@@ -82,9 +98,6 @@ class BisrStrategy:
     normalized: bool = True
     momentum: float = 0.0
     inv_coefficients: tuple[float, ...] | None = field(default=None)
-    _gram_memo: dict[tuple[int, int, int | None], tuple[float, ...]] = field(
-        default_factory=dict, init=False, repr=False, compare=False, hash=False
-    )
 
     def __post_init__(self) -> None:
         if self.bandwidth < 2:
@@ -112,19 +125,13 @@ class BisrStrategy:
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> tuple[float, ...]:
-        key = (n_steps, min_sep, max_participations)
-        memo = self._gram_memo
-        hit = memo.get(key)
-        if hit is not None:
-            return hit
-        inv = list(self._inv_coefs())
-        out = tuple(
-            _native().bisr_gram_matrix(
-                inv, n_steps, min_sep, max_participations, self.normalized
-            )
+        return _bisr_gram_matrix_cached(
+            self._inv_coefs(),
+            self.normalized,
+            n_steps,
+            min_sep,
+            max_participations,
         )
-        memo[key] = out
-        return out
 
     def streaming_matrix(self, *, n_steps: int, **_) -> StreamingMatrix:
         inv = list(self._inv_coefs())
