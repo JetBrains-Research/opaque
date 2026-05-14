@@ -467,6 +467,63 @@ class TestAdaptiveClippedGrad:
                 rel_tol=1e-5,
             )
 
+    def test_pre_clipping_transform_unscales_for_adaptive_tracker(self):
+        """``pre_clipping_transform`` runs before the grad-norm that drives
+        the adaptive quantile tracker.
+
+        The canonical use is fp16 loss-scaling: the loss is multiplied by
+        ``loss_scale`` inside the closure, and ``pre_clipping_transform``
+        divides the per-example gradient by the same factor before
+        clipping.  A correct implementation makes the adaptive tracker
+        invariant to ``loss_scale`` — the unscaled grad norms drive
+        adaptation regardless of the scale chosen.
+        """
+
+        def make_loss(loss_scale: float):
+            def loss_fn(params, x, y):
+                pred = x @ params
+                return ((pred - y) ** 2).mean() * loss_scale
+
+            return loss_fn
+
+        params = torch.randn(10, requires_grad=False)
+        batch_x = torch.randn(8, 10)
+        batch_y = torch.randn(8)
+
+        # Baseline: no scaling, no transform.
+        grad_fn, state = adaptive_clipped_grad(
+            make_loss(1.0),
+            initial_clipping_norm=0.5,
+            target_quantile=0.5,
+            learning_rate=0.2,
+            key=key(0),
+            batch_argnums=(1, 2),
+        )
+        _, state_base = grad_fn(params, batch_x, batch_y, state=state)
+
+        # Scaled loss + matching pre_clipping_transform → same threshold.
+        scale = 128.0
+        grad_fn_scaled, state_scaled = adaptive_clipped_grad(
+            make_loss(scale),
+            initial_clipping_norm=0.5,
+            target_quantile=0.5,
+            learning_rate=0.2,
+            key=key(0),
+            batch_argnums=(1, 2),
+            pre_clipping_transform=lambda g: (
+                tuple(t / scale for t in g) if isinstance(g, tuple) else g / scale
+            ),
+        )
+        _, state_scaled_after = grad_fn_scaled(
+            params, batch_x, batch_y, state=state_scaled
+        )
+
+        assert math.isclose(
+            state_base._next_clipping_norm,
+            state_scaled_after._next_clipping_norm,
+            rel_tol=1e-5,
+        )
+
 
 class TestInputValidation:
     """Tests for parameter validation."""
