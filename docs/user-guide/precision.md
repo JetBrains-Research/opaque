@@ -9,7 +9,7 @@ reverse-engineering individual modules.
 | Knob | Where | What it controls |
 |------|-------|------------------|
 | `torch.autocast(...)` | Around the forward / loss closure | Op-level dtype dispatch (matmul, conv, …). Standard PyTorch. |
-| `loss_scaler` | Returned by [`opaque.precision.loss_scaler`](../reference/utilities.md) | Dynamic loss scaling for `fp16` — multiplies loss before backward, unscales grads before clipping. |
+| `loss_scaler` | `opaque.precision.loss_scaler` | Dynamic loss scaling for `fp16` — multiplies loss before backward, unscales grads before clipping. |
 | `compute_dtype` | Kwarg on clipping + noise factories | Precision at which sensitivity-bound and noise sampling are computed. **DP-critical**: must be high enough for the privacy accountant to be calibrated to a real C, not a rounded-to-zero one. |
 
 ## The DP-critical invariant
@@ -115,11 +115,15 @@ inside the forward pass; clipping / noise reductions run *outside* the autocast
 region (inside `vmap`, where autocast does not propagate) and produce the
 sensitivity bound the privacy accountant relies on. Three rules:
 
-- **Default is `torch.float32`** on every public knob:
-  `clipped_grad(..., compute_dtype=None)` auto-promotes `bfloat16` / `float16`
-  inputs to `float32` for the L2 reduction. `gaussian_noise(...,
-  compute_dtype=torch.float32)` and `mf_gaussian_noise(..., compute_dtype=
-  torch.float32)` sample at `float32`.
+- **Safe defaults on every public knob**, but the precise default differs
+  by primitive. Clipping defaults to `compute_dtype=None`, which auto-promotes
+  `bfloat16` / `float16` inputs to `float32` for the L2 reduction and leaves
+  `float32` / `float64` inputs untouched (so an fp64 forward stays fp64
+  through clipping). Both `gaussian_noise(...)` and `mf_gaussian_noise(...)`
+  default to the literal `compute_dtype=torch.float32` and sample at that
+  precision regardless of the input pytree's dtype. If you want `compute_dtype
+  =torch.float64` end-to-end, you must pass it explicitly to clipping *and*
+  noise — the clipping side does not promote upward on its own.
 - **Don't lower it without recalibrating.** Setting
   `compute_dtype=torch.bfloat16` is a numerical regression of the privacy
   guarantee — the accountant still records `noise_multiplier · C`, but the

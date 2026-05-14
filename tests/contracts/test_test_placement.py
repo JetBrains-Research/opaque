@@ -52,6 +52,7 @@ WHEEL_IMPORT_ROOTS: dict[str, tuple[str, ...]] = {
         "opaque.functional",
         "opaque.scheduling",
         "opaque.profiling",
+        "opaque.precision",
     ),
     "opaque-optimizers": (
         "opaque.api.optimizers",
