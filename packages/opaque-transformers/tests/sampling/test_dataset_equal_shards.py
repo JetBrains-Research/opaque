@@ -115,3 +115,8 @@ class TestEqualShardTrim:
         """W=1 — no sharding, no trim, dataloader sees the whole dataset."""
         ds = _shard_for(dataset_size=10, world_size=1, rank=0)
         assert len(ds) == 10
+
+    def test_smaller_than_world_size_rejected(self):
+        """N<W would trim to 0 examples — must raise instead of silently emptying."""
+        with pytest.raises(ValueError, match="fewer than world_size"):
+            _shard_for(dataset_size=2, world_size=3, rank=0)

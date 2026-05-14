@@ -3310,6 +3310,12 @@ class DPTrainer:
 
             world_size = self._ddp.world_size
             trim_to = (len(dataset) // world_size) * world_size
+            if trim_to < 1:
+                raise ValueError(
+                    f"Train dataset has {len(dataset)} example(s), fewer than "
+                    f"world_size={world_size}; every rank requires at least one "
+                    "example after sharding."
+                )
             if trim_to < len(dataset):
                 dataset = Subset(dataset, range(trim_to))
             dataset = local_shard(
