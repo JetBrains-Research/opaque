@@ -112,8 +112,8 @@ class BallsInBins(DpFtrlProcess):
     @property
     def atomic_unit(self) -> int:
         # One full epoch covers ``num_bins`` rounds; the BnB dominating-pair
-        # analysis is defined at epoch boundaries.  ``approx_at_step`` rounds up to
-        # the next epoch.
+        # analysis is defined at epoch boundaries.  ``per_step(self) * K``
+        # rounds K up to the next epoch.
         return self.num_bins
 
     @functools.lru_cache(maxsize=8)

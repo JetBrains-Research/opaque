@@ -104,6 +104,34 @@ Each amplification factory wraps a mechanism into a single
 strategy object** into `mf_gaussian_noise` and the accounting factory — that's
 how DP correctness is preserved.
 
+### Step-by-step ε reporting (`per_step`)
+
+DP-FTRL processes are *whole-process*: feeding the bare process to
+`Accountant`'s `acct |= step` would over-count. Wrap with
+`dpftrl_acc.per_step(...)` to get a step-shaped adapter whose
+`per_step(proc) * K` materialises the strategy-aware K-prefix PLD —
+identical in shape to the DP-SGD `acct |= step` idiom but with the
+correct K-step bound under MF correlations:
+
+```python
+proc = dpftrl_acc.poisson(
+    dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
+    sample_rate=0.01,
+    n_steps=1000,
+)
+step = dpftrl_acc.per_step(proc)
+acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
+
+for batch in dataloader:
+    # ... train ...
+    acct |= step
+    eps_so_far = acct.epsilon_at(delta=1e-5)
+```
+
+`(per_step(proc) * K).epsilon_at(δ)` is bounded above by
+`proc.epsilon_at(δ)` and is monotone non-decreasing in K (post-processing
+on the deployed N-step mechanism); `K > proc.n_steps` raises.
+
 ## 3. Clipping
 
 Same engine clipping primitives as DP-SGD, just imported from
