@@ -189,7 +189,9 @@ class TestPushFromCheckpoint:
             trainer = _trainer_with_hub(
                 tmp_path, hub_strategy=hub_strategy, hub_always_push=hub_always_push
             )
-        with patch("opaque.api.transformers.trainer._hub._upload_folder") as mock_upload:
+        with patch(
+            "opaque.api.transformers.trainer._hub._upload_folder"
+        ) as mock_upload:
             _hub._push_from_checkpoint(trainer, ckpt_dir)
         return trainer, mock_upload
 
@@ -243,7 +245,9 @@ class TestPushFromCheckpoint:
         trainer.hub_model_id = "org/repo"
         ckpt_dir = str(tmp_path / "checkpoint-1")
         os.makedirs(ckpt_dir)
-        with patch("opaque.api.transformers.trainer._hub._upload_folder") as mock_upload:
+        with patch(
+            "opaque.api.transformers.trainer._hub._upload_folder"
+        ) as mock_upload:
             _hub._push_from_checkpoint(trainer, ckpt_dir)
         for call in mock_upload.call_args_list:
             assert call.kwargs.get("revision") == "my-branch"
@@ -263,7 +267,9 @@ class TestPushFromCheckpoint:
         trainer.push_in_progress = in_flight
         ckpt_dir = str(tmp_path / "checkpoint-1")
         os.makedirs(ckpt_dir)
-        with patch("opaque.api.transformers.trainer._hub._upload_folder") as mock_upload:
+        with patch(
+            "opaque.api.transformers.trainer._hub._upload_folder"
+        ) as mock_upload:
             _hub._push_from_checkpoint(trainer, ckpt_dir)
         mock_upload.assert_not_called()
 
@@ -285,7 +291,8 @@ class TestPushFromCheckpoint:
         ckpt_dir = str(tmp_path / "checkpoint-1")
         os.makedirs(ckpt_dir)
         with patch(
-            "opaque.api.transformers.trainer._hub._upload_folder", return_value=mock_future
+            "opaque.api.transformers.trainer._hub._upload_folder",
+            return_value=mock_future,
         ):
             _hub._push_from_checkpoint(trainer, ckpt_dir)
         # Jobs should have been extended, not replaced.
@@ -339,7 +346,9 @@ class TestPushToHub:
 
         with (
             patch.object(trainer, "save_model") as mock_save,
-            patch("opaque.api.transformers.trainer._hub.create_model_card") as mock_card,
+            patch(
+                "opaque.api.transformers.trainer._hub.create_model_card"
+            ) as mock_card,
             patch("opaque.api.transformers.trainer._hub._upload_folder") as mock_upload,
             patch("opaque.api.transformers.trainer._hub._finish_current_push"),
         ):
@@ -458,7 +467,9 @@ class TestCreateModelCard:
 def _tiny_trainer_with_hub(tmp_path) -> DPTrainer:
     model_url = MagicMock()
     model_url.repo_id = "org/repo"
-    with patch("opaque.api.transformers.trainer._hub._create_repo", return_value=model_url):
+    with patch(
+        "opaque.api.transformers.trainer._hub._create_repo", return_value=model_url
+    ):
         return _tiny_trainer(
             tmp_path, push_to_hub=True, hub_model_id="org/repo", max_grad_norm=1.0
         )

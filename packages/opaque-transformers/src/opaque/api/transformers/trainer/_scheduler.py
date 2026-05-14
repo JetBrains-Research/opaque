@@ -277,7 +277,9 @@ def build_lr_schedule(
 
     if W == 0:
         return decay
-    return _with_warmup_floor(decay, transition_steps=W, ramp="linear", floor=warmup_init)
+    return _with_warmup_floor(
+        decay, transition_steps=W, ramp="linear", floor=warmup_init
+    )
 
 
 def _resolve_min_lr(base_lr: float, kwargs: dict[str, Any]) -> float:

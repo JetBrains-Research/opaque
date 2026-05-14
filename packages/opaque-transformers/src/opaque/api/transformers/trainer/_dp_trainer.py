@@ -1737,7 +1737,9 @@ class DPTrainer:
                         if self._ddp.is_distributed and getattr(
                             a, "average_tokens_across_devices", True
                         ):
-                            from opaque.api.engine.distributed._state import reduce_scalar
+                            from opaque.api.engine.distributed._state import (
+                                reduce_scalar,
+                            )
 
                             n_tokens = int(
                                 reduce_scalar(

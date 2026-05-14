@@ -535,9 +535,10 @@ def _build_privacy_summary(trainer: "DPTrainer") -> dict[str, float | str]:
 
     # Fall back to args.
     st = trainer.state
-    if noise_multiplier == "unknown" and getattr(
-        st, "privacy_resolved_noise_multiplier", None
-    ) is not None:
+    if (
+        noise_multiplier == "unknown"
+        and getattr(st, "privacy_resolved_noise_multiplier", None) is not None
+    ):
         noise_multiplier = round(st.privacy_resolved_noise_multiplier, 6)
     elif noise_multiplier == "unknown" and a.privacy_noise_multiplier is not None:
         noise_multiplier = a.privacy_noise_multiplier
