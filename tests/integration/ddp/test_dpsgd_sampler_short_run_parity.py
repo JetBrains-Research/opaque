@@ -79,7 +79,7 @@ def _build_dataset(
     # reach zero loss, so eval loss stays bounded below by a healthy
     # constant even at full batch.
     target_w = torch.randn(_INPUT_DIM, _OUTPUT_DIM, device=device, generator=g)
-    y = (x @ target_w + 0.1 * torch.randn(n, _OUTPUT_DIM, device=device, generator=g))
+    y = x @ target_w + 0.1 * torch.randn(n, _OUTPUT_DIM, device=device, generator=g)
     return x, y
 
 
@@ -261,5 +261,7 @@ def test_dpsgd_sampler_short_run_1_vs_2_gpu_parity() -> None:
     two = _run(2)
     assert one > 0 and two > 0
     rel = abs(two - one) / one
-    print(f"\nDP-SGD sampler parity: eval_1gpu={one:.6f}, eval_2gpu={two:.6f}, rel={rel:.4%}")
+    print(
+        f"\nDP-SGD sampler parity: eval_1gpu={one:.6f}, eval_2gpu={two:.6f}, rel={rel:.4%}"
+    )
     assert rel < 0.02, f"sampler-active eval relative delta {rel:.4f} exceeds 2%"

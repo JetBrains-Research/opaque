@@ -24,9 +24,7 @@ from opaque.dpftrl.noise import band_mf_strategy, blt_strategy, identity_strateg
 
 
 def _band(nm: float = 1.0, *, n_steps: int = 20, bands: int = 2) -> MfGaussian:
-    return ftrl_acc.mf_gaussian(
-        nm, band_mf_strategy(bands=bands), n_steps=n_steps
-    )
+    return ftrl_acc.mf_gaussian(nm, band_mf_strategy(bands=bands), n_steps=n_steps)
 
 
 class TestBandMfGaussian:
@@ -104,9 +102,7 @@ class TestFtrlPoissonDataclass:
         )
 
         sens = strategy.sensitivity(n_steps=n_steps)
-        manual = (
-            dpsgd_acc.poisson(dpsgd_acc.gaussian(nm / sens), rate) * n_steps
-        )
+        manual = dpsgd_acc.poisson(dpsgd_acc.gaussian(nm / sens), rate) * n_steps
 
         assert proc.epsilon_at(1e-5) == pytest.approx(manual.epsilon_at(1e-5), rel=1e-6)
 
@@ -156,9 +152,9 @@ class TestBltMfGaussian:
     def test_fields(self):
         proc = self._blt(1.0)
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.strategy.sensitivity(
-            n_steps=10, min_sep=10, max_participations=1
-        ) > 0
+        assert (
+            proc.strategy.sensitivity(n_steps=10, min_sep=10, max_participations=1) > 0
+        )
         assert isinstance(
             proc.strategy.gram_matrix(n_steps=10, min_sep=10, max_participations=1),
             tuple,

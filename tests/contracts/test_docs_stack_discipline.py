@@ -94,6 +94,5 @@ def test_user_facing_docs_do_not_leak_internal_namespace() -> None:
         "User-facing docs must not reference concrete ``opaque.api.*`` "
         "paths — the internal namespace is contributor-only and must "
         "not leak into user-facing documentation. Move or remove "
-        "references in:\n"
-        + "\n".join(f"  - {v}" for v in sorted(violations))
+        "references in:\n" + "\n".join(f"  - {v}" for v in sorted(violations))
     )

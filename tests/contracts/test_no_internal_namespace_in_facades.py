@@ -89,9 +89,7 @@ FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
 }
 
 
-def _collect_facade_files(
-    wheel: str, globs: tuple[str, ...]
-) -> list[pathlib.Path]:
+def _collect_facade_files(wheel: str, globs: tuple[str, ...]) -> list[pathlib.Path]:
     src_dir = PACKAGES_DIR / wheel / "src"
     if not src_dir.exists():
         return []

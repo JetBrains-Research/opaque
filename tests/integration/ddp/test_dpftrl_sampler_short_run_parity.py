@@ -73,7 +73,7 @@ def _build_dataset(
     g.manual_seed(generator_seed)
     x = torch.randn(n, _INPUT_DIM, device=device, generator=g)
     target_w = torch.randn(_INPUT_DIM, _OUTPUT_DIM, device=device, generator=g)
-    y = (x @ target_w + 0.1 * torch.randn(n, _OUTPUT_DIM, device=device, generator=g))
+    y = x @ target_w + 0.1 * torch.randn(n, _OUTPUT_DIM, device=device, generator=g)
     return x, y
 
 
@@ -258,5 +258,7 @@ def test_dpftrl_sampler_short_run_1_vs_2_gpu_parity() -> None:
     two = _run(2)
     assert one > 0 and two > 0
     rel = abs(two - one) / one
-    print(f"\nDP-FTRL sampler parity: eval_1gpu={one:.6f}, eval_2gpu={two:.6f}, rel={rel:.4%}")
+    print(
+        f"\nDP-FTRL sampler parity: eval_1gpu={one:.6f}, eval_2gpu={two:.6f}, rel={rel:.4%}"
+    )
     assert rel < 0.02, f"sampler-active eval relative delta {rel:.4f} exceeds 2%"

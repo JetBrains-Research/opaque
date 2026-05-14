@@ -40,9 +40,9 @@ class TestLambdaCgdDataclass:
     def test_fields_via_strategy(self):
         proc = _lambda_cgd_mech(1.0, lambda_=0.5)
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.strategy.sensitivity(
-            n_steps=10, min_sep=1, max_participations=1
-        ) > 0
+        assert (
+            proc.strategy.sensitivity(n_steps=10, min_sep=1, max_participations=1) > 0
+        )
         assert proc.strategy.lambda_ == pytest.approx(0.5)
         assert isinstance(
             proc.strategy.gram_matrix(n_steps=10, min_sep=1, max_participations=1),
@@ -71,9 +71,9 @@ class TestBisrDataclass:
     def test_fields_via_strategy(self):
         proc = _bisr_mech(1.0)
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.strategy.sensitivity(
-            n_steps=10, min_sep=1, max_participations=1
-        ) > 0
+        assert (
+            proc.strategy.sensitivity(n_steps=10, min_sep=1, max_participations=1) > 0
+        )
         assert isinstance(
             proc.strategy.gram_matrix(n_steps=10, min_sep=1, max_participations=1),
             tuple,
