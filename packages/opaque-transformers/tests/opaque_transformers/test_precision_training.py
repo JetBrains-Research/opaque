@@ -88,20 +88,20 @@ def test_bf16_preserves_pre_cast_model(tmp_path):
 
 
 def test_fp16_true_enables_autocast_and_loss_scaler(tmp_path):
-    """fp16=True enables autocast and instantiates the OpaqueLossScaler."""
-    from opaque.api.transformers.trainer._loss_scaler import OpaqueLossScaler
+    """fp16=True enables autocast and instantiates the functional loss scaler."""
+    from opaque.precision import LossScaler, LossScalerState
 
     trainer, model = _tiny_trainer(tmp_path, fp16=True)
     assert next(model.parameters()).dtype == torch.float32
     assert trainer._amp_dtype == torch.float16
-    assert isinstance(trainer._loss_scaler, OpaqueLossScaler)
-    assert trainer._loss_scaler.enabled is True
+    assert isinstance(trainer._loss_scaler, LossScaler)
+    assert isinstance(trainer._loss_scaler_state, LossScalerState)
 
 
 def test_fp16_loss_scaler_initial_scale(tmp_path):
     """Default loss scale is 2**16 — same as torch.amp.GradScaler."""
     trainer, _ = _tiny_trainer(tmp_path, fp16=True)
-    assert trainer._loss_scaler.scale == 2**16
+    assert trainer._loss_scaler_state.scale == 2**16
 
 
 # ----------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 """Trainer-level wiring for ``torch_compile``, ``use_liger_kernel``, and the
-``OpaqueLossScaler`` integration.
+functional loss-scaler integration.
 
 These tests target the *plumbing* — Phase 11 features behave correctly when
 flags flip — without running full training (which would require a complete
@@ -17,8 +17,8 @@ import pytest
 import torch
 import torch.nn as nn
 
+from opaque.precision import LossScaler
 from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
-from opaque.api.transformers.trainer._loss_scaler import OpaqueLossScaler
 
 
 # ----------------------------------------------------------------------------
@@ -157,16 +157,16 @@ def test_liger_kernel_config_is_translated_at_init(tmp_path, monkeypatch):
 
 
 # ----------------------------------------------------------------------------
-# fp16 + OpaqueLossScaler integration with the Trainer
+# fp16 + functional loss-scaler integration with the Trainer
 # ----------------------------------------------------------------------------
 
 
 def test_fp16_trainer_wires_loss_scaler_into_self(tmp_path):
-    """fp16=True must wire a working OpaqueLossScaler onto self._loss_scaler
+    """fp16=True must wire a working LossScaler onto self._loss_scaler
     so training_step's inf/nan check has something to call."""
     trainer, _ = _tiny_trainer(tmp_path, fp16=True)
-    assert isinstance(trainer._loss_scaler, OpaqueLossScaler)
-    assert trainer._loss_scaler.scale == 2**16
+    assert isinstance(trainer._loss_scaler, LossScaler)
+    assert trainer._loss_scaler_state.scale == 2**16
 
 
 def test_bf16_trainer_does_not_wire_loss_scaler(tmp_path):
@@ -174,11 +174,13 @@ def test_bf16_trainer_does_not_wire_loss_scaler(tmp_path):
     so training_step skips the inf-check entirely (zero-overhead bf16)."""
     trainer, _ = _tiny_trainer(tmp_path, bf16=True)
     assert trainer._loss_scaler is None
+    assert trainer._loss_scaler_state is None
 
 
 def test_fp32_trainer_does_not_wire_loss_scaler(tmp_path):
     trainer, _ = _tiny_trainer(tmp_path)
     assert trainer._loss_scaler is None
+    assert trainer._loss_scaler_state is None
 
 
 def test_fp16_loss_scaler_backoff_via_direct_call(tmp_path):
@@ -186,9 +188,13 @@ def test_fp16_loss_scaler_backoff_via_direct_call(tmp_path):
     semantic the training_step relies on for fp16 inf/nan steps.
     Doesn't run training_step itself (which needs a full data pipeline); the
     invariant under test is that a non-finite update halves the scale."""
+    from opaque.precision import all_finite
+
     trainer, _ = _tiny_trainer(tmp_path, fp16=True)
-    initial = trainer._loss_scaler.scale
+    initial = trainer._loss_scaler_state.scale
     inf_grads = {"w": torch.tensor([float("inf")])}
-    assert trainer._loss_scaler.all_finite(inf_grads) is False
-    trainer._loss_scaler.update(grads_were_finite=False)
-    assert trainer._loss_scaler.scale == initial / 2
+    assert all_finite(inf_grads) is False
+    trainer._loss_scaler_state = trainer._loss_scaler.update(
+        trainer._loss_scaler_state, grads_were_finite=False
+    )
+    assert trainer._loss_scaler_state.scale == initial / 2
