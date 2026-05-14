@@ -33,6 +33,7 @@ from opaque.scheduling import (  # noqa: E402
     linear_schedule,
     one_minus_sqrt_schedule,
     polynomial_schedule,
+    warmup_stable_decay,
     with_restarts,
     with_warmup,
 )
@@ -502,3 +503,258 @@ class TestHFParity:
             )
         )
         self._check(ours, hf, N)
+
+
+# ---------------------------------------------------------------------------
+# with_warmup(init_value=...) — non-zero "floor → 1" ramp
+# ---------------------------------------------------------------------------
+
+
+class TestWithWarmupInitValue:
+    """``init_value`` interpolates the ramp factor from ``init_value`` to 1.0.
+
+    Equivalent to multiplying the inner schedule by
+    ``init_value + (1 - init_value) * ramp(progress)`` over the warmup
+    window, then by 1.0 afterwards.
+    """
+
+    def test_default_init_value_is_zero(self):
+        """Omitting ``init_value`` is identical to the historical 0 → 1 ramp."""
+        a = with_warmup(constant_schedule(1.0), transition_steps=10)
+        b = with_warmup(constant_schedule(1.0), transition_steps=10, init_value=0.0)
+        for s in range(20):
+            assert a(s) == pytest.approx(b(s))
+
+    def test_floor_to_one_starts_at_init_value(self):
+        sched = with_warmup(
+            constant_schedule(1.0), transition_steps=10, init_value=0.25
+        )
+        assert sched(0) == pytest.approx(0.25)
+
+    def test_floor_to_one_reaches_inner_at_transition_steps(self):
+        sched = with_warmup(
+            constant_schedule(1.0), transition_steps=10, init_value=0.25
+        )
+        assert sched(10) == pytest.approx(1.0)
+
+    def test_floor_to_one_linear_interpolation(self):
+        """``init_value + (1 - init_value) * progress`` shape at the midpoint."""
+        sched = with_warmup(constant_schedule(1.0), transition_steps=10, init_value=0.2)
+        # Midpoint factor = 0.2 + 0.8 * 0.5 = 0.6.
+        assert sched(5) == pytest.approx(0.6)
+
+    def test_floor_to_one_with_cosine_ramp(self):
+        """At the midpoint cosine ramp = 0.5 → factor = init + (1-init)*0.5."""
+        sched = with_warmup(
+            constant_schedule(1.0),
+            transition_steps=10,
+            ramp="cosine",
+            init_value=0.1,
+        )
+        # ramp(0.5) = 0.5 * (1 - cos(pi/2)) = 0.5
+        # factor = 0.1 + 0.9 * 0.5 = 0.55
+        assert sched(5) == pytest.approx(0.55, abs=1e-12)
+
+    def test_floor_to_one_multiplies_inner(self):
+        """The floor scales the inner schedule's value at step 0, not the ramp output."""
+        # Inner returns float(step), so at step 0 inner=0 and we expect 0 even with floor.
+        # Use a constant inner to isolate the factor behavior.
+        sched = with_warmup(constant_schedule(2.0), transition_steps=4, init_value=0.5)
+        # factor at step 0 = 0.5; inner = 2.0; result = 1.0.
+        assert sched(0) == pytest.approx(1.0)
+        # factor at step 2 = 0.5 + 0.5 * 0.5 = 0.75; inner = 2.0; result = 1.5.
+        assert sched(2) == pytest.approx(1.5)
+        # After warmup, factor = 1.0; result = 2.0.
+        assert sched(4) == pytest.approx(2.0)
+        assert sched(100) == pytest.approx(2.0)
+
+    def test_init_value_one_is_constant_inner(self):
+        """``init_value=1.0`` collapses to the inner schedule unchanged."""
+        inner = cosine_schedule(1.0, 0.0, transition_steps=20)
+        sched = with_warmup(inner, transition_steps=10, init_value=1.0)
+        for s in (0, 1, 5, 10, 15, 20, 30):
+            assert sched(s) == pytest.approx(inner(s))
+
+    def test_negative_init_value_raises(self):
+        with pytest.raises(ValueError, match="init_value"):
+            with_warmup(constant_schedule(1.0), transition_steps=10, init_value=-0.1)
+
+    def test_init_value_above_one_raises(self):
+        with pytest.raises(ValueError, match="init_value"):
+            with_warmup(constant_schedule(1.0), transition_steps=10, init_value=1.1)
+
+
+# ---------------------------------------------------------------------------
+# warmup_stable_decay (WSD)
+# ---------------------------------------------------------------------------
+
+
+class TestWarmupStableDecay:
+    """Three-phase warmup → constant → decay schedule (Hägele et al. 2024)."""
+
+    def test_phase_lengths_validated(self):
+        with pytest.raises(ValueError, match="num_warmup_steps > 0"):
+            warmup_stable_decay(
+                1.0, num_warmup_steps=0, num_stable_steps=10, num_decay_steps=10
+            )
+        with pytest.raises(ValueError, match="num_stable_steps >= 0"):
+            warmup_stable_decay(
+                1.0, num_warmup_steps=10, num_stable_steps=-1, num_decay_steps=10
+            )
+        with pytest.raises(ValueError, match="num_decay_steps > 0"):
+            warmup_stable_decay(
+                1.0, num_warmup_steps=10, num_stable_steps=10, num_decay_steps=0
+            )
+
+    def test_unknown_warmup_ramp_raises(self):
+        with pytest.raises(ValueError, match="warmup_ramp"):
+            warmup_stable_decay(
+                1.0,
+                num_warmup_steps=10,
+                num_stable_steps=10,
+                num_decay_steps=10,
+                warmup_ramp="bogus",
+            )
+
+    def test_unknown_decay_shape_raises(self):
+        with pytest.raises(ValueError, match="decay_shape"):
+            warmup_stable_decay(
+                1.0,
+                num_warmup_steps=10,
+                num_stable_steps=10,
+                num_decay_steps=10,
+                decay_shape="bogus",
+            )
+
+    def test_warmup_phase_starts_at_zero(self):
+        sched = warmup_stable_decay(
+            1.0, num_warmup_steps=10, num_stable_steps=20, num_decay_steps=30
+        )
+        assert sched(0) == pytest.approx(0.0)
+
+    def test_warmup_phase_linear_interpolation(self):
+        sched = warmup_stable_decay(
+            1.0, num_warmup_steps=10, num_stable_steps=20, num_decay_steps=30
+        )
+        assert sched(5) == pytest.approx(0.5)
+        # At the end of warmup we're still on the warmup branch (step <
+        # num_warmup_steps is the boundary), so at step 10 we've crossed
+        # into the stable phase = init_value.
+        assert sched(10) == pytest.approx(1.0)
+
+    def test_stable_phase_is_constant(self):
+        sched = warmup_stable_decay(
+            1.0, num_warmup_steps=10, num_stable_steps=20, num_decay_steps=30
+        )
+        for s in (10, 15, 20, 25, 29):
+            assert sched(s) == pytest.approx(1.0)
+
+    def test_decay_phase_one_minus_sqrt_default(self):
+        sched = warmup_stable_decay(
+            1.0,
+            end_value=0.0,
+            num_warmup_steps=10,
+            num_stable_steps=20,
+            num_decay_steps=100,
+        )
+        # Stable ends at step 30; decay runs steps 30..130.
+        # At step 30: factor = 1 - sqrt(0) = 1 → value = init = 1.0.
+        assert sched(30) == pytest.approx(1.0)
+        # At step 30 + 100 * 0.25 = 55: progress = 0.25,
+        # factor = 1 - sqrt(0.25) = 0.5 → value = 0 + 1 * 0.5 = 0.5.
+        assert sched(55) == pytest.approx(0.5)
+        # After decay: value = end_value.
+        assert sched(130) == pytest.approx(0.0)
+        assert sched(500) == pytest.approx(0.0)
+
+    def test_decay_phase_linear_shape(self):
+        sched = warmup_stable_decay(
+            1.0,
+            end_value=0.0,
+            num_warmup_steps=10,
+            num_stable_steps=20,
+            num_decay_steps=100,
+            decay_shape="linear",
+        )
+        # Linear: factor(p) = 1 - p → value = end + (init - end) * (1 - p).
+        # At step 30 (p=0): 1.0.
+        # At step 80 (p=0.5): 0.5.
+        # At step 130 (p=1): 0.0.
+        assert sched(30) == pytest.approx(1.0)
+        assert sched(80) == pytest.approx(0.5)
+        assert sched(130) == pytest.approx(0.0)
+
+    def test_decay_phase_cosine_shape(self):
+        sched = warmup_stable_decay(
+            1.0,
+            end_value=0.0,
+            num_warmup_steps=10,
+            num_stable_steps=20,
+            num_decay_steps=100,
+            decay_shape="cosine",
+        )
+        # Cosine: factor(p) = 0.5 * (1 + cos(pi * p)).
+        # At step 30 (p=0): factor=1 → value=1.0.
+        # At step 80 (p=0.5): factor=0.5 → value=0.5.
+        # At step 130 (p=1): factor=0 → value=0.0.
+        assert sched(30) == pytest.approx(1.0)
+        assert sched(80) == pytest.approx(0.5, abs=1e-12)
+        assert sched(130) == pytest.approx(0.0, abs=1e-12)
+
+    def test_non_zero_end_value_for_min_lr_floor(self):
+        sched = warmup_stable_decay(
+            1.0,
+            end_value=0.1,
+            num_warmup_steps=10,
+            num_stable_steps=20,
+            num_decay_steps=100,
+            decay_shape="linear",
+        )
+        # End of decay clamps at end_value.
+        assert sched(130) == pytest.approx(0.1)
+        assert sched(500) == pytest.approx(0.1)
+        # Midpoint: 0.1 + 0.9 * 0.5 = 0.55.
+        assert sched(80) == pytest.approx(0.55)
+
+    def test_zero_stable_steps_collapses_to_warmup_then_decay(self):
+        sched = warmup_stable_decay(
+            1.0,
+            num_warmup_steps=10,
+            num_stable_steps=0,
+            num_decay_steps=100,
+            decay_shape="linear",
+        )
+        # Decay starts immediately after warmup ends.
+        assert sched(0) == pytest.approx(0.0)  # start of warmup
+        assert sched(10) == pytest.approx(1.0)  # peak (start of decay)
+        assert sched(60) == pytest.approx(0.5)  # midpoint of decay
+        assert sched(110) == pytest.approx(0.0)  # end of decay
+
+    def test_callable_decay_shape(self):
+        # Quadratic decay: factor(p) = (1 - p) ** 2.
+        sched = warmup_stable_decay(
+            1.0,
+            end_value=0.0,
+            num_warmup_steps=10,
+            num_stable_steps=0,
+            num_decay_steps=10,
+            decay_shape=lambda p: (1.0 - p) ** 2,
+        )
+        # At step 10 (p=0): factor=1 → 1.0.
+        # At step 15 (p=0.5): factor=0.25 → 0.25.
+        # At step 20 (p=1): factor=0 → 0.0.
+        assert sched(10) == pytest.approx(1.0)
+        assert sched(15) == pytest.approx(0.25)
+        assert sched(20) == pytest.approx(0.0)
+
+    def test_callable_warmup_ramp(self):
+        # Square ramp: ramp(p) = p**2.
+        sched = warmup_stable_decay(
+            1.0,
+            num_warmup_steps=10,
+            num_stable_steps=10,
+            num_decay_steps=10,
+            warmup_ramp=lambda p: p * p,
+        )
+        # At step 5 (p=0.5): ramp=0.25 → value = 0.25 * 1.0 = 0.25.
+        assert sched(5) == pytest.approx(0.25)

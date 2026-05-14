@@ -16,7 +16,11 @@ The :data:`Schedule` type alias is reachable via
 :mod:`opaque.scheduling.types`.
 """
 
-from opaque.api.engine.scheduling._compose import with_restarts, with_warmup
+from opaque.api.engine.scheduling._compose import (
+    warmup_stable_decay,
+    with_restarts,
+    with_warmup,
+)
 from opaque.api.engine.scheduling._curves import (
     constant_schedule,
     cosine_schedule,
@@ -37,4 +41,5 @@ __all__ = [
     "one_minus_sqrt_schedule",
     "with_warmup",
     "with_restarts",
+    "warmup_stable_decay",
 ]
