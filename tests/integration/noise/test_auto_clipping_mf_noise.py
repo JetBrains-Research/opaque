@@ -144,8 +144,7 @@ def _per_group_supported_by_mf_noise() -> bool:
     grads = clipped({"w": torch.zeros(2, 2)}, max_norm=pg)
     template = {"w": torch.zeros(2, 2)}
     noise_fn, state = mf_gaussian_noise(
-        template, identity_strategy(), **_NOISE_PART,
-            noise_multiplier=1.0, key=key(0)
+        template, identity_strategy(), **_NOISE_PART, noise_multiplier=1.0, key=key(0)
     )
     try:
         noise_fn(grads, state)
@@ -453,7 +452,7 @@ class TestSecondMomentAutoSxMf:
         noise_fn, noise_state = mf_gaussian_noise(
             params,
             first_strategy,
-             **_NOISE_PART,
+            **_NOISE_PART,
             noise_multiplier=NOISE_MULTIPLIER,
             key=key(19),
             second_moment_strategy=second_strategy,

@@ -169,8 +169,8 @@ No manual marker exclusion needed - tests skip automatically when dependencies a
 ### GPU and Multi-GPU Tests
 
 Some tests require a CUDA GPU. They live under each package's
-`tests/distributed/` directory (e.g. `packages/opaque-dpsgd/tests/distributed/`,
-`packages/opaque-transformers/tests/distributed/`) and use `torch.distributed`
+`tests/ddp/` directory (e.g. `packages/opaque-dpsgd/tests/ddp/`,
+`packages/opaque-transformers/tests/ddp/`) and use `torch.distributed`
 with the NCCL backend:
 
 ```bash
@@ -178,8 +178,8 @@ with the NCCL backend:
 uv run pytest -m cuda -v
 
 # Run distributed tests (requires 2+ GPUs)
-uv run pytest packages/opaque-dpsgd/tests/distributed/ \
-              packages/opaque-transformers/tests/distributed/ -v
+uv run pytest packages/opaque-dpsgd/tests/ddp/ \
+              packages/opaque-transformers/tests/ddp/ -v
 ```
 
 `@pytest.mark.cuda` tests auto-skip on hosts without CUDA; `@pytest.mark.mps`

@@ -1,0 +1,311 @@
+"""Minimal NCCL DDP helpers + mp.spawn entrypoints (must live in this module for pickle)."""
+
+from __future__ import annotations
+
+import os
+import socket
+
+import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
+import torch.nn as nn
+
+from opaque.distributed import sum_gradients, sync
+from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad
+from opaque.dpftrl.noise import band_mf_strategy, identity_strategy, mf_gaussian_noise
+from opaque.functional import make_functional
+from opaque.pytree import tree_map
+from opaque.random import key
+from opaque.types import clipped
+
+
+def _is_ddp_available() -> bool:
+    return dist.is_available() and torch.cuda.is_available()
+
+
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _setup_ddp(rank: int, world_size: int, port: int) -> None:
+    if not _is_ddp_available():
+        raise RuntimeError("DDP requires CUDA and torch.distributed support")
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    os.environ["RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
+    torch.cuda.set_device(rank)
+    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+
+
+def _cleanup_ddp() -> None:
+    if dist.is_initialized():
+        dist.destroy_process_group()
+
+
+def _spawn(world_size: int, fn, *args) -> None:
+    port = _find_free_port()
+    mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
+
+
+class SimpleModel(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fc1 = nn.Linear(10, 20)
+        self.fc2 = nn.Linear(20, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = torch.relu(self.fc1(x))
+        return self.fc2(x)
+
+
+class TinyModel(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fc1 = nn.Linear(6, 12)
+        self.fc2 = nn.Linear(12, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.fc2(torch.relu(self.fc1(x)))
+
+
+class AutoSimpleModel(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fc1 = nn.Linear(8, 16)
+        self.fc2 = nn.Linear(16, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = torch.relu(self.fc1(x))
+        return self.fc2(x)
+
+
+def _fixed_sd_mf() -> dict[str, torch.Tensor]:
+    torch.manual_seed(1313)
+    return SimpleModel().state_dict()
+
+
+def _fixed_sd_tiny() -> dict[str, torch.Tensor]:
+    torch.manual_seed(9191)
+    return TinyModel().state_dict()
+
+
+def _worker_identity_mf_three_steps(rank: int, world_size: int, port: int) -> None:
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        batch_size = 32
+        param_dim = 64
+        grad_template = {"weight": torch.zeros(batch_size, param_dim, device=device)}
+        noise_fn, state = mf_gaussian_noise(
+            grad_template,
+            identity_strategy(),
+            n_steps=3,
+            noise_multiplier=1.0,
+            key=key(0),
+        )
+        step_noise_values = []
+        step_stds = []
+        for _step in range(3):
+            grads = clipped(
+                {"weight": torch.zeros(batch_size, param_dim, device=device)},
+                max_norm=1.0,
+            )
+            noised, state = noise_fn(grads, state)
+            step_noise_values.append(noised.pytree["weight"].clone())
+            step_stds.append(noised.pytree["weight"].std().item())
+
+        assert not torch.allclose(step_noise_values[0], step_noise_values[1])
+        assert not torch.allclose(step_noise_values[1], step_noise_values[2])
+
+        for step_idx, std in enumerate(step_stds):
+            assert 0.8 < std < 1.2, f"Step {step_idx}: std {std} out of range"
+
+        for step_idx, noise_val in enumerate(step_noise_values):
+            assert torch.isfinite(noise_val).all(), f"Step {step_idx}: non-finite noise"
+
+        for step_idx, noise_val in enumerate(step_noise_values):
+            gathered = [torch.zeros_like(noise_val) for _ in range(world_size)]
+            dist.all_gather(gathered, noise_val)
+            if rank == 0:
+                for other in gathered[1:]:
+                    assert torch.allclose(gathered[0], other, atol=1e-6), (
+                        f"Step {step_idx}: rank 0 and other ranks disagree"
+                    )
+
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_mf_shared_noise(rank: int, world_size: int, port: int) -> None:
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        grad_template = {"weight": torch.zeros(4, device=device)}
+        noise_fn, state = mf_gaussian_noise(
+            grad_template,
+            identity_strategy(),
+            n_steps=1,
+            noise_multiplier=1.0,
+            key=key(0),
+        )
+        grads = {"weight": torch.zeros(4, device=device)}
+        noised, _ = noise_fn(clipped(grads, max_norm=1.0), state)
+
+        w = noised.pytree["weight"]
+        gathered = [torch.zeros_like(w) for _ in range(world_size)]
+        dist.all_gather(gathered, w)
+        if rank == 0:
+            for other in gathered[1:]:
+                assert torch.equal(gathered[0], other)
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_mf_clip_three_steps(rank: int, world_size: int, port: int) -> None:
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        model = SimpleModel().to(device)
+        model.load_state_dict(_fixed_sd_mf())
+        func_model, params, _frozen = make_functional(model, partition_trainable=True)
+
+        def loss_fn(params, x, y):
+            pred = func_model(params, x)
+            return ((pred - y) ** 2).mean()
+
+        grad_fn, clip_state = clipped_grad(
+            loss_fn, clipping_norm=1.0, batch_argnums=(1, 2)
+        )
+        tmpl = tree_map(lambda t: torch.zeros_like(t, device=device), params)
+        noise_fn, noise_state = mf_gaussian_noise(
+            tmpl,
+            identity_strategy(),
+            n_steps=4,
+            noise_multiplier=1.1,
+            key=key(0),
+        )
+        x = torch.randn(4, 10, device=device)
+        y = torch.randn(4, 1, device=device)
+        for _ in range(3):
+            grads, clip_state = grad_fn(params, x, y, state=clip_state)
+            summed = sum_gradients(grads)
+            _noised, noise_state = noise_fn(summed, noise_state)
+            noise_state = sync(noise_state)
+            assert torch.isfinite(_noised.pytree["fc1.weight"]).all()
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_mf_parity(rank: int, world_size: int, port: int, out_path: str) -> None:
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        model = SimpleModel().to(device)
+        model.load_state_dict(_fixed_sd_mf())
+        func_model, params, _frozen = make_functional(model, partition_trainable=True)
+
+        def loss_fn(params, x, y):
+            pred = func_model(params, x)
+            return ((pred - y) ** 2).mean()
+
+        grad_fn, clip_state = clipped_grad(
+            loss_fn, clipping_norm=1.0, batch_argnums=(1, 2)
+        )
+        tmpl = tree_map(lambda t: torch.zeros_like(t, device=device), params)
+        noise_fn, noise_state = mf_gaussian_noise(
+            tmpl,
+            identity_strategy(),
+            n_steps=4,
+            noise_multiplier=1.1,
+            key=key(0),
+        )
+        x_full = torch.arange(80, dtype=torch.float32, device=device).reshape(8, 10)
+        y_full = torch.arange(8, dtype=torch.float32, device=device).reshape(8, 1) * 0.1
+        sl = slice(rank * 4, (rank + 1) * 4)
+        x = x_full[sl]
+        y = y_full[sl]
+        grads, _ = grad_fn(params, x, y, state=clip_state)
+        summed = sum_gradients(grads)
+        noised, _ = noise_fn(summed, noise_state)
+        if rank == 0:
+            torch.save(noised.pytree["fc1.weight"].cpu(), out_path)
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_auto_mf(rank: int, world_size: int, port: int) -> None:
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        torch.manual_seed(777 + rank)
+        model = AutoSimpleModel().to(device)
+        func_model, params, _frozen = make_functional(model, partition_trainable=True)
+
+        def loss_fn(params, x, y):
+            pred = func_model(params, x)
+            return ((pred - y) ** 2).mean()
+
+        grad_fn, clip_state = auto_clipped_grad(
+            loss_fn,
+            batch_argnums=(1, 2),
+            R=1.0,
+            normalize_by=4.0,
+        )
+        tmpl = tree_map(lambda t: torch.zeros_like(t, device=device), params)
+        noise_fn, noise_state = mf_gaussian_noise(
+            tmpl,
+            band_mf_strategy(bands=2, momentum=0.9),
+            n_steps=4,
+            noise_multiplier=0.6,
+            key=key(22),
+        )
+        x = torch.randn(4, 8, device=device)
+        y = torch.randn(4, 1, device=device)
+        for _ in range(2):
+            grads, clip_state = grad_fn(params, x, y, state=clip_state)
+            summed = sum_gradients(grads)
+            noised, noise_state = noise_fn(summed, noise_state)
+            assert torch.isfinite(noised.pytree["fc1.weight"]).all()
+            noise_state = sync(noise_state)
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_band_parity(rank: int, world_size: int, port: int, out_path: str) -> None:
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        model = TinyModel().to(device)
+        model.load_state_dict(_fixed_sd_tiny())
+        func_model, params, _frozen = make_functional(model, partition_trainable=True)
+
+        def loss_fn(params, x, y):
+            pred = func_model(params, x)
+            return ((pred - y) ** 2).mean()
+
+        grad_fn, clip_state = clipped_grad(
+            loss_fn, clipping_norm=1.0, batch_argnums=(1, 2)
+        )
+        tmpl = tree_map(lambda t: torch.zeros_like(t, device=device), params)
+        noise_fn, noise_state = mf_gaussian_noise(
+            tmpl,
+            band_mf_strategy(bands=2, momentum=0.9),
+            n_steps=4,
+            noise_multiplier=0.85,
+            key=key(5),
+        )
+        x_full = torch.arange(48, dtype=torch.float32, device=device).reshape(8, 6)
+        y_full = (
+            torch.arange(8, dtype=torch.float32, device=device).reshape(8, 1) * 0.05
+        )
+        sl = slice(rank * 4, (rank + 1) * 4)
+        grads, _ = grad_fn(params, x_full[sl], y_full[sl], state=clip_state)
+        summed = sum_gradients(grads)
+        noised, _ = noise_fn(summed, noise_state)
+        if rank == 0:
+            torch.save(noised.pytree["fc1.weight"].cpu(), out_path)
+    finally:
+        _cleanup_ddp()
