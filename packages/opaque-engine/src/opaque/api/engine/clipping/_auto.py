@@ -234,8 +234,13 @@ def auto_clipped_grad(
         batch_argnums: Which arguments have a batch dimension.
         return_aux: If True, returns per-example diagnostics as
             :class:`AutoClippedGradAux`.
-        pre_clipping_transform: Optional per-example gradient transform
-            applied before AUTO-S scaling.
+        pre_clipping_transform: An optional function to apply to the
+            per-example gradients before AUTO-S scaling. The function
+            should consume the gradient pytree for a single example
+            and return a new pytree (possibly with different structure).
+            Can be used to e.g., scale the leaves of the pytree to
+            accommodate preconditioner clipping. Does not affect the
+            sensitivity guarantee. Default is identity function.
         microbatch_size: Process the batch in chunks of this size.
         dtype: Optional accumulation dtype for the summed gradient.
         second_moment: If True, also accumulate the per-example sum of
