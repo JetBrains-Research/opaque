@@ -248,9 +248,7 @@ class TestPerStepCrossAmp:
         e_full_direct = proc.epsilon_at(_DELTA)
         assert math.isclose(e_full_via_step, e_full_direct, rel_tol=1e-9)
 
-    def test_repeated_at_intermediate_matches_approx_at_step(
-        self, amp: str, _seed_mc
-    ):
+    def test_repeated_at_intermediate_matches_approx_at_step(self, amp: str, _seed_mc):
         factory, _ = _AMPLIFICATIONS[amp]
         proc = factory()
         K = max(1, proc.n_steps // 2)
