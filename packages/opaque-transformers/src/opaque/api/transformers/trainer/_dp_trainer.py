@@ -1336,7 +1336,7 @@ class DPTrainer:
 
         if self._train_dataset is None:
             raise ValueError("DPTrainer.train() requires a train_dataset.")
-        dataset_size = len(self._train_dataset)
+        dataset_size = self._effective_train_dataset_size()
         if dataset_size <= 0:
             raise ValueError(
                 "DPTrainer requires a non-empty train_dataset: DP-SGD needs "
@@ -1349,6 +1349,14 @@ class DPTrainer:
         # Poisson sampler on each shard with the same epoch-folded key, so
         # the *local* rate equals the *global* rate by construction.  The
         # accountant uses regular ``acc.poisson`` over the global rate.
+        #
+        # ``dataset_size`` is the *post-trim* effective size — under DDP we
+        # drop ``len(train_dataset) % world_size`` tail examples so every
+        # rank ends up with an identical-length shard (avoids deadlocks for
+        # fixed-order FTRL samplers).  Computing ``sample_rate`` here from
+        # the trimmed denominator means the accountant calibrates noise for
+        # exactly the ``q`` the sampler will use — there is no "actual q
+        # vs accounted q" drift.
         sample_rate = expected_batch_size / dataset_size
         if sample_rate > 1.0:
             raise ValueError(
@@ -3296,26 +3304,18 @@ class DPTrainer:
         # (``opaque.distributed.local_shard``); the Poisson sampler runs
         # with the same epoch-keyed RNG on every rank so the union of
         # per-rank batches is a single global Poisson draw at the user's
-        # ``expected_batch_size`` rate.  We trim the dataset to a multiple
-        # of ``world_size`` first so every rank gets an equal shard —
-        # ``local_shard`` otherwise hands the remainder to the last rank,
-        # which is harmless for Poisson sampling but desynchronises the
-        # batch count per epoch for fixed-order samplers (BLT-style
-        # sequential, BnB) that downstream FTRL integrations will hand to
-        # ``get_train_dataloader``.
+        # ``expected_batch_size`` rate.  ``ctx.sample_rate`` was computed in
+        # ``_setup_training`` from the same trimmed denominator we use here
+        # (see :meth:`_effective_train_dataset_size`), so the rate the
+        # sampler is configured with matches the rate the accountant
+        # calibrated against — both bind to the post-trim ``q``.
         if self._ddp.world_size > 1:
             from torch.utils.data import Subset
 
             from opaque.distributed import local_shard
 
             world_size = self._ddp.world_size
-            trim_to = (len(dataset) // world_size) * world_size
-            if trim_to < 1:
-                raise ValueError(
-                    f"Train dataset has {len(dataset)} example(s), fewer than "
-                    f"world_size={world_size}; every rank requires at least one "
-                    "example after sharding."
-                )
+            trim_to = self._effective_train_dataset_size()
             if trim_to < len(dataset):
                 dataset = Subset(dataset, range(trim_to))
             dataset = local_shard(
@@ -3877,6 +3877,36 @@ class DPTrainer:
     # needed).
     _SAVE_STRATEGIES = ("no", "steps", "epoch", "best")
 
+    def _effective_train_dataset_size(self) -> int:
+        """Length of ``self._train_dataset`` after the DDP equal-shard trim.
+
+        Single source of truth for the training-time dataset size: under DDP
+        the trainer drops ``len(train_dataset) % world_size`` tail examples
+        before sharding so every rank ends up with an identical-length local
+        shard (avoids batch-count desynchronisation under fixed-order
+        samplers).  Callers that drive privacy accounting and the Poisson
+        sampler must agree on which denominator they're using; routing both
+        through this helper guarantees that.
+
+        Raises:
+            ValueError: If ``len(train_dataset) < world_size``, which would
+                trim the whole dataset away.
+        """
+        if self._train_dataset is None:
+            return 0
+        n = len(self._train_dataset)
+        world_size = self._ddp.world_size
+        if world_size <= 1:
+            return n
+        trimmed = (n // world_size) * world_size
+        if trimmed < 1:
+            raise ValueError(
+                f"Train dataset has {n} example(s), fewer than "
+                f"world_size={world_size}; every rank requires at least one "
+                "example after sharding."
+            )
+        return trimmed
+
     def _steps_breakdown(
         self,
         dataset_size: int,
@@ -3908,14 +3938,16 @@ class DPTrainer:
         """Predict ``total_steps`` for ``state.compute_steps`` at init time.
 
         Returns the same value as the ``total_steps`` field of
-        ``_steps_breakdown(len(self._train_dataset))``.  Override in
-        subclasses where the dataset isn't sized at construction time
-        (e.g. streaming datasets) — return ``0`` to signal "unknown" and
-        ``state.compute_steps`` will leave ``state.{logging,eval,save}
-        _steps`` at HF defaults until ``_setup_training`` recomputes.
+        ``_steps_breakdown(self._effective_train_dataset_size())`` — the
+        post-trim denominator the actual training run will see, so
+        ``state.max_steps`` matches the cadence ``_setup_training`` produces.
+        Override in subclasses where the dataset isn't sized at construction
+        time (e.g. streaming datasets) — return ``0`` to signal "unknown" and
+        ``state.compute_steps`` will leave ``state.{logging,eval,save}_steps``
+        at HF defaults until ``_setup_training`` recomputes.
         """
         try:
-            n = len(self._train_dataset)
+            n = self._effective_train_dataset_size()
         except TypeError:
             return 0
         return self._steps_breakdown(n)[1]

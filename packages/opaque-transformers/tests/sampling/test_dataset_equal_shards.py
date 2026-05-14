@@ -120,3 +120,74 @@ class TestEqualShardTrim:
         """N<W would trim to 0 examples — must raise instead of silently emptying."""
         with pytest.raises(ValueError, match="fewer than world_size"):
             _shard_for(dataset_size=2, world_size=3, rank=0)
+
+
+def _trainer_with_ddp(*, dataset_size: int, world_size: int) -> DPTrainer:
+    """Build a DPTrainer pinned to ``world_size`` (rank 0)."""
+    model = torch.nn.Linear(2, 2)
+    dataset = _IdentityDataset(dataset_size)
+    args = DPTrainingArguments(
+        output_dir="/tmp/sample-rate-invariant-test",
+        per_device_train_batch_size=2,
+        max_grad_norm=1.0,
+        privacy_target_epsilon=10.0,
+        privacy_noise_multiplier=1.0,
+        max_steps=1,
+        save_strategy="no",
+        report_to=[],
+        use_cpu=True,
+    )
+    trainer = DPTrainer(model=model, args=args, train_dataset=dataset)
+    trainer._ddp = dataclasses.replace(
+        trainer._ddp,
+        is_distributed=True,
+        rank=0,
+        world_size=world_size,
+    )
+    return trainer
+
+
+class TestSampleRateInvariant:
+    """``ctx.sample_rate`` must equal what the PoissonSampler ends up using.
+
+    The whole point of trimming the dataset *before* computing
+    ``sample_rate`` is that the accountant calibrates against the same
+    ``q`` the sampler runs at — no "actual q vs accounted q" drift.  These
+    tests pin that contract end-to-end: drive ``_setup_training`` so the
+    real ``ctx.sample_rate`` is computed, then drive ``get_train_dataloader``
+    and compare the sampler's stored rate to it.
+    """
+
+    def _setup(self, trainer: DPTrainer) -> None:
+        # ``_setup_training`` is the single source of truth for
+        # ``ctx.sample_rate``; we drive it directly to keep the test fast
+        # (no full ``train()`` loop required).  ``train()`` would otherwise
+        # store the returned ctx on ``self._ctx``, so we mirror that.
+        trainer._ctx = trainer._setup_training()
+
+    def test_sample_rate_uses_trimmed_denominator(self):
+        # N=10, W=3 trims to 9; expected_batch_size=2 → q = 2/9, NOT 2/10.
+        trainer = _trainer_with_ddp(dataset_size=10, world_size=3)
+        self._setup(trainer)
+        assert trainer._ctx.sample_rate == pytest.approx(2 / 9)
+
+    def test_sampler_q_matches_accountant_q(self):
+        # End-to-end: ``ctx.sample_rate`` (accountant view) must equal the
+        # rate the constructed sampler is configured with (sampler view).
+        # ``ctx.current_sampler`` is the real ``OpaqueEpochPoissonBatchSampler``
+        # — torch's ``DataLoader.batch_sampler`` may wrap it.
+        trainer = _trainer_with_ddp(dataset_size=10, world_size=3)
+        self._setup(trainer)
+        trainer.get_train_dataloader()
+        sampler_rate = trainer._ctx.current_sampler._sample_rate
+        assert sampler_rate == pytest.approx(trainer._ctx.sample_rate)
+
+    def test_world_size_one_uses_full_denominator(self):
+        # W=1 → no trim → q = 2/10.  Both views agree, no drift.
+        trainer = _trainer_with_ddp(dataset_size=10, world_size=1)
+        self._setup(trainer)
+        assert trainer._ctx.sample_rate == pytest.approx(2 / 10)
+        trainer.get_train_dataloader()
+        assert trainer._ctx.current_sampler._sample_rate == pytest.approx(
+            trainer._ctx.sample_rate
+        )
