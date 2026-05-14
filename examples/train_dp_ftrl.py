@@ -986,9 +986,21 @@ def main():
     # batch_size for non-Poisson samplers (BLT sequential and BnB) is
     # reduced.  Poisson samplers handle this implicitly via ``sample_rate``
     # on the shard.
-    per_rank_batch_size = (
-        max(1, args.batch_size // world_size) if is_ddp else args.batch_size
-    )
+    if is_ddp:
+        # BLT (SequentialBatchSampler) and BnB consume a fixed per-rank
+        # batch size; if ``--batch-size`` is not divisible by
+        # ``world_size`` we'd silently train on a different global batch
+        # than the one accounting / clipping / LR schedule were sized
+        # against.  Reject the run early instead of masking the drift.
+        if args.batch_size < world_size or args.batch_size % world_size != 0:
+            raise ValueError(
+                f"--batch-size ({args.batch_size}) must be a positive "
+                f"multiple of world_size ({world_size}) under DDP so the "
+                f"per-rank non-Poisson sampler reproduces the global batch."
+            )
+        per_rank_batch_size = args.batch_size // world_size
+    else:
+        per_rank_batch_size = args.batch_size
 
     # Sampler keys fold in ``rank`` so each shard draws independent
     # examples; in single-rank mode ``rank == 0`` and the keys reduce to
