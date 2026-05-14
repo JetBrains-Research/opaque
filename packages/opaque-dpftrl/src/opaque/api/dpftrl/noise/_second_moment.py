@@ -58,7 +58,7 @@ def make_second_moment_mf_noise(
     max_participations: int | None,
     noise_multiplier: float,
     key: RngKey,
-    dtype: torch.dtype | None,
+    compute_dtype: torch.dtype = torch.float32,
 ) -> tuple[
     Callable[
         [Any, SecondMomentMFNoiseState],
@@ -84,7 +84,7 @@ def make_second_moment_mf_noise(
         min_sep=min_sep,
         max_participations=max_participations,
         key=rng_fold_in(key, 0),
-        dtype=dtype,
+        compute_dtype=compute_dtype,
     )
     second_fn, second_state, second_row_l2_at = _make_raw_mf_noise(
         grad_template,
@@ -93,7 +93,7 @@ def make_second_moment_mf_noise(
         min_sep=min_sep,
         max_participations=max_participations,
         key=rng_fold_in(key, 1),
-        dtype=dtype,
+        compute_dtype=compute_dtype,
     )
 
     init_state = SecondMomentMFNoiseState(

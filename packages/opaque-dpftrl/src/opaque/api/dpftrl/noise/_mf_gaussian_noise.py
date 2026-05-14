@@ -58,7 +58,7 @@ def mf_gaussian_noise(
     max_participations: int | None = None,
     noise_multiplier: float,
     key: RngKey,
-    dtype: torch.dtype | None = None,
+    compute_dtype: torch.dtype = torch.float32,
     second_moment_strategy: "MfStrategy | None" = None,
 ) -> tuple[
     Callable[..., tuple[Any, MFNoiseState | SecondMomentMFNoiseState]],
@@ -96,7 +96,13 @@ def mf_gaussian_noise(
         noise_multiplier: Gaussian noise multiplier.  The clipped-gradient
             ``max_norm`` is read from each ``ClippedPytree`` input.
         key: Explicit RNG key for deterministic randomness.
-        dtype: Optional dtype for intermediate noise computation.
+        compute_dtype: Dtype used for the underlying ``torch.randn`` and the
+            linear-combination arithmetic.  Defaults to ``torch.float32`` to
+            match :func:`opaque.dpsgd.noise.gaussian_noise` — sampling
+            Gaussians in bf16/fp16 introduces discretization that distorts
+            the noise distribution. Type stability on the public boundary is
+            preserved: the input pytree's dtype is matched on output (input
+            upcast to ``compute_dtype``, noise added, downcast at return).
         second_moment_strategy: Optional explicit strategy recipe for
             the squared-gradient stream.
 
@@ -117,7 +123,7 @@ def mf_gaussian_noise(
             max_participations=max_participations,
             noise_multiplier=resolved_noise_multiplier,
             key=key,
-            dtype=dtype,
+            compute_dtype=compute_dtype,
         )
 
     raw_noise_fn, raw_state, row_l2_at = _make_raw_mf_noise(
@@ -127,7 +133,7 @@ def mf_gaussian_noise(
         min_sep=min_sep,
         max_participations=max_participations,
         key=key,
-        dtype=dtype,
+        compute_dtype=compute_dtype,
     )
 
     def noise_fn(
@@ -186,7 +192,7 @@ def _make_raw_mf_noise(
     min_sep: int,
     max_participations: int | None,
     key: RngKey,
-    dtype: torch.dtype | None,
+    compute_dtype: torch.dtype = torch.float32,
 ) -> tuple[
     Callable[..., tuple[Any, MFNoiseState]],
     MFNoiseState,
@@ -212,7 +218,7 @@ def _make_raw_mf_noise(
             strategy,
             n_steps=n_steps,
             key=key,
-            dtype=dtype,
+            compute_dtype=compute_dtype,
         )
     streaming = strategy.streaming_matrix(
         n_steps=n_steps,
@@ -223,7 +229,7 @@ def _make_raw_mf_noise(
         grad_template,
         streaming,
         key=key,
-        dtype=dtype,
+        compute_dtype=compute_dtype,
     )
     if isinstance(strategy, IdentityStrategy):
         # C^{-1} is the identity, every row has L2 = 1; skip the

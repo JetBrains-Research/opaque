@@ -174,7 +174,7 @@ def _make_lambda_cgd_noise(
     *,
     n_steps: int,
     key: RngKey,
-    dtype: torch.dtype | None = None,
+    compute_dtype: torch.dtype = torch.float32,
 ) -> tuple[
     Callable[..., tuple[Any, MFNoiseState]],
     MFNoiseState,
@@ -211,7 +211,7 @@ def _make_lambda_cgd_noise(
             clipped_grads,
             stddev,
             generator=g_current,
-            dtype=dtype,
+            compute_dtype=compute_dtype,
         )
 
         if step == 0 or lambda_ == 0.0:
@@ -223,7 +223,7 @@ def _make_lambda_cgd_noise(
                 clipped_grads,
                 stddev,
                 generator=g_prev,
-                dtype=dtype,
+                compute_dtype=compute_dtype,
             )
             corr_noise = tree_map(
                 lambda zt, zp: zt - lambda_ * zp,
