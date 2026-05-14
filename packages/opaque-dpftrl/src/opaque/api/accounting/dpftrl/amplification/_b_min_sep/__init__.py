@@ -23,7 +23,7 @@ from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
 
-from ._transcript_cache import get_handle_or_none
+from ._transcript_cache import with_handle as _with_transcript_handle
 
 _Inner = MfGaussian
 
@@ -114,23 +114,28 @@ class BMinSep(DpFtrlProcess):
         effective_nm = self.inner.noise_multiplier / sensitivity
         p = _participation_p_from_per_example_rate(self.p0, bands)
 
-        hid = get_handle_or_none(
+        # Hold the transcript-cache lock around both the lookup and the
+        # use so a concurrent ``_clear_all_native_caches()`` (e.g. from
+        # ``calibrate(...)``'s finally clause running on another thread)
+        # cannot drop the corpus before the Rust call resolves it.
+        result = _with_transcript_handle(
             tuple(coefs),
             self.n_steps,
             p,
             config.num_mc_samples,
             config.seed,
-        )
-        if hid is None:
-            return _native.bandmf_b_min_sep_warm_mc_pld(
+            lambda hid: _native.bandmf_b_min_sep_pld_from_transcript_handle(
+                hid,
                 coefs,
                 self.n_steps,
                 p,
                 effective_nm,
                 native_cfg,
-            )
-        return _native.bandmf_b_min_sep_pld_from_transcript_handle(
-            hid,
+            ),
+        )
+        if result is not None:
+            return result
+        return _native.bandmf_b_min_sep_warm_mc_pld(
             coefs,
             self.n_steps,
             p,

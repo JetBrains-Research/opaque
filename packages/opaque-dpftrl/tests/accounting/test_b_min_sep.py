@@ -52,6 +52,12 @@ def test_transcript_cache_evicts_lru(monkeypatch):
 
     monkeypatch.delenv("OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES", raising=False)
     monkeypatch.setattr(tc._cache, "_max_entries", 2)
+    # Force a healthy byte budget regardless of what the test process
+    # started with; ``_max_bytes`` was frozen at module-load time and
+    # ``_refresh_max_bytes`` honours the env var we just cleared, so
+    # both the env override and a direct attribute clamp are safe.
+    monkeypatch.setattr(tc._cache, "_default_max_bytes", 4 * 1024 * 1024 * 1024)
+    monkeypatch.setattr(tc._cache, "_max_bytes", 4 * 1024 * 1024 * 1024)
     _drain_cache(tc)
 
     calls: list[tuple[str, int]] = []
@@ -106,7 +112,13 @@ def test_transcript_cache_evicts_for_byte_cap(monkeypatch):
     )
 
     monkeypatch.setattr(tc._cache, "_max_entries", 16)
-    monkeypatch.setattr(tc._cache, "_max_bytes", 3 * 64 * 10 * 8)
+    # ``_refresh_max_bytes`` re-reads the env var on every cache hit,
+    # so set the env var rather than monkeypatching the attribute (which
+    # the next refresh would clobber).  3 * 64 * 10 * 8 = 15 360 bytes
+    # fits exactly one entry.
+    monkeypatch.setenv(
+        "OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES", str(3 * 64 * 10 * 8)
+    )
     _drain_cache(tc)
 
     calls: list[tuple[str, int]] = []

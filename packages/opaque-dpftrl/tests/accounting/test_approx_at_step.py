@@ -590,9 +590,12 @@ class TestAtStepInvariants:
             # despite running fewer rounds.  Re-tuning is the documented
             # ``approx_at_step`` semantic ("fresh K-step run"); for this
             # specific pair the bounded-by-full invariant does not hold and
-            # is not provable.  The other invariants (trend, monotone at
-            # unit boundaries, sandwich for closed-form paths) still cover
-            # this combination.
+            # is not provable.  ``test_monotone_at_unit_boundaries`` skips
+            # the same pair for the same reason; sandwich (closed-form-only)
+            # never runs for the MC paths.  The remaining invariants for
+            # this pair are ``test_step_zero_is_identity_eps``,
+            # ``test_full_horizon_matches_proc``, ``test_overshoot_clamps_n``,
+            # and ``test_trend_increases``.
             pytest.skip(
                 "BMinSep + BandMf: fresh K-step retuning at small bands can "
                 "exceed full-N ε; documented limitation of approx_at_step."
