@@ -98,6 +98,7 @@ nav:
       - DP-FTRL: user-guide/dp-ftrl.md
     - Per-Example Gradient Clipping: user-guide/clipping.md
     - Noise Addition: user-guide/noise.md
+    - Mixed Precision: user-guide/precision.md
     - Privacy Accounting: user-guide/accounting.md
     - Sampling & Microbatching: user-guide/sampling.md
     - Optimizers: user-guide/optimizers.md
