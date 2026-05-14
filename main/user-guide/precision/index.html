@@ -12,13 +12,13 @@
         <meta name="author" content="Opaque Contributors">
       
       
-        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/user-guide/dp-sgd/">
+        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/user-guide/precision/">
       
       
-        <link rel="prev" href="../rng-key/">
+        <link rel="prev" href="../noise/">
       
       
-        <link rel="next" href="../dp-ftrl/">
+        <link rel="next" href="../accounting/">
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
@@ -26,7 +26,7 @@
     
     
       
-        <title>DP-SGD - Opaque</title>
+        <title>Mixed Precision - Opaque</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#dp-sgd-end-to-end" class="md-skip">
+        <a href="#mixed-precision" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              DP-SGD
+              Mixed Precision
             
           </span>
         </div>
@@ -630,8 +630,6 @@
                 
   
   
-    
-  
   
   
     
@@ -647,11 +645,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4" >
         
           
           <label class="md-nav__link" for="__nav_3_4" id="__nav_3_4_label" tabindex="">
@@ -667,7 +665,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_3_4">
             <span class="md-nav__icon md-icon"></span>
             End-to-end pipelines
@@ -678,32 +676,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    DP-SGD
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../dp-sgd/" class="md-nav__link">
         
   
   
@@ -714,107 +690,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#why-dp-sgd" class="md-nav__link">
-    <span class="md-ellipsis">
-      Why DP-SGD
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#1-calibration" class="md-nav__link">
-    <span class="md-ellipsis">
-      1. Calibration
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#2-clipping" class="md-nav__link">
-    <span class="md-ellipsis">
-      2. Clipping
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#3-noise" class="md-nav__link">
-    <span class="md-ellipsis">
-      3. Noise
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#4-sampling" class="md-nav__link">
-    <span class="md-ellipsis">
-      4. Sampling
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#5-optimizer" class="md-nav__link">
-    <span class="md-ellipsis">
-      5. Optimizer
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#6-end-to-end-loop" class="md-nav__link">
-    <span class="md-ellipsis">
-      6. End-to-end loop
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#runnable-references" class="md-nav__link">
-    <span class="md-ellipsis">
-      Runnable references
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#see-also" class="md-nav__link">
-    <span class="md-ellipsis">
-      See also
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -901,10 +776,32 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../precision/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Mixed Precision
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -915,6 +812,80 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-dp-critical-invariant" class="md-nav__link">
+    <span class="md-ellipsis">
+      The DP-critical invariant
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-bfloat16-training" class="md-nav__link">
+    <span class="md-ellipsis">
+      Recipe: bfloat16 training
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-float16-training-with-loss-scaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Recipe: float16 training (with loss scaling)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-float32-training-everything-disabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      Recipe: float32 training (everything disabled)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-compute_dtype-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      The compute_dtype contract
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#whats-compatible-with-torchamp-and-what-isnt" class="md-nav__link">
+    <span class="md-ellipsis">
+      What's compatible with torch.amp and what isn't
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -2233,81 +2204,54 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#why-dp-sgd" class="md-nav__link">
+  <a href="#the-dp-critical-invariant" class="md-nav__link">
     <span class="md-ellipsis">
-      Why DP-SGD
+      The DP-critical invariant
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#1-calibration" class="md-nav__link">
+  <a href="#recipe-bfloat16-training" class="md-nav__link">
     <span class="md-ellipsis">
-      1. Calibration
+      Recipe: bfloat16 training
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-clipping" class="md-nav__link">
+  <a href="#recipe-float16-training-with-loss-scaling" class="md-nav__link">
     <span class="md-ellipsis">
-      2. Clipping
+      Recipe: float16 training (with loss scaling)
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-noise" class="md-nav__link">
+  <a href="#recipe-float32-training-everything-disabled" class="md-nav__link">
     <span class="md-ellipsis">
-      3. Noise
+      Recipe: float32 training (everything disabled)
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-sampling" class="md-nav__link">
+  <a href="#the-compute_dtype-contract" class="md-nav__link">
     <span class="md-ellipsis">
-      4. Sampling
+      The compute_dtype contract
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-optimizer" class="md-nav__link">
+  <a href="#whats-compatible-with-torchamp-and-what-isnt" class="md-nav__link">
     <span class="md-ellipsis">
-      5. Optimizer
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#6-end-to-end-loop" class="md-nav__link">
-    <span class="md-ellipsis">
-      6. End-to-end loop
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#runnable-references" class="md-nav__link">
-    <span class="md-ellipsis">
-      Runnable references
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#see-also" class="md-nav__link">
-    <span class="md-ellipsis">
-      See also
+      What's compatible with torch.amp and what isn't
     </span>
   </a>
   
@@ -2332,161 +2276,177 @@
   
 
 
-<h1 id="dp-sgd-end-to-end">DP-SGD end-to-end<a class="headerlink" href="#dp-sgd-end-to-end" title="Permanent link">&para;</a></h1>
-<p>This guide walks through the full DP-SGD pipeline: calibrate the noise
-multiplier for a target privacy budget, clip per-example gradients,
-add Gaussian noise, run a torchopt optimizer step, and checkpoint
-state. Every import on this page comes from the <code>opaque.dpsgd.*</code>
-public façade — no engine paths, no internal <code>opaque.api.*</code> paths.</p>
-<p>For the conceptual deep-dives on each component, see the topic pages
-under <a href="../">User Guide</a>: <a href="../clipping/">clipping</a>,
-<a href="../noise/">noise</a>, <a href="../sampling/">sampling</a>, <a href="../accounting/">accounting</a>,
-<a href="../optimizers/">optimizers</a>. For the full DP-FTRL counterpart, see
-<a href="../dp-ftrl/">DP-FTRL end-to-end</a>.</p>
-<h2 id="why-dp-sgd">Why DP-SGD<a class="headerlink" href="#why-dp-sgd" title="Permanent link">&para;</a></h2>
-<p>DP-SGD adds independent Gaussian noise to a clipped gradient at every
-training step. The privacy accountant composes per-step costs into a
-total budget: each call to the noise mechanism is a separate
-<code>DpProcess</code>, multiplied by the number of training steps.</p>
-<p>Compared to DP-FTRL (which adds correlated noise across the run),
-DP-SGD is simpler — no strategy selection, no whole-process
-calibration, the training length isn't fixed at calibration time. The
-trade-off is that independent noise compounds linearly across cumulative
-updates.</p>
-<h2 id="1-calibration">1. Calibration<a class="headerlink" href="#1-calibration" title="Permanent link">&para;</a></h2>
-<p>Calibrate the noise multiplier to your privacy budget before training:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>            <span class="c1"># cross-cutting (compose, calibrate)</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpsgd.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpsgd_acc</span>  <span class="c1"># DP-SGD factories</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">dataset_size</span> <span class="o">=</span> <span class="mi">50_000</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">batch_size</span> <span class="o">=</span> <span class="mi">256</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">sample_rate</span> <span class="o">=</span> <span class="n">batch_size</span> <span class="o">/</span> <span class="n">dataset_size</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">num_steps</span> <span class="o">=</span> <span class="mi">1000</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">num_steps</span><span class="p">,</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">param_max</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="p">)</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">noise_multiplier</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">param</span>
+<h1 id="mixed-precision">Mixed Precision<a class="headerlink" href="#mixed-precision" title="Permanent link">&para;</a></h1>
+<p>Opaque supports <code>bfloat16</code>, <code>float16</code>, and <code>float32</code> training. Three knobs
+control what runs at what precision; all three are independent, and the safe
+defaults already cover the common cases. This page documents the contract so
+you can reason about edge cases — especially the <strong>DP-critical</strong> ones — without
+reverse-engineering individual modules.</p>
+<table>
+<thead>
+<tr>
+<th>Knob</th>
+<th>Where</th>
+<th>What it controls</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>torch.autocast(...)</code></td>
+<td>Around the forward / loss closure</td>
+<td>Op-level dtype dispatch (matmul, conv, …). Standard PyTorch.</td>
+</tr>
+<tr>
+<td><code>loss_scaler</code></td>
+<td><code>opaque.precision.loss_scaler</code></td>
+<td>Dynamic loss scaling for <code>fp16</code> — multiplies loss before backward, unscales grads before clipping.</td>
+</tr>
+<tr>
+<td><code>compute_dtype</code></td>
+<td>Kwarg on clipping + noise factories</td>
+<td>Precision at which sensitivity-bound and noise sampling are computed. <strong>DP-critical</strong>: must be high enough for the privacy accountant to be calibrated to a real C, not a rounded-to-zero one.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-dp-critical-invariant">The DP-critical invariant<a class="headerlink" href="#the-dp-critical-invariant" title="Permanent link">&para;</a></h2>
+<p>The privacy accountant is calibrated to <code>noise_multiplier · C</code>, where C is the
+per-example clip-norm threshold passed to <code>clipped_grad</code>. If anything makes the
+gradient norm seen by the clip mechanism differ from the gradient norm that the
+optimizer step actually consumes, the recorded privacy guarantee is wrong.</p>
+<p>There are two places this shows up:</p>
+<ol>
+<li>
+<p><strong>Loss scaling.</strong> When you scale the loss by <code>S</code> before backward (the
+   underflow workaround for <code>fp16</code>), per-example gradients come back at
+   magnitude <code>S · g</code>. Clipping that to C means the <em>effective</em> per-example
+   bound is <code>C/S</code>, not C. The accountant doesn't know about S; it still records
+   "noise calibrated to C". To preserve the invariant, the unscale must run
+   <strong>before</strong> the clip-norm. <code>clipped_grad</code> exposes a <code>pre_clipping_transform</code>
+   slot for exactly this purpose — <code>loss_scaler.unscale_grads</code> is shaped to
+   plug in there.</p>
+</li>
+<li>
+<p><strong>Compute precision.</strong> When per-example L2-norm reductions run in <code>bfloat16</code>
+   (which has 8-bit mantissa), small gradients silently round to zero. The
+   sensitivity bound C the mechanism observes can be much smaller than the
+   geometric truth, and the realized noise stddev is too small for the actual
+   sensitivity. Clipping and noise both default <code>compute_dtype=torch.float32</code>
+   for this reason — even when training is otherwise in <code>bfloat16</code> /
+   <code>float16</code>.</p>
+</li>
+</ol>
+<h2 id="recipe-bfloat16-training">Recipe: <code>bfloat16</code> training<a class="headerlink" href="#recipe-bfloat16-training" title="Permanent link">&para;</a></h2>
+<p>Easiest path. <code>bfloat16</code> has the same 8-bit exponent as <code>float32</code>, so loss
+scaling isn't needed — gradients don't underflow. Just enter an autocast
+context around the loss closure.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">per_example_loss</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">autocast</span><span class="p">(</span><span class="n">device_type</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">):</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        <span class="k">return</span> <span class="n">loss</span><span class="p">(</span><span class="n">model_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="p">),</span> <span class="n">y</span><span class="p">)</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">per_example_loss</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="n">C</span><span class="p">,</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="p">)</span>
 </code></pre></div>
-<p><code>dpsgd_acc.gaussian(nm)</code> is the per-step Gaussian mechanism;
-<code>dpsgd_acc.poisson(..., sample_rate)</code> wraps it with Poisson
-amplification; <code>* num_steps</code> composes across the run. The resulting
-<code>DpProcess</code> is what <code>acc.calibrate</code> solves for the noise multiplier.</p>
-<h2 id="2-clipping">2. Clipping<a class="headerlink" href="#2-clipping" title="Permanent link">&para;</a></h2>
-<p><code>opaque.dpsgd.clipping.clipped_grad</code> wraps a per-example loss
-function in <code>vmap(grad(...))</code> semantics, clips each per-example
-gradient to a fixed norm, and sums:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
+<p><code>compute_dtype</code> defaults to <code>torch.float32</code> on both <code>clipped_grad</code> and
+<code>gaussian_noise</code>, so the sensitivity-bound and noise sampling run at safe
+precision even though the forward is in <code>bfloat16</code>.</p>
+<h2 id="recipe-float16-training-with-loss-scaling">Recipe: <code>float16</code> training (with loss scaling)<a class="headerlink" href="#recipe-float16-training-with-loss-scaling" title="Permanent link">&para;</a></h2>
+<p><code>float16</code> has a 5-bit exponent, so gradients can underflow. Use
+<code>opaque.precision.loss_scaler</code> to multiply the loss before backward, then wire
+the unscale as <code>pre_clipping_transform</code> so clipping sees the true magnitudes.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.precision</span><span class="w"> </span><span class="kn">import</span> <span class="n">loss_scaler</span><span class="p">,</span> <span class="n">all_finite</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">loss_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">):</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="c1"># ... per-example loss (NO mean over batch) ...</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="k">return</span> <span class="n">loss</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">loss_fn</span><span class="p">,</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="p">)</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">scaler</span><span class="p">,</span> <span class="n">scaler_state</span> <span class="o">=</span> <span class="n">loss_scaler</span><span class="p">()</span>  <span class="c1"># defaults match torch.amp.GradScaler</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">per_example_loss</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">autocast</span><span class="p">(</span><span class="n">device_type</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float16</span><span class="p">):</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>        <span class="n">loss</span> <span class="o">=</span> <span class="n">loss_fn</span><span class="p">(</span><span class="n">model_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="p">),</span> <span class="n">y</span><span class="p">)</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="k">return</span> <span class="n">scaler</span><span class="o">.</span><span class="n">scale_loss</span><span class="p">(</span><span class="n">loss</span><span class="p">,</span> <span class="n">scaler_state</span><span class="p">)</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">per_example_loss</span><span class="p">,</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="n">C</span><span class="p">,</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    <span class="n">pre_clipping_transform</span><span class="o">=</span><span class="k">lambda</span> <span class="n">g</span><span class="p">:</span> <span class="n">scaler</span><span class="o">.</span><span class="n">unscale_grads</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">scaler_state</span><span class="p">),</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="p">)</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="c1"># in the step:</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="n">grads_finite</span> <span class="o">=</span> <span class="n">all_finite</span><span class="p">(</span><span class="n">grads</span><span class="p">)</span>
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="k">if</span> <span class="n">grads_finite</span><span class="p">:</span>
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>    <span class="n">noisy</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>    <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">)</span>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>    <span class="n">acc_state</span> <span class="o">=</span> <span class="n">accountant</span><span class="o">.</span><span class="n">advance</span><span class="p">(</span><span class="n">acc_state</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="n">scaler_state</span> <span class="o">=</span> <span class="n">scaler</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">scaler_state</span><span class="p">,</span> <span class="n">grads_finite</span><span class="p">)</span>
 </code></pre></div>
-<p>For automatic threshold tuning across steps:
-<code>opaque.dpsgd.clipping.adaptive_clipped_grad</code> (Andrew et al. 2021).
-For AUTO-S smooth scaling: <code>opaque.dpsgd.clipping.auto_clipped_grad</code>
-(Bu et al. 2023).</p>
-<h2 id="3-noise">3. Noise<a class="headerlink" href="#3-noise" title="Permanent link">&para;</a></h2>
-<p><code>opaque.dpsgd.noise.gaussian_noise</code> adds calibrated Gaussian noise to
-the clipped gradient sum:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span><span class="p">,</span> <span class="n">split</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">key_sampling</span><span class="p">,</span> <span class="n">key_noise</span> <span class="o">=</span> <span class="n">split</span><span class="p">(</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span> <span class="n">num</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key_noise</span><span class="p">,</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="p">)</span>
+<p>On a non-finite step the wrapper <em>must</em> skip the noise mechanism, the optimizer
+update, <strong>and</strong> the accountant advance — together. Skipped steps consume zero
+privacy budget. The scaler's <code>update</code> advances the grow/backoff schedule
+regardless of the skip decision.</p>
+<h2 id="recipe-float32-training-everything-disabled">Recipe: <code>float32</code> training (everything disabled)<a class="headerlink" href="#recipe-float32-training-everything-disabled" title="Permanent link">&para;</a></h2>
+<p>Pass <code>enabled=False</code> to keep the call sites uniform; the scaler degrades to
+identity functions, the autocast block is just omitted.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">scaler</span><span class="p">,</span> <span class="n">scaler_state</span> <span class="o">=</span> <span class="n">loss_scaler</span><span class="p">(</span><span class="n">enabled</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># the same wiring as the fp16 recipe; scale_loss / unscale_grads / update</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># are no-ops.</span>
 </code></pre></div>
-<p>For bounded noise support, pass <code>bound=...</code> to
-<code>opaque.dpsgd.noise.gaussian_noise</code> — same accounting, inverse-CDF
-sampling, accepts a positive scalar (symmetric <code>[-B, B]</code>) or a
-<code>(low, high)</code> tuple.</p>
-<h2 id="4-sampling">4. Sampling<a class="headerlink" href="#4-sampling" title="Permanent link">&para;</a></h2>
-<p>DP-SGD pairs with Poisson subsampling:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSampler</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">dataset</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key_sampling</span><span class="p">,</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="p">)</span>
-</code></pre></div>
-<p><code>PoissonSampler</code> accepts <code>truncated_batch_size=</code> for the
-truncated-Poisson variant; calibration must use
-<code>dpsgd_acc.poisson(..., truncated_batch_size=..., dataset_size=...)</code>
-to match.</p>
-<h2 id="5-optimizer">5. Optimizer<a class="headerlink" href="#5-optimizer" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">noise_bias_correction</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>  <span class="c1"># DP-aware second-moment correction</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="p">)</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
-</code></pre></div>
-<p><code>opaque.optimizers</code> ships <code>adamw</code>, <code>adam</code>, <code>sgd</code>, <code>radam</code>,
-<code>adafactor</code>, <code>lion</code>, <code>ademamix</code>, <code>schedule_free</code>, plus a few torchopt
-re-exports. The <code>noise_bias_correction=True</code> flag corrects the
-biased second moment that arises when the optimizer sees noised
-gradients.</p>
-<h2 id="6-end-to-end-loop">6. End-to-end loop<a class="headerlink" href="#6-end-to-end-loop" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_functional</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">state_dict</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">fmodel</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">make_functional</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="k">for</span> <span class="n">step</span><span class="p">,</span> <span class="n">batch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">sampler</span><span class="p">):</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">noised</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noised</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="c1"># Checkpoint at the end (or any step):</span>
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="n">ckpt</span> <span class="o">=</span> <span class="p">{</span>
-<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>    <span class="s2">&quot;params&quot;</span><span class="p">:</span> <span class="n">params</span><span class="p">,</span>
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>    <span class="s2">&quot;opt_state&quot;</span><span class="p">:</span> <span class="n">opt_state</span><span class="p">,</span>
-<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>    <span class="s2">&quot;clip_state&quot;</span><span class="p">:</span> <span class="n">clip_state</span><span class="p">,</span>
-<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>    <span class="s2">&quot;noise_state&quot;</span><span class="p">:</span> <span class="n">noise_state</span><span class="p">,</span>
-<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="p">}</span>
-<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">state_dict</span><span class="p">(</span><span class="n">ckpt</span><span class="p">),</span> <span class="s2">&quot;step.pt&quot;</span><span class="p">)</span>
-</code></pre></div>
-<p>Restore from the same flat state dict with
-<code>opaque.serialization.from_state_dict</code>.</p>
-<h2 id="runnable-references">Runnable references<a class="headerlink" href="#runnable-references" title="Permanent link">&para;</a></h2>
+<h2 id="the-compute_dtype-contract">The <code>compute_dtype</code> contract<a class="headerlink" href="#the-compute_dtype-contract" title="Permanent link">&para;</a></h2>
+<p><code>compute_dtype</code> is <strong>not</strong> an autocast surface. Autocast intercepts op dispatch
+inside the forward pass; clipping / noise reductions run <em>outside</em> the autocast
+region (inside <code>vmap</code>, where autocast does not propagate) and produce the
+sensitivity bound the privacy accountant relies on. Three rules:</p>
 <ul>
-<li><a href="https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py"><code>examples/train_causal_lm.py</code></a>
-  — full causal-LM training script.</li>
-<li><code>tests/integration/test_dpsgd_pipeline.py</code> — minimal smoke test
-  exercising the same flow on a tiny LlamaConfig + LoRA model
-  (and the Qwen2 variant for the real-HF case).</li>
+<li><strong>Safe defaults on every public knob</strong>, but the precise default differs
+  by primitive. Clipping defaults to <code>compute_dtype=None</code>, which auto-promotes
+  <code>bfloat16</code> / <code>float16</code> inputs to <code>float32</code> for the L2 reduction and leaves
+  <code>float32</code> / <code>float64</code> inputs untouched (so an fp64 forward stays fp64
+  through clipping). Both <code>gaussian_noise(...)</code> and <code>mf_gaussian_noise(...)</code>
+  default to the literal <code>compute_dtype=torch.float32</code> and sample at that
+  precision regardless of the input pytree's dtype. If you want <code>compute_dtype
+  =torch.float64</code> end-to-end, you must pass it explicitly to clipping <em>and</em>
+  noise — the clipping side does not promote upward on its own.</li>
+<li><strong>Don't lower it without recalibrating.</strong> Setting
+  <code>compute_dtype=torch.bfloat16</code> is a numerical regression of the privacy
+  guarantee — the accountant still records <code>noise_multiplier · C</code>, but the
+  realized noise stddev no longer matches.</li>
+<li><strong>You can raise it.</strong> <code>compute_dtype=torch.float64</code> is safe (and
+  occasionally useful for very small clip thresholds or aggressive
+  noise multipliers).</li>
 </ul>
-<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
-<ul>
-<li><a href="../clipping/">Clipping</a> — fixed, AUTO-S, adaptive variants and
-  per-group norms.</li>
-<li><a href="../noise/">Noise</a> — Gaussian (optionally bounded), when to choose
-  which.</li>
-<li><a href="../sampling/">Sampling</a> — Poisson sampler details and the
-  truncated-Poisson trade-off.</li>
-<li><a href="../accounting/">Accounting</a> — <code>DpProcess</code>, calibration, budgets.</li>
-<li><a href="../optimizers/">Optimizers</a> — DP bias correction and the
-  second-moment story.</li>
-<li><a href="../../mechanisms/dp-sgd/">DP-SGD mechanisms</a> — Gaussian
-  reference page.</li>
-<li><a href="../dp-ftrl/">DP-FTRL end-to-end</a> — the correlated-noise companion
-  pipeline.</li>
-</ul>
+<h2 id="whats-compatible-with-torchamp-and-what-isnt">What's compatible with <code>torch.amp</code> and what isn't<a class="headerlink" href="#whats-compatible-with-torchamp-and-what-isnt" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th><code>torch.amp</code> primitive</th>
+<th>Opaque counterpart</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>torch.amp.autocast(device_type, dtype=...)</code></td>
+<td>Used directly; nothing to wrap. The trainer enters it around the loss closure.</td>
+</tr>
+<tr>
+<td><code>torch.amp.GradScaler</code></td>
+<td><code>opaque.precision.loss_scaler</code> — functional analog. State is a frozen dataclass; defaults match <code>GradScaler</code> (<code>init_scale=2**16</code>, <code>growth_factor=2.0</code>, <code>backoff_factor=0.5</code>, <code>growth_interval=2000</code>).</td>
+</tr>
+<tr>
+<td><code>torch.amp.custom_fwd</code> / <code>custom_bwd</code></td>
+<td>Not used — the functional DP step goes through <code>vmap(grad(...))</code>, which does not interact with custom autograd. Triton kernels in <code>opaque-patches</code> consult <code>torch.is_autocast_enabled()</code> directly at the wrapper boundary.</td>
+</tr>
+<tr>
+<td><code>GradScaler.step(optimizer)</code> (fuses inf-check + optimizer.step + skip)</td>
+<td>Caller-owned. <code>loss_scaler</code> returns the schedule and the unscale; the surrounding loop owns the skip decision because <code>optimizer.update(...)</code> is composed by the user, not by the scaler.</td>
+</tr>
+</tbody>
+</table>
+<p>The structural gap — the scaler doesn't own the optimizer call — is forced by
+the functional path: per-example gradients are returned as a pytree by
+<code>vmap(grad(...))</code>, never attached to <code>Parameter.grad</code>. There's no
+<code>scaler.unscale_(optimizer)</code> analogue because there's no optimizer to walk
+parameters of. The trade is that the unscale runs <em>inside</em> <code>vmap</code>, per-example,
+before any reduction — which is exactly where DP needs it.</p>
 
 
 
