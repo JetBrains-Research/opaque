@@ -217,17 +217,22 @@ primitives subsume all of them; the table below shows the recipe for
 each.  No engine-side alias is needed — pass the equivalent
 construction directly.
 
+The HF schedules all include a `0 → base_lr` warmup over the first
+`W` steps.  Each Opaque recipe configures the inner cosine with
+`transition_begin=W` (so the cosine returns `init_value` during the
+warmup window) and wraps it with `with_warmup(..., transition_steps=W)`
+so that leading plateau is rescaled into the ramp.
+
 | `transformers` name | Opaque recipe |
 |---|---|
-| `cosine` | `cosine_schedule(base_lr, 0.0, transition_steps=N - W, transition_begin=W)` |
+| `cosine` | `with_warmup(cosine_schedule(base_lr, 0.0, transition_steps=N - W, transition_begin=W), transition_steps=W)` |
 | `cosine_with_min_lr` | Same as `cosine`, but pass `end_value=min_lr` (the second positional arg of `cosine_schedule`). |
-| `cosine_with_restarts` | `with_restarts(cosine_schedule(base_lr, 0.0, transition_steps=cycle_length), transition_steps=N - W, num_cycles=k, transition_begin=W)` |
-| `cosine_warmup_with_min_lr` | `with_warmup(cosine_schedule(base_lr, min_lr, ...), W)` |
+| `cosine_with_restarts` | `with_warmup(with_restarts(cosine_schedule(base_lr, 0.0, transition_steps=cycle_length), transition_steps=N - W, num_cycles=k, transition_begin=W), transition_steps=W)` |
+| `cosine_warmup_with_min_lr` | `with_warmup(cosine_schedule(base_lr, min_lr, transition_steps=N - W, transition_begin=W), transition_steps=W)` |
 | `warmup_stable_decay` | [`warmup_stable_decay(...)`](#warmup-stable-decay-wsd) — direct primitive. |
 
-`cosine_schedule` already accepts a `num_cycles` kwarg for inline
-oscillation; for hard restarts (jump back to `init_value` at each
-boundary) prefer `with_restarts` instead.
+If your application doesn't use warmup (`W == 0`), drop the
+`with_warmup` wrapper and the `transition_begin=W` argument.
 
 ## Reading the current LR
 
