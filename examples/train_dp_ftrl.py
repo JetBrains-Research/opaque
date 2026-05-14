@@ -960,25 +960,9 @@ def main():
     if args.mechanism == "blt":
         train_dataset = train_dataset.shuffle(seed=args.seed)
 
-    # --- Distributed data partitioning ---
-    # DDP uses disjoint shards per rank.  Per-example Poisson probability is
-    # unchanged: each example lives on exactly one rank and is still drawn
-    # with probability ``sample_rate`` globally; summing gradients across
-    # ranks recovers the single-rank gradient distribution and the MF
-    # accountant stays identical to single rank.  Replicated-data /
-    # parallel-Poisson accounting is *not* supported here because the
-    # correlated MF amplifiers (BLT, BSR, BiSR, BandMF, λ-CGD) don't have
-    # a derived parallel-worker PLD — the variety of DP-FTRL samplers
-    # doesn't fit the DP-SGD parallel-Poisson pattern.
+    # Sharded DDP: trim to a multiple of ``world_size`` so every shard has
+    # equal length (keeps ``sync()`` / ``sum_gradients_()`` in lockstep).
     if is_ddp:
-        # Trim to a multiple of ``world_size`` so every shard has identical
-        # length.  This avoids two distributed pitfalls: (a) the last rank
-        # otherwise gets the remainder and ``SequentialBatchSampler`` (BLT)
-        # can yield one more batch there, deadlocking the cross-rank
-        # ``sync()`` / ``sum_gradients_()`` collectives; and (b)
-        # ``BallsInBinsSampler`` would have systematically different bin
-        # counts on the larger shard.  Dropping at most ``world_size - 1``
-        # examples is privacy-irrelevant (those examples never participate).
         trimmed_size = (len(train_dataset) // world_size) * world_size
         if trimmed_size < len(train_dataset):
             train_dataset = train_dataset.select(range(trimmed_size))
@@ -1250,9 +1234,7 @@ def main():
     # args.max_steps``.
     total_steps = args.num_epochs * expected_steps_per_epoch
     stop_at_step = (
-        min(total_steps, args.max_steps)
-        if args.max_steps is not None
-        else total_steps
+        min(total_steps, args.max_steps) if args.max_steps is not None else total_steps
     )
 
     lr_schedule = make_lr_schedule(
