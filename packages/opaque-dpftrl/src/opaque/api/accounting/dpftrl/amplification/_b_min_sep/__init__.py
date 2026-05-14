@@ -130,35 +130,40 @@ class BMinSep(DpFtrlProcess):
         effective_nm = self.inner.noise_multiplier / sensitivity
         p = _participation_p_from_per_example_rate(self.p0, bands)
 
-        # Reuse the cached transcript handle when computing at the full
-        # horizon (the only K that matches the cached corpus key).  For
-        # K < N we fall through to a fresh one-shot MC; the Rust sampler
-        # is seed-stable so the K-row transcript matches the prefix of
-        # the N-row transcript at the same seed.
+        # Always look up the cached corpus at ``self.n_steps`` (the full
+        # horizon at which it was prepared).  For K < N the Rust side
+        # slices each sample to the first K columns, which — because
+        # within a single sample the per-step RNG state is deterministic
+        # in the columns up to it — is byte-identical to a freshly-prepared
+        # K-row transcript at the same per-sample seed.  The K-step PLD
+        # is therefore a deterministic post-processing of the N-step
+        # corpus, and ``ε(_pld_at_horizon(K)) ≤ ε(self)`` holds exactly
+        # (no MC variance gap).
         #
         # ``_with_transcript_handle`` holds the per-cache lock around
         # both the lookup and the Rust call so a concurrent
         # ``_clear_all_native_caches()`` (e.g. from ``calibrate()``'s
         # finally clause on another thread) cannot drop the corpus
-        # mid-use; on cache-miss it returns ``None`` and we fall through.
-        if rounded == self.n_steps:
-            result = _with_transcript_handle(
-                tuple(coefs),
-                self.n_steps,
+        # mid-use; on cache-miss it returns ``None`` and we fall through
+        # to a fresh K-row warm MC (which loses the prefix-projection
+        # property but is still a valid PLD at K).
+        result = _with_transcript_handle(
+            tuple(coefs),
+            self.n_steps,
+            p,
+            config.num_mc_samples,
+            config.seed,
+            lambda hid: _native.bandmf_b_min_sep_pld_from_transcript_handle(
+                hid,
+                coefs,
+                rounded,
                 p,
-                config.num_mc_samples,
-                config.seed,
-                lambda hid: _native.bandmf_b_min_sep_pld_from_transcript_handle(
-                    hid,
-                    coefs,
-                    self.n_steps,
-                    p,
-                    effective_nm,
-                    native_cfg,
-                ),
-            )
-            if result is not None:
-                return result
+                effective_nm,
+                native_cfg,
+            ),
+        )
+        if result is not None:
+            return result
         return _native.bandmf_b_min_sep_warm_mc_pld(
             coefs,
             rounded,
