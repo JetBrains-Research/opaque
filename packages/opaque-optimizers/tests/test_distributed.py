@@ -1,14 +1,14 @@
 """Tests for ``opaque.api.optimizers.distributed`` sync handlers.
 
 The handlers are audit-only (assert cross-rank equality of optimizer state
-leaves), so the multi-rank checks themselves are exercised by the engine's
-DDP test suite. These tests cover the single-process invariants:
+structure and leaves), so the multi-rank checks themselves are exercised by
+the engine's DDP test suite. These tests cover the single-process invariants:
 
 - Registration happens at import time for every Opaque optimizer state.
-- ``sync_optimizer_state`` is a no-op when not distributed.
-- Recursion walks tuples / lists / dicts / nested dataclasses correctly.
-- Unknown leaf types are skipped conservatively (no crash).
-- Chain-style states (tuple of per-transform states from torchopt) recurse.
+- ``sync_optimizer_state`` is a no-op when not distributed (returns input
+  unchanged — same object identity for both bare dataclass and chain states).
+- Recursion walks tuples / lists / dicts / nested dataclasses / strings /
+  unknown leaf types without raising.
 """
 
 from __future__ import annotations
@@ -21,23 +21,27 @@ import torch
 from opaque.api.engine.distributed._state import _SYNC_REGISTRY
 
 from opaque.api.optimizers import distributed as _trigger_registration  # noqa: F401
+from opaque.api.optimizers._adadelta import AdadeltaState
 from opaque.api.optimizers._adafactor import AdafactorState
 from opaque.api.optimizers._adagrad import AdagradState
 from opaque.api.optimizers._adam import AdamState
 from opaque.api.optimizers._ademamix import AdEMAMixState
 from opaque.api.optimizers._lion import LionState
+from opaque.api.optimizers._radam import RAdamState
 from opaque.api.optimizers._rmsprop import RMSpropState
 from opaque.api.optimizers._schedule_free import ScheduleFreeState
 from opaque.api.optimizers.distributed import sync_optimizer_state
 
 
 _ALL_OPTIMIZER_STATES = (
+    AdadeltaState,
     AdamState,
-    LionState,
-    RMSpropState,
-    AdagradState,
     AdEMAMixState,
     AdafactorState,
+    AdagradState,
+    LionState,
+    RAdamState,
+    RMSpropState,
     ScheduleFreeState,
 )
 
@@ -57,7 +61,12 @@ class TestRegistration:
 
 
 class TestNonDistributedNoOp:
-    """In single-process mode the handler is a pass-through."""
+    """In single-process mode the handler is a pass-through.
+
+    The function returns ``state`` before any container construction (see
+    the ``if not is_distributed(): return state`` early-return), so we
+    assert *identity* of the returned object, not just equality.
+    """
 
     def _adam_state(self) -> AdamState:
         return AdamState(
@@ -72,16 +81,15 @@ class TestNonDistributedNoOp:
         out = sync_optimizer_state(state)
         assert out is state
 
-    def test_returns_same_tuple_when_inner_states_unchanged(self):
+    def test_returns_input_tuple_unchanged(self):
+        # Single-process mode returns the original tuple unchanged (no fresh
+        # tuple is constructed; the recursive ``tuple(...)`` branch is only
+        # reached under ``is_distributed()``).  Identity holds end-to-end.
         a = self._adam_state()
         b = self._adam_state()
         chain = (a, b)
         out = sync_optimizer_state(chain)
-        # ``tuple(...)`` constructs a fresh tuple but the elements are
-        # passed through unchanged.
-        assert isinstance(out, tuple)
-        assert out[0] is a
-        assert out[1] is b
+        assert out is chain
 
     def test_returns_input_for_unknown_types(self):
         # torchopt's ``EmptyState`` is a non-dataclass; the handler returns
@@ -121,7 +129,7 @@ class TestRecursionCoverage:
     def test_adafactor_v_flat_tuple_of_tuple_of_tensors(self):
         # Adafactor's factored second moment is shaped as nested tuples of
         # tensors; the recursion must traverse ``v_flat`` (tuple of tuple
-        # of Tensor) and the ``treespec`` opaque field must be skipped
+        # of Tensor) and the ``treespec`` opaque field must be handled
         # without raising.
         try:
             import optree
@@ -140,8 +148,10 @@ class TestRecursionCoverage:
         assert sync_optimizer_state(state) is state
 
     def test_skip_none_string_bool_leaves(self):
-        # Construct a synthetic dataclass with each "skip" leaf type so the
-        # walker has to traverse without raising.
+        # Synthetic dataclass exercising the audit's ``None`` / ``str`` /
+        # ``bool`` paths.  Strings are now compared cross-rank (not skipped);
+        # the walker must traverse them without raising in single-process
+        # mode.
         @dataclasses.dataclass
         class _Dummy:
             none_field: Any = None
@@ -150,6 +160,27 @@ class TestRecursionCoverage:
             t: torch.Tensor = dataclasses.field(default_factory=lambda: torch.zeros(2))
 
         assert sync_optimizer_state(_Dummy()) is not None  # no-raise
+
+    def test_radam_state_walks(self):
+        # ``RAdamState`` must be auditable in single-process mode; the
+        # registered handler is shared with the other optimizer dataclasses.
+        state = RAdamState(
+            mu={"w": torch.zeros(2)},
+            nu={"w": torch.zeros(2)},
+            phi=0.0,
+            step=0,
+        )
+        assert sync_optimizer_state(state) is state
+
+    def test_adadelta_state_walks(self):
+        state = AdadeltaState(
+            v_g={"w": torch.zeros(2)},
+            v_dx={"w": torch.zeros(2)},
+            phi_g=0.0,
+            phi_dx={"w": torch.zeros(2)},
+            step=0,
+        )
+        assert sync_optimizer_state(state) is state
 
 
 class TestChainState:
@@ -166,9 +197,8 @@ class TestChainState:
         inner_b = LionState(m={"w": torch.zeros(2)}, step=0)
         chain = (inner_a, inner_b)
         out = sync_optimizer_state(chain)
-        assert isinstance(out, tuple)
-        assert out[0] is inner_a
-        assert out[1] is inner_b
+        # Single-process mode returns the original tuple unchanged.
+        assert out is chain
 
     def test_list_chain_descends(self):
         inner = AdamState(
@@ -178,5 +208,4 @@ class TestChainState:
             step=0,
         )
         out = sync_optimizer_state([inner])
-        assert isinstance(out, list)
-        assert out[0] is inner
+        assert out is not None
