@@ -108,13 +108,40 @@ class BandMfStrategy:
     computed on demand via the strategy methods, keyed on the
     amplifier-supplied ``n_steps``.  No gram matrix: BandMF uses cyclic
     Poisson / b-min-sep amplification, not BnB.
+
+    Pinned coefficients.  BandMF's ``coefficients(n_steps=N)`` returns
+    just the ``bands``-long band of the Toeplitz first column (the
+    horizon-independent quantity produced by L-BFGS).
+    ``coefficients_override`` is that same length-``bands`` tuple,
+    captured from an already-tuned strategy at some horizon ``N``.  When
+    set, :meth:`coefficients` returns the override verbatim regardless
+    of ``n_steps``; the K-prefix mechanism is then evaluated by passing
+    the same band + ``n_steps=K`` to the downstream accountant.  Used
+    by ``approx_at_step`` on the matching amplifier
+    (:class:`opaque.api.accounting.dpftrl.amplification.BMinSep` /
+    :class:`opaque.api.accounting.dpftrl.amplification.CyclicPoisson`)
+    to expose the deployed-and-stopped-early mechanism, whose privacy
+    bound is :math:`\\le` the full-horizon bound by the post-processing
+    inequality.
     """
 
     bands: int
     momentum: float = 1.0
     lr_schedule: Schedule | None = field(default=None, compare=False)
+    coefficients_override: tuple[float, ...] | None = field(default=None)
+
+    def __post_init__(self) -> None:
+        if self.coefficients_override is not None and (
+            len(self.coefficients_override) != self.bands
+        ):
+            raise ValueError(
+                f"coefficients_override length ({len(self.coefficients_override)}) "
+                f"must equal bands ({self.bands})"
+            )
 
     def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
+        if self.coefficients_override is not None:
+            return torch.tensor(self.coefficients_override, dtype=torch.float64)
         return _band_mf_coefficients_cached(
             n_steps, self.bands, self.momentum, _lr_key(self.lr_schedule, n_steps)
         )
@@ -140,6 +167,7 @@ def band_mf_strategy(
     bands: int,
     momentum: float = 1.0,
     lr_schedule: Schedule | None = None,
+    coefficients_override: tuple[float, ...] | None = None,
 ) -> BandMfStrategy:
     """Create a BandMF strategy recipe.
 
@@ -153,6 +181,10 @@ def band_mf_strategy(
         lr_schedule: Optional :data:`opaque.scheduling.types.Schedule`
             (``Callable[[int], float]``).  Materialised at ``[0, n_steps)``
             when the strategy first sees the amplifier's ``n_steps``.
+        coefficients_override: Optional pinned first-column coefficients
+            for the deployed strategy matrix.  Used by ``approx_at_step``
+            on the matching amplifier to expose deployed-and-stopped-early
+            accounting; rarely set by user code.
 
     Returns:
         A :class:`BandMfStrategy` recipe.
@@ -163,6 +195,9 @@ def band_mf_strategy(
         bands=bands,
         momentum=momentum,
         lr_schedule=lr_schedule,
+        coefficients_override=(
+            tuple(coefficients_override) if coefficients_override is not None else None
+        ),
     )
 
 

@@ -119,17 +119,22 @@ class BallsInBins(DpFtrlProcess):
     def approx_at_step(self, step: int) -> DpProcess:
         """Process truncated to its first ``step`` rounds (rounded up to an epoch).
 
-        Strategies are pure recipes — no per-horizon state to regenerate.
-        Just clamp ``n_steps`` to the next epoch boundary; the strategy's
-        polymorphic ``gram_matrix(...)`` / ``sensitivity(...)`` methods
-        rebuild for the new horizon on the next ``pld()`` call.
-
-        See :meth:`DpFtrlProcess.approx_at_step` for the upper-bound
-        semantics.
+        Returns the *deployed-and-stopped-early* mechanism.  For
+        horizon-independent strategies (BSR, BiSR, λ-CGD) the
+        coefficient sequences slice trivially and the K-prefix output
+        stream is a deterministic projection of the N-step output of
+        the *same* mechanism.  For BLT (the only retuning inner here),
+        the N-tuned Toeplitz first column is pinned onto the strategy
+        via ``coefficients_override`` on first truncation so the K-step
+        accountant evaluates the same deployed mechanism rather than a
+        K-tuned re-optimization.  In both cases the post-processing
+        inequality gives ``ε(approx_at_step(K)) ≤ ε(self)`` and
+        monotonicity in K.
         """
         import dataclasses
 
         from opaque.api.accounting.core.mechanisms.types import Identity
+        from opaque.api.dpftrl.noise._blt import BltStrategy
 
         if step <= 0:
             return Identity()
@@ -143,6 +148,18 @@ class BallsInBins(DpFtrlProcess):
         rounded = min(-(-step // unit) * unit, self.n_steps)
         if rounded == self.n_steps:
             return self
+        s = self.inner.strategy
+        if isinstance(s, BltStrategy) and s.coefficients_override is None:
+            pinned = tuple(
+                s.coefficients(
+                    n_steps=self.n_steps,
+                    min_sep=self.min_sep,
+                    max_participations=self.max_participations,
+                ).tolist()
+            )
+            new_s = dataclasses.replace(s, coefficients_override=pinned)
+            new_inner = dataclasses.replace(self.inner, strategy=new_s)
+            return dataclasses.replace(self, inner=new_inner, n_steps=rounded)
         return dataclasses.replace(self, n_steps=rounded)
 
     @functools.lru_cache(maxsize=8)

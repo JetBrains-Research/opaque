@@ -12,13 +12,15 @@ participation rate ``p_0`` via ``p = p_0 / (1 - p_0 * (bands - 1))`` for
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 from dataclasses import dataclass
 
 from opaque.api.accounting.core import _native
 
-from opaque.api.accounting.core._base import Pld
+from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core.discretization import get_discretization
+from opaque.api.accounting.core.mechanisms.types import Identity
 from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
@@ -75,6 +77,40 @@ class BMinSep(DpFtrlProcess):
         # n_steps=10 yields 3, not 2).
         bands = self.inner.strategy.bands
         return (self.n_steps + bands - 1) // bands
+
+    def approx_at_step(self, step: int) -> DpProcess:
+        """Process truncated to its first ``step`` rounds (rounded to a band).
+
+        Returns the *deployed-and-stopped-early* mechanism: the K-prefix
+        is a deterministic projection (post-processing) of the full
+        N-step output of the same banded Toeplitz strategy ``C``, so
+        ``ε(approx_at_step(K)) ≤ ε(self)`` and is monotone in K by the
+        post-processing inequality.  Concretely, on first truncation the
+        N-tuned BandMF coefficients are pinned onto the inner
+        :class:`BandMfStrategy` via ``coefficients_override`` and only
+        ``n_steps`` is reduced; subsequent ``pld`` calls evaluate the
+        warm-start b-min-sep MC accountant on the leading K rows of the
+        *same* mechanism.
+        """
+        if step <= 0:
+            return Identity()
+        if step >= self.n_steps:
+            return self
+        unit = self.atomic_unit
+        if unit < 1:
+            raise ValueError(
+                f"{type(self).__name__}.atomic_unit must be >= 1, got {unit}"
+            )
+        rounded = min(-(-step // unit) * unit, self.n_steps)
+        if rounded == self.n_steps:
+            return self
+        s = self.inner.strategy
+        if isinstance(s, BandMfStrategy) and s.coefficients_override is None:
+            pinned = tuple(s.coefficients(n_steps=self.n_steps).tolist())
+            new_s = dataclasses.replace(s, coefficients_override=pinned)
+            new_inner = dataclasses.replace(self.inner, strategy=new_s)
+            return dataclasses.replace(self, inner=new_inner, n_steps=rounded)
+        return dataclasses.replace(self, n_steps=rounded)
 
     @functools.lru_cache(maxsize=8)
     def pld(

@@ -18,14 +18,16 @@ References:
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import math
 from dataclasses import dataclass
 
 from opaque.api.accounting.core import _native
 
-from opaque.api.accounting.core._base import Pld
+from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core.discretization import get_discretization
+from opaque.api.accounting.core.mechanisms.types import Identity
 from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
@@ -96,6 +98,38 @@ class CyclicPoisson(DpFtrlProcess):
         # justification as :attr:`min_sep` — only BandMF/Identity ever read
         # this on a CyclicPoisson.
         return self.n_steps
+
+    def approx_at_step(self, step: int) -> DpProcess:
+        """Process truncated to its first ``step`` rounds (rounded to an atomic unit).
+
+        Returns the *deployed-and-stopped-early* mechanism: the K-prefix
+        is a deterministic projection of the full N-step output of the
+        same banded Toeplitz strategy (Identity is the degenerate
+        ``bands=1`` case), so ``ε(approx_at_step(K)) ≤ ε(self)`` and is
+        monotone in K by the post-processing inequality.  On first
+        truncation the N-tuned BandMF coefficients are pinned via
+        ``coefficients_override``; Identity is horizon-independent so no
+        pinning is needed there.
+        """
+        if step <= 0:
+            return Identity()
+        if step >= self.n_steps:
+            return self
+        unit = self.atomic_unit
+        if unit < 1:
+            raise ValueError(
+                f"{type(self).__name__}.atomic_unit must be >= 1, got {unit}"
+            )
+        rounded = min(-(-step // unit) * unit, self.n_steps)
+        if rounded == self.n_steps:
+            return self
+        s = self.inner.strategy
+        if isinstance(s, BandMfStrategy) and s.coefficients_override is None:
+            pinned = tuple(s.coefficients(n_steps=self.n_steps).tolist())
+            new_s = dataclasses.replace(s, coefficients_override=pinned)
+            new_inner = dataclasses.replace(self.inner, strategy=new_s)
+            return dataclasses.replace(self, inner=new_inner, n_steps=rounded)
+        return dataclasses.replace(self, n_steps=rounded)
 
     def __post_init__(self):
         # Validate truncation pairing here (not only in the factory) so

@@ -580,23 +580,6 @@ class TestAtStepInvariants:
             assert K <= sub.n_steps <= proc.n_steps
 
     def test_bounded_by_full(self, amp: str, mech: str):
-        if (amp, mech) == ("BMinSep", "BandMf"):
-            # ``approx_at_step(K)`` re-tunes :class:`BandMfStrategy` for the
-            # smaller horizon K: the L-BFGS objective is finite-workload, so
-            # the optimal coefficients shift with K.  For small bands/K
-            # (the test uses ``bands=4`` and ``K=N/2=16``), the K-tuned
-            # coefficients can be measurably looser than the N-tuned ones —
-            # tight enough that the K-step MC ε exceeds the N-step MC ε
-            # despite running fewer rounds.  Re-tuning is the documented
-            # ``approx_at_step`` semantic ("fresh K-step run"); for this
-            # specific pair the bounded-by-full invariant does not hold and
-            # is not provable.  The other invariants (trend, monotone at
-            # unit boundaries, sandwich for closed-form paths) still cover
-            # this combination.
-            pytest.skip(
-                "BMinSep + BandMf: fresh K-step retuning at small bands can "
-                "exceed full-N ε; documented limitation of approx_at_step."
-            )
         proc = _build(amp, mech)
         e_full = _eps(proc, _DELTA, amp)
         slack = 0.10 * max(e_full, 1.0) if _AMPLIFICATIONS[amp][1] else 1e-9
@@ -610,16 +593,6 @@ class TestAtStepInvariants:
         assert e_small < e_full
 
     def test_monotone_at_unit_boundaries(self, amp: str, mech: str):
-        if (amp, mech) == ("BMinSep", "BandMf"):
-            # Same ``approx_at_step`` retuning caveat as
-            # :meth:`test_bounded_by_full`: fresh K-step ``BandMfStrategy``
-            # coefficients can make intermediate ``ε`` exceed the full-``N``
-            # value at the MC sample budget, so the unit-boundary sequence is
-            # not guaranteed monotone within the slack used for other MC pairs.
-            pytest.skip(
-                "BMinSep + BandMf: K-step retuning breaks monotone-at-units "
-                "with fixed MC samples; see test_bounded_by_full."
-            )
         proc = _build(amp, mech)
         n, M = proc.n_steps, proc.atomic_unit
         e_full = _eps(proc, _DELTA, amp)
