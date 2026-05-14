@@ -6,6 +6,7 @@ from opaque.api.accounting.dpftrl.types import (
     CyclicPoisson,
     DpFtrlProcess,
     MfGaussian,
+    PerStep,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "BMinSep",
     "BallsInBins",
     "DpFtrlProcess",
+    "PerStep",
 ]

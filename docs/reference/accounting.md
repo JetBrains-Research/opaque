@@ -413,6 +413,29 @@ proc = dpftrl_acc.balls_in_bins(
 proc = dpftrl_acc.balls_in_bins(dpsgd_acc.gaussian(1.1), num_bins=100, num_epochs=10)
 ```
 
+### `per_step(proc) -> PerStep`
+
+Adapter that wraps a whole-process DP-FTRL accountant so it composes
+step-by-step under `Accountant`'s `acct |= step` idiom (the DP-SGD path
+shape). `per_step(proc) * K` materialises the strategy-aware K-prefix
+PLD via `proc._pld_at_horizon(K)` — bounded above by
+`proc.epsilon_at(δ)` and monotone non-decreasing in K (post-processing
+on the deployed N-step mechanism). `K > proc.n_steps` raises;
+`PerStep` only composes with other `PerStep` instances wrapping the
+*same* underlying process.
+
+- `proc` (DpFtrlProcess): The whole-process accountant
+  (`dpftrl_acc.poisson(...)`, `b_min_sep(...)`, `balls_in_bins(...)`).
+
+```python
+proc = dpftrl_acc.poisson(
+    dpftrl_acc.mf_gaussian(0.8, strategy),
+    sample_rate=0.01, n_steps=15_624,
+)
+step = dpftrl_acc.per_step(proc)
+eps_K = (step * 1_000).epsilon_at(1e-5)   # K-step ε ≤ proc.epsilon_at(δ)
+```
+
 ---
 
 ## Composition Functions
