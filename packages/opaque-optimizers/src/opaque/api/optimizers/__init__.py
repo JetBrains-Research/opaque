@@ -80,6 +80,8 @@ from opaque.api.optimizers._rmsprop import rmsprop
 from opaque.api.optimizers._schedule_free import schedule_free
 from opaque.api.optimizers._sgd import sgd
 
+from . import distributed as _distributed_optimizer_registration  # noqa: F401
+
 __all__ = [
     "adam",
     "adamw",
