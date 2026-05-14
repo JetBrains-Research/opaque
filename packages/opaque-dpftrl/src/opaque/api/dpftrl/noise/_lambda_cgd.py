@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 import torch
@@ -43,6 +44,22 @@ def _native():
     return _n
 
 
+@lru_cache(maxsize=256)
+def _lambda_cgd_gram_matrix_cached(
+    lambda_: float,
+    normalized: bool,
+    n_steps: int,
+    min_sep: int,
+    max_participations: int | None,
+) -> tuple[float, ...]:
+    """Gram sequence for λ-CGD; cached across repeated σ / PLD probes."""
+    return tuple(
+        _native().lambda_cgd_gram_matrix(
+            lambda_, n_steps, min_sep, max_participations, normalized
+        )
+    )
+
+
 def _column_norm(lambda_: float, n_steps: int, step: int) -> float:
     """Column norm :math:`d_t` of :math:`C_\\lambda` at 0-indexed step t."""
     if lambda_ == 0.0:
@@ -62,9 +79,6 @@ class LambdaCgdStrategy:
 
     lambda_: float
     normalized: bool = True
-    _gram_memo: dict[tuple[int, int, int | None], tuple[float, ...]] = field(
-        default_factory=dict, init=False, repr=False, compare=False, hash=False
-    )
 
     def __post_init__(self) -> None:
         if self.lambda_ < 0 or self.lambda_ >= 1.0:
@@ -79,18 +93,9 @@ class LambdaCgdStrategy:
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> tuple[float, ...]:
-        key = (n_steps, min_sep, max_participations)
-        memo = self._gram_memo
-        hit = memo.get(key)
-        if hit is not None:
-            return hit
-        out = tuple(
-            _native().lambda_cgd_gram_matrix(
-                self.lambda_, n_steps, min_sep, max_participations, self.normalized
-            )
+        return _lambda_cgd_gram_matrix_cached(
+            self.lambda_, self.normalized, n_steps, min_sep, max_participations
         )
-        memo[key] = out
-        return out
 
     def streaming_matrix(self, **_) -> StreamingMatrix:
         # Lambda-CGD never materializes a streaming matrix — it uses
