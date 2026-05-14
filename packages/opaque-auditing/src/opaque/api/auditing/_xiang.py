@@ -36,8 +36,12 @@ _MAX_EXACT_RANKS = 2000
 # (ε, δ)-DP path — analytical
 # ---------------------------------------------------------------------------
 
+
 def xiang_p_value_eps_delta(
-    r: int, u: int, eps: float, delta: float,
+    r: int,
+    u: int,
+    eps: float,
+    delta: float,
 ) -> float:
     """P-value under (ε, δ)-DP using Xiang's order-statistics framework.
 
@@ -68,6 +72,7 @@ def xiang_p_value_eps_delta(
 # ---------------------------------------------------------------------------
 # Gaussian (μ-GDP) path — grid-based order statistics + Chernoff
 # ---------------------------------------------------------------------------
+
 
 def xiang_p_value_gaussian(
     n: int,
@@ -110,7 +115,9 @@ def xiang_p_value_gaussian(
 
 
 def _compute_v_k(
-    n: int, r_prime: int, grid: BaseGrid,
+    n: int,
+    r_prime: int,
+    grid: BaseGrid,
 ) -> np.ndarray:
     """Compute v_k for ranks k = n − r' + 1, …, n.
 
@@ -123,9 +130,11 @@ def _compute_v_k(
     k_vals = np.arange(n - r_prime + 1, n + 1, dtype=np.float64)
 
     # Log combinatorial: ln(n! / ((k-1)! · (n-k)!))
-    log_C = (scipy.special.gammaln(n + 1)
-             - scipy.special.gammaln(k_vals)
-             - scipy.special.gammaln(n - k_vals + 1))
+    log_C = (
+        scipy.special.gammaln(n + 1)
+        - scipy.special.gammaln(k_vals)
+        - scipy.special.gammaln(n - k_vals + 1)
+    )
 
     # Grid quantities — all shape (grid_size,)
     mass = grid.mass
@@ -148,11 +157,7 @@ def _compute_v_k(
 
     # Full log integrand: (r_prime, grid_size)
     log_integrand = (
-        log_C[:, None]
-        + log_mass[None, :]
-        + term_F
-        + term_1mF
-        + log_sig[None, :]
+        log_C[:, None] + log_mass[None, :] + term_F + term_1mF + log_sig[None, :]
     )
 
     # v_k = Σ_grid exp(log_integrand)  —  logsumexp for stability
@@ -184,8 +189,9 @@ def _chernoff_lower_tail(
     if u == 0:
         # All guesses correct.  The Chernoff minimum is at λ → −∞,
         # giving P = Π(1−v_k) · 0.5^n_trunc.
-        log_pval = (float(np.sum(np.log(np.maximum(1.0 - v_k, 1e-300))))
-                    + n_trunc * math.log(0.5))
+        log_pval = float(
+            np.sum(np.log(np.maximum(1.0 - v_k, 1e-300)))
+        ) + n_trunc * math.log(0.5)
         return min(math.exp(log_pval), 1.0)
 
     # Bisect for λ* ∈ (−50, 0) where dκ/dλ = 0.

@@ -20,6 +20,7 @@ __all__ = ["BaseGrid", "gaussian_base_pair_grid", "gaussian_to_eps_delta"]
 # GDP → (ε, δ) conversion
 # ---------------------------------------------------------------------------
 
+
 def gaussian_to_eps_delta(mu: float, delta: float) -> float:
     """Convert μ-GDP to (ε, δ)-DP.  Returns ε.
 
@@ -89,6 +90,7 @@ def gaussian_to_eps_delta(mu: float, delta: float) -> float:
 # Discretised base distribution pair for μ-GDP
 # ---------------------------------------------------------------------------
 
+
 class BaseGrid(NamedTuple):
     """Discretised base distribution pair for μ-GDP.
 
@@ -141,7 +143,7 @@ def gaussian_base_pair_grid(mu: float, num_points: int) -> BaseGrid:
     dz = z[1] - z[0]
 
     # Densities in z-space
-    phi_z = scipy.stats.norm.pdf(z)          # P in z-space
+    phi_z = scipy.stats.norm.pdf(z)  # P in z-space
     phi_z_mu = scipy.stats.norm.pdf(z - mu)  # Q in z-space
 
     # Mixture density contribution per grid point

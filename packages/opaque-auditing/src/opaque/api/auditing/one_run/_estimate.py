@@ -124,7 +124,8 @@ class OneRunEstimate:
     # ------------------------------------------------------------------
 
     def _best_r_u(
-        self, threshold: float | None = None,
+        self,
+        threshold: float | None = None,
     ) -> tuple[int, int]:
         """Compute (r, u) for the Xiang order-statistics test.
 

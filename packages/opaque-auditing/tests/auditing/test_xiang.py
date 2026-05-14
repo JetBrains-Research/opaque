@@ -29,6 +29,7 @@ from opaque.auditing.types import CoinFlip
 
 # ---- Helpers ---------------------------------------------------------------
 
+
 def _make_estimate(in_scores, out_scores):
     """Build a OneRunEstimate from raw in/out score arrays."""
     in_scores = np.asarray(in_scores, dtype=float)
@@ -57,6 +58,7 @@ def _delta_at(mu: float, eps: float) -> float:
 
 
 # ---- gaussian_to_eps_delta -------------------------------------------------
+
 
 class TestGaussianToEpsDelta:
     """Unit tests for GDP-to-(ε,δ) conversion."""
@@ -103,6 +105,7 @@ class TestGaussianToEpsDelta:
 
 # ---- gaussian_base_pair_grid -----------------------------------------------
 
+
 class TestGaussianBasePairGrid:
     """Unit tests for the discretised Gaussian base pair."""
 
@@ -136,6 +139,7 @@ class TestGaussianBasePairGrid:
 
 
 # ---- xiang_p_value_eps_delta -----------------------------------------------
+
 
 class TestXiangPValueEpsDelta:
     """Unit tests for the (ε,δ)-DP analytical p-value."""
@@ -186,6 +190,7 @@ class TestXiangPValueEpsDelta:
 
 # ---- xiang_p_value_gaussian ------------------------------------------------
 
+
 class TestXiangPValueGaussian:
     """Unit tests for the Gaussian grid-based p-value."""
 
@@ -230,6 +235,7 @@ class TestXiangPValueGaussian:
 
 
 # ---- epsilon_at (Xiang dispatch) -------------------------------------------
+
 
 class TestEpsilonAtXiang:
     """Behavioural tests for the replaced epsilon_at()."""
@@ -287,6 +293,7 @@ class TestEpsilonAtXiang:
 
 # ---- epsilon_at_gaussian ---------------------------------------------------
 
+
 class TestEpsilonAtGaussian:
     """Tests for the new epsilon_at_gaussian() method."""
 
@@ -328,6 +335,7 @@ class TestEpsilonAtGaussian:
 
 
 # ---- Contract: torch-free --------------------------------------------------
+
 
 class TestTorchFree:
     """New auditing modules must not import torch."""
