@@ -98,21 +98,6 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-# ``torch.vmap`` strips the per-example batch axis; HF sequence models expect
-# ``(batch, seq)``.  See :meth:`DPTrainer._build_per_example_loss`.
-_VMAP_BATCH_UNSQUEEZE_KEYS: frozenset[str] = frozenset(
-    {
-        "input_ids",
-        "attention_mask",
-        "token_type_ids",
-        "position_ids",
-        "decoder_input_ids",
-        "decoder_attention_mask",
-        "labels",
-    }
-)
-
-
 def _callback_matches(
     candidate: type[TrainerCallback] | TrainerCallback,
     target: type[TrainerCallback] | TrainerCallback,
@@ -361,7 +346,7 @@ class DPTrainer:
 
         # Explicit patch sites (no import-time mutation of HF globals):
         # 1) global runtime compat (masking / collator / checkpoint hooks)
-        # 2) ``apply_model_patches(..., compat=True, performance=use_performance_kernels)``
+        # 2) ``apply_model_patches(..., compat=use_compat_patches, performance=use_performance_kernels)``
         from opaque.api.transformers import _runtime_bootstrap as _opaque_rt
 
         _opaque_rt.apply_transformers_runtime_compat_patches()
@@ -613,7 +598,14 @@ class DPTrainer:
         self._eval_dataloader = None
 
     def _apply_opaque_model_patches(self) -> None:
-        """``apply_model_patches(model, compat=True, performance=use_performance_kernels)``."""
+        """``apply_model_patches(model, compat=use_compat_patches, performance=use_performance_kernels)``.
+
+        ``use_compat_patches`` (default ``True``) gates opaque's vmap-safety
+        patches: batchify, kv-cache disable, vmap-safe masking.  When opaque
+        doesn't recognise the model family it logs an info-level message
+        (so users see *why* opaque skipped); set the flag to ``False`` to
+        suppress for models that don't need or want the compat suite.
+        """
         try:
             from opaque.patches import apply_model_patches
         except ImportError:
@@ -621,13 +613,14 @@ class DPTrainer:
             return
 
         kwargs: dict[str, Any] = {}
+        compat = bool(self.args.use_compat_patches)
         performance = bool(self.args.use_performance_kernels)
         if performance:
             from ._performance_kernels import translate_performance_kernels_config
 
             kwargs.update(translate_performance_kernels_config(self._coerce_performance_kernels_config()))
 
-        apply_model_patches(self._model, compat=True, performance=performance, **kwargs)
+        apply_model_patches(self._model, compat=compat, performance=performance, **kwargs)
 
     def _coerce_performance_kernels_config(self) -> dict[str, Any] | None:
         raw = self.args.performance_kernels_config
@@ -2716,14 +2709,13 @@ class DPTrainer:
             *batch_args: Tensor,
         ) -> Tensor:
             merged = {**frozen_params, **trainable}
+            # Each ``batch_arg`` lost its leading batch dim to vmap; the
+            # model's ``forward`` either gets unsqueezed by opaque's
+            # batchify patch (recognised families) or expects to handle
+            # the post-vmap shape itself (custom models with
+            # ``use_compat_patches=False``).  The trainer no longer
+            # second-guesses the model shape.
             kwargs = dict(zip(keys, batch_args, strict=True))
-            for name, value in list(kwargs.items()):
-                if (
-                    name in _VMAP_BATCH_UNSQUEEZE_KEYS
-                    and isinstance(value, Tensor)
-                    and value.ndim == 1
-                ):
-                    kwargs[name] = value.unsqueeze(0)  # (seq,) -> (1, seq)
             if autocast_active:
                 with torch.autocast(device_type=device_type, dtype=amp_dtype):
                     output = fmodel(merged, **kwargs)

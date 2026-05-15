@@ -26,6 +26,9 @@ def _args(**overrides) -> TrainingArguments:
         privacy_target_epsilon=10.0,
         privacy_noise_multiplier=1.0,
         use_cpu=True,
+        # Synthetic ``nn.Linear`` fixture; not in opaque's family
+        # registry — silence the "no detectable family" info log.
+        use_compat_patches=False,
     )
     defaults.update(overrides)
     return TrainingArguments(**defaults)

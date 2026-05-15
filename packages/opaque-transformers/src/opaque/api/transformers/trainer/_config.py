@@ -278,6 +278,13 @@ class TrainingArguments:
     torch_compile_mode: str | None = None
     use_performance_kernels: bool = False
     performance_kernels_config: dict[str, Any] | str | None = None
+    # Whether ``opaque.patches.apply_model_patches`` should apply compat
+    # patches (vmap-safety: batchify, kv-cache disable, vmap-safe masking)
+    # to the model.  Default ``True``.  Set to ``False`` for custom models
+    # designed to be vmap-safe without opaque's patches, or for non-HF
+    # ``nn.Module`` test fixtures — silences the "no detectable family"
+    # info log opaque emits when it doesn't recognise the model.
+    use_compat_patches: bool = True
 
     # =================================================================
     # Misc

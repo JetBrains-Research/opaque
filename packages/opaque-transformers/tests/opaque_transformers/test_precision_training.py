@@ -25,6 +25,9 @@ def _args(tmp_path, **overrides) -> TrainingArguments:
         num_train_epochs=1,
         save_strategy="no",
         use_cpu=True,
+        # Synthetic ``nn.Linear`` fixture; not in opaque's family
+        # registry — silence the "no detectable family" info log.
+        use_compat_patches=False,
         privacy_target_epsilon=10.0,
         privacy_noise_multiplier=1.0,
     )

@@ -115,7 +115,16 @@ def apply_transformers_model_patches(
 
     family = detect_family(model)
     if family is None:
-        logger.debug("opaque: model has no detectable family; skipping patches")
+        # When the caller asked for compat patches but the model isn't
+        # in any registered family, surface that the request could not
+        # be fulfilled.  ``performance``-only calls stay at debug since
+        # kernel fusions are opportunistic, not contract.
+        log_fn = logger.info if compat else logger.debug
+        log_fn(
+            "opaque: compat patches were requested but model family for %s "
+            "is unknown; no model-level patches applied.",
+            type(model).__name__,
+        )
         return
 
     apply_fn = get_family_apply_fn(family)
