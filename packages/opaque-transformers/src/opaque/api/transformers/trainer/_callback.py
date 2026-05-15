@@ -44,10 +44,56 @@ from transformers.trainer_callback import (
 
 __all__ = [
     "DEFAULT_CALLBACKS",
+    "BestModelSaveCallback",
     "build_callback_handler",
+    "is_metric_improved",
+    "resolve_eval_metric",
     "rewrite_logs_for_reporting",
     "wrap_reporting_callback_class",
 ]
+
+
+def resolve_eval_metric(
+    metrics: dict[str, Any] | None,
+    metric_for_best_model: str | None,
+) -> tuple[str, float] | None:
+    """Look up ``metric_for_best_model`` in ``metrics`` with HF's ``eval_`` auto-prefix.
+
+    Returns ``(resolved_key, value)`` if found, else ``None``.  Matches the
+    key-resolution rule used by HF (and historically by
+    :meth:`DPTrainer._update_best_metric`): try the raw key first; if absent
+    and the key doesn't already start with ``"eval_"``, try the prefixed
+    form.  Returns ``None`` when ``metric_for_best_model`` is ``None``, the
+    metric dict is empty, or the key isn't present under either spelling —
+    callers decide whether that's a no-op (callbacks) or an error (trainer).
+    """
+    if metric_for_best_model is None or not metrics:
+        return None
+    key = metric_for_best_model
+    if key not in metrics and not key.startswith("eval_"):
+        key = f"eval_{key}"
+    if key not in metrics:
+        return None
+    return key, float(metrics[key])
+
+
+def is_metric_improved(
+    value: float,
+    best_metric: float | None,
+    greater_is_better: bool | None,
+) -> bool:
+    """``True`` if ``value`` is a strict improvement over ``best_metric``.
+
+    The first call (``best_metric is None``) always counts as an
+    improvement, mirroring HF.  ``greater_is_better=None`` is conservative:
+    treated as ``False`` (lower is better) to match HF's
+    ``metric_for_best_model='loss'`` default.
+    """
+    if best_metric is None:
+        return True
+    if greater_is_better:
+        return value > best_metric
+    return value < best_metric
 
 
 log = logging.getLogger(__name__)
@@ -232,3 +278,34 @@ def build_callback_handler(
     )
     handler.add_callback(PrinterCallback() if args.disable_tqdm else ProgressCallback())
     return handler
+
+
+class BestModelSaveCallback(TrainerCallback):
+    """Sets ``control.should_save`` when an evaluation improves ``best_metric``.
+
+    HF's :class:`DefaultFlowCallback` recognises ``save_strategy="steps"``
+    and ``"epoch"`` but not ``"best"``.  This callback fills that gap.
+    Auto-injected by :class:`DPTrainer` when ``save_strategy == "best"``.
+
+    Timing
+    ------
+    ``on_evaluate`` fires inside :meth:`DPTrainer._after_evaluate`, *before*
+    :meth:`DPTrainer._update_best_metric` runs in the caller.  So when this
+    callback fires, ``state.best_metric`` still holds the *previous* best —
+    the same precondition :class:`~transformers.EarlyStoppingCallback` relies
+    on.  We therefore compute the improvement comparison ourselves rather
+    than reading post-update state.  The trainer's separate
+    :meth:`~DPTrainer._update_best_metric` call records the new best under
+    the canonical attribute names; the two stay in sync because both use
+    :func:`is_metric_improved` against the same operands.
+    """
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if getattr(args, "save_strategy", None) != "best":
+            return
+        resolved = resolve_eval_metric(metrics, args.metric_for_best_model)
+        if resolved is None:
+            return
+        _, value = resolved
+        if is_metric_improved(value, state.best_metric, args.greater_is_better):
+            control.should_save = True

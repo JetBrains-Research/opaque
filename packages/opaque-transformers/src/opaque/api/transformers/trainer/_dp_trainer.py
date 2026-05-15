@@ -53,7 +53,12 @@ from . import _checkpoint as ckpt
 from . import _distributed
 from ._dataloader import OpaqueEpochPoissonBatchSampler
 from . import _eval
-from ._callback import build_callback_handler
+from ._callback import (
+    BestModelSaveCallback,
+    build_callback_handler,
+    is_metric_improved,
+    resolve_eval_metric,
+)
 from ._config import TrainingArguments
 from ._eval import EvalLoopOutput, EvalPrediction
 from ._precision import eval_dtype
@@ -495,6 +500,12 @@ class DPTrainer:
             processing_class=processing_class,
             callbacks=self._base_callbacks,
         )
+        # ``DefaultFlowCallback`` doesn't recognise ``save_strategy="best"``;
+        # auto-inject the matching callback so user callbacks aren't required
+        # to know about this gap.  Gated on the trainer-side snapshot so the
+        # demoted-to-``"no"`` case (output_dir is None) doesn't install it.
+        if self._save_strategy == "best":
+            self._callback_handler.add_callback(BestModelSaveCallback())
         if args.debug and "underflow_overflow" in str(args.debug):
             from transformers.debug_utils import DebugUnderflowOverflow
 
@@ -1500,39 +1511,18 @@ class DPTrainer:
             self.state.epoch = float(epoch + 1)
             # ``DefaultFlowCallback.on_epoch_end`` populates
             # ``should_evaluate`` / ``should_save`` / ``should_log`` for
-            # epoch-strategy cadence; we then act on the flags.
+            # epoch-strategy cadence; ``_maybe_log_save_evaluate`` then acts
+            # on the flags exactly as the step-end path does, so the
+            # epoch-boundary log / eval / save sequence shares one call site.
             self._control = self._callback_handler.on_epoch_end(
                 self.args, self.state, self._control
             )
-
-            # Flush the log row if epoch-strategy logging set should_log
-            # (HF calls _maybe_log_save_evaluate directly after on_epoch_end;
-            # we route through the same method so the epoch-boundary log row
-            # uses the same smoothed-loss / DP-metric path as step-level rows).
-            if self._control.should_log:
-                self._maybe_log_save_evaluate(
-                    ctx,
-                    last_step_result,
-                    global_step,
-                    ignore_keys_for_eval=ignore_keys_for_eval,
-                )
-
-            improved_epoch = False
-            if self._control.should_evaluate:
-                self._control.should_evaluate = False
-                metrics = self.evaluate(ignore_keys=ignore_keys_for_eval)
-                self._update_metric_driven_schedule(ctx, metrics)
-                improved_epoch = self._update_best_metric(metrics, global_step)
-
-            if self._save_strategy == "best" and improved_epoch:
-                # ``DefaultFlowCallback`` doesn't handle ``save_strategy="best"``;
-                # fire the save after eval when the metric improved.  Set
-                # the flag (instead of overwriting) so user callbacks that
-                # already requested a save don't get clobbered.
-                self._control.should_save = True
-            if self._control.should_save:
-                self._save_checkpoint(ctx, global_step)
-                self._control.should_save = False
+            self._maybe_log_save_evaluate(
+                ctx,
+                last_step_result,
+                global_step,
+                ignore_keys_for_eval=ignore_keys_for_eval,
+            )
 
             if self._control.should_training_stop:
                 break
@@ -3248,16 +3238,15 @@ class DPTrainer:
                 "metric_for_best_model to select the eval metric that drives "
                 "the schedule."
             )
-        key_name = metric_name
-        if key_name not in eval_metrics and not key_name.startswith("eval_"):
-            key_name = f"eval_{metric_name}"
-        if key_name not in eval_metrics:
+        resolved = resolve_eval_metric(eval_metrics, metric_name)
+        if resolved is None:
             raise ValueError(
                 "lr_scheduler_type='reduce_lr_on_plateau' expected "
                 f"metric_for_best_model={metric_name!r} to be present in "
                 f"evaluation metrics, but found keys {sorted(eval_metrics)}."
             )
-        schedule.update(float(eval_metrics[key_name]))
+        _, value = resolved
+        schedule.update(value)
 
     def _maybe_log_save_evaluate(
         self,
@@ -3327,19 +3316,16 @@ class DPTrainer:
             ctrl = self._control
             ctrl.should_log = False
 
-        improved = False
         if ctrl.should_evaluate:
             metrics = self.evaluate(ignore_keys=ignore_keys_for_eval)
+            # ``evaluate()`` fires ``on_evaluate`` from inside
+            # ``_after_evaluate``; :class:`BestModelSaveCallback` (auto-
+            # injected when ``save_strategy="best"``) may have set
+            # ``should_save`` there.  Refresh the local handle accordingly.
             ctrl = self._control
             self._update_metric_driven_schedule(ctx, metrics)
-            improved = self._update_best_metric(metrics, global_step)
+            self._update_best_metric(metrics, global_step)
             ctrl.should_evaluate = False
-
-        # ``best`` strategy: fold the improvement signal in by *setting*
-        # (never clearing) ``should_save`` so a user callback that
-        # requested a save isn't silently overridden.
-        if self._save_strategy == "best" and improved:
-            ctrl.should_save = True
 
         if ctrl.should_save:
             self._save_checkpoint(ctx, global_step)
@@ -3654,59 +3640,41 @@ class DPTrainer:
             return max(1, int(round(total_steps * float(v))))
         return max(1, int(v))
 
-    def _should_save(
-        self,
-        ctx: "_TrainingContext",
-        global_step: int,
-        *,
-        improved: bool = False,
-    ) -> bool:
-        strategy = self._save_strategy
-        if strategy == "no" or strategy == "epoch":
-            return False
-        if strategy == "best":
-            return improved
-        # save_strategy == "steps"
-        if ctx.save_steps_resolved <= 0:
-            return False
-        return global_step % ctx.save_steps_resolved == 0
-
     def _update_best_metric(
         self,
         eval_metrics: dict[str, Any],
         global_step: int,
-    ) -> bool:
+    ) -> None:
         """Update ``state.best_*`` if the eval metric improved.
 
-        Returns ``True`` when the metric improved (used to trigger
-        ``save_strategy='best'``).
+        ``BestModelSaveCallback`` independently decides whether to set
+        ``control.should_save`` for ``save_strategy='best'`` (it runs at
+        ``on_evaluate``, before this method updates ``state.best_metric``);
+        both use :func:`is_metric_improved` against the same operands so
+        the two decisions can't drift.
         """
         a = self.args
         if a.metric_for_best_model is None:
-            return False
-        # Auto-prefix "eval_" if not present (HF parity).
-        key = a.metric_for_best_model
-        if key not in eval_metrics and not key.startswith("eval_"):
-            key = f"eval_{key}"
-        if key not in eval_metrics:
+            return
+        resolved = resolve_eval_metric(eval_metrics, a.metric_for_best_model)
+        if resolved is None:
+            key = a.metric_for_best_model
+            if not key.startswith("eval_"):
+                key = f"eval_{key}"
             raise KeyError(
                 f"The `metric_for_best_model` training argument is set to {key!r}, "
                 "which is not found in the evaluation metrics. The available "
                 f"evaluation metrics are: {list(eval_metrics.keys())}. Consider "
                 "changing `metric_for_best_model`."
             )
-        value = float(eval_metrics[key])
-        if self.state.best_metric is None:
-            improved = True
-        elif self._greater_is_better:
-            improved = value > self.state.best_metric
-        else:
-            improved = value < self.state.best_metric
-        if improved:
-            self.state.best_metric = value
-            if self._save_strategy in {"steps", "epoch", "best"}:
-                self.state.best_global_step = global_step
-        return improved
+        _, value = resolved
+        if not is_metric_improved(
+            value, self.state.best_metric, self._greater_is_better
+        ):
+            return
+        self.state.best_metric = value
+        if self._save_strategy in {"steps", "epoch", "best"}:
+            self.state.best_global_step = global_step
 
     def _load_best_model(self, ctx: "_TrainingContext") -> None:
         """Restore best-checkpoint weights into the underlying ``nn.Module``.
