@@ -15,7 +15,6 @@ from __future__ import annotations
 import math
 from typing import Any, Callable
 
-from opaque.api.engine.scheduling._compose import _NAMED_RAMPS
 from opaque.scheduling import (
     constant_schedule,
     cosine_schedule,
@@ -34,51 +33,6 @@ __all__ = [
     "parse_optim_args",
     "ReduceLROnPlateauSchedule",
 ]
-
-
-def _with_warmup_floor(
-    schedule: Callable[[int], float] | float,
-    transition_steps: int,
-    *,
-    ramp: str | Callable[[float], float] = "linear",
-    floor: float = 0.0,
-) -> Callable[[int], float]:
-    """Apply a ``floor → 1`` multiplicative warmup ramp, then the inner schedule.
-
-    Older DPTrainer builds used ``with_warmup(..., init_value=floor)`` against
-    a since-removed keyword on :func:`opaque.scheduling.with_warmup`. The
-    public primitive always applies a ``0 → 1`` ramp; this helper matches the
-    historical ``floor → 1`` behavior (including ``cosine_warmup_with_min_lr``
-    and ``warmup_stable_decay``).
-    """
-    if transition_steps <= 0:
-        raise ValueError(
-            f"_with_warmup_floor requires transition_steps > 0; got {transition_steps}."
-        )
-    inner: Callable[[int], float] = (
-        schedule if callable(schedule) else constant_schedule(float(schedule))
-    )
-    if floor <= 0.0:
-        return with_warmup(inner, transition_steps, ramp=ramp)
-    if isinstance(ramp, str):
-        if ramp not in _NAMED_RAMPS:
-            raise ValueError(
-                f"Unknown ramp={ramp!r}; expected one of {sorted(_NAMED_RAMPS)} "
-                "or a callable."
-            )
-        ramp_fn = _NAMED_RAMPS[ramp]
-    else:
-        ramp_fn = ramp
-
-    def wrapped(step: int) -> float:
-        if step < transition_steps:
-            p = step / transition_steps
-            u = ramp_fn(p)
-            factor = floor + (1.0 - floor) * u
-            return factor * inner(step)
-        return inner(step)
-
-    return wrapped
 
 
 _DEFERRED: set[str] = set()
@@ -277,7 +231,7 @@ def build_lr_schedule(
 
     if W == 0:
         return decay
-    return _with_warmup_floor(decay, transition_steps=W, ramp="linear", floor=warmup_init)
+    return with_warmup(decay, transition_steps=W, ramp="linear", init_value=warmup_init)
 
 
 def _resolve_min_lr(base_lr: float, kwargs: dict[str, Any]) -> float:
@@ -378,11 +332,11 @@ def _build_wsd(
     if W <= 0:
         return core
 
-    return _with_warmup_floor(
+    return with_warmup(
         core,
         transition_steps=W,
         ramp=warmup_type,
-        floor=min_lr_ratio,
+        init_value=min_lr_ratio,
     )
 
 
