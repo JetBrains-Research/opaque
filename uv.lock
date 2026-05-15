@@ -2296,7 +2296,7 @@ requires-dist = [
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "scipy", specifier = ">=1.11.0" },
-    { name = "torch", specifier = ">=2.10.0" },
+    { name = "torch", specifier = ">=2.9.0" },
 ]
 
 [[package]]
@@ -2324,7 +2324,7 @@ requires-dist = [
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "opaque-optimizers", marker = "extra == 'optimizers'", editable = "packages/opaque-optimizers" },
     { name = "scipy", specifier = ">=1.11.0" },
-    { name = "torch", specifier = ">=2.10.0" },
+    { name = "torch", specifier = ">=2.9.0" },
 ]
 provides-extras = ["optimizers"]
 
@@ -2347,7 +2347,7 @@ requires-dist = [
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "opaque-optimizers", marker = "extra == 'optimizers'", editable = "packages/opaque-optimizers" },
-    { name = "torch", specifier = ">=2.10.0" },
+    { name = "torch", specifier = ">=2.9.0" },
 ]
 provides-extras = ["optimizers"]
 
@@ -2366,7 +2366,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.22" },
     { name = "opaque-base", editable = "packages/opaque-base" },
     { name = "optree", specifier = ">=0.17.0" },
-    { name = "torch", specifier = ">=2.10.0" },
+    { name = "torch", specifier = ">=2.9.0" },
 ]
 
 [[package]]
@@ -2381,7 +2381,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "opaque-engine", editable = "packages/opaque-engine" },
-    { name = "torch", specifier = ">=2.10.0" },
+    { name = "torch", specifier = ">=2.9.0" },
     { name = "torchopt", specifier = ">=0.7.3" },
 ]
 
@@ -2403,7 +2403,7 @@ transformers = [
 requires-dist = [
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "peft", marker = "extra == 'transformers'", specifier = ">=0.13.0" },
-    { name = "torch", specifier = ">=2.10.0" },
+    { name = "torch", specifier = ">=2.9.0" },
     { name = "transformers", marker = "extra == 'transformers'", specifier = "==4.57.1" },
 ]
 provides-extras = ["transformers"]
