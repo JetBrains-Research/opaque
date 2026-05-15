@@ -392,6 +392,7 @@ class DPTrainer:
         # behavior matrix.
         self._amp_dtype: torch.dtype | None = None
         self._loss_scaler = None
+        self._loss_scaler_state = None
         self._setup_precision()
 
         # Functional state (populated by _setup_training, used by evaluate)
@@ -705,8 +706,11 @@ class DPTrainer:
             self._amp_dtype — None | torch.bfloat16 | torch.float16.
                 Driven into ``torch.autocast(device_type, dtype=self._amp_dtype)``
                 inside the loss closure (Step 5) when set.
-            self._loss_scaler — None | OpaqueLossScaler.  Populated for
-                fp16 only (bf16 has wider exponent range, no scaling).
+            self._loss_scaler — None | LossScaler transform from
+                :mod:`opaque.precision`.  Populated for fp16 only (bf16
+                has wider exponent range, no scaling needed).
+            self._loss_scaler_state — None | LossScalerState.  Threaded
+                through training_step; replaced wholesale each step.
         """
         a = self.args
         # ``tf32`` is a single global flag flip.  HF semantics: ``None`` =
@@ -720,17 +724,17 @@ class DPTrainer:
 
         if a.bf16:
             self._amp_dtype = torch.bfloat16
-            self._loss_scaler = None  # bf16 doesn't need loss scaling
+            self._loss_scaler = None
+            self._loss_scaler_state = None
         elif a.fp16:
-            self._amp_dtype = torch.float16
-            # Loss scaler is wired in a follow-up step; for now, set up the
-            # attribute so the loss closure can branch on it being None.
-            from ._loss_scaler import OpaqueLossScaler
+            from opaque.precision import loss_scaler
 
-            self._loss_scaler = OpaqueLossScaler()
+            self._amp_dtype = torch.float16
+            self._loss_scaler, self._loss_scaler_state = loss_scaler()
         else:
             self._amp_dtype = None
             self._loss_scaler = None
+            self._loss_scaler_state = None
 
     def _refresh_label_contract_for_model(self) -> None:
         if self.args.label_names is not None:
@@ -1676,16 +1680,19 @@ class DPTrainer:
         # overflow on **any** rank must trip every rank or parameter trees
         # diverge — see ``_distributed.reduce_step_finite``.
         if self._loss_scaler is not None:
-            grads_finite = self._loss_scaler.all_finite(grads)
+            from opaque.precision import all_finite
+
+            grads_finite = all_finite(grads)
             grads_finite = _distributed.reduce_step_finite(grads_finite, self._ddp)
-            self._loss_scaler.update(grads_finite)
+            self._loss_scaler_state = self._loss_scaler.update(
+                self._loss_scaler_state, grads_finite
+            )
             if not grads_finite:
                 batch_size = int(leading.shape[0]) if leading.ndim > 0 else 0
                 return {
                     "loss": float("nan"),
                     "batch_size": batch_size,
-                    "skipped": True,
-                    "loss_scale": self._loss_scaler.scale,
+                    "loss_scale": self._loss_scaler_state.scale,
                 }
 
         # Noise injection — ``grads`` is a ``ClippedPytree`` whose
@@ -2877,7 +2884,7 @@ class DPTrainer:
             # — applied per-example, before the clip-norm — so the
             # accountant's sensitivity calibration sees unscaled grads.
             if loss_scaler is not None:
-                loss = loss_scaler.scale_loss(loss)
+                loss = loss_scaler.scale_loss(loss, self._loss_scaler_state)
             return loss
 
         # When `args.torch_compile=True`, compile the loss closure (NOT
@@ -3348,14 +3355,18 @@ class DPTrainer:
         """Create the clipped gradient function based on clipping mode.
 
         When fp16 autocast is active, the loss closure scales the loss by
-        ``loss_scaler.scale``; the matching unscale runs as
+        ``self._loss_scaler_state.scale``; the matching unscale runs as
         ``pre_clipping_transform`` *inside* vmap, *before* the clip-norm.
         This preserves the DP sensitivity invariant the accountant relies on.
         """
-        loss_scaler = self._loss_scaler
-        pre_clip = (
-            loss_scaler.unscale_grads if loss_scaler is not None else (lambda g: g)
-        )
+        if self._loss_scaler is not None:
+            scaler = self._loss_scaler
+
+            def pre_clip(g):
+                return scaler.unscale_grads(g, self._loss_scaler_state)
+        else:
+            def pre_clip(g):
+                return g
 
         ca = a.clipping_kwargs
         target_clip_rate = float(ca.get("target_clipping_rate", 0.5))
