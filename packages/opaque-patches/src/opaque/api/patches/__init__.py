@@ -38,7 +38,7 @@ def apply_model_patches(
     """
     global _runtime_patches_applied
     if not _runtime_patches_applied:
-        apply_runtime_patches()
+        apply_runtime_patches(performance=performance, compat=compat, **kwargs)
 
     try:
         from opaque.api.patches.transformers._router import (
