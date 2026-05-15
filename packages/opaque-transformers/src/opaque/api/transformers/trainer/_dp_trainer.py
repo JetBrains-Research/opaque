@@ -3690,19 +3690,6 @@ class DPTrainer:
         auto_gamma = float(ca.get("gamma", 0.01))
 
         if a.clipping_mode == "adaptive":
-            if loss_scaler is not None:
-                # adaptive_clipped_grad does not yet expose
-                # pre_clipping_transform; without it, fp16 loss-scaling
-                # would feed scaled gradients into the adaptive quantile
-                # tracker, breaking the privacy guarantee.  Reject up
-                # front rather than silently producing unsafe noise.
-                raise NotImplementedError(
-                    "fp16=True with clipping_mode='adaptive' is not yet "
-                    "supported: adaptive_clipped_grad lacks the "
-                    "pre_clipping_transform hook needed to unscale grads "
-                    "before the clip-norm.  Use bf16=True (no scaler "
-                    "needed) or clipping_mode='fixed'/'auto' with fp16."
-                )
             return adaptive_clipped_grad(
                 loss_fn,
                 argnums=0,
@@ -3714,6 +3701,7 @@ class DPTrainer:
                 return_aux=True,
                 key=key(a.seed),
                 normalize_by=expected_batch_size,
+                pre_clipping_transform=pre_clip,
             )
         elif a.clipping_mode == "auto":
             return auto_clipped_grad(
