@@ -82,7 +82,6 @@ from transformers import (
 from transformers.trainer_utils import RemoveColumnsCollator
 from transformers.trainer_utils import (
     TrainerMemoryTracker,
-    number_of_arguments,
     speed_metrics,
 )
 from transformers.data.data_collator import default_data_collator
@@ -225,28 +224,13 @@ class DPTrainer:
         train_dataset: Dataset | None = None,
         eval_dataset: Dataset | dict[str, Dataset] | None = None,
         processing_class: PreTrainedTokenizerBase | None = None,
-        model_init: Callable[..., PreTrainedModel] | None = None,
         compute_loss_func: Callable | None = None,
         compute_metrics: Callable | None = None,
         callbacks: list[Any] | None = None,
         optimizers: tuple[Any | None, Any | None] = (None, None),
         optimizer_cls_and_kwargs: tuple[Any, dict[str, Any]] | None = None,
         preprocess_logits_for_metrics: Callable | None = None,
-        tokenizer: PreTrainedTokenizerBase | None = None,
     ) -> None:
-        if tokenizer is not None:
-            if processing_class is not None:
-                raise TypeError(
-                    "Pass either `processing_class=` or the deprecated "
-                    "`tokenizer=` alias, not both."
-                )
-            warnings.warn(
-                "`tokenizer` is deprecated and will be removed; pass "
-                "`processing_class=` instead.",
-                FutureWarning,
-                stacklevel=2,
-            )
-            processing_class = tokenizer
         if args is None:
             args = TrainingArguments(output_dir="tmp_trainer")
         # HF parity (``Trainer.__init__``): seed Python / NumPy / torch
@@ -265,15 +249,7 @@ class DPTrainer:
         else:
             set_seed(args.seed)
         if model is None:
-            if model_init is None:
-                raise RuntimeError(
-                    "`DPTrainer` requires either a `model` or `model_init` argument"
-                )
-            model = model_init()
-        elif model_init is not None:
-            raise ValueError(
-                "`DPTrainer` requires either a `model` or `model_init` argument, but not both."
-            )
+            raise RuntimeError("`DPTrainer` requires a `model` argument")
         self._functional_optimizer_factory: (
             tuple[Callable[..., Any], dict[str, Any]] | None
         ) = None
@@ -296,7 +272,6 @@ class DPTrainer:
             self._functional_optimizer_name = getattr(
                 _fn, "__name__", type(_fn).__name__
             )
-        self.model_init = model_init
         self._model = model
         self.args = args
         self._processing_class = processing_class
@@ -412,7 +387,6 @@ class DPTrainer:
         self._eval_dataloader: DataLoader | None = None
         self._signature_columns: list[str] | None = None
         self._signature_columns_unavailable = False
-        self._suppress_metric_driven_schedule_update = False
 
         # Save / best-model arg validation.  ``__post_init__`` already
         # filled in ``metric_for_best_model`` / ``greater_is_better``
@@ -623,21 +597,6 @@ class DPTrainer:
         """Whether this is the world-rank-0 process (HF parity)."""
         return self._ddp.is_world_zero
 
-    def call_model_init(self, trial: Any | None = None) -> PreTrainedModel:
-        """Call ``model_init`` with HF's 0-or-1 argument contract."""
-        if self.model_init is None:
-            raise RuntimeError("call_model_init requires `model_init` to be set.")
-        arg_count = number_of_arguments(self.model_init)
-        if arg_count == 0:
-            model = self.model_init()
-        elif arg_count == 1:
-            model = self.model_init(trial)
-        else:
-            raise RuntimeError("model_init should have 0 or 1 argument.")
-        if model is None:
-            raise RuntimeError("model_init should not return None.")
-        return model
-
     def _reset_state_for_new_run(self) -> None:
         self.state = DPTrainerState()
         self.state.max_steps = self._predict_total_steps()
@@ -650,23 +609,8 @@ class DPTrainer:
         self._globalstep_last_logged = 0
         self._train_start_time = None
         self._ctx = None
-        self._last_train_ctx_for_tune = None
         self._train_dataloader = None
         self._eval_dataloader = None
-
-    def _place_model_for_current_args(self) -> None:
-        self._device = self.args.device
-        if self._device.type not in {"cpu", "cuda", "mps"}:
-            raise ValueError(
-                f"DPTrainer only supports cpu, cuda, and mps devices; got device={self._device!r}."
-            )
-        self._ddp = _distributed.resolve_ddp_state(self._device, self.args)
-        _distributed.validate_ddp_backend(self.args, self._ddp)
-        self._model.to(self._device)
-        # Re-resolve precision after placing the model on a different
-        # device.  Same code path as `__init__`.
-        self._setup_precision()
-        self._apply_opaque_model_patches()
 
     def _apply_opaque_model_patches(self) -> None:
         """``apply_model_patches(model, compat=True, performance=use_performance_kernels)``."""
@@ -747,20 +691,6 @@ class DPTrainer:
             self._loss_scaler = None
             self._loss_scaler_state = None
 
-    def _refresh_label_contract_for_model(self) -> None:
-        if self.args.label_names is not None:
-            self._label_names = list(self.args.label_names)
-        else:
-            inspected = self._model
-            if _is_peft_model(self._model):
-                if hasattr(self._model, "get_base_model"):
-                    inspected = self._model.get_base_model()
-                else:
-                    inspected = self._model.base_model.model
-            discovered = find_labels(inspected.__class__)
-            self._label_names = list(discovered) if discovered else ["labels"]
-        self._can_return_loss = can_return_loss(self._model.__class__)
-
     def _effective_output_dir(self) -> str | None:
         return self.args.output_dir
 
@@ -772,7 +702,6 @@ class DPTrainer:
         self,
         resume_from_checkpoint: str | bool | None = None,
         ignore_keys_for_eval: list[str] | None = None,
-        **kwargs: Any,
     ) -> TrainOutput:
         """Run the full DP-SGD training loop.
 
@@ -814,18 +743,6 @@ class DPTrainer:
         """
         if resume_from_checkpoint is False:
             resume_from_checkpoint = None
-        if "model_path" in kwargs:
-            resume_from_checkpoint = kwargs.pop("model_path")
-            warnings.warn(
-                "`model_path` is deprecated and will be removed in a future version. "
-                "Use `resume_from_checkpoint` instead.",
-                FutureWarning,
-                stacklevel=2,
-            )
-        if kwargs:
-            raise TypeError(
-                f"train() got unexpected keyword arguments: {', '.join(kwargs.keys())}."
-            )
         _disable_tokenizers_parallelism_before_fork()
 
         self.is_in_train = True
@@ -971,7 +888,6 @@ class DPTrainer:
         self._callback_handler.state = self.state
         self._control = TrainerControl()
         self._ctx = None
-        self._last_train_ctx_for_tune = None
         self._train_dataloader = None
         self._eval_dataloader = None
         self._tr_loss = torch.tensor(0.0, device=self._device)
@@ -1320,11 +1236,7 @@ class DPTrainer:
         # fresh runs.  Disable ``eval_on_start`` if you don't want it
         # on resume.
         if a.eval_on_start:
-            self._suppress_metric_driven_schedule_update = True
-            try:
-                self.evaluate(ignore_keys=ignore_keys_for_eval)
-            finally:
-                self._suppress_metric_driven_schedule_update = False
+            self.evaluate(ignore_keys=ignore_keys_for_eval)
 
         for epoch in range(start_epoch, ctx.num_epochs):
             self.state.epoch = float(epoch)

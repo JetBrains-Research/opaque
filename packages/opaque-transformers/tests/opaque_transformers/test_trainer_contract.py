@@ -62,14 +62,6 @@ def test_constructor_accepts_hf_positional_model_and_optional_datasets(tmp_path)
     assert trainer.eval_dataset is None
 
 
-def test_constructor_accepts_model_init(tmp_path):
-    args = _args(tmp_path)
-
-    trainer = DPTrainer(model_init=_LogitsOnlyModel, args=args)
-
-    assert isinstance(trainer.model, _LogitsOnlyModel)
-
-
 def test_label_less_predict_returns_logits_not_loss(tmp_path):
     args = _args(tmp_path, per_device_eval_batch_size=2)
     trainer = DPTrainer(model=_LogitsOnlyModel(), args=args)
@@ -201,8 +193,8 @@ def test_public_save_model_writes_training_args(tmp_path):
 def test_train_signature_keeps_hf_subset():
     """``train()`` keeps the HF-compatible subset of parameter names.
 
-    HPO was removed; ``trial`` is no longer accepted. ``hyperparameter_search``
-    no longer exists.
+    HPO is removed (``trial`` not accepted, ``hyperparameter_search`` gone)
+    and the deprecated ``model_path`` kwarg is dropped along with ``**kwargs``.
     """
     from transformers import Trainer
 
@@ -211,7 +203,7 @@ def test_train_signature_keeps_hf_subset():
     for name in ["resume_from_checkpoint", "ignore_keys_for_eval"]:
         assert name in dp_train.parameters
         assert name in trainer_train.parameters
-    assert any(
+    assert not any(
         p.kind is inspect.Parameter.VAR_KEYWORD for p in dp_train.parameters.values()
     )
     assert not hasattr(DPTrainer, "hyperparameter_search")
