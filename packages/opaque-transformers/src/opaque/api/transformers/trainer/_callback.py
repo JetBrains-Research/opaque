@@ -29,9 +29,8 @@ callbacks that override ``on_substep_end`` will simply not be invoked.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from transformers import TrainingArguments
 from transformers.integrations import get_reporting_integration_callbacks
 from transformers.trainer_callback import (
     CallbackHandler,
@@ -40,6 +39,13 @@ from transformers.trainer_callback import (
     ProgressCallback,
     TrainerCallback,
 )
+
+if TYPE_CHECKING:
+    # ``TYPE_CHECKING`` import so the annotation on ``build_callback_handler``
+    # types as our standalone ``TrainingArguments`` without taking a runtime
+    # dependency from ``_callback`` on ``_config`` (today there is no cycle;
+    # this is defensive for future evolution).
+    from ._config import TrainingArguments
 
 
 __all__ = [

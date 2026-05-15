@@ -358,31 +358,6 @@ class _PredictionAccumulator:
             return _concat_nested_chunks(cold, padding_value=pad_value)
         return list(cold)
 
-    @property
-    def num_samples(self) -> int:
-        """Number of accumulated samples (sum of batch sizes seen)."""
-        # Every cold chunk is a concatenated tensor; its first-dim length
-        # is the *sample* count (after losses were repeated by bs).  Hot
-        # buffers may still hold tensors whose first dim equals batch_size.
-        if self._cold_labels or self._hot_labels:
-            cold = sum(int(find_batch_size(t) or 0) for t in self._cold_labels)
-            hot = sum(int(find_batch_size(t) or 0) for t in self._hot_labels)
-            return cold + hot
-        if self._cold_logits or self._hot_logits:
-            cold = sum(int(find_batch_size(t) or 0) for t in self._cold_logits)
-            hot = sum(int(find_batch_size(t) or 0) for t in self._hot_logits)
-            return cold + hot
-        if self._cold_losses or self._hot_losses:
-            cold = sum(int(t.shape[0]) for t in self._cold_losses)
-            hot = sum(int(t.shape[0]) for t in self._hot_losses)
-            return cold + hot
-        if self._cold_inputs or self._hot_inputs:
-            cold = sum(int(t.shape[0]) for t in self._cold_inputs)
-            hot = sum(int(t.shape[0]) for t in self._hot_inputs)
-            return cold + hot
-        return self._num_batches
-
-
 def _to_cpu_nested(value: Any) -> Any:
     if isinstance(value, Tensor):
         return value.to("cpu")
@@ -426,42 +401,6 @@ def _freeze_hot_chunk(
         return _to_cpu_nested(tensors[0])
     concatenated = _concat_nested_chunks(tensors, padding_value=pad_value)
     return _to_cpu_nested(concatenated)
-
-
-def _pad_and_concat(
-    tensors: list[Tensor],
-    padding_value: float | int = _HF_PAD_VALUE,
-) -> Tensor:
-    """Concatenate tensors along ``dim=0``, right-padding inner dims to match.
-
-    Variable per-batch sequence lengths are common in causal-LM eval (each
-    batch is padded only to its own max length).  Mirrors HF's
-    ``nested_concat`` for flat tensors.
-
-    The default ``padding_value`` is ``-100`` — HF's universal sentinel for
-    eval tensors so that ``compute_metrics`` users can mask ignored
-    positions out uniformly.  Logits / inputs / labels all share this
-    convention; pass a different value only when concatenating something
-    that isn't downstream of ``compute_metrics``.
-    """
-    if len(tensors) == 1:
-        return tensors[0]
-    if any(t.dim() < 1 for t in tensors):
-        return torch.cat(tensors, dim=0)
-    # Determine the maximum size along every dim except dim 0.
-    rank = tensors[0].dim()
-    max_sizes = [max(t.shape[d] for t in tensors) for d in range(1, rank)]
-    padded = []
-    for t in tensors:
-        pad_spec: list[int] = []
-        # F.pad expects pads from the LAST dimension backwards.
-        for d in reversed(range(1, rank)):
-            diff = max_sizes[d - 1] - t.shape[d]
-            pad_spec.extend([0, diff])
-        if any(p > 0 for p in pad_spec):
-            t = torch.nn.functional.pad(t, pad_spec, value=padding_value)
-        padded.append(t)
-    return torch.cat(padded, dim=0)
 
 
 # ---------------------------------------------------------------------------

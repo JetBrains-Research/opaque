@@ -25,9 +25,7 @@ import dataclasses
 import math
 from typing import Any
 
-from transformers.trainer_callback import TrainerControl as DPTrainerControl
-
-__all__ = ["DPTrainerControl", "DPTrainerState"]
+__all__ = ["DPTrainerState"]
 
 
 _STATE_VERSION = 1
@@ -106,11 +104,3 @@ class DPTrainerState:
             )
         known = {f.name for f in dataclasses.fields(cls)}
         return cls(**{k: v for k, v in data.items() if k in known})
-
-
-# ``DPTrainerControl`` is a direct re-export of HF's ``TrainerControl``.
-# Re-exported so callers can rely on ``isinstance(control,
-# DPTrainerControl)`` while also benefitting from HF's
-# ``ExportableState`` protocol (``state()`` / ``from_state()``) and the
-# ``_new_step`` / ``_new_epoch`` / ``_new_training`` reset helpers used
-# by the callback flag lifecycle.

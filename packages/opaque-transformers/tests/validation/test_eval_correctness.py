@@ -5,8 +5,6 @@ Covers:
 - ``speed_metrics`` is reported under the ``metric_key_prefix`` (HF parity).
 - ``EvalPrediction.losses`` is per-example (length = total samples), not
   per-batch.
-- ``_pad_and_concat`` defaults to ``-100`` padding (HF parity for logits
-  / inputs / labels).
 - ``ignore_keys`` filters ``ModelOutput`` containers in ``prediction_step``.
 - A user-supplied ``data_collator`` replaces ``collate_dp`` for the train
   loader; the DP path raises a typed error if it doesn't return the
@@ -24,7 +22,7 @@ from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
-from opaque.api.transformers.trainer._eval import _pad_and_concat, speed_metrics
+from opaque.api.transformers.trainer._eval import speed_metrics
 
 from _hf_shared import build_lm_dataset  # noqa: E402
 
@@ -71,27 +69,6 @@ def time_at_t_minus(seconds: float) -> float:
     import time
 
     return time.monotonic() - seconds
-
-
-class TestPadAndConcat:
-    """``_pad_and_concat`` defaults to HF's ``-100`` sentinel."""
-
-    def test_default_pad_value_is_minus_100(self):
-        a = torch.zeros(2, 3, dtype=torch.long)
-        b = torch.zeros(1, 5, dtype=torch.long)
-        out = _pad_and_concat([a, b])
-        assert out.shape == (3, 5)
-        # First row's tail (last 2 columns) must be -100, not 0.
-        assert (out[0, 3:] == -100).all()
-        assert (out[1, 3:] == -100).all()
-        # b is full-width, no pad.
-        assert (out[2] == 0).all()
-
-    def test_explicit_pad_value_honored(self):
-        a = torch.zeros(1, 2)
-        b = torch.zeros(1, 4)
-        out = _pad_and_concat([a, b], padding_value=0.0)
-        assert (out[0, 2:] == 0.0).all()
 
 
 # ---------------------------------------------------------------------------

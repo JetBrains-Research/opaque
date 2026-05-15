@@ -296,5 +296,4 @@ __all__ = [
     "canonical_optimizer_names",
     "supported_names",
     "validate_functional_optimizer_cls_and_kwargs",
-    "_DP_OPTIMIZER_UNSUPPORTED",
 ]
