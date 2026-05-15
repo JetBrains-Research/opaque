@@ -41,7 +41,9 @@ def test_apply_model_patches_propagates_compat_false_to_runtime(monkeypatch):
         captured.update(kwargs)
         patches_init._runtime_patches_applied = True
 
-    monkeypatch.setattr(patches_init, "apply_runtime_patches", fake_apply_runtime_patches)
+    monkeypatch.setattr(
+        patches_init, "apply_runtime_patches", fake_apply_runtime_patches
+    )
 
     patches_init.apply_model_patches(_StubModel(), compat=False, peft=False)
 
@@ -58,7 +60,9 @@ def test_apply_model_patches_propagates_performance_false_to_runtime(monkeypatch
         captured.update(kwargs)
         patches_init._runtime_patches_applied = True
 
-    monkeypatch.setattr(patches_init, "apply_runtime_patches", fake_apply_runtime_patches)
+    monkeypatch.setattr(
+        patches_init, "apply_runtime_patches", fake_apply_runtime_patches
+    )
 
     patches_init.apply_model_patches(_StubModel(), performance=False, peft=False)
 
@@ -76,7 +80,9 @@ def test_apply_model_patches_propagates_explicit_runtime_kwargs(monkeypatch):
         captured.update(kwargs)
         patches_init._runtime_patches_applied = True
 
-    monkeypatch.setattr(patches_init, "apply_runtime_patches", fake_apply_runtime_patches)
+    monkeypatch.setattr(
+        patches_init, "apply_runtime_patches", fake_apply_runtime_patches
+    )
 
     patches_init.apply_model_patches(
         _StubModel(),
