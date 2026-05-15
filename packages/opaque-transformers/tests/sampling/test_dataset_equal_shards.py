@@ -20,7 +20,7 @@ import pytest
 import torch
 from torch.utils.data import Dataset
 
-from opaque.transformers.trainer import DPTrainer, DPTrainingArguments
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 
 pytest.importorskip("transformers")
@@ -57,10 +57,10 @@ def _shard_for(
     """
     model = torch.nn.Linear(2, 2)
     dataset = _IdentityDataset(dataset_size)
-    args = DPTrainingArguments(
+    args = TrainingArguments(
         output_dir="/tmp/equal-shards-test",
         per_device_train_batch_size=2,
-        max_grad_norm=1.0,
+        clipping_norm=1.0,
         privacy_target_epsilon=10.0,
         privacy_noise_multiplier=1.0,
         max_steps=1,
@@ -126,10 +126,10 @@ def _trainer_with_ddp(*, dataset_size: int, world_size: int) -> DPTrainer:
     """Build a DPTrainer pinned to ``world_size`` (rank 0)."""
     model = torch.nn.Linear(2, 2)
     dataset = _IdentityDataset(dataset_size)
-    args = DPTrainingArguments(
+    args = TrainingArguments(
         output_dir="/tmp/sample-rate-invariant-test",
         per_device_train_batch_size=2,
-        max_grad_norm=1.0,
+        clipping_norm=1.0,
         privacy_target_epsilon=10.0,
         privacy_noise_multiplier=1.0,
         max_steps=1,
