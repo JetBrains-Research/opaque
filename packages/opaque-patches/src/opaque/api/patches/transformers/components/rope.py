@@ -67,6 +67,7 @@ def _pytorch_causal_lm_loss(
 
     logits_flat = logits.view(-1, vocab_size)
     shift_labels_flat = shift_labels.view(-1)
+    label_smoothing = float(kwargs.get("label_smoothing") or 0.0)
 
     if num_items_in_batch is not None:
         loss = nn.functional.cross_entropy(
@@ -74,6 +75,7 @@ def _pytorch_causal_lm_loss(
             shift_labels_flat,
             ignore_index=ignore_index,
             reduction="sum",
+            label_smoothing=label_smoothing,
         )
         if torch.is_tensor(num_items_in_batch):
             num_items_in_batch = num_items_in_batch.to(loss.device)
@@ -83,6 +85,7 @@ def _pytorch_causal_lm_loss(
             logits_flat,
             shift_labels_flat,
             ignore_index=ignore_index,
+            label_smoothing=label_smoothing,
         )
 
 
@@ -124,8 +127,11 @@ def _opaque_causal_lm_loss(
     logits_flat = logits.view(-1, vocab_size)
     shift_labels_flat = shift_labels.view(-1)
     shift_labels_flat = shift_labels_flat.to(logits_flat.device)
+    label_smoothing = float(kwargs.get("label_smoothing") or 0.0)
 
-    losses, _ = Opaque_CrossEntropyLoss.apply(logits_flat, shift_labels_flat)
+    losses, _ = Opaque_CrossEntropyLoss.apply(
+        logits_flat, shift_labels_flat, 0, 0, label_smoothing
+    )
 
     # Mask out ignored positions so they get zero upstream gradient
     mask = shift_labels_flat != ignore_index
