@@ -102,7 +102,7 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
     match process:
         case Accountant():
             new_acct = Accountant(budget=process._budget)
-            new_acct._process = cached(process._process)
+            new_acct.process = cached(process.process)
             return new_acct
         case CachedProcess():
             return process

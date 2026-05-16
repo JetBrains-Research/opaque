@@ -74,7 +74,7 @@ class Accountant:
                 budget_exceeded checks. Should be a Budget from the
                 budgets module (e.g., epsilon_budget(3.0, delta=1e-5)).
         """
-        self._process: DpProcess = Identity()
+        self.process: DpProcess = Identity()
         self._budget: Budget | None = budget
 
     def __or__(self, process: DpProcess) -> Accountant:
@@ -101,7 +101,7 @@ class Accountant:
             acct = acct | step  # Collapsed into Repeated(step, 2)
         """
         new_acct = Accountant(budget=self._budget)
-        new_acct._process = self._process | process
+        new_acct.process = self.process | process
         return new_acct
 
     def epsilon_at(self, delta: float) -> float:
@@ -125,7 +125,7 @@ class Accountant:
             eps = acct.epsilon_at(1e-5)
             print(f"Privacy: (ε={eps:.2f}, δ=1e-5)")
         """
-        return self._process.epsilon_at(delta)
+        return self.process.epsilon_at(delta)
 
     def delta_at(self, epsilon: float) -> float:
         """Get delta for a target epsilon.
@@ -138,7 +138,7 @@ class Accountant:
         Returns:
             Failure probability delta. Lower is better.
         """
-        return self._process.delta_at(epsilon)
+        return self.process.delta_at(epsilon)
 
     def advantage(self) -> float:
         """Get f-DP advantage (total-variation privacy).
@@ -149,7 +149,7 @@ class Accountant:
         Returns:
             Advantage in [0, 1].
         """
-        return self._process.advantage()
+        return self.process.advantage()
 
     def beta_at(self, alpha: float) -> float:
         """Get Type-II error rate (hypothesis testing interpretation).
@@ -161,7 +161,7 @@ class Accountant:
             Type-II error rate (false negative) in [0, 1].
             Higher is more private (attacker makes more mistakes).
         """
-        return self._process.beta_at(alpha)
+        return self.process.beta_at(alpha)
 
     def risk_at(self, prior: float) -> float:
         """Get Bayes risk under an optimal adversary.
@@ -173,7 +173,7 @@ class Accountant:
         Returns:
             Bayes risk in [0, 0.5]. Higher is more private.
         """
-        return self._process.risk_at(prior)
+        return self.process.risk_at(prior)
 
     @property
     def budget_exceeded(self) -> bool:
@@ -189,14 +189,14 @@ class Accountant:
         if self._budget is None:
             return False
 
-        achieved = self._budget.evaluate(self._process)
+        achieved = self._budget.evaluate(self.process)
         return achieved > self._budget.value
 
 
 def _accountant_state_dict(acct: Accountant) -> dict[str, Any]:
     from opaque.serialization import state_dict as opaque_state_dict
 
-    out: dict[str, Any] = {"process": dict(opaque_state_dict(acct._process))}
+    out: dict[str, Any] = {"process": dict(opaque_state_dict(acct.process))}
     if acct._budget is not None:
         b = acct._budget
         out["budget"] = {"type": type(b).__name__} | {
@@ -210,7 +210,7 @@ def _accountant_from_state_dict(state: dict[str, Any]) -> Accountant:
     if "budget" in state:
         budget = _deserialize_budget(dict(state["budget"]))
     acct = Accountant(budget=budget)
-    acct._process = _load_dp_process(dict(state["process"]))
+    acct.process = _load_dp_process(dict(state["process"]))
     return acct
 
 

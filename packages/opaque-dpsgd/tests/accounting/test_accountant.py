@@ -110,7 +110,7 @@ class TestAccountantMetrics:
         acct = acct | dpsgd_acc.gaussian(1.0)
 
         eps_from_acct = acct.epsilon_at(1e-5)
-        eps_from_process = acct._process.epsilon_at(1e-5)
+        eps_from_process = acct.process.epsilon_at(1e-5)
 
         assert eps_from_acct == eps_from_process
 
@@ -416,4 +416,4 @@ class TestAccountantCached:
         acct1 = acc.cached(acct)
         acct2 = acc.cached(acct1)
         # Inner process should be the same CachedProcess (not double-wrapped)
-        assert acct1._process is acct2._process
+        assert acct1.process is acct2.process
