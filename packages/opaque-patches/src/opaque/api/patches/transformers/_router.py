@@ -66,9 +66,21 @@ def _patch_forward(
 
 
 def apply_transformers_model_patches(
-    model: nn.Module, *, performance: bool = True, compat: bool = True, **kwargs
+    model: nn.Module,
+    *,
+    performance: bool = True,
+    compat: bool = True,
+    fused_linear_cross_entropy: bool = False,
+    **kwargs,
 ) -> None:
-    """Apply Liger-style global + instance patching for kernels and compat wrappers."""
+    """Apply Liger-style global + instance patching for kernels and compat wrappers.
+
+    ``fused_linear_cross_entropy`` is promoted out of ``**kwargs`` because
+    it is the one per-concern flag whose default is ``False`` rather than
+    inherited from ``performance``: the fused forward returns
+    ``logits=None``, so it has to be enabled explicitly by callers that
+    don't read logits downstream.
+    """
     # Check CUDA for kernels, but compat patches can run without CUDA
     has_kernels = True
     if not torch.cuda.is_available():
@@ -82,6 +94,7 @@ def apply_transformers_model_patches(
     # Force disable kernels if dependencies are missing
     if not has_kernels:
         performance = False
+        fused_linear_cross_entropy = False
         for key in _KERNEL_KWARGS:
             if key in kwargs:
                 kwargs[key] = False
@@ -100,7 +113,13 @@ def apply_transformers_model_patches(
         )
         return
 
-    apply_fn(model, performance=performance, compat=compat, **kwargs)
+    apply_fn(
+        model,
+        performance=performance,
+        compat=compat,
+        fused_linear_cross_entropy=fused_linear_cross_entropy,
+        **kwargs,
+    )
     logger.debug("opaque: Applied model patches for %s", family)
 
     batchify = kwargs.get("batchify", compat)

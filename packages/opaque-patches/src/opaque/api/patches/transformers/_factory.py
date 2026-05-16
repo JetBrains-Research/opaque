@@ -182,8 +182,12 @@ def make_apply_model_patches(
         ``apply(model=None, *, performance=True, compat=True, **kwargs) -> None``.
         Per-concern kwargs default into the right bucket:
         ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
-        ``fused_linear_cross_entropy``, ``kv_cache`` → ``performance``;
-        ``eager_attention``, ``batchify`` → ``compat``.
+        ``kv_cache`` → ``performance``; ``eager_attention``,
+        ``batchify`` → ``compat``. ``fused_linear_cross_entropy`` is
+        opt-in (defaults to ``False``) because the fused path returns
+        ``logits=None``, which is incompatible with trainers that read
+        logits (e.g. SFTTrainer with ``compute_metrics`` /
+        ``preprocess_logits_for_metrics``).
     """
     activation_factory = _resolve(activation_kind, _ACTIVATION_FACTORIES)
     rms_norm_factory = _resolve(rms_norm_kind, _RMSNORM_FACTORIES)
@@ -232,25 +236,24 @@ def make_apply_model_patches(
                         model,
                     )
 
-        # Cross-entropy patches split into two gates so callers needing
-        # logits (e.g. SFTTrainer with ``compute_metrics`` /
-        # ``preprocess_logits_for_metrics``) can disable the fused
-        # linear+CE forward (which sets ``logits=None``) while keeping
-        # the non-fused CE kernel on materialized logits.
-        #   - ``cross_entropy``: ``loss_function`` → ``Opaque_CrossEntropyLoss``
-        #     (kernel speedup on already-materialized logits; safe — returns logits).
-        #   - ``fused_linear_cross_entropy``: ``forward`` → ``Opaque_LinearCrossEntropyLoss``
-        #     (skips ``lm_head`` materialization for max memory savings; returns
-        #     ``logits=None`` on the fused path).
-        # ``fused_linear_cross_entropy`` cascades from ``cross_entropy`` so the
-        # historical ``cross_entropy=False`` opt-out still turns both off.
+        # Cross-entropy patches are split into two gates.
+        #   - ``cross_entropy`` (defaults to ``performance``):
+        #     ``loss_function`` → ``Opaque_CrossEntropyLoss``. Kernel
+        #     speedup on already-materialized logits; safe — the model
+        #     keeps returning logits.
+        #   - ``fused_linear_cross_entropy`` (opt-in, off by default):
+        #     ``forward`` → ``Opaque_LinearCrossEntropyLoss``. Skips
+        #     ``lm_head`` materialization for the largest memory savings,
+        #     but the fused path returns ``logits=None``, so it is unsafe
+        #     for trainers that read logits (compute_metrics,
+        #     preprocess_logits_for_metrics, …). Enable explicitly in
+        #     pipelines where loss is the only consumer.
         causal_lm_class = classes.get("causal_lm")
         causal_lm_obj = getattr(mod, causal_lm_class, None) if causal_lm_class else None
-        cross_entropy_on = kwargs.get("cross_entropy", performance)
-        if cross_entropy_on and causal_lm_obj is not None:
+        if kwargs.get("cross_entropy", performance) and causal_lm_obj is not None:
             apply_causal_lm_loss_function_patch(model, causal_lm_obj)
         if (
-            kwargs.get("fused_linear_cross_entropy", cross_entropy_on)
+            kwargs.get("fused_linear_cross_entropy", False)
             and causal_lm_obj is not None
         ):
             _patch_forward(

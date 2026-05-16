@@ -23,6 +23,7 @@ def apply_model_patches(
     performance: bool = True,
     compat: bool = True,
     peft: bool = True,
+    fused_linear_cross_entropy: bool = False,
     **kwargs,
 ) -> None:
     """Apply global and instance-level patches for a specific model.
@@ -35,20 +36,21 @@ def apply_model_patches(
     Per-concern flags pass through ``**kwargs``. Performance bucket
     (kernel / memory-efficiency, default-on with ``performance=True``):
     ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
-    ``fused_linear_cross_entropy``, ``kv_cache``. Compat bucket (vmap
-    safety, default-on with ``compat=True``): ``eager_attention``,
-    ``batchify``.
+    ``kv_cache``. Compat bucket (vmap safety, default-on with
+    ``compat=True``): ``eager_attention``, ``batchify``.
 
     ``cross_entropy`` swaps in the non-fused CE kernel via
-    ``loss_function`` (logits still materialized — safe for callers that
-    read them). ``fused_linear_cross_entropy`` replaces the forward to
-    skip ``lm_head`` and compute loss directly from hidden states; on the
-    fused path it returns ``logits=None``. The latter cascades from the
-    former (so the historical ``cross_entropy=False`` opt-out still turns
-    both off); pass ``fused_linear_cross_entropy=False`` alone when the
-    trainer needs logits (e.g. SFTTrainer with ``compute_metrics`` /
-    ``preprocess_logits_for_metrics``) while keeping the non-fused
-    kernel on materialized logits.
+    ``loss_function`` — logits stay materialized, so trainers that
+    inspect them (compute_metrics, preprocess_logits_for_metrics, eval
+    that reads ``outputs.logits``) keep working.
+
+    ``fused_linear_cross_entropy`` is the one per-concern flag promoted
+    to an explicit kwarg because it is the only patch whose default is
+    ``False`` regardless of ``performance``. When enabled, the forward
+    replacement skips ``lm_head`` and computes loss directly from hidden
+    states; the fused path returns ``logits=None``, so enable it only
+    when loss is the only consumer of the forward output (the bundled
+    training examples do exactly that).
     """
     global _runtime_patches_applied
     if not _runtime_patches_applied:
@@ -60,7 +62,11 @@ def apply_model_patches(
         )
 
         apply_transformers_model_patches(
-            model, performance=performance, compat=compat, **kwargs
+            model,
+            performance=performance,
+            compat=compat,
+            fused_linear_cross_entropy=fused_linear_cross_entropy,
+            **kwargs,
         )
     except ImportError:
         logger.debug("opaque: Hugging Face kernel patches not available.")
@@ -81,10 +87,11 @@ def apply_runtime_patches(
 ) -> None:
     """Apply global runtime patches.
 
-    Liger-style flag names: ``vmap_masking``, ``empty_batches``,
-    ``vmap_checkpointing``.  ``use_fused_loss`` was dropped — fused-CE
-    is now applied per-model via :func:`apply_model_patches` when
-    ``cross_entropy=True``.
+    Per-concern compat flags (default-on with ``compat=True``):
+    ``vmap_masking`` (vmap-safe causal-mask builders),
+    ``empty_batches`` (collator handling for Poisson-sampled empty
+    batches), ``vmap_checkpointing`` (gradient-checkpointing shim).
+    Per-model CE patches live on :func:`apply_model_patches`.
     """
     global _runtime_patches_applied
     _runtime_patches_applied = True
