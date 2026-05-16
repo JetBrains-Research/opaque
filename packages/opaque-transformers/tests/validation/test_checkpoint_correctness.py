@@ -307,7 +307,7 @@ class TestSaveOnlyModelStillWritesTrainerState:
         assert (d / "accountant.json").exists()
         # Resumability files skipped under save_only_model.
         assert not (d / "dp_optimizer.pt").exists()
-        assert not (d / "dp_runtime_state.pt").exists()
+        assert not (d / "dp_state.pt").exists()
 
 
 # ---------------------------------------------------------------------------

@@ -691,7 +691,7 @@ class TestDPTrainerCheckpointing:
             assert weights_present
             assert cfg_present
             assert (d / "dp_optimizer.pt").exists()
-            assert (d / "dp_runtime_state.pt").exists()
+            assert (d / "dp_state.pt").exists()
             assert (d / "accountant.json").exists()
             assert (d / "rng_state.pth").exists()
             assert (d / "trainer_state.json").exists()
@@ -760,7 +760,7 @@ class TestDPTrainerCheckpointing:
         # Resumability files (optimizer / DP runtime / RNG) are skipped
         # under ``save_only_model``.
         assert not (d / "dp_optimizer.pt").exists()
-        assert not (d / "dp_runtime_state.pt").exists()
+        assert not (d / "dp_state.pt").exists()
         assert not (d / "rng_state.pth").exists()
         # Interpretability files are always written: ``trainer_state.json``,
         # ``training_args.bin`` (HF-parity filename), and ``accountant.json``
@@ -1130,9 +1130,15 @@ class TestDPTrainerCheckpointing:
         with pytest.raises(FileNotFoundError):
             trainer.train(resume_from_checkpoint=str(tmp_path / "no-such-ckpt"))
 
-    def test_resume_true_raises_when_no_checkpoints(
+    def test_resume_true_starts_fresh_when_no_checkpoints(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
     ):
+        """``resume_from_checkpoint=True`` is tolerant: auto-finds the latest
+        checkpoint when one exists, falls back to a fresh run when none does.
+
+        Lets scripts pass ``resume_from_checkpoint=True`` unconditionally —
+        "resume if you can, else start fresh" — without probing the filesystem.
+        """
         model, tokenizer = gpt2_with_lora
         trainer = DPTrainer(
             model=model,
@@ -1141,8 +1147,9 @@ class TestDPTrainerCheckpointing:
             train_dataset=tiny_lm_dataset,
             eval_dataset=tiny_lm_dataset,
         )
-        with pytest.raises(ValueError, match="no checkpoints found"):
-            trainer.train(resume_from_checkpoint=True)
+        out = trainer.train(resume_from_checkpoint=True)
+        # Fresh-run semantics: global_step advances from 0, not via resume.
+        assert out.global_step > 0
 
     def test_resume_restores_accountant(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
@@ -1196,7 +1203,7 @@ class TestDPTrainerCheckpointing:
         assert os.path.exists(os.path.join(ckpt_dir, "accountant.json"))
         # Resumability files absent under save_only_model.
         assert not os.path.exists(os.path.join(ckpt_dir, "dp_optimizer.pt"))
-        assert not os.path.exists(os.path.join(ckpt_dir, "dp_runtime_state.pt"))
+        assert not os.path.exists(os.path.join(ckpt_dir, "dp_state.pt"))
 
         model2, tokenizer2 = gpt2_with_lora
         out2_dir = tmp_path / "resumed"

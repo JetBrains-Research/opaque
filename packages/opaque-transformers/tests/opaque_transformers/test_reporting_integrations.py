@@ -405,7 +405,7 @@ def test_artifact_callback_sees_complete_dp_checkpoint_after_save(
         ckpt.TRAINER_STATE_NAME,
         ckpt.TRAINING_ARGS_NAME,
         ckpt.DP_OPTIMIZER_NAME,
-        ckpt.DP_RUNTIME_STATE_NAME,
+        ckpt.DP_STATE_NAME,
         ckpt.RNG_STATE_NAME,
     }.issubset(checkpoint["files"])
 
@@ -448,7 +448,7 @@ def test_artifact_callback_save_only_model_still_sees_privacy_metadata(
         ckpt.TRAINER_STATE_NAME,
         ckpt.TRAINING_ARGS_NAME,
     }.issubset(files)
-    assert ckpt.DP_RUNTIME_STATE_NAME not in files
+    assert ckpt.DP_STATE_NAME not in files
     assert ckpt.DP_OPTIMIZER_NAME not in files
     assert ckpt.RNG_STATE_NAME not in files
 

@@ -1,8 +1,8 @@
 """Checkpoint helpers for DPTrainer.
 
 Defines the on-disk layout (parallel to HuggingFace ``Trainer``), discovery and
-rotation utilities, an RNG snapshot helper, and the DP-runtime bundle stored
-under ``dp_runtime_state.pt``.  Clip / noise slices use
+rotation utilities, an RNG snapshot helper, and the DP-side runtime bundle
+stored under ``dp_state.pt``.  Clip / noise slices use
 :func:`opaque.serialization.state_dict`; resume merges them with the live
 training context via :func:`opaque.serialization.from_state_dict`.
 """
@@ -30,11 +30,11 @@ log = logging.getLogger(__name__)
 # Filename layout: ``training_args.bin`` matches HF's ``TRAINING_ARGS_NAME``.
 TRAINING_ARGS_NAME = "training_args.bin"
 DP_OPTIMIZER_NAME = "dp_optimizer.pt"
-DP_RUNTIME_STATE_NAME = "dp_runtime_state.pt"
+DP_STATE_NAME = "dp_state.pt"
 DP_ACCOUNTANT_NAME = "accountant.json"
 RNG_STATE_NAME = "rng_state.pth"
 
-DP_RUNTIME_BUNDLE_VERSION = 2
+DP_STATE_BUNDLE_VERSION = 2
 
 _CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")
 
@@ -45,9 +45,9 @@ __all__ = [
     "DP_OPTIMIZER_NAME",
     "TRAINING_ARGS_NAME",
     "TRAINER_STATE_NAME",
-    "DP_RUNTIME_STATE_NAME",
+    "DP_STATE_NAME",
     "DP_ACCOUNTANT_NAME",
-    "DP_RUNTIME_BUNDLE_VERSION",
+    "DP_STATE_BUNDLE_VERSION",
     "RNG_STATE_NAME",
     "parse_checkpoint_step",
     "list_checkpoints",
@@ -205,7 +205,7 @@ def save_dp_runtime_state(
     total_steps: int,
     extra: dict[str, Any] | None = None,
 ) -> None:
-    """Save the DP runtime bundle (everything under DP_RUNTIME_STATE_NAME)."""
+    """Save the DP runtime bundle (everything under DP_STATE_NAME)."""
     if not isinstance(clip_state, ClipState):
         raise TypeError(
             f"clip_state must be a ClipState instance, got {type(clip_state).__name__}"
@@ -215,7 +215,7 @@ def save_dp_runtime_state(
             f"noise_state must be a NoiseState instance, got {type(noise_state).__name__}"
         )
     payload: dict[str, Any] = {
-        "version": DP_RUNTIME_BUNDLE_VERSION,
+        "version": DP_STATE_BUNDLE_VERSION,
         "clip_state": opaque_state_dict(clip_state),
         "noise_state": opaque_state_dict(noise_state),
         "sampler_state": sampler_state,
@@ -243,9 +243,9 @@ def load_dp_runtime_state(path: str) -> dict[str, Any]:
     """
     payload = torch.load(path, map_location="cpu", weights_only=False)
     ver = int(payload["version"])
-    if ver != DP_RUNTIME_BUNDLE_VERSION:
+    if ver != DP_STATE_BUNDLE_VERSION:
         raise ValueError(
-            f"unsupported dp_runtime_state bundle version {ver} "
-            f"(expected {DP_RUNTIME_BUNDLE_VERSION})"
+            f"unsupported dp_state bundle version {ver} "
+            f"(expected {DP_STATE_BUNDLE_VERSION})"
         )
     return payload

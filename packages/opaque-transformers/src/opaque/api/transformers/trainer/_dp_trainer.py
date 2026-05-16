@@ -3832,7 +3832,7 @@ class DPTrainer:
             extra["lr_schedule_state"] = ctx.lr_schedule.state_dict()
 
         ckpt.save_dp_runtime_state(
-            os.path.join(ckpt_dir, ckpt.DP_RUNTIME_STATE_NAME),
+            os.path.join(ckpt_dir, ckpt.DP_STATE_NAME),
             clip_state=ctx.clip_state,
             noise_state=ctx.noise_state,
             sampler_state=sampler_state,
@@ -3929,7 +3929,16 @@ class DPTrainer:
     # ------------------------------------------------------------------
 
     def _resolve_resume_path(self, value: str | bool | None) -> str | None:
-        """Resolve ``resume_from_checkpoint`` to a concrete directory or ``None``."""
+        """Resolve ``resume_from_checkpoint`` to a concrete directory or ``None``.
+
+        ``True`` is **tolerant**: if a checkpoint exists under
+        ``args.output_dir`` it is auto-selected; if no checkpoints exist
+        the call falls through to ``None`` (fresh run) with an info-level
+        log.  This lets scripts pass ``resume_from_checkpoint=True``
+        unconditionally — "resume if you can, else start fresh" — without
+        having to probe the filesystem first.  ``output_dir is None``
+        still raises since that's a config error, not a missing artefact.
+        """
         if value is None or value is False:
             return None
         if value is True:
@@ -3940,10 +3949,12 @@ class DPTrainer:
                 )
             found = ckpt.get_last_checkpoint(output_dir)
             if found is None:
-                raise ValueError(
-                    f"resume_from_checkpoint=True but no checkpoints found under "
-                    f"{output_dir}"
+                log.info(
+                    "resume_from_checkpoint=True but no checkpoints found under "
+                    "%s; starting a fresh run.",
+                    output_dir,
                 )
+                return None
             return found
         if not isinstance(value, str):
             raise TypeError(
@@ -3973,7 +3984,7 @@ class DPTrainer:
     def _read_runtime_for_resume(
         self, ckpt_dir: str
     ) -> tuple[dict[str, Any] | None, "Accountant | None"]:
-        """Pre-load ``dp_runtime_state.pt`` and ``accountant.json`` for resume.
+        """Pre-load ``dp_state.pt`` and ``accountant.json`` for resume.
 
         Returns ``(runtime_payload, accountant)``.  ``runtime_payload`` is
         ``None`` when the checkpoint was written with ``save_only_model=True``.
@@ -3983,7 +3994,7 @@ class DPTrainer:
         When ``accountant.json`` is missing, prefix with ``nonprivate()`` so
         ε stays infinite instead of silently restarting from zero.
         """
-        runtime_path = os.path.join(ckpt_dir, ckpt.DP_RUNTIME_STATE_NAME)
+        runtime_path = os.path.join(ckpt_dir, ckpt.DP_STATE_NAME)
         runtime_payload = (
             ckpt.load_dp_runtime_state(runtime_path)
             if os.path.exists(runtime_path)

@@ -171,7 +171,7 @@ class TestDpRuntimeBundle:
 
         assert opaque_from_state_dict(clip, loaded["clip_state"]) == clip
         assert opaque_from_state_dict(noise, loaded["noise_state"]) == noise
-        assert loaded["version"] == ckpt.DP_RUNTIME_BUNDLE_VERSION
+        assert loaded["version"] == ckpt.DP_STATE_BUNDLE_VERSION
         assert loaded["sampler_state"]["iter_count"] == 2
         assert loaded["sample_rate"] == pytest.approx(0.1)
         assert loaded["target_delta"] == pytest.approx(1e-5)
@@ -216,5 +216,5 @@ class TestDpRuntimeBundle:
     def test_rejects_unknown_bundle_version(self, tmp_path):
         path = str(tmp_path / "dp.pt")
         torch.save({"version": 1, "clip_state": {}, "noise_state": {}}, path)
-        with pytest.raises(ValueError, match="unsupported dp_runtime_state"):
+        with pytest.raises(ValueError, match="unsupported dp_state"):
             ckpt.load_dp_runtime_state(path)
