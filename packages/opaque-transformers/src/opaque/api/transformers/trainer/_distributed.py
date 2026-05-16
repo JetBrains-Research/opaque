@@ -88,10 +88,10 @@ def resolve_ddp_state(device: torch.device, args: Any | None = None) -> DDPState
     if not is_distributed() and args is not None:
         env_world = int(os.environ.get("WORLD_SIZE", "1"))
         if env_world > 1:
-            backend = getattr(args, "ddp_backend", None) or (
+            backend = args.ddp_backend or (
                 "nccl" if torch.cuda.is_available() else "gloo"
             )
-            timeout_seconds = int(getattr(args, "ddp_timeout", 1800))
+            timeout_seconds = int(args.ddp_timeout)
             from datetime import timedelta as _td
             import logging as _logging
 
@@ -138,7 +138,7 @@ def validate_ddp_backend(args: Any, ddp: DDPState) -> None:
     already initialized, the configured value (when set) must match the live
     backend to avoid silent misconfiguration.
     """
-    configured = getattr(args, "ddp_backend", None)
+    configured = args.ddp_backend
     if configured is None:
         return
     configured_backend = str(configured).lower()
@@ -178,7 +178,7 @@ def should_log(args: Any, ddp: DDPState) -> bool:
     """
     if not ddp.is_distributed:
         return True
-    if getattr(args, "log_on_each_node", True):
+    if args.log_on_each_node:
         return ddp.is_local_zero
     return ddp.is_world_zero
 
@@ -192,7 +192,7 @@ def should_save(args: Any, ddp: DDPState) -> bool:
     """
     if not ddp.is_distributed:
         return True
-    if getattr(args, "save_on_each_node", False):
+    if args.save_on_each_node:
         return ddp.is_local_zero
     return ddp.is_world_zero
 

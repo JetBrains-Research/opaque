@@ -258,6 +258,11 @@ class DPTrainer:
                 _fn, "__name__", type(_fn).__name__
             )
         self._model = model
+        # Computed once: PEFT detection appears at multiple resume /
+        # restore sites and the result depends only on the model class,
+        # which doesn't change after construction (HPO model_init was
+        # removed in Phase C).
+        self._is_peft: bool = _is_peft_model(model)
         self.args = args
         self._processing_class = processing_class
         self._base_callbacks: list[Any] = list(callbacks) if callbacks else []
@@ -298,7 +303,7 @@ class DPTrainer:
             self._label_names: list[str] = list(args.label_names)
         else:
             inspected = model
-            if _is_peft_model(model):
+            if self._is_peft:
                 if hasattr(model, "get_base_model"):
                     inspected = model.get_base_model()
                 else:
@@ -2463,7 +2468,7 @@ class DPTrainer:
         if self._signature_columns is not None or self._signature_columns_unavailable:
             return
         model_to_inspect = self._model
-        if _is_peft_model(self._model):
+        if self._is_peft:
             if hasattr(self._model, "get_base_model"):
                 model_to_inspect = self._model.get_base_model()
             else:
@@ -3032,7 +3037,7 @@ class DPTrainer:
 
         del clip_state, noise_multiplier  # see docstring
         a = self.args
-        extra = parse_optim_args(getattr(a, "optim_args", None))
+        extra = parse_optim_args(a.optim_args)
         fac = self._functional_optimizer_factory
         if fac is not None:
             factory, init_kw = fac
@@ -3393,7 +3398,7 @@ class DPTrainer:
         # ``strict=True`` for full-model checkpoints; ``strict=False`` only
         # when the model is a PEFT wrapper (the trainable set is a subset
         # of the module's parameters by design).
-        strict = getattr(self._model, "peft_config", None) is None
+        strict = not self._is_peft
         self._model.load_state_dict(state_dict, strict=strict)
 
     # ------------------------------------------------------------------
@@ -3485,7 +3490,7 @@ class DPTrainer:
     def _warn_if_existing_output_dir(self) -> None:
         a = self.args
         output_dir = self._effective_output_dir()
-        if output_dir is None or getattr(a, "overwrite_output_dir", False):
+        if output_dir is None or a.overwrite_output_dir:
             return
         if not os.path.isdir(output_dir):
             return
@@ -3587,7 +3592,7 @@ class DPTrainer:
         # ``strict``: adapter dirs ship only adapter weights, full-model
         # dirs ship the full state dict.
         if not mutated:
-            strict = getattr(self._model, "peft_config", None) is None
+            strict = not self._is_peft
             self._model.load_state_dict(new_state, strict=strict)
 
         # Rebuild the functional view from the (now-mutated) module.  Keep
@@ -3981,7 +3986,7 @@ class DPTrainer:
         # parameters (subset → ``strict=False``); full-model checkpoints
         # surface mismatched keys as errors (``strict=True``).
         if not mutated:
-            strict = getattr(self._model, "peft_config", None) is None
+            strict = not self._is_peft
             self._model.load_state_dict(new_state, strict=strict)
 
     def _read_runtime_for_resume(

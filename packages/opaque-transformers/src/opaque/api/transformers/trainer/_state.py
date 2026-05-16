@@ -76,8 +76,11 @@ class DPTrainerState:
         HF parity: fractional values < 1 are interpreted as fractions of
         ``max_steps`` and rounded up; ``None`` is left alone.
         """
-        for kind in ("logging", "eval", "save"):
-            num_steps = getattr(args, f"{kind}_steps", None)
+        for kind, num_steps in (
+            ("logging", args.logging_steps),
+            ("eval", args.eval_steps),
+            ("save", args.save_steps),
+        ):
             if num_steps is None:
                 continue
             if num_steps < 1:

@@ -265,9 +265,7 @@ def build_callback_handler(
     """
     reporting_callbacks = [
         wrap_reporting_callback_class(callback_cls)
-        for callback_cls in get_reporting_integration_callbacks(
-            getattr(args, "report_to", None)
-        )
+        for callback_cls in get_reporting_integration_callbacks(args.report_to)
     ]
     user_callbacks = list(callbacks) if callbacks else []
     callback_list: list[Any] = [
@@ -307,7 +305,7 @@ class BestModelSaveCallback(TrainerCallback):
     """
 
     def on_evaluate(self, args, state, control, metrics=None, **kwargs):
-        if getattr(args, "save_strategy", None) != "best":
+        if args.save_strategy != "best":
             return
         resolved = resolve_eval_metric(metrics, args.metric_for_best_model)
         if resolved is None:

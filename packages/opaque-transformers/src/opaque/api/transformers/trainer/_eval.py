@@ -431,11 +431,11 @@ def should_run_eval_at_step(
     This helper is intentionally pure so it can be unit-tested without a
     model.
     """
-    strategy = getattr(args, "eval_strategy", "no")
+    strategy = args.eval_strategy
     if strategy == "no":
         return False
 
-    delay = float(getattr(args, "eval_delay", 0) or 0)
+    delay = float(args.eval_delay or 0)
 
     if strategy == "steps":
         if global_step < delay:

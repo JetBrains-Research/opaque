@@ -499,7 +499,7 @@ def _build_plateau(
     the LR schedule makes the LR trajectory data-dependent in a way
     the privacy accountant doesn't track.
     """
-    metric = getattr(args, "metric_for_best_model", None) or "loss"
+    metric = args.metric_for_best_model or "loss"
     mode = kwargs.get("mode")
     if mode is None:
         # HF convention: minimize loss, maximize anything else.
