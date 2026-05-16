@@ -30,7 +30,6 @@ from opaque.scheduling import (
 __all__ = [
     "build_lr_schedule",
     "get_warmup_steps",
-    "parse_optim_args",
     "ReduceLROnPlateauSchedule",
 ]
 
@@ -518,53 +517,3 @@ def _build_plateau(
     )
 
 
-# ---------------------------------------------------------------------------
-# optim_args parsing (HF parity).
-# ---------------------------------------------------------------------------
-
-
-def _coerce_value(raw: str) -> Any:
-    """Best-effort literal coercion of a user-supplied option string."""
-    s = raw.strip()
-    lowered = s.lower()
-    if lowered in ("true", "false"):
-        return lowered == "true"
-    if lowered in ("none", "null"):
-        return None
-    try:
-        return int(s)
-    except ValueError:
-        pass
-    try:
-        return float(s)
-    except ValueError:
-        pass
-    return s
-
-
-def parse_optim_args(spec: str | None) -> dict[str, Any]:
-    """Parse HF's ``optim_args`` string into a kwargs ``dict``.
-
-    Format: ``"key1=value1,key2=value2"``.  Whitespace around keys and
-    values is stripped.  Values are coerced to ``bool`` / ``int`` /
-    ``float`` when possible, otherwise kept as ``str``.
-
-    Empty / ``None`` input returns ``{}``.
-
-    Raises:
-        ValueError: malformed entry (missing ``=`` or empty key).
-    """
-    if not spec:
-        return {}
-    out: dict[str, Any] = {}
-    for entry in spec.split(","):
-        if not entry.strip():
-            continue
-        if "=" not in entry:
-            raise ValueError(f"optim_args entry {entry!r} is not in 'key=value' form")
-        key, _, value = entry.partition("=")
-        key = key.strip()
-        if not key:
-            raise ValueError(f"optim_args entry {entry!r} has an empty key")
-        out[key] = _coerce_value(value)
-    return out

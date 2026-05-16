@@ -28,7 +28,6 @@ from opaque.api.transformers.trainer._optim import (
     build_optimizer,
     canonical_optimizer_names,
 )
-from opaque.api.transformers.trainer._scheduler import parse_optim_args
 
 
 def _args(tmp_path, **overrides) -> TrainingArguments:
@@ -187,7 +186,7 @@ class TestSupportedOptimizersConstruct:
         def lr(_step: int) -> float:
             return 0.01
 
-        extra = parse_optim_args(getattr(args, "optim_args", None))
+        extra = dict(args.optim_args or {})
         opt = build_optimizer(args, lr, extra_kwargs=extra)
         params = {"w": torch.randn(2, 3, requires_grad=True)}
         st = opt.init(params)
@@ -210,8 +209,8 @@ class TestSgdWeightDecay:
 
         args0 = _args(tmp_path, optim="sgd", weight_decay=0.0)
         args1 = _args(tmp_path, optim="sgd", weight_decay=0.1)
-        opt0 = build_optimizer(args0, lr, parse_optim_args(None))
-        opt1 = build_optimizer(args1, lr, parse_optim_args(None))
+        opt0 = build_optimizer(args0, lr, {})
+        opt1 = build_optimizer(args1, lr, {})
         params = {"w": torch.ones(2, 2, requires_grad=True)}
         st0 = opt0.init(params)
         st1 = opt1.init(params)
@@ -225,7 +224,7 @@ class TestSgdWeightDecay:
             return 0.1
 
         args = _args(tmp_path, optim="sgd", weight_decay=0.0)
-        opt = build_optimizer(args, lr, parse_optim_args(None))
+        opt = build_optimizer(args, lr, {})
         params = {"w": torch.ones(2, 2, requires_grad=True)}
         st = opt.init(params)
         assert isinstance(st, tuple)

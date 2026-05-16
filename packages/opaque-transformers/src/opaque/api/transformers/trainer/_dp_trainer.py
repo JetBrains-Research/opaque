@@ -65,7 +65,6 @@ from ._precision import eval_dtype
 from ._scheduler import (
     ReduceLROnPlateauSchedule,
     build_lr_schedule,
-    parse_optim_args,
 )
 from ._state import DPTrainerState
 from opaque.random import key
@@ -3022,11 +3021,11 @@ class DPTrainer:
         ``weight_decay``, ``adam_beta1``/``adam_beta2``, ``adam_epsilon``)
         to the underlying opaque factory.  Opaque-only knobs (for example
         ``noise_bias_correction``, ``decoupled_weight_decay``,
-        ``update_rms_clip``) are supplied through parsed ``args.optim_args``.
-        ``args.optim_args`` is parsed via
-        :func:`parse_optim_args` and overrides any auto-mapped values;
-        opaque factories raise ``TypeError`` on unknown keys, so typos
-        surface immediately.
+        ``update_rms_clip``) are supplied through ``args.optim_args``,
+        which ``TrainingArguments.__post_init__`` has already normalized
+        from any of {Mapping, JSON object string, HF "key=value,..."
+        string, None} to ``dict[str, Any] | None``.  Opaque factories
+        raise ``TypeError`` on unknown keys, so typos surface immediately.
 
         ``clip_state`` and ``noise_multiplier`` are accepted for
         signature stability with subclasses; the wrapper-pytree noise
@@ -3037,7 +3036,7 @@ class DPTrainer:
 
         del clip_state, noise_multiplier  # see docstring
         a = self.args
-        extra = parse_optim_args(a.optim_args)
+        extra = dict(a.optim_args or {})
         fac = self._functional_optimizer_factory
         if fac is not None:
             factory, init_kw = fac

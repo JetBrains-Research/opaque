@@ -217,9 +217,10 @@ def build_optimizer(
 ) -> GradientTransformation:
     """Construct the DP-aware opaque optimizer for ``args.optim``.
 
-    ``extra_kwargs`` typically comes from ``parse_optim_args(args.optim_args)``
-    and takes precedence over HF field defaults mapped in
-    ``_apply_top_level_fields``.
+    ``extra_kwargs`` typically comes from ``args.optim_args``
+    (already normalized to ``dict[str, Any] | None`` by
+    :meth:`TrainingArguments.__post_init__`) and takes precedence over
+    HF field defaults mapped in ``_apply_top_level_fields``.
     """
     canonical, base_kwargs = resolve_optimizer_name(args.optim)
     extra_kwargs = dict(extra_kwargs or {})

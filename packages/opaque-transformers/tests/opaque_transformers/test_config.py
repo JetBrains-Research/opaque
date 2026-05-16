@@ -352,3 +352,110 @@ class TestNoiseCalibrationKwargs:
         assert tuned.noise_calibration_kwargs["min"] == 0.05
         assert tuned.noise_calibration_kwargs["max"] == 10.0
         assert tuned.noise_calibration_kwargs["tolerance"] == 1e-2
+
+
+# ---------------------------------------------------------------------------
+# Unified dict-field input contract (Mapping / JSON / HF comma form)
+# ---------------------------------------------------------------------------
+
+
+from collections.abc import MutableMapping, MutableSequence  # noqa: E402
+
+
+class _FakeDictConfig(MutableMapping):
+    """Minimal ``Mapping`` stand-in for OmegaConf's ``DictConfig`` in tests."""
+
+    def __init__(self, data):
+        self._data = dict(data)
+
+    def __getitem__(self, k):
+        return self._data[k]
+
+    def __setitem__(self, k, v):
+        self._data[k] = v
+
+    def __delitem__(self, k):
+        del self._data[k]
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self):
+        return len(self._data)
+
+
+class _FakeListConfig(MutableSequence):
+    """Minimal ``Sequence`` stand-in for OmegaConf's ``ListConfig``."""
+
+    def __init__(self, data):
+        self._data = list(data)
+
+    def __getitem__(self, i):
+        return self._data[i]
+
+    def __setitem__(self, i, v):
+        self._data[i] = v
+
+    def __delitem__(self, i):
+        del self._data[i]
+
+    def __len__(self):
+        return len(self._data)
+
+    def insert(self, i, v):
+        self._data.insert(i, v)
+
+
+class TestDictFieldInputContract:
+    """All dict-shaped fields accept Mapping / JSON / HF comma form / None."""
+
+    def test_mapping_input_materialises_to_dict(self):
+        args = TrainingArguments(
+            clipping_kwargs=_FakeDictConfig({"target_clipping_rate": 0.5}),
+        )
+        assert isinstance(args.clipping_kwargs, dict)
+        assert args.clipping_kwargs == {"target_clipping_rate": 0.5}
+
+    def test_nested_listconfig_materialises_to_list(self):
+        # A Mapping containing a non-list Sequence (e.g. OmegaConf
+        # ListConfig).  The nested container must come back as a plain
+        # list — silently fixes the OmegaConf nested-ListConfig leak.
+        nested = _FakeDictConfig({"items": _FakeListConfig([1, 2, 3])})
+        args = TrainingArguments(clipping_kwargs=nested)
+        assert args.clipping_kwargs == {"items": [1, 2, 3]}
+        assert isinstance(args.clipping_kwargs["items"], list)
+
+    def test_json_string_input_parses(self):
+        args = TrainingArguments(clipping_kwargs='{"target_clipping_rate": 0.5}')
+        assert args.clipping_kwargs == {"target_clipping_rate": 0.5}
+
+    def test_hf_comma_string_input_parses(self):
+        args = TrainingArguments(
+            clipping_kwargs="target_clipping_rate=0.5,norm_max=10.0",
+        )
+        assert args.clipping_kwargs == {
+            "target_clipping_rate": 0.5,
+            "norm_max": 10.0,
+        }
+
+    def test_optim_args_accepts_mapping(self):
+        args = TrainingArguments(optim_args={"weight_decay": 0.01})
+        assert args.optim_args == {"weight_decay": 0.01}
+
+    def test_optim_args_accepts_json_string(self):
+        args = TrainingArguments(optim_args='{"weight_decay": 0.01}')
+        assert args.optim_args == {"weight_decay": 0.01}
+
+    def test_optim_args_accepts_hf_comma_string(self):
+        args = TrainingArguments(optim_args="weight_decay=0.01,nesterov=True")
+        assert args.optim_args == {"weight_decay": 0.01, "nesterov": True}
+
+    def test_optim_args_none_stays_none(self):
+        args = TrainingArguments(optim_args=None)
+        assert args.optim_args is None
+
+    def test_clipping_norm_accepts_dictconfig(self):
+        args = TrainingArguments(
+            clipping_norm=_FakeDictConfig({"fallback": 1.0, "attn": 0.5}),
+        )
+        assert args.clipping_norm == {"fallback": 1.0, "attn": 0.5}

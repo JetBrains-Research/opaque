@@ -35,8 +35,8 @@ from opaque.api.transformers.trainer._scheduler import (  # noqa: E402
     ReduceLROnPlateauSchedule,
     build_lr_schedule,
     get_warmup_steps,
-    parse_optim_args,
 )
+from opaque.api.transformers.trainer._config import _parse_dict_string
 
 
 BASE_LR = 1e-3
@@ -575,17 +575,17 @@ class TestReduceLROnPlateau:
 
 
 # ---------------------------------------------------------------------------
-# parse_optim_args
+# HF comma-form parsing (covers the optim_args string shape via the
+# unified _parse_dict_string helper now used by every dict field).
 # ---------------------------------------------------------------------------
 
 
-class TestParseOptimArgs:
+class TestParseDictStringCommaForm:
     def test_empty_returns_empty_dict(self):
-        assert parse_optim_args(None) == {}
-        assert parse_optim_args("") == {}
+        assert _parse_dict_string("") == {}
 
     def test_basic_parse_with_coercion(self):
-        out = parse_optim_args("momentum=0.9,nesterov=True,steps=10,name=adam")
+        out = _parse_dict_string("momentum=0.9,nesterov=True,steps=10,name=adam")
         assert out == {
             "momentum": 0.9,
             "nesterov": True,
@@ -594,15 +594,15 @@ class TestParseOptimArgs:
         }
 
     def test_whitespace_tolerated(self):
-        assert parse_optim_args(" a = 1 , b = 2 ") == {"a": 1, "b": 2}
+        assert _parse_dict_string(" a = 1 , b = 2 ") == {"a": 1, "b": 2}
 
     def test_missing_equals_raises(self):
         with pytest.raises(ValueError, match="key=value"):
-            parse_optim_args("momentum")
+            _parse_dict_string("momentum")
 
     def test_empty_key_raises(self):
         with pytest.raises(ValueError, match="empty key"):
-            parse_optim_args("=1")
+            _parse_dict_string("=1")
 
 
 # ---------------------------------------------------------------------------

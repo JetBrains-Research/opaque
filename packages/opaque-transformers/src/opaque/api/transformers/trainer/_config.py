@@ -62,6 +62,7 @@ import json
 import logging
 import os
 import warnings
+from collections.abc import Mapping, Sequence
 from dataclasses import field
 from functools import cached_property
 from typing import Any
@@ -93,8 +94,12 @@ _DDP_BACKEND_CHOICES: tuple[str, ...] = (
 _DDP_BACKEND_FIRST_CLASS: tuple[str, ...] = ("nccl", "gloo", "mpi")
 _DDP_BACKEND_ENV_DEPENDENT: tuple[str, ...] = ("xccl", "hccl", "cncl", "mccl")
 
-# JSON dict fields that may arrive as JSON strings via CLI (HF parity).
-_JSON_DICT_FIELDS: tuple[str, ...] = (
+# Dict-shaped fields.  Each accepts the same input contract via
+# ``_normalize_dict_field`` at ``__post_init__`` time: a ``Mapping`` (incl.
+# OmegaConf ``DictConfig``), a JSON object string (``"{...}"``), an HF-style
+# comma-separated ``"key=value,key=value"`` string, or ``None``.  The
+# normalised result is ``dict[str, Any] | None`` for every entry.
+_DICT_FIELDS: tuple[str, ...] = (
     "performance_kernels_config",
     "lr_scheduler_kwargs",
     "gradient_checkpointing_kwargs",
@@ -102,6 +107,7 @@ _JSON_DICT_FIELDS: tuple[str, ...] = (
     "sampling_kwargs",
     "noise_calibration_kwargs",
     "privacy_noise_mechanism_kwargs",
+    "optim_args",
 )
 
 # Optimizer surface is owned by ``_optim``; keep validation logic and
@@ -164,7 +170,7 @@ class TrainingArguments:
     adam_epsilon: float = 1e-8
     clipping_norm: float | dict[str, Any] | str = 1.0
     optim: str = "adamw"
-    optim_args: str | None = None
+    optim_args: dict[str, Any] | str | None = None
     lr_scheduler_type: SchedulerType | str = "linear"
     lr_scheduler_kwargs: dict[str, Any] | str | None = field(default_factory=dict)
     warmup_ratio: float = 0.0
@@ -365,31 +371,31 @@ class TrainingArguments:
         if self.logging_dir is not None:
             self.logging_dir = os.path.expanduser(self.logging_dir)
 
-        # CLI dict fields can arrive as JSON strings.  Only parse object
-        # literals; other strings (notably config paths) are left alone.
-        for field_name in _JSON_DICT_FIELDS:
-            passed_value = getattr(self, field_name, None)
-            if isinstance(passed_value, str) and passed_value.startswith("{"):
-                setattr(
-                    self,
-                    field_name,
-                    _convert_str_dict(json.loads(passed_value)),
-                )
+        # Dict-shaped fields accept Mapping (incl. OmegaConf DictConfig),
+        # JSON object string, HF-style "key=value,..." string, or None.
+        # Normalize once here so downstream code only ever sees
+        # ``dict[str, Any] | None``.
+        for field_name in _DICT_FIELDS:
+            setattr(
+                self,
+                field_name,
+                _normalize_dict_field(getattr(self, field_name)),
+            )
 
+        # Privacy / clipping / sampling kwargs default to ``{}`` rather
+        # than ``None`` for the consumer's convenience (avoids ``or {}``
+        # at every read site).  ``optim_args`` / ``lr_scheduler_kwargs``
+        # / ``performance_kernels_config`` / ``gradient_checkpointing_kwargs``
+        # may legitimately be ``None`` (= unset, fall through to factory
+        # defaults) and stay as-is.
         for _name in (
             "clipping_kwargs",
             "sampling_kwargs",
             "noise_calibration_kwargs",
             "privacy_noise_mechanism_kwargs",
         ):
-            _v = getattr(self, _name)
-            if _v is None:
+            if getattr(self, _name) is None:
                 setattr(self, _name, {})
-            elif not isinstance(_v, dict):
-                raise TypeError(
-                    f"{_name} must be a dict or a JSON object string; "
-                    f"got {type(_v).__name__}."
-                )
         _nc = self.noise_calibration_kwargs
         for _k, _default in (("min", 0.01), ("max", 10.0), ("tolerance", 1e-3)):
             _nc.setdefault(_k, _default)
@@ -807,29 +813,106 @@ class TrainingArguments:
 # =====================================================================
 
 
-def _convert_str_dict(value: Any) -> Any:
-    """Recursively coerce string scalars from JSON dict arguments."""
-    if isinstance(value, dict):
-        return {k: _convert_str_dict(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_convert_str_dict(v) for v in value]
+def _coerce_scalar(raw: Any) -> Any:
+    """Best-effort literal coercion of a user-supplied option scalar.
+
+    Recognises ``true``/``false`` / ``none``/``null`` (case-insensitive),
+    integers, and floats; falls back to the original string.  Non-string
+    inputs pass through unchanged.  Used to coerce CLI-style strings
+    coming from HF's ``key=value,...`` shape and from JSON values that
+    are themselves strings (e.g. ``{"x": "1.0"}`` → ``{"x": 1.0}``).
+    """
+    if not isinstance(raw, str):
+        return raw
+    s = raw.strip()
+    lowered = s.lower()
+    if lowered in ("true", "false"):
+        return lowered == "true"
+    if lowered in ("none", "null"):
+        return None
+    try:
+        return int(s)
+    except ValueError:
+        pass
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    return s
+
+
+def _to_native(value: Any) -> Any:
+    """Recursively materialize ``Mapping`` → dict and non-str ``Sequence`` → list.
+
+    Silently resolves OmegaConf ``DictConfig`` / ``ListConfig`` and any
+    other Mapping/Sequence container into plain Python types.  String
+    scalars are coerced via :func:`_coerce_scalar` (bool / null / int /
+    float fallback).  ``str``/``bytes``/``bytearray`` are intentionally
+    not treated as Sequences.  Idempotent on already-native structures.
+    """
+    if isinstance(value, Mapping):
+        return {k: _to_native(v) for k, v in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_to_native(v) for v in value]
+    return _coerce_scalar(value)
+
+
+def _parse_dict_string(value: str) -> dict[str, Any]:
+    """Parse a CLI string into a ``dict`` — JSON first, HF comma form as fallback.
+
+    When the stripped string starts with ``{`` it is parsed as JSON and
+    materialized via :func:`_to_native`.  Otherwise it is treated as
+    HF's flat ``"key1=value1,key2=value2"`` shape (the format
+    :class:`~transformers.HfArgumentParser` recognises for some dict
+    fields and the existing ``optim_args`` parser used).  Nested keys
+    are not supported in the comma form — pass JSON or a Mapping for
+    nested structure.
+
+    Raises:
+        ValueError: malformed JSON, JSON whose root is not an object,
+            or a comma-form entry without a key or ``=``.
+    """
+    stripped = value.strip()
+    if stripped.startswith("{"):
+        loaded = json.loads(stripped)
+        if not isinstance(loaded, Mapping):
+            raise ValueError(
+                f"expected a JSON object (dict); got {type(loaded).__name__}"
+            )
+        return _to_native(loaded)
+    out: dict[str, Any] = {}
+    for entry in stripped.split(","):
+        if not entry.strip():
+            continue
+        if "=" not in entry:
+            raise ValueError(f"entry {entry!r} is not in 'key=value' form")
+        key, _, val = entry.partition("=")
+        key = key.strip()
+        if not key:
+            raise ValueError(f"entry {entry!r} has an empty key")
+        out[key] = _coerce_scalar(val)
+    return out
+
+
+def _normalize_dict_field(value: Any) -> dict[str, Any] | None:
+    """Normalize a dict-shaped field to ``dict[str, Any] | None``.
+
+    Input contract (one of):
+    - ``None`` — passes through.
+    - ``str`` — parsed by :func:`_parse_dict_string` (JSON or HF comma form).
+    - ``Mapping`` (incl. OmegaConf ``DictConfig``) — materialized to
+      plain dict via :func:`_to_native`.
+    """
+    if value is None:
+        return None
     if isinstance(value, str):
-        lowered = value.lower()
-        if lowered == "true":
-            return True
-        if lowered == "false":
-            return False
-        if lowered in {"none", "null"}:
-            return None
-        try:
-            return int(value)
-        except ValueError:
-            pass
-        try:
-            return float(value)
-        except ValueError:
-            pass
-    return value
+        return _parse_dict_string(value)
+    if isinstance(value, Mapping):
+        return _to_native(value)
+    raise TypeError(
+        f"dict field must be Mapping, str (JSON or 'key=value' form), or None; "
+        f"got {type(value).__name__}"
+    )
 
 
 def _coerce_clipping_norm(value: Any) -> float | dict[str, float]:
@@ -839,13 +922,7 @@ def _coerce_clipping_norm(value: Any) -> float | dict[str, float]:
     if isinstance(value, str):
         stripped = value.strip()
         if stripped.startswith("{"):
-            loaded = json.loads(stripped)
-            if not isinstance(loaded, dict):
-                raise ValueError(
-                    "clipping_norm JSON must be an object mapping strings to "
-                    f"numbers; got {type(loaded).__name__}"
-                )
-            return _coerce_clipping_norm(_convert_str_dict(loaded))
+            return _coerce_clipping_norm(_parse_dict_string(stripped))
         try:
             value = float(stripped)
         except ValueError as exc:
@@ -861,9 +938,9 @@ def _coerce_clipping_norm(value: Any) -> float | dict[str, float]:
                 f"got {out!r}."
             )
         return out
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         coerced: dict[str, float] = {}
-        for k, v in value.items():
+        for k, v in _to_native(value).items():
             if not isinstance(k, str):
                 raise TypeError(
                     "clipping_norm dict keys must be str (pattern or 'fallback'); "
@@ -884,6 +961,6 @@ def _coerce_clipping_norm(value: Any) -> float | dict[str, float]:
             return coerced["fallback"]
         return coerced
     raise TypeError(
-        "clipping_norm must be float, int, dict[str, float], or str; "
+        "clipping_norm must be float, int, Mapping[str, float], or str; "
         f"got {type(value).__name__}"
     )
