@@ -375,49 +375,11 @@ class DPTrainer:
         self._signature_columns: list[str] | None = None
         self._signature_columns_unavailable = False
 
-        # Save / best-model arg validation.  ``__post_init__`` already
-        # filled in ``metric_for_best_model`` / ``greater_is_better``
-        # defaults and coerced the strategy enums to plain strings;
-        # what remains is the cross-field invariants that depend on
-        # ``output_dir`` (which can be ``None`` for in-memory runs).
+        # All cross-field validation (save/eval strategy invariants,
+        # load_best_model_at_end requirements, …) lives in
+        # ``TrainingArguments.__post_init__``.  The trainer reads the
+        # validated ``args`` directly — no defensive snapshots.
         a = self.args
-        if a.save_strategy not in self._SAVE_STRATEGIES:
-            raise ValueError(
-                f"Unsupported save_strategy={a.save_strategy!r}; "
-                f"expected one of {self._SAVE_STRATEGIES}"
-            )
-        save_strategy = a.save_strategy
-        if save_strategy != "no":
-            if a.output_dir is None:
-                # No place to save → demote to "no" so the trainer remains
-                # usable for in-memory runs and tests that don't care
-                # about checkpoints.
-                log.warning(
-                    "save_strategy=%r but output_dir is None; demoting to 'no'.",
-                    save_strategy,
-                )
-                save_strategy = "no"
-            elif a.save_steps is not None and a.save_steps <= 0:
-                raise ValueError(f"save_steps must be > 0, got {a.save_steps}")
-        if a.load_best_model_at_end:
-            if a.eval_strategy == "no":
-                raise ValueError(
-                    "load_best_model_at_end=True requires eval_strategy != 'no'"
-                )
-            if save_strategy == "no":
-                raise ValueError(
-                    "load_best_model_at_end=True requires save_strategy != 'no'"
-                )
-        if a.save_strategy == "best" and a.eval_strategy == "no":
-            raise ValueError("save_strategy='best' requires eval_strategy != 'no'")
-        # Trainer-side snapshot: ``save_strategy`` may be demoted to
-        # "no" for in-memory runs without mutating ``args``.
-        # ``greater_is_better`` is forwarded as-is so checkpoint code
-        # can rely on a non-``args`` source.
-        self._save_strategy: str = save_strategy
-        self._greater_is_better: bool | None = (
-            None if a.greater_is_better is None else bool(a.greater_is_better)
-        )
 
         # Callback state.  ``state.{logging,eval,save}_steps`` are
         # resolved from ``args`` via ``state.compute_steps`` so
@@ -428,13 +390,7 @@ class DPTrainer:
         self.state = DPTrainerState()
         self.state.max_steps = self._predict_total_steps()
         self.state.compute_steps(args)
-        # HF parity (CallbackHandler.add_callback at trainer_callback.py:187):
-        # the state object carries process-zero flags so callbacks (W&B, TB,
-        # printer, …) can suppress side-effects on non-zero ranks without
-        # asking the trainer.  Mirror those flags onto every newly-built
-        # state.
-        self.state.is_world_process_zero = self._ddp.is_world_zero
-        self.state.is_local_process_zero = self._ddp.is_local_zero
+        self._stamp_ddp_flags(self.state)
         # Smoothed-loss bookkeeping (HF parity, trainer-internal).
         # ``_tr_loss`` accumulates per-step losses on device; ``_total_loss_scalar``
         # is the running total across all logging windows; ``_globalstep_last_logged``
@@ -465,7 +421,7 @@ class DPTrainer:
         # auto-inject the matching callback so user callbacks aren't required
         # to know about this gap.  Gated on the trainer-side snapshot so the
         # demoted-to-``"no"`` case (output_dir is None) doesn't install it.
-        if self._save_strategy == "best":
+        if self.args.save_strategy == "best":
             self._callback_handler.add_callback(BestModelSaveCallback())
         if args.debug and "underflow_overflow" in str(args.debug):
             from transformers.debug_utils import DebugUnderflowOverflow
@@ -584,12 +540,21 @@ class DPTrainer:
         """Whether this is the world-rank-0 process (HF parity)."""
         return self._ddp.is_world_zero
 
+    def _stamp_ddp_flags(self, state: DPTrainerState) -> None:
+        """Stamp per-rank ``is_*_process_zero`` flags onto ``state``.
+
+        The flags are per-rank metadata (not part of the durable
+        checkpoint contract), so any newly-constructed or
+        freshly-deserialized ``DPTrainerState`` needs them set.
+        """
+        state.is_world_process_zero = self._ddp.is_world_zero
+        state.is_local_process_zero = self._ddp.is_local_zero
+
     def _reset_state_for_new_run(self) -> None:
         self.state = DPTrainerState()
         self.state.max_steps = self._predict_total_steps()
         self.state.compute_steps(self.args)
-        self.state.is_world_process_zero = self._ddp.is_world_zero
-        self.state.is_local_process_zero = self._ddp.is_local_zero
+        self._stamp_ddp_flags(self.state)
         self._control = TrainerControl()
         self._tr_loss = torch.tensor(0.0, device=self._device)
         self._total_loss_scalar = 0.0
@@ -811,11 +776,7 @@ class DPTrainer:
             trainer_state_json = self._read_trainer_state(resume_path)
             if trainer_state_json is not None:
                 self.state = DPTrainerState.from_json(trainer_state_json)
-                # Restore the rank-aware process-zero flags after the JSON
-                # round-trip — they are per-rank, not part of the durable
-                # checkpoint contract.
-                self.state.is_world_process_zero = self._ddp.is_world_zero
-                self.state.is_local_process_zero = self._ddp.is_local_zero
+                self._stamp_ddp_flags(self.state)
                 # Re-bind callback handler to the new state object.
                 self._callback_handler.state = self.state
 
@@ -870,8 +831,7 @@ class DPTrainer:
 
     def _reset_state_for_batch_size_retry(self, snapshot: DPTrainerState) -> None:
         self.state = DPTrainerState.from_json(snapshot.to_json())
-        self.state.is_world_process_zero = self._ddp.is_world_zero
-        self.state.is_local_process_zero = self._ddp.is_local_zero
+        self._stamp_ddp_flags(self.state)
         self._callback_handler.state = self.state
         self._control = TrainerControl()
         self._ctx = None
@@ -3284,13 +3244,6 @@ class DPTrainer:
     # Save / checkpoint  (Phase 2a)
     # ------------------------------------------------------------------
 
-    # Allowed values for ``args.save_strategy``.  Inlined-validation
-    # is in ``__init__`` (a previous ``_validate_save_args`` helper was
-    # collapsed once ``TrainingArguments.__post_init__`` became
-    # idempotent — the snapshot dance it performed is no longer
-    # needed).
-    _SAVE_STRATEGIES = ("no", "steps", "epoch", "best")
-
     def _effective_train_dataset_size(self) -> int:
         """Length of ``self._train_dataset`` after the DDP equal-shard trim.
 
@@ -3425,11 +3378,11 @@ class DPTrainer:
             )
         _, value = resolved
         if not is_metric_improved(
-            value, self.state.best_metric, self._greater_is_better
+            value, self.state.best_metric, self.args.greater_is_better
         ):
             return
         self.state.best_metric = value
-        if self._save_strategy in {"steps", "epoch", "best"}:
+        if self.args.save_strategy in {"steps", "epoch", "best"}:
             self.state.best_global_step = global_step
 
     def _load_best_model(self, ctx: "_TrainingContext") -> None:
@@ -3790,7 +3743,7 @@ class DPTrainer:
         Skipped if a checkpoint at this exact step already exists (e.g. an
         epoch-strategy save just fired and we're now at end-of-training).
         """
-        if self._save_strategy == "no":
+        if self.args.save_strategy == "no":
             return
         output_dir = self._effective_output_dir()
         if output_dir is None:
@@ -3802,7 +3755,7 @@ class DPTrainer:
 
     def _refresh_final_checkpoint_state(self, global_step: int) -> None:
         """Refresh final checkpoint metadata after final logs update callbacks."""
-        if self._save_strategy == "no":
+        if self.args.save_strategy == "no":
             return
         output_dir = self._effective_output_dir()
         if output_dir is None:

@@ -936,7 +936,7 @@ class TestDPTrainerCheckpointing:
         # ``__post_init__`` populates the default at construction time,
         # so the args object reflects the resolved value just like
         # ``transformers.TrainingArguments``.
-        assert trainer._greater_is_better is False
+        assert trainer.args.greater_is_better is False
         assert trainer.args.greater_is_better is False
 
     def test_greater_is_better_default_for_accuracy(
@@ -958,7 +958,7 @@ class TestDPTrainerCheckpointing:
         )
         # Anything not ending in "loss" → greater_is_better=True.  HF parity:
         # ``__post_init__`` populates the default at construction time.
-        assert trainer._greater_is_better is True
+        assert trainer.args.greater_is_better is True
         assert trainer.args.greater_is_better is True
 
     def test_best_metric_tracking_runs(self, gpt2_with_lora, tiny_lm_dataset, tmp_path):

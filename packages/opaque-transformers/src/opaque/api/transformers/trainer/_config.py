@@ -69,12 +69,14 @@ from typing import Any
 
 import torch
 from transformers.debug_utils import DebugOption
-from transformers.trainer_utils import (
-    IntervalStrategy,
-    SaveStrategy,
-    SchedulerType,
-)
+from transformers.trainer_utils import SchedulerType
 from transformers.training_args import ParallelMode
+
+
+# Plain-string strategy domains; replaces HF's ``IntervalStrategy`` and
+# ``SaveStrategy`` enums (we never need the enum form, only the value).
+_INTERVAL_STRATEGIES: tuple[str, ...] = ("no", "steps", "epoch")
+_SAVE_STRATEGIES: tuple[str, ...] = ("no", "steps", "epoch", "best")
 from transformers.utils import is_torch_bf16_gpu_available, is_torch_xla_available
 
 
@@ -149,7 +151,6 @@ class TrainingArguments:
     # =================================================================
     output_dir: str | None = None
     overwrite_output_dir: bool = False
-    do_eval: bool = False
 
     # =================================================================
     # Batch sizes
@@ -189,7 +190,7 @@ class TrainingArguments:
     log_level_replica: str = "warning"
     log_on_each_node: bool = True
     logging_dir: str | None = None
-    logging_strategy: IntervalStrategy | str = "steps"
+    logging_strategy: str = "steps"
     logging_first_step: bool = False
     logging_steps: float = 500
     logging_nan_inf_filter: bool = True
@@ -197,7 +198,7 @@ class TrainingArguments:
     # =================================================================
     # Saving
     # =================================================================
-    save_strategy: SaveStrategy | str = "steps"
+    save_strategy: str = "steps"
     save_steps: float = 500
     save_total_limit: int | None = None
     save_safetensors: bool = True
@@ -237,7 +238,7 @@ class TrainingArguments:
     # =================================================================
     # Evaluation
     # =================================================================
-    eval_strategy: IntervalStrategy | str = "no"
+    eval_strategy: str = "no"
     eval_steps: float | None = None
     eval_on_start: bool = False
     eval_do_concat_batches: bool = True
@@ -416,28 +417,27 @@ class TrainingArguments:
         for _k, _default in (("min", 0.01), ("max", 10.0), ("tolerance", 1e-3)):
             _nc.setdefault(_k, _default)
 
-        # --- 1c. Deprecated DP mechanism / sampling names -------------------
-        if self.privacy_noise_mechanism == "truncated_gaussian":
-            warnings.warn(
-                "privacy_noise_mechanism='truncated_gaussian' is deprecated; use "
-                "'gaussian' with privacy_noise_mechanism_kwargs={'bound': ...} "
-                "(defaults bound from privacy_noise_radius when missing).",
-                DeprecationWarning,
-                stacklevel=2,
+        # --- 2. Strategy validation -----------------------------------------
+        # Plain-string strategies; the HF enum round-trip was dropped
+        # alongside the enum imports.
+        if self.eval_strategy not in _INTERVAL_STRATEGIES:
+            raise ValueError(
+                f"eval_strategy={self.eval_strategy!r}; "
+                f"expected one of {_INTERVAL_STRATEGIES}"
             )
-            self.privacy_noise_mechanism = "gaussian"
-            _pnkw = dict(self.privacy_noise_mechanism_kwargs)
-            _pnkw.setdefault("bound", self.privacy_noise_radius)
-            self.privacy_noise_mechanism_kwargs = _pnkw
-        # --- 2. Strategy enum coercion --------------------------------------
-        # Round-trip through ``.value`` so the field stays a plain string
-        # downstream.  HF's ``ExplicitEnum`` instances compare equal to
-        # their string value (``IntervalStrategy.STEPS == "steps"``).
-        self.eval_strategy = IntervalStrategy(self.eval_strategy).value
-        self.logging_strategy = IntervalStrategy(self.logging_strategy).value
-        self.save_strategy = SaveStrategy(self.save_strategy).value
-        # Keep as the SchedulerType enum (not .value) so HF utilities that
-        # call ``trainer.args.lr_scheduler_type.value`` work correctly.
+        if self.logging_strategy not in _INTERVAL_STRATEGIES:
+            raise ValueError(
+                f"logging_strategy={self.logging_strategy!r}; "
+                f"expected one of {_INTERVAL_STRATEGIES}"
+            )
+        if self.save_strategy not in _SAVE_STRATEGIES:
+            raise ValueError(
+                f"save_strategy={self.save_strategy!r}; "
+                f"expected one of {_SAVE_STRATEGIES}"
+            )
+        # Keep ``lr_scheduler_type`` as the SchedulerType enum (not
+        # ``.value``) so HF utilities that read
+        # ``trainer.args.lr_scheduler_type.value`` keep working.
         self.lr_scheduler_type = SchedulerType(self.lr_scheduler_type)
 
         if isinstance(self.debug, str):
@@ -473,7 +473,7 @@ class TrainingArguments:
             self.disable_tqdm = log.getEffectiveLevel() > logging.WARN
 
         # --- 4. Cadence-alignment validation --------------------------------
-        if self.eval_strategy == IntervalStrategy.STEPS.value and (
+        if self.eval_strategy == "steps" and (
             self.eval_steps is None or self.eval_steps == 0
         ):
             if self.logging_steps and self.logging_steps > 0:
@@ -489,7 +489,7 @@ class TrainingArguments:
                 )
 
         if (
-            self.logging_strategy == IntervalStrategy.STEPS.value
+            self.logging_strategy == "steps"
             and self.logging_steps == 0
         ):
             raise ValueError(
@@ -499,7 +499,7 @@ class TrainingArguments:
 
         # Coerce >1 step fields to ``int`` (HF parity).
         if (
-            self.logging_strategy == IntervalStrategy.STEPS.value
+            self.logging_strategy == "steps"
             and self.logging_steps > 1
         ):
             if self.logging_steps != int(self.logging_steps):
@@ -509,7 +509,7 @@ class TrainingArguments:
                 )
             self.logging_steps = int(self.logging_steps)
         if (
-            self.eval_strategy == IntervalStrategy.STEPS.value
+            self.eval_strategy == "steps"
             and self.eval_steps is not None
             and self.eval_steps > 1
         ):
@@ -519,7 +519,7 @@ class TrainingArguments:
                     f"{self.eval_steps}"
                 )
             self.eval_steps = int(self.eval_steps)
-        if self.save_strategy == SaveStrategy.STEPS.value and self.save_steps > 1:
+        if self.save_strategy == "steps" and self.save_steps > 1:
             if self.save_steps != int(self.save_steps):
                 raise ValueError(
                     f"--save_steps must be an integer if bigger than 1: "
@@ -529,7 +529,7 @@ class TrainingArguments:
 
         if (
             self.load_best_model_at_end
-            and self.save_strategy != SaveStrategy.BEST.value
+            and self.save_strategy != "best"
         ):
             if self.eval_strategy != self.save_strategy:
                 raise ValueError(
@@ -539,7 +539,7 @@ class TrainingArguments:
                     f"{self.save_strategy}"
                 )
             if (
-                self.eval_strategy == IntervalStrategy.STEPS.value
+                self.eval_strategy == "steps"
                 and self.eval_steps
                 and self.save_steps
             ):
@@ -570,9 +570,6 @@ class TrainingArguments:
                         )
 
         # --- 5. Default population ------------------------------------------
-        if not self.do_eval and self.eval_strategy != IntervalStrategy.NO.value:
-            self.do_eval = True
-
         if (
             self.load_best_model_at_end
             or self.lr_scheduler_type == SchedulerType.REDUCE_ON_PLATEAU
@@ -582,10 +579,33 @@ class TrainingArguments:
         if self.greater_is_better is None and self.metric_for_best_model is not None:
             self.greater_is_better = not self.metric_for_best_model.endswith("loss")
 
+        # --- 5b. Cross-field invariants (formerly trainer-side) -------------
+        # ``save_strategy='best'`` requires eval to be configured so we
+        # can actually pick a best checkpoint.
+        if self.save_strategy == "best" and self.eval_strategy == "no":
+            raise ValueError("save_strategy='best' requires eval_strategy != 'no'")
+        # ``load_best_model_at_end`` requires both eval and save to be on.
+        if self.load_best_model_at_end:
+            if self.eval_strategy == "no":
+                raise ValueError(
+                    "load_best_model_at_end=True requires eval_strategy != 'no'"
+                )
+            if self.save_strategy == "no":
+                raise ValueError(
+                    "load_best_model_at_end=True requires save_strategy != 'no'"
+                )
+        # ``save_steps`` must be positive when save_strategy != 'no'.
+        if (
+            self.save_strategy != "no"
+            and self.save_steps is not None
+            and self.save_steps <= 0
+        ):
+            raise ValueError(f"save_steps must be > 0, got {self.save_steps}")
+
         # --- 6. Warmup / dataloader sanity ----------------------------------
         if (
             self.lr_scheduler_type == SchedulerType.REDUCE_ON_PLATEAU
-            and self.eval_strategy == IntervalStrategy.NO.value
+            and self.eval_strategy == "no"
             and not self.eval_on_start
         ):
             raise ValueError(

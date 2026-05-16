@@ -28,9 +28,6 @@ from typing import Any
 __all__ = ["DPTrainerState"]
 
 
-_STATE_VERSION = 1
-
-
 @dataclasses.dataclass
 class DPTrainerState:
     """Trainer state for DPTrainer (standalone; not a ``TrainerState`` subclass).
@@ -67,9 +64,6 @@ class DPTrainerState:
     privacy_expected_batch_size: int | None = None
     privacy_total_steps: int | None = None
 
-    # Serialisation version; bumped on schema changes.
-    version: int = _STATE_VERSION
-
     def compute_steps(self, args: Any) -> None:
         """Resolve absolute step counts for logging/eval/save.
 
@@ -97,14 +91,6 @@ class DPTrainerState:
         """Reconstruct from a dict loaded from ``trainer_state.json``.
 
         Unknown keys are filtered (forward-compat with newer writers).
-        Missing ``version`` is tolerated and treated as legacy v0;
-        a version greater than our own raises ``ValueError``.
         """
-        version = data.get("version")
-        if version is not None and version > _STATE_VERSION:
-            raise ValueError(
-                f"checkpoint trainer_state.json version {version} is not "
-                f"supported by this DPTrainer (expected <= {_STATE_VERSION})."
-            )
         known = {f.name for f in dataclasses.fields(cls)}
         return cls(**{k: v for k, v in data.items() if k in known})

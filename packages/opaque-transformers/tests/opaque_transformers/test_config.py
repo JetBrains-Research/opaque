@@ -8,10 +8,9 @@ Covers:
 - Cadence-alignment validation for ``load_best_model_at_end``
   (``save_strategy`` must equal ``eval_strategy``;
   ``save_steps % eval_steps == 0`` when both are step-based).
-- Strategy-string coercion across the four strategy fields
+- Strategy-string validation across the four strategy fields
   (``eval_strategy`` / ``logging_strategy`` / ``save_strategy`` /
   ``lr_scheduler_type``).
-- ``do_eval`` auto-flip when an eval strategy is configured.
 """
 
 from __future__ import annotations
@@ -137,6 +136,12 @@ class TestStrategyCoercion:
         # Side-args needed for some coercions (eval_strategy="steps" needs eval_steps).
         if field == "eval_strategy" and value == "steps":
             kwargs["eval_steps"] = 1
+        # ``save_strategy='best'`` is a cross-field invariant: requires
+        # ``eval_strategy != 'no'`` so the trainer can pick a best
+        # checkpoint.  Pair with ``eval_strategy='steps'`` so the
+        # coercion path exits cleanly.
+        if field == "save_strategy" and value == "best":
+            kwargs.update(eval_strategy="steps", eval_steps=1, save_steps=1)
         args = TrainingArguments(**kwargs)
         assert getattr(args, field) == expected
 
@@ -252,22 +257,6 @@ class TestOptimizerSupportSurface:
         assert optim in message
         # Whitelist error lists the supported set.
         assert "expected one of" in message
-
-
-class TestDoEvalAutoFlip:
-    """``do_eval`` auto-flips when an eval strategy is configured."""
-
-    def test_eval_strategy_steps_flips_do_eval(self):
-        args = TrainingArguments(eval_strategy="steps", eval_steps=5)
-        assert args.do_eval is True
-
-    def test_eval_strategy_no_keeps_do_eval_false(self):
-        args = TrainingArguments(eval_strategy="no")
-        assert args.do_eval is False
-
-    def test_explicit_do_eval_preserved(self):
-        args = TrainingArguments(do_eval=True, eval_strategy="no")
-        assert args.do_eval is True
 
 
 class TestEvalStepsFallback:
