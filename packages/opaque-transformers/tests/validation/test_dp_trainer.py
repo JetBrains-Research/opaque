@@ -1571,58 +1571,6 @@ class TestDPTrainerEvalMemory:
         assert isinstance(captured["label_ids"], list)
         assert len(captured["predictions"]) == 2
 
-    def test_batch_eval_metrics_per_batch_reduction(
-        self, gpt2_with_lora, tiny_lm_dataset
-    ):
-        """batch_eval_metrics=True calls compute_metrics once per batch.
-
-        HF parity: ``compute_result=True`` is passed *inline* on the last
-        data batch — there is no separate synthetic final call after the
-        loop.  With 2 batches: batch-1 → False, batch-2 (last) → True.
-        """
-        model, tokenizer = gpt2_with_lora
-        calls: list[bool] = []  # records compute_result for each call
-
-        def cm(eval_pred, compute_result=True):
-            calls.append(compute_result)
-            return {"acc": 0.5}
-
-        trainer = DPTrainer(
-            model=model,
-            args=_default_args(
-                per_device_eval_batch_size=4,  # 8 examples / 4 = 2 batches
-                batch_eval_metrics=True,
-            ),
-            processing_class=tokenizer,
-            train_dataset=tiny_lm_dataset,
-            eval_dataset=tiny_lm_dataset,
-            compute_metrics=cm,
-        )
-        metrics = trainer.evaluate()
-
-        # batch-1 → compute_result=False, batch-2 (last) → compute_result=True.
-        # No separate synthetic final call — HF inline-final pattern.
-        assert calls == [False, True]
-        assert "eval_acc" in metrics
-
-    def test_batch_eval_metrics_without_compute_metrics_raises(
-        self,
-        gpt2_with_lora,
-        tiny_lm_dataset,
-    ):
-        """Validation: batch_eval_metrics=True without compute_metrics → ValueError."""
-        model, tokenizer = gpt2_with_lora
-        with pytest.raises(ValueError, match="batch_eval_metrics=True"):
-            DPTrainer(
-                model=model,
-                args=_default_args(batch_eval_metrics=True),
-                processing_class=tokenizer,
-                train_dataset=tiny_lm_dataset,
-                eval_dataset=tiny_lm_dataset,
-                compute_metrics=None,
-            )
-
-
 # ---------------------------------------------------------------------------
 # Phase 3c: include_for_metrics + deprecated alias removal
 # ---------------------------------------------------------------------------

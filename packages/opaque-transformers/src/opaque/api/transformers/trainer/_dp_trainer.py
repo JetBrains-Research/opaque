@@ -280,10 +280,11 @@ class DPTrainer:
         self._compute_loss_func = compute_loss_func
         self._preprocess_logits = preprocess_logits_for_metrics
         self._smoothing_kernel_warned = False
-
-        # Validate eval-related args before any further setup so misconfig
-        # surfaces at construction time, not deep inside the eval loop.
-        _eval.validate_eval_args(args, compute_metrics)
+        # Lazily-built per-example eval-loss closure (vmap'd).  Populated
+        # by ``_get_eval_per_example_loss_fn`` on first use; reset to
+        # ``None`` here so model rebinding can invalidate the cache.
+        self._eval_per_example_loss_fn: Callable | None = None
+        self._eval_per_example_loss_fn_model: Any = None
 
         # Default label_names so the eval loop can identify label tensors in
         # the batch dict.  HF parity (trainer.py:789-797): inspect the
@@ -1846,6 +1847,47 @@ class DPTrainer:
         else:
             labs = None
 
+        # ``'loss' in include_for_metrics`` opts into real per-example
+        # losses via the vmap'd eval closure — one forward pass returns
+        # ``(per_example_loss_1d, logits_batched)``.  Requires labels
+        # (loss-without-labels falls through to the standard path) and
+        # not ``prediction_loss_only`` (the vmap path produces logits
+        # anyway — there's no separate loss-only fast path).
+        use_per_example_loss = (
+            "loss" in (self.args.include_for_metrics or [])
+            and has_labels
+            and not prediction_loss_only
+        )
+
+        if use_per_example_loss:
+            vmapped_fn, batch_argnums, batch_keys = (
+                self._get_eval_per_example_loss_fn()
+            )
+            if self._ctx is not None:
+                trainable = self._ctx.trainable_params
+            else:
+                trainable = {
+                    name: p
+                    for name, p in self._model.named_parameters()
+                    if p.requires_grad
+                }
+            batch_args = tuple(inputs.get(k) for k in batch_keys)
+            with torch.no_grad():
+                was_training = self._model.training
+                if was_training:
+                    self._model.eval()
+                try:
+                    per_example_loss, logits_tensor = vmapped_fn(
+                        trainable, *batch_args
+                    )
+                finally:
+                    if was_training:
+                        self._model.train()
+            loss = per_example_loss.detach()
+            if prediction_loss_only:
+                return loss, None, None
+            return loss, logits_tensor.detach(), labs
+
         with torch.no_grad():
             if has_labels or loss_without_labels:
                 loss, output = self.compute_loss(
@@ -1950,11 +1992,21 @@ class DPTrainer:
 
         The loop produces ``(loss, logits, labels)`` per batch via
         :meth:`prediction_step` and feeds them to a
-        :class:`~opaque.api.transformers.trainer._eval._PredictionAccumulator`.
+        :class:`~opaque.api.transformers.trainer._eval._PredictionAccumulator`;
         ``compute_metrics`` is invoked once at the end with a single
-        :class:`EvalPrediction`, *unless* ``args.batch_eval_metrics`` is
-        ``True`` — in that mode, ``compute_metrics`` is called per batch as
-        a stateful reducer and the trainer-side accumulator is bypassed.
+        :class:`EvalPrediction`.
+
+        Optional ``EvalPrediction`` fields are opt-in via
+        ``args.include_for_metrics`` (the HF-canonical knob):
+
+        - ``'inputs'`` — populates ``EvalPrediction.inputs`` with the
+          model's primary input column (sniffed from
+          ``model.main_input_name``; ``"input_ids"`` for text models,
+          ``"pixel_values"`` for vision, etc.).
+        - ``'loss'`` — populates ``EvalPrediction.losses`` with **real
+          per-example losses** computed via the vmap'd eval closure
+          (:meth:`prediction_step` switches to a per-example forward
+          when this is requested).
 
         ``prediction_loss_only`` (when not ``None``) overrides
         ``args.prediction_loss_only`` — used by HF when callers want a
@@ -1979,52 +2031,7 @@ class DPTrainer:
         # HF parity (trainer.py:4863-4866 → ``EvalPrediction.inputs``):
         # ``inputs`` exposed to ``compute_metrics`` carries only the
         # model's *primary* input column, not the entire batch dict.
-        # The primary column is sniffed from ``model.main_input_name``
-        # (``PreTrainedModel`` default ``"input_ids"``; vision models
-        # override to ``"pixel_values"``; audio to ``"input_values"``).
-        # Falling back to the full batch dict, as the prior
-        # implementation did, leaks ``attention_mask`` /
-        # ``decoder_input_ids`` / collator-side scratch columns into
-        # user metrics that expect a single tensor.
         main_input_name = getattr(self._model, "main_input_name", "input_ids")
-
-        batch_eval_metrics = (
-            bool(a.batch_eval_metrics) and self._compute_metrics is not None
-        )
-
-        def _concat_metric_payload(lhs: Any, rhs: Any) -> Any:
-            if isinstance(lhs, dict) and isinstance(rhs, dict):
-                return {
-                    k: _concat_metric_payload(lhs[k], rhs[k])
-                    for k in lhs.keys()
-                    if k in rhs
-                }
-            if isinstance(lhs, tuple) and isinstance(rhs, tuple):
-                return tuple(_concat_metric_payload(x, y) for x, y in zip(lhs, rhs))
-            if isinstance(lhs, list) and isinstance(rhs, list):
-                return [_concat_metric_payload(x, y) for x, y in zip(lhs, rhs)]
-            return _eval.nested_concat(lhs, rhs, padding_index=-100)
-
-        def _gather_metric_payload(value: Any) -> Any:
-            if value is None or not self._ddp.is_distributed:
-                return value
-            if getattr(a, "eval_use_gather_object", False):
-                import torch.distributed as dist
-
-                gathered: list[Any] = [None] * int(self._ddp.world_size)
-                dist.all_gather_object(gathered, value)
-                merged: Any | None = None
-                for item in gathered:
-                    if item is None:
-                        continue
-                    merged = (
-                        item if merged is None else _concat_metric_payload(merged, item)
-                    )
-                return merged
-
-            from opaque.api.engine.distributed._state import gather_pytree
-
-            return gather_pytree(value)
 
         # HF-parity entry log so train-time eval, final eval, and predict
         # show up distinctly in train logs.
@@ -2032,59 +2039,34 @@ class DPTrainer:
             num_examples = len(getattr(dataloader, "dataset", []) or [])
         except TypeError:
             num_examples = 0
-        per_device_eval_bs = int(getattr(a, "per_device_eval_batch_size", 0) or 0)
+        per_device_eval_bs = int(a.per_device_eval_batch_size or 0)
         log.info("***** Running %s *****", description)
         if num_examples:
             log.info("  Num examples = %d", num_examples)
         if per_device_eval_bs:
             log.info("  Batch size = %d", per_device_eval_bs)
 
-        accumulator: _eval._PredictionAccumulator | None = None
-        if not batch_eval_metrics:
-            accumulator = _eval._PredictionAccumulator(
-                prediction_loss_only=ploss_only,
-                eval_accumulation_steps=a.eval_accumulation_steps,
-                eval_do_concat_batches=bool(a.eval_do_concat_batches),
-                include_inputs=include_inputs,
-                include_losses=include_losses,
+        accumulator = _eval._PredictionAccumulator(
+            prediction_loss_only=ploss_only,
+            eval_accumulation_steps=a.eval_accumulation_steps,
+            eval_do_concat_batches=bool(a.eval_do_concat_batches),
+            include_inputs=include_inputs,
+            include_losses=include_losses,
+        )
+        if a.eval_accumulation_steps:
+            log.info(
+                "Eval CPU offload engaged: flushing every %d batches",
+                a.eval_accumulation_steps,
             )
-            if a.eval_accumulation_steps:
-                log.info(
-                    "Eval CPU offload engaged: flushing every %d batches",
-                    a.eval_accumulation_steps,
-                )
 
         total_loss = 0.0
         loss_samples = 0
         total_samples = 0
-        num_batches = 0
-        per_batch_metrics: dict[str, Any] = {}
-        final_batch_metrics: dict[str, Any] | None = None
 
-        # HF parity (trainer.py:4720-4729): under ``batch_eval_metrics`` the
-        # reducer must receive ``compute_result=True`` *inline on the last
-        # data batch* together with that batch's real predictions/labels —
-        # not as a synthetic empty-EvalPrediction call after the loop.
-        # Drive a one-batch peek-ahead so each iteration knows whether it's
-        # the final non-empty batch; this works for any iterable, including
-        # streaming datasets without ``__len__``.
-        batch_iter = iter(dataloader)
-        pending: Any = None
-        for candidate in batch_iter:
-            if (_eval.find_batch_size(candidate) or 0) > 0:
-                pending = candidate
-                break
-
-        while pending is not None:
-            batch = pending
-            pending = None
-            for candidate in batch_iter:
-                if (_eval.find_batch_size(candidate) or 0) > 0:
-                    pending = candidate
-                    break
-            is_last_step = pending is None
-
+        for batch in dataloader:
             bs = _eval.find_batch_size(batch) or 0
+            if bs == 0:
+                continue
             loss, logits, labels = self.prediction_step(
                 self._model,
                 batch,
@@ -2100,92 +2082,37 @@ class DPTrainer:
                 self._control,
             )
 
+            # ``loss`` is scalar (default forward) or 1-D per-example
+            # (when ``'loss' in include_for_metrics`` triggers the
+            # vmap'd eval closure).  Either way, sum-into-total uses the
+            # same closed form: scalar contributes ``loss * bs``; 1-D
+            # contributes ``loss.sum()`` which equals the same total.
             if loss is not None:
-                total_loss += float(loss.item()) * bs
+                total_loss += (
+                    float(loss.sum().item())
+                    if loss.ndim > 0
+                    else float(loss.item()) * bs
+                )
                 loss_samples += bs
             total_samples += bs
-            num_batches += 1
 
-            if batch_eval_metrics:
-                # Per-batch stateful reduction.  HF parity (trainer.py:4720-
-                # 4729): pass the **full batch dict** as
-                # ``EvalPrediction.inputs`` (HF binds the for-loop variable
-                # ``inputs`` directly into ``batch_kwargs["inputs"]``), not
-                # a filtered single-column view.  Only invoke
-                # ``compute_metrics`` when both predictions and labels are
-                # non-None — otherwise ``compute_result=False`` calls would
-                # receive ``predictions=None`` under
-                # ``prediction_loss_only=True`` and silently break user
-                # reducers.
-                if logits is not None and labels is not None:
-                    if self._preprocess_logits is not None:
-                        logits_for_hook: Tensor | tuple[Tensor, ...]
-                        logits_for_hook = (
-                            logits[0]
-                            if isinstance(logits, tuple) and len(logits) == 1
-                            else logits
-                        )
-                        processed = self._preprocess_logits(logits_for_hook, labels)
-                        logits = processed
-
-                    gathered_logits = _gather_metric_payload(logits)
-                    gathered_labels = _gather_metric_payload(labels)
-                    gathered_inputs = (
-                        _gather_metric_payload(batch) if include_inputs else None
-                    )
-                    gathered_losses = None
-                    if include_losses and loss is not None:
-                        gathered_losses = _gather_metric_payload(
-                            loss.detach().to(self._device).reshape(()).repeat(bs)
-                        )
-
-                    ep = EvalPrediction(
-                        predictions=_eval.nested_numpify(gathered_logits),
-                        label_ids=_eval.nested_numpify(gathered_labels),
-                        inputs=_eval.nested_numpify(gathered_inputs)
-                        if gathered_inputs is not None
-                        else None,
-                        losses=_eval.nested_numpify(gathered_losses)
-                        if gathered_losses is not None
-                        else None,
-                    )
-                    step_metrics = self._compute_metrics(
-                        ep,
-                        compute_result=is_last_step,
-                    )
-                    if step_metrics:
-                        if is_last_step:
-                            final_batch_metrics = dict(step_metrics)
-                        else:
-                            per_batch_metrics.update(step_metrics)
-            else:
-                if logits is not None and self._preprocess_logits is not None:
-                    logits_for_hook: Tensor | tuple[Tensor, ...]
-                    logits_for_hook = (
-                        logits[0]
-                        if isinstance(logits, tuple) and len(logits) == 1
-                        else logits
-                    )
-                    processed = self._preprocess_logits(logits_for_hook, labels)
-                    logits = processed
-
-                # HF parity (trainer.py:4687-4688): the non-batched path
-                # collects ``inputs_decode = inputs[main_input_name]`` —
-                # a bare tensor — into the accumulator.  When the user's
-                # collator omits the primary input column entirely
-                # (uncommon), ``main_input`` is ``None`` and downstream
-                # ``EvalPrediction.inputs`` is reported as unavailable.
-                if include_inputs:
-                    main_input = batch.get(main_input_name)
-                else:
-                    main_input = None
-                accumulator.add(
-                    loss=loss,
-                    logits=logits,
-                    labels=labels,
-                    inputs=main_input,
-                    batch_size=bs,
+            if logits is not None and self._preprocess_logits is not None:
+                logits_for_hook: Tensor | tuple[Tensor, ...]
+                logits_for_hook = (
+                    logits[0]
+                    if isinstance(logits, tuple) and len(logits) == 1
+                    else logits
                 )
+                logits = self._preprocess_logits(logits_for_hook, labels)
+
+            main_input = batch.get(main_input_name) if include_inputs else None
+            accumulator.add(
+                loss=loss,
+                logits=logits,
+                labels=labels,
+                inputs=main_input,
+                batch_size=bs,
+            )
 
         # ----- Finalize metrics -----
         # Phase 10c: under DDP each rank evaluated a disjoint shard of the
@@ -2206,19 +2133,11 @@ class DPTrainer:
         if loss_samples > 0:
             metrics["loss"] = total_loss / loss_samples
 
-        predictions: Tensor | list[Tensor] | None = None
-        label_ids: Tensor | list[Tensor] | None = None
-
-        # HF parity (trainer.py:4757-4769): num_samples for the
-        # ``EvalLoopOutput`` follows a fallback chain — prefer the
-        # dataset's ``__len__``, then the dataloader's, and only fall
-        # back to observed batch sums when neither is available (pure
-        # streaming).  Under DDP each rank's dataloader sees a per-rank
-        # shard (``local_shard``) so ``len(dataset)`` reports the per-rank
-        # count, not the cluster-wide one.  Skip the length-probe path and
-        # use the AllReduce'd ``total_samples`` directly so truncation
-        # after gather doesn't slice the cluster-wide tensor back down to
-        # one shard.
+        # HF parity: under DDP each rank's dataloader sees a per-rank
+        # shard (``local_shard``) so ``len(dataset)`` reports per-rank
+        # count, not cluster-wide.  Use the AllReduce'd ``total_samples``
+        # directly so truncation after gather doesn't slice the
+        # cluster-wide tensor back down to one shard.
         if self._ddp.is_distributed:
             num_samples = total_samples
         else:
@@ -2227,47 +2146,32 @@ class DPTrainer:
                 observed=total_samples,
             )
 
-        if batch_eval_metrics:
-            # The reducer's ``compute_result=True`` call already ran inline
-            # on the last data batch.  Prefer that final return value;
-            # fall back to the running per-batch dict only when the last
-            # batch had no predictions (so the reducer never produced a
-            # final return) or returned nothing.
-            if final_batch_metrics is not None:
-                metrics.update(final_batch_metrics)
-            elif per_batch_metrics:
-                metrics.update(per_batch_metrics)
-        else:
-            predictions, label_ids, inputs_arr, losses_tensor = accumulator.finalize(
-                num_samples=num_samples,
-                gather=self._ddp.is_distributed,
+        predictions, label_ids, inputs_arr, losses_tensor = accumulator.finalize(
+            num_samples=num_samples,
+            gather=self._ddp.is_distributed,
+        )
+
+        if total_samples > 0 and (
+            self._compute_metrics is not None
+            and not ploss_only
+            and predictions is not None
+        ):
+            ep = EvalPrediction(
+                predictions=predictions,
+                label_ids=label_ids,
+                inputs=inputs_arr,
+                losses=losses_tensor,
             )
+            user_metrics = self._compute_metrics(ep)
+            if user_metrics:
+                metrics.update(user_metrics)
+        # Empty-dataset path: HF silently skips ``compute_metrics``;
+        # we mirror that — ``metrics`` carries only ``loss`` (absent
+        # when total_samples == 0).  Caller-level evaluate/predict
+        # wrappers add throughput metrics.
 
-            if total_samples > 0 and (
-                self._compute_metrics is not None
-                and not ploss_only
-                and predictions is not None
-            ):
-                ep = EvalPrediction(
-                    predictions=predictions,
-                    label_ids=label_ids,
-                    inputs=inputs_arr,
-                    losses=losses_tensor,
-                )
-                user_metrics = self._compute_metrics(ep)
-                if user_metrics:
-                    metrics.update(user_metrics)
-            # Empty-dataset path: HF silently skips ``compute_metrics``;
-            # we mirror that — ``metrics`` carries only ``loss`` (absent
-            # when total_samples == 0).  Caller-level evaluate/predict
-            # wrappers add throughput metrics.
-
-        # HF parity: scalarize numpy / tensor scalars before serialization
-        # so JSON-encoded log rows never carry ``np.float32`` / 0-d Tensor
-        # objects that would otherwise crash ``json.dump``.
+        # HF parity: scalarize numpy / tensor scalars before serialization.
         metrics = _eval.denumpify_detensorize(metrics)
-        # Apply the prefix once, at the end.  Caller-level evaluate/predict
-        # wrappers add already-prefixed speed metrics after this raw loop.
         prefixed = _eval.with_metric_prefix(metrics, metric_key_prefix)
 
         return EvalLoopOutput(
@@ -2662,7 +2566,9 @@ class DPTrainer:
         fmodel: Callable[..., Any],
         frozen_params: dict[str, Tensor],
         batch_keys: tuple[str, ...],
-    ) -> tuple[Callable[..., Tensor], tuple[int, ...]]:
+        *,
+        return_logits: bool = False,
+    ) -> tuple[Callable[..., Any], tuple[int, ...]]:
         """Build the per-example DP-SGD loss closure.
 
         Mirrors HF's default ``Trainer.compute_loss`` (``model(**inputs).loss``),
@@ -2688,17 +2594,27 @@ class DPTrainer:
                 ``trainable_params`` at every forward.
             batch_keys: Ordered tuple of tensor keys the collator emits
                 (discovered via :meth:`_discover_batch_keys`).
+            return_logits: When ``True``, the closure returns
+                ``(loss, logits)`` instead of just ``loss`` — used by
+                eval (:meth:`prediction_step`) to recover both
+                per-example losses and predictions in a single vmap'd
+                forward.  Loss scaling is skipped in this mode (eval
+                doesn't compose with fp16 dynamic loss scaling).
 
         Returns:
-            ``(per_example_loss_fn, batch_argnums)`` where the loss
-            closure has signature
-            ``(trainable_params, *batch_args) -> scalar_loss``.
+            ``(per_example_loss_fn, batch_argnums)`` where the closure
+            has signature ``(trainable_params, *batch_args) ->
+            scalar_loss`` (or ``(scalar_loss, logits)`` when
+            ``return_logits=True``).
         """
         keys = batch_keys
         smoothing = float(self.args.label_smoothing_factor)
         amp_dtype = self._amp_dtype
         device_type = self._device.type
-        loss_scaler = self._loss_scaler
+        # Skip loss scaling on the eval closure: fp16 dynamic scaling is
+        # a training-side mechanism for gradient underflow, irrelevant
+        # to eval and incompatible with the ``return_logits`` shape.
+        loss_scaler = None if return_logits else self._loss_scaler
         # autocast(device_type="cpu") only supports bf16; fp16 autocast is
         # a CUDA-only path.  We let torch raise a clear error on misuse;
         # nothing extra to validate here.
@@ -2707,7 +2623,7 @@ class DPTrainer:
         def per_example_loss(
             trainable: dict[str, Tensor],
             *batch_args: Tensor,
-        ) -> Tensor:
+        ) -> Any:
             merged = {**frozen_params, **trainable}
             # Each ``batch_arg`` lost its leading batch dim to vmap; the
             # model's ``forward`` either gets unsqueezed by opaque's
@@ -2735,9 +2651,12 @@ class DPTrainer:
                     "subclass for domain-specific losses."
                 )
 
+            output_logits = getattr(output, "logits", None)
+            if output_logits is None and isinstance(output, dict):
+                output_logits = output.get("logits")
+
             if smoothing > 0.0:
-                logits = getattr(output, "logits", None)
-                if logits is not None:
+                if output_logits is not None:
                     label_key = next(
                         (k for k in self._label_names if k in kwargs), None
                     )
@@ -2748,14 +2667,14 @@ class DPTrainer:
                     )
                     if labels_tensor is not None:
                         if (
-                            logits.ndim >= 2
-                            and logits.shape[:-1] == labels_tensor.shape
-                            and logits.shape[-2] > 1
+                            output_logits.ndim >= 2
+                            and output_logits.shape[:-1] == labels_tensor.shape
+                            and output_logits.shape[-2] > 1
                         ):
-                            smooth_logits = logits[..., :-1, :].contiguous()
+                            smooth_logits = output_logits[..., :-1, :].contiguous()
                             smooth_labels = labels_tensor[..., 1:].contiguous()
                         else:
-                            smooth_logits = logits
+                            smooth_logits = output_logits
                             smooth_labels = labels_tensor
                         loss = torch.nn.functional.cross_entropy(
                             smooth_logits.view(-1, smooth_logits.size(-1)),
@@ -2779,6 +2698,8 @@ class DPTrainer:
             # accountant's sensitivity calibration sees unscaled grads.
             if loss_scaler is not None:
                 loss = loss_scaler.scale_loss(loss, self._loss_scaler_state)
+            if return_logits:
+                return loss, output_logits
             return loss
 
         # When `args.torch_compile=True`, compile the loss closure (NOT
@@ -2795,6 +2716,52 @@ class DPTrainer:
             )
 
         return per_example_loss, tuple(range(1, 1 + len(keys)))
+
+    def _get_eval_per_example_loss_fn(
+        self,
+    ) -> tuple[Callable[..., Any], tuple[int, ...], tuple[str, ...]]:
+        """Return a vmap'd per-example eval closure (cached) plus its batch keys.
+
+        Used by :meth:`prediction_step` when the caller has opted into
+        real per-example losses via
+        ``args.include_for_metrics=['loss']``.  The closure returns
+        ``(per_example_loss, logits)`` for one example; ``vmap`` over
+        the batch produces a 1-D loss tensor + batched logits in a
+        single forward pass.
+
+        Cached per model identity — invalidated when ``self._model``
+        rebinds (the cache key is the live ``self._model`` reference).
+        During an active training run the trainer already has
+        ``ctx.fmodel`` / ``ctx.frozen_params`` populated; outside
+        training we run ``make_functional(self._model)`` once on first
+        use and reuse the result.
+        """
+        if (
+            self._eval_per_example_loss_fn is not None
+            and self._eval_per_example_loss_fn_model is self._model
+        ):
+            fn, batch_argnums, batch_keys = self._eval_per_example_loss_fn
+            return fn, batch_argnums, batch_keys
+
+        ctx = self._ctx
+        if ctx is not None:
+            fmodel = ctx.fmodel
+            frozen_params = ctx.frozen_params
+            batch_keys = ctx.batch_keys
+        else:
+            from opaque.functional import make_functional
+
+            fmodel, _trainable, frozen_params = make_functional(
+                self._model, partition_trainable=True
+            )
+            batch_keys = self._discover_batch_keys()
+        fn, batch_argnums = self._build_per_example_loss(
+            fmodel, frozen_params, batch_keys, return_logits=True
+        )
+        vmapped = torch.vmap(fn, in_dims=(None,) + (0,) * len(batch_argnums))
+        self._eval_per_example_loss_fn = (vmapped, batch_argnums, batch_keys)
+        self._eval_per_example_loss_fn_model = self._model
+        return vmapped, batch_argnums, batch_keys
 
     def _discover_batch_keys(self) -> tuple[str, ...]:
         """Discover the ordered tuple of tensor keys the collator emits.

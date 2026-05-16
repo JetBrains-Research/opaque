@@ -1,13 +1,13 @@
 """Unit tests for opaque.api.transformers.trainer._eval helpers.
 
-Covers ``should_run_eval_at_step``, ``_PredictionAccumulator``, and
-``validate_eval_args`` without instantiating a model — every parity rule
-for the eval loop is exercised in milliseconds.
+Covers ``should_run_eval_at_step`` and ``_PredictionAccumulator``
+without instantiating a model — every parity rule for the eval loop is
+exercised in milliseconds.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import pytest
 import torch
@@ -17,7 +17,6 @@ from opaque.api.transformers.trainer._eval import (
     EvalPrediction,
     _PredictionAccumulator,
     should_run_eval_at_step,
-    validate_eval_args,
     with_metric_prefix,
 )
 
@@ -37,8 +36,6 @@ class _Args:
     eval_accumulation_steps: int | None = None
     eval_do_concat_batches: bool = True
     prediction_loss_only: bool = False
-    batch_eval_metrics: bool = False
-    include_for_metrics: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -130,18 +127,26 @@ class TestPredictionAccumulator:
 
     def test_loss_only_short_circuits(self):
         acc = _PredictionAccumulator(prediction_loss_only=True, include_losses=True)
-        for v in (0.1, 0.2, 0.3):
-            _add_batch(acc, v)
+        # ``include_losses`` now stores only **real** 1-D per-example
+        # losses (produced by the vmap'd eval closure).  Pass per-example
+        # tensors of length ``batch_size`` directly.
+        for vals in ([0.1, 0.2], [0.3, 0.4], [0.5, 0.6]):
+            acc.add(
+                loss=torch.tensor(vals),
+                logits=torch.randn(2, 4),
+                labels=torch.randint(0, 10, (2, 4)),
+                inputs=torch.zeros(2, dtype=torch.long),
+                batch_size=2,
+            )
         preds, labels, inputs, losses = acc.finalize()
         assert preds is None
         assert labels is None
-        # Per-example losses (HF parity): each batch's reduced loss is
-        # repeated by ``batch_size``; with bs=2 over 3 batches that's 6.
         assert losses is not None
         assert losses.shape == (6,)
+        # Real per-example: each value distinct, not replicated.
         assert losses[0].item() == pytest.approx(0.1)
-        assert losses[1].item() == pytest.approx(0.1)
-        assert losses[5].item() == pytest.approx(0.3)
+        assert losses[1].item() == pytest.approx(0.2)
+        assert losses[5].item() == pytest.approx(0.6)
 
     def test_do_concat_false_returns_lists(self):
         acc = _PredictionAccumulator(eval_do_concat_batches=False)
@@ -185,20 +190,35 @@ class TestPredictionAccumulator:
         assert inputs.shape == (6,)
 
     def test_include_losses_is_per_example(self):
-        # HF parity: ``EvalPrediction.losses`` is per-example, length =
-        # total samples (sum of batch sizes), not per-batch.
+        # Real per-example losses: each entry distinct.
         acc = _PredictionAccumulator(include_losses=True)
-        for v in (0.1, 0.2, 0.3, 0.4):
-            _add_batch(acc, v)
+        for batch_vals in ([0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]):
+            acc.add(
+                loss=torch.tensor(batch_vals),
+                logits=torch.randn(2, 4),
+                labels=torch.randint(0, 10, (2, 4)),
+                inputs=torch.zeros(2, dtype=torch.long),
+                batch_size=2,
+            )
         _, _, _, losses = acc.finalize()
         assert losses is not None
-        # 4 batches × bs=2 = 8 per-example losses.
         assert losses.shape == (8,)
-        # Each batch's value is repeated by its batch size.
-        assert losses[0].item() == pytest.approx(0.1)
-        assert losses[1].item() == pytest.approx(0.1)
-        assert losses[6].item() == pytest.approx(0.4)
-        assert losses[7].item() == pytest.approx(0.4)
+        # Per-example values are stored as-is, not replicated batch-mean.
+        for idx, expected in enumerate([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]):
+            assert losses[idx].item() == pytest.approx(expected)
+
+    def test_include_losses_drops_scalar_batch_mean(self):
+        # Scalar (batch-mean) losses carry no per-example information so
+        # the accumulator silently drops them — populating
+        # ``EvalPrediction.losses`` from a replicated mean is fake by
+        # construction.  Users wanting real per-example losses must set
+        # ``include_for_metrics=['loss']`` so ``prediction_step`` takes
+        # the vmap'd eval path.
+        acc = _PredictionAccumulator(include_losses=True)
+        for v in (0.1, 0.2, 0.3):
+            _add_batch(acc, v)
+        _, _, _, losses = acc.finalize()
+        assert losses is None
 
     def test_missing_loss_still_collects_predictions(self):
         acc = _PredictionAccumulator(include_losses=True)
@@ -258,43 +278,6 @@ class TestWithMetricPrefix:
     def test_empty_prefix_is_passthrough(self):
         out = with_metric_prefix({"acc": 0.9}, "")
         assert out == {"acc": 0.9}
-
-
-# ---------------------------------------------------------------------------
-# validate_eval_args
-# ---------------------------------------------------------------------------
-
-
-class TestValidateEvalArgs:
-    def test_no_op_at_defaults(self):
-        validate_eval_args(_Args(), compute_metrics=None)  # does not raise
-
-    def test_batch_eval_metrics_without_compute_metrics_raises(self):
-        a = _Args(batch_eval_metrics=True)
-        with pytest.raises(ValueError, match="batch_eval_metrics=True"):
-            validate_eval_args(a, compute_metrics=None)
-
-    def test_batch_eval_metrics_with_compute_metrics_passes(self):
-        a = _Args(batch_eval_metrics=True)
-        validate_eval_args(
-            a,
-            compute_metrics=lambda ep, compute_result=False: {"x": 0.0},
-        )
-
-    def test_batch_eval_metrics_requires_compute_result_parameter(self):
-        a = _Args(batch_eval_metrics=True)
-        with pytest.raises(ValueError, match="compute_result"):
-            validate_eval_args(a, compute_metrics=lambda ep, **kw: {"x": 0.0})
-
-    def test_unknown_include_for_metrics_key_raises(self):
-        a = _Args(include_for_metrics=["foo"])
-        with pytest.raises(ValueError, match="include_for_metrics"):
-            validate_eval_args(a, compute_metrics=None)
-
-    def test_known_include_for_metrics_keys_pass(self):
-        validate_eval_args(_Args(include_for_metrics=["inputs"]), None)
-        validate_eval_args(_Args(include_for_metrics=["loss"]), None)
-        validate_eval_args(_Args(include_for_metrics=["inputs", "loss"]), None)
 
 
 # ---------------------------------------------------------------------------

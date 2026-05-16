@@ -235,10 +235,8 @@ class TrainingArguments:
     eval_steps: float | None = None
     eval_on_start: bool = False
     eval_do_concat_batches: bool = True
-    batch_eval_metrics: bool = False
     prediction_loss_only: bool = False
     include_for_metrics: list[str] = field(default_factory=list)
-    eval_use_gather_object: bool = False
     average_tokens_across_devices: bool = True
     metric_for_best_model: str | None = None
     greater_is_better: bool | None = None
@@ -685,6 +683,17 @@ class TrainingArguments:
                 "runtime stack that is not covered by Opaque first-class CI. "
                 "Launch with an initialized process group on compatible hardware.",
                 self.ddp_backend,
+            )
+
+        # ``include_for_metrics`` opts into populating optional fields on
+        # ``EvalPrediction`` — currently ``{"inputs", "loss"}``.  Fail fast on
+        # unknown keys (HF's runtime ValueError; moved here for consistency).
+        _allowed_include_for_metrics = frozenset({"inputs", "loss"})
+        _bad = [k for k in self.include_for_metrics if k not in _allowed_include_for_metrics]
+        if _bad:
+            raise ValueError(
+                f"include_for_metrics entries must be a subset of "
+                f"{sorted(_allowed_include_for_metrics)}; got unknown keys: {_bad}"
             )
 
         # Idempotency sentinel.

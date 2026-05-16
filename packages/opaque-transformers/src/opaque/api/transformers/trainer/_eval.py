@@ -18,16 +18,13 @@ helpers used by the eval loop:
   ``transformers.trainer_utils.speed_metrics`` so eval/predict reports
   expose ``{prefix}_runtime``, ``{prefix}_samples_per_second``,
   ``{prefix}_steps_per_second``.
-- :func:`validate_eval_args` — pure constructor-time validation of the
-  eval-related fields on :class:`TrainingArguments`.
 """
 
 from __future__ import annotations
 
 import dataclasses
-import inspect
 import time
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import Tensor
@@ -59,7 +56,6 @@ __all__ = [
     "resolve_eval_num_samples",
     "should_run_eval_at_step",
     "speed_metrics",
-    "validate_eval_args",
     "with_metric_prefix",
 ]
 
@@ -166,12 +162,16 @@ class _PredictionAccumulator:
         ``inputs_decode = inputs[main_input_name]``), or ``None`` if the
         collator didn't emit the primary input.
         """
-        # Per-example losses (HF parity): each batch's reduced loss is
-        # repeated by its batch size so the final ``EvalPrediction.losses``
-        # has length ``total_samples`` rather than ``num_batches``.
-        if self.include_losses and loss is not None:
-            losses_per_example = loss.detach().reshape(()).repeat(int(batch_size))
-            self._hot_losses.append(losses_per_example)
+        # ``loss`` is either scalar (the standard ``prediction_step``
+        # path: a batch-mean reduced by the model's ``forward``) or 1-D
+        # of length ``batch_size`` (the vmap'd eval closure path
+        # triggered by ``'loss' in include_for_metrics``).  We store
+        # only the real per-example track; scalar losses are discarded
+        # at this point because they carry no per-example information
+        # — populating ``EvalPrediction.losses`` from a replicated
+        # batch-mean is fake-by-construction and HF-misleading.
+        if self.include_losses and loss is not None and loss.ndim > 0:
+            self._hot_losses.append(loss.detach())
 
         if not self.prediction_loss_only:
             if logits is not None:
@@ -539,59 +539,3 @@ def with_metric_prefix(metrics: dict[str, Any], prefix: str) -> dict[str, Any]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Constructor-time validation
-# ---------------------------------------------------------------------------
-
-
-_ALLOWED_INCLUDE_FOR_METRICS = frozenset({"inputs", "loss"})
-
-
-def validate_eval_args(
-    args: "TrainingArguments",
-    compute_metrics: Callable | None,
-) -> None:
-    """Validate eval-related fields on ``args``.
-
-    Notes on the ``losses`` field of :class:`EvalPrediction`
-    (HF-parity caveat that lives here for visibility):
-
-    - Each entry in ``EvalPrediction.losses`` is a **per-example** loss
-      built by repeating the batch-mean by the batch size — the same
-      ``losses.repeat(batch_size)`` trick HF uses.  When the model's
-      ``forward`` reduces the loss to a scalar (the typical
-      causal-LM / classification path), this repeat is a flat
-      replication of the *same* number ``bs`` times, **not** a true
-      per-example breakdown.  Callers that need a genuine per-example
-      loss vector (e.g. for percentile-rank histograms or
-      perplexity-per-token plots) should override
-      :meth:`DPTrainer._build_per_example_loss` to return an
-      un-reduced loss tensor; a future enhancement may surface this
-      directly in the eval contract.
-
-    Raises:
-        ValueError: if ``batch_eval_metrics=True`` but ``compute_metrics`` is
-            ``None``, or if ``include_for_metrics`` contains an entry outside
-            ``{"inputs", "loss"}``.
-    """
-    if getattr(args, "batch_eval_metrics", False) and compute_metrics is None:
-        raise ValueError(
-            "batch_eval_metrics=True requires a compute_metrics callable: the "
-            "metric is computed per batch as a stateful reducer, so a no-op "
-            "trainer-side fallback is meaningless."
-        )
-    if getattr(args, "batch_eval_metrics", False) and compute_metrics is not None:
-        if "compute_result" not in inspect.signature(compute_metrics).parameters:
-            raise ValueError(
-                "When using `batch_eval_metrics`, your `compute_metrics` function "
-                "must take a `compute_result` boolean argument, triggered after "
-                "the last batch to return summary statistics."
-            )
-
-    include = list(getattr(args, "include_for_metrics", []) or [])
-    bad = [k for k in include if k not in _ALLOWED_INCLUDE_FOR_METRICS]
-    if bad:
-        raise ValueError(
-            f"include_for_metrics entries must be a subset of "
-            f"{sorted(_ALLOWED_INCLUDE_FOR_METRICS)}; got unknown keys: {bad}"
-        )
