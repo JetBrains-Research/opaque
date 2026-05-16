@@ -315,26 +315,23 @@ Chunked Triton cross-entropy processes the vocabulary dimension in blocks (up to
 
 ### Fused linear cross-entropy
 
-The most impactful memory optimization, and **opt-in**: pass
-`fused_linear_cross_entropy=True` to `apply_model_patches(model, ...)`
-to enable it. Standard cross-entropy materializes
-`logits = hidden_states @ lm_head.T` — for Mellum-4b with 128K vocab,
-~2 GB per forward pass. The fused kernel computes the loss directly
-from hidden states and weight matrix using tiled matrix multiplication
-inside Triton, never materializing the full logits tensor.
+Computes the loss directly from hidden states and the `lm_head` weight matrix
+using tiled matrix multiplication inside the Triton kernel, never materializing
+the full logits tensor. For Mellum-4b with 128K vocab, that avoids the
+~2 GB `logits = hidden_states @ lm_head.T` allocation that the non-fused
+cross-entropy path produces per forward pass.
 
-When enabled, `XForCausalLM.forward` returns `logits=None` on the fast
-path (the kernel writes the loss directly). That is incompatible with
-trainers or eval loops that read `outputs.logits` — `compute_metrics`,
-`preprocess_logits_for_metrics`, generation eval, and similar consumers
-all need the materialized tensor. The default is off so those cases
-keep working; enable it explicitly when loss is the only consumer.
-The bundled `train_causal_lm.py` and `train_dp_ftrl.py` examples
-opt in.
+The patched `XForCausalLM.forward` returns `logits=None` on the fast path,
+which is incompatible with callers that read `outputs.logits` —
+`compute_metrics`, `preprocess_logits_for_metrics`, and generation eval all
+need the materialized tensor. The patch is opt-in for this reason: pass
+`fused_linear_cross_entropy=True` to `apply_model_patches(model, ...)` when
+loss is the only consumer of the forward output. `examples/train_causal_lm.py`
+and `examples/train_dp_ftrl.py` enable it.
 
-The `cross_entropy=True` gate (default-on with `performance=True`)
-still installs `Opaque_CrossEntropyLoss` via `loss_function` — that
-swap keeps logits materialized and is safe everywhere.
+`cross_entropy=True` (defaults from `kernels`) still installs the non-fused
+`Opaque_CrossEntropyLoss` via `loss_function`, which operates on materialized
+logits and leaves `outputs.logits` populated.
 
 Key design decisions:
 - **Pre-shift in Python** — `hidden_states[..., :-1, :]` and `labels[..., 1:]`
@@ -391,8 +388,7 @@ loss = opaque_cross_entropy_loss(logits, labels)
 ## Configuration
 
 Patching is configured through the explicit API rather than import-time side
-effects. Three umbrella switches gate broad buckets of patches, plus per-concern
-kwargs for fine control.
+effects. Three umbrella flags drive the per-concern defaults:
 
 ```python
 from opaque.patches import apply_model_patches, apply_runtime_patches
@@ -410,49 +406,51 @@ apply_model_patches(
   compat=True,       # vmap-safe attention + batchify
   peft=True,         # LoRA / PEFT module patching
   kernels=True,      # Triton kernels (rope, rms_norm, activation, cross_entropy);
-                     # defaults to performance, auto-False without CUDA + Triton
-  fused_linear_cross_entropy=True,  # opt-in: skip lm_head materialization, fast path returns logits=None
+                     # defaults to performance, forced False without CUDA + Triton
+  fused_linear_cross_entropy=True,  # opt-in: skips lm_head, fast path returns logits=None
 )
 ```
 
 Group → per-concern defaults:
 
-- `performance` (memory / efficiency wins that run anywhere): `kv_cache`.
-- `compat` (vmap safety): `eager_attention`, `batchify`.
-- `kernels` (Triton kernels, need CUDA + Triton): `rope`, `rms_norm`,
-  `activation`, `cross_entropy`. Defaults to `performance` when not passed;
-  auto-forced to `False` when CUDA / Triton can't be imported, so
-  `performance=True` keeps shipping `kv_cache` on CPU / MPS.
+- `performance` — memory-efficiency patches that run on any host
+  (currently `kv_cache`).
+- `compat` — vmap-safety wrappers (`eager_attention`, `batchify`).
+- `kernels` — Triton kernel patches that require CUDA + Triton (`rope`,
+  `rms_norm`, `activation`, `cross_entropy`). Defaults to `performance`
+  when not passed and is forced to `False` when CUDA / Triton can't be
+  imported, so `performance=True` keeps `kv_cache` on CPU / MPS.
 
-`fused_linear_cross_entropy` is the one kernel kwarg that is **always opt-in**:
-the fused path returns `logits=None` and breaks any trainer that reads
-`outputs.logits` (compute_metrics, preprocess_logits_for_metrics, eval loops
-that inspect logits). Enable it only when loss is the sole consumer of the
-forward output — see [Fused linear cross-entropy](#fused-linear-cross-entropy).
+`fused_linear_cross_entropy` is a kernel kwarg with an explicit default of
+`False`. The fused path returns `logits=None`, which is incompatible with
+callers that read `outputs.logits` — `compute_metrics`,
+`preprocess_logits_for_metrics`, and generation eval. Enable it when loss is
+the only consumer of the forward output; see
+[Fused linear cross-entropy](#fused-linear-cross-entropy).
 
 Common configurations:
 
 ```python
-# Keep compat shims, drop everything performance-related.
+# Drop everything performance-related; keep compat shims.
 apply_model_patches(model, performance=False)
 
-# Keep kv_cache (pure-Python perf shim) but skip Triton kernels — what
-# the router does on CPU / MPS automatically.
+# Keep kv_cache but skip the Triton kernels — what the router does on
+# CPU / MPS automatically.
 apply_model_patches(model, performance=True, kernels=False)
 
 # Drop model-side compat wrappers, keep runtime patches.
 apply_model_patches(model, compat=False)
 
-# Maximize memory savings — loss-only consumer of forward outputs.
+# Enable the fused linear+CE forward (loss-only consumer of forward output).
 apply_model_patches(model, fused_linear_cross_entropy=True)
 
 # Disable runtime checkpoint patching for debugging.
 apply_runtime_patches(vmap_checkpointing=False)
 ```
 
-The only environment-level switch in this area is
-`OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES=all|collator`, which controls the empty-
-batch collator wrapper used with Poisson sampling.
+The environment-level switch in this area is
+`OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES=all|collator`, which controls the
+empty-batch collator wrapper used with Poisson sampling.
 
 ## Other models
 

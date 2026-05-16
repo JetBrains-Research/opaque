@@ -33,30 +33,28 @@ def apply_model_patches(
     architectures can import and invoke ``apply_peft_model_patches``
     directly from the root namespace to apply LoRA kernels.
 
-    Three umbrella flags govern the per-concern ``**kwargs``:
+    Three umbrella flags drive the per-concern ``**kwargs``:
 
-    - ``performance`` (default ``True``) — memory / efficiency wins that
-      run on any host (currently ``kv_cache``).
+    - ``performance`` (default ``True``) — memory-efficiency patches
+      that run on any host (currently ``kv_cache``).
     - ``compat`` (default ``True``) — vmap-safety wrappers
       (``eager_attention``, ``batchify``).
     - ``kernels`` (kwarg, defaults to ``performance``) — Triton kernel
       patches that require CUDA + Triton (``rope``, ``rms_norm``,
-      ``activation``, ``cross_entropy``). Auto-forced to ``False`` when
-      CUDA / Triton can't be imported, regardless of the caller's
-      request, so ``performance=True`` keeps shipping ``kv_cache`` on
-      CPU / MPS hosts.
+      ``activation``, ``cross_entropy``). Forced to ``False`` when
+      CUDA / Triton can't be imported, so ``performance=True`` keeps
+      ``kv_cache`` enabled on CPU / MPS hosts.
 
-    ``cross_entropy`` swaps in the non-fused CE kernel via
-    ``loss_function`` — logits stay materialized, so trainers that
-    inspect them (compute_metrics, preprocess_logits_for_metrics, eval
-    that reads ``outputs.logits``) keep working.
+    ``cross_entropy`` installs the non-fused CE kernel via
+    ``loss_function``; logits remain materialized, so callers that read
+    ``outputs.logits`` (``compute_metrics``,
+    ``preprocess_logits_for_metrics``, eval loops) continue to work.
 
-    ``fused_linear_cross_entropy`` is the one kernel kwarg promoted to
-    an explicit parameter: it defaults to ``False`` rather than
-    inheriting from ``kernels`` because the fused forward returns
-    ``logits=None``, which is unsafe for trainers that read logits.
-    Enable it only when loss is the only consumer of the forward output
-    (the bundled training examples do exactly that).
+    ``fused_linear_cross_entropy`` is a kernel kwarg promoted to an
+    explicit parameter: it defaults to ``False`` rather than inheriting
+    from ``kernels`` because the fused forward returns ``logits=None``,
+    which is incompatible with callers that read logits. Enable it
+    when loss is the only consumer of the forward output.
     """
     global _runtime_patches_applied
     if not _runtime_patches_applied:

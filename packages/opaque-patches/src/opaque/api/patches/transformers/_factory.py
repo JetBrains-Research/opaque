@@ -181,13 +181,13 @@ def make_apply_model_patches(
         Callable with signature
         ``apply(model=None, *, performance=True, compat=True,
         kernels=None, **kwargs) -> None``.
-        Per-concern kwargs default into the right bucket:
+        Per-concern kwargs default into the right group:
         ``rope``, ``rms_norm``, ``activation``, ``cross_entropy`` →
-        ``kernels`` (which itself defaults to ``performance`` when left
-        ``None``); ``kv_cache`` → ``performance``; ``eager_attention``,
-        ``batchify`` → ``compat``. ``fused_linear_cross_entropy`` is
-        opt-in (defaults to ``False``) because the fused path returns
-        ``logits=None``, which is incompatible with trainers that read
+        ``kernels`` (itself defaulting to ``performance`` when ``None``);
+        ``kv_cache`` → ``performance``; ``eager_attention``,
+        ``batchify`` → ``compat``. ``fused_linear_cross_entropy``
+        defaults to ``False`` because the fused path returns
+        ``logits=None``, which is incompatible with callers that read
         logits (e.g. SFTTrainer with ``compute_metrics`` /
         ``preprocess_logits_for_metrics``).
     """
@@ -204,11 +204,10 @@ def make_apply_model_patches(
         **kwargs,
     ) -> None:
         # ``kernels`` is the umbrella for CUDA + Triton patches. Defaults
-        # to ``performance`` so plain ``apply(performance=True)`` still
-        # ships kernels, while ``performance=True, kernels=False`` keeps
-        # non-kernel performance shims (kv_cache) and skips the CUDA-only
-        # paths — that latter form is what the router uses on hosts
-        # without CUDA / Triton.
+        # to ``performance`` so ``apply(performance=True)`` enables them;
+        # the router passes ``kernels=False`` on hosts without CUDA /
+        # Triton, which keeps non-kernel performance patches (``kv_cache``)
+        # while skipping the CUDA-only paths.
         if kernels is None:
             kernels = performance
         # Lazily apply family-runtime patches.  Idempotent.
@@ -247,18 +246,17 @@ def make_apply_model_patches(
                         model,
                     )
 
-        # Cross-entropy patches are split into two gates, both Triton-kernel
-        # based and so gated on ``kernels`` (resp. the opt-in flag).
-        #   - ``cross_entropy``: ``loss_function`` → ``Opaque_CrossEntropyLoss``.
-        #     Kernel speedup on already-materialized logits; safe — the
-        #     model keeps returning logits.
-        #   - ``fused_linear_cross_entropy`` (opt-in, off by default):
-        #     ``forward`` → ``Opaque_LinearCrossEntropyLoss``. Skips
-        #     ``lm_head`` materialization for the largest memory savings,
-        #     but the fused path returns ``logits=None``, so it is unsafe
-        #     for trainers that read logits (compute_metrics,
-        #     preprocess_logits_for_metrics, …). Enable explicitly in
-        #     pipelines where loss is the only consumer.
+        # Cross-entropy patches are split into two gates.
+        #   - ``cross_entropy`` (defaults from ``kernels``): installs
+        #     ``Opaque_CrossEntropyLoss`` via ``loss_function``. Operates
+        #     on materialized logits; the model still returns them.
+        #   - ``fused_linear_cross_entropy`` (defaults to ``False``):
+        #     replaces ``forward`` with ``Opaque_LinearCrossEntropyLoss``,
+        #     which skips ``lm_head`` materialization and returns
+        #     ``logits=None`` on the fast path. Incompatible with callers
+        #     that read ``outputs.logits`` (compute_metrics,
+        #     preprocess_logits_for_metrics, generation eval); enable
+        #     only when loss is the only consumer of the forward output.
         causal_lm_class = classes.get("causal_lm")
         causal_lm_obj = getattr(mod, causal_lm_class, None) if causal_lm_class else None
         if kwargs.get("cross_entropy", kernels) and causal_lm_obj is not None:
@@ -276,11 +274,11 @@ def make_apply_model_patches(
         # vmap-safety patch on the causal-LM class.
         if kwargs.get("batchify", compat) and causal_lm_obj is not None:
             apply_batchify_patch(causal_lm_obj, model)
-        # KV cache disabler: avoids wasted DynamicCache allocation per
-        # forward during training (and prevents vmap memory leaks from
-        # the cache's circular refs). Pure-Python — sits in the
-        # ``performance`` bucket rather than ``kernels`` so it still runs
-        # on CPU / MPS hosts where Triton can't.
+        # KV cache disabler: skips the DynamicCache allocation that HF
+        # makes on every training forward, and breaks the cache's
+        # circular references that vmap would leak. Pure Python — sits
+        # in the ``performance`` bucket rather than ``kernels`` so it
+        # still applies on CPU / MPS hosts.
         if kwargs.get("kv_cache", performance) and causal_lm_obj is not None:
             apply_kv_cache_patch(causal_lm_obj, model)
 

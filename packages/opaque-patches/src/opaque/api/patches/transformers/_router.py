@@ -88,21 +88,20 @@ def apply_transformers_model_patches(
 ) -> None:
     """Apply Liger-style global + instance patching for kernels and compat wrappers.
 
-    Three umbrella flags govern the per-concern kwargs:
+    Three umbrella flags drive the per-concern kwargs:
 
-    - ``performance`` — memory / efficiency wins that run anywhere
+    - ``performance`` — memory-efficiency patches that run on any host
       (currently ``kv_cache``).
     - ``compat`` — vmap-safety wrappers (``eager_attention``, ``batchify``).
     - ``kernels`` — Triton kernel patches that require CUDA + Triton
       (``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
       ``fused_linear_cross_entropy``). Defaults to ``performance`` when
-      left as ``None`` and is auto-forced to ``False`` when CUDA / Triton
-      can't be imported, regardless of the caller's request.
+      ``None``; forced to ``False`` when CUDA / Triton can't be imported.
 
-    ``fused_linear_cross_entropy`` is the one kernel kwarg promoted out
-    of ``**kwargs``: it defaults to ``False`` rather than inheriting from
-    ``kernels`` because the fused forward returns ``logits=None``, which
-    is unsafe for trainers that read logits.
+    ``fused_linear_cross_entropy`` is a kernel kwarg promoted out of
+    ``**kwargs`` because it defaults to ``False`` rather than inheriting
+    from ``kernels``: the fused forward returns ``logits=None``, which
+    is incompatible with callers that read logits.
     """
     if kernels is None:
         kernels = performance

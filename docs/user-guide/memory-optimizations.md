@@ -189,19 +189,17 @@ memory savings.
 
 ### Fused linear cross-entropy
 
-The most impactful memory optimization, and **opt-in**: pass
-`fused_linear_cross_entropy=True` to `apply_model_patches(model, ...)`.
-Standard cross-entropy materializes `logits = hidden_states @ lm_head.T` —
-for Mellum-4b with 128K vocab that is ~2 GB per forward pass. The fused
-kernel computes the loss directly from hidden states, never materializing
-the full logits tensor.
+Computes the loss directly from hidden states and the `lm_head` weight matrix,
+never materializing the full `(batch*seq, vocab)` logits tensor. For Mellum-4b
+with 128K vocab, that saves ~2 GB per forward pass relative to the non-fused
+path. Enabled by passing `fused_linear_cross_entropy=True` to
+`apply_model_patches(model, ...)`.
 
-The fused path returns `logits=None` from `XForCausalLM.forward`, so it is
-incompatible with trainers / eval loops that read `outputs.logits`
-(`compute_metrics`, `preprocess_logits_for_metrics`, generation eval, …).
-Enable it only when loss is the only consumer of the forward output — the
-bundled `examples/train_causal_lm.py` and `examples/train_dp_ftrl.py`
-scripts opt in.
+The fused path returns `logits=None` from `XForCausalLM.forward`, which is
+incompatible with callers that read `outputs.logits` — `compute_metrics`,
+`preprocess_logits_for_metrics`, and generation eval. Enable the patch when
+loss is the only consumer of the forward output;
+`examples/train_causal_lm.py` and `examples/train_dp_ftrl.py` do.
 
 | Metric | V=32K | V=128K |
 |--------|-------|--------|
