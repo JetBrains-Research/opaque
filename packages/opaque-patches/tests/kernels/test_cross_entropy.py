@@ -501,7 +501,9 @@ class TestCrossEntropySoftcapping:
         ).reshape(batch, seq_len)
 
         # Opaque: pass raw logits + scale param
-        losses_op, _ = Opaque_CrossEntropyLoss.apply(logits, labels, 0, logit_scale, 0.0)
+        losses_op, _ = Opaque_CrossEntropyLoss.apply(
+            logits, labels, 0, logit_scale, 0.0
+        )
 
         print(f"\nLogit scaling forward (V={vocab}):")
         assert_precision(losses_op, ref, rtol=1e-4, atol=1e-6, label="per-token losses")
@@ -531,7 +533,9 @@ class TestCrossEntropySoftcapping:
 
         # Opaque
         logits_op = logits_pt.detach().clone().requires_grad_(True)
-        losses_op, _ = Opaque_CrossEntropyLoss.apply(logits_op, labels, 0, logit_scale, 0.0)
+        losses_op, _ = Opaque_CrossEntropyLoss.apply(
+            logits_op, labels, 0, logit_scale, 0.0
+        )
         mask = (labels != -100).float()
         loss_op = (losses_op * mask).sum() / mask.sum().clamp(min=1)
         loss_op.backward()
@@ -701,7 +705,12 @@ class TestCrossEntropyLabelSmoothing:
         vocab = mellum_config["vocab_size"]
 
         logits = torch.randn(
-            batch, seq_len, vocab, device="cuda", dtype=torch.float32, requires_grad=True
+            batch,
+            seq_len,
+            vocab,
+            device="cuda",
+            dtype=torch.float32,
+            requires_grad=True,
         )
         labels = torch.randint(0, vocab, (batch, seq_len), device="cuda")
         labels[:, -10:] = -100

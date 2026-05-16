@@ -457,7 +457,9 @@ class _CrossEntropyBackward(torch.autograd.Function):
 
 class Opaque_CrossEntropyLoss(torch.autograd.Function):
     @staticmethod
-    def forward(logits, labels, logit_softcapping=0, logit_scaling=0, label_smoothing=0.0):
+    def forward(
+        logits, labels, logit_softcapping=0, logit_scaling=0, label_smoothing=0.0
+    ):
         """New-style API forward without ctx parameter.
 
         Args:
@@ -517,7 +519,9 @@ class Opaque_CrossEntropyLoss(torch.autograd.Function):
         return grad_logits, None, None, None, None
 
     @staticmethod
-    def vmap(info, in_dims, logits, labels, logit_softcapping, logit_scaling, label_smoothing):
+    def vmap(
+        info, in_dims, logits, labels, logit_softcapping, logit_scaling, label_smoothing
+    ):
         """Custom vmap rule for DP-SGD.
 
         Calls Triton forward kernel directly with merged batch dims.

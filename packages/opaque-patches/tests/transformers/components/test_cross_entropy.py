@@ -99,9 +99,7 @@ class TestCrossEntropyPatches:
         ls = 0.1
 
         # Opaque path: forward smoothing via kwargs (mirrors HF's loss_kwargs).
-        loss = _opaque_causal_lm_loss(
-            logits, labels, vocab_size, label_smoothing=ls
-        )
+        loss = _opaque_causal_lm_loss(logits, labels, vocab_size, label_smoothing=ls)
 
         # Reference: HF's shift + masked F.cross_entropy with smoothing.
         import torch.nn as nn
