@@ -391,7 +391,7 @@ loss = opaque_cross_entropy_loss(logits, labels)
 ## Configuration
 
 Patching is configured through the explicit API rather than import-time side
-effects. Two top-level switches gate broad buckets of patches, plus per-concern
+effects. Three umbrella switches gate broad buckets of patches, plus per-concern
 kwargs for fine control.
 
 ```python
@@ -406,29 +406,39 @@ apply_runtime_patches(
 
 apply_model_patches(
   model,
-  performance=True,  # Triton kernels (rope, rms_norm, activation, cross_entropy) + kv_cache disabler
+  performance=True,  # kv_cache disabler + (by default) the kernels group
   compat=True,       # vmap-safe attention + batchify
   peft=True,         # LoRA / PEFT module patching
+  kernels=True,      # Triton kernels (rope, rms_norm, activation, cross_entropy);
+                     # defaults to performance, auto-False without CUDA + Triton
   fused_linear_cross_entropy=True,  # opt-in: skip lm_head materialization, fast path returns logits=None
 )
 ```
 
-Performance-bucket per-concern kwargs (default on with `performance=True`):
-`rope`, `rms_norm`, `activation`, `cross_entropy`, `kv_cache`. Compat-bucket
-(default on with `compat=True`): `eager_attention`, `batchify`.
+Group → per-concern defaults:
 
-`fused_linear_cross_entropy` is the one exception: it is **always opt-in**,
-even with `performance=True`, because the fused path returns `logits=None`
-and breaks any trainer that reads `outputs.logits` (compute_metrics,
-preprocess_logits_for_metrics, eval loops that inspect logits). Enable it
-only when loss is the sole consumer of the forward output — see
-[Fused linear cross-entropy](#fused-linear-cross-entropy).
+- `performance` (memory / efficiency wins that run anywhere): `kv_cache`.
+- `compat` (vmap safety): `eager_attention`, `batchify`.
+- `kernels` (Triton kernels, need CUDA + Triton): `rope`, `rms_norm`,
+  `activation`, `cross_entropy`. Defaults to `performance` when not passed;
+  auto-forced to `False` when CUDA / Triton can't be imported, so
+  `performance=True` keeps shipping `kv_cache` on CPU / MPS.
+
+`fused_linear_cross_entropy` is the one kernel kwarg that is **always opt-in**:
+the fused path returns `logits=None` and breaks any trainer that reads
+`outputs.logits` (compute_metrics, preprocess_logits_for_metrics, eval loops
+that inspect logits). Enable it only when loss is the sole consumer of the
+forward output — see [Fused linear cross-entropy](#fused-linear-cross-entropy).
 
 Common configurations:
 
 ```python
-# Keep compat shims, drop Triton kernels.
+# Keep compat shims, drop everything performance-related.
 apply_model_patches(model, performance=False)
+
+# Keep kv_cache (pure-Python perf shim) but skip Triton kernels — what
+# the router does on CPU / MPS automatically.
+apply_model_patches(model, performance=True, kernels=False)
 
 # Drop model-side compat wrappers, keep runtime patches.
 apply_model_patches(model, compat=False)

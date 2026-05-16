@@ -33,24 +33,30 @@ def apply_model_patches(
     architectures can import and invoke ``apply_peft_model_patches``
     directly from the root namespace to apply LoRA kernels.
 
-    Per-concern flags pass through ``**kwargs``. Performance bucket
-    (kernel / memory-efficiency, default-on with ``performance=True``):
-    ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
-    ``kv_cache``. Compat bucket (vmap safety, default-on with
-    ``compat=True``): ``eager_attention``, ``batchify``.
+    Three umbrella flags govern the per-concern ``**kwargs``:
+
+    - ``performance`` (default ``True``) — memory / efficiency wins that
+      run on any host (currently ``kv_cache``).
+    - ``compat`` (default ``True``) — vmap-safety wrappers
+      (``eager_attention``, ``batchify``).
+    - ``kernels`` (kwarg, defaults to ``performance``) — Triton kernel
+      patches that require CUDA + Triton (``rope``, ``rms_norm``,
+      ``activation``, ``cross_entropy``). Auto-forced to ``False`` when
+      CUDA / Triton can't be imported, regardless of the caller's
+      request, so ``performance=True`` keeps shipping ``kv_cache`` on
+      CPU / MPS hosts.
 
     ``cross_entropy`` swaps in the non-fused CE kernel via
     ``loss_function`` — logits stay materialized, so trainers that
     inspect them (compute_metrics, preprocess_logits_for_metrics, eval
     that reads ``outputs.logits``) keep working.
 
-    ``fused_linear_cross_entropy`` is the one per-concern flag promoted
-    to an explicit kwarg because it is the only patch whose default is
-    ``False`` regardless of ``performance``. When enabled, the forward
-    replacement skips ``lm_head`` and computes loss directly from hidden
-    states; the fused path returns ``logits=None``, so enable it only
-    when loss is the only consumer of the forward output (the bundled
-    training examples do exactly that).
+    ``fused_linear_cross_entropy`` is the one kernel kwarg promoted to
+    an explicit parameter: it defaults to ``False`` rather than
+    inheriting from ``kernels`` because the fused forward returns
+    ``logits=None``, which is unsafe for trainers that read logits.
+    Enable it only when loss is the only consumer of the forward output
+    (the bundled training examples do exactly that).
     """
     global _runtime_patches_applied
     if not _runtime_patches_applied:
