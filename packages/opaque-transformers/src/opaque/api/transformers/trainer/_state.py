@@ -70,11 +70,12 @@ class DPTrainerState:
     # Serialisation version; bumped on schema changes.
     version: int = _STATE_VERSION
 
-    def compute_steps(self, args: Any, max_steps: int) -> None:
+    def compute_steps(self, args: Any) -> None:
         """Resolve absolute step counts for logging/eval/save.
 
-        HF parity: fractional values < 1 are interpreted as fractions of
-        ``max_steps`` and rounded up; ``None`` is left alone.
+        Reads ``self.max_steps`` (set by the caller before invocation).
+        Fractional values < 1 are interpreted as fractions and rounded
+        up; ``None`` is left alone.
         """
         for kind, num_steps in (
             ("logging", args.logging_steps),
@@ -84,7 +85,7 @@ class DPTrainerState:
             if num_steps is None:
                 continue
             if num_steps < 1:
-                num_steps = math.ceil(max_steps * num_steps)
+                num_steps = math.ceil(self.max_steps * num_steps)
             setattr(self, f"{kind}_steps", num_steps)
 
     def to_json(self) -> dict[str, Any]:

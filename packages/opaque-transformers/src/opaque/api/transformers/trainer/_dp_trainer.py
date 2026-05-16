@@ -1,20 +1,15 @@
 """DP-SGD Trainer for HuggingFace models.
 
 Provides :class:`DPTrainer` — a differentially private, HF-Trainer-parity
-trainer using Opaque primitives, with a method decomposition mirroring
-HuggingFace's Trainer:
-
-- ``train()`` → ``_setup_training()`` → ``_inner_training_loop()``
-- ``training_step()`` — single DP-SGD step (clip → noise → optimize)
-- ``evaluate()`` — functional forward pass (no param restoration needed)
-- ``create_optimizer()`` / ``create_scheduler()`` — functional optimizer setup
-- ``get_train_dataloader()`` / ``get_eval_dataloader()`` — Poisson / standard
-- ``log()`` / ``_maybe_log_save_evaluate()`` — metric dispatch
+trainer built on Opaque primitives.  See the class docstring for the
+public method layout.
 
 The trainer is shape-agnostic: any HF-style ``data_collator`` whose output
 the model's forward accepts will work.  Domain-specific training that
-builds on this trainer should subclass it and override the relevant
-method (mirroring HF's own subclassing pattern).
+builds on this trainer (SFT / DPO / KTO) should subclass it and override
+:meth:`DPTrainer.compute_per_example_loss` — the single DP-correct
+extension point that both training (vmap → grad → clip → noise) and
+eval (vmap when ``include_for_metrics=['loss']``) route through.
 """
 
 from __future__ import annotations
@@ -193,7 +188,10 @@ class DPTrainer:
 
     - ``train()`` → ``_setup_training()`` + ``_inner_training_loop()``
     - ``training_step()`` — clip → noise → optimize (fused, unlike HF)
-    - ``evaluate()`` — uses functional model, no param restoration
+    - ``evaluate()`` / ``predict()`` — both return :class:`EvaluationResult`;
+      shared pipeline via ``_run_evaluation_loop``
+    - ``compute_per_example_loss()`` — DP-correct override hook; the
+      single extension point for SFT / DPO / KTO subclasses
     - ``create_optimizer()`` — functional optimizer (torchopt)
     - ``get_train_dataloader()`` — PoissonSampler
     - ``get_eval_dataloader()`` — standard DataLoader
@@ -206,7 +204,7 @@ class DPTrainer:
         args: TrainingArguments | None = None,
         data_collator: Callable | None = None,
         train_dataset: Dataset | None = None,
-        eval_dataset: Dataset | dict[str, Dataset] | None = None,
+        eval_dataset: Dataset | None = None,
         processing_class: PreTrainedTokenizerBase | None = None,
         compute_loss_func: Callable | None = None,
         compute_metrics: Callable | None = None,
@@ -429,7 +427,7 @@ class DPTrainer:
         # zeros from a premature ``int(...)`` truncation.
         self.state = DPTrainerState()
         self.state.max_steps = self._predict_total_steps()
-        self.state.compute_steps(args, self.state.max_steps)
+        self.state.compute_steps(args)
         # HF parity (CallbackHandler.add_callback at trainer_callback.py:187):
         # the state object carries process-zero flags so callbacks (W&B, TB,
         # printer, …) can suppress side-effects on non-zero ranks without
@@ -589,7 +587,7 @@ class DPTrainer:
     def _reset_state_for_new_run(self) -> None:
         self.state = DPTrainerState()
         self.state.max_steps = self._predict_total_steps()
-        self.state.compute_steps(self.args, self.state.max_steps)
+        self.state.compute_steps(self.args)
         self.state.is_world_process_zero = self._ddp.is_world_zero
         self.state.is_local_process_zero = self._ddp.is_local_zero
         self._control = TrainerControl()
@@ -1016,12 +1014,11 @@ class DPTrainer:
         self.state.num_train_epochs = float(num_epochs)
         # Resolve fractional ``logging_steps`` / ``eval_steps`` /
         # ``save_steps`` to absolute step counts on ``state`` so
-        # ``DefaultFlowCallback`` can read them.  Mirrors HF
-        # ``Trainer.__init__`` calling ``state.compute_steps``.  Already
-        # called in ``__init__`` with the same ``total_steps`` value, but
-        # repeated here so subclasses overriding ``_predict_total_steps``
-        # to no-op still get a populated cadence by ``train()`` time.
-        self.state.compute_steps(a, total_steps)
+        # ``DefaultFlowCallback`` can read them.  Already called in
+        # ``__init__`` with the same ``total_steps``, but repeated here
+        # so subclasses overriding ``_predict_total_steps`` to no-op
+        # still get a populated cadence by ``train()`` time.
+        self.state.compute_steps(a)
 
         # Resolve save_steps from a fraction now that total_steps is known.
         save_steps_resolved = self._resolve_save_steps_int(total_steps)
