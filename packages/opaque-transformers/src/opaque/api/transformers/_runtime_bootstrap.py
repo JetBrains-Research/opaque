@@ -5,8 +5,8 @@ gradient-checkpointing hooks) are **not** applied when this package is
 imported. Call :func:`patch_all` or construct
 :class:`~opaque.transformers.trainer.DPTrainer`, which invokes
 :func:`apply_transformers_runtime_compat_patches` then applies per-model
-patches via :func:`opaque.patches.apply_model_patches` with ``compat=True``
-and ``performance=args.use_performance_kernels``.
+patches via :func:`opaque.patches.apply_model_patches` with ``compat=True``,
+``performance=True``, and ``kernels=args.use_performance_kernels``.
 """
 
 from __future__ import annotations

@@ -93,11 +93,12 @@ def test_torch_compile_invalid_mode_rejected_at_args(tmp_path):
 # ----------------------------------------------------------------------------
 
 
-def test_use_performance_kernels_default_false_still_applies_compat_patches(
+def test_use_performance_kernels_default_keeps_kv_cache_and_compat_on(
     tmp_path, monkeypatch
 ):
-    """Without use_performance_kernels, DPTrainer still calls apply_model_patches with
-    performance=False (compat-only); performance kernels stay off."""
+    """Default-off ``use_performance_kernels`` still applies compat and the
+    ``performance`` bucket (kv_cache); only the Triton ``kernels`` group is
+    disabled."""
     calls: list[dict] = []
 
     def _spy(model, **kwargs):
@@ -107,13 +108,15 @@ def test_use_performance_kernels_default_false_still_applies_compat_patches(
 
     _tiny_trainer(tmp_path)  # use_performance_kernels default is False
     assert len(calls) == 1
-    assert calls[0]["kwargs"]["performance"] is False
+    assert calls[0]["kwargs"]["performance"] is True
+    assert calls[0]["kwargs"]["kernels"] is False
     assert calls[0]["kwargs"]["compat"] is True
 
 
-def test_use_performance_kernels_true_invokes_apply_model_patches(tmp_path, monkeypatch):
-    """use_performance_kernels=True calls apply_model_patches(model, performance=True,
-    compat=True) once at __init__ time (HF parity)."""
+def test_use_performance_kernels_true_enables_kernels_group(tmp_path, monkeypatch):
+    """``use_performance_kernels=True`` flips ``kernels`` on at the
+    ``apply_model_patches`` call (alongside the always-on ``performance``
+    and ``compat`` umbrellas)."""
     calls: list[dict] = []
 
     def _spy(model, **kwargs):
@@ -127,12 +130,14 @@ def test_use_performance_kernels_true_invokes_apply_model_patches(tmp_path, monk
     assert len(calls) == 1
     assert calls[0]["model"] is model
     assert calls[0]["kwargs"]["performance"] is True
+    assert calls[0]["kwargs"]["kernels"] is True
     assert calls[0]["kwargs"]["compat"] is True
 
 
-def test_performance_kernels_config_is_translated_at_init(tmp_path, monkeypatch):
-    """performance_kernels_config keys are translated to opaque-patches kwarg names
-    before being forwarded to apply_model_patches."""
+def test_performance_kernels_config_forwards_opaque_keys_as_is(tmp_path, monkeypatch):
+    """``performance_kernels_config`` is a flat dict forwarded as-is to
+    ``apply_model_patches`` kwargs — no key translation, opaque-patches
+    keys used directly."""
     calls: list[dict] = []
 
     def _spy(model, **kwargs):
@@ -150,10 +155,25 @@ def test_performance_kernels_config_is_translated_at_init(tmp_path, monkeypatch)
         },
     )
     assert len(calls) == 1
-    assert calls[0]["kwargs"]["fuse_rope"] is True
-    assert calls[0]["kwargs"]["fuse_rms_norm"] is True
-    # cross_entropy unified opaque flag — driven by fused_linear_cross_entropy.
-    assert calls[0]["kwargs"]["fuse_cross_entropy"] is True
+    assert calls[0]["kwargs"]["rope"] is True
+    assert calls[0]["kwargs"]["rms_norm"] is True
+    assert calls[0]["kwargs"]["fused_linear_cross_entropy"] is True
+
+
+def test_performance_kernels_config_can_disable_kv_cache(tmp_path, monkeypatch):
+    """``kv_cache`` stays on by default but can be opted out via the config
+    dict for models whose forward depends on HF's DynamicCache."""
+    calls: list[dict] = []
+
+    def _spy(model, **kwargs):
+        calls.append({"kwargs": kwargs})
+
+    monkeypatch.setattr("opaque.patches.apply_model_patches", _spy)
+
+    _tiny_trainer(tmp_path, performance_kernels_config={"kv_cache": False})
+    assert len(calls) == 1
+    assert calls[0]["kwargs"]["kv_cache"] is False
+    assert calls[0]["kwargs"]["performance"] is True
 
 
 # ----------------------------------------------------------------------------

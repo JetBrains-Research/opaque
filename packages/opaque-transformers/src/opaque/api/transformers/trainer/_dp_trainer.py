@@ -351,7 +351,7 @@ class DPTrainer:
 
         # Explicit patch sites (no import-time mutation of HF globals):
         # 1) global runtime compat (masking / collator / checkpoint hooks)
-        # 2) ``apply_model_patches(..., compat=use_compat_patches, performance=use_performance_kernels)``
+        # 2) ``apply_model_patches(..., compat=use_compat_patches, performance=True, kernels=use_performance_kernels)``
         from opaque.api.transformers import _runtime_bootstrap as _opaque_rt
 
         _opaque_rt.apply_transformers_runtime_compat_patches()
@@ -603,13 +603,21 @@ class DPTrainer:
         self._eval_dataloader = None
 
     def _apply_opaque_model_patches(self) -> None:
-        """``apply_model_patches(model, compat=use_compat_patches, performance=use_performance_kernels)``.
+        """``apply_model_patches(model, compat=use_compat_patches, performance=True, kernels=use_performance_kernels)``.
 
-        ``use_compat_patches`` (default ``True``) gates opaque's vmap-safety
-        patches: batchify, kv-cache disable, vmap-safe masking.  When opaque
-        doesn't recognise the model family it logs an info-level message
-        (so users see *why* opaque skipped); set the flag to ``False`` to
-        suppress for models that don't need or want the compat suite.
+        ``use_compat_patches`` (default ``True``) gates vmap-safety
+        patches: ``eager_attention``, ``batchify``, vmap-safe masking /
+        collator / checkpoint hooks.  ``use_performance_kernels`` (default
+        ``False``) gates the CUDA + Triton kernel group (``rope``,
+        ``rms_norm``, ``activation``, ``cross_entropy``).  The
+        ``performance`` bucket — currently ``kv_cache`` — is always
+        enabled here because ``DynamicCache`` allocation leaks vmap refs
+        and inflates training memory regardless of host;
+        ``performance_kernels_config={"kv_cache": False}`` opts out.
+
+        When opaque doesn't recognise the model family it logs an
+        info-level message; set ``use_compat_patches=False`` to suppress
+        for custom or non-HF ``nn.Module`` fixtures.
         """
         try:
             from opaque.patches import apply_model_patches
@@ -617,31 +625,14 @@ class DPTrainer:
             log.debug("opaque.patches unavailable; skipping model patches.")
             return
 
-        kwargs: dict[str, Any] = {}
-        compat = bool(self.args.use_compat_patches)
-        performance = bool(self.args.use_performance_kernels)
-        if performance:
-            from ._performance_kernels import translate_performance_kernels_config
-
-            kwargs.update(translate_performance_kernels_config(self._coerce_performance_kernels_config()))
-
-        apply_model_patches(self._model, compat=compat, performance=performance, **kwargs)
-
-    def _coerce_performance_kernels_config(self) -> dict[str, Any] | None:
-        raw = self.args.performance_kernels_config
-        if raw is None:
-            return None
-        if isinstance(raw, str):
-            stripped = raw.strip()
-            if not stripped:
-                return None
-            loaded = json.loads(stripped)
-            if not isinstance(loaded, dict):
-                raise ValueError(
-                    "performance_kernels_config must decode to a JSON object when given as a string."
-                )
-            return loaded
-        return dict(raw)
+        kwargs = self.args.performance_kernels_config or {}
+        apply_model_patches(
+            self._model,
+            compat=bool(self.args.use_compat_patches),
+            performance=True,
+            kernels=bool(self.args.use_performance_kernels),
+            **kwargs,
+        )
 
     def _setup_precision(self) -> None:
         """Resolve compute precision (TF32, bf16/fp16 autocast).

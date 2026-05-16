@@ -280,14 +280,30 @@ class TrainingArguments:
     torch_compile: bool = False
     torch_compile_backend: str | None = None
     torch_compile_mode: str | None = None
+    # ``use_performance_kernels`` gates the CUDA + Triton kernel group
+    # (``rope``, ``rms_norm``, ``activation``, ``cross_entropy``).  Default
+    # ``False`` because the kernels need CUDA + Triton at runtime and the
+    # default cluster shape isn't guaranteed to have them.  ``kv_cache``
+    # is a pure-Python ``performance`` patch and stays enabled regardless;
+    # disable it explicitly via ``performance_kernels_config={"kv_cache":
+    # False}`` for models whose forward depends on the HF ``DynamicCache``.
     use_performance_kernels: bool = False
+    # Flat ``dict[str, bool]`` forwarded as-is to
+    # ``opaque.patches.apply_model_patches`` kwargs (no key translation).
+    # Supported keys: ``rope``, ``rms_norm``, ``activation``,
+    # ``cross_entropy``, ``fused_linear_cross_entropy``, ``kv_cache``,
+    # ``eager_attention``, ``batchify``.  ``fused_linear_cross_entropy``
+    # is opt-in because the fused forward returns ``logits=None``, which
+    # is incompatible with ``compute_metrics`` /
+    # ``preprocess_logits_for_metrics``.
     performance_kernels_config: dict[str, Any] | str | None = None
     # Whether ``opaque.patches.apply_model_patches`` should apply compat
-    # patches (vmap-safety: batchify, kv-cache disable, vmap-safe masking)
-    # to the model.  Default ``True``.  Set to ``False`` for custom models
-    # designed to be vmap-safe without opaque's patches, or for non-HF
-    # ``nn.Module`` test fixtures — silences the "no detectable family"
-    # info log opaque emits when it doesn't recognise the model.
+    # patches (vmap-safety: ``eager_attention``, ``batchify``, vmap-safe
+    # masking / collator / checkpoint hooks).  Default ``True``.  Set to
+    # ``False`` for custom models designed to be vmap-safe without
+    # opaque's patches, or for non-HF ``nn.Module`` test fixtures —
+    # silences the "no detectable family" info log opaque emits when it
+    # doesn't recognise the model.
     use_compat_patches: bool = True
 
     # =================================================================

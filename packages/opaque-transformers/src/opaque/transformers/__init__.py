@@ -3,7 +3,7 @@
 This module is a thin façade over the trainer implementation package shipped
 in the same wheel. Importing it does **not** mutate Hugging Face globals:
 :class:`~opaque.transformers.trainer.DPTrainer` applies runtime compat patches
-and ``apply_model_patches(..., compat=True, performance=use_performance_kernels)``
+and ``apply_model_patches(..., compat=use_compat_patches, performance=True, kernels=use_performance_kernels)``
 during construction. For scripts that use HF primitives without
 ``DPTrainer``, call :func:`patch_all` once for global runtime shims.
 """
