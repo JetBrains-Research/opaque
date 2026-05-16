@@ -328,6 +328,16 @@ class TrainingArguments:
     # ---- Noise-multiplier calibration to ε (search bounds + tolerance) ---
     noise_calibration_kwargs: dict[str, Any] | str = field(default_factory=dict)
 
+    # ---- Resume policy --------------------------------------------------
+    # ``accountant.json`` carries the privacy provenance of all prior
+    # training; resuming without it would silently discard the spent
+    # budget.  Default ``False`` → resume raises when the file is
+    # missing.  Set to ``True`` for the legitimate "warmup on public
+    # data, then DP-fine-tune" workflow where the resumed checkpoint
+    # genuinely has zero prior DP cost; calibration then runs over the
+    # remaining steps against an empty accountant.
+    privacy_resume_without_accountant: bool = False
+
     # =================================================================
     # Validation / coercion
     # =================================================================

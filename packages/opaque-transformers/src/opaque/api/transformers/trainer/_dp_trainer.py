@@ -843,8 +843,9 @@ class DPTrainer:
                 )
                 self._warn_on_arg_drift(runtime_payload)
             elif prefix_accountant is not None:
-                # save_only_model checkpoints have no DP runtime file but we still
-                # need to install the (possibly nonprivate-prefixed) accountant.
+                # save_only_model checkpoints have no DP runtime file but
+                # we still install the saved accountant (or the empty
+                # ``Accountant()`` from the warmup opt-in path).
                 ctx.accounting = prefix_accountant
             self._load_rng_state(resume_path)
             self._load_callback_states()
@@ -3991,8 +3992,19 @@ class DPTrainer:
         The runtime file stores flat ``opaque.serialization`` dicts for clip
         and noise state; they are merged in :meth:`_apply_runtime_state`.
 
-        When ``accountant.json`` is missing, prefix with ``nonprivate()`` so
-        ε stays infinite instead of silently restarting from zero.
+        ``accountant.json`` carries the privacy provenance of all prior
+        training.  Missing-file policy:
+
+        - **Default** (``args.privacy_resume_without_accountant=False``):
+          raise ``FileNotFoundError``.  Resuming without a recorded
+          accountant would silently discard the spent privacy budget —
+          surface that as a hard failure so it can't go unnoticed.
+        - **Opt-in** (``args.privacy_resume_without_accountant=True``):
+          install an empty ``Accountant()`` as the prefix and proceed.
+          Calibration runs over the remaining steps as if the prior
+          run had zero DP cost.  Designed for "warmup on public data,
+          then DP-fine-tune" workflows where this is genuinely correct;
+          dangerous to enable in any other context.
         """
         runtime_path = os.path.join(ckpt_dir, ckpt.DP_STATE_NAME)
         runtime_payload = (
@@ -4005,14 +4017,24 @@ class DPTrainer:
         if os.path.exists(acct_path):
             with open(acct_path) as f:
                 accountant = opaque_from_state_dict(Accountant(), json.load(f))
-        else:
-            log.warning(
-                "No accountant.json in %s; prepending nonprivate() mechanism — "
-                "all future ε computations will be infinite. Pass a checkpoint "
-                "that includes the accountant to recover finite privacy bounds.",
+        elif self.args.privacy_resume_without_accountant:
+            log.info(
+                "No accountant.json in %s; privacy_resume_without_accountant=True, "
+                "treating prior training as zero DP cost and calibrating remaining "
+                "steps against an empty accountant.",
                 ckpt_dir,
             )
-            accountant = Accountant() | acc.nonprivate()
+            accountant = Accountant()
+        else:
+            raise FileNotFoundError(
+                f"Cannot resume from {ckpt_dir}: accountant.json is missing. "
+                "Resuming without the saved accountant would silently discard "
+                "the spent privacy budget.  Either restore accountant.json from "
+                "the source of truth, or — only when the resumed checkpoint has "
+                "genuinely zero prior DP cost (e.g. warmup on public data) — "
+                "pass privacy_resume_without_accountant=True to opt in to "
+                "recalibration against an empty accountant."
+            )
         return runtime_payload, accountant
 
     def _read_trainer_state(self, ckpt_dir: str) -> dict[str, Any] | None:

@@ -1151,6 +1151,80 @@ class TestDPTrainerCheckpointing:
         # Fresh-run semantics: global_step advances from 0, not via resume.
         assert out.global_step > 0
 
+    def test_resume_missing_accountant_raises_by_default(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        """Missing ``accountant.json`` on resume raises by default.
+
+        The privacy provenance of prior training lives in
+        ``accountant.json``; resuming without it would silently discard
+        the spent budget.  Default policy is hard-fail.
+        """
+        import os
+
+        # Produce a checkpoint, then delete its accountant.json.
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=self._common_args(tmp_path, max_steps=2, save_steps=2),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        trainer.train()
+        ckpt_dir = tmp_path / "checkpoint-2"
+        os.remove(ckpt_dir / "accountant.json")
+
+        model2, tokenizer2 = gpt2_with_lora
+        trainer2 = DPTrainer(
+            model=model2,
+            args=self._common_args(tmp_path, max_steps=4, save_steps=2),
+            processing_class=tokenizer2,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        with pytest.raises(FileNotFoundError, match="accountant.json is missing"):
+            trainer2.train(resume_from_checkpoint=str(ckpt_dir))
+
+    def test_resume_missing_accountant_opt_in_recalibrates(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        """``privacy_resume_without_accountant=True`` permits resume with empty prefix.
+
+        Designed for the warmup-then-DP workflow: prior training had
+        zero DP cost (e.g. trained on public data), so calibration
+        proceeds against an empty accountant over the remaining steps.
+        """
+        import os
+
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=self._common_args(tmp_path, max_steps=2, save_steps=2),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        trainer.train()
+        ckpt_dir = tmp_path / "checkpoint-2"
+        os.remove(ckpt_dir / "accountant.json")
+
+        model2, tokenizer2 = gpt2_with_lora
+        trainer2 = DPTrainer(
+            model=model2,
+            args=self._common_args(
+                tmp_path,
+                max_steps=4,
+                save_steps=2,
+                privacy_resume_without_accountant=True,
+            ),
+            processing_class=tokenizer2,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        out = trainer2.train(resume_from_checkpoint=str(ckpt_dir))
+        assert out.global_step == 4
+
     def test_resume_restores_accountant(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
     ):
