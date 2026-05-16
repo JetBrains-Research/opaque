@@ -2769,10 +2769,16 @@ than the PyTorch baseline.</p>
 element-wise operation. The real value is in the fused backward and vmap
 memory savings.</p>
 <h3 id="fused-linear-cross-entropy">Fused linear cross-entropy<a class="headerlink" href="#fused-linear-cross-entropy" title="Permanent link">&para;</a></h3>
-<p>The most impactful optimization. Standard cross-entropy requires materializing
-<code>logits = hidden_states @ lm_head.T</code> — for Mellum-4b with 128K vocab, this is
-~2 GB per forward pass. Fused linear cross-entropy computes the loss directly
-from hidden states, never materializing the full logits tensor.</p>
+<p>Computes the loss directly from hidden states and the <code>lm_head</code> weight matrix,
+never materializing the full <code>(batch*seq, vocab)</code> logits tensor. For Mellum-4b
+with 128K vocab, that saves ~2 GB per forward pass relative to the non-fused
+path. Enabled by passing <code>fused_linear_cross_entropy=True</code> to
+<code>apply_model_patches(model, ...)</code>.</p>
+<p>The fused path returns <code>logits=None</code> from <code>XForCausalLM.forward</code>, which is
+incompatible with callers that read <code>outputs.logits</code> — <code>compute_metrics</code>,
+<code>preprocess_logits_for_metrics</code>, and generation eval. Enable the patch when
+loss is the only consumer of the forward output;
+<code>examples/train_causal_lm.py</code> and <code>examples/train_dp_ftrl.py</code> do.</p>
 <table>
 <thead>
 <tr>
@@ -2896,9 +2902,11 @@ parameter count.</p>
 <p><strong>Memory grows over time:</strong> Profile across iterations to identify whether
 peak memory is increasing. Check for tensors that are accumulating outside
 the training loop (e.g., appending to a list without detaching).</p>
-<p><strong>OOM with fused linear CE disabled:</strong> Without fused linear CE, the full
-<code>(batch*seq, vocab)</code> logits tensor is materialized. For 128K vocab models,
-this uses ~2 GB per sample. Re-enable fused CE or reduce batch size.</p>
+<p><strong>OOM with fused linear CE not enabled:</strong> Fused linear CE is opt-in
+(<code>apply_model_patches(model, fused_linear_cross_entropy=True)</code>). Without
+it, the full <code>(batch*seq, vocab)</code> logits tensor is materialized — for
+128K vocab models, that is ~2 GB per sample. Enable the flag (only if
+nothing else reads logits) or reduce batch size.</p>
 <h2 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
 <p>See the <code>opaque.profiling</code> module for complete function signatures.</p>
 

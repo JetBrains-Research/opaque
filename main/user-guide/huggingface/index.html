@@ -3223,11 +3223,21 @@ grouped-query attention (GQA) where Q and K have different head counts.</p>
 <p>Chunked Triton cross-entropy processes the vocabulary dimension in blocks (up to
 65536), avoiding materialization of the full <code>(batch*seq, vocab)</code> logits tensor.</p>
 <h3 id="fused-linear-cross-entropy">Fused linear cross-entropy<a class="headerlink" href="#fused-linear-cross-entropy" title="Permanent link">&para;</a></h3>
-<p>The most impactful optimization. Standard cross-entropy requires materializing
-<code>logits = hidden_states @ lm_head.T</code> — for Mellum-4b with 128K vocab, this is
-~2 GB per forward pass. Fused linear cross-entropy computes the loss directly
-from hidden states and weight matrix using tiled matrix multiplication inside
-the Triton kernel, never materializing the full logits tensor.</p>
+<p>Computes the loss directly from hidden states and the <code>lm_head</code> weight matrix
+using tiled matrix multiplication inside the Triton kernel, never materializing
+the full logits tensor. For Mellum-4b with 128K vocab, that avoids the
+~2 GB <code>logits = hidden_states @ lm_head.T</code> allocation that the non-fused
+cross-entropy path produces per forward pass.</p>
+<p>The patched <code>XForCausalLM.forward</code> returns <code>logits=None</code> on the fast path,
+which is incompatible with callers that read <code>outputs.logits</code> —
+<code>compute_metrics</code>, <code>preprocess_logits_for_metrics</code>, and generation eval all
+need the materialized tensor. The patch is opt-in for this reason: pass
+<code>fused_linear_cross_entropy=True</code> to <code>apply_model_patches(model, ...)</code> when
+loss is the only consumer of the forward output. <code>examples/train_causal_lm.py</code>
+and <code>examples/train_dp_ftrl.py</code> enable it.</p>
+<p><code>cross_entropy=True</code> (defaults from <code>kernels</code>) still installs the non-fused
+<code>Opaque_CrossEntropyLoss</code> via <code>loss_function</code>, which operates on materialized
+logits and leaves <code>outputs.logits</code> populated.</p>
 <p>Key design decisions:
 - <strong>Pre-shift in Python</strong> — <code>hidden_states[..., :-1, :]</code> and <code>labels[..., 1:]</code>
   so vmap merge is a trivial reshape
@@ -3323,36 +3333,62 @@ qkv_proj), Cohere (no transpose).</p>
 </table>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
 <p>Patching is configured through the explicit API rather than import-time side
-effects. The most useful knobs today are:</p>
+effects. Three umbrella flags drive the per-concern defaults:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.patches</span><span class="w"> </span><span class="kn">import</span> <span class="n">apply_model_patches</span><span class="p">,</span> <span class="n">apply_runtime_patches</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">apply_runtime_patches</span><span class="p">(</span>
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>  <span class="n">compat</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>  <span class="n">allow_empty_batches</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>  <span class="n">enable_vmap_checkpointing</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>  <span class="n">use_fused_loss</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>  <span class="n">vmap_masking</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>  <span class="n">empty_batches</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>  <span class="n">vmap_checkpointing</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 <a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="p">)</span>
 <a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>
 <a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="n">apply_model_patches</span><span class="p">(</span>
 <a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>  <span class="n">model</span><span class="p">,</span>
-<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>  <span class="n">performance</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>  <span class="c1"># Triton kernels + PEFT fusion</span>
-<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>  <span class="n">compat</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>       <span class="c1"># vmap-safe attention / batchify / KV-cache shims</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>  <span class="n">performance</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>  <span class="c1"># kv_cache disabler + (by default) the kernels group</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>  <span class="n">compat</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>       <span class="c1"># vmap-safe attention + batchify</span>
 <a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>  <span class="n">peft</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>         <span class="c1"># LoRA / PEFT module patching</span>
-<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="p">)</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>  <span class="n">kernels</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>      <span class="c1"># Triton kernels (rope, rms_norm, activation, cross_entropy);</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>                     <span class="c1"># defaults to performance, forced False without CUDA + Triton</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>  <span class="n">fused_linear_cross_entropy</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>  <span class="c1"># opt-in: skips lm_head, fast path returns logits=None</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="p">)</span>
 </code></pre></div>
+<p>Group → per-concern defaults:</p>
+<ul>
+<li><code>performance</code> — memory-efficiency patches that run on any host
+  (currently <code>kv_cache</code>).</li>
+<li><code>compat</code> — vmap-safety wrappers (<code>eager_attention</code>, <code>batchify</code>).</li>
+<li><code>kernels</code> — Triton kernel patches that require CUDA + Triton (<code>rope</code>,
+  <code>rms_norm</code>, <code>activation</code>, <code>cross_entropy</code>). Defaults to <code>performance</code>
+  when not passed and is forced to <code>False</code> when CUDA / Triton can't be
+  imported, so <code>performance=True</code> keeps <code>kv_cache</code> on CPU / MPS.</li>
+</ul>
+<p><code>fused_linear_cross_entropy</code> is a kernel kwarg with an explicit default of
+<code>False</code>. The fused path returns <code>logits=None</code>, which is incompatible with
+callers that read <code>outputs.logits</code> — <code>compute_metrics</code>,
+<code>preprocess_logits_for_metrics</code>, and generation eval. Enable it when loss is
+the only consumer of the forward output; see
+<a href="#fused-linear-cross-entropy">Fused linear cross-entropy</a>.</p>
 <p>Common configurations:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Keep correctness shims, but disable Triton kernels / PEFT fusion.</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Drop everything performance-related; keep compat shims.</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">apply_model_patches</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">performance</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Disable model-side compat wrappers while keeping runtime patches.</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">apply_model_patches</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">compat</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1"># Disable runtime checkpoint patching for debugging.</span>
-<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="n">apply_runtime_patches</span><span class="p">(</span><span class="n">enable_vmap_checkpointing</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Keep kv_cache but skip the Triton kernels — what the router does on</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="c1"># CPU / MPS automatically.</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="n">apply_model_patches</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">performance</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">kernels</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="c1"># Drop model-side compat wrappers, keep runtime patches.</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="n">apply_model_patches</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">compat</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="c1"># Enable the fused linear+CE forward (loss-only consumer of forward output).</span>
+<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="n">apply_model_patches</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">fused_linear_cross_entropy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>
+<a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="c1"># Disable runtime checkpoint patching for debugging.</span>
+<a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="n">apply_runtime_patches</span><span class="p">(</span><span class="n">vmap_checkpointing</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 </code></pre></div>
-<p>The only remaining environment-level switch in this area is
-<code>OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES=all|collator</code>, which controls the empty-
-batch collator wrapper used with Poisson sampling.</p>
+<p>The environment-level switch in this area is
+<code>OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES=all|collator</code>, which controls the
+empty-batch collator wrapper used with Poisson sampling.</p>
 <h2 id="other-models">Other models<a class="headerlink" href="#other-models" title="Permanent link">&para;</a></h2>
 <p>Models not in the table above may work if their architecture follows
 the standard Transformers pattern. If a model fails under <code>vmap</code>, the most
