@@ -9,11 +9,13 @@ training context via :func:`opaque.serialization.from_state_dict`.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 import random
 import re
 import shutil
+from dataclasses import field
 from typing import Any
 
 import numpy as np
@@ -49,6 +51,7 @@ __all__ = [
     "DP_ACCOUNTANT_NAME",
     "DP_STATE_BUNDLE_VERSION",
     "RNG_STATE_NAME",
+    "RuntimeCheckpoint",
     "parse_checkpoint_step",
     "list_checkpoints",
     "get_last_checkpoint",
@@ -191,6 +194,36 @@ def restore_rng_state(snap: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
+@dataclasses.dataclass
+class RuntimeCheckpoint:
+    """Typed payload of ``dp_state.pt`` — the DP-side runtime bundle.
+
+    Replaces the prior ad-hoc ``dict[str, Any]`` so the resume code is
+    type-driven (attribute access, ``dataclasses.fields(...)`` iteration)
+    instead of string-keyed.  Adding a new field is a single edit on
+    this dataclass; ``_apply_runtime_state`` and ``_warn_on_arg_drift``
+    in the trainer pick it up automatically.
+
+    Fields with ``metadata={"compare_on_resume": True}`` are checked
+    against the live ``args`` on resume and emit a warning on drift —
+    used for privacy-relevant scalars where heterogeneous composition
+    still yields a correct ε but the saved-vs-current mismatch is
+    worth surfacing.
+    """
+
+    version: int
+    clip_state: dict[str, Any]
+    noise_state: dict[str, Any]
+    sampler_state: dict[str, Any] | None
+    sample_rate: float = field(metadata={"compare_on_resume": True})
+    target_delta: float = field(metadata={"compare_on_resume": True})
+    noise_multiplier: float = field(metadata={"compare_on_resume": True})
+    expected_steps_per_epoch: int = field(metadata={"compare_on_resume": True})
+    expected_batch_size: int = field(metadata={"compare_on_resume": True})
+    total_steps: int = field(metadata={"compare_on_resume": True})
+    lr_schedule_state: dict[str, Any] | None = None
+
+
 def save_dp_runtime_state(
     path: str,
     *,
@@ -203,9 +236,9 @@ def save_dp_runtime_state(
     expected_steps_per_epoch: int,
     expected_batch_size: int,
     total_steps: int,
-    extra: dict[str, Any] | None = None,
+    lr_schedule_state: dict[str, Any] | None = None,
 ) -> None:
-    """Save the DP runtime bundle (everything under DP_STATE_NAME)."""
+    """Save the DP runtime bundle as a :class:`RuntimeCheckpoint`."""
     if not isinstance(clip_state, ClipState):
         raise TypeError(
             f"clip_state must be a ClipState instance, got {type(clip_state).__name__}"
@@ -214,38 +247,47 @@ def save_dp_runtime_state(
         raise TypeError(
             f"noise_state must be a NoiseState instance, got {type(noise_state).__name__}"
         )
-    payload: dict[str, Any] = {
-        "version": DP_STATE_BUNDLE_VERSION,
-        "clip_state": opaque_state_dict(clip_state),
-        "noise_state": opaque_state_dict(noise_state),
-        "sampler_state": sampler_state,
-        "sample_rate": float(sample_rate),
-        "target_delta": float(target_delta),
-        "noise_multiplier": float(noise_multiplier),
-        "expected_steps_per_epoch": int(expected_steps_per_epoch),
-        "expected_batch_size": int(expected_batch_size),
-        "total_steps": int(total_steps),
-    }
-    if extra:
-        payload["extra"] = extra
-    torch.save(payload, path)
+    bundle = RuntimeCheckpoint(
+        version=DP_STATE_BUNDLE_VERSION,
+        clip_state=opaque_state_dict(clip_state),
+        noise_state=opaque_state_dict(noise_state),
+        sampler_state=sampler_state,
+        sample_rate=float(sample_rate),
+        target_delta=float(target_delta),
+        noise_multiplier=float(noise_multiplier),
+        expected_steps_per_epoch=int(expected_steps_per_epoch),
+        expected_batch_size=int(expected_batch_size),
+        total_steps=int(total_steps),
+        lr_schedule_state=lr_schedule_state,
+    )
+    # ``torch.save`` of a dataclass round-trips via pickle.  Kept as
+    # pickle to handle the heterogeneous types (tensors inside
+    # ``clip_state`` / ``noise_state``, Python objects in
+    # ``sampler_state``).  A future migration to safetensors+JSON
+    # sidecar would eliminate the ``weights_only=False`` requirement.
+    torch.save(bundle, path)
 
 
-def load_dp_runtime_state(path: str) -> dict[str, Any]:
-    """Load the raw DP runtime bundle from disk.
+def load_dp_runtime_state(path: str) -> RuntimeCheckpoint:
+    """Load the DP runtime bundle from disk as a typed :class:`RuntimeCheckpoint`.
 
     ``clip_state`` and ``noise_state`` are flat serialisation dicts; merge them
     into live objects with :func:`opaque.serialization.from_state_dict` using
     the templates produced by the current training setup.
 
     ``weights_only=False`` is required for PyTorch 2.6+ defaults when tensors
-    appear in the bundle.
+    or dataclasses appear in the bundle.
     """
-    payload = torch.load(path, map_location="cpu", weights_only=False)
-    ver = int(payload["version"])
-    if ver != DP_STATE_BUNDLE_VERSION:
+    bundle = torch.load(path, map_location="cpu", weights_only=False)
+    if not isinstance(bundle, RuntimeCheckpoint):
+        raise TypeError(
+            f"dp_state.pt at {path} did not deserialize to RuntimeCheckpoint "
+            f"(got {type(bundle).__name__}); checkpoint may be from an older "
+            "trainer version."
+        )
+    if bundle.version != DP_STATE_BUNDLE_VERSION:
         raise ValueError(
-            f"unsupported dp_state bundle version {ver} "
+            f"unsupported dp_state bundle version {bundle.version} "
             f"(expected {DP_STATE_BUNDLE_VERSION})"
         )
-    return payload
+    return bundle

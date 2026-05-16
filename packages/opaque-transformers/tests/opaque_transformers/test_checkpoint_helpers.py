@@ -169,15 +169,16 @@ class TestDpRuntimeBundle:
         )
         loaded = ckpt.load_dp_runtime_state(path)
 
-        assert opaque_from_state_dict(clip, loaded["clip_state"]) == clip
-        assert opaque_from_state_dict(noise, loaded["noise_state"]) == noise
-        assert loaded["version"] == ckpt.DP_STATE_BUNDLE_VERSION
-        assert loaded["sampler_state"]["iter_count"] == 2
-        assert loaded["sample_rate"] == pytest.approx(0.1)
-        assert loaded["target_delta"] == pytest.approx(1e-5)
-        assert loaded["noise_multiplier"] == pytest.approx(1.1)
-        assert loaded["expected_steps_per_epoch"] == 10
-        assert loaded["total_steps"] == 30
+        assert isinstance(loaded, ckpt.RuntimeCheckpoint)
+        assert opaque_from_state_dict(clip, loaded.clip_state) == clip
+        assert opaque_from_state_dict(noise, loaded.noise_state) == noise
+        assert loaded.version == ckpt.DP_STATE_BUNDLE_VERSION
+        assert loaded.sampler_state["iter_count"] == 2
+        assert loaded.sample_rate == pytest.approx(0.1)
+        assert loaded.target_delta == pytest.approx(1e-5)
+        assert loaded.noise_multiplier == pytest.approx(1.1)
+        assert loaded.expected_steps_per_epoch == 10
+        assert loaded.total_steps == 30
 
     def test_unsupported_clip_state_type_raises(self, tmp_path):
         path = str(tmp_path / "dp.pt")
@@ -215,6 +216,18 @@ class TestDpRuntimeBundle:
 
     def test_rejects_unknown_bundle_version(self, tmp_path):
         path = str(tmp_path / "dp.pt")
-        torch.save({"version": 1, "clip_state": {}, "noise_state": {}}, path)
+        fake = ckpt.RuntimeCheckpoint(
+            version=1,  # wrong; current is DP_STATE_BUNDLE_VERSION (2)
+            clip_state={},
+            noise_state={},
+            sampler_state=None,
+            sample_rate=0.1,
+            target_delta=1e-5,
+            noise_multiplier=1.0,
+            expected_steps_per_epoch=1,
+            expected_batch_size=32,
+            total_steps=1,
+        )
+        torch.save(fake, path)
         with pytest.raises(ValueError, match="unsupported dp_state"):
             ckpt.load_dp_runtime_state(path)

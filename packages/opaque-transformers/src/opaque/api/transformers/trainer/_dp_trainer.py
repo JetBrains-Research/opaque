@@ -809,7 +809,7 @@ class DPTrainer:
 
         # Pre-load weights so make_functional starts from the saved values.
         prefix_accountant: Accountant | None = None
-        runtime_payload: dict[str, Any] | None = None
+        runtime_payload: ckpt.RuntimeCheckpoint | None = None
         trainer_state_json: dict[str, Any] | None = None
         if resume_path is not None:
             self._load_model_weights(resume_path)
@@ -855,7 +855,7 @@ class DPTrainer:
                 ctx,
                 resume_path=resume_path,
                 saved_sampler_state=(
-                    runtime_payload.get("sampler_state") if runtime_payload else None
+                    runtime_payload.sampler_state if runtime_payload else None
                 ),
                 ignore_keys_for_eval=ignore_keys_for_eval,
             )
@@ -3826,11 +3826,13 @@ class DPTrainer:
             if ctx.current_sampler is not None
             else None
         )
-        extra: dict[str, Any] = {}
         # Persist plateau schedule state so resumes don't lose the
         # accumulated bad-epoch counter.
-        if isinstance(ctx.lr_schedule, ReduceLROnPlateauSchedule):
-            extra["lr_schedule_state"] = ctx.lr_schedule.state_dict()
+        lr_schedule_state = (
+            ctx.lr_schedule.state_dict()
+            if isinstance(ctx.lr_schedule, ReduceLROnPlateauSchedule)
+            else None
+        )
 
         ckpt.save_dp_runtime_state(
             os.path.join(ckpt_dir, ckpt.DP_STATE_NAME),
@@ -3843,7 +3845,7 @@ class DPTrainer:
             expected_steps_per_epoch=ctx.expected_steps_per_epoch,
             expected_batch_size=int(self.args.train_batch_size),
             total_steps=ctx.total_steps,
-            extra=extra,
+            lr_schedule_state=lr_schedule_state,
         )
 
     def _save_accountant(self, ckpt_dir: str, accountant: "Accountant") -> None:
@@ -3984,11 +3986,11 @@ class DPTrainer:
 
     def _read_runtime_for_resume(
         self, ckpt_dir: str
-    ) -> tuple[dict[str, Any] | None, "Accountant | None"]:
+    ) -> tuple["ckpt.RuntimeCheckpoint | None", "Accountant | None"]:
         """Pre-load ``dp_state.pt`` and ``accountant.json`` for resume.
 
-        Returns ``(runtime_payload, accountant)``.  ``runtime_payload`` is
-        ``None`` when the checkpoint was written with ``save_only_model=True``.
+        Returns ``(runtime, accountant)``.  ``runtime`` is ``None`` when
+        the checkpoint was written with ``save_only_model=True``.
         The runtime file stores flat ``opaque.serialization`` dicts for clip
         and noise state; they are merged in :meth:`_apply_runtime_state`.
 
@@ -4048,15 +4050,13 @@ class DPTrainer:
     def _apply_runtime_state(
         self,
         ctx: "_TrainingContext",
-        payload: dict[str, Any],
+        runtime: "ckpt.RuntimeCheckpoint",
         accountant: "Accountant | None",
         ckpt_dir: str,
     ) -> None:
         """Overwrite ctx fields with values restored from a checkpoint."""
-        ctx.clip_state = opaque_from_state_dict(ctx.clip_state, payload["clip_state"])
-        ctx.noise_state = opaque_from_state_dict(
-            ctx.noise_state, payload["noise_state"]
-        )
+        ctx.clip_state = opaque_from_state_dict(ctx.clip_state, runtime.clip_state)
+        ctx.noise_state = opaque_from_state_dict(ctx.noise_state, runtime.noise_state)
 
         opt_path = os.path.join(ckpt_dir, ckpt.DP_OPTIMIZER_NAME)
         if os.path.exists(opt_path):
@@ -4076,8 +4076,7 @@ class DPTrainer:
         # ``lr_scheduler_type`` between save and resume doesn't silently
         # get a fresh schedule (saved → resumed type mismatch) or a
         # discarded saved counter (saved was plateau → resumed isn't).
-        extra = payload.get("extra") or {}
-        sched_state = extra.get("lr_schedule_state")
+        sched_state = runtime.lr_schedule_state
         live_is_plateau = isinstance(ctx.lr_schedule, ReduceLROnPlateauSchedule)
         if sched_state is not None and live_is_plateau:
             ctx.lr_schedule.load_state_dict(sched_state)
@@ -4141,39 +4140,29 @@ class DPTrainer:
             for key, value in attrs.items():
                 setattr(cb, key, value)
 
-    def _warn_on_arg_drift(self, payload: dict[str, Any]) -> None:
+    def _warn_on_arg_drift(self, runtime: "ckpt.RuntimeCheckpoint") -> None:
         """Surface drift between the saved checkpoint and current ``args``.
 
-        Privacy-relevant fields (``sample_rate``, ``target_delta``,
-        ``noise_multiplier``, ``total_steps``, ``expected_batch_size``)
-        emit a warning — heterogeneous composition still produces a
-        correct ε.  HF parity on LR-schedule drift: not checked (HF
-        accepts ``args`` changes between save and resume silently).
+        Fields with ``metadata={"compare_on_resume": True}`` on
+        :class:`~opaque.api.transformers.trainer._checkpoint.RuntimeCheckpoint`
+        are checked against current values.  Heterogeneous composition
+        still produces a correct ε, but a saved-vs-current mismatch is
+        worth surfacing.
+
+        Adding a new privacy-relevant field becomes a one-line edit on
+        ``RuntimeCheckpoint`` (add ``field(metadata={"compare_on_resume":
+        True})``); the drift iteration picks it up automatically as
+        long as :meth:`_current_value_for_drift` knows where to read
+        the live value from.
         """
         a = self.args
         ctx = self._ctx
-        for arg_name, current in (
-            (
-                "sample_rate",
-                ctx.sample_rate
-                if ctx is not None
-                else a.train_batch_size / max(1, len(self._train_dataset)),
-            ),
-            (
-                "target_delta",
-                ctx.target_delta if ctx is not None else a.privacy_target_delta,
-            ),
-            (
-                "noise_multiplier",
-                ctx.noise_multiplier if ctx is not None else a.privacy_noise_multiplier,
-            ),
-            (
-                "total_steps",
-                ctx.total_steps if ctx is not None else self._predict_total_steps(),
-            ),
-            ("expected_batch_size", int(a.train_batch_size)),
-        ):
-            saved = payload.get(arg_name)
+        current_by_name = self._current_values_for_drift(a, ctx)
+        for f in dataclasses.fields(runtime):
+            if not f.metadata.get("compare_on_resume"):
+                continue
+            saved = getattr(runtime, f.name)
+            current = current_by_name.get(f.name)
             if saved is None or current is None:
                 continue
             if isinstance(saved, float) and isinstance(current, float):
@@ -4182,14 +4171,47 @@ class DPTrainer:
                         "Resume arg drift on %s: saved=%g, current=%g — "
                         "heterogeneous composition still gives a correct ε but "
                         "the saved/current mechanisms differ",
-                        arg_name,
+                        f.name,
                         saved,
                         current,
                     )
             elif saved != current:
                 log.warning(
                     "Resume arg drift on %s: saved=%r, current=%r",
-                    arg_name,
+                    f.name,
                     saved,
                     current,
                 )
+
+    def _current_values_for_drift(
+        self, a, ctx: "_TrainingContext | None"
+    ) -> dict[str, Any]:
+        """Resolve current (post-setup) values for the drift-checked fields.
+
+        Splits the lookup off so :meth:`_warn_on_arg_drift` stays a pure
+        iteration over field metadata — no per-field if/else.  Returns
+        ``None`` for any field whose live value can't be determined yet
+        (e.g. ``sample_rate`` before ``ctx`` exists).
+        """
+        return {
+            "sample_rate": (
+                ctx.sample_rate
+                if ctx is not None
+                else a.train_batch_size / max(1, len(self._train_dataset))
+            ),
+            "target_delta": (
+                ctx.target_delta if ctx is not None else a.privacy_target_delta
+            ),
+            "noise_multiplier": (
+                ctx.noise_multiplier
+                if ctx is not None
+                else a.privacy_noise_multiplier
+            ),
+            "total_steps": (
+                ctx.total_steps if ctx is not None else self._predict_total_steps()
+            ),
+            "expected_batch_size": int(a.train_batch_size),
+            "expected_steps_per_epoch": (
+                ctx.expected_steps_per_epoch if ctx is not None else None
+            ),
+        }

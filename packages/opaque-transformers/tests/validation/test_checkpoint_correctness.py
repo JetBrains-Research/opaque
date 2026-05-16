@@ -393,6 +393,29 @@ class TestArgDriftWarnings:
     ``sample_rate`` / ``noise_multiplier`` warnings).
     """
 
+    def _baseline_runtime(self, trainer, tiny_dataset):
+        """Build a ``RuntimeCheckpoint`` whose privacy scalars match live args.
+
+        Drift comparisons are made field-by-field; baseline values that
+        match the live trainer trip no warnings.  Tests then mutate the
+        field under test on the returned bundle.
+        """
+        import opaque.api.transformers.trainer._checkpoint as ckpt
+
+        target_delta = trainer.args.privacy_target_delta or 1e-5
+        return ckpt.RuntimeCheckpoint(
+            version=ckpt.DP_STATE_BUNDLE_VERSION,
+            clip_state={},
+            noise_state={},
+            sampler_state=None,
+            sample_rate=trainer.args.train_batch_size / max(1, len(tiny_dataset)),
+            target_delta=float(target_delta),
+            noise_multiplier=float(trainer.args.privacy_noise_multiplier),
+            expected_steps_per_epoch=1,
+            expected_batch_size=int(trainer.args.train_batch_size),
+            total_steps=int(trainer.args.max_steps),
+        )
+
     def test_expected_batch_size_drift_warns(
         self,
         lora_model,
@@ -400,10 +423,8 @@ class TestArgDriftWarnings:
         tmp_path,
         caplog,
     ):
-        """A synthetic payload whose ``expected_batch_size`` differs warns."""
+        """A synthetic bundle whose ``expected_batch_size`` differs warns."""
         model, tokenizer = lora_model
-        # Live args: per_device_train_batch_size=2, so
-        # ``expected_batch_size`` resolves to 2.
         trainer = DPTrainer(
             model=model,
             args=_args(tmp_path, per_device_train_batch_size=2),
@@ -411,23 +432,12 @@ class TestArgDriftWarnings:
             train_dataset=tiny_dataset,
             eval_dataset=tiny_dataset,
         )
-        live_eb = int(trainer.args.train_batch_size)
+        runtime = self._baseline_runtime(trainer, tiny_dataset)
+        # Drift only ``expected_batch_size``: saved=4, current=2.
+        runtime.expected_batch_size = int(trainer.args.train_batch_size) * 2
 
-        # Synthesize a runtime payload with the *same* sample_rate /
-        # noise_multiplier as the live config (no drift there) plus
-        # ``target_delta=None`` (so the drift loop's ``saved is None``
-        # short-circuit skips it), then ship a different
-        # ``expected_batch_size``.  The warning must fire on the new
-        # field independently.
-        payload: dict[str, Any] = {
-            "sample_rate": trainer.args.train_batch_size / max(1, len(tiny_dataset)),
-            "target_delta": None,
-            "noise_multiplier": float(trainer.args.privacy_noise_multiplier),
-            "total_steps": int(trainer.args.max_steps),
-            "expected_batch_size": live_eb * 2,  # saved=4, current=2
-        }
         with caplog.at_level(logging.WARNING):
-            trainer._warn_on_arg_drift(payload)
+            trainer._warn_on_arg_drift(runtime)
 
         drift_msgs = [
             r
@@ -441,7 +451,7 @@ class TestArgDriftWarnings:
         )
 
     def test_no_drift_no_warning(self, lora_model, tiny_dataset, tmp_path, caplog):
-        """Identical saved/current payload emits no drift warning."""
+        """Identical saved/current bundle emits no drift warning."""
         model, tokenizer = lora_model
         trainer = DPTrainer(
             model=model,
@@ -450,16 +460,10 @@ class TestArgDriftWarnings:
             train_dataset=tiny_dataset,
             eval_dataset=tiny_dataset,
         )
-        live_eb = int(trainer.args.train_batch_size)
-        payload: dict[str, Any] = {
-            "sample_rate": trainer.args.train_batch_size / max(1, len(tiny_dataset)),
-            "target_delta": None,
-            "noise_multiplier": float(trainer.args.privacy_noise_multiplier),
-            "total_steps": int(trainer.args.max_steps),
-            "expected_batch_size": live_eb,
-        }
+        runtime = self._baseline_runtime(trainer, tiny_dataset)
+
         with caplog.at_level(logging.WARNING):
-            trainer._warn_on_arg_drift(payload)
+            trainer._warn_on_arg_drift(runtime)
 
         drift_msgs = [r for r in caplog.records if "drift" in r.getMessage().lower()]
         assert not drift_msgs, (
