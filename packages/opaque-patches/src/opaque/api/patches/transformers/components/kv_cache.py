@@ -3,11 +3,12 @@
 def _disable_kv_cache(forward_fn):
     """Wrap forward to disable KV cache when no existing cache is passed.
 
-    HuggingFace models default to ``config.use_cache = True``, which creates
-    a ``DynamicCache`` on every forward pass — even during training where it
-    is never used.  Under ``vmap``, these cache objects leak memory due to
-    circular references (cache → tensors → autograd metadata → cache) that
-    defeat Python's reference counting.
+    HuggingFace models default to ``config.use_cache = True``, which
+    allocates a ``DynamicCache`` on every forward pass — the cache is
+    built but never consumed during training. Under ``vmap`` the same
+    cache objects also leak via circular references (cache → tensors →
+    autograd metadata → cache) that defeat refcounting, so the patch
+    addresses both memory paths.
 
     This wrapper forces ``use_cache=False`` when ``past_key_values`` is
     ``None`` or an empty cache, matching the approach used by Unsloth

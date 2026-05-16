@@ -112,14 +112,23 @@ def make_apply_family_patches(
 
     Returns:
         Callable with signature
-        ``apply(*, performance=True, compat=True, **kwargs) -> None``.
-        Liger-aligned kwargs ``eager_attention`` and ``rope`` are read
-        from kwargs (defaulting to ``compat`` / ``performance``).
+        ``apply(*, performance=True, compat=True, kernels=None, **kwargs) -> None``.
+        ``eager_attention`` defaults from ``compat``; ``rope`` (Triton
+        kernel) defaults from ``kernels``, which itself defaults from
+        ``performance`` when not passed explicitly.
     """
 
-    def apply(*, performance: bool = True, compat: bool = True, **kwargs) -> None:
+    def apply(
+        *,
+        performance: bool = True,
+        compat: bool = True,
+        kernels: bool | None = None,
+        **kwargs,
+    ) -> None:
+        if kernels is None:
+            kernels = performance
         eager_attention = kwargs.get("eager_attention", compat)
-        rope = kwargs.get("rope", performance)
+        rope = kwargs.get("rope", kernels)
         requested_concerns = set()
         if eager_attention:
             requested_concerns.add("eager_attention")

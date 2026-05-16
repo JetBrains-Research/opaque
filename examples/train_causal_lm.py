@@ -971,7 +971,10 @@ def main():
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
-    apply_model_patches(model)
+    # Loss is the only consumer of the forward output in this script, so
+    # opt into the fused linear+CE kernel (skips ``lm_head`` and returns
+    # ``logits=None`` on the fast path — see ``apply_model_patches`` docs).
+    apply_model_patches(model, fused_linear_cross_entropy=True)
     model.print_trainable_parameters()
     profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")

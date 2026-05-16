@@ -16,11 +16,29 @@ from opaque.api.patches.transformers._registry import detect_family, get_family_
 logger = logging.getLogger(__name__)
 
 
-# When CUDA + Triton aren't available the kernel patches can't run; force
-# them off even if the caller passed an explicit ``True``.  Listed here
-# (rather than computed by prefix) so the Liger-aligned flag set is
-# explicit and grep-able.
-_KERNEL_KWARGS = ("rope", "rms_norm", "activation", "cross_entropy")
+# Per-concern kwargs whose default bucket is ``kernels`` — they install
+# Triton kernels that require CUDA + Triton at runtime, so the router
+# auto-forces them off when those aren't available. Listed here
+# (rather than computed by prefix) so the flag set is explicit and
+# grep-able.
+_KERNEL_KWARGS = (
+    "rope",
+    "rms_norm",
+    "activation",
+    "cross_entropy",
+    "fused_linear_cross_entropy",
+)
+
+
+def _has_kernel_runtime() -> bool:
+    """Return True iff CUDA + Triton are importable on this host."""
+    if not torch.cuda.is_available():
+        return False
+    try:
+        import triton  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 
 def _patch_forward(
@@ -60,25 +78,40 @@ def _patch_forward(
 
 
 def apply_transformers_model_patches(
-    model: nn.Module, *, performance: bool = True, compat: bool = True, **kwargs
+    model: nn.Module,
+    *,
+    performance: bool = True,
+    compat: bool = True,
+    kernels: bool | None = None,
+    fused_linear_cross_entropy: bool = False,
+    **kwargs,
 ) -> None:
-    """Apply Liger-style global + instance patching for kernels and compat wrappers."""
-    # Check CUDA for kernels, but compat patches can run without CUDA
-    has_kernels = True
-    if not torch.cuda.is_available():
-        has_kernels = False
-    else:
-        try:
-            import triton  # noqa: F401
-        except ImportError:
-            has_kernels = False
+    """Apply Liger-style global + instance patching for kernels and compat wrappers.
 
-    # Force disable kernels if dependencies are missing
-    if not has_kernels:
-        performance = False
-        for key in _KERNEL_KWARGS:
-            if key in kwargs:
-                kwargs[key] = False
+    Three umbrella flags drive the per-concern kwargs:
+
+    - ``performance`` — memory-efficiency patches that run on any host
+      (currently ``kv_cache``).
+    - ``compat`` — vmap-safety wrappers (``eager_attention``, ``batchify``).
+    - ``kernels`` — Triton kernel patches that require CUDA + Triton
+      (``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
+      ``fused_linear_cross_entropy``). Defaults to ``performance`` when
+      ``None``; forced to ``False`` when CUDA / Triton can't be imported.
+
+    ``fused_linear_cross_entropy`` is a kernel kwarg promoted out of
+    ``**kwargs`` because it defaults to ``False`` rather than inheriting
+    from ``kernels``: the fused forward returns ``logits=None``, which
+    is incompatible with callers that read logits.
+    """
+    if kernels is None:
+        kernels = performance
+
+    # Auto-disable kernel-group patches when CUDA / Triton aren't there;
+    # the broader ``performance`` bucket is left alone so pure-Python
+    # performance shims (kv_cache) still apply on CPU / MPS hosts.
+    if not _has_kernel_runtime():
+        kernels = False
+        fused_linear_cross_entropy = False
 
     family = detect_family(model)
     if family is None:
@@ -94,7 +127,14 @@ def apply_transformers_model_patches(
         )
         return
 
-    apply_fn(model, performance=performance, compat=compat, **kwargs)
+    apply_fn(
+        model,
+        performance=performance,
+        compat=compat,
+        kernels=kernels,
+        fused_linear_cross_entropy=fused_linear_cross_entropy,
+        **kwargs,
+    )
     logger.debug("opaque: Applied model patches for %s", family)
 
     batchify = kwargs.get("batchify", compat)

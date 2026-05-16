@@ -15,7 +15,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _reset_runtime_flag():
-    from opaque.api import patches as patches_init
+    import opaque.api.patches as patches_init
 
     saved = patches_init._runtime_patches_applied
     patches_init._runtime_patches_applied = False
@@ -33,7 +33,7 @@ class _StubModel:
 
 def test_apply_model_patches_propagates_compat_false_to_runtime(monkeypatch):
     """``compat=False`` on the model entrypoint must reach the runtime entrypoint."""
-    from opaque.api import patches as patches_init
+    import opaque.api.patches as patches_init
 
     captured: dict = {}
 
@@ -52,7 +52,7 @@ def test_apply_model_patches_propagates_compat_false_to_runtime(monkeypatch):
 
 
 def test_apply_model_patches_propagates_performance_false_to_runtime(monkeypatch):
-    from opaque.api import patches as patches_init
+    import opaque.api.patches as patches_init
 
     captured: dict = {}
 
@@ -72,7 +72,7 @@ def test_apply_model_patches_propagates_performance_false_to_runtime(monkeypatch
 
 def test_apply_model_patches_propagates_explicit_runtime_kwargs(monkeypatch):
     """Per-flag overrides (e.g. ``vmap_checkpointing=False``) pass through too."""
-    from opaque.api import patches as patches_init
+    import opaque.api.patches as patches_init
 
     captured: dict = {}
 
@@ -97,7 +97,7 @@ def test_apply_model_patches_propagates_explicit_runtime_kwargs(monkeypatch):
 
 def test_apply_model_patches_compat_false_does_not_enable_runtime_patches(monkeypatch):
     """End-to-end: when compat=False, none of the three runtime sub-patches fire."""
-    from opaque.api import patches as patches_init
+    import opaque.api.patches as patches_init
     from opaque.api.patches.transformers.runtime import (
         collator as collator_runtime,
         masking as masking_runtime,
@@ -131,7 +131,7 @@ def test_apply_model_patches_compat_false_does_not_enable_runtime_patches(monkey
 
 def test_apply_model_patches_default_compat_enables_runtime_patches(monkeypatch):
     """Sanity: default behavior (compat=True) still applies the runtime patches."""
-    from opaque.api import patches as patches_init
+    import opaque.api.patches as patches_init
     from opaque.api.patches.transformers.runtime import (
         collator as collator_runtime,
         masking as masking_runtime,
