@@ -32,9 +32,23 @@ def apply_model_patches(
     architectures can import and invoke ``apply_peft_model_patches``
     directly from the root namespace to apply LoRA kernels.
 
-    Liger-aligned per-model flags are passed through ``**kwargs``:
-    ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``, plus
-    opaque-specific ``eager_attention``, ``batchify``, ``kv_cache``.
+    Per-concern flags pass through ``**kwargs``. Performance bucket
+    (kernel / memory-efficiency, default-on with ``performance=True``):
+    ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
+    ``fused_linear_cross_entropy``, ``kv_cache``. Compat bucket (vmap
+    safety, default-on with ``compat=True``): ``eager_attention``,
+    ``batchify``.
+
+    ``cross_entropy`` swaps in the non-fused CE kernel via
+    ``loss_function`` (logits still materialized — safe for callers that
+    read them). ``fused_linear_cross_entropy`` replaces the forward to
+    skip ``lm_head`` and compute loss directly from hidden states; on the
+    fused path it returns ``logits=None``. The latter cascades from the
+    former (so the historical ``cross_entropy=False`` opt-out still turns
+    both off); pass ``fused_linear_cross_entropy=False`` alone when the
+    trainer needs logits (e.g. SFTTrainer with ``compute_metrics`` /
+    ``preprocess_logits_for_metrics``) while keeping the non-fused
+    kernel on materialized logits.
     """
     global _runtime_patches_applied
     if not _runtime_patches_applied:

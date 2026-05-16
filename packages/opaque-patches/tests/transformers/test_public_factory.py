@@ -249,6 +249,92 @@ def test_cross_entropy_sets_loss_function_on_model_instance(monkeypatch):
     assert untouched.loss_function is original_loss
 
 
+def test_fused_linear_cross_entropy_gates_forward_independently(monkeypatch):
+    """``fused_linear_cross_entropy=False`` keeps logits in the output while
+    ``cross_entropy=True`` still installs the non-fused CE kernel."""
+    import torch
+
+    from opaque.api.patches.transformers.components.cross_entropy import (
+        _opaque_causal_lm_loss,
+    )
+
+    module_name = "public_api_fake_fused_ce_module"
+    mod = types.ModuleType(module_name)
+
+    original_forward_sentinel = object()
+
+    def original_loss(*args, **kwargs):
+        return None
+
+    class FakeForCausalLM(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.loss_function = original_loss
+
+        def forward(self, *args, **kwargs):
+            return original_forward_sentinel
+
+    mod.FakeForCausalLM = FakeForCausalLM
+    monkeypatch.setitem(sys.modules, module_name, mod)
+
+    fam = make_apply_family_patches(
+        family="public_api_test_fused_linear_ce",
+        module_path=module_name,
+    )
+    apply = make_apply_model_patches(
+        family="public_api_test_fused_linear_ce",
+        family_apply=fam,
+        module_path=module_name,
+        classes={"causal_lm": "FakeForCausalLM"},
+    )
+
+    patched = FakeForCausalLM()
+
+    # Opt out of only the fused linear+CE forward — loss_function should
+    # still get the non-fused kernel and the class forward must NOT carry
+    # the fused-CE marker (other concerns like kv_cache may still wrap
+    # ``forward``; ``__opaque_patched__`` is the fused-CE-specific tag).
+    apply(
+        patched,
+        performance=True,
+        compat=False,
+        fused_linear_cross_entropy=False,
+    )
+    assert patched.loss_function is _opaque_causal_lm_loss
+    assert not hasattr(FakeForCausalLM.forward, "__opaque_patched__")
+
+    # Historical ``cross_entropy=False`` cascades to disable the forward
+    # patch as well — both stay off.
+    fresh_mod = types.ModuleType(module_name + "_b")
+
+    class FreshForCausalLM(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.loss_function = original_loss
+
+        def forward(self, *args, **kwargs):
+            return original_forward_sentinel
+
+    fresh_mod.FreshForCausalLM = FreshForCausalLM
+    monkeypatch.setitem(sys.modules, module_name + "_b", fresh_mod)
+
+    fam_b = make_apply_family_patches(
+        family="public_api_test_fused_linear_ce_b",
+        module_path=module_name + "_b",
+    )
+    apply_b = make_apply_model_patches(
+        family="public_api_test_fused_linear_ce_b",
+        family_apply=fam_b,
+        module_path=module_name + "_b",
+        classes={"causal_lm": "FreshForCausalLM"},
+    )
+
+    fresh = FreshForCausalLM()
+    apply_b(fresh, performance=True, compat=False, cross_entropy=False)
+    assert fresh.loss_function is original_loss
+    assert not hasattr(FreshForCausalLM.forward, "__opaque_patched__")
+
+
 # ----------------------------------------------------------------------------
 # family_name detection
 # ----------------------------------------------------------------------------

@@ -4,13 +4,15 @@
 
 GPT-2 uses absolute positional embeddings, standard GELU activations,
 and standard LayerNorm (no SwiGLU/GeGLU, no RMSNorm, no RoPE).  The
-family-level patches (eager attention, RoPE) are all no-ops for this
-architecture; only the vmap-safety concerns apply:
+family-level kernel patches (eager attention, RoPE) are all no-ops for
+this architecture; only the per-model concerns apply:
 
-- ``batchify``: transformers ≥ 4.47 added a ``logits_to_keep`` slice
-  (``hidden_states[:, slice_indices, :]``) that assumes a 3-D batch
-  dim.  Under vmap the batch dim is absent, causing an IndexError.
-- ``kv_cache``: prevents DynamicCache allocation per-example under vmap.
+- ``batchify`` (compat): transformers ≥ 4.47 added a ``logits_to_keep``
+  slice (``hidden_states[:, slice_indices, :]``) that assumes a 3-D
+  batch dim.  Under vmap the batch dim is absent, causing an IndexError.
+- ``kv_cache`` (performance): skips per-forward DynamicCache allocation
+  during training, which also avoids the cache's circular-reference
+  memory leak under vmap.
 
 Registration: this module calls ``register_family`` at import time —
 the same mechanism downstream users follow to add their own families.

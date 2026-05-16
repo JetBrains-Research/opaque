@@ -180,8 +180,10 @@ def make_apply_model_patches(
     Returns:
         Callable with signature
         ``apply(model=None, *, performance=True, compat=True, **kwargs) -> None``.
-        Liger-aligned kwargs: ``rope``, ``rms_norm``, ``activation``,
-        ``cross_entropy``, ``eager_attention``, ``batchify``, ``kv_cache``.
+        Per-concern kwargs default into the right bucket:
+        ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
+        ``fused_linear_cross_entropy``, ``kv_cache`` → ``performance``;
+        ``eager_attention``, ``batchify`` → ``compat``.
     """
     activation_factory = _resolve(activation_kind, _ACTIVATION_FACTORIES)
     rms_norm_factory = _resolve(rms_norm_kind, _RMSNORM_FACTORIES)
@@ -230,27 +232,41 @@ def make_apply_model_patches(
                         model,
                     )
 
-        # Cross-entropy: patch ``XForCausalLM.forward`` and attach the
-        # Opaque causal-LM loss function to the current model instance.
-        # This avoids mutating HuggingFace's process-global loss registry.
-        if kwargs.get("cross_entropy", performance):
-            causal_lm_class = classes.get("causal_lm")
-            if causal_lm_class is not None:
-                causal_lm_obj = getattr(mod, causal_lm_class, None)
-                _patch_forward(
-                    causal_lm_obj,
-                    _make_fused_ce_causal_lm_forward,
-                    model,
-                )
-                if causal_lm_obj is not None:
-                    apply_causal_lm_loss_function_patch(model, causal_lm_obj)
-
-        # vmap-safety patches on the causal-LM class.
+        # Cross-entropy patches split into two gates so callers needing
+        # logits (e.g. SFTTrainer with ``compute_metrics`` /
+        # ``preprocess_logits_for_metrics``) can disable the fused
+        # linear+CE forward (which sets ``logits=None``) while keeping
+        # the non-fused CE kernel on materialized logits.
+        #   - ``cross_entropy``: ``loss_function`` → ``Opaque_CrossEntropyLoss``
+        #     (kernel speedup on already-materialized logits; safe — returns logits).
+        #   - ``fused_linear_cross_entropy``: ``forward`` → ``Opaque_LinearCrossEntropyLoss``
+        #     (skips ``lm_head`` materialization for max memory savings; returns
+        #     ``logits=None`` on the fused path).
+        # ``fused_linear_cross_entropy`` cascades from ``cross_entropy`` so the
+        # historical ``cross_entropy=False`` opt-out still turns both off.
         causal_lm_class = classes.get("causal_lm")
         causal_lm_obj = getattr(mod, causal_lm_class, None) if causal_lm_class else None
+        cross_entropy_on = kwargs.get("cross_entropy", performance)
+        if cross_entropy_on and causal_lm_obj is not None:
+            apply_causal_lm_loss_function_patch(model, causal_lm_obj)
+        if (
+            kwargs.get("fused_linear_cross_entropy", cross_entropy_on)
+            and causal_lm_obj is not None
+        ):
+            _patch_forward(
+                causal_lm_obj,
+                _make_fused_ce_causal_lm_forward,
+                model,
+            )
+
+        # vmap-safety patch on the causal-LM class.
         if kwargs.get("batchify", compat) and causal_lm_obj is not None:
             apply_batchify_patch(causal_lm_obj, model)
-        if kwargs.get("kv_cache", compat) and causal_lm_obj is not None:
+        # KV cache disabler: avoids wasted DynamicCache allocation per
+        # forward during training (and prevents vmap memory leaks from
+        # the cache's circular refs). Performance-bucket since it's about
+        # memory efficiency in the common training path.
+        if kwargs.get("kv_cache", performance) and causal_lm_obj is not None:
             apply_kv_cache_patch(causal_lm_obj, model)
 
     apply.__name__ = f"apply_{family}_patches"
