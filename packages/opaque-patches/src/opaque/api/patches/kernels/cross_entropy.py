@@ -256,6 +256,10 @@ def _ce_forward_impl(
     DO_SOFTCAPPING = logit_softcapping != 0
     DO_LOGIT_SCALING = logit_scaling != 0
     ls = float(label_smoothing)
+    if not (0.0 <= ls <= 1.0):
+        raise ValueError(
+            f"label_smoothing must be in [0.0, 1.0]; got {label_smoothing!r}."
+        )
     DO_LABEL_SMOOTHING = ls > 0.0
 
     losses = torch.empty(n_rows, dtype=torch.float32, device=device)

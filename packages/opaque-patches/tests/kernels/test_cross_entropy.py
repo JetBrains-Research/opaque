@@ -738,7 +738,12 @@ class TestCrossEntropyLabelSmoothing:
     def test_zero_smoothing_matches_standard_ce(
         self, assert_precision, mellum_config, vocab_size
     ):
-        """``label_smoothing=0`` must reproduce the standard CE path bit-for-bit."""
+        """``label_smoothing=0`` must match plain ``F.cross_entropy`` exactly.
+
+        Guards against accidental activation of the smoothing-gated forward
+        rewrite when ``DO_LABEL_SMOOTHING`` is False — the smoothing-off
+        path must still produce standard CE.
+        """
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
         seq_len = mellum_config["seq_len"]
@@ -748,10 +753,31 @@ class TestCrossEntropyLabelSmoothing:
         )
         labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
 
-        losses_plain, _ = Opaque_CrossEntropyLoss.apply(logits, labels, 0, 0, 0.0)
-        losses_zero_ls, _ = Opaque_CrossEntropyLoss.apply(logits, labels, 0, 0, 0.0)
+        losses_op, _ = Opaque_CrossEntropyLoss.apply(logits, labels, 0, 0, 0.0)
+        ref = F.cross_entropy(
+            logits.reshape(-1, vocab_size),
+            labels.reshape(-1),
+            reduction="none",
+        )
 
-        assert torch.equal(losses_plain, losses_zero_ls)
+        assert_precision(
+            losses_op.reshape(-1),
+            ref,
+            rtol=RTOL_CE_FORWARD,
+            atol=ATOL_CE_FORWARD,
+            label="label_smoothing=0 vs F.cross_entropy",
+        )
+
+    @pytest.mark.parametrize("bad_value", [-0.1, 1.5, 2.0])
+    def test_out_of_range_smoothing_raises(self, mellum_config, bad_value):
+        """``label_smoothing`` outside [0.0, 1.0] raises ValueError early."""
+        torch.manual_seed(42)
+        vocab_size = mellum_config["vocab_size"]
+        logits = torch.randn(2, 8, vocab_size, device="cuda", dtype=torch.float32)
+        labels = torch.randint(0, vocab_size, (2, 8), device="cuda")
+
+        with pytest.raises(ValueError, match="label_smoothing"):
+            Opaque_CrossEntropyLoss.apply(logits, labels, 0, 0, bad_value)
 
 
 if __name__ == "__main__":
