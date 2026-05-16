@@ -7,14 +7,14 @@ from __future__ import annotations
 
 from opaque.api.transformers.trainer import (
     DPTrainer,
+    EvaluationResult,
     TrainingArguments,
-    PredictionOutput,
     TrainOutput,
 )
 
 __all__ = [
     "DPTrainer",
+    "EvaluationResult",
     "TrainingArguments",
-    "PredictionOutput",
     "TrainOutput",
 ]

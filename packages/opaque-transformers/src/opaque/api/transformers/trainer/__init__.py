@@ -6,14 +6,12 @@ symbols re-exported from :mod:`opaque.transformers`.
 
 from __future__ import annotations
 
-from transformers.trainer_utils import PredictionOutput
-
 from ._config import TrainingArguments
-from ._dp_trainer import DPTrainer, TrainOutput
+from ._dp_trainer import DPTrainer, EvaluationResult, TrainOutput
 
 __all__ = [
     "DPTrainer",
+    "EvaluationResult",
     "TrainingArguments",
-    "PredictionOutput",
     "TrainOutput",
 ]

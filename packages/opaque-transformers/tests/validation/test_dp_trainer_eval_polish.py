@@ -8,16 +8,13 @@ DPTrainer's ``prediction_step`` previously returned only
 ``EvalPrediction.inputs`` similarly forwarded the entire batch dict
 instead of HF's ``main_input_name``-filtered single tensor.
 
-Stage 4 mirrors HF (``transformers/trainer.py:4907-4910`` /
-``trainer.py:4863-4866``):
+Stage 4:
 
 - ``prediction_step`` collapses every output field that survives
   the ``ignore_keys + ["loss"]`` filter into a tuple, then collapses
   to a bare tensor when length 1, ``None`` when length 0.
-- ``ignore_keys=None`` defaults to
-  ``model.config.keys_to_ignore_at_inference`` (most decoder models
-  set ``["past_key_values"]`` so KV caches don't accidentally land
-  in user metrics).
+- ``ignore_keys`` defaults to ``[]``; the always-on kv_cache patch
+  prevents ``past_key_values`` from being emitted in outputs.
 - ``EvalPrediction.inputs`` carries only ``inputs[main_input_name]``
   (sniffed from ``model.main_input_name``; default ``"input_ids"``).
 """
@@ -323,7 +320,13 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
         assert isinstance(logits, torch.Tensor)
         assert logits.shape == (2, 2)
 
-    def test_tuple_outputs_fall_back_to_first_loss_item(self, tmp_path):
+    def test_tuple_output_rejected_with_typeerror(self, tmp_path):
+        """``forward`` returning a tuple is rejected (not silently coerced).
+
+        DPTrainer's eval contract requires a dict-like ``ModelOutput``.
+        Bare tuples are HF cruft from pre-``ModelOutput`` model APIs;
+        wrap your forward to return a dict.
+        """
         dataset = [
             {"features": torch.zeros(3), "labels": 0},
             {"features": torch.ones(3), "labels": 1},
@@ -336,18 +339,12 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
         )
         batch = next(iter(trainer.get_eval_dataloader(dataset)))
 
-        loss, logits, labels = trainer.prediction_step(
-            trainer.model,
-            batch,
-            prediction_loss_only=False,
-        )
-
-        assert loss is not None
-        assert isinstance(logits, tuple)
-        assert len(logits) == 2
-        assert logits[0].shape == (2, 2)
-        assert logits[1].shape == (2, 2)
-        assert torch.equal(labels, batch["labels"])
+        with pytest.raises(TypeError, match="dict-like ModelOutput"):
+            trainer.prediction_step(
+                trainer.model,
+                batch,
+                prediction_loss_only=False,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -372,10 +369,10 @@ class TestPredictionStepLogitsCollapse:
     ):
         """A model returning only ``loss`` + ``logits`` exposes a bare ``Tensor``.
 
-        GPT-2's eval-time ``ModelOutput`` shape after dropping
-        ``past_key_values`` (the default ``keys_to_ignore_at_inference``)
-        is ``{loss, logits}``.  After filtering ``["loss"]`` the tuple
-        has length 1 and must collapse to the raw ``logits`` tensor.
+        GPT-2's eval-time ``ModelOutput`` is ``{loss, logits}`` under the
+        always-on kv_cache patch (which skips ``past_key_values``
+        allocation).  After filtering ``["loss"]`` the tuple has length 1
+        and must collapse to the raw ``logits`` tensor.
         """
         model, tokenizer = gpt2_lora_and_tokenizer
         trainer = DPTrainer(
@@ -499,10 +496,6 @@ class TestPredictionStepTupleCollapsePure:
             "input_ids": torch.zeros(2, 3, dtype=torch.long),
             "labels": torch.zeros(2, 3, dtype=torch.long),
         }
-        # Pass empty ``ignore_keys`` to avoid the model-config sniff —
-        # GPT-2's ``keys_to_ignore_at_inference`` is
-        # ``["past_key_values"]`` which doesn't intersect our fake
-        # output's fields, but explicitness keeps the test readable.
         _, out_logits, _ = trainer.prediction_step(
             trainer._model,
             batch,
@@ -567,68 +560,6 @@ class TestPredictionStepTupleCollapsePure:
         assert isinstance(out_logits, Tensor), (
             f"length-1 tuple should collapse to bare Tensor, got "
             f"{type(out_logits).__name__}"
-        )
-        assert torch.equal(out_logits, logits)
-
-    def test_ignore_keys_default_reads_model_config(
-        self,
-        gpt2_lora_and_tokenizer,
-        tiny_dataset,
-        tmp_path,
-    ):
-        """``ignore_keys=None`` honors ``model.config.keys_to_ignore_at_inference``.
-
-        Set ``keys_to_ignore_at_inference=["hidden_states"]`` on the
-        model config and confirm that a multi-output ``ModelOutput``
-        with both ``logits`` and ``hidden_states`` collapses to a bare
-        ``logits`` tensor — proving the trainer read the default off
-        the model config.
-        """
-        trainer = self._make_trainer(
-            gpt2_lora_and_tokenizer,
-            tiny_dataset,
-            tmp_path,
-        )
-        # PEFT models expose the base model's config.  Drill through
-        # to set the flag (or set it on the wrapper if exposed).
-        cfg = getattr(trainer._model, "config", None)
-        assert cfg is not None
-        cfg.keys_to_ignore_at_inference = ["hidden_states"]
-
-        @dataclass
-        class FakeOutput(ModelOutput):
-            loss: Any = None
-            logits: Any = None
-            hidden_states: Any = None
-
-        loss = torch.tensor(0.7)
-        logits = torch.zeros(2, 3, 4)
-        hidden = torch.zeros(2, 3, 8)
-        fake_out = FakeOutput(loss=loss, logits=logits, hidden_states=hidden)
-
-        def fake_compute_loss(
-            model, inputs, return_outputs=False, num_items_in_batch=None
-        ):  # noqa: ARG001
-            if return_outputs:
-                return loss, fake_out
-            return loss
-
-        trainer.compute_loss = fake_compute_loss
-
-        batch = {
-            "input_ids": torch.zeros(2, 3, dtype=torch.long),
-            "labels": torch.zeros(2, 3, dtype=torch.long),
-        }
-        # ``ignore_keys=None`` triggers the model-config fallback.
-        _, out_logits, _ = trainer.prediction_step(
-            trainer._model,
-            batch,
-            prediction_loss_only=False,
-            ignore_keys=None,
-        )
-        assert isinstance(out_logits, Tensor), (
-            "model config's keys_to_ignore_at_inference should have "
-            "filtered hidden_states out, leaving logits alone"
         )
         assert torch.equal(out_logits, logits)
 

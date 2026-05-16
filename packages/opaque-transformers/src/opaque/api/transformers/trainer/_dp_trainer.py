@@ -60,7 +60,7 @@ from ._callback import (
     resolve_eval_metric,
 )
 from ._config import TrainingArguments
-from ._eval import EvalLoopOutput, EvalPrediction
+from ._eval import EvalPrediction, EvaluationResult
 from ._precision import eval_dtype
 from ._scheduler import (
     ReduceLROnPlateauSchedule,
@@ -85,13 +85,13 @@ from transformers.trainer_utils import (
 )
 from transformers.data.data_collator import default_data_collator
 from transformers.trainer_callback import TrainerCallback, TrainerControl
-from transformers.trainer_utils import PredictionOutput, seed_worker
-from transformers.utils import can_return_loss, find_labels
+from transformers.trainer_utils import seed_worker
+from transformers.utils import find_labels
 
 __all__ = [
     "DPTrainer",
+    "EvaluationResult",
     "TrainingArguments",
-    "PredictionOutput",
     "TrainOutput",
 ]
 
@@ -309,7 +309,6 @@ class DPTrainer:
                     inspected = model.base_model.model
             discovered = find_labels(inspected.__class__)
             self._label_names = list(discovered) if discovered else ["labels"]
-        self._can_return_loss = can_return_loss(inspected.__class__)
 
         # HF parity: the trainer does not tokenise.  The user supplies
         # already-prepared datasets and a matching ``data_collator``.
@@ -1803,28 +1802,28 @@ class DPTrainer:
         called — the loop never materializes prediction tensors.
 
         ``ignore_keys`` filters keys out of ``ModelOutput`` containers
-        before logits are extracted (HF parity).  When ``None``, the
-        default is taken from ``model.config.keys_to_ignore_at_inference``
-        (most decoder models set this to ``["past_key_values"]``); when
-        the model has no such config field, falls back to ``[]``.
+        before logits are extracted.  Defaults to ``[]``; the kv_cache
+        patch (always-on under DPTrainer) already prevents
+        ``past_key_values`` from landing in outputs, so there's nothing
+        to filter by default.
 
-        ``logits`` mirrors HF: a ``tuple`` of every output field
-        *not* in ``ignore_keys + ["loss"]``, collapsed to a bare
-        tensor when the tuple has length 1.  This exposes auxiliary
-        outputs (``hidden_states``, ``attentions``,
+        ``logits`` is a ``tuple`` of every output field *not* in
+        ``ignore_keys + ["loss"]``, collapsed to a bare tensor when the
+        tuple has length 1.  This exposes auxiliary outputs
+        (``hidden_states``, ``attentions``,
         ``encoder_last_hidden_state``, …) to ``compute_metrics`` for
-        seq2seq / encoder-decoder / vision models, instead of
-        silently dropping them as the prior ``output.logits``-only
-        path did.
+        seq2seq / encoder-decoder / vision models.
+
+        The model ``forward`` is required to return a dict-like
+        ``ModelOutput`` (or any ``Mapping`` of name → tensor).  Bare
+        tuples, plain dataclasses, and bare tensors are rejected with
+        :class:`TypeError`; wrap your forward to return a dict if you
+        need a custom output shape.
         """
         label_keys = list(self._label_names) if self._label_names else []
         has_labels = bool(label_keys) and all(
             inputs.get(k) is not None for k in label_keys
         )
-        return_loss = inputs.get("return_loss")
-        if return_loss is None:
-            return_loss = self._can_return_loss
-        loss_without_labels = not label_keys and bool(return_loss)
 
         inputs = self._prepare_input(inputs)
         # Split the batch into ``label_kwargs`` and model inputs.  Labels are
@@ -1885,7 +1884,7 @@ class DPTrainer:
             return loss, logits_tensor.detach(), labs
 
         with torch.no_grad():
-            if has_labels or loss_without_labels:
+            if has_labels:
                 loss, output = self.compute_loss(
                     model,
                     {**model_inputs, **labels_kwargs},
@@ -1917,55 +1916,28 @@ class DPTrainer:
         if prediction_loss_only:
             return loss, None, None
 
-        # HF parity (trainer.py:4864): when the user passes
-        # ``ignore_keys=None``, sniff the default off the model config.
-        # Most decoder models set ``keys_to_ignore_at_inference`` to
-        # ``["past_key_values"]`` so KV caches don't accidentally land
-        # in ``compute_metrics``; vision and classification models
-        # typically leave it empty.
-        if ignore_keys is None:
-            cfg = getattr(self._model, "config", None)
-            ignore_keys = list(
-                getattr(cfg, "keys_to_ignore_at_inference", None) or ["past_key_values"]
+        if not isinstance(output, Mapping):
+            raise TypeError(
+                "DPTrainer requires model.forward to return a dict-like "
+                "ModelOutput (or Mapping). "
+                f"Got {type(output).__name__}; wrap forward to return a dict."
             )
-        else:
-            ignore_keys = list(ignore_keys)
 
-        # HF parity (trainer.py:4907-4910): collect every output field
-        # that survives the ``ignore_keys + ["loss"]`` filter into a
-        # tuple, preserving model-defined order.  ``ModelOutput`` is
-        # dict-like; plain dataclass outputs are read attribute-by-
-        # attribute via ``dataclasses.fields``.  Non-tensor values are
-        # dropped (HF's eval pipeline only consumes tensor predictions).
+        # Collect every output field that survives the ``ignore_keys +
+        # ["loss"]`` filter into a tuple, preserving model-defined order.
+        # Non-tensor values are dropped (eval pipeline consumes tensor
+        # predictions only).
+        ignore_keys = list(ignore_keys) if ignore_keys is not None else []
         skip = set(ignore_keys)
-        if has_labels or loss_without_labels:
+        if has_labels:
             skip.add("loss")
-        if isinstance(output, dict):
-            items = output.items()
-            logits_tuple: tuple[Tensor, ...] = tuple(
-                v for k, v in items if k not in skip and isinstance(v, Tensor)
-            )
-        elif isinstance(output, tuple):
-            # HF parity: tuple outputs use everything after the loss when a
-            # loss was produced, otherwise the whole tuple is predictions.
-            values = output[1:] if (has_labels or loss_without_labels) else output
-            logits_tuple = tuple(v for v in values if isinstance(v, Tensor))
-        else:
-            from dataclasses import fields, is_dataclass
+        logits_tuple: tuple[Tensor, ...] = tuple(
+            v for k, v in output.items() if k not in skip and isinstance(v, Tensor)
+        )
 
-            if is_dataclass(output):
-                items = ((f.name, getattr(output, f.name)) for f in fields(output))
-                logits_tuple = tuple(
-                    v for k, v in items if k not in skip and isinstance(v, Tensor)
-                )
-            else:
-                logits_tuple = (output,) if isinstance(output, Tensor) else ()
-
-        # HF parity (trainer.py:4926-4928): collapse a length-1 tuple to
-        # a bare tensor so single-output models keep the simple
-        # ``compute_metrics(EvalPrediction(predictions=tensor, ...))``
-        # contract.  Length-0 falls through as ``None`` (model returned
-        # only ``loss`` after filtering — predictions are unavailable).
+        # Collapse a length-1 tuple to a bare tensor so single-output
+        # models keep the simple ``compute_metrics(EvalPrediction(
+        # predictions=tensor, ...))`` contract.  Length-0 → ``None``.
         if len(logits_tuple) == 0:
             logits: Tensor | tuple[Tensor, ...] | None = None
         elif len(logits_tuple) == 1:
@@ -1983,8 +1955,8 @@ class DPTrainer:
         prediction_loss_only: bool | None = None,
         ignore_keys: list[str] | None = None,
         metric_key_prefix: str = "eval",
-    ) -> EvalLoopOutput:
-        """Drive a full eval pass and return an :class:`EvalLoopOutput`.
+    ) -> EvaluationResult:
+        """Drive a full eval pass and return an :class:`EvaluationResult`.
 
         The loop produces ``(loss, logits, labels)`` per batch via
         :meth:`prediction_step` and feeds them to a
@@ -2170,7 +2142,7 @@ class DPTrainer:
         metrics = _eval.denumpify_detensorize(metrics)
         prefixed = _eval.with_metric_prefix(metrics, metric_key_prefix)
 
-        return EvalLoopOutput(
+        return EvaluationResult(
             predictions=predictions,
             label_ids=label_ids,
             metrics=prefixed,
@@ -2179,7 +2151,7 @@ class DPTrainer:
 
     def evaluate(
         self,
-        eval_dataset: Dataset | dict[str, Dataset] | None = None,
+        eval_dataset: Dataset | None = None,
         ignore_keys: list[str] | None = None,
         metric_key_prefix: str = "eval",
     ) -> dict[str, float]:
@@ -2189,94 +2161,52 @@ class DPTrainer:
         ``trainable_params``. After training (no active context),
         falls back to the ``nn.Module``.
 
-        ``eval_dataset`` may be a single :class:`datasets.Dataset` or a
-        :class:`dict` mapping a name to a dataset (HF parity).  In the
-        dict case, each entry is evaluated independently and the
-        per-entry metrics are namespaced with
-        ``f"{metric_key_prefix}_{name}"``; the merged dict is returned
-        after each sub-evaluation has performed its own log/callback
-        side effects.
+        Installs the cached-accountant barrier on the active training
+        context (when present), appends the metrics to
+        ``state.log_history`` via :meth:`log`, fires the ``on_evaluate``
+        callback, updates ``state.best_metric`` / ``best_global_step``,
+        and feeds the metric into a metric-driven LR schedule (e.g.
+        plateau).  Direct user calls behave identically to the eval
+        calls the training loop makes.
 
-        HF parity: this method also installs the cached-accountant
-        barrier on the active training context (when present), appends
-        the metrics to ``state.log_history`` via :meth:`log`, fires the
-        ``on_evaluate`` callback, updates ``state.best_metric`` /
-        ``best_global_step``, and feeds the metric into a metric-driven
-        LR schedule (e.g. plateau).  Direct user calls to
-        :meth:`evaluate` therefore behave identically to the eval calls
-        the training loop makes.
-
-        Returns a metrics dict with ``{prefix}_loss`` and any keys produced
-        by a user-supplied ``compute_metrics`` (auto-prefixed with
-        ``metric_key_prefix`` where missing — HF parity).
+        Returns a metrics dict with ``{prefix}_loss`` and any keys
+        produced by a user-supplied ``compute_metrics`` (auto-prefixed
+        with ``metric_key_prefix`` where missing — HF parity).
         """
-        # HF parity: ``dict[str, Dataset]`` dispatches per task by
-        # recursively calling ``evaluate`` with a namespaced prefix, so
-        # each sub-evaluation logs and fires callbacks independently.
-        from collections.abc import Mapping
-
         dataset = eval_dataset if eval_dataset is not None else self._eval_dataset
         if dataset is None:
             raise ValueError("DPTrainer.evaluate() requires an eval_dataset.")
-        if isinstance(dataset, Mapping):
-            merged: dict[str, float] = {}
-            for name, ds in dataset.items():
-                sub_metrics = self.evaluate(
-                    eval_dataset=ds,
-                    ignore_keys=ignore_keys,
-                    metric_key_prefix=f"{metric_key_prefix}_{name}",
-                )
-                merged.update(sub_metrics)
-            return merged
 
-        metrics = self._run_evaluation_loop(
+        result = self._run_evaluation_loop(
             dataset,
             prediction_loss_only=True if self._compute_metrics is None else None,
             ignore_keys=ignore_keys,
             metric_key_prefix=metric_key_prefix,
         )
-        self._after_evaluate(metrics)
-        return metrics
+        self._after_evaluate(result.metrics)
+        return result.metrics
 
     def predict(
         self,
         test_dataset: Dataset,
         ignore_keys: list[str] | None = None,
         metric_key_prefix: str = "test",
-    ) -> PredictionOutput:
-        """Run prediction loop and return HF-compatible ``PredictionOutput``."""
-        self._memory_tracker.start()
-        loader = self.get_eval_dataloader(test_dataset)
-        self._callback_handler.eval_dataloader = loader
-        start_time = time.time()
-        with eval_dtype(self._model, self.args, self._train_dtype):
-            output = self.evaluation_loop(
-                loader,
-                description="Prediction",
-                ignore_keys=ignore_keys,
-                metric_key_prefix=metric_key_prefix,
-            )
-        total_batch_size = max(1, int(self.args.per_device_eval_batch_size))
-        output.metrics.update(
-            speed_metrics(
-                metric_key_prefix,
-                start_time,
-                num_samples=output.num_samples,
-                num_steps=math.ceil(output.num_samples / total_batch_size),
-            )
+    ) -> EvaluationResult:
+        """Run prediction loop and return predictions + labels + metrics."""
+        result = self._run_evaluation_loop(
+            test_dataset,
+            prediction_loss_only=None,
+            ignore_keys=ignore_keys,
+            metric_key_prefix=metric_key_prefix,
+            description="Prediction",
         )
-        self._memory_tracker.stop_and_update_metrics(output.metrics)
         self._control = self._callback_handler.on_predict(
             self.args,
             self.state,
             self._control,
-            metrics=output.metrics,
+            metrics=result.metrics,
         )
-        return PredictionOutput(
-            predictions=output.predictions,
-            label_ids=output.label_ids,
-            metrics=output.metrics,
-        )
+        return result
 
     def log_metrics(self, split: str, metrics: dict[str, float]) -> None:
         """Log metrics in HF's public helper shape."""
@@ -2330,13 +2260,12 @@ class DPTrainer:
         prediction_loss_only: bool | None,
         ignore_keys: list[str] | None,
         metric_key_prefix: str,
-    ) -> dict[str, float]:
-        """Drive a single :meth:`evaluation_loop` and return its metrics.
+        description: str = "Evaluation",
+    ) -> EvaluationResult:
+        """Drive a single :meth:`evaluation_loop` and return its result.
 
         Pure forward + accumulator; no callback / log / state-mutation
-        side effects.  Used both directly (single-dataset
-        :meth:`evaluate`) and per-task (dict-dispatched
-        :meth:`evaluate`).
+        side effects.  Shared by :meth:`evaluate` and :meth:`predict`.
         """
         # HF parity: start/stop memory tracker around the eval loop so
         # ``skip_memory_metrics=False`` captures eval-phase memory usage.
@@ -2345,24 +2274,24 @@ class DPTrainer:
         self._callback_handler.eval_dataloader = loader
         start_time = time.time()
         with eval_dtype(self._model, self.args, self._train_dtype):
-            output = self.evaluation_loop(
+            result = self.evaluation_loop(
                 loader,
-                description="Evaluation",
+                description=description,
                 prediction_loss_only=prediction_loss_only,
                 ignore_keys=ignore_keys,
                 metric_key_prefix=metric_key_prefix,
             )
         total_batch_size = max(1, int(self.args.per_device_eval_batch_size))
-        output.metrics.update(
+        result.metrics.update(
             speed_metrics(
                 metric_key_prefix,
                 start_time,
-                num_samples=output.num_samples,
-                num_steps=math.ceil(output.num_samples / total_batch_size),
+                num_samples=result.num_samples,
+                num_steps=math.ceil(result.num_samples / total_batch_size),
             )
         )
-        self._memory_tracker.stop_and_update_metrics(output.metrics)
-        return output.metrics
+        self._memory_tracker.stop_and_update_metrics(result.metrics)
+        return result
 
     def _after_evaluate(self, metrics: dict[str, float]) -> None:
         """Apply the post-eval side effects HF parity requires.

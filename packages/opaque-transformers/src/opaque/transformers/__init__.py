@@ -19,8 +19,8 @@ from opaque.api.transformers._runtime_bootstrap import (
 )
 from opaque.api.transformers.trainer import (
     DPTrainer,
+    EvaluationResult,
     TrainingArguments,
-    PredictionOutput,
     TrainOutput,
 )
 
@@ -32,8 +32,8 @@ except PackageNotFoundError:
 __all__ = [
     "__version__",
     "DPTrainer",
+    "EvaluationResult",
     "TrainingArguments",
-    "PredictionOutput",
     "TrainOutput",
     "is_patched",
     "is_vmap_patched",

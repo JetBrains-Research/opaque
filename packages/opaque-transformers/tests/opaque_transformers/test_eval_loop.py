@@ -13,8 +13,8 @@ import pytest
 import torch
 
 from opaque.api.transformers.trainer._eval import (
-    EvalLoopOutput,
     EvalPrediction,
+    EvaluationResult,
     _PredictionAccumulator,
     should_run_eval_at_step,
     with_metric_prefix,
@@ -300,8 +300,8 @@ class TestReExports:
         assert getattr(ep, "inputs", None) is not None
         assert getattr(ep, "losses", None) is not None
 
-    def test_eval_loop_output_constructible(self):
-        out = EvalLoopOutput(
+    def test_evaluation_result_constructible(self):
+        out = EvaluationResult(
             predictions=None,
             label_ids=None,
             metrics={"eval_loss": 0.0},

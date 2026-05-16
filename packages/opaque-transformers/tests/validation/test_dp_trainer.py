@@ -16,7 +16,7 @@ import torch
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import TrainerCallback as _HFTrainerCallback
-from transformers.trainer_utils import PredictionOutput
+from opaque.transformers import EvaluationResult
 
 from opaque.transformers.trainer import DPTrainer, TrainingArguments, TrainOutput
 from opaque.api.transformers.trainer._state import DPTrainerState
@@ -240,51 +240,6 @@ class TestDPTrainerEvaluate:
 
         assert "test_loss" in metrics
 
-    def test_evaluate_dict_eval_dataset_dispatches_per_task(
-        self,
-        gpt2_with_lora,
-        tiny_lm_dataset,
-    ):
-        """``eval_dataset={"task_a": ds_a, "task_b": ds_b}`` returns per-task metrics.
-
-        HF parity: each entry is evaluated independently and the
-        per-entry metric keys are namespaced with
-        ``f"{metric_key_prefix}_{name}_*"``.  The merged dict is
-        returned as one row.
-
-        ``evaluate`` does not auto-tokenize datasets passed at call
-        time — they must already be in the trainer's expected batch
-        shape (this matches HF, where the trainer takes dataset shape
-        as the user's responsibility).  The test pre-pads via the
-        same ``build_lm_dataset`` helper the fixture uses.
-        """
-        model, tokenizer = gpt2_with_lora
-
-        ds_a = build_lm_dataset(["x sample", "y sample"], tokenizer, max_length=16)
-        ds_b = build_lm_dataset(
-            ["a sample", "b sample", "c sample"],
-            tokenizer,
-            max_length=16,
-        )
-
-        trainer = DPTrainer(
-            model=model,
-            args=_default_args(),
-            processing_class=tokenizer,
-            train_dataset=tiny_lm_dataset,
-            eval_dataset=tiny_lm_dataset,
-        )
-
-        metrics = trainer.evaluate(eval_dataset={"task_a": ds_a, "task_b": ds_b})
-
-        # Both task-specific loss keys present.
-        assert "eval_task_a_loss" in metrics
-        assert "eval_task_b_loss" in metrics
-        # Throughput trio also namespaced per task.
-        assert "eval_task_a_runtime" in metrics
-        assert "eval_task_b_runtime" in metrics
-
-
 class TestDPTrainerCallbacks:
     """Test that callbacks are fired at the right points."""
 
@@ -364,7 +319,7 @@ class TestDPTrainerPhase7Flags:
         )
 
         out = trainer.predict(tiny_lm_dataset)
-        assert isinstance(out, PredictionOutput)
+        assert isinstance(out, EvaluationResult)
         assert "test_loss" in out.metrics
 
     def test_explicit_predict_ignores_do_predict_flag(
@@ -382,7 +337,7 @@ class TestDPTrainerPhase7Flags:
         )
 
         out = trainer.predict(tiny_lm_dataset)
-        assert isinstance(out, PredictionOutput)
+        assert isinstance(out, EvaluationResult)
         assert "test_loss" in out.metrics
 
     def test_debug_underflow_overflow_callback_is_wired(

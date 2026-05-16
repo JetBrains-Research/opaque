@@ -1,10 +1,12 @@
 """Evaluation helpers for :class:`DPTrainer`.
 
-This module re-exports HuggingFace's :class:`~transformers.trainer_utils.EvalPrediction`
-and :class:`~transformers.trainer_utils.EvalLoopOutput` so the rest of the
-codebase imports them from a single Opaque-owned path.  It also hosts pure
-helpers used by the eval loop:
+This module hosts the Opaque-owned eval container plus pure helpers used
+by the eval loop:
 
+- :class:`EvaluationResult` — single dataclass returned by
+  :meth:`DPTrainer.evaluate`, :meth:`DPTrainer.predict`, and
+  :meth:`DPTrainer.evaluation_loop`.  Replaces HF's split
+  ``EvalLoopOutput`` / ``PredictionOutput`` pair.
 - :class:`_PredictionAccumulator` — collects per-batch losses, predictions,
   labels, and (optionally) inputs across an eval loop, with a hot/cold
   buffer split that keeps CPU-offload flushes O(K·N) (one move per batch
@@ -18,6 +20,9 @@ helpers used by the eval loop:
   ``transformers.trainer_utils.speed_metrics`` so eval/predict reports
   expose ``{prefix}_runtime``, ``{prefix}_samples_per_second``,
   ``{prefix}_steps_per_second``.
+
+``EvalPrediction`` is re-exported from ``transformers.trainer_utils`` as the
+canonical input shape for user-supplied ``compute_metrics`` callbacks.
 """
 
 from __future__ import annotations
@@ -36,7 +41,6 @@ from transformers.trainer_pt_utils import (
     nested_truncate,
 )
 from transformers.trainer_utils import (
-    EvalLoopOutput,
     EvalPrediction,
     denumpify_detensorize,
 )
@@ -46,8 +50,8 @@ if TYPE_CHECKING:
 
 
 __all__ = [
-    "EvalLoopOutput",
     "EvalPrediction",
+    "EvaluationResult",
     "_PredictionAccumulator",
     "denumpify_detensorize",
     "find_batch_size",
@@ -67,18 +71,20 @@ __all__ = [
 _HF_PAD_VALUE = -100
 
 
-# Import-time smoke check: fail loudly if a future ``transformers`` release
-# changes the shape of ``EvalPrediction`` we rely on.  Across HF versions
-# ``EvalPrediction`` has been a NamedTuple-like class accepting these four
-# constructor kwargs; we probe by constructing one with all of them.
-try:
-    EvalPrediction(predictions=None, label_ids=None, inputs=None, losses=None)
-except TypeError as _exc:  # pragma: no cover - defensive guard
-    raise RuntimeError(
-        "transformers.trainer_utils.EvalPrediction does not accept the expected "
-        "keyword arguments (predictions, label_ids, inputs, losses); the "
-        "installed transformers version is incompatible with opaque-transformers."
-    ) from _exc
+@dataclasses.dataclass
+class EvaluationResult:
+    """Output of :meth:`DPTrainer.evaluation_loop` /
+    :meth:`DPTrainer.evaluate` / :meth:`DPTrainer.predict`.
+
+    Fields mirror HF's ``EvalLoopOutput`` (``predictions``, ``label_ids``,
+    ``metrics``, ``num_samples``); ``predict`` returns the same shape
+    rather than the separate ``PredictionOutput`` HF used historically.
+    """
+
+    predictions: Any | None
+    label_ids: Any | None
+    metrics: dict[str, float]
+    num_samples: int
 
 
 # ---------------------------------------------------------------------------
@@ -488,7 +494,7 @@ def speed_metrics(
 
 
 def resolve_eval_num_samples(dataloader: Any, *, observed: int) -> int:
-    """Resolve the ``num_samples`` field of an :class:`EvalLoopOutput`.
+    """Resolve the ``num_samples`` field of an :class:`EvaluationResult`.
 
     HF parity (``transformers.trainer.Trainer.evaluation_loop``,
     trainer.py:4757-4769): prefer the dataset's reported length, then the
