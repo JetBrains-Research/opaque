@@ -432,66 +432,57 @@ class TestPredictionStepLogitsCollapse:
         assert labels is None
 
 
-class TestPredictionStepTupleCollapsePure:
-    """Pure-Python tests that exercise the tuple-collapse branch directly.
+class _MultiOutputStubModel(torch.nn.Module):
+    """Stub model whose ``forward`` returns a fixed ``ModelOutput``.
 
-    Stub the trainer's forward path with a fake ``compute_loss`` so we
-    can return a multi-output ``ModelOutput`` without finding a real
-    HF model that emits one.  This is the only way to test the
-    ``len(logits_tuple) > 1`` branch on a CPU-bound test box.
+    Used to exercise ``prediction_step``'s logits-collection branch with
+    a multi-field output (``loss + logits + hidden_states``) without
+    needing a real HF model that emits one.
     """
 
-    def _make_trainer(self, gpt2_lora_and_tokenizer, tiny_dataset, tmp_path):
-        model, tokenizer = gpt2_lora_and_tokenizer
-        return DPTrainer(
-            model=model,
-            args=_args(tmp_path),
-            processing_class=tokenizer,
-            train_dataset=tiny_dataset,
-            eval_dataset=tiny_dataset,
-        )
+    main_input_name = "input_ids"
 
-    def test_multi_output_returns_tuple(
-        self,
-        gpt2_lora_and_tokenizer,
-        tiny_dataset,
-        tmp_path,
-    ):
-        """A model returning ``loss + logits + hidden_states`` exposes a tuple.
+    def __init__(self, output: Any) -> None:
+        super().__init__()
+        self._output = output
+        # DPTrainer's optimizer setup needs at least one trainable param.
+        self._noop = torch.nn.Linear(1, 1)
 
-        Monkey-patch ``compute_loss`` to return a fake ``ModelOutput``
-        with two non-loss fields.  Both must come through as a
-        ``tuple[Tensor, ...]``.
-        """
-        trainer = self._make_trainer(
-            gpt2_lora_and_tokenizer,
-            tiny_dataset,
-            tmp_path,
-        )
+    def forward(self, **inputs):  # noqa: ARG002
+        return self._output
 
+
+class TestPredictionStepTupleCollapsePure:
+    """Pure-Python tests for ``prediction_step``'s logits-collection branch.
+
+    Use a stub model whose ``forward`` returns a fixed multi-output
+    ``ModelOutput`` so we can hit the ``len(logits_tuple) > 1`` and
+    length-1 collapse paths without finding an HF model that emits one.
+    """
+
+    def _make_fake_output(self):
         @dataclass
         class FakeOutput(ModelOutput):
             loss: Any = None
             logits: Any = None
             hidden_states: Any = None
 
-        loss = torch.tensor(1.5)
-        logits = torch.zeros(2, 3, 4)
-        hidden = torch.zeros(2, 3, 8)
-        fake_out = FakeOutput(loss=loss, logits=logits, hidden_states=hidden)
+        return FakeOutput(
+            loss=torch.tensor(1.5),
+            logits=torch.zeros(2, 3, 4),
+            hidden_states=torch.zeros(2, 3, 8),
+        )
 
-        def fake_compute_loss(
-            model, inputs, return_outputs=False, num_items_in_batch=None
-        ):  # noqa: ARG001
-            if return_outputs:
-                return loss, fake_out
-            return loss
+    def test_multi_output_returns_tuple(self, tmp_path):
+        """A model returning ``loss + logits + hidden_states`` exposes a tuple."""
+        fake_out = self._make_fake_output()
+        trainer = DPTrainer(
+            model=_MultiOutputStubModel(fake_out),
+            args=_args(tmp_path),
+            train_dataset=[{"input_ids": torch.zeros(3, dtype=torch.long), "labels": 0}],
+            eval_dataset=[{"input_ids": torch.zeros(3, dtype=torch.long), "labels": 0}],
+        )
 
-        trainer.compute_loss = fake_compute_loss
-
-        # Minimal batch — only labels matter for the
-        # ``compute_loss``-returns-no-loss check; everything else is
-        # forwarded through our stub.
         batch = {
             "input_ids": torch.zeros(2, 3, dtype=torch.long),
             "labels": torch.zeros(2, 3, dtype=torch.long),
@@ -506,46 +497,18 @@ class TestPredictionStepTupleCollapsePure:
             f"multi-output model should expose a tuple, got {type(out_logits).__name__}"
         )
         assert len(out_logits) == 2
-        assert torch.equal(out_logits[0], logits)
-        assert torch.equal(out_logits[1], hidden)
+        assert torch.equal(out_logits[0], fake_out.logits)
+        assert torch.equal(out_logits[1], fake_out.hidden_states)
 
-    def test_ignore_keys_drops_auxiliary_outputs(
-        self,
-        gpt2_lora_and_tokenizer,
-        tiny_dataset,
-        tmp_path,
-    ):
-        """``ignore_keys=["hidden_states"]`` collapses to a bare tensor.
-
-        Same fake ``ModelOutput`` as the previous test, but with
-        ``hidden_states`` filtered out — the resulting tuple has
-        length 1 and must collapse back to a bare ``logits`` tensor.
-        """
-        trainer = self._make_trainer(
-            gpt2_lora_and_tokenizer,
-            tiny_dataset,
-            tmp_path,
+    def test_ignore_keys_drops_auxiliary_outputs(self, tmp_path):
+        """``ignore_keys=["hidden_states"]`` collapses to a bare tensor."""
+        fake_out = self._make_fake_output()
+        trainer = DPTrainer(
+            model=_MultiOutputStubModel(fake_out),
+            args=_args(tmp_path),
+            train_dataset=[{"input_ids": torch.zeros(3, dtype=torch.long), "labels": 0}],
+            eval_dataset=[{"input_ids": torch.zeros(3, dtype=torch.long), "labels": 0}],
         )
-
-        @dataclass
-        class FakeOutput(ModelOutput):
-            loss: Any = None
-            logits: Any = None
-            hidden_states: Any = None
-
-        loss = torch.tensor(1.5)
-        logits = torch.zeros(2, 3, 4)
-        hidden = torch.zeros(2, 3, 8)
-        fake_out = FakeOutput(loss=loss, logits=logits, hidden_states=hidden)
-
-        def fake_compute_loss(
-            model, inputs, return_outputs=False, num_items_in_batch=None
-        ):  # noqa: ARG001
-            if return_outputs:
-                return loss, fake_out
-            return loss
-
-        trainer.compute_loss = fake_compute_loss
 
         batch = {
             "input_ids": torch.zeros(2, 3, dtype=torch.long),
@@ -561,7 +524,7 @@ class TestPredictionStepTupleCollapsePure:
             f"length-1 tuple should collapse to bare Tensor, got "
             f"{type(out_logits).__name__}"
         )
-        assert torch.equal(out_logits, logits)
+        assert torch.equal(out_logits, fake_out.logits)
 
 
 # ---------------------------------------------------------------------------

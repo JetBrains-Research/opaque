@@ -953,12 +953,13 @@ class DPTrainer:
         batch_keys = self._discover_batch_keys()
 
         # --- Build the per-example loss closure ---
-        # Default behaviour mirrors HF's ``Trainer.compute_loss``:
-        # ``model(**inputs).loss``, which transparently inherits HF's
+        # Default behaviour: forward through ``fmodel`` and read
+        # ``output["loss"]``, which transparently inherits HF's
         # ``LOSS_MAPPING`` dispatch (causal-LM gets ``ForCausalLMLoss``,
         # classification gets ``ForSequenceClassificationLoss``, …).
-        # Subclasses override :meth:`_build_per_example_loss` for
-        # domain-specific losses.
+        # Subclasses override :meth:`compute_per_example_loss` for
+        # domain-specific losses; ``_build_per_example_loss`` here just
+        # wraps it with autocast / fp16 scaling / torch.compile.
         per_example_loss_fn, batch_argnums = self._build_per_example_loss(
             fmodel,
             frozen_params,
@@ -1691,88 +1692,119 @@ class DPTrainer:
     # evaluate() — functional forward, no param restoration
     # ------------------------------------------------------------------
 
-    def compute_loss(
+    def compute_per_example_loss(
         self,
-        model: Any,
+        fmodel: Callable[..., Any],
+        params: dict[str, Tensor],
         inputs: dict[str, Tensor],
-        return_outputs: bool = False,
-        num_items_in_batch: int | None = None,
+        *,
+        return_logits: bool = False,
     ) -> Tensor | tuple[Tensor, Any]:
-        """Forward + loss for a single batch.
+        """Compute one example's loss; vmap-batched by the caller.
 
-        Used during evaluation.  Override (or pass ``compute_loss_func=``
-        on the constructor) to customize the eval-time loss computation.
+        This is the unified DP-correct override hook.  The trainer wraps
+        it with ``vmap`` for training (then ``grad`` → clip → noise) and
+        for per-example eval (when ``'loss' in include_for_metrics``).
+        Subclasses (SFT, DPO, KTO, …) override this method to compute
+        domain-specific per-example losses — the same override point
+        covers training and eval semantics by construction.
 
-        ``compute_loss_func`` follows HF's contract: it is called as
-        ``compute_loss_func(outputs, labels, num_items_in_batch=...)``
-        and returns the loss tensor.  ``return_outputs`` is handled by
-        :meth:`compute_loss` itself, not by the user function.
+        Default behavior: forward through ``fmodel(params, **inputs)``
+        and read ``output["loss"]`` (HF's per-model ``LOSS_MAPPING``
+        dispatch is inherited automatically — causal-LM, classification,
+        seq2seq, etc.).  When a ``compute_loss_func`` was supplied at
+        construction it is called as
+        ``compute_loss_func(outputs, labels) -> scalar`` instead — a
+        no-subclass escape hatch for one-off custom losses.
 
-        DP-correctness note: training-time loss is computed per-example
-        by :meth:`_build_per_example_loss` (vmap-batched, clipped, then
-        noised); overriding ``compute_loss`` does *not* affect the
-        training path.  To customise the training loss, override
-        :meth:`_build_per_example_loss` instead — same pattern HF uses
-        for its own ``compute_loss`` overrides in subclasses.
+        ``args.label_smoothing_factor > 0`` overrides the model's loss
+        with a manual ``cross_entropy(..., label_smoothing=...)`` over
+        the logits when both logits and labels are available
+        (HF parity for the default CausalLM / classification path).
+        Subclasses that override this method are responsible for
+        handling smoothing themselves.
 
-        Mid-training (``self._ctx`` populated) the forward goes through
-        the functional ``fmodel`` with the bound module toggled into
-        ``eval()`` mode for the duration so dropout / BatchNorm behave
-        as in HF's ``Trainer.evaluate``.  Post-training it goes through
-        the bound ``self._model`` directly.
+        Args:
+            fmodel: Functional model from
+                :func:`opaque.functional.make_functional` (called as
+                ``fmodel(params, **inputs)``).
+            params: All model parameters merged
+                (``frozen | trainable``).  Under vmap, ``trainable`` is
+                replicated per example and ``frozen`` is broadcast.
+            inputs: One example's input dict (under vmap; the caller
+                stripped the leading batch dim before invoking this
+                method).
+            return_logits: When ``True``, also return the model's
+                ``logits`` tensor — used by the per-example eval path
+                so a single forward yields both per-example losses and
+                predictions.
+
+        Returns:
+            Scalar ``loss`` (or ``(loss, logits)`` when
+            ``return_logits=True``).
         """
-        # HF parity: pop labels before forward when a user
-        # ``compute_loss_func`` will compute the loss from outputs.
-        labels = None
-        forward_inputs = inputs
-        if self._compute_loss_func is not None:
-            forward_inputs = dict(inputs)
-            label_keys = self._label_names or ["labels"]
-            collected_labels: list[Tensor] = []
-            for k in label_keys:
-                if k in forward_inputs:
-                    collected_labels.append(forward_inputs.pop(k))
-            if collected_labels:
-                labels = (
-                    collected_labels[0]
-                    if len(collected_labels) == 1
-                    else tuple(collected_labels)
-                )
+        output = fmodel(params, **inputs)
 
-        if self._ctx is not None:
-            merged = {**self._ctx.frozen_params, **self._ctx.trainable_params}
-            was_training = self._model.training
-            if was_training:
-                self._model.eval()
-            try:
-                output = self._ctx.fmodel(merged, **forward_inputs)
-            finally:
-                if was_training:
-                    self._model.train()
-        else:
-            was_training = self._model.training
-            if was_training:
-                self._model.eval()
-            try:
-                output = self._model(**forward_inputs)
-            finally:
-                if was_training:
-                    self._model.train()
+        output_logits = (
+            output.get("logits") if isinstance(output, Mapping)
+            else getattr(output, "logits", None)
+        )
 
         if self._compute_loss_func is not None:
-            loss = self._compute_loss_func(
-                output,
-                labels,
-                num_items_in_batch=num_items_in_batch,
+            labels = next(
+                (inputs[k] for k in self._label_names if k in inputs), None
             )
+            loss = self._compute_loss_func(output, labels)
         else:
-            loss = getattr(output, "loss", None)
-            if loss is None and isinstance(output, dict):
-                loss = output.get("loss")
-            if loss is None and isinstance(output, tuple) and output:
-                loss = output[0]
-        if return_outputs:
-            return loss, output
+            loss = output.get("loss") if isinstance(output, Mapping) else None
+            if loss is None:
+                loss = getattr(output, "loss", None)
+        if loss is None:
+            raise RuntimeError(
+                "DPTrainer.compute_per_example_loss: model forward returned no "
+                "`loss` field.  Pass `compute_loss_func=` for a custom loss, "
+                "or override `compute_per_example_loss` in a subclass."
+            )
+
+        smoothing = float(self.args.label_smoothing_factor)
+        if smoothing > 0.0:
+            if output_logits is not None:
+                label_key = next(
+                    (k for k in self._label_names if k in inputs), None
+                )
+                labels_tensor = (
+                    inputs.get(label_key) if label_key is not None
+                    else inputs.get("labels")
+                )
+                if labels_tensor is not None:
+                    if (
+                        output_logits.ndim >= 2
+                        and output_logits.shape[:-1] == labels_tensor.shape
+                        and output_logits.shape[-2] > 1
+                    ):
+                        smooth_logits = output_logits[..., :-1, :].contiguous()
+                        smooth_labels = labels_tensor[..., 1:].contiguous()
+                    else:
+                        smooth_logits = output_logits
+                        smooth_labels = labels_tensor
+                    loss = torch.nn.functional.cross_entropy(
+                        smooth_logits.view(-1, smooth_logits.size(-1)),
+                        smooth_labels.view(-1),
+                        ignore_index=-100,
+                        label_smoothing=smoothing,
+                    )
+            elif not self._smoothing_kernel_warned:
+                warnings.warn(
+                    "label_smoothing_factor is set, but the fused CE kernel "
+                    "path does not expose logits yet; falling back to "
+                    "unsmoothed fused loss for this run.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                self._smoothing_kernel_warned = True
+
+        if return_logits:
+            return loss, output_logits
         return loss
 
     def prediction_step(
@@ -1827,7 +1859,7 @@ class DPTrainer:
 
         inputs = self._prepare_input(inputs)
         # Split the batch into ``label_kwargs`` and model inputs.  Labels are
-        # captured before ``compute_loss`` because user loss functions may pop
+        # captured before the forward because user loss functions may pop
         # or otherwise consume them.
         model_inputs: dict[str, Any] = dict(inputs)
         labels_kwargs: dict[str, Tensor] = {}
@@ -1883,36 +1915,32 @@ class DPTrainer:
                 return loss, None, None
             return loss, logits_tensor.detach(), labs
 
+        # Batched forward: reduced eval path reads ``output["loss"]``
+        # directly (no per-example vmap).  This is the HF-equivalent fast
+        # path; users who want ``compute_loss_func`` honoured at eval set
+        # ``include_for_metrics=["loss"]`` to take the per-example path
+        # above.
         with torch.no_grad():
-            if has_labels:
-                loss, output = self.compute_loss(
-                    model,
-                    {**model_inputs, **labels_kwargs},
-                    return_outputs=True,
-                )
+            was_training = self._model.training
+            if was_training:
+                self._model.eval()
+            try:
+                if self._ctx is not None:
+                    merged = {**self._ctx.frozen_params, **self._ctx.trainable_params}
+                    output = self._ctx.fmodel(
+                        merged, **{**model_inputs, **labels_kwargs}
+                    )
+                else:
+                    output = model(**{**model_inputs, **labels_kwargs})
+            finally:
+                if was_training:
+                    self._model.train()
+            if has_labels and isinstance(output, Mapping):
+                loss = output.get("loss")
                 if loss is not None:
                     loss = loss.detach().mean()
             else:
                 loss = None
-                if self._ctx is not None:
-                    merged = {**self._ctx.frozen_params, **self._ctx.trainable_params}
-                    was_training = self._model.training
-                    if was_training:
-                        self._model.eval()
-                    try:
-                        output = self._ctx.fmodel(merged, **inputs)
-                    finally:
-                        if was_training:
-                            self._model.train()
-                else:
-                    was_training = self._model.training
-                    if was_training:
-                        self._model.eval()
-                    try:
-                        output = model(**inputs)
-                    finally:
-                        if was_training:
-                            self._model.train()
         if prediction_loss_only:
             return loss, None, None
 
@@ -2494,23 +2522,14 @@ class DPTrainer:
         *,
         return_logits: bool = False,
     ) -> tuple[Callable[..., Any], tuple[int, ...]]:
-        """Build the per-example DP-SGD loss closure.
+        """Wrap :meth:`compute_per_example_loss` for ``vmap(grad(...))``.
 
-        Mirrors HF's default ``Trainer.compute_loss`` (``model(**inputs).loss``),
-        and therefore inherits HF's per-model ``LOSS_MAPPING`` dispatch
-        for free: causal-LM models compute ``ForCausalLMLoss``,
-        classification models compute ``ForSequenceClassificationLoss``,
-        and so on, without any trainer-side registry.
-
-        DP-SGD requires a *per-example* loss function (HF returns a
-        batch mean) plus a positional ``batch_argnums`` tuple so
-        ``vmap`` knows which arguments carry the batch dim.  This
-        method bridges HF's kwargs-style call to ``clipped_grad``'s
-        positional contract.
-
-        Override in subclasses to compute domain-specific per-example
-        losses (e.g. log-prob math under vmap with a frozen reference
-        model carried in ``frozen_params`` or on ``self``).
+        Bridges the user-facing override hook (``compute_per_example_loss``,
+        kwargs-style) to ``clipped_grad``'s positional contract:
+        ``(trainable_params, *batch_args) -> scalar_loss``.  The training
+        loop concerns — autocast, fp16 loss scaling, ``torch.compile`` —
+        wrap around the user's per-example loss math here so subclasses
+        don't have to reimplement them.
 
         Args:
             fmodel: Functional model from
@@ -2520,20 +2539,14 @@ class DPTrainer:
             batch_keys: Ordered tuple of tensor keys the collator emits
                 (discovered via :meth:`_discover_batch_keys`).
             return_logits: When ``True``, the closure returns
-                ``(loss, logits)`` instead of just ``loss`` — used by
-                eval (:meth:`prediction_step`) to recover both
-                per-example losses and predictions in a single vmap'd
-                forward.  Loss scaling is skipped in this mode (eval
-                doesn't compose with fp16 dynamic loss scaling).
+                ``(loss, logits)`` instead of just ``loss``.  fp16 loss
+                scaling is skipped in this mode (eval doesn't compose
+                with dynamic loss scaling).
 
         Returns:
-            ``(per_example_loss_fn, batch_argnums)`` where the closure
-            has signature ``(trainable_params, *batch_args) ->
-            scalar_loss`` (or ``(scalar_loss, logits)`` when
-            ``return_logits=True``).
+            ``(per_example_loss_fn, batch_argnums)``.
         """
         keys = batch_keys
-        smoothing = float(self.args.label_smoothing_factor)
         amp_dtype = self._amp_dtype
         device_type = self._device.type
         # Skip loss scaling on the eval closure: fp16 dynamic scaling is
@@ -2550,72 +2563,22 @@ class DPTrainer:
             *batch_args: Tensor,
         ) -> Any:
             merged = {**frozen_params, **trainable}
-            # Each ``batch_arg`` lost its leading batch dim to vmap; the
-            # model's ``forward`` either gets unsqueezed by opaque's
-            # batchify patch (recognised families) or expects to handle
-            # the post-vmap shape itself (custom models with
-            # ``use_compat_patches=False``).  The trainer no longer
-            # second-guesses the model shape.
-            kwargs = dict(zip(keys, batch_args, strict=True))
+            inputs = dict(zip(keys, batch_args, strict=True))
             if autocast_active:
                 with torch.autocast(device_type=device_type, dtype=amp_dtype):
-                    output = fmodel(merged, **kwargs)
+                    result = self.compute_per_example_loss(
+                        fmodel, merged, inputs, return_logits=return_logits
+                    )
             else:
-                output = fmodel(merged, **kwargs)
-            loss = getattr(output, "loss", None)
-            if loss is None and isinstance(output, dict):
-                loss = output.get("loss")
-            if loss is None and isinstance(output, tuple) and output:
-                loss = output[0]
-            if loss is None:
-                raise RuntimeError(
-                    "DPTrainer: model forward returned no `loss`. "
-                    "HF parity requires the model to compute a loss "
-                    "from the batch (typically by carrying a `labels` "
-                    "key).  Override `_build_per_example_loss` in a "
-                    "subclass for domain-specific losses."
+                result = self.compute_per_example_loss(
+                    fmodel, merged, inputs, return_logits=return_logits
                 )
 
-            output_logits = getattr(output, "logits", None)
-            if output_logits is None and isinstance(output, dict):
-                output_logits = output.get("logits")
+            if return_logits:
+                loss, logits = result
+            else:
+                loss = result
 
-            if smoothing > 0.0:
-                if output_logits is not None:
-                    label_key = next(
-                        (k for k in self._label_names if k in kwargs), None
-                    )
-                    labels_tensor = (
-                        kwargs.get(label_key)
-                        if label_key is not None
-                        else kwargs.get("labels")
-                    )
-                    if labels_tensor is not None:
-                        if (
-                            output_logits.ndim >= 2
-                            and output_logits.shape[:-1] == labels_tensor.shape
-                            and output_logits.shape[-2] > 1
-                        ):
-                            smooth_logits = output_logits[..., :-1, :].contiguous()
-                            smooth_labels = labels_tensor[..., 1:].contiguous()
-                        else:
-                            smooth_logits = output_logits
-                            smooth_labels = labels_tensor
-                        loss = torch.nn.functional.cross_entropy(
-                            smooth_logits.view(-1, smooth_logits.size(-1)),
-                            smooth_labels.view(-1),
-                            ignore_index=-100,
-                            label_smoothing=smoothing,
-                        )
-                else:
-                    if not self._smoothing_kernel_warned:
-                        warnings.warn(
-                            "label_smoothing_factor is set, but the fused CE kernel path does not expose logits yet; "
-                            "falling back to unsmoothed fused loss for this run.",
-                            UserWarning,
-                            stacklevel=2,
-                        )
-                        self._smoothing_kernel_warned = True
             # fp16 dynamic-loss-scale: multiply the loss by the current
             # scale before returning to vmap(grad(...)).  The matching
             # unscale runs inside `clipped_grad`'s `pre_clipping_transform`
@@ -2624,7 +2587,7 @@ class DPTrainer:
             if loss_scaler is not None:
                 loss = loss_scaler.scale_loss(loss, self._loss_scaler_state)
             if return_logits:
-                return loss, output_logits
+                return loss, logits
             return loss
 
         # When `args.torch_compile=True`, compile the loss closure (NOT
