@@ -25,7 +25,6 @@ import math
 import os
 import time
 import tempfile
-import warnings
 from collections.abc import Mapping
 from typing import Any, Callable, NamedTuple
 
@@ -135,6 +134,45 @@ def _disable_tokenizers_parallelism_before_fork() -> None:
 def _effective(value: Any) -> float:
     """Extract scalar from float or PerGroup for logging."""
     return value.effective if hasattr(value, "effective") else float(value)
+
+
+def _compile_with_fullgraph_fallback(
+    fn: Callable, *, backend: str, mode: str
+) -> Callable:
+    """Compile ``fn`` with ``fullgraph=True``; on first-call failure,
+    log a warning and lazily recompile with ``fullgraph=False``.
+
+    ``torch.compile`` is lazy — the compile failure (graph break under
+    ``fullgraph=True``) surfaces only when the compiled function is
+    actually executed.  This wrapper catches that first-execution
+    exception, records the fallback, and forwards subsequent calls to
+    the more permissive variant.  ``fullgraph=True`` first catches
+    silent eager-fallback regressions the user explicitly opted into
+    compiling against.
+    """
+    full = torch.compile(fn, backend=backend, mode=mode, fullgraph=True)
+    fallback: Callable | None = None
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        nonlocal fallback
+        if fallback is not None:
+            return fallback(*args, **kwargs)
+        try:
+            return full(*args, **kwargs)
+        except Exception as e:  # noqa: BLE001 - any compile failure → fallback
+            log.warning(
+                "torch.compile fullgraph=True failed (%s: %s); "
+                "falling back to fullgraph=False for subsequent steps.",
+                type(e).__name__,
+                e,
+            )
+            fallback = torch.compile(
+                fn, backend=backend, mode=mode, fullgraph=False
+            )
+            return fallback(*args, **kwargs)
+
+    return wrapper
 
 
 class TrainOutput(NamedTuple):
@@ -281,7 +319,6 @@ class DPTrainer:
         self._compute_metrics = compute_metrics
         self._compute_loss_func = compute_loss_func
         self._preprocess_logits = preprocess_logits_for_metrics
-        self._smoothing_kernel_warned = False
         # Lazily-built per-example eval-loss closure (vmap'd).  Populated
         # by ``_get_eval_per_example_loss_fn`` on first use; reset to
         # ``None`` here so model rebinding can invalidate the cache.
@@ -822,12 +859,14 @@ class DPTrainer:
             self._eval_dataloader = None
 
     def _is_retryable_oom(self, err: RuntimeError) -> bool:
-        message = str(err).lower()
-        return (
-            "out of memory" in message
-            or "cuda out of memory" in message
-            or "mps backend out of memory" in message
-        )
+        """``True`` for an OOM that justifies a microbatch retry.
+
+        ``torch.OutOfMemoryError`` (torch >= 2.4) is the typed exception
+        emitted by both CUDA and MPS backends; ``isinstance`` is robust
+        across torch versions and avoids matching unrelated runtime
+        errors that happen to mention "out of memory" in the message.
+        """
+        return isinstance(err, torch.OutOfMemoryError)
 
     def _reset_state_for_batch_size_retry(self, snapshot: DPTrainerState) -> None:
         self.state = DPTrainerState.from_json(snapshot.to_json())
@@ -1674,12 +1713,17 @@ class DPTrainer:
         ``compute_loss_func(outputs, labels) -> scalar`` instead — a
         no-subclass escape hatch for one-off custom losses.
 
-        ``args.label_smoothing_factor > 0`` overrides the model's loss
-        with a manual ``cross_entropy(..., label_smoothing=...)`` over
-        the logits when both logits and labels are available
-        (HF parity for the default CausalLM / classification path).
-        Subclasses that override this method are responsible for
-        handling smoothing themselves.
+        ``args.label_smoothing_factor > 0`` is honored by both the
+        Opaque CE kernels (which accept ``label_smoothing`` natively —
+        the trainer pushes it through as a ``loss_kwarg``) and by a
+        trainer-side ``cross_entropy(..., label_smoothing=...)`` rebuild
+        that overrides the model's loss whenever logits are exposed.
+        The rebuild covers the no-patches case (HF's native
+        ``ForCausalLMLoss`` silently drops the kwarg); for the
+        opt-in ``fused_linear_cross_entropy`` path (``logits=None``),
+        the kernel applies smoothing inside the fused kernel.
+        Subclasses overriding this method are responsible for
+        smoothing semantics themselves.
 
         Args:
             fmodel: Functional model from
@@ -1700,6 +1744,16 @@ class DPTrainer:
             Scalar ``loss`` (or ``(loss, logits)`` when
             ``return_logits=True``).
         """
+        smoothing = float(self.args.label_smoothing_factor)
+        # Push smoothing through to the loss function as a kwarg so the
+        # Opaque CE kernels (both non-fused and fused-linear) apply it
+        # natively.  Vmap-safe — the value is a scalar constant, not a
+        # batched tensor.  HF model forwards have ``**kwargs`` that
+        # propagate to ``loss_function``; HF's native CE silently drops
+        # the kwarg but the trainer-side rebuild below corrects that.
+        if smoothing > 0.0:
+            inputs = {**inputs, "label_smoothing": smoothing}
+
         output = fmodel(params, **inputs)
 
         output_logits = (
@@ -1723,42 +1777,36 @@ class DPTrainer:
                 "or override `compute_per_example_loss` in a subclass."
             )
 
-        smoothing = float(self.args.label_smoothing_factor)
-        if smoothing > 0.0:
-            if output_logits is not None:
-                label_key = next(
-                    (k for k in self._label_names if k in inputs), None
+        # Trainer-side rebuild: when logits are exposed, rewrite the
+        # loss with ``F.cross_entropy(..., label_smoothing=...)`` so the
+        # no-patches case (HF's native CE drops the kwarg) is also
+        # honored.  Idempotent w.r.t. the kernel's smoothed loss: both
+        # paths converge to the same math when ``label_smoothing > 0``.
+        if smoothing > 0.0 and output_logits is not None:
+            label_key = next(
+                (k for k in self._label_names if k in inputs), None
+            )
+            labels_tensor = (
+                inputs.get(label_key) if label_key is not None
+                else inputs.get("labels")
+            )
+            if labels_tensor is not None:
+                if (
+                    output_logits.ndim >= 2
+                    and output_logits.shape[:-1] == labels_tensor.shape
+                    and output_logits.shape[-2] > 1
+                ):
+                    smooth_logits = output_logits[..., :-1, :].contiguous()
+                    smooth_labels = labels_tensor[..., 1:].contiguous()
+                else:
+                    smooth_logits = output_logits
+                    smooth_labels = labels_tensor
+                loss = torch.nn.functional.cross_entropy(
+                    smooth_logits.view(-1, smooth_logits.size(-1)),
+                    smooth_labels.view(-1),
+                    ignore_index=-100,
+                    label_smoothing=smoothing,
                 )
-                labels_tensor = (
-                    inputs.get(label_key) if label_key is not None
-                    else inputs.get("labels")
-                )
-                if labels_tensor is not None:
-                    if (
-                        output_logits.ndim >= 2
-                        and output_logits.shape[:-1] == labels_tensor.shape
-                        and output_logits.shape[-2] > 1
-                    ):
-                        smooth_logits = output_logits[..., :-1, :].contiguous()
-                        smooth_labels = labels_tensor[..., 1:].contiguous()
-                    else:
-                        smooth_logits = output_logits
-                        smooth_labels = labels_tensor
-                    loss = torch.nn.functional.cross_entropy(
-                        smooth_logits.view(-1, smooth_logits.size(-1)),
-                        smooth_labels.view(-1),
-                        ignore_index=-100,
-                        label_smoothing=smoothing,
-                    )
-            elif not self._smoothing_kernel_warned:
-                warnings.warn(
-                    "label_smoothing_factor is set, but the fused CE kernel "
-                    "path does not expose logits yet; falling back to "
-                    "unsmoothed fused loss for this run.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-                self._smoothing_kernel_warned = True
 
         if return_logits:
             return loss, output_logits
@@ -2332,22 +2380,38 @@ class DPTrainer:
 
     def _maybe_prime_collate(self, collate_fn: Callable, dataset: Any) -> Callable:
         """Warm ``empty_collate`` with one real example so the first Poisson
-        batch can be empty without needing ``examples[0]`` for a template."""
+        batch can be empty without needing ``examples[0]`` for a template.
+
+        The wrapped ``empty_collate`` is stateful — calling it once with a
+        real row caches the template tensor's shape so a later empty batch
+        can be synthesized.  Returns the collator unmodified (priming is a
+        side effect on the closure state).
+
+        Falls back to unprimed when probing the dataset isn't possible
+        (streaming iterables have no ``__len__`` / indexing; custom
+        collators may reject a single-row list).  Each ``except`` is
+        narrowed to the exact failure mode it's guarding against so that
+        unrelated exceptions still surface.
+        """
         if dataset is None:
             return collate_fn
         try:
             n = len(dataset)  # type: ignore[arg-type]
         except TypeError:
+            # Streaming / iterable dataset without ``__len__``.
             return collate_fn
         if n == 0:
             return collate_fn
         try:
             row = dataset[0]  # type: ignore[index]
-        except Exception:
+        except (TypeError, IndexError, KeyError):
+            # Non-subscriptable dataset, or row lookup failed.
             return collate_fn
         try:
             collate_fn([row])
-        except Exception:
+        except (TypeError, ValueError, KeyError):
+            # Collator rejected the single-row list shape (rare —
+            # default collators accept lists of any length including 1).
             return collate_fn
         return collate_fn
 
@@ -2550,14 +2614,19 @@ class DPTrainer:
         # When `args.torch_compile=True`, compile the loss closure (NOT
         # the model — opaque's functional path goes through
         # `functional_call`, which doesn't compose with model-compile).
-        # `aot_eager` and `inductor` are validated upstream; users can
-        # set `torch_compile_backend` to anything torch.compile accepts.
+        # Try ``fullgraph=True`` first so graph breaks surface as errors
+        # at first call (otherwise torch.compile silently fragments and
+        # falls back to eager, giving the user no signal); lazily
+        # downgrade to ``fullgraph=False`` with a warning if the closure
+        # can't be traced fully.  Backends ``aot_eager`` / ``inductor``
+        # are validated upstream; users can set
+        # ``torch_compile_backend`` to anything torch.compile accepts.
         compile_args = self.args
         if compile_args.torch_compile:
             backend = compile_args.torch_compile_backend or "inductor"
             mode = compile_args.torch_compile_mode or "default"
-            per_example_loss = torch.compile(
-                per_example_loss, backend=backend, mode=mode, fullgraph=False
+            per_example_loss = _compile_with_fullgraph_fallback(
+                per_example_loss, backend=backend, mode=mode
             )
 
         return per_example_loss, tuple(range(1, 1 + len(keys)))
@@ -3201,7 +3270,7 @@ class DPTrainer:
                 a.privacy_target_epsilon,
                 target_delta,
             )
-            prefix_process = prefix_accountant._process
+            prefix_process = prefix_accountant.process
 
             def objective(nm, _prefix=prefix_process, _rem=remaining_steps):
                 return _prefix | (mechanism(nm) * _rem)

@@ -42,8 +42,12 @@ class DPTrainerState:
     epoch: float = 0.0
     global_step: int = 0
     max_steps: int = 0
-    logging_steps: float = 500
-    eval_steps: float | None = 500
+    # Resolved cadence in absolute steps.  ``compute_steps`` pre-resolves
+    # fractional values (e.g. ``logging_steps=0.5``) and ``None`` to ints
+    # before storing here; the on-state representation is uniformly
+    # ``int`` for all three.
+    logging_steps: int = 500
+    eval_steps: int | None = 500
     save_steps: int = 500
     train_batch_size: int | None = None
     num_train_epochs: int = 0
@@ -80,7 +84,10 @@ class DPTrainerState:
                 continue
             if num_steps < 1:
                 num_steps = math.ceil(self.max_steps * num_steps)
-            setattr(self, f"{kind}_steps", num_steps)
+            # Coerce to ``int`` so the resolved cadence on state is
+            # uniformly typed (the dataclass declares int fields; user
+            # ``args`` may carry the value as float).
+            setattr(self, f"{kind}_steps", int(num_steps))
 
     def to_json(self) -> dict[str, Any]:
         """Return a JSON-compatible dict for ``trainer_state.json``."""

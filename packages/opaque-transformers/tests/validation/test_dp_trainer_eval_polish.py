@@ -167,7 +167,7 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
                         param.add_(1.0)
                 trainer.state.global_step = 7
                 torch.manual_seed(9999)
-                raise RuntimeError("CUDA out of memory")
+                raise torch.OutOfMemoryError("CUDA out of memory")
 
             assert microbatch_size_override == 2
             assert trainer.state.global_step == 0

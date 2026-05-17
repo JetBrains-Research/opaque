@@ -384,7 +384,7 @@ class TestDPTrainerPhase7Flags:
             assert ignore_keys_for_eval is None
             calls.append(microbatch_size_override)
             if len(calls) < 3:
-                raise RuntimeError("CUDA out of memory")
+                raise torch.OutOfMemoryError("CUDA out of memory")
             return TrainOutput(
                 global_step=1, training_loss=1.0, metrics={"train_loss": 1.0}
             )
@@ -418,10 +418,10 @@ class TestDPTrainerPhase7Flags:
             *, resume_from_checkpoint, microbatch_size_override, ignore_keys_for_eval
         ):
             assert ignore_keys_for_eval is None
-            raise RuntimeError("out of memory")
+            raise torch.OutOfMemoryError("out of memory")
 
         monkeypatch.setattr(trainer, "_train_once", fake_train_once)
-        with pytest.raises(RuntimeError, match="out of memory"):
+        with pytest.raises(torch.OutOfMemoryError, match="out of memory"):
             trainer.train()
 
     def test_past_index_is_rejected(self, tmp_path):
