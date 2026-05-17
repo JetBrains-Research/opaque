@@ -3294,20 +3294,38 @@ class DPTrainer:
     def _restore_params(self, trainable_params: dict[str, Tensor]) -> None:
         """Load trained parameters back into the nn.Module.
 
-        ``strict=False`` for PEFT models because the trainable set is a
-        strict subset of the module's parameters (only adapter weights
-        are tracked by ``ctx.trainable_params``).  Full-model paths use
-        ``strict=True`` so a typo'd parameter name surfaces as an error
-        rather than silently leaving the parameter at its initial value.
+        Validates that ``trainable_params`` keys exactly match the
+        model's current set of ``requires_grad=True`` parameters before
+        loading; any divergence raises ``RuntimeError``.  This catches
+        typo'd parameter names in subclass overrides (which
+        ``strict=False`` would silently ignore, leaving the parameter
+        at its initial value) and surfaces mid-run requires_grad
+        churn (a callback freezing / unfreezing layers between snapshot
+        and restore — the snapshot no longer matches the model).
+
+        After validation the merged state dict (model's current state
+        with trainable entries overwritten) is loaded with
+        ``strict=True``; the state dict is sourced from the model
+        itself so every key the model expects is already present.
         """
+        expected = {name for name, p in self._model.named_parameters() if p.requires_grad}
+        got = set(trainable_params)
+        if got != expected:
+            missing = expected - got
+            unexpected = got - expected
+            details = []
+            if missing:
+                details.append(f"missing from trainable_params: {sorted(missing)}")
+            if unexpected:
+                details.append(f"not in model.named_parameters(): {sorted(unexpected)}")
+            raise RuntimeError(
+                "DPTrainer._restore_params: trainable_params keys do not match "
+                "the model's current requires_grad set. " + "; ".join(details)
+            )
         state_dict = self._model.state_dict()
         for name, tensor in trainable_params.items():
             state_dict[name] = tensor.detach()
-        # ``strict=True`` for full-model checkpoints; ``strict=False`` only
-        # when the model is a PEFT wrapper (the trainable set is a subset
-        # of the module's parameters by design).
-        strict = not self._is_peft
-        self._model.load_state_dict(state_dict, strict=strict)
+        self._model.load_state_dict(state_dict, strict=True)
 
     # ------------------------------------------------------------------
     # Save / checkpoint  (Phase 2a)
@@ -3460,31 +3478,42 @@ class DPTrainer:
         Ordering contract (HF parity):
 
         1. Read the saved state dict from ``state.best_model_checkpoint``.
-        2. Mutate ``self._model`` via ``load_state_dict(..., strict=False)``
-           — ``strict=False`` because PEFT-adapter checkpoints save only the
-           adapter parameters (a strict subset of the trainable set).
-        3. Rebuild ``ctx.trainable_params`` from the freshly mutated module
-           so the functional path picks up the loaded weights.
+        2. Mutate ``self._model`` via ``load_state_dict(...)`` — the
+           caller verified the model's parameter set matches what was
+           saved.
+        3. Rebuild ``ctx.trainable_params`` from the freshly mutated
+           module so the functional path picks up the loaded weights.
 
         Mutating the module first means a ``save_model()`` call between
-        ``_load_best_model`` and the ``train()`` ``finally`` block sees the
-        loaded weights even before ``_restore_params`` runs.
+        ``_load_best_model`` and the ``train()`` ``finally`` block sees
+        the loaded weights even before ``_restore_params`` runs.
 
-        No-op when no best checkpoint was recorded (e.g., eval never
-        improved).
+        Raises ``RuntimeError`` when ``load_best_model_at_end=True`` was
+        requested but the best-checkpoint contract can't be honored —
+        no best checkpoint was recorded (eval never improved) or the
+        recorded directory has no weights file.  Soft-failing here
+        leaves the user with the last-trained weights silently masquerading
+        as "best", which is exactly what the flag is meant to prevent.
         """
         ckpt_dir = self.state.best_model_checkpoint
         if ckpt_dir is None:
-            log.warning(
-                "load_best_model_at_end=True but no best checkpoint was recorded; "
-                "leaving in-memory params untouched"
+            raise RuntimeError(
+                "load_best_model_at_end=True but no best checkpoint was recorded "
+                "during training (eval never improved on metric_for_best_model="
+                f"{self.args.metric_for_best_model!r}).  Either disable "
+                "load_best_model_at_end, or verify the eval/metric configuration "
+                "produces at least one improving step."
             )
-            return
         log.info("Loading best model from %s", ckpt_dir)
         new_state, mutated = self._read_weights_file(ckpt_dir)
         if not new_state and not mutated:
-            log.warning("No weights found in %s; skipping best-model load", ckpt_dir)
-            return
+            raise RuntimeError(
+                f"load_best_model_at_end=True: best checkpoint recorded at "
+                f"{ckpt_dir!r} but no weights file (model.safetensors / "
+                "pytorch_model.bin / sharded index) was found there.  The "
+                "directory may have been pruned or moved between save and "
+                "end-of-train load."
+            )
 
         # Mutate the underlying module so ``save_model()`` and any callback
         # firing on ``on_train_end`` observe the best weights immediately.
@@ -4033,10 +4062,35 @@ class DPTrainer:
         "attributes": {...}}``; saved attributes are set back onto the
         live callback instance so its identity is preserved
         (``EarlyStoppingCallback`` parity).
+
+        Drift between the saved set and the live set is logged at
+        ``info`` so a user who removed / added a callback between runs
+        sees it explicitly instead of silently inheriting the previous
+        run's callback state (or not).
         """
         if not self.args.restore_callback_states_from_checkpoint:
             return
         cb_states = self.state.stateful_callbacks or {}
+        live_names = {type(cb).__name__ for cb in self._callback_handler.callbacks}
+        saved_names = set(cb_states)
+
+        missing_in_live = saved_names - live_names
+        missing_in_saved = live_names - saved_names
+        if missing_in_live:
+            log.info(
+                "Resume callback drift: %d saved callback(s) not present in "
+                "live trainer (state will not be restored): %s",
+                len(missing_in_live),
+                sorted(missing_in_live),
+            )
+        if missing_in_saved:
+            log.info(
+                "Resume callback drift: %d live callback(s) not present in "
+                "saved state (will start with fresh state): %s",
+                len(missing_in_saved),
+                sorted(missing_in_saved),
+            )
+
         for cb in self._callback_handler.callbacks:
             name = type(cb).__name__
             if name not in cb_states:
