@@ -193,7 +193,6 @@ class TrainingArguments:
     logging_strategy: str = "steps"
     logging_first_step: bool = False
     logging_steps: float = 500
-    logging_nan_inf_filter: bool = True
 
     # =================================================================
     # Saving

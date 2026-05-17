@@ -1317,23 +1317,15 @@ class DPTrainer:
 
                 last_loss = step_result["loss"]
                 last_step_result = step_result
-                # HF parity: ``logging_nan_inf_filter`` applied at the
-                # per-step loss accumulation level (not only at log-emit
-                # time) — when a step's loss is NaN/Inf we substitute the
-                # running average so the smoothed curve stays finite.
-                step_loss_f = float(last_loss)
-                if a.logging_nan_inf_filter and (
-                    math.isnan(step_loss_f) or math.isinf(step_loss_f)
-                ):
-                    window_so_far = max(
-                        1, global_step - 1 - self._globalstep_last_logged
-                    )
-                    self._tr_loss = self._tr_loss + self._tr_loss / window_so_far
-                else:
-                    # HF parity: convert to tensor on device before accumulating
-                    # so the accumulator stays on device (important for DDP gather).
-                    tr_loss_step = torch.tensor(step_loss_f, device=self._device)
-                    self._tr_loss = self._tr_loss + tr_loss_step
+                # Loss accumulator stays on device for DDP gather.  fp16
+                # overflows already short-circuit upstream (the scaler
+                # returns ``batch_size=0`` which hits the empty-step
+                # ``continue`` above), so any NaN reaching here reflects
+                # a genuine forward / loss-math divergence — propagate
+                # it through the running average so the user sees the
+                # honest signal instead of a smoothed-over fake curve.
+                tr_loss_step = torch.tensor(float(last_loss), device=self._device)
+                self._tr_loss = self._tr_loss + tr_loss_step
                 # Token counting (Phase 5c).
                 if a.include_num_input_tokens_seen != "no":
                     main_input_name = getattr(
@@ -1464,6 +1456,11 @@ class DPTrainer:
                 "privacy_noise_multiplier": ctx.noise_multiplier,
             }
         )
+        # Surface fp16 overflow counter for stability auditing.  Only
+        # emitted on runs where the loss-scaler was actually active
+        # (avoids a noisy zero on bf16 / fp32 / no-scaler runs).
+        if self._loss_scaler is not None:
+            metrics["train_fp16_overflow_steps"] = self.state.fp16_overflow_steps
         if a.include_num_input_tokens_seen != "no":
             metrics["num_input_tokens_seen"] = self.state.num_input_tokens_seen
         self._memory_tracker.stop_and_update_metrics(metrics)
@@ -1576,11 +1573,21 @@ class DPTrainer:
                 self._loss_scaler_state, grads_finite
             )
             if not grads_finite:
-                batch_size = int(leading.shape[0]) if leading.ndim > 0 else 0
+                # Overflow → optimizer update is skipped; flow through the
+                # outer-loop's empty-step gate by returning ``batch_size=0``
+                # (same sentinel an empty Poisson sample uses).  Drops the
+                # historical ``loss=NaN`` return — propagating NaN into the
+                # log path forced ``logging_nan_inf_filter`` to substitute
+                # the running average and racing with this code; now the
+                # outer loop sees a clean "no step happened" signal.  The
+                # overflow is still surfaced via ``state.fp16_overflow_steps``
+                # for end-of-train auditing.
+                self.state.fp16_overflow_steps += 1
                 return {
-                    "loss": float("nan"),
-                    "batch_size": batch_size,
+                    "loss": 0.0,
+                    "batch_size": 0,
                     "loss_scale": self._loss_scaler_state.scale,
+                    "overflow": True,
                 }
 
         # Noise injection — ``grads`` is a ``ClippedPytree`` whose

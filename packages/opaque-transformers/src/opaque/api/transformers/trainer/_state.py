@@ -52,6 +52,11 @@ class DPTrainerState:
     train_batch_size: int | None = None
     num_train_epochs: int = 0
     num_input_tokens_seen: int = 0
+    # fp16 dynamic-loss-scale overflows: count of training steps where the
+    # scaled gradient was not finite and the optimizer update was skipped.
+    # Reported in end-of-train metrics as ``train/fp16_overflow_steps`` for
+    # fp16-stability auditing; zero on bf16 / fp32 / no-scaler runs.
+    fp16_overflow_steps: int = 0
     log_history: list[dict[str, float]] = dataclasses.field(default_factory=list)
     best_metric: float | None = None
     best_global_step: int | None = None
