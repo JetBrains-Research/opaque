@@ -21,9 +21,7 @@ from opaque.serialization import state_dict, from_state_dict
 
 def _make_sampler(seed: int = 7, n_steps: int = 20) -> PoissonSampler:
     dataset = TensorDataset(torch.arange(200).reshape(-1, 1))
-    return PoissonSampler(
-        dataset, sample_rate=0.1, n_steps=n_steps, key=key(seed)
-    )
+    return PoissonSampler(dataset, sample_rate=0.1, n_steps=n_steps, key=key(seed))
 
 
 class TestPoissonStateDictRoundTrip:
@@ -54,7 +52,9 @@ class TestPoissonStateDictRoundTrip:
 
         fresh = _make_sampler(seed=11)
         snapshot = state_dict(fresh)
-        template = _make_sampler(seed=0)  # different seed; template only supplies dataset
+        template = _make_sampler(
+            seed=0
+        )  # different seed; template only supplies dataset
         restored = from_state_dict(template, snapshot)
 
         assert restored.consumed == 0
@@ -82,9 +82,7 @@ class TestPoissonStateDictRoundTrip:
             key=key(7),
         )
         snapshot = state_dict(sampler)
-        template = PoissonSampler(
-            dataset, sample_rate=0.5, n_steps=99, key=key(0)
-        )
+        template = PoissonSampler(dataset, sample_rate=0.5, n_steps=99, key=key(0))
         restored = from_state_dict(template, snapshot)
 
         assert restored.sample_rate == 0.2

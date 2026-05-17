@@ -108,23 +108,17 @@ class TestBMinSepRoundTrip:
 
 class TestBallsInBinsRoundTrip:
     def test_snapshot_resumes_at_cursor(self):
-        original = BallsInBinsSampler(
-            _ds(), num_bins=10, n_steps=30, key=key(5)
-        )
+        original = BallsInBinsSampler(_ds(), num_bins=10, n_steps=30, key=key(5))
         original_batches = list(original)
 
-        fresh = BallsInBinsSampler(
-            _ds(), num_bins=10, n_steps=30, key=key(5)
-        )
+        fresh = BallsInBinsSampler(_ds(), num_bins=10, n_steps=30, key=key(5))
         it = iter(fresh)
         K = 12
         head = [next(it) for _ in range(K)]
         assert head == original_batches[:K]
 
         snapshot = state_dict(fresh)
-        template = BallsInBinsSampler(
-            _ds(), num_bins=10, n_steps=30, key=key(99)
-        )
+        template = BallsInBinsSampler(_ds(), num_bins=10, n_steps=30, key=key(99))
         restored = from_state_dict(template, snapshot)
 
         assert restored.consumed == K
