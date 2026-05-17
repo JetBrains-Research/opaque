@@ -12,7 +12,8 @@ per-example rate ``p_0`` used in cyclic Poisson accounting). For target
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from typing import Any
 
 import numpy as np
 from torch.utils.data import Sampler
@@ -66,6 +67,7 @@ class BMinSepSampler(Sampler):
         self.bands = bands
         self.sampling_prob = sampling_prob
         self.n_steps = n_steps
+        self._key = key
         self.generator = np.random.default_rng(key.seed)
 
         # Warm-start initial cooldown (Algorithm 2, lines 1–2).
@@ -81,46 +83,63 @@ class BMinSepSampler(Sampler):
                     self._bars_left[j] = int(self.generator.integers(1, bands))
 
         self._recent: deque[set[int]] = deque(maxlen=max(0, bands - 1))
+        self._consumed = 0
+
+    def _sample_step(self) -> list[int]:
+        """Advance the Markov chain by one step and return the next batch.
+
+        Mutates ``self.generator``, ``self._bars_left``, and
+        ``self._recent``.  State-dict replay calls this helper to
+        fast-forward without yielding.
+        """
+        exclude: set[int] = set()
+        for batch in self._recent:
+            exclude.update(batch)
+
+        eligible = [
+            idx for idx in range(self.num_examples) if self._bars_left[idx] == 0
+        ]
+        eligible = [i for i in eligible if i not in exclude]
+
+        n_elig = len(eligible)
+        if n_elig == 0:
+            batch_indices: list[int] = []
+        else:
+            sample_size = self.generator.binomial(n=n_elig, p=self.sampling_prob)
+            if sample_size > 0:
+                pos = self.generator.choice(
+                    n_elig, size=sample_size, replace=False, shuffle=False
+                )
+                batch_indices = [eligible[int(k)] for k in pos]
+            else:
+                batch_indices = []
+
+        batch_set = set(batch_indices)
+
+        # Advance cooldown: one step closer to eligibility.
+        mask = self._bars_left > 0
+        self._bars_left[mask] -= 1
+
+        # Selected examples cannot appear in the next (bands - 1) iterations.
+        for idx in batch_indices:
+            self._bars_left[idx] = max(self._bars_left[idx], self.bands - 1)
+
+        self._recent.append(batch_set)
+        return batch_indices
 
     def __iter__(self) -> Iterator[list[int]]:
-        for _ in range(self.n_steps):
-            exclude: set[int] = set()
-            for batch in self._recent:
-                exclude.update(batch)
-
-            eligible = [
-                idx for idx in range(self.num_examples) if self._bars_left[idx] == 0
-            ]
-            eligible = [i for i in eligible if i not in exclude]
-
-            n_elig = len(eligible)
-            if n_elig == 0:
-                batch_indices: list[int] = []
-            else:
-                sample_size = self.generator.binomial(n=n_elig, p=self.sampling_prob)
-                if sample_size > 0:
-                    pos = self.generator.choice(
-                        n_elig, size=sample_size, replace=False, shuffle=False
-                    )
-                    batch_indices = [eligible[int(k)] for k in pos]
-                else:
-                    batch_indices = []
-
-            batch_set = set(batch_indices)
-
-            # Advance cooldown: one step closer to eligibility.
-            mask = self._bars_left > 0
-            self._bars_left[mask] -= 1
-
-            # Selected examples cannot appear in the next (bands - 1) iterations.
-            for idx in batch_indices:
-                self._bars_left[idx] = max(self._bars_left[idx], self.bands - 1)
-
-            self._recent.append(batch_set)
-            yield batch_indices
+        for _ in range(self._consumed, self.n_steps):
+            batch = self._sample_step()
+            self._consumed += 1
+            yield batch
 
     def __len__(self) -> int:
         return self.n_steps
+
+    @property
+    def consumed(self) -> int:
+        """Number of batches yielded so far (resume cursor)."""
+        return self._consumed
 
     @property
     def expected_batch_size(self) -> float:
@@ -134,3 +153,56 @@ class BMinSepSampler(Sampler):
         p = self.sampling_prob
         n = float(self.num_examples)
         return n * p * (1.0 - p)
+
+
+def _state_dict_b_min_sep(s: BMinSepSampler) -> dict[str, Any]:
+    """Serialise ``BMinSepSampler`` state.
+
+    The Markov state (``_bars_left`` cooldown array, ``_recent`` deque)
+    is path-dependent — it can't be recomputed from key alone, so the
+    loader replays ``consumed`` steps to reconstruct it.  Only the
+    constructor inputs + cursor are serialised.
+    """
+    return {
+        "key_seed": int(s._key.seed),
+        "key_impl": str(s._key.impl),
+        "consumed": int(s._consumed),
+        "bands": int(s.bands),
+        "sampling_prob": float(s.sampling_prob),
+        "n_steps": int(s.n_steps),
+    }
+
+
+def _from_state_dict_b_min_sep(
+    template: BMinSepSampler, sd: Mapping[str, Any]
+) -> BMinSepSampler:
+    """Rebuild ``BMinSepSampler`` at the saved cursor.
+
+    The dataset comes from ``template``; the Markov chain is replayed
+    from its initial state by calling ``_sample_step`` ``consumed``
+    times so the cooldown array and recent-batches deque match a
+    continuous run.
+    """
+    sampler = BMinSepSampler(
+        template.data_source,
+        bands=int(sd["bands"]),
+        sampling_prob=float(sd["sampling_prob"]),
+        n_steps=int(sd["n_steps"]),
+        key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),
+    )
+    consumed = int(sd["consumed"])
+    for _ in range(consumed):
+        sampler._sample_step()
+    sampler._consumed = consumed
+    return sampler
+
+
+def _register_b_min_sep_sampler_serializer() -> None:
+    from opaque.serialization import register_serializer
+
+    register_serializer(
+        BMinSepSampler, _state_dict_b_min_sep, _from_state_dict_b_min_sep
+    )
+
+
+_register_b_min_sep_sampler_serializer()

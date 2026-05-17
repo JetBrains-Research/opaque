@@ -26,7 +26,8 @@ References:
     - Cyclic Poisson sampling for matrix mechanisms: https://arxiv.org/abs/2211.06530
 """
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from typing import Any
 
 import numpy as np
 from torch.utils.data import Sampler
@@ -106,6 +107,7 @@ class CyclicPoissonSampler(Sampler):
             )
 
         self.num_examples = len(data_source)
+        self._key = key
         self.generator = np.random.default_rng(key.seed)
 
         if partition_type == PartitionType.INDEPENDENT:
@@ -124,6 +126,31 @@ class CyclicPoissonSampler(Sampler):
         self.n_steps = n_steps
         self.partition_type = partition_type
         self.truncated_batch_size = truncated_batch_size
+        self._consumed = 0
+
+    def _sample_step(self, step_idx: int) -> list[int]:
+        """Sample one batch at the given step index.
+
+        The active group rotates with ``step_idx % bands``; the per-step
+        generator advance is the same regardless of whether the result
+        is yielded or discarded, so state-dict replay can use this
+        helper to fast-forward the generator without yielding.
+        """
+        group_idx = step_idx % self.bands
+        group = self.partition[group_idx]
+
+        sample_size = self.generator.binomial(n=len(group), p=self.sample_rate)
+        if self.truncated_batch_size is not None:
+            sample_size = min(sample_size, self.truncated_batch_size)
+
+        if sample_size > 0:
+            batch = self.generator.choice(
+                group, size=sample_size, replace=False, shuffle=False
+            )
+        else:
+            batch = np.array([], dtype=group.dtype)
+
+        return batch.tolist()
 
     def __iter__(self) -> Iterator[list[int]]:
         """Yield Poisson batches.
@@ -132,25 +159,18 @@ class CyclicPoissonSampler(Sampler):
         probability ``sample_rate`` per example, optionally capped at
         ``truncated_batch_size``.
         """
-        for step in range(self.n_steps):
-            group_idx = step % self.bands
-            group = self.partition[group_idx]
-
-            sample_size = self.generator.binomial(n=len(group), p=self.sample_rate)
-            if self.truncated_batch_size is not None:
-                sample_size = min(sample_size, self.truncated_batch_size)
-
-            if sample_size > 0:
-                batch = self.generator.choice(
-                    group, size=sample_size, replace=False, shuffle=False
-                )
-            else:
-                batch = np.array([], dtype=group.dtype)
-
-            yield batch.tolist()
+        for step in range(self._consumed, self.n_steps):
+            batch = self._sample_step(step)
+            self._consumed += 1
+            yield batch
 
     def __len__(self) -> int:
         return self.n_steps
+
+    @property
+    def consumed(self) -> int:
+        """Number of batches yielded so far (resume cursor)."""
+        return self._consumed
 
     @property
     def expected_batch_size(self) -> float:
@@ -163,3 +183,61 @@ class CyclicPoissonSampler(Sampler):
         """Variance of batch size (Poisson property; before truncation)."""
         avg_group_size = self.num_examples / self.bands
         return avg_group_size * self.sample_rate * (1 - self.sample_rate)
+
+
+def _state_dict_cyclic_poisson(s: CyclicPoissonSampler) -> dict[str, Any]:
+    """Serialise ``CyclicPoissonSampler`` state.
+
+    Partition is deterministic from ``(key, bands, num_examples,
+    partition_type)`` so we don't store it explicitly — load
+    reconstructs it from the saved key.
+    """
+    return {
+        "key_seed": int(s._key.seed),
+        "key_impl": str(s._key.impl),
+        "consumed": int(s._consumed),
+        "sample_rate": float(s.sample_rate),
+        "bands": int(s.bands),
+        "n_steps": int(s.n_steps),
+        "partition_type": s.partition_type.name,
+        "truncated_batch_size": s.truncated_batch_size,
+    }
+
+
+def _from_state_dict_cyclic_poisson(
+    template: CyclicPoissonSampler, sd: Mapping[str, Any]
+) -> CyclicPoissonSampler:
+    """Rebuild ``CyclicPoissonSampler`` at the saved cursor.
+
+    The dataset comes from ``template``; the partition reconstructs
+    deterministically from the saved key + bands; the generator is
+    fast-forwarded by replaying ``consumed`` discarded ``_sample_step``
+    calls so the next yielded batch matches a continuous run.
+    """
+    sampler = CyclicPoissonSampler(
+        template.data_source,
+        sample_rate=float(sd["sample_rate"]),
+        bands=int(sd["bands"]),
+        n_steps=int(sd["n_steps"]),
+        partition_type=PartitionType[sd["partition_type"]],
+        truncated_batch_size=sd.get("truncated_batch_size"),
+        key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),
+    )
+    consumed = int(sd["consumed"])
+    for step_idx in range(consumed):
+        sampler._sample_step(step_idx)
+    sampler._consumed = consumed
+    return sampler
+
+
+def _register_cyclic_poisson_sampler_serializer() -> None:
+    from opaque.serialization import register_serializer
+
+    register_serializer(
+        CyclicPoissonSampler,
+        _state_dict_cyclic_poisson,
+        _from_state_dict_cyclic_poisson,
+    )
+
+
+_register_cyclic_poisson_sampler_serializer()
