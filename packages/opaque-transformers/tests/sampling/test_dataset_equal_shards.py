@@ -80,6 +80,7 @@ def _shard_for(
     trainer._ctx = types.SimpleNamespace(
         sample_rate=0.5,
         expected_steps_per_epoch=1,
+        total_steps=1,
         current_sampler=None,
     )
     trainer._train_dataloader = None
@@ -174,12 +175,12 @@ class TestSampleRateInvariant:
     def test_sampler_q_matches_accountant_q(self):
         # End-to-end: ``ctx.sample_rate`` (accountant view) must equal the
         # rate the constructed sampler is configured with (sampler view).
-        # ``ctx.current_sampler`` is the real ``OpaqueEpochPoissonBatchSampler``
-        # — torch's ``DataLoader.batch_sampler`` may wrap it.
+        # ``ctx.current_sampler`` is the single ``PoissonSampler``
+        # instance for the whole training run.
         trainer = _trainer_with_ddp(dataset_size=10, world_size=3)
         self._setup(trainer)
         trainer.get_train_dataloader()
-        sampler_rate = trainer._ctx.current_sampler._sample_rate
+        sampler_rate = trainer._ctx.current_sampler.sample_rate
         assert sampler_rate == pytest.approx(trainer._ctx.sample_rate)
 
     def test_world_size_one_uses_full_denominator(self):
@@ -188,6 +189,6 @@ class TestSampleRateInvariant:
         self._setup(trainer)
         assert trainer._ctx.sample_rate == pytest.approx(2 / 10)
         trainer.get_train_dataloader()
-        assert trainer._ctx.current_sampler._sample_rate == pytest.approx(
+        assert trainer._ctx.current_sampler.sample_rate == pytest.approx(
             trainer._ctx.sample_rate
         )

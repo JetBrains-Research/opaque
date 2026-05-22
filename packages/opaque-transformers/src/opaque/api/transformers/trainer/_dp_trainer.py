@@ -45,7 +45,6 @@ from opaque.serialization import (
 )
 from . import _checkpoint as ckpt
 from . import _distributed
-from ._dataloader import OpaqueEpochPoissonBatchSampler
 from . import _eval
 from ._callback import (
     BestModelSaveCallback,
@@ -1224,6 +1223,37 @@ class DPTrainer:
         if a.eval_on_start:
             self.evaluate(ignore_keys=ignore_keys_for_eval)
 
+        # Build the train loader ONCE.  Under the new sampler contract,
+        # a single ``PoissonSampler(n_steps=total_steps)`` drives every
+        # epoch; the outer loop's role is purely callback synthesis
+        # (``on_epoch_begin`` / ``on_epoch_end``) and per-epoch break
+        # handling.  Resume restores the sampler's ``consumed`` cursor
+        # via the opaque.serialization registry; the restored sampler
+        # is installed on ``ctx.current_sampler`` *before* loader
+        # construction so ``DataLoader`` binds to it (the
+        # ``batch_sampler`` attribute is immutable post-init).
+        if (
+            resume_path is not None
+            and saved_sampler_state is not None
+            and not a.ignore_data_skip
+        ):
+            from opaque.serialization import from_state_dict
+
+            # Need a template sampler whose ``data_source`` matches the
+            # saved length so ``from_state_dict`` can validate.  Build
+            # one (without caching the loader yet), then replace it
+            # with the restored cursor before the actual loader binds.
+            if ctx.current_sampler is None:
+                self._train_dataloader = None
+                self.get_train_dataloader()  # populates ctx.current_sampler
+                self._train_dataloader = None  # drop the cached loader
+            ctx.current_sampler = from_state_dict(
+                ctx.current_sampler, saved_sampler_state
+            )
+
+        train_loader = self.get_train_dataloader()
+        train_loader_iter = iter(train_loader)
+
         for epoch in range(start_epoch, ctx.num_epochs):
             self.state.epoch = float(epoch)
             self._control = self._callback_handler.on_epoch_begin(
@@ -1232,54 +1262,15 @@ class DPTrainer:
             if self._control.should_training_stop:
                 break
 
-            # Build once per run and advance its epoch-specific sampler state.
-            epoch_loader = self.get_train_dataloader()
-            if hasattr(epoch_loader, "set_epoch"):
-                epoch_loader.set_epoch(epoch)
-            elif ctx.current_sampler is not None and hasattr(
-                ctx.current_sampler, "set_epoch"
-            ):
-                ctx.current_sampler.set_epoch(epoch)
-
-            # Resume mid-epoch: load saved sampler state into the freshly
-            # built sampler unless the user opted out via ignore_data_skip.
-            # Only applies when the saved ``global_step`` lies *inside* the
-            # epoch we're about to run; at a clean epoch boundary the saved
-            # sampler is fully consumed and loading it would silently skip
-            # the run.
-            mid_epoch_resume = global_step % max(1, ctx.expected_steps_per_epoch) != 0
-            if (
-                resume_path is not None
-                and epoch == start_epoch
-                and mid_epoch_resume
-                and saved_sampler_state is not None
-                and not a.ignore_data_skip
-                and ctx.current_sampler is not None
-            ):
-                # Reject saved sampler state that would skip the entire
-                # epoch.  Happens when the user resumes after changing
-                # dataset size or batch size: the saved ``iter_count``
-                # is computed against the old ``num_iterations`` and may
-                # be ≥ the freshly-computed bound, yielding zero
-                # batches with no error.  Warn and run the epoch fresh
-                # rather than silently no-op'ing.
-                saved_iter = int(saved_sampler_state.get("iter_count", 0))
-                fresh_iters = int(ctx.expected_steps_per_epoch)
-                if saved_iter >= fresh_iters:
-                    log.warning(
-                        "Saved sampler iter_count=%d is >= the current "
-                        "epoch's num_iterations=%d (likely because "
-                        "dataset size or batch size changed since the "
-                        "checkpoint was written).  Skipping sampler "
-                        "state restore — this epoch runs from iteration "
-                        "0.  Pass ignore_data_skip=True to silence.",
-                        saved_iter,
-                        fresh_iters,
-                    )
-                else:
-                    ctx.current_sampler.load_state_dict(saved_sampler_state)
-
-            for step_idx, batch in enumerate(epoch_loader):
+            for step_idx in range(ctx.expected_steps_per_epoch):
+                try:
+                    batch = next(train_loader_iter)
+                except StopIteration:
+                    # Sampler exhausted before this epoch's quota — happens
+                    # when ``total_steps`` doesn't divide evenly into the
+                    # ``num_epochs × expected_steps_per_epoch`` budget, or
+                    # on resume past the recorded ``total_steps``.
+                    break
                 batch = self._prepare_input(batch)
                 batch_size = _eval.find_batch_size(batch) or 0
 
@@ -2718,12 +2709,12 @@ class DPTrainer:
     def get_train_dataloader(self) -> DataLoader:
         """Train DataLoader.
 
-        During training (``self._ctx`` populated) returns a per-epoch
-        :class:`PoissonSampler` / :class:`TruncatedPoissonSampler`
-        DataLoader, keyed by ``args.seed`` folded with the current
-        ``state.epoch`` so each epoch draws an independent sample
-        sequence.  Outside training (``ctx is None``, inspection mode)
-        returns a standard DataLoader.
+        During training (``self._ctx`` populated) returns a
+        single-pass :class:`PoissonSampler`-backed DataLoader bounded
+        by ``ctx.total_steps`` (one sampler instance for the whole
+        run; the outer epoch loop just synthesises boundaries for the
+        HF callback surface).  Outside training (``ctx is None``,
+        inspection mode) returns a standard DataLoader.
 
         Override in a subclass to plug in a custom sampler — DP
         correctness depends on the sampler producing each example with
@@ -2764,8 +2755,8 @@ class DPTrainer:
 
         # Under DDP each rank operates on a disjoint shard of the dataset
         # (``opaque.distributed.local_shard``); the Poisson sampler runs
-        # with the same epoch-keyed RNG on every rank so the union of
-        # per-rank batches is a single global Poisson draw at the user's
+        # with the same key on every rank so the union of per-rank batches
+        # is a single global Poisson draw at the user's
         # ``expected_batch_size`` rate.  ``ctx.sample_rate`` was computed in
         # ``_setup_training`` from the same trimmed denominator we use here
         # (see :meth:`_effective_train_dataset_size`), so the rate the
@@ -2786,18 +2777,29 @@ class DPTrainer:
                 world_size=world_size,
             )
 
-        sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
-        tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
-        truncated_batch_size = int(tb_raw) if tb_raw is not None else None
+        # ONE sampler for the whole run.  Resume installs
+        # ``ctx.current_sampler`` from a registry-deserialised snapshot
+        # before calling here, so the loader picks up the right cursor;
+        # otherwise build a fresh ``PoissonSampler(n_steps=total_steps)``
+        # which iterates end-to-end without per-epoch re-instantiation.
+        # The outer epoch loop is purely a synthetic boundary layer for
+        # HF callbacks, not a sampling-side concept.
+        if ctx.current_sampler is None:
+            sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
+            tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
+            truncated_batch_size = int(tb_raw) if tb_raw is not None else None
 
-        sampler = OpaqueEpochPoissonBatchSampler(
-            dataset=dataset,
-            sample_rate=ctx.sample_rate,
-            num_iterations=ctx.expected_steps_per_epoch,
-            seed=a.data_seed if a.data_seed is not None else a.seed,
-            truncated_batch_size=truncated_batch_size,
-        )
-        ctx.current_sampler = sampler
+            from opaque.dpsgd.sampling import PoissonSampler
+            from opaque.random import key
+
+            ctx.current_sampler = PoissonSampler(
+                dataset,
+                sample_rate=ctx.sample_rate,
+                n_steps=ctx.total_steps,
+                truncated_batch_size=truncated_batch_size,
+                key=key(a.data_seed if a.data_seed is not None else a.seed),
+            )
+        sampler = ctx.current_sampler
 
         # HF parity: MPS requires fork start method when using multiple workers
         # (PyTorch's default spawn method does not work with MPS).
@@ -3763,8 +3765,13 @@ class DPTrainer:
         )
 
     def _save_dp_runtime(self, ckpt_dir: str, ctx: "_TrainingContext") -> None:
+        # ``state_dict`` from the opaque.serialization registry — each
+        # sampler family (Poisson here, dp-ftrl variants in subclasses)
+        # registers its own serializer pair at module-import time.
+        from opaque.serialization import state_dict as opaque_state_dict
+
         sampler_state = (
-            ctx.current_sampler.state_dict()
+            opaque_state_dict(ctx.current_sampler)
             if ctx.current_sampler is not None
             else None
         )

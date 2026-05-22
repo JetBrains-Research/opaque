@@ -82,12 +82,16 @@ class TestPoissonStateDictRoundTrip:
             key=key(7),
         )
         snapshot = state_dict(sampler)
+        # Sample-math args (sample_rate, truncated_batch_size, key) come
+        # from the snapshot.  ``n_steps`` comes from the template — the
+        # user may extend the run on resume.
         template = PoissonSampler(dataset, sample_rate=0.5, n_steps=99, key=key(0))
         restored = from_state_dict(template, snapshot)
 
         assert restored.sample_rate == 0.2
-        assert restored.n_steps == 10
         assert restored.truncated_batch_size == 15
+        # n_steps follows the template (allows resume + extend).
+        assert restored.n_steps == 99
 
 
 class TestPoissonLenReflectsRemaining:

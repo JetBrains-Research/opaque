@@ -155,10 +155,13 @@ class TestDpRuntimeBundle:
             clip_state=clip,
             noise_state=noise,
             sampler_state={
-                "key": {"seed": 5, "impl": "x"},
-                "iter_count": 2,
+                "key_seed": 5,
+                "key_impl": "opaque_threefry_like",
+                "consumed": 2,
+                "num_samples": 100,
                 "sample_rate": 0.1,
-                "num_iterations": 10,
+                "n_steps": 10,
+                "truncated_batch_size": None,
             },
             sample_rate=0.1,
             target_delta=1e-5,
@@ -173,7 +176,7 @@ class TestDpRuntimeBundle:
         assert opaque_from_state_dict(clip, loaded.clip_state) == clip
         assert opaque_from_state_dict(noise, loaded.noise_state) == noise
         assert loaded.version == ckpt.DP_STATE_BUNDLE_VERSION
-        assert loaded.sampler_state["iter_count"] == 2
+        assert loaded.sampler_state["consumed"] == 2
         assert loaded.sample_rate == pytest.approx(0.1)
         assert loaded.target_delta == pytest.approx(1e-5)
         assert loaded.noise_multiplier == pytest.approx(1.1)
