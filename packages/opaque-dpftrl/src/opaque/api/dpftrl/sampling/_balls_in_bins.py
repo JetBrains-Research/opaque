@@ -19,7 +19,8 @@ References:
     - Choquette-Choo et al. (2024), "Privacy Amplification for Matrix Mechanisms"
 """
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from typing import Any
 
 import numpy as np
 from torch.utils.data import Sampler
@@ -86,6 +87,7 @@ class BallsInBinsSampler(Sampler):
         self.n_steps = n_steps
 
         self._num_samples = len(data_source)
+        self._key = key
 
         generator = np.random.default_rng(key.seed)
         # True BnB: each example independently picks a bin.
@@ -93,44 +95,63 @@ class BallsInBinsSampler(Sampler):
         self._bins: list[list[int]] = [[] for _ in range(num_bins)]
         for idx, b in enumerate(assignments):
             self._bins[b].append(idx)
+        # Round-robin emits one batch per non-empty bin; cache the
+        # non-empty bin order so iteration is a flat enumerate.
+        self._nonempty_bins: list[list[int]] = [b for b in self._bins if b]
+        self._consumed = 0
 
     @property
     def num_epochs(self) -> int | None:
         """Per-bin participation count: ``n_steps // num_bins``."""
         return None if self.n_steps is None else self.n_steps // self.num_bins
 
+    @property
+    def consumed(self) -> int:
+        """Number of batches yielded so far (resume cursor)."""
+        return self._consumed
+
     def __iter__(self) -> Iterator[list[int]]:
-        """Yield batches: round-robin over bins, repeated for ``num_epochs``.
+        """Yield batches: round-robin over non-empty bins, repeated
+        for ``num_epochs``.
 
-        The same bin assignment is yielded every epoch.  Empty bins are
-        skipped.
-
-        Yields:
-            Lists of indices, one per non-empty bin per epoch.
+        The same bin assignment is reused every epoch — the BnB
+        privacy accounting (Lemma 3.2) requires the assignment be
+        fixed across the run.
         """
+        nonempty = self._nonempty_bins
+        if not nonempty:
+            return
+        per_epoch = len(nonempty)
         if self.n_steps is None:
+            i = self._consumed
             while True:
-                for batch in self._bins:
-                    if batch:
-                        yield batch
+                # Increment before yield so a snapshot taken mid-iter
+                # reports the count of batches actually emitted so far.
+                self._consumed = i + 1
+                yield nonempty[i % per_epoch]
+                i += 1
         else:
             epochs = self.n_steps // self.num_bins
-            for _ in range(epochs):
-                for batch in self._bins:
-                    if batch:
-                        yield batch
+            total = per_epoch * epochs
+            for i in range(self._consumed, total):
+                self._consumed = i + 1
+                yield nonempty[i % per_epoch]
 
     def __len__(self) -> int:
-        """Total number of non-empty batches across all epochs.
+        """Non-empty batches remaining.
+
+        After a partial run, reflects what ``__iter__`` will yield —
+        the total minus the cursor — so ``len(DataLoader(...))`` matches
+        the resumed iteration count.
 
         Raises:
             TypeError: If n_steps is None (infinite iteration).
         """
         if self.n_steps is None:
             raise TypeError("len() of unsized object (n_steps=None)")
-        non_empty = sum(1 for b in self._bins if b)
         epochs = self.n_steps // self.num_bins
-        return non_empty * epochs
+        total = len(self._nonempty_bins) * epochs
+        return total - self._consumed
 
     @property
     def expected_batch_size(self) -> float:
@@ -141,3 +162,71 @@ class BallsInBinsSampler(Sampler):
     def sample_rate(self) -> float:
         """Effective sampling rate: 1 / num_bins."""
         return 1.0 / self.num_bins
+
+
+def _state_dict_balls_in_bins(s: BallsInBinsSampler) -> dict[str, Any]:
+    """Serialise ``BallsInBinsSampler`` state.
+
+    Bin assignment is deterministic from ``(key, num_bins, num_samples)``;
+    ``num_samples`` is persisted so the loader can validate the
+    template dataset length before relying on deterministic
+    reconstruction.  Round-robin iteration is deterministic given the
+    assignment, so no Markov-state replay is needed on load — the
+    cursor alone fixes the resume point.
+    """
+    return {
+        "key_seed": int(s._key.seed),
+        "key_impl": str(s._key.impl),
+        "consumed": int(s._consumed),
+        "num_samples": int(s._num_samples),
+        "num_bins": int(s.num_bins),
+        "n_steps": s.n_steps,
+    }
+
+
+def _from_state_dict_balls_in_bins(
+    template: BallsInBinsSampler, sd: Mapping[str, Any]
+) -> BallsInBinsSampler:
+    """Rebuild ``BallsInBinsSampler`` at the saved cursor.
+
+    The dataset comes from ``template``; the bin assignment is
+    reconstructed deterministically by the constructor; the cursor is
+    restored so ``__iter__`` resumes at the right round-robin
+    position.
+
+    Raises ``ValueError`` if the template dataset length differs from
+    the snapshot — the bin assignment depends on ``num_samples`` (each
+    example independently picks a bin), so a mismatched length would
+    silently produce a different assignment.
+    """
+    saved_n = int(sd["num_samples"])
+    template_n = len(template.data_source)
+    if saved_n != template_n:
+        raise ValueError(
+            f"BallsInBinsSampler.from_state_dict: template dataset length "
+            f"{template_n} does not match snapshot num_samples={saved_n}.  "
+            "Restoring with a differently-sized dataset would silently "
+            "produce a different bin assignment, voiding the BnB privacy "
+            "accounting (Lemma 3.2 requires fixed assignment across the run)."
+        )
+    sampler = BallsInBinsSampler(
+        template.data_source,
+        num_bins=int(sd["num_bins"]),
+        n_steps=sd.get("n_steps"),
+        key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),
+    )
+    sampler._consumed = int(sd["consumed"])
+    return sampler
+
+
+def _register_balls_in_bins_sampler_serializer() -> None:
+    from opaque.serialization import register_serializer
+
+    register_serializer(
+        BallsInBinsSampler,
+        _state_dict_balls_in_bins,
+        _from_state_dict_balls_in_bins,
+    )
+
+
+_register_balls_in_bins_sampler_serializer()
