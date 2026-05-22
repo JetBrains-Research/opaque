@@ -110,9 +110,6 @@ nav:
       - TrainingArguments: user-guide/huggingface/training-arguments.md
       - Model Patches: user-guide/huggingface/model-patches.md
       - PEFT and LoRA: user-guide/huggingface/peft.md
-      - Subclassing DPTrainer: user-guide/huggingface/subclassing.md
-      - Checkpoint and Resume: user-guide/huggingface/checkpointing.md
-      - Troubleshooting: user-guide/huggingface/troubleshooting.md
     - Memory Optimizations: user-guide/memory-optimizations.md
     - Privacy Auditing: user-guide/auditing.md
     - Known Limitations: limitations.md
@@ -153,6 +150,7 @@ nav:
     - Utilities: reference/utilities.md
     - Optimizers: reference/optimizers.md
     - Schedules: reference/schedules.md
+    - Transformers: reference/transformers.md
 extra:
   social:
     - icon: fontawesome/brands/github

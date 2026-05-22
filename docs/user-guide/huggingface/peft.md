@@ -1,25 +1,25 @@
 # PEFT and LoRA
 
-LoRA is a practical necessity for DP training of large models.
-Per-example gradient computation via `vmap` requires memory
-proportional to `batch_size * trainable_parameters`.  With full
-fine-tuning of a 7B model, this is prohibitive.  LoRA reduces
-trainable parameters to ~0.1% of the model, making per-example
-gradients feasible.
+This page covers Opaque's support for parameter-efficient fine-tuning
+(PEFT) — primarily LoRA — driven directly through the
+`make_functional` / `clipped_grad` API.  The recipe doesn't require
+DPTrainer; it's the same primitives the trainer uses internally, and
+the page closes with a note on what changes when the trainer drives
+the run.
 
-DPTrainer auto-detects PEFT wrappers and handles them transparently:
-the functional model conversion partitions parameters by
-`requires_grad`, and the trainer's `_restore_params` strict-validates
-the trainable-key set on resume.
+## Why PEFT for DP
 
-This page covers the primitives (the `make_functional` API), the
-end-to-end LoRA recipe, and how other PEFT methods integrate.
+Per-example gradient computation via `vmap(grad(...))` requires memory
+proportional to `batch_size * trainable_parameters`.  For full
+fine-tuning of a 7B model this is prohibitive; with LoRA the
+trainable surface drops to ~0.1% of the model and per-example
+gradient memory drops accordingly.  In practice, PEFT — LoRA
+specifically — is a precondition for DP fine-tuning at LLM scale.
 
-## The `make_functional` primer
+## `make_functional`
 
-PyTorch models store parameters internally.  To use them with
-`vmap(grad(...))` (or `clipped_grad` directly), convert to functional
-form:
+PyTorch modules store parameters internally.  To use them with
+`vmap(grad(...))` or `clipped_grad`, convert to functional form:
 
 ```python
 from opaque.functional import make_functional
@@ -32,98 +32,59 @@ def loss_fn(params, input_ids, labels):
     return out.loss
 ```
 
-`make_functional(model)` returns:
+Returns:
 
 - `fmodel` — a callable that takes parameters as the first argument
   followed by the model's normal arguments.
 - `params` — the model's parameters as a flat dict keyed by parameter
   name.
 
-### Separating trainable and frozen parameters
+### Trainable / frozen partition
 
-For PEFT (LoRA, adapters, BitFit, …) you want to clip and noise *only*
-the trainable subset.  `partition_trainable=True` splits parameters by
-their `requires_grad` attribute:
+For PEFT (LoRA, adapters, BitFit, …) you want to clip and noise
+*only* the trainable subset.  `partition_trainable=True` splits
+parameters by their `requires_grad` attribute:
 
 ```python
 fmodel, trainable, frozen = make_functional(model, partition_trainable=True)
 
 def loss_fn(trainable_params, input_ids, labels):
-    all_params = {**frozen, **trainable_params}
-    out = fmodel(all_params, input_ids=input_ids, labels=labels)
+    out = fmodel(
+        {**frozen, **trainable_params},
+        input_ids=input_ids,
+        labels=labels,
+    )
     return out.loss
 ```
 
 Only `trainable_params` receives per-example gradients.  Frozen
-parameters are treated as constants by `vmap`, which drastically
-reduces memory since per-example gradients are only computed for the
-trainable subset.
+parameters are treated as constants by `vmap` — broadcast, not
+replicated per example — so per-example gradient memory scales with
+the trainable subset alone.
 
-DPTrainer does this partitioning automatically — you don't call
-`make_functional` yourself when using the trainer.  The trainer's
-internal training context (`_TrainingContext`) carries
-`trainable_params` and `frozen_params` separately so the vmap'd loss
-closure can `{**frozen, **trainable}` for each forward pass.
+## LoRA recipe
 
-## LoRA with DPTrainer
+LoRA (Hu et al. 2021) replaces a frozen linear layer `W (d_in × d_out)`
+with `W + A @ B * (alpha / r)` where `A (d_in × r)` and `B (r × d_out)`
+are small trainable matrices.  Only `A` and `B` are trained; the base
+`W` stays frozen.  Trainable parameter count drops from `d_in × d_out`
+to `r × (d_in + d_out)`.
 
-The DPTrainer recipe is straightforward — load the model, wrap with
-LoRA, hand to the trainer:
-
-```python
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from peft import LoraConfig, get_peft_model
-from opaque.transformers import DPTrainer, TrainingArguments
-
-tok = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B")
-model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8B")
-
-lora_config = LoraConfig(
-    r=8,
-    lora_alpha=16,
-    target_modules=["q_proj", "v_proj"],
-    bias="none",
-)
-model = get_peft_model(model, lora_config)
-
-args = TrainingArguments(
-    output_dir="llama-dp-lora",
-    per_device_train_batch_size=4,
-    num_train_epochs=1.0,
-    learning_rate=3e-4,
-    privacy_target_epsilon=8.0,
-    privacy_target_delta=1e-5,
-    clipping_norm=1.0,
-    use_performance_kernels=True,            # CUDA + Triton
-)
-
-trainer = DPTrainer(
-    model=model,
-    args=args,
-    train_dataset=train_ds,
-    processing_class=tok,
-)
-trainer.train()
-```
-
-The trainer detects the `PeftModel` wrapper at construction time
-(`self._is_peft = True`), partitions parameters via
-`make_functional(partition_trainable=True)` inside `_setup_training`,
-and clips / noises only the LoRA adapters.
-
-## LoRA without DPTrainer
-
-Direct usage with `clipped_grad`, no trainer:
+End-to-end recipe with `clipped_grad` and `gaussian_noise`:
 
 ```python
 from peft import LoraConfig, get_peft_model
+from transformers import AutoModelForCausalLM
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.functional import make_functional
 from opaque.random import key
 
 model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8B")
-model = get_peft_model(model, LoraConfig(r=8, lora_alpha=16, target_modules=["q_proj", "v_proj"]))
+model = get_peft_model(
+    model,
+    LoraConfig(r=8, lora_alpha=16, target_modules=["q_proj", "v_proj"], bias="none"),
+)
 
 # Functional form: only LoRA params are trainable.
 fmodel, trainable, frozen = make_functional(model, partition_trainable=True)
@@ -152,7 +113,10 @@ for input_ids, labels in dataloader:
     trainable = {k: trainable[k] - lr * noisy_grads[k] for k in trainable}
 ```
 
-## Other PEFT methods
+The `frozen` dict is captured once at `make_functional` time and
+remains a constant in the loss closure for the whole run.
+
+### Other PEFT methods
 
 Any parameter-efficient method that uses standard `requires_grad`
 flags works with `make_functional(partition_trainable=True)`:
@@ -169,7 +133,7 @@ The key requirement is that trainable parameters are identified by
 `requires_grad=True`.  If a PEFT method uses custom forward hooks
 instead of standard parameters, it may not work with `vmap`.
 
-## LoRA hyperparameters
+### LoRA hyperparameters
 
 | Parameter | Typical values | Effect on DP training |
 |---|---|---|
@@ -180,25 +144,6 @@ instead of standard parameters, it may not work with `vmap`.
 
 Start with `r=8`, `target_modules=["q_proj", "v_proj"]`, `bias="none"`.
 Increase rank or add modules only if accuracy is insufficient.
-
-## Resume validation
-
-When resuming a PEFT-wrapped run, `DPTrainer._restore_params` validates
-that the keys in the saved `trainable_params` snapshot match the
-current model's `requires_grad=True` set.  Mismatch raises
-`RuntimeError`.
-
-This catches two failure modes:
-
-- **Typo'd parameter names** in subclass overrides — would otherwise
-  leave the parameter at its initial value.
-- **Mid-run `requires_grad` churn** — a callback freezing /
-  unfreezing layers between snapshot and resume; the snapshot no
-  longer matches the model.
-
-If the trainable set legitimately changed between runs (e.g. user
-added a new LoRA module), build a fresh checkpoint rather than
-resuming from the stale one.
 
 ## Memory profile
 
@@ -216,13 +161,54 @@ total params.  Full fine-tuning of even small models becomes
 prohibitive once you account for `batch_size × trainable_params`
 gradient tensors.
 
+## DPTrainer integration
+
+`DPTrainer` hands a PEFT-wrapped model the same treatment:
+
+- Construction detects the `PeftModel` wrapper and caches the result
+  on `self._is_peft`.
+- `_setup_training` calls `make_functional(model,
+  partition_trainable=True)` internally — you don't construct the
+  functional form yourself.
+- Clipping and noising target the trainable LoRA adapters only;
+  frozen base parameters are broadcast.
+- `apply_model_patches(peft=True)` (default) enables the fused LoRA
+  kernels when the adapter layout makes them applicable.
+
+The trainer flow is identical to the recipe above, just packaged:
+
+```python
+from peft import LoraConfig, get_peft_model
+from transformers import AutoModelForCausalLM
+from opaque.transformers import DPTrainer, TrainingArguments
+
+model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8B")
+model = get_peft_model(
+    model,
+    LoraConfig(r=8, lora_alpha=16, target_modules=["q_proj", "v_proj"], bias="none"),
+)
+
+args = TrainingArguments(
+    output_dir="llama-dp-lora",
+    per_device_train_batch_size=4,
+    privacy_target_epsilon=8.0,
+    privacy_target_delta=1e-5,
+    clipping_norm=1.0,
+    use_performance_kernels=True,
+)
+trainer = DPTrainer(model=model, args=args, train_dataset=train_ds)
+trainer.train()
+```
+
 ## See also
 
-- [Model patches](model-patches.md) — fused LoRA kernels, model
-  compatibility matrix.
+- [Model patches](model-patches.md) — fused LoRA kernels and the
+  per-model compatibility matrix.
 - [Memory Optimizations](../memory-optimizations.md) — gradient
   checkpointing, microbatching.
 - [Per-example gradient clipping](../clipping.md) —
   `clipped_grad`, `auto_clipped_grad`, `adaptive_clipped_grad`.
 - [Utilities reference](../../reference/utilities.md) —
   `make_functional` signatures.
+- [DPTrainer](dptrainer.md) — when the trainer drives the LoRA recipe
+  for you.

@@ -10,30 +10,20 @@ you're trying to do.
 
 ## What's covered
 
-- **[DPTrainer](dptrainer.md)** — `train()`, `evaluate()`, `predict()`,
-  `EvaluationResult`, the callback wiring, and the log / save surface.
-  Start here if you have a model and a dataset and want to train.
-- **[TrainingArguments](training-arguments.md)** — every field on the
-  dataclass, grouped by concern (privacy, compute, sampling, output,
-  schedule, distributed, …).  DPTrainer-specific knobs are flagged
-  inline so you know which fields don't exist on stock HF Trainer.
-- **[Model patching](model-patches.md)** — what `apply_runtime_patches`
+- **[DPTrainer](dptrainer.md)** — common training / eval / predict
+  usage.  Start here if you have a model and a dataset and want to
+  train.
+- **[TrainingArguments](training-arguments.md)** — the most-used DP
+  knobs, the batch-size contract, and the save / resume claims.  The
+  exhaustive field listing lives in the API reference.
+- **[Model patches](model-patches.md)** — what `apply_runtime_patches`
   and `apply_model_patches` do, why vmap needs them, the model
-  compatibility matrix, the Triton kernel surface, and the umbrella
-  flags that control them.
-- **[PEFT and LoRA](peft.md)** — `make_functional` primer, full LoRA
-  example end-to-end, and how other PEFT methods slot in.
-- **[Subclassing DPTrainer](subclassing.md)** — `compute_per_example_loss`
-  is the single override hook for SFT, DPO, KTO, and other
-  domain-specific trainers.  The trainer composes vmap + grad + clip
-  around it; subclasses just compute one example's loss.
-- **[Checkpoint and resume](checkpointing.md)** — checkpoint layout,
-  the typed `RuntimeCheckpoint` bundle, sampler-state restore,
-  accountant prefix-and-recalibrate, and the failure modes around
-  `load_best_model_at_end`.
-- **[Troubleshooting](troubleshooting.md)** — known failure modes,
-  unsupported HF Trainer features (HPO, hub publishing, multi-task
-  eval), and stale-API symptoms.
+  compatibility matrix, and the Triton kernel surface.
+- **[PEFT and LoRA](peft.md)** — `make_functional` primer, the LoRA
+  recipe end-to-end, and how other PEFT methods slot in.
+- **[API reference — transformers](../../reference/transformers.md)** —
+  full parameter inventory for `DPTrainer`, `TrainingArguments`, and
+  the public state objects.
 
 ## Which page do I start on?
 
@@ -43,14 +33,10 @@ Have a model + dataset, want to train?
 ├─ Yes ── start with dptrainer.md
 │         then training-arguments.md for tuning
 │
-└─ No ─── Building a custom loss / SFT / DPO / KTO?
-          ├─ Yes ── subclassing.md
-          │
-          └─ No ─── Something else
-                    ├─ Model not on compatibility matrix → model-patches.md
-                    ├─ LoRA / adapters → peft.md
-                    ├─ Resuming a run → checkpointing.md
-                    └─ Hit an error → troubleshooting.md
+└─ No ─── Something else
+          ├─ Model not on compatibility matrix → model-patches.md
+          ├─ LoRA / adapters → peft.md
+          └─ Need exact field types / defaults → reference/transformers.md
 ```
 
 ## Quick start

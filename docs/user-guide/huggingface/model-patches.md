@@ -1,77 +1,26 @@
 # Model Patches and Kernels
 
-DPTrainer auto-patches HuggingFace models on construction.  Two
-concerns are handled:
+`opaque.patches` is a standalone library that makes HuggingFace
+Transformers models work under `torch.func.vmap(grad(...))` and
+provides fused Triton kernels for the hot ops on the forward /
+backward path.  It predates and operates independently of
+`DPTrainer` — any code that drives DP-SGD over HF models (the
+trainer, a hand-rolled training loop, a custom orchestration layer)
+can use the same APIs.
+
+Two concerns are handled:
 
 - **Compat patches** — vmap-safety rewrites for attention, causal
-  masks, KV-cache, and batchify wrappers.  Required so
-  `vmap(grad(...))` over the per-example loss closure doesn't trip
-  on hardcoded batch-dim indexing.
+  masks, KV-cache, batchify wrappers, gradient checkpointing, and
+  collator behaviour under Poisson sampling.  Required so
+  `vmap(grad(...))` over a per-example loss closure doesn't trip on
+  hardcoded batch-dim indexing or data-dependent control flow.
 - **Performance kernels** — fused Triton kernels for RoPE, RMSNorm,
-  activations, cross-entropy, and (opt-in) fused linear CE.  Drop-in
-  numerically-equivalent replacements; significant memory savings on
-  long-sequence models.
+  activations (SwiGLU / GeGLU), cross-entropy, optional fused linear
+  CE, and fused LoRA.  Drop-in numerically-equivalent replacements;
+  significant memory savings on long-sequence models.
 
-The trainer calls `opaque.patches.apply_runtime_patches(...)` and
-`opaque.patches.apply_model_patches(model, ...)` during `__init__`,
-driven by three `TrainingArguments` flags.  If you're using the
-trainer, you typically don't need to call these directly.
-
-## Configuration via TrainingArguments
-
-Three flags drive the patch surface:
-
-| Field | Default | Effect |
-|---|---|---|
-| `use_compat_patches` | `True` | Apply vmap-safety patches (eager-attention, batchify, vmap-safe masking / collator / checkpoint hooks). |
-| `use_performance_kernels` | `False` | Apply the CUDA + Triton kernel group (`rope`, `rms_norm`, `activation`, `cross_entropy`).  Auto-forced `False` on hosts without CUDA + Triton. |
-| `performance_kernels_config` | `None` | Flat `dict[str, bool]` forwarded as-is to `apply_model_patches` kwargs.  Per-kernel override. |
-
-Supported `performance_kernels_config` keys:
-
-```python
-args = TrainingArguments(
-    use_performance_kernels=True,
-    performance_kernels_config={
-        # ---- kernels bucket (CUDA + Triton) -------------------------
-        "rope": True,
-        "rms_norm": True,
-        "activation": True,
-        "cross_entropy": True,
-        "fused_linear_cross_entropy": False,  # opt-in; see below
-        # ---- performance bucket (pure Python) -----------------------
-        "kv_cache": True,                     # always-on by default
-        # ---- compat bucket (vmap-safety) ----------------------------
-        "eager_attention": True,
-        "batchify": True,
-        "vmap_masking": True,                 # vmap-safe causal-mask builders
-        "empty_batches": True,                # collator wrapper for Poisson 0-batches
-        "vmap_checkpointing": True,           # gradient-checkpointing under vmap(grad)
-    },
-)
-```
-
-The flat dict is forwarded as-is to `apply_model_patches` and
-`apply_runtime_patches` — each key gates one concern.  Defaults
-follow the umbrella flags: kernel keys default to
-`use_performance_kernels`, `kv_cache` is always on, compat keys
-default to `use_compat_patches`.
-
-`kv_cache` sits in the `performance` bucket (not `kernels`) and stays
-on by default regardless of `use_performance_kernels`.  Disable it
-explicitly for models whose forward depends on the HF `DynamicCache`:
-
-```python
-performance_kernels_config={"kv_cache": False}
-```
-
-The trainer always passes `performance=True` (so `kv_cache` is on)
-and gates `kernels=use_performance_kernels` (so the CUDA group is
-opt-in).
-
-## Direct API
-
-If you're not using DPTrainer, call the patch APIs directly:
+## API surface
 
 ```python
 from opaque.patches import apply_runtime_patches, apply_model_patches
@@ -96,14 +45,39 @@ before creating checkpointed models or HF data collators.
 after any PEFT / LoRA wrapping, so the patcher sees the final module
 graph.
 
+### Umbrella flags
+
+| Flag | Default | Effect |
+|---|---|---|
+| `compat` | `True` | vmap-safety wrappers — `eager_attention`, `batchify`, `vmap_masking`, `empty_batches`, `vmap_checkpointing`. |
+| `performance` | `True` | Memory-efficiency patches that run on any host (currently `kv_cache`). |
+| `kernels` | `performance` | CUDA + Triton kernel group — `rope`, `rms_norm`, `activation`, `cross_entropy`.  Forced `False` when CUDA + Triton aren't importable, so `performance=True` keeps `kv_cache` on CPU / MPS hosts. |
+| `peft` | `True` | LoRA / PEFT module fusion (`opaque_lora_*`). |
+| `fused_linear_cross_entropy` | `False` | Promoted kernel kwarg — opt-in because the fused forward returns `logits=None`, which is incompatible with callers that read `outputs.logits`. |
+
+Each umbrella forwards to per-concern boolean kwargs in `**kwargs`,
+so you can override individual patches without flipping the whole
+group:
+
+```python
+apply_model_patches(
+    model,
+    kernels=True,
+    rope=False,                  # disable just the RoPE kernel
+)
+apply_runtime_patches(
+    vmap_checkpointing=False,    # debug: keep stock torch.utils.checkpoint
+)
+```
+
 ## Why patches are needed
 
 `torch.func.vmap` removes the batch dimension: a function that
 normally receives input of shape `(batch, seq_len, hidden)` instead
 receives `(seq_len, hidden)`, with `vmap` handling batching
-externally.  HuggingFace models use hardcoded dimension indices (e.g.
-`x.shape[0]` for batch size) and data-dependent control flow that
-break under vmap.
+externally.  HuggingFace models use hardcoded dimension indices
+(e.g. `x.shape[0]` for batch size) and data-dependent control flow
+that break under vmap.
 
 The patches replace these with:
 
@@ -127,6 +101,10 @@ Concrete patch targets:
 - **Batchify wrappers** — automatically add / remove the batch
   dimension for model forward methods called under
   `vmap(grad(...))`.
+- **Gradient checkpointing** — `torch.utils.checkpoint` is
+  incompatible with `vmap(grad(...))` out of the box; the runtime
+  patch installs the saved-tensors-hooks + non-reentrant + functional
+  shim that makes it compose.
 
 ## Attention implementations
 
@@ -159,9 +137,9 @@ model = AutoModelForCausalLM.from_pretrained(
 
 ## Model compatibility
 
-Opaque's auto-patching covers these model families.  The table shows
-vmap compatibility and which fused Triton kernels are applied per
-model:
+`apply_model_patches` dispatches per `config.model_type` to a
+registered family handler.  The table shows vmap compatibility and
+which fused Triton kernels are applied per model:
 
 | Model | Tested sizes | Activation | RMSNorm | RoPE | CE | Fused Linear CE | LoRA Fusion |
 |---|---|---|---|---|---|---|---|
@@ -256,10 +234,9 @@ blocks (up to 65536), avoiding materialisation of the full
 `(batch*seq, vocab)` logits tensor.
 
 The kernel honours `label_smoothing` natively (`F.cross_entropy(...,
-label_smoothing=...)` parity).  When `label_smoothing > 0`, the
-trainer forwards it through as a loss kwarg; the kernel applies the
-smoothed formula directly.  Available standalone as
-`opaque.patches.kernels.opaque_cross_entropy_loss`.
+label_smoothing=...)` parity) — pass `label_smoothing=...` as a loss
+kwarg and the kernel applies the smoothed formula directly.
+Available standalone as `opaque.patches.kernels.opaque_cross_entropy_loss`.
 
 ### Fused linear cross-entropy
 
@@ -275,21 +252,20 @@ fast path, which is incompatible with callers that read
 `outputs.logits` — `compute_metrics`,
 `preprocess_logits_for_metrics`, and generation eval all need the
 materialised tensor.  The patch is **opt-in** for this reason:
-enable via `performance_kernels_config={"fused_linear_cross_entropy":
-True}` when loss is the only consumer of the forward output.
-`examples/train_causal_lm.py` and `examples/train_dp_ftrl.py`
-enable it.
+enable via `apply_model_patches(model,
+fused_linear_cross_entropy=True)` when loss is the only consumer of
+the forward output.  `examples/train_causal_lm.py` and
+`examples/train_dp_ftrl.py` enable it.
 
 `cross_entropy=True` (default when `kernels=True`) still installs
-the non-fused `Opaque_CrossEntropyLoss` via `loss_function`, which
-operates on materialised logits and leaves `outputs.logits`
-populated.
+the non-fused chunked CE via `loss_function`, which operates on
+materialised logits and leaves `outputs.logits` populated.
 
 Key design decisions:
 
 - **Pre-shift in Python** — `hidden_states[..., :-1, :]` and
   `labels[..., 1:]` so vmap merge is a trivial reshape.
-- **Skip weight gradient when frozen** — in DP-SGD LoRA training,
+- **Skip weight gradient when frozen** — in LoRA training,
   `lm_head` is frozen, so ~1/3 of backward compute is skipped
   entirely.
 - **Weight scaling outside the kernel** — Cohere (multiplicative),
@@ -302,7 +278,7 @@ Granite, Cohere, Cohere2.
 ### Fused LoRA operations
 
 Three LoRA fusion levels, applied automatically when LoRA adapters
-are detected:
+are detected and `peft=True` is passed to `apply_model_patches`:
 
 | Kernel | Description |
 |---|---|
@@ -377,9 +353,10 @@ expected shape, it is a no-op.
 
 ### Custom non-HF nn.Module
 
-For an arbitrary `nn.Module`, `DPTrainer` requires `forward` to
-return a dict-like `ModelOutput` (or any `Mapping` with `"loss"` and
-optionally `"logits"`).  Wrap if needed:
+For an arbitrary `nn.Module` used downstream of `make_functional`,
+the `forward` should return a dict-like `ModelOutput` (or any
+`Mapping` with `"loss"` and optionally `"logits"`) so consumers like
+`DPTrainer.prediction_step` can read named fields.  Wrap if needed:
 
 ```python
 class MyModel(torch.nn.Module):
@@ -393,52 +370,44 @@ class MyModel(torch.nn.Module):
         return {"loss": loss, "logits": logits}
 ```
 
-Pass `use_compat_patches=False` if your model is already vmap-safe
-and doesn't need opaque's compat shims.
+If the model is already vmap-safe and doesn't need opaque's compat
+shims, pass `compat=False` to `apply_model_patches` (or
+`use_compat_patches=False` to DPTrainer).
 
-## Feature compatibility
+## DPTrainer integration
 
-| Feature | Status | Notes |
+`DPTrainer` calls `apply_runtime_patches(...)` and
+`apply_model_patches(model, ...)` during `__init__`, driven by three
+`TrainingArguments` fields — using the trainer doesn't require calling
+the patch APIs directly:
+
+| Field | Default | Effect |
 |---|---|---|
-| SDPA attention | Recommended | Default; up to 3.6× memory savings over eager. |
-| Mixed precision (fp16 / bf16) | Supported | Set `args.fp16=True` or `args.bf16=True`. |
-| LoRA / PEFT adapters | Supported | See [PEFT and LoRA](peft.md). |
-| Kernel optimizations | Supported | Auto-applied via `use_performance_kernels=True`. |
-| Microbatching | Supported | `auto_find_microbatch_size=True` retries on OOM. |
-| Gradient checkpointing | Supported | See [Memory Optimizations](../memory-optimizations.md#gradient-checkpointing). |
-| `torch.compile` | Supported | `args.torch_compile=True`; tries `fullgraph=True` first. |
+| `use_compat_patches` | `True` | Routed to `compat`.  Set `False` for custom models that don't need vmap-safety shims. |
+| `use_performance_kernels` | `False` | Routed to `kernels`.  Auto-`False` on hosts without CUDA + Triton. |
+| `performance_kernels_config` | `None` | Flat `dict[str, bool]` forwarded as-is to `apply_model_patches` / `apply_runtime_patches` kwargs.  Per-concern override. |
 
-## Configuration summary
+The trainer always passes `performance=True` (so `kv_cache` is on
+regardless), and `peft=True` so LoRA fusion engages when adapters
+are detected.  `performance_kernels_config` accepts any of the
+per-concern keys discussed above:
 
 ```python
-# Default: vmap-safety on, kv_cache on, kernels off.
-args = TrainingArguments(...)
-
-# Enable the Triton kernel group on CUDA hosts.
-args = TrainingArguments(
-    use_performance_kernels=True,
-)
-
-# Custom kernel selection — drop fused-linear-CE, keep the rest.
 args = TrainingArguments(
     use_performance_kernels=True,
     performance_kernels_config={
-        "fused_linear_cross_entropy": False,
+        "fused_linear_cross_entropy": True,   # opt-in
+        "kv_cache": False,                    # for HF DynamicCache-dependent models
     },
 )
-
-# Disable kv_cache (HF DynamicCache needed by model forward).
-args = TrainingArguments(
-    performance_kernels_config={"kv_cache": False},
-)
-
-# Vmap-safe custom model — drop compat shims.
-args = TrainingArguments(use_compat_patches=False)
 ```
 
 ## See also
 
-- [PEFT and LoRA](peft.md) — `make_functional` and PEFT integration.
-- [Subclassing](subclassing.md) — `compute_per_example_loss` override hook.
-- [Memory Optimizations](../memory-optimizations.md) — kernel benchmarks and gradient checkpointing.
+- [PEFT and LoRA](peft.md) — `make_functional`, the trainable / frozen
+  partition, and the LoRA training recipe.
+- [Memory Optimizations](../memory-optimizations.md) — kernel
+  benchmarks and gradient checkpointing.
+- [DPTrainer](dptrainer.md) — when the trainer drives the patch
+  surface for you.
 - [Distributed Training](../distributed-trainer.md) — DDP specifics.

@@ -24,7 +24,7 @@ term dominates for large models.
 
 LoRA dramatically reduces gradient memory because only the adapter
 parameters (~0.1% of model) require per-example gradients. See
-[PEFT and LoRA](huggingface/peft.md#lora-with-dptrainer)
+[PEFT and LoRA](huggingface/peft.md#lora-recipe)
 for details.
 
 ## Microbatching

@@ -68,8 +68,7 @@ stitches them.
 - **[Distributed DPTrainer](distributed-trainer.md)** — DDP setup and
   `ddp_shard` behavior for `DPTrainer`.
 - **[HuggingFace Integration](huggingface/index.md)** — `DPTrainer`,
-  `TrainingArguments`, model patches, LoRA, subclassing for SFT / DPO /
-  KTO, checkpoint / resume contract, and troubleshooting.
+  `TrainingArguments`, model patches, and LoRA.
 - **[Memory Optimizations](memory-optimizations.md)** — Microbatching,
   gradient checkpointing, fused kernels, profiling.
 - **[Privacy Auditing](auditing.md)** — Empirical privacy validation
