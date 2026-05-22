@@ -294,8 +294,7 @@ class DPTrainer:
         self._model = model
         # Computed once: PEFT detection appears at multiple resume /
         # restore sites and the result depends only on the model class,
-        # which doesn't change after construction (HPO model_init was
-        # removed in Phase C).
+        # which doesn't change after construction.
         self._is_peft: bool = _is_peft_model(model)
         self.args = args
         self._processing_class = processing_class
@@ -539,7 +538,12 @@ class DPTrainer:
     # ------------------------------------------------------------------
 
     def add_callback(self, callback: type[TrainerCallback] | TrainerCallback) -> None:
-        """Add a callback to the trainer and remember it for future HPO trials."""
+        """Add a callback to the trainer's live callback handler.
+
+        Also appended to ``self._base_callbacks`` so subsequent state
+        resets (e.g. ``_reset_state_for_batch_size_retry``) rebuild the
+        handler with this callback included.
+        """
         self._callback_handler.add_callback(callback)
         self._base_callbacks.append(callback)
 
@@ -1753,11 +1757,14 @@ class DPTrainer:
             inputs = {**inputs, "label_smoothing": smoothing}
 
         output = fmodel(params, **inputs)
-
-        output_logits = (
-            output.get("logits") if isinstance(output, Mapping)
-            else getattr(output, "logits", None)
-        )
+        # Output is required to be dict-like (``ModelOutput`` /
+        # ``Mapping``).  ``prediction_step`` enforces this contract at
+        # the eval boundary; the training path lands here through
+        # ``_build_per_example_loss`` which calls ``fmodel`` (and HF
+        # families uniformly emit ``ModelOutput``).  A non-Mapping
+        # surfaces as ``AttributeError`` on ``.get`` below — louder than
+        # a silent fallback would be.
+        output_logits = output.get("logits")
 
         if self._compute_loss_func is not None:
             labels = next(
@@ -1765,9 +1772,7 @@ class DPTrainer:
             )
             loss = self._compute_loss_func(output, labels)
         else:
-            loss = output.get("loss") if isinstance(output, Mapping) else None
-            if loss is None:
-                loss = getattr(output, "loss", None)
+            loss = output.get("loss")
         if loss is None:
             raise RuntimeError(
                 "DPTrainer.compute_per_example_loss: model forward returned no "
@@ -3130,8 +3135,14 @@ class DPTrainer:
     # ------------------------------------------------------------------
 
     def _create_grad_fn(
-        self, loss_fn, batch_argnums, a, clip_norm, expected_batch_size, microbatch_size
-    ):
+        self,
+        loss_fn: Callable[..., Any],
+        batch_argnums: tuple[int, ...],
+        a: TrainingArguments,
+        clip_norm: Any,
+        expected_batch_size: int,
+        microbatch_size: int,
+    ) -> Callable[..., Any]:
         """Create the clipped gradient function based on clipping mode.
 
         When fp16 autocast is active, the loss closure scales the loss by
@@ -3192,8 +3203,13 @@ class DPTrainer:
             )
 
     def _build_mechanism(
-        self, a, expected_batch_size, sample_rate, clip_norm, dataset_size
-    ):
+        self,
+        a: TrainingArguments,
+        expected_batch_size: int,
+        sample_rate: float,
+        clip_norm: Any,
+        dataset_size: int,
+    ) -> Callable[..., Any]:
         """Build the privacy accounting mechanism chain.
 
         The Poisson amplification covers both plain Poisson sampling and
@@ -4167,12 +4183,24 @@ class DPTrainer:
         ``None`` for any field whose live value can't be determined yet
         (e.g. ``sample_rate`` before ``ctx`` exists).
         """
+        # ``sample_rate`` fallback (when ``ctx`` isn't built yet) must
+        # mirror ``_setup_training``'s computation — same numerator
+        # (``expected_batch_size``, which is ``world_size *
+        # per_device_train_batch_size``) and same denominator (the
+        # post-DDP-trim dataset size).  Using ``len(self._train_dataset)``
+        # raw would falsely report drift on every DDP resume because
+        # the trim hasn't been applied at compare time.  Returns
+        # ``None`` (skips the check) when the dataset isn't available.
+        if ctx is not None:
+            fallback_rate: float | None = ctx.sample_rate
+        elif self._train_dataset is None:
+            fallback_rate = None
+        else:
+            fallback_rate = a.train_batch_size / max(
+                1, self._effective_train_dataset_size()
+            )
         return {
-            "sample_rate": (
-                ctx.sample_rate
-                if ctx is not None
-                else a.train_batch_size / max(1, len(self._train_dataset))
-            ),
+            "sample_rate": fallback_rate,
             "target_delta": (
                 ctx.target_delta if ctx is not None else a.privacy_target_delta
             ),

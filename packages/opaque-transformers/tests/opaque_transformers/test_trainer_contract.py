@@ -165,7 +165,9 @@ def test_label_smoothing_recomputes_loss_from_logits_for_vector_case(tmp_path):
     )
 
     def fmodel(params, **kwargs):
-        return types.SimpleNamespace(loss=unsmoothed_loss, logits=logits)
+        # ``compute_per_example_loss`` expects dict-like output (the
+        # ``ModelOutput`` contract); a plain dict satisfies it.
+        return {"loss": unsmoothed_loss, "logits": logits}
 
     loss_fn, batch_argnums = trainer._build_per_example_loss(
         fmodel,
