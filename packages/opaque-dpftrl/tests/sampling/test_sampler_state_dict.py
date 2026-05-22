@@ -175,9 +175,7 @@ class TestLenReflectsRemaining:
         assert len(s) == 12
 
     def test_b_min_sep_len_drops(self):
-        s = BMinSepSampler(
-            _ds(), bands=3, sampling_prob=0.2, n_steps=12, key=key(1)
-        )
+        s = BMinSepSampler(_ds(), bands=3, sampling_prob=0.2, n_steps=12, key=key(1))
         assert len(s) == 12
         it = iter(s)
         for _ in range(5):
@@ -233,13 +231,9 @@ class TestRejectDatasetLengthMismatch:
     def test_balls_in_bins_mismatch_raises(self):
         import pytest
 
-        sampler = BallsInBinsSampler(
-            _ds(200), num_bins=10, n_steps=30, key=key(7)
-        )
+        sampler = BallsInBinsSampler(_ds(200), num_bins=10, n_steps=30, key=key(7))
         snapshot = state_dict(sampler)
-        template = BallsInBinsSampler(
-            _ds(150), num_bins=10, n_steps=30, key=key(0)
-        )
+        template = BallsInBinsSampler(_ds(150), num_bins=10, n_steps=30, key=key(0))
         with pytest.raises(ValueError, match="num_samples"):
             from_state_dict(template, snapshot)
 
