@@ -64,8 +64,12 @@ class SequentialBatchSampler(Sampler):
             yield list(range(start, start + self._batch_size))
 
     def __len__(self) -> int:
-        """Number of complete batches."""
-        return self._num_batches
+        """Complete batches remaining (``_num_batches - consumed``).
+
+        After a partial run, reflects what ``__iter__`` will yield —
+        so ``len(DataLoader(...))`` matches the resumed iteration count.
+        """
+        return self._num_batches - self._consumed
 
     @property
     def consumed(self) -> int:
@@ -82,10 +86,14 @@ def _state_dict_sequential(s: SequentialBatchSampler) -> dict[str, Any]:
     """Serialise ``SequentialBatchSampler`` state.
 
     Iteration is fully deterministic with no RNG and no Markov state,
-    so the cursor alone fixes the resume point.
+    so the cursor alone fixes the resume point.  ``num_samples`` is
+    persisted so the loader can validate the template dataset length —
+    a mismatched length would change ``_num_batches`` and thereby what
+    indices each cursor position maps to.
     """
     return {
         "consumed": int(s._consumed),
+        "num_samples": int(s._num_samples),
         "batch_size": int(s._batch_size),
     }
 
@@ -93,7 +101,22 @@ def _state_dict_sequential(s: SequentialBatchSampler) -> dict[str, Any]:
 def _from_state_dict_sequential(
     template: SequentialBatchSampler, sd: Mapping[str, Any]
 ) -> SequentialBatchSampler:
-    """Rebuild ``SequentialBatchSampler`` at the saved cursor."""
+    """Rebuild ``SequentialBatchSampler`` at the saved cursor.
+
+    Raises ``ValueError`` if the template dataset length differs from
+    the snapshot — ``_num_batches = num_samples // batch_size`` drives
+    the index ranges each yield emits.
+    """
+    saved_n = int(sd["num_samples"])
+    template_n = len(template.data_source)
+    if saved_n != template_n:
+        raise ValueError(
+            f"SequentialBatchSampler.from_state_dict: template dataset "
+            f"length {template_n} does not match snapshot "
+            f"num_samples={saved_n}.  Restoring with a differently-sized "
+            "dataset would silently expose / skip different indices after "
+            "resume."
+        )
     sampler = SequentialBatchSampler(
         template.data_source,
         batch_size=int(sd["batch_size"]),

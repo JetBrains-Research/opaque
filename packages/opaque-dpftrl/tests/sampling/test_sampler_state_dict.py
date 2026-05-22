@@ -159,3 +159,95 @@ class TestSequentialRoundTrip:
         restored = from_state_dict(template, snapshot)
 
         assert restored._batch_size == 25
+
+
+class TestLenReflectsRemaining:
+    """``__len__`` reports remaining batches, not the original total."""
+
+    def test_cyclic_poisson_len_drops(self):
+        s = CyclicPoissonSampler(
+            _ds(), sample_rate=0.1, bands=4, n_steps=20, key=key(1)
+        )
+        assert len(s) == 20
+        it = iter(s)
+        for _ in range(8):
+            next(it)
+        assert len(s) == 12
+
+    def test_b_min_sep_len_drops(self):
+        s = BMinSepSampler(
+            _ds(), bands=3, sampling_prob=0.2, n_steps=12, key=key(1)
+        )
+        assert len(s) == 12
+        it = iter(s)
+        for _ in range(5):
+            next(it)
+        assert len(s) == 7
+
+    def test_balls_in_bins_len_drops(self):
+        s = BallsInBinsSampler(_ds(), num_bins=10, n_steps=30, key=key(5))
+        total = len(s)
+        it = iter(s)
+        for _ in range(7):
+            next(it)
+        assert len(s) == total - 7
+
+    def test_sequential_len_drops(self):
+        s = SequentialBatchSampler(_ds(200), batch_size=10)
+        assert len(s) == 20
+        it = iter(s)
+        for _ in range(6):
+            next(it)
+        assert len(s) == 14
+
+
+class TestRejectDatasetLengthMismatch:
+    """All four ``from_state_dict`` paths validate template dataset length."""
+
+    def test_cyclic_poisson_mismatch_raises(self):
+        import pytest
+
+        sampler = CyclicPoissonSampler(
+            _ds(200), sample_rate=0.1, bands=4, n_steps=20, key=key(7)
+        )
+        snapshot = state_dict(sampler)
+        template = CyclicPoissonSampler(
+            _ds(150), sample_rate=0.1, bands=4, n_steps=20, key=key(0)
+        )
+        with pytest.raises(ValueError, match="num_examples"):
+            from_state_dict(template, snapshot)
+
+    def test_b_min_sep_mismatch_raises(self):
+        import pytest
+
+        sampler = BMinSepSampler(
+            _ds(200), bands=3, sampling_prob=0.2, n_steps=12, key=key(7)
+        )
+        snapshot = state_dict(sampler)
+        template = BMinSepSampler(
+            _ds(150), bands=3, sampling_prob=0.2, n_steps=12, key=key(0)
+        )
+        with pytest.raises(ValueError, match="num_examples"):
+            from_state_dict(template, snapshot)
+
+    def test_balls_in_bins_mismatch_raises(self):
+        import pytest
+
+        sampler = BallsInBinsSampler(
+            _ds(200), num_bins=10, n_steps=30, key=key(7)
+        )
+        snapshot = state_dict(sampler)
+        template = BallsInBinsSampler(
+            _ds(150), num_bins=10, n_steps=30, key=key(0)
+        )
+        with pytest.raises(ValueError, match="num_samples"):
+            from_state_dict(template, snapshot)
+
+    def test_sequential_mismatch_raises(self):
+        import pytest
+
+        sampler = SequentialBatchSampler(_ds(200), batch_size=10)
+        snapshot = state_dict(sampler)
+        template = SequentialBatchSampler(_ds(150), batch_size=10)
+        with pytest.raises(ValueError, match="num_samples"):
+            from_state_dict(template, snapshot)

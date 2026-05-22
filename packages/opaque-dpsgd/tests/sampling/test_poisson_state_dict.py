@@ -88,3 +88,53 @@ class TestPoissonStateDictRoundTrip:
         assert restored.sample_rate == 0.2
         assert restored.n_steps == 10
         assert restored.truncated_batch_size == 15
+
+
+class TestPoissonLenReflectsRemaining:
+    """``__len__`` reports batches the iterator will yield, not total."""
+
+    def test_len_drops_with_consumption(self):
+        sampler = _make_sampler(seed=42, n_steps=20)
+        assert len(sampler) == 20
+
+        it = iter(sampler)
+        for _ in range(7):
+            next(it)
+        assert len(sampler) == 13
+
+    def test_len_after_restore_matches_remaining(self):
+        fresh = _make_sampler(seed=42, n_steps=20)
+        it = iter(fresh)
+        for _ in range(11):
+            next(it)
+        snapshot = state_dict(fresh)
+
+        template = _make_sampler(seed=0, n_steps=20)
+        restored = from_state_dict(template, snapshot)
+        assert len(restored) == 20 - 11
+
+
+class TestPoissonRejectsDatasetLengthMismatch:
+    """``from_state_dict`` validates the template dataset length."""
+
+    def test_mismatch_raises(self):
+        sampler = PoissonSampler(
+            TensorDataset(torch.arange(200).reshape(-1, 1)),
+            sample_rate=0.1,
+            n_steps=5,
+            key=key(7),
+        )
+        snapshot = state_dict(sampler)
+
+        # Template over a different-sized dataset — would silently
+        # produce a different Poisson stream.
+        template = PoissonSampler(
+            TensorDataset(torch.arange(150).reshape(-1, 1)),
+            sample_rate=0.1,
+            n_steps=5,
+            key=key(0),
+        )
+        import pytest
+
+        with pytest.raises(ValueError, match="num_samples"):
+            from_state_dict(template, snapshot)

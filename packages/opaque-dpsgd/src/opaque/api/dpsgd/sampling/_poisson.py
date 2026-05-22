@@ -127,14 +127,19 @@ class PoissonSampler(Sampler):
                 yield batch
 
     def __len__(self) -> int:
-        """Return number of batches.
+        """Return the number of batches the iterator will yield.
+
+        After a partial run, this is ``n_steps - consumed`` so
+        ``len(DataLoader(batch_sampler=sampler))`` reflects the batches
+        actually remaining (not the original total).  ``__iter__``
+        starts at ``self._consumed``; ``__len__`` matches.
 
         Raises:
             TypeError: If n_steps is None (infinite iteration).
         """
         if self.n_steps is None:
             raise TypeError("len() of unsized object (n_steps=None)")
-        return self.n_steps
+        return self.n_steps - self._consumed
 
     @property
     def consumed(self) -> int:
@@ -155,15 +160,18 @@ class PoissonSampler(Sampler):
 def _state_dict_poisson(s: PoissonSampler) -> dict[str, Any]:
     """Serialise ``PoissonSampler`` state.
 
-    Saves the original ``key`` (so the generator can be reconstructed)
-    plus a ``consumed`` counter (so the loader can replay the generator
-    forward to the resume position).  The dataset is *not* serialised —
-    it's supplied by the ``template`` argument on load.
+    Saves the original ``key`` (so the generator can be reconstructed),
+    ``num_samples`` (so the load validates the template dataset
+    length — Poisson stream depends on it), and a ``consumed`` counter
+    (so the loader can replay the generator forward to the resume
+    position).  The dataset itself is *not* serialised — it's supplied
+    by the ``template`` argument on load.
     """
     return {
         "key_seed": int(s._key.seed),
         "key_impl": str(s._key.impl),
         "consumed": int(s._consumed),
+        "num_samples": int(s._num_samples),
         "sample_rate": float(s.sample_rate),
         "n_steps": s.n_steps,
         "truncated_batch_size": s.truncated_batch_size,
@@ -179,7 +187,20 @@ def _from_state_dict_poisson(
     other constructor arg is taken from ``sd``.  Replay advances the
     numpy generator by ``consumed`` discarded ``_sample_step`` calls so
     the next yielded batch matches a continuous run.
+
+    Raises ``ValueError`` if the template dataset length differs from
+    the snapshot — Poisson sampling per-step is over the full dataset,
+    so a mismatched length would silently emit a different stream.
     """
+    saved_n = int(sd["num_samples"])
+    template_n = len(template.data_source)
+    if saved_n != template_n:
+        raise ValueError(
+            f"PoissonSampler.from_state_dict: template dataset length "
+            f"{template_n} does not match snapshot num_samples={saved_n}.  "
+            "Restoring with a differently-sized dataset would silently emit "
+            "a different Poisson stream."
+        )
     sampler = PoissonSampler(
         template.data_source,
         sample_rate=float(sd["sample_rate"]),

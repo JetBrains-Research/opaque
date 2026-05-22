@@ -134,7 +134,12 @@ class BMinSepSampler(Sampler):
             yield batch
 
     def __len__(self) -> int:
-        return self.n_steps
+        """Batches remaining (``n_steps - consumed``).
+
+        After a partial run, reflects what ``__iter__`` will yield —
+        so ``len(DataLoader(...))`` matches the resumed iteration count.
+        """
+        return self.n_steps - self._consumed
 
     @property
     def consumed(self) -> int:
@@ -160,13 +165,16 @@ def _state_dict_b_min_sep(s: BMinSepSampler) -> dict[str, Any]:
 
     The Markov state (``_bars_left`` cooldown array, ``_recent`` deque)
     is path-dependent — it can't be recomputed from key alone, so the
-    loader replays ``consumed`` steps to reconstruct it.  Only the
-    constructor inputs + cursor are serialised.
+    loader replays ``consumed`` steps to reconstruct it.
+    ``num_examples`` is persisted so the loader can validate the
+    template dataset length before relying on deterministic
+    reconstruction of the warm-start cooldown.
     """
     return {
         "key_seed": int(s._key.seed),
         "key_impl": str(s._key.impl),
         "consumed": int(s._consumed),
+        "num_examples": int(s.num_examples),
         "bands": int(s.bands),
         "sampling_prob": float(s.sampling_prob),
         "n_steps": int(s.n_steps),
@@ -182,7 +190,20 @@ def _from_state_dict_b_min_sep(
     from its initial state by calling ``_sample_step`` ``consumed``
     times so the cooldown array and recent-batches deque match a
     continuous run.
+
+    Raises ``ValueError`` if the template dataset length differs from
+    the snapshot — both the warm-start cooldown distribution and the
+    replayed eligibility scan depend on ``num_examples``.
     """
+    saved_n = int(sd["num_examples"])
+    template_n = len(template.data_source)
+    if saved_n != template_n:
+        raise ValueError(
+            f"BMinSepSampler.from_state_dict: template dataset length "
+            f"{template_n} does not match snapshot num_examples={saved_n}.  "
+            "Restoring with a differently-sized dataset would silently "
+            "reconstruct a different Markov chain."
+        )
     sampler = BMinSepSampler(
         template.data_source,
         bands=int(sd["bands"]),

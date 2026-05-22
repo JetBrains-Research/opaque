@@ -165,7 +165,13 @@ class CyclicPoissonSampler(Sampler):
             yield batch
 
     def __len__(self) -> int:
-        return self.n_steps
+        """Batches remaining (``n_steps - consumed``).
+
+        After a partial run, this reports what ``__iter__`` will yield
+        — not the original total — so ``len(DataLoader(...))`` matches
+        the resumed iteration count.
+        """
+        return self.n_steps - self._consumed
 
     @property
     def consumed(self) -> int:
@@ -189,13 +195,15 @@ def _state_dict_cyclic_poisson(s: CyclicPoissonSampler) -> dict[str, Any]:
     """Serialise ``CyclicPoissonSampler`` state.
 
     Partition is deterministic from ``(key, bands, num_examples,
-    partition_type)`` so we don't store it explicitly — load
-    reconstructs it from the saved key.
+    partition_type)``; ``num_examples`` is persisted so the loader can
+    validate the template dataset length before relying on
+    deterministic reconstruction.
     """
     return {
         "key_seed": int(s._key.seed),
         "key_impl": str(s._key.impl),
         "consumed": int(s._consumed),
+        "num_examples": int(s.num_examples),
         "sample_rate": float(s.sample_rate),
         "bands": int(s.bands),
         "n_steps": int(s.n_steps),
@@ -213,7 +221,20 @@ def _from_state_dict_cyclic_poisson(
     deterministically from the saved key + bands; the generator is
     fast-forwarded by replaying ``consumed`` discarded ``_sample_step``
     calls so the next yielded batch matches a continuous run.
+
+    Raises ``ValueError`` if the template dataset length differs from
+    the snapshot — the partition depends on ``num_examples``, so a
+    mismatched length would silently reconstruct a different stream.
     """
+    saved_n = int(sd["num_examples"])
+    template_n = len(template.data_source)
+    if saved_n != template_n:
+        raise ValueError(
+            f"CyclicPoissonSampler.from_state_dict: template dataset length "
+            f"{template_n} does not match snapshot num_examples={saved_n}.  "
+            "Restoring with a differently-sized dataset would silently "
+            "produce a different partition."
+        )
     sampler = CyclicPoissonSampler(
         template.data_source,
         sample_rate=float(sd["sample_rate"]),

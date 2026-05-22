@@ -138,7 +138,11 @@ class BallsInBinsSampler(Sampler):
                 yield nonempty[i % per_epoch]
 
     def __len__(self) -> int:
-        """Total number of non-empty batches across all epochs.
+        """Non-empty batches remaining.
+
+        After a partial run, reflects what ``__iter__`` will yield —
+        the total minus the cursor — so ``len(DataLoader(...))`` matches
+        the resumed iteration count.
 
         Raises:
             TypeError: If n_steps is None (infinite iteration).
@@ -146,7 +150,8 @@ class BallsInBinsSampler(Sampler):
         if self.n_steps is None:
             raise TypeError("len() of unsized object (n_steps=None)")
         epochs = self.n_steps // self.num_bins
-        return len(self._nonempty_bins) * epochs
+        total = len(self._nonempty_bins) * epochs
+        return total - self._consumed
 
     @property
     def expected_batch_size(self) -> float:
@@ -163,14 +168,17 @@ def _state_dict_balls_in_bins(s: BallsInBinsSampler) -> dict[str, Any]:
     """Serialise ``BallsInBinsSampler`` state.
 
     Bin assignment is deterministic from ``(key, num_bins, num_samples)``;
-    only the constructor inputs + cursor are persisted.  Round-robin
-    iteration is deterministic given the assignment, so no Markov-state
-    replay is needed on load — the cursor alone fixes the resume point.
+    ``num_samples`` is persisted so the loader can validate the
+    template dataset length before relying on deterministic
+    reconstruction.  Round-robin iteration is deterministic given the
+    assignment, so no Markov-state replay is needed on load — the
+    cursor alone fixes the resume point.
     """
     return {
         "key_seed": int(s._key.seed),
         "key_impl": str(s._key.impl),
         "consumed": int(s._consumed),
+        "num_samples": int(s._num_samples),
         "num_bins": int(s.num_bins),
         "n_steps": s.n_steps,
     }
@@ -185,7 +193,22 @@ def _from_state_dict_balls_in_bins(
     reconstructed deterministically by the constructor; the cursor is
     restored so ``__iter__`` resumes at the right round-robin
     position.
+
+    Raises ``ValueError`` if the template dataset length differs from
+    the snapshot — the bin assignment depends on ``num_samples`` (each
+    example independently picks a bin), so a mismatched length would
+    silently produce a different assignment.
     """
+    saved_n = int(sd["num_samples"])
+    template_n = len(template.data_source)
+    if saved_n != template_n:
+        raise ValueError(
+            f"BallsInBinsSampler.from_state_dict: template dataset length "
+            f"{template_n} does not match snapshot num_samples={saved_n}.  "
+            "Restoring with a differently-sized dataset would silently "
+            "produce a different bin assignment, voiding the BnB privacy "
+            "accounting (Lemma 3.2 requires fixed assignment across the run)."
+        )
     sampler = BallsInBinsSampler(
         template.data_source,
         num_bins=int(sd["num_bins"]),
