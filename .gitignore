@@ -59,6 +59,7 @@ docs/_build/
 docs/_static/
 docs/_templates/
 site/
+.cache/
 
 # MyPy
 .mypy_cache/
