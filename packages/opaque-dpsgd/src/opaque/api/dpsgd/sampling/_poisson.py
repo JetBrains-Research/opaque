@@ -10,6 +10,13 @@ plain Poisson at the same ``sample_rate``—pair with
 For distributed training, shard the dataset **before** creating the
 sampler using ``local_shard()`` and derive a per-rank key with
 ``fold_in(key, rank)``.
+
+Resume contract: register the sampler with
+:mod:`opaque.serialization` (done at module-import time below) so
+``state_dict(sampler)`` / ``from_state_dict(template, sd)`` round-trip
+the cursor + RNG.  ``__iter__`` continues from ``self._consumed`` and
+``__len__`` reports the remaining batches — see
+``tests/sampling/test_poisson_state_dict.py``.
 """
 
 from collections.abc import Iterator, Mapping
