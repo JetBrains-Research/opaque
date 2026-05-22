@@ -70,7 +70,6 @@ except ModuleNotFoundError as import_error:
         hidden_states,
         weight,
         labels,
-        num_items_in_batch=None,
         ignore_index=-100,
         logit_softcapping=0,
     ):
@@ -85,12 +84,6 @@ except ModuleNotFoundError as import_error:
             ignore_index=ignore_index,
         )
         nll_sum = loss_flat.sum()
-
-        if num_items_in_batch is not None:
-            if torch.is_tensor(num_items_in_batch):
-                num_items_in_batch = num_items_in_batch.to(nll_sum.device)
-            return nll_sum / num_items_in_batch
-
         n_valid = (
             (shifted_labels.reshape(-1) != ignore_index).sum().float().clamp(min=1)
         )
