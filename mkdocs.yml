@@ -104,7 +104,15 @@ nav:
     - Optimizers: user-guide/optimizers.md
     - LR Scheduling: user-guide/lr-scheduling.md
     - Distributed Training: user-guide/distributed.md
-    - HuggingFace Compatibility: user-guide/huggingface.md
+    - HuggingFace Integration:
+      - Overview: user-guide/huggingface/index.md
+      - DPTrainer: user-guide/huggingface/dptrainer.md
+      - TrainingArguments: user-guide/huggingface/training-arguments.md
+      - Model Patches: user-guide/huggingface/model-patches.md
+      - PEFT and LoRA: user-guide/huggingface/peft.md
+      - Subclassing DPTrainer: user-guide/huggingface/subclassing.md
+      - Checkpoint and Resume: user-guide/huggingface/checkpointing.md
+      - Troubleshooting: user-guide/huggingface/troubleshooting.md
     - Memory Optimizations: user-guide/memory-optimizations.md
     - Privacy Auditing: user-guide/auditing.md
     - Known Limitations: limitations.md

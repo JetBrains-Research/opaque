@@ -33,17 +33,29 @@ Supported `performance_kernels_config` keys:
 args = TrainingArguments(
     use_performance_kernels=True,
     performance_kernels_config={
+        # ---- kernels bucket (CUDA + Triton) -------------------------
         "rope": True,
         "rms_norm": True,
         "activation": True,
         "cross_entropy": True,
         "fused_linear_cross_entropy": False,  # opt-in; see below
+        # ---- performance bucket (pure Python) -----------------------
         "kv_cache": True,                     # always-on by default
+        # ---- compat bucket (vmap-safety) ----------------------------
         "eager_attention": True,
         "batchify": True,
+        "vmap_masking": True,                 # vmap-safe causal-mask builders
+        "empty_batches": True,                # collator wrapper for Poisson 0-batches
+        "vmap_checkpointing": True,           # gradient-checkpointing under vmap(grad)
     },
 )
 ```
+
+The flat dict is forwarded as-is to `apply_model_patches` and
+`apply_runtime_patches` — each key gates one concern.  Defaults
+follow the umbrella flags: kernel keys default to
+`use_performance_kernels`, `kv_cache` is always on, compat keys
+default to `use_compat_patches`.
 
 `kv_cache` sits in the `performance` bucket (not `kernels`) and stays
 on by default regardless of `use_performance_kernels`.  Disable it
@@ -70,11 +82,11 @@ model = AutoModelForCausalLM.from_pretrained(...)
 # Optional: attach LoRA / PEFT adapters here.
 apply_model_patches(
     model,
-    compat=True,                              # vmap-safety
-    performance=True,                         # kv_cache disabler + kernels group
-    kernels=True,                             # Triton kernels (CUDA + Triton)
+    compat=True,                              # vmap-safety (eager-attn, batchify, …)
+    performance=True,                         # kv_cache (pure-Python; always-on)
+    kernels=True,                             # CUDA + Triton group (rope, rms_norm, …)
     peft=True,                                # LoRA fusion when adapters detected
-    fused_linear_cross_entropy=False,         # opt-in (returns logits=None)
+    fused_linear_cross_entropy=False,         # opt-in (fused forward returns logits=None)
 )
 ```
 
@@ -170,7 +182,13 @@ model:
 | Cohere2 | 8B | SwiGLU | — | Yes | Yes | Yes | QKV + MLP |
 | Exaone4 | 1.2B, 32B (tiny config) | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
 | GPT-2 | 124M, 355M | — | — | — | — | — | — |
-| DeepSeek | 7B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
+
+DeepSeek-Coder ships with `config.model_type == "llama"` and therefore
+inherits the LLaMA family registration end-to-end — vmap compat,
+SwiGLU / RMSNorm / RoPE kernels, fused linear CE, and QKV + MLP LoRA
+fusion all apply.  Validated against
+`deepseek-ai/deepseek-coder-1.3b-base`.  A DeepSeek variant shipping a
+non-`llama` `model_type` would land in the "Other models" path below.
 
 Gemma3's `q_norm` / `k_norm` RMSNorms inside `Gemma3Attention` are
 picked up automatically because the kernel patcher rebinds
@@ -240,8 +258,8 @@ blocks (up to 65536), avoiding materialisation of the full
 The kernel honours `label_smoothing` natively (`F.cross_entropy(...,
 label_smoothing=...)` parity).  When `label_smoothing > 0`, the
 trainer forwards it through as a loss kwarg; the kernel applies the
-smoothed formula directly.  See
-[`Opaque_CrossEntropyLoss`](../../reference/index.md#kernels).
+smoothed formula directly.  Available standalone as
+`opaque.patches.kernels.opaque_cross_entropy_loss`.
 
 ### Fused linear cross-entropy
 
@@ -288,14 +306,14 @@ are detected:
 
 | Kernel | Description |
 |---|---|
-| `Opaque_LoRA_W` | Single linear: `x @ W.T + x @ A @ B * s` — avoids intermediate `x @ A`. |
-| `Opaque_LoRA_QKV` | Fused Q+K+V: shares input across 3 projections in one call. |
-| `Opaque_LoRA_MLP` | Fused gate+up+down: 3 projections + activation in one call. |
+| `opaque_lora_w` | Single linear: `x @ W.T + x @ A @ B * s` — avoids intermediate `x @ A`. |
+| `opaque_lora_qkv` | Fused Q+K+V: shares input across 3 projections in one call. |
+| `opaque_lora_mlp` | Fused gate+up+down: 3 projections + activation in one call. |
 
-`LoRA_W` patches `peft.tuners.lora.Linear.forward` and applies to
-all LoRA layers.  `LoRA_QKV` and `LoRA_MLP` are auto-fused when all
-projections in an attention block or MLP block have LoRA adapters
-with no bias.
+`opaque_lora_w` patches `peft.tuners.lora.Linear.forward` and applies
+to all LoRA layers.  `opaque_lora_qkv` and `opaque_lora_mlp` are
+auto-fused when all projections in an attention block or MLP block
+have LoRA adapters with no bias.
 
 QKV fusion eligible models: LLaMA, Mistral, Gemma, Gemma2, Granite,
 Cohere2.  Excluded: Qwen2 (bias on Q/K/V), Qwen3 (q_norm/k_norm),

@@ -24,7 +24,7 @@ term dominates for large models.
 
 LoRA dramatically reduces gradient memory because only the adapter
 parameters (~0.1% of model) require per-example gradients. See
-[HuggingFace Compatibility — LoRA](huggingface.md#using-lora-with-dp-sgd)
+[PEFT and LoRA](huggingface/peft.md#lora-with-dptrainer)
 for details.
 
 ## Microbatching
@@ -160,7 +160,7 @@ passes) and recomputing activations in backward instead of saving them. Each
 kernel also implements native vmap support, so `vmap(grad())` works without
 fallbacks.
 
-See [HuggingFace Compatibility — Patched operations](huggingface.md#patched-operations)
+See [Model Patches — Triton kernels](huggingface/model-patches.md#triton-kernels)
 for per-operation details and per-model support.
 
 ### Kernel benchmarks

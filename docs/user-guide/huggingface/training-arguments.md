@@ -90,7 +90,7 @@ trainer construction time — see [Model patches](model-patches.md):
 |---|---|---|---|
 | `use_compat_patches` | `bool` | `True` | Apply vmap-safety patches (eager-attention, batchify, vmap-safe masking / collator / checkpoint hooks).  Set `False` for custom models that don't need them. |
 | `use_performance_kernels` | `bool` | `False` | Enable the CUDA + Triton kernel group (`rope`, `rms_norm`, `activation`, `cross_entropy`).  Auto-`False` on hosts without CUDA + Triton. |
-| `performance_kernels_config` | `dict \| str \| None` | `None` | Flat dict of opaque-patches kwargs forwarded as-is.  Keys: `rope`, `rms_norm`, `activation`, `cross_entropy`, `fused_linear_cross_entropy`, `kv_cache`, `eager_attention`, `batchify`. |
+| `performance_kernels_config` | `dict \| str \| None` | `None` | Flat dict of opaque-patches kwargs forwarded as-is.  Keys: `rope`, `rms_norm`, `activation`, `cross_entropy`, `fused_linear_cross_entropy`, `kv_cache`, `eager_attention`, `batchify`, `vmap_masking`, `empty_batches`, `vmap_checkpointing`. |
 
 `kv_cache` is in the `performance` bucket (not `kernels`) and stays on
 by default regardless of `use_performance_kernels`.  Disable it

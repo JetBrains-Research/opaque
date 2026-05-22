@@ -136,7 +136,9 @@ def loss_fn(trainable_params, input_ids, labels):
     )
     return out.loss
 
-# DP components.
+# DP components.  `normalize_by` is the cluster-wide logical batch (Poisson E[B]).
+batch_size = 64
+lr = 3e-4
 grad_fn, clip_state = clipped_grad(
     loss_fn, argnums=0, batch_argnums=(1, 2),
     clipping_norm=1.0, normalize_by=batch_size,
@@ -157,7 +159,7 @@ flags works with `make_functional(partition_trainable=True)`:
 
 | Method | Library | Notes |
 |---|---|---|
-| **LoRA** | `peft` | Recommended.  Well-tested with Opaque; auto LoRA-fusion when adapters have no bias. |
+| **LoRA** | `peft` | Recommended.  Well-tested with Opaque; auto LoRA-fusion (`opaque_lora_qkv` / `opaque_lora_mlp`) when adapters have no bias. |
 | **Adapters** (bottleneck) | `peft` / `adapter-transformers` | Works.  More trainable params than LoRA at same capacity. |
 | **BitFit** (bias-only) | Manual (`requires_grad=False` on non-bias) | Minimal trainable params; very memory-efficient. |
 | **Prefix tuning** | `peft` | Works but virtual tokens add complexity to loss computation. |
@@ -174,7 +176,7 @@ instead of standard parameters, it may not work with `vmap`.
 | `r` (rank) | 4, 8, 16 | Higher → more trainable params → more memory for vmap. |
 | `lora_alpha` | 16, 32 | Scaling factor; does not affect memory. |
 | `target_modules` | `["q_proj", "v_proj"]` | More modules → more trainable params. |
-| `bias` | `"none"` | Required for fused LoRA kernels (`Opaque_LoRA_QKV` / `Opaque_LoRA_MLP`). |
+| `bias` | `"none"` | Required for fused LoRA kernels (`opaque_lora_qkv` / `opaque_lora_mlp`). |
 
 Start with `r=8`, `target_modules=["q_proj", "v_proj"]`, `bias="none"`.
 Increase rank or add modules only if accuracy is insufficient.

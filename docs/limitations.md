@@ -31,7 +31,7 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 ```
 
-See [HuggingFace Compatibility](user-guide/huggingface.md#attention-implementation-support)
+See [Model Patches — Attention implementations](user-guide/huggingface/model-patches.md#attention-implementations)
 for supported attention implementations.
 
 ## DDP only
@@ -47,20 +47,21 @@ and are not covered by default CI.
 Kernel optimization and patching for HuggingFace models is part of
 `opaque.patches` and is CUDA+Triton only.
 
-Low-level Triton-backed `Opaque_*` autograd classes (for example,
-`Opaque_SwiGLU`, `Opaque_RoPE_QK`, `Opaque_LinearCrossEntropyLoss`) are
-internal implementation details and should not be imported directly in user
+Low-level Triton-backed autograd primitives are internal
+implementation details and should not be imported directly in user
 code.
 
-On CPU/MPS (or without Triton), Opaque falls back to non-kernel compatibility
-paths. For the performance / Triton stack, use `OPAQUE_SKIP_PYTORCH_PATCHES`
-and `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` (see
-[HuggingFace Compatibility](user-guide/huggingface.md#configuration)).
-`opaque.transformers` applies compat and optional kernel patches explicitly
-via `DPTrainer` / `patch_all()`, not via `OPAQUE_SKIP_TRANSFORMERS_PATCHES`.
+On CPU/MPS (or without Triton), the kernel group is auto-disabled —
+the router forces `kernels=False` when CUDA + Triton can't be
+imported, so `performance=True` keeps the pure-Python `kv_cache`
+patch on those hosts.  Configure the patch surface via the explicit
+flags (see
+[Model Patches — Configuration](user-guide/huggingface/model-patches.md#configuration-via-trainingarguments));
+opaque-patches has no environment-variable kill switches.
 
-Advanced users can still call kernel wrappers directly via
-`opaque.patches.kernels`.
+Public standalone kernels (`opaque_swiglu`, `opaque_cross_entropy_loss`,
+`opaque_lora_w`, `opaque_lora_qkv`, `opaque_lora_mlp`) are importable
+from `opaque.patches.kernels`.
 
 ## In-place operations under vmap
 
