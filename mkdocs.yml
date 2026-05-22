@@ -109,7 +109,6 @@ nav:
       - DPTrainer: user-guide/huggingface/dptrainer.md
       - TrainingArguments: user-guide/huggingface/training-arguments.md
       - Model Patches: user-guide/huggingface/model-patches.md
-      - PEFT and LoRA: user-guide/huggingface/peft.md
     - Memory Optimizations: user-guide/memory-optimizations.md
     - Privacy Auditing: user-guide/auditing.md
     - Known Limitations: limitations.md

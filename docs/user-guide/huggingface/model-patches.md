@@ -404,8 +404,8 @@ args = TrainingArguments(
 
 ## See also
 
-- [PEFT and LoRA](peft.md) — `make_functional`, the trainable / frozen
-  partition, and the LoRA training recipe.
+- [Utilities reference — `make_functional`](../../reference/utilities.md#trainable-frozen-partition-for-peft-and-lora) —
+  the `partition_trainable=True` flag for PEFT / LoRA training.
 - [Memory Optimizations](../memory-optimizations.md) — kernel
   benchmarks and gradient checkpointing.
 - [DPTrainer](dptrainer.md) — when the trainer drives the patch

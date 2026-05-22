@@ -23,9 +23,10 @@ term dominates for large models.
 | 7B + LoRA r=8 | ~2.5 GB | ~160 MB | ~10 MB |
 
 LoRA dramatically reduces gradient memory because only the adapter
-parameters (~0.1% of model) require per-example gradients. See
-[PEFT and LoRA](huggingface/peft.md#lora-recipe)
-for details.
+parameters (~0.1% of model) require per-example gradients.  Use
+`make_functional(model, partition_trainable=True)` to expose only the
+trainable subset to `vmap(grad(...))` — see [Utilities reference —
+`make_functional`](../reference/utilities.md#trainable-frozen-partition-for-peft-and-lora).
 
 ## Microbatching
 
@@ -134,7 +135,10 @@ with functorch). No special kwargs needed.
   compatible with higher-order transforms (hessian, jacrev(jacrev)).
   Opaque only uses first-order differentiation, so this is not an issue
   in practice.
-- Skip patches with: `OPAQUE_SKIP_PYTORCH_CHECKPOINT_PATCHES=all`
+- Opt out at the API layer (no env-var kill switches): pass
+  `vmap_checkpointing=False` to `apply_runtime_patches(...)` or
+  `apply_model_patches(...)`, or `performance_kernels_config={"vmap_checkpointing": False}`
+  to `TrainingArguments`.
 
 ### CPU offloading of saved tensors
 

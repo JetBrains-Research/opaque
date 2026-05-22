@@ -18,12 +18,16 @@ you're trying to do.
   exhaustive field listing lives in the API reference.
 - **[Model patches](model-patches.md)** — what `apply_runtime_patches`
   and `apply_model_patches` do, why vmap needs them, the model
-  compatibility matrix, and the Triton kernel surface.
-- **[PEFT and LoRA](peft.md)** — `make_functional` primer, the LoRA
-  recipe end-to-end, and how other PEFT methods slot in.
+  compatibility matrix, the Triton kernel surface (including fused
+  LoRA), and how to bring your own model.
 - **[API reference — transformers](../../reference/transformers.md)** —
   full parameter inventory for `DPTrainer`, `TrainingArguments`, and
   the public state objects.
+
+LoRA and other PEFT setups use the standard `peft` library workflow;
+the only Opaque-specific piece is
+`make_functional(model, partition_trainable=True)` — documented under
+[Utilities reference](../../reference/utilities.md#trainable-frozen-partition-for-peft-and-lora).
 
 ## Which page do I start on?
 
@@ -35,7 +39,6 @@ Have a model + dataset, want to train?
 │
 └─ No ─── Something else
           ├─ Model not on compatibility matrix → model-patches.md
-          ├─ LoRA / adapters → peft.md
           └─ Need exact field types / defaults → reference/transformers.md
 ```
 

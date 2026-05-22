@@ -22,6 +22,30 @@ output = fmodel(params, input_tensor)
 Functional models allow `torch.func.vmap` to compute per-example gradients
 efficiently, which is essential for DP-SGD.
 
+### Trainable / frozen partition (for PEFT and LoRA)
+
+For parameter-efficient fine-tuning (LoRA, adapters, BitFit, …) only a
+small subset of parameters has `requires_grad=True`.  Pass
+`partition_trainable=True` to split the parameter dict accordingly:
+
+```python
+fmodel, trainable, frozen = make_functional(model, partition_trainable=True)
+
+def loss_fn(trainable_params, x, y):
+    out = fmodel({**frozen, **trainable_params}, x)
+    return ((out - y) ** 2).mean()
+```
+
+Only `trainable_params` flows into the loss closure, so
+`vmap(grad(...))` over `loss_fn` produces per-example gradients only
+for the trainable subset.  Frozen parameters are broadcast (constant)
+under `vmap`, which is what makes LoRA-style DP fine-tuning of
+multi-billion-parameter models feasible — per-example gradient memory
+scales with trainable params, not total params.  See [Memory
+optimizations](../user-guide/memory-optimizations.md) for the memory
+arithmetic; fused LoRA Triton kernels are documented under [Model
+patches — Fused LoRA operations](../user-guide/huggingface/model-patches.md#fused-lora-operations).
+
 **See also**: [Quick Start Guide](../getting-started/quickstart.md) for
 functional API usage.
 

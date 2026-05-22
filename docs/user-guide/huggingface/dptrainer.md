@@ -122,14 +122,23 @@ outputs, one example's labels), not once per batch — there's no
 trainers is supported but is a more advanced extension point; reach
 out if you need to wire one up.
 
+## PEFT and LoRA
+
+PEFT-wrapped models work transparently: wrap the model with
+`peft.get_peft_model(...)` before constructing the trainer.  The
+trainer detects the `PeftModel` and routes the functional path through
+`make_functional(model, partition_trainable=True)` internally — only
+LoRA adapters receive per-example gradients (essential for memory at
+multi-billion-parameter scale).  Fused LoRA Triton kernels engage
+automatically when adapters have `bias="none"` — see
+[Model patches — Fused LoRA operations](model-patches.md#fused-lora-operations).
+
 ## See also
 
 - [TrainingArguments](training-arguments.md) — the most-tuned
   DP-specific knobs and the batch-size contract.
 - [Model patches](model-patches.md) — what the trainer auto-applies
   and how to opt parts in or out.
-- [PEFT and LoRA](peft.md) — `make_functional`, trainable / frozen
-  partition, LoRA recipe.
 - [API reference — transformers](../../reference/transformers.md) —
   full parameter inventory for `DPTrainer`, `TrainingArguments`, and
   the public state objects.
