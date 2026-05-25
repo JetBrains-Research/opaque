@@ -2206,6 +2206,21 @@ def main():
                                 _v = _agg("r_cross_norm")
                                 if _v is not None:
                                     wb_metrics["rotation/r_cross_norm"] = _v
+                                # Rényi entropy diagnostics (alpha set by
+                                # XSE_ADAPTIVE_DEPTH_ALPHA env var; at α=1
+                                # these equal the Shannon-based metrics).
+                                _v = _agg("spectral_entropy_renyi")
+                                if _v is not None:
+                                    wb_metrics["rotation/spectral_entropy_renyi"] = _v
+                                _v = _agg("r_eff_renyi")
+                                if _v is not None:
+                                    wb_metrics["rotation/r_eff_renyi"] = _v
+                                _v = _agg("r_e_dyn")
+                                if _v is not None:
+                                    wb_metrics["rotation/r_e_dyn"] = _v
+                                _v = _agg("alpha")
+                                if _v is not None:
+                                    wb_metrics["rotation/alpha"] = _v
                     # Per-group metrics under group/ section
                     if (
                         isinstance(step_clip_norm, PerGroup)
