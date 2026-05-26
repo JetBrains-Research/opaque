@@ -40,8 +40,9 @@ from __future__ import annotations
 
 import time
 from contextlib import contextmanager
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field, replace
+from types import MappingProxyType
 
 import torch
 
@@ -254,7 +255,7 @@ class StepPerf:
     memory_allocated_gb: float = 0.0
     memory_reserved_gb: float = 0.0
     batch_size: int = 0
-    marks: dict[str, float] = field(default_factory=dict)
+    marks: Mapping[str, float] = field(default_factory=lambda: MappingProxyType({}))
 
     def to_dict(self, prefix: str = "") -> dict[str, float]:
         """Convert to flat dict for logging.
@@ -386,7 +387,7 @@ def step_perf(
         memory_allocated_gb=mem.allocated_gb,
         memory_reserved_gb=mem.reserved_gb,
         batch_size=batch_size,
-        marks=dict(builder._marks),
+        marks=MappingProxyType(dict(builder._marks)),
     )
 
 

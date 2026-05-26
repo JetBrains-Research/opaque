@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import MappingProxyType
 
 import torch
 
@@ -75,10 +76,10 @@ def sync_perf_state(state: PerfState) -> PerfState:
             samples_per_second=last_samples / last_time if last_time > 0 else 0.0,
             steps_per_second=1.0 / last_time if last_time > 0 else 0.0,
             memory_peak_gb=last_peak,
-            memory_allocated_gb=last_step.memory_allocated_gb,
-            memory_reserved_gb=last_step.memory_reserved_gb,
+            memory_allocated_gb=0.0,
+            memory_reserved_gb=0.0,
             batch_size=last_samples,
-            marks=last_step.marks,
+            marks=MappingProxyType({}),
         )
 
     return replace(
