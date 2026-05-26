@@ -146,10 +146,10 @@ from opaque.dpftrl.noise import (
     mf_gaussian_noise,
 )
 from opaque.profiling import (
-    StepTimer,
-    TrainingProfiler,
+    PerfState,
     print_memory,
     reset_peak_memory,
+    step_perf,
 )
 from opaque.random import key, fold_in
 from opaque.scheduling import (
@@ -873,7 +873,7 @@ def main():
     if use_eager:
         model_kwargs["attn_implementation"] = "eager"
 
-    profiler = TrainingProfiler(device)
+    perf_state = PerfState(device=device)
 
     try:
         model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
@@ -884,7 +884,6 @@ def main():
         model_kwargs["torch_dtype"] = torch_dtype
         model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
     model = model.to(device)
-    profiler, _ = profiler.mark("model_loaded")
     print_memory(device, "After model load")
 
     # --- Tokenizer ---
@@ -908,7 +907,6 @@ def main():
     # ``logits=None`` on the fast path — see ``apply_model_patches`` docs).
     apply_model_patches(model, fused_linear_cross_entropy=True)
     model.print_trainable_parameters()
-    profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")
 
     # --- Data ---
@@ -1162,7 +1160,6 @@ def main():
     )
     param_names = list(trainable_params.keys())
     print(f"Trainable parameters: {len(param_names)} (took {time.time() - t0:.1f}s)")
-    profiler, _ = profiler.mark("functional_conversion")
     print_memory(device, "After functional conversion")
 
     def merged_params(trainable):
@@ -1759,7 +1756,6 @@ def main():
     global_step = 0
 
     reset_peak_memory(device)
-    profiler, _ = profiler.mark("training_start")
     print_memory(device, "Before training")
 
     # Privacy accountant — same ``acc |= step`` idiom as the DP-SGD trainer.
@@ -1821,8 +1817,7 @@ def main():
 
             lr_t = float(lr_schedule(global_step))
 
-            step_timer = StepTimer(device, batch_size=batch_size)
-            with step_timer:
+            with step_perf(device, batch_size=batch_size) as sp:
                 with offload_ctx:
                     (grads, aux), clip_state = grad_fn(
                         trainable_params,
@@ -1841,6 +1836,8 @@ def main():
                         sum_gradients_(grads.squared_grads)
                     else:
                         sum_gradients_(grads)
+                sp.mark("clip")
+
                 noisy_grads, noise_state = noise_fn(grads, noise_state)
                 # All ranks generate identical noise from the same seed
                 # (no rank-fold in the noise key) so the per-rank
@@ -1854,14 +1851,17 @@ def main():
                     step_noise_stddev = noisy_grads.noisy_grads.noise_stddev
                 else:
                     step_noise_stddev = noisy_grads.noise_stddev
+                sp.mark("noise")
+
                 updates, opt_state = optimizer.update(
                     noisy_grads,
                     opt_state,
                     params=trainable_params,
                 )
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
+                sp.mark("optimizer")
 
-            profiler = profiler.add_step(step_timer)
+            perf_state = perf_state.add(sp.result)
 
             if batch_size == 0:
                 global_step += 1
@@ -1877,7 +1877,7 @@ def main():
 
             # --- Logging ---
             if global_step % args.log_steps == 0:
-                perf = profiler.current_metrics()
+                perf = sp.result.to_dict(prefix="train/")
 
                 if use_wandb:
                     wb_metrics = {
@@ -1901,13 +1901,8 @@ def main():
                             else step_noise_stddev
                         ),
                         "train/lr": lr_t,
-                        "perf/step_time_sec": perf["step_time_sec"],
-                        "perf/throughput_samples_per_sec": perf[
-                            "throughput_samples_sec"
-                        ],
-                        "perf/allocated_gb": perf["memory_allocated_gb"],
-                        "perf/reserved_gb": perf["memory_reserved_gb"],
-                        "perf/peak_gb": perf["memory_peak_gb"],
+                        **perf,
+                        **perf_state.to_dict(prefix="train/"),
                     }
                     if (
                         isinstance(clip_norm, PerGroup)
@@ -1935,7 +1930,7 @@ def main():
                     f"BS: {batch_size} | Loss: {avg_loss:.4f} | "
                     f"Clip: {clip_rate:.1%} | GradNorm: {mean_grad_norm:.3f} | "
                     f"LR: {lr_t:.2e} | "
-                    f"Time: {perf['step_time_sec']:.2f}s | Mem: {perf['memory_peak_gb']:.1f}GB"
+                    f"Time: {perf['train/step_time_sec']:.2f}s | Mem: {perf['train/memory_peak_gb']:.1f}GB"
                 )
 
             # --- Eval ---
@@ -2007,10 +2002,11 @@ def main():
         # final ε at the last step.  No need to re-log a separate
         # ``privacy/epsilon_final`` scalar.
 
-    profiler, _ = profiler.mark("training_complete")
-    summary_profiler = sync(profiler) if is_ddp else profiler
-    print("\n" + summary_profiler.final_summary())
-    print("\n" + summary_profiler.checkpoint_summary())
+    final_perf_state = sync(perf_state) if is_ddp else perf_state
+    print("\nPerformance:")
+    print(f"  Avg step time (stable): {final_perf_state.avg_step_time_stable:.2f}s")
+    print(f"  Avg throughput (stable): {final_perf_state.avg_samples_per_second_stable:.1f} samples/s")
+    print(f"  Peak memory: {final_perf_state.max_peak_memory_gb:.2f} GB")
 
     if use_wandb:
         wandb.finish()

@@ -1,4 +1,4 @@
-"""TrainingProfiler sync under NCCL."""
+"""PerfState sync under NCCL."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ pytestmark = pytest.mark.cuda
 
 
 class TestProfilerSyncDistributed:
-    def test_sync_profiler(self) -> None:
+    def test_sync_perf_state(self) -> None:
         if torch.cuda.device_count() < 2:
             pytest.skip("Requires >= 2 CUDA devices")
         _spawn(2, _worker_sync_profiler)

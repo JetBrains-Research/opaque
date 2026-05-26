@@ -1,17 +1,19 @@
-"""Memory + step-time profiler for DP training."""
+"""Performance profiling for DP training."""
 
 from opaque.api.engine.profiling import (
-    StepTimer,
-    TrainingProfiler,
+    PerfState,
+    StepPerf,
     empty_cache,
     get_memory_stats,
     print_memory,
     reset_peak_memory,
+    step_perf,
 )
 
 __all__ = [
-    "TrainingProfiler",
-    "StepTimer",
+    "StepPerf",
+    "step_perf",
+    "PerfState",
     "get_memory_stats",
     "print_memory",
     "reset_peak_memory",

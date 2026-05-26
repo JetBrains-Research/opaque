@@ -40,6 +40,7 @@ from collections.abc import Callable
 from typing import Any
 
 import torch
+from torch.profiler import record_function
 
 from opaque.types import (
     ClippedPytree,
@@ -359,6 +360,10 @@ def gaussian_noise(
 
     def noise_fn(grads, st):
         """Add Gaussian noise to a clipped pytree (or paired stream)."""
+        with record_function("opaque::gaussian_noise"):
+            return _noise_fn_impl(grads, st)
+
+    def _noise_fn_impl(grads, st):
         if isinstance(grads, SecondMomentClippingOutput):
             return _add_paired(grads, st)
 

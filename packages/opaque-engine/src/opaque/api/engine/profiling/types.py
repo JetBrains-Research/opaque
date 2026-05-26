@@ -1,12 +1,14 @@
 """Public type definitions for :mod:`opaque.profiling`.
 
-Re-exports the pure data records (``MemoryStats``, ``StepMetrics``,
-``Checkpoint``) for type annotations. The interactive profiler classes
-(``TrainingProfiler``, ``StepTimer``) live in the package init.
+Re-exports pure data records for type annotations.
 """
 
 from __future__ import annotations
 
-from opaque.api.engine.profiling._memory import Checkpoint, MemoryStats, StepMetrics
+from opaque.api.engine.profiling._memory import (
+    MemoryStats,
+    PerfState,
+    StepPerf,
+)
 
-__all__ = ["MemoryStats", "StepMetrics", "Checkpoint"]
+__all__ = ["StepPerf", "PerfState", "MemoryStats"]

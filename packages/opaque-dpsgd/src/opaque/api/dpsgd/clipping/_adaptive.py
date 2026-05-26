@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import torch
+from torch.profiler import record_function
 
 from opaque.types import SecondMomentClippingOutput, clipped
 
@@ -370,6 +371,10 @@ def adaptive_clipped_grad(
             Else:
                 (grad, new_state)
         """
+        with record_function("opaque::adaptive_clipped_grad"):
+            return _grad_fn_impl(*args, state=state, **kwargs)
+
+    def _grad_fn_impl(*args, state: AdaptiveClipState, **kwargs):
         # Empty batch: zero grads, no adaptation, step still incremented.
         # When ``second_moment=True`` was forwarded to the inner ``clipped_grad``,
         # mirror its empty-batch shape (paired ``SecondMomentClippingOutput``) so
