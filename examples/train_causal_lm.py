@@ -666,6 +666,12 @@ def parse_args():
         help="Number of canaries for one-run auditing",
     )
     audit_group.add_argument(
+        "--audit-method",
+        choices=["eps_delta", "gdp"],
+        default="eps_delta",
+        help="Which audit method's ε to report ('eps_delta' = mechanism-agnostic; 'gdp' = μ-GDP, tighter for Gaussian-DP mechanisms)",
+    )
+    audit_group.add_argument(
         "--audit-batch-size",
         type=int,
         default=None,
@@ -1175,6 +1181,10 @@ def main():
             reference_scores=audit_ref_scores,
         )
         return auditing.one_run(scores, coin_flip=audit_cf)
+
+    def _audit_method(estimate):
+        """Pick the audit-method object on `estimate` per ``args.audit_method``."""
+        return estimate.gdp() if args.audit_method == "gdp" else estimate.eps_delta()
 
     # Compute reference (untrained) scores for auditing before any training
     # Paper Algorithm 3: Score = loss(w0, x) - loss(wℓ, x), so we need w0 losses
@@ -1724,19 +1734,14 @@ def main():
 
                 if args.audit:
                     audit_estimate = run_audit(trainable_params)
-                    audit_eps_delta = audit_estimate.eps_delta().epsilon_at(
-                        delta=args.target_delta
-                    )
-                    audit_eps_gdp = audit_estimate.gdp().epsilon_at(
+                    audit_eps = _audit_method(audit_estimate).epsilon_at(
                         delta=args.target_delta
                     )
                     audit_auc = audit_estimate.auc()
-                    metrics["privacy/epsilon_audit_eps_delta"] = audit_eps_delta
-                    metrics["privacy/epsilon_audit_gdp"] = audit_eps_gdp
+                    metrics["privacy/epsilon_audit"] = audit_eps
                     metrics["privacy/audit_auc"] = audit_auc
                     eval_msg += (
-                        f", ε_audit[eps_delta]={audit_eps_delta:.4f}"
-                        f", ε_audit[gdp]={audit_eps_gdp:.4f}"
+                        f", ε_audit[{args.audit_method}]={audit_eps:.4f}"
                         f", AUC={audit_auc:.4f}"
                     )
 
@@ -1813,21 +1818,19 @@ def main():
     print(f"  Final ε (theoretical): {final_epsilon:.4f}")
     if args.audit:
         audit_result = run_audit(trainable_params)
-        audit_eps_delta = audit_result.eps_delta().epsilon_at(delta=args.target_delta)
-        audit_eps_gdp = audit_result.gdp().epsilon_at(delta=args.target_delta)
+        audit_eps = _audit_method(audit_result).epsilon_at(delta=args.target_delta)
         audit_auc = audit_result.auc()
         print(
-            f"  Final ε (eps_delta):  {audit_eps_delta:.4f}  ({audit_result.n_in} in, {audit_result.n_out} out)"
+            f"  Final ε (audit, {args.audit_method}): {audit_eps:.4f}"
+            f"  ({audit_result.n_in} in, {audit_result.n_out} out)"
         )
-        print(f"  Final ε (gdp):        {audit_eps_gdp:.4f}")
         print(f"  Audit AUC:            {audit_auc:.4f}")
         print(f"  β @ α=0.01:           {audit_result.beta_at(alpha=0.01):.4f}")
         print(f"  β @ α=0.10:           {audit_result.beta_at(alpha=0.1):.4f}")
         if use_wandb:
             wandb.log(
                 {
-                    "privacy/epsilon_audit_eps_delta": audit_eps_delta,
-                    "privacy/epsilon_audit_gdp": audit_eps_gdp,
+                    "privacy/epsilon_audit": audit_eps,
                     "privacy/audit_auc": audit_auc,
                 },
                 step=global_step,
