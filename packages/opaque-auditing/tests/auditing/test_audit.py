@@ -87,37 +87,37 @@ class TestConstruction:
 
 
 class TestEpsilonAt:
-    """Tests for epsilon_at method."""
+    """Tests for eps_delta().epsilon_at()."""
 
     def test_perfect_separation(self):
         estimate = _make_estimate(list(range(100, 150)), list(range(0, 50)))
-        eps = estimate.epsilon_at(significance=0.05, delta=0, threshold=75)
+        eps = estimate.eps_delta().epsilon_at(significance=0.05, delta=0, threshold=75)
         assert eps > 0
 
     def test_no_separation(self):
         scores = list(range(100))
         estimate = _make_estimate(scores, scores)
-        eps = estimate.epsilon_at(significance=0.05, delta=0)
+        eps = estimate.eps_delta().epsilon_at(significance=0.05, delta=0)
         assert eps < 1.0
 
     def test_invalid_significance(self):
         estimate = _make_estimate([1, 2], [3, 4])
         with pytest.raises(ValueError, match="significance must be in"):
-            estimate.epsilon_at(significance=0.0)
+            estimate.eps_delta().epsilon_at(significance=0.0)
         with pytest.raises(ValueError, match="significance must be in"):
-            estimate.epsilon_at(significance=0.6)
+            estimate.eps_delta().epsilon_at(significance=0.6)
 
     def test_invalid_delta(self):
         estimate = _make_estimate([1, 2], [3, 4])
         with pytest.raises(ValueError, match="delta must be in"):
-            estimate.epsilon_at(significance=0.05, delta=-0.1)
+            estimate.eps_delta().epsilon_at(significance=0.05, delta=-0.1)
         with pytest.raises(ValueError, match="delta must be in"):
-            estimate.epsilon_at(significance=0.05, delta=1.5)
+            estimate.eps_delta().epsilon_at(significance=0.05, delta=1.5)
 
     def test_delta_passthrough(self):
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        eps_0 = estimate.epsilon_at(delta=0.0)
-        eps_d = estimate.epsilon_at(delta=0.1)
+        eps_0 = estimate.eps_delta().epsilon_at(delta=0.0)
+        eps_d = estimate.eps_delta().epsilon_at(delta=0.1)
         assert isinstance(eps_0, float)
         assert isinstance(eps_d, float)
 
@@ -172,12 +172,12 @@ class TestEdgeCases:
 
     def test_single_score_each(self):
         estimate = _make_estimate([10], [0])
-        eps = estimate.epsilon_at(significance=0.05, delta=0, threshold=5)
+        eps = estimate.eps_delta().epsilon_at(significance=0.05, delta=0, threshold=5)
         assert eps >= 0
 
     def test_large_separation(self):
         estimate = _make_estimate(np.arange(1000, 2000), np.arange(0, 1000))
-        eps = estimate.epsilon_at(significance=0.05, delta=0, threshold=1000)
+        eps = estimate.eps_delta().epsilon_at(significance=0.05, delta=0, threshold=1000)
         assert eps > 5.0
 
 
@@ -332,7 +332,7 @@ class TestOneRunFunction:
 
         estimate = one_run(scores, coin_flip=cf)
         assert estimate.auc() > 0.6
-        assert estimate.epsilon_at(significance=0.05, delta=1e-5) > 0
+        assert estimate.eps_delta().epsilon_at(significance=0.05, delta=1e-5) > 0
 
 
 class TestOneRunEstimateRepr:

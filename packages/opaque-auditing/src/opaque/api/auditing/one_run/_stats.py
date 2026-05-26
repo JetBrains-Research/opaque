@@ -1,16 +1,25 @@
-"""Statistical helpers for one-run privacy auditing.
+"""Statistical helpers shared across one-run audit methods.
 
-Likelihood-ratio p-value computation and epsilon binary search
-for the one-run estimator (Steinke et al. 2023).
+Includes argument validation, the closed-form ε ceiling used as the
+binary-search upper bracket, and the legacy Steinke likelihood-ratio
+search (preserved for the private ``_epsilon_at_steinke`` regression path).
 """
 
 from __future__ import annotations
+
+import math
 
 import numpy as np
 import scipy.special
 import scipy.stats
 
-__all__ = ["epsilon_one_run_search", "one_run_p_value"]
+__all__ = [
+    "epsilon_one_run_search",
+    "one_run_p_value",
+    "search_ceiling",
+    "validate_delta",
+    "validate_significance",
+]
 
 
 def one_run_p_value(
@@ -38,6 +47,21 @@ def validate_significance(significance: float) -> None:
 def validate_delta(delta: float) -> None:
     if not 0 <= delta <= 1:
         raise ValueError(f"delta must be in [0, 1], got {delta}")
+
+
+def search_ceiling(m: int, delta: float, significance: float) -> float:
+    """Maximum ε any one-run audit at ``(m, delta, significance)`` can return.
+
+    Derived from the perfect-attack p-value
+    ``sigmoid(ε) ** n_eff = significance`` where
+    ``n_eff = m - round(m * delta)``.
+
+    A safety pad of 1.1× and a floor of 1.0 keep the binary search well-posed
+    when ``n_eff`` is too small to certify any positive ε.
+    """
+    n_eff = max(m - round(m * delta), 1)
+    eps_exact = -math.log(significance ** (-1.0 / n_eff) - 1.0)
+    return max(eps_exact * 1.1, 1.0)
 
 
 def epsilon_one_run_search(
