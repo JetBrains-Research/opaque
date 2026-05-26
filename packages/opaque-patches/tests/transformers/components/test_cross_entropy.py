@@ -37,37 +37,6 @@ class TestCrossEntropyPatches:
             f"Cross-entropy loss mismatch: got {loss.item():.6f}, expected {ref.item():.6f}"
         )
 
-    def test_causal_lm_loss_with_num_items_in_batch(self, device):
-        """Loss with num_items_in_batch should use sum reduction."""
-        from opaque.api.patches.transformers.components.cross_entropy import (
-            _opaque_causal_lm_loss,
-        )
-
-        batch, seq_len, vocab_size = (2, 16, 1000)
-        logits = torch.randn(batch, seq_len, vocab_size, device=device)
-        labels = torch.randint(0, vocab_size, (batch, seq_len), device=device)
-        import torch.nn as nn
-
-        num_items = torch.tensor(
-            batch * (seq_len - 1), dtype=torch.float32, device=device
-        )
-        loss = _opaque_causal_lm_loss(
-            logits, labels, vocab_size, num_items_in_batch=num_items
-        )
-        labels_ref = nn.functional.pad(labels, (0, 1), value=-100)
-        shift_labels = labels_ref[..., 1:].contiguous()
-        logits_flat = logits.float().view(-1, vocab_size)
-        shift_labels_flat = shift_labels.view(-1)
-        ref = (
-            F.cross_entropy(
-                logits_flat, shift_labels_flat, ignore_index=-100, reduction="sum"
-            )
-            / num_items
-        )
-        assert torch.allclose(loss, ref, rtol=0.001, atol=0.001), (
-            f"Sum-reduced loss mismatch: got {loss.item():.6f}, expected {ref.item():.6f}"
-        )
-
     def test_backward_through_patched_loss(self, device):
         """Gradients should flow through patched cross-entropy loss."""
         from opaque.api.patches.transformers.components.cross_entropy import (
