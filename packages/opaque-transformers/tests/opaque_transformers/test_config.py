@@ -396,7 +396,7 @@ class TestMechanismAndSamplerDefaults:
 
     def test_mf_kwargs_auto_filled(self):
         args = TrainingArguments(privacy_noise_mechanism="mf_band")
-        assert args.privacy_noise_mechanism_kwargs == {"bands": 9}
+        assert args.privacy_noise_mechanism_kwargs == {"bands": 16}
 
     def test_mf_user_kwargs_win_on_collision(self):
         args = TrainingArguments(
@@ -407,13 +407,15 @@ class TestMechanismAndSamplerDefaults:
 
     def test_mf_user_kwargs_merge_with_defaults(self):
         args = TrainingArguments(
-            privacy_noise_mechanism="mf_bisr",
-            privacy_noise_mechanism_kwargs={"bandwidth": 8},
+            privacy_noise_mechanism="mf_bsr",
+            privacy_noise_mechanism_kwargs={"bandwidth": 16},
         )
-        # Defaults supply ``alpha``; user override wins on ``bandwidth``.
+        # Defaults supply ``alpha``/``beta``; user override wins on
+        # ``bandwidth``.
         assert args.privacy_noise_mechanism_kwargs == {
-            "bandwidth": 8,
-            "alpha": 0.5,
+            "bandwidth": 16,
+            "alpha": 1.0,
+            "beta": 0.9,
         }
 
 

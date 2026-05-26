@@ -57,16 +57,52 @@ same shape.
 
 | Field | Use |
 |---|---|
-| `sampling_mode` | Only `"poisson"` is supported today. |
+| `sampling_mode` | `"auto"` (default) pairs the sampler with `privacy_noise_mechanism`; explicit values `{"poisson", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}` are validated against the mechanism's allow-list. |
 | `sampling_kwargs` | Forwarded to the sampler.  `truncated_batch_size=N` caps Poisson draws at `N` (weaker privacy at the same `q` unless recalibrated). |
-| `clipping_mode` | `"fixed"` (default), `"adaptive"`, or `"auto"`. |
+| `clipping_mode` | `"fixed"` (default), `"adaptive"`, or `"auto"`.  `adaptive` is rejected under any `mf_*` mechanism (MF noise requires constant per-step sensitivity). |
 | `clipping_kwargs` | Adaptive / AUTO-S kwargs (`target_clipping_rate`, `norm_max`, `gamma`). |
-| `privacy_noise_mechanism` | `"gaussian"` is the only mechanism today. |
-| `privacy_noise_mechanism_kwargs` | Mechanism extras — e.g. `bound=...` for the bounded Gaussian variant. |
+| `privacy_noise_mechanism` | `"gaussian"` (default, DP-SGD), or one of the DP-FTRL matrix-factorization mechanisms: `"mf_band"`, `"mf_blt"`, `"mf_bisr"`, `"mf_bsr"`, `"mf_lambda_cgd"`, `"mf_identity"`. |
+| `privacy_noise_mechanism_kwargs` | Mechanism extras.  For `"gaussian"`: e.g. `bound=...` for the bounded Gaussian variant.  For `mf_*`: per-strategy kwargs (auto-filled from Mellum-shaped defaults — see below). |
 | `noise_calibration_kwargs` | Calibration search bounds; defaults `{"min": 0.01, "max": 10.0, "tolerance": 1e-3}`. |
 
 All dict-shaped fields accept a `Mapping`, a JSON object string, or
 the HF-style comma string `"a=1,b=2"`.
+
+### DP-FTRL mechanisms
+
+Picking a `mf_*` mechanism auto-resolves the sampler and auto-fills
+the strategy kwargs:
+
+| `privacy_noise_mechanism` | Auto-resolved sampler | Default kwargs |
+|---|---|---|
+| `mf_band` | `b_min_sep` (or explicit `poisson`) | `{"bands": 16}` |
+| `mf_blt` | `balls_in_bins` | `{"max_buffers": 16}` |
+| `mf_bisr` | `balls_in_bins` | `{"bandwidth": 4}` |
+| `mf_bsr` | `balls_in_bins` | `{"bandwidth": 8, "alpha": 1.0, "beta": 0.9}` |
+| `mf_lambda_cgd` | `balls_in_bins` | `{"lambda_": 0.5}` |
+| `mf_identity` | `poisson` | `{}` |
+
+So the minimal DP-FTRL configuration is one field:
+
+```python
+args = TrainingArguments(privacy_noise_mechanism="mf_band")
+# sampling_mode resolves to "b_min_sep"
+# privacy_noise_mechanism_kwargs resolves to {"bands": 16}
+```
+
+Defaults are tuned for a Mellum/Kstack-shaped causal-LM target;
+they're a sensible starting point, not universally optimal.  Override
+any kwarg explicitly via `privacy_noise_mechanism_kwargs={...}`; user
+keys win on collision with the defaults table.
+
+Mechanism constraints (validated at construction):
+
+- BandMF requires `bands <= total_steps`; shrink `bands` for short
+  runs.
+- BallsInBins requires `total_steps % num_bins == 0` where
+  `num_bins = expected_steps_per_epoch` (so configure `max_steps` /
+  dataset / batch size to satisfy this).
+- BSR requires `alpha > beta` (paper constraint).
 
 ## Compute / precision
 

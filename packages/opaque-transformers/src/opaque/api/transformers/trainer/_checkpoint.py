@@ -36,7 +36,7 @@ DP_STATE_NAME = "dp_state.pt"
 DP_ACCOUNTANT_NAME = "accountant.json"
 RNG_STATE_NAME = "rng_state.pth"
 
-DP_STATE_BUNDLE_VERSION = 2
+DP_STATE_BUNDLE_VERSION = 3
 
 _CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")
 
@@ -221,6 +221,17 @@ class RuntimeCheckpoint:
     expected_steps_per_epoch: int = field(metadata={"compare_on_resume": True})
     expected_batch_size: int = field(metadata={"compare_on_resume": True})
     total_steps: int = field(metadata={"compare_on_resume": True})
+    # DP-FTRL provenance (``"gaussian"`` for the DP-SGD path).
+    # ``mechanism_kind`` is compared against the live args on resume so
+    # a saved ``mf_band`` run can't silently restore into a ``gaussian``
+    # rebuild.  The amplification context lets the resume path
+    # reconstruct the streaming noise matrix exactly as it was built.
+    mechanism_kind: str = field(
+        default="gaussian", metadata={"compare_on_resume": True}
+    )
+    mf_n_steps: int | None = None
+    mf_min_sep: int | None = None
+    mf_max_participations: int | None = None
 
 
 def save_dp_runtime_state(
@@ -235,6 +246,10 @@ def save_dp_runtime_state(
     expected_steps_per_epoch: int,
     expected_batch_size: int,
     total_steps: int,
+    mechanism_kind: str = "gaussian",
+    mf_n_steps: int | None = None,
+    mf_min_sep: int | None = None,
+    mf_max_participations: int | None = None,
 ) -> None:
     """Save the DP runtime bundle as a :class:`RuntimeCheckpoint`."""
     if not isinstance(clip_state, ClipState):
@@ -256,6 +271,12 @@ def save_dp_runtime_state(
         expected_steps_per_epoch=int(expected_steps_per_epoch),
         expected_batch_size=int(expected_batch_size),
         total_steps=int(total_steps),
+        mechanism_kind=str(mechanism_kind),
+        mf_n_steps=int(mf_n_steps) if mf_n_steps is not None else None,
+        mf_min_sep=int(mf_min_sep) if mf_min_sep is not None else None,
+        mf_max_participations=(
+            int(mf_max_participations) if mf_max_participations is not None else None
+        ),
     )
     # ``torch.save`` of a dataclass round-trips via pickle.  Kept as
     # pickle to handle the heterogeneous types (tensors inside

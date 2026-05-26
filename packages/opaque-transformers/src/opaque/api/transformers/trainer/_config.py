@@ -165,11 +165,14 @@ _ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
 # Tuned for a Mellum/Kstack-shaped causal-LM target; not universally
 # optimal, just a sensible starting point so ``privacy_noise_mechanism=
 # "mf_band"`` works out of the box.  User-supplied keys win on collision.
+# Keys match the strategy factory signatures in
+# :mod:`opaque.dpftrl.noise` exactly so the trainer can spread the dict
+# into the factory call.
 _MECH_DEFAULTS: dict[str, dict[str, Any]] = {
-    "mf_band": {"bands": 9},
+    "mf_band": {"bands": 16},
     "mf_blt": {"max_buffers": 16},
-    "mf_bisr": {"bandwidth": 16, "alpha": 0.5},
-    "mf_bsr": {"bandwidth": 16, "alpha": 0.5},
+    "mf_bisr": {"bandwidth": 4},
+    "mf_bsr": {"bandwidth": 8, "alpha": 1.0, "beta": 0.9},
     "mf_lambda_cgd": {"lambda_": 0.5},
     "mf_identity": {},
 }
