@@ -654,9 +654,9 @@ def parse_args():
     )
     audit_g.add_argument(
         "--audit-method",
-        choices=["eps_delta", "gdp"],
-        default="eps_delta",
-        help="Which audit method's ε to report ('eps_delta' = mechanism-agnostic; 'gdp' = μ-GDP, tighter for Gaussian-DP mechanisms)",
+        choices=["gdp", "eps_delta"],
+        default="gdp",
+        help="Which audit method's ε to report ('gdp' = μ-GDP, recommended for Gaussian-DP mechanisms like DP-FTRL; 'eps_delta' = mechanism-agnostic (ε, δ)-DP fallback)",
     )
     audit_g.add_argument(
         "--audit-batch-size",
@@ -1914,7 +1914,7 @@ def main():
                     audit_eps = _audit_method(audit_estimate).epsilon_at(
                         delta=args.target_delta
                     )
-                    audit_auc = audit_estimate.auc()
+                    audit_auc = audit_estimate.attack_auc()
                     metrics["privacy/epsilon_audit"] = audit_eps
                     metrics["privacy/audit_auc"] = audit_auc
                     eval_msg += (
@@ -1978,7 +1978,7 @@ def main():
     if args.audit:
         audit_result = run_audit(trainable_params)
         audit_eps = _audit_method(audit_result).epsilon_at(delta=args.target_delta)
-        audit_auc = audit_result.auc()
+        audit_auc = audit_result.attack_auc()
         print(
             f"  Final ε (audit, {args.audit_method}): {audit_eps:.4f}"
             f"  ({audit_result.n_in} in, {audit_result.n_out} out)"
@@ -1986,8 +1986,8 @@ def main():
         print(f"  Audit AUC:            {audit_auc:.4f}")
         # Empirical attack ROC β (1 − TPR at given FPR); independent of the
         # audit method, hence read from OneRunEstimate rather than the method.
-        print(f"  Attack β @ α=0.01:    {audit_result.beta_at(alpha=0.01):.4f}")
-        print(f"  Attack β @ α=0.10:    {audit_result.beta_at(alpha=0.1):.4f}")
+        print(f"  Attack β @ α=0.01:    {audit_result.attack_beta_at(alpha=0.01):.4f}")
+        print(f"  Attack β @ α=0.10:    {audit_result.attack_beta_at(alpha=0.1):.4f}")
         if use_wandb:
             wandb.log(
                 {

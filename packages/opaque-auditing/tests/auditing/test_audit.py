@@ -122,49 +122,79 @@ class TestEpsilonAt:
         assert isinstance(eps_d, float)
 
 
-class TestAuc:
-    """Tests for auc method."""
+class TestPldMirrorDispatch:
+    """OneRunEstimate's Pld-mirror surface dispatches to gdp() by default."""
+
+    def test_epsilon_at_matches_gdp(self):
+        estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
+        assert estimate.epsilon_at(delta=1e-5) == estimate.gdp().epsilon_at(
+            delta=1e-5
+        )
+
+    def test_delta_at_matches_gdp(self):
+        estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
+        assert estimate.delta_at(epsilon=2.0) == estimate.gdp().delta_at(
+            epsilon=2.0
+        )
+
+    def test_beta_at_matches_gdp(self):
+        estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
+        assert estimate.beta_at(alpha=0.1) == estimate.gdp().beta_at(alpha=0.1)
+
+    def test_advantage_matches_gdp(self):
+        estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
+        assert estimate.advantage() == estimate.gdp().advantage()
+
+    def test_epsilon_at_rejects_delta_zero(self):
+        """gdp dispatch requires δ > 0."""
+        estimate = _make_estimate([1, 2], [3, 4])
+        with pytest.raises(ValueError, match="delta > 0"):
+            estimate.epsilon_at(delta=0.0)
+
+
+class TestAttackAuc:
+    """Tests for attack_auc method."""
 
     def test_perfect_attack(self):
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        assert estimate.auc() > 0.99
+        assert estimate.attack_auc() > 0.99
 
     def test_random_attack(self):
         scores = np.arange(100)
         estimate = _make_estimate(scores, scores)
-        assert 0.45 < estimate.auc() < 0.55
+        assert 0.45 < estimate.attack_auc() < 0.55
 
     def test_negative_scores(self):
         estimate = _make_estimate(np.arange(-50, 0), np.arange(-100, -50))
-        assert estimate.auc() > 0.99
+        assert estimate.attack_auc() > 0.99
 
 
-class TestBetaAt:
-    """Tests for beta_at method (Type-II error = 1 - TPR)."""
+class TestAttackBetaAt:
+    """Tests for attack_beta_at method (empirical Type-II error = 1 - TPR)."""
 
     def test_perfect_classifier(self):
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        assert estimate.beta_at(alpha=0.1) < 0.1
+        assert estimate.attack_beta_at(alpha=0.1) < 0.1
 
     def test_random_classifier(self):
         scores = np.arange(100)
         estimate = _make_estimate(scores, scores)
-        beta = estimate.beta_at(alpha=0.1)
+        beta = estimate.attack_beta_at(alpha=0.1)
         assert 0.8 < beta < 0.95
 
     def test_multiple_alphas(self):
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
         alphas = np.array([0.01, 0.05, 0.1])
-        betas = estimate.beta_at(alpha=alphas)
+        betas = estimate.attack_beta_at(alpha=alphas)
         assert len(betas) == 3
         assert np.all(betas[:-1] >= betas[1:])
 
     def test_invalid_alpha(self):
         estimate = _make_estimate([1, 2], [3, 4])
         with pytest.raises(ValueError, match="fpr must be in"):
-            estimate.beta_at(alpha=-0.1)
+            estimate.attack_beta_at(alpha=-0.1)
         with pytest.raises(ValueError, match="fpr must be in"):
-            estimate.beta_at(alpha=1.5)
+            estimate.attack_beta_at(alpha=1.5)
 
 
 class TestEdgeCases:
@@ -187,37 +217,37 @@ class TestAucCI:
     def test_basic_ci(self):
         rng = np.random.default_rng(42)
         estimate = _make_estimate(rng.normal(2.0, 1.0, 100), rng.normal(0.0, 1.0, 100))
-        ci = estimate.auc(confidence=0.95, num_samples=50, key=key(42))
+        ci = estimate.attack_auc(confidence=0.95, num_samples=50, key=key(42))
         assert isinstance(ci, tuple)
         assert len(ci) == 2
         assert ci[0] < ci[1]
 
     def test_ci_reproducibility(self):
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        ci1 = estimate.auc(confidence=0.95, num_samples=20, key=key(42))
-        ci2 = estimate.auc(confidence=0.95, num_samples=20, key=key(42))
+        ci1 = estimate.attack_auc(confidence=0.95, num_samples=20, key=key(42))
+        ci2 = estimate.attack_auc(confidence=0.95, num_samples=20, key=key(42))
         assert ci1 == ci2
 
     def test_point_estimate_unchanged(self):
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        val = estimate.auc()
+        val = estimate.attack_auc()
         assert isinstance(val, float)
 
     def test_ci_contains_point_estimate(self):
         rng = np.random.default_rng(42)
         estimate = _make_estimate(rng.normal(2.0, 1.0, 200), rng.normal(0.0, 1.0, 200))
-        point = estimate.auc()
-        ci = estimate.auc(confidence=0.95, num_samples=200, key=key(42))
+        point = estimate.attack_auc()
+        ci = estimate.attack_auc(confidence=0.95, num_samples=200, key=key(42))
         assert ci[0] <= point <= ci[1]
 
     def test_invalid_confidence(self):
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
         with pytest.raises(ValueError):
-            estimate.auc(confidence=0.0)
+            estimate.attack_auc(confidence=0.0)
         with pytest.raises(ValueError):
-            estimate.auc(confidence=1.0)
+            estimate.attack_auc(confidence=1.0)
         with pytest.raises(ValueError):
-            estimate.auc(confidence=-0.1)
+            estimate.attack_auc(confidence=-0.1)
 
 
 class TestCoinFlip:
@@ -319,7 +349,7 @@ class TestOneRunFunction:
         assert isinstance(estimate, OneRunEstimate)
         assert estimate.n_in == len(cf.in_indices)
         assert estimate.n_out == len(cf.out_indices)
-        assert estimate.auc() > 0.99
+        assert estimate.attack_auc() > 0.99
 
     def test_end_to_end_one_run(self):
         rng = np.random.default_rng(42)
@@ -331,7 +361,7 @@ class TestOneRunFunction:
         scores[~cf._in_mask] = rng.normal(loc=0.3, scale=0.3, size=(~cf._in_mask).sum())
 
         estimate = one_run(scores, coin_flip=cf)
-        assert estimate.auc() > 0.6
+        assert estimate.attack_auc() > 0.6
         assert estimate.eps_delta().epsilon_at(significance=0.05, delta=1e-5) > 0
 
 

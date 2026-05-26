@@ -93,7 +93,7 @@ and returns a frozen estimate.
 
 ```python
 estimate = auditing.one_run(scores, coin_flip=cf)
-print(estimate.eps_delta().epsilon_at(delta=1e-5))
+print(estimate.epsilon_at(delta=1e-5))
 ```
 
 ---
@@ -140,13 +140,56 @@ class OneRunEstimate  # frozen dataclass
 ```
 
 Precomputed one-run audit estimate, returned by `auditing.one_run()`.
-Holds the Pareto-optimal threshold structure and exposes two audit
-methods plus attack-side metrics.
+Holds the Pareto-optimal threshold structure and exposes:
+
+- a **default audit-method surface** (`epsilon_at`, `delta_at`, `beta_at`,
+  `advantage`) that dispatches to μ-GDP — the paper-recommended default
+  for Gaussian-DP mechanisms;
+- two **method factories** (`eps_delta`, `gdp`) for explicit override;
+- **attack-side empirical metrics** (`attack_auc`, `attack_beta_at`).
 
 | Attribute | Type | Description |
 |---|---|---|
 | `n_in` | `int` | Number of held-in canaries |
 | `n_out` | `int` | Number of held-out canaries |
+
+### epsilon_at
+
+```python
+estimate.epsilon_at(*, delta, significance=0.05, threshold=None) -> float
+```
+
+Epsilon lower bound from the default μ-GDP audit method. Equivalent to
+`self.gdp().epsilon_at(...)`. Requires `delta > 0`. For non-Gaussian-DP
+mechanisms use `self.eps_delta().epsilon_at(...)` explicitly.
+
+### delta_at
+
+```python
+estimate.delta_at(*, epsilon, significance=0.05, threshold=None) -> float
+```
+
+δ(ε) from the default μ-GDP audit method. Equivalent to
+`self.gdp().delta_at(...)`.
+
+### beta_at
+
+```python
+estimate.beta_at(*, alpha, significance=0.05, threshold=None) -> float
+```
+
+Theoretical f-DP β at α under the inferred μ̂-GDP. Equivalent to
+`self.gdp().beta_at(...)`. For the empirical attack ROC β, see
+[`attack_beta_at`](#attack_beta_at).
+
+### advantage
+
+```python
+estimate.advantage(*, significance=0.05, threshold=None) -> float
+```
+
+Total-variation advantage at the inferred μ̂-GDP. Equivalent to
+`self.gdp().advantage()`.
 
 ### eps_delta
 
@@ -155,7 +198,8 @@ estimate.eps_delta() -> EpsDeltaMethod
 ```
 
 Mechanism-agnostic (ε, δ)-DP order-statistics audit method
-(Xiang et al. 2025). See [EpsDeltaMethod](#epsdeltamethod) below.
+(Xiang et al. 2025). Use for non-Gaussian-DP mechanisms or pure ε-DP
+auditing. See [EpsDeltaMethod](#epsdeltamethod) below.
 
 ### gdp
 
@@ -163,28 +207,31 @@ Mechanism-agnostic (ε, δ)-DP order-statistics audit method
 estimate.gdp(*, grid_size=10_000) -> GdpMethod
 ```
 
-μ-GDP order-statistics audit method (Xiang et al. 2025). Tighter than
-`eps_delta()` when the audited mechanism satisfies Gaussian DP
-(DP-SGD, matrix-factorisation DP-FTRL). See [GdpMethod](#gdpmethod).
+μ-GDP order-statistics audit method (Xiang et al. 2025) with a tunable
+integration grid. The top-level `epsilon_at` / `delta_at` / `beta_at` /
+`advantage` are shortcuts for `gdp()` with the default `grid_size`. See
+[GdpMethod](#gdpmethod) below.
 
-### auc
-
-```python
-estimate.auc(*, confidence=None, num_samples=1000, key=None) -> float | tuple[float, float]
-```
-
-ROC AUC. Returns point estimate by default, or `(lower, upper)` CI tuple
-when `confidence` is provided.
-
-### beta_at
+### attack_auc
 
 ```python
-estimate.beta_at(*, alpha) -> float | np.ndarray
+estimate.attack_auc(*, confidence=None, num_samples=1000, key=None) -> float | tuple[float, float]
 ```
 
-Empirical attack Type-II error at a given Type-I error rate;
-`β = 1 − TPR` at `α = FPR`, interpolated from the Pareto-optimal ROC
-frontier. Independent of which audit method you pick.
+Empirical ROC AUC of the membership inference attack. Returns point
+estimate by default, or `(lower, upper)` CI tuple when `confidence` is
+provided. Independent of the audit method.
+
+### attack_beta_at
+
+```python
+estimate.attack_beta_at(*, alpha) -> float | np.ndarray
+```
+
+Empirical attack β at given FPR: `1 − TPR` interpolated from the
+Pareto-optimal ROC frontier. Distinct from
+[`beta_at`](#beta_at) which is the theoretical f-DP β at the
+inferred μ̂-GDP.
 
 ---
 
@@ -254,9 +301,8 @@ method.beta_at(*, alpha, significance=0.05, threshold=None) -> float
 ```
 
 f-DP Type-II error at α under the inferred μ̂-GDP:
-β(α; μ) = Φ(Φ⁻¹(1 − α) − μ̂). This is the *theoretical* β of the
-post-audit guarantee, distinct from `OneRunEstimate.beta_at` (empirical
-attack ROC).
+β(α; μ) = Φ(Φ⁻¹(1 − α) − μ̂). Theoretical β of the post-audit guarantee,
+distinct from `OneRunEstimate.attack_beta_at` (empirical attack ROC).
 
 ### advantage
 
@@ -277,8 +323,12 @@ Total-variation advantage at the inferred μ̂-GDP: TV(μ) = 2·Φ(μ̂/2) − 1
 | `auditing.one_run(scores, coin_flip=cf)` | Estimate privacy → `OneRunEstimate` |
 | `cf.train_indices(len(dataset))` | Training indices for `dataset.select()` |
 | `cf.canary_subset(dataset)` | `Subset` of canary examples for DataLoader |
-| `estimate.eps_delta().epsilon_at(delta=)` | (ε, δ)-DP audit ε bound |
-| `estimate.gdp().epsilon_at(delta=)` | μ-GDP audit ε bound (tighter for Gaussian DP) |
-| `estimate.auc()` | Attack AUC |
-| `estimate.auc(confidence=, key=)` | AUC with confidence interval |
-| `estimate.beta_at(alpha=)` | Empirical attack β at given FPR |
+| `estimate.epsilon_at(delta=)` | ε bound (μ-GDP default) |
+| `estimate.delta_at(epsilon=)` | δ at given ε |
+| `estimate.beta_at(alpha=)` | Theoretical β at α (μ-GDP) |
+| `estimate.advantage()` | TV advantage at inferred μ̂ |
+| `estimate.eps_delta()` | Mechanism-agnostic (ε, δ)-DP method (override) |
+| `estimate.gdp(grid_size=)` | μ-GDP method with tunable grid |
+| `estimate.attack_auc()` | Empirical attack AUC |
+| `estimate.attack_auc(confidence=, key=)` | Empirical AUC with CI |
+| `estimate.attack_beta_at(alpha=)` | Empirical attack β at given FPR |

@@ -44,8 +44,8 @@ def test_basic_audit_workflow():
     assert eps_bonf > 0, "Bonferroni should also detect leakage"
 
     # Test utility metrics
-    assert 0.5 < result.auc() < 1.0, "AUC should be above random"
-    assert result.beta_at(alpha=0.05) < 0.95, (
+    assert 0.5 < result.attack_auc() < 1.0, "AUC should be above random"
+    assert result.attack_beta_at(alpha=0.05) < 0.95, (
         "Beta should be below 1 for detectable leakage"
     )
 
@@ -58,7 +58,7 @@ def test_audit_with_auc_ci():
 
     result = _make_estimate(in_scores, out_scores)
 
-    auc_ci = result.auc(confidence=0.95, num_samples=20, key=key(42))
+    auc_ci = result.attack_auc(confidence=0.95, num_samples=20, key=key(42))
     assert len(auc_ci) == 2
     assert auc_ci[0] <= auc_ci[1]
 
@@ -72,7 +72,7 @@ def test_no_privacy_leakage():
     eps = result.eps_delta().epsilon_at(significance=0.05, delta=0)
     assert eps < 0.5, "Should detect minimal leakage"
 
-    assert 0.4 < result.auc() < 0.6, "AUC should be near random"
+    assert 0.4 < result.attack_auc() < 0.6, "AUC should be near random"
 
 
 def test_perfect_attack():
@@ -81,7 +81,7 @@ def test_perfect_attack():
         np.arange(50, 100, dtype=float), np.arange(0, 50, dtype=float)
     )
 
-    assert result.auc() > 0.99, "Perfect attack should have AUC ~1.0"
+    assert result.attack_auc() > 0.99, "Perfect attack should have AUC ~1.0"
 
     eps = result.eps_delta().epsilon_at(significance=0.05, delta=0, threshold=50)
     assert eps > 2.5, "Perfect attack should give large epsilon"
@@ -97,9 +97,9 @@ def test_real_world_scenario():
     eps = result.eps_delta().epsilon_at(delta=1e-5)
     assert eps > 0, "Should detect some privacy leakage"
 
-    assert 0.5 < result.auc() < 0.85, "AUC should show modest attack"
+    assert 0.5 < result.attack_auc() < 0.85, "AUC should show modest attack"
 
-    beta_at_1pct = result.beta_at(alpha=0.01)
+    beta_at_1pct = result.attack_beta_at(alpha=0.01)
     assert beta_at_1pct > 0.7, (
         "Beta should be high at low alpha (weak attack at strict threshold)"
     )
@@ -129,5 +129,5 @@ def test_all_metrics_on_single_result():
     assert result.eps_delta().epsilon_at(delta=1e-5) > 0
 
     # All utility metrics
-    assert 0.5 < result.auc() < 1.0
-    assert result.beta_at(alpha=0.05) <= 1.0
+    assert 0.5 < result.attack_auc() < 1.0
+    assert result.attack_beta_at(alpha=0.05) <= 1.0

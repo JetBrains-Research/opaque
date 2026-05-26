@@ -69,9 +69,9 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 - **[Auditing](auditing.md)**: Empirical privacy validation
   - `auditing.coin_flip()`, `auditing.loss_scores()`, `auditing.one_run()` - Three-step workflow
-  - `OneRunEstimate.eps_delta().epsilon_at()` - Mechanism-agnostic (ε, δ)-DP ε bound
-  - `OneRunEstimate.gdp().epsilon_at()` - μ-GDP ε bound (tighter for Gaussian DP)
-  - `auc()`, `beta_at()` - Attack metrics
+  - `OneRunEstimate.epsilon_at()`, `.delta_at()`, `.beta_at()`, `.advantage()` - μ-GDP-default Pld-mirror surface
+  - `OneRunEstimate.eps_delta()` - Mechanism-agnostic (ε, δ)-DP override
+  - `attack_auc()`, `attack_beta_at()` - Attack-side empirical metrics
 
 - **[Distributed](distributed.md)**: Multi-GPU training with DDP
   - `sum_gradients()` / `sum_gradients_()` - Copy-returning and in-place DP gradient summation
@@ -213,10 +213,14 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `auditing.coin_flip()`               | Designate canaries + partition  | [Guide](../user-guide/auditing.md)             |
 | `auditing.loss_scores()`            | Compute membership scores       | [Guide](../user-guide/auditing.md)             |
 | `auditing.one_run()`                | Build one-run estimate          | [Guide](../user-guide/auditing.md)             |
-| `OneRunEstimate.eps_delta()`        | (ε, δ)-DP audit method          | [Guide](../user-guide/auditing.md)             |
-| `OneRunEstimate.gdp()`              | μ-GDP audit method              | [Guide](../user-guide/auditing.md)             |
-| `OneRunEstimate.auc()`              | Membership inference AUC        | [Guide](../user-guide/auditing.md)             |
-| `OneRunEstimate.beta_at()`          | Empirical attack β at given FPR | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimate.epsilon_at()`       | ε bound (μ-GDP default)         | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimate.delta_at()`         | δ at given ε (μ-GDP default)    | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimate.beta_at()`          | Theoretical β at α (μ-GDP)      | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimate.advantage()`        | TV at inferred μ̂ (μ-GDP)        | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimate.eps_delta()`        | (ε, δ)-DP audit method override | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimate.gdp(grid_size=)`    | μ-GDP method with tunable grid  | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimate.attack_auc()`       | Empirical attack AUC            | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimate.attack_beta_at()`   | Empirical attack β at given FPR | [Guide](../user-guide/auditing.md)             |
 
 ### Distributed
 

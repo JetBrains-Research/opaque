@@ -109,7 +109,7 @@ class OneRunEstimate:
     def __repr__(self) -> str:
         return (
             f"OneRunEstimate(n_in={self.n_in}, n_out={self.n_out}, "
-            f"auc={self.auc():.4f})"
+            f"auc={self.attack_auc():.4f})"
         )
 
     # ------------------------------------------------------------------
@@ -158,10 +158,77 @@ class OneRunEstimate:
         return GdpMethod(_estimate=self, grid_size=grid_size)
 
     # ------------------------------------------------------------------
-    # Attack utility metrics
+    # Pld-mirror surface — dispatches to gdp() (paper-recommended default)
     # ------------------------------------------------------------------
 
-    def auc(
+    def epsilon_at(
+        self,
+        *,
+        delta: float,
+        significance: float = 0.05,
+        threshold: float | None = None,
+    ) -> float:
+        """Epsilon lower bound from the default μ-GDP audit method.
+
+        Shortcut for ``self.gdp().epsilon_at(...)``.  For non-Gaussian-DP
+        mechanisms use ``self.eps_delta().epsilon_at(...)`` explicitly.
+        Requires ``delta > 0`` — μ-GDP is incompatible with pure ε-DP.
+        """
+        return self.gdp().epsilon_at(
+            delta=delta, significance=significance, threshold=threshold,
+        )
+
+    def delta_at(
+        self,
+        *,
+        epsilon: float,
+        significance: float = 0.05,
+        threshold: float | None = None,
+    ) -> float:
+        """δ(ε) from the default μ-GDP audit method.
+
+        Shortcut for ``self.gdp().delta_at(...)``.
+        """
+        return self.gdp().delta_at(
+            epsilon=epsilon, significance=significance, threshold=threshold,
+        )
+
+    def beta_at(
+        self,
+        *,
+        alpha: float,
+        significance: float = 0.05,
+        threshold: float | None = None,
+    ) -> float:
+        """f-DP Type-II error at α from the default μ-GDP audit method.
+
+        Shortcut for ``self.gdp().beta_at(...)`` — *theoretical* β at the
+        inferred μ̂.  For the *empirical* attack-ROC β (1 − TPR at given
+        FPR), see :meth:`attack_beta_at`.
+        """
+        return self.gdp().beta_at(
+            alpha=alpha, significance=significance, threshold=threshold,
+        )
+
+    def advantage(
+        self,
+        *,
+        significance: float = 0.05,
+        threshold: float | None = None,
+    ) -> float:
+        """Total-variation advantage from the default μ-GDP audit method.
+
+        Shortcut for ``self.gdp().advantage(...)``.
+        """
+        return self.gdp().advantage(
+            significance=significance, threshold=threshold,
+        )
+
+    # ------------------------------------------------------------------
+    # Attack-side empirical metrics
+    # ------------------------------------------------------------------
+
+    def attack_auc(
         self,
         *,
         confidence: float | None = None,
@@ -213,17 +280,18 @@ class OneRunEstimate:
         ci = np.quantile(values, corrected, method="linear")
         return (float(ci[0]), float(ci[1]))
 
-    def beta_at(self, *, alpha: float | np.ndarray) -> float | np.ndarray:
-        """Type-II error rate of the attack at a given Type-I error rate.
+    def attack_beta_at(self, *, alpha: float | np.ndarray) -> float | np.ndarray:
+        """Empirical attack β: 1 − TPR at FPR = ``alpha``.
 
-        Empirical FNR at FPR = ``alpha``, interpolated from the attack's
-        Pareto-optimal ROC frontier.
+        Interpolated from the attack's Pareto-optimal ROC frontier;
+        independent of the audit method.  For the *theoretical* β under
+        the inferred μ̂-GDP guarantee, use :meth:`beta_at`.
 
         Args:
             alpha: Type-I error rate(s) (false positive rate) in [0, 1].
 
         Returns:
-            Type-II error rate(s) at the specified alpha(s).
+            Empirical Type-II error rate(s) at the specified alpha(s).
         """
         tpr = tpr_at_given_fpr(alpha, self.tp_counts, self.fp_counts)
         return 1.0 - tpr
