@@ -222,6 +222,75 @@ class TestGdpMethod:
         assert abs(eps_5k - eps_10k) < 0.5
 
 
+# ---- Pld-mirror surface: delta_at, beta_at, advantage ----------------------
+
+
+class TestGdpPldSurface:
+    """Tests for delta_at / beta_at / advantage on GdpMethod."""
+
+    def test_delta_at_round_trips_with_epsilon_at(self):
+        """gdp(): δ̂ = delta_at(epsilon_at(δ)) ≈ δ (closed-form inversion)."""
+        est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
+        method = est.gdp()
+        delta_input = 1e-5
+        eps = method.epsilon_at(delta=delta_input)
+        d_out = method.delta_at(epsilon=eps)
+        assert abs(d_out - delta_input) < 1e-6
+
+    def test_delta_at_monotone_in_epsilon(self):
+        """Larger ε ⇒ smaller δ along the μ̂-GDP curve."""
+        est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
+        method = est.gdp()
+        d_small = method.delta_at(epsilon=1.0)
+        d_large = method.delta_at(epsilon=4.0)
+        assert d_large <= d_small
+
+    def test_delta_at_negative_epsilon_raises(self):
+        est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
+        with pytest.raises(ValueError, match="epsilon must be >= 0"):
+            est.gdp().delta_at(epsilon=-0.1)
+
+    def test_beta_at_endpoints(self):
+        """β(0) ≤ 1, β(1) ≥ 0; perfect attack has β well below 1 − α."""
+        est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
+        method = est.gdp()
+        assert 0.0 <= method.beta_at(alpha=0.0) <= 1.0
+        assert 0.0 <= method.beta_at(alpha=1.0) <= 1.0
+        # Strong separation → β at α=0.5 substantially below 0.5 (random)
+        assert method.beta_at(alpha=0.5) < 0.5
+
+    def test_beta_at_no_separation_near_random(self):
+        """μ̂ ≈ 0 → β(α) ≈ 1 − α."""
+        est = _make_estimate(np.arange(100), np.arange(100))
+        beta = est.gdp().beta_at(alpha=0.3)
+        assert abs(beta - 0.7) < 0.1
+
+    def test_beta_at_invalid_alpha_raises(self):
+        est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
+        with pytest.raises(ValueError, match="alpha must be in"):
+            est.gdp().beta_at(alpha=-0.1)
+        with pytest.raises(ValueError, match="alpha must be in"):
+            est.gdp().beta_at(alpha=1.5)
+
+    def test_advantage_in_unit_interval(self):
+        est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
+        adv = est.gdp().advantage()
+        assert 0.0 <= adv <= 1.0
+
+    def test_advantage_no_separation_near_zero(self):
+        est = _make_estimate(np.arange(100), np.arange(100))
+        adv = est.gdp().advantage()
+        assert adv < 0.1
+
+    def test_advantage_matches_closed_form(self):
+        """advantage() ≡ 2·Φ(μ̂/2) − 1 at the inferred μ̂."""
+        est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
+        method = est.gdp()
+        mu = method._mu_at(0.05, None)
+        expected = 2.0 * scipy.stats.norm.cdf(mu / 2.0) - 1.0
+        assert abs(method.advantage() - expected) < 1e-10
+
+
 # ---- Contract: torch-free --------------------------------------------------
 
 
