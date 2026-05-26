@@ -7,8 +7,10 @@ there is likely a bug in the implementation.
 
 ## How it works
 
-Opaque implements one-run auditing from
-[Steinke, Nasr, Jagielski (2023)](https://arxiv.org/abs/2305.08846):
+Opaque implements one-run auditing
+([Steinke, Nasr, Jagielski 2023](https://arxiv.org/abs/2305.08846))
+with the tighter order-statistics tests from
+[Xiang, Chen, Kerkouche (2025)](https://arxiv.org/abs/2509.08704):
 
 1. **Designate canaries.** Randomly select `m` examples as canaries.
 2. **Flip coins.** For each canary, include or exclude it from training
@@ -17,8 +19,8 @@ Opaque implements one-run auditing from
    included.
 4. **Score.** Compute a membership score for each canary (negative loss by
    default — lower loss means more likely a member).
-5. **Test.** Use a likelihood-ratio test to bound epsilon from the scores
-   and coin flips.
+5. **Test.** Pick an audit method (`eps_delta` or `gdp`) and convert
+   scores + coin flips into an ε lower bound.
 
 Only one training run is needed, unlike shadow-model approaches.
 
@@ -52,8 +54,11 @@ scores = auditing.loss_scores(
 
 # 4. Estimate: build the one-run estimate
 estimate = auditing.one_run(scores, coin_flip=cf)
-print(f"ε (empirical): {estimate.epsilon_at(delta=1e-5):.4f}")
-print(f"AUC: {estimate.auc():.4f}")
+
+# 5. Pick an audit method and query ε
+print(f"ε (eps_delta): {estimate.eps_delta().epsilon_at(delta=1e-5):.4f}")
+print(f"ε (gdp):       {estimate.gdp().epsilon_at(delta=1e-5):.4f}")
+print(f"AUC:           {estimate.auc():.4f}")
 ```
 
 ## Integration with training
@@ -85,11 +90,12 @@ scores = auditing.loss_scores(
     dataloader=canary_loader,
 )
 estimate = auditing.one_run(scores, coin_flip=cf)
-print(f"ε (empirical): {estimate.epsilon_at(delta=1e-5):.4f}")
+print(f"ε (eps_delta): {estimate.eps_delta().epsilon_at(delta=1e-5):.4f}")
 ```
 
 See [examples/train_causal_lm.py](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py)
-for a complete working example with the `--audit` flag.
+and [examples/train_dp_ftrl.py](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dp_ftrl.py)
+for complete working examples with the `--audit` flag.
 
 ### Parameter reference
 
@@ -103,24 +109,59 @@ for a complete working example with the `--audit` flag.
 - **`reference_scores`**: Baseline scores from an untrained model. When
   provided, returned scores are `scores - reference_scores` (loss reduction).
 
-## Epsilon estimation
+## Audit methods
 
-Epsilon is estimated using the one-run likelihood-ratio test from
-Steinke et al. (2023). For each Pareto-optimal threshold, the test
-tries positive-only, negative-only, and two-sided guesses, taking
-the best result with Bonferroni correction.
+`OneRunEstimate` exposes two factory methods, one per f-DP family. Pick one
+explicitly — neither is the silent default — and chain `.epsilon_at(...)`:
+
+| Method | f-DP family | Mechanism scope | `delta` |
+|---|---|---|---|
+| `estimate.eps_delta()` | (ε, δ)-DP | Any DP mechanism (Laplace, discrete Gaussian, …) | `delta >= 0` (pure ε-DP OK) |
+| `estimate.gdp()` | μ-GDP | Gaussian-DP mechanisms (DP-SGD, MF DP-FTRL) | `delta > 0` (required) |
+
+`gdp()` is strictly tighter than `eps_delta()` when the audited mechanism
+satisfies Gaussian DP. For arbitrary mechanisms — or pure ε-DP — use
+`eps_delta()`.
 
 ```python
-estimate.epsilon_at(delta=1e-5)                       # default significance=0.05
-estimate.epsilon_at(delta=1e-5, significance=0.01)    # stricter confidence
-estimate.epsilon_at(delta=1e-5, threshold=4.0)        # specific threshold
+estimate.eps_delta().epsilon_at(delta=1e-5)
+estimate.eps_delta().epsilon_at(delta=1e-5, significance=0.01)
+estimate.eps_delta().epsilon_at(delta=1e-5, threshold=4.0)
+
+estimate.gdp().epsilon_at(delta=1e-5)
+estimate.gdp(grid_size=20_000).epsilon_at(delta=1e-5)  # tighter numerical
 ```
+
+Both methods also expose `delta_at(epsilon=)` — the inverse query along the
+audit's (ε, δ) boundary:
+
+```python
+estimate.eps_delta().delta_at(epsilon=3.0)   # largest δ for which ε ≥ 3.0 is certified
+estimate.gdp().delta_at(epsilon=3.0)
+```
+
+`gdp()` additionally mirrors the full
+[`Pld`](accounting.md#privacy-metrics) surface — the inferred μ̂ pins down
+a single f-DP curve so the values below are sharp:
+
+```python
+estimate.gdp().beta_at(alpha=0.01)   # theoretical β under inferred μ̂-GDP
+estimate.gdp().advantage()           # 2·Φ(μ̂/2) − 1
+```
+
+`eps_delta()` deliberately does *not* expose `beta_at` / `advantage`:
+the (ε, δ)-DP trade-off function is a family envelope rather than a single
+mechanism's curve, and the resulting values would be worst-case across the
+family rather than instance-specific.
 
 ## Attack metrics
 
+Independent of which audit method you chose, you can read attack-side
+metrics from the estimate directly:
+
 ```python
 estimate.auc()                  # ROC AUC (0.5 = random, 1.0 = perfect)
-estimate.beta_at(alpha=0.01)    # Type-II error at 1% FPR
+estimate.beta_at(alpha=0.01)    # empirical attack β at 1% FPR (1 − TPR)
 ```
 
 AUC confidence intervals:
@@ -132,7 +173,22 @@ print(f"AUC 95% CI: [{ci[0]:.3f}, {ci[1]:.3f}]")
 
 ## Number of canaries
 
-More canaries = tighter bounds:
+The one-run audit has a hard ceiling at `ε ≲ ln(m / -ln(α))` for a perfect
+attack with `m` canaries at significance `α`. Anything above that is
+unreachable regardless of which method you pick:
+
+| Canaries m | Hard ceiling at α=0.05 |
+|---|---|
+| 1 000 | ≈ 5.8 |
+| 10 000 | ≈ 8.1 |
+| 100 000 | ≈ 10.4 |
+| 1 000 000 | ≈ 12.7 |
+
+Imperfect attacks lower this further. So if you train at `ε = 60`, the
+audit cannot certify anywhere near it — that's a property of one-run
+auditing, not an Opaque limitation.
+
+In practice:
 
 | Canaries | Use case |
 |---|---|
@@ -150,9 +206,9 @@ The audited epsilon should be **below** the theoretical epsilon:
   ε (theoretical):      3.00    ← expected: gap exists
 ```
 
-**Gap is expected.** The audit runs a suboptimal attack; the theoretical
-bound is a worst-case upper bound. A large gap is normal, especially in
-high-noise regimes.
+**Gap is expected.** The audit runs a suboptimal attack and is capped by
+`ln(m)`; the theoretical bound is a worst-case upper bound. A large gap is
+normal, especially in high-noise regimes.
 
 **Audited > theoretical is a red flag.** Investigate:
 
@@ -163,6 +219,7 @@ high-noise regimes.
 
 ## References
 
+- Xiang, Chen, Kerkouche (2025). [Tight Privacy Auditing in One Run](https://arxiv.org/abs/2509.08704).
 - Steinke, Nasr, Jagielski (2023). [Privacy Auditing with One (1) Training Run](https://arxiv.org/abs/2305.08846). NeurIPS 2023.
 - Carlini et al. (2022). [Membership Inference Attacks From First Principles](https://arxiv.org/abs/2112.03570).
 

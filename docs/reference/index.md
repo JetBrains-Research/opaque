@@ -69,7 +69,8 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 - **[Auditing](auditing.md)**: Empirical privacy validation
   - `auditing.coin_flip()`, `auditing.loss_scores()`, `auditing.one_run()` - Three-step workflow
-  - `OneRunEstimate.epsilon_at()` - Epsilon bound (one-run method)
+  - `OneRunEstimate.eps_delta().epsilon_at()` - Mechanism-agnostic (ε, δ)-DP ε bound
+  - `OneRunEstimate.gdp().epsilon_at()` - μ-GDP ε bound (tighter for Gaussian DP)
   - `auc()`, `beta_at()` - Attack metrics
 
 - **[Distributed](distributed.md)**: Multi-GPU training with DDP
@@ -212,9 +213,10 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `auditing.coin_flip()`               | Designate canaries + partition  | [Guide](../user-guide/auditing.md)             |
 | `auditing.loss_scores()`            | Compute membership scores       | [Guide](../user-guide/auditing.md)             |
 | `auditing.one_run()`                | Build one-run estimate          | [Guide](../user-guide/auditing.md)             |
-| `OneRunEstimate.epsilon_at()`       | Epsilon bound (one-run method)  | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimate.eps_delta()`        | (ε, δ)-DP audit method          | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimate.gdp()`              | μ-GDP audit method              | [Guide](../user-guide/auditing.md)             |
 | `OneRunEstimate.auc()`              | Membership inference AUC        | [Guide](../user-guide/auditing.md)             |
-| `OneRunEstimate.beta_at()`          | Type-II error at given alpha    | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimate.beta_at()`          | Empirical attack β at given FPR | [Guide](../user-guide/auditing.md)             |
 
 ### Distributed
 
