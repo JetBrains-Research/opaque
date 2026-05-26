@@ -1115,6 +1115,18 @@ class DPTrainer:
         # that wrapper at call time and emits a ``NoisedPytree`` whose
         # ``.noise_stddev`` carries the realized σ for downstream
         # consumers (e.g. opaque optimizers' DP bias correction).
+        if a.privacy_noise_mechanism != "gaussian":
+            # DP-FTRL ``mf_*`` mechanisms are accepted by the config
+            # surface (Phase 1) but not yet wired into the training
+            # context.  Phase 2 lights up :func:`mf_gaussian_noise`,
+            # the sampler dispatch in ``get_train_dataloader``, and the
+            # DP-FTRL accountant amplification chain.
+            raise NotImplementedError(
+                f"privacy_noise_mechanism={a.privacy_noise_mechanism!r} is "
+                f"accepted by TrainingArguments but not yet wired into the "
+                f"DPTrainer noise factory; DP-FTRL integration lands in a "
+                f"follow-up phase.  Use 'gaussian' for now."
+            )
         _gn_extra: dict[str, Any] = {}
         if isinstance(a.privacy_noise_mechanism_kwargs, dict):
             for _k, _v in a.privacy_noise_mechanism_kwargs.items():
