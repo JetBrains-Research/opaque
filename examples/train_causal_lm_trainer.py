@@ -1,15 +1,24 @@
-"""End-to-end DP-SGD LoRA training with Opaque's HuggingFace DPTrainer.
+"""End-to-end DP LoRA training with Opaque's HuggingFace DPTrainer.
 
-This script mirrors examples/train_causal_lm.py for model/data/LoRA/privacy
-configuration, but delegates the training loop to opaque.transformers.trainer.
+Covers both DP-SGD (Gaussian) and DP-FTRL (matrix-factorization) via the
+``--noise-mechanism`` flag — the DPTrainer accepts both surfaces through
+the same ``TrainingArguments``.
 
 USAGE:
 
-  # Quick smoke test, GPT-2 on ag_news
+  # Quick smoke test, GPT-2 on ag_news (DP-SGD)
   python examples/train_causal_lm_trainer.py --preset smoke
 
-  # Full production-style configuration on Mellum-4b + KStack
+  # Full production-style configuration on Mellum-4b + KStack (DP-SGD)
   python examples/train_causal_lm_trainer.py --preset mellum-kstack
+
+  # DP-FTRL with banded MF (Mellum-shaped defaults: bands=16, sampler=b_min_sep)
+  python examples/train_causal_lm_trainer.py --preset mellum-kstack \
+      --noise-mechanism mf_band
+
+  # DP-FTRL with BLT (balls-in-bins sampling)
+  python examples/train_causal_lm_trainer.py --preset smoke \
+      --noise-mechanism mf_blt --noise-mechanism-kwargs max_buffers=16
 
   # Save DPTrainer checkpoints every eval interval
   python examples/train_causal_lm_trainer.py --preset smoke --save-steps 10
@@ -348,8 +357,34 @@ def parse_args() -> argparse.Namespace:
     dp_group.add_argument(
         "--noise-mechanism",
         type=str,
-        choices=["gaussian", "truncated_gaussian"],
+        choices=[
+            "gaussian",
+            "truncated_gaussian",
+            "mf_band",
+            "mf_blt",
+            "mf_bisr",
+            "mf_bsr",
+            "mf_lambda_cgd",
+            "mf_identity",
+        ],
         default="gaussian",
+        help=(
+            "DP-SGD: 'gaussian' (default), 'truncated_gaussian'.  "
+            "DP-FTRL: 'mf_band', 'mf_blt', 'mf_bisr', 'mf_bsr', "
+            "'mf_lambda_cgd', 'mf_identity'.  Strategy kwargs auto-fill "
+            "from Mellum-shaped defaults; override via --noise-mechanism-kwargs."
+        ),
+    )
+    dp_group.add_argument(
+        "--noise-mechanism-kwargs",
+        type=str,
+        default=None,
+        help=(
+            "JSON object or 'key=value,...' string forwarded to the strategy "
+            "factory (e.g. 'bands=16' for mf_band, "
+            "'bandwidth=8,alpha=1.0,beta=0.9' for mf_bsr).  Empty ⇒ keep "
+            "per-mechanism defaults."
+        ),
     )
     dp_group.add_argument("--noise-radius", type=float, default=3.0)
     dp_group.add_argument(
@@ -720,6 +755,7 @@ def main() -> int:
             else {}
         ),
         privacy_noise_mechanism=args.noise_mechanism,
+        privacy_noise_mechanism_kwargs=args.noise_mechanism_kwargs or {},
         privacy_noise_radius=args.noise_radius,
     )
 
