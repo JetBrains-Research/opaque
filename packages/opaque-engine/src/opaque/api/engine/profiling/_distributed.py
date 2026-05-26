@@ -50,9 +50,7 @@ def sync_perf_state(state: PerfState) -> PerfState:
     total_samples = int(
         reduce_scalar(float(state.total_samples), op="sum", device=device)
     )
-    max_peak = reduce_scalar(
-        float(state.max_peak_memory_gb), op="max", device=device
-    )
+    max_peak = reduce_scalar(float(state.max_peak_memory_gb), op="max", device=device)
 
     total_time_stable = reduce_scalar(
         float(state.total_time_stable), op="max", device=device

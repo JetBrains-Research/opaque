@@ -185,7 +185,9 @@ class TestPerfState:
 
     def test_to_dict(self):
         state = PerfState(device=torch.device("cpu"))
-        state = state.add(StepPerf(step_time_sec=1.0, batch_size=32, memory_peak_gb=4.0))
+        state = state.add(
+            StepPerf(step_time_sec=1.0, batch_size=32, memory_peak_gb=4.0)
+        )
         d = state.to_dict(prefix="perf/")
         assert "perf/avg_step_time_sec" in d
         assert "perf/avg_samples_per_second" in d

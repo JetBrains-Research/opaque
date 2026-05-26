@@ -503,6 +503,7 @@ class PerfState:
             f"{prefix}max_peak_memory_gb": self.max_peak_memory_gb,
         }
 
+
 __all__ = [
     "StepPerf",
     "step_perf",

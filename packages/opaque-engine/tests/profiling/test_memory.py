@@ -143,7 +143,7 @@ class TestStepPerf:
 
         monkeypatch.setattr(torch.mps, "synchronize", _sync)
 
-        with step_perf("mps", batch_size=16) as perf:
+        with step_perf("mps", batch_size=16):
             x = torch.randn(16, 16, device="mps")
             _ = x @ x.T
 
@@ -175,10 +175,30 @@ class TestPerfState:
         """Should exclude first step for stable average."""
         state = PerfState(device=torch.device("cpu"))
         # Simulate steps with known times
-        step1 = StepPerf(step_time_sec=10.0, batch_size=1, samples_per_second=0.1, steps_per_second=0.1)
-        step2 = StepPerf(step_time_sec=2.0, batch_size=1, samples_per_second=0.5, steps_per_second=0.5)
-        step3 = StepPerf(step_time_sec=2.0, batch_size=1, samples_per_second=0.5, steps_per_second=0.5)
-        step4 = StepPerf(step_time_sec=2.0, batch_size=1, samples_per_second=0.5, steps_per_second=0.5)
+        step1 = StepPerf(
+            step_time_sec=10.0,
+            batch_size=1,
+            samples_per_second=0.1,
+            steps_per_second=0.1,
+        )
+        step2 = StepPerf(
+            step_time_sec=2.0,
+            batch_size=1,
+            samples_per_second=0.5,
+            steps_per_second=0.5,
+        )
+        step3 = StepPerf(
+            step_time_sec=2.0,
+            batch_size=1,
+            samples_per_second=0.5,
+            steps_per_second=0.5,
+        )
+        step4 = StepPerf(
+            step_time_sec=2.0,
+            batch_size=1,
+            samples_per_second=0.5,
+            steps_per_second=0.5,
+        )
 
         state = state.add(step1)
         state = state.add(step2)
