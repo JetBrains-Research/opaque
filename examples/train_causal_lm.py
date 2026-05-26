@@ -1724,11 +1724,21 @@ def main():
 
                 if args.audit:
                     audit_estimate = run_audit(trainable_params)
-                    audit_eps = audit_estimate.epsilon_at(delta=args.target_delta)
+                    audit_eps_delta = audit_estimate.eps_delta().epsilon_at(
+                        delta=args.target_delta
+                    )
+                    audit_eps_gdp = audit_estimate.gdp().epsilon_at(
+                        delta=args.target_delta
+                    )
                     audit_auc = audit_estimate.auc()
-                    metrics["privacy/epsilon_empirical"] = audit_eps
+                    metrics["privacy/epsilon_audit_eps_delta"] = audit_eps_delta
+                    metrics["privacy/epsilon_audit_gdp"] = audit_eps_gdp
                     metrics["privacy/audit_auc"] = audit_auc
-                    eval_msg += f", ε_audit={audit_eps:.4f}, AUC={audit_auc:.4f}"
+                    eval_msg += (
+                        f", ε_audit[eps_delta]={audit_eps_delta:.4f}"
+                        f", ε_audit[gdp]={audit_eps_gdp:.4f}"
+                        f", AUC={audit_auc:.4f}"
+                    )
 
                 if use_wandb:
                     wandb.log(metrics, step=global_step)
@@ -1803,18 +1813,21 @@ def main():
     print(f"  Final ε (theoretical): {final_epsilon:.4f}")
     if args.audit:
         audit_result = run_audit(trainable_params)
-        audit_eps = audit_result.epsilon_at(delta=args.target_delta)
+        audit_eps_delta = audit_result.eps_delta().epsilon_at(delta=args.target_delta)
+        audit_eps_gdp = audit_result.gdp().epsilon_at(delta=args.target_delta)
         audit_auc = audit_result.auc()
         print(
-            f"  Final ε (empirical):  {audit_eps:.4f}  ({audit_result.n_in} in, {audit_result.n_out} out)"
+            f"  Final ε (eps_delta):  {audit_eps_delta:.4f}  ({audit_result.n_in} in, {audit_result.n_out} out)"
         )
+        print(f"  Final ε (gdp):        {audit_eps_gdp:.4f}")
         print(f"  Audit AUC:            {audit_auc:.4f}")
         print(f"  β @ α=0.01:           {audit_result.beta_at(alpha=0.01):.4f}")
         print(f"  β @ α=0.10:           {audit_result.beta_at(alpha=0.1):.4f}")
         if use_wandb:
             wandb.log(
                 {
-                    "privacy/epsilon_empirical": audit_eps,
+                    "privacy/epsilon_audit_eps_delta": audit_eps_delta,
+                    "privacy/epsilon_audit_gdp": audit_eps_gdp,
                     "privacy/audit_auc": audit_auc,
                 },
                 step=global_step,

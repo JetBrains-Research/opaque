@@ -122,6 +122,7 @@ apply_runtime_patches()
 import torchopt
 
 import opaque.accounting as acc
+import opaque.auditing as auditing
 import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.accounting import calibration as cal
 from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad, per_group
@@ -638,6 +639,26 @@ def parse_args():
     priv_g.add_argument("--calibration-max", type=float, default=20.0)
     priv_g.add_argument("--calibration-tolerance", type=float, default=1e-3)
 
+    audit_g = parser.add_argument_group("audit", "Empirical privacy auditing")
+    audit_g.add_argument(
+        "--audit",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable empirical auditing (disabled by default)",
+    )
+    audit_g.add_argument(
+        "--audit-canaries",
+        type=int,
+        default=1000,
+        help="Number of canaries for one-run auditing",
+    )
+    audit_g.add_argument(
+        "--audit-batch-size",
+        type=int,
+        default=None,
+        help="Batch size for auditing scoring (default: same as training batch size; forward-only so less memory than training)",
+    )
+
     # W&B
     track_g = parser.add_argument_group("tracking")
     track_g.add_argument("--no-wandb", action="store_true")
@@ -727,6 +748,8 @@ def parse_args():
         args.microbatch_size = None
     if args.eval_batch_size is None:
         args.eval_batch_size = args.microbatch_size or args.batch_size
+    if args.audit_batch_size is None:
+        args.audit_batch_size = args.eval_batch_size
 
     if args.per_group_clipping:
         parsed: dict[str, float] = {}
@@ -901,6 +924,24 @@ def main():
     )
     print(f"Prepared: {len(train_dataset)} train, {len(eval_dataset)} eval")
 
+    # Privacy auditing setup: designate canaries and remove held-out ones
+    audit_cf = None
+    audit_dataset = None
+    audit_ref_scores = None
+    if args.audit:
+        print(f"\nSetting up privacy auditing with {args.audit_canaries} canaries...")
+        audit_cf = auditing.coin_flip(
+            train_dataset,
+            num_canaries=args.audit_canaries,
+            key=key(args.seed),
+        )
+        audit_dataset = train_dataset  # Keep reference before filtering
+        train_dataset = train_dataset.select(audit_cf.train_indices(len(train_dataset)))
+        print(
+            f"  Canaries: {len(audit_cf.in_indices)} in, "
+            f"{len(audit_cf.out_indices)} out (held out from training)"
+        )
+
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
     @empty_collate
@@ -1074,6 +1115,29 @@ def main():
     def per_example_loss_fn(trainable, input_ids):
         output = fmodel(merged_params(trainable), input_ids, labels=input_ids)
         return output.loss
+
+    # Auditing canary DataLoader + run_audit helper
+    canary_loader = None
+    if args.audit and audit_cf is not None:
+        canary_loader = DataLoader(
+            audit_cf.canary_subset(audit_dataset),
+            batch_size=args.audit_batch_size,
+            shuffle=False,
+            collate_fn=collate,
+        )
+
+    def run_audit(trainable):
+        """Score canaries and return a OneRunEstimate, or None if --audit is off."""
+        if not args.audit or audit_cf is None:
+            return None
+        scores = auditing.loss_scores(
+            per_example_loss_fn,
+            trainable,
+            batch_argnums=(1,),
+            dataloader=canary_loader,
+            reference_scores=audit_ref_scores,
+        )
+        return auditing.one_run(scores, coin_flip=audit_cf)
 
     def eval_loss(trainable):
         with torch.no_grad():
@@ -1654,6 +1718,20 @@ def main():
             args.target_delta
         )
 
+    # Compute reference (untrained) scores for auditing before any training.
+    # Paper Algorithm 3: score = loss(w0, x) − loss(wℓ, x), so we need w0 losses.
+    if args.audit and audit_cf is not None:
+        print("\nComputing reference scores on untrained model...")
+        audit_ref_scores = auditing.loss_scores(
+            per_example_loss_fn,
+            trainable_params,
+            batch_argnums=(1,),
+            dataloader=canary_loader,
+        )
+        print(
+            f"  Reference scores: mean={audit_ref_scores.mean():.4f}, std={audit_ref_scores.std():.4f}"
+        )
+
     # Step-0 eval — baseline before any training step.  Logs the calibrated
     # values that downstream per-step metrics also report so the dashboard
     # has continuous lines (no broken first-point).
@@ -1805,17 +1883,33 @@ def main():
             if global_step % args.eval_steps == 0:
                 current_eval_loss = eval_loss(trainable_params)
                 epsilon = epsilon_at_step(global_step)
-                print(
-                    f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
-                )
-                if use_wandb:
-                    wandb.log(
-                        {
-                            "eval/loss": current_eval_loss,
-                            "privacy/epsilon": epsilon,
-                        },
-                        step=global_step,
+                metrics = {
+                    "eval/loss": current_eval_loss,
+                    "privacy/epsilon": epsilon,
+                }
+                eval_msg = f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
+
+                if args.audit:
+                    audit_estimate = run_audit(trainable_params)
+                    audit_eps_delta = audit_estimate.eps_delta().epsilon_at(
+                        delta=args.target_delta
                     )
+                    audit_eps_gdp = audit_estimate.gdp().epsilon_at(
+                        delta=args.target_delta
+                    )
+                    audit_auc = audit_estimate.auc()
+                    metrics["privacy/epsilon_audit_eps_delta"] = audit_eps_delta
+                    metrics["privacy/epsilon_audit_gdp"] = audit_eps_gdp
+                    metrics["privacy/audit_auc"] = audit_auc
+                    eval_msg += (
+                        f", ε_audit[eps_delta]={audit_eps_delta:.4f}"
+                        f", ε_audit[gdp]={audit_eps_gdp:.4f}"
+                        f", AUC={audit_auc:.4f}"
+                    )
+
+                print(eval_msg)
+                if use_wandb:
+                    wandb.log(metrics, step=global_step)
 
         if args.max_steps is not None and global_step >= args.max_steps:
             print(f"\nReached max_steps={args.max_steps}, stopping.")
@@ -1860,11 +1954,33 @@ def main():
         print("\nPrivacy (single-shot):")
         print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e}")
         print(f"  Noise multiplier: {noise_multiplier:.4f}")
-        print(f"  Final ε: {final_epsilon:.4f}")
+        print(f"  Final ε (theoretical): {final_epsilon:.4f}")
         # ``privacy/epsilon`` is logged at every eval step (see the
         # per-eval block above), so the wandb timeline already shows the
         # final ε at the last step.  No need to re-log a separate
         # ``privacy/epsilon_final`` scalar.
+
+    if args.audit:
+        audit_result = run_audit(trainable_params)
+        audit_eps_delta = audit_result.eps_delta().epsilon_at(delta=args.target_delta)
+        audit_eps_gdp = audit_result.gdp().epsilon_at(delta=args.target_delta)
+        audit_auc = audit_result.auc()
+        print(
+            f"  Final ε (eps_delta):  {audit_eps_delta:.4f}  ({audit_result.n_in} in, {audit_result.n_out} out)"
+        )
+        print(f"  Final ε (gdp):        {audit_eps_gdp:.4f}")
+        print(f"  Audit AUC:            {audit_auc:.4f}")
+        print(f"  β @ α=0.01:           {audit_result.beta_at(alpha=0.01):.4f}")
+        print(f"  β @ α=0.10:           {audit_result.beta_at(alpha=0.1):.4f}")
+        if use_wandb:
+            wandb.log(
+                {
+                    "privacy/epsilon_audit_eps_delta": audit_eps_delta,
+                    "privacy/epsilon_audit_gdp": audit_eps_gdp,
+                    "privacy/audit_auc": audit_auc,
+                },
+                step=global_step,
+            )
 
     profiler, _ = profiler.mark("training_complete")
     print("\n" + profiler.final_summary())
