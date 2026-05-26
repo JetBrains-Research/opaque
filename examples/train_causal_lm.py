@@ -848,6 +848,14 @@ def main():
     if args.audit_batch_size is None:
         args.audit_batch_size = args.microbatch_size or args.batch_size
 
+    # μ-GDP auditing has no meaningful answer at δ = 0 (pure DP is incompatible
+    # with Gaussian DP).  Fail fast instead of crashing inside the audit.
+    if args.audit and args.audit_method == "gdp" and args.target_delta <= 0:
+        raise SystemExit(
+            "--audit-method gdp requires --target-delta > 0 "
+            f"(got {args.target_delta}); use --audit-method eps_delta for pure DP."
+        )
+
     if is_main_process:
         print("=" * 80)
         print("DP-SGD LoRA Training for Causal Language Models")
@@ -1825,8 +1833,10 @@ def main():
             f"  ({audit_result.n_in} in, {audit_result.n_out} out)"
         )
         print(f"  Audit AUC:            {audit_auc:.4f}")
-        print(f"  β @ α=0.01:           {audit_result.beta_at(alpha=0.01):.4f}")
-        print(f"  β @ α=0.10:           {audit_result.beta_at(alpha=0.1):.4f}")
+        # Empirical attack ROC β (1 − TPR at given FPR); independent of the
+        # audit method, hence read from OneRunEstimate rather than the method.
+        print(f"  Attack β @ α=0.01:    {audit_result.beta_at(alpha=0.01):.4f}")
+        print(f"  Attack β @ α=0.10:    {audit_result.beta_at(alpha=0.1):.4f}")
         if use_wandb:
             wandb.log(
                 {

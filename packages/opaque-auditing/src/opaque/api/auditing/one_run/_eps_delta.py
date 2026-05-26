@@ -79,7 +79,7 @@ class EpsDeltaMethod:
         return eps_lo
 
     # ------------------------------------------------------------------
-    # Pld-mirror surface
+    # Query surface
     # ------------------------------------------------------------------
 
     def epsilon_at(

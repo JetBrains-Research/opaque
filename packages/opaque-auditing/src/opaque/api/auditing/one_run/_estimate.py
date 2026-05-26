@@ -3,7 +3,7 @@
 The ``one_run()`` function precomputes the Pareto-optimal threshold
 structure from canary scores and returns a frozen ``OneRunEstimate``.
 Epsilon estimation goes through a method object obtained from one of the
-factory methods (``eps_delta()``, ``gaussian()``); attack-side metrics
+factory methods (``eps_delta()``, ``gdp()``); attack-side metrics
 (``auc``, ``beta_at``) live directly on the estimate.
 
 References:
@@ -20,17 +20,18 @@ import numpy as np
 import scipy.stats
 
 from opaque.api.auditing._coin_flip import CoinFlip
-from opaque.api.auditing.methods._eps_delta import EpsDeltaMethod
-from opaque.api.auditing.methods._gdp import GdpMethod
+from opaque.api.auditing.one_run._eps_delta import EpsDeltaMethod
+from opaque.api.auditing.one_run._gdp import GdpMethod
 from opaque.api.auditing.one_run._roc import get_tn_fn_counts, tpr_at_given_fpr
-from opaque.api.auditing.one_run._stats import (
-    epsilon_one_run_search,
-    validate_delta,
-    validate_significance,
-)
 from opaque.random.types import RngKey
 
 __all__ = ["OneRunEstimate", "one_run"]
+
+
+# Minimum grid points for the GDP numerical integration.  Below this the
+# grid construction (``z[1] - z[0]``) is degenerate; the smallest useful
+# grid covers each of the two Gaussian humps with a handful of points.
+_MIN_GRID_SIZE = 16
 
 
 def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
@@ -150,70 +151,11 @@ class OneRunEstimate:
 
     def gdp(self, *, grid_size: int = 10_000) -> GdpMethod:
         """μ-GDP order-statistics audit method (Xiang et al. 2025)."""
+        if grid_size < _MIN_GRID_SIZE:
+            raise ValueError(
+                f"grid_size must be >= {_MIN_GRID_SIZE}, got {grid_size}"
+            )
         return GdpMethod(_estimate=self, grid_size=grid_size)
-
-    # ------------------------------------------------------------------
-    # Legacy Steinke search — kept private for regression tests
-    # ------------------------------------------------------------------
-
-    def _epsilon_at_steinke(
-        self,
-        *,
-        delta: float = 0.0,
-        significance: float = 0.05,
-        threshold: float | None = None,
-        eps_max: float = 20.0,
-        tol: float = 1e-4,
-    ) -> float:
-        """Epsilon lower bound using Steinke et al. (2023).
-
-        Likelihood-ratio test with Bonferroni correction over thresholds
-        and variants.  Dominated by the Xiang (ε, δ) method.
-        """
-        validate_significance(significance)
-        validate_delta(delta)
-
-        m = self.n_in + self.n_out
-
-        if threshold is not None:
-            tp = int(np.sum(self.in_scores >= threshold))
-            fp = int(np.sum(self.out_scores >= threshold))
-            tn = int(np.sum(self.out_scores < threshold))
-            fn = int(np.sum(self.in_scores < threshold))
-
-            sig_corrected = significance / 3.0
-
-            eps_pos = epsilon_one_run_search(
-                tp + fp, tp, m, sig_corrected, delta, eps_max, tol
-            )
-            eps_neg = epsilon_one_run_search(
-                fn + tn, tn, m, sig_corrected, delta, eps_max, tol
-            )
-            eps_both = epsilon_one_run_search(
-                m, tp + tn, m, sig_corrected, delta, eps_max, tol
-            )
-            return max(eps_pos, eps_neg, eps_both)
-
-        n_thresholds = len(self.thresholds)
-        sig_corrected = significance / (3 * n_thresholds)
-        best = 0.0
-        for i in range(n_thresholds):
-            tp_i = self.n_in - self.fn_counts[i]
-            fp_i = self.n_out - self.tn_counts[i]
-            fn_i = self.fn_counts[i]
-            tn_i = self.tn_counts[i]
-
-            eps_pos = epsilon_one_run_search(
-                tp_i + fp_i, tp_i, m, sig_corrected, delta, eps_max, tol
-            )
-            eps_neg = epsilon_one_run_search(
-                fn_i + tn_i, tn_i, m, sig_corrected, delta, eps_max, tol
-            )
-            eps_both = epsilon_one_run_search(
-                m, tp_i + tn_i, m, sig_corrected, delta, eps_max, tol
-            )
-            best = max(best, eps_pos, eps_neg, eps_both)
-        return best
 
     # ------------------------------------------------------------------
     # Attack utility metrics

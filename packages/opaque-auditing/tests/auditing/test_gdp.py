@@ -1,7 +1,7 @@
 """Tests for the μ-GDP audit method.
 
-Covers ``methods/_gdp.py`` (the method class) and ``methods/_gdp_math.py``
-(the Gaussian DP helpers + order-statistics p-value).
+Covers ``one_run/_gdp.py`` — the method class, GDP↔(ε,δ) conversion,
+discretised base pair, and order-statistics p-value.
 """
 
 from __future__ import annotations
@@ -14,11 +14,11 @@ import numpy as np
 import pytest
 import scipy.stats
 
-from opaque.api.auditing.methods._eps_delta import _p_value as _eps_delta_p_value
-from opaque.api.auditing.methods._gdp_math import (
-    gdp_base_pair_grid,
-    gdp_to_eps_delta,
-    p_value,
+from opaque.api.auditing.one_run._eps_delta import _p_value as _eps_delta_p_value
+from opaque.api.auditing.one_run._gdp import (
+    _gdp_base_pair_grid,
+    _gdp_to_eps_delta,
+    _p_value,
 )
 from opaque.auditing import one_run
 from opaque.auditing.types import CoinFlip
@@ -51,19 +51,19 @@ def _delta_at(mu: float, eps: float) -> float:
     return scipy.stats.norm.cdf(a) - math.exp(eps) * scipy.stats.norm.cdf(b)
 
 
-# ---- gdp_to_eps_delta ------------------------------------------------------
+# ---- _gdp_to_eps_delta -----------------------------------------------------
 
 
 class TestGdpToEpsDelta:
     """Unit tests for μ-GDP → (ε, δ) conversion."""
 
     def test_mu_zero_returns_zero(self):
-        assert gdp_to_eps_delta(0.0, 1e-5) == 0.0
+        assert _gdp_to_eps_delta(0.0, 1e-5) == 0.0
 
     @pytest.mark.parametrize("mu", [0.5, 1.0, 2.0, 5.0])
     def test_cross_check(self, mu):
         delta = 1e-5
-        eps = gdp_to_eps_delta(mu, delta)
+        eps = _gdp_to_eps_delta(mu, delta)
         actual_delta = _delta_at(mu, eps)
         assert abs(actual_delta - delta) < 1e-7
 
@@ -71,28 +71,30 @@ class TestGdpToEpsDelta:
         delta = 1e-5
         prev = 0.0
         for mu in [0.1, 0.5, 1.0, 2.0, 5.0, 10.0]:
-            eps = gdp_to_eps_delta(mu, delta)
+            eps = _gdp_to_eps_delta(mu, delta)
             assert eps >= prev
             prev = eps
 
     def test_large_delta(self):
-        eps = gdp_to_eps_delta(1.0, 0.5)
-        assert eps < gdp_to_eps_delta(1.0, 1e-5)
+        eps = _gdp_to_eps_delta(1.0, 0.5)
+        assert eps < _gdp_to_eps_delta(1.0, 1e-5)
 
     def test_negative_mu_raises(self):
         with pytest.raises(ValueError, match="mu must be >= 0"):
-            gdp_to_eps_delta(-1.0, 1e-5)
+            _gdp_to_eps_delta(-1.0, 1e-5)
 
     def test_delta_out_of_range_raises(self):
         with pytest.raises(ValueError, match="delta must be in"):
-            gdp_to_eps_delta(1.0, 0.0)
+            _gdp_to_eps_delta(1.0, 0.0)
         with pytest.raises(ValueError, match="delta must be in"):
-            gdp_to_eps_delta(1.0, 1.0)
-        with pytest.raises(ValueError, match="delta must be in"):
-            gdp_to_eps_delta(1.0, -0.1)
+            _gdp_to_eps_delta(1.0, -0.1)
+
+    def test_delta_one_returns_zero(self):
+        """δ = 1 ⇒ no privacy constraint ⇒ smallest ε is 0 (no exception)."""
+        assert _gdp_to_eps_delta(1.0, 1.0) == 0.0
 
 
-# ---- gdp_base_pair_grid ----------------------------------------------------
+# ---- _gdp_base_pair_grid ---------------------------------------------------
 
 
 class TestGdpBasePairGrid:
@@ -100,54 +102,54 @@ class TestGdpBasePairGrid:
 
     @pytest.mark.parametrize("mu", [0.5, 1.0, 2.0, 5.0, 10.0])
     def test_total_mass_near_one(self, mu):
-        grid = gdp_base_pair_grid(mu, 10_000)
+        grid = _gdp_base_pair_grid(mu, 10_000)
         total = float(np.sum(grid.mass))
         assert abs(total - 1.0) < 0.01
 
     @pytest.mark.parametrize("mu", [0.5, 1.0, 2.0])
     def test_F_y_monotone(self, mu):
-        grid = gdp_base_pair_grid(mu, 10_000)
+        grid = _gdp_base_pair_grid(mu, 10_000)
         assert np.all(np.diff(grid.F_y) >= -1e-10)
 
     @pytest.mark.parametrize("mu", [0.5, 1.0, 2.0])
     def test_abs_pl_sorted(self, mu):
-        grid = gdp_base_pair_grid(mu, 10_000)
+        grid = _gdp_base_pair_grid(mu, 10_000)
         assert np.all(np.diff(grid.abs_privacy_loss) >= -1e-10)
 
     def test_min_abs_pl_near_zero(self):
-        grid = gdp_base_pair_grid(1.0, 10_000)
+        grid = _gdp_base_pair_grid(1.0, 10_000)
         assert grid.abs_privacy_loss[0] < 0.05
 
     def test_mass_non_negative(self):
-        grid = gdp_base_pair_grid(1.0, 10_000)
+        grid = _gdp_base_pair_grid(1.0, 10_000)
         assert np.all(grid.mass >= -1e-15)
 
     def test_mu_zero_raises(self):
         with pytest.raises(ValueError, match="mu must be > 0"):
-            gdp_base_pair_grid(0.0, 100)
+            _gdp_base_pair_grid(0.0, 100)
 
 
-# ---- p_value ---------------------------------------------------------------
+# ---- _p_value --------------------------------------------------------------
 
 
 class TestPValue:
     """Unit tests for the μ-GDP grid-based p-value."""
 
     def test_perfect_attack(self):
-        p = p_value(100, 100, 0, 1.0, 5000)
+        p = _p_value(100, 100, 0, 1.0, 5000)
         assert 0 < p < 0.01
 
     def test_near_random(self):
-        p = p_value(100, 100, 45, 1.0, 5000)
+        p = _p_value(100, 100, 45, 1.0, 5000)
         assert p > 0.3
 
     def test_mu_zero_returns_one(self):
-        assert p_value(100, 100, 10, 0.0) == 1.0
+        assert _p_value(100, 100, 10, 0.0, 5000) == 1.0
 
     def test_monotone_in_mu(self):
         prev = 0.0
         for mu in [0.3, 0.5, 1.0, 2.0, 3.0]:
-            p = p_value(100, 100, 20, mu, 5000)
+            p = _p_value(100, 100, 20, mu, 5000)
             assert p >= prev - 1e-10
             prev = p
 
@@ -155,18 +157,18 @@ class TestPValue:
         """At the same effective (ε, δ), μ-GDP p-value ≤ (ε, δ) p-value."""
         mu = 1.0
         delta = 1e-5
-        eps = gdp_to_eps_delta(mu, delta)
-        p_gdp = p_value(200, 200, 30, mu, 5000)
+        eps = _gdp_to_eps_delta(mu, delta)
+        p_gdp = _p_value(200, 200, 30, mu, 5000)
         p_epsd = _eps_delta_p_value(200, 30, eps, delta)
         assert p_gdp <= p_epsd + 1e-10
 
     def test_scaling_with_n(self):
-        p50 = p_value(50, 50, 0, 1.0, 5000)
-        p200 = p_value(200, 200, 0, 1.0, 5000)
+        p50 = _p_value(50, 50, 0, 1.0, 5000)
+        p200 = _p_value(200, 200, 0, 1.0, 5000)
         assert p200 < p50
 
     def test_returns_float(self):
-        p = p_value(100, 100, 20, 1.0, 5000)
+        p = _p_value(100, 100, 20, 1.0, 5000)
         assert isinstance(p, float)
         assert 0 <= p <= 1
 
@@ -295,21 +297,20 @@ class TestGdpPldSurface:
 
 
 class TestTorchFree:
-    """gdp method modules must not import torch."""
+    """gdp method module must not import torch."""
 
-    _METHODS = (
+    _PATH = (
         pathlib.Path(__file__).resolve().parents[2]
         / "src"
         / "opaque"
         / "api"
         / "auditing"
-        / "methods"
+        / "one_run"
+        / "_gdp.py"
     )
 
-    @pytest.mark.parametrize("filename", ["_gdp.py", "_gdp_math.py"])
-    def test_no_torch_import(self, filename):
-        path = self._METHODS / filename
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+    def test_no_torch_import(self):
+        tree = ast.parse(self._PATH.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:

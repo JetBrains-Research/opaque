@@ -14,7 +14,7 @@ import pytest
 import scipy.special
 import scipy.stats
 
-from opaque.api.auditing.methods._eps_delta import _p_value
+from opaque.api.auditing.one_run._eps_delta import _p_value
 from opaque.auditing import one_run
 from opaque.auditing.types import CoinFlip
 
@@ -108,15 +108,6 @@ class TestEpsDeltaMethod:
         eps = est.eps_delta().epsilon_at(delta=0.0, threshold=50.0)
         assert eps > 0
 
-    def test_dominance_over_steinke(self):
-        """Xiang should give ε ≥ Steinke on well-separated data."""
-        est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        eps_xiang = est.eps_delta().epsilon_at(delta=1e-5)
-        eps_steinke = est._epsilon_at_steinke(delta=1e-5)
-        assert eps_xiang >= eps_steinke * 0.9, (
-            f"Xiang ({eps_xiang:.4f}) too much below Steinke ({eps_steinke:.4f})"
-        )
-
     def test_returns_float(self):
         est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
         assert isinstance(est.eps_delta().epsilon_at(delta=0.0), float)
@@ -182,7 +173,7 @@ class TestTorchFree:
         / "opaque"
         / "api"
         / "auditing"
-        / "methods"
+        / "one_run"
         / "_eps_delta.py"
     )
 

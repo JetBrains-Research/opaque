@@ -1,34 +1,161 @@
-"""Numerical machinery for the μ-GDP one-run audit method.
+"""μ-GDP order-statistics audit method for one-run privacy auditing.
 
-Contains:
-
-- :func:`gdp_to_eps_delta` — closed-form μ-GDP → (ε, δ) conversion.
-- :func:`gdp_base_pair_grid` + :class:`BaseGrid` — discretised base
-  distribution pair used by the order-statistics p-value.
-- :func:`p_value` — μ-GDP p-value via order statistics + Chernoff bound
-  (Xiang et al. 2025, Theorems 2–3).
-
-Torch-free: numpy + scipy only.
+Mirrors :class:`opaque.accounting.Pld`'s metric surface: ``epsilon_at``,
+``delta_at``, ``beta_at``, ``advantage``.  All four derive from a single
+inferred μ̂ via :meth:`GdpMethod._mu_at`.  Constructed via
+:meth:`OneRunEstimate.gdp`.
 
 Reference: Xiang, Chen, Kerkouche (2025), https://arxiv.org/abs/2509.08704
 """
 
 from __future__ import annotations
 
+import dataclasses
 import math
-from typing import NamedTuple
+from typing import NamedTuple, TYPE_CHECKING
 
 import numpy as np
 import scipy.special
 import scipy.stats
 
+from opaque.api.auditing.one_run._stats import (
+    search_ceiling,
+    validate_delta,
+    validate_significance,
+)
+
+if TYPE_CHECKING:
+    from opaque.api.auditing.one_run._estimate import OneRunEstimate
+
+
+_TOL_MU = 0.01
+
 # Maximum number of ranks to compute exactly.  Higher ranks (sorted by |L|)
 # have lower error probability (more confident).  Truncated low-confidence
 # ranks use v_k = 0.5 (conservative).  2000 ranks × 10K grid ≈ 160 MB;
-# covers the top 20% for n = 10K, which dominates the Chernoff sum.
-# Increasing beyond 2000 gives diminishing returns since low-confidence
-# ranks contribute v_k ≈ 0.5 anyway.
+# covers the top 20 % for n = 10K, which dominates the Chernoff sum.
 _MAX_EXACT_RANKS = 2000
+
+
+# ---------------------------------------------------------------------------
+# Audit method
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class GdpMethod:
+    """μ-GDP order-statistics audit method (Xiang et al. 2025)."""
+
+    _estimate: OneRunEstimate
+    grid_size: int = 10_000
+
+    # ------------------------------------------------------------------
+    # Primitive — inferred μ̂ from the order-statistics test
+    # ------------------------------------------------------------------
+
+    def _mu_at(self, significance: float, threshold: float | None) -> float:
+        """Inferred μ̂ via binary search.  Independent of δ."""
+        validate_significance(significance)
+        m = self._estimate.n_in + self._estimate.n_out
+        r, u = self._estimate._best_r_u(threshold)
+
+        # Bracket: start from the (ε, δ)-DP ceiling (a generous over-estimate
+        # asymptotically for μ-GDP) and auto-expand if the p-value at mu_hi
+        # is still < significance — keeps the search well-posed on the
+        # edge of the (m, σ) parameter space without a hidden cap.
+        mu_hi = search_ceiling(m, 0.0, significance)
+        while _p_value(m, r, u, mu_hi, self.grid_size) < significance:
+            mu_hi *= 2.0
+
+        mu_lo = 0.0
+        while mu_hi - mu_lo > _TOL_MU:
+            mu_mid = (mu_lo + mu_hi) / 2.0
+            if _p_value(m, r, u, mu_mid, self.grid_size) < significance:
+                mu_lo = mu_mid
+            else:
+                mu_hi = mu_mid
+        return mu_lo
+
+    # ------------------------------------------------------------------
+    # Pld-mirror surface
+    # ------------------------------------------------------------------
+
+    def epsilon_at(
+        self,
+        *,
+        delta: float,
+        significance: float = 0.05,
+        threshold: float | None = None,
+    ) -> float:
+        """Epsilon lower bound at the given (δ, significance).
+
+        Raises:
+            ValueError: If ``delta <= 0``.
+        """
+        if delta <= 0:
+            raise ValueError(
+                f"μ-GDP f-DP auditing requires delta > 0, got {delta}"
+            )
+        validate_delta(delta)
+        return _gdp_to_eps_delta(
+            self._mu_at(significance, threshold), delta,
+        )
+
+    def delta_at(
+        self,
+        *,
+        epsilon: float,
+        significance: float = 0.05,
+        threshold: float | None = None,
+    ) -> float:
+        """δ(ε) under the inferred μ̂-GDP guarantee.
+
+        Closed form: δ(ε; μ) = Φ(μ/2 − ε/μ) − e^ε · Φ(−μ/2 − ε/μ).
+        """
+        if epsilon < 0:
+            raise ValueError(f"epsilon must be >= 0, got {epsilon}")
+        mu = self._mu_at(significance, threshold)
+        if mu == 0.0:
+            return 0.0
+        a = mu / 2.0 - epsilon / mu
+        b = -mu / 2.0 - epsilon / mu
+        term1 = scipy.stats.norm.cdf(a)
+        log_term2 = epsilon + scipy.stats.norm.logcdf(b)
+        term2 = math.exp(log_term2) if log_term2 < 700 else math.inf
+        return float(max(0.0, term1 - term2))
+
+    def beta_at(
+        self,
+        *,
+        alpha: float,
+        significance: float = 0.05,
+        threshold: float | None = None,
+    ) -> float:
+        """f-DP Type-II error at α under the inferred μ̂-GDP.
+
+        β(α; μ) = Φ(Φ⁻¹(1 − α) − μ).  Note: this is the *theoretical* β
+        of the post-audit guarantee, distinct from
+        :meth:`OneRunEstimate.beta_at` which is the empirical attack ROC.
+        """
+        if not 0.0 <= alpha <= 1.0:
+            raise ValueError(f"alpha must be in [0, 1], got {alpha}")
+        mu = self._mu_at(significance, threshold)
+        return float(
+            scipy.stats.norm.cdf(scipy.stats.norm.ppf(1.0 - alpha) - mu)
+        )
+
+    def advantage(
+        self,
+        *,
+        significance: float = 0.05,
+        threshold: float | None = None,
+    ) -> float:
+        """Total-variation advantage at the inferred μ̂-GDP.
+
+        TV(μ) = 2 · Φ(μ/2) − 1.
+        """
+        mu = self._mu_at(significance, threshold)
+        return float(2.0 * scipy.stats.norm.cdf(mu / 2.0) - 1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -36,29 +163,21 @@ _MAX_EXACT_RANKS = 2000
 # ---------------------------------------------------------------------------
 
 
-def gdp_to_eps_delta(mu: float, delta: float) -> float:
+def _gdp_to_eps_delta(mu: float, delta: float) -> float:
     """Convert μ-GDP to (ε, δ)-DP.  Returns ε.
 
     Uses the closed-form relation
         δ(ε) = Φ(μ/2 − ε/μ) − exp(ε)·Φ(−μ/2 − ε/μ)
     and binary-searches for the ε at which δ(ε) = *delta*.
-
-    Args:
-        mu: Gaussian DP parameter (σ = 1/μ for sensitivity-1 queries).
-            Must be ≥ 0.
-        delta: Target failure probability.  Must be in (0, 1).
-
-    Returns:
-        Smallest ε such that the μ-GDP mechanism satisfies (ε, δ)-DP.
-
-    Raises:
-        ValueError: If mu < 0 or delta is not in (0, 1).
     """
     if mu < 0.0:
         raise ValueError(f"mu must be >= 0, got {mu}")
-    if not (0.0 < delta < 1.0):
-        raise ValueError(f"delta must be in (0, 1), got {delta}")
+    if not (0.0 < delta <= 1.0):
+        raise ValueError(f"delta must be in (0, 1], got {delta}")
     if mu == 0.0:
+        return 0.0
+    if delta >= 1.0:
+        # δ ≥ 1 ⇒ no privacy constraint; smallest ε is 0.
         return 0.0
 
     _norm_cdf = scipy.stats.norm.cdf
@@ -68,7 +187,6 @@ def gdp_to_eps_delta(mu: float, delta: float) -> float:
         a = mu / 2.0 - eps / mu
         b = -mu / 2.0 - eps / mu
         term1 = _norm_cdf(a)
-        # exp(eps) * Phi(b) in log-space to avoid overflow for large eps.
         log_term2 = eps + _norm_logcdf(b)
         term2 = math.exp(log_term2) if log_term2 < 700 else math.inf
         return term1 - term2
@@ -98,7 +216,7 @@ def gdp_to_eps_delta(mu: float, delta: float) -> float:
 # ---------------------------------------------------------------------------
 
 
-class BaseGrid(NamedTuple):
+class _BaseGrid(NamedTuple):
     """Discretised base distribution pair for μ-GDP.
 
     All arrays are sorted by ascending ``abs_privacy_loss``.  The grid
@@ -120,7 +238,7 @@ class BaseGrid(NamedTuple):
     """|L(z)| = |μ²/2 − μ·z| at each grid point."""
 
 
-def gdp_base_pair_grid(mu: float, num_points: int) -> BaseGrid:
+def _gdp_base_pair_grid(mu: float, num_points: int) -> _BaseGrid:
     """Build discretised base pair for μ-GDP.
 
     The grid lives in z-space where z = Φ⁻¹(y).  In this space:
@@ -129,16 +247,6 @@ def gdp_base_pair_grid(mu: float, num_points: int) -> BaseGrid:
     - Q density in z:  φ(z − μ)  (shifted normal)
     - Mixture:  (φ(z) + φ(z − μ)) / 2
     - |L(z)| = |μ²/2 − μ·z|
-
-    Both densities are smooth Gaussians, so a uniform z-grid captures
-    all the mass regardless of μ.
-
-    Args:
-        mu: Gaussian DP parameter (must be > 0).
-        num_points: Number of grid points.
-
-    Returns:
-        A :class:`BaseGrid` with arrays sorted by ascending |L|.
     """
     if mu <= 0.0:
         raise ValueError("mu must be > 0 for grid construction")
@@ -167,7 +275,7 @@ def gdp_base_pair_grid(mu: float, num_points: int) -> BaseGrid:
     F_y[0] = 0.0
     F_y[1:] = cum[:-1]
 
-    return BaseGrid(
+    return _BaseGrid(
         z=z_sorted,
         mass=mass_sorted,
         F_y=F_y,
@@ -180,42 +288,31 @@ def gdp_base_pair_grid(mu: float, num_points: int) -> BaseGrid:
 # ---------------------------------------------------------------------------
 
 
-def p_value(
+def _p_value(
     n: int,
     r: int,
     u: int,
     mu: float,
     grid_size: int = 10_000,
 ) -> float:
-    """P-value under μ-GDP.
+    """P-value under μ-GDP (Xiang et al. 2025, Theorems 2–3).
 
     Builds a discretised base pair for the Gaussian trade-off function,
     computes the conditional error probability v_k for the top r' ranks
-    via numerical integration (Theorem 2, Eq. 12 of Xiang et al. 2025),
-    then applies a Chernoff tail bound on the sum of independent
-    heterogeneous Bernoullis (Theorem 3).
-
-    Args:
-        n: Total number of canaries.
-        r: Number of released guesses (typically r = n).
-        u: Number of errors among released guesses.
-        mu: Gaussian DP parameter to test (σ = 1/μ).
-        grid_size: Number of grid points for numerical integration.
-
-    Returns:
-        Upper bound on P(≤ u errors | mechanism is μ-GDP).
+    via numerical integration, then applies a Chernoff tail bound on the
+    sum of independent heterogeneous Bernoullis.
     """
     if mu <= 0.0:
         return 1.0  # perfectly private — can't reject
 
-    grid = gdp_base_pair_grid(mu, grid_size)
+    grid = _gdp_base_pair_grid(mu, grid_size)
     r_prime = min(r, _MAX_EXACT_RANKS)
     v_k = _compute_v_k(n, r_prime, grid)
     n_trunc = r - r_prime  # truncated ranks use v_k = 0.5
     return _chernoff_lower_tail(v_k, n_trunc, u)
 
 
-def _compute_v_k(n: int, r_prime: int, grid: BaseGrid) -> np.ndarray:
+def _compute_v_k(n: int, r_prime: int, grid: _BaseGrid) -> np.ndarray:
     """v_k for ranks k = n − r' + 1, …, n.
 
     v_k = E[sigmoid(−|L(Y_{(k)})|)] where Y_{(k)} is the k-th order

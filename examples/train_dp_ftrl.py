@@ -757,6 +757,14 @@ def parse_args():
     if args.audit_batch_size is None:
         args.audit_batch_size = args.eval_batch_size
 
+    # μ-GDP auditing has no meaningful answer at δ = 0 (pure DP is incompatible
+    # with Gaussian DP).  Fail fast instead of crashing inside the audit.
+    if args.audit and args.audit_method == "gdp" and args.target_delta <= 0:
+        raise SystemExit(
+            "--audit-method gdp requires --target-delta > 0 "
+            f"(got {args.target_delta}); use --audit-method eps_delta for pure DP."
+        )
+
     if args.per_group_clipping:
         parsed: dict[str, float] = {}
         fallback_value = None
@@ -947,6 +955,7 @@ def main():
             f"  Canaries: {len(audit_cf.in_indices)} in, "
             f"{len(audit_cf.out_indices)} out (held out from training)"
         )
+        print(f"  Training set: {len(train_dataset)} examples")
 
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
@@ -1122,7 +1131,7 @@ def main():
         output = fmodel(merged_params(trainable), input_ids, labels=input_ids)
         return output.loss
 
-    # Auditing canary DataLoader + run_audit helper
+    # Build canary DataLoader for auditing
     canary_loader = None
     if args.audit and audit_cf is not None:
         canary_loader = DataLoader(
@@ -1132,8 +1141,9 @@ def main():
             collate_fn=collate,
         )
 
+    # Auditing helper: compute scores and run one-run estimator
     def run_audit(trainable):
-        """Score canaries and return a OneRunEstimate, or None if --audit is off."""
+        """Score canaries and report audit metrics. Returns OneRunEstimate or None."""
         if not args.audit or audit_cf is None:
             return None
         scores = auditing.loss_scores(
@@ -1912,9 +1922,9 @@ def main():
                         f", AUC={audit_auc:.4f}"
                     )
 
-                print(eval_msg)
                 if use_wandb:
                     wandb.log(metrics, step=global_step)
+                print(eval_msg)
 
         if args.max_steps is not None and global_step >= args.max_steps:
             print(f"\nReached max_steps={args.max_steps}, stopping.")
@@ -1974,8 +1984,10 @@ def main():
             f"  ({audit_result.n_in} in, {audit_result.n_out} out)"
         )
         print(f"  Audit AUC:            {audit_auc:.4f}")
-        print(f"  β @ α=0.01:           {audit_result.beta_at(alpha=0.01):.4f}")
-        print(f"  β @ α=0.10:           {audit_result.beta_at(alpha=0.1):.4f}")
+        # Empirical attack ROC β (1 − TPR at given FPR); independent of the
+        # audit method, hence read from OneRunEstimate rather than the method.
+        print(f"  Attack β @ α=0.01:    {audit_result.beta_at(alpha=0.01):.4f}")
+        print(f"  Attack β @ α=0.10:    {audit_result.beta_at(alpha=0.1):.4f}")
         if use_wandb:
             wandb.log(
                 {
