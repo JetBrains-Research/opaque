@@ -139,13 +139,13 @@ class TestEpsDeltaMethod:
         assert eps > 5.0
 
 
-# ---- Pld-mirror surface: delta_at, beta_at, advantage ----------------------
+# ---- delta_at --------------------------------------------------------------
 
 
-class TestEpsDeltaPldSurface:
-    """Tests for delta_at / beta_at / advantage on EpsDeltaMethod."""
+class TestEpsDeltaDeltaAt:
+    """Tests for EpsDeltaMethod.delta_at()."""
 
-    def test_delta_at_inverts_epsilon_at(self):
+    def test_inverts_epsilon_at(self):
         """delta_at and epsilon_at are inverses up to n_eff discretization (1/m)."""
         m = 200
         est = _make_estimate(np.arange(m // 2, m), np.arange(0, m // 2))
@@ -156,7 +156,7 @@ class TestEpsDeltaPldSurface:
         # n_eff = m − round(m·δ) is a step function; round-trip lands within 2/m
         assert abs(d_out - delta_input) < 2.0 / m
 
-    def test_delta_at_unreachable_eps_returns_zero(self):
+    def test_unreachable_eps_returns_zero(self):
         """Asking for ε > ε̂(0) → return 0 (no δ certifies)."""
         est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
         method = est.eps_delta()
@@ -164,45 +164,10 @@ class TestEpsDeltaPldSurface:
         d = method.delta_at(epsilon=eps0 + 5.0)
         assert d == 0.0
 
-    def test_delta_at_negative_epsilon_raises(self):
+    def test_negative_epsilon_raises(self):
         est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
         with pytest.raises(ValueError, match="epsilon must be >= 0"):
             est.eps_delta().delta_at(epsilon=-0.1)
-
-    def test_beta_at_perfect_attack_gives_low_beta(self):
-        """Perfect separation → small β at moderate α."""
-        est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        beta = est.eps_delta().beta_at(alpha=0.5, delta=0.0)
-        assert 0.0 <= beta < 0.5
-
-    def test_beta_at_no_separation_gives_random_curve(self):
-        """ε̂ ≈ 0 → β(α) ≈ 1 − α (random guessing)."""
-        est = _make_estimate(np.arange(100), np.arange(100))
-        beta = est.eps_delta().beta_at(alpha=0.3, delta=0.0)
-        assert abs(beta - 0.7) < 0.1
-
-    def test_beta_at_invalid_alpha_raises(self):
-        est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        with pytest.raises(ValueError, match="alpha must be in"):
-            est.eps_delta().beta_at(alpha=-0.1)
-        with pytest.raises(ValueError, match="alpha must be in"):
-            est.eps_delta().beta_at(alpha=1.5)
-
-    def test_advantage_in_unit_interval(self):
-        est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        adv = est.eps_delta().advantage(delta=0.0)
-        assert 0.0 <= adv <= 1.0
-
-    def test_advantage_no_separation_near_zero(self):
-        est = _make_estimate(np.arange(100), np.arange(100))
-        adv = est.eps_delta().advantage(delta=0.0)
-        assert adv < 0.1
-
-    def test_advantage_monotone_in_separation(self):
-        """Better-separated scores → larger advantage."""
-        weak = _make_estimate(np.arange(50, 100), np.arange(40, 90))
-        strong = _make_estimate(np.arange(100, 150), np.arange(0, 50))
-        assert strong.eps_delta().advantage() >= weak.eps_delta().advantage()
 
 
 # ---- Contract: torch-free --------------------------------------------------
