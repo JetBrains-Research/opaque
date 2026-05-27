@@ -6,7 +6,14 @@ import warnings
 import pytest
 import torch
 
-from opaque.profiling import PerfState, PerfStage, PerfTracker, StepPerf, perf_tracker, step_perf
+from opaque.profiling import (
+    PerfState,
+    PerfStage,
+    PerfTracker,
+    StepPerf,
+    perf_tracker,
+    step_perf,
+)
 
 
 DEVICES = ["cpu"]
