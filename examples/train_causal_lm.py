@@ -1671,7 +1671,6 @@ def main():
                         "train/noise_std": _effective(noise_stddev),
                         "train/lr": current_lr,
                         **tracker.train.last.to_dict(prefix="train/"),
-                        **tracker.to_dict(),
                     }
                     if (
                         isinstance(step_clip_norm, PerGroup)

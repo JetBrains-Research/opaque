@@ -1898,7 +1898,6 @@ def main():
                         ),
                         "train/lr": lr_t,
                         **tracker.train.last.to_dict(prefix="train/"),
-                        **tracker.to_dict(),
                     }
                     if (
                         isinstance(clip_norm, PerGroup)

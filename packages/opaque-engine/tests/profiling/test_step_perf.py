@@ -376,20 +376,6 @@ class TestPerfTracker:
         tracker.train = "something"
         assert isinstance(tracker.train, PerfStage)
 
-    def test_to_dict_all_stages(self):
-        tracker = perf_tracker("cpu", warmup_steps=0)
-        tracker.train._absorb(StepPerf(step_time_sec=1.0, batch_size=32))
-        tracker.eval._absorb(StepPerf(step_time_sec=0.5, batch_size=64))
-        d = tracker.to_dict()
-        assert "train/num_steps" in d
-        assert "eval/num_steps" in d
-        assert d["train/samples_per_second"] == pytest.approx(32.0)
-        assert d["eval/samples_per_second"] == pytest.approx(128.0)
-
-    def test_to_dict_empty(self):
-        tracker = perf_tracker("cpu")
-        assert tracker.to_dict() == {}
-
     def test_stages_property(self):
         tracker = perf_tracker("cpu")
         _ = tracker.train

@@ -19,10 +19,7 @@ Example - PerfTracker in a training loop:
     ...         grads = compute_gradients(batch)
     ...         sp.mark("clip")
     ...         update_params(grads)
-    ...     wandb.log({
-    ...         **tracker.train.last.to_dict(prefix="train/"),
-    ...         **tracker.to_dict(),
-    ...     })
+    ...     wandb.log(tracker.train.last.to_dict(prefix="train/"))
 
 Example - Simple memory tracking:
     >>> from opaque.profiling import get_memory_stats, print_memory
@@ -608,7 +605,7 @@ class PerfTracker:
         >>> with tracker.train(batch_size=32) as sp:
         ...     train_step(batch)
         ...     sp.mark("clip")
-        >>> wandb.log(tracker.to_dict())
+        >>> wandb.log(tracker.train.last.to_dict("train/"))
     """
 
     def __init__(self, device: torch.device, warmup_steps: int = 1) -> None:
@@ -641,12 +638,6 @@ class PerfTracker:
     @property
     def stages(self) -> dict[str, PerfStage]:
         return dict(self._stages)
-
-    def to_dict(self) -> dict[str, float]:
-        result: dict[str, float] = {}
-        for stage in self._stages.values():
-            result.update(stage.to_dict(prefix=f"{stage.name}/"))
-        return result
 
 
 def perf_tracker(
