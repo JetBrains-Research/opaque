@@ -59,12 +59,11 @@ GPU utilization. Below that, the overhead of launching kernels dominates.
 
 ### Tuning workflow
 
-Use a short manual sweep with `TrainingProfiler`:
+Use a short manual sweep with `step_perf`:
 
 ```python
 from opaque.dpsgd.clipping import clipped_grad
-from opaque.profiling import reset_peak_memory
-from opaque.profiling import StepTimer, TrainingProfiler
+from opaque.profiling import reset_peak_memory, step_perf
 
 def try_microbatch(candidate_mb: int) -> float:
     grad_fn, clip_state = clipped_grad(
@@ -75,13 +74,10 @@ def try_microbatch(candidate_mb: int) -> float:
     )
 
     reset_peak_memory(device)
-    profiler = TrainingProfiler(device)
-    timer = StepTimer(device, batch_size=len(batch_x))
-    with timer:
+    with step_perf(device, batch_size=len(batch_x)) as perf:
         _grads, _aux = grad_fn(params, batch_x, batch_y, state=clip_state)
-    profiler = profiler.add_step(timer)
 
-    return profiler.current_metrics()["memory_peak_gb"]
+    return perf.result.memory_peak_gb
 ```
 
 1. Start with `microbatch_size = batch_size`.
@@ -189,10 +185,17 @@ memory savings.
 
 ### Fused linear cross-entropy
 
-The most impactful optimization. Standard cross-entropy requires materializing
-`logits = hidden_states @ lm_head.T` — for Mellum-4b with 128K vocab, this is
-~2 GB per forward pass. Fused linear cross-entropy computes the loss directly
-from hidden states, never materializing the full logits tensor.
+Computes the loss directly from hidden states and the `lm_head` weight matrix,
+never materializing the full `(batch*seq, vocab)` logits tensor. For Mellum-4b
+with 128K vocab, that saves ~2 GB per forward pass relative to the non-fused
+path. Enabled by passing `fused_linear_cross_entropy=True` to
+`apply_model_patches(model, ...)`.
+
+The fused path returns `logits=None` from `XForCausalLM.forward`, which is
+incompatible with callers that read `outputs.logits` — `compute_metrics`,
+`preprocess_logits_for_metrics`, and generation eval. Enable the patch when
+loss is the only consumer of the forward output;
+`examples/train_causal_lm.py` and `examples/train_dp_ftrl.py` do.
 
 | Metric | V=32K | V=128K |
 |--------|-------|--------|
@@ -207,31 +210,30 @@ from hidden states, never materializing the full logits tensor.
 
 ## Profiling
 
-### TrainingProfiler
+### step_perf + PerfState
 
-Use `TrainingProfiler` to track checkpoints and step-level metrics in your
-training loop.
+Use `step_perf` to measure individual training steps and `PerfState` to
+accumulate throughput statistics across a run.
 
 ```python
-from opaque.profiling import StepTimer, TrainingProfiler
+from opaque.profiling import step_perf, PerfState, print_memory
 
-profiler = TrainingProfiler(device)
-profiler, _ = profiler.mark("start")
+print_memory(device, "start")
+perf_state = PerfState(device=device)
 
 for batch in dataloader:
-    timer = StepTimer(device, batch_size=len(batch["input_ids"]))
-    with timer:
+    with step_perf(device, batch_size=len(batch["input_ids"])) as perf:
         train_step(batch)
-    profiler = profiler.add_step(timer)
+        perf.mark("clip")
 
-    metrics = profiler.current_metrics()
-    # e.g., metrics["step_time_sec"], metrics["memory_peak_gb"]
+    perf_state = perf_state.add(perf.result)
+    # e.g., perf.result.step_time_sec, perf.result.memory_peak_gb
 
-profiler, _ = profiler.mark("end")
-print(profiler.final_summary())
+print_memory(device, "end")
+print(perf_state.to_dict(prefix="train/"))
 ```
 
-For one-off checkpoints without a profiler, use `print_memory(device, label)`
+For one-off memory snapshots, use `print_memory(device, label)`
 or `get_memory_stats(device)`.
 
 ### Device support
@@ -256,9 +258,8 @@ Start from your single-device stable value and reduce by 10-20% for DDP.
 ## Troubleshooting
 
 **Out of memory:** Reduce `microbatch_size` and re-profile with
-`TrainingProfiler`. If the model itself does not fit, use
-LoRA or another parameter-efficient method to reduce the trainable
-parameter count.
+`step_perf`. If the model itself does not fit, use LoRA or another
+parameter-efficient method to reduce the trainable parameter count.
 
 **Low efficiency (<80%):** Memory fragmentation. Call
 `torch.cuda.empty_cache()` between steps, or reduce `microbatch_size`.
@@ -267,9 +268,11 @@ parameter count.
 peak memory is increasing. Check for tensors that are accumulating outside
 the training loop (e.g., appending to a list without detaching).
 
-**OOM with fused linear CE disabled:** Without fused linear CE, the full
-`(batch*seq, vocab)` logits tensor is materialized. For 128K vocab models,
-this uses ~2 GB per sample. Re-enable fused CE or reduce batch size.
+**OOM with fused linear CE not enabled:** Fused linear CE is opt-in
+(`apply_model_patches(model, fused_linear_cross_entropy=True)`). Without
+it, the full `(batch*seq, vocab)` logits tensor is materialized — for
+128K vocab models, that is ~2 GB per sample. Enable the flag (only if
+nothing else reads logits) or reduce batch size.
 
 ## API reference
 

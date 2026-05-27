@@ -808,7 +808,6 @@ class _LinearCEBackward(torch.autograd.Function):
 
         B_vmap = hidden_states.shape[0]
         D = hidden_states.shape[-1]
-        V = weight.shape[0]
 
         # Pre-shift and merge all samples into one flat batch
         h_shifted = hidden_states[..., :-1, :].contiguous()  # (B_vmap, ..., seq-1, D)
@@ -854,9 +853,15 @@ class _LinearCEBackward(torch.autograd.Function):
         de = de.reshape(B_vmap, tokens_per_sample, D)
 
         if dc is None:
-            dc = weight.new_zeros((B_vmap, V, D))
+            # ``weight`` is frozen (``compute_dc=False``) — the per-sample
+            # weight gradient is structurally all-zero.  Return a single
+            # (V, D) zero tensor with ``out_dim=None`` so vmap broadcasts it
+            # across the batch; allocating (B_vmap, V, D) here costs an
+            # extra ``B_vmap * V * D`` floats and OOMs Mellum-scale LoRA on
+            # 24 GB GPUs even at microbatch=4.
+            return (de, weight.new_zeros(weight.shape)), (0, None)
 
-        # dc is already (B_vmap, V, D) from per-sample kernel (or zeros if skipped)
+        # dc is (B_vmap, V, D) from per-sample kernel
         return (de, dc), (0, 0)
 
 
@@ -873,8 +878,7 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
     :func:`torch.nn.functional.cross_entropy`.  Does not materialize the full
     ``(batch * seq, vocab)`` logit matrix.
 
-    Returns unreduced ``nll_sum`` — caller handles reduction (mean,
-    ``num_items_in_batch``).
+    Returns unreduced ``nll_sum`` — caller handles reduction.
     """
 
     @staticmethod
@@ -999,15 +1003,14 @@ def opaque_linear_cross_entropy_loss(
     hidden_states,
     weight,
     labels,
-    num_items_in_batch=None,
     ignore_index=-100,
     logit_softcapping=0,
     label_smoothing=0.0,
 ):
     """Convenience wrapper for fused linear + cross-entropy loss.
 
-    The kernel returns nll_sum (unreduced). This wrapper divides by
-    num_items_in_batch (if given) or count of valid tokens.
+    The kernel returns nll_sum (unreduced); this wrapper divides by the
+    count of non-ignored tokens (mean reduction).
 
     Any weight scaling (Granite divisive, Cohere multiplicative) should be
     applied to the weight tensor before calling this function, so that
@@ -1017,7 +1020,6 @@ def opaque_linear_cross_entropy_loss(
         hidden_states: (..., hidden_dim) embeddings from backbone
         weight: (vocab_size, hidden_dim) lm_head weight (pre-scaled if needed)
         labels: (...,) target token IDs (-100 = ignore)
-        num_items_in_batch: optional denominator for loss averaging
         ignore_index: label value to ignore
         logit_softcapping: Gemma2 softcap value (0 = disabled)
         label_smoothing: same semantics as :func:`torch.nn.functional.cross_entropy`
@@ -1040,12 +1042,6 @@ def opaque_linear_cross_entropy_loss(
         logit_softcapping,
         label_smoothing,
     )
-
-    if num_items_in_batch is not None:
-        if torch.is_tensor(num_items_in_batch):
-            num_items_in_batch = num_items_in_batch.to(nll_sum.device)
-        return nll_sum / num_items_in_batch
-
     shifted_labels = labels[..., 1:].contiguous().flatten()
     n_valid = (shifted_labels != ignore_index).sum().float().clamp(min=1)
     return nll_sum / n_valid

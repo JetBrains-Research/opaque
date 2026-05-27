@@ -27,6 +27,7 @@ def _cross_entropy_forward(
     logits_row_stride,
     loss_ptr,
     logsumexp_ptr,
+    sum_logits_ptr,
     labels_ptr,
     VOCAB_SIZE: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
@@ -34,6 +35,7 @@ def _cross_entropy_forward(
     SOFTCAP: tl.constexpr,
     DO_LOGIT_SCALING: tl.constexpr,
     LOGIT_SCALE: tl.constexpr,
+    DO_LABEL_SMOOTHING: tl.constexpr,
 ):
     row_idx = tl.program_id(0)
     logits_ptr += row_idx * triton_cast(logits_row_stride, tl.int64)
@@ -72,6 +74,10 @@ def _cross_entropy_forward(
 
     tl.store(loss_ptr, loss)
     tl.store(logsumexp_ptr, logsumexp)
+    if DO_LABEL_SMOOTHING:
+        sum_logits_ptr += row_idx
+        sum_logits = tl.sum(tl.where(mask, logits, 0.0), 0)
+        tl.store(sum_logits_ptr, sum_logits)
 
 
 @triton.jit
@@ -80,6 +86,7 @@ def _chunked_cross_entropy_forward(
     logits_row_stride,
     loss_ptr,
     logsumexp_ptr,
+    sum_logits_ptr,
     labels_ptr,
     VOCAB_SIZE: tl.constexpr,
     N_CHUNKS: tl.constexpr,
@@ -88,6 +95,7 @@ def _chunked_cross_entropy_forward(
     SOFTCAP: tl.constexpr,
     DO_LOGIT_SCALING: tl.constexpr,
     LOGIT_SCALE: tl.constexpr,
+    DO_LABEL_SMOOTHING: tl.constexpr,
 ):
     """Chunked forward for vocab > MAX_FUSED_SIZE.
 
@@ -133,6 +141,12 @@ def _chunked_cross_entropy_forward(
             loss = 0.0
         tl.store(loss_ptr, loss)
     tl.store(logsumexp_ptr, logsumexp)
+    # Cross-chunk accumulation of sum(logits) into a per-row buffer.
+    # Each chunk contributes its partial sum; the buffer is pre-zeroed
+    # in the Python wrapper so atomic_add composes correctly.
+    if DO_LABEL_SMOOTHING:
+        chunk_sum = tl.sum(tl.where(mask, logits, 0.0), 0)
+        tl.atomic_add(sum_logits_ptr + row_idx, chunk_sum)
 
 
 @triton.jit
@@ -149,6 +163,7 @@ def _cross_entropy_backward(
     SOFTCAP: tl.constexpr,
     DO_LOGIT_SCALING: tl.constexpr,
     LOGIT_SCALE: tl.constexpr,
+    LABEL_SMOOTHING: tl.constexpr,
 ):
     row_idx = tl.program_id(0)
     block_idx = tl.program_id(1)
@@ -183,11 +198,23 @@ def _cross_entropy_backward(
 
     logsumexp = tl.load(logsumexp_ptr)
     y = tl.exp(x - logsumexp)
-    y = tl.where(
-        col_offsets == label_idx,
-        y - 1.0,
-        y,
-    )
+    # Gradient with optional label smoothing:
+    #   ∂loss/∂z_j = p_j - (1-ls) * 1[j==t] - ls/V
+    # Standard CE corresponds to ls = 0:
+    #   ∂loss/∂z_j = p_j - 1[j==t]
+    if LABEL_SMOOTHING > 0.0:
+        y = tl.where(mask, y - (LABEL_SMOOTHING / VOCAB_SIZE), y)
+        y = tl.where(
+            col_offsets == label_idx,
+            y - (1.0 - LABEL_SMOOTHING),
+            y,
+        )
+    else:
+        y = tl.where(
+            col_offsets == label_idx,
+            y - 1.0,
+            y,
+        )
 
     # Chain rule for logit scaling: d/dx [s * x] = s
     if DO_LOGIT_SCALING:
@@ -208,6 +235,7 @@ def _ce_forward_impl(
     device,
     logit_softcapping=0,
     logit_scaling=0,
+    label_smoothing=0.0,
 ):
     """Shared forward implementation for both standard and vmap paths.
 
@@ -216,14 +244,35 @@ def _ce_forward_impl(
     Args:
         logit_softcapping: Gemma 2 softcap value (0 = disabled).
         logit_scaling: Cohere logit scale value (0 = disabled).
+        label_smoothing: ``F.cross_entropy``-style smoothing weight in
+            [0, 1].  When > 0 the per-row NLL becomes
+            ``(1-ls)*hard + ls*(lse - mean(z))`` matching
+            ``F.cross_entropy(..., label_smoothing=ls)``.  Zero positions
+            (``label == -100``) stay at loss 0.
     """
     div, mod = divmod(vocab_size, MAX_FUSED_SIZE)
     n_chunks = div + (mod != 0)
 
     DO_SOFTCAPPING = logit_softcapping != 0
     DO_LOGIT_SCALING = logit_scaling != 0
+    ls = float(label_smoothing)
+    if not (0.0 <= ls <= 1.0):
+        raise ValueError(
+            f"label_smoothing must be in [0.0, 1.0]; got {label_smoothing!r}."
+        )
+    DO_LABEL_SMOOTHING = ls > 0.0
 
     losses = torch.empty(n_rows, dtype=torch.float32, device=device)
+    # ``sum_logits`` accumulator: per-row sum of (post-scale/softcap)
+    # logits, used to compute ``mean_z`` for the smoothed-CE formula.
+    # Pre-zeroed because the chunked path uses ``atomic_add``.  A
+    # one-element placeholder when smoothing is off keeps the kernel
+    # signature uniform.
+    sum_logits = (
+        torch.zeros(n_rows, dtype=torch.float32, device=device)
+        if DO_LABEL_SMOOTHING
+        else torch.empty(1, dtype=torch.float32, device=device)
+    )
 
     if n_chunks == 1:
         # Small vocab (<= 65536): single-chunk path
@@ -236,6 +285,7 @@ def _ce_forward_impl(
                 logits_flat.stride(0),
                 losses,
                 logsumexp,
+                sum_logits,
                 labels_flat,
                 VOCAB_SIZE=vocab_size,
                 BLOCK_SIZE=BLOCK_SIZE,
@@ -243,6 +293,7 @@ def _ce_forward_impl(
                 SOFTCAP=logit_softcapping,
                 DO_LOGIT_SCALING=DO_LOGIT_SCALING,
                 LOGIT_SCALE=logit_scaling,
+                DO_LABEL_SMOOTHING=DO_LABEL_SMOOTHING,
                 num_warps=num_warps,
             )
     else:
@@ -255,6 +306,7 @@ def _ce_forward_impl(
                 logits_flat.stride(0),
                 losses,
                 logsumexp,
+                sum_logits,
                 labels_flat,
                 VOCAB_SIZE=vocab_size,
                 N_CHUNKS=n_chunks,
@@ -263,6 +315,7 @@ def _ce_forward_impl(
                 SOFTCAP=logit_softcapping,
                 DO_LOGIT_SCALING=DO_LOGIT_SCALING,
                 LOGIT_SCALE=logit_scaling,
+                DO_LABEL_SMOOTHING=DO_LABEL_SMOOTHING,
                 num_warps=32,
             )
 
@@ -271,6 +324,19 @@ def _ce_forward_impl(
         # loss = -x[label] + logsumexp (chunk 0 stored -x, now add logsumexp)
         losses += logsumexp
         losses.masked_fill_(labels_flat == -100, 0)
+
+    if DO_LABEL_SMOOTHING:
+        # Smoothed CE: (1-ls)*hard + ls*(lse - mean_z), matching
+        # ``F.cross_entropy(..., label_smoothing=ls)``.  Ignored positions
+        # (label == -100) keep loss = 0 — the standard kernel already
+        # zeroed those, but we re-mask after the smoothing rewrite.
+        mean_z = sum_logits / vocab_size
+        smoothed = (1.0 - ls) * losses + ls * (logsumexp - mean_z)
+        losses = torch.where(
+            labels_flat == -100,
+            torch.zeros_like(smoothed),
+            smoothed,
+        )
 
     return losses, logsumexp
 
@@ -287,6 +353,7 @@ class _CrossEntropyBackward(torch.autograd.Function):
         vocab_size,
         logit_softcapping,
         logit_scaling,
+        label_smoothing,
     ):
         original_shape = logits.shape
         # In-place: kernel writes dlogits directly into logits buffer
@@ -315,6 +382,7 @@ class _CrossEntropyBackward(torch.autograd.Function):
                 SOFTCAP=logit_softcapping,
                 DO_LOGIT_SCALING=logit_scaling != 0,
                 LOGIT_SCALE=logit_scaling,
+                LABEL_SMOOTHING=float(label_smoothing),
                 num_warps=8,
             )
 
@@ -339,14 +407,23 @@ class _CrossEntropyBackward(torch.autograd.Function):
         vocab_size,
         logit_softcapping,
         logit_scaling,
+        label_smoothing,
     ):
-        (grad_bdim, logits_bdim, lse_bdim, labels_bdim, vs_bdim, sc_bdim, ls_bdim) = (
-            in_dims
-        )
+        (
+            grad_bdim,
+            logits_bdim,
+            lse_bdim,
+            labels_bdim,
+            vs_bdim,
+            sc_bdim,
+            ls_bdim,
+            smooth_bdim,
+        ) = in_dims
 
         assert vs_bdim is None, "vocab_size should not be batched"
         assert sc_bdim is None, "logit_softcapping should not be batched"
         assert ls_bdim is None, "logit_scaling should not be batched"
+        assert smooth_bdim is None, "label_smoothing should not be batched"
 
         original_shape = logits.shape
         # Merge vmap batch into rows, in-place (kernel writes dlogits into logits buffer)
@@ -375,6 +452,7 @@ class _CrossEntropyBackward(torch.autograd.Function):
                 SOFTCAP=logit_softcapping,
                 DO_LOGIT_SCALING=logit_scaling != 0,
                 LOGIT_SCALE=logit_scaling,
+                LABEL_SMOOTHING=float(label_smoothing),
                 num_warps=8,
             )
 
@@ -383,12 +461,16 @@ class _CrossEntropyBackward(torch.autograd.Function):
 
 class Opaque_CrossEntropyLoss(torch.autograd.Function):
     @staticmethod
-    def forward(logits, labels, logit_softcapping=0, logit_scaling=0):
+    def forward(
+        logits, labels, logit_softcapping=0, logit_scaling=0, label_smoothing=0.0
+    ):
         """New-style API forward without ctx parameter.
 
         Args:
             logit_softcapping: Gemma 2 softcap value (0 = disabled).
             logit_scaling: Cohere logit scale value (0 = disabled).
+            label_smoothing: ``F.cross_entropy``-style smoothing weight
+                in [0, 1].  ``0.0`` (default) is standard CE.
         """
         original_shape = logits.shape[:-1]
         vocab_size = logits.shape[-1]
@@ -406,6 +488,7 @@ class Opaque_CrossEntropyLoss(torch.autograd.Function):
             device,
             logit_softcapping=logit_softcapping,
             logit_scaling=logit_scaling,
+            label_smoothing=label_smoothing,
         )
 
         losses = losses.reshape(original_shape)
@@ -415,13 +498,14 @@ class Opaque_CrossEntropyLoss(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        logits, labels, logit_softcapping, logit_scaling = inputs
+        logits, labels, logit_softcapping, logit_scaling, label_smoothing = inputs
         losses, logsumexp = output
         ctx.save_for_backward(logits, logsumexp, labels)
         ctx.vocab_size = logits.shape[-1]
         ctx.original_shape = logits.shape[:-1]
         ctx.logit_softcapping = logit_softcapping
         ctx.logit_scaling = logit_scaling
+        ctx.label_smoothing = float(label_smoothing)
 
     @staticmethod
     def backward(ctx, grad_losses, grad_logsumexp):
@@ -434,21 +518,27 @@ class Opaque_CrossEntropyLoss(torch.autograd.Function):
             ctx.vocab_size,
             ctx.logit_softcapping,
             ctx.logit_scaling,
+            ctx.label_smoothing,
         )
-        return grad_logits, None, None, None
+        return grad_logits, None, None, None, None
 
     @staticmethod
-    def vmap(info, in_dims, logits, labels, logit_softcapping, logit_scaling):
+    def vmap(
+        info, in_dims, logits, labels, logit_softcapping, logit_scaling, label_smoothing
+    ):
         """Custom vmap rule for DP-SGD.
 
         Calls Triton forward kernel directly with merged batch dims.
         """
-        logits_bdim, labels_bdim, sc_bdim, ls_bdim = in_dims
+        logits_bdim, labels_bdim, sc_bdim, ls_bdim, smooth_bdim = in_dims
 
         if logits_bdim != 0:
             raise ValueError(f"logits should be batched at dim 0, got {logits_bdim}")
         if labels_bdim != 0:
             raise ValueError(f"labels should be batched at dim 0, got {labels_bdim}")
+        assert sc_bdim is None, "logit_softcapping should not be batched"
+        assert ls_bdim is None, "logit_scaling should not be batched"
+        assert smooth_bdim is None, "label_smoothing should not be batched"
 
         batched_shape = logits.shape[:-1]
         vocab_size = logits.shape[-1]
@@ -466,6 +556,7 @@ class Opaque_CrossEntropyLoss(torch.autograd.Function):
             device,
             logit_softcapping=logit_softcapping,
             logit_scaling=logit_scaling,
+            label_smoothing=label_smoothing,
         )
 
         losses = losses.reshape(batched_shape)
@@ -474,16 +565,24 @@ class Opaque_CrossEntropyLoss(torch.autograd.Function):
         return (losses, logsumexp), (logits_bdim, logits_bdim)
 
 
-def opaque_cross_entropy_loss(logits, labels, logit_softcapping=0, logit_scaling=0):
+def opaque_cross_entropy_loss(
+    logits,
+    labels,
+    logit_softcapping=0,
+    logit_scaling=0,
+    label_smoothing=0.0,
+):
     """Convenience wrapper.
 
     Args:
         logit_softcapping: Gemma 2 softcap value (0 = disabled).
         logit_scaling: Cohere logit scale value (0 = disabled).
+        label_smoothing: ``F.cross_entropy``-style smoothing weight in
+            [0, 1].  Default 0.0 (standard CE).
     """
     ensure_cuda_tensors(logits, labels, fn_name="opaque_cross_entropy_loss")
     (logits,) = follow_autocast(logits)
     losses, _ = Opaque_CrossEntropyLoss.apply(
-        logits, labels, logit_softcapping, logit_scaling
+        logits, labels, logit_softcapping, logit_scaling, label_smoothing
     )
     return losses

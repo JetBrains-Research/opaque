@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import torch
+from torch.profiler import record_function
 
 from opaque.types import SecondMomentClippingOutput, clipped
 
@@ -143,6 +144,7 @@ def adaptive_clipped_grad(
     fraction_noise_std: float = _DEFAULT_FRACTION_NOISE_STD,
     key: RngKey,
     return_aux: bool = False,
+    pre_clipping_transform: Callable = lambda x: x,
     **clipped_grad_kwargs: Any,
 ) -> tuple[Callable, AdaptiveClipState]:
     """Create function for adaptive gradient clipping with explicit state-passing.
@@ -167,6 +169,15 @@ def adaptive_clipped_grad(
         key: RNG key for quantile noise generation.
         return_aux: If True, return per-example aux with loss values,
             gradient norms, and clipping rate.
+        pre_clipping_transform: An optional function to apply to the
+            per-example gradients before clipping. The function should
+            consume the gradient pytree for a single example and return
+            a new pytree (possibly with different structure). Can be
+            used to e.g., scale the leaves of the pytree to accommodate
+            preconditioner clipping, or to unscale fp16-loss-scaled
+            gradients so the adaptive quantile tracker observes the
+            unscaled per-example norms. Does not affect the sensitivity
+            guarantee. Default is identity function.
         **clipped_grad_kwargs: Passed to ``clipped_grad()``
             (``batch_argnums``, ``normalize_by``, etc).
 
@@ -360,6 +371,10 @@ def adaptive_clipped_grad(
             Else:
                 (grad, new_state)
         """
+        with record_function("opaque::adaptive_clipped_grad"):
+            return _grad_fn_impl(*args, state=state, **kwargs)
+
+    def _grad_fn_impl(*args, state: AdaptiveClipState, **kwargs):
         # Empty batch: zero grads, no adaptation, step still incremented.
         # When ``second_moment=True`` was forwarded to the inner ``clipped_grad``,
         # mirror its empty-batch shape (paired ``SecondMomentClippingOutput``) so
@@ -404,6 +419,7 @@ def adaptive_clipped_grad(
                 clipping_norm=state._next_clipping_norm,
                 return_aux=user_wants_return_aux,
                 _force_grad_norms=not user_wants_return_aux,
+                pre_clipping_transform=pre_clipping_transform,
                 **clipped_grad_kwargs,
             ),
         )

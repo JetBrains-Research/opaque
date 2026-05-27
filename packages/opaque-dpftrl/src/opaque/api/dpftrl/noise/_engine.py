@@ -76,9 +76,16 @@ def _iid_normal_noise(
     target_tree: Any,
     stddev: float | PerGroup,
     generator: torch.Generator | None = None,
-    dtype: torch.dtype | None = None,
+    compute_dtype: torch.dtype = torch.float32,
 ) -> Any:
-    """Generate IID normal noise matching the structure of target_tree."""
+    """Generate IID normal noise matching the structure of ``target_tree``.
+
+    ``compute_dtype`` is the dtype used for the underlying ``torch.randn``
+    call.  Defaults to ``torch.float32`` to match :func:`opaque.dpsgd.noise.gaussian_noise`
+    — sampling Gaussians in bf16/fp16 has discretization issues that distort
+    the noise distribution.  Type stability on the public boundary is
+    preserved by the caller (which casts back to the input dtype).
+    """
 
     def _randn_on_device(
         shape: tuple[int, ...],
@@ -113,10 +120,9 @@ def _iid_normal_noise(
                     f"got {type(tensor).__name__} for key {param_key!r}."
                 )
             leaf_std = stddev.for_key(param_key)
-            noise_dtype = _internal_compute_dtype(dtype or tensor.dtype)
             noise = _randn_on_device(
                 tensor.shape,
-                noise_dtype=noise_dtype,
+                noise_dtype=compute_dtype,
                 device=tensor.device,
                 generator=generator,
             )
@@ -124,10 +130,9 @@ def _iid_normal_noise(
         return out
 
     def make_noise(t):
-        noise_dtype = _internal_compute_dtype(dtype or t.dtype)
         noise = _randn_on_device(
             t.shape,
-            noise_dtype=noise_dtype,
+            noise_dtype=compute_dtype,
             device=t.device,
             generator=generator,
         )
@@ -177,7 +182,7 @@ def _matrix_factorization_noise(
     noising: torch.Tensor | streaming_matrix.StreamingMatrix,
     *,
     key: RngKey,
-    dtype: torch.dtype | None = None,
+    compute_dtype: torch.dtype = torch.float32,
 ) -> tuple[
     Callable[..., tuple[Any, MFNoiseState]],
     MFNoiseState,
@@ -191,7 +196,9 @@ def _matrix_factorization_noise(
         grad_template: Pytree with the same structure/shapes as gradients.
         noising: Dense 2D tensor or ``StreamingMatrix`` representing C^{-1}.
         key: Pre-resolved base ``RngKey``.
-        dtype: Optional dtype for intermediate noise computation.
+        compute_dtype: Dtype used for the underlying ``torch.randn`` and
+            linear-combination arithmetic.  Matches the
+            :func:`opaque.dpsgd.noise.gaussian_noise` convention.
 
     Returns:
         ``(noise_fn, state)`` where
@@ -202,9 +209,13 @@ def _matrix_factorization_noise(
         ``ClippedPytree.max_norm``.
     """
     if isinstance(noising, torch.Tensor):
-        return _tensor_mf_noise(grad_template, noising, key=key, dtype=dtype)
+        return _tensor_mf_noise(
+            grad_template, noising, key=key, compute_dtype=compute_dtype
+        )
     elif isinstance(noising, streaming_matrix.StreamingMatrix):
-        return _streaming_mf_noise(grad_template, noising, key=key, dtype=dtype)
+        return _streaming_mf_noise(
+            grad_template, noising, key=key, compute_dtype=compute_dtype
+        )
     else:
         raise TypeError(f"Unsupported noising type: {type(noising)}")
 
@@ -214,7 +225,7 @@ def _tensor_mf_noise(
     noising: torch.Tensor,
     *,
     key: RngKey,
-    dtype: torch.dtype | None = None,
+    compute_dtype: torch.dtype = torch.float32,
 ) -> tuple[Callable, MFNoiseState]:
     """(noise_fn, state) from a 2D noising matrix C^{-1}."""
     if noising.ndim != 2:
@@ -249,7 +260,6 @@ def _tensor_mf_noise(
             def add_noise_keyed(param_key: str, grad_tensor: torch.Tensor):
                 eff = stddev.for_key(param_key)
                 matrix_row = matrix_row_base * eff
-                compute_dtype = _internal_compute_dtype(dtype or grad_tensor.dtype)
                 noise = _gaussian_linear_combination(
                     matrix_row,
                     grad_tensor.shape,
@@ -271,7 +281,6 @@ def _tensor_mf_noise(
             matrix_row = matrix_row_base * float(stddev)
 
             def add_noise(grad_tensor):
-                compute_dtype = _internal_compute_dtype(dtype or grad_tensor.dtype)
                 noise = _gaussian_linear_combination(
                     matrix_row,
                     grad_tensor.shape,
@@ -297,7 +306,7 @@ def _streaming_mf_noise(
     noising: streaming_matrix.StreamingMatrix,
     *,
     key: RngKey,
-    dtype: torch.dtype | None = None,
+    compute_dtype: torch.dtype = torch.float32,
 ) -> tuple[Callable, MFNoiseState]:
     """(noise_fn, state) from a streaming noising matrix C^{-1}."""
     streaming_state = noising.init_multiply(grad_template)
@@ -316,7 +325,7 @@ def _streaming_mf_noise(
             clipped_grads,
             stddev,
             generator=g,
-            dtype=dtype,
+            compute_dtype=compute_dtype,
         )
         corr_noise, new_streaming_state = noising.multiply_next(iid_noise, s_state)
         noisy_grads = tree_map(

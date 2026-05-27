@@ -440,6 +440,44 @@ eps = acct.epsilon_at(delta=1e-5)
 mutating the original. The `budget_exceeded` property checks whether the
 accumulated process exceeds the budget.
 
+### DP-FTRL: step-by-step accounting via `per_step`
+
+DP-FTRL accountants are *whole-process* (`dpftrl_acc.poisson` / `b_min_sep` /
+`balls_in_bins` already cover all `n_steps` rounds), so feeding the bare
+process to `acct |= step` would over-count. Wrap the process with
+`dpftrl_acc.per_step(...)` to get a step-shaped adapter whose
+`per_step(proc) * K` materialises the strategy-aware K-prefix PLD (rather
+than the K-fold composition of a single-step PLD, which would double-count
+the workload coefficients):
+
+```python
+import opaque.accounting as acc
+import opaque.dpftrl.accounting as dpftrl_acc
+from opaque.accounting import Accountant
+from opaque.dpftrl.noise import band_mf_strategy
+
+strategy = band_mf_strategy(bands=64)
+proc = dpftrl_acc.poisson(
+    dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
+    sample_rate=0.01,
+    n_steps=15_624,
+)
+step = dpftrl_acc.per_step(proc)
+acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
+
+for batch in dataloader:
+    # ... train ...
+    acct |= step
+    if acct.budget_exceeded:
+        break
+
+eps = acct.epsilon_at(delta=1e-5)
+```
+
+The K-step ε is bounded above by `proc.epsilon_at(delta)` and is monotone
+non-decreasing in K — both follow from the post-processing inequality on the
+deployed N-step mechanism. `K > proc.n_steps` raises `ValueError`.
+
 ### Serialization
 
 ```python

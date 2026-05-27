@@ -51,7 +51,7 @@ def pytorch_cross_entropy(logits, labels):
 
 def opaque_cross_entropy(logits, labels):
     """Opaque kernel: Opaque_CrossEntropyLoss with masked mean for vmap compatibility."""
-    losses, _ = Opaque_CrossEntropyLoss.apply(logits, labels)
+    losses, _ = Opaque_CrossEntropyLoss.apply(logits, labels, 0, 0, 0.0)
     # For vmap compatibility, avoid data-dependent control flow
     mask = (labels != -100).float()
     n_valid = mask.sum()
@@ -99,7 +99,7 @@ class TestCrossEntropyForward:
         logits = torch.randn(2, 64, vocab_size, device="cuda", dtype=torch.float32)
         labels = torch.randint(0, vocab_size, (2, 64), device="cuda")
 
-        losses_op, _ = Opaque_CrossEntropyLoss.apply(logits, labels)
+        losses_op, _ = Opaque_CrossEntropyLoss.apply(logits, labels, 0, 0, 0.0)
 
         logits_flat = logits.reshape(-1, vocab_size)
         labels_flat = labels.reshape(-1)
@@ -178,7 +178,7 @@ class TestCrossEntropyBackward:
         labels = torch.randint(0, vocab, (batch, seq_len), device="cuda")
         labels[:, -10:] = -100  # Mask last 10 positions
 
-        losses, _ = Opaque_CrossEntropyLoss.apply(logits, labels)
+        losses, _ = Opaque_CrossEntropyLoss.apply(logits, labels, 0, 0, 0.0)
         losses.sum().backward()
 
         # Gradients at -100 positions must be exactly zero
@@ -443,7 +443,7 @@ class TestCrossEntropySoftcapping:
         ).reshape(batch, seq_len)
 
         # Opaque: pass raw logits + softcap param
-        losses_op, _ = Opaque_CrossEntropyLoss.apply(logits, labels, softcap, 0)
+        losses_op, _ = Opaque_CrossEntropyLoss.apply(logits, labels, softcap, 0, 0.0)
 
         print(f"\nSoftcapping forward (V={vocab}):")
         assert_precision(losses_op, ref, rtol=1e-4, atol=1e-6, label="per-token losses")
@@ -473,7 +473,7 @@ class TestCrossEntropySoftcapping:
 
         # Opaque
         logits_op = logits_pt.detach().clone().requires_grad_(True)
-        losses_op, _ = Opaque_CrossEntropyLoss.apply(logits_op, labels, softcap, 0)
+        losses_op, _ = Opaque_CrossEntropyLoss.apply(logits_op, labels, softcap, 0, 0.0)
         mask = (labels != -100).float()
         loss_op = (losses_op * mask).sum() / mask.sum().clamp(min=1)
         loss_op.backward()
@@ -501,7 +501,9 @@ class TestCrossEntropySoftcapping:
         ).reshape(batch, seq_len)
 
         # Opaque: pass raw logits + scale param
-        losses_op, _ = Opaque_CrossEntropyLoss.apply(logits, labels, 0, logit_scale)
+        losses_op, _ = Opaque_CrossEntropyLoss.apply(
+            logits, labels, 0, logit_scale, 0.0
+        )
 
         print(f"\nLogit scaling forward (V={vocab}):")
         assert_precision(losses_op, ref, rtol=1e-4, atol=1e-6, label="per-token losses")
@@ -531,7 +533,9 @@ class TestCrossEntropySoftcapping:
 
         # Opaque
         logits_op = logits_pt.detach().clone().requires_grad_(True)
-        losses_op, _ = Opaque_CrossEntropyLoss.apply(logits_op, labels, 0, logit_scale)
+        losses_op, _ = Opaque_CrossEntropyLoss.apply(
+            logits_op, labels, 0, logit_scale, 0.0
+        )
         mask = (labels != -100).float()
         loss_op = (losses_op * mask).sum() / mask.sum().clamp(min=1)
         loss_op.backward()
@@ -561,7 +565,7 @@ class TestCrossEntropySoftcapping:
             return F.cross_entropy(capped.reshape(-1, v), t.reshape(-1))
 
         def f_op(lgt, t):
-            losses, _ = Opaque_CrossEntropyLoss.apply(lgt, t, softcap, 0)
+            losses, _ = Opaque_CrossEntropyLoss.apply(lgt, t, softcap, 0, 0.0)
             mask = (t != -100).float()
             return (losses * mask).sum() / mask.sum().clamp(min=1)
 
@@ -593,11 +597,187 @@ class TestCrossEntropySoftcapping:
 
         # Opaque: pass raw logits + both params
         losses_op, _ = Opaque_CrossEntropyLoss.apply(
-            logits, labels, softcap, logit_scale
+            logits, labels, softcap, logit_scale, 0.0
         )
 
         print(f"\nCombined softcap+scaling forward (V={vocab}):")
         assert_precision(losses_op, ref, rtol=1e-4, atol=1e-6, label="per-token losses")
+
+
+# ============================================================================
+# Label Smoothing Tests
+# ============================================================================
+
+
+class TestCrossEntropyLabelSmoothing:
+    """``label_smoothing`` matches ``F.cross_entropy(..., label_smoothing=ls)``."""
+
+    @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
+    @pytest.mark.parametrize("label_smoothing", [0.05, 0.1, 0.2])
+    def test_forward_matches_pytorch(
+        self, assert_precision, mellum_config, vocab_size, label_smoothing
+    ):
+        """Forward parity across single-chunk and chunked vocabs."""
+        torch.manual_seed(42)
+        batch = mellum_config["batch_size"]
+        seq_len = mellum_config["seq_len"]
+
+        logits = torch.randn(
+            batch, seq_len, vocab_size, device="cuda", dtype=torch.float32
+        )
+        labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
+
+        logits_flat = logits.reshape(-1, vocab_size)
+        labels_flat = labels.reshape(-1)
+
+        ref = F.cross_entropy(
+            logits_flat,
+            labels_flat,
+            label_smoothing=label_smoothing,
+            reduction="none",
+        )
+        losses_op, _ = Opaque_CrossEntropyLoss.apply(
+            logits, labels, 0, 0, label_smoothing
+        )
+
+        print(f"\nCE smoothed forward (vocab={vocab_size}, ls={label_smoothing}):")
+        assert_precision(
+            losses_op.reshape(-1),
+            ref,
+            rtol=RTOL_CE_FORWARD,
+            atol=ATOL_CE_FORWARD,
+            label="per-token smoothed losses",
+        )
+
+    @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
+    @pytest.mark.parametrize("label_smoothing", [0.05, 0.1, 0.2])
+    def test_backward_matches_pytorch(
+        self, assert_precision, mellum_config, vocab_size, label_smoothing
+    ):
+        """Backward parity: smoothed gradient matches ``F.cross_entropy``."""
+        torch.manual_seed(42)
+        batch = mellum_config["batch_size"]
+        seq_len = mellum_config["seq_len"]
+
+        logits_pt = torch.randn(
+            batch,
+            seq_len,
+            vocab_size,
+            device="cuda",
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
+
+        # PyTorch reference (mean reduction over valid positions)
+        ref_loss = F.cross_entropy(
+            logits_pt.reshape(-1, vocab_size),
+            labels.reshape(-1),
+            label_smoothing=label_smoothing,
+            reduction="mean",
+        )
+        ref_loss.backward()
+
+        # Opaque kernel — match the mean reduction inside opaque_cross_entropy
+        logits_op = logits_pt.detach().clone().requires_grad_(True)
+        losses, _ = Opaque_CrossEntropyLoss.apply(
+            logits_op, labels, 0, 0, label_smoothing
+        )
+        mask = (labels.reshape(-1) != -100).float()
+        n_valid = mask.sum()
+        op_loss = (losses.reshape(-1) * mask).sum() / torch.clamp(n_valid, min=1.0)
+        op_loss.backward()
+
+        print(f"\nCE smoothed backward (vocab={vocab_size}, ls={label_smoothing}):")
+        assert_precision(
+            logits_op.grad,
+            logits_pt.grad,
+            rtol=RTOL_CE_BACKWARD,
+            atol=ATOL_CE_BACKWARD,
+            label="logits.grad (smoothed)",
+        )
+
+    def test_ignore_index_keeps_zero_grad_with_smoothing(self, mellum_config):
+        """``label == -100`` positions still produce zero gradient under smoothing."""
+        torch.manual_seed(42)
+        batch = mellum_config["batch_size"]
+        seq_len = mellum_config["seq_len"]
+        vocab = mellum_config["vocab_size"]
+
+        logits = torch.randn(
+            batch,
+            seq_len,
+            vocab,
+            device="cuda",
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        labels = torch.randint(0, vocab, (batch, seq_len), device="cuda")
+        labels[:, -10:] = -100
+
+        losses, _ = Opaque_CrossEntropyLoss.apply(logits, labels, 0, 0, 0.1)
+        losses.sum().backward()
+
+        masked_grad = logits.grad[:, -10:, :]
+        assert masked_grad.abs().max() == 0.0, (
+            f"Non-zero grad at -100 positions under smoothing: "
+            f"max={masked_grad.abs().max():.2e}"
+        )
+
+        # Smoothed loss at -100 positions should be zero too.
+        losses_only, _ = Opaque_CrossEntropyLoss.apply(
+            logits.detach(), labels, 0, 0, 0.1
+        )
+        masked_losses = losses_only[:, -10:]
+        assert masked_losses.abs().max() == 0.0, (
+            f"Non-zero smoothed loss at -100 positions: "
+            f"max={masked_losses.abs().max():.2e}"
+        )
+
+    @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
+    def test_zero_smoothing_matches_standard_ce(
+        self, assert_precision, mellum_config, vocab_size
+    ):
+        """``label_smoothing=0`` must match plain ``F.cross_entropy`` exactly.
+
+        Guards against accidental activation of the smoothing-gated forward
+        rewrite when ``DO_LABEL_SMOOTHING`` is False — the smoothing-off
+        path must still produce standard CE.
+        """
+        torch.manual_seed(42)
+        batch = mellum_config["batch_size"]
+        seq_len = mellum_config["seq_len"]
+
+        logits = torch.randn(
+            batch, seq_len, vocab_size, device="cuda", dtype=torch.float32
+        )
+        labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
+
+        losses_op, _ = Opaque_CrossEntropyLoss.apply(logits, labels, 0, 0, 0.0)
+        ref = F.cross_entropy(
+            logits.reshape(-1, vocab_size),
+            labels.reshape(-1),
+            reduction="none",
+        )
+
+        assert_precision(
+            losses_op.reshape(-1),
+            ref,
+            rtol=RTOL_CE_FORWARD,
+            atol=ATOL_CE_FORWARD,
+            label="label_smoothing=0 vs F.cross_entropy",
+        )
+
+    @pytest.mark.parametrize("bad_value", [-0.1, 1.5, 2.0])
+    def test_out_of_range_smoothing_raises(self, mellum_config, bad_value):
+        """``label_smoothing`` outside [0.0, 1.0] raises ValueError early."""
+        torch.manual_seed(42)
+        vocab_size = mellum_config["vocab_size"]
+        logits = torch.randn(2, 8, vocab_size, device="cuda", dtype=torch.float32)
+        labels = torch.randint(0, vocab_size, (2, 8), device="cuda")
+
+        with pytest.raises(ValueError, match="label_smoothing"):
+            Opaque_CrossEntropyLoss.apply(logits, labels, 0, 0, bad_value)
 
 
 if __name__ == "__main__":

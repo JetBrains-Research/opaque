@@ -315,11 +315,23 @@ Chunked Triton cross-entropy processes the vocabulary dimension in blocks (up to
 
 ### Fused linear cross-entropy
 
-The most impactful optimization. Standard cross-entropy requires materializing
-`logits = hidden_states @ lm_head.T` — for Mellum-4b with 128K vocab, this is
-~2 GB per forward pass. Fused linear cross-entropy computes the loss directly
-from hidden states and weight matrix using tiled matrix multiplication inside
-the Triton kernel, never materializing the full logits tensor.
+Computes the loss directly from hidden states and the `lm_head` weight matrix
+using tiled matrix multiplication inside the Triton kernel, never materializing
+the full logits tensor. For Mellum-4b with 128K vocab, that avoids the
+~2 GB `logits = hidden_states @ lm_head.T` allocation that the non-fused
+cross-entropy path produces per forward pass.
+
+The patched `XForCausalLM.forward` returns `logits=None` on the fast path,
+which is incompatible with callers that read `outputs.logits` —
+`compute_metrics`, `preprocess_logits_for_metrics`, and generation eval all
+need the materialized tensor. The patch is opt-in for this reason: pass
+`fused_linear_cross_entropy=True` to `apply_model_patches(model, ...)` when
+loss is the only consumer of the forward output. `examples/train_causal_lm.py`
+and `examples/train_dp_ftrl.py` enable it.
+
+`cross_entropy=True` (defaults from `kernels`) still installs the non-fused
+`Opaque_CrossEntropyLoss` via `loss_function`, which operates on materialized
+logits and leaves `outputs.logits` populated.
 
 Key design decisions:
 - **Pre-shift in Python** — `hidden_states[..., :-1, :]` and `labels[..., 1:]`
@@ -376,42 +388,69 @@ loss = opaque_cross_entropy_loss(logits, labels)
 ## Configuration
 
 Patching is configured through the explicit API rather than import-time side
-effects. The most useful knobs today are:
+effects. Three umbrella flags drive the per-concern defaults:
 
 ```python
 from opaque.patches import apply_model_patches, apply_runtime_patches
 
 apply_runtime_patches(
   compat=True,
-  allow_empty_batches=True,
-  enable_vmap_checkpointing=True,
-  use_fused_loss=True,
+  vmap_masking=True,
+  empty_batches=True,
+  vmap_checkpointing=True,
 )
 
 apply_model_patches(
   model,
-  performance=True,  # Triton kernels + PEFT fusion
-  compat=True,       # vmap-safe attention / batchify / KV-cache shims
+  performance=True,  # kv_cache disabler + (by default) the kernels group
+  compat=True,       # vmap-safe attention + batchify
   peft=True,         # LoRA / PEFT module patching
+  kernels=True,      # Triton kernels (rope, rms_norm, activation, cross_entropy);
+                     # defaults to performance, forced False without CUDA + Triton
+  fused_linear_cross_entropy=True,  # opt-in: skips lm_head, fast path returns logits=None
 )
 ```
+
+Group → per-concern defaults:
+
+- `performance` — memory-efficiency patches that run on any host
+  (currently `kv_cache`).
+- `compat` — vmap-safety wrappers (`eager_attention`, `batchify`).
+- `kernels` — Triton kernel patches that require CUDA + Triton (`rope`,
+  `rms_norm`, `activation`, `cross_entropy`). Defaults to `performance`
+  when not passed and is forced to `False` when CUDA / Triton can't be
+  imported, so `performance=True` keeps `kv_cache` on CPU / MPS.
+
+`fused_linear_cross_entropy` is a kernel kwarg with an explicit default of
+`False`. The fused path returns `logits=None`, which is incompatible with
+callers that read `outputs.logits` — `compute_metrics`,
+`preprocess_logits_for_metrics`, and generation eval. Enable it when loss is
+the only consumer of the forward output; see
+[Fused linear cross-entropy](#fused-linear-cross-entropy).
 
 Common configurations:
 
 ```python
-# Keep correctness shims, but disable Triton kernels / PEFT fusion.
+# Drop everything performance-related; keep compat shims.
 apply_model_patches(model, performance=False)
 
-# Disable model-side compat wrappers while keeping runtime patches.
+# Keep kv_cache but skip the Triton kernels — what the router does on
+# CPU / MPS automatically.
+apply_model_patches(model, performance=True, kernels=False)
+
+# Drop model-side compat wrappers, keep runtime patches.
 apply_model_patches(model, compat=False)
 
+# Enable the fused linear+CE forward (loss-only consumer of forward output).
+apply_model_patches(model, fused_linear_cross_entropy=True)
+
 # Disable runtime checkpoint patching for debugging.
-apply_runtime_patches(enable_vmap_checkpointing=False)
+apply_runtime_patches(vmap_checkpointing=False)
 ```
 
-The only remaining environment-level switch in this area is
-`OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES=all|collator`, which controls the empty-
-batch collator wrapper used with Poisson sampling.
+The environment-level switch in this area is
+`OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES=all|collator`, which controls the
+empty-batch collator wrapper used with Poisson sampling.
 
 ## Other models
 

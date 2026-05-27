@@ -23,6 +23,7 @@ def apply_model_patches(
     performance: bool = True,
     compat: bool = True,
     peft: bool = True,
+    fused_linear_cross_entropy: bool = False,
     **kwargs,
 ) -> None:
     """Apply global and instance-level patches for a specific model.
@@ -32,13 +33,32 @@ def apply_model_patches(
     architectures can import and invoke ``apply_peft_model_patches``
     directly from the root namespace to apply LoRA kernels.
 
-    Liger-aligned per-model flags are passed through ``**kwargs``:
-    ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``, plus
-    opaque-specific ``eager_attention``, ``batchify``, ``kv_cache``.
+    Three umbrella flags drive the per-concern ``**kwargs``:
+
+    - ``performance`` (default ``True``) — memory-efficiency patches
+      that run on any host (currently ``kv_cache``).
+    - ``compat`` (default ``True``) — vmap-safety wrappers
+      (``eager_attention``, ``batchify``).
+    - ``kernels`` (kwarg, defaults to ``performance``) — Triton kernel
+      patches that require CUDA + Triton (``rope``, ``rms_norm``,
+      ``activation``, ``cross_entropy``). Forced to ``False`` when
+      CUDA / Triton can't be imported, so ``performance=True`` keeps
+      ``kv_cache`` enabled on CPU / MPS hosts.
+
+    ``cross_entropy`` installs the non-fused CE kernel via
+    ``loss_function``; logits remain materialized, so callers that read
+    ``outputs.logits`` (``compute_metrics``,
+    ``preprocess_logits_for_metrics``, eval loops) continue to work.
+
+    ``fused_linear_cross_entropy`` is a kernel kwarg promoted to an
+    explicit parameter: it defaults to ``False`` rather than inheriting
+    from ``kernels`` because the fused forward returns ``logits=None``,
+    which is incompatible with callers that read logits. Enable it
+    when loss is the only consumer of the forward output.
     """
     global _runtime_patches_applied
     if not _runtime_patches_applied:
-        apply_runtime_patches()
+        apply_runtime_patches(performance=performance, compat=compat, **kwargs)
 
     try:
         from opaque.api.patches.transformers._router import (
@@ -46,7 +66,11 @@ def apply_model_patches(
         )
 
         apply_transformers_model_patches(
-            model, performance=performance, compat=compat, **kwargs
+            model,
+            performance=performance,
+            compat=compat,
+            fused_linear_cross_entropy=fused_linear_cross_entropy,
+            **kwargs,
         )
     except ImportError:
         logger.debug("opaque: Hugging Face kernel patches not available.")
@@ -67,10 +91,11 @@ def apply_runtime_patches(
 ) -> None:
     """Apply global runtime patches.
 
-    Liger-style flag names: ``vmap_masking``, ``empty_batches``,
-    ``vmap_checkpointing``.  ``use_fused_loss`` was dropped — fused-CE
-    is now applied per-model via :func:`apply_model_patches` when
-    ``cross_entropy=True``.
+    Per-concern compat flags (default-on with ``compat=True``):
+    ``vmap_masking`` (vmap-safe causal-mask builders),
+    ``empty_batches`` (collator handling for Poisson-sampled empty
+    batches), ``vmap_checkpointing`` (gradient-checkpointing shim).
+    Per-model CE patches live on :func:`apply_model_patches`.
     """
     global _runtime_patches_applied
     _runtime_patches_applied = True

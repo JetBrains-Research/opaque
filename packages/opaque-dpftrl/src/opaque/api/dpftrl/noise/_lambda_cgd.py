@@ -22,6 +22,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 import torch
@@ -41,6 +42,22 @@ def _native():
     from opaque.api.accounting.core import _native as _n
 
     return _n
+
+
+@lru_cache(maxsize=256)
+def _lambda_cgd_gram_matrix_cached(
+    lambda_: float,
+    normalized: bool,
+    n_steps: int,
+    min_sep: int,
+    max_participations: int | None,
+) -> tuple[float, ...]:
+    """Gram sequence for λ-CGD; cached across repeated σ / PLD probes."""
+    return tuple(
+        _native().lambda_cgd_gram_matrix(
+            lambda_, n_steps, min_sep, max_participations, normalized
+        )
+    )
 
 
 def _column_norm(lambda_: float, n_steps: int, step: int) -> float:
@@ -76,10 +93,8 @@ class LambdaCgdStrategy:
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> tuple[float, ...]:
-        return tuple(
-            _native().lambda_cgd_gram_matrix(
-                self.lambda_, n_steps, min_sep, max_participations, self.normalized
-            )
+        return _lambda_cgd_gram_matrix_cached(
+            self.lambda_, self.normalized, n_steps, min_sep, max_participations
         )
 
     def streaming_matrix(self, **_) -> StreamingMatrix:
@@ -159,7 +174,7 @@ def _make_lambda_cgd_noise(
     *,
     n_steps: int,
     key: RngKey,
-    dtype: torch.dtype | None = None,
+    compute_dtype: torch.dtype = torch.float32,
 ) -> tuple[
     Callable[..., tuple[Any, MFNoiseState]],
     MFNoiseState,
@@ -196,7 +211,7 @@ def _make_lambda_cgd_noise(
             clipped_grads,
             stddev,
             generator=g_current,
-            dtype=dtype,
+            compute_dtype=compute_dtype,
         )
 
         if step == 0 or lambda_ == 0.0:
@@ -208,7 +223,7 @@ def _make_lambda_cgd_noise(
                 clipped_grads,
                 stddev,
                 generator=g_prev,
-                dtype=dtype,
+                compute_dtype=compute_dtype,
             )
             corr_noise = tree_map(
                 lambda zt, zp: zt - lambda_ * zp,

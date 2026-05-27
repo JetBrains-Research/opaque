@@ -59,20 +59,31 @@ except ModuleNotFoundError as import_error:
         x2 = x[..., half:]
         return torch.cat((-x2, x1), dim=-1)
 
-    def opaque_cross_entropy_loss(logits, labels, logit_softcapping=0, logit_scaling=0):
+    def opaque_cross_entropy_loss(
+        logits,
+        labels,
+        logit_softcapping=0,
+        logit_scaling=0,
+        label_smoothing=0.0,
+    ):
         logits = _apply_logit_transforms(logits, logit_softcapping, logit_scaling)
         flat_logits = logits.reshape(-1, logits.shape[-1])
         flat_labels = labels.reshape(-1)
-        loss_flat = F.cross_entropy(flat_logits, flat_labels, reduction="none")
+        loss_flat = F.cross_entropy(
+            flat_logits,
+            flat_labels,
+            reduction="none",
+            label_smoothing=float(label_smoothing or 0.0),
+        )
         return loss_flat.reshape(labels.shape)
 
     def opaque_linear_cross_entropy_loss(
         hidden_states,
         weight,
         labels,
-        num_items_in_batch=None,
         ignore_index=-100,
         logit_softcapping=0,
+        label_smoothing=0.0,
     ):
         shifted_hidden = hidden_states[..., :-1, :].contiguous()
         shifted_labels = labels[..., 1:].contiguous()
@@ -83,14 +94,9 @@ except ModuleNotFoundError as import_error:
             shifted_labels.reshape(-1),
             reduction="none",
             ignore_index=ignore_index,
+            label_smoothing=float(label_smoothing or 0.0),
         )
         nll_sum = loss_flat.sum()
-
-        if num_items_in_batch is not None:
-            if torch.is_tensor(num_items_in_batch):
-                num_items_in_batch = num_items_in_batch.to(nll_sum.device)
-            return nll_sum / num_items_in_batch
-
         n_valid = (
             (shifted_labels.reshape(-1) != ignore_index).sum().float().clamp(min=1)
         )

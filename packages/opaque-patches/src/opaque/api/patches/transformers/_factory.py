@@ -179,9 +179,17 @@ def make_apply_model_patches(
 
     Returns:
         Callable with signature
-        ``apply(model=None, *, performance=True, compat=True, **kwargs) -> None``.
-        Liger-aligned kwargs: ``rope``, ``rms_norm``, ``activation``,
-        ``cross_entropy``, ``eager_attention``, ``batchify``, ``kv_cache``.
+        ``apply(model=None, *, performance=True, compat=True,
+        kernels=None, **kwargs) -> None``.
+        Per-concern kwargs default into the right group:
+        ``rope``, ``rms_norm``, ``activation``, ``cross_entropy`` →
+        ``kernels`` (itself defaulting to ``performance`` when ``None``);
+        ``kv_cache`` → ``performance``; ``eager_attention``,
+        ``batchify`` → ``compat``. ``fused_linear_cross_entropy``
+        defaults to ``False`` because the fused path returns
+        ``logits=None``, which is incompatible with callers that read
+        logits (e.g. SFTTrainer with ``compute_metrics`` /
+        ``preprocess_logits_for_metrics``).
     """
     activation_factory = _resolve(activation_kind, _ACTIVATION_FACTORIES)
     rms_norm_factory = _resolve(rms_norm_kind, _RMSNORM_FACTORIES)
@@ -192,10 +200,18 @@ def make_apply_model_patches(
         *,
         performance: bool = True,
         compat: bool = True,
+        kernels: bool | None = None,
         **kwargs,
     ) -> None:
+        # ``kernels`` is the umbrella for CUDA + Triton patches. Defaults
+        # to ``performance`` so ``apply(performance=True)`` enables them;
+        # the router passes ``kernels=False`` on hosts without CUDA /
+        # Triton, which keeps non-kernel performance patches (``kv_cache``)
+        # while skipping the CUDA-only paths.
+        if kernels is None:
+            kernels = performance
         # Lazily apply family-runtime patches.  Idempotent.
-        family_apply(performance=performance, compat=compat, **kwargs)
+        family_apply(performance=performance, compat=compat, kernels=kernels, **kwargs)
 
         try:
             mod = importlib.import_module(module_path)
@@ -203,15 +219,15 @@ def make_apply_model_patches(
             return
 
         # Gated activation inside the model's MLP module (SwiGLU / GeGLU /
-        # Phi3-style SwiGLU).  ``performance`` remains the coarse gate;
-        # ``activation`` is the fine-grained override.
-        if activation_factory is not None and kwargs.get("activation", performance):
+        # Phi3-style SwiGLU).  Triton kernel — gated on ``kernels``.
+        if activation_factory is not None and kwargs.get("activation", kernels):
             mlp_class = classes.get("mlp")
             if mlp_class is not None:
                 _patch_forward(getattr(mod, mlp_class, None), activation_factory, model)
 
-        # RMSNorm (unified standalone + fused-add).
-        rms_norm_on = kwargs.get("rms_norm", performance)
+        # RMSNorm (unified standalone + fused-add). Triton kernel — gated
+        # on ``kernels``.
+        rms_norm_on = kwargs.get("rms_norm", kernels)
         if rms_norm_on:
             if rms_norm_factory is not None:
                 rms_norm_class = classes.get("rms_norm")
@@ -230,27 +246,40 @@ def make_apply_model_patches(
                         model,
                     )
 
-        # Cross-entropy: patch ``XForCausalLM.forward`` and attach the
-        # Opaque causal-LM loss function to the current model instance.
-        # This avoids mutating HuggingFace's process-global loss registry.
-        if kwargs.get("cross_entropy", performance):
-            causal_lm_class = classes.get("causal_lm")
-            if causal_lm_class is not None:
-                causal_lm_obj = getattr(mod, causal_lm_class, None)
-                _patch_forward(
-                    causal_lm_obj,
-                    _make_fused_ce_causal_lm_forward,
-                    model,
-                )
-                if causal_lm_obj is not None:
-                    apply_causal_lm_loss_function_patch(model, causal_lm_obj)
-
-        # vmap-safety patches on the causal-LM class.
+        # Cross-entropy patches are split into two gates.
+        #   - ``cross_entropy`` (defaults from ``kernels``): installs
+        #     ``Opaque_CrossEntropyLoss`` via ``loss_function``. Operates
+        #     on materialized logits; the model still returns them.
+        #   - ``fused_linear_cross_entropy`` (defaults to ``False``):
+        #     replaces ``forward`` with ``Opaque_LinearCrossEntropyLoss``,
+        #     which skips ``lm_head`` materialization and returns
+        #     ``logits=None`` on the fast path. Incompatible with callers
+        #     that read ``outputs.logits`` (compute_metrics,
+        #     preprocess_logits_for_metrics, generation eval); enable
+        #     only when loss is the only consumer of the forward output.
         causal_lm_class = classes.get("causal_lm")
         causal_lm_obj = getattr(mod, causal_lm_class, None) if causal_lm_class else None
+        if kwargs.get("cross_entropy", kernels) and causal_lm_obj is not None:
+            apply_causal_lm_loss_function_patch(model, causal_lm_obj)
+        if (
+            kwargs.get("fused_linear_cross_entropy", False)
+            and causal_lm_obj is not None
+        ):
+            _patch_forward(
+                causal_lm_obj,
+                _make_fused_ce_causal_lm_forward,
+                model,
+            )
+
+        # vmap-safety patch on the causal-LM class.
         if kwargs.get("batchify", compat) and causal_lm_obj is not None:
             apply_batchify_patch(causal_lm_obj, model)
-        if kwargs.get("kv_cache", compat) and causal_lm_obj is not None:
+        # KV cache disabler: skips the DynamicCache allocation that HF
+        # makes on every training forward, and breaks the cache's
+        # circular references that vmap would leak. Pure Python — sits
+        # in the ``performance`` bucket rather than ``kernels`` so it
+        # still applies on CPU / MPS hosts.
+        if kwargs.get("kv_cache", performance) and causal_lm_obj is not None:
             apply_kv_cache_patch(causal_lm_obj, model)
 
     apply.__name__ = f"apply_{family}_patches"

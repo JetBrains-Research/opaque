@@ -11,7 +11,6 @@ from opaque.api.patches.transformers.components.cross_entropy import (
 
 def test_fused_ce_allowed_full_sequence_no_extra_loss_kwargs():
     assert _fused_linear_ce_loss_is_supported(0, {}) is True
-    assert _fused_linear_ce_loss_is_supported(0, {"num_items_in_batch": 8}) is True
     assert _fused_linear_ce_loss_is_supported(0, {"ignore_index": -100}) is True
 
 

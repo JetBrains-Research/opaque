@@ -1,14 +1,14 @@
 """Tests for memory profiling tools.
 
-Tests the profiling API (MemoryStats, StepTimer, TrainingProfiler)
+Tests the profiling API (MemoryStats, step_perf, PerfState)
 across different devices (CUDA, MPS, CPU).
 """
 
 import pytest
 import torch
 
-from opaque.profiling import StepTimer, TrainingProfiler, get_memory_stats
-from opaque.profiling.types import Checkpoint, MemoryStats, StepMetrics  # noqa: F401
+from opaque.profiling import PerfState, StepPerf, get_memory_stats, step_perf
+from opaque.profiling.types import MemoryStats  # noqa: F401
 
 
 # Test on available devices
@@ -85,26 +85,48 @@ class TestGetMemoryStats:
         torch.cuda.empty_cache()
 
 
-class TestStepTimer:
-    """Tests for StepTimer context manager."""
+class TestStepPerf:
+    """Tests for step_perf context manager and StepPerf record."""
 
     @pytest.mark.parametrize("device", DEVICES)
     def test_measures_time(self, device):
         """Should measure elapsed time."""
-        timer = StepTimer(device, track_memory=False)
-        with timer:
+        with step_perf(device, batch_size=32) as perf:
             x = torch.randn(100, 100)
             _ = x @ x.T
-        assert timer.elapsed > 0
+        result = perf.perf
+        assert isinstance(result, StepPerf)
+        assert result.step_time_sec > 0
 
-    def test_metrics_property(self):
-        """Should expose metrics property."""
-        timer = StepTimer("cpu", batch_size=32)
-        with timer:
+    def test_batch_size_and_throughput(self):
+        """Should compute throughput from batch size."""
+        with step_perf("cpu", batch_size=64) as perf:
             pass
-        metrics = timer.metrics
-        assert isinstance(metrics, StepMetrics)
-        assert metrics.batch_size == 32
+        result = perf.perf
+        assert result.batch_size == 64
+        assert result.samples_per_second > 0
+
+    def test_marks(self):
+        """Should record sub-step marks."""
+        with step_perf("cpu", batch_size=16) as perf:
+            _ = torch.randn(50, 50)
+            perf.mark("clip")
+            _ = torch.randn(50, 50)
+            perf.mark("noise")
+        result = perf.perf
+        assert "clip" in result.marks
+        assert "noise" in result.marks
+        assert result.marks["clip"] > 0
+        assert result.marks["noise"] > 0
+
+    def test_to_dict(self):
+        """Should convert to flat dict for logging."""
+        with step_perf("cpu", batch_size=8) as perf:
+            pass
+        d = perf.perf.to_dict(prefix="train/")
+        assert "train/step_time_sec" in d
+        assert "train/samples_per_second" in d
+        assert "train/memory_peak_gb" in d
 
     @pytest.mark.skipif(
         not torch.backends.mps.is_available(), reason="MPS not available"
@@ -112,109 +134,80 @@ class TestStepTimer:
     def test_mps_synchronizes_before_timing(self, monkeypatch):
         """MPS timer should synchronize before measuring elapsed time."""
         calls = {"count": 0}
+        original_sync = torch.mps.synchronize
 
         def _sync() -> None:
             calls["count"] += 1
+            original_sync()
 
         monkeypatch.setattr(torch.mps, "synchronize", _sync)
 
-        timer = StepTimer("mps", track_memory=False)
-        with timer:
+        with step_perf("mps", batch_size=16):
             x = torch.randn(16, 16, device="mps")
             _ = x @ x.T
 
-        assert calls["count"] == 1
+        assert calls["count"] >= 1
 
 
-class TestTrainingProfiler:
-    """Tests for TrainingProfiler class."""
+class TestPerfState:
+    """Tests for PerfState accumulator."""
 
     @pytest.mark.parametrize("device", DEVICES)
     def test_initialization(self, device):
         """Should initialize with device."""
-        profiler = TrainingProfiler(torch.device(device))
-        assert profiler.device == torch.device(device)
-        assert profiler.num_steps == 0
-
-    @pytest.mark.parametrize("device", DEVICES)
-    def test_mark_creates_checkpoint(self, device):
-        """Should create checkpoint with mark()."""
-        profiler = TrainingProfiler(torch.device(device))
-        profiler, stats = profiler.mark("test_point")
-        assert len(profiler.checkpoints) == 1
-        assert profiler.checkpoints[0].name == "test_point"
-        assert isinstance(stats, MemoryStats)
+        state = PerfState(device=torch.device(device))
+        assert state.num_steps == 0
 
     @pytest.mark.parametrize("device", DEVICES)
     def test_add_step(self, device):
         """Should record completed step metrics."""
-        profiler = TrainingProfiler(torch.device(device))
-        timer = StepTimer(device, batch_size=32)
-        with timer:
+        state = PerfState(device=torch.device(device))
+        with step_perf(device, batch_size=32) as perf:
             x = torch.randn(100, 100)
             _ = x @ x.T
-        profiler = profiler.add_step(timer)
-        assert profiler.num_steps == 1
-        assert profiler.step_times[0] > 0
-        assert profiler.step_batch_sizes[0] == 32
+        state = state.add(perf.perf)
+        assert state.num_steps == 1
+        assert state.last_step is not None
+        assert state.last_step.batch_size == 32
 
     def test_avg_step_time_stable(self):
         """Should exclude first step for stable average."""
-        profiler = TrainingProfiler(
-            torch.device("cpu"),
-            step_metrics=(
-                StepMetrics(step_time=10.0, batch_size=1, throughput=0.1),
-                StepMetrics(step_time=2.0, batch_size=1, throughput=0.5),
-                StepMetrics(step_time=2.0, batch_size=1, throughput=0.5),
-                StepMetrics(step_time=2.0, batch_size=1, throughput=0.5),
-            ),
+        state = PerfState(device=torch.device("cpu"))
+        # Simulate steps with known times
+        step1 = StepPerf(
+            step_time_sec=10.0,
+            batch_size=1,
+            samples_per_second=0.1,
         )
-        assert profiler.avg_step_time_stable == pytest.approx(2.0)
+        step2 = StepPerf(
+            step_time_sec=2.0,
+            batch_size=1,
+            samples_per_second=0.5,
+        )
+        step3 = StepPerf(
+            step_time_sec=2.0,
+            batch_size=1,
+            samples_per_second=0.5,
+        )
+        step4 = StepPerf(
+            step_time_sec=2.0,
+            batch_size=1,
+            samples_per_second=0.5,
+        )
 
-    @pytest.mark.parametrize("device", DEVICES)
-    def test_current_metrics(self, device):
-        """Should return current metrics dict."""
-        profiler = TrainingProfiler(torch.device(device))
-        timer = StepTimer(device, batch_size=32)
-        with timer:
+        state = state.add(step1)
+        state = state.add(step2)
+        state = state.add(step3)
+        state = state.add(step4)
+
+        assert state.avg_step_time_stable == pytest.approx(2.0)
+
+    def test_to_dict(self):
+        """Should return accumulated metrics as dict."""
+        state = PerfState(device=torch.device("cpu"))
+        with step_perf("cpu", batch_size=16) as perf:
             pass
-        profiler = profiler.add_step(timer)
-        metrics = profiler.current_metrics()
-        assert "step_time_sec" in metrics
-        assert "memory_peak_gb" in metrics
-        assert "memory_peak_exact" in metrics
-        assert "memory_reserved_exact" in metrics
-        assert "memory_total_known" in metrics
-
-    def test_software_peak_tracking_from_checkpoints(self, monkeypatch):
-        """Profiler should keep high-water peak from checkpoints."""
-        profiler = TrainingProfiler(torch.device("cpu"))
-
-        peaks = iter([0.10, 0.35, 0.20])
-
-        def fake_stats(_device):
-            peak = next(peaks)
-            return MemoryStats(peak_gb=peak)
-
-        monkeypatch.setattr(
-            "opaque.api.engine.profiling._memory.get_memory_stats", fake_stats
-        )
-
-        profiler, _ = profiler.mark("a")
-        profiler, _ = profiler.mark("b")
-        assert profiler.peak_memory_gb == pytest.approx(0.35)
-
-    @pytest.mark.parametrize("device", DEVICES)
-    def test_final_summary(self, device):
-        """Should generate comprehensive summary."""
-        profiler = TrainingProfiler(torch.device(device))
-        profiler, _ = profiler.mark("start")
-        for _ in range(3):
-            timer = StepTimer(device, batch_size=16)
-            with timer:
-                pass
-            profiler = profiler.add_step(timer)
-        profiler, _ = profiler.mark("end")
-        summary = profiler.final_summary()
-        assert "Training Performance Summary" in summary
-        assert "Total steps:" in summary
+        state = state.add(perf.perf)
+        d = state.to_dict(prefix="train/")
+        assert "train/avg_step_time_sec" in d
+        assert "train/max_peak_memory_gb" in d

@@ -5,6 +5,9 @@ Computes optimized BLT parameters on demand from the strategy's recipe
 amplifier-supplied ``(n_steps, min_sep, max_participations)``.  The
 L-BFGS optimization is cached so a given recipe + amplification context
 runs the optimizer once across all (accounting + noise) consumers.
+``lr_schedule`` is an :data:`opaque.scheduling.types.Schedule`
+(``Callable[[int], float]``) materialised to a tensor at workload-coefficient
+build time.
 
 References:
     - BLT: https://arxiv.org/abs/2404.16706
@@ -19,6 +22,7 @@ from functools import lru_cache
 import torch
 
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
+from opaque.api.engine.scheduling.types import Schedule
 
 from ._band_mf import _momentum_workload_coef
 from ._blt_math import (
@@ -41,8 +45,11 @@ def _native():
     return _n
 
 
-def _lr_key(lr_schedule: torch.Tensor | None) -> tuple[float, ...] | None:
-    return None if lr_schedule is None else tuple(lr_schedule.tolist())
+def _lr_key(lr_schedule: Schedule | None, n: int) -> tuple[float, ...] | None:
+    """Materialise the schedule at ``[0, n)`` for use as an ``lru_cache`` key."""
+    return (
+        None if lr_schedule is None else tuple(float(lr_schedule(t)) for t in range(n))
+    )
 
 
 @lru_cache(maxsize=32)
@@ -69,6 +76,36 @@ def _blt_optimize_cached(
     )
 
 
+@lru_cache(maxsize=256)
+def _blt_gram_matrix_cached(
+    n_steps: int,
+    min_sep: int,
+    max_participations: int | None,
+    max_buffers: int,
+    momentum: float,
+    lr_key: tuple[float, ...] | None,
+) -> tuple[float, ...]:
+    """BLT Gram sequence; cached across repeated σ / PLD probes (shares L-BFGS cache)."""
+    blt = _blt_optimize_cached(
+        n_steps,
+        min_sep,
+        max_participations,
+        max_buffers,
+        momentum,
+        lr_key,
+    )
+    coefs = _blt_toeplitz_coefs(blt, n_steps)
+    return tuple(
+        _native().toeplitz_gram_matrix(
+            coefs.tolist(),
+            n_steps,
+            min_sep,
+            max_participations,
+            True,
+        )
+    )
+
+
 @register_strategy
 @dataclass(frozen=True, slots=True)
 class BltStrategy:
@@ -82,7 +119,7 @@ class BltStrategy:
 
     max_buffers: int = 10
     momentum: float = 1.0
-    lr_schedule: torch.Tensor | None = field(default=None, compare=False)
+    lr_schedule: Schedule | None = field(default=None, compare=False)
 
     def _blt(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
@@ -93,7 +130,7 @@ class BltStrategy:
             max_participations,
             self.max_buffers,
             self.momentum,
-            _lr_key(self.lr_schedule),
+            _lr_key(self.lr_schedule, n_steps),
         )
 
     def coefficients(
@@ -107,17 +144,13 @@ class BltStrategy:
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> tuple[float, ...]:
-        coefs = self.coefficients(
-            n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
-        )
-        return tuple(
-            _native().toeplitz_gram_matrix(
-                coefs.tolist(),
-                n_steps,
-                min_sep,
-                max_participations,
-                True,
-            )
+        return _blt_gram_matrix_cached(
+            n_steps,
+            min_sep,
+            max_participations,
+            self.max_buffers,
+            self.momentum,
+            _lr_key(self.lr_schedule, n_steps),
         )
 
     def streaming_matrix(
@@ -153,7 +186,7 @@ def blt_strategy(
     *,
     max_buffers: int = 10,
     momentum: float = 1.0,
-    lr_schedule: torch.Tensor | None = None,
+    lr_schedule: Schedule | None = None,
 ) -> BltStrategy:
     """Create a BLT (Buffered Linear Toeplitz) strategy recipe.
 
@@ -165,8 +198,9 @@ def blt_strategy(
     Args:
         max_buffers: Maximum BLT buffer count for the optimizer (default 10).
         momentum: Polyak momentum (default 1.0 = prefix-sum workload).
-        lr_schedule: Optional per-step learning rates (length must match
-            the amplifier's ``n_steps`` at use time).
+        lr_schedule: Optional :data:`opaque.scheduling.types.Schedule`
+            (``Callable[[int], float]``).  Materialised at ``[0, n_steps)``
+            when the strategy first sees the amplifier's ``n_steps``.
 
     Returns:
         A :class:`BltStrategy` recipe.
@@ -176,11 +210,7 @@ def blt_strategy(
     return BltStrategy(
         max_buffers=max_buffers,
         momentum=momentum,
-        lr_schedule=(
-            torch.as_tensor(lr_schedule, dtype=torch.float64).clone()
-            if lr_schedule is not None
-            else None
-        ),
+        lr_schedule=lr_schedule,
     )
 
 

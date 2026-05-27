@@ -10,12 +10,24 @@ def _pytorch_causal_lm_loss(
     logits,
     labels,
     vocab_size: int,
-    num_items_in_batch=None,
     ignore_index: int = -100,
     shift_labels=None,
+    label_smoothing: float = 0.0,
     **kwargs,
 ) -> torch.Tensor:
-    """Standard PyTorch cross-entropy loss for non-CUDA devices."""
+    """Standard PyTorch cross-entropy loss for non-CUDA devices.
+
+    Always reduces with mean-over-non-ignored-tokens (matches
+    ``F.cross_entropy(..., reduction="mean", ignore_index=-100)``).
+    Per-batch reductions that would couple per-example gradients are
+    not supported — they'd break DP-SGD's per-example sensitivity bound.
+
+    ``label_smoothing`` is a named parameter (not a kwarg) so the
+    signature documents that opaque honors it.  HF's stock
+    ``ForCausalLMLoss`` accepts it via ``**kwargs`` and silently drops
+    it; HF Trainer rebuilds the loss separately.  Opaque honors it
+    inline.
+    """
     logits = logits.float()
 
     if shift_labels is None:
@@ -25,37 +37,34 @@ def _pytorch_causal_lm_loss(
     logits_flat = logits.view(-1, vocab_size)
     shift_labels_flat = shift_labels.view(-1)
 
-    if num_items_in_batch is not None:
-        loss = nn.functional.cross_entropy(
-            logits_flat,
-            shift_labels_flat,
-            ignore_index=ignore_index,
-            reduction="sum",
-        )
-        if torch.is_tensor(num_items_in_batch):
-            num_items_in_batch = num_items_in_batch.to(loss.device)
-        return loss / num_items_in_batch
-    else:
-        return nn.functional.cross_entropy(
-            logits_flat,
-            shift_labels_flat,
-            ignore_index=ignore_index,
-        )
+    return nn.functional.cross_entropy(
+        logits_flat,
+        shift_labels_flat,
+        ignore_index=ignore_index,
+        label_smoothing=float(label_smoothing or 0.0),
+    )
 
 
 def _opaque_causal_lm_loss(
     logits,
     labels,
     vocab_size: int,
-    num_items_in_batch=None,
     ignore_index: int = -100,
     shift_labels=None,
+    label_smoothing: float = 0.0,
     **kwargs,
 ) -> torch.Tensor:
     """CausalLM loss using Opaque cross-entropy Triton kernel.
 
     Supports all vocab sizes via chunked computation for vocab > 65536.
-    Falls back to PyTorch cross-entropy on non-CUDA devices.
+    Falls back to PyTorch cross-entropy on non-CUDA devices.  Always
+    reduces with mean-over-non-ignored-tokens; per-batch reductions are
+    not supported (would break DP-SGD per-example sensitivity).
+
+    ``label_smoothing`` is a named parameter — the Triton kernel applies
+    smoothing directly (matching ``F.cross_entropy(...,
+    label_smoothing=...)``), and the CPU fallback passes it to
+    ``F.cross_entropy``.
     """
     # Triton kernels require CUDA — fall back to standard CE on CPU/MPS
     if not logits.is_cuda:
@@ -63,9 +72,9 @@ def _opaque_causal_lm_loss(
             logits,
             labels,
             vocab_size,
-            num_items_in_batch,
             ignore_index,
             shift_labels,
+            label_smoothing=label_smoothing,
             **kwargs,
         )
 
@@ -82,19 +91,15 @@ def _opaque_causal_lm_loss(
     shift_labels_flat = shift_labels.view(-1)
     shift_labels_flat = shift_labels_flat.to(logits_flat.device)
 
-    losses, _ = Opaque_CrossEntropyLoss.apply(logits_flat, shift_labels_flat)
+    losses, _ = Opaque_CrossEntropyLoss.apply(
+        logits_flat, shift_labels_flat, 0, 0, float(label_smoothing or 0.0)
+    )
 
     # Mask out ignored positions so they get zero upstream gradient
     mask = shift_labels_flat != ignore_index
     masked_losses = losses * mask.float()
 
-    # Match HF fixed_cross_entropy reduction behavior
-    if num_items_in_batch is not None:
-        if torch.is_tensor(num_items_in_batch):
-            num_items_in_batch = num_items_in_batch.to(losses.device)
-        return masked_losses.sum() / num_items_in_batch
-    else:
-        return masked_losses.sum() / mask.sum().clamp(min=1)
+    return masked_losses.sum() / mask.sum().clamp(min=1)
 
 
 def apply_causal_lm_loss_function_patch(model, target_cls: type[nn.Module]) -> bool:
@@ -274,15 +279,11 @@ def _make_fused_ce_causal_lm_forward(original):
                 label_smoothing,
             )
 
-            num_items_in_batch = kwargs.get("num_items_in_batch")
-            if num_items_in_batch is not None:
-                if torch.is_tensor(num_items_in_batch):
-                    num_items_in_batch = num_items_in_batch.to(nll_sum.device)
-                loss = nll_sum / num_items_in_batch
-            else:
-                shifted_labels = labels[..., 1:].contiguous().flatten()
-                n_valid = (shifted_labels != ignore_index).sum().float().clamp(min=1)
-                loss = nll_sum / n_valid
+            # Always reduce with mean-over-non-ignored-tokens; per-batch
+            # reductions would break DP-SGD per-example sensitivity.
+            shifted_labels = labels[..., 1:].contiguous().flatten()
+            n_valid = (shifted_labels != ignore_index).sum().float().clamp(min=1)
+            loss = nll_sum / n_valid
 
             logits = None
         else:

@@ -13,7 +13,8 @@ Public surface:
 - pure curves: `constant_schedule`, `linear_schedule`,
   `polynomial_schedule`, `exponential_schedule`, `cosine_schedule`,
   `inverse_sqrt_schedule`, `one_minus_sqrt_schedule`;
-- composition primitives: `with_warmup`, `with_restarts`.
+- composition primitives: `with_warmup`, `with_restarts`,
+  `warmup_stable_decay`.
 
 ---
 
@@ -245,12 +246,14 @@ with_warmup(
     transition_steps: int,
     *,
     ramp: str | Callable[[float], float] = "linear",
+    init_value: float = 0.0,
 ) -> Callable[[int], float]
 ```
 
-Multiply `schedule` by a 0 → 1 ramp over the first `transition_steps`
-steps; afterwards return `schedule(step)` unchanged.  A scalar
-`float` for `schedule` is treated as `constant_schedule(value)`.
+Multiply `schedule` by an `init_value → 1` ramp over the first
+`transition_steps` steps; afterwards return `schedule(step)` unchanged.
+A scalar `float` for `schedule` is treated as
+`constant_schedule(value)`.
 
 The `ramp` kwarg picks the warmup curve shape:
 
@@ -259,6 +262,15 @@ The `ramp` kwarg picks the warmup curve shape:
 - `"1-sqrt"`: `1 - sqrt(1 - progress)`
 - a callable `f(progress)` taking progress in `[0, 1]` and returning
   a factor in `[0, 1]` — for any custom shape.
+
+`init_value` (default `0.0`) is the starting factor for the ramp.
+The default produces a standard `0 → 1` warmup.  A positive value
+(must lie in `[0, 1]`) produces a `floor → 1` ramp that starts at
+`init_value * schedule(0)` instead of zero — useful when the
+optimizer needs a non-trivial step from the very first update (e.g.
+StableAdamW), or to match `warmup_lr_rate` semantics from HF's
+`cosine_warmup_with_min_lr`.  `init_value=1.0` collapses the wrapper
+to the inner schedule unchanged.
 
 All schedules in this module return `init_value` for
 `step < transition_begin`, so configuring a decay with
@@ -291,10 +303,13 @@ sched = with_warmup(
 
 # Warmup-then-constant via the float shorthand.
 sched = with_warmup(base_lr, transition_steps=W)
+
+# Floor → 1 ramp (start at 0.1 * schedule(0)).
+sched = with_warmup(base_lr, transition_steps=W, init_value=0.1)
 ```
 
-Raises `ValueError` if `transition_steps <= 0` or `ramp` is an
-unknown string.
+Raises `ValueError` if `transition_steps <= 0`, `ramp` is an
+unknown string, or `init_value` is outside `[0, 1]`.
 
 ---
 
@@ -328,6 +343,67 @@ sched = with_restarts(inner, transition_steps=4000, num_cycles=4)
 ```
 
 Raises `ValueError` if `num_cycles <= 0` or `transition_steps <= 0`.
+
+---
+
+## `warmup_stable_decay`
+
+```python
+warmup_stable_decay(
+    init_value: float,
+    end_value: float = 0.0,
+    *,
+    num_warmup_steps: int,
+    num_stable_steps: int,
+    num_decay_steps: int,
+    warmup_ramp: str | Callable[[float], float] = "linear",
+    decay_shape: str | Callable[[float], float] = "1-sqrt",
+) -> Callable[[int], float]
+```
+
+Three-phase **W**armup → **S**table → **D**ecay schedule (Hägele
+et al. 2024, MiniCPM).  Over
+`num_warmup_steps + num_stable_steps + num_decay_steps` total steps:
+
+1. `[0, num_warmup_steps)` — ramp from `0` to `init_value`.
+2. `[num_warmup_steps, num_warmup_steps + num_stable_steps)` —
+   constant at `init_value`.
+3. `[num_warmup_steps + num_stable_steps, total)` — decay from
+   `init_value` down to `end_value` under `decay_shape`.
+
+Beyond `total` returns `end_value`.
+
+`decay_shape` selects the decay curve:
+
+- `"1-sqrt"` (default — Hägele et al.'s recommendation):
+  `factor = 1 - sqrt(progress)`; concave-down, fast initial drop,
+  slow finish.
+- `"linear"`: `factor = 1 - progress`.
+- `"cosine"`: `factor = 0.5 * (1 + cos(pi * progress))`; half-cosine
+  from init to end.
+- a callable `f(progress) -> factor in [0, 1]` mapping progress
+  (where `0` is the start of decay and `1` is the end) to the
+  factor applied to `(init_value - end_value)`.
+
+The stable middle plateau enables **decay-only fine-tuning**: resume
+from any checkpoint inside the stable region and run only the decay
+tail without re-running the warmup.
+
+```python
+from opaque.scheduling import warmup_stable_decay
+
+schedule = warmup_stable_decay(
+    init_value=1e-3,
+    end_value=1e-4,                 # min-lr floor
+    num_warmup_steps=500,
+    num_stable_steps=8_000,
+    num_decay_steps=1_500,
+)
+```
+
+Raises `ValueError` if `num_warmup_steps <= 0`, `num_stable_steps < 0`,
+`num_decay_steps <= 0`, or if `warmup_ramp` / `decay_shape` is an
+unknown string.
 
 ---
 
