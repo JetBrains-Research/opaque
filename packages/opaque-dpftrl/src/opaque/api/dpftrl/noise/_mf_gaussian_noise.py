@@ -28,6 +28,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import torch
+from torch.profiler import record_function
 
 from opaque.api.engine.noise_allocation import per_group_noise_stddev
 from opaque.random.types import RngKey
@@ -137,6 +138,13 @@ def mf_gaussian_noise(
     )
 
     def noise_fn(
+        clipped_grads: Any,
+        st: MFNoiseState,
+    ) -> tuple[NoisedPytree, MFNoiseState]:
+        with record_function("opaque::mf_gaussian_noise"):
+            return _noise_fn_impl(clipped_grads, st)
+
+    def _noise_fn_impl(
         clipped_grads: Any,
         st: MFNoiseState,
     ) -> tuple[NoisedPytree, MFNoiseState]:

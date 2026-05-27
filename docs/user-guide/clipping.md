@@ -142,14 +142,12 @@ sums are accumulated in-place, so peak memory is proportional to
 
 ### Choosing microbatch size
 
-Use `TrainingProfiler` from `opaque.profiling` to run a short sweep and
+Use `step_perf` from `opaque.profiling` to run a short sweep and
 select the largest stable microbatch that does not OOM:
 
 ```python
-from opaque.profiling import reset_peak_memory
-from opaque.profiling import StepTimer, TrainingProfiler
+from opaque.profiling import reset_peak_memory, step_perf
 
-profiler = TrainingProfiler(device)
 for candidate_mb in [64, 32, 16, 8, 4, 2, 1]:
     grad_fn, state = clipped_grad(
         loss_fn,
@@ -159,12 +157,10 @@ for candidate_mb in [64, 32, 16, 8, 4, 2, 1]:
     )
 
     reset_peak_memory(device)
-    timer = StepTimer(device, batch_size=batch_size)
-    with timer:
+    with step_perf(device, batch_size=batch_size) as perf:
         grads, aux = grad_fn(params, batch_x, batch_y, state=state)
-    profiler = profiler.add_step(timer)
 
-    print(candidate_mb, profiler.current_metrics()["memory_peak_gb"])
+    print(candidate_mb, perf.result.memory_peak_gb)
 ```
 
 See [Memory Optimizations](memory-optimizations.md) for details.

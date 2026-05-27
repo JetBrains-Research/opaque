@@ -369,14 +369,12 @@ accumulated in-place, so peak memory is proportional to
 
 ### Choosing microbatch size
 
-Use `TrainingProfiler` to compare a few candidate microbatch sizes and select
+Use `step_perf` to compare a few candidate microbatch sizes and select
 the largest stable value for your device:
 
 ```python
-from opaque.profiling import reset_peak_memory
-from opaque.profiling import StepTimer, TrainingProfiler
+from opaque.profiling import reset_peak_memory, step_perf
 
-profiler = TrainingProfiler(device)
 for optimal in [64, 32, 16, 8, 4, 2, 1]:
     grad_fn, clip_state = clipped_grad(
         loss_fn,
@@ -386,12 +384,10 @@ for optimal in [64, 32, 16, 8, 4, 2, 1]:
     )
 
     reset_peak_memory(device)
-    timer = StepTimer(device, batch_size=batch_size)
-    with timer:
+    with step_perf(device, batch_size=batch_size) as perf:
         grads, aux = grad_fn(params, batch_x, batch_y, state=clip_state)
-    profiler = profiler.add_step(timer)
 
-    print(optimal, profiler.current_metrics()["memory_peak_gb"])
+    print(optimal, perf.result.memory_peak_gb)
 
 grad_fn, clip_state = clipped_grad(
     loss_fn,

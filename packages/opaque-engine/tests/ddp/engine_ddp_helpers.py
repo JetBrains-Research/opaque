@@ -159,41 +159,28 @@ def _worker_reduce_pytree_nested(rank: int, world_size: int, port: int) -> None:
 def _worker_sync_profiler(rank: int, world_size: int, port: int) -> None:
     from opaque.api.engine.distributed._state import reduce_scalar
     from opaque.distributed import sync
-    from opaque.profiling import StepTimer, TrainingProfiler
+    from opaque.profiling import PerfState, step_perf
 
     _setup_ddp(rank, world_size, port)
     try:
         device = torch.device(f"cuda:{rank}")
-        profiler = TrainingProfiler(device)
+        state = PerfState(device=device)
 
-        timer = StepTimer(device, batch_size=4)
-        with timer:
+        with step_perf(device, batch_size=4) as perf:
             x = torch.randn(1024 + 512 * rank, device=device)
             _ = (x * x).sum()
-        profiler = profiler.add_step(timer)
+        state = state.add(perf.result)
 
-        synced_profiler = sync(profiler)
-        assert synced_profiler is not profiler
-        assert synced_profiler.num_steps == 1
-        assert synced_profiler.step_batch_sizes[-1] == world_size * 4
-        assert profiler.step_batch_sizes[-1] == 4
-        assert synced_profiler.is_fully_synced
-        assert synced_profiler.step_metrics[-1].step_time >= 0.0
+        synced_state = sync(state)
+        assert synced_state is not state
+        assert synced_state.num_steps == 1
+        assert synced_state.last_step.batch_size == world_size * 4
+        assert state.last_step.batch_size == 4
+        assert synced_state.last_step.step_time_sec >= 0.0
 
-        local_peak = float(synced_profiler._observed_peak_gb)
+        local_peak = float(synced_state.max_peak_memory_gb)
         peak_min = reduce_scalar(local_peak, op="min", device=device)
         peak_max = reduce_scalar(local_peak, op="max", device=device)
         assert abs(peak_max - peak_min) < 1e-6
-
-        twice_synced = sync(synced_profiler)
-        assert twice_synced is synced_profiler
-
-        profiler_with_mark, _ = synced_profiler.mark("after_sync")
-        assert not profiler_with_mark.is_fully_synced
-        synced_with_mark = sync(profiler_with_mark)
-        assert synced_with_mark.is_fully_synced
-        assert len(synced_with_mark.checkpoints) == 1
-        assert synced_with_mark.checkpoints[0].name == "after_sync"
-        assert synced_with_mark._synced_checkpoints == len(synced_with_mark.checkpoints)
     finally:
         _cleanup_ddp()

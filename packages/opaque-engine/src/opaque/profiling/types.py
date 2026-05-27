@@ -1,5 +1,11 @@
-"""Profiling result types — ``MemoryStats``, ``StepMetrics``, ``Checkpoint``."""
+"""Profiling result types."""
 
-from opaque.api.engine.profiling.types import Checkpoint, MemoryStats, StepMetrics
+from opaque.api.engine.profiling.types import (
+    MemoryStats,
+    PerfStage,
+    PerfState,
+    PerfTracker,
+    StepPerf,
+)
 
-__all__ = ["MemoryStats", "StepMetrics", "Checkpoint"]
+__all__ = ["StepPerf", "PerfStage", "PerfTracker", "PerfState", "MemoryStats"]

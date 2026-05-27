@@ -1,42 +1,44 @@
-"""Memory profiling and performance diagnostics for DP training.
+"""Performance profiling for DP training.
 
-Provides stateful profiler classes plus convenience helpers for tracking
-memory usage and timing during differentially private training.
-
-- :class:`TrainingProfiler` — immutable profiler state for training loops
-- :class:`StepTimer` — context manager for timing an individual step
-- :func:`get_memory_stats`, :func:`print_memory`,
-  :func:`reset_peak_memory`, :func:`empty_cache` — point-in-time helpers
-
-Pure data records (``MemoryStats``, ``StepMetrics``, ``Checkpoint``) live
-in :mod:`opaque.profiling.types`.
+Provides :func:`step_perf` to measure individual training steps and
+:class:`PerfState` to accumulate throughput statistics across a run.
+Memory utilities (:func:`get_memory_stats`, :func:`print_memory`,
+:func:`reset_peak_memory`, :func:`empty_cache`) remain available as
+standalone helpers.
 
 Example:
-    >>> from opaque.api.engine.profiling import StepTimer, TrainingProfiler, print_memory
+    >>> from opaque.api.engine.profiling import step_perf, PerfState, print_memory
     >>>
     >>> print_memory(device, "After model load")
-    >>> profiler = TrainingProfiler(device)
-    >>> profiler, _ = profiler.mark("model_loaded")
+    >>> perf_state = PerfState(device=device)
     >>> for batch in dataloader:
-    ...     timer = StepTimer(device, batch_size=len(batch))
-    ...     with timer:
+    ...     with step_perf(device, batch_size=len(batch)) as perf:
     ...         train_step(batch)
-    ...     profiler = profiler.add_step(timer)
-    >>> print(profiler.final_summary())
+    ...         perf.mark("clip")
+    ...     perf_state = perf_state.add(perf.result)
+    ...     wandb.log(perf.result.to_dict(prefix="train/"))
 """
 
 from opaque.api.engine.profiling._memory import (
-    StepTimer,
-    TrainingProfiler,
+    PerfStage,
+    PerfState,
+    PerfTracker,
+    StepPerf,
     empty_cache,
     get_memory_stats,
+    perf_tracker,
     print_memory,
     reset_peak_memory,
+    step_perf,
 )
 
 __all__ = [
-    "TrainingProfiler",
-    "StepTimer",
+    "StepPerf",
+    "step_perf",
+    "PerfStage",
+    "PerfTracker",
+    "perf_tracker",
+    "PerfState",
     "get_memory_stats",
     "print_memory",
     "reset_peak_memory",

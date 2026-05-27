@@ -8,6 +8,7 @@ from typing import Any
 
 import torch
 from torch.func import grad_and_value
+from torch.profiler import record_function
 
 from opaque.api.engine.types import clipped
 
@@ -263,7 +264,8 @@ def clipped_grad(
             if batch_size_from_args(args, batch_argnums_tuple) == 0:
                 return _empty_batch_response(args, state)
 
-            (result, returned_state) = clipped_grad_fn(*args, state=state, **kwargs)
+            with record_function("opaque::clipped_grad"):
+                (result, returned_state) = clipped_grad_fn(*args, state=state, **kwargs)
             if _force_grad_norms:
                 if isinstance(result, tuple):
                     clipped_grads, aux = result
@@ -287,9 +289,10 @@ def clipped_grad(
             if batch_size_from_args(args, batch_argnums_tuple) == 0:
                 return _empty_batch_response(args, state)
 
-            (clipped_grads, aux), returned_state = clipped_grad_fn(
-                *args, state=state, **kwargs
-            )
+            with record_function("opaque::clipped_grad"):
+                (clipped_grads, aux), returned_state = clipped_grad_fn(
+                    *args, state=state, **kwargs
+                )
             grad_aux = ClippedGradAux(
                 loss_values=aux.values,
                 grad_norms=aux.norms,

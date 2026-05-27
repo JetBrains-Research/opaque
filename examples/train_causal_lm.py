@@ -75,8 +75,7 @@ from opaque.distributed import sync
 from opaque.distributed.gradients import sum_gradients_
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.profiling import (
-    StepTimer,
-    TrainingProfiler,
+    perf_tracker,
     print_memory,
     reset_peak_memory,
 )
@@ -940,8 +939,7 @@ def main():
         backend_label = args.sdpa_backend or "auto"
         print(f"Attention: sdpa (backend={backend_label})")
 
-    # Initialize profiler
-    profiler = TrainingProfiler(device)
+    tracker = perf_tracker(device)
 
     try:
         model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
@@ -952,7 +950,6 @@ def main():
         model_kwargs["torch_dtype"] = torch_dtype
         model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
     model = model.to(device)
-    profiler, _ = profiler.mark("model_loaded")
     print_memory(device, "After model load")
 
     # Load tokenizer
@@ -976,7 +973,6 @@ def main():
     # ``logits=None`` on the fast path — see ``apply_model_patches`` docs).
     apply_model_patches(model, fused_linear_cross_entropy=True)
     model.print_trainable_parameters()
-    profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")
 
     # Load and prepare dataset
@@ -1144,7 +1140,6 @@ def main():
     param_names = list(trainable_params.keys())
     elapsed = time.time() - start_time
     print(f"Trainable parameters: {len(param_names)} (took {elapsed:.1f}s)")
-    profiler, _ = profiler.mark("functional_conversion")
     print_memory(device, "After functional conversion")
 
     def merged_params(trainable):
@@ -1567,7 +1562,6 @@ def main():
 
     # Reset peak memory before training to get accurate training peak
     reset_peak_memory(device)
-    profiler, _ = profiler.mark("training_start")
     print_memory(device, "Before training")
 
     # Step-0 eval: log baseline metrics before any training
@@ -1618,8 +1612,7 @@ def main():
             batch_size = len(input_ids)
 
             # === Execution ===
-            step_timer = StepTimer(device, batch_size=batch_size)
-            with step_timer:
+            with tracker.train(batch_size=batch_size) as sp:
                 # Compute clipped gradients (handles empty batches via library)
                 with offload_ctx:
                     (grads_tuple, aux), clip_state = grad_fn(
@@ -1628,19 +1621,20 @@ def main():
                 if is_ddp:
                     clip_state, aux = sync(clip_state, aux)
                     sum_gradients_(grads_tuple)
+                sp.mark("clip")
 
                 step_clip_norm = _step_clip_norm(grads_tuple)
                 noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
                 noise_stddev = _step_noise_stddev(noisy_grads)
                 if is_ddp:
                     noise_state = sync(noise_state)
+                sp.mark("noise")
 
                 updates, opt_state = base_opt.update(
                     noisy_grads, opt_state, params=trainable_params
                 )
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
-
-            profiler = profiler.add_step(step_timer)
+                sp.mark("optimizer")
 
             # Empty batch (rare but possible with Poisson): skip metrics.
             if batch_size == 0:
@@ -1661,14 +1655,7 @@ def main():
 
             # === Logging (every log_steps) ===
             if global_step % args.log_steps == 0:
-                log_profiler = sync(profiler) if is_ddp else profiler
-                profiler = log_profiler
-                perf = profiler.current_metrics()
-
                 if use_wandb:
-                    # Resolve LR for the current step.  ``lr_for_opt`` may
-                    # be a scalar (constant LR) or a torchopt schedule
-                    # callable that takes a step index.
                     current_lr = (
                         float(lr_for_opt(global_step))
                         if callable(lr_for_opt)
@@ -1683,15 +1670,8 @@ def main():
                         "train/clipped_grad_norm_mean": aux.clipped_grad_norms.mean().item(),
                         "train/noise_std": _effective(noise_stddev),
                         "train/lr": current_lr,
-                        "perf/step_time_sec": perf["step_time_sec"],
-                        "perf/throughput_samples_per_sec": perf[
-                            "throughput_samples_sec"
-                        ],
-                        "perf/allocated_gb": perf["memory_allocated_gb"],
-                        "perf/reserved_gb": perf["memory_reserved_gb"],
-                        "perf/peak_gb": perf["memory_peak_gb"],
+                        **tracker.train.last.to_dict(prefix="train/"),
                     }
-                    # Per-group metrics under group/ section
                     if (
                         isinstance(step_clip_norm, PerGroup)
                         and aux.group_norms is not None
@@ -1713,6 +1693,7 @@ def main():
                                 )
                     wandb.log(wb_metrics, step=global_step)
 
+                last = tracker.train.last
                 print(
                     f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
                     f"BS: {batch_size} | "
@@ -1720,7 +1701,7 @@ def main():
                     f"Clip: norm={_effective(step_clip_norm):.3f}, rate={clip_rate:.1%} | "
                     f"GradNorm: μ={mean_grad_norm:.3f} | "
                     f"Noise: σ={_effective(noise_stddev):.4f} | "
-                    f"Time: {perf['step_time_sec']:.2f}s | Mem: {perf['memory_peak_gb']:.1f}GB"
+                    f"Time: {last.step_time_sec:.2f}s | Mem: {last.memory_peak_gb:.1f}GB"
                 )
 
             # Expensive operations (eval + privacy + audit) every eval_steps
@@ -1834,11 +1815,11 @@ def main():
                 step=global_step,
             )
 
-    # Mark training complete and print profiler summary
-    profiler, _ = profiler.mark("training_complete")
-    summary_profiler = sync(profiler) if is_ddp else profiler
-    print("\n" + summary_profiler.final_summary())
-    print("\n" + summary_profiler.checkpoint_summary())
+    synced = sync(tracker) if is_ddp else tracker
+    print("\nPerformance:")
+    print(f"  Throughput: {synced.train.samples_per_second:.1f} samples/s")
+    print(f"  Steps/s: {synced.train.steps_per_second:.2f}")
+    print(f"  Peak memory: {synced.train.max_peak_memory_gb:.2f} GB")
 
     if use_wandb:
         wandb.finish()
