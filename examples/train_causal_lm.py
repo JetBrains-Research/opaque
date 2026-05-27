@@ -666,6 +666,12 @@ def parse_args():
         help="Number of canaries for one-run auditing",
     )
     audit_group.add_argument(
+        "--audit-method",
+        choices=["gdp", "eps_delta"],
+        default="gdp",
+        help="Which audit method's ε to report ('gdp' = μ-GDP, recommended for Gaussian-DP mechanisms like DP-SGD; 'eps_delta' = mechanism-agnostic (ε, δ)-DP fallback)",
+    )
+    audit_group.add_argument(
         "--audit-batch-size",
         type=int,
         default=None,
@@ -841,6 +847,14 @@ def main():
     # Set audit_batch_size to microbatch_size if not specified (forward-only, so at least as cheap)
     if args.audit_batch_size is None:
         args.audit_batch_size = args.microbatch_size or args.batch_size
+
+    # μ-GDP auditing has no meaningful answer at δ = 0 (pure DP is incompatible
+    # with Gaussian DP).  Fail fast instead of crashing inside the audit.
+    if args.audit and args.audit_method == "gdp" and args.target_delta <= 0:
+        raise SystemExit(
+            "--audit-method gdp requires --target-delta > 0 "
+            f"(got {args.target_delta}); use --audit-method eps_delta for pure DP."
+        )
 
     if is_main_process:
         print("=" * 80)
@@ -1175,6 +1189,10 @@ def main():
             reference_scores=audit_ref_scores,
         )
         return auditing.one_run(scores, coin_flip=audit_cf)
+
+    def _audit_method(estimate):
+        """Pick the audit-method object on `estimate` per ``args.audit_method``."""
+        return estimate.gdp() if args.audit_method == "gdp" else estimate.eps_delta()
 
     # Compute reference (untrained) scores for auditing before any training
     # Paper Algorithm 3: Score = loss(w0, x) - loss(wℓ, x), so we need w0 losses
@@ -1724,11 +1742,16 @@ def main():
 
                 if args.audit:
                     audit_estimate = run_audit(trainable_params)
-                    audit_eps = audit_estimate.epsilon_at(delta=args.target_delta)
-                    audit_auc = audit_estimate.auc()
-                    metrics["privacy/epsilon_empirical"] = audit_eps
+                    audit_eps = _audit_method(audit_estimate).epsilon_at(
+                        delta=args.target_delta
+                    )
+                    audit_auc = audit_estimate.attack_auc()
+                    metrics["privacy/epsilon_audit"] = audit_eps
                     metrics["privacy/audit_auc"] = audit_auc
-                    eval_msg += f", ε_audit={audit_eps:.4f}, AUC={audit_auc:.4f}"
+                    eval_msg += (
+                        f", ε_audit[{args.audit_method}]={audit_eps:.4f}"
+                        f", AUC={audit_auc:.4f}"
+                    )
 
                 if use_wandb:
                     wandb.log(metrics, step=global_step)
@@ -1803,18 +1826,21 @@ def main():
     print(f"  Final ε (theoretical): {final_epsilon:.4f}")
     if args.audit:
         audit_result = run_audit(trainable_params)
-        audit_eps = audit_result.epsilon_at(delta=args.target_delta)
-        audit_auc = audit_result.auc()
+        audit_eps = _audit_method(audit_result).epsilon_at(delta=args.target_delta)
+        audit_auc = audit_result.attack_auc()
         print(
-            f"  Final ε (empirical):  {audit_eps:.4f}  ({audit_result.n_in} in, {audit_result.n_out} out)"
+            f"  Final ε (audit, {args.audit_method}): {audit_eps:.4f}"
+            f"  ({audit_result.n_in} in, {audit_result.n_out} out)"
         )
         print(f"  Audit AUC:            {audit_auc:.4f}")
-        print(f"  β @ α=0.01:           {audit_result.beta_at(alpha=0.01):.4f}")
-        print(f"  β @ α=0.10:           {audit_result.beta_at(alpha=0.1):.4f}")
+        # Empirical attack ROC β (1 − TPR at given FPR); independent of the
+        # audit method, hence read from OneRunEstimate rather than the method.
+        print(f"  Attack β @ α=0.01:    {audit_result.attack_beta_at(alpha=0.01):.4f}")
+        print(f"  Attack β @ α=0.10:    {audit_result.attack_beta_at(alpha=0.1):.4f}")
         if use_wandb:
             wandb.log(
                 {
-                    "privacy/epsilon_empirical": audit_eps,
+                    "privacy/epsilon_audit": audit_eps,
                     "privacy/audit_auc": audit_auc,
                 },
                 step=global_step,

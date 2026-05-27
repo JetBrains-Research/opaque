@@ -1,16 +1,10 @@
 """One-run privacy audit estimator.
 
 The ``one_run()`` function precomputes the Pareto-optimal threshold
-structure from canary scores and returns a frozen ``OneRunEstimate``
-that holds all precomputed state. Query methods on the estimate
-(``epsilon_at``, ``beta_at``, etc.) dispatch into that state.
-
-``epsilon_at()`` uses the tight (ε,δ)-DP order-statistics bound from
-Xiang, Chen & Kerkouche (2025) — mechanism-agnostic and strictly
-tighter than the previous Steinke et al. (2023) bound.
-
-``epsilon_at_gaussian()`` uses the full Gaussian f-DP order-statistics
-bound — tightest possible for DP-SGD with Gaussian noise.
+structure from canary scores and returns a frozen ``OneRunEstimate``.
+Epsilon estimation goes through a method object obtained from one of the
+factory methods (``eps_delta()``, ``gdp()``); attack-side metrics
+(``auc``, ``beta_at``) live directly on the estimate.
 
 References:
     - Xiang, Chen, Kerkouche (2025), https://arxiv.org/abs/2509.08704
@@ -26,20 +20,18 @@ import numpy as np
 import scipy.stats
 
 from opaque.api.auditing._coin_flip import CoinFlip
-from opaque.api.auditing._gaussian_trade_off import gaussian_to_eps_delta
-from opaque.api.auditing._xiang import (
-    xiang_p_value_eps_delta,
-    xiang_p_value_gaussian,
-)
+from opaque.api.auditing.one_run._eps_delta import EpsDeltaMethod
+from opaque.api.auditing.one_run._gdp import GdpMethod
 from opaque.api.auditing.one_run._roc import get_tn_fn_counts, tpr_at_given_fpr
-from opaque.api.auditing.one_run._stats import (
-    epsilon_one_run_search,
-    validate_delta,
-    validate_significance,
-)
 from opaque.random.types import RngKey
 
 __all__ = ["OneRunEstimate", "one_run"]
+
+
+# Minimum grid points for the GDP numerical integration.  Below this the
+# grid construction (``z[1] - z[0]``) is degenerate; the smallest useful
+# grid covers each of the two Gaussian humps with a handful of points.
+_MIN_GRID_SIZE = 16
 
 
 def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
@@ -64,10 +56,9 @@ def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
         cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
         scores = auditing.loss_scores(loss_fn, params,
                                        batch_argnums=(1,),
-                                       dataset=dataset,
-                                       indices=cf.canary_indices)
+                                       dataloader=canary_loader)
         estimate = auditing.one_run(scores, coin_flip=cf)
-        print(estimate.epsilon_at(delta=1e-5))
+        print(estimate.eps_delta().epsilon_at(delta=1e-5))
     """
     in_scores, out_scores = coin_flip.split_scores(scores)
 
@@ -96,11 +87,13 @@ def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
 class OneRunEstimate:
     """Precomputed one-run audit estimate.
 
-    Constructed by :func:`one_run`. Holds the Pareto-optimal threshold
-    structure and exposes query methods for privacy metrics.
+    Constructed by :func:`one_run`.  Holds the Pareto-optimal threshold
+    structure shared by every audit method.
 
-    This is a frozen dataclass — all heavy computation happens in
-    :func:`one_run`, and query methods dispatch into precomputed fields.
+    Epsilon estimation: call :meth:`eps_delta` or :meth:`gdp` to get the
+    corresponding audit method, then ``.epsilon_at(delta=…)``.
+    Attack-side metrics (:meth:`auc`, :meth:`beta_at`) are independent of
+    the audit method and live directly on the estimate.
     """
 
     n_in: int
@@ -116,7 +109,7 @@ class OneRunEstimate:
     def __repr__(self) -> str:
         return (
             f"OneRunEstimate(n_in={self.n_in}, n_out={self.n_out}, "
-            f"auc={self.auc():.4f})"
+            f"auc={self.attack_auc():.4f})"
         )
 
     # ------------------------------------------------------------------
@@ -127,17 +120,12 @@ class OneRunEstimate:
         self,
         threshold: float | None = None,
     ) -> tuple[int, int]:
-        """Compute (r, u) for the Xiang order-statistics test.
+        """Compute (r, u) for the order-statistics test.
 
-        r is the number of released guesses (always m = n_in + n_out),
-        u is the number of errors (m minus the number of correct guesses).
-
-        If ``threshold`` is given, compute accuracy at that threshold.
-        Otherwise, find the Pareto-optimal threshold maximising
-        TP + TN (total correct guesses).
-
-        Returns:
-            ``(r, u)`` tuple.
+        ``r`` is the number of released guesses (always m = n_in + n_out);
+        ``u`` is the number of errors (m minus the number of correct
+        guesses).  If ``threshold`` is given, accuracy is evaluated there;
+        otherwise the Pareto-optimal threshold maximising TP + TN is used.
         """
         m = self.n_in + self.n_out
 
@@ -146,207 +134,101 @@ class OneRunEstimate:
             tn = int(np.sum(self.out_scores < threshold))
             return m, m - (tp + tn)
 
-        # Vectorised search over Pareto-optimal thresholds
         correct = (self.n_in - self.fn_counts) + self.tn_counts
         best_c = int(np.max(correct))
         return m, m - best_c
 
     # ------------------------------------------------------------------
-    # Epsilon estimation — (ε,δ)-DP Xiang (default)
+    # Audit methods
+    # ------------------------------------------------------------------
+
+    def eps_delta(self) -> EpsDeltaMethod:
+        """(ε, δ)-DP order-statistics audit method (Xiang et al. 2025).
+
+        Mechanism-agnostic.
+        """
+        return EpsDeltaMethod(_estimate=self)
+
+    def gdp(self, *, grid_size: int = 10_000) -> GdpMethod:
+        """μ-GDP order-statistics audit method (Xiang et al. 2025)."""
+        if grid_size < _MIN_GRID_SIZE:
+            raise ValueError(
+                f"grid_size must be >= {_MIN_GRID_SIZE}, got {grid_size}"
+            )
+        return GdpMethod(_estimate=self, grid_size=grid_size)
+
+    # ------------------------------------------------------------------
+    # Pld-mirror surface — dispatches to gdp() (paper-recommended default)
     # ------------------------------------------------------------------
 
     def epsilon_at(
         self,
         *,
-        delta: float = 0.0,
-        significance: float = 0.05,
-        threshold: float | None = None,
-        eps_max: float = 20.0,
-        tol: float = 1e-4,
-    ) -> float:
-        """Epsilon lower bound using (ε,δ)-DP Xiang bound (order statistics).
-
-        Mechanism-agnostic: valid for any DP mechanism. Strictly tighter
-        than the Steinke et al. (2023) bound for all δ ≥ 0.
-
-        For the tightest bound on Gaussian mechanisms (DP-SGD), use
-        :meth:`epsilon_at_gaussian` instead.
-
-        .. versionchanged:: 0.5.0
-            Replaced the Steinke et al. (2023) Bonferroni search with the
-            Xiang et al. (2025) order-statistics bound.  The previous
-            implementation is preserved as ``_epsilon_at_steinke()``.
-
-        Args:
-            delta: DP delta parameter. Default: 0 (pure DP).
-            significance: Allowed failure probability (1 - confidence).
-            threshold: If provided, compute accuracy at this specific
-                score threshold. Otherwise, use the Pareto-optimal
-                threshold that maximises total accuracy (TP + TN).
-            eps_max: Initial upper bound for epsilon search. Auto-expanded
-                if needed.
-            tol: Binary search tolerance. Default: 1e-4.
-
-        Returns:
-            Epsilon lower bound at the specified confidence level.
-        """
-        validate_significance(significance)
-        validate_delta(delta)
-
-        r, u = self._best_r_u(threshold)
-
-        # Auto-expand search range
-        while xiang_p_value_eps_delta(r, u, eps_max, delta) < significance:
-            eps_max *= 2
-
-        # Binary search: find largest eps where p-value < significance
-        eps_lo, eps_hi = 0.0, eps_max
-        while eps_hi - eps_lo > tol:
-            eps_mid = (eps_lo + eps_hi) / 2.0
-            if xiang_p_value_eps_delta(r, u, eps_mid, delta) < significance:
-                eps_lo = eps_mid
-            else:
-                eps_hi = eps_mid
-
-        return eps_lo
-
-    # ------------------------------------------------------------------
-    # Epsilon estimation — Gaussian Xiang (tightest for DP-SGD)
-    # ------------------------------------------------------------------
-
-    def epsilon_at_gaussian(
-        self,
-        *,
         delta: float,
         significance: float = 0.05,
         threshold: float | None = None,
-        mu_max: float = 20.0,
-        tol: float = 0.01,
-        grid_size: int = 10_000,
     ) -> float:
-        """Epsilon lower bound using Gaussian f-DP (tightest for DP-SGD).
+        """Epsilon lower bound from the default μ-GDP audit method.
 
-        Uses Xiang et al.'s full order-statistics bound with the
-        Gaussian (μ-GDP) trade-off function. Significantly tighter than
-        :meth:`epsilon_at` for mechanisms satisfying Gaussian DP (e.g.
-        DP-SGD with Gaussian noise).
-
-        Only valid for Gaussian mechanisms. For general mechanisms, use
-        :meth:`epsilon_at` instead.
-
-        Args:
-            delta: DP delta parameter. Required; must be > 0 since
-                Gaussian DP cannot satisfy pure DP.
-            significance: Allowed failure probability (1 - confidence).
-            threshold: If provided, compute accuracy at this specific
-                score threshold. Otherwise, use the Pareto-optimal
-                threshold that maximises total accuracy (TP + TN).
-            mu_max: Initial upper bound for μ search. Auto-expanded
-                if needed.
-            tol: Binary search tolerance for μ. Default: 0.01.
-            grid_size: Grid points for numerical integration.
-
-        Returns:
-            Epsilon lower bound at the specified confidence level.
-
-        Raises:
-            ValueError: If delta ≤ 0.
+        Shortcut for ``self.gdp().epsilon_at(...)``.  For non-Gaussian-DP
+        mechanisms use ``self.eps_delta().epsilon_at(...)`` explicitly.
+        Requires ``delta > 0`` — μ-GDP is incompatible with pure ε-DP.
         """
-        if delta <= 0:
-            raise ValueError(
-                "Gaussian trade-off auditing requires delta > 0. "
-                "Use epsilon_at() for pure DP (delta = 0) auditing."
-            )
-        validate_delta(delta)
-        validate_significance(significance)
+        return self.gdp().epsilon_at(
+            delta=delta, significance=significance, threshold=threshold,
+        )
 
-        m = self.n_in + self.n_out
-        r, u = self._best_r_u(threshold)
-
-        # Auto-expand search range
-        while xiang_p_value_gaussian(m, r, u, mu_max, grid_size) < significance:
-            mu_max *= 2
-
-        # Binary search: find largest mu where p-value < significance
-        mu_lo, mu_hi = 0.0, mu_max
-        while mu_hi - mu_lo > tol:
-            mu_mid = (mu_lo + mu_hi) / 2.0
-            if xiang_p_value_gaussian(m, r, u, mu_mid, grid_size) < significance:
-                mu_lo = mu_mid
-            else:
-                mu_hi = mu_mid
-
-        return gaussian_to_eps_delta(mu_lo, delta)
-
-    # ------------------------------------------------------------------
-    # Epsilon estimation — Steinke (preserved for comparison)
-    # ------------------------------------------------------------------
-
-    def _epsilon_at_steinke(
+    def delta_at(
         self,
         *,
-        delta: float = 0.0,
+        epsilon: float,
         significance: float = 0.05,
         threshold: float | None = None,
-        eps_max: float = 20.0,
-        tol: float = 1e-4,
     ) -> float:
-        """Epsilon lower bound using Steinke et al. (2023).
+        """δ(ε) from the default μ-GDP audit method.
 
-        Preserved for backward compatibility and research comparisons.
-        Uses the likelihood-ratio test with Bonferroni correction over
-        thresholds and variants.
+        Shortcut for ``self.gdp().delta_at(...)``.
         """
-        validate_significance(significance)
-        validate_delta(delta)
+        return self.gdp().delta_at(
+            epsilon=epsilon, significance=significance, threshold=threshold,
+        )
 
-        m = self.n_in + self.n_out
+    def beta_at(
+        self,
+        *,
+        alpha: float,
+        significance: float = 0.05,
+        threshold: float | None = None,
+    ) -> float:
+        """f-DP Type-II error at α from the default μ-GDP audit method.
 
-        if threshold is not None:
-            tp = int(np.sum(self.in_scores >= threshold))
-            fp = int(np.sum(self.out_scores >= threshold))
-            tn = int(np.sum(self.out_scores < threshold))
-            fn = int(np.sum(self.in_scores < threshold))
+        Shortcut for ``self.gdp().beta_at(...)`` — *theoretical* β at the
+        inferred μ̂.  For the *empirical* attack-ROC β (1 − TPR at given
+        FPR), see :meth:`attack_beta_at`.
+        """
+        return self.gdp().beta_at(
+            alpha=alpha, significance=significance, threshold=threshold,
+        )
 
-            sig_corrected = significance / 3.0
+    def advantage(
+        self,
+        *,
+        significance: float = 0.05,
+        threshold: float | None = None,
+    ) -> float:
+        """Total-variation advantage from the default μ-GDP audit method.
 
-            eps_pos = epsilon_one_run_search(
-                tp + fp, tp, m, sig_corrected, delta, eps_max, tol
-            )
-            eps_neg = epsilon_one_run_search(
-                fn + tn, tn, m, sig_corrected, delta, eps_max, tol
-            )
-            eps_both = epsilon_one_run_search(
-                m, tp + tn, m, sig_corrected, delta, eps_max, tol
-            )
-            return max(eps_pos, eps_neg, eps_both)
-
-        n_thresholds = len(self.thresholds)
-        sig_corrected = significance / (3 * n_thresholds)
-        best = 0.0
-        for i in range(n_thresholds):
-            tp_i = self.n_in - self.fn_counts[i]
-            fp_i = self.n_out - self.tn_counts[i]
-            fn_i = self.fn_counts[i]
-            tn_i = self.tn_counts[i]
-
-            eps_pos = epsilon_one_run_search(
-                tp_i + fp_i, tp_i, m, sig_corrected, delta, eps_max, tol
-            )
-            eps_neg = epsilon_one_run_search(
-                fn_i + tn_i, tn_i, m, sig_corrected, delta, eps_max, tol
-            )
-            eps_both = epsilon_one_run_search(
-                m, tp_i + tn_i, m, sig_corrected, delta, eps_max, tol
-            )
-            best = max(best, eps_pos, eps_neg, eps_both)
-        return best
+        Shortcut for ``self.gdp().advantage(...)``.
+        """
+        return self.gdp().advantage(
+            significance=significance, threshold=threshold,
+        )
 
     # ------------------------------------------------------------------
-    # Attack utility metrics
+    # Attack-side empirical metrics
     # ------------------------------------------------------------------
 
-    def auc(
+    def attack_auc(
         self,
         *,
         confidence: float | None = None,
@@ -398,16 +280,18 @@ class OneRunEstimate:
         ci = np.quantile(values, corrected, method="linear")
         return (float(ci[0]), float(ci[1]))
 
-    def beta_at(self, *, alpha: float | np.ndarray) -> float | np.ndarray:
-        """Type-II error rate at a given Type-I error rate.
+    def attack_beta_at(self, *, alpha: float | np.ndarray) -> float | np.ndarray:
+        """Empirical attack β: 1 − TPR at FPR = ``alpha``.
 
-        Higher beta means the attack is weaker (more private).
+        Interpolated from the attack's Pareto-optimal ROC frontier;
+        independent of the audit method.  For the *theoretical* β under
+        the inferred μ̂-GDP guarantee, use :meth:`beta_at`.
 
         Args:
             alpha: Type-I error rate(s) (false positive rate) in [0, 1].
 
         Returns:
-            Type-II error rate(s) at the specified alpha(s).
+            Empirical Type-II error rate(s) at the specified alpha(s).
         """
         tpr = tpr_at_given_fpr(alpha, self.tp_counts, self.fp_counts)
         return 1.0 - tpr
