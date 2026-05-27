@@ -152,9 +152,7 @@ class OneRunEstimate:
     def gdp(self, *, grid_size: int = 10_000) -> GdpMethod:
         """μ-GDP order-statistics audit method (Xiang et al. 2025)."""
         if grid_size < _MIN_GRID_SIZE:
-            raise ValueError(
-                f"grid_size must be >= {_MIN_GRID_SIZE}, got {grid_size}"
-            )
+            raise ValueError(f"grid_size must be >= {_MIN_GRID_SIZE}, got {grid_size}")
         return GdpMethod(_estimate=self, grid_size=grid_size)
 
     # ------------------------------------------------------------------
@@ -175,7 +173,9 @@ class OneRunEstimate:
         Requires ``delta > 0`` — μ-GDP is incompatible with pure ε-DP.
         """
         return self.gdp().epsilon_at(
-            delta=delta, significance=significance, threshold=threshold,
+            delta=delta,
+            significance=significance,
+            threshold=threshold,
         )
 
     def delta_at(
@@ -190,7 +190,9 @@ class OneRunEstimate:
         Shortcut for ``self.gdp().delta_at(...)``.
         """
         return self.gdp().delta_at(
-            epsilon=epsilon, significance=significance, threshold=threshold,
+            epsilon=epsilon,
+            significance=significance,
+            threshold=threshold,
         )
 
     def beta_at(
@@ -207,7 +209,9 @@ class OneRunEstimate:
         FPR), see :meth:`attack_beta_at`.
         """
         return self.gdp().beta_at(
-            alpha=alpha, significance=significance, threshold=threshold,
+            alpha=alpha,
+            significance=significance,
+            threshold=threshold,
         )
 
     def advantage(
@@ -221,7 +225,8 @@ class OneRunEstimate:
         Shortcut for ``self.gdp().advantage(...)``.
         """
         return self.gdp().advantage(
-            significance=significance, threshold=threshold,
+            significance=significance,
+            threshold=threshold,
         )
 
     # ------------------------------------------------------------------

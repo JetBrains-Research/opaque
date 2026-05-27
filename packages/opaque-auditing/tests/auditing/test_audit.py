@@ -127,15 +127,11 @@ class TestPldMirrorDispatch:
 
     def test_epsilon_at_matches_gdp(self):
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        assert estimate.epsilon_at(delta=1e-5) == estimate.gdp().epsilon_at(
-            delta=1e-5
-        )
+        assert estimate.epsilon_at(delta=1e-5) == estimate.gdp().epsilon_at(delta=1e-5)
 
     def test_delta_at_matches_gdp(self):
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        assert estimate.delta_at(epsilon=2.0) == estimate.gdp().delta_at(
-            epsilon=2.0
-        )
+        assert estimate.delta_at(epsilon=2.0) == estimate.gdp().delta_at(epsilon=2.0)
 
     def test_beta_at_matches_gdp(self):
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
@@ -207,7 +203,9 @@ class TestEdgeCases:
 
     def test_large_separation(self):
         estimate = _make_estimate(np.arange(1000, 2000), np.arange(0, 1000))
-        eps = estimate.eps_delta().epsilon_at(significance=0.05, delta=0, threshold=1000)
+        eps = estimate.eps_delta().epsilon_at(
+            significance=0.05, delta=0, threshold=1000
+        )
         assert eps > 5.0
 
 

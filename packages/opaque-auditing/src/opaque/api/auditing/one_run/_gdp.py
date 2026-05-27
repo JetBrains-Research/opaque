@@ -93,12 +93,11 @@ class GdpMethod:
             ValueError: If ``delta <= 0``.
         """
         if delta <= 0:
-            raise ValueError(
-                f"μ-GDP f-DP auditing requires delta > 0, got {delta}"
-            )
+            raise ValueError(f"μ-GDP f-DP auditing requires delta > 0, got {delta}")
         validate_delta(delta)
         return _gdp_to_eps_delta(
-            self._mu_at(significance, threshold), delta,
+            self._mu_at(significance, threshold),
+            delta,
         )
 
     def delta_at(
@@ -140,9 +139,7 @@ class GdpMethod:
         if not 0.0 <= alpha <= 1.0:
             raise ValueError(f"alpha must be in [0, 1], got {alpha}")
         mu = self._mu_at(significance, threshold)
-        return float(
-            scipy.stats.norm.cdf(scipy.stats.norm.ppf(1.0 - alpha) - mu)
-        )
+        return float(scipy.stats.norm.cdf(scipy.stats.norm.ppf(1.0 - alpha) - mu))
 
     def advantage(
         self,
