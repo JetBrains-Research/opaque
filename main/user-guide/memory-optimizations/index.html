@@ -1099,9 +1099,9 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#trainingprofiler" class="md-nav__link">
+  <a href="#step_perf-perfstate" class="md-nav__link">
     <span class="md-ellipsis">
-      TrainingProfiler
+      step_perf + PerfState
     </span>
   </a>
   
@@ -2418,9 +2418,9 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#trainingprofiler" class="md-nav__link">
+  <a href="#step_perf-perfstate" class="md-nav__link">
     <span class="md-ellipsis">
-      TrainingProfiler
+      step_perf + PerfState
     </span>
   </a>
   
@@ -2586,27 +2586,23 @@ cost of 16x more sequential computation.</p>
 small microbatches. In practice, <code>microbatch_size &gt;= 4</code> maintains reasonable
 GPU utilization. Below that, the overhead of launching kernels dominates.</p>
 <h3 id="tuning-workflow">Tuning workflow<a class="headerlink" href="#tuning-workflow" title="Permanent link">&para;</a></h3>
-<p>Use a short manual sweep with <code>TrainingProfiler</code>:</p>
+<p>Use a short manual sweep with <code>step_perf</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">reset_peak_memory</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">StepTimer</span><span class="p">,</span> <span class="n">TrainingProfiler</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">try_microbatch</span><span class="p">(</span><span class="n">candidate_mb</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>        <span class="n">loss_fn</span><span class="p">,</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>        <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>        <span class="n">microbatch_size</span><span class="o">=</span><span class="n">candidate_mb</span><span class="p">,</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="p">)</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="n">reset_peak_memory</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    <span class="n">profiler</span> <span class="o">=</span> <span class="n">TrainingProfiler</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    <span class="n">timer</span> <span class="o">=</span> <span class="n">StepTimer</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">batch_x</span><span class="p">))</span>
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>    <span class="k">with</span> <span class="n">timer</span><span class="p">:</span>
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>        <span class="n">_grads</span><span class="p">,</span> <span class="n">_aux</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch_x</span><span class="p">,</span> <span class="n">batch_y</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>    <span class="n">profiler</span> <span class="o">=</span> <span class="n">profiler</span><span class="o">.</span><span class="n">add_step</span><span class="p">(</span><span class="n">timer</span><span class="p">)</span>
-<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>
-<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>    <span class="k">return</span> <span class="n">profiler</span><span class="o">.</span><span class="n">current_metrics</span><span class="p">()[</span><span class="s2">&quot;memory_peak_gb&quot;</span><span class="p">]</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">reset_peak_memory</span><span class="p">,</span> <span class="n">step_perf</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">try_microbatch</span><span class="p">(</span><span class="n">candidate_mb</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>        <span class="n">loss_fn</span><span class="p">,</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>        <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>        <span class="n">microbatch_size</span><span class="o">=</span><span class="n">candidate_mb</span><span class="p">,</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="p">)</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">reset_peak_memory</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="k">with</span> <span class="n">step_perf</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">batch_x</span><span class="p">))</span> <span class="k">as</span> <span class="n">perf</span><span class="p">:</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>        <span class="n">_grads</span><span class="p">,</span> <span class="n">_aux</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch_x</span><span class="p">,</span> <span class="n">batch_y</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>    <span class="k">return</span> <span class="n">perf</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">memory_peak_gb</span>
 </code></pre></div>
 <ol>
 <li>Start with <code>microbatch_size = batch_size</code>.</li>
@@ -2831,27 +2827,26 @@ loss is the only consumer of the forward output;
 </tbody>
 </table>
 <h2 id="profiling">Profiling<a class="headerlink" href="#profiling" title="Permanent link">&para;</a></h2>
-<h3 id="trainingprofiler">TrainingProfiler<a class="headerlink" href="#trainingprofiler" title="Permanent link">&para;</a></h3>
-<p>Use <code>TrainingProfiler</code> to track checkpoints and step-level metrics in your
-training loop.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">StepTimer</span><span class="p">,</span> <span class="n">TrainingProfiler</span>
+<h3 id="step_perf-perfstate">step_perf + PerfState<a class="headerlink" href="#step_perf-perfstate" title="Permanent link">&para;</a></h3>
+<p>Use <code>step_perf</code> to measure individual training steps and <code>PerfState</code> to
+accumulate throughput statistics across a run.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">step_perf</span><span class="p">,</span> <span class="n">PerfState</span><span class="p">,</span> <span class="n">print_memory</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">profiler</span> <span class="o">=</span> <span class="n">TrainingProfiler</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">profiler</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">profiler</span><span class="o">.</span><span class="n">mark</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">print_memory</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="s2">&quot;start&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">perf_state</span> <span class="o">=</span> <span class="n">PerfState</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">timer</span> <span class="o">=</span> <span class="n">StepTimer</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">batch</span><span class="p">[</span><span class="s2">&quot;input_ids&quot;</span><span class="p">]))</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="k">with</span> <span class="n">timer</span><span class="p">:</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>        <span class="n">train_step</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>    <span class="n">profiler</span> <span class="o">=</span> <span class="n">profiler</span><span class="o">.</span><span class="n">add_step</span><span class="p">(</span><span class="n">timer</span><span class="p">)</span>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>    <span class="n">metrics</span> <span class="o">=</span> <span class="n">profiler</span><span class="o">.</span><span class="n">current_metrics</span><span class="p">()</span>
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>    <span class="c1"># e.g., metrics[&quot;step_time_sec&quot;], metrics[&quot;memory_peak_gb&quot;]</span>
-<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="n">profiler</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">profiler</span><span class="o">.</span><span class="n">mark</span><span class="p">(</span><span class="s2">&quot;end&quot;</span><span class="p">)</span>
-<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="nb">print</span><span class="p">(</span><span class="n">profiler</span><span class="o">.</span><span class="n">final_summary</span><span class="p">())</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="k">with</span> <span class="n">step_perf</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">batch</span><span class="p">[</span><span class="s2">&quot;input_ids&quot;</span><span class="p">]))</span> <span class="k">as</span> <span class="n">perf</span><span class="p">:</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>        <span class="n">train_step</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>        <span class="n">perf</span><span class="o">.</span><span class="n">mark</span><span class="p">(</span><span class="s2">&quot;clip&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>    <span class="n">perf_state</span> <span class="o">=</span> <span class="n">perf_state</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">perf</span><span class="o">.</span><span class="n">result</span><span class="p">)</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>    <span class="c1"># e.g., perf.result.step_time_sec, perf.result.memory_peak_gb</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="n">print_memory</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="s2">&quot;end&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="nb">print</span><span class="p">(</span><span class="n">perf_state</span><span class="o">.</span><span class="n">to_dict</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;train/&quot;</span><span class="p">))</span>
 </code></pre></div>
-<p>For one-off checkpoints without a profiler, use <code>print_memory(device, label)</code>
+<p>For one-off memory snapshots, use <code>print_memory(device, label)</code>
 or <code>get_memory_stats(device)</code>.</p>
 <h3 id="device-support">Device support<a class="headerlink" href="#device-support" title="Permanent link">&para;</a></h3>
 <table>
@@ -2894,9 +2889,8 @@ scaling.</p>
 Start from your single-device stable value and reduce by 10-20% for DDP.</p>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <p><strong>Out of memory:</strong> Reduce <code>microbatch_size</code> and re-profile with
-<code>TrainingProfiler</code>. If the model itself does not fit, use
-LoRA or another parameter-efficient method to reduce the trainable
-parameter count.</p>
+<code>step_perf</code>. If the model itself does not fit, use LoRA or another
+parameter-efficient method to reduce the trainable parameter count.</p>
 <p><strong>Low efficiency (&lt;80%):</strong> Memory fragmentation. Call
 <code>torch.cuda.empty_cache()</code> between steps, or reduce <code>microbatch_size</code>.</p>
 <p><strong>Memory grows over time:</strong> Profile across iterations to identify whether
