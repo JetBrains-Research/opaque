@@ -306,7 +306,7 @@ class TestPerfStage:
 
     def test_context_manager_auto_absorbs(self):
         stage = PerfStage("train", torch.device("cpu"), warmup_steps=0)
-        with stage(batch_size=32) as sp:
+        with stage(batch_size=32):
             _ = torch.randn(10, 10)
         assert stage.num_steps == 1
         assert stage.last is not None
@@ -405,9 +405,9 @@ class TestPerfTracker:
 
     def test_multi_stage_integration(self):
         tracker = perf_tracker("cpu", warmup_steps=0)
-        with tracker.train(batch_size=32) as sp:
+        with tracker.train(batch_size=32):
             _ = torch.randn(10, 10)
-        with tracker.eval(batch_size=64) as sp:
+        with tracker.eval(batch_size=64):
             _ = torch.randn(10, 10)
         assert tracker.train.num_steps == 1
         assert tracker.eval.num_steps == 1
