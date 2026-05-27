@@ -20,10 +20,13 @@ Example:
 """
 
 from opaque.api.engine.profiling._memory import (
+    PerfStage,
     PerfState,
+    PerfTracker,
     StepPerf,
     empty_cache,
     get_memory_stats,
+    perf_tracker,
     print_memory,
     reset_peak_memory,
     step_perf,
@@ -32,6 +35,9 @@ from opaque.api.engine.profiling._memory import (
 __all__ = [
     "StepPerf",
     "step_perf",
+    "PerfStage",
+    "PerfTracker",
+    "perf_tracker",
     "PerfState",
     "get_memory_stats",
     "print_memory",

@@ -1,31 +1,27 @@
 """Memory and timing profiling tools for DP training.
 
 This module provides lightweight tools for tracking memory usage and timing
-during differentially private training. All profiling state is modeled as
-explicit immutable records so it can be threaded through training loops and
-safely synchronized across distributed ranks.
+during differentially private training.
 
 Key Components:
-    - MemoryStats: Dataclass for GPU memory statistics
     - StepPerf: Frozen record of a single step's performance
     - step_perf: Context manager that measures one training step
-    - PerfState: Functional accumulator for DDP sync + stable averages
+    - PerfStage / PerfTracker: Mutable multi-stage accumulator
+    - perf_tracker: Factory for PerfTracker
     - Utility functions: get_memory_stats, print_memory, reset_peak_memory
 
-Example - Basic usage in training loop:
-    >>> from opaque.profiling import step_perf, PerfState
+Example - PerfTracker in a training loop:
+    >>> from opaque.profiling import perf_tracker
     >>>
-    >>> perf_state = PerfState(device=device)
-    >>> for step, batch in enumerate(dataloader):
-    ...     with step_perf(device, batch_size=len(batch)) as perf:
+    >>> tracker = perf_tracker(device)
+    >>> for batch in dataloader:
+    ...     with tracker.train(batch_size=len(batch)) as sp:
     ...         grads = compute_gradients(batch)
-    ...         perf.mark("clip")
+    ...         sp.mark("clip")
     ...         update_params(grads)
-    ...         perf.mark("update")
-    ...     perf_state = perf_state.add(perf.result)
     ...     wandb.log({
-    ...         "train/loss": loss,
-    ...         **perf.result.to_dict(prefix="train/"),
+    ...         **tracker.train.last.to_dict(prefix="train/"),
+    ...         **tracker.to_dict(),
     ...     })
 
 Example - Simple memory tracking:
@@ -39,6 +35,7 @@ Example - Simple memory tracking:
 from __future__ import annotations
 
 import time
+import warnings
 from contextlib import contextmanager
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field, replace
@@ -240,7 +237,6 @@ class StepPerf:
     Attributes:
         step_time_sec: Total wall-clock time for the step.
         samples_per_second: Throughput (batch_size / step_time_sec).
-        steps_per_second: Inverse of step_time_sec.
         memory_peak_gb: Peak GPU memory during the step.
         memory_allocated_gb: Allocated memory at end of step.
         memory_reserved_gb: Reserved memory at end of step.
@@ -250,7 +246,6 @@ class StepPerf:
 
     step_time_sec: float = 0.0
     samples_per_second: float = 0.0
-    steps_per_second: float = 0.0
     memory_peak_gb: float = 0.0
     memory_allocated_gb: float = 0.0
     memory_reserved_gb: float = 0.0
@@ -272,7 +267,6 @@ class StepPerf:
         d: dict[str, float] = {
             f"{prefix}step_time_sec": self.step_time_sec,
             f"{prefix}samples_per_second": self.samples_per_second,
-            f"{prefix}steps_per_second": self.steps_per_second,
             f"{prefix}memory_peak_gb": self.memory_peak_gb,
             f"{prefix}memory_allocated_gb": self.memory_allocated_gb,
             f"{prefix}memory_reserved_gb": self.memory_reserved_gb,
@@ -294,7 +288,7 @@ class _StepPerfBuilder:
         self._batch_size = batch_size
         self._marks: dict[str, float] = {}
         self._last_mark_time: float = 0.0
-        self._result: StepPerf | None = None
+        self._perf: StepPerf | None = None
 
     def mark(self, name: str) -> None:
         """Record a sub-step timing mark.
@@ -313,7 +307,7 @@ class _StepPerfBuilder:
         self._last_mark_time = now
 
     @property
-    def result(self) -> StepPerf:
+    def perf(self) -> StepPerf:
         """The finalized :class:`StepPerf` record.
 
         Only available after the ``step_perf`` context manager exits.
@@ -321,12 +315,21 @@ class _StepPerfBuilder:
         Raises:
             RuntimeError: If accessed before the context manager exits.
         """
-        if self._result is None:
+        if self._perf is None:
             raise RuntimeError(
-                "StepPerf result is not available until the step_perf "
-                "context manager exits."
+                "StepPerf is not available until the step_perf context manager exits."
             )
-        return self._result
+        return self._perf
+
+    @property
+    def result(self) -> StepPerf:
+        """Deprecated — use :attr:`perf` instead."""
+        warnings.warn(
+            "Use .perf instead of .result",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.perf
 
 
 @contextmanager
@@ -350,15 +353,15 @@ def step_perf(
     Yields:
         A :class:`_StepPerfBuilder` that supports ``.mark(name)``
         during the step body. After the context exits, access the
-        frozen record via ``.result``.
+        frozen record via ``.perf``.
 
     Example:
-        >>> with step_perf("cuda", batch_size=32) as perf:
+        >>> with step_perf("cuda", batch_size=32) as sp:
         ...     grads = compute_gradients(batch)
-        ...     perf.mark("clip")
+        ...     sp.mark("clip")
         ...     update_params(grads)
-        ...     perf.mark("update")
-        >>> wandb.log(perf.result.to_dict(prefix="train/"))
+        ...     sp.mark("update")
+        >>> wandb.log(sp.perf.to_dict(prefix="train/"))
     """
     if isinstance(device, str):
         device = torch.device(device)
@@ -379,10 +382,9 @@ def step_perf(
 
     mem = get_memory_stats(device) if track_memory else MemoryStats()
 
-    builder._result = StepPerf(
+    builder._perf = StepPerf(
         step_time_sec=elapsed,
         samples_per_second=batch_size / elapsed if elapsed > 0 else 0.0,
-        steps_per_second=1.0 / elapsed if elapsed > 0 else 0.0,
         memory_peak_gb=mem.peak_gb,
         memory_allocated_gb=mem.allocated_gb,
         memory_reserved_gb=mem.reserved_gb,
@@ -505,11 +507,180 @@ class PerfState:
         }
 
 
+_STAGE_SHORTCUTS = frozenset({"train", "eval", "test"})
+
+
+class PerfStage:
+    """Mutable accumulator for a single named profiling stage.
+
+    Tracks step count, wall-clock totals (post-warmup), peak memory,
+    and the most recent :class:`StepPerf`.  Callable as a context
+    manager that wraps :func:`step_perf` and auto-absorbs the result.
+
+    Attributes:
+        name: Stage label (e.g. ``"train"``, ``"eval"``).
+        num_steps: Total steps recorded (including warmup).
+        total_time: Cumulative wall-clock time (post-warmup).
+        total_samples: Cumulative sample count (post-warmup).
+        max_peak_memory_gb: High-water mark of peak memory.
+        last: Most recent :class:`StepPerf`, or ``None``.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        device: torch.device,
+        warmup_steps: int = 1,
+    ) -> None:
+        self.name = name
+        self.num_steps: int = 0
+        self.total_time: float = 0.0
+        self.total_samples: int = 0
+        self.max_peak_memory_gb: float = 0.0
+        self.last: StepPerf | None = None
+        self._device = device
+        self._warmup_steps = warmup_steps
+
+    @property
+    def samples_per_second(self) -> float:
+        if self.total_time > 0:
+            return self.total_samples / self.total_time
+        return 0.0
+
+    @property
+    def steps_per_second(self) -> float:
+        post = max(0, self.num_steps - self._warmup_steps)
+        if self.total_time > 0 and post > 0:
+            return post / self.total_time
+        return 0.0
+
+    def _absorb(self, perf: StepPerf) -> None:
+        self.num_steps += 1
+        self.max_peak_memory_gb = max(self.max_peak_memory_gb, perf.memory_peak_gb)
+        self.last = perf
+        if self.num_steps > self._warmup_steps:
+            self.total_time += perf.step_time_sec
+            self.total_samples += perf.batch_size
+
+    def __ior__(self, perf: StepPerf) -> PerfStage:
+        self._absorb(perf)
+        return self
+
+    def __call__(
+        self,
+        *,
+        batch_size: int = 0,
+        track_memory: bool = True,
+    ) -> Iterator[_StepPerfBuilder]:
+        @contextmanager
+        def _ctx() -> Iterator[_StepPerfBuilder]:
+            with step_perf(
+                self._device,
+                batch_size=batch_size,
+                track_memory=track_memory,
+            ) as sp:
+                yield sp
+            self._absorb(sp.perf)
+
+        return _ctx()
+
+    def to_dict(self, prefix: str = "") -> dict[str, float]:
+        return {
+            f"{prefix}num_steps": self.num_steps,
+            f"{prefix}total_time_sec": self.total_time,
+            f"{prefix}samples_per_second": self.samples_per_second,
+            f"{prefix}steps_per_second": self.steps_per_second,
+            f"{prefix}max_peak_memory_gb": self.max_peak_memory_gb,
+        }
+
+
+class PerfTracker:
+    """Mutable multi-stage performance tracker.
+
+    Provides named stages (``train``, ``eval``, ``test`` as attribute
+    shortcuts; arbitrary names via ``tracker["name"]``).  Each stage
+    is a :class:`PerfStage` created lazily on first access.
+
+    Created via :func:`perf_tracker`.
+
+    Example:
+        >>> tracker = perf_tracker(device)
+        >>> with tracker.train(batch_size=32) as sp:
+        ...     train_step(batch)
+        ...     sp.mark("clip")
+        >>> wandb.log(tracker.to_dict())
+    """
+
+    def __init__(self, device: torch.device, warmup_steps: int = 1) -> None:
+        object.__setattr__(self, "device", device)
+        object.__setattr__(self, "_warmup_steps", warmup_steps)
+        object.__setattr__(self, "_stages", {})
+
+    def _get_stage(self, name: str) -> PerfStage:
+        stages: dict[str, PerfStage] = self._stages
+        if name not in stages:
+            stages[name] = PerfStage(name, self.device, self._warmup_steps)
+        return stages[name]
+
+    def __getattr__(self, name: str) -> PerfStage:
+        if name in _STAGE_SHORTCUTS:
+            return self._get_stage(name)
+        raise AttributeError(
+            f"{type(self).__name__!r} has no attribute {name!r}. "
+            f"Use tracker[{name!r}] for custom stages."
+        )
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if name in _STAGE_SHORTCUTS:
+            return
+        object.__setattr__(self, name, value)
+
+    def __getitem__(self, name: str) -> PerfStage:
+        return self._get_stage(name)
+
+    @property
+    def stages(self) -> dict[str, PerfStage]:
+        return dict(self._stages)
+
+    def to_dict(self) -> dict[str, float]:
+        result: dict[str, float] = {}
+        for stage in self._stages.values():
+            result.update(stage.to_dict(prefix=f"{stage.name}/"))
+        return result
+
+
+def perf_tracker(
+    device: torch.device | str,
+    warmup_steps: int = 1,
+) -> PerfTracker:
+    """Create a multi-stage performance tracker.
+
+    Args:
+        device: PyTorch device (for GPU sync and memory reads).
+        warmup_steps: Steps to exclude from time/sample totals per
+            stage (default ``1``).
+
+    Returns:
+        A new :class:`PerfTracker`.
+
+    Example:
+        >>> tracker = perf_tracker("cuda")
+        >>> with tracker.train(batch_size=64) as sp:
+        ...     train_step(batch)
+        >>> print(tracker.train.samples_per_second)
+    """
+    if isinstance(device, str):
+        device = torch.device(device)
+    return PerfTracker(device, warmup_steps)
+
+
 __all__ = [
     "StepPerf",
     "step_perf",
     "PerfState",
-    "MemoryStats",
+    "PerfStage",
+    "PerfTracker",
+    "perf_tracker",
     "get_memory_stats",
     "reset_peak_memory",
     "print_memory",

@@ -94,7 +94,7 @@ class TestStepPerf:
         with step_perf(device, batch_size=32) as perf:
             x = torch.randn(100, 100)
             _ = x @ x.T
-        result = perf.result
+        result = perf.perf
         assert isinstance(result, StepPerf)
         assert result.step_time_sec > 0
 
@@ -102,10 +102,9 @@ class TestStepPerf:
         """Should compute throughput from batch size."""
         with step_perf("cpu", batch_size=64) as perf:
             pass
-        result = perf.result
+        result = perf.perf
         assert result.batch_size == 64
         assert result.samples_per_second > 0
-        assert result.steps_per_second > 0
 
     def test_marks(self):
         """Should record sub-step marks."""
@@ -114,7 +113,7 @@ class TestStepPerf:
             perf.mark("clip")
             _ = torch.randn(50, 50)
             perf.mark("noise")
-        result = perf.result
+        result = perf.perf
         assert "clip" in result.marks
         assert "noise" in result.marks
         assert result.marks["clip"] > 0
@@ -124,7 +123,7 @@ class TestStepPerf:
         """Should convert to flat dict for logging."""
         with step_perf("cpu", batch_size=8) as perf:
             pass
-        d = perf.result.to_dict(prefix="train/")
+        d = perf.perf.to_dict(prefix="train/")
         assert "train/step_time_sec" in d
         assert "train/samples_per_second" in d
         assert "train/memory_peak_gb" in d
@@ -166,7 +165,7 @@ class TestPerfState:
         with step_perf(device, batch_size=32) as perf:
             x = torch.randn(100, 100)
             _ = x @ x.T
-        state = state.add(perf.result)
+        state = state.add(perf.perf)
         assert state.num_steps == 1
         assert state.last_step is not None
         assert state.last_step.batch_size == 32
@@ -179,25 +178,21 @@ class TestPerfState:
             step_time_sec=10.0,
             batch_size=1,
             samples_per_second=0.1,
-            steps_per_second=0.1,
         )
         step2 = StepPerf(
             step_time_sec=2.0,
             batch_size=1,
             samples_per_second=0.5,
-            steps_per_second=0.5,
         )
         step3 = StepPerf(
             step_time_sec=2.0,
             batch_size=1,
             samples_per_second=0.5,
-            steps_per_second=0.5,
         )
         step4 = StepPerf(
             step_time_sec=2.0,
             batch_size=1,
             samples_per_second=0.5,
-            steps_per_second=0.5,
         )
 
         state = state.add(step1)
@@ -212,7 +207,7 @@ class TestPerfState:
         state = PerfState(device=torch.device("cpu"))
         with step_perf("cpu", batch_size=16) as perf:
             pass
-        state = state.add(perf.result)
+        state = state.add(perf.perf)
         d = state.to_dict(prefix="train/")
         assert "train/avg_step_time_sec" in d
         assert "train/max_peak_memory_gb" in d

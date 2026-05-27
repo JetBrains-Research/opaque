@@ -1,14 +1,16 @@
 """Public type definitions for :mod:`opaque.profiling`.
 
-Re-exports pure data records for type annotations.
+Re-exports data records and tracker types for type annotations.
 """
 
 from __future__ import annotations
 
 from opaque.api.engine.profiling._memory import (
     MemoryStats,
+    PerfStage,
     PerfState,
+    PerfTracker,
     StepPerf,
 )
 
-__all__ = ["StepPerf", "PerfState", "MemoryStats"]
+__all__ = ["StepPerf", "PerfStage", "PerfTracker", "PerfState", "MemoryStats"]

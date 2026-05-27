@@ -146,10 +146,9 @@ from opaque.dpftrl.noise import (
     mf_gaussian_noise,
 )
 from opaque.profiling import (
-    PerfState,
+    perf_tracker,
     print_memory,
     reset_peak_memory,
-    step_perf,
 )
 from opaque.random import key, fold_in
 from opaque.scheduling import (
@@ -873,7 +872,7 @@ def main():
     if use_eager:
         model_kwargs["attn_implementation"] = "eager"
 
-    perf_state = PerfState(device=device)
+    tracker = perf_tracker(device)
 
     try:
         model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
@@ -1817,7 +1816,7 @@ def main():
 
             lr_t = float(lr_schedule(global_step))
 
-            with step_perf(device, batch_size=batch_size) as sp:
+            with tracker.train(batch_size=batch_size) as sp:
                 with offload_ctx:
                     (grads, aux), clip_state = grad_fn(
                         trainable_params,
@@ -1861,7 +1860,6 @@ def main():
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
                 sp.mark("optimizer")
 
-            perf_state = perf_state.add(sp.result)
 
             if batch_size == 0:
                 global_step += 1
@@ -1877,8 +1875,6 @@ def main():
 
             # --- Logging ---
             if global_step % args.log_steps == 0:
-                perf = sp.result.to_dict(prefix="train/")
-
                 if use_wandb:
                     wb_metrics = {
                         "train/loss": avg_loss,
@@ -1901,8 +1897,8 @@ def main():
                             else step_noise_stddev
                         ),
                         "train/lr": lr_t,
-                        **perf,
-                        **perf_state.to_dict(prefix="train/"),
+                        **tracker.train.last.to_dict(prefix="train/"),
+                        **tracker.to_dict(),
                     }
                     if (
                         isinstance(clip_norm, PerGroup)
@@ -1925,12 +1921,13 @@ def main():
                                 )
                     wandb.log(wb_metrics, step=global_step)
 
+                last = tracker.train.last
                 print(
                     f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
                     f"BS: {batch_size} | Loss: {avg_loss:.4f} | "
                     f"Clip: {clip_rate:.1%} | GradNorm: {mean_grad_norm:.3f} | "
                     f"LR: {lr_t:.2e} | "
-                    f"Time: {perf['train/step_time_sec']:.2f}s | Mem: {perf['train/memory_peak_gb']:.1f}GB"
+                    f"Time: {last.step_time_sec:.2f}s | Mem: {last.memory_peak_gb:.1f}GB"
                 )
 
             # --- Eval ---
@@ -2002,11 +1999,11 @@ def main():
         # final ε at the last step.  No need to re-log a separate
         # ``privacy/epsilon_final`` scalar.
 
-    final_perf_state = sync(perf_state) if is_ddp else perf_state
+    synced = sync(tracker) if is_ddp else tracker
     print("\nPerformance:")
-    print(f"  Avg step time (stable): {final_perf_state.avg_step_time_stable:.2f}s")
-    print(f"  Avg throughput (stable): {final_perf_state.avg_samples_per_second_stable:.1f} samples/s")
-    print(f"  Peak memory: {final_perf_state.max_peak_memory_gb:.2f} GB")
+    print(f"  Throughput: {synced.train.samples_per_second:.1f} samples/s")
+    print(f"  Steps/s: {synced.train.steps_per_second:.2f}")
+    print(f"  Peak memory: {synced.train.max_peak_memory_gb:.2f} GB")
 
     if use_wandb:
         wandb.finish()

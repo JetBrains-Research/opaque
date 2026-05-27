@@ -75,10 +75,9 @@ from opaque.distributed import sync
 from opaque.distributed.gradients import sum_gradients_
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.profiling import (
-    PerfState,
+    perf_tracker,
     print_memory,
     reset_peak_memory,
-    step_perf,
 )
 from opaque.random import key, fold_in
 from opaque.dpsgd.sampling import PoissonSampler
@@ -940,8 +939,7 @@ def main():
         backend_label = args.sdpa_backend or "auto"
         print(f"Attention: sdpa (backend={backend_label})")
 
-    # Initialize performance state
-    perf_state = PerfState(device=device)
+    tracker = perf_tracker(device)
 
     try:
         model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
@@ -1614,7 +1612,7 @@ def main():
             batch_size = len(input_ids)
 
             # === Execution ===
-            with step_perf(device, batch_size=batch_size) as sp:
+            with tracker.train(batch_size=batch_size) as sp:
                 # Compute clipped gradients (handles empty batches via library)
                 with offload_ctx:
                     (grads_tuple, aux), clip_state = grad_fn(
@@ -1638,8 +1636,6 @@ def main():
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
                 sp.mark("optimizer")
 
-            perf_state = perf_state.add(sp.result)
-
             # Empty batch (rare but possible with Poisson): skip metrics.
             if batch_size == 0:
                 global_step += 1
@@ -1659,14 +1655,7 @@ def main():
 
             # === Logging (every log_steps) ===
             if global_step % args.log_steps == 0:
-                log_perf_state = sync(perf_state) if is_ddp else perf_state
-                perf_state = log_perf_state
-                perf = sp.result.to_dict(prefix="train/")
-
                 if use_wandb:
-                    # Resolve LR for the current step.  ``lr_for_opt`` may
-                    # be a scalar (constant LR) or a torchopt schedule
-                    # callable that takes a step index.
                     current_lr = (
                         float(lr_for_opt(global_step))
                         if callable(lr_for_opt)
@@ -1681,10 +1670,9 @@ def main():
                         "train/clipped_grad_norm_mean": aux.clipped_grad_norms.mean().item(),
                         "train/noise_std": _effective(noise_stddev),
                         "train/lr": current_lr,
-                        **perf,
-                        **perf_state.to_dict(prefix="train/"),
+                        **tracker.train.last.to_dict(prefix="train/"),
+                        **tracker.to_dict(),
                     }
-                    # Per-group metrics under group/ section
                     if (
                         isinstance(step_clip_norm, PerGroup)
                         and aux.group_norms is not None
@@ -1706,6 +1694,7 @@ def main():
                                 )
                     wandb.log(wb_metrics, step=global_step)
 
+                last = tracker.train.last
                 print(
                     f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
                     f"BS: {batch_size} | "
@@ -1713,7 +1702,7 @@ def main():
                     f"Clip: norm={_effective(step_clip_norm):.3f}, rate={clip_rate:.1%} | "
                     f"GradNorm: μ={mean_grad_norm:.3f} | "
                     f"Noise: σ={_effective(noise_stddev):.4f} | "
-                    f"Time: {perf['train/step_time_sec']:.2f}s | Mem: {perf['train/memory_peak_gb']:.1f}GB"
+                    f"Time: {last.step_time_sec:.2f}s | Mem: {last.memory_peak_gb:.1f}GB"
                 )
 
             # Expensive operations (eval + privacy + audit) every eval_steps
@@ -1827,12 +1816,11 @@ def main():
                 step=global_step,
             )
 
-    # Print performance summary
-    final_perf_state = sync(perf_state) if is_ddp else perf_state
+    synced = sync(tracker) if is_ddp else tracker
     print("\nPerformance:")
-    print(f"  Avg step time (stable): {final_perf_state.avg_step_time_stable:.2f}s")
-    print(f"  Avg throughput (stable): {final_perf_state.avg_samples_per_second_stable:.1f} samples/s")
-    print(f"  Peak memory: {final_perf_state.max_peak_memory_gb:.2f} GB")
+    print(f"  Throughput: {synced.train.samples_per_second:.1f} samples/s")
+    print(f"  Steps/s: {synced.train.steps_per_second:.2f}")
+    print(f"  Peak memory: {synced.train.max_peak_memory_gb:.2f} GB")
 
     if use_wandb:
         wandb.finish()

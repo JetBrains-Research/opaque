@@ -16,10 +16,11 @@ from opaque.api.engine.distributed._state import (
 
 from ._memory import (
     PerfState,
+    PerfTracker,
     StepPerf,
 )
 
-__all__ = ["sync_perf_state"]
+__all__ = ["sync_perf_state", "sync_perf_tracker"]
 
 
 def sync_perf_state(state: PerfState) -> PerfState:
@@ -74,7 +75,6 @@ def sync_perf_state(state: PerfState) -> PerfState:
         last_step = StepPerf(
             step_time_sec=last_time,
             samples_per_second=last_samples / last_time if last_time > 0 else 0.0,
-            steps_per_second=1.0 / last_time if last_time > 0 else 0.0,
             memory_peak_gb=last_peak,
             memory_allocated_gb=0.0,
             memory_reserved_gb=0.0,
@@ -93,4 +93,56 @@ def sync_perf_state(state: PerfState) -> PerfState:
     )
 
 
+def _sync_last(last: StepPerf | None, device: torch.device) -> StepPerf | None:
+    if last is None:
+        return None
+    last_time = reduce_scalar(float(last.step_time_sec), op="max", device=device)
+    last_samples = int(reduce_scalar(float(last.batch_size), op="sum", device=device))
+    last_peak = reduce_scalar(float(last.memory_peak_gb), op="max", device=device)
+    return StepPerf(
+        step_time_sec=last_time,
+        samples_per_second=last_samples / last_time if last_time > 0 else 0.0,
+        memory_peak_gb=last_peak,
+        memory_allocated_gb=0.0,
+        memory_reserved_gb=0.0,
+        batch_size=last_samples,
+        marks=MappingProxyType({}),
+    )
+
+
+def sync_perf_tracker(tracker: PerfTracker) -> PerfTracker:
+    """Synchronize PerfTracker across distributed ranks.
+
+    Returns a new :class:`PerfTracker` with reduced per-stage values.
+    The original tracker is not modified.
+    """
+    if not is_distributed():
+        return tracker
+
+    device = tracker.device
+    synced = PerfTracker(device, tracker._warmup_steps)
+
+    for name, stage in tracker._stages.items():
+        assert_scalar_equal(
+            float(stage.num_steps),
+            name=f"PerfStage({name!r}).num_steps",
+            device=device,
+        )
+
+        s = synced._get_stage(name)
+        s.num_steps = stage.num_steps
+        s._warmup_steps = stage._warmup_steps
+        s.total_time = reduce_scalar(float(stage.total_time), op="max", device=device)
+        s.total_samples = int(
+            reduce_scalar(float(stage.total_samples), op="sum", device=device)
+        )
+        s.max_peak_memory_gb = reduce_scalar(
+            float(stage.max_peak_memory_gb), op="max", device=device
+        )
+        s.last = _sync_last(stage.last, device)
+
+    return synced
+
+
 register_sync_type(PerfState, sync_perf_state)
+register_sync_type(PerfTracker, sync_perf_tracker)
