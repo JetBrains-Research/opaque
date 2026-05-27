@@ -52,9 +52,15 @@ _STRATEGY_FACTORIES: dict[str, Callable[..., Any]] = {
     "mf_identity": identity_strategy,
 }
 
+# Strategies that consume the optimizer LR schedule for workload-aware
+# Toeplitz coefficient tuning.  Other strategies ignore the LR schedule.
+_LR_SCHEDULED_STRATEGIES: frozenset[str] = frozenset({"mf_band", "mf_blt"})
+
+
 def build_strategy(
     mechanism: str,
     kwargs: dict[str, Any] | None,
+    lr_schedule: Any = None,
 ) -> Any:
     """Build the MF strategy recipe for ``mechanism``.
 
@@ -62,20 +68,24 @@ def build_strategy(
     trainer pre-merges its per-mechanism defaults in
     ``TrainingArguments.__post_init__``.
 
-    The optimizer LR schedule is *not* auto-injected.  BandMF / BLT
-    accept a ``lr_schedule`` kwarg for workload-aware Toeplitz tuning,
-    but :mod:`opaque.serialization` rejects callable strategy fields
-    (see ``opaque.api.dpftrl.noise._strategy_codec._to_wire``), so an
-    auto-injected schedule would break ``accountant.json`` save / load
-    and the ``dp_state.pt`` resume.  Users who explicitly opt into
-    ``lr_schedule=...`` via ``privacy_noise_mechanism_kwargs`` take on
-    the checkpoint-incompatibility (the strategy must be re-supplied on
-    resume; not currently surfaced).
+    For BandMF / BLT, the optimizer ``lr_schedule`` is auto-injected
+    when the user did not already supply one in ``kwargs`` — those
+    strategies tune their Toeplitz coefficients against the schedule
+    for tighter privacy at the realised workload.  Schedule recipes
+    from :mod:`opaque.scheduling` round-trip cleanly through the
+    accountant; raw lambdas do not (a clear error from the strategy
+    codec surfaces at serialization time).
     """
     factory = _STRATEGY_FACTORIES[mechanism]
     if mechanism == "mf_identity":
         return factory()
     extra = dict(kwargs) if kwargs else {}
+    if (
+        mechanism in _LR_SCHEDULED_STRATEGIES
+        and lr_schedule is not None
+        and "lr_schedule" not in extra
+    ):
+        extra["lr_schedule"] = lr_schedule
     return factory(**extra)
 
 

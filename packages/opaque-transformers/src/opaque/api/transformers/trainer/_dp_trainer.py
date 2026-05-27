@@ -1086,6 +1086,7 @@ class DPTrainer:
                     if isinstance(a.privacy_noise_mechanism_kwargs, dict)
                     else None
                 ),
+                lr_schedule=lr_schedule,
             )
             sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
             tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))

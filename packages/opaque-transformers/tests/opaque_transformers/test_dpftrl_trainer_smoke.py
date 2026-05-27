@@ -258,6 +258,138 @@ class TestDpFtrlCheckpointRoundTrip:
         )
 
 
+class TestDpFtrlLrScheduleIntegration:
+    """The optimizer LR schedule auto-flows into BandMF / BLT strategies.
+
+    Pre-refactor (opaque.scheduling as a closure DSL), the trainer
+    silently dropped the schedule because the strategy codec rejected
+    callable fields.  Post-refactor, schedules are frozen recipe
+    dataclasses, round-trip through the strategy codec via tagged
+    sub-dicts, and the trainer's ``_setup_training`` auto-injects the
+    live LR schedule into BandMF / BLT.
+    """
+
+    def test_band_mf_strategy_receives_schedule(self, tmp_path):
+        # The trainer's live LR schedule should appear on
+        # ``ctx.mf_strategy.lr_schedule``.  Snapshot via an
+        # ``on_step_begin`` callback (fires after ``_setup_training``
+        # populates ``_ctx``).
+        from opaque.scheduling.types import ConstantSchedule, CosineSchedule
+        from transformers import TrainerCallback
+
+        captured: dict[str, type] = {}
+        sentinel_trainer: dict[str, object] = {}
+
+        class _Snap(TrainerCallback):
+            def on_step_begin(self, args_, state_, ctrl_, **_kw):
+                trainer = sentinel_trainer["trainer"]
+                strat = getattr(trainer._ctx, "mf_strategy", None)
+                if strat is not None and "ls_cls" not in captured:
+                    captured["ls_cls"] = type(strat.lr_schedule)
+
+        for sched_type, expected_cls in (
+            ("cosine", CosineSchedule),
+            ("constant", ConstantSchedule),
+        ):
+            args = TrainingArguments(
+                output_dir=str(tmp_path / sched_type),
+                per_device_train_batch_size=4,
+                max_steps=16,
+                privacy_noise_mechanism="mf_band",
+                privacy_noise_mechanism_kwargs={"bands": 4},
+                privacy_noise_multiplier=1.0,
+                clipping_norm=1.0,
+                learning_rate=1e-3,
+                optim="sgd",
+                lr_scheduler=sched_type,
+                report_to=[],
+                save_strategy="no",
+                eval_strategy="no",
+                logging_strategy="no",
+                disable_tqdm=True,
+                use_cpu=True,
+                seed=0,
+            )
+            torch.manual_seed(0)
+            trainer = DPTrainer(
+                model=_TinyLM(),
+                args=args,
+                train_dataset=_TinyDS(),
+                data_collator=_collate,
+            )
+            sentinel_trainer["trainer"] = trainer
+            captured.clear()
+            trainer.add_callback(_Snap())
+            trainer.train()
+            assert captured.get("ls_cls") is expected_cls, (
+                f"expected {expected_cls.__name__} for "
+                f"lr_scheduler={sched_type!r}, got "
+                f"{captured.get('ls_cls')}"
+            )
+
+    def test_resume_preserves_schedule_in_accountant(self, tmp_path):
+        # Save mid-train, resume to completion, verify ε matches a
+        # from-scratch run — the saved accountant.json must round-trip
+        # the cosine schedule baked into the BandMfStrategy.
+        outdir = tmp_path / "bandmf_cosine"
+        kwargs = dict(
+            per_device_train_batch_size=4,
+            max_steps=16,
+            save_steps=4,
+            privacy_noise_mechanism="mf_band",
+            privacy_noise_mechanism_kwargs={"bands": 4},
+            privacy_noise_multiplier=1.0,
+            clipping_norm=1.0,
+            learning_rate=1e-3,
+            optim="sgd",
+            lr_scheduler="cosine",
+            report_to=[],
+            save_strategy="steps",
+            eval_strategy="no",
+            logging_strategy="no",
+            disable_tqdm=True,
+            use_cpu=True,
+            seed=0,
+        )
+
+        # From-scratch run.
+        args = TrainingArguments(output_dir=str(outdir), **kwargs)
+        torch.manual_seed(0)
+        t1 = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        out1 = t1.train()
+
+        # Find a mid-train checkpoint.
+        ckpts = sorted(
+            [d for d in os.listdir(outdir) if d.startswith("checkpoint-")],
+            key=lambda d: int(d.split("-")[1]),
+        )
+        assert len(ckpts) >= 2
+        mid = str(outdir / ckpts[-2])
+
+        # Resume.
+        outdir2 = tmp_path / "bandmf_cosine_resumed"
+        args2 = TrainingArguments(output_dir=str(outdir2), **kwargs)
+        torch.manual_seed(0)
+        t2 = DPTrainer(
+            model=_TinyLM(),
+            args=args2,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        out2 = t2.train(resume_from_checkpoint=mid)
+
+        # Identical ε is the strongest signal that the accountant's
+        # internal schedule survived the disk round-trip.
+        assert out1.metrics["privacy_epsilon"] == pytest.approx(
+            out2.metrics["privacy_epsilon"], rel=1e-9
+        )
+
+
 class TestGaussianPathUnchanged:
     """Sanity: DP-SGD path still works (no regression from MF wiring)."""
 

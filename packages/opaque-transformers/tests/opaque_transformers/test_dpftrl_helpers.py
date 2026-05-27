@@ -46,6 +46,56 @@ class _ListDataset(Dataset):
         return i
 
 
+class TestBuildStrategyLrSchedule:
+    """``lr_schedule`` auto-injection for BandMF / BLT only."""
+
+    def test_band_mf_receives_lr_schedule(self):
+        from opaque.scheduling import cosine_schedule
+
+        sched = cosine_schedule(1e-3, 0.0, 1000)
+        strategy = _dpftrl.build_strategy("mf_band", {"bands": 4}, lr_schedule=sched)
+        assert isinstance(strategy, BandMfStrategy)
+        assert strategy.lr_schedule is sched
+
+    def test_blt_receives_lr_schedule(self):
+        from opaque.scheduling import cosine_schedule
+
+        sched = cosine_schedule(1e-3, 0.0, 1000)
+        strategy = _dpftrl.build_strategy(
+            "mf_blt", {"max_buffers": 4}, lr_schedule=sched
+        )
+        assert isinstance(strategy, BltStrategy)
+        assert strategy.lr_schedule is sched
+
+    def test_other_mechanisms_ignore_lr_schedule(self):
+        # BiSR/BSR/lambda_cgd/identity don't accept an lr_schedule kwarg;
+        # build_strategy must not pass one through (no TypeError from the
+        # factory).
+        from opaque.scheduling import cosine_schedule
+
+        sched = cosine_schedule(1e-3, 0.0, 1000)
+        for mech, kw in [
+            ("mf_bisr", {"bandwidth": 4}),
+            ("mf_bsr", {"bandwidth": 4, "alpha": 1.0, "beta": 0.9}),
+            ("mf_lambda_cgd", {"lambda_": 0.5}),
+            ("mf_identity", {}),
+        ]:
+            strategy = _dpftrl.build_strategy(mech, kw, lr_schedule=sched)
+            assert not hasattr(strategy, "lr_schedule") or strategy.lr_schedule is None
+
+    def test_user_kwarg_wins_over_auto_injection(self):
+        from opaque.scheduling import constant_schedule, cosine_schedule
+
+        live = cosine_schedule(1e-3, 0.0, 1000)
+        user = constant_schedule(5e-4)
+        strategy = _dpftrl.build_strategy(
+            "mf_band",
+            {"bands": 4, "lr_schedule": user},
+            lr_schedule=live,
+        )
+        assert strategy.lr_schedule is user
+
+
 class TestBuildStrategy:
     @pytest.mark.parametrize(
         "mechanism,kwargs,cls",
