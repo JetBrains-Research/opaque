@@ -5,9 +5,12 @@ Dong & Ganesh, "Privacy Amplification for BandMF via b-Min-Sep Subsampling"
 program for the likelihood ratio (Section 5).
 
 The runtime sampler should use :class:`opaque.dpftrl.sampling.BMinSepSampler`
-with the same ``bands`` and ``p`` derived from the target per-example
-participation rate ``p_0`` via ``p = p_0 / (1 - p_0 * (bands - 1))`` for
-``bands > 1``.
+with the same ``bands`` and ``p`` as the accountant.  Read these off the
+:class:`BMinSep` instance: ``bands`` via ``inner.strategy.bands`` (or the
+equivalent ``min_sep`` property) and ``p`` via ``sampling_prob``.  The
+conversion ``p = p_0 / (1 - p_0 * (bands - 1))`` is encapsulated by
+:func:`participation_p_from_per_example_rate`, so runtime callers never
+duplicate the formula.
 """
 
 from __future__ import annotations
@@ -28,8 +31,14 @@ from ._transcript_cache import with_handle as _with_transcript_handle
 _Inner = MfGaussian
 
 
-def _participation_p_from_per_example_rate(p0: float, bands: int) -> float:
-    """Paper: p = p_0 / (1 - p_0 * (b - 1))."""
+def participation_p_from_per_example_rate(p0: float, bands: int) -> float:
+    """Paper: ``p = p_0 / (1 - p_0 * (b - 1))``.
+
+    Converts a target per-example participation rate ``p_0 = E[batch] / |D|``
+    into the paper's per-iteration inclusion probability ``p`` that
+    :class:`opaque.dpftrl.sampling.BMinSepSampler` expects.  ``bands == 1``
+    degenerates to ``p_0`` (plain Poisson, no min-sep constraint).
+    """
     if not 0.0 < p0 < 1.0:
         raise ValueError(f"per-example rate p_0 must be in (0, 1), got {p0}")
     if bands < 1:
@@ -75,6 +84,16 @@ class BMinSep(DpFtrlProcess):
         # n_steps=10 yields 3, not 2).
         bands = self.inner.strategy.bands
         return (self.n_steps + bands - 1) // bands
+
+    @property
+    def sampling_prob(self) -> float:
+        # The runtime ``BMinSepSampler`` parameter — the paper's per-iteration
+        # inclusion probability ``p``.  Equal to ``self.p0`` only when
+        # ``bands == 1``; the conversion belongs with the privacy proof so
+        # callers (runtime sampler builders) never re-derive it.
+        return participation_p_from_per_example_rate(
+            self.p0, self.inner.strategy.bands
+        )
 
     @functools.lru_cache(maxsize=8)
     def _pld_at_horizon(
@@ -128,7 +147,7 @@ class BMinSep(DpFtrlProcess):
         coefs = s.coefficients(n_steps=self.n_steps).tolist()
         sensitivity = s.sensitivity(n_steps=self.n_steps)
         effective_nm = self.inner.noise_multiplier / sensitivity
-        p = _participation_p_from_per_example_rate(self.p0, bands)
+        p = self.sampling_prob
 
         # Always look up the cached corpus at ``self.n_steps`` (the full
         # horizon at which it was prepared).  For K < N the Rust side
