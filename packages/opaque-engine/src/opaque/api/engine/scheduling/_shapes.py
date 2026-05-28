@@ -1,6 +1,6 @@
 """Named ramp / decay shape lookups shared by composition wrappers.
 
-The ``_NAMED_RAMPS`` and ``_NAMED_DECAYS`` tables map a string
+The :data:`NAMED_RAMPS` and :data:`NAMED_DECAYS` tables map a string
 discriminator (``"linear"``, ``"cosine"``, ``"1-sqrt"``) to the actual
 shape function.  Composition recipes (:class:`~._with_warmup.WithWarmup`,
 :class:`~._warmup_stable_decay.WarmupStableDecay`) store the

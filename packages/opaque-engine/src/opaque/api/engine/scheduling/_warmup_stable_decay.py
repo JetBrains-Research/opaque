@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Union
 
-from opaque.api.engine.scheduling._named import resolve_decay, resolve_ramp
+from opaque.api.engine.scheduling._shapes import resolve_decay, resolve_ramp
 
 __all__ = ["WarmupStableDecay", "warmup_stable_decay"]
 

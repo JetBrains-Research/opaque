@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from typing import Union
 
 from opaque.api.engine.scheduling._constant import ConstantSchedule
-from opaque.api.engine.scheduling._named import resolve_ramp
 from opaque.api.engine.scheduling._schedule import Schedule
+from opaque.api.engine.scheduling._shapes import resolve_ramp
 
 __all__ = ["WithWarmup", "with_warmup"]
 
