@@ -91,9 +91,7 @@ class BMinSep(DpFtrlProcess):
         # inclusion probability ``p``.  Equal to ``self.p0`` only when
         # ``bands == 1``; the conversion belongs with the privacy proof so
         # callers (runtime sampler builders) never re-derive it.
-        return participation_p_from_per_example_rate(
-            self.p0, self.inner.strategy.bands
-        )
+        return participation_p_from_per_example_rate(self.p0, self.inner.strategy.bands)
 
     @functools.lru_cache(maxsize=8)
     def _pld_at_horizon(
