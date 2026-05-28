@@ -221,7 +221,6 @@ class RuntimeCheckpoint:
     expected_steps_per_epoch: int = field(metadata={"compare_on_resume": True})
     expected_batch_size: int = field(metadata={"compare_on_resume": True})
     total_steps: int = field(metadata={"compare_on_resume": True})
-    lr_schedule_state: dict[str, Any] | None = None
 
 
 def save_dp_runtime_state(
@@ -236,7 +235,6 @@ def save_dp_runtime_state(
     expected_steps_per_epoch: int,
     expected_batch_size: int,
     total_steps: int,
-    lr_schedule_state: dict[str, Any] | None = None,
 ) -> None:
     """Save the DP runtime bundle as a :class:`RuntimeCheckpoint`."""
     if not isinstance(clip_state, ClipState):
@@ -258,7 +256,6 @@ def save_dp_runtime_state(
         expected_steps_per_epoch=int(expected_steps_per_epoch),
         expected_batch_size=int(expected_batch_size),
         total_steps=int(total_steps),
-        lr_schedule_state=lr_schedule_state,
     )
     # ``torch.save`` of a dataclass round-trips via pickle.  Kept as
     # pickle to handle the heterogeneous types (tensors inside

@@ -49,7 +49,7 @@ fields.
 
 **Code**:
 - New `opaque.scheduling` module: the curves torchopt doesn't ship — `cosine_schedule`, `inverse_sqrt_schedule`, `constant_schedule`, `linear_schedule`, `polynomial_schedule`, `one_minus_sqrt_schedule` — plus `with_warmup(decay, num_warmup_steps, base_lr)` and `with_restarts` composition primitives that auto-shift the step counter passed to `decay`.
-- HF shim `opaque.api.transformers.trainer._scheduler` (`build_lr_schedule(args, num_training_steps)`, `get_warmup_steps(...)`, `parse_optim_args(...)`, `ReduceLROnPlateauSchedule`): dispatches **all 11** of HF's `SchedulerType` strings — `linear`, `cosine`, `constant`, `constant_with_warmup`, `inverse_sqrt`, `polynomial`, `cosine_with_restarts`, `cosine_with_min_lr`, `cosine_warmup_with_min_lr`, `warmup_stable_decay`, `reduce_lr_on_plateau` — to compositions of the primitives above; unknown kwargs raise `ValueError`.
+- HF shim `opaque.api.transformers.trainer._scheduler` (`build_lr_schedule(args, num_training_steps)`, `get_warmup_steps(...)`, `parse_optim_args(...)`): dispatches **10** of HF's `SchedulerType` strings — `linear`, `cosine`, `constant`, `constant_with_warmup`, `inverse_sqrt`, `polynomial`, `cosine_with_restarts`, `cosine_with_min_lr`, `cosine_warmup_with_min_lr`, `warmup_stable_decay` — to compositions of the primitives above; unknown kwargs raise `ValueError`.  `reduce_lr_on_plateau` is intentionally not supported: it's metric-driven and data-dependent, which doesn't fit the recipe-based static-schedule model the rest of `opaque.scheduling` is built on.
 - `DPTrainer.create_scheduler(num_training_steps)` (subclass override hook); called from `_setup_training` and the resulting callable is passed into `create_optimizer` for every optimizer branch (`adam`, `sgd`, `adamw-bc`, `adamw`).
 - `learning_rate` is logged in `state.log_history` at each `logging_steps` boundary, computed as `lr_schedule(global_step - 1)` — the value just applied to the optimizer update at iteration `global_step` (HF parity: torchopt's `scale_by_schedule` increments the count *after* the update, so the LR consumed by step N is `schedule(N - 1)`).
 
@@ -87,8 +87,7 @@ Highlights of what landed:
   fractional `save_steps`, end-of-training final save, rotation that protects
   most-recent + best.
 - **Best-model tracking** — HF parity: `metric_for_best_model` is auto-defaulted
-  to `"loss"` under `load_best_model_at_end` (and under
-  `lr_scheduler_type="reduce_lr_on_plateau"`); `greater_is_better` defaults
+  to `"loss"` under `load_best_model_at_end`; `greater_is_better` defaults
   from the metric-name suffix.
 - **Resume** — `train(resume_from_checkpoint=path|True|None)`. Restores
   model, optimizer, clip / noise / sampler / accountant states, RNG snapshots,

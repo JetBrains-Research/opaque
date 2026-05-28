@@ -55,10 +55,7 @@ from ._callback import (
 from ._config import TrainingArguments
 from ._eval import EvalPrediction, EvaluationResult
 from ._precision import eval_dtype
-from ._scheduler import (
-    ReduceLROnPlateauSchedule,
-    build_lr_schedule,
-)
+from ._scheduler import build_lr_schedule
 from ._state import DPTrainerState
 from opaque.random import key
 from torch import Tensor
@@ -2207,10 +2204,9 @@ class DPTrainer:
         Installs the cached-accountant barrier on the active training
         context (when present), appends the metrics to
         ``state.log_history`` via :meth:`log`, fires the ``on_evaluate``
-        callback, updates ``state.best_metric`` / ``best_global_step``,
-        and feeds the metric into a metric-driven LR schedule (e.g.
-        plateau).  Direct user calls behave identically to the eval
-        calls the training loop makes.
+        callback, and updates ``state.best_metric`` / ``best_global_step``.
+        Direct user calls behave identically to the eval calls the
+        training loop makes.
 
         Returns a metrics dict with ``{prefix}_loss`` and any keys
         produced by a user-supplied ``compute_metrics`` (auto-prefixed
@@ -3022,38 +3018,6 @@ class DPTrainer:
             self.args, self.state, self._control, logs=output
         )
 
-    def _update_metric_driven_schedule(
-        self,
-        ctx: _TrainingContext,
-        eval_metrics: dict[str, Any],
-    ) -> None:
-        """Feed a metric value to a plateau-style schedule, if active.
-
-        No-op when the active schedule isn't metric-driven.  The metric
-        consumed is the one named by ``args.metric_for_best_model``,
-        with the same auto ``"eval_"`` prefix fallback used by
-        :meth:`_update_best_metric`.
-        """
-        schedule = ctx.lr_schedule
-        if not isinstance(schedule, ReduceLROnPlateauSchedule):
-            return
-        metric_name = self.args.metric_for_best_model
-        if metric_name is None:
-            raise ValueError(
-                "lr_scheduler_type='reduce_lr_on_plateau' requires "
-                "metric_for_best_model to select the eval metric that drives "
-                "the schedule."
-            )
-        resolved = resolve_eval_metric(eval_metrics, metric_name)
-        if resolved is None:
-            raise ValueError(
-                "lr_scheduler_type='reduce_lr_on_plateau' expected "
-                f"metric_for_best_model={metric_name!r} to be present in "
-                f"evaluation metrics, but found keys {sorted(eval_metrics)}."
-            )
-        _, value = resolved
-        schedule.update(value)
-
     def _maybe_log_save_evaluate(
         self,
         ctx: _TrainingContext,
@@ -3129,7 +3093,6 @@ class DPTrainer:
             # injected when ``save_strategy="best"``) may have set
             # ``should_save`` there.  Refresh the local handle accordingly.
             ctrl = self._control
-            self._update_metric_driven_schedule(ctx, metrics)
             self._update_best_metric(metrics, global_step)
             ctrl.should_evaluate = False
 
@@ -3798,13 +3761,6 @@ class DPTrainer:
             if ctx.current_sampler is not None
             else None
         )
-        # Persist plateau schedule state so resumes don't lose the
-        # accumulated bad-epoch counter.
-        lr_schedule_state = (
-            ctx.lr_schedule.state_dict()
-            if isinstance(ctx.lr_schedule, ReduceLROnPlateauSchedule)
-            else None
-        )
 
         ckpt.save_dp_runtime_state(
             os.path.join(ckpt_dir, ckpt.DP_STATE_NAME),
@@ -3817,7 +3773,6 @@ class DPTrainer:
             expected_steps_per_epoch=ctx.expected_steps_per_epoch,
             expected_batch_size=int(self.args.train_batch_size),
             total_steps=ctx.total_steps,
-            lr_schedule_state=lr_schedule_state,
         )
 
     def _save_accountant(self, ckpt_dir: str, accountant: "Accountant") -> None:
@@ -4042,31 +3997,6 @@ class DPTrainer:
 
         if accountant is not None:
             ctx.accounting = accountant
-
-        # Restore plateau LR schedule state when both sides agree on the
-        # type.  Warn on either-side mismatch so a user who changed
-        # ``lr_scheduler_type`` between save and resume doesn't silently
-        # get a fresh schedule (saved → resumed type mismatch) or a
-        # discarded saved counter (saved was plateau → resumed isn't).
-        sched_state = runtime.lr_schedule_state
-        live_is_plateau = isinstance(ctx.lr_schedule, ReduceLROnPlateauSchedule)
-        if sched_state is not None and live_is_plateau:
-            ctx.lr_schedule.load_state_dict(sched_state)
-        elif sched_state is not None and not live_is_plateau:
-            log.warning(
-                "Checkpoint carries a metric-driven LR schedule state but "
-                "the current run uses lr_scheduler_type=%r — discarding "
-                "saved schedule state.  The new schedule starts from "
-                "step 0 of its own curve.",
-                self.args.lr_scheduler_type,
-            )
-        elif sched_state is None and live_is_plateau:
-            log.warning(
-                "Current run uses lr_scheduler_type='reduce_lr_on_plateau' "
-                "but the checkpoint has no saved schedule state — the "
-                "plateau counter starts from 0 (no accumulated bad-epoch "
-                "history).",
-            )
 
     def _load_rng_state(self, ckpt_dir: str) -> None:
         """Restore this rank's RNG snapshot from a checkpoint.

@@ -4,7 +4,7 @@ Covers:
 
 - ``no_cuda`` is no longer accepted on the standalone dataclass.
 - Auto-default of ``metric_for_best_model="loss"`` under
-  ``load_best_model_at_end`` / ``reduce_lr_on_plateau``.
+  ``load_best_model_at_end``.
 - Cadence-alignment validation for ``load_best_model_at_end``
   (``save_strategy`` must equal ``eval_strategy``;
   ``save_steps % eval_steps == 0`` when both are step-based).
@@ -50,15 +50,6 @@ class TestMetricForBestModelDefaults:
         assert args.metric_for_best_model == "loss"
         # Loss-suffixed metric ⇒ greater_is_better=False.
         assert args.greater_is_better is False
-
-    def test_reduce_lr_on_plateau_defaults_metric(self):
-        args = TrainingArguments(
-            lr_scheduler_type="reduce_lr_on_plateau",
-            eval_strategy="steps",
-            eval_steps=1,
-        )
-        assert args.metric_for_best_model == "loss"
-
 
 class TestCadenceAlignment:
     """``load_best_model_at_end`` requires save / eval cadence alignment."""

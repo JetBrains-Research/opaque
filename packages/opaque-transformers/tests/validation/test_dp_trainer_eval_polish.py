@@ -204,67 +204,6 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
 
         assert output.global_step == 1
 
-    def test_eval_on_start_does_not_feed_plateau_schedule(
-        self,
-        tmp_path,
-        monkeypatch,
-    ):
-        dataset = [
-            {"features": torch.zeros(3), "labels": 0},
-            {"features": torch.ones(3), "labels": 1},
-            {"features": torch.full((3,), 0.5), "labels": 0},
-            {"features": torch.full((3,), -0.5), "labels": 1},
-        ]
-        trainer = DPTrainer(
-            model=_TinyEvalModel(),
-            args=_args(
-                tmp_path,
-                eval_on_start=True,
-                eval_strategy="no",
-                lr_scheduler_type="reduce_lr_on_plateau",
-                metric_for_best_model="loss",
-            ),
-            train_dataset=dataset,
-            eval_dataset=dataset,
-        )
-        schedule_updates = []
-
-        def update_schedule(ctx, metrics):
-            schedule_updates.append((ctx, metrics))
-
-        monkeypatch.setattr(
-            trainer,
-            "_update_metric_driven_schedule",
-            update_schedule,
-        )
-
-        trainer.train()
-
-        assert schedule_updates == []
-
-    def test_plateau_schedule_requires_configured_eval_metric(self, tmp_path):
-        dataset = [
-            {"features": torch.zeros(3), "labels": 0},
-            {"features": torch.ones(3), "labels": 1},
-            {"features": torch.full((3,), 0.5), "labels": 0},
-            {"features": torch.full((3,), -0.5), "labels": 1},
-        ]
-        trainer = DPTrainer(
-            model=_TinyEvalModel(),
-            args=_args(
-                tmp_path,
-                eval_strategy="steps",
-                eval_steps=1,
-                lr_scheduler_type="reduce_lr_on_plateau",
-                metric_for_best_model="accuracy",
-            ),
-            train_dataset=dataset,
-            eval_dataset=dataset,
-        )
-
-        with pytest.raises(ValueError, match="metric_for_best_model='accuracy'"):
-            trainer.train()
-
     def test_evaluate_without_metrics_uses_prediction_loss_only(
         self,
         tmp_path,

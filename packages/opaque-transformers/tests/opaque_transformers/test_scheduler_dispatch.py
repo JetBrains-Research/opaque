@@ -32,7 +32,6 @@ from transformers.optimization import (  # noqa: E402
 )
 
 from opaque.api.transformers.trainer._scheduler import (  # noqa: E402
-    ReduceLROnPlateauSchedule,
     build_lr_schedule,
     get_warmup_steps,
 )
@@ -412,22 +411,6 @@ class TestWarmupRatio:
 
 
 class TestErrors:
-    def test_reduce_lr_on_plateau_defaults_metric_to_loss(self):
-        # HF parity: ``TrainingArguments.__post_init__`` defaults
-        # ``metric_for_best_model`` to ``"loss"`` whenever
-        # ``lr_scheduler_type == "reduce_lr_on_plateau"``.  This stub
-        # mirrors that contract: the builder accepts a default metric
-        # name (``"loss"``) and wires up ``mode="min"``.
-        sched = build_lr_schedule(
-            _Args(
-                lr_scheduler_type="reduce_lr_on_plateau",
-                metric_for_best_model="loss",
-            ),
-            num_training_steps=100,
-        )
-        # ``mode`` derived from the metric name suffix: ``"loss"`` → "min".
-        assert sched.mode == "min"
-
     def test_cosine_with_min_lr_requires_one_of_min_args(self):
         with pytest.raises(ValueError, match="min_lr"):
             build_lr_schedule(
@@ -506,72 +489,6 @@ class TestErrors:
                 ),
                 num_training_steps=100,
             )
-
-
-# ---------------------------------------------------------------------------
-# ReduceLROnPlateauSchedule — metric-driven dispatch
-# ---------------------------------------------------------------------------
-
-
-class TestReduceLROnPlateau:
-    def test_dispatcher_returns_plateau_instance(self):
-        sched = build_lr_schedule(
-            _Args(
-                lr_scheduler_type="reduce_lr_on_plateau",
-                metric_for_best_model="eval_loss",
-                lr_scheduler_kwargs={"factor": 0.5, "patience": 2},
-            ),
-            num_training_steps=100,
-        )
-        assert isinstance(sched, ReduceLROnPlateauSchedule)
-        assert sched.factor == 0.5
-        assert sched.patience == 2
-        # Loss-named metric → mode="min".
-        assert sched.mode == "min"
-        # Initial LR before any update equals base_lr.
-        assert sched(0) == pytest.approx(BASE_LR)
-
-    def test_mode_defaults_to_max_for_non_loss_metric(self):
-        sched = build_lr_schedule(
-            _Args(
-                lr_scheduler_type="reduce_lr_on_plateau",
-                metric_for_best_model="eval_accuracy",
-            ),
-            num_training_steps=10,
-        )
-        assert sched.mode == "max"
-
-    def test_drops_lr_after_patience(self):
-        sched = ReduceLROnPlateauSchedule(
-            base_lr=1.0,
-            factor=0.5,
-            patience=1,
-            threshold=0.0,
-            mode="min",
-        )
-        # First update: best.
-        sched.update(1.0)
-        assert sched(0) == 1.0
-        # Second update: bad → counter=1, still under patience.
-        sched.update(1.0)
-        assert sched(0) == 1.0
-        # Third update: bad again → counter=2 > patience, factor applied.
-        sched.update(1.0)
-        assert sched(0) == pytest.approx(0.5)
-
-    def test_state_dict_round_trip(self):
-        a = ReduceLROnPlateauSchedule(
-            base_lr=1.0, factor=0.5, patience=0, threshold=0.0
-        )
-        a.update(1.0)
-        a.update(1.0)  # → drop
-        sd = a.state_dict()
-
-        b = ReduceLROnPlateauSchedule(
-            base_lr=1.0, factor=0.5, patience=0, threshold=0.0
-        )
-        b.load_state_dict(sd)
-        assert b(0) == a(0)
 
 
 # ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ Translates :attr:`TrainingArguments.lr_scheduler_type` plus
 Supported types: ``constant``, ``constant_with_warmup``, ``linear``,
 ``cosine``, ``polynomial``, ``inverse_sqrt``, ``cosine_with_restarts``,
 ``cosine_with_min_lr``, ``cosine_warmup_with_min_lr``,
-``warmup_stable_decay``, ``reduce_lr_on_plateau``.
+``warmup_stable_decay``.
 """
 
 from __future__ import annotations
@@ -30,7 +30,6 @@ from opaque.scheduling import (
 __all__ = [
     "build_lr_schedule",
     "get_warmup_steps",
-    "ReduceLROnPlateauSchedule",
 ]
 
 
@@ -47,19 +46,6 @@ _WSD_KWARGS = frozenset(
     }
 )
 
-_PLATEAU_KWARGS = frozenset(
-    {
-        "factor",
-        "patience",
-        "mode",
-        "threshold",
-        "threshold_mode",
-        "cooldown",
-        "min_lr",
-        "eps",
-    }
-)
-
 _ALLOWED_KWARGS: dict[str, frozenset[str]] = {
     "constant": frozenset(),
     "constant_with_warmup": frozenset(),
@@ -73,7 +59,6 @@ _ALLOWED_KWARGS: dict[str, frozenset[str]] = {
         {"num_cycles", "min_lr", "min_lr_rate", "warmup_lr_rate"}
     ),
     "warmup_stable_decay": _WSD_KWARGS,
-    "reduce_lr_on_plateau": _PLATEAU_KWARGS,
 }
 
 
@@ -152,8 +137,6 @@ def build_lr_schedule(
         )
     if name == "warmup_stable_decay":
         return _build_wsd(base_lr, W, num_training_steps, kwargs)
-    if name == "reduce_lr_on_plateau":
-        return _build_plateau(args, base_lr, kwargs)
 
     warmup_init = 0.0  # warmup ramp starts at 0 unless overridden below.
 
@@ -337,183 +320,4 @@ def _build_wsd(
         ramp=warmup_type,
         init_value=min_lr_ratio,
     )
-
-
-# ---------------------------------------------------------------------------
-# ReduceLROnPlateau schedule (metric-driven, not step-indexed).
-# ---------------------------------------------------------------------------
-
-
-_PLATEAU_MODES = {"min", "max"}
-_PLATEAU_THRESHOLD_MODES = {"rel", "abs"}
-
-
-class ReduceLROnPlateauSchedule:
-    """Metric-driven LR schedule mirroring ``torch.optim.lr_scheduler.ReduceLROnPlateau``.
-
-    Behaves as a ``Callable[[int], float]`` so it slots into the same
-    ``scale_by_schedule`` plumbing as the step-indexed schedules; the
-    step argument is ignored — the LR is updated only via :meth:`update`,
-    which DPTrainer calls after each evaluation with the value of
-    ``state.best_metric`` (or, equivalently, the latest eval metric).
-
-    Use ``mode="min"`` for losses (default) and ``mode="max"`` for
-    accuracy-style metrics.  ``factor`` (``< 1``) multiplies the current
-    LR each time ``patience`` consecutive bad epochs accumulate.  ``min_lr``
-    is the absolute floor of the LR.
-    """
-
-    def __init__(
-        self,
-        base_lr: float,
-        *,
-        factor: float = 0.1,
-        patience: int = 10,
-        mode: str = "min",
-        threshold: float = 1e-4,
-        threshold_mode: str = "rel",
-        cooldown: int = 0,
-        min_lr: float = 0.0,
-        eps: float = 1e-8,
-    ) -> None:
-        if mode not in _PLATEAU_MODES:
-            raise ValueError(
-                f"mode must be one of {sorted(_PLATEAU_MODES)}; got {mode!r}"
-            )
-        if threshold_mode not in _PLATEAU_THRESHOLD_MODES:
-            raise ValueError(
-                f"threshold_mode must be one of {sorted(_PLATEAU_THRESHOLD_MODES)}; "
-                f"got {threshold_mode!r}"
-            )
-        if not (0.0 < factor < 1.0):
-            raise ValueError(f"factor must be in (0, 1); got {factor}")
-        if patience < 0:
-            raise ValueError(f"patience must be >= 0; got {patience}")
-
-        self.base_lr = float(base_lr)
-        self.factor = float(factor)
-        self.patience = int(patience)
-        self.mode = mode
-        self.threshold = float(threshold)
-        self.threshold_mode = threshold_mode
-        self.cooldown = int(cooldown)
-        self.min_lr = float(min_lr)
-        self.eps = float(eps)
-
-        self._lr: float = float(base_lr)
-        self._best: float | None = None
-        self._num_bad: int = 0
-        self._cooldown_counter: int = 0
-
-    # --- callable interface ------------------------------------------------
-
-    def __call__(self, step: int) -> float:  # noqa: ARG002 — step ignored
-        return self._lr
-
-    # --- metric updates ----------------------------------------------------
-
-    def _is_better(self, current: float, best: float) -> bool:
-        if self.mode == "min":
-            if self.threshold_mode == "rel":
-                return current < best * (1.0 - self.threshold)
-            return current < best - self.threshold
-        # mode == "max"
-        if self.threshold_mode == "rel":
-            return current > best * (1.0 + self.threshold)
-        return current > best + self.threshold
-
-    def update(self, metric: float | None) -> None:
-        """Feed a fresh eval metric value; may reduce the LR."""
-        if metric is None:
-            return
-        metric = float(metric)
-        if self._best is None or self._is_better(metric, self._best):
-            self._best = metric
-            self._num_bad = 0
-        else:
-            self._num_bad += 1
-
-        if self._cooldown_counter > 0:
-            self._cooldown_counter -= 1
-            self._num_bad = 0  # cooldown swallows bad-epoch counter (HF parity)
-
-        if self._num_bad > self.patience:
-            new_lr = max(self._lr * self.factor, self.min_lr)
-            if self._lr - new_lr > self.eps:
-                self._lr = new_lr
-            self._cooldown_counter = self.cooldown
-            self._num_bad = 0
-
-    # --- (de)serialization -------------------------------------------------
-
-    def state_dict(self) -> dict[str, Any]:
-        return {
-            "base_lr": self.base_lr,
-            "factor": self.factor,
-            "patience": self.patience,
-            "mode": self.mode,
-            "threshold": self.threshold,
-            "threshold_mode": self.threshold_mode,
-            "cooldown": self.cooldown,
-            "min_lr": self.min_lr,
-            "eps": self.eps,
-            "_lr": self._lr,
-            "_best": self._best,
-            "_num_bad": self._num_bad,
-            "_cooldown_counter": self._cooldown_counter,
-        }
-
-    def load_state_dict(self, sd: dict[str, Any]) -> None:
-        # Configuration stays as-constructed; only mutable state is restored
-        # (HF / torch convention).  Mismatched configuration is the caller's
-        # responsibility — the drift-detection helper in _checkpoint.py
-        # surfaces it loudly.
-        if "_lr" in sd:
-            self._lr = float(sd["_lr"])
-        if "_best" in sd:
-            self._best = None if sd["_best"] is None else float(sd["_best"])
-        if "_num_bad" in sd:
-            self._num_bad = int(sd["_num_bad"])
-        if "_cooldown_counter" in sd:
-            self._cooldown_counter = int(sd["_cooldown_counter"])
-
-
-def _build_plateau(
-    args: Any,
-    base_lr: float,
-    kwargs: dict[str, Any],
-) -> ReduceLROnPlateauSchedule:
-    """Construct a :class:`ReduceLROnPlateauSchedule` from HF-style args.
-
-    ``mode`` defaults from ``metric_for_best_model`` when unset:
-    ``"min"`` for ``*loss*`` metrics, ``"max"`` otherwise.
-
-    ``TrainingArguments.__post_init__`` defaults
-    ``metric_for_best_model="loss"`` whenever ``lr_scheduler_type ==
-    "reduce_lr_on_plateau"``, so this builder always sees a
-    non-``None`` metric name.
-
-    DP caveat: the schedule's metric input must come from a
-    held-out / public eval set.  Feeding train-data eval metrics into
-    the LR schedule makes the LR trajectory data-dependent in a way
-    the privacy accountant doesn't track.
-    """
-    metric = args.metric_for_best_model or "loss"
-    mode = kwargs.get("mode")
-    if mode is None:
-        # HF convention: minimize loss, maximize anything else.
-        mode = "min" if metric.endswith("loss") else "max"
-
-    return ReduceLROnPlateauSchedule(
-        base_lr=base_lr,
-        factor=float(kwargs.get("factor", 0.1)),
-        patience=int(kwargs.get("patience", 10)),
-        mode=mode,
-        threshold=float(kwargs.get("threshold", 1e-4)),
-        threshold_mode=str(kwargs.get("threshold_mode", "rel")),
-        cooldown=int(kwargs.get("cooldown", 0)),
-        min_lr=float(kwargs.get("min_lr", 0.0)),
-        eps=float(kwargs.get("eps", 1e-8)),
-    )
-
 

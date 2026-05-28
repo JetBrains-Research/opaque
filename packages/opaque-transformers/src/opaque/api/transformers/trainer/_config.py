@@ -574,10 +574,7 @@ class TrainingArguments:
                         )
 
         # --- 5. Default population ------------------------------------------
-        if (
-            self.load_best_model_at_end
-            or self.lr_scheduler_type == SchedulerType.REDUCE_ON_PLATEAU
-        ) and self.metric_for_best_model is None:
+        if self.load_best_model_at_end and self.metric_for_best_model is None:
             self.metric_for_best_model = "loss"
 
         if self.greater_is_better is None and self.metric_for_best_model is not None:
@@ -607,15 +604,6 @@ class TrainingArguments:
             raise ValueError(f"save_steps must be > 0, got {self.save_steps}")
 
         # --- 6. Warmup / dataloader sanity ----------------------------------
-        if (
-            self.lr_scheduler_type == SchedulerType.REDUCE_ON_PLATEAU
-            and self.eval_strategy == "no"
-            and not self.eval_on_start
-        ):
-            raise ValueError(
-                "lr_scheduler_type='reduce_lr_on_plateau' requires eval_strategy != 'no'"
-            )
-
         if self.warmup_ratio is None:
             self.warmup_ratio = 0.0
         if self.warmup_ratio < 0 or self.warmup_ratio > 1:
