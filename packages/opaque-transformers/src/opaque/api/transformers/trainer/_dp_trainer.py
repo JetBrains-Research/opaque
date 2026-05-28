@@ -40,6 +40,7 @@ from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.functional import make_functional
+from opaque.profiling import PerfTracker, perf_tracker
 from opaque.serialization import (
     from_state_dict as opaque_from_state_dict,
     state_dict as opaque_state_dict,
@@ -447,6 +448,13 @@ class DPTrainer:
         # ``skip_memory_metrics``, psutil availability, CPU + GPU tracking).
         self._memory_tracker = TrainerMemoryTracker(self.args.skip_memory_metrics)
         self._memory_tracker.start()
+        # Opaque step-level performance tracker: per-step wall-clock,
+        # throughput, peak memory, and sub-step marks for clip / noise /
+        # optimizer.  Sibling to ``_memory_tracker`` (which handles HF's
+        # before/after-train memory metrics); the two surfaces are
+        # complementary — HF's ``speed_metrics`` for run-level wall-clock
+        # stays, the tracker adds per-step + post-warmup steady-state.
+        self._perf_tracker: PerfTracker = perf_tracker(self._device)
         self._callback_handler = build_callback_handler(
             args=args,
             model=self._model,
@@ -1582,115 +1590,123 @@ class DPTrainer:
         # handling: privacy budget is consumed for every step regardless
         # of realized batch size (Poisson accounting is data-independent).
         leading = batch_args[0]
-        # Clipped gradients (with optional CPU offload)
-        with ctx.offload_ctx:
-            (grads, aux), ctx.clip_state = ctx.grad_fn(
-                ctx.trainable_params,
-                *batch_args,
-                state=ctx.clip_state,
+        step_batch_size = int(leading.shape[0])
+        # Per-step perf tracker covers clip → DDP sync → noise → optimizer;
+        # post-step metric bookkeeping below stays outside the scope.
+        # ``sp.mark`` records the elapsed time since the previous mark.
+        with self._perf_tracker.train(batch_size=step_batch_size) as sp:
+            # Clipped gradients (with optional CPU offload)
+            with ctx.offload_ctx:
+                (grads, aux), ctx.clip_state = ctx.grad_fn(
+                    ctx.trainable_params,
+                    *batch_args,
+                    state=ctx.clip_state,
+                )
+
+            # Phase 10c: DDP collectives between clipping and noise.
+            # 1. ``sum_gradients_`` — AllReduce SUM the clipped per-example sum;
+            #    after this every rank holds the cluster-wide gradient sum.
+            # 2. ``sync(clip_state, aux)`` — under fixed clipping ``clip_state``
+            #    sync asserts ``clipping_norm`` matches across ranks; under
+            #    adaptive clipping it aggregates the clipped-count and
+            #    recomputes the norm.  ``sync(aux)`` gathers the per-example
+            #    tensor fields (``grad_norms`` / ``loss_values`` / …) and
+            #    weights scalar fields (``clipping_rate``) across ranks so
+            #    metrics reported below reflect the cluster-wide batch.
+            # Noise can then be added independently on every rank (shared key
+            # ⇒ identical noise) and the optimizer update is a pure function of
+            # an identical input on every rank, so parameters stay in lockstep.
+            if self._ddp.is_distributed:
+                from opaque.distributed import sum_gradients_, sync as _opaque_sync
+
+                sum_gradients_(grads)
+                ctx.clip_state, aux = _opaque_sync(ctx.clip_state, aux)
+            sp.mark("clip")
+
+            # fp16 dynamic-loss-scale: detect overflow on the (post-AllReduce)
+            # gradient.  ``pre_clipping_transform`` ran per-example before the
+            # clip-norm so the unscale is done; an inf/nan here reflects a real
+            # forward/backward overflow.  Mirrors ``torch.amp.GradScaler.step``:
+            # skip the optimizer update and back off the scale.  Under DDP, an
+            # overflow on **any** rank must trip every rank or parameter trees
+            # diverge — see ``_distributed.reduce_step_finite``.
+            if self._loss_scaler is not None:
+                from opaque.precision import all_finite
+
+                grads_finite = all_finite(grads)
+                grads_finite = _distributed.reduce_step_finite(grads_finite, self._ddp)
+                self._loss_scaler_state = self._loss_scaler.update(
+                    self._loss_scaler_state, grads_finite
+                )
+                if not grads_finite:
+                    # Overflow → optimizer update is skipped; flow through the
+                    # outer-loop's empty-step gate by returning ``batch_size=0``
+                    # (same sentinel an empty Poisson sample uses).  Drops the
+                    # historical ``loss=NaN`` return — propagating NaN into the
+                    # log path forced ``logging_nan_inf_filter`` to substitute
+                    # the running average and racing with this code; now the
+                    # outer loop sees a clean "no step happened" signal.  The
+                    # overflow is still surfaced via ``state.fp16_overflow_steps``
+                    # for end-of-train auditing.
+                    self.state.fp16_overflow_steps += 1
+                    return {
+                        "loss": 0.0,
+                        "batch_size": 0,
+                        "loss_scale": self._loss_scaler_state.scale,
+                        "overflow": True,
+                    }
+
+            # Noise injection — ``grads`` is a ``ClippedPytree`` whose
+            # ``.max_norm`` carries the per-step sensitivity; ``noise_fn``
+            # reads it directly and returns a ``NoisedPytree``.  Adaptive
+            # clipping flows through unchanged because the wrapper updates
+            # ``max_norm`` per call.
+            noisy_grads, ctx.noise_state = ctx.noise_fn(grads, ctx.noise_state)
+            sp.mark("noise")
+
+            # HF parity: empty device cache *after* the forward/backward pass
+            # (activations are freed) but *before* the optimizer update.
+            # Uses global_step (pre-increment) to match HF's cadence.
+            self._maybe_empty_device_cache()
+
+            # Pre-optimizer hook fires *after* clipping+noise but *before* the
+            # optimizer update.  ``grads`` exposes the clipped-and-noised
+            # gradients keyed by parameter name so callbacks (e.g. NES's
+            # ``OptimizationCallback``) can compute group norms without
+            # touching ``param.grad`` (which doesn't exist in the functional
+            # path).
+            # ``call_event`` rather than the per-hook method so we can forward
+            # DP-specific kwargs (``grads``, ``trainable_params``) — HF's
+            # ``CallbackHandler.on_pre_optimizer_step`` has a fixed signature.
+            self._control = self._callback_handler.call_event(
+                "on_pre_optimizer_step",
+                self.args,
+                self.state,
+                self._control,
+                grads=noisy_grads,
+                trainable_params=ctx.trainable_params,
             )
 
-        # Phase 10c: DDP collectives between clipping and noise.
-        # 1. ``sum_gradients_`` — AllReduce SUM the clipped per-example sum;
-        #    after this every rank holds the cluster-wide gradient sum.
-        # 2. ``sync(clip_state, aux)`` — under fixed clipping ``clip_state``
-        #    sync asserts ``clipping_norm`` matches across ranks; under
-        #    adaptive clipping it aggregates the clipped-count and
-        #    recomputes the norm.  ``sync(aux)`` gathers the per-example
-        #    tensor fields (``grad_norms`` / ``loss_values`` / …) and
-        #    weights scalar fields (``clipping_rate``) across ranks so
-        #    metrics reported below reflect the cluster-wide batch.
-        # Noise can then be added independently on every rank (shared key
-        # ⇒ identical noise) and the optimizer update is a pure function of
-        # an identical input on every rank, so parameters stay in lockstep.
-        if self._ddp.is_distributed:
-            from opaque.distributed import sum_gradients_, sync as _opaque_sync
-
-            sum_gradients_(grads)
-            ctx.clip_state, aux = _opaque_sync(ctx.clip_state, aux)
-
-        # fp16 dynamic-loss-scale: detect overflow on the (post-AllReduce)
-        # gradient.  ``pre_clipping_transform`` ran per-example before the
-        # clip-norm so the unscale is done; an inf/nan here reflects a real
-        # forward/backward overflow.  Mirrors ``torch.amp.GradScaler.step``:
-        # skip the optimizer update and back off the scale.  Under DDP, an
-        # overflow on **any** rank must trip every rank or parameter trees
-        # diverge — see ``_distributed.reduce_step_finite``.
-        if self._loss_scaler is not None:
-            from opaque.precision import all_finite
-
-            grads_finite = all_finite(grads)
-            grads_finite = _distributed.reduce_step_finite(grads_finite, self._ddp)
-            self._loss_scaler_state = self._loss_scaler.update(
-                self._loss_scaler_state, grads_finite
+            # Optimizer step — DP-aware optimizers read σ directly off the
+            # ``NoisedPytree`` when ``noise_bias_correction=True`` was set at
+            # construction (via ``optim_args``); no per-step kwargs are accepted.
+            updates, ctx.opt_state = ctx.opt.update(
+                noisy_grads,
+                ctx.opt_state,
+                params=ctx.trainable_params,
             )
-            if not grads_finite:
-                # Overflow → optimizer update is skipped; flow through the
-                # outer-loop's empty-step gate by returning ``batch_size=0``
-                # (same sentinel an empty Poisson sample uses).  Drops the
-                # historical ``loss=NaN`` return — propagating NaN into the
-                # log path forced ``logging_nan_inf_filter`` to substitute
-                # the running average and racing with this code; now the
-                # outer loop sees a clean "no step happened" signal.  The
-                # overflow is still surfaced via ``state.fp16_overflow_steps``
-                # for end-of-train auditing.
-                self.state.fp16_overflow_steps += 1
-                return {
-                    "loss": 0.0,
-                    "batch_size": 0,
-                    "loss_scale": self._loss_scaler_state.scale,
-                    "overflow": True,
-                }
+            ctx.trainable_params = torchopt.apply_updates(ctx.trainable_params, updates)
+            sp.mark("optimizer")
 
-        # Noise injection — ``grads`` is a ``ClippedPytree`` whose
-        # ``.max_norm`` carries the per-step sensitivity; ``noise_fn``
-        # reads it directly and returns a ``NoisedPytree``.  Adaptive
-        # clipping flows through unchanged because the wrapper updates
-        # ``max_norm`` per call.
-        noisy_grads, ctx.noise_state = ctx.noise_fn(grads, ctx.noise_state)
-
-        # HF parity: empty device cache *after* the forward/backward pass
-        # (activations are freed) but *before* the optimizer update.
-        # Uses global_step (pre-increment) to match HF's cadence.
-        self._maybe_empty_device_cache()
-
-        # Pre-optimizer hook fires *after* clipping+noise but *before* the
-        # optimizer update.  ``grads`` exposes the clipped-and-noised
-        # gradients keyed by parameter name so callbacks (e.g. NES's
-        # ``OptimizationCallback``) can compute group norms without
-        # touching ``param.grad`` (which doesn't exist in the functional
-        # path).
-        # ``call_event`` rather than the per-hook method so we can forward
-        # DP-specific kwargs (``grads``, ``trainable_params``) — HF's
-        # ``CallbackHandler.on_pre_optimizer_step`` has a fixed signature.
-        self._control = self._callback_handler.call_event(
-            "on_pre_optimizer_step",
-            self.args,
-            self.state,
-            self._control,
-            grads=noisy_grads,
-            trainable_params=ctx.trainable_params,
-        )
-
-        # Optimizer step — DP-aware optimizers read σ directly off the
-        # ``NoisedPytree`` when ``noise_bias_correction=True`` was set at
-        # construction (via ``optim_args``); no per-step kwargs are accepted.
-        updates, ctx.opt_state = ctx.opt.update(
-            noisy_grads,
-            ctx.opt_state,
-            params=ctx.trainable_params,
-        )
-        ctx.trainable_params = torchopt.apply_updates(ctx.trainable_params, updates)
-
-        # Post-optimizer hook: surface the post-update parameters so
-        # callbacks tracking weight-update norms can snapshot them.
-        self._control = self._callback_handler.call_event(
-            "on_optimizer_step",
-            self.args,
-            self.state,
-            self._control,
-            trainable_params=ctx.trainable_params,
-        )
+            # Post-optimizer hook: surface the post-update parameters so
+            # callbacks tracking weight-update norms can snapshot them.
+            self._control = self._callback_handler.call_event(
+                "on_optimizer_step",
+                self.args,
+                self.state,
+                self._control,
+                trainable_params=ctx.trainable_params,
+            )
 
         # After ``sync(aux)`` in distributed mode, ``aux.batch_size`` is
         # the cluster-wide realized batch size (sum across ranks); on a
@@ -2128,12 +2144,13 @@ class DPTrainer:
             bs = _eval.find_batch_size(batch) or 0
             if bs == 0:
                 continue
-            loss, logits, labels = self.prediction_step(
-                self._model,
-                batch,
-                prediction_loss_only=ploss_only,
-                ignore_keys=ignore_keys,
-            )
+            with self._perf_tracker.eval(batch_size=bs):
+                loss, logits, labels = self.prediction_step(
+                    self._model,
+                    batch,
+                    prediction_loss_only=ploss_only,
+                    ignore_keys=ignore_keys,
+                )
 
             # Per-batch progress hook (HF parity); progress bars / NES
             # callbacks rely on this firing once per eval batch.
@@ -2230,6 +2247,16 @@ class DPTrainer:
         # we mirror that — ``metrics`` carries only ``loss`` (absent
         # when total_samples == 0).  Caller-level evaluate/predict
         # wrappers add throughput metrics.
+
+        # Opaque per-step performance metrics for the eval pass.
+        # ``last`` is the most recent batch's StepPerf (post-warmup);
+        # we surface ``step_time_sec`` / ``memory_*`` as new fields.
+        # ``samples_per_second`` is emitted here too but the caller's
+        # later ``speed_metrics`` update overwrites it with the
+        # wall-clock aggregate — HF parity wins on the colliding key,
+        # everything else is added by us.
+        if self._perf_tracker.eval.last is not None:
+            metrics.update(self._perf_tracker.eval.last.to_dict())
 
         # HF parity: scalarize numpy / tensor scalars before serialization.
         metrics = _eval.denumpify_detensorize(metrics)
@@ -3145,6 +3172,12 @@ class DPTrainer:
             ).items():
                 for metric_name, value in group_values.items():
                     logs[f"privacy_group_{group_name}_{metric_name}"] = value
+            # Opaque per-step performance metrics (step_time_sec,
+            # samples_per_second, memory_*, clip_sec / noise_sec /
+            # optimizer_sec from ``sp.mark(...)``).  Bare keys; the
+            # reporting-callback rewriter wraps them under ``train/``.
+            if self._perf_tracker.train.last is not None:
+                logs.update(self._perf_tracker.train.last.to_dict())
             self.log(logs, start_time=self._train_start_time)
             ctrl = self._control
             ctrl.should_log = False
