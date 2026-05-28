@@ -416,7 +416,7 @@ For per-model patches and the kernel surface, see
       show_source: true
       heading_level: 3
 
-::: opaque.api.transformers.trainer
+::: opaque.transformers.trainer
     options:
       show_source: true
       heading_level: 3
