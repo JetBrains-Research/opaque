@@ -281,9 +281,9 @@ class TestEndToEnd:
 
         assert isinstance(estimate, OneRunEstimate)
         assert estimate.n_in + estimate.n_out == 50
-        assert 0.0 <= estimate.auc() <= 1.0
-        assert estimate.epsilon_at(delta=0.0) >= 0.0
-        assert estimate.beta_at(alpha=0.1) >= 0.0
+        assert 0.0 <= estimate.attack_auc() <= 1.0
+        assert estimate.eps_delta().epsilon_at(delta=0.0) >= 0.0
+        assert estimate.attack_beta_at(alpha=0.1) >= 0.0
 
     def test_with_collate_fn(self):
         """Test workflow with custom collate_fn on DataLoader."""
