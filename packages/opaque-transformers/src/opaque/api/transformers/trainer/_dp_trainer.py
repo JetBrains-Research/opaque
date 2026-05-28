@@ -181,20 +181,6 @@ class TrainOutput(NamedTuple):
     metrics: dict[str, float]
 
 
-@dataclasses.dataclass(frozen=True)
-class _MFContext:
-    """DP-FTRL provenance carried through the training loop.
-
-    ``strategy`` is the built BandMF / BLT recipe; ``amplifier_factory``
-    produces the raw DpFtrlProcess for a calibrated multiplier so callers
-    (noise construction, checkpoint save) can read
-    ``(n_steps, min_sep, max_participations)`` off it on demand.
-    """
-
-    strategy: Any
-    amplifier_factory: Callable[[float], Any]
-
-
 @dataclasses.dataclass
 class _TrainingContext:
     """Mutable state carried through the training loop."""
@@ -230,7 +216,7 @@ class _TrainingContext:
     # ``FixedClipState`` is a marker without per-state fields.
     clip_norm: Any = None
     mechanism_kind: str = "gaussian"
-    mf: _MFContext | None = None
+    mf: _dpftrl.MFContext | None = None
 
 
 class DPTrainer:
@@ -1079,7 +1065,7 @@ class DPTrainer:
 
         # --- MF strategy (DP-FTRL only) ---
         mechanism_kind = a.privacy_noise_mechanism
-        mf: _MFContext | None = None
+        mf: _dpftrl.MFContext | None = None
         if mechanism_kind != "gaussian":
             mf_strategy = _dpftrl.build_strategy(
                 mechanism_kind,
@@ -1101,7 +1087,9 @@ class DPTrainer:
                 dataset_size=dataset_size,
                 truncated_batch_size=int(tb_raw) if tb_raw is not None else None,
             )
-            mf = _MFContext(strategy=mf_strategy, amplifier_factory=mf_amplifier_factory)
+            mf = _dpftrl.MFContext(
+                strategy=mf_strategy, amplifier_factory=mf_amplifier_factory
+            )
 
         # --- Privacy calibration ---
         target_delta = (
@@ -2877,11 +2865,8 @@ class DPTrainer:
                     if isinstance(a.sampling_kwargs, dict)
                     else None
                 ),
-                mechanism_kwargs=(
-                    a.privacy_noise_mechanism_kwargs
-                    if isinstance(a.privacy_noise_mechanism_kwargs, dict)
-                    else None
-                ),
+                mf=ctx.mf,
+                noise_multiplier=ctx.noise_multiplier,
                 num_bins=ctx.expected_steps_per_epoch,
                 expected_batch_size=int(a.train_batch_size),
             )

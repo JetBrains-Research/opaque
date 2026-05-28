@@ -194,6 +194,21 @@ class TestPerStepWrapper:
         assert isinstance(step_factory(1.0), PerStep)
 
 
+def _mf_band_context(bands: int, sample_rate: float, n_steps: int) -> _dpftrl.MFContext:
+    """Build an ``MFContext`` for BandMF tests — strategy + amplifier."""
+    strategy = _dpftrl.build_strategy("mf_band", {"bands": bands})
+    amplifier_factory = _dpftrl.build_amplifier_factory(
+        sampling_mode="b_min_sep",
+        strategy=strategy,
+        sample_rate=sample_rate,
+        n_steps=n_steps,
+        num_bins=0,
+        dataset_size=0,
+        truncated_batch_size=None,
+    )
+    return _dpftrl.MFContext(strategy=strategy, amplifier_factory=amplifier_factory)
+
+
 class TestBuildSampler:
     def test_poisson(self):
         dataset = _ListDataset(64)
@@ -204,27 +219,52 @@ class TestBuildSampler:
             n_steps=8,
             key=key(0),
             sampling_kwargs=None,
-            mechanism_kwargs=None,
+            mf=None,
+            noise_multiplier=None,
             num_bins=4,
             expected_batch_size=4,
         )
         assert isinstance(sampler, PoissonSampler)
 
-    def test_b_min_sep_sources_bands_from_mechanism_kwargs(self):
+    def test_b_min_sep_reads_bands_and_sampling_prob_from_amplifier(self):
+        from opaque.api.accounting.dpftrl.amplification._b_min_sep import (
+            participation_p_from_per_example_rate,
+        )
+
         dataset = _ListDataset(64)
+        p0, bands, n_steps = 0.05, 4, 8
+        mf = _mf_band_context(bands=bands, sample_rate=p0, n_steps=n_steps)
         sampler = _dpftrl.build_sampler(
             sampling_mode="b_min_sep",
             dataset=dataset,
-            sample_rate=0.1,
-            n_steps=8,
+            sample_rate=p0,
+            n_steps=n_steps,
             key=key(0),
             sampling_kwargs=None,
-            mechanism_kwargs={"bands": 4},
+            mf=mf,
+            noise_multiplier=1.0,
             num_bins=4,
             expected_batch_size=4,
         )
         assert isinstance(sampler, BMinSepSampler)
-        assert sampler.bands == 4
+        assert sampler.bands == bands
+        assert sampler.sampling_prob == participation_p_from_per_example_rate(p0, bands)
+
+    def test_b_min_sep_without_mf_raises(self):
+        dataset = _ListDataset(64)
+        with pytest.raises(ValueError, match="requires a built MFContext"):
+            _dpftrl.build_sampler(
+                sampling_mode="b_min_sep",
+                dataset=dataset,
+                sample_rate=0.05,
+                n_steps=8,
+                key=key(0),
+                sampling_kwargs=None,
+                mf=None,
+                noise_multiplier=1.0,
+                num_bins=4,
+                expected_batch_size=4,
+            )
 
     def test_balls_in_bins(self):
         dataset = _ListDataset(64)
@@ -235,7 +275,8 @@ class TestBuildSampler:
             n_steps=8,
             key=key(0),
             sampling_kwargs=None,
-            mechanism_kwargs=None,
+            mf=None,
+            noise_multiplier=None,
             num_bins=4,
             expected_batch_size=4,
         )
@@ -244,6 +285,7 @@ class TestBuildSampler:
 
     def test_cyclic_poisson(self):
         dataset = _ListDataset(64)
+        mf = _mf_band_context(bands=4, sample_rate=0.1, n_steps=8)
         sampler = _dpftrl.build_sampler(
             sampling_mode="cyclic_poisson",
             dataset=dataset,
@@ -251,7 +293,8 @@ class TestBuildSampler:
             n_steps=8,
             key=key(0),
             sampling_kwargs=None,
-            mechanism_kwargs={"bands": 4},
+            mf=mf,
+            noise_multiplier=1.0,
             num_bins=4,
             expected_batch_size=4,
         )
@@ -266,7 +309,8 @@ class TestBuildSampler:
             n_steps=8,
             key=key(0),
             sampling_kwargs=None,
-            mechanism_kwargs=None,
+            mf=None,
+            noise_multiplier=None,
             num_bins=4,
             expected_batch_size=8,
         )
@@ -282,7 +326,8 @@ class TestBuildSampler:
                 n_steps=8,
                 key=key(0),
                 sampling_kwargs=None,
-                mechanism_kwargs=None,
+                mf=None,
+                noise_multiplier=None,
                 num_bins=4,
                 expected_batch_size=4,
             )
@@ -296,7 +341,8 @@ class TestBuildSampler:
             n_steps=4,
             key=key(0),
             sampling_kwargs={"truncated_batch_size": 8},
-            mechanism_kwargs=None,
+            mf=None,
+            noise_multiplier=None,
             num_bins=4,
             expected_batch_size=4,
         )

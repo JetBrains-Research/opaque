@@ -82,6 +82,8 @@ def _shard_for(
         expected_steps_per_epoch=1,
         total_steps=1,
         current_sampler=None,
+        mf=None,
+        noise_multiplier=None,
     )
     trainer._train_dataloader = None
     loader = trainer.get_train_dataloader()

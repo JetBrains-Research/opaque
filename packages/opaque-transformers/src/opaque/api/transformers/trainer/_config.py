@@ -799,6 +799,22 @@ class TrainingArguments:
             for _k, _v in defaults.items():
                 self.privacy_noise_mechanism_kwargs.setdefault(_k, _v)
 
+        # Privacy-derived sampler parameters are owned by the strategy /
+        # amplifier; the trainer reads them off the built recipe at
+        # sampler-construction time.  Accepting them under
+        # ``sampling_kwargs`` would let the runtime sampler silently
+        # desync from the accountant.
+        _privacy_owned = {"bands", "sampling_prob"}
+        if isinstance(self.sampling_kwargs, dict):
+            _bad = _privacy_owned & self.sampling_kwargs.keys()
+            if _bad:
+                raise ValueError(
+                    f"sampling_kwargs may not carry privacy-derived keys "
+                    f"{sorted(_bad)}; these are owned by "
+                    f"privacy_noise_mechanism_kwargs (the strategy recipe) "
+                    f"and read off the built amplifier at runtime."
+                )
+
         # --- 12. metric_for_best_model must be eval-side -------------------
         if self.load_best_model_at_end and self.metric_for_best_model:
             m = self.metric_for_best_model

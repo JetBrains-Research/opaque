@@ -17,6 +17,7 @@ it with :func:`opaque.dpftrl.accounting.per_step` for the
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable
 from typing import Any
 
@@ -41,6 +42,23 @@ from opaque.dpftrl.accounting import (
 )
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.random.types import RngKey
+
+
+@dataclasses.dataclass(frozen=True)
+class MFContext:
+    """DP-FTRL provenance carried through the training loop.
+
+    ``strategy`` is the built BandMF / BLT recipe; ``amplifier_factory``
+    produces the raw DpFtrlProcess for a calibrated multiplier so callers
+    (noise construction, sampler construction, checkpoint save) can read
+    ``(n_steps, min_sep, max_participations, sampling_prob)`` off it on
+    demand — the recipe + the amplifier are the single source of truth
+    for everything privacy-derived; nothing downstream should re-parse
+    the user's mechanism kwargs.
+    """
+
+    strategy: Any
+    amplifier_factory: Callable[[float], Any]
 
 # Strategy factory dispatch — keyed by ``privacy_noise_mechanism``.
 _STRATEGY_FACTORIES: dict[str, Callable[..., Any]] = {
@@ -179,19 +197,20 @@ def build_sampler(
     n_steps: int,
     key: RngKey,
     sampling_kwargs: dict[str, Any] | None,
-    mechanism_kwargs: dict[str, Any] | None,
+    mf: MFContext | None,
+    noise_multiplier: float | None,
     num_bins: int,
     expected_batch_size: int,
 ) -> Any:
     """Construct the Opaque sampler matching ``sampling_mode``.
 
-    ``bands`` is sourced from ``mechanism_kwargs`` (the canonical
-    ``privacy_noise_mechanism_kwargs['bands']`` for BandMF) with a
-    ``sampling_kwargs['bands']`` fallback for power users who want to
-    decouple sampler bands from mechanism bands.
+    Privacy-derived sampler parameters (``bands``, paper-``p``) are read
+    off the built ``mf`` recipe / amplifier — never off ``sampling_kwargs``
+    or ``mechanism_kwargs`` — so the runtime sampler cannot desync from
+    the accountant.  ``sampling_kwargs`` carries only sampler-ergonomics
+    knobs (e.g. ``truncated_batch_size`` for Poisson cap).
     """
     sk = dict(sampling_kwargs) if sampling_kwargs else {}
-    mk = dict(mechanism_kwargs) if mechanism_kwargs else {}
     if sampling_mode == "poisson":
         tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
         truncated_batch_size = int(tb_raw) if tb_raw is not None else None
@@ -203,12 +222,17 @@ def build_sampler(
             key=key,
         )
     if sampling_mode == "b_min_sep":
-        bands = int(mk.get("bands", sk.get("bands", 1)))
-        sampling_prob = float(sk.get("sampling_prob", sample_rate))
+        if mf is None or noise_multiplier is None:
+            raise ValueError(
+                "sampling_mode='b_min_sep' requires a built MFContext and a "
+                "calibrated noise_multiplier; got mf=None or "
+                "noise_multiplier=None."
+            )
+        amp = mf.amplifier_factory(noise_multiplier)
         return BMinSepSampler(
             dataset,
-            bands=bands,
-            sampling_prob=sampling_prob,
+            bands=int(mf.strategy.bands),
+            sampling_prob=float(amp.sampling_prob),
             n_steps=n_steps,
             key=key,
         )
@@ -220,11 +244,15 @@ def build_sampler(
             key=key,
         )
     if sampling_mode == "cyclic_poisson":
-        bands = int(mk.get("bands", sk.get("bands", 1)))
+        if mf is None:
+            raise ValueError(
+                "sampling_mode='cyclic_poisson' requires a built MFContext; "
+                "got mf=None."
+            )
         return CyclicPoissonSampler(
             dataset,
             sample_rate=sample_rate,
-            bands=bands,
+            bands=int(mf.strategy.bands),
             n_steps=n_steps,
             key=key,
         )
@@ -234,6 +262,7 @@ def build_sampler(
 
 
 __all__ = [
+    "MFContext",
     "build_strategy",
     "build_amplifier_factory",
     "build_step_mechanism_factory",

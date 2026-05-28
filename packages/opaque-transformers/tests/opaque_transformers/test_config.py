@@ -348,6 +348,22 @@ class TestClippingAndSamplingSurfaces:
         args = TrainingArguments(sampling_kwargs='{"max_batch_size": 8}')
         assert args.sampling_kwargs == {"max_batch_size": 8}
 
+    def test_sampling_kwargs_rejects_bands(self):
+        """``bands`` is owned by the strategy, not the sampler kwargs."""
+        with pytest.raises(ValueError, match="privacy-derived keys"):
+            TrainingArguments(
+                privacy_noise_mechanism="mf_band",
+                sampling_kwargs={"bands": 4},
+            )
+
+    def test_sampling_kwargs_rejects_sampling_prob(self):
+        """``sampling_prob`` is derived by the amplifier, not user input."""
+        with pytest.raises(ValueError, match="privacy-derived keys"):
+            TrainingArguments(
+                privacy_noise_mechanism="mf_band",
+                sampling_kwargs={"sampling_prob": 0.1},
+            )
+
 
 class TestMechanismAndSamplerDefaults:
     """``privacy_noise_mechanism`` surface + ``sampling_mode='auto'`` resolver."""
