@@ -2645,9 +2645,10 @@ user-facing installation target.</p>
 <ul>
 <li><strong><a href="auditing/">Auditing</a></strong>: Empirical privacy validation</li>
 <li><code>auditing.coin_flip()</code>, <code>auditing.loss_scores()</code>, <code>auditing.one_run()</code> - Three-step workflow</li>
-<li><code>OneRunEstimate.epsilon_at()</code> - Epsilon bound (one-run method)</li>
+<li><code>OneRunEstimate.epsilon_at()</code>, <code>.delta_at()</code>, <code>.beta_at()</code>, <code>.advantage()</code> - μ-GDP-default Pld-mirror surface</li>
+<li><code>OneRunEstimate.eps_delta()</code> - Mechanism-agnostic (ε, δ)-DP override</li>
 <li>
-<p><code>auc()</code>, <code>beta_at()</code> - Attack metrics</p>
+<p><code>attack_auc()</code>, <code>attack_beta_at()</code> - Attack-side empirical metrics</p>
 </li>
 <li>
 <p><strong><a href="distributed/">Distributed</a></strong>: Multi-GPU training with DDP</p>
@@ -3053,17 +3054,42 @@ user-facing installation target.</p>
 </tr>
 <tr>
 <td><code>OneRunEstimate.epsilon_at()</code></td>
-<td>Epsilon bound (one-run method)</td>
+<td>ε bound (μ-GDP default)</td>
 <td><a href="../user-guide/auditing/">Guide</a></td>
 </tr>
 <tr>
-<td><code>OneRunEstimate.auc()</code></td>
-<td>Membership inference AUC</td>
+<td><code>OneRunEstimate.delta_at()</code></td>
+<td>δ at given ε (μ-GDP default)</td>
 <td><a href="../user-guide/auditing/">Guide</a></td>
 </tr>
 <tr>
 <td><code>OneRunEstimate.beta_at()</code></td>
-<td>Type-II error at given alpha</td>
+<td>Theoretical β at α (μ-GDP)</td>
+<td><a href="../user-guide/auditing/">Guide</a></td>
+</tr>
+<tr>
+<td><code>OneRunEstimate.advantage()</code></td>
+<td>TV at inferred μ̂ (μ-GDP)</td>
+<td><a href="../user-guide/auditing/">Guide</a></td>
+</tr>
+<tr>
+<td><code>OneRunEstimate.eps_delta()</code></td>
+<td>(ε, δ)-DP audit method override</td>
+<td><a href="../user-guide/auditing/">Guide</a></td>
+</tr>
+<tr>
+<td><code>OneRunEstimate.gdp(grid_size=)</code></td>
+<td>μ-GDP method with tunable grid</td>
+<td><a href="../user-guide/auditing/">Guide</a></td>
+</tr>
+<tr>
+<td><code>OneRunEstimate.attack_auc()</code></td>
+<td>Empirical attack AUC</td>
+<td><a href="../user-guide/auditing/">Guide</a></td>
+</tr>
+<tr>
+<td><code>OneRunEstimate.attack_beta_at()</code></td>
+<td>Empirical attack β at given FPR</td>
 <td><a href="../user-guide/auditing/">Guide</a></td>
 </tr>
 </tbody>

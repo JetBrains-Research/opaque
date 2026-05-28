@@ -3223,8 +3223,12 @@ for epoch in range(n_epochs):
 <h2 id="step-4-score-canaries-and-estimate-epsilon">Step 4 — Score canaries and estimate epsilon<a class="anchor-link" href="#step-4-score-canaries-and-estimate-epsilon">¶</a></h2><p><code>loss_scores()</code> computes per-canary membership scores (negated loss)
 using <code>vmap</code>. Passing <code>reference_scores</code> subtracts the untrained
 baseline so the score measures <em>loss reduction</em> from training.</p>
-<p><code>one_run()</code> then performs the likelihood-ratio test from
-Steinke et al. (2023) to estimate epsilon.</p>
+<p><code>one_run()</code> then builds a <code>OneRunEstimate</code>. The estimate exposes a
+Pld-mirror surface (<code>epsilon_at</code>, <code>delta_at</code>, <code>beta_at</code>, <code>advantage</code>)
+that defaults to the <strong>μ-GDP order-statistics test</strong>
+(Xiang et al. 2025) — the tight choice for Gaussian-DP mechanisms like
+DP-SGD. The mechanism-agnostic (ε, δ)-DP fallback is available via
+<code>estimate.eps_delta()</code>.</p>
 </div>
 </div>
 </div>
@@ -3283,13 +3287,13 @@ theoretical bound from privacy accounting.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell">
-<div class="jp-Cell jp-CodeCell jp-Notebook-cell">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [7]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="CodeMirror cm-s-jupyter">
 <div class="zeroclipboard-container">
 <clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-7">
@@ -3309,10 +3313,14 @@ theoretical bound from privacy accounting.</p>
 <span class="n">theoretical_eps</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 
 <span class="n">delta</span> <span class="o">=</span> <span class="mf">1e-5</span>
+<span class="c1"># Default audit method: μ-GDP (Xiang et al. 2025) — tightest for DP-SGD.</span>
 <span class="n">audited_eps</span> <span class="o">=</span> <span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="n">delta</span><span class="p">)</span>
+<span class="c1"># Mechanism-agnostic (ε, δ)-DP fallback (for non-Gaussian-DP mechanisms):</span>
+<span class="n">audited_eps_general</span> <span class="o">=</span> <span class="n">estimate</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">()</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="n">delta</span><span class="p">)</span>
 
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Audited epsilon:      </span><span class="si">{</span><span class="n">audited_eps</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Theoretical epsilon:  </span><span class="si">{</span><span class="n">theoretical_eps</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Audited ε (μ-GDP, default): </span><span class="si">{</span><span class="n">audited_eps</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Audited ε ((ε,δ)-DP):       </span><span class="si">{</span><span class="n">audited_eps_general</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Theoretical ε:              </span><span class="si">{</span><span class="n">theoretical_eps</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 <span class="k">if</span> <span class="n">audited_eps</span> <span class="o">&lt;=</span> <span class="n">theoretical_eps</span><span class="p">:</span>
     <span class="nb">print</span><span class="p">(</span><span class="s2">"OK: audited epsilon is within the theoretical bound."</span><span class="p">)</span>
 <span class="k">else</span><span class="p">:</span>
@@ -3325,29 +3333,18 @@ process = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate) *
 theoretical_eps = process.epsilon_at(1e-5)
 
 delta = 1e-5
+# Default audit method: μ-GDP (Xiang et al. 2025) — tightest for DP-SGD.
 audited_eps = estimate.epsilon_at(delta=delta)
+# Mechanism-agnostic (ε, δ)-DP fallback (for non-Gaussian-DP mechanisms):
+audited_eps_general = estimate.eps_delta().epsilon_at(delta=delta)
 
-print(f"Audited epsilon:      {audited_eps:.2f}")
-print(f"Theoretical epsilon:  {theoretical_eps:.2f}")
+print(f"Audited ε (μ-GDP, default): {audited_eps:.2f}")
+print(f"Audited ε ((ε,δ)-DP):       {audited_eps_general:.2f}")
+print(f"Theoretical ε:              {theoretical_eps:.2f}")
 if audited_eps &lt;= theoretical_eps:
     print("OK: audited epsilon is within the theoretical bound.")
 else:
     print("WARNING: audited epsilon exceeds theoretical bound.")</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Audited epsilon:      0.69
-Theoretical epsilon:  298.83
-OK: audited epsilon is within the theoretical bound.
-</pre>
 </div>
 </div>
 </div>
@@ -3385,13 +3382,13 @@ from out-members. Values near 0.5 mean the model leaks little.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell">
-<div class="jp-Cell jp-CodeCell jp-Notebook-cell">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [8]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="CodeMirror cm-s-jupyter">
 <div class="zeroclipboard-container">
 <clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-8">
@@ -3404,38 +3401,17 @@ from out-members. Values near 0.5 mean the model leaks little.</p>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"AUC:        </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">auc</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"β@α=0.01: </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Attack AUC:        </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Attack β @ α=0.01: </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">attack_beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
-<span class="n">ci</span> <span class="o">=</span> <span class="n">estimate</span><span class="o">.</span><span class="n">auc</span><span class="p">(</span><span class="n">confidence</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"AUC 95% CI: [</span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]"</span><span class="p">)</span>
+<span class="n">ci</span> <span class="o">=</span> <span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">(</span><span class="n">confidence</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Attack AUC 95% CI: [</span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]"</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-8">print(f"AUC:        {estimate.auc():.3f}")
-print(f"β@α=0.01: {estimate.beta_at(alpha=0.01):.3f}")
+<div class="clipboard-copy-txt" id="cell-8">print(f"Attack AUC:        {estimate.attack_auc():.3f}")
+print(f"Attack β @ α=0.01: {estimate.attack_beta_at(alpha=0.01):.3f}")
 
-ci = estimate.auc(confidence=0.95, num_samples=1000, key=key(42))
-print(f"AUC 95% CI: [{ci[0]:.3f}, {ci[1]:.3f}]")</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>AUC:        0.683
-β@α=0.01: 0.978
-</pre>
-</div>
-</div>
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>AUC 95% CI: [0.623, 0.718]
-</pre>
+ci = estimate.attack_auc(confidence=0.95, num_samples=1000, key=key(42))
+print(f"Attack AUC 95% CI: [{ci[0]:.3f}, {ci[1]:.3f}]")</div>
 </div>
 </div>
 </div>
@@ -3518,11 +3494,15 @@ plt.show()</div>
 <h2 id="summary">Summary<a class="anchor-link" href="#summary">¶</a></h2><p>The auditing workflow is three steps after preparing the data:</p>
 <ol>
 <li><strong>Partition</strong> — <code>auditing.coin_flip(dataset, num_canaries=..., key=...)</code></li>
-<li><strong>Train</strong> — on <code>cf.train_subset(dataset)</code> with normal DP-SGD</li>
+<li><strong>Train</strong> — on <code>cf.train_subset(dataset)</code> with normal DP-SGD or DP-FTRL</li>
 <li><strong>Score &amp; estimate</strong> — <code>auditing.loss_scores(...)</code> then
-<code>auditing.one_run(scores, coin_flip=cf)</code></li>
+<code>auditing.one_run(scores, coin_flip=cf)</code>, then query
+<code>estimate.epsilon_at(delta=...)</code> (default: μ-GDP, tightest for
+Gaussian-DP mechanisms). Use <code>estimate.eps_delta().epsilon_at(...)</code>
+for non-Gaussian-DP mechanisms or pure ε-DP.</li>
 </ol>
-<p>See <code>examples/train_causal_lm.py --audit</code> for a complete LLM example.</p>
+<p>See <code>examples/train_causal_lm.py --audit</code> and
+<code>examples/train_dp_ftrl.py --audit</code> for complete LLM examples.</p>
 </div>
 </div>
 </div>

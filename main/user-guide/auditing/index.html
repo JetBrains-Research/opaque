@@ -1031,6 +1031,24 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#default-audit-method-gdp" class="md-nav__link">
+    <span class="md-ellipsis">
+      Default audit method: μ-GDP
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-a-different-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      Choosing a different method
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#integration-with-training" class="md-nav__link">
     <span class="md-ellipsis">
       Integration with training
@@ -1082,18 +1100,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#epsilon-estimation" class="md-nav__link">
+  <a href="#attack-side-metrics" class="md-nav__link">
     <span class="md-ellipsis">
-      Epsilon estimation
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#attack-metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      Attack metrics
+      Attack-side metrics
     </span>
   </a>
   
@@ -2291,6 +2300,24 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#default-audit-method-gdp" class="md-nav__link">
+    <span class="md-ellipsis">
+      Default audit method: μ-GDP
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-a-different-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      Choosing a different method
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#integration-with-training" class="md-nav__link">
     <span class="md-ellipsis">
       Integration with training
@@ -2342,18 +2369,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#epsilon-estimation" class="md-nav__link">
+  <a href="#attack-side-metrics" class="md-nav__link">
     <span class="md-ellipsis">
-      Epsilon estimation
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#attack-metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      Attack metrics
+      Attack-side metrics
     </span>
   </a>
   
@@ -2420,8 +2438,10 @@ Privacy auditing gives empirical lower bounds by running a membership
 inference attack. If the audited epsilon exceeds the theoretical epsilon,
 there is likely a bug in the implementation.</p>
 <h2 id="how-it-works">How it works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
-<p>Opaque implements one-run auditing from
-<a href="https://arxiv.org/abs/2305.08846">Steinke, Nasr, Jagielski (2023)</a>:</p>
+<p>Opaque implements one-run auditing
+(<a href="https://arxiv.org/abs/2305.08846">Steinke, Nasr, Jagielski 2023</a>)
+with the tight order-statistics tests from
+<a href="https://arxiv.org/abs/2509.08704">Xiang, Chen, Kerkouche (2025)</a>:</p>
 <ol>
 <li><strong>Designate canaries.</strong> Randomly select <code>m</code> examples as canaries.</li>
 <li><strong>Flip coins.</strong> For each canary, include or exclude it from training
@@ -2430,8 +2450,8 @@ there is likely a bug in the implementation.</p>
    included.</li>
 <li><strong>Score.</strong> Compute a membership score for each canary (negative loss by
    default — lower loss means more likely a member).</li>
-<li><strong>Test.</strong> Use a likelihood-ratio test to bound epsilon from the scores
-   and coin flips.</li>
+<li><strong>Test.</strong> Convert scores + coin flips into an ε lower bound via the
+   audit-method surface on <code>OneRunEstimate</code>.</li>
 </ol>
 <p>Only one training run is needed, unlike shadow-model approaches.</p>
 <h2 id="quick-start">Quick start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
@@ -2460,34 +2480,76 @@ there is likely a bug in the implementation.</p>
 <a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>    <span class="n">dataloader</span><span class="o">=</span><span class="n">canary_loader</span><span class="p">,</span>
 <a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="p">)</span>
 <a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="c1"># 4. Estimate: build the one-run estimate</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="c1"># 4. Estimate: build the one-run estimate and query ε</span>
 <a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
-<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ε (empirical): </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;AUC: </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">auc</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ε (audit):  </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;AUC (attack): </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
+<h2 id="default-audit-method-gdp">Default audit method: μ-GDP<a class="headerlink" href="#default-audit-method-gdp" title="Permanent link">&para;</a></h2>
+<p><code>OneRunEstimate.epsilon_at(delta=)</code>, <code>.delta_at(epsilon=)</code>, <code>.beta_at(alpha=)</code>,
+and <code>.advantage()</code> all dispatch to the <strong>μ-GDP order-statistics test</strong> from
+Xiang et al. (2025).</p>
+<p>This is the default because every DP mechanism Opaque ships — DP-SGD with
+Gaussian noise, and DP-FTRL with matrix-factorisation Gaussian noise — is
+in the Gaussian-DP family. On these mechanisms the μ-GDP test is <strong>3–10×
+tighter</strong> than the mechanism-agnostic (ε,δ)-DP test (Xiang et al. 2025,
+§5).</p>
+<p>The dispatch requires <code>delta &gt; 0</code>: μ-GDP is incompatible with pure ε-DP.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>                       <span class="c1"># default — μ-GDP</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>    <span class="c1"># stricter confidence</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="mf">4.0</span><span class="p">)</span>        <span class="c1"># specific threshold</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">estimate</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="n">epsilon</span><span class="o">=</span><span class="mf">3.0</span><span class="p">)</span>                        <span class="c1"># inverse along the boundary</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">estimate</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>                          <span class="c1"># theoretical β under μ̂-GDP</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">estimate</span><span class="o">.</span><span class="n">advantage</span><span class="p">()</span>                                  <span class="c1"># TV(μ̂) = 2·Φ(μ̂/2) − 1</span>
+</code></pre></div>
+<h2 id="choosing-a-different-method">Choosing a different method<a class="headerlink" href="#choosing-a-different-method" title="Permanent link">&para;</a></h2>
+<p><code>OneRunEstimate.gdp(grid_size=)</code> returns the underlying μ-GDP method
+object — useful if you want to tune the integration grid or reuse a
+single μ̂ across multiple queries:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">gdp</span> <span class="o">=</span> <span class="n">estimate</span><span class="o">.</span><span class="n">gdp</span><span class="p">(</span><span class="n">grid_size</span><span class="o">=</span><span class="mi">20_000</span><span class="p">)</span>   <span class="c1"># tighter numerics</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">gdp</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">gdp</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+</code></pre></div>
+<p><code>OneRunEstimate.eps_delta()</code> returns the mechanism-agnostic (ε,δ)-DP
+method object. Use it when:</p>
+<ul>
+<li>You audit a non-Gaussian-DP mechanism (Laplace, discrete Gaussian,
+  heavy-tailed noise, …).</li>
+<li>You need pure ε-DP (δ=0) auditing.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">()</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>   <span class="c1"># pure ε-DP</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">estimate</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">()</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>  <span class="c1"># general (ε, δ)-DP fallback</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">estimate</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">()</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="n">epsilon</span><span class="o">=</span><span class="mf">3.0</span><span class="p">)</span>
+</code></pre></div>
+<p><code>EpsDeltaMethod</code> deliberately does <em>not</em> expose <code>beta_at</code> / <code>advantage</code>:
+the (ε,δ)-DP trade-off function is a family envelope, so those metrics
+would be worst-case across the family rather than instance-specific. The
+μ-GDP method's inferred μ̂ pins down a single curve, so its <code>beta_at</code> /
+<code>advantage</code> are sharp.</p>
 <h2 id="integration-with-training">Integration with training<a class="headerlink" href="#integration-with-training" title="Permanent link">&para;</a></h2>
-<p>The three-step API separates concerns: <strong>partition</strong> (before training),
-<strong>score</strong> (after training), <strong>estimate</strong> (compute metrics).</p>
+<p>The four-step API separates concerns: <strong>partition</strong> (before training),
+<strong>train</strong> (unchanged), <strong>score</strong> + <strong>estimate</strong> (after training).</p>
 <h3 id="step-1-partition-before-training">Step 1: Partition before training<a class="headerlink" href="#step-1-partition-before-training" title="Permanent link">&para;</a></h3>
 <p>Call <code>auditing.coin_flip</code> after preparing the dataset:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">cf</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">coin_flip</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">num_canaries</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1"># Remove held-out canaries from training set</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">train_dataset</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">train_indices</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">)))</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">cf</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">coin_flip</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">num_canaries</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># Remove held-out canaries from training set</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">train_dataset</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">train_indices</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">)))</span>
 </code></pre></div>
 <h3 id="step-2-train-normally">Step 2: Train normally<a class="headerlink" href="#step-2-train-normally" title="Permanent link">&para;</a></h3>
 <p>No changes to the training loop. The dataset is already filtered.</p>
 <h3 id="step-3-score-and-estimate-after-training">Step 3: Score and estimate after training<a class="headerlink" href="#step-3-score-and-estimate-after-training" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">per_example_loss_fn</span><span class="p">,</span> <span class="n">trained_params</span><span class="p">,</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">dataloader</span><span class="o">=</span><span class="n">canary_loader</span><span class="p">,</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="p">)</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ε (empirical): </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">per_example_loss_fn</span><span class="p">,</span> <span class="n">trained_params</span><span class="p">,</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">dataloader</span><span class="o">=</span><span class="n">canary_loader</span><span class="p">,</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="p">)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ε (audit): </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>See <a href="https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py">examples/train_causal_lm.py</a>
-for a complete working example with the <code>--audit</code> flag.</p>
+and <a href="https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dp_ftrl.py">examples/train_dp_ftrl.py</a>
+for complete working examples with the <code>--audit</code> flag.</p>
 <h3 id="parameter-reference">Parameter reference<a class="headerlink" href="#parameter-reference" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>batch_argnums</code></strong>: Which positional arguments of <code>loss_fn</code> come from the
@@ -2500,25 +2562,52 @@ for a complete working example with the <code>--audit</code> flag.</p>
 <li><strong><code>reference_scores</code></strong>: Baseline scores from an untrained model. When
   provided, returned scores are <code>scores - reference_scores</code> (loss reduction).</li>
 </ul>
-<h2 id="epsilon-estimation">Epsilon estimation<a class="headerlink" href="#epsilon-estimation" title="Permanent link">&para;</a></h2>
-<p>Epsilon is estimated using the one-run likelihood-ratio test from
-Steinke et al. (2023). For each Pareto-optimal threshold, the test
-tries positive-only, negative-only, and two-sided guesses, taking
-the best result with Bonferroni correction.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>                       <span class="c1"># default significance=0.05</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>    <span class="c1"># stricter confidence</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="mf">4.0</span><span class="p">)</span>        <span class="c1"># specific threshold</span>
-</code></pre></div>
-<h2 id="attack-metrics">Attack metrics<a class="headerlink" href="#attack-metrics" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">auc</span><span class="p">()</span>                  <span class="c1"># ROC AUC (0.5 = random, 1.0 = perfect)</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">estimate</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>    <span class="c1"># Type-II error at 1% FPR</span>
+<h2 id="attack-side-metrics">Attack-side metrics<a class="headerlink" href="#attack-side-metrics" title="Permanent link">&para;</a></h2>
+<p>Independent of the audit method, you can read attack-side empirical
+metrics directly from the estimate:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">()</span>                  <span class="c1"># ROC AUC (0.5 = random, 1.0 = perfect)</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">estimate</span><span class="o">.</span><span class="n">attack_beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>    <span class="c1"># empirical attack β = 1 − TPR at FPR=α</span>
 </code></pre></div>
 <p>AUC confidence intervals:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">ci</span> <span class="o">=</span> <span class="n">estimate</span><span class="o">.</span><span class="n">auc</span><span class="p">(</span><span class="n">confidence</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;AUC 95% CI: [</span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">ci</span> <span class="o">=</span> <span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">(</span><span class="n">confidence</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;AUC 95% CI: [</span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">)</span>
 </code></pre></div>
+<p>The <code>attack_</code> prefix distinguishes these from the (audit-side) <code>beta_at</code>
+that reads the theoretical f-DP β at the inferred μ̂-GDP.</p>
 <h2 id="number-of-canaries">Number of canaries<a class="headerlink" href="#number-of-canaries" title="Permanent link">&para;</a></h2>
-<p>More canaries = tighter bounds:</p>
+<p>The one-run audit has a hard ceiling at <code>ε ≲ ln(m / -ln(α))</code> for a perfect
+attack with <code>m</code> canaries at significance <code>α</code>. Anything above that is
+unreachable regardless of which method you pick:</p>
+<table>
+<thead>
+<tr>
+<th>Canaries m</th>
+<th>Hard ceiling at α=0.05</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 000</td>
+<td>≈ 5.8</td>
+</tr>
+<tr>
+<td>10 000</td>
+<td>≈ 8.1</td>
+</tr>
+<tr>
+<td>100 000</td>
+<td>≈ 10.4</td>
+</tr>
+<tr>
+<td>1 000 000</td>
+<td>≈ 12.7</td>
+</tr>
+</tbody>
+</table>
+<p>Imperfect attacks lower this further. So if you train at <code>ε = 60</code>, the
+audit cannot certify anywhere near it — that's a property of one-run
+auditing, not an Opaque limitation.</p>
+<p>In practice:</p>
 <table>
 <thead>
 <tr>
@@ -2547,12 +2636,12 @@ the best result with Bonferroni correction.</p>
 </table>
 <h2 id="interpreting-results">Interpreting results<a class="headerlink" href="#interpreting-results" title="Permanent link">&para;</a></h2>
 <p>The audited epsilon should be <strong>below</strong> the theoretical epsilon:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>  ε (one-run):          1.50
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>  ε (theoretical):      3.00    ← expected: gap exists
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>  ε (one-run):          1.50
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>  ε (theoretical):      3.00    ← expected: gap exists
 </code></pre></div>
-<p><strong>Gap is expected.</strong> The audit runs a suboptimal attack; the theoretical
-bound is a worst-case upper bound. A large gap is normal, especially in
-high-noise regimes.</p>
+<p><strong>Gap is expected.</strong> The audit runs a suboptimal attack and is capped by
+<code>ln(m)</code>; the theoretical bound is a worst-case upper bound. A large gap is
+normal, especially in high-noise regimes.</p>
 <p><strong>Audited &gt; theoretical is a red flag.</strong> Investigate:</p>
 <ul>
 <li>Gradient clipping applied incorrectly</li>
@@ -2562,6 +2651,7 @@ high-noise regimes.</p>
 </ul>
 <h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
 <ul>
+<li>Xiang, Chen, Kerkouche (2025). <a href="https://arxiv.org/abs/2509.08704">Tight Privacy Auditing in One Run</a>.</li>
 <li>Steinke, Nasr, Jagielski (2023). <a href="https://arxiv.org/abs/2305.08846">Privacy Auditing with One (1) Training Run</a>. NeurIPS 2023.</li>
 <li>Carlini et al. (2022). <a href="https://arxiv.org/abs/2112.03570">Membership Inference Attacks From First Principles</a>.</li>
 </ul>
