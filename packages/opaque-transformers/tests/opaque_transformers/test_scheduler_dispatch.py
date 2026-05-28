@@ -492,6 +492,73 @@ class TestErrors:
 
 
 # ---------------------------------------------------------------------------
+# User-supplied Schedule recipe path
+# ---------------------------------------------------------------------------
+
+
+class TestUserSuppliedRecipe:
+    """``lr_scheduler_type`` accepts a Schedule recipe directly.
+
+    When a recipe is passed, the HF-name dispatch is bypassed and the
+    recipe is returned as-is; ``warmup_steps`` / ``warmup_ratio`` /
+    ``lr_scheduler_kwargs`` are HF-name-dispatch-only and must be unset.
+    """
+
+    def test_recipe_returned_unchanged(self):
+        from opaque.scheduling import cosine_schedule
+
+        recipe = cosine_schedule(
+            init_value=1e-3, end_value=0.0, transition_steps=100
+        )
+        out = build_lr_schedule(
+            _Args(lr_scheduler_type=recipe), num_training_steps=100
+        )
+        assert out is recipe
+        # Pointwise sanity: the recipe drives LR at every step.
+        for step in (0, 25, 50, 75, 99):
+            assert out(step) == pytest.approx(recipe(step))
+
+    def test_warmup_steps_rejected_with_recipe(self):
+        from opaque.scheduling import cosine_schedule
+
+        recipe = cosine_schedule(
+            init_value=1e-3, end_value=0.0, transition_steps=100
+        )
+        with pytest.raises(ValueError, match="warmup_steps / warmup_ratio"):
+            build_lr_schedule(
+                _Args(lr_scheduler_type=recipe, warmup_steps=10),
+                num_training_steps=100,
+            )
+
+    def test_warmup_ratio_rejected_with_recipe(self):
+        from opaque.scheduling import cosine_schedule
+
+        recipe = cosine_schedule(
+            init_value=1e-3, end_value=0.0, transition_steps=100
+        )
+        with pytest.raises(ValueError, match="warmup_steps / warmup_ratio"):
+            build_lr_schedule(
+                _Args(lr_scheduler_type=recipe, warmup_ratio=0.1),
+                num_training_steps=100,
+            )
+
+    def test_kwargs_rejected_with_recipe(self):
+        from opaque.scheduling import cosine_schedule
+
+        recipe = cosine_schedule(
+            init_value=1e-3, end_value=0.0, transition_steps=100
+        )
+        with pytest.raises(ValueError, match="lr_scheduler_kwargs"):
+            build_lr_schedule(
+                _Args(
+                    lr_scheduler_type=recipe,
+                    lr_scheduler_kwargs={"num_cycles": 1.0},
+                ),
+                num_training_steps=100,
+            )
+
+
+# ---------------------------------------------------------------------------
 # HF comma-form parsing (covers the optim_args string shape via the
 # unified _parse_dict_string helper now used by every dict field).
 # ---------------------------------------------------------------------------

@@ -188,6 +188,22 @@ class TestHFFieldNormalization:
         with pytest.raises(ValueError, match="torch_empty_cache_steps"):
             TrainingArguments(torch_empty_cache_steps=0)
 
+    def test_lr_scheduler_type_accepts_schedule_recipe(self):
+        # ``lr_scheduler_type`` accepts a Schedule recipe in addition to
+        # HF-style name strings; the SchedulerType-enum coercion is
+        # skipped for callables.
+        from opaque.scheduling import cosine_schedule
+
+        recipe = cosine_schedule(
+            init_value=1e-3, end_value=0.0, transition_steps=100
+        )
+        args = TrainingArguments(lr_scheduler_type=recipe)
+        assert args.lr_scheduler_type is recipe
+
+    def test_lr_scheduler_type_rejects_non_callable_non_string(self):
+        with pytest.raises(TypeError, match="lr_scheduler_type must be"):
+            TrainingArguments(lr_scheduler_type=42)
+
 
 class TestUnknownKwargs:
     @pytest.mark.parametrize(

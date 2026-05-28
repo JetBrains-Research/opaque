@@ -68,6 +68,7 @@ from functools import cached_property
 from typing import Any
 
 import torch
+from opaque.scheduling.types import Schedule
 from transformers.debug_utils import DebugOption
 from transformers.trainer_utils import SchedulerType
 from transformers.training_args import ParallelMode
@@ -172,7 +173,12 @@ class TrainingArguments:
     clipping_norm: float | dict[str, Any] | str = 1.0
     optim: str = "adamw"
     optim_args: dict[str, Any] | str | None = None
-    lr_scheduler_type: SchedulerType | str = "linear"
+    # Accepts an HF-style name (string or :class:`SchedulerType` enum)
+    # *or* an :data:`~opaque.scheduling.types.Schedule` recipe directly.
+    # When a recipe is supplied, ``warmup_steps``/``warmup_ratio``/
+    # ``lr_scheduler_kwargs`` must be unset — the recipe owns its own
+    # composition (compose ``with_warmup(...)`` yourself).
+    lr_scheduler_type: SchedulerType | str | Schedule = "linear"
     lr_scheduler_kwargs: dict[str, Any] | str | None = field(default_factory=dict)
     warmup_ratio: float = 0.0
     warmup_steps: int = 0
@@ -441,8 +447,17 @@ class TrainingArguments:
             )
         # Keep ``lr_scheduler_type`` as the SchedulerType enum (not
         # ``.value``) so HF utilities that read
-        # ``trainer.args.lr_scheduler_type.value`` keep working.
-        self.lr_scheduler_type = SchedulerType(self.lr_scheduler_type)
+        # ``trainer.args.lr_scheduler_type.value`` keep working.  A
+        # user-supplied ``Schedule`` recipe is left as-is; the recipe
+        # is consumed directly by ``build_lr_schedule``.
+        if isinstance(self.lr_scheduler_type, (str, SchedulerType)):
+            self.lr_scheduler_type = SchedulerType(self.lr_scheduler_type)
+        elif not callable(self.lr_scheduler_type):
+            raise TypeError(
+                f"lr_scheduler_type must be a str, SchedulerType, or "
+                f"Schedule callable; got "
+                f"{type(self.lr_scheduler_type).__name__}."
+            )
 
         if isinstance(self.debug, str):
             self.debug = [DebugOption(s) for s in self.debug.split()]

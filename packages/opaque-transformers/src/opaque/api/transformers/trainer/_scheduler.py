@@ -25,6 +25,7 @@ from opaque.scheduling import (
     with_restarts,
     with_warmup,
 )
+from transformers.trainer_utils import SchedulerType
 
 
 __all__ = [
@@ -99,8 +100,33 @@ def build_lr_schedule(
     ``args.warmup_ratio``, ``args.learning_rate``, and
     ``args.lr_scheduler_kwargs``.  Returns a callable suitable for
     passing as the ``lr`` argument of any torchopt optimizer factory.
+
+    ``args.lr_scheduler_type`` may also be a :data:`Schedule` recipe;
+    in that case the recipe is returned as-is and the HF-name dispatch
+    is bypassed entirely.  Warmup / kwargs args are HF-name-dispatch-
+    only and must be unset for the recipe path.
     """
-    name = args.lr_scheduler_type
+    raw = args.lr_scheduler_type
+    # User-supplied Schedule recipe path.  ``str`` / ``SchedulerType``
+    # are excluded explicitly because both are technically callable
+    # (SchedulerType is an Enum subclass; the class itself is callable
+    # via ``SchedulerType(x)``), but instances of the enum aren't.
+    if not isinstance(raw, (str, SchedulerType)) and callable(raw):
+        if args.warmup_steps or args.warmup_ratio:
+            raise ValueError(
+                "warmup_steps / warmup_ratio are incompatible with a "
+                "user-supplied lr_scheduler_type Schedule; compose "
+                "with_warmup(schedule, ...) into the recipe yourself."
+            )
+        if args.lr_scheduler_kwargs:
+            raise ValueError(
+                "lr_scheduler_kwargs is incompatible with a user-"
+                "supplied lr_scheduler_type Schedule; configure the "
+                "recipe via its constructor instead."
+            )
+        return raw
+
+    name = raw
     if hasattr(name, "value"):
         name = name.value
     base_lr = args.learning_rate
