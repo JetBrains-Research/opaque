@@ -10,21 +10,17 @@ are structured.
 
 from __future__ import annotations
 
-from opaque.api.engine.scheduling._compose import (
-    WarmupStableDecay,
-    WithRestarts,
-    WithWarmup,
-)
-from opaque.api.engine.scheduling._curves import (
-    ConstantSchedule,
-    CosineSchedule,
-    ExponentialSchedule,
-    InverseSqrtSchedule,
-    LinearSchedule,
-    OneMinusSqrtSchedule,
-    PolynomialSchedule,
-    Schedule,
-)
+from opaque.api.engine.scheduling._constant import ConstantSchedule
+from opaque.api.engine.scheduling._cosine import CosineSchedule
+from opaque.api.engine.scheduling._exponential import ExponentialSchedule
+from opaque.api.engine.scheduling._inverse_sqrt import InverseSqrtSchedule
+from opaque.api.engine.scheduling._linear import LinearSchedule
+from opaque.api.engine.scheduling._one_minus_sqrt import OneMinusSqrtSchedule
+from opaque.api.engine.scheduling._polynomial import PolynomialSchedule
+from opaque.api.engine.scheduling._schedule import Schedule
+from opaque.api.engine.scheduling._warmup_stable_decay import WarmupStableDecay
+from opaque.api.engine.scheduling._with_restarts import WithRestarts
+from opaque.api.engine.scheduling._with_warmup import WithWarmup
 
 __all__ = [
     "Schedule",

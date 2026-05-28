@@ -1,8 +1,9 @@
 """Step-indexed scalar schedules — factory functions.
 
-Curves and composition wrappers are frozen, callable recipe dataclasses;
-each factory returns the matching recipe instance.  Call-site usage is
-unchanged from the previous closure-based API::
+Curves and composition wrappers are frozen, callable recipe dataclasses,
+each defined in its own ``_*.py`` impl module.  Factory functions here
+construct the matching recipe — call-site usage is unchanged from the
+previous closure-based API::
 
     from opaque.api.engine.scheduling import cosine_schedule, with_warmup
 
@@ -18,20 +19,16 @@ The recipe classes themselves live in
 type annotations.
 """
 
-from opaque.api.engine.scheduling._compose import (
-    warmup_stable_decay,
-    with_restarts,
-    with_warmup,
-)
-from opaque.api.engine.scheduling._curves import (
-    constant_schedule,
-    cosine_schedule,
-    exponential_schedule,
-    inverse_sqrt_schedule,
-    linear_schedule,
-    one_minus_sqrt_schedule,
-    polynomial_schedule,
-)
+from opaque.api.engine.scheduling._constant import constant_schedule
+from opaque.api.engine.scheduling._cosine import cosine_schedule
+from opaque.api.engine.scheduling._exponential import exponential_schedule
+from opaque.api.engine.scheduling._inverse_sqrt import inverse_sqrt_schedule
+from opaque.api.engine.scheduling._linear import linear_schedule
+from opaque.api.engine.scheduling._one_minus_sqrt import one_minus_sqrt_schedule
+from opaque.api.engine.scheduling._polynomial import polynomial_schedule
+from opaque.api.engine.scheduling._warmup_stable_decay import warmup_stable_decay
+from opaque.api.engine.scheduling._with_restarts import with_restarts
+from opaque.api.engine.scheduling._with_warmup import with_warmup
 
 __all__ = [
     "constant_schedule",
