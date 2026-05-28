@@ -1,8 +1,10 @@
 """Tests for b_min_sep BandMF amplification."""
 
+import pytest
+
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.accounting.dpftrl.amplification._b_min_sep import (
-    _participation_p_from_per_example_rate,
+    participation_p_from_per_example_rate,
 )
 from opaque.dpftrl.noise import band_mf_strategy
 
@@ -10,9 +12,33 @@ from opaque.dpftrl.noise import band_mf_strategy
 def test_p_conversion():
     p0 = 0.05
     b = 8
-    p = _participation_p_from_per_example_rate(p0, b)
+    p = participation_p_from_per_example_rate(p0, b)
     assert p > p0
     assert abs(1.0 / p0 - (1.0 / p + (b - 1))) < 1e-9
+
+
+def test_p_conversion_bands_one_is_identity():
+    assert participation_p_from_per_example_rate(0.07, 1) == 0.07
+
+
+def test_p_conversion_rejects_infeasible_p0():
+    with pytest.raises(ValueError, match="infeasible"):
+        participation_p_from_per_example_rate(p0=0.5, bands=4)
+
+
+def test_sampling_prob_property_matches_helper():
+    strategy = band_mf_strategy(bands=4)
+    inner = ftrl_acc.mf_gaussian(1.0, strategy)
+    p0 = 0.02
+    proc = ftrl_acc.b_min_sep(inner, n_steps=40, p0=p0)
+    assert proc.sampling_prob == participation_p_from_per_example_rate(p0, 4)
+
+
+def test_sampling_prob_degenerates_to_p0_for_bands_one():
+    strategy = band_mf_strategy(bands=1)
+    inner = ftrl_acc.mf_gaussian(1.0, strategy)
+    proc = ftrl_acc.b_min_sep(inner, n_steps=40, p0=0.05)
+    assert proc.sampling_prob == 0.05
 
 
 def test_b_min_sep_smoke_pld():
