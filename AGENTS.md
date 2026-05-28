@@ -27,7 +27,7 @@ ships an `__init__.py`.
 | --- | --- | --- | --- |
 | `opaque` | — | umbrella pin for the default bundle | sub-wheels |
 | `opaque-base` | `opaque.api.base.serialization`; façade `opaque.serialization` | Pure-Python serialization registry + dispatcher (the seam for `state_dict` / `from_state_dict`); no torch / numpy / optree | stdlib only |
-| `opaque-engine` | `opaque.api.engine.{types,pytree,random,serialization,distributed,noise_allocation,clipping,functional,scheduling,profiling}`; façades `opaque.types`, `opaque.pytree`, `opaque.random`, `opaque.distributed`, `opaque.functional`, `opaque.scheduling`, `opaque.profiling` | Torch substrate: pytree wrappers (`ClippedPytree`, `NoisedPytree`, `PerGroup`), `RngKey`, fixed + AUTO-S clipping, schedules + warmup, DDP plumbing, profiler, structural state-dict for tensors/ndarrays/dataclasses, per-group / paired noise stddev math | `opaque-base`, torch, numpy, optree |
+| `opaque-engine` | `opaque.api.engine.{types,pytree,random,serialization,distributed,noise_allocation,clipping,functional,scheduling,profiling,precision}`; façades `opaque.types`, `opaque.pytree`, `opaque.random`, `opaque.distributed`, `opaque.functional`, `opaque.scheduling`, `opaque.profiling`, `opaque.precision` | Torch substrate: pytree wrappers (`ClippedPytree`, `NoisedPytree`, `PerGroup`), `RngKey`, fixed + AUTO-S clipping, schedules + warmup, DDP plumbing, profiler, mixed-precision loss scaling, structural state-dict for tensors/ndarrays/dataclasses, per-group / paired noise stddev math | `opaque-base`, torch, numpy, optree |
 | `opaque-optimizers` | `opaque.api.optimizers`; façade `opaque.optimizers` | Torchopt-based functional optimizer chain (DP-aware AdamW-BC and friends) | `opaque-engine`, torchopt |
 | `opaque-accounting` | `opaque.api.accounting.core` (+ Rust ext); façade `opaque.accounting` | PLD privacy accounting (PyO3 extension at `opaque.api.accounting.core.opaque_accounting`, aliased as `_native`); torch-free | `opaque-base` |
 | `opaque-dpsgd` | `opaque.api.dpsgd.*`, `opaque.api.accounting.dpsgd.*`; façade `opaque.dpsgd` | Gaussian / truncated-Gaussian / per-group noise, adaptive clipping, Poisson + truncated-Poisson samplers, DP-SGD-specific accounting factories | `opaque-engine`, `opaque-accounting` |
@@ -151,9 +151,10 @@ pip install "opaque[all]"                # everything
 
 ### Dependency groups
 
-The root `pyproject.toml` keeps only two dev-facing dependency groups:
+The root `pyproject.toml` keeps three dev-facing dependency groups:
 
 - `dev` — pytest, pytest-cov, ruff, scipy (statistical tests).
+- `examples` — torchopt, datasets, wandb, and everything `examples/` scripts need.
 - `docs` — mkdocs stack.
 
 Everything else lives in the relevant package's
@@ -169,20 +170,15 @@ Everything else lives in the relevant package's
 
 ## Patching model (on-import)
 
-Importing `opaque.performance` applies its patches (HF Triton kernels,
-gradient-checkpointing shims) unless disabled with env vars set **before**
-import — see below.
-
-`opaque.transformers` does **not** mutate Hugging Face globals on import.
-Use `opaque.transformers.patch_all()` for global runtime compat (masking,
-collator, checkpoint hooks), or construct `opaque.transformers.trainer.DPTrainer`,
-which calls `opaque.patches.apply_runtime_patches(compat=True)` and
-`opaque.patches.apply_model_patches(model, compat=True, performance=use_liger_kernel)`
-(`use_liger_kernel` mirrors HF’s Liger-style performance flag).
+Importing `opaque.patches` or `opaque.transformers` automatically applies
+their respective patches. There is no top-level `opaque.patch_all()` —
+each sub-package owns its own patching. Disable selectively with
+sub-package-specific env vars set **before** the import:
 
 ```bash
-OPAQUE_SKIP_PYTORCH_PATCHES=all              # skip all opaque.performance patches
-OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all  # skip HF kernel patches (opaque-patches performance side)
+OPAQUE_SKIP_PYTORCH_PATCHES=all            # skip all opaque.patches torch-level patches
+OPAQUE_SKIP_TRANSFORMERS_PATCHES=all       # skip all opaque.transformers compat patches
+OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all # skip the HF kernel patches
 ```
 
 Fine-grained variables also apply for the performance stack:
@@ -190,13 +186,16 @@ Fine-grained variables also apply for the performance stack:
 `OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES`,
 `OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES`.
 
-Patch layers:
+Patch submodules:
 
-- `opaque.performance` — gradient-checkpointing for `torch.utils.checkpoint`
-  + HF Triton kernel patches (SwiGLU, GeGLU, RoPE, fused CE, LoRA) via
-  `opaque.performance.huggingface`.
-- `opaque.transformers` / `opaque.patches` — DPTrainer applies runtime + model
-  compat explicitly; optional Triton kernels when `use_liger_kernel=True`.
+- `opaque.patches.torch` — gradient-checkpointing for `torch.utils.checkpoint`.
+- `opaque.patches.kernels` — fused Triton kernels (SwiGLU, GeGLU, RoPE,
+  fused CE, LoRA).
+- `opaque.patches.transformers` — HF Transformers model patches
+  (vmap-safe attention, KV cache, per-model component replacements).
+- `opaque.patches.peft` — PEFT/LoRA patches (vmap-safe linear, MLP, QKV).
+- `opaque.transformers` — compatibility-only runtime (Poisson-collator
+  compat, trainer integration).
 
 ## Key architectural notes
 
@@ -284,6 +283,40 @@ Exaone4 / DeepSeek (inherits LLaMA). Text-first; see
   refactor-diary guards and have been removed now that the migration
   is complete.
 
+## MCP tools (agent extensions)
+
+Two MCP extensions provide agent-accessible infrastructure tooling.
+They are installed via the JetBrains AI marketplace — this repo does
+not bundle or configure them.
+
+### jbr-fed-researcher
+
+Skills for individual contributors / experiment work:
+
+| Skill | What it does |
+| --- | --- |
+| `cadence-experiments` | Submit and monitor GPU training runs on Cadence (JetTrain). Default workspace: `JbrFed`. |
+| `wandb-metrics` | Query experiment tracking on `jetbrains.wandb.io`. Default entity: `federated-compute`. |
+| `zenml-experiments` | Manage ML pipelines on `zenml.labs.jb.gg`. Default workspace: `prod`. |
+
+### jbr-fed-team
+
+Skills for team-level coordination:
+
+| Skill | What it does |
+| --- | --- |
+| `youtrack-issues` | Track issues in YouTrack (project `JBRes`, subsystem `Federated Compute`). |
+| `meta-issue-updates` | Post weekly status updates to YouTrack meta issues from meeting notes. |
+
+### Feature-validation agent
+
+An autonomous multi-hour Claude Code agent at
+`.claude/agents/feature-validation.md` that validates code changes by
+running GPU experiments (Cadence) and analyzing results (W&B). It
+designs baseline-vs-variant experiments, gets user approval once, then
+runs fully autonomously using `/loop` for multi-hour monitoring. See
+the agent file for the full protocol.
+
 ## Experiment tracking (W&B)
 
 - Entity: `federated-compute`, Project: `opaque`
@@ -305,6 +338,21 @@ Baseline without kernel patches:
 OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all \
   uv run python examples/train_causal_lm.py --preset mellum-kstack --max-steps 100
 ```
+
+## Cadence presets
+
+GPU training configs in `.cadence/configs/`:
+
+| Preset file | Entry point | Notes |
+| --- | --- | --- |
+| `train_causal_lm (mellum_kstack).yaml` | `train_causal_lm.py --preset mellum-kstack` | Single H200, DP-SGD |
+| `train_dp_ftrl (mellum_kstack).yaml` | `train_dp_ftrl.py --preset mellum-kstack` | Single H200, DP-FTRL |
+| `train_causal_lm (qwen_7b_kstack).yaml` | `train_causal_lm.py` | 7B model, single H200 |
+| `train_causal_lm (mellum_kstack_distributed).yaml` | `train_causal_lm.py --preset mellum-kstack` | Multi-GPU DDP |
+| `train_dp_ftrl (mellum_kstack_distributed).yaml` | `train_dp_ftrl.py --preset mellum-kstack` | Multi-GPU DDP |
+
+Override args via `-e EXTRA_ARGS="--max-steps 200"` and run name via
+`-e RUN_NAME="my-experiment"`.
 
 ## Documentation
 
@@ -348,7 +396,7 @@ the canonical lint / test / Rust-test commands.
   (~30 s cold, cached afterwards). Subsequent syncs are fast (~seconds).
 - The namespace is PEP 420 — there is **no** `opaque.core` import path.
   Public primitives live at `opaque.{types,pytree,random,distributed,
-  functional,scheduling,profiling,serialization,optimizers}` (provided
+  functional,scheduling,profiling,precision,serialization,optimizers}` (provided
   by `opaque-base` + `opaque-engine` + `opaque-optimizers`); stack code
   imports clipping via `opaque.dpsgd.clipping` / `opaque.dpftrl.clipping`.
 - `gaussian_noise` returns `(noise_fn, state)` and the inner `noise_fn` signature

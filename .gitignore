@@ -104,8 +104,7 @@ outputs/
 results/
 output.log
 
-# Claude Code session state
-.claude/
+# Claude Code / Junie — each has its own .gitignore inside
 
 # Hugging Face
 trainer_output/
