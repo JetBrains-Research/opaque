@@ -113,6 +113,67 @@ _DICT_FIELDS: tuple[str, ...] = (
     "optim_args",
 )
 
+# Privacy noise mechanism surface.  ``"gaussian"`` is the DP-SGD baseline;
+# ``"mf_*"`` are DP-FTRL matrix-factorization mechanisms from
+# :mod:`opaque.dpftrl.noise`, dispatched through ``_dpftrl.build_strategy``
+# in :meth:`DPTrainer._setup_training`.
+_MECHANISMS_DPFTRL: frozenset[str] = frozenset(
+    {"mf_band", "mf_blt", "mf_bisr", "mf_bsr", "mf_lambda_cgd", "mf_identity"}
+)
+_MECHANISMS: frozenset[str] = frozenset({"gaussian", *_MECHANISMS_DPFTRL})
+
+# Concrete sampling modes (resolved set; ``"auto"`` is the default field
+# value and is replaced by one of these in ``__post_init__``).
+_SAMPLING_MODES: frozenset[str] = frozenset(
+    {"poisson", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}
+)
+
+# Canonical sampler pairing.  Each mechanism has a single "best" sampler;
+# users opting into a mechanism shouldn't have to remember to pair the
+# sampler too.  ``sampling_mode="auto"`` (the default) resolves via this
+# table.  Explicit ``sampling_mode`` overrides are validated against
+# :data:`_ALLOWED_SAMPLERS` below.
+_SAMPLER_BY_MECHANISM: dict[str, str] = {
+    "gaussian": "poisson",
+    "mf_identity": "poisson",
+    "mf_band": "b_min_sep",
+    "mf_blt": "balls_in_bins",
+    "mf_bisr": "balls_in_bins",
+    "mf_bsr": "balls_in_bins",
+    "mf_lambda_cgd": "balls_in_bins",
+}
+
+# Per-mechanism allow-list for explicit ``sampling_mode`` overrides.
+# ``mf_band`` accepts ``"poisson"`` as a looser-but-valid alternative to
+# its canonical ``"b_min_sep"`` participation pattern; everything else
+# pins a single sampler.
+_ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
+    "gaussian": frozenset({"poisson"}),
+    "mf_identity": frozenset({"poisson"}),
+    "mf_band": frozenset({"b_min_sep", "poisson"}),
+    "mf_blt": frozenset({"balls_in_bins"}),
+    "mf_bisr": frozenset({"balls_in_bins"}),
+    "mf_bsr": frozenset({"balls_in_bins"}),
+    "mf_lambda_cgd": frozenset({"balls_in_bins"}),
+}
+
+# Per-mechanism kwargs defaults auto-filled into
+# ``privacy_noise_mechanism_kwargs`` when the user leaves them blank.
+# Tuned for a Mellum/Kstack-shaped causal-LM target; not universally
+# optimal, just a sensible starting point so ``privacy_noise_mechanism=
+# "mf_band"`` works out of the box.  User-supplied keys win on collision.
+# Keys match the strategy factory signatures in
+# :mod:`opaque.dpftrl.noise` exactly so the trainer can spread the dict
+# into the factory call.
+_MECH_DEFAULTS: dict[str, dict[str, Any]] = {
+    "mf_band": {"bands": 16},
+    "mf_blt": {"max_buffers": 16},
+    "mf_bisr": {"bandwidth": 4},
+    "mf_bsr": {"bandwidth": 8, "alpha": 1.0, "beta": 0.9},
+    "mf_lambda_cgd": {"lambda_": 0.5},
+    "mf_identity": {},
+}
+
 # Optimizer surface is owned by ``_optim``; keep validation logic and
 # aliases in one place so ``TrainingArguments`` and optimizer factory
 # stay in sync.
@@ -349,12 +410,12 @@ class TrainingArguments:
     #: parity with ``sampling_kwargs`` / ``clipping_kwargs``.
     privacy_noise_mechanism_kwargs: dict[str, Any] | str = field(default_factory=dict)
 
-    # ---- Poisson subsampling (cap via ``sampling_kwargs``) ---------------
     # ---- Subsampling (cap via ``sampling_kwargs``) -----------------------
-    # ``"auto"`` (default) resolves to the canonical sampler for the
-    # chosen :attr:`privacy_noise_mechanism` in ``__post_init__`` — for
-    # the current DP-SGD ``"gaussian"`` mechanism that is ``"poisson"``.
-    # Downstream code only ever sees a resolved concrete mode.
+    # ``"auto"`` (default) pairs the sampler with
+    # :attr:`privacy_noise_mechanism` via :data:`_SAMPLER_BY_MECHANISM` in
+    # ``__post_init__``; explicit overrides are validated against
+    # :data:`_ALLOWED_SAMPLERS`.  Downstream code only ever sees a
+    # resolved concrete mode.
     sampling_mode: str = "auto"
     sampling_kwargs: dict[str, Any] | str = field(default_factory=dict)
 
@@ -694,26 +755,65 @@ class TrainingArguments:
                 f"clipping_mode must be 'fixed', 'adaptive', or 'auto'; "
                 f"got {self.clipping_mode!r}."
             )
+        if self.privacy_noise_mechanism not in _MECHANISMS:
+            raise ValueError(
+                f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}; "
+                f"expected one of {sorted(_MECHANISMS)}."
+            )
         # ``sampling_mode="auto"`` resolves to the canonical sampler for
-        # the chosen mechanism.  Today there's only ``"gaussian"`` →
-        # ``"poisson"``; matrix-factorization mechanisms add more rows
-        # to this table when DP-FTRL lands.
-        _SAMPLER_BY_MECHANISM: dict[str, str] = {
-            "gaussian": "poisson",
-        }
+        # the chosen mechanism; explicit values are validated against the
+        # per-mechanism allow-list.  Downstream code only ever sees a
+        # resolved concrete mode.
         if self.sampling_mode == "auto":
-            self.sampling_mode = _SAMPLER_BY_MECHANISM[
-                self.privacy_noise_mechanism
-            ]
-        if self.sampling_mode != "poisson":
+            self.sampling_mode = _SAMPLER_BY_MECHANISM[self.privacy_noise_mechanism]
+        elif self.sampling_mode not in _SAMPLING_MODES:
             raise ValueError(
-                f"sampling_mode must be 'poisson'; got {self.sampling_mode!r}."
+                f"sampling_mode={self.sampling_mode!r}; expected 'auto' or one "
+                f"of {sorted(_SAMPLING_MODES)}."
             )
-        if self.privacy_noise_mechanism != "gaussian":
+        elif self.sampling_mode not in _ALLOWED_SAMPLERS[self.privacy_noise_mechanism]:
             raise ValueError(
-                f"privacy_noise_mechanism must be 'gaussian'; "
-                f"got {self.privacy_noise_mechanism!r}."
+                f"sampling_mode={self.sampling_mode!r} is not valid for "
+                f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}; "
+                f"allowed: {sorted(_ALLOWED_SAMPLERS[self.privacy_noise_mechanism])} "
+                f"(omit sampling_mode or set 'auto' to pick automatically)."
             )
+
+        if self.privacy_noise_mechanism in _MECHANISMS_DPFTRL:
+            # MF privacy proofs require constant per-step record
+            # sensitivity; ``adaptive`` clipping drifts the threshold
+            # across steps and breaks the analysis.  ``fixed`` and
+            # ``auto`` (AUTO-S smooth scaling) both keep sensitivity
+            # constant by construction.
+            if self.clipping_mode == "adaptive":
+                raise ValueError(
+                    f"clipping_mode='adaptive' is incompatible with "
+                    f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}: "
+                    f"matrix-factorization noise requires constant per-step "
+                    f"sensitivity.  Use clipping_mode='fixed' or 'auto'."
+                )
+            # Auto-fill mechanism kwargs from the Mellum-shaped defaults
+            # so a one-line ``privacy_noise_mechanism='mf_band'`` works
+            # out of the box.  User-supplied keys win on collision.
+            defaults = _MECH_DEFAULTS[self.privacy_noise_mechanism]
+            for _k, _v in defaults.items():
+                self.privacy_noise_mechanism_kwargs.setdefault(_k, _v)
+
+        # Privacy-derived sampler parameters are owned by the strategy /
+        # amplifier; the trainer reads them off the built recipe at
+        # sampler-construction time.  Accepting them under
+        # ``sampling_kwargs`` would let the runtime sampler silently
+        # desync from the accountant.
+        _privacy_owned = {"bands", "sampling_prob"}
+        if isinstance(self.sampling_kwargs, dict):
+            _bad = _privacy_owned & self.sampling_kwargs.keys()
+            if _bad:
+                raise ValueError(
+                    f"sampling_kwargs may not carry privacy-derived keys "
+                    f"{sorted(_bad)}; these are owned by "
+                    f"privacy_noise_mechanism_kwargs (the strategy recipe) "
+                    f"and read off the built amplifier at runtime."
+                )
 
         # --- 12. metric_for_best_model must be eval-side -------------------
         if self.load_best_model_at_end and self.metric_for_best_model:

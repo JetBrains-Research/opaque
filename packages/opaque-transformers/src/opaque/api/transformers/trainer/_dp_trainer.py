@@ -38,6 +38,7 @@ from opaque.accounting import calibration as cal
 from opaque.api.engine.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
+from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.functional import make_functional
 from opaque.serialization import (
     from_state_dict as opaque_from_state_dict,
@@ -45,6 +46,7 @@ from opaque.serialization import (
 )
 from . import _checkpoint as ckpt
 from . import _distributed
+from . import _dpftrl
 from . import _eval
 from ._callback import (
     BestModelSaveCallback,
@@ -213,6 +215,8 @@ class _TrainingContext:
     # mode reads the configured value directly because the new
     # ``FixedClipState`` is a marker without per-state fields.
     clip_norm: Any = None
+    mechanism_kind: str = "gaussian"
+    mf: _dpftrl.MFContext | None = None
 
 
 class DPTrainer:
@@ -1052,24 +1056,54 @@ class DPTrainer:
             microbatch_size,
         )
 
+        # --- LR schedule ---
+        # Built early so MF strategies (BandMF / BLT) can consume it for
+        # workload-aware Toeplitz tuning.  The schedule only depends on
+        # ``total_steps``, so moving it ahead of ``_build_mechanism`` is
+        # a no-op for DP-SGD.
+        lr_schedule = self.create_scheduler(num_training_steps=total_steps)
+
+        # --- MF strategy (DP-FTRL only) ---
+        mechanism_kind = a.privacy_noise_mechanism
+        mf: _dpftrl.MFContext | None = None
+        if mechanism_kind != "gaussian":
+            mf_strategy = _dpftrl.build_strategy(
+                mechanism_kind,
+                (
+                    a.privacy_noise_mechanism_kwargs
+                    if isinstance(a.privacy_noise_mechanism_kwargs, dict)
+                    else None
+                ),
+                lr_schedule=lr_schedule,
+            )
+            sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
+            tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
+            mf_amplifier_factory = _dpftrl.build_amplifier_factory(
+                sampling_mode=a.sampling_mode,
+                strategy=mf_strategy,
+                sample_rate=sample_rate,
+                n_steps=total_steps,
+                num_bins=expected_steps_per_epoch,
+                dataset_size=dataset_size,
+                truncated_batch_size=int(tb_raw) if tb_raw is not None else None,
+            )
+            mf = _dpftrl.MFContext(
+                strategy=mf_strategy, amplifier_factory=mf_amplifier_factory
+            )
+
         # --- Privacy calibration ---
         target_delta = (
             a.privacy_target_delta
             if a.privacy_target_delta is not None
             else 1.0 / (dataset_size**1.1)
         )
-        # --- LR schedule ---
-        # Built before the privacy mechanism so future mechanism
-        # families that consume the workload schedule (e.g.
-        # workload-aware Toeplitz tuning for DP-FTRL BandMF / BLT) can
-        # read it at strategy-construction time.  The schedule only
-        # depends on ``total_steps``, so moving it ahead of
-        # ``_build_mechanism`` is a no-op for the current
-        # Gaussian-only path.
-        lr_schedule = self.create_scheduler(num_training_steps=total_steps)
-
         mechanism = self._build_mechanism(
-            a, expected_batch_size, sample_rate, clip_norm, dataset_size
+            a,
+            expected_batch_size,
+            sample_rate,
+            clip_norm,
+            dataset_size,
+            mf_amplifier_factory=mf.amplifier_factory if mf is not None else None,
         )
         noise_multiplier = self._calibrate_noise(
             a,
@@ -1115,21 +1149,38 @@ class DPTrainer:
         # that wrapper at call time and emits a ``NoisedPytree`` whose
         # ``.noise_stddev`` carries the realized σ for downstream
         # consumers (e.g. opaque optimizers' DP bias correction).
-        _gn_extra: dict[str, Any] = {}
-        if isinstance(a.privacy_noise_mechanism_kwargs, dict):
-            for _k, _v in a.privacy_noise_mechanism_kwargs.items():
-                if _k in ("bound", "compute_dtype"):
-                    _gn_extra[_k] = _v
-        make_noise = (
-            functools.partial(gaussian_noise, **_gn_extra)
-            if _gn_extra
-            else gaussian_noise
-        )
-
-        noise_fn, noise_state = make_noise(
-            noise_multiplier=noise_multiplier,
-            key=key(a.seed),
-        )
+        if mechanism_kind == "gaussian":
+            _gn_extra: dict[str, Any] = {}
+            if isinstance(a.privacy_noise_mechanism_kwargs, dict):
+                for _k, _v in a.privacy_noise_mechanism_kwargs.items():
+                    if _k in ("bound", "compute_dtype"):
+                        _gn_extra[_k] = _v
+            make_noise = (
+                functools.partial(gaussian_noise, **_gn_extra)
+                if _gn_extra
+                else gaussian_noise
+            )
+            noise_fn, noise_state = make_noise(
+                noise_multiplier=noise_multiplier,
+                key=key(a.seed),
+            )
+        else:
+            # DP-FTRL: pull the participation context off the raw
+            # amplifier (matches the legacy script's
+            # ``_amp.n_steps`` / ``min_sep`` / ``max_participations``
+            # pattern) so the streaming noise matrix tracks the
+            # calibrated PLD exactly.
+            assert mf is not None
+            _amp = mf.amplifier_factory(noise_multiplier)
+            noise_fn, noise_state = mf_gaussian_noise(
+                trainable_params,
+                mf.strategy,
+                n_steps=int(_amp.n_steps),
+                min_sep=int(_amp.min_sep),
+                max_participations=int(_amp.max_participations),
+                noise_multiplier=noise_multiplier,
+                key=key(a.seed),
+            )
 
         # --- Collate ---
         # Same wrapper used by the eval dataloader so train and eval
@@ -1166,6 +1217,8 @@ class DPTrainer:
             ),
             save_steps_resolved=save_steps_resolved,
             clip_norm=clip_norm,
+            mechanism_kind=mechanism_kind,
+            mf=mf,
         )
 
     def _inner_training_loop(
@@ -2788,24 +2841,34 @@ class DPTrainer:
         # ONE sampler for the whole run.  Resume installs
         # ``ctx.current_sampler`` from a registry-deserialised snapshot
         # before calling here, so the loader picks up the right cursor;
-        # otherwise build a fresh ``PoissonSampler(n_steps=total_steps)``
-        # which iterates end-to-end without per-epoch re-instantiation.
-        # The outer epoch loop is purely a synthetic boundary layer for
-        # HF callbacks, not a sampling-side concept.
+        # otherwise build a fresh sampler bound to the resolved
+        # ``sampling_mode`` (one of the five supported modes —
+        # ``poisson``, ``b_min_sep``, ``balls_in_bins``,
+        # ``cyclic_poisson``, ``sequential``) which iterates end-to-end
+        # without per-epoch re-instantiation.  The outer epoch loop is
+        # purely a synthetic boundary layer for HF callbacks, not a
+        # sampling-side concept.
         if ctx.current_sampler is None:
-            sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
-            tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
-            truncated_batch_size = int(tb_raw) if tb_raw is not None else None
-
-            from opaque.dpsgd.sampling import PoissonSampler
             from opaque.random import key
 
-            ctx.current_sampler = PoissonSampler(
-                dataset,
+            sampler_key = key(
+                a.data_seed if a.data_seed is not None else a.seed
+            )
+            ctx.current_sampler = _dpftrl.build_sampler(
+                sampling_mode=a.sampling_mode,
+                dataset=dataset,
                 sample_rate=ctx.sample_rate,
                 n_steps=ctx.total_steps,
-                truncated_batch_size=truncated_batch_size,
-                key=key(a.data_seed if a.data_seed is not None else a.seed),
+                key=sampler_key,
+                sampling_kwargs=(
+                    a.sampling_kwargs
+                    if isinstance(a.sampling_kwargs, dict)
+                    else None
+                ),
+                mf=ctx.mf,
+                noise_multiplier=ctx.noise_multiplier,
+                num_bins=ctx.expected_steps_per_epoch,
+                expected_batch_size=int(a.train_batch_size),
             )
         sampler = ctx.current_sampler
 
@@ -3179,13 +3242,31 @@ class DPTrainer:
         sample_rate: float,
         clip_norm: Any,
         dataset_size: int,
+        *,
+        mf_amplifier_factory: Callable[[float], Any] | None = None,
     ) -> Callable[..., Any]:
         """Build the privacy accounting mechanism chain.
 
-        The Poisson amplification covers both plain Poisson sampling and
-        the truncated variant: ``dpsgd_acc.poisson`` dispatches internally
+        DP-SGD branch (``privacy_noise_mechanism == "gaussian"``): the
+        Poisson amplification covers both plain Poisson sampling and the
+        truncated variant; ``dpsgd_acc.poisson`` dispatches internally
         when ``truncated_batch_size`` / ``dataset_size`` are supplied.
+
+        DP-FTRL branch (``mf_*`` mechanism): wraps the supplied raw
+        amplifier factory (built in :meth:`_setup_training`) with
+        :func:`opaque.dpftrl.accounting.per_step` so each call returns a
+        per-step composable :class:`DpProcess` that materialises as the
+        true K-step PLD of the deployed N-step mechanism under
+        ``acc |= step`` accumulation.
         """
+        if a.privacy_noise_mechanism != "gaussian":
+            if mf_amplifier_factory is None:
+                raise RuntimeError(
+                    "_build_mechanism reached the DP-FTRL branch without an "
+                    "amplifier factory; _setup_training should populate it."
+                )
+            return _dpftrl.build_step_mechanism_factory(mf_amplifier_factory)
+
         num_groups = len(clip_norm.values) if hasattr(clip_norm, "values") else 1
 
         base = dpsgd_acc.gaussian
@@ -3762,6 +3843,14 @@ class DPTrainer:
             else None
         )
 
+        if ctx.mf is not None:
+            _amp = ctx.mf.amplifier_factory(ctx.noise_multiplier)
+            mf_n_steps: int | None = int(_amp.n_steps)
+            mf_min_sep: int | None = int(_amp.min_sep)
+            mf_max_participations: int | None = int(_amp.max_participations)
+        else:
+            mf_n_steps = mf_min_sep = mf_max_participations = None
+
         ckpt.save_dp_runtime_state(
             os.path.join(ckpt_dir, ckpt.DP_STATE_NAME),
             clip_state=ctx.clip_state,
@@ -3773,6 +3862,10 @@ class DPTrainer:
             expected_steps_per_epoch=ctx.expected_steps_per_epoch,
             expected_batch_size=int(self.args.train_batch_size),
             total_steps=ctx.total_steps,
+            mechanism_kind=ctx.mechanism_kind,
+            mf_n_steps=mf_n_steps,
+            mf_min_sep=mf_min_sep,
+            mf_max_participations=mf_max_participations,
         )
 
     def _save_accountant(self, ckpt_dir: str, accountant: "Accountant") -> None:
@@ -4152,5 +4245,8 @@ class DPTrainer:
             "expected_batch_size": int(a.train_batch_size),
             "expected_steps_per_epoch": (
                 ctx.expected_steps_per_epoch if ctx is not None else None
+            ),
+            "mechanism_kind": (
+                ctx.mechanism_kind if ctx is not None else a.privacy_noise_mechanism
             ),
         }

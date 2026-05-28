@@ -323,6 +323,12 @@ class TestClippingAndSamplingSurfaces:
 
     def test_invalid_sampling_mode_raises(self):
         with pytest.raises(ValueError, match="sampling_mode"):
+            TrainingArguments(sampling_mode="not_a_real_sampler")
+
+    def test_sampling_mode_not_allowed_for_mechanism_raises(self):
+        # ``sequential`` is a valid sampler name on the wider surface but
+        # not paired with the default ``gaussian`` mechanism.
+        with pytest.raises(ValueError, match="sampling_mode"):
             TrainingArguments(sampling_mode="sequential")
 
     def test_sampling_mode_auto_resolves_to_poisson_for_gaussian(self):
@@ -341,6 +347,92 @@ class TestClippingAndSamplingSurfaces:
     def test_sampling_kwargs_json_string_parsed(self):
         args = TrainingArguments(sampling_kwargs='{"max_batch_size": 8}')
         assert args.sampling_kwargs == {"max_batch_size": 8}
+
+    def test_sampling_kwargs_rejects_bands(self):
+        """``bands`` is owned by the strategy, not the sampler kwargs."""
+        with pytest.raises(ValueError, match="privacy-derived keys"):
+            TrainingArguments(
+                privacy_noise_mechanism="mf_band",
+                sampling_kwargs={"bands": 4},
+            )
+
+    def test_sampling_kwargs_rejects_sampling_prob(self):
+        """``sampling_prob`` is derived by the amplifier, not user input."""
+        with pytest.raises(ValueError, match="privacy-derived keys"):
+            TrainingArguments(
+                privacy_noise_mechanism="mf_band",
+                sampling_kwargs={"sampling_prob": 0.1},
+            )
+
+
+class TestMechanismAndSamplerDefaults:
+    """``privacy_noise_mechanism`` surface + ``sampling_mode='auto'`` resolver."""
+
+    def test_default_gaussian_resolves_to_poisson(self):
+        args = TrainingArguments()
+        assert args.privacy_noise_mechanism == "gaussian"
+        assert args.sampling_mode == "poisson"
+
+    def test_unknown_mechanism_rejected(self):
+        with pytest.raises(ValueError, match="privacy_noise_mechanism"):
+            TrainingArguments(privacy_noise_mechanism="laplace")
+
+    @pytest.mark.parametrize(
+        "mechanism,expected_sampler",
+        [
+            ("mf_band", "b_min_sep"),
+            ("mf_blt", "balls_in_bins"),
+            ("mf_bisr", "balls_in_bins"),
+            ("mf_bsr", "balls_in_bins"),
+            ("mf_lambda_cgd", "balls_in_bins"),
+            ("mf_identity", "poisson"),
+        ],
+    )
+    def test_auto_resolves_per_mechanism(self, mechanism, expected_sampler):
+        args = TrainingArguments(privacy_noise_mechanism=mechanism)
+        assert args.sampling_mode == expected_sampler
+
+    def test_mf_band_accepts_poisson_override(self):
+        args = TrainingArguments(
+            privacy_noise_mechanism="mf_band", sampling_mode="poisson"
+        )
+        assert args.sampling_mode == "poisson"
+
+    def test_mf_blt_rejects_poisson_override(self):
+        with pytest.raises(ValueError, match="sampling_mode"):
+            TrainingArguments(
+                privacy_noise_mechanism="mf_blt", sampling_mode="poisson"
+            )
+
+    def test_mf_rejects_adaptive_clipping(self):
+        with pytest.raises(ValueError, match="adaptive"):
+            TrainingArguments(
+                privacy_noise_mechanism="mf_band", clipping_mode="adaptive"
+            )
+
+    def test_mf_kwargs_auto_filled(self):
+        args = TrainingArguments(privacy_noise_mechanism="mf_band")
+        assert args.privacy_noise_mechanism_kwargs == {"bands": 16}
+
+    def test_mf_user_kwargs_win_on_collision(self):
+        args = TrainingArguments(
+            privacy_noise_mechanism="mf_band",
+            privacy_noise_mechanism_kwargs={"bands": 4},
+        )
+        assert args.privacy_noise_mechanism_kwargs == {"bands": 4}
+
+    def test_mf_user_kwargs_merge_with_defaults(self):
+        args = TrainingArguments(
+            privacy_noise_mechanism="mf_bsr",
+            privacy_noise_mechanism_kwargs={"bandwidth": 16},
+        )
+        # Defaults supply ``alpha``/``beta``; user override wins on
+        # ``bandwidth``.
+        assert args.privacy_noise_mechanism_kwargs == {
+            "bandwidth": 16,
+            "alpha": 1.0,
+            "beta": 0.9,
+        }
 
 
 class TestNoiseCalibrationKwargs:
