@@ -10,7 +10,7 @@ Covers:
   ``save_steps % eval_steps == 0`` when both are step-based).
 - Strategy-string validation across the four strategy fields
   (``eval_strategy`` / ``logging_strategy`` / ``save_strategy`` /
-  ``lr_scheduler_type``).
+  ``lr_scheduler``).
 """
 
 from __future__ import annotations
@@ -118,8 +118,8 @@ class TestStrategyCoercion:
             ("save_strategy", "best", "best"),
             ("logging_strategy", "steps", "steps"),
             ("logging_strategy", "epoch", "epoch"),
-            ("lr_scheduler_type", "linear", "linear"),
-            ("lr_scheduler_type", "cosine", "cosine"),
+            ("lr_scheduler", "linear", "linear"),
+            ("lr_scheduler", "cosine", "cosine"),
         ],
     )
     def test_canonical_string_coercion(self, field, value, expected):
@@ -140,9 +140,9 @@ class TestStrategyCoercion:
         with pytest.raises(ValueError):
             TrainingArguments(eval_strategy="completely-bogus")
 
-    def test_unknown_lr_scheduler_type_raises(self):
+    def test_unknown_lr_scheduler_raises(self):
         with pytest.raises(ValueError):
-            TrainingArguments(lr_scheduler_type="not-a-real-scheduler")
+            TrainingArguments(lr_scheduler="not-a-real-scheduler")
 
 
 class TestHFFieldNormalization:
@@ -179,7 +179,7 @@ class TestHFFieldNormalization:
 
     def test_lr_scheduler_kwargs_json_object_is_parsed(self):
         args = TrainingArguments(
-            lr_scheduler_type="cosine",
+            lr_scheduler="cosine",
             lr_scheduler_kwargs='{"num_cycles": "2"}',
         )
         assert args.lr_scheduler_kwargs == {"num_cycles": 2}
@@ -188,8 +188,8 @@ class TestHFFieldNormalization:
         with pytest.raises(ValueError, match="torch_empty_cache_steps"):
             TrainingArguments(torch_empty_cache_steps=0)
 
-    def test_lr_scheduler_type_accepts_schedule_recipe(self):
-        # ``lr_scheduler_type`` accepts a Schedule recipe in addition to
+    def test_lr_scheduler_accepts_schedule_recipe(self):
+        # ``lr_scheduler`` accepts a Schedule recipe in addition to
         # HF-style name strings; the SchedulerType-enum coercion is
         # skipped for callables.
         from opaque.scheduling import cosine_schedule
@@ -197,12 +197,12 @@ class TestHFFieldNormalization:
         recipe = cosine_schedule(
             init_value=1e-3, end_value=0.0, transition_steps=100
         )
-        args = TrainingArguments(lr_scheduler_type=recipe)
-        assert args.lr_scheduler_type is recipe
+        args = TrainingArguments(lr_scheduler=recipe)
+        assert args.lr_scheduler is recipe
 
-    def test_lr_scheduler_type_rejects_non_callable_non_string(self):
-        with pytest.raises(TypeError, match="lr_scheduler_type must be"):
-            TrainingArguments(lr_scheduler_type=42)
+    def test_lr_scheduler_rejects_non_callable_non_string(self):
+        with pytest.raises(TypeError, match="lr_scheduler must be"):
+            TrainingArguments(lr_scheduler=42)
 
 
 class TestUnknownKwargs:

@@ -178,7 +178,7 @@ class TrainingArguments:
     # When a recipe is supplied, ``warmup_steps``/``warmup_ratio``/
     # ``lr_scheduler_kwargs`` must be unset — the recipe owns its own
     # composition (compose ``with_warmup(...)`` yourself).
-    lr_scheduler_type: SchedulerType | str | Schedule = "linear"
+    lr_scheduler: SchedulerType | str | Schedule = "linear"
     lr_scheduler_kwargs: dict[str, Any] | str | None = field(default_factory=dict)
     warmup_ratio: float = 0.0
     warmup_steps: int = 0
@@ -445,18 +445,16 @@ class TrainingArguments:
                 f"save_strategy={self.save_strategy!r}; "
                 f"expected one of {_SAVE_STRATEGIES}"
             )
-        # Keep ``lr_scheduler_type`` as the SchedulerType enum (not
-        # ``.value``) so HF utilities that read
-        # ``trainer.args.lr_scheduler_type.value`` keep working.  A
-        # user-supplied ``Schedule`` recipe is left as-is; the recipe
-        # is consumed directly by ``build_lr_schedule``.
-        if isinstance(self.lr_scheduler_type, (str, SchedulerType)):
-            self.lr_scheduler_type = SchedulerType(self.lr_scheduler_type)
-        elif not callable(self.lr_scheduler_type):
+        # Normalize string / SchedulerType forms to the enum; a
+        # user-supplied ``Schedule`` recipe is left as-is and consumed
+        # directly by ``build_lr_schedule``.
+        if isinstance(self.lr_scheduler, (str, SchedulerType)):
+            self.lr_scheduler = SchedulerType(self.lr_scheduler)
+        elif not callable(self.lr_scheduler):
             raise TypeError(
-                f"lr_scheduler_type must be a str, SchedulerType, or "
+                f"lr_scheduler must be a str, SchedulerType, or "
                 f"Schedule callable; got "
-                f"{type(self.lr_scheduler_type).__name__}."
+                f"{type(self.lr_scheduler).__name__}."
             )
 
         if isinstance(self.debug, str):

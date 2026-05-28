@@ -461,10 +461,10 @@ class TestDPTrainerAdaptiveClipping:
 
 
 class TestDPTrainerLRScheduling:
-    """Test that ``lr_scheduler_type`` and warmup actually take effect."""
+    """Test that ``lr_scheduler`` and warmup actually take effect."""
 
     def test_constant_lr_logged_at_base(self, gpt2_with_lora, tiny_lm_dataset):
-        """lr_scheduler_type='constant' logs base_lr at every step."""
+        """lr_scheduler='constant' logs base_lr at every step."""
         model, tokenizer = gpt2_with_lora
 
         trainer = DPTrainer(
@@ -474,7 +474,7 @@ class TestDPTrainerLRScheduling:
                 max_steps=3,
                 num_train_epochs=1,
                 learning_rate=1e-3,
-                lr_scheduler_type="constant",
+                lr_scheduler="constant",
                 eval_strategy="no",
                 logging_steps=1,
             ),
@@ -507,7 +507,7 @@ class TestDPTrainerLRScheduling:
                 max_steps=5,
                 num_train_epochs=1,
                 learning_rate=1e-3,
-                lr_scheduler_type="linear",
+                lr_scheduler="linear",
                 warmup_steps=2,
                 eval_strategy="no",
                 logging_steps=1,
@@ -559,7 +559,7 @@ class TestDPTrainerLRScheduling:
 
         trainer1 = DPTrainer(
             model=model_const,
-            args=_default_args(lr_scheduler_type="constant", **common),
+            args=_default_args(lr_scheduler="constant", **common),
             processing_class=tok,
             train_dataset=tiny_lm_dataset,
             eval_dataset=tiny_lm_dataset,
@@ -578,7 +578,7 @@ class TestDPTrainerLRScheduling:
 
         trainer2 = DPTrainer(
             model=model_const,
-            args=_default_args(lr_scheduler_type="linear", **common),
+            args=_default_args(lr_scheduler="linear", **common),
             processing_class=tok,
             train_dataset=tiny_lm_dataset,
             eval_dataset=tiny_lm_dataset,
@@ -606,7 +606,7 @@ class TestDPTrainerCheckpointing:
             max_steps=4,
             num_train_epochs=1,
             learning_rate=1e-3,
-            lr_scheduler_type="constant",
+            lr_scheduler="constant",
             eval_strategy="no",
             logging_steps=1,
             output_dir=str(output_dir),

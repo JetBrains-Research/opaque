@@ -1,6 +1,6 @@
 """Tests for opaque.api.transformers.trainer._scheduler.
 
-Verifies that ``build_lr_schedule`` dispatches HF's ``lr_scheduler_type``
+Verifies that ``build_lr_schedule`` dispatches HF's ``lr_scheduler``
 strings to a schedule that reproduces HF's reference behavior pointwise,
 and that deferred / unknown types and bad kwargs raise.
 """
@@ -45,7 +45,7 @@ BASE_LR = 1e-3
 class _Args:
     """Minimal stand-in for TrainingArguments — only the fields the shim reads."""
 
-    lr_scheduler_type: str = "linear"
+    lr_scheduler: str = "linear"
     learning_rate: float = BASE_LR
     warmup_steps: int = 0
     warmup_ratio: float = 0.0
@@ -97,14 +97,14 @@ class TestGetWarmupSteps:
 class TestPointwiseParity:
     def test_constant(self):
         ours = build_lr_schedule(
-            _Args(lr_scheduler_type="constant"), num_training_steps=500
+            _Args(lr_scheduler="constant"), num_training_steps=500
         )
         hf = _hf_lambda(get_constant_schedule)
         _assert_pointwise(ours, hf, 500)
 
     def test_constant_with_warmup(self):
         ours = build_lr_schedule(
-            _Args(lr_scheduler_type="constant_with_warmup", warmup_steps=50),
+            _Args(lr_scheduler="constant_with_warmup", warmup_steps=50),
             num_training_steps=500,
         )
         hf = _hf_lambda(
@@ -114,7 +114,7 @@ class TestPointwiseParity:
 
     def test_linear(self):
         ours = build_lr_schedule(
-            _Args(lr_scheduler_type="linear", warmup_steps=100),
+            _Args(lr_scheduler="linear", warmup_steps=100),
             num_training_steps=1000,
         )
         hf = _hf_lambda(lambda o: get_linear_schedule_with_warmup(o, 100, 1000))
@@ -122,7 +122,7 @@ class TestPointwiseParity:
 
     def test_cosine_default_cycles(self):
         ours = build_lr_schedule(
-            _Args(lr_scheduler_type="cosine", warmup_steps=100),
+            _Args(lr_scheduler="cosine", warmup_steps=100),
             num_training_steps=1000,
         )
         hf = _hf_lambda(lambda o: get_cosine_schedule_with_warmup(o, 100, 1000))
@@ -131,7 +131,7 @@ class TestPointwiseParity:
     def test_cosine_custom_cycles(self):
         ours = build_lr_schedule(
             _Args(
-                lr_scheduler_type="cosine",
+                lr_scheduler="cosine",
                 warmup_steps=100,
                 lr_scheduler_kwargs={"num_cycles": 1.5},
             ),
@@ -144,7 +144,7 @@ class TestPointwiseParity:
 
     def test_polynomial_defaults(self):
         ours = build_lr_schedule(
-            _Args(lr_scheduler_type="polynomial", warmup_steps=100),
+            _Args(lr_scheduler="polynomial", warmup_steps=100),
             num_training_steps=1000,
         )
         hf = _hf_lambda(
@@ -155,7 +155,7 @@ class TestPointwiseParity:
     def test_polynomial_custom_power(self):
         ours = build_lr_schedule(
             _Args(
-                lr_scheduler_type="polynomial",
+                lr_scheduler="polynomial",
                 warmup_steps=100,
                 lr_scheduler_kwargs={"power": 2.0, "lr_end": 1e-9},
             ),
@@ -170,7 +170,7 @@ class TestPointwiseParity:
 
     def test_inverse_sqrt(self):
         ours = build_lr_schedule(
-            _Args(lr_scheduler_type="inverse_sqrt", warmup_steps=100),
+            _Args(lr_scheduler="inverse_sqrt", warmup_steps=100),
             num_training_steps=1000,
         )
         hf = _hf_lambda(lambda o: get_inverse_sqrt_schedule(o, num_warmup_steps=100))
@@ -180,7 +180,7 @@ class TestPointwiseParity:
     def test_cosine_with_restarts(self, k):
         ours = build_lr_schedule(
             _Args(
-                lr_scheduler_type="cosine_with_restarts",
+                lr_scheduler="cosine_with_restarts",
                 warmup_steps=100,
                 lr_scheduler_kwargs={"num_cycles": k},
             ),
@@ -196,7 +196,7 @@ class TestPointwiseParity:
     def test_cosine_with_min_lr_absolute(self):
         ours = build_lr_schedule(
             _Args(
-                lr_scheduler_type="cosine_with_min_lr",
+                lr_scheduler="cosine_with_min_lr",
                 warmup_steps=100,
                 lr_scheduler_kwargs={"min_lr": 1e-4},
             ),
@@ -212,7 +212,7 @@ class TestPointwiseParity:
     def test_cosine_with_min_lr_rate(self):
         ours = build_lr_schedule(
             _Args(
-                lr_scheduler_type="cosine_with_min_lr",
+                lr_scheduler="cosine_with_min_lr",
                 warmup_steps=100,
                 lr_scheduler_kwargs={"min_lr_rate": 0.1},
             ),
@@ -234,7 +234,7 @@ class TestPointwiseParity:
         base_lr = 1e-3
         sched = build_lr_schedule(
             _Args(
-                lr_scheduler_type="cosine_warmup_with_min_lr",
+                lr_scheduler="cosine_warmup_with_min_lr",
                 warmup_steps=100,
                 lr_scheduler_kwargs={"min_lr_rate": 0.1},
             ),
@@ -250,7 +250,7 @@ class TestPointwiseParity:
         base_lr = 1e-3
         sched = build_lr_schedule(
             _Args(
-                lr_scheduler_type="cosine_warmup_with_min_lr",
+                lr_scheduler="cosine_warmup_with_min_lr",
                 warmup_steps=100,
                 lr_scheduler_kwargs={"min_lr_rate": 0.1, "warmup_lr_rate": 0.2},
             ),
@@ -266,7 +266,7 @@ class TestPointwiseParity:
         kwargs = {"min_lr_rate": 0.1}
         ours_warmup = build_lr_schedule(
             _Args(
-                lr_scheduler_type="cosine_warmup_with_min_lr",
+                lr_scheduler="cosine_warmup_with_min_lr",
                 warmup_steps=100,
                 lr_scheduler_kwargs=kwargs,
             ),
@@ -274,7 +274,7 @@ class TestPointwiseParity:
         )
         ours_regular = build_lr_schedule(
             _Args(
-                lr_scheduler_type="cosine_with_min_lr",
+                lr_scheduler="cosine_with_min_lr",
                 warmup_steps=100,
                 lr_scheduler_kwargs=kwargs,
             ),
@@ -288,7 +288,7 @@ class TestPointwiseParity:
         base_lr = 1e-3
         sched = build_lr_schedule(
             _Args(
-                lr_scheduler_type="cosine_warmup_with_min_lr",
+                lr_scheduler="cosine_warmup_with_min_lr",
                 warmup_steps=100,
                 lr_scheduler_kwargs={"min_lr": 1e-5},
             ),
@@ -301,7 +301,7 @@ class TestPointwiseParity:
     def test_warmup_stable_decay_cosine(self):
         ours = build_lr_schedule(
             _Args(
-                lr_scheduler_type="warmup_stable_decay",
+                lr_scheduler="warmup_stable_decay",
                 warmup_steps=50,
                 lr_scheduler_kwargs={"num_decay_steps": 200, "min_lr_ratio": 0.1},
             ),
@@ -321,7 +321,7 @@ class TestPointwiseParity:
     def test_warmup_stable_decay_linear(self):
         ours = build_lr_schedule(
             _Args(
-                lr_scheduler_type="warmup_stable_decay",
+                lr_scheduler="warmup_stable_decay",
                 warmup_steps=50,
                 lr_scheduler_kwargs={"num_decay_steps": 200, "decay_type": "linear"},
             ),
@@ -341,7 +341,7 @@ class TestPointwiseParity:
     def test_warmup_stable_decay_explicit_stable(self):
         ours = build_lr_schedule(
             _Args(
-                lr_scheduler_type="warmup_stable_decay",
+                lr_scheduler="warmup_stable_decay",
                 warmup_steps=50,
                 lr_scheduler_kwargs={"num_decay_steps": 200, "num_stable_steps": 500},
             ),
@@ -369,7 +369,7 @@ class TestPointwiseParity:
         }
         ours = build_lr_schedule(
             _Args(
-                lr_scheduler_type="warmup_stable_decay",
+                lr_scheduler="warmup_stable_decay",
                 warmup_steps=W,
                 lr_scheduler_kwargs=kw,
             ),
@@ -398,7 +398,7 @@ class TestWarmupRatio:
     def test_warmup_ratio_resolves_to_steps(self):
         # ratio 0.05 of 1000 -> 50 warmup steps
         ours = build_lr_schedule(
-            _Args(lr_scheduler_type="linear", warmup_ratio=0.05),
+            _Args(lr_scheduler="linear", warmup_ratio=0.05),
             num_training_steps=1000,
         )
         hf = _hf_lambda(lambda o: get_linear_schedule_with_warmup(o, 50, 1000))
@@ -414,7 +414,7 @@ class TestErrors:
     def test_cosine_with_min_lr_requires_one_of_min_args(self):
         with pytest.raises(ValueError, match="min_lr"):
             build_lr_schedule(
-                _Args(lr_scheduler_type="cosine_with_min_lr", warmup_steps=10),
+                _Args(lr_scheduler="cosine_with_min_lr", warmup_steps=10),
                 num_training_steps=100,
             )
 
@@ -422,7 +422,7 @@ class TestErrors:
         with pytest.raises(ValueError, match="only one"):
             build_lr_schedule(
                 _Args(
-                    lr_scheduler_type="cosine_with_min_lr",
+                    lr_scheduler="cosine_with_min_lr",
                     warmup_steps=10,
                     lr_scheduler_kwargs={"min_lr": 1e-4, "min_lr_rate": 0.1},
                 ),
@@ -432,14 +432,14 @@ class TestErrors:
     def test_cosine_warmup_with_min_lr_requires_min_arg(self):
         with pytest.raises(ValueError, match="min_lr"):
             build_lr_schedule(
-                _Args(lr_scheduler_type="cosine_warmup_with_min_lr", warmup_steps=10),
+                _Args(lr_scheduler="cosine_warmup_with_min_lr", warmup_steps=10),
                 num_training_steps=100,
             )
 
     def test_wsd_requires_num_decay_steps(self):
         with pytest.raises(ValueError, match="num_decay_steps"):
             build_lr_schedule(
-                _Args(lr_scheduler_type="warmup_stable_decay", warmup_steps=10),
+                _Args(lr_scheduler="warmup_stable_decay", warmup_steps=10),
                 num_training_steps=100,
             )
 
@@ -447,7 +447,7 @@ class TestErrors:
         with pytest.raises(ValueError, match="warmup_type"):
             build_lr_schedule(
                 _Args(
-                    lr_scheduler_type="warmup_stable_decay",
+                    lr_scheduler="warmup_stable_decay",
                     warmup_steps=10,
                     lr_scheduler_kwargs={"num_decay_steps": 20, "warmup_type": "bogus"},
                 ),
@@ -458,7 +458,7 @@ class TestErrors:
         with pytest.raises(ValueError, match="decay_type"):
             build_lr_schedule(
                 _Args(
-                    lr_scheduler_type="warmup_stable_decay",
+                    lr_scheduler="warmup_stable_decay",
                     warmup_steps=10,
                     lr_scheduler_kwargs={"num_decay_steps": 20, "decay_type": "bogus"},
                 ),
@@ -466,14 +466,14 @@ class TestErrors:
             )
 
     def test_unknown_type(self):
-        with pytest.raises(ValueError, match="Unknown lr_scheduler_type"):
-            build_lr_schedule(_Args(lr_scheduler_type="bogus"), 100)
+        with pytest.raises(ValueError, match="Unknown lr_scheduler"):
+            build_lr_schedule(_Args(lr_scheduler="bogus"), 100)
 
     def test_unknown_kwargs_for_cosine(self):
         with pytest.raises(ValueError, match="unsupported keys"):
             build_lr_schedule(
                 _Args(
-                    lr_scheduler_type="cosine",
+                    lr_scheduler="cosine",
                     lr_scheduler_kwargs={"power": 2.0},  # 'power' belongs to polynomial
                 ),
                 num_training_steps=100,
@@ -484,7 +484,7 @@ class TestErrors:
         with pytest.raises(ValueError, match="unsupported keys"):
             build_lr_schedule(
                 _Args(
-                    lr_scheduler_type="constant",
+                    lr_scheduler="constant",
                     lr_scheduler_kwargs={"num_cycles": 1.0},
                 ),
                 num_training_steps=100,
@@ -497,7 +497,7 @@ class TestErrors:
 
 
 class TestUserSuppliedRecipe:
-    """``lr_scheduler_type`` accepts a Schedule recipe directly.
+    """``lr_scheduler`` accepts a Schedule recipe directly.
 
     When a recipe is passed, the HF-name dispatch is bypassed and the
     recipe is returned as-is; ``warmup_steps`` / ``warmup_ratio`` /
@@ -511,7 +511,7 @@ class TestUserSuppliedRecipe:
             init_value=1e-3, end_value=0.0, transition_steps=100
         )
         out = build_lr_schedule(
-            _Args(lr_scheduler_type=recipe), num_training_steps=100
+            _Args(lr_scheduler=recipe), num_training_steps=100
         )
         assert out is recipe
         # Pointwise sanity: the recipe drives LR at every step.
@@ -526,7 +526,7 @@ class TestUserSuppliedRecipe:
         )
         with pytest.raises(ValueError, match="warmup_steps / warmup_ratio"):
             build_lr_schedule(
-                _Args(lr_scheduler_type=recipe, warmup_steps=10),
+                _Args(lr_scheduler=recipe, warmup_steps=10),
                 num_training_steps=100,
             )
 
@@ -538,7 +538,7 @@ class TestUserSuppliedRecipe:
         )
         with pytest.raises(ValueError, match="warmup_steps / warmup_ratio"):
             build_lr_schedule(
-                _Args(lr_scheduler_type=recipe, warmup_ratio=0.1),
+                _Args(lr_scheduler=recipe, warmup_ratio=0.1),
                 num_training_steps=100,
             )
 
@@ -551,7 +551,7 @@ class TestUserSuppliedRecipe:
         with pytest.raises(ValueError, match="lr_scheduler_kwargs"):
             build_lr_schedule(
                 _Args(
-                    lr_scheduler_type=recipe,
+                    lr_scheduler=recipe,
                     lr_scheduler_kwargs={"num_cycles": 1.0},
                 ),
                 num_training_steps=100,
@@ -602,7 +602,7 @@ class TestWarmupEdgeCases:
         # ``warmup_steps=0`` and ``warmup_ratio=0`` ⇒ the warmup ramp
         # collapses to the identity transform.  HF and ours must match.
         ours = build_lr_schedule(
-            _Args(lr_scheduler_type="linear", warmup_steps=0),
+            _Args(lr_scheduler="linear", warmup_steps=0),
             num_training_steps=200,
         )
         hf = _hf_lambda(lambda o: get_linear_schedule_with_warmup(o, 0, 200))
@@ -610,7 +610,7 @@ class TestWarmupEdgeCases:
 
     def test_cosine_no_warmup(self):
         ours = build_lr_schedule(
-            _Args(lr_scheduler_type="cosine", warmup_steps=0),
+            _Args(lr_scheduler="cosine", warmup_steps=0),
             num_training_steps=200,
         )
         hf = _hf_lambda(lambda o: get_cosine_schedule_with_warmup(o, 0, 200))
@@ -627,7 +627,7 @@ class TestWarmupEdgeCases:
         # documented as a known divergence.
         N = 100
         ours = build_lr_schedule(
-            _Args(lr_scheduler_type="linear", warmup_steps=N),
+            _Args(lr_scheduler="linear", warmup_steps=N),
             num_training_steps=N,
         )
         hf_lam = _hf_lambda(lambda o: get_linear_schedule_with_warmup(o, N, N))
@@ -646,7 +646,7 @@ class TestWarmupEdgeCases:
         # range.
         N = 100
         ours = build_lr_schedule(
-            _Args(lr_scheduler_type="linear", warmup_steps=200),
+            _Args(lr_scheduler="linear", warmup_steps=200),
             num_training_steps=N,
         )
         hf_lam = _hf_lambda(lambda o: get_linear_schedule_with_warmup(o, 200, N))
@@ -660,14 +660,14 @@ class TestWarmupEdgeCases:
         N = 500
         polynomial = build_lr_schedule(
             _Args(
-                lr_scheduler_type="polynomial",
+                lr_scheduler="polynomial",
                 warmup_steps=50,
                 lr_scheduler_kwargs={"power": 1.0, "lr_end": 0.0},
             ),
             num_training_steps=N,
         )
         linear = build_lr_schedule(
-            _Args(lr_scheduler_type="linear", warmup_steps=50),
+            _Args(lr_scheduler="linear", warmup_steps=50),
             num_training_steps=N,
         )
         for s in range(0, N + 50, 25):

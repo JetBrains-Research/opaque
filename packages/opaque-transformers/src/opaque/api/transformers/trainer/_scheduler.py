@@ -1,6 +1,6 @@
 """HuggingFace-style LR scheduler dispatch for DPTrainer.
 
-Translates :attr:`TrainingArguments.lr_scheduler_type` plus
+Translates :attr:`TrainingArguments.lr_scheduler` plus
 ``lr_scheduler_kwargs`` into a ``Callable[[int], float]`` built from
 :mod:`opaque.scheduling` primitives.
 
@@ -85,7 +85,7 @@ def _validate_kwargs(name: str, kwargs: dict[str, Any]) -> None:
     if extra:
         raise ValueError(
             f"lr_scheduler_kwargs contains unsupported keys for "
-            f"lr_scheduler_type={name!r}: {sorted(extra)}. "
+            f"lr_scheduler={name!r}: {sorted(extra)}. "
             f"Allowed: {sorted(allowed) or '<none>'}."
         )
 
@@ -96,17 +96,17 @@ def build_lr_schedule(
 ) -> Callable[[int], float]:
     """Build a step -> learning-rate callable from HF-style training arguments.
 
-    Reads ``args.lr_scheduler_type``, ``args.warmup_steps``,
+    Reads ``args.lr_scheduler``, ``args.warmup_steps``,
     ``args.warmup_ratio``, ``args.learning_rate``, and
     ``args.lr_scheduler_kwargs``.  Returns a callable suitable for
     passing as the ``lr`` argument of any torchopt optimizer factory.
 
-    ``args.lr_scheduler_type`` may also be a :data:`Schedule` recipe;
+    ``args.lr_scheduler`` may also be a :data:`Schedule` recipe;
     in that case the recipe is returned as-is and the HF-name dispatch
     is bypassed entirely.  Warmup / kwargs args are HF-name-dispatch-
     only and must be unset for the recipe path.
     """
-    raw = args.lr_scheduler_type
+    raw = args.lr_scheduler
     # User-supplied Schedule recipe path.  ``str`` / ``SchedulerType``
     # are excluded explicitly because both are technically callable
     # (SchedulerType is an Enum subclass; the class itself is callable
@@ -115,13 +115,13 @@ def build_lr_schedule(
         if args.warmup_steps or args.warmup_ratio:
             raise ValueError(
                 "warmup_steps / warmup_ratio are incompatible with a "
-                "user-supplied lr_scheduler_type Schedule; compose "
+                "user-supplied lr_scheduler Schedule; compose "
                 "with_warmup(schedule, ...) into the recipe yourself."
             )
         if args.lr_scheduler_kwargs:
             raise ValueError(
                 "lr_scheduler_kwargs is incompatible with a user-"
-                "supplied lr_scheduler_type Schedule; configure the "
+                "supplied lr_scheduler Schedule; configure the "
                 "recipe via its constructor instead."
             )
         return raw
@@ -138,14 +138,14 @@ def build_lr_schedule(
 
     if name in _DEFERRED:
         raise NotImplementedError(
-            f"lr_scheduler_type={name!r} is a recognized HuggingFace scheduler "
+            f"lr_scheduler={name!r} is a recognized HuggingFace scheduler "
             f"that DPTrainer doesn't implement yet. If you need it, please open "
             f"an issue at https://github.com/JetBrains-Research/opaque/issues. "
             f"Currently supported: {sorted(_ALLOWED_KWARGS)}."
         )
     if name not in _ALLOWED_KWARGS:
         raise ValueError(
-            f"Unknown lr_scheduler_type={name!r}. Supported: {sorted(_ALLOWED_KWARGS)}."
+            f"Unknown lr_scheduler={name!r}. Supported: {sorted(_ALLOWED_KWARGS)}."
         )
 
     _validate_kwargs(name, kwargs)

@@ -43,7 +43,7 @@ fields.
 
 ## Phase 1: LR Scheduler — implemented
 
-**Parameters**: `lr_scheduler_type`, `lr_scheduler_kwargs`, `warmup_ratio`, `warmup_steps`.
+**Parameters**: `lr_scheduler`, `lr_scheduler_kwargs`, `warmup_ratio`, `warmup_steps`.
 
 **Implementation**: A callable `step → learning_rate` is passed directly to torchopt's optimizer factories — torchopt's `scale_by_neg_lr` accepts `Callable[[int], float]` and embeds the step counter inside the optimizer state via `scale_by_schedule`. No `torch.optim.lr_scheduler` machinery and no LR scaling on `updates`.
 
@@ -57,7 +57,7 @@ fields.
 
 **Tests**:
 - `packages/opaque-core/tests/scheduling/test_scheduling.py` — pointwise correctness of every primitive.
-- `packages/opaque-transformers/tests/opaque_transformers/test_scheduler_dispatch.py` — HF parity for each `lr_scheduler_type` (≈200 sample points per type at `tol=1e-9`); plus dispatch error cases and warmup edge cases (`warmup_steps=0`, `warmup_steps==num_training_steps`, `warmup_steps>num_training_steps`, `polynomial(power=1.0)` ≡ `linear`).
+- `packages/opaque-transformers/tests/opaque_transformers/test_scheduler_dispatch.py` — HF parity for each `lr_scheduler` (≈200 sample points per type at `tol=1e-9`); plus dispatch error cases and warmup edge cases (`warmup_steps=0`, `warmup_steps==num_training_steps`, `warmup_steps>num_training_steps`, `polynomial(power=1.0)` ≡ `linear`).
 - `packages/opaque-transformers/tests/validation/test_dp_trainer.py::TestDPTrainerLRScheduling` — end-to-end through `DPTrainer.train()`.
 
 **Docs**: `docs/api/schedules.md`, `docs/user-guide/lr-scheduling.md`, plus an LR-scheduling section in `docs/user-guide/huggingface.md`.
@@ -1385,7 +1385,7 @@ available.
 
 | Phase | Parameters | Count | Key file changes |
 |---|---|---|---|
-| **1: LR Scheduler** | lr_scheduler_type, lr_scheduler_kwargs, warmup_ratio, warmup_steps | 4 | `__init__.py`: create_scheduler, loop integration |
+| **1: LR Scheduler** | lr_scheduler, lr_scheduler_kwargs, warmup_ratio, warmup_steps | 4 | `__init__.py`: create_scheduler, loop integration |
 | **2a: Basic saving** | output_dir, overwrite_output_dir, save_strategy, save_steps, save_safetensors, save_only_model, save_total_limit | 7 | `__init__.py` + new `_checkpoint.py` |
 | **2b: Best model** | load_best_model_at_end, metric_for_best_model, greater_is_better | 3 | `__init__.py`, `_checkpoint.py` |
 | **2c: Resume** | resume_from_checkpoint, restore_callback_states, ignore_data_skip | 3 | `__init__.py`, `_checkpoint.py` |

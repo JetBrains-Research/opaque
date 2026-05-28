@@ -341,7 +341,7 @@ class TestPostInitIdempotency:
                 "eval_strategy",
                 "logging_strategy",
                 "save_strategy",
-                "lr_scheduler_type",
+                "lr_scheduler",
                 "logging_steps",
                 "use_cpu",
                 "include_for_metrics",

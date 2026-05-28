@@ -2977,7 +2977,7 @@ class DPTrainer:
         """Build the LR schedule for the run.
 
         Dispatches via :func:`opaque.api.transformers.trainer._scheduler.build_lr_schedule`,
-        which reads ``args.lr_scheduler_type``, ``args.lr_scheduler_kwargs``,
+        which reads ``args.lr_scheduler``, ``args.lr_scheduler_kwargs``,
         and ``args.warmup_steps`` / ``args.warmup_ratio``.  Override in a
         subclass to supply a different schedule.
         """
