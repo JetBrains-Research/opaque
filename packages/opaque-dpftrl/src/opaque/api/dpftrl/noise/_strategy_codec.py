@@ -11,6 +11,13 @@ serializer to resolve a strategy sub-dict back to its class) and
 installs a ``state_dict`` / ``from_state_dict`` pair on the universal
 :mod:`opaque.serialization` registry so direct ``state_dict(strategy)``
 works too.
+
+Recipe-typed fields (e.g. ``lr_schedule: Schedule`` carrying a
+:mod:`opaque.scheduling` recipe dataclass) round-trip through a
+tagged sub-dict ``{"__opaque_recipe__": "CosineSchedule", **fields}``
+so the deserializer can reconstruct the right subtype.  A user
+passing a raw lambda for ``lr_schedule`` still raises — only
+registered recipe classes round-trip cleanly.
 """
 
 from __future__ import annotations
@@ -26,6 +33,12 @@ _STRATEGY_REGISTRY: dict[str, type] = {}
 
 #: ``ClsName → factory_callable`` map.  Populated lazily.
 _STRATEGY_FACTORIES: dict[str, Any] = {}
+
+#: Magic key marking a tagged recipe sub-dict (Schedule, etc.) on the
+#: wire.  The presence of this key in a dict-valued strategy field
+#: tells :func:`deserialize_strategy` to reconstruct the recipe via
+#: :func:`_resolve_recipe_class` rather than passing the dict through.
+_RECIPE_TAG: str = "__opaque_recipe__"
 
 
 def _resolve_factory(cls_name: str):
@@ -62,24 +75,73 @@ def _factory_name_for(cls_name: str) -> str:
     return "".join(out_chars) + "_strategy"
 
 
+def _resolve_recipe_class(name: str) -> type | None:
+    """Look up a registered recipe class by name.
+
+    Currently scoped to :mod:`opaque.scheduling.types` (where the
+    Schedule recipe dataclasses are re-exported for ``isinstance``
+    use); can be extended to other recipe namespaces as more callable
+    dataclass families appear.  Returns ``None`` if the name is not
+    found.
+    """
+    from opaque.scheduling import types as _scheduling_types
+
+    return getattr(_scheduling_types, name, None)
+
+
 def _to_wire(value: Any) -> Any:
     """Coerce a single field value to a JSON/state-dict-friendly form.
 
-    Callables (e.g. an :data:`opaque.scheduling.types.Schedule` ``lr_schedule``)
-    are recipe inputs that cannot be round-tripped through serialization —
-    pass them in fresh when reconstructing the strategy.
+    Callable recipe dataclasses (Schedule recipes from
+    :mod:`opaque.scheduling`) round-trip via a tagged nested sub-dict;
+    raw callables (lambdas, free functions) raise — they have no
+    recipe to serialize and must be re-supplied on the receiving side.
+
+    Nesting is structured (not flat dotted paths) so multi-level
+    recipes — e.g. :class:`~opaque.scheduling.WithWarmup` wrapping a
+    :class:`~opaque.scheduling.CosineSchedule` — round-trip with
+    recursive ``_to_wire`` / :func:`_from_wire` calls.
     """
     if isinstance(value, torch.Tensor):
         return value.detach().cpu().tolist()
     if isinstance(value, tuple):
         return list(value)
     if callable(value) and not isinstance(value, type):
+        cls = _resolve_recipe_class(type(value).__name__)
+        if cls is type(value):
+            from dataclasses import fields as _fields
+
+            payload: dict[str, Any] = {_RECIPE_TAG: type(value).__name__}
+            for f in _fields(value):
+                payload[f.name] = _to_wire(getattr(value, f.name))
+            return payload
         raise TypeError(
             "Cannot serialize a callable strategy field "
-            f"(type={type(value).__name__}).  Schedules and other callable "
-            "recipe inputs must be re-supplied to the strategy factory "
-            "after deserialization."
+            f"(type={type(value).__name__}).  Pass an opaque.scheduling "
+            "recipe (e.g. cosine_schedule(...)) instead of a raw "
+            "function/lambda, or re-supply the callable to the strategy "
+            "factory after deserialization."
         )
+    return value
+
+
+def _from_wire(value: Any) -> Any:
+    """Inverse of :func:`_to_wire` — unpack tagged recipes back into instances.
+
+    Plain (non-tagged) values pass through unchanged.  Tagged recipes
+    are reconstructed by class-name lookup; recursive ``_from_wire``
+    handles nested recipes (e.g. a Schedule inside a WithWarmup).
+    """
+    if isinstance(value, dict) and _RECIPE_TAG in value:
+        cls_name = value[_RECIPE_TAG]
+        cls = _resolve_recipe_class(cls_name)
+        if cls is None:
+            raise ValueError(
+                f"Unknown recipe class {cls_name!r} on strategy field "
+                "(was the schedule defined in opaque.scheduling?)"
+            )
+        kwargs = {k: _from_wire(v) for k, v in value.items() if k != _RECIPE_TAG}
+        return cls(**kwargs)
     return value
 
 
@@ -92,7 +154,12 @@ def serialize_strategy(s: Any) -> dict[str, Any]:
 
 
 def deserialize_strategy(sd: dict[str, Any]) -> Any:
-    """Deserialize a strategy dict by calling its factory."""
+    """Deserialize a strategy dict by calling its factory.
+
+    Tagged recipe sub-dicts (Schedule recipes etc.) are reconstructed
+    via :func:`_from_wire` before reaching the factory so callers don't
+    need to know about the wire format.
+    """
     sd = dict(sd)
     t = sd.pop("type")
     cls = _STRATEGY_REGISTRY.get(t)
@@ -101,7 +168,8 @@ def deserialize_strategy(sd: dict[str, Any]) -> Any:
             f"Unknown strategy type: {t!r} (registered: {sorted(_STRATEGY_REGISTRY)!r})"
         )
     factory = _resolve_factory(t)
-    return factory(**sd)
+    kwargs = {k: _from_wire(v) for k, v in sd.items()}
+    return factory(**kwargs)
 
 
 def register_strategy(cls: type) -> type:
