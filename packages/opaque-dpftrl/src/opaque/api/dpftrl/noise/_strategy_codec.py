@@ -140,9 +140,7 @@ def _from_wire(value: Any) -> Any:
                 f"Unknown recipe class {cls_name!r} on strategy field "
                 "(was the schedule defined in opaque.scheduling?)"
             )
-        kwargs = {
-            k: _from_wire(v) for k, v in value.items() if k != _RECIPE_TAG
-        }
+        kwargs = {k: _from_wire(v) for k, v in value.items() if k != _RECIPE_TAG}
         return cls(**kwargs)
     return value
 
