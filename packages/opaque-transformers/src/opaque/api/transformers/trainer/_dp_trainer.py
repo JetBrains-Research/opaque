@@ -181,6 +181,20 @@ class TrainOutput(NamedTuple):
     metrics: dict[str, float]
 
 
+@dataclasses.dataclass(frozen=True)
+class _MFContext:
+    """DP-FTRL provenance carried through the training loop.
+
+    ``strategy`` is the built BandMF / BLT recipe; ``amplifier_factory``
+    produces the raw DpFtrlProcess for a calibrated multiplier so callers
+    (noise construction, checkpoint save) can read
+    ``(n_steps, min_sep, max_participations)`` off it on demand.
+    """
+
+    strategy: Any
+    amplifier_factory: Callable[[float], Any]
+
+
 @dataclasses.dataclass
 class _TrainingContext:
     """Mutable state carried through the training loop."""
@@ -215,19 +229,8 @@ class _TrainingContext:
     # mode reads the configured value directly because the new
     # ``FixedClipState`` is a marker without per-state fields.
     clip_norm: Any = None
-    # DP-FTRL fields (populated only when ``args.privacy_noise_mechanism``
-    # starts with ``"mf_"``).  ``mf_strategy`` is the built strategy
-    # recipe; ``mf_amplifier_factory`` produces the raw DpFtrlProcess for
-    # the calibrated multiplier so the noise side can read
-    # ``(n_steps, min_sep, max_participations)`` off it.  ``mf_n_steps``
-    # etc. are the amplifier's runtime context, persisted into
-    # ``RuntimeCheckpoint`` for resume rebuild.
     mechanism_kind: str = "gaussian"
-    mf_strategy: Any = None
-    mf_amplifier_factory: Any = None
-    mf_n_steps: int | None = None
-    mf_min_sep: int | None = None
-    mf_max_participations: int | None = None
+    mf: _MFContext | None = None
 
 
 class DPTrainer:
@@ -1076,8 +1079,7 @@ class DPTrainer:
 
         # --- MF strategy (DP-FTRL only) ---
         mechanism_kind = a.privacy_noise_mechanism
-        mf_strategy: Any = None
-        mf_amplifier_factory: Any = None
+        mf: _MFContext | None = None
         if mechanism_kind != "gaussian":
             mf_strategy = _dpftrl.build_strategy(
                 mechanism_kind,
@@ -1099,6 +1101,7 @@ class DPTrainer:
                 dataset_size=dataset_size,
                 truncated_batch_size=int(tb_raw) if tb_raw is not None else None,
             )
+            mf = _MFContext(strategy=mf_strategy, amplifier_factory=mf_amplifier_factory)
 
         # --- Privacy calibration ---
         target_delta = (
@@ -1112,7 +1115,7 @@ class DPTrainer:
             sample_rate,
             clip_norm,
             dataset_size,
-            mf_amplifier_factory=mf_amplifier_factory,
+            mf_amplifier_factory=mf.amplifier_factory if mf is not None else None,
         )
         noise_multiplier = self._calibrate_noise(
             a,
@@ -1158,9 +1161,6 @@ class DPTrainer:
         # that wrapper at call time and emits a ``NoisedPytree`` whose
         # ``.noise_stddev`` carries the realized σ for downstream
         # consumers (e.g. opaque optimizers' DP bias correction).
-        mf_n_steps: int | None = None
-        mf_min_sep: int | None = None
-        mf_max_participations: int | None = None
         if mechanism_kind == "gaussian":
             _gn_extra: dict[str, Any] = {}
             if isinstance(a.privacy_noise_mechanism_kwargs, dict):
@@ -1182,17 +1182,14 @@ class DPTrainer:
             # ``_amp.n_steps`` / ``min_sep`` / ``max_participations``
             # pattern) so the streaming noise matrix tracks the
             # calibrated PLD exactly.
-            assert mf_amplifier_factory is not None
-            _amp = mf_amplifier_factory(noise_multiplier)
-            mf_n_steps = int(_amp.n_steps)
-            mf_min_sep = int(_amp.min_sep)
-            mf_max_participations = int(_amp.max_participations)
+            assert mf is not None
+            _amp = mf.amplifier_factory(noise_multiplier)
             noise_fn, noise_state = mf_gaussian_noise(
                 trainable_params,
-                mf_strategy,
-                n_steps=mf_n_steps,
-                min_sep=mf_min_sep,
-                max_participations=mf_max_participations,
+                mf.strategy,
+                n_steps=int(_amp.n_steps),
+                min_sep=int(_amp.min_sep),
+                max_participations=int(_amp.max_participations),
                 noise_multiplier=noise_multiplier,
                 key=key(a.seed),
             )
@@ -1233,11 +1230,7 @@ class DPTrainer:
             save_steps_resolved=save_steps_resolved,
             clip_norm=clip_norm,
             mechanism_kind=mechanism_kind,
-            mf_strategy=mf_strategy,
-            mf_amplifier_factory=mf_amplifier_factory,
-            mf_n_steps=mf_n_steps,
-            mf_min_sep=mf_min_sep,
-            mf_max_participations=mf_max_participations,
+            mf=mf,
         )
 
     def _inner_training_loop(
@@ -3865,6 +3858,14 @@ class DPTrainer:
             else None
         )
 
+        if ctx.mf is not None:
+            _amp = ctx.mf.amplifier_factory(ctx.noise_multiplier)
+            mf_n_steps: int | None = int(_amp.n_steps)
+            mf_min_sep: int | None = int(_amp.min_sep)
+            mf_max_participations: int | None = int(_amp.max_participations)
+        else:
+            mf_n_steps = mf_min_sep = mf_max_participations = None
+
         ckpt.save_dp_runtime_state(
             os.path.join(ckpt_dir, ckpt.DP_STATE_NAME),
             clip_state=ctx.clip_state,
@@ -3877,9 +3878,9 @@ class DPTrainer:
             expected_batch_size=int(self.args.train_batch_size),
             total_steps=ctx.total_steps,
             mechanism_kind=ctx.mechanism_kind,
-            mf_n_steps=ctx.mf_n_steps,
-            mf_min_sep=ctx.mf_min_sep,
-            mf_max_participations=ctx.mf_max_participations,
+            mf_n_steps=mf_n_steps,
+            mf_min_sep=mf_min_sep,
+            mf_max_participations=mf_max_participations,
         )
 
     def _save_accountant(self, ckpt_dir: str, accountant: "Accountant") -> None:

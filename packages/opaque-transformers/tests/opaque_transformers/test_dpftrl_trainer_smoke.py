@@ -271,7 +271,7 @@ class TestDpFtrlLrScheduleIntegration:
 
     def test_band_mf_strategy_receives_schedule(self, tmp_path):
         # The trainer's live LR schedule should appear on
-        # ``ctx.mf_strategy.lr_schedule``.  Snapshot via an
+        # ``ctx.mf.strategy.lr_schedule``.  Snapshot via an
         # ``on_step_begin`` callback (fires after ``_setup_training``
         # populates ``_ctx``).
         from opaque.scheduling.types import ConstantSchedule, CosineSchedule
@@ -283,9 +283,9 @@ class TestDpFtrlLrScheduleIntegration:
         class _Snap(TrainerCallback):
             def on_step_begin(self, args_, state_, ctrl_, **_kw):
                 trainer = sentinel_trainer["trainer"]
-                strat = getattr(trainer._ctx, "mf_strategy", None)
-                if strat is not None and "ls_cls" not in captured:
-                    captured["ls_cls"] = type(strat.lr_schedule)
+                mf = getattr(trainer._ctx, "mf", None)
+                if mf is not None and "ls_cls" not in captured:
+                    captured["ls_cls"] = type(mf.strategy.lr_schedule)
 
         for sched_type, expected_cls in (
             ("cosine", CosineSchedule),
