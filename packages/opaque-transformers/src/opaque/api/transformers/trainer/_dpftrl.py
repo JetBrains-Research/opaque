@@ -60,6 +60,7 @@ class MFContext:
     strategy: Any
     amplifier_factory: Callable[[float], Any]
 
+
 # Strategy factory dispatch — keyed by ``privacy_noise_mechanism``.
 _STRATEGY_FACTORIES: dict[str, Callable[..., Any]] = {
     "mf_band": band_mf_strategy,
@@ -159,9 +160,7 @@ def build_amplifier_factory(
             _nb: int = num_bins,
             _ns: int = n_steps,
         ) -> Any:
-            return _ftrl_balls_in_bins(
-                mf_gaussian(nm, _s), num_bins=_nb, n_steps=_ns
-            )
+            return _ftrl_balls_in_bins(mf_gaussian(nm, _s), num_bins=_nb, n_steps=_ns)
 
     else:
         raise ValueError(

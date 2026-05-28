@@ -35,7 +35,7 @@ from opaque.api.transformers.trainer._scheduler import (  # noqa: E402
     build_lr_schedule,
     get_warmup_steps,
 )
-from opaque.api.transformers.trainer._config import _parse_dict_string
+from opaque.api.transformers.trainer._config import _parse_dict_string  # noqa: E402
 
 
 BASE_LR = 1e-3
@@ -96,9 +96,7 @@ class TestGetWarmupSteps:
 
 class TestPointwiseParity:
     def test_constant(self):
-        ours = build_lr_schedule(
-            _Args(lr_scheduler="constant"), num_training_steps=500
-        )
+        ours = build_lr_schedule(_Args(lr_scheduler="constant"), num_training_steps=500)
         hf = _hf_lambda(get_constant_schedule)
         _assert_pointwise(ours, hf, 500)
 
@@ -507,12 +505,8 @@ class TestUserSuppliedRecipe:
     def test_recipe_returned_unchanged(self):
         from opaque.scheduling import cosine_schedule
 
-        recipe = cosine_schedule(
-            init_value=1e-3, end_value=0.0, transition_steps=100
-        )
-        out = build_lr_schedule(
-            _Args(lr_scheduler=recipe), num_training_steps=100
-        )
+        recipe = cosine_schedule(init_value=1e-3, end_value=0.0, transition_steps=100)
+        out = build_lr_schedule(_Args(lr_scheduler=recipe), num_training_steps=100)
         assert out is recipe
         # Pointwise sanity: the recipe drives LR at every step.
         for step in (0, 25, 50, 75, 99):
@@ -521,9 +515,7 @@ class TestUserSuppliedRecipe:
     def test_warmup_steps_rejected_with_recipe(self):
         from opaque.scheduling import cosine_schedule
 
-        recipe = cosine_schedule(
-            init_value=1e-3, end_value=0.0, transition_steps=100
-        )
+        recipe = cosine_schedule(init_value=1e-3, end_value=0.0, transition_steps=100)
         with pytest.raises(ValueError, match="warmup_steps / warmup_ratio"):
             build_lr_schedule(
                 _Args(lr_scheduler=recipe, warmup_steps=10),
@@ -533,9 +525,7 @@ class TestUserSuppliedRecipe:
     def test_warmup_ratio_rejected_with_recipe(self):
         from opaque.scheduling import cosine_schedule
 
-        recipe = cosine_schedule(
-            init_value=1e-3, end_value=0.0, transition_steps=100
-        )
+        recipe = cosine_schedule(init_value=1e-3, end_value=0.0, transition_steps=100)
         with pytest.raises(ValueError, match="warmup_steps / warmup_ratio"):
             build_lr_schedule(
                 _Args(lr_scheduler=recipe, warmup_ratio=0.1),
@@ -545,9 +535,7 @@ class TestUserSuppliedRecipe:
     def test_kwargs_rejected_with_recipe(self):
         from opaque.scheduling import cosine_schedule
 
-        recipe = cosine_schedule(
-            init_value=1e-3, end_value=0.0, transition_steps=100
-        )
+        recipe = cosine_schedule(init_value=1e-3, end_value=0.0, transition_steps=100)
         with pytest.raises(ValueError, match="lr_scheduler_kwargs"):
             build_lr_schedule(
                 _Args(

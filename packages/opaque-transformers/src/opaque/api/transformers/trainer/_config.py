@@ -61,7 +61,6 @@ import dataclasses
 import json
 import logging
 import os
-import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import field
 from functools import cached_property
@@ -72,13 +71,13 @@ from opaque.scheduling.types import Schedule
 from transformers.debug_utils import DebugOption
 from transformers.trainer_utils import SchedulerType
 from transformers.training_args import ParallelMode
+from transformers.utils import is_torch_bf16_gpu_available, is_torch_xla_available
 
 
 # Plain-string strategy domains; replaces HF's ``IntervalStrategy`` and
 # ``SaveStrategy`` enums (we never need the enum form, only the value).
 _INTERVAL_STRATEGIES: tuple[str, ...] = ("no", "steps", "epoch")
 _SAVE_STRATEGIES: tuple[str, ...] = ("no", "steps", "epoch", "best")
-from transformers.utils import is_torch_bf16_gpu_available, is_torch_xla_available
 
 
 log = logging.getLogger(__name__)
@@ -566,20 +565,14 @@ class TrainingArguments:
                     "non-zero `eval_steps` or a non-zero `logging_steps`."
                 )
 
-        if (
-            self.logging_strategy == "steps"
-            and self.logging_steps == 0
-        ):
+        if self.logging_strategy == "steps" and self.logging_steps == 0:
             raise ValueError(
                 f"logging strategy {self.logging_strategy} requires "
                 "non-zero --logging_steps"
             )
 
         # Coerce >1 step fields to ``int`` (HF parity).
-        if (
-            self.logging_strategy == "steps"
-            and self.logging_steps > 1
-        ):
+        if self.logging_strategy == "steps" and self.logging_steps > 1:
             if self.logging_steps != int(self.logging_steps):
                 raise ValueError(
                     f"--logging_steps must be an integer if bigger than 1: "
@@ -605,10 +598,7 @@ class TrainingArguments:
                 )
             self.save_steps = int(self.save_steps)
 
-        if (
-            self.load_best_model_at_end
-            and self.save_strategy != "best"
-        ):
+        if self.load_best_model_at_end and self.save_strategy != "best":
             if self.eval_strategy != self.save_strategy:
                 raise ValueError(
                     "--load_best_model_at_end requires the save and eval "
@@ -616,11 +606,7 @@ class TrainingArguments:
                     f"{self.eval_strategy}\n  Save strategy: "
                     f"{self.save_strategy}"
                 )
-            if (
-                self.eval_strategy == "steps"
-                and self.eval_steps
-                and self.save_steps
-            ):
+            if self.eval_strategy == "steps" and self.eval_steps and self.save_steps:
                 if self.save_steps % self.eval_steps != 0:
                     if self.eval_steps < 1 or self.save_steps < 1:
                         if not (self.eval_steps < 1 and self.save_steps < 1):
@@ -857,7 +843,9 @@ class TrainingArguments:
         # ``EvalPrediction`` — currently ``{"inputs", "loss"}``.  Fail fast on
         # unknown keys (HF's runtime ValueError; moved here for consistency).
         _allowed_include_for_metrics = frozenset({"inputs", "loss"})
-        _bad = [k for k in self.include_for_metrics if k not in _allowed_include_for_metrics]
+        _bad = [
+            k for k in self.include_for_metrics if k not in _allowed_include_for_metrics
+        ]
         if _bad:
             raise ValueError(
                 f"include_for_metrics entries must be a subset of "

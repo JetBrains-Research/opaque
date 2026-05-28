@@ -364,6 +364,7 @@ class _PredictionAccumulator:
             return _concat_nested_chunks(cold, padding_value=pad_value)
         return list(cold)
 
+
 def _to_cpu_nested(value: Any) -> Any:
     if isinstance(value, Tensor):
         return value.to("cpu")
@@ -543,5 +544,3 @@ def with_metric_prefix(metrics: dict[str, Any], prefix: str) -> dict[str, Any]:
     for k, v in metrics.items():
         out[k if k.startswith(head) else f"{head}{k}"] = v
     return out
-
-

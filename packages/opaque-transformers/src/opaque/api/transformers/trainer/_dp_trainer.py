@@ -17,14 +17,12 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import functools
-import importlib
 import inspect
 import json
 import logging
 import math
 import os
 import time
-import tempfile
 from collections.abc import Mapping
 from typing import Any, Callable, NamedTuple
 
@@ -89,6 +87,7 @@ __all__ = [
 ]
 
 log = logging.getLogger(__name__)
+
 
 def _callback_matches(
     candidate: type[TrainerCallback] | TrainerCallback,
@@ -166,9 +165,7 @@ def _compile_with_fullgraph_fallback(
                 type(e).__name__,
                 e,
             )
-            fallback = torch.compile(
-                fn, backend=backend, mode=mode, fullgraph=False
-            )
+            fallback = torch.compile(fn, backend=backend, mode=mode, fullgraph=False)
             return fallback(*args, **kwargs)
 
     return wrapper
@@ -416,7 +413,6 @@ class DPTrainer:
         # load_best_model_at_end requirements, …) lives in
         # ``TrainingArguments.__post_init__``.  The trainer reads the
         # validated ``args`` directly — no defensive snapshots.
-        a = self.args
 
         # Callback state.  ``state.{logging,eval,save}_steps`` are
         # resolved from ``args`` via ``state.compute_steps`` so
@@ -563,9 +559,7 @@ class DPTrainer:
         """Remove the first matching callback from the active handler."""
         self._callback_handler.remove_callback(callback)
         self._base_callbacks = [
-            cb
-            for cb in self._base_callbacks
-            if not _callback_matches(cb, callback)
+            cb for cb in self._base_callbacks if not _callback_matches(cb, callback)
         ]
 
     def pop_callback(
@@ -575,9 +569,7 @@ class DPTrainer:
         """Pop and return the first matching callback from the active handler."""
         popped = self._callback_handler.pop_callback(callback)
         self._base_callbacks = [
-            cb
-            for cb in self._base_callbacks
-            if not _callback_matches(cb, callback)
+            cb for cb in self._base_callbacks if not _callback_matches(cb, callback)
         ]
         return popped
 
@@ -1426,7 +1418,9 @@ class DPTrainer:
                         if self._ddp.is_distributed and getattr(
                             a, "average_tokens_across_devices", True
                         ):
-                            from opaque.api.engine.distributed._state import reduce_scalar
+                            from opaque.api.engine.distributed._state import (
+                                reduce_scalar,
+                            )
 
                             n_tokens = int(
                                 reduce_scalar(
@@ -1840,9 +1834,7 @@ class DPTrainer:
         output_logits = output.get("logits")
 
         if self._compute_loss_func is not None:
-            labels = next(
-                (inputs[k] for k in self._label_names if k in inputs), None
-            )
+            labels = next((inputs[k] for k in self._label_names if k in inputs), None)
             loss = self._compute_loss_func(output, labels)
         else:
             loss = output.get("loss")
@@ -1859,12 +1851,9 @@ class DPTrainer:
         # honored.  Idempotent w.r.t. the kernel's smoothed loss: both
         # paths converge to the same math when ``label_smoothing > 0``.
         if smoothing > 0.0 and output_logits is not None:
-            label_key = next(
-                (k for k in self._label_names if k in inputs), None
-            )
+            label_key = next((k for k in self._label_names if k in inputs), None)
             labels_tensor = (
-                inputs.get(label_key) if label_key is not None
-                else inputs.get("labels")
+                inputs.get(label_key) if label_key is not None else inputs.get("labels")
             )
             if labels_tensor is not None:
                 if (
@@ -1968,9 +1957,7 @@ class DPTrainer:
         )
 
         if use_per_example_loss:
-            vmapped_fn, batch_argnums, batch_keys = (
-                self._get_eval_per_example_loss_fn()
-            )
+            vmapped_fn, batch_argnums, batch_keys = self._get_eval_per_example_loss_fn()
             if self._ctx is not None:
                 trainable = self._ctx.trainable_params
             else:
@@ -1985,9 +1972,7 @@ class DPTrainer:
                 if was_training:
                     self._model.eval()
                 try:
-                    per_example_loss, logits_tensor = vmapped_fn(
-                        trainable, *batch_args
-                    )
+                    per_example_loss, logits_tensor = vmapped_fn(trainable, *batch_args)
                 finally:
                     if was_training:
                         self._model.train()
@@ -2517,7 +2502,6 @@ class DPTrainer:
             return [self._prepare_input(v) for v in value]
         return value
 
-
     def _set_signature_columns_if_needed(self) -> None:
         if self._signature_columns is not None or self._signature_columns_unavailable:
             return
@@ -2878,9 +2862,7 @@ class DPTrainer:
         if ctx.current_sampler is None:
             from opaque.random import key
 
-            sampler_key = key(
-                a.data_seed if a.data_seed is not None else a.seed
-            )
+            sampler_key = key(a.data_seed if a.data_seed is not None else a.seed)
             ctx.current_sampler = _dpftrl.build_sampler(
                 sampling_mode=a.sampling_mode,
                 dataset=dataset,
@@ -2888,9 +2870,7 @@ class DPTrainer:
                 n_steps=ctx.total_steps,
                 key=sampler_key,
                 sampling_kwargs=(
-                    a.sampling_kwargs
-                    if isinstance(a.sampling_kwargs, dict)
-                    else None
+                    a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else None
                 ),
                 mf=ctx.mf,
                 noise_multiplier=ctx.noise_multiplier,
@@ -3222,6 +3202,7 @@ class DPTrainer:
             def pre_clip(g):
                 return scaler.unscale_grads(g, self._loss_scaler_state)
         else:
+
             def pre_clip(g):
                 return g
 
@@ -3417,7 +3398,9 @@ class DPTrainer:
         ``strict=True``; the state dict is sourced from the model
         itself so every key the model expects is already present.
         """
-        expected = {name for name, p in self._model.named_parameters() if p.requires_grad}
+        expected = {
+            name for name, p in self._model.named_parameters() if p.requires_grad
+        }
         got = set(trainable_params)
         if got != expected:
             missing = expected - got
@@ -4190,8 +4173,8 @@ class DPTrainer:
                 continue
             payload = cb_states[name]
             attrs = payload.get("attributes") or {} if isinstance(payload, dict) else {}
-            for key, value in attrs.items():
-                setattr(cb, key, value)
+            for attr_key, value in attrs.items():
+                setattr(cb, attr_key, value)
 
     def _warn_on_arg_drift(self, runtime: "ckpt.RuntimeCheckpoint") -> None:
         """Surface drift between the saved checkpoint and current ``args``.
@@ -4268,9 +4251,7 @@ class DPTrainer:
                 ctx.target_delta if ctx is not None else a.privacy_target_delta
             ),
             "noise_multiplier": (
-                ctx.noise_multiplier
-                if ctx is not None
-                else a.privacy_noise_multiplier
+                ctx.noise_multiplier if ctx is not None else a.privacy_noise_multiplier
             ),
             "total_steps": (
                 ctx.total_steps if ctx is not None else self._predict_total_steps()

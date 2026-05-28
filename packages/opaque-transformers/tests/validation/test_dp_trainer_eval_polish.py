@@ -418,7 +418,9 @@ class TestPredictionStepTupleCollapsePure:
         trainer = DPTrainer(
             model=_MultiOutputStubModel(fake_out),
             args=_args(tmp_path),
-            train_dataset=[{"input_ids": torch.zeros(3, dtype=torch.long), "labels": 0}],
+            train_dataset=[
+                {"input_ids": torch.zeros(3, dtype=torch.long), "labels": 0}
+            ],
             eval_dataset=[{"input_ids": torch.zeros(3, dtype=torch.long), "labels": 0}],
         )
 
@@ -445,7 +447,9 @@ class TestPredictionStepTupleCollapsePure:
         trainer = DPTrainer(
             model=_MultiOutputStubModel(fake_out),
             args=_args(tmp_path),
-            train_dataset=[{"input_ids": torch.zeros(3, dtype=torch.long), "labels": 0}],
+            train_dataset=[
+                {"input_ids": torch.zeros(3, dtype=torch.long), "labels": 0}
+            ],
             eval_dataset=[{"input_ids": torch.zeros(3, dtype=torch.long), "labels": 0}],
         )
 

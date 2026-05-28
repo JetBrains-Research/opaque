@@ -337,9 +337,9 @@ class TestGPT2LoRADPTraining:
 
         # Verify noise was added
         for name in grads.pytree:
-            assert not torch.allclose(
-                grads.pytree[name], noisy_grads.pytree[name]
-            ), f"Noise not added to {name}"
+            assert not torch.allclose(grads.pytree[name], noisy_grads.pytree[name]), (
+                f"Noise not added to {name}"
+            )
 
     def test_microbatching_produces_same_result(self, gpt2_with_lora, sample_batch):
         """Test that microbatching produces identical results."""
@@ -459,9 +459,7 @@ class TestGPT2LoRADPTraining:
         assert isinstance(noisy_grads, NoisedPytree)
         updated_params = {}
         for name, param in trainable.items():
-            updated_params[name] = (
-                param - learning_rate * noisy_grads.pytree[name]
-            )
+            updated_params[name] = param - learning_rate * noisy_grads.pytree[name]
 
         # 4. Verify update happened
         for name in trainable:

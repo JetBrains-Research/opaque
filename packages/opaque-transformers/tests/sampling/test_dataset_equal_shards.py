@@ -44,9 +44,7 @@ class _IdentityDataset(Dataset):
         }
 
 
-def _shard_for(
-    *, dataset_size: int, world_size: int, rank: int
-) -> Dataset:
+def _shard_for(*, dataset_size: int, world_size: int, rank: int) -> Dataset:
     """Drive ``get_train_dataloader``'s shard path and return its dataset.
 
     Builds a real ``DPTrainer`` then pins ``_ddp`` to ``(rank, world_size)``
@@ -104,8 +102,7 @@ class TestEqualShardTrim:
     def test_uneven_dataset_makes_all_ranks_equal(self):
         """N=10, W=3 → every rank's shard has length 3."""
         sizes = {
-            r: len(_shard_for(dataset_size=10, world_size=3, rank=r))
-            for r in range(3)
+            r: len(_shard_for(dataset_size=10, world_size=3, rank=r)) for r in range(3)
         }
         assert sizes == {0: 3, 1: 3, 2: 3}
 

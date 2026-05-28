@@ -16,7 +16,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-import torch
 from datasets import concatenate_datasets
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer

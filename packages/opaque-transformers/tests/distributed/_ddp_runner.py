@@ -409,7 +409,7 @@ def scenario_env_backend_diagnostic(output_dir: str, **_) -> None:
         )
     except ValueError as exc:
         msg = str(exc)
-        assert "ddp_backend='xccl'" in msg or "ddp_backend=\"xccl\"" in msg
+        assert "ddp_backend='xccl'" in msg or 'ddp_backend="xccl"' in msg
         return
     raise AssertionError("Expected DPTrainer to fail fast for unavailable xccl runtime")
 

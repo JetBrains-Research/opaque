@@ -240,6 +240,7 @@ class TestDPTrainerEvaluate:
 
         assert "test_loss" in metrics
 
+
 class TestDPTrainerCallbacks:
     """Test that callbacks are fired at the right points."""
 
@@ -1607,6 +1608,7 @@ class TestDPTrainerEvalMemory:
         assert isinstance(captured["label_ids"], list)
         assert len(captured["predictions"]) == 2
 
+
 # ---------------------------------------------------------------------------
 # Phase 3c: include_for_metrics + deprecated alias removal
 # ---------------------------------------------------------------------------
@@ -1788,6 +1790,7 @@ class TestDPTrainerEvalMetrics:
                 train_dataset=tiny_lm_dataset,
                 eval_dataset=tiny_lm_dataset,
             )
+
 
 # ---------------------------------------------------------------------------
 # Phase 3 — end-to-end integration & parity

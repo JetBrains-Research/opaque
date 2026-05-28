@@ -79,9 +79,7 @@ def _args(
     max_steps: int,
     save_steps: int | None = None,
 ) -> TrainingArguments:
-    kwargs = (
-        dict(_MF_TEST_KWARGS[mechanism]) if mechanism in _MF_TEST_KWARGS else {}
-    )
+    kwargs = dict(_MF_TEST_KWARGS[mechanism]) if mechanism in _MF_TEST_KWARGS else {}
     return TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=4,

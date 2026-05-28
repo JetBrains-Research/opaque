@@ -51,6 +51,7 @@ class TestMetricForBestModelDefaults:
         # Loss-suffixed metric ⇒ greater_is_better=False.
         assert args.greater_is_better is False
 
+
 class TestCadenceAlignment:
     """``load_best_model_at_end`` requires save / eval cadence alignment."""
 
@@ -194,9 +195,7 @@ class TestHFFieldNormalization:
         # skipped for callables.
         from opaque.scheduling import cosine_schedule
 
-        recipe = cosine_schedule(
-            init_value=1e-3, end_value=0.0, transition_steps=100
-        )
+        recipe = cosine_schedule(init_value=1e-3, end_value=0.0, transition_steps=100)
         args = TrainingArguments(lr_scheduler=recipe)
         assert args.lr_scheduler is recipe
 
@@ -400,9 +399,7 @@ class TestMechanismAndSamplerDefaults:
 
     def test_mf_blt_rejects_poisson_override(self):
         with pytest.raises(ValueError, match="sampling_mode"):
-            TrainingArguments(
-                privacy_noise_mechanism="mf_blt", sampling_mode="poisson"
-            )
+            TrainingArguments(privacy_noise_mechanism="mf_blt", sampling_mode="poisson")
 
     def test_mf_rejects_adaptive_clipping(self):
         with pytest.raises(ValueError, match="adaptive"):

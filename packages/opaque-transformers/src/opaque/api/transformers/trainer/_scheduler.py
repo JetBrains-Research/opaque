@@ -346,4 +346,3 @@ def _build_wsd(
         ramp=warmup_type,
         init_value=min_lr_ratio,
     )
-
