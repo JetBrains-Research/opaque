@@ -4261,4 +4261,7 @@ class DPTrainer:
             "expected_steps_per_epoch": (
                 ctx.expected_steps_per_epoch if ctx is not None else None
             ),
+            "mechanism_kind": (
+                ctx.mechanism_kind if ctx is not None else a.privacy_noise_mechanism
+            ),
         }

@@ -115,11 +115,8 @@ _DICT_FIELDS: tuple[str, ...] = (
 
 # Privacy noise mechanism surface.  ``"gaussian"`` is the DP-SGD baseline;
 # ``"mf_*"`` are DP-FTRL matrix-factorization mechanisms from
-# :mod:`opaque.dpftrl.noise`.  Wiring for ``mf_*`` is rolled out in phases
-# — Phase 1 (this) extends the config surface and validates inputs;
-# Phase 2 lights up the noise factory and sampler dispatch in
-# :class:`DPTrainer`.  Until then, ``mf_*`` mechanisms raise
-# ``NotImplementedError`` at training-context setup.
+# :mod:`opaque.dpftrl.noise`, dispatched through ``_dpftrl.build_strategy``
+# in :meth:`DPTrainer._setup_training`.
 _MECHANISMS_DPFTRL: frozenset[str] = frozenset(
     {"mf_band", "mf_blt", "mf_bisr", "mf_bsr", "mf_lambda_cgd", "mf_identity"}
 )

@@ -359,7 +359,6 @@ def parse_args() -> argparse.Namespace:
         type=str,
         choices=[
             "gaussian",
-            "truncated_gaussian",
             "mf_band",
             "mf_blt",
             "mf_bisr",
@@ -369,7 +368,7 @@ def parse_args() -> argparse.Namespace:
         ],
         default="gaussian",
         help=(
-            "DP-SGD: 'gaussian' (default), 'truncated_gaussian'.  "
+            "DP-SGD: 'gaussian' (default).  "
             "DP-FTRL: 'mf_band', 'mf_blt', 'mf_bisr', 'mf_bsr', "
             "'mf_lambda_cgd', 'mf_identity'.  Strategy kwargs auto-fill "
             "from Mellum-shaped defaults; override via --noise-mechanism-kwargs."
