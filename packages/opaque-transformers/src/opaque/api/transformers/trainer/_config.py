@@ -344,7 +344,12 @@ class TrainingArguments:
     privacy_noise_mechanism_kwargs: dict[str, Any] | str = field(default_factory=dict)
 
     # ---- Poisson subsampling (cap via ``sampling_kwargs``) ---------------
-    sampling_mode: str = "poisson"
+    # ---- Subsampling (cap via ``sampling_kwargs``) -----------------------
+    # ``"auto"`` (default) resolves to the canonical sampler for the
+    # chosen :attr:`privacy_noise_mechanism` in ``__post_init__`` — for
+    # the current DP-SGD ``"gaussian"`` mechanism that is ``"poisson"``.
+    # Downstream code only ever sees a resolved concrete mode.
+    sampling_mode: str = "auto"
     sampling_kwargs: dict[str, Any] | str = field(default_factory=dict)
 
     # ---- Noise-multiplier calibration to ε (search bounds + tolerance) ---
@@ -688,6 +693,17 @@ class TrainingArguments:
                 f"clipping_mode must be 'fixed', 'adaptive', or 'auto'; "
                 f"got {self.clipping_mode!r}."
             )
+        # ``sampling_mode="auto"`` resolves to the canonical sampler for
+        # the chosen mechanism.  Today there's only ``"gaussian"`` →
+        # ``"poisson"``; matrix-factorization mechanisms add more rows
+        # to this table when DP-FTRL lands.
+        _SAMPLER_BY_MECHANISM: dict[str, str] = {
+            "gaussian": "poisson",
+        }
+        if self.sampling_mode == "auto":
+            self.sampling_mode = _SAMPLER_BY_MECHANISM[
+                self.privacy_noise_mechanism
+            ]
         if self.sampling_mode != "poisson":
             raise ValueError(
                 f"sampling_mode must be 'poisson'; got {self.sampling_mode!r}."

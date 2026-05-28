@@ -1061,6 +1061,16 @@ class DPTrainer:
             if a.privacy_target_delta is not None
             else 1.0 / (dataset_size**1.1)
         )
+        # --- LR schedule ---
+        # Built before the privacy mechanism so future mechanism
+        # families that consume the workload schedule (e.g.
+        # workload-aware Toeplitz tuning for DP-FTRL BandMF / BLT) can
+        # read it at strategy-construction time.  The schedule only
+        # depends on ``total_steps``, so moving it ahead of
+        # ``_build_mechanism`` is a no-op for the current
+        # Gaussian-only path.
+        lr_schedule = self.create_scheduler(num_training_steps=total_steps)
+
         mechanism = self._build_mechanism(
             a, expected_batch_size, sample_rate, clip_norm, dataset_size
         )
@@ -1092,9 +1102,6 @@ class DPTrainer:
             sample_rate,
             total_steps,
         )
-
-        # --- LR schedule ---
-        lr_schedule = self.create_scheduler(num_training_steps=total_steps)
 
         # --- Optimizer ---
         opt, opt_state = self.create_optimizer(

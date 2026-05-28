@@ -318,6 +318,15 @@ class TestClippingAndSamplingSurfaces:
         with pytest.raises(ValueError, match="sampling_mode"):
             TrainingArguments(sampling_mode="sequential")
 
+    def test_sampling_mode_auto_resolves_to_poisson_for_gaussian(self):
+        # ``"auto"`` (the default) resolves to the canonical sampler for
+        # the chosen mechanism — ``"poisson"`` for the DP-SGD
+        # ``"gaussian"`` baseline.
+        args = TrainingArguments()
+        assert args.sampling_mode == "poisson"
+        args_explicit = TrainingArguments(sampling_mode="auto")
+        assert args_explicit.sampling_mode == "poisson"
+
     def test_clipping_kwargs_json_string_parsed(self):
         args = TrainingArguments(clipping_kwargs='{"norm_max": 9.0}')
         assert args.clipping_kwargs == {"norm_max": 9.0}
