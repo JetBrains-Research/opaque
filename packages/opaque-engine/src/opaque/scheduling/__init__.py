@@ -1,21 +1,24 @@
 """Step-indexed schedules + warmup / restart / WSD composition.
 
 Each schedule is a frozen, callable recipe dataclass; the factory
-functions construct the matching recipe.  See
-:mod:`opaque.api.engine.scheduling` for the implementation.
+functions construct the matching recipe.  Call-site usage is unchanged
+from the previous closure-based API::
+
+    from opaque.scheduling import cosine_schedule, with_warmup
+
+    decay = cosine_schedule(
+        init_value=1e-3, end_value=0.0,
+        transition_steps=900, transition_begin=100,
+    )
+    schedule = with_warmup(decay, transition_steps=100)
+    schedule(step)   # → float, scheduled value at integer step
+
+The recipe classes themselves live in :mod:`opaque.scheduling.types`
+for ``isinstance`` checks and type annotations — matching how
+:mod:`opaque.dpftrl.noise.types` exposes its strategy classes.
 """
 
 from opaque.api.engine.scheduling import (
-    ConstantSchedule,
-    CosineSchedule,
-    ExponentialSchedule,
-    InverseSqrtSchedule,
-    LinearSchedule,
-    OneMinusSqrtSchedule,
-    PolynomialSchedule,
-    WarmupStableDecay,
-    WithRestarts,
-    WithWarmup,
     constant_schedule,
     cosine_schedule,
     exponential_schedule,
@@ -29,18 +32,6 @@ from opaque.api.engine.scheduling import (
 )
 
 __all__ = [
-    # Recipe classes
-    "ConstantSchedule",
-    "LinearSchedule",
-    "PolynomialSchedule",
-    "ExponentialSchedule",
-    "CosineSchedule",
-    "InverseSqrtSchedule",
-    "OneMinusSqrtSchedule",
-    "WithWarmup",
-    "WithRestarts",
-    "WarmupStableDecay",
-    # Factory functions (backward-compat)
     "constant_schedule",
     "linear_schedule",
     "polynomial_schedule",

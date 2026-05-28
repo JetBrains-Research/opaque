@@ -20,8 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Union
 
-from opaque.api.engine.scheduling._curves import ConstantSchedule
-from opaque.api.engine.scheduling.types import Schedule
+from opaque.api.engine.scheduling._curves import ConstantSchedule, Schedule
 
 __all__ = [
     "WithWarmup",

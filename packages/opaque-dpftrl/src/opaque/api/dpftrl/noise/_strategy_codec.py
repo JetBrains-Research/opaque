@@ -78,13 +78,15 @@ def _factory_name_for(cls_name: str) -> str:
 def _resolve_recipe_class(name: str) -> type | None:
     """Look up a registered recipe class by name.
 
-    Currently scoped to :mod:`opaque.scheduling`; can be extended to
-    other recipe namespaces as more callable dataclass families appear.
-    Returns ``None`` if the name is not found.
+    Currently scoped to :mod:`opaque.scheduling.types` (where the
+    Schedule recipe dataclasses are re-exported for ``isinstance``
+    use); can be extended to other recipe namespaces as more callable
+    dataclass families appear.  Returns ``None`` if the name is not
+    found.
     """
-    from opaque import scheduling as _scheduling
+    from opaque.scheduling import types as _scheduling_types
 
-    return getattr(_scheduling, name, None)
+    return getattr(_scheduling_types, name, None)
 
 
 def _to_wire(value: Any) -> Any:

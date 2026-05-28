@@ -21,11 +21,18 @@ For "warmup, then decay" shapes, configure the decay with
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 
-from opaque.api.engine.scheduling.types import Schedule  # noqa: F401  (re-exported)
+#: Step-indexed scalar schedule — the callable type that every recipe
+#: dataclass in this module satisfies via ``__call__``.  Defined here
+#: (the foundational impl module) so the ``types`` façade can re-export
+#: it alongside the recipe classes without a circular import.
+Schedule = Callable[[int], float]
+
 
 __all__ = [
+    "Schedule",
     "ConstantSchedule",
     "LinearSchedule",
     "PolynomialSchedule",
