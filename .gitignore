@@ -59,6 +59,7 @@ docs/_build/
 docs/_static/
 docs/_templates/
 site/
+.cache/
 
 # MyPy
 .mypy_cache/
@@ -102,6 +103,6 @@ papers/
 outputs/
 results/
 output.log
+trainer_output/
 
 # Claude Code / Junie — each has its own .gitignore inside
-

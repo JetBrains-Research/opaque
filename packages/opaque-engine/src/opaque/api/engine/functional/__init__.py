@@ -6,6 +6,7 @@ compatible with torch.func transformations.
 """
 
 from collections.abc import Callable  # noqa: E402
+import functools  # noqa: E402
 
 import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
@@ -348,6 +349,16 @@ def with_batch_dim(
             return True
         return tensor.ndim < threshold
 
+    # ``functools.wraps`` propagates ``fn.__wrapped__`` (and sets it to
+    # ``fn`` itself) so callers can walk the chain back to the original
+    # function via ``inspect.signature(wrapper, follow_wrapped=True)`` — the
+    # default behavior of :func:`inspect.signature`.  Concretely: when this
+    # wraps a transformers ``forward(input_ids=None, attention_mask=None,
+    # …)``, ``inspect.signature`` resolves to the real named parameters
+    # instead of just ``(*args, **kwargs)``.  HF-style column pruning that
+    # introspects ``model.forward`` (and any other downstream consumer of
+    # the signature) keeps working after batchifying.
+    @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         unsqueezed = False
         args_list = list(args)

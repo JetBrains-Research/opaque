@@ -212,7 +212,10 @@ def _from_state_dict_balls_in_bins(
     sampler = BallsInBinsSampler(
         template.data_source,
         num_bins=int(sd["num_bins"]),
-        n_steps=sd.get("n_steps"),
+        # Take ``n_steps`` from the template — caller may extend or
+        # shorten the run on resume; the cursor below fixes the
+        # round-robin resume position.
+        n_steps=template.n_steps,
         key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),
     )
     sampler._consumed = int(sd["consumed"])

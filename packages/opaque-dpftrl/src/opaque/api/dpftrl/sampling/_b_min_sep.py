@@ -208,7 +208,10 @@ def _from_state_dict_b_min_sep(
         template.data_source,
         bands=int(sd["bands"]),
         sampling_prob=float(sd["sampling_prob"]),
-        n_steps=int(sd["n_steps"]),
+        # Take ``n_steps`` from the template — caller may extend or
+        # shorten the run on resume.  The cursor + Markov replay below
+        # fix the resume position; ``n_steps`` only bounds iteration.
+        n_steps=int(template.n_steps),
         key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),
     )
     consumed = int(sd["consumed"])

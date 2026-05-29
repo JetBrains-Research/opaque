@@ -190,10 +190,14 @@ def _from_state_dict_poisson(
 ) -> PoissonSampler:
     """Rebuild ``PoissonSampler`` at the saved cursor.
 
-    The dataset comes from ``template`` (it can't be serialised); every
-    other constructor arg is taken from ``sd``.  Replay advances the
-    numpy generator by ``consumed`` discarded ``_sample_step`` calls so
-    the next yielded batch matches a continuous run.
+    The dataset *and* ``n_steps`` come from ``template`` (the user may
+    extend or shorten the run on resume; the saved ``n_steps`` is
+    advisory).  ``key``, ``sample_rate``, and ``truncated_batch_size``
+    come from ``sd`` — they drive the per-step sampling math and must
+    match the saved run for the replay to land on a deterministic
+    continuation.  Replay advances the numpy generator by ``consumed``
+    discarded ``_sample_step`` calls so the next yielded batch matches
+    a continuous run.
 
     Raises ``ValueError`` if the template dataset length differs from
     the snapshot — Poisson sampling per-step is over the full dataset,
@@ -211,7 +215,11 @@ def _from_state_dict_poisson(
     sampler = PoissonSampler(
         template.data_source,
         sample_rate=float(sd["sample_rate"]),
-        n_steps=sd.get("n_steps"),
+        # Take ``n_steps`` from the template — the user may have
+        # extended or shortened ``max_steps`` between runs.  The cursor
+        # below is what fixes the resume position; ``n_steps`` only
+        # bounds the iterator's stopping point.
+        n_steps=template.n_steps,
         truncated_batch_size=sd.get("truncated_batch_size"),
         key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),
     )

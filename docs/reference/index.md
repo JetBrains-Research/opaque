@@ -81,6 +81,14 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `local_shard()` - Partition dataset for DDP training
   - `is_distributed()`, `get_rank()`, `get_world_size()` - Distributed utilities
 
+### HuggingFace Integration
+
+- **[Transformers](transformers.md)**: `opaque.transformers` — DP-SGD for HuggingFace models
+  - `DPTrainer` — full constructor, methods, callback wiring, overridable hooks
+  - `TrainingArguments` — every field grouped by concern (privacy, compute, patches, save, eval, …)
+  - `EvaluationResult`, `TrainOutput` — return types
+  - `patch_all`, `is_patched`, `is_vmap_patched` — runtime-patch entry points
+
 ## Quick Reference
 
 ### Typical DP-SGD Workflow
