@@ -21,7 +21,6 @@ from typing import Any
 import torch
 
 from opaque.distributed import get_rank, get_world_size, is_distributed
-from opaque.api.engine.distributed._state import reduce_scalar
 from opaque.distributed.collectives import barrier as _opaque_barrier
 
 __all__ = [
@@ -196,17 +195,3 @@ def barrier(ddp: DDPState) -> None:
     """
     if ddp.is_distributed:
         _opaque_barrier()
-
-
-def reduce_step_finite(grads_finite: bool, ddp: DDPState) -> bool:
-    """Cluster-wide AND on ``grads_finite``.
-
-    fp16 overflow on **any** rank must trip every rank to skip the
-    optimizer update — otherwise rank A applies an update with sane grads
-    while rank B no-ops, and the parameter trees diverge instantly.
-    Implemented as ``min`` reduction on a 0/1 int (``min`` of any zero is
-    zero — i.e. "any rank saw an inf" wins).
-    """
-    if not ddp.is_distributed:
-        return grads_finite
-    return bool(reduce_scalar(int(grads_finite), op="min", device=ddp.device))

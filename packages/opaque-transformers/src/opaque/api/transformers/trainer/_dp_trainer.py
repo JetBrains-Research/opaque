@@ -389,12 +389,9 @@ class DPTrainer:
         _opaque_rt.apply_transformers_runtime_compat_patches()
         self._apply_opaque_model_patches()
 
-        # Compute precision (HF parity — autocast for bf16/fp16, full-cast
-        # only for the *_full_eval scope).  See _setup_precision for the
-        # behavior matrix.
+        # Compute precision: bf16 autocast for training, full-cast only for
+        # the bf16_full_eval scope.  See _setup_precision.
         self._amp_dtype: torch.dtype | None = None
-        self._loss_scaler = None
-        self._loss_scaler_state = None
         self._setup_precision()
 
         # Functional state (populated by _setup_training, used by evaluate)
@@ -639,26 +636,23 @@ class DPTrainer:
         )
 
     def _setup_precision(self) -> None:
-        """Resolve compute precision (TF32, bf16/fp16 autocast).
+        """Resolve compute precision (TF32, bf16 autocast).
 
-        HF parity: ``bf16=True`` and ``fp16=True`` enable autocast on the
-        loss closure (forward); they do NOT cast the model.  Full-cast is
-        reserved for ``bf16_full_eval`` / ``fp16_full_eval`` (eval scope
-        only — see :mod:`._precision`).
+        ``bf16=True`` enables autocast on the loss closure (forward); it
+        does NOT cast the model.  Full-cast is reserved for
+        ``bf16_full_eval`` (eval scope only — see :mod:`._precision`).
+        bf16 is the only mixed-precision mode: it has the dynamic range
+        that fp16's dynamic loss scaler exists to compensate for, so no
+        scaler is needed (and fp16 training is intentionally unsupported).
 
         Sets:
             self._device — already resolved by caller.
             self._train_dtype — dtype the model parameters are stored in.
                 Stays at whatever the caller pre-placed; autocast does
                 NOT change it.
-            self._amp_dtype — None | torch.bfloat16 | torch.float16.
-                Driven into ``torch.autocast(device_type, dtype=self._amp_dtype)``
+            self._amp_dtype — None | torch.bfloat16.  Driven into
+                ``torch.autocast(device_type, dtype=self._amp_dtype)``
                 inside the loss closure (Step 5) when set.
-            self._loss_scaler — None | LossScaler transform from
-                :mod:`opaque.precision`.  Populated for fp16 only (bf16
-                has wider exponent range, no scaling needed).
-            self._loss_scaler_state — None | LossScalerState.  Threaded
-                through training_step; replaced wholesale each step.
         """
         a = self.args
         # ``tf32`` is a single global flag flip.  HF semantics: ``None`` =
@@ -669,20 +663,7 @@ class DPTrainer:
             torch.backends.cudnn.allow_tf32 = bool(a.tf32)
 
         self._train_dtype = next(self._model.parameters()).dtype
-
-        if a.bf16:
-            self._amp_dtype = torch.bfloat16
-            self._loss_scaler = None
-            self._loss_scaler_state = None
-        elif a.fp16:
-            from opaque.precision import loss_scaler
-
-            self._amp_dtype = torch.float16
-            self._loss_scaler, self._loss_scaler_state = loss_scaler()
-        else:
-            self._amp_dtype = None
-            self._loss_scaler = None
-            self._loss_scaler_state = None
+        self._amp_dtype = torch.bfloat16 if a.bf16 else None
 
     def _effective_output_dir(self) -> str | None:
         return self.args.output_dir
@@ -961,7 +942,7 @@ class DPTrainer:
         # classification gets ``ForSequenceClassificationLoss``, …).
         # Subclasses override :meth:`compute_per_example_loss` for
         # domain-specific losses; ``_build_per_example_loss`` here just
-        # wraps it with autocast / fp16 scaling / torch.compile.
+        # wraps it with autocast / torch.compile.
         per_example_loss_fn, batch_argnums = self._build_per_example_loss(
             fmodel,
             frozen_params,
@@ -1359,24 +1340,22 @@ class DPTrainer:
                     (step_idx + 1) / max(1, ctx.expected_steps_per_epoch)
                 )
 
-                # Empty Poisson round (or fp16-overflow skip): no loss /
-                # tokens to accumulate.  The optimizer still applied a
-                # pure-noise update on an empty round and ``global_step``
-                # already advanced, so we must NOT skip the log/save/eval
-                # gate below — a save or eval boundary landing exactly on an
-                # empty round used to be silently dropped.  ``step_result``
-                # carries only ``{loss: 0, batch_size: 0}`` here, which the
-                # gate reads via ``.get`` defaults (the logged loss is the
-                # windowed average, unaffected by this step).
+                # Empty Poisson round: no loss / tokens to accumulate.  The
+                # optimizer still applied a pure-noise update and
+                # ``global_step`` already advanced, so we must NOT skip the
+                # log/save/eval gate below — a save or eval boundary landing
+                # exactly on an empty round used to be silently dropped.
+                # ``step_result`` carries only ``{loss: 0, batch_size: 0}``
+                # here, which the gate reads via ``.get`` defaults (the logged
+                # loss is the windowed average, unaffected by this step).
                 if batch_size != 0:
                     last_loss = step_result["loss"]
                     last_step_result = step_result
-                    # Loss accumulator stays on device for DDP gather.  fp16
-                    # overflows short-circuit upstream (the scaler returns
-                    # ``batch_size=0``), so any NaN reaching here reflects a
-                    # genuine forward / loss-math divergence — propagate it
-                    # through the running average so the user sees the honest
-                    # signal instead of a smoothed-over fake curve.
+                    # Loss accumulator stays on device for DDP gather.  A NaN
+                    # reaching here reflects a genuine forward / loss-math
+                    # divergence — propagate it through the running average so
+                    # the user sees the honest signal instead of a
+                    # smoothed-over fake curve.
                     tr_loss_step = torch.tensor(float(last_loss), device=self._device)
                     self._tr_loss = self._tr_loss + tr_loss_step
                 # Token counting (Phase 5c).
@@ -1521,11 +1500,6 @@ class DPTrainer:
                 "privacy_noise_multiplier": ctx.noise_multiplier,
             }
         )
-        # Surface fp16 overflow counter for stability auditing.  Only
-        # emitted on runs where the loss-scaler was actually active
-        # (avoids a noisy zero on bf16 / fp32 / no-scaler runs).
-        if self._loss_scaler is not None:
-            metrics["train_fp16_overflow_steps"] = self.state.fp16_overflow_steps
         if a.include_num_input_tokens_seen != "no":
             metrics["num_input_tokens_seen"] = self.state.num_input_tokens_seen
         self._memory_tracker.stop_and_update_metrics(metrics)
@@ -1627,44 +1601,6 @@ class DPTrainer:
                 sum_gradients_(grads)
                 ctx.clip_state, aux = _opaque_sync(ctx.clip_state, aux)
             sp.mark("clip")
-
-            # fp16 dynamic-loss-scale: detect overflow on the (post-AllReduce)
-            # gradient.  ``pre_clipping_transform`` ran per-example before the
-            # clip-norm so the unscale is done; an inf/nan here reflects a real
-            # forward/backward overflow.  Mirrors ``torch.amp.GradScaler.step``:
-            # skip the optimizer update and back off the scale.  Under DDP, an
-            # overflow on **any** rank must trip every rank or parameter trees
-            # diverge — see ``_distributed.reduce_step_finite``.
-            if self._loss_scaler is not None:
-                from opaque.precision import all_finite
-
-                # ``grads`` is a ``ClippedPytree`` wrapper, which is *not* an
-                # optree node — flattening it yields a single opaque leaf, so
-                # ``all_finite(grads)`` would never see the tensors (and always
-                # report finite).  Inspect ``grads.pytree`` (the raw tensor
-                # tree) so a real fp16 overflow is actually detected.
-                grads_finite = all_finite(grads.pytree)
-                grads_finite = _distributed.reduce_step_finite(grads_finite, self._ddp)
-                self._loss_scaler_state = self._loss_scaler.update(
-                    self._loss_scaler_state, grads_finite
-                )
-                if not grads_finite:
-                    # Overflow → optimizer update is skipped; flow through the
-                    # outer-loop's empty-step gate by returning ``batch_size=0``
-                    # (same sentinel an empty Poisson sample uses).  Drops the
-                    # historical ``loss=NaN`` return — propagating NaN into the
-                    # log path forced ``logging_nan_inf_filter`` to substitute
-                    # the running average and racing with this code; now the
-                    # outer loop sees a clean "no step happened" signal.  The
-                    # overflow is still surfaced via ``state.fp16_overflow_steps``
-                    # for end-of-train auditing.
-                    self.state.fp16_overflow_steps += 1
-                    return {
-                        "loss": 0.0,
-                        "batch_size": 0,
-                        "loss_scale": self._loss_scaler_state.scale,
-                        "overflow": True,
-                    }
 
             # Noise injection — ``grads`` is a ``ClippedPytree`` whose
             # ``.max_norm`` carries the per-step sensitivity; ``noise_fn``
@@ -2482,19 +2418,19 @@ class DPTrainer:
         # ``eval_dtype`` casts ``self._model`` in place.  During an active
         # training run the eval forward goes through the functional
         # ``ctx.fmodel`` + detached param dicts, which the cast does NOT
-        # reach — so {bf16,fp16}_full_eval is a no-op mid-training (it only
-        # takes effect for the post-training nn.Module path).  Surface that
-        # once instead of letting it pass silently.
+        # reach — so bf16_full_eval is a no-op mid-training (it only takes
+        # effect for the post-training nn.Module path).  Surface that once
+        # instead of letting it pass silently.
         if (
             self._ctx is not None
-            and (self.args.fp16_full_eval or self.args.bf16_full_eval)
+            and self.args.bf16_full_eval
             and not getattr(self, "_warned_full_eval_functional", False)
         ):
             log.warning(
-                "bf16_full_eval/fp16_full_eval do not apply to in-training "
-                "evaluation: the functional eval forward runs at the training "
-                "dtype.  Full-cast eval takes effect only for evaluation after "
-                "train() returns (the nn.Module path)."
+                "bf16_full_eval does not apply to in-training evaluation: the "
+                "functional eval forward runs at the training dtype.  Full-cast "
+                "eval takes effect only for evaluation after train() returns "
+                "(the nn.Module path)."
             )
             self._warned_full_eval_functional = True
         with eval_dtype(self._model, self.args, self._train_dtype):
@@ -2738,9 +2674,9 @@ class DPTrainer:
         Bridges the user-facing override hook (``compute_per_example_loss``,
         kwargs-style) to ``clipped_grad``'s positional contract:
         ``(trainable_params, *batch_args) -> scalar_loss``.  The training
-        loop concerns — autocast, fp16 loss scaling, ``torch.compile`` —
-        wrap around the user's per-example loss math here so subclasses
-        don't have to reimplement them.
+        loop concerns — bf16 autocast and ``torch.compile`` — wrap around
+        the user's per-example loss math here so subclasses don't have to
+        reimplement them.
 
         Args:
             fmodel: Functional model from
@@ -2750,9 +2686,7 @@ class DPTrainer:
             batch_keys: Ordered tuple of tensor keys the collator emits
                 (discovered via :meth:`_discover_batch_keys`).
             return_logits: When ``True``, the closure returns
-                ``(loss, logits)`` instead of just ``loss``.  fp16 loss
-                scaling is skipped in this mode (eval doesn't compose
-                with dynamic loss scaling).
+                ``(loss, logits)`` instead of just ``loss``.
 
         Returns:
             ``(per_example_loss_fn, batch_argnums)``.
@@ -2760,13 +2694,8 @@ class DPTrainer:
         keys = batch_keys
         amp_dtype = self._amp_dtype
         device_type = self._device.type
-        # Skip loss scaling on the eval closure: fp16 dynamic scaling is
-        # a training-side mechanism for gradient underflow, irrelevant
-        # to eval and incompatible with the ``return_logits`` shape.
-        loss_scaler = None if return_logits else self._loss_scaler
-        # autocast(device_type="cpu") only supports bf16; fp16 autocast is
-        # a CUDA-only path.  We let torch raise a clear error on misuse;
-        # nothing extra to validate here.
+        # bf16 autocast only; no loss scaling (bf16 needs none, fp16 training
+        # is unsupported).
         autocast_active = amp_dtype is not None
 
         def per_example_loss(
@@ -2785,21 +2714,7 @@ class DPTrainer:
                     fmodel, merged, inputs, return_logits=return_logits
                 )
 
-            if return_logits:
-                loss, logits = result
-            else:
-                loss = result
-
-            # fp16 dynamic-loss-scale: multiply the loss by the current
-            # scale before returning to vmap(grad(...)).  The matching
-            # unscale runs inside `clipped_grad`'s `pre_clipping_transform`
-            # — applied per-example, before the clip-norm — so the
-            # accountant's sensitivity calibration sees unscaled grads.
-            if loss_scaler is not None:
-                loss = loss_scaler.scale_loss(loss, self._loss_scaler_state)
-            if return_logits:
-                return loss, logits
-            return loss
+            return result
 
         # When `args.torch_compile=True`, compile the loss closure (NOT
         # the model — opaque's functional path goes through
@@ -3357,23 +3272,7 @@ class DPTrainer:
         expected_batch_size: int,
         microbatch_size: int,
     ) -> Callable[..., Any]:
-        """Create the clipped gradient function based on clipping mode.
-
-        When fp16 autocast is active, the loss closure scales the loss by
-        ``self._loss_scaler_state.scale``; the matching unscale runs as
-        ``pre_clipping_transform`` *inside* vmap, *before* the clip-norm.
-        This preserves the DP sensitivity invariant the accountant relies on.
-        """
-        if self._loss_scaler is not None:
-            scaler = self._loss_scaler
-
-            def pre_clip(g):
-                return scaler.unscale_grads(g, self._loss_scaler_state)
-        else:
-
-            def pre_clip(g):
-                return g
-
+        """Create the clipped gradient function based on clipping mode."""
         ca = a.clipping_kwargs
         target_clip_rate = float(ca.get("target_clipping_rate", 0.5))
         clip_norm_max = float(ca.get("norm_max", 10.0))
@@ -3391,7 +3290,6 @@ class DPTrainer:
                 return_aux=True,
                 key=key(a.seed),
                 normalize_by=expected_batch_size,
-                pre_clipping_transform=pre_clip,
             )
         elif a.clipping_mode == "auto":
             return auto_clipped_grad(
@@ -3403,7 +3301,6 @@ class DPTrainer:
                 normalize_by=expected_batch_size,
                 microbatch_size=microbatch_size,
                 return_aux=True,
-                pre_clipping_transform=pre_clip,
             )
         else:
             return clipped_grad(
@@ -3414,7 +3311,6 @@ class DPTrainer:
                 normalize_by=expected_batch_size,
                 microbatch_size=microbatch_size,
                 return_aux=True,
-                pre_clipping_transform=pre_clip,
             )
 
     def _build_mechanism(

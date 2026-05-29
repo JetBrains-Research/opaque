@@ -5,10 +5,8 @@ Covers:
   and restored to the training dtype on exit.
 - ``bf16_full_eval=True`` + ``bf16=True``: no-op (model already bf16);
   the model stays bf16 after the context exits.
-- ``fp16_full_eval=True``: casts the model to fp16 inside the eval context
-  and restores the training dtype on exit.
-- Mutual exclusivity between ``bf16_full_eval`` and ``fp16_full_eval``
-  is rejected at args construction (already-validated regression test).
+- ``fp16_full_eval`` is unsupported (not a field) and raises ``TypeError``;
+  ``bf16_full_eval`` is the only full-cast eval mode.
 """
 
 from __future__ import annotations
@@ -84,36 +82,11 @@ def test_bf16_full_eval_restores_even_on_exception():
 
 
 # ----------------------------------------------------------------------------
-# fp16_full_eval — full-cast for the eval scope (HF parity)
+# fp16_full_eval is unsupported (bf16_full_eval is the only full-cast mode)
 # ----------------------------------------------------------------------------
 
 
-def test_fp16_full_eval_casts_model_for_eval_scope():
-    """fp16_full_eval=True casts the model to fp16 inside the context and
-    restores the train_dtype on exit (HF parity: trainer.py:2661)."""
-    model = torch.nn.Linear(4, 2)
-    args = _args(fp16_full_eval=True)
-    assert next(model.parameters()).dtype == torch.float32
-    with eval_dtype(model, args, torch.float32):
-        assert next(model.parameters()).dtype == torch.float16
-    assert next(model.parameters()).dtype == torch.float32
-
-
-def test_fp16_full_eval_no_op_when_already_fp16():
-    """If the caller pre-cast to fp16, eval_dtype is a no-op; train_dtype
-    drives the (no-op) restore on exit."""
-    model = torch.nn.Linear(4, 2).to(torch.float16)
-    args = _args(fp16_full_eval=True)
-    with eval_dtype(model, args, torch.float16):
-        assert next(model.parameters()).dtype == torch.float16
-    assert next(model.parameters()).dtype == torch.float16
-
-
-# ----------------------------------------------------------------------------
-# Mutual exclusivity (already validated at args construction)
-# ----------------------------------------------------------------------------
-
-
-def test_bf16_and_fp16_full_eval_mutually_exclusive():
-    with pytest.raises(ValueError, match="full eval"):
-        _args(bf16_full_eval=True, fp16_full_eval=True)
+def test_fp16_full_eval_is_rejected():
+    """fp16_full_eval is not a supported field — passing it raises TypeError."""
+    with pytest.raises(TypeError):
+        _args(fp16_full_eval=True)

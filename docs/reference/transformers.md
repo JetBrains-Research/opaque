@@ -102,8 +102,6 @@ is the caller's loop.
 - `train_steps`
 - `train_runtime`, `train_samples_per_second`, `train_steps_per_second`
 - `privacy_epsilon`, `privacy_delta`, `privacy_noise_multiplier`
-- `train_fp16_overflow_steps` (only when the fp16 loss scaler was
-  active for the run)
 - `num_input_tokens_seen` (only when
   `args.include_num_input_tokens_seen != "no"`)
 
@@ -200,10 +198,8 @@ Dataclass surface.  Every field listed here exists on
 |---|---|---|---|
 | `use_cpu` | `bool` | `False` | Pin to CPU even if CUDA is available. |
 | `use_mps_device` | `bool` | `False` | Use MPS (Apple Silicon). |
-| `bf16` | `bool` | `False` | bf16 autocast on the loss closure. |
-| `fp16` | `bool` | `False` | fp16 autocast + dynamic loss scaling.  Mutually exclusive with `bf16`. |
+| `bf16` | `bool` | `False` | bf16 autocast on the loss closure (the only mixed-precision mode; no loss scaler needed). |
 | `bf16_full_eval` | `bool` | `False` | Cast model to bf16 for eval scope only. |
-| `fp16_full_eval` | `bool` | `False` | Cast model to fp16 for eval scope only. |
 | `tf32` | `bool \| None` | `None` | Toggle TF32 on Ampere+. |
 | `gradient_checkpointing` | `bool` | `False` | Activation recomputation.  Pair with `use_reentrant=False` for vmap-safety. |
 | `gradient_checkpointing_kwargs` | `dict \| str \| None` | `None` | Forwarded to `model.gradient_checkpointing_enable(...)`. |
@@ -340,8 +336,7 @@ NPU, XLA) are rejected with a redirect message.
 `__post_init__` runs cross-field validation idempotently:
 
 - Strategy strings validated against allowed sets.
-- `bf16` + `fp16` mutually exclusive; same for `warmup_ratio` +
-  `warmup_steps`.
+- `warmup_steps` overrides `warmup_ratio` when both are set.
 - `save_strategy="best"` requires `eval_strategy != "no"`.
 - `load_best_model_at_end=True` requires both `save_strategy != "no"`
   and `eval_strategy != "no"`.

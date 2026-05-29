@@ -14,8 +14,7 @@ DP regression would silently break:
 - realized noise stddev equals ``noise_multiplier * clipping_norm``;
 - ``evaluate()`` consumes no privacy budget;
 - DP noise is reproducible at σ>0 and tracks ``seed`` / ``data_seed``;
-- the two confirmed silent defects stay fixed (fp16 finite-check sees the
-  real tensors; resuming a ``save_only_model`` checkpoint is refused).
+- resuming a weights-only (``save_only_model``) checkpoint is refused.
 """
 
 from __future__ import annotations
@@ -87,66 +86,6 @@ def _args(tmp_path, **overrides) -> TrainingArguments:
     )
     defaults.update(overrides)
     return TrainingArguments(**defaults)
-
-
-# ---------------------------------------------------------------------------
-# C2 — fp16 finite-check must inspect the real tensors, not the wrapper
-# ---------------------------------------------------------------------------
-
-
-def test_all_finite_sees_clipped_pytree_tensors():
-    """Regression guard for the fp16 overflow no-op.
-
-    ``ClippedPytree`` is not an optree node, so ``all_finite`` on the
-    *wrapper* flattens to a single opaque leaf and never inspects the
-    tensors — it would report a NaN-laden gradient as finite.  The trainer
-    must call ``all_finite(grads.pytree)``; this test pins both halves so a
-    revert to ``all_finite(grads)`` is caught here.
-    """
-    from opaque.api.engine.types import clipped
-    from opaque.precision import all_finite
-
-    nan_grads = {"w": torch.tensor([float("nan"), 1.0])}
-    cp = clipped(nan_grads, max_norm=1.0)
-
-    # The trap: the wrapper looks finite because it's an opaque leaf.
-    assert all_finite(cp) is True
-    # The fix: inspecting the inner pytree sees the NaN.
-    assert all_finite(cp.pytree) is False
-
-    finite = clipped({"w": torch.tensor([0.0, 1.0])}, max_norm=1.0)
-    assert all_finite(finite.pytree) is True
-
-
-@pytest.mark.cuda
-def test_fp16_overflow_is_detected_and_skips_step(gpt2_lora, lm_dataset, tmp_path):
-    """End-to-end: a real fp16 overflow trips the scaler and skips the step.
-
-    Requires CUDA (fp16 autocast is GPU-only).  Forces an overflow by
-    overriding the per-example loss to emit a non-finite value, then asserts
-    the optimizer update is skipped and the overflow counter advances —
-    which only happens if ``all_finite`` actually saw the bad gradient.
-    """
-    model, tok = gpt2_lora
-
-    class _OverflowTrainer(DPTrainer):
-        def compute_per_example_loss(
-            self, fmodel, params, inputs, *, return_logits=False
-        ):
-            loss = super().compute_per_example_loss(
-                fmodel, params, inputs, return_logits=return_logits
-            )
-            if return_logits:
-                base, logits = loss
-                return base * float("inf"), logits
-            return loss * float("inf")
-
-    args = _args(tmp_path, fp16=True, use_cpu=False, max_steps=2)
-    trainer = _OverflowTrainer(
-        model=model, args=args, train_dataset=lm_dataset, processing_class=tok
-    )
-    trainer.train()
-    assert trainer.state.fp16_overflow_steps > 0
 
 
 # ---------------------------------------------------------------------------

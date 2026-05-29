@@ -85,9 +85,9 @@ def _resolve_trainer_dtype(
     }
     if requested_name == "float16":
         raise ValueError(
-            "DPTrainer does not support fp16 training yet because autocast and "
-            "GradScaler validation are still pending. Use --dtype bfloat16 or "
-            "--dtype float32."
+            "DPTrainer does not support fp16 training: dynamic loss scaling "
+            "adds a per-example unscale-before-clip step for no benefit on "
+            "bf16-capable hardware. Use --dtype bfloat16 or --dtype float32."
         )
 
     requested_dtype = dtype_map[requested_name]
@@ -720,7 +720,6 @@ def main() -> int:
         use_cpu=device.type == "cpu",
         use_mps_device=device.type == "mps",
         bf16=dtype_name == "bfloat16",
-        fp16=False,
         gradient_checkpointing=args.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         cpu_offload_activations=args.cpu_offload,

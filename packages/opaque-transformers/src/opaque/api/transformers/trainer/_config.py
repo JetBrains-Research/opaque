@@ -287,8 +287,6 @@ class TrainingArguments:
     use_cpu: bool = False
     use_mps_device: bool = False
     bf16: bool = False
-    fp16: bool = False
-    fp16_full_eval: bool = False
     bf16_full_eval: bool = False
     tf32: bool | None = None
 
@@ -702,12 +700,11 @@ class TrainingArguments:
             )
 
         # --- 7. Mixed precision sanity --------------------------------------
-        if self.fp16 and self.bf16:
-            raise ValueError("At most one of fp16 and bf16 can be True, but not both")
-        if self.fp16_full_eval and self.bf16_full_eval:
-            raise ValueError(
-                "At most one of fp16 and bf16 can be True for full eval, but not both"
-            )
+        # bf16 is the only mixed-precision mode: it needs no loss scaler and
+        # has the dynamic range fp16's scaler exists to fake.  fp16 training
+        # (autocast + dynamic loss scaling) is intentionally not supported —
+        # it adds a per-example unscale-before-clip landmine for no benefit on
+        # the bf16-capable hardware this targets.
         if (self.bf16 or self.bf16_full_eval) and not self.use_cpu:
             if not is_torch_bf16_gpu_available() and not is_torch_xla_available():
                 raise ValueError(
