@@ -232,3 +232,243 @@ def test_resume_save_only_model_allowed_with_opt_in(gpt2_lora, lm_dataset, tmp_p
     )
     out = trainer2.train(resume_from_checkpoint=ckpt_dir)  # must not raise
     assert out.global_step >= 4
+
+
+# ---------------------------------------------------------------------------
+# Calibration & accounting composition
+# ---------------------------------------------------------------------------
+
+
+def _reference_epsilon(nm: float, q: float, n_steps: int, delta: float) -> float:
+    """Independently composed reference ε for Poisson-subsampled Gaussian."""
+    import opaque.dpsgd.accounting as dpsgd_acc
+    from opaque.accounting import Accountant
+
+    acc = Accountant()
+    step = dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=q)
+    for _ in range(n_steps):
+        acc |= step
+    return acc.epsilon_at(delta)
+
+
+def test_calibrated_noise_hits_target_epsilon(gpt2_lora, lm_dataset, tmp_path):
+    """The σ the trainer calibrates reproduces the target ε against an
+    independently-built accountant — guards the calibration solver, which no
+    other test exercises (all others pin a fixed multiplier)."""
+    model, tok = gpt2_lora
+    target_eps, delta = 8.0, 1e-5
+    args = _args(
+        tmp_path,
+        privacy_noise_multiplier=None,  # force calibration
+        privacy_target_epsilon=target_eps,
+        privacy_target_delta=delta,
+        max_steps=4,
+        save_strategy="no",
+    )
+    trainer = DPTrainer(
+        model=model, args=args, train_dataset=lm_dataset, processing_class=tok
+    )
+    out = trainer.train()
+
+    sigma = trainer.state.privacy_resolved_noise_multiplier
+    q = trainer.state.privacy_sample_rate
+    n = trainer.state.privacy_total_steps
+    assert n == 4
+    assert q == pytest.approx(4 / len(lm_dataset))  # batch 4 over 8 examples
+
+    reported = out.metrics["privacy_epsilon"]
+    ref = _reference_epsilon(sigma, q, n, delta)
+
+    # Reported ε matches an independent composition of the resolved σ ...
+    assert reported == pytest.approx(ref, rel=1e-3)
+    # ... and calibration landed just under the requested budget.
+    assert reported <= target_eps + 1e-2
+    assert reported >= target_eps - 0.5
+
+
+def test_accountant_composes_exactly_total_steps(gpt2_lora, lm_dataset, tmp_path):
+    """Reported ε equals an N-step reference and is distinguishable from
+    N±1 — locking the one-mechanism-per-step composition count."""
+    model, tok = gpt2_lora
+    nm, delta = 1.0, 1e-5
+    args = _args(
+        tmp_path,
+        privacy_noise_multiplier=nm,
+        privacy_target_delta=delta,
+        max_steps=5,
+        save_strategy="no",
+    )
+    trainer = DPTrainer(
+        model=model, args=args, train_dataset=lm_dataset, processing_class=tok
+    )
+    out = trainer.train()
+    q = trainer.state.privacy_sample_rate
+    reported = out.metrics["privacy_epsilon"]
+
+    assert reported == pytest.approx(_reference_epsilon(nm, q, 5, delta), rel=1e-6)
+    assert reported != pytest.approx(_reference_epsilon(nm, q, 4, delta), rel=1e-3)
+    assert reported != pytest.approx(_reference_epsilon(nm, q, 6, delta), rel=1e-3)
+
+
+def test_resume_keeps_total_epsilon_on_budget(gpt2_lora, lm_dataset, tmp_path):
+    """A run checkpointed mid-way and resumed reports the same final ε as an
+    uninterrupted run (prefix + remaining stays on budget)."""
+    model, tok = gpt2_lora
+    nm, delta = 1.0, 1e-5
+
+    full_dir = tmp_path / "full"
+    args_full = _args(
+        full_dir, privacy_noise_multiplier=nm, privacy_target_delta=delta,
+        max_steps=4, save_strategy="no",
+    )
+    full = DPTrainer(model=model, args=args_full, train_dataset=lm_dataset, processing_class=tok)
+    eps_full = full.train().metrics["privacy_epsilon"]
+
+    # Fresh model for the interrupted run.
+    model2 = AutoModelForCausalLM.from_pretrained("gpt2")
+    model2.config.pad_token_id = tok.pad_token_id
+    model2 = get_peft_model(
+        model2,
+        LoraConfig(task_type=TaskType.CAUSAL_LM, r=8, lora_alpha=16, lora_dropout=0.0,
+                   target_modules=["c_attn"], fan_in_fan_out=True),
+    )
+    part_dir = tmp_path / "part"
+    args_part = _args(
+        part_dir, privacy_noise_multiplier=nm, privacy_target_delta=delta,
+        max_steps=2, save_strategy="steps", save_steps=2,
+    )
+    part = DPTrainer(model=model2, args=args_part, train_dataset=lm_dataset, processing_class=tok)
+    part.train()
+    ckpt = os.path.join(part_dir, "checkpoint-2")
+    assert os.path.isdir(ckpt)
+
+    args_resume = _args(
+        part_dir, privacy_noise_multiplier=nm, privacy_target_delta=delta,
+        max_steps=4, save_strategy="no",
+    )
+    resumed = DPTrainer(model=model2, args=args_resume, train_dataset=lm_dataset, processing_class=tok)
+    eps_resumed = resumed.train(resume_from_checkpoint=ckpt).metrics["privacy_epsilon"]
+
+    assert eps_resumed == pytest.approx(eps_full, rel=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Clipping & noise primitives the trainer relies on
+# ---------------------------------------------------------------------------
+
+
+def test_clipping_bounds_per_example_norms():
+    """Post-clip per-example gradient norms are ≤ the clip bound, and the
+    clip is actually exercised (some raw norms exceed it)."""
+    from opaque.api.engine.clipping import clipped_grad
+
+    C = 1.0
+    # 4 examples; scale x so per-example grads have very different norms,
+    # several far above C.
+    xs = torch.tensor([[10.0], [0.01], [5.0], [-8.0]])
+
+    def per_example_loss(params, x):
+        # grad wrt w is x * (residual); large |x| -> large grad norm.
+        return 0.5 * ((params["w"] * x).sum() - 1.0) ** 2
+
+    params = {"w": torch.tensor([1.0])}
+    grad_fn, state = clipped_grad(
+        per_example_loss, argnums=0, batch_argnums=(1,), clipping_norm=C,
+        return_aux=True, normalize_by=1.0,
+    )
+    (_, aux), _ = grad_fn(params, xs, state=state)
+
+    assert aux.grad_norms.max().item() > C  # clip is exercised
+    assert torch.all(aux.clipped_grad_norms <= C + 1e-5)
+
+
+def test_realized_noise_stddev_equals_nm_times_clip():
+    """gaussian_noise reports and realizes σ = noise_multiplier * clip_norm."""
+    from opaque.api.engine.types import clipped
+    from opaque.dpsgd.noise import gaussian_noise
+    from opaque.random import key
+
+    nm, C = 1.3, 2.0
+    big = {"w": torch.zeros(200_000)}
+    cp = clipped(big, max_norm=C)
+    noise_fn, st = gaussian_noise(noise_multiplier=nm, key=key(0))
+    noised, _ = noise_fn(cp, st)
+
+    assert float(noised.noise_stddev) == pytest.approx(nm * C, rel=1e-6)
+    # Empirical stddev of the realized noise matches σ.
+    realized = noised.pytree["w"]
+    assert realized.std().item() == pytest.approx(nm * C, rel=5e-2)
+
+
+def test_eval_consumes_no_privacy_budget(gpt2_lora, lm_dataset, tmp_path):
+    """Repeated evaluate() calls do not advance the accountant."""
+    model, tok = gpt2_lora
+    delta = 1e-5
+    args = _args(
+        tmp_path, privacy_noise_multiplier=1.0, privacy_target_delta=delta,
+        max_steps=4, save_strategy="no",
+    )
+    trainer = DPTrainer(
+        model=model, args=args, train_dataset=lm_dataset,
+        eval_dataset=lm_dataset, processing_class=tok,
+    )
+    trainer.train()
+    eps_before = trainer._accountant.epsilon_at(delta)
+    for _ in range(3):
+        trainer.evaluate()
+    eps_after = trainer._accountant.epsilon_at(delta)
+    assert eps_after == pytest.approx(eps_before, rel=0, abs=0)
+
+
+def test_dp_noise_reproducible_at_sigma_positive(gpt2_tok, lm_dataset, tmp_path):
+    """Same seed ⇒ identical trained params at σ>0; different seed ⇒ different."""
+
+    from transformers import set_seed
+
+    def _train(seed, out):
+        # Fix the model/LoRA init identically across runs so only the
+        # trainer's DP ``seed`` (noise + sampling RNG) varies.
+        set_seed(0)
+        m = AutoModelForCausalLM.from_pretrained("gpt2")
+        m.config.pad_token_id = gpt2_tok.pad_token_id
+        m = get_peft_model(
+            m,
+            LoraConfig(task_type=TaskType.CAUSAL_LM, r=8, lora_alpha=16, lora_dropout=0.0,
+                       target_modules=["c_attn"], fan_in_fan_out=True),
+        )
+        args = _args(out, privacy_noise_multiplier=1.0, seed=seed, max_steps=4, save_strategy="no")
+        t = DPTrainer(model=m, args=args, train_dataset=lm_dataset, processing_class=gpt2_tok)
+        t.train()  # restores trained params into t.model in its finally block
+        return {
+            n: p.detach().clone()
+            for n, p in t.model.named_parameters()
+            if p.requires_grad
+        }
+
+    a = _train(123, tmp_path / "a")
+    b = _train(123, tmp_path / "b")
+    c = _train(456, tmp_path / "c")
+    key0 = next(iter(a))
+    assert torch.allclose(a[key0], b[key0], atol=0, rtol=0)
+    assert not torch.allclose(a[key0], c[key0])
+
+
+def test_truncated_poisson_accounting_differs_from_plain():
+    """Truncated-Poisson amplification yields a different ε than plain Poisson
+    at the same noise multiplier — the trainer's truncated branch is real."""
+    import opaque.dpsgd.accounting as dpsgd_acc
+    from opaque.accounting import Accountant
+
+    nm, q, n, delta, ds = 1.0, 0.5, 4, 1e-5, 8
+
+    def eps(step):
+        acc = Accountant()
+        for _ in range(n):
+            acc |= step
+        return acc.epsilon_at(delta)
+
+    plain = dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=q)
+    trunc = dpsgd_acc.poisson(
+        dpsgd_acc.gaussian(nm), sample_rate=q, truncated_batch_size=3, dataset_size=ds
+    )
+    assert eps(plain) != pytest.approx(eps(trunc), rel=1e-3)
