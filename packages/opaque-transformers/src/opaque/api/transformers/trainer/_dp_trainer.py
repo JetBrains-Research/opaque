@@ -705,20 +705,20 @@ class DPTrainer:
 
         Resume semantics under DP differ from HF's batch-replay model:
 
-        - **Sampler resume is O(1), not batch-replay.** HF's ``Trainer``
-          rebuilds the dataloader and skips ``global_step`` batches one
-          by one to recover the exact data order; that's incompatible
-          with our Poisson sampler whose per-iteration subsample is
-          derived from ``fold_in(key, iter_count)``.  Loading the
-          saved ``iter_count`` jumps the sampler directly to the right
-          place.  **Privacy budget is unchanged** — every iteration
-          still consumes one Poisson-amplified Gaussian step, the
-          accountant composes the same number of mechanisms — but the
-          *concrete batches* the resumed run sees from iteration N
-          onward are the same distribution, not the same byte sequence,
-          as a non-resumed run that reached iteration N organically.
-          This is intentional (variance reduction, no replay cost) and
-          DP-valid.
+        - **Sampler resume restores the cursor, not the data order.**
+          HF's ``Trainer`` rebuilds the dataloader and skips
+          ``global_step`` batches one by one to recover the exact data
+          order; we instead restore the sampler's ``consumed`` cursor.
+          For the Poisson sampler this is done by advancing its NumPy
+          generator forward by ``consumed`` discarded sampling steps
+          (an ``O(consumed)`` RNG replay — cheap relative to training,
+          but *not* an ``O(1)`` jump), so the continuation is a
+          deterministic resume of the saved stream.  **Privacy budget is
+          unchanged** — every iteration still consumes one
+          Poisson-amplified Gaussian step and the accountant composes the
+          same number of mechanisms — and the resumed subsample sequence
+          from iteration N onward matches a continuous run from the same
+          seed.  DP-valid either way.
         - **``ignore_data_skip=True``** disables the sampler-state
           restore on resume.  The new run starts each epoch from
           ``iter_count=0`` with a fresh subsample sequence, again
