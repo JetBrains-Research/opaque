@@ -7,26 +7,14 @@ project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
-    # opaque-accounting ships a PyO3 native extension that needs
-    # rustc + cargo at build time. The Cadence H200 base image
-    # doesn't bundle a Rust toolchain by default. Install via
-    # rustup (non-interactive, default toolchain) so subsequent
-    # uv sync / maturin develop can compile the .so.
-    if ! command -v rustc >/dev/null 2>&1; then
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-      export PATH="$HOME/.cargo/bin:$PATH"
-    fi
-    export PATH="$HOME/.cargo/bin:$PATH"
-    rustc --version
+    # `uv sync` handles the maturin PEP 517 build internally via uv's
+    # bundled build-environment toolchain. Empirically this works for
+    # the manual-loop preset on the same workers; the trainer preset
+    # was failing because of an explicit `uv run maturin develop` step
+    # that bypassed uv's isolated build env and hit a Cadence worker
+    # that lacks system rustc. Trust uv sync and verify with a smoke
+    # import.
     uv sync --group dev --group examples --all-packages --extra all
-    # `uv sync` installs the editable workspace member but doesn't
-    # always build/refresh the .so. Force a maturin-develop into
-    # .venv so the native extension is present before the trainer
-    # imports opaque.accounting at module load.
-    uv pip install --quiet "maturin>=1.0,<2.0"
-    uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
-    # Sanity check: fail fast with a clear message if the import
-    # still cannot find the native extension.
     uv run python -c "from opaque.api.accounting.core import opaque_accounting as _; print('opaque_accounting native ext OK')"
     uv run python examples/train_causal_lm_trainer.py --preset mellum-kstack $EXTRA_ARGS
 provisioning:
