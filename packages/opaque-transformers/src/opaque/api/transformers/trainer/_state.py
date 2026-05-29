@@ -10,8 +10,15 @@ and an explicit serialisation ``version``.
 Dropped vs HF:
 
 - ``total_flos`` — FLOP counter never written by the DP path.
-- ``is_hyper_param_search``, ``trial_name``, ``trial_params`` — HPO
-  was removed in Phase C.
+
+HPO parity: HPO itself is not supported by DPTrainer (no
+``hyperparameter_search`` entry point), but ``is_hyper_param_search``,
+``trial_name``, and ``trial_params`` are kept on the state because HF's
+own reporting callbacks (WandB, TensorBoard, ClearML, Neptune, ...)
+read them via attribute access in their ``on_train_begin`` / logging
+paths regardless of whether HPO is active. Defaults
+(``False`` / ``None`` / ``None``) route every HPO-guarded branch into
+its no-HPO arm — i.e. callbacks behave as in a normal non-HPO HF run.
 
 Schema divergence: ``trainer_state.json`` written by DPTrainer may
 include privacy telemetry keys in ``log_history``. HF's strict
@@ -59,6 +66,13 @@ class DPTrainerState:
     is_local_process_zero: bool = True
     is_world_process_zero: bool = True
     stateful_callbacks: dict[str, Any] = dataclasses.field(default_factory=dict)
+
+    # HPO duck-typing parity: HPO is not supported on DPTrainer, but HF's
+    # reporting callbacks read these attributes unconditionally on every
+    # run (see module docstring).  Defaults route into the no-HPO arm.
+    is_hyper_param_search: bool = False
+    trial_name: str | None = None
+    trial_params: dict[str, Any] | None = None
 
     # DPTrainer-specific privacy bookkeeping
     privacy_resolved_delta: float | None = None
