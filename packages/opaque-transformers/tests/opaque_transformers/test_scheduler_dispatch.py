@@ -191,6 +191,32 @@ class TestPointwiseParity:
         )
         _assert_pointwise(ours, hf, 1000)
 
+    @pytest.mark.parametrize(
+        "warmup,total,k",
+        [
+            (101, 1000, 4),  # decay=899, 899 % 4 == 3
+            (50, 997, 3),  # decay=947, 947 % 3 == 2
+            (0, 1000, 7),  # decay=1000, 1000 % 7 == 6
+        ],
+    )
+    def test_cosine_with_restarts_non_divisible(self, warmup, total, k):
+        """Restart window need not be divisible by num_cycles — used to crash
+        in ``with_restarts``; now matches HF's fractional-progress formula."""
+        ours = build_lr_schedule(
+            _Args(
+                lr_scheduler="cosine_with_restarts",
+                warmup_steps=warmup,
+                lr_scheduler_kwargs={"num_cycles": k},
+            ),
+            num_training_steps=total,
+        )
+        hf = _hf_lambda(
+            lambda o: get_cosine_with_hard_restarts_schedule_with_warmup(
+                o, warmup, total, num_cycles=k
+            )
+        )
+        _assert_pointwise(ours, hf, total)
+
     def test_cosine_with_min_lr_absolute(self):
         ours = build_lr_schedule(
             _Args(
