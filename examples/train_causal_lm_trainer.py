@@ -80,16 +80,8 @@ def _resolve_trainer_dtype(
     """Resolve dtype for DPTrainer's current full-cast precision support."""
     dtype_map = {
         "float32": torch.float32,
-        "float16": torch.float16,
         "bfloat16": torch.bfloat16,
     }
-    if requested_name == "float16":
-        raise ValueError(
-            "DPTrainer does not support fp16 training: dynamic loss scaling "
-            "adds a per-example unscale-before-clip step for no benefit on "
-            "bf16-capable hardware. Use --dtype bfloat16 or --dtype float32."
-        )
-
     requested_dtype = dtype_map[requested_name]
     if _is_dtype_supported(device, requested_dtype):
         return requested_name, requested_dtype, None
@@ -234,8 +226,8 @@ def parse_args() -> argparse.Namespace:
         "--dtype",
         type=str,
         default="bfloat16",
-        choices=["float32", "float16", "bfloat16"],
-        help="Model precision. DPTrainer currently supports float32 and bf16.",
+        choices=["float32", "bfloat16"],
+        help="Model precision. DPTrainer supports float32 and bf16.",
     )
 
     data_group = parser.add_argument_group("data", "Dataset and tokenization settings")

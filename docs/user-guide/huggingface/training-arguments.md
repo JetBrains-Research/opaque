@@ -108,7 +108,7 @@ Mechanism constraints (validated at construction):
 
 | Field | Default | Notes |
 |---|---|---|
-| `bf16` | `False` | bf16 autocast on the per-example loss closure (the only mixed-precision mode; no loss scaler). |
+| `bf16` | `False` | bf16 autocast on the per-example loss closure. |
 | `bf16_full_eval` | `False` | Cast the model to bf16 for the eval scope only. |
 | `gradient_checkpointing` | `False` | Pair with `gradient_checkpointing_kwargs={"use_reentrant": False}` — reentrant checkpointing doesn't compose with vmap. |
 | `torch_compile` | `False` | Compiles the per-example loss closure (not the model).  Tries `fullgraph=True` first; falls back with a warning. |
@@ -192,9 +192,9 @@ porting an HF script, remove or translate these:
 
 | HF argument | Why it's unsupported | DPTrainer alternative |
 | --- | --- | --- |
-| `gradient_accumulation_steps` | One optimizer step must be exactly one Poisson round for the accountant to compose correctly | Increase `per_device_train_batch_size` (the expected Poisson batch); use `auto_find_microbatch_size=True` for OOM relief |
+| `gradient_accumulation_steps` | One optimizer step must be exactly one Poisson round for the accountant to compose correctly | Increase `per_device_train_batch_size` (the expected Poisson round size) for a larger effective batch; the physical vmap chunk (microbatch) is decoupled from it and auto-shrinks under `auto_find_microbatch_size=True` for OOM relief — accounting is unaffected |
 | `group_by_length`, `length_column_name` | Length-bucketed batching breaks the equal per-example inclusion probability Poisson amplification relies on | Leave examples unsorted; Poisson sampling handles variable lengths |
-| `dataloader_drop_last` | Poisson batches are variable-size by design; "last batch" is meaningless | n/a (omit) |
+| `dataloader_drop_last` | The Poisson / random samplers produce variable-size batches, so dropping a "last batch" is meaningless; the sequential batch sampler already enforces drop-last internally where it matters for correctness | n/a (handled by the sampler) |
 | `deepspeed`, `fsdp`, `fsdp_config`, `accelerator_config`, `parallelism_config` | Parameter/gradient sharding is incompatible with vmap per-example gradients | Use Opaque's built-in DDP (`torchrun` + sharded data) |
 | `tpu_num_cores`, `mp_parameters` | TPU/XLA and SageMaker MP are not supported execution backends | CUDA / CPU only |
 | `fp16`, `fp16_full_eval`, `fp16_opt_level`, `half_precision_backend`, `fp16_backend` | fp16 dynamic loss scaling adds a per-example unscale-before-clip step for no benefit on bf16-capable hardware | `bf16=True` (native bf16 autocast; no loss scaler) |

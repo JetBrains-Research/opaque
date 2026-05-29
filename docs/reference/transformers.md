@@ -198,7 +198,7 @@ Dataclass surface.  Every field listed here exists on
 |---|---|---|---|
 | `use_cpu` | `bool` | `False` | Pin to CPU even if CUDA is available. |
 | `use_mps_device` | `bool` | `False` | Use MPS (Apple Silicon). |
-| `bf16` | `bool` | `False` | bf16 autocast on the loss closure (the only mixed-precision mode; no loss scaler needed). |
+| `bf16` | `bool` | `False` | bf16 autocast on the loss closure. |
 | `bf16_full_eval` | `bool` | `False` | Cast model to bf16 for eval scope only. |
 | `tf32` | `bool \| None` | `None` | Toggle TF32 on Ampere+. |
 | `gradient_checkpointing` | `bool` | `False` | Activation recomputation.  Pair with `use_reentrant=False` for vmap-safety. |
