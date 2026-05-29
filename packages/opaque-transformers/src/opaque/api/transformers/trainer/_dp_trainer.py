@@ -837,9 +837,39 @@ class DPTrainer:
                 )
                 self._warn_on_arg_drift(runtime_payload)
             elif prefix_accountant is not None:
-                # save_only_model checkpoints have no DP runtime file but
-                # we still install the saved accountant (or the empty
-                # ``Accountant()`` from the warmup opt-in path).
+                # No ``dp_state.pt`` in the checkpoint.  Reaching here with
+                # ``privacy_resume_without_accountant=False`` means
+                # ``accountant.json`` *was* present (otherwise
+                # ``_read_runtime_for_resume`` would have raised) but the DP
+                # runtime state was not saved — i.e. a ``save_only_model``
+                # checkpoint of a real DP run.  Continuing training from it
+                # would rebuild the noise state at ``_step_counter=0`` and
+                # restart the Poisson cursor, **reusing the same noise draws**
+                # the original run already released on (re-sampled) data.  An
+                # observer of both runs could cancel the shared noise and
+                # recover a noiseless data-dependent gradient — a silent
+                # privacy violation while the accountant still reports a clean
+                # ε.  Refuse it: ``save_only_model`` checkpoints are
+                # export-only.
+                if not self.args.privacy_resume_without_accountant:
+                    raise RuntimeError(
+                        f"Cannot resume training from {resume_path}: the "
+                        "checkpoint has no DP runtime state "
+                        f"({ckpt.DP_STATE_NAME} is missing, as written by "
+                        "save_only_model=True), but it does carry a privacy "
+                        "accountant with prior DP cost.  Continuing training "
+                        "would reuse the original run's noise stream and "
+                        "silently break the privacy guarantee.  save_only_model "
+                        "checkpoints are export-only; resume from a full "
+                        "checkpoint (save_only_model=False).  Only if the "
+                        "checkpoint genuinely has zero prior DP cost (e.g. a "
+                        "public-data warmup) pass "
+                        "privacy_resume_without_accountant=True to opt in."
+                    )
+                # Warmup opt-in path: the user asserts zero prior DP cost, so
+                # there is no released DP noise to collide with — installing the
+                # empty prefix accountant and starting the noise stream fresh is
+                # correct.
                 ctx.accounting = prefix_accountant
             self._load_rng_state(resume_path)
             self._load_callback_states()
@@ -1627,7 +1657,12 @@ class DPTrainer:
             if self._loss_scaler is not None:
                 from opaque.precision import all_finite
 
-                grads_finite = all_finite(grads)
+                # ``grads`` is a ``ClippedPytree`` wrapper, which is *not* an
+                # optree node — flattening it yields a single opaque leaf, so
+                # ``all_finite(grads)`` would never see the tensors (and always
+                # report finite).  Inspect ``grads.pytree`` (the raw tensor
+                # tree) so a real fp16 overflow is actually detected.
+                grads_finite = all_finite(grads.pytree)
                 grads_finite = _distributed.reduce_step_finite(grads_finite, self._ddp)
                 self._loss_scaler_state = self._loss_scaler.update(
                     self._loss_scaler_state, grads_finite
