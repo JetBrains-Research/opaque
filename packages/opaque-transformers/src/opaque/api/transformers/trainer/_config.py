@@ -43,10 +43,13 @@ DP-correct invariants worth flagging:
   HF property). Internal microbatch chunking under OOM retry never
   changes the logical batch — privacy accounting is unaffected.
 - ``optim`` accepts the torchopt-backed names DPTrainer wires
-  (``adam``, ``adamw``, ``adamw-bc``, ``sgd``, ``rmsprop``, ``adagrad``,
-  ``adadelta``, ``adamax``, ``radam``); HF's ``OptimizerNames`` values
-  (``adamw_torch``, ``adafactor``, ``lion``, …) are rejected with a
-  per-name redirection.
+  (``adam``, ``adamw``, ``adamw-bc`` = DP bias-corrected AdamW, ``sgd``,
+  ``lion``, ``ademamix``, ``adafactor``, ``rmsprop``, ``adagrad``,
+  ``radam``, ``adadelta``, ``schedule_free``) plus HF aliases that map
+  cleanly onto them (``adamw_torch`` / ``adamw_torch_fused`` / ``adamw_hf``
+  → ``adamw``, ``lion_32bit`` → ``lion``, …).  Names with no functional
+  equivalent (bitsandbytes 8-bit / paged, Apex-fused, XLA/NPU variants)
+  are rejected with a per-name redirection.
 - ``metric_for_best_model`` must resolve to an eval-side metric (raise
   on ``"train_*"`` shape) when ``load_best_model_at_end`` is on.
 

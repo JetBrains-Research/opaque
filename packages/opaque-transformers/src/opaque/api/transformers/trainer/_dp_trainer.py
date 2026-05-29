@@ -1388,28 +1388,28 @@ class DPTrainer:
                     (step_idx + 1) / max(1, ctx.expected_steps_per_epoch)
                 )
 
-                if batch_size == 0:
-                    # Still fire on_step_end so callbacks observe a step boundary.
-                    self._control = self._callback_handler.on_step_end(
-                        self.args, self.state, self._control
-                    )
-                    if self._control.should_training_stop:
-                        break
-                    continue
-
-                last_loss = step_result["loss"]
-                last_step_result = step_result
-                # Loss accumulator stays on device for DDP gather.  fp16
-                # overflows already short-circuit upstream (the scaler
-                # returns ``batch_size=0`` which hits the empty-step
-                # ``continue`` above), so any NaN reaching here reflects
-                # a genuine forward / loss-math divergence — propagate
-                # it through the running average so the user sees the
-                # honest signal instead of a smoothed-over fake curve.
-                tr_loss_step = torch.tensor(float(last_loss), device=self._device)
-                self._tr_loss = self._tr_loss + tr_loss_step
+                # Empty Poisson round (or fp16-overflow skip): no loss /
+                # tokens to accumulate.  The optimizer still applied a
+                # pure-noise update on an empty round and ``global_step``
+                # already advanced, so we must NOT skip the log/save/eval
+                # gate below — a save or eval boundary landing exactly on an
+                # empty round used to be silently dropped.  ``step_result``
+                # carries only ``{loss: 0, batch_size: 0}`` here, which the
+                # gate reads via ``.get`` defaults (the logged loss is the
+                # windowed average, unaffected by this step).
+                if batch_size != 0:
+                    last_loss = step_result["loss"]
+                    last_step_result = step_result
+                    # Loss accumulator stays on device for DDP gather.  fp16
+                    # overflows short-circuit upstream (the scaler returns
+                    # ``batch_size=0``), so any NaN reaching here reflects a
+                    # genuine forward / loss-math divergence — propagate it
+                    # through the running average so the user sees the honest
+                    # signal instead of a smoothed-over fake curve.
+                    tr_loss_step = torch.tensor(float(last_loss), device=self._device)
+                    self._tr_loss = self._tr_loss + tr_loss_step
                 # Token counting (Phase 5c).
-                if a.include_num_input_tokens_seen != "no":
+                if batch_size != 0 and a.include_num_input_tokens_seen != "no":
                     main_input_name = getattr(
                         self._model, "main_input_name", "input_ids"
                     )
@@ -2943,12 +2943,16 @@ class DPTrainer:
         # ``ctx.current_sampler`` from a registry-deserialised snapshot
         # before calling here, so the loader picks up the right cursor;
         # otherwise build a fresh sampler bound to the resolved
-        # ``sampling_mode`` (one of the five supported modes —
-        # ``poisson``, ``b_min_sep``, ``balls_in_bins``,
-        # ``cyclic_poisson``, ``sequential``) which iterates end-to-end
-        # without per-epoch re-instantiation.  The outer epoch loop is
-        # purely a synthetic boundary layer for HF callbacks, not a
-        # sampling-side concept.
+        # ``sampling_mode``.  Three modes are reachable through
+        # ``TrainingArguments`` (validated by ``_ALLOWED_SAMPLERS``):
+        # ``poisson`` (DP-SGD + ``mf_identity``), ``b_min_sep`` (``mf_band``),
+        # and ``balls_in_bins`` (other MF mechanisms).  ``build_sampler`` also
+        # constructs ``cyclic_poisson`` / ``sequential`` for subclasses that
+        # call it directly, but those are not exposed as config
+        # ``sampling_mode`` values (no matching accountant amplifier) and the
+        # config layer rejects them.  The sampler iterates end-to-end without
+        # per-epoch re-instantiation; the outer epoch loop is purely a
+        # synthetic boundary layer for HF callbacks.
         if ctx.current_sampler is None:
             from opaque.random import fold_in, key
 
@@ -4372,8 +4376,23 @@ class DPTrainer:
             "target_delta": (
                 ctx.target_delta if ctx is not None else a.privacy_target_delta
             ),
+            # In *calibrated* mode the noise multiplier is recomputed over the
+            # remaining steps and so legitimately differs from the saved one;
+            # comparing them would fire a spurious "drift" warning on every
+            # resume and erode trust in the genuinely-meaningful drift signals.
+            # Return ``None`` (the drift loop skips ``None``) unless the user
+            # pinned a fixed multiplier, where a mismatch is real drift.
             "noise_multiplier": (
-                ctx.noise_multiplier if ctx is not None else a.privacy_noise_multiplier
+                None
+                if (
+                    ctx is not None
+                    and ctx.noise_multiplier_source == "calibrated"
+                )
+                else (
+                    ctx.noise_multiplier
+                    if ctx is not None
+                    else a.privacy_noise_multiplier
+                )
             ),
             "total_steps": (
                 ctx.total_steps if ctx is not None else self._predict_total_steps()
