@@ -306,7 +306,7 @@ def parse_args() -> argparse.Namespace:
         help="Use DPTrainer cpu_offload_activations.",
     )
     train_group.add_argument(
-        "--auto-find-batch-size",
+        "--auto-find-microbatch-size",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Let DPTrainer retry with smaller physical microbatches on OOM.",
