@@ -558,3 +558,25 @@ def test_multi_dataset_eval_namespaces_metrics(gpt2_lora, lm_dataset, tmp_path):
     assert any(k.startswith("eval_a_") for k in metrics)
     assert any(k.startswith("eval_b_") for k in metrics)
     assert "eval_a_loss" in metrics and "eval_b_loss" in metrics
+
+
+def test_partial_checkpoint_tmp_dir_is_ignored(gpt2_lora, lm_dataset, tmp_path):
+    """A crash-leftover ``checkpoint-N.tmp`` staging dir is invisible to
+    checkpoint discovery and resume (atomic-publish guarantee)."""
+    from opaque.api.transformers.trainer import _checkpoint as ckpt
+
+    model, tok = gpt2_lora
+    args = _args(tmp_path, max_steps=2, save_strategy="steps", save_steps=2)
+    trainer = DPTrainer(
+        model=model, args=args, train_dataset=lm_dataset, processing_class=tok
+    )
+    trainer.train()
+    # Simulate a crash mid-write: a half-populated staging dir for a later step.
+    partial = tmp_path / "checkpoint-99.tmp"
+    partial.mkdir()
+    (partial / "accountant.json").write_text("{}")  # but no dp_state.pt
+
+    found = ckpt.list_checkpoints(str(tmp_path))
+    assert all(not p.endswith(".tmp") for p in found)
+    last = ckpt.get_last_checkpoint(str(tmp_path))
+    assert last is not None and last.endswith("checkpoint-2")  # not the .tmp

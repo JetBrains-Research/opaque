@@ -22,6 +22,7 @@ import json
 import logging
 import math
 import os
+import shutil
 import time
 from collections.abc import Mapping
 from typing import Any, Callable, NamedTuple
@@ -3927,14 +3928,25 @@ class DPTrainer:
         if output_dir is None:
             raise ValueError("Saving checkpoints requires args.output_dir to be set")
         ckpt_dir = os.path.join(output_dir, f"{ckpt.PREFIX_CHECKPOINT_DIR}-{step}")
+        # Atomic publish: write everything into a sibling ``*.tmp`` staging
+        # directory, then ``os.replace`` it onto the final ``checkpoint-N``
+        # name only once all artefacts (and every rank's RNG snapshot) have
+        # landed.  A crash mid-write leaves a ``checkpoint-N.tmp`` dir, which
+        # the ``^checkpoint-(\d+)$`` discovery regex ignores — so resume and
+        # rotation never select a half-written checkpoint (which, missing
+        # ``dp_state.pt``, would otherwise route into the save_only_model
+        # noise-reuse path).  Same-directory rename ⇒ atomic on POSIX.
+        staging_dir = ckpt_dir + ".tmp"
         # Rank-0 owns the directory creation + bulk artefacts; every rank
         # restores params (needed for either RNG snapshot writers reading
         # `self._model.state_dict()` shapes consistently in future, and for
         # callbacks below that may inspect params).
         self._restore_params(ctx.trainable_params)
         if _distributed.should_save(a, self._ddp):
-            os.makedirs(ckpt_dir, exist_ok=True)
-            self._save_model_artifacts(ckpt_dir)
+            if os.path.isdir(staging_dir):
+                shutil.rmtree(staging_dir)  # stale leftover from a prior crash
+            os.makedirs(staging_dir, exist_ok=True)
+            self._save_model_artifacts(staging_dir)
 
             # HF parity: register ``best_model_checkpoint`` by *looking up*
             # the folder named ``checkpoint-{best_global_step}`` rather than
@@ -3945,37 +3957,51 @@ class DPTrainer:
             # rotation could delete it because no folder is protected.
             # Resolve *before* writing ``trainer_state.json`` so the file
             # lands once with the final ``best_model_checkpoint`` populated.
+            # The path always uses the *final* ``checkpoint-N`` name (not the
+            # staging dir), since that's what exists after the rename below.
             if self.state.best_global_step is not None:
-                best_dir = os.path.join(
-                    output_dir,
-                    f"{ckpt.PREFIX_CHECKPOINT_DIR}-{self.state.best_global_step}",
-                )
-                if os.path.isdir(best_dir):
-                    self.state.best_model_checkpoint = best_dir
+                if self.state.best_global_step == step:
+                    # This very checkpoint is the best — point at its final
+                    # name (it materialises at the rename).
+                    self.state.best_model_checkpoint = ckpt_dir
                 else:
-                    log.debug(
-                        "best_global_step=%d but no checkpoint-%d/ folder "
-                        "exists (best step fell into a non-saved bucket); "
-                        "leaving best_model_checkpoint unset",
-                        self.state.best_global_step,
-                        self.state.best_global_step,
+                    best_dir = os.path.join(
+                        output_dir,
+                        f"{ckpt.PREFIX_CHECKPOINT_DIR}-{self.state.best_global_step}",
                     )
+                    if os.path.isdir(best_dir):
+                        self.state.best_model_checkpoint = best_dir
+                    else:
+                        log.debug(
+                            "best_global_step=%d but no checkpoint-%d/ folder "
+                            "exists (best step fell into a non-saved bucket); "
+                            "leaving best_model_checkpoint unset",
+                            self.state.best_global_step,
+                            self.state.best_global_step,
+                        )
 
-            self._save_trainer_state(ckpt_dir)
-            self._save_training_args(ckpt_dir)
-            self._save_accountant(ckpt_dir, ctx.accounting)
+            self._save_trainer_state(staging_dir)
+            self._save_training_args(staging_dir)
+            self._save_accountant(staging_dir, ctx.accounting)
             if not a.save_only_model:
-                self._save_optimizer(ckpt_dir, ctx)
-                self._save_dp_runtime(ckpt_dir, ctx)
+                self._save_optimizer(staging_dir, ctx)
+                self._save_dp_runtime(staging_dir, ctx)
 
         # Per-rank RNG snapshot — every rank, after rank-0 has created the
-        # directory.  Barrier guarantees the dir exists before non-zero
+        # staging directory.  Barrier guarantees it exists before non-zero
         # ranks try to write into it.
         _distributed.barrier(self._ddp)
         if not a.save_only_model:
-            self._save_rng_state(ckpt_dir)
+            self._save_rng_state(staging_dir)
+        # All ranks have finished writing into the staging dir; publish it.
+        _distributed.barrier(self._ddp)
 
         if _distributed.should_save(a, self._ddp):
+            if os.path.isdir(ckpt_dir):
+                # Defensive: the only callers target a fresh step, but never
+                # let a stale dir block the atomic rename.
+                shutil.rmtree(ckpt_dir)
+            os.replace(staging_dir, ckpt_dir)
             # Rotation honours ``save_total_limit`` and protects best when set.
             ckpt.rotate_checkpoints(
                 output_dir,
