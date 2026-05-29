@@ -1029,6 +1029,30 @@ class TrainingArguments:
         _ = self._setup_devices
         return getattr(self, "_n_gpu", 0)
 
+    # =================================================================
+    # Serialization (HF-callback parity)
+    # =================================================================
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable dict of field values.
+
+        HF reporting callbacks (W&B / TensorBoard / MLflow) call
+        ``args.to_dict()`` during ``on_train_begin`` to log the run
+        configuration. Provide a shallow dataclass-asdict that handles
+        the non-trivial field types we declare (``Path``, ``torch.dtype``,
+        enums, recipe dataclasses) by falling back to ``str()`` on
+        anything ``json`` would refuse.
+        """
+        out: dict[str, Any] = {}
+        for field in dataclasses.fields(self):
+            value = getattr(self, field.name)
+            try:
+                json.dumps(value)
+                out[field.name] = value
+            except (TypeError, ValueError):
+                out[field.name] = str(value)
+        return out
+
 
 # =====================================================================
 # Helpers
