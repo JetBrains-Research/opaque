@@ -254,3 +254,43 @@ update). All ranks agree, so no divergence — a cadence surprise.
 4. **H1 (DDP eval deadlock), H2 (cosine_with_restarts crash), H5 (DDP sampler key)** — crashes/hangs + sampling correctness.
 5. **M1 (epoch-resume ε overshoot), M3/H3 (precision & eval-shape surprises)**.
 6. UX/doc cleanups (L1, M4, M6, M7, M8, the false DDP-sampler comment).
+
+---
+
+## Resolution status
+
+All findings were addressed on this branch (`claude/opaque-trainer-ultra-review-g2Tlm`), each with
+regression coverage where testable on CPU. DDP-only items (H1, H5, and the DDP DP-guarantee assertions)
+ship with the fix plus a `cuda`-marked / unit-level guard and **still require a multi-GPU validation run**
+before merge.
+
+| Finding | Status | How |
+| --- | --- | --- |
+| **META** test gap | Fixed | New `tests/validation/test_dp_guarantees.py`: calibrated-ε vs reference, exact composition count, clipping-bounds, σ=nm·C, eval-spends-no-budget, σ>0 reproducibility, truncated-Poisson, rank-fold decorrelation, resume-on-budget, dict-eval, partial-checkpoint |
+| **C1** save_only_model resume | Fixed | Hard-error in `_train_once` unless `privacy_resume_without_accountant`; test |
+| **C2** fp16 finite-check | Fixed | `all_finite(grads.pytree)`; CPU building-block guard + `cuda` e2e test (confirmed empirically) |
+| **H1** DDP eval deadlock | Fixed (loud-fail) | Reject empty shards + `eval_do_concat_batches=False` under DDP; **needs multi-GPU validation** for full uneven-shard gather |
+| **H2** cosine_with_restarts crash | Fixed | Fractional cycle length in `WithRestarts` + inner-cosine float span; exact-HF non-divisible parity tests |
+| **H3** eval dual-path shape | Fixed | Docstring corrected, `ignore_keys` honoured, one-time logits-only warning |
+| **H4** sampler O(n) replay | Fixed (docs) | Corrected the false O(1) claim; replay is correct, an O(1) numpy-internals jump was rejected as fragile |
+| **H5** DDP sampler key | Fixed (fresh-run) | `fold_in(key, rank)`; decorrelation unit test; resume-per-rank-snapshot noted, **needs multi-GPU validation** |
+| **M1** epoch-resume ε overshoot | Fixed | Unconditional `global_step >= ctx.total_steps` ceiling; test |
+| **M2** atomic checkpoint write | Fixed | Stage into `checkpoint-N.tmp` + `os.replace`; crash-sim test |
+| **M3** full-eval no-op in train | Fixed (warn) | One-time warning that full-cast eval is post-training only |
+| **M4** dict eval | Fixed | Recursive per-split prefixed eval; test |
+| **M5** per-example eval keys | Fixed | Validate eval batch carries train keys; clear error |
+| **M6** drift false-positive | Fixed | Skip noise_multiplier drift in calibrated mode |
+| **M7** dead sampler modes | Fixed (docs) | Corrected "five modes" comment; build_sampler-only modes documented |
+| **M8** optim docstring | Fixed | Added `adamw-bc` alias; corrected docstring (dropped `adamax`, fixed adafactor/lion) |
+| **M9** empty-round cadence | Fixed | Run log/save/eval gate on empty rounds; loss/token accumulation guarded |
+| **L1** HF-migration UX | Fixed (docs) | Migration table in `training-arguments.md` |
+| **L2** budget defaults | Fixed | Positivity/range guards on ε / σ / δ |
+| **L3** eval-on-train warning | Fixed | One-time warning |
+| **L4** batch_eval_metrics | Documented | Dataclass already raises `TypeError`; migration table points to `eval_accumulation_steps` |
+| **L5** calibration-timing doc | Fixed | `dptrainer.md` corrected |
+| **L7** dead DDP-backend branch | Fixed | Removed |
+| **L8** fp16+CPU | Won't fix | Finding was incorrect — `fp16_full_eval` is a CPU-valid cast; based on an outdated CPU-autocast assumption |
+| Nits | Fixed | `_collect_chunks` no-op, dead `prediction_loss_only` branch, `inverse_sqrt timescale=0`, `eval_dtype` parameterless guard, stale precision/version docstrings |
+
+Full affected-suite sweep (`opaque-transformers` + engine scheduling + dpsgd sampling, CPU, not-slow):
+**668 passed, 19 skipped**; repo contract tests: **11 passed**; lint/format clean.
