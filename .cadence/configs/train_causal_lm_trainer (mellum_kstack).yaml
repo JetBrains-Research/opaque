@@ -7,13 +7,22 @@ project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
+    # opaque-accounting ships a PyO3 native extension that needs
+    # rustc + cargo at build time. The Cadence H200 base image
+    # doesn't bundle a Rust toolchain by default. Install via
+    # rustup (non-interactive, default toolchain) so subsequent
+    # uv sync / maturin develop can compile the .so.
+    if ! command -v rustc >/dev/null 2>&1; then
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+      export PATH="$HOME/.cargo/bin:$PATH"
+    fi
+    export PATH="$HOME/.cargo/bin:$PATH"
+    rustc --version
     uv sync --group dev --group examples --all-packages --extra all
-    # opaque-accounting ships a PyO3 native extension. `uv sync`
-    # installs the editable workspace member but does not always
-    # build/refresh the .so on cache-replay workers (the editable
-    # install can reuse a stale RECORD and skip the rust compile).
-    # Force a maturin-develop into .venv to guarantee the .so is
-    # present before the trainer imports opaque.accounting.
+    # `uv sync` installs the editable workspace member but doesn't
+    # always build/refresh the .so. Force a maturin-develop into
+    # .venv so the native extension is present before the trainer
+    # imports opaque.accounting at module load.
     uv pip install --quiet "maturin>=1.0,<2.0"
     uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
     # Sanity check: fail fast with a clear message if the import
