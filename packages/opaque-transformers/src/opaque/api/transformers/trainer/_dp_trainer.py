@@ -1480,6 +1480,14 @@ class DPTrainer:
                     break
                 if a.max_steps > 0 and global_step >= a.max_steps:
                     break
+                # Hard ceiling at the calibrated horizon.  Noise was
+                # calibrated for exactly ``ctx.total_steps`` composed
+                # mechanisms; without this guard an epoch-driven resume
+                # (``max_steps`` unset) with ``ignore_data_skip=True`` re-runs
+                # the partial epoch from step 0 and overruns ``total_steps``,
+                # spending more privacy budget than calibrated.
+                if global_step >= ctx.total_steps:
+                    break
 
             # Update state.epoch first so log_history rows are tagged correctly.
             self.state.epoch = float(epoch + 1)
@@ -1501,6 +1509,8 @@ class DPTrainer:
             if self._control.should_training_stop:
                 break
             if a.max_steps > 0 and global_step >= a.max_steps:
+                break
+            if global_step >= ctx.total_steps:  # calibrated-horizon ceiling
                 break
 
         # Final save — parity with HF: when saving is enabled, the last step always

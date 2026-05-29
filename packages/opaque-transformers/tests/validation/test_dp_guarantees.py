@@ -496,3 +496,50 @@ def test_rank_folded_key_decorrelates_per_shard_sampling():
     rank0 = stream(fold_in(base, 0))
     rank1 = stream(fold_in(base, 1))
     assert rank0 != rank1
+
+
+def test_epoch_driven_resume_does_not_overshoot_budget(gpt2_lora, lm_dataset, tmp_path):
+    """Epoch-driven (no max_steps) resume with ignore_data_skip from a
+    non-epoch-aligned checkpoint must stop at total_steps, not re-run the
+    partial epoch and overspend the calibrated budget."""
+    model, tok = gpt2_lora
+    nm, delta = 1.0, 1e-5
+    # batch 2 over 8 examples -> q=0.25 -> 4 steps/epoch; 2 epochs -> 8 total.
+    common = dict(
+        per_device_train_batch_size=2,
+        clipping_norm=1.0,
+        privacy_noise_multiplier=nm,
+        privacy_target_delta=delta,
+        use_cpu=True,
+        report_to=[],
+        num_train_epochs=2,
+    )
+    args = TrainingArguments(
+        output_dir=str(tmp_path), save_strategy="steps", save_steps=3, **common
+    )
+    trainer = DPTrainer(
+        model=model, args=args, train_dataset=lm_dataset, processing_class=tok
+    )
+    trainer.train()
+    ckpt = os.path.join(tmp_path, "checkpoint-3")  # mid epoch 0 (steps 1-4)
+    assert os.path.isdir(ckpt)
+
+    model2 = AutoModelForCausalLM.from_pretrained("gpt2")
+    model2.config.pad_token_id = tok.pad_token_id
+    model2 = get_peft_model(
+        model2,
+        LoraConfig(task_type=TaskType.CAUSAL_LM, r=8, lora_alpha=16, lora_dropout=0.0,
+                   target_modules=["c_attn"], fan_in_fan_out=True),
+    )
+    args2 = TrainingArguments(
+        output_dir=str(tmp_path), save_strategy="no", ignore_data_skip=True, **common
+    )
+    resumed = DPTrainer(
+        model=model2, args=args2, train_dataset=lm_dataset, processing_class=tok
+    )
+    out = resumed.train(resume_from_checkpoint=ckpt)
+    assert out.global_step == 8  # total_steps, not 11
+    # ε reflects exactly 8 composed mechanisms (the calibrated horizon).
+    assert out.metrics["privacy_epsilon"] == pytest.approx(
+        _reference_epsilon(nm, resumed.state.privacy_sample_rate, 8, delta), rel=1e-6
+    )

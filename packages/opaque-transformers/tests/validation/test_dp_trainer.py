@@ -1208,14 +1208,15 @@ class TestDPTrainerCheckpointing:
         # Resumed run composes additional steps on top of saved process → ε grows.
         assert out2.metrics["privacy_epsilon"] > eps_after_2
 
-    def test_resume_save_only_model_composes_budget(
+    def test_resume_save_only_model_is_refused(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
     ):
-        """Resuming a ``save_only_model=True`` checkpoint composes ε via the
-        always-saved ``accountant.json``.  Optimizer state and sampler
-        state are absent (resume-only artifacts) but the privacy budget
-        is preserved."""
-        import math
+        """A ``save_only_model=True`` checkpoint omits the DP runtime state
+        (noise/sampler), so resuming *training* from it would rebuild the
+        noise stream at step 0 and reuse the original run's noise on
+        re-sampled data — a silent privacy break.  The trainer must refuse
+        it (export-only), even though ``accountant.json`` is present."""
+        import pytest
 
         model, tokenizer = gpt2_with_lora
         trainer1 = DPTrainer(
@@ -1229,9 +1230,8 @@ class TestDPTrainerCheckpointing:
         )
         trainer1.train()
         ckpt_dir = str(tmp_path / "checkpoint-2")
-        # Interpretability files always present.
+        # Interpretability file always present; resumability files absent.
         assert os.path.exists(os.path.join(ckpt_dir, "accountant.json"))
-        # Resumability files absent under save_only_model.
         assert not os.path.exists(os.path.join(ckpt_dir, "dp_optimizer.pt"))
         assert not os.path.exists(os.path.join(ckpt_dir, "dp_state.pt"))
 
@@ -1251,10 +1251,8 @@ class TestDPTrainerCheckpointing:
             train_dataset=tiny_lm_dataset,
             eval_dataset=tiny_lm_dataset,
         )
-        out2 = trainer2.train(resume_from_checkpoint=ckpt_dir)
-        # The budget composes via the saved accountant — finite, not ∞.
-        assert math.isfinite(out2.metrics["privacy_epsilon"])
-        assert out2.metrics["privacy_epsilon"] > 0
+        with pytest.raises(RuntimeError, match="export-only"):
+            trainer2.train(resume_from_checkpoint=ckpt_dir)
 
     def test_ignore_data_skip_runs(self, gpt2_with_lora, tiny_lm_dataset, tmp_path):
         """ignore_data_skip=True still completes training successfully."""
