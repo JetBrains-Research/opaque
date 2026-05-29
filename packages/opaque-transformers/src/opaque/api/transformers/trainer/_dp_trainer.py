@@ -1925,8 +1925,24 @@ class DPTrainer:
         subclass-override compatibility.  The actual forward goes
         through ``self._ctx.fmodel`` mid-training (functional path) or
         ``self._model`` post-training (``nn.Module`` path) — both
-        produce identically-shaped tensors so downstream code is
-        path-agnostic.
+        produce identically-shaped tensors so the functional/``nn.Module``
+        choice is downstream-transparent.
+
+        Two prediction shapes are possible, selected by
+        ``include_for_metrics``:
+
+        - **Standard path** (default): ``logits`` is a ``tuple`` of every
+          output field surviving the ``ignore_keys + ["loss"]`` filter,
+          collapsed to a bare tensor when length 1 — so multi-output
+          models (seq2seq / vision) expose every auxiliary tensor to
+          ``compute_metrics``.
+        - **Per-example-loss path** (``"loss" in include_for_metrics``):
+          the vmap'd closure returns real per-example losses plus the
+          model's ``logits`` tensor *only*.  Auxiliary outputs are not
+          collected on this path, so ``predictions`` is logits-only even
+          for multi-output models.  A one-time warning is emitted; if you
+          need full multi-output predictions, drop ``"loss"`` from
+          ``include_for_metrics`` and use the standard path.
 
         ``inputs`` is forwarded to the model via ``**inputs`` after
         popping label tensors named in ``self._label_names`` (default:
@@ -2014,7 +2030,24 @@ class DPTrainer:
             loss = per_example_loss.detach()
             if prediction_loss_only:
                 return loss, None, None
-            return loss, logits_tensor.detach(), labs
+            # The per-example path collects only the model's ``logits``
+            # tensor (not the full ``ignore_keys``-filtered output tuple the
+            # standard path builds).  Surface that once so multi-output
+            # users aren't silently handed logits-only predictions, and
+            # honour an explicit ``logits`` entry in ``ignore_keys``.
+            if not getattr(self, "_warned_per_example_logits_only", False):
+                log.warning(
+                    "include_for_metrics=['loss'] uses the per-example eval "
+                    "path, which returns logits-only predictions (auxiliary "
+                    "model outputs are not collected).  Drop 'loss' from "
+                    "include_for_metrics for the full multi-output prediction "
+                    "tuple."
+                )
+                self._warned_per_example_logits_only = True
+            preds = None if ignore_keys and "logits" in ignore_keys else (
+                logits_tensor.detach() if logits_tensor is not None else None
+            )
+            return loss, preds, labs
 
         # Batched forward: reduced eval path reads ``output["loss"]``
         # directly (no per-example vmap).  This is the HF-equivalent fast
