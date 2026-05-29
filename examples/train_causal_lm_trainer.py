@@ -329,7 +329,16 @@ def parse_args() -> argparse.Namespace:
         choices=["fixed", "adaptive", "auto"],
         default="adaptive",
     )
-    dp_group.add_argument("--clipping-norm", type=float, default=1.0)
+    dp_group.add_argument(
+        "--clipping-norm",
+        type=float,
+        default=1.0,
+        help=(
+            "Per-example DP clip bound (positive float).  Pass 'inf' to disable "
+            "clipping entirely — only meaningful for a non-private baseline "
+            "(--noise-multiplier 0)."
+        ),
+    )
     dp_group.add_argument("--target-clipping-rate", type=float, default=0.5)
     dp_group.add_argument("--clipping-norm-max", type=float, default=10.0)
     dp_group.add_argument("--auto-clipping-gamma", type=float, default=0.01)
@@ -389,7 +398,16 @@ def parse_args() -> argparse.Namespace:
     privacy_group = parser.add_argument_group("privacy", "Privacy accounting")
     privacy_group.add_argument("--target-epsilon", type=float, default=3.0)
     privacy_group.add_argument("--target-delta", type=float, default=None)
-    privacy_group.add_argument("--noise-multiplier", type=float, default=None)
+    privacy_group.add_argument(
+        "--noise-multiplier",
+        type=float,
+        default=None,
+        help=(
+            "Fixed noise multiplier (skips calibration).  Set to 0 for a "
+            "non-private baseline: the chosen mechanism/sampler are kept, no "
+            "noise is added, and the accountant reports epsilon=inf."
+        ),
+    )
     privacy_group.add_argument("--calibration-min", type=float, default=0.11)
     privacy_group.add_argument("--calibration-max", type=float, default=3.5)
     privacy_group.add_argument("--calibration-tolerance", type=float, default=1e-3)
@@ -688,6 +706,7 @@ def main() -> int:
         )
 
     save_strategy = "steps" if args.save_steps is not None else "no"
+
     training_args = TrainingArguments(
         output_dir=args.output_dir,
         overwrite_output_dir=True,
@@ -731,7 +750,7 @@ def main() -> int:
         clipping_norm=(
             {"fallback": float(args.clipping_norm), **dict(args.per_group_clipping)}
             if args.per_group_clipping
-            else float(args.clipping_norm)
+            else args.clipping_norm
         ),
         clipping_kwargs={
             "target_clipping_rate": args.target_clipping_rate,

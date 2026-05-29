@@ -134,6 +134,38 @@ multi-billion-parameter scale).  Fused LoRA Triton kernels engage
 automatically when adapters have `bias="none"` — see
 [Model patches — Fused LoRA operations](model-patches.md#fused-lora-operations).
 
+## Non-private baseline
+
+To measure the utility cost of differential privacy, run the trainer with
+noise turned off — `privacy_noise_multiplier=0.0` — keeping everything else
+(mechanism, sampler, optimizer, accounting) identical:
+
+```python
+import math
+
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
+
+trainer = DPTrainer(
+    model=model,
+    args=TrainingArguments(
+        privacy_noise_multiplier=0.0,   # σ = 0 → no noise added
+        clipping_norm=math.inf,         # optional: disable clipping for plain SGD
+        max_steps=100,
+    ),
+    processing_class=tokenizer,
+    train_dataset=train_dataset,
+)
+out = trainer.train()
+assert out.metrics["privacy_epsilon"] == float("inf")  # no guarantee, reported faithfully
+```
+
+The accountant composes a non-private step, so `privacy_epsilon` is `inf`
+rather than a finite budget — calibration is skipped and the run proceeds
+normally. Clipping stays on by default (set `clipping_norm=math.inf` to
+disable it as well). See
+[TrainingArguments — Non-private baseline](training-arguments.md#non-private-baseline)
+for the full contract.
+
 ## See also
 
 - [TrainingArguments](training-arguments.md) — the most-tuned

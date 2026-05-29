@@ -1,5 +1,7 @@
 """Unit tests for Gaussian noise over clipped DP query pytrees."""
 
+import math
+
 import pytest
 import scipy.stats
 import torch
@@ -54,6 +56,16 @@ class TestGaussian:
         output, state = noise_fn(clipped(grad, max_norm=1.0), state)
         assert torch.equal(output.pytree, grad)
         assert output.noise_stddev == pytest.approx(0.0)
+
+    def test_zero_noise_with_infinite_max_norm_no_nan(self):
+        # Disabled clipping (max_norm=+inf) at σ=0 must short-circuit to zero
+        # noise — guarding the ``0 * inf = NaN`` std product.
+        noise_fn, state = gaussian_noise(noise_multiplier=0.0, key=key(0))
+        grad = torch.randn(5, 3)
+        output, _ = noise_fn(clipped(grad, max_norm=math.inf), state)
+        assert torch.equal(output.pytree, grad)
+        assert output.noise_stddev == pytest.approx(0.0)
+        assert not torch.isnan(output.pytree).any()
 
     def test_negative_noise_multiplier_raises(self):
         with pytest.raises(ValueError, match="noise_multiplier must be non-negative"):

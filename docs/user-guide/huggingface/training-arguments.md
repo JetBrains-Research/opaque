@@ -51,7 +51,39 @@ skip calibration.
 `clipping_norm` accepts a positive scalar (global clipping), a dict
 keyed by regex on parameter names with a `"fallback"` entry
 (per-group clipping), or a JSON / `key=value,...` string with the
-same shape.
+same shape.  It also accepts `math.inf` to **disable clipping** (the
+single canonical no-clip value) — see the non-private baseline below.
+
+## Non-private baseline
+
+Set `privacy_noise_multiplier=0.0` to run the *same* trainer, mechanism,
+sampler, and accounting surface with **no privacy** (ε = ∞) — a useful
+baseline for measuring the utility cost of the DP machinery:
+
+```python
+import math
+
+args = TrainingArguments(
+    privacy_noise_multiplier=0.0,   # no noise (σ = 0)
+    clipping_norm=math.inf,         # optional: disable clipping too
+)
+```
+
+- **No noise** — the realized noise standard deviation is
+  `noise_multiplier × clip = 0`, so gradients pass through unchanged.
+- **ε = ∞** — the accountant composes a non-private step, so
+  `metrics["privacy_epsilon"]` is reported as `inf` (a faithful "no
+  guarantee" output, not an error).  Calibration is skipped and the
+  resolved multiplier is recorded as `0.0` (source `"fixed"`).
+- **Clipping is independent.** It stays on by default (the configured
+  `clipping_norm` / `clipping_mode`); keep it for a "clipping-only"
+  ablation, or disable it with `clipping_norm=math.inf` for plain
+  non-private SGD.
+
+This works for both `"gaussian"` (DP-SGD) and the `mf_*` (DP-FTRL)
+mechanisms.  Disabling clipping (`clipping_norm=math.inf`) is rejected
+unless `privacy_noise_multiplier=0.0`, since infinite sensitivity with
+noise would yield infinite noise and `NaN` gradients.
 
 ## Sampling and noise
 

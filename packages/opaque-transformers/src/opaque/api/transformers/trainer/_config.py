@@ -35,7 +35,10 @@ DP-correct invariants worth flagging:
   with a required ``"fallback"`` key (default clip) plus substring
   pattern keys for :func:`opaque.api.engine.clipping.per_group` semantics. Adaptive /
   auto clipping hyperparameters stay in ``clipping_mode`` and
-  ``clipping_kwargs`` (not per-group norms).
+  ``clipping_kwargs`` (not per-group norms). Pass ``math.inf`` to
+  **disable clipping** entirely (the single canonical no-clip bound) —
+  only meaningful for a non-private baseline (``privacy_noise_multiplier=
+  0``); with noise it would mean unbounded sensitivity and is rejected.
 - ``per_device_train_batch_size`` is the **per-rank logical Poisson batch**
   (HF parity at ``gradient_accumulation_steps=1``). One Poisson round =
   one DP-SGD step. Cluster-wide logical batch is
@@ -63,6 +66,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import math
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import field
@@ -764,6 +768,27 @@ class TrainingArguments:
                 "privacy_noise_multiplier must be >= 0; got "
                 f"{self.privacy_noise_multiplier!r}."
             )
+        # Disabling clipping (clip bound = +inf, via clipping_norm=math.inf or
+        # a per-group dict with an inf bound) is only sound for a non-private
+        # run.  With noise — nm > 0, or nm calibrated (None) — infinite
+        # sensitivity yields an infinite realized noise stddev (nm * inf) and
+        # inf/NaN gradients, so require an explicit non-private baseline.
+        _clip_disabled = (
+            isinstance(self.clipping_norm, float) and math.isinf(self.clipping_norm)
+        ) or (
+            isinstance(self.clipping_norm, dict)
+            and any(
+                isinstance(v, float) and math.isinf(v)
+                for v in self.clipping_norm.values()
+            )
+        )
+        if _clip_disabled and self.privacy_noise_multiplier != 0.0:
+            raise ValueError(
+                "Disabling clipping (clipping_norm=math.inf) is only valid for "
+                "a non-private baseline (privacy_noise_multiplier=0.0); got "
+                f"privacy_noise_multiplier={self.privacy_noise_multiplier!r}. "
+                "Set privacy_noise_multiplier=0.0, or pass a finite clipping_norm."
+            )
         if self.privacy_target_delta is not None and not (
             0 < self.privacy_target_delta < 1
         ):
@@ -1113,7 +1138,18 @@ def _normalize_dict_field(value: Any) -> dict[str, Any] | None:
 
 
 def _coerce_clipping_norm(value: Any) -> float | dict[str, float]:
-    """Normalize ``clipping_norm``: positive scalar or per-group dict."""
+    """Normalize ``clipping_norm``: positive scalar or per-group dict.
+
+    To **disable** clipping, pass ``math.inf`` (the single canonical
+    no-clip bound) — only meaningful with ``privacy_noise_multiplier = 0``
+    (a non-private baseline).  ``None`` is rejected; there is exactly one
+    way to express "no clipping".
+    """
+    if value is None:
+        raise ValueError(
+            "clipping_norm must be a positive number (use math.inf to disable "
+            "clipping for a non-private run); got None."
+        )
     if isinstance(value, bool):
         raise TypeError("clipping_norm must not be a boolean")
     if isinstance(value, str):
