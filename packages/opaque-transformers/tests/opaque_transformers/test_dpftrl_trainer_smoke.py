@@ -14,6 +14,7 @@ in-package CI signal so regressions surface immediately.
 
 from __future__ import annotations
 
+import math
 import os
 
 import pytest
@@ -78,6 +79,8 @@ def _args(
     mechanism: str,
     max_steps: int,
     save_steps: int | None = None,
+    noise_multiplier: float = 1.0,
+    clipping_norm: float | str = 1.0,
 ) -> TrainingArguments:
     kwargs = dict(_MF_TEST_KWARGS[mechanism]) if mechanism in _MF_TEST_KWARGS else {}
     return TrainingArguments(
@@ -88,8 +91,8 @@ def _args(
         save_strategy="steps" if save_steps else "no",
         privacy_noise_mechanism=mechanism,
         privacy_noise_mechanism_kwargs=kwargs,
-        privacy_noise_multiplier=1.0,
-        clipping_norm=1.0,
+        privacy_noise_multiplier=noise_multiplier,
+        clipping_norm=clipping_norm,
         learning_rate=1e-3,
         optim="sgd",
         report_to=[],
@@ -407,3 +410,88 @@ class TestGaussianPathUnchanged:
         out = trainer.train()
         assert out.global_step == 4
         assert "privacy_epsilon" in out.metrics
+
+
+class TestNonPrivateZeroNoise:
+    """``privacy_noise_multiplier=0`` → non-DP baseline.
+
+    The chosen mechanism and sampler are kept intact; the accountant
+    composes a non-private step so ε=∞ is reported, and zero noise is
+    added (clipping still applies unless disabled).
+    """
+
+    @pytest.mark.parametrize(
+        "mechanism,max_steps",
+        [("gaussian", 4), ("mf_identity", 4), ("mf_band", 16)],
+    )
+    def test_zero_noise_reports_inf_epsilon(self, tmp_path, mechanism, max_steps):
+        args = _args(
+            output_dir=str(tmp_path / mechanism),
+            mechanism=mechanism,
+            max_steps=max_steps,
+            noise_multiplier=0.0,
+        )
+        torch.manual_seed(0)
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        out = trainer.train()
+
+        # ε=∞ is the legal non-private output; the multiplier round-trips
+        # as a fixed 0.0 with the "fixed" provenance tag.
+        assert out.global_step > 0
+        assert math.isinf(out.metrics["privacy_epsilon"])
+        assert out.metrics["privacy_noise_multiplier"] == 0.0
+        assert trainer.state.privacy_resolved_noise_multiplier == 0.0
+        assert trainer.state.privacy_noise_multiplier_source == "fixed"
+        assert math.isfinite(out.metrics["train_loss"])
+
+    def test_zero_noise_is_deterministic(self, tmp_path):
+        # σ=0 ⇒ no randomness from the noise stream: two runs at the same
+        # seed must produce identical weights.
+        def _run(tag):
+            args = _args(
+                output_dir=str(tmp_path / tag),
+                mechanism="gaussian",
+                max_steps=4,
+                noise_multiplier=0.0,
+            )
+            torch.manual_seed(0)
+            trainer = DPTrainer(
+                model=_TinyLM(),
+                args=args,
+                train_dataset=_TinyDS(),
+                data_collator=_collate,
+            )
+            trainer.train()
+            return {n: p.detach().clone() for n, p in trainer.model.named_parameters()}
+
+        a, b = _run("a"), _run("b")
+        for n in a:
+            assert torch.equal(a[n], b[n]), f"param {n} differs across σ=0 runs"
+
+    def test_disabled_clipping_zero_noise_no_nan(self, tmp_path):
+        # clipping_norm=math.inf with σ=0 is true non-private SGD;
+        # the 0*inf NaN hazard in the noise std must be guarded.
+        args = _args(
+            output_dir=str(tmp_path / "noclip"),
+            mechanism="gaussian",
+            max_steps=4,
+            noise_multiplier=0.0,
+            clipping_norm=math.inf,
+        )
+        assert math.isinf(args.clipping_norm)
+        torch.manual_seed(0)
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        out = trainer.train()
+        assert math.isfinite(out.metrics["train_loss"])
+        for n, p in trainer.model.named_parameters():
+            assert not torch.isnan(p).any(), f"NaN in param {n}"

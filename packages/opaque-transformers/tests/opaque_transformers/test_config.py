@@ -15,6 +15,8 @@ Covers:
 
 from __future__ import annotations
 
+import math
+
 import pytest
 from transformers.debug_utils import DebugOption
 
@@ -311,6 +313,38 @@ class TestMaxGradNorm:
     def test_dict_missing_fallback_raises(self):
         with pytest.raises(ValueError, match="fallback"):
             TrainingArguments(clipping_norm={"linear": 1.0})
+
+    @pytest.mark.parametrize("value", [math.inf, "inf", "Infinity", "1e999"])
+    def test_infinity_disables_clipping(self, value):
+        # ``math.inf`` is the single canonical no-clip value (string spellings
+        # parse to it via float()).  Allowed only for a non-private baseline.
+        args = TrainingArguments(clipping_norm=value, privacy_noise_multiplier=0.0)
+        assert math.isinf(args.clipping_norm)
+
+    def test_none_rejected(self):
+        # There is exactly one way to disable clipping (math.inf); None is not
+        # it and must point users at the canonical form.
+        with pytest.raises(ValueError, match="math.inf"):
+            TrainingArguments(clipping_norm=None, privacy_noise_multiplier=0.0)
+
+    @pytest.mark.parametrize("nm", [None, 0.5, 1.0])
+    def test_disabled_clipping_with_noise_rejected(self, nm):
+        # Disabling clipping is unsound with noise (nm > 0) or calibration
+        # (nm is None) — infinite sensitivity ⇒ infinite noise stddev.
+        with pytest.raises(ValueError, match="non-private baseline"):
+            TrainingArguments(clipping_norm=math.inf, privacy_noise_multiplier=nm)
+
+    def test_disabled_per_group_clipping_with_noise_rejected(self):
+        with pytest.raises(ValueError, match="non-private baseline"):
+            TrainingArguments(
+                clipping_norm={"fallback": math.inf, "linear": 1.0},
+                privacy_noise_multiplier=1.0,
+            )
+
+    def test_garbage_string_raises(self):
+        for bad in ("banana", "none"):
+            with pytest.raises(ValueError, match="clipping_norm"):
+                TrainingArguments(clipping_norm=bad)
 
 
 class TestClippingAndSamplingSurfaces:

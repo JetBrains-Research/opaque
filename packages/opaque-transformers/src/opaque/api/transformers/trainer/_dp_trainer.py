@@ -3423,7 +3423,16 @@ class DPTrainer:
                     "_build_mechanism reached the DP-FTRL branch without an "
                     "amplifier factory; _setup_training should populate it."
                 )
-            return _dpftrl.build_step_mechanism_factory(mf_amplifier_factory)
+            _ftrl_factory = _dpftrl.build_step_mechanism_factory(mf_amplifier_factory)
+
+            def mechanism(nm, _f=_ftrl_factory):
+                # noise_multiplier == 0 → non-private run: compose the
+                # infinite-loss element so ``epsilon_at(delta) == inf`` falls
+                # out of the accountant with no special-casing downstream
+                # (see ``acc.nonprivate()`` docstring).
+                return acc.nonprivate() if nm == 0.0 else _f(nm)
+
+            return mechanism
 
         num_groups = len(clip_norm.values) if hasattr(clip_norm, "values") else 1
 
@@ -3438,7 +3447,15 @@ class DPTrainer:
                     num_groups=num_groups,
                 )
 
-        _unamplified = base
+        # Non-private substitution: at noise_multiplier == 0 the inner element
+        # becomes ``acc.nonprivate()``, which composes through the poisson /
+        # adaclip wrappers below to yield ``epsilon == inf`` — exactly the
+        # documented ``noise_multiplier=0`` usage, no special-casing needed.
+        _dp_element = base
+
+        def _unamplified(nm, _b=_dp_element):
+            return acc.nonprivate() if nm == 0.0 else _b(nm)
+
         sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
         tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
         tb_cap = int(tb_raw) if tb_raw is not None else None
