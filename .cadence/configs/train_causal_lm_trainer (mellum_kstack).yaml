@@ -8,6 +8,11 @@ working_dir: "."
 cmd:
   - |-
     uv sync --group dev --group examples --all-packages --extra all  # "all" is a real extra in pyproject.toml
+    # opaque-accounting is a Rust/PyO3 extension; uv sync sometimes skips the
+    # maturin rebuild when the .so was deleted but the package is still
+    # registered as installed. Force a maturin-develop build so the .so is
+    # always present before training starts.
+    uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
     uv run python examples/train_causal_lm_trainer.py --preset mellum-kstack $EXTRA_ARGS
 provisioning:
   gpu_type: h200
