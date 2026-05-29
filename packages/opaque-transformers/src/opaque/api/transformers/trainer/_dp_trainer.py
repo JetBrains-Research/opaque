@@ -2027,6 +2027,20 @@ class DPTrainer:
                     for name, p in self._model.named_parameters()
                     if p.requires_grad
                 }
+            # ``batch_keys`` / ``batch_argnums`` were discovered from the
+            # *train* collator and baked into the vmap'd closure.  If the eval
+            # collator emits a different key set, ``inputs.get(k)`` is ``None``
+            # and vmap fails with an opaque error.  Validate up front and
+            # raise a clear, actionable message instead.
+            missing = [k for k in batch_keys if inputs.get(k) is None]
+            if missing:
+                raise KeyError(
+                    "Per-example eval (include_for_metrics=['loss']) expects the "
+                    f"eval batch to carry the train-discovered keys {list(batch_keys)!r}, "
+                    f"but {missing!r} are absent (or None).  The eval collator/"
+                    "dataset differs from the training one; align them, or drop "
+                    "'loss' from include_for_metrics to use the standard eval path."
+                )
             batch_args = tuple(inputs.get(k) for k in batch_keys)
             with torch.no_grad():
                 was_training = self._model.training
@@ -2354,10 +2368,30 @@ class DPTrainer:
         Returns a metrics dict with ``{prefix}_loss`` and any keys
         produced by a user-supplied ``compute_metrics`` (auto-prefixed
         with ``metric_key_prefix`` where missing — HF parity).
+
+        Multi-dataset eval (HF parity): pass a ``Mapping`` of
+        ``name -> dataset`` (or set ``eval_dataset`` to one at
+        construction) to evaluate each split independently with metrics
+        namespaced as ``{prefix}_{name}_*`` and merged into one dict;
+        each sub-evaluation logs and fires ``on_evaluate`` on its own.
         """
         dataset = eval_dataset if eval_dataset is not None else self._eval_dataset
         if dataset is None:
             raise ValueError("DPTrainer.evaluate() requires an eval_dataset.")
+
+        # Multi-dataset eval: recurse per split with a namespaced prefix and
+        # merge (mirrors transformers.Trainer.evaluate).
+        if isinstance(dataset, Mapping):
+            merged: dict[str, float] = {}
+            for name, sub_dataset in dataset.items():
+                merged.update(
+                    self.evaluate(
+                        eval_dataset=sub_dataset,
+                        ignore_keys=ignore_keys,
+                        metric_key_prefix=f"{metric_key_prefix}_{name}",
+                    )
+                )
+            return merged
 
         result = self._run_evaluation_loop(
             dataset,
@@ -2455,6 +2489,24 @@ class DPTrainer:
         loader = self.get_eval_dataloader(dataset)
         self._callback_handler.eval_dataloader = loader
         start_time = time.time()
+        # ``eval_dtype`` casts ``self._model`` in place.  During an active
+        # training run the eval forward goes through the functional
+        # ``ctx.fmodel`` + detached param dicts, which the cast does NOT
+        # reach — so {bf16,fp16}_full_eval is a no-op mid-training (it only
+        # takes effect for the post-training nn.Module path).  Surface that
+        # once instead of letting it pass silently.
+        if (
+            self._ctx is not None
+            and (self.args.fp16_full_eval or self.args.bf16_full_eval)
+            and not getattr(self, "_warned_full_eval_functional", False)
+        ):
+            log.warning(
+                "bf16_full_eval/fp16_full_eval do not apply to in-training "
+                "evaluation: the functional eval forward runs at the training "
+                "dtype.  Full-cast eval takes effect only for evaluation after "
+                "train() returns (the nn.Module path)."
+            )
+            self._warned_full_eval_functional = True
         with eval_dtype(self._model, self.args, self._train_dtype):
             result = self.evaluation_loop(
                 loader,

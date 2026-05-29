@@ -543,3 +543,18 @@ def test_epoch_driven_resume_does_not_overshoot_budget(gpt2_lora, lm_dataset, tm
     assert out.metrics["privacy_epsilon"] == pytest.approx(
         _reference_epsilon(nm, resumed.state.privacy_sample_rate, 8, delta), rel=1e-6
     )
+
+
+def test_multi_dataset_eval_namespaces_metrics(gpt2_lora, lm_dataset, tmp_path):
+    """A dict eval_dataset evaluates each split and namespaces metric keys
+    as {prefix}_{name}_* (HF parity)."""
+    model, tok = gpt2_lora
+    args = _args(tmp_path, max_steps=2, save_strategy="no")
+    trainer = DPTrainer(
+        model=model, args=args, train_dataset=lm_dataset, processing_class=tok
+    )
+    trainer.train()
+    metrics = trainer.evaluate(eval_dataset={"a": lm_dataset, "b": lm_dataset})
+    assert any(k.startswith("eval_a_") for k in metrics)
+    assert any(k.startswith("eval_b_") for k in metrics)
+    assert "eval_a_loss" in metrics and "eval_b_loss" in metrics
