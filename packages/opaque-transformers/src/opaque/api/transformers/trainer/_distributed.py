@@ -33,7 +33,6 @@ __all__ = [
     "barrier",
 ]
 
-_BACKEND_FIRST_CLASS = {"nccl", "gloo", "mpi"}
 _BACKEND_ENV_DEPENDENT_HINTS = {
     "xccl": "Intel XPU/XCCL runtime",
     "hccl": "Habana Gaudi/HCCL runtime",
@@ -157,16 +156,9 @@ def validate_ddp_backend(args: Any, ddp: DDPState) -> None:
             "Configured ddp_backend does not match initialized process group: "
             f"ddp_backend={configured_backend!r}, live_backend={live_backend!r}."
         )
-    if (
-        configured_backend not in _BACKEND_FIRST_CLASS
-        and configured_backend in _BACKEND_ENV_DEPENDENT_HINTS
-        and live_backend != configured_backend
-    ):
-        raise ValueError(
-            f"ddp_backend={configured_backend!r} requires "
-            f"{_BACKEND_ENV_DEPENDENT_HINTS[configured_backend]}, but the active "
-            f"backend is {live_backend!r}."
-        )
+    # (Once the group is initialized ``get_backend()`` is always non-empty, so
+    # the mismatch check above already covers env-dependent backends — no
+    # additional empty-``live_backend`` branch is reachable here.)
 
 
 def should_log(args: Any, ddp: DDPState) -> bool:

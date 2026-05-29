@@ -54,9 +54,10 @@ def eval_dtype(
         yield
         return
 
-    current = next(model.parameters()).dtype
-    if current == target:
-        # Already there (e.g. ``bf16=True`` was also set) — no-op.
+    first_param = next(model.parameters(), None)
+    if first_param is None or first_param.dtype == target:
+        # Parameterless module, or already at the target dtype (e.g.
+        # ``bf16=True`` was also set) — nothing to cast.
         yield
         return
 

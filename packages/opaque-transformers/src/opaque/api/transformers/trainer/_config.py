@@ -739,6 +739,29 @@ class TrainingArguments:
         self.clipping_norm = _coerce_clipping_norm(self.clipping_norm)
 
         # --- 11b. DP mechanism / clipping / sampling surfaces ---------------
+        # Privacy budget must be positive — calibration to ε <= 0 is
+        # ill-posed and would otherwise surface as an opaque solver failure.
+        if self.privacy_noise_multiplier is None and self.privacy_target_epsilon <= 0:
+            raise ValueError(
+                "privacy_target_epsilon must be > 0 when calibrating noise "
+                f"(privacy_noise_multiplier is None); got "
+                f"{self.privacy_target_epsilon!r}."
+            )
+        if (
+            self.privacy_noise_multiplier is not None
+            and self.privacy_noise_multiplier < 0
+        ):
+            raise ValueError(
+                "privacy_noise_multiplier must be >= 0; got "
+                f"{self.privacy_noise_multiplier!r}."
+            )
+        if self.privacy_target_delta is not None and not (
+            0 < self.privacy_target_delta < 1
+        ):
+            raise ValueError(
+                "privacy_target_delta must lie in (0, 1); got "
+                f"{self.privacy_target_delta!r}."
+            )
         if self.clipping_mode not in ("fixed", "adaptive", "auto"):
             raise ValueError(
                 f"clipping_mode must be 'fixed', 'adaptive', or 'auto'; "

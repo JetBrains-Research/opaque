@@ -191,7 +191,11 @@ def build_lr_schedule(
             transition_begin=W,
         )
     elif name == "inverse_sqrt":
-        timescale = kwargs.get("timescale") or W or 10_000
+        # Explicit ``None`` check (not truthiness): a user-supplied
+        # ``timescale=0`` is invalid but should not silently fall through to
+        # the warmup-steps default.
+        ts = kwargs.get("timescale")
+        timescale = ts if ts is not None else (W or 10_000)
         decay = inverse_sqrt_schedule(
             base_lr, transition_steps=timescale, transition_begin=W
         )

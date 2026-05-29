@@ -43,10 +43,11 @@ out = trainer.train()
 print(out.global_step, out.training_loss, out.metrics["privacy_epsilon"])
 ```
 
-Construction immediately moves the model to the resolved device,
-auto-patches the model (vmap-safety + optional Triton kernels), and
-calibrates the noise multiplier from `privacy_target_epsilon`.  No
-extra setup calls are needed before `train()`.
+Construction immediately moves the model to the resolved device and
+auto-patches it (vmap-safety + optional Triton kernels).  The noise
+multiplier is calibrated from `privacy_target_epsilon` at the start of
+`train()` (once the dataset size and step count are known), not at
+construction.  No extra setup calls are needed before `train()`.
 
 ## Training, evaluation, prediction
 

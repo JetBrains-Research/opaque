@@ -180,6 +180,29 @@ For per-rank sharding, accountant cluster-wide composition, and
 rank-gated checkpointing, see
 [Distributed DPTrainer](../distributed-trainer.md).
 
+## Migrating from HF: unsupported arguments
+
+`TrainingArguments` is a standalone dataclass, not a subclass of
+`transformers.TrainingArguments`.  HF knobs DPTrainer does **not**
+support are simply not fields, so passing them raises
+`TypeError: __init__() got an unexpected keyword argument …`.  When
+porting an HF script, remove or translate these:
+
+| HF argument | Why it's unsupported | DPTrainer alternative |
+| --- | --- | --- |
+| `gradient_accumulation_steps` | One optimizer step must be exactly one Poisson round for the accountant to compose correctly | Increase `per_device_train_batch_size` (the expected Poisson batch); use `auto_find_microbatch_size=True` for OOM relief |
+| `group_by_length`, `length_column_name` | Length-bucketed batching breaks the equal per-example inclusion probability Poisson amplification relies on | Leave examples unsorted; Poisson sampling handles variable lengths |
+| `dataloader_drop_last` | Poisson batches are variable-size by design; "last batch" is meaningless | n/a (omit) |
+| `deepspeed`, `fsdp`, `fsdp_config`, `accelerator_config`, `parallelism_config` | Parameter/gradient sharding is incompatible with vmap per-example gradients | Use Opaque's built-in DDP (`torchrun` + sharded data) |
+| `tpu_num_cores`, `mp_parameters` | TPU/XLA and SageMaker MP are not supported execution backends | CUDA / CPU only |
+| `fp16_opt_level`, `half_precision_backend`, `fp16_backend` | Apex/Accelerate mixed-precision backends are not used | `bf16=True` / `fp16=True` (native autocast) |
+| `optim="adamw_8bit"` / paged / Apex-fused | No functional torchopt equivalent | A supported `optim` name (see the optimizer table) |
+| `batch_eval_metrics` | Streaming metric reduction not implemented | Use `eval_accumulation_steps` to bound eval memory |
+
+`per_gpu_*`, `adafactor` (bool), `torchdynamo`, and the various
+deprecated `push_to_hub_*` aliases are likewise dropped — use their
+modern replacements.
+
 ## See also
 
 - [DPTrainer](dptrainer.md) — what to call once the args are configured.

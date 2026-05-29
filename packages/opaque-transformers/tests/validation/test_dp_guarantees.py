@@ -130,7 +130,9 @@ def test_fp16_overflow_is_detected_and_skips_step(gpt2_lora, lm_dataset, tmp_pat
     model, tok = gpt2_lora
 
     class _OverflowTrainer(DPTrainer):
-        def compute_per_example_loss(self, fmodel, params, inputs, *, return_logits=False):
+        def compute_per_example_loss(
+            self, fmodel, params, inputs, *, return_logits=False
+        ):
             loss = super().compute_per_example_loss(
                 fmodel, params, inputs, return_logits=return_logits
             )
@@ -152,7 +154,9 @@ def test_fp16_overflow_is_detected_and_skips_step(gpt2_lora, lm_dataset, tmp_pat
 # ---------------------------------------------------------------------------
 
 
-def test_resume_from_save_only_model_checkpoint_is_refused(gpt2_lora, lm_dataset, tmp_path):
+def test_resume_from_save_only_model_checkpoint_is_refused(
+    gpt2_lora, lm_dataset, tmp_path
+):
     """save_only_model checkpoints lack DP runtime state; resuming would reuse
     the noise stream.  Training-resume must hard-error."""
     model, tok = gpt2_lora
@@ -318,10 +322,15 @@ def test_resume_keeps_total_epsilon_on_budget(gpt2_lora, lm_dataset, tmp_path):
 
     full_dir = tmp_path / "full"
     args_full = _args(
-        full_dir, privacy_noise_multiplier=nm, privacy_target_delta=delta,
-        max_steps=4, save_strategy="no",
+        full_dir,
+        privacy_noise_multiplier=nm,
+        privacy_target_delta=delta,
+        max_steps=4,
+        save_strategy="no",
     )
-    full = DPTrainer(model=model, args=args_full, train_dataset=lm_dataset, processing_class=tok)
+    full = DPTrainer(
+        model=model, args=args_full, train_dataset=lm_dataset, processing_class=tok
+    )
     eps_full = full.train().metrics["privacy_epsilon"]
 
     # Fresh model for the interrupted run.
@@ -329,24 +338,41 @@ def test_resume_keeps_total_epsilon_on_budget(gpt2_lora, lm_dataset, tmp_path):
     model2.config.pad_token_id = tok.pad_token_id
     model2 = get_peft_model(
         model2,
-        LoraConfig(task_type=TaskType.CAUSAL_LM, r=8, lora_alpha=16, lora_dropout=0.0,
-                   target_modules=["c_attn"], fan_in_fan_out=True),
+        LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            target_modules=["c_attn"],
+            fan_in_fan_out=True,
+        ),
     )
     part_dir = tmp_path / "part"
     args_part = _args(
-        part_dir, privacy_noise_multiplier=nm, privacy_target_delta=delta,
-        max_steps=2, save_strategy="steps", save_steps=2,
+        part_dir,
+        privacy_noise_multiplier=nm,
+        privacy_target_delta=delta,
+        max_steps=2,
+        save_strategy="steps",
+        save_steps=2,
     )
-    part = DPTrainer(model=model2, args=args_part, train_dataset=lm_dataset, processing_class=tok)
+    part = DPTrainer(
+        model=model2, args=args_part, train_dataset=lm_dataset, processing_class=tok
+    )
     part.train()
     ckpt = os.path.join(part_dir, "checkpoint-2")
     assert os.path.isdir(ckpt)
 
     args_resume = _args(
-        part_dir, privacy_noise_multiplier=nm, privacy_target_delta=delta,
-        max_steps=4, save_strategy="no",
+        part_dir,
+        privacy_noise_multiplier=nm,
+        privacy_target_delta=delta,
+        max_steps=4,
+        save_strategy="no",
     )
-    resumed = DPTrainer(model=model2, args=args_resume, train_dataset=lm_dataset, processing_class=tok)
+    resumed = DPTrainer(
+        model=model2, args=args_resume, train_dataset=lm_dataset, processing_class=tok
+    )
     eps_resumed = resumed.train(resume_from_checkpoint=ckpt).metrics["privacy_epsilon"]
 
     assert eps_resumed == pytest.approx(eps_full, rel=1e-6)
@@ -373,8 +399,12 @@ def test_clipping_bounds_per_example_norms():
 
     params = {"w": torch.tensor([1.0])}
     grad_fn, state = clipped_grad(
-        per_example_loss, argnums=0, batch_argnums=(1,), clipping_norm=C,
-        return_aux=True, normalize_by=1.0,
+        per_example_loss,
+        argnums=0,
+        batch_argnums=(1,),
+        clipping_norm=C,
+        return_aux=True,
+        normalize_by=1.0,
     )
     (_, aux), _ = grad_fn(params, xs, state=state)
 
@@ -405,12 +435,18 @@ def test_eval_consumes_no_privacy_budget(gpt2_lora, lm_dataset, tmp_path):
     model, tok = gpt2_lora
     delta = 1e-5
     args = _args(
-        tmp_path, privacy_noise_multiplier=1.0, privacy_target_delta=delta,
-        max_steps=4, save_strategy="no",
+        tmp_path,
+        privacy_noise_multiplier=1.0,
+        privacy_target_delta=delta,
+        max_steps=4,
+        save_strategy="no",
     )
     trainer = DPTrainer(
-        model=model, args=args, train_dataset=lm_dataset,
-        eval_dataset=lm_dataset, processing_class=tok,
+        model=model,
+        args=args,
+        train_dataset=lm_dataset,
+        eval_dataset=lm_dataset,
+        processing_class=tok,
     )
     trainer.train()
     eps_before = trainer._accountant.epsilon_at(delta)
@@ -433,11 +469,25 @@ def test_dp_noise_reproducible_at_sigma_positive(gpt2_tok, lm_dataset, tmp_path)
         m.config.pad_token_id = gpt2_tok.pad_token_id
         m = get_peft_model(
             m,
-            LoraConfig(task_type=TaskType.CAUSAL_LM, r=8, lora_alpha=16, lora_dropout=0.0,
-                       target_modules=["c_attn"], fan_in_fan_out=True),
+            LoraConfig(
+                task_type=TaskType.CAUSAL_LM,
+                r=8,
+                lora_alpha=16,
+                lora_dropout=0.0,
+                target_modules=["c_attn"],
+                fan_in_fan_out=True,
+            ),
         )
-        args = _args(out, privacy_noise_multiplier=1.0, seed=seed, max_steps=4, save_strategy="no")
-        t = DPTrainer(model=m, args=args, train_dataset=lm_dataset, processing_class=gpt2_tok)
+        args = _args(
+            out,
+            privacy_noise_multiplier=1.0,
+            seed=seed,
+            max_steps=4,
+            save_strategy="no",
+        )
+        t = DPTrainer(
+            model=m, args=args, train_dataset=lm_dataset, processing_class=gpt2_tok
+        )
         t.train()  # restores trained params into t.model in its finally block
         return {
             n: p.detach().clone()
@@ -528,8 +578,14 @@ def test_epoch_driven_resume_does_not_overshoot_budget(gpt2_lora, lm_dataset, tm
     model2.config.pad_token_id = tok.pad_token_id
     model2 = get_peft_model(
         model2,
-        LoraConfig(task_type=TaskType.CAUSAL_LM, r=8, lora_alpha=16, lora_dropout=0.0,
-                   target_modules=["c_attn"], fan_in_fan_out=True),
+        LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            target_modules=["c_attn"],
+            fan_in_fan_out=True,
+        ),
     )
     args2 = TrainingArguments(
         output_dir=str(tmp_path), save_strategy="no", ignore_data_skip=True, **common

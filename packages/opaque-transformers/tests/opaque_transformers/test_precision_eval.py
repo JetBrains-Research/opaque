@@ -5,7 +5,8 @@ Covers:
   and restored to the training dtype on exit.
 - ``bf16_full_eval=True`` + ``bf16=True``: no-op (model already bf16);
   the model stays bf16 after the context exits.
-- ``fp16_full_eval=True``: raises ``NotImplementedError`` at use time.
+- ``fp16_full_eval=True``: casts the model to fp16 inside the eval context
+  and restores the training dtype on exit.
 - Mutual exclusivity between ``bf16_full_eval`` and ``fp16_full_eval``
   is rejected at args construction (already-validated regression test).
 """

@@ -2,7 +2,8 @@
 
 Covers the full-cast precision path:
 - ``bf16=True`` casts the model to ``torch.bfloat16`` at ``__init__``.
-- ``fp16=True`` raises ``NotImplementedError`` (deferred to Phase 11).
+- ``fp16=True`` enables fp16 autocast on the loss closure and wires a
+  dynamic loss scaler (``self._loss_scaler``).
 - ``tf32=True``/``False`` flips both ``torch.backends.cuda.matmul.allow_tf32``
   and ``torch.backends.cudnn.allow_tf32``; ``None`` leaves them alone.
 - ``self._train_dtype`` captures the effective post-cast dtype for the

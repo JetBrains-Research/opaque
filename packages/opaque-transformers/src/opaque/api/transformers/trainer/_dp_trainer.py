@@ -2053,8 +2053,8 @@ class DPTrainer:
                     if was_training:
                         self._model.train()
             loss = per_example_loss.detach()
-            if prediction_loss_only:
-                return loss, None, None
+            # (No ``prediction_loss_only`` early-return here: ``use_per_example_loss``
+            # already requires ``not prediction_loss_only``.)
             # The per-example path collects only the model's ``logits``
             # tensor (not the full ``ignore_keys``-filtered output tuple the
             # standard path builds).  Surface that once so multi-output
@@ -2069,8 +2069,10 @@ class DPTrainer:
                     "tuple."
                 )
                 self._warned_per_example_logits_only = True
-            preds = None if ignore_keys and "logits" in ignore_keys else (
-                logits_tensor.detach() if logits_tensor is not None else None
+            preds = (
+                None
+                if ignore_keys and "logits" in ignore_keys
+                else (logits_tensor.detach() if logits_tensor is not None else None)
             )
             return loss, preds, labs
 
@@ -2393,6 +2395,23 @@ class DPTrainer:
                     )
                 )
             return merged
+
+        # DP footgun: evaluating on the (private) training set consumes no
+        # privacy budget, but the reported metrics are computed on private
+        # data and are NOT covered by the DP guarantee — publishing them
+        # leaks.  Warn once so "DP end-to-end" isn't silently assumed.
+        if (
+            self._train_dataset is not None
+            and dataset is self._train_dataset
+            and not getattr(self, "_warned_eval_on_train", False)
+        ):
+            log.warning(
+                "Evaluating on the training dataset: eval consumes no privacy "
+                "budget, but the resulting metrics are computed on private "
+                "data and carry NO differential-privacy guarantee.  Do not "
+                "publish them as DP-protected."
+            )
+            self._warned_eval_on_train = True
 
         result = self._run_evaluation_loop(
             dataset,
@@ -4462,10 +4481,7 @@ class DPTrainer:
             # pinned a fixed multiplier, where a mismatch is real drift.
             "noise_multiplier": (
                 None
-                if (
-                    ctx is not None
-                    and ctx.noise_multiplier_source == "calibrated"
-                )
+                if (ctx is not None and ctx.noise_multiplier_source == "calibrated")
                 else (
                     ctx.noise_multiplier
                     if ctx is not None
