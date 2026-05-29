@@ -3007,6 +3007,32 @@ class DPTrainer:
         if self._ddp.world_size > 1:
             from opaque.distributed import local_shard
 
+            # The distributed eval gather in ``evaluation_loop`` issues one
+            # collective per collected payload (predictions / labels / inputs
+            # / losses) on every rank.  A rank with an *empty* shard produces
+            # ``None`` for those payloads and would skip the matching
+            # collective, desyncing the process group into a hang.  Fail loud
+            # instead: every rank needs at least one eval example.  (Uneven
+            # but non-empty shards are fine — the gather exchanges sizes.)
+            if len(dataset) < self._ddp.world_size:
+                raise ValueError(
+                    f"Distributed evaluation needs at least world_size="
+                    f"{self._ddp.world_size} eval examples (one per rank); got "
+                    f"{len(dataset)}.  A rank with an empty shard would skip the "
+                    "gather collective and deadlock.  Use a larger eval_dataset "
+                    "or evaluate on a single process."
+                )
+            # ``eval_do_concat_batches=False`` returns per-batch *lists*; the
+            # gather then runs one collective per list element, and ranks with
+            # different batch counts issue a different number of collectives →
+            # hang.  Reject it under DDP rather than deadlock.
+            if not self.args.eval_do_concat_batches:
+                raise ValueError(
+                    "eval_do_concat_batches=False is not supported under "
+                    "distributed evaluation (world_size>1): the per-batch list "
+                    "gather issues a data-dependent number of collectives and "
+                    "can deadlock.  Set eval_do_concat_batches=True for DDP eval."
+                )
             dataset = local_shard(
                 dataset,
                 rank=self._ddp.rank,
