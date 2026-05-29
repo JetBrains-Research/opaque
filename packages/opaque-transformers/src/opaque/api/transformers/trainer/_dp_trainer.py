@@ -48,6 +48,7 @@ from . import _checkpoint as ckpt
 from . import _distributed
 from . import _dpftrl
 from . import _eval
+from . import _hub
 from ._callback import (
     BestModelSaveCallback,
     build_callback_handler,
@@ -479,6 +480,14 @@ class DPTrainer:
         # HF parity: stop the init-phase memory snapshot here so training
         # (which re-starts the tracker) gets a clean baseline.
         self._memory_tracker.stop_and_update_metrics()
+
+        # Hub publishing: create/validate the repo up front when push_to_hub
+        # is set so a misconfigured token/repo fails fast at construction
+        # rather than after a full training run.  push_to_hub() also lazily
+        # inits if called directly without this flag.
+        self.hub_model_id: str | None = args.hub_model_id
+        if args.push_to_hub:
+            _hub.init_hf_repo(self)
 
     # ------------------------------------------------------------------
     # Public properties (TrainerProtocol)
@@ -1517,6 +1526,11 @@ class DPTrainer:
             self.args, self.state, self._control
         )
 
+        # Publish the finished model once, at the end of training (the only
+        # auto-push point — no per-checkpoint uploads).
+        if self.args.push_to_hub:
+            _hub.push_to_hub(self, commit_message="End of training")
+
         return TrainOutput(
             global_step=global_step,
             training_loss=train_loss,
@@ -2394,6 +2408,72 @@ class DPTrainer:
             raise ValueError("save_state requires args.output_dir to be set")
         os.makedirs(output_dir, exist_ok=True)
         self._save_trainer_state(output_dir)
+
+    # ------------------------------------------------------------------
+    # Hub publishing (orthogonal to DP — publish the finished model)
+    # ------------------------------------------------------------------
+
+    def init_hf_repo(self, token: str | None = None) -> None:
+        """Create (or validate) the HF Hub repo and populate ``self.hub_model_id``.
+
+        Mirrors ``Trainer.init_hf_repo``.
+        """
+        _hub.init_hf_repo(self, token=token)
+
+    def push_to_hub(
+        self,
+        commit_message: str | None = "End of training",
+        blocking: bool = True,
+        token: str | None = None,
+        revision: str | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Upload the model to the HF Hub.
+
+        Mirrors ``Trainer.push_to_hub``.  Restores in-memory params, writes the
+        model card (with the Opaque DP ε/δ section), then uploads
+        ``args.output_dir`` via ``huggingface_hub.upload_folder``.  Synchronous
+        by default; there is no in-training auto-push.
+        """
+        return _hub.push_to_hub(
+            self,
+            commit_message=commit_message,
+            blocking=blocking,
+            token=token,
+            revision=revision,
+            **kwargs,
+        )
+
+    def create_model_card(
+        self,
+        language: str | None = None,
+        license: str | None = None,  # noqa: A002
+        tags: str | list[str] | None = None,
+        model_name: str | None = None,
+        finetuned_from: str | None = None,
+        tasks: str | list[str] | None = None,
+        dataset_tags: str | list[str] | None = None,
+        dataset: str | list[str] | None = None,
+        dataset_args: str | list[str] | None = None,
+    ) -> None:
+        """Write ``README.md`` to ``args.output_dir`` with HF model card + DP section.
+
+        Mirrors ``Trainer.create_model_card`` with Opaque-specific additions:
+        ``differential-privacy`` + ``opaque`` tags, and a ``## Privacy budget``
+        section listing ε, δ, noise multiplier, and clipping norm.
+        """
+        _hub.create_model_card(
+            self,
+            language=language,
+            license=license,
+            tags=tags,
+            model_name=model_name,
+            finetuned_from=finetuned_from,
+            tasks=tasks,
+            dataset_tags=dataset_tags,
+            dataset=dataset,
+            dataset_args=dataset_args,
+        )
 
     def _run_evaluation_loop(
         self,
@@ -3764,6 +3844,7 @@ class DPTrainer:
     def save_model(
         self,
         output_dir: str | None = None,
+        _internal_call: bool = False,
     ) -> None:
         """Restore in-memory params into the model and call ``model.save_pretrained``.
 
@@ -3771,6 +3852,9 @@ class DPTrainer:
 
         Args:
             output_dir: Directory to save to.  Defaults to ``args.output_dir``.
+            _internal_call: Set by :meth:`push_to_hub` to avoid push recursion
+                (a direct user ``save_model`` with ``push_to_hub=True`` also
+                publishes; the push path saves with this flag to skip that).
         """
         a = self.args
         target = output_dir or self._effective_output_dir()
@@ -3798,6 +3882,11 @@ class DPTrainer:
                 )
         # Barrier so non-saving ranks don't proceed before the save lands.
         _distributed.barrier(self._ddp)
+        # A direct user save with push_to_hub=True also publishes (HF parity).
+        # ``_internal_call`` short-circuits the push triggered from within
+        # ``push_to_hub`` itself.
+        if a.push_to_hub and not _internal_call:
+            _hub.push_to_hub(self, commit_message="Model save", revision=a.hub_revision)
 
     def _save_checkpoint(self, ctx: "_TrainingContext", step: int) -> str:
         """Write a complete ``checkpoint-<step>`` directory; returns its path.

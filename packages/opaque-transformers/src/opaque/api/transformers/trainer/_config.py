@@ -342,6 +342,20 @@ class TrainingArguments:
     project: str | None = None
 
     # =================================================================
+    # Hub publishing (orthogonal to DP — publish the finished model)
+    # =================================================================
+    # Minimal "publish & manage" surface: the model is uploaded once at the
+    # end of training (or via an explicit ``trainer.push_to_hub()``), with a
+    # model card carrying the DP ε/δ provenance.  The HF in-training auto-push
+    # machinery (``hub_strategy``, per-checkpoint async uploads) is
+    # intentionally not supported — it re-couples Hub to the checkpoint loop.
+    push_to_hub: bool = False
+    hub_model_id: str | None = None
+    hub_token: str | None = None
+    hub_private_repo: bool | None = None
+    hub_revision: str | None = None
+
+    # =================================================================
     # Compile / kernels (Phase 11 owns wiring; field surface stays)
     # =================================================================
     torch_compile: bool = False
@@ -926,6 +940,28 @@ class TrainingArguments:
     def eval_batch_size(self) -> int:
         """Cluster-wide eval batch size (HF parity)."""
         return self.per_device_eval_batch_size * max(1, self.world_size)
+
+    # --- HF-utility compatibility shims (read-only) ---------------------
+    # These are *not* user knobs (no fields, so passing them to the
+    # constructor still raises ``TypeError``); they exist only so HF
+    # utilities that read off the args object — ``transformers.modelcard``'s
+    # ``extract_hyperparameters_from_trainer``, reporting callbacks — keep
+    # working after the corresponding fields were intentionally dropped.
+
+    @property
+    def gradient_accumulation_steps(self) -> int:
+        """Always 1: DP-SGD does one optimizer step per Poisson round."""
+        return 1
+
+    @property
+    def lr_scheduler_type(self) -> Any:
+        """HF alias for ``lr_scheduler`` (the resolved ``SchedulerType``)."""
+        return self.lr_scheduler
+
+    @property
+    def fp16(self) -> bool:
+        """fp16 training is unsupported (bf16 only); always ``False``."""
+        return False
 
     # =================================================================
     # Device resolution (bypasses Accelerate)
