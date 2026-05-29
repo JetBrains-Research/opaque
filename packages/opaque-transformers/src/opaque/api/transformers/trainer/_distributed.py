@@ -21,7 +21,6 @@ from typing import Any
 import torch
 
 from opaque.distributed import get_rank, get_world_size, is_distributed
-from opaque.api.engine.distributed._state import reduce_scalar
 from opaque.distributed.collectives import barrier as _opaque_barrier
 
 __all__ = [
@@ -33,7 +32,6 @@ __all__ = [
     "barrier",
 ]
 
-_BACKEND_FIRST_CLASS = {"nccl", "gloo", "mpi"}
 _BACKEND_ENV_DEPENDENT_HINTS = {
     "xccl": "Intel XPU/XCCL runtime",
     "hccl": "Habana Gaudi/HCCL runtime",
@@ -157,16 +155,9 @@ def validate_ddp_backend(args: Any, ddp: DDPState) -> None:
             "Configured ddp_backend does not match initialized process group: "
             f"ddp_backend={configured_backend!r}, live_backend={live_backend!r}."
         )
-    if (
-        configured_backend not in _BACKEND_FIRST_CLASS
-        and configured_backend in _BACKEND_ENV_DEPENDENT_HINTS
-        and live_backend != configured_backend
-    ):
-        raise ValueError(
-            f"ddp_backend={configured_backend!r} requires "
-            f"{_BACKEND_ENV_DEPENDENT_HINTS[configured_backend]}, but the active "
-            f"backend is {live_backend!r}."
-        )
+    # (Once the group is initialized ``get_backend()`` is always non-empty, so
+    # the mismatch check above already covers env-dependent backends — no
+    # additional empty-``live_backend`` branch is reachable here.)
 
 
 def should_log(args: Any, ddp: DDPState) -> bool:
@@ -204,17 +195,3 @@ def barrier(ddp: DDPState) -> None:
     """
     if ddp.is_distributed:
         _opaque_barrier()
-
-
-def reduce_step_finite(grads_finite: bool, ddp: DDPState) -> bool:
-    """Cluster-wide AND on ``grads_finite``.
-
-    fp16 overflow on **any** rank must trip every rank to skip the
-    optimizer update — otherwise rank A applies an update with sane grads
-    while rank B no-ops, and the parameter trees diverge instantly.
-    Implemented as ``min`` reduction on a 0/1 int (``min`` of any zero is
-    zero — i.e. "any rank saw an inf" wins).
-    """
-    if not ddp.is_distributed:
-        return grads_finite
-    return bool(reduce_scalar(int(grads_finite), op="min", device=ddp.device))

@@ -2,7 +2,8 @@
 
 Covers the full-cast precision path:
 - ``bf16=True`` casts the model to ``torch.bfloat16`` at ``__init__``.
-- ``fp16=True`` raises ``NotImplementedError`` (deferred to Phase 11).
+- ``fp16=True`` is unsupported (not a field) and raises ``TypeError``;
+  bf16 is the only mixed-precision mode (no loss scaler needed).
 - ``tf32=True``/``False`` flips both ``torch.backends.cuda.matmul.allow_tf32``
   and ``torch.backends.cudnn.allow_tf32``; ``None`` leaves them alone.
 - ``self._train_dtype`` captures the effective post-cast dtype for the
@@ -58,7 +59,6 @@ def test_bf16_true_enables_autocast(tmp_path):
     assert next(model.parameters()).dtype == torch.float32
     assert trainer._train_dtype == torch.float32
     assert trainer._amp_dtype == torch.bfloat16
-    assert trainer._loss_scaler is None  # bf16 has wider exponent; no scaler
 
 
 def test_bf16_default_false_no_autocast(tmp_path):
@@ -66,7 +66,6 @@ def test_bf16_default_false_no_autocast(tmp_path):
     assert next(model.parameters()).dtype == torch.float32
     assert trainer._train_dtype == torch.float32
     assert trainer._amp_dtype is None
-    assert trainer._loss_scaler is None
 
 
 def test_bf16_preserves_pre_cast_model(tmp_path):
@@ -86,25 +85,16 @@ def test_bf16_preserves_pre_cast_model(tmp_path):
 
 
 # ----------------------------------------------------------------------------
-# fp16 — autocast + functional loss scaler
+# fp16 is unsupported (bf16 is the only mixed-precision mode)
 # ----------------------------------------------------------------------------
 
 
-def test_fp16_true_enables_autocast_and_loss_scaler(tmp_path):
-    """fp16=True enables autocast and wires the functional loss scaler."""
-    from opaque.precision import LossScaler, LossScalerState
+def test_fp16_is_rejected(tmp_path):
+    """fp16 training is not a supported field — passing it raises TypeError."""
+    import pytest
 
-    trainer, model = _tiny_trainer(tmp_path, fp16=True)
-    assert next(model.parameters()).dtype == torch.float32
-    assert trainer._amp_dtype == torch.float16
-    assert isinstance(trainer._loss_scaler, LossScaler)
-    assert isinstance(trainer._loss_scaler_state, LossScalerState)
-
-
-def test_fp16_loss_scaler_initial_scale(tmp_path):
-    """Default loss scale is 2**16 — same as torch.amp.GradScaler."""
-    trainer, _ = _tiny_trainer(tmp_path, fp16=True)
-    assert trainer._loss_scaler_state.scale == 2**16
+    with pytest.raises(TypeError):
+        _tiny_trainer(tmp_path, fp16=True)
 
 
 # ----------------------------------------------------------------------------

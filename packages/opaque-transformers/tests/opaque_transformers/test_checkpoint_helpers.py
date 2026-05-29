@@ -220,7 +220,7 @@ class TestDpRuntimeBundle:
     def test_rejects_unknown_bundle_version(self, tmp_path):
         path = str(tmp_path / "dp.pt")
         fake = ckpt.RuntimeCheckpoint(
-            version=1,  # wrong; current is DP_STATE_BUNDLE_VERSION (2)
+            version=1,  # wrong; current is DP_STATE_BUNDLE_VERSION (see _checkpoint)
             clip_state={},
             noise_state={},
             sampler_state=None,

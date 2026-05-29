@@ -108,8 +108,8 @@ Mechanism constraints (validated at construction):
 
 | Field | Default | Notes |
 |---|---|---|
-| `bf16` / `fp16` | `False` | Autocast on the per-example loss closure.  `fp16` enables dynamic loss scaling. |
-| `bf16_full_eval` / `fp16_full_eval` | `False` | Cast the model for the eval scope only. |
+| `bf16` | `False` | bf16 autocast on the per-example loss closure. |
+| `bf16_full_eval` | `False` | Cast the model to bf16 for the eval scope only. |
 | `gradient_checkpointing` | `False` | Pair with `gradient_checkpointing_kwargs={"use_reentrant": False}` — reentrant checkpointing doesn't compose with vmap. |
 | `torch_compile` | `False` | Compiles the per-example loss closure (not the model).  Tries `fullgraph=True` first; falls back with a warning. |
 
@@ -146,11 +146,13 @@ Resume claims:
   with the remaining steps is DP-valid.  Calibration runs over the
   remaining steps to hit the original `privacy_target_epsilon`
   against that prefix.
-- `privacy_resume_without_accountant=True` opts in to the
-  warmup-on-public-data, then-DP workflow — resume from a checkpoint
-  with no `accountant.json` and the trainer treats prior training as
-  zero DP cost.  Without this flag, missing `accountant.json` raises
-  `FileNotFoundError`.
+- `resume_from_checkpoint` requires a **complete DP checkpoint**
+  (`dp_state.pt` + `dp_optimizer.pt` + `accountant.json`).  A
+  weights-only export (`save_only_model=True`, an HF checkpoint, a
+  pretrained model) is rejected — to start a fresh DP run from such
+  weights, load them at construction (`model=...`); the run begins with
+  a zero accountant, which is correct only when the prior training had
+  no DP cost (e.g. public-data warmup).
 - `ignore_data_skip=True` skips sampler-state restore (useful when
   the dataset shape changed between runs); the resumed run starts
   each epoch from a fresh subsample sequence.
@@ -179,6 +181,29 @@ Resume claims:
 For per-rank sharding, accountant cluster-wide composition, and
 rank-gated checkpointing, see
 [Distributed DPTrainer](../distributed-trainer.md).
+
+## Migrating from HF: unsupported arguments
+
+`TrainingArguments` is a standalone dataclass, not a subclass of
+`transformers.TrainingArguments`.  HF knobs DPTrainer does **not**
+support are simply not fields, so passing them raises
+`TypeError: __init__() got an unexpected keyword argument …`.  When
+porting an HF script, remove or translate these:
+
+| HF argument | Why it's unsupported | DPTrainer alternative |
+| --- | --- | --- |
+| `gradient_accumulation_steps` | One optimizer step must be exactly one Poisson round for the accountant to compose correctly | Increase `per_device_train_batch_size` (the expected Poisson round size) for a larger effective batch; the physical vmap chunk (microbatch) is decoupled from it and auto-shrinks under `auto_find_microbatch_size=True` for OOM relief — accounting is unaffected |
+| `group_by_length`, `length_column_name` | Length-bucketed batching breaks the equal per-example inclusion probability Poisson amplification relies on | Leave examples unsorted; Poisson sampling handles variable lengths |
+| `dataloader_drop_last` | The Poisson / random samplers produce variable-size batches, so dropping a "last batch" is meaningless; the sequential batch sampler already enforces drop-last internally where it matters for correctness | n/a (handled by the sampler) |
+| `deepspeed`, `fsdp`, `fsdp_config`, `accelerator_config`, `parallelism_config` | Parameter/gradient sharding is incompatible with vmap per-example gradients | Use Opaque's built-in DDP (`torchrun` + sharded data) |
+| `tpu_num_cores`, `mp_parameters` | TPU/XLA and SageMaker MP are not supported execution backends | CUDA / CPU only |
+| `fp16`, `fp16_full_eval`, `fp16_opt_level`, `half_precision_backend`, `fp16_backend` | fp16 dynamic loss scaling adds a per-example unscale-before-clip step for no benefit on bf16-capable hardware | `bf16=True` (native bf16 autocast; no loss scaler) |
+| `optim="adamw_8bit"` / paged / Apex-fused | No functional torchopt equivalent | A supported `optim` name (see the optimizer table) |
+| `batch_eval_metrics` | Streaming metric reduction not implemented | Use `eval_accumulation_steps` to bound eval memory |
+
+`per_gpu_*`, `adafactor` (bool), `torchdynamo`, and the various
+deprecated `push_to_hub_*` aliases are likewise dropped — use their
+modern replacements.
 
 ## See also
 

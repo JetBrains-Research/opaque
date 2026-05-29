@@ -43,10 +43,13 @@ DP-correct invariants worth flagging:
   HF property). Internal microbatch chunking under OOM retry never
   changes the logical batch — privacy accounting is unaffected.
 - ``optim`` accepts the torchopt-backed names DPTrainer wires
-  (``adam``, ``adamw``, ``adamw-bc``, ``sgd``, ``rmsprop``, ``adagrad``,
-  ``adadelta``, ``adamax``, ``radam``); HF's ``OptimizerNames`` values
-  (``adamw_torch``, ``adafactor``, ``lion``, …) are rejected with a
-  per-name redirection.
+  (``adam``, ``adamw``, ``adamw-bc`` = DP bias-corrected AdamW, ``sgd``,
+  ``lion``, ``ademamix``, ``adafactor``, ``rmsprop``, ``adagrad``,
+  ``radam``, ``adadelta``, ``schedule_free``) plus HF aliases that map
+  cleanly onto them (``adamw_torch`` / ``adamw_torch_fused`` / ``adamw_hf``
+  → ``adamw``, ``lion_32bit`` → ``lion``, …).  Names with no functional
+  equivalent (bitsandbytes 8-bit / paged, Apex-fused, XLA/NPU variants)
+  are rejected with a per-name redirection.
 - ``metric_for_best_model`` must resolve to an eval-side metric (raise
   on ``"train_*"`` shape) when ``load_best_model_at_end`` is on.
 
@@ -284,8 +287,6 @@ class TrainingArguments:
     use_cpu: bool = False
     use_mps_device: bool = False
     bf16: bool = False
-    fp16: bool = False
-    fp16_full_eval: bool = False
     bf16_full_eval: bool = False
     tf32: bool | None = None
 
@@ -339,6 +340,20 @@ class TrainingArguments:
     disable_tqdm: bool | None = None
     run_name: str | None = None
     project: str | None = None
+
+    # =================================================================
+    # Hub publishing (orthogonal to DP — publish the finished model)
+    # =================================================================
+    # Minimal "publish & manage" surface: the model is uploaded once at the
+    # end of training (or via an explicit ``trainer.push_to_hub()``), with a
+    # model card carrying the DP ε/δ provenance.  The HF in-training auto-push
+    # machinery (``hub_strategy``, per-checkpoint async uploads) is
+    # intentionally not supported — it re-couples Hub to the checkpoint loop.
+    push_to_hub: bool = False
+    hub_model_id: str | None = None
+    hub_token: str | None = None
+    hub_private_repo: bool | None = None
+    hub_revision: str | None = None
 
     # =================================================================
     # Compile / kernels (Phase 11 owns wiring; field surface stays)
@@ -422,14 +437,12 @@ class TrainingArguments:
     noise_calibration_kwargs: dict[str, Any] | str = field(default_factory=dict)
 
     # ---- Resume policy --------------------------------------------------
-    # ``accountant.json`` carries the privacy provenance of all prior
-    # training; resuming without it would silently discard the spent
-    # budget.  Default ``False`` → resume raises when the file is
-    # missing.  Set to ``True`` for the legitimate "warmup on public
-    # data, then DP-fine-tune" workflow where the resumed checkpoint
-    # genuinely has zero prior DP cost; calibration then runs over the
-    # remaining steps against an empty accountant.
-    privacy_resume_without_accountant: bool = False
+    # There is no "resume without DP state" opt-in.  ``resume_from_checkpoint``
+    # requires a *complete* DP checkpoint (dp_state + optimizer + accountant);
+    # a weights-only export is not resumable.  To start a fresh DP run from
+    # arbitrary weights (public-data warmup, an HF checkpoint, a pretrained
+    # model), load them at construction via ``model=...`` — the run begins
+    # with a zero accountant.
 
     # =================================================================
     # Validation / coercion
@@ -701,12 +714,11 @@ class TrainingArguments:
             )
 
         # --- 7. Mixed precision sanity --------------------------------------
-        if self.fp16 and self.bf16:
-            raise ValueError("At most one of fp16 and bf16 can be True, but not both")
-        if self.fp16_full_eval and self.bf16_full_eval:
-            raise ValueError(
-                "At most one of fp16 and bf16 can be True for full eval, but not both"
-            )
+        # bf16 is the only mixed-precision mode: it needs no loss scaler and
+        # has the dynamic range fp16's scaler exists to fake.  fp16 training
+        # (autocast + dynamic loss scaling) is intentionally not supported —
+        # it adds a per-example unscale-before-clip landmine for no benefit on
+        # the bf16-capable hardware this targets.
         if (self.bf16 or self.bf16_full_eval) and not self.use_cpu:
             if not is_torch_bf16_gpu_available() and not is_torch_xla_available():
                 raise ValueError(
@@ -736,6 +748,29 @@ class TrainingArguments:
         self.clipping_norm = _coerce_clipping_norm(self.clipping_norm)
 
         # --- 11b. DP mechanism / clipping / sampling surfaces ---------------
+        # Privacy budget must be positive — calibration to ε <= 0 is
+        # ill-posed and would otherwise surface as an opaque solver failure.
+        if self.privacy_noise_multiplier is None and self.privacy_target_epsilon <= 0:
+            raise ValueError(
+                "privacy_target_epsilon must be > 0 when calibrating noise "
+                f"(privacy_noise_multiplier is None); got "
+                f"{self.privacy_target_epsilon!r}."
+            )
+        if (
+            self.privacy_noise_multiplier is not None
+            and self.privacy_noise_multiplier < 0
+        ):
+            raise ValueError(
+                "privacy_noise_multiplier must be >= 0; got "
+                f"{self.privacy_noise_multiplier!r}."
+            )
+        if self.privacy_target_delta is not None and not (
+            0 < self.privacy_target_delta < 1
+        ):
+            raise ValueError(
+                "privacy_target_delta must lie in (0, 1); got "
+                f"{self.privacy_target_delta!r}."
+            )
         if self.clipping_mode not in ("fixed", "adaptive", "auto"):
             raise ValueError(
                 f"clipping_mode must be 'fixed', 'adaptive', or 'auto'; "
@@ -905,6 +940,28 @@ class TrainingArguments:
     def eval_batch_size(self) -> int:
         """Cluster-wide eval batch size (HF parity)."""
         return self.per_device_eval_batch_size * max(1, self.world_size)
+
+    # --- HF-utility compatibility shims (read-only) ---------------------
+    # These are *not* user knobs (no fields, so passing them to the
+    # constructor still raises ``TypeError``); they exist only so HF
+    # utilities that read off the args object — ``transformers.modelcard``'s
+    # ``extract_hyperparameters_from_trainer``, reporting callbacks — keep
+    # working after the corresponding fields were intentionally dropped.
+
+    @property
+    def gradient_accumulation_steps(self) -> int:
+        """Always 1: DP-SGD does one optimizer step per Poisson round."""
+        return 1
+
+    @property
+    def lr_scheduler_type(self) -> Any:
+        """HF alias for ``lr_scheduler`` (the resolved ``SchedulerType``)."""
+        return self.lr_scheduler
+
+    @property
+    def fp16(self) -> bool:
+        """fp16 training is unsupported (bf16 only); always ``False``."""
+        return False
 
     # =================================================================
     # Device resolution (bypasses Accelerate)

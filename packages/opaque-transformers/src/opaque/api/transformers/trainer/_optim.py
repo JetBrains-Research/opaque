@@ -90,6 +90,10 @@ _HF_ALIASES: dict[str, tuple[str, dict[str, Any]]] = {
     # ``lion`` itself is a canonical opaque name; HF's enum still
     # surfaces it, route through the canonical entry above.
     "schedule_free_radam": ("schedule_free", {"base": "radam"}),
+    # DP bias-corrected AdamW: a named shortcut for
+    # ``optim="adamw", optim_args="noise_bias_correction=True"``.  Explicit
+    # ``optim_args`` still win on merge (see ``resolve_optimizer_name``).
+    "adamw-bc": ("adamw", {"noise_bias_correction": True}),
 }
 
 

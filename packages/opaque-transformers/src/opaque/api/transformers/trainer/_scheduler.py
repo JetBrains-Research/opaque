@@ -25,6 +25,7 @@ from opaque.scheduling import (
     with_restarts,
     with_warmup,
 )
+from opaque.scheduling.types import CosineSchedule
 from transformers.trainer_utils import SchedulerType
 
 
@@ -190,14 +191,30 @@ def build_lr_schedule(
             transition_begin=W,
         )
     elif name == "inverse_sqrt":
-        timescale = kwargs.get("timescale") or W or 10_000
+        # Explicit ``None`` check (not truthiness): a user-supplied
+        # ``timescale=0`` is invalid but should not silently fall through to
+        # the warmup-steps default.
+        ts = kwargs.get("timescale")
+        timescale = ts if ts is not None else (W or 10_000)
         decay = inverse_sqrt_schedule(
             base_lr, transition_steps=timescale, transition_begin=W
         )
     elif name == "cosine_with_restarts":
         cycles = int(kwargs.get("num_cycles", 1))
+        # Real-valued cycle length: ``with_restarts`` places restart
+        # boundaries at ``k * decay_steps / cycles`` and the inner half-cosine
+        # must span the *same* fractional length, else (for non-divisible
+        # ``decay_steps``) the cosine bottoms out early and the cycle shapes
+        # drift from HF's fractional-progress formula.  ``cosine_schedule``'s
+        # factory truncates ``transition_steps`` to int, so build the inner
+        # ``CosineSchedule`` directly to preserve the fractional span.
         cycle_length = decay_steps / cycles
-        inner = cosine_schedule(base_lr, 0.0, transition_steps=cycle_length)
+        inner = CosineSchedule(
+            init_value=float(base_lr),
+            end_value=0.0,
+            transition_steps=cycle_length,
+            num_cycles=0.5,
+        )
         decay = with_restarts(
             inner, transition_steps=decay_steps, num_cycles=cycles, transition_begin=W
         )

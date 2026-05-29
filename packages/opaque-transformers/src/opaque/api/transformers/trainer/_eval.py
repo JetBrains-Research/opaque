@@ -359,7 +359,13 @@ class _PredictionAccumulator:
         pad_value: int | float,
     ) -> Any | list[Any] | None:
         if not cold:
-            return None if empty_ok else None
+            # An empty container always collapses to ``None`` (HF parity:
+            # ``compute_metrics`` receives ``None`` for predictions/labels in
+            # loss-only mode).  ``empty_ok`` is retained as caller intent —
+            # predictions/labels pass ``prediction_loss_only``; ``inputs`` is
+            # only collected behind a non-empty guard.
+            del empty_ok
+            return None
         if self.eval_do_concat_batches:
             return _concat_nested_chunks(cold, padding_value=pad_value)
         return list(cold)

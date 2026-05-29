@@ -22,6 +22,7 @@ import json
 import logging
 import math
 import os
+import shutil
 import time
 from collections.abc import Mapping
 from typing import Any, Callable, NamedTuple
@@ -47,6 +48,7 @@ from . import _checkpoint as ckpt
 from . import _distributed
 from . import _dpftrl
 from . import _eval
+from . import _hub
 from ._callback import (
     BestModelSaveCallback,
     build_callback_handler,
@@ -388,12 +390,9 @@ class DPTrainer:
         _opaque_rt.apply_transformers_runtime_compat_patches()
         self._apply_opaque_model_patches()
 
-        # Compute precision (HF parity — autocast for bf16/fp16, full-cast
-        # only for the *_full_eval scope).  See _setup_precision for the
-        # behavior matrix.
+        # Compute precision: bf16 autocast for training, full-cast only for
+        # the bf16_full_eval scope.  See _setup_precision.
         self._amp_dtype: torch.dtype | None = None
-        self._loss_scaler = None
-        self._loss_scaler_state = None
         self._setup_precision()
 
         # Functional state (populated by _setup_training, used by evaluate)
@@ -481,6 +480,14 @@ class DPTrainer:
         # HF parity: stop the init-phase memory snapshot here so training
         # (which re-starts the tracker) gets a clean baseline.
         self._memory_tracker.stop_and_update_metrics()
+
+        # Hub publishing: create/validate the repo up front when push_to_hub
+        # is set so a misconfigured token/repo fails fast at construction
+        # rather than after a full training run.  push_to_hub() also lazily
+        # inits if called directly without this flag.
+        self.hub_model_id: str | None = args.hub_model_id
+        if args.push_to_hub:
+            _hub.init_hf_repo(self)
 
     # ------------------------------------------------------------------
     # Public properties (TrainerProtocol)
@@ -638,26 +645,23 @@ class DPTrainer:
         )
 
     def _setup_precision(self) -> None:
-        """Resolve compute precision (TF32, bf16/fp16 autocast).
+        """Resolve compute precision (TF32, bf16 autocast).
 
-        HF parity: ``bf16=True`` and ``fp16=True`` enable autocast on the
-        loss closure (forward); they do NOT cast the model.  Full-cast is
-        reserved for ``bf16_full_eval`` / ``fp16_full_eval`` (eval scope
-        only — see :mod:`._precision`).
+        ``bf16=True`` enables autocast on the loss closure (forward); it
+        does NOT cast the model.  Full-cast is reserved for
+        ``bf16_full_eval`` (eval scope only — see :mod:`._precision`).
+        bf16 is the only mixed-precision mode: it has the dynamic range
+        that fp16's dynamic loss scaler exists to compensate for, so no
+        scaler is needed (and fp16 training is intentionally unsupported).
 
         Sets:
             self._device — already resolved by caller.
             self._train_dtype — dtype the model parameters are stored in.
                 Stays at whatever the caller pre-placed; autocast does
                 NOT change it.
-            self._amp_dtype — None | torch.bfloat16 | torch.float16.
-                Driven into ``torch.autocast(device_type, dtype=self._amp_dtype)``
+            self._amp_dtype — None | torch.bfloat16.  Driven into
+                ``torch.autocast(device_type, dtype=self._amp_dtype)``
                 inside the loss closure (Step 5) when set.
-            self._loss_scaler — None | LossScaler transform from
-                :mod:`opaque.precision`.  Populated for fp16 only (bf16
-                has wider exponent range, no scaling needed).
-            self._loss_scaler_state — None | LossScalerState.  Threaded
-                through training_step; replaced wholesale each step.
         """
         a = self.args
         # ``tf32`` is a single global flag flip.  HF semantics: ``None`` =
@@ -668,20 +672,7 @@ class DPTrainer:
             torch.backends.cudnn.allow_tf32 = bool(a.tf32)
 
         self._train_dtype = next(self._model.parameters()).dtype
-
-        if a.bf16:
-            self._amp_dtype = torch.bfloat16
-            self._loss_scaler = None
-            self._loss_scaler_state = None
-        elif a.fp16:
-            from opaque.precision import loss_scaler
-
-            self._amp_dtype = torch.float16
-            self._loss_scaler, self._loss_scaler_state = loss_scaler()
-        else:
-            self._amp_dtype = None
-            self._loss_scaler = None
-            self._loss_scaler_state = None
+        self._amp_dtype = torch.bfloat16 if a.bf16 else None
 
     def _effective_output_dir(self) -> str | None:
         return self.args.output_dir
@@ -705,20 +696,20 @@ class DPTrainer:
 
         Resume semantics under DP differ from HF's batch-replay model:
 
-        - **Sampler resume is O(1), not batch-replay.** HF's ``Trainer``
-          rebuilds the dataloader and skips ``global_step`` batches one
-          by one to recover the exact data order; that's incompatible
-          with our Poisson sampler whose per-iteration subsample is
-          derived from ``fold_in(key, iter_count)``.  Loading the
-          saved ``iter_count`` jumps the sampler directly to the right
-          place.  **Privacy budget is unchanged** — every iteration
-          still consumes one Poisson-amplified Gaussian step, the
-          accountant composes the same number of mechanisms — but the
-          *concrete batches* the resumed run sees from iteration N
-          onward are the same distribution, not the same byte sequence,
-          as a non-resumed run that reached iteration N organically.
-          This is intentional (variance reduction, no replay cost) and
-          DP-valid.
+        - **Sampler resume restores the cursor, not the data order.**
+          HF's ``Trainer`` rebuilds the dataloader and skips
+          ``global_step`` batches one by one to recover the exact data
+          order; we instead restore the sampler's ``consumed`` cursor.
+          For the Poisson sampler this is done by advancing its NumPy
+          generator forward by ``consumed`` discarded sampling steps
+          (an ``O(consumed)`` RNG replay — cheap relative to training,
+          but *not* an ``O(1)`` jump), so the continuation is a
+          deterministic resume of the saved stream.  **Privacy budget is
+          unchanged** — every iteration still consumes one
+          Poisson-amplified Gaussian step and the accountant composes the
+          same number of mechanisms — and the resumed subsample sequence
+          from iteration N onward matches a continuous run from the same
+          seed.  DP-valid either way.
         - **``ignore_data_skip=True``** disables the sampler-state
           restore on resume.  The new run starts each epoch from
           ``iter_count=0`` with a fresh subsample sequence, again
@@ -831,16 +822,14 @@ class DPTrainer:
         self._ctx = ctx
 
         if resume_path is not None:
-            if runtime_payload is not None:
-                self._apply_runtime_state(
-                    ctx, runtime_payload, prefix_accountant, resume_path
-                )
-                self._warn_on_arg_drift(runtime_payload)
-            elif prefix_accountant is not None:
-                # save_only_model checkpoints have no DP runtime file but
-                # we still install the saved accountant (or the empty
-                # ``Accountant()`` from the warmup opt-in path).
-                ctx.accounting = prefix_accountant
+            # ``_read_runtime_for_resume`` guarantees a complete payload
+            # (dp_state + optimizer + accountant) or raises — weights-only
+            # exports are rejected there — so resume always restores the full
+            # DP runtime, never a partial one.
+            self._apply_runtime_state(
+                ctx, runtime_payload, prefix_accountant, resume_path
+            )
+            self._warn_on_arg_drift(runtime_payload)
             self._load_rng_state(resume_path)
             self._load_callback_states()
 
@@ -849,7 +838,9 @@ class DPTrainer:
                 ctx,
                 resume_path=resume_path,
                 saved_sampler_state=(
-                    runtime_payload.sampler_state if runtime_payload else None
+                    runtime_payload.sampler_state
+                    if runtime_payload is not None
+                    else None
                 ),
                 ignore_keys_for_eval=ignore_keys_for_eval,
             )
@@ -960,7 +951,7 @@ class DPTrainer:
         # classification gets ``ForSequenceClassificationLoss``, …).
         # Subclasses override :meth:`compute_per_example_loss` for
         # domain-specific losses; ``_build_per_example_loss`` here just
-        # wraps it with autocast / fp16 scaling / torch.compile.
+        # wraps it with autocast / torch.compile.
         per_example_loss_fn, batch_argnums = self._build_per_example_loss(
             fmodel,
             frozen_params,
@@ -1358,28 +1349,26 @@ class DPTrainer:
                     (step_idx + 1) / max(1, ctx.expected_steps_per_epoch)
                 )
 
-                if batch_size == 0:
-                    # Still fire on_step_end so callbacks observe a step boundary.
-                    self._control = self._callback_handler.on_step_end(
-                        self.args, self.state, self._control
-                    )
-                    if self._control.should_training_stop:
-                        break
-                    continue
-
-                last_loss = step_result["loss"]
-                last_step_result = step_result
-                # Loss accumulator stays on device for DDP gather.  fp16
-                # overflows already short-circuit upstream (the scaler
-                # returns ``batch_size=0`` which hits the empty-step
-                # ``continue`` above), so any NaN reaching here reflects
-                # a genuine forward / loss-math divergence — propagate
-                # it through the running average so the user sees the
-                # honest signal instead of a smoothed-over fake curve.
-                tr_loss_step = torch.tensor(float(last_loss), device=self._device)
-                self._tr_loss = self._tr_loss + tr_loss_step
+                # Empty Poisson round: no loss / tokens to accumulate.  The
+                # optimizer still applied a pure-noise update and
+                # ``global_step`` already advanced, so we must NOT skip the
+                # log/save/eval gate below — a save or eval boundary landing
+                # exactly on an empty round used to be silently dropped.
+                # ``step_result`` carries only ``{loss: 0, batch_size: 0}``
+                # here, which the gate reads via ``.get`` defaults (the logged
+                # loss is the windowed average, unaffected by this step).
+                if batch_size != 0:
+                    last_loss = step_result["loss"]
+                    last_step_result = step_result
+                    # Loss accumulator stays on device for DDP gather.  A NaN
+                    # reaching here reflects a genuine forward / loss-math
+                    # divergence — propagate it through the running average so
+                    # the user sees the honest signal instead of a
+                    # smoothed-over fake curve.
+                    tr_loss_step = torch.tensor(float(last_loss), device=self._device)
+                    self._tr_loss = self._tr_loss + tr_loss_step
                 # Token counting (Phase 5c).
-                if a.include_num_input_tokens_seen != "no":
+                if batch_size != 0 and a.include_num_input_tokens_seen != "no":
                     main_input_name = getattr(
                         self._model, "main_input_name", "input_ids"
                     )
@@ -1450,6 +1439,14 @@ class DPTrainer:
                     break
                 if a.max_steps > 0 and global_step >= a.max_steps:
                     break
+                # Hard ceiling at the calibrated horizon.  Noise was
+                # calibrated for exactly ``ctx.total_steps`` composed
+                # mechanisms; without this guard an epoch-driven resume
+                # (``max_steps`` unset) with ``ignore_data_skip=True`` re-runs
+                # the partial epoch from step 0 and overruns ``total_steps``,
+                # spending more privacy budget than calibrated.
+                if global_step >= ctx.total_steps:
+                    break
 
             # Update state.epoch first so log_history rows are tagged correctly.
             self.state.epoch = float(epoch + 1)
@@ -1471,6 +1468,8 @@ class DPTrainer:
             if self._control.should_training_stop:
                 break
             if a.max_steps > 0 and global_step >= a.max_steps:
+                break
+            if global_step >= ctx.total_steps:  # calibrated-horizon ceiling
                 break
 
         # Final save — parity with HF: when saving is enabled, the last step always
@@ -1510,11 +1509,6 @@ class DPTrainer:
                 "privacy_noise_multiplier": ctx.noise_multiplier,
             }
         )
-        # Surface fp16 overflow counter for stability auditing.  Only
-        # emitted on runs where the loss-scaler was actually active
-        # (avoids a noisy zero on bf16 / fp32 / no-scaler runs).
-        if self._loss_scaler is not None:
-            metrics["train_fp16_overflow_steps"] = self.state.fp16_overflow_steps
         if a.include_num_input_tokens_seen != "no":
             metrics["num_input_tokens_seen"] = self.state.num_input_tokens_seen
         self._memory_tracker.stop_and_update_metrics(metrics)
@@ -1531,6 +1525,11 @@ class DPTrainer:
         self._control = self._callback_handler.on_train_end(
             self.args, self.state, self._control
         )
+
+        # Publish the finished model once, at the end of training (the only
+        # auto-push point — no per-checkpoint uploads).
+        if self.args.push_to_hub:
+            _hub.push_to_hub(self, commit_message="End of training")
 
         return TrainOutput(
             global_step=global_step,
@@ -1616,39 +1615,6 @@ class DPTrainer:
                 sum_gradients_(grads)
                 ctx.clip_state, aux = _opaque_sync(ctx.clip_state, aux)
             sp.mark("clip")
-
-            # fp16 dynamic-loss-scale: detect overflow on the (post-AllReduce)
-            # gradient.  ``pre_clipping_transform`` ran per-example before the
-            # clip-norm so the unscale is done; an inf/nan here reflects a real
-            # forward/backward overflow.  Mirrors ``torch.amp.GradScaler.step``:
-            # skip the optimizer update and back off the scale.  Under DDP, an
-            # overflow on **any** rank must trip every rank or parameter trees
-            # diverge — see ``_distributed.reduce_step_finite``.
-            if self._loss_scaler is not None:
-                from opaque.precision import all_finite
-
-                grads_finite = all_finite(grads)
-                grads_finite = _distributed.reduce_step_finite(grads_finite, self._ddp)
-                self._loss_scaler_state = self._loss_scaler.update(
-                    self._loss_scaler_state, grads_finite
-                )
-                if not grads_finite:
-                    # Overflow → optimizer update is skipped; flow through the
-                    # outer-loop's empty-step gate by returning ``batch_size=0``
-                    # (same sentinel an empty Poisson sample uses).  Drops the
-                    # historical ``loss=NaN`` return — propagating NaN into the
-                    # log path forced ``logging_nan_inf_filter`` to substitute
-                    # the running average and racing with this code; now the
-                    # outer loop sees a clean "no step happened" signal.  The
-                    # overflow is still surfaced via ``state.fp16_overflow_steps``
-                    # for end-of-train auditing.
-                    self.state.fp16_overflow_steps += 1
-                    return {
-                        "loss": 0.0,
-                        "batch_size": 0,
-                        "loss_scale": self._loss_scaler_state.scale,
-                        "overflow": True,
-                    }
 
             # Noise injection — ``grads`` is a ``ClippedPytree`` whose
             # ``.max_norm`` carries the per-step sensitivity; ``noise_fn``
@@ -1890,8 +1856,24 @@ class DPTrainer:
         subclass-override compatibility.  The actual forward goes
         through ``self._ctx.fmodel`` mid-training (functional path) or
         ``self._model`` post-training (``nn.Module`` path) — both
-        produce identically-shaped tensors so downstream code is
-        path-agnostic.
+        produce identically-shaped tensors so the functional/``nn.Module``
+        choice is downstream-transparent.
+
+        Two prediction shapes are possible, selected by
+        ``include_for_metrics``:
+
+        - **Standard path** (default): ``logits`` is a ``tuple`` of every
+          output field surviving the ``ignore_keys + ["loss"]`` filter,
+          collapsed to a bare tensor when length 1 — so multi-output
+          models (seq2seq / vision) expose every auxiliary tensor to
+          ``compute_metrics``.
+        - **Per-example-loss path** (``"loss" in include_for_metrics``):
+          the vmap'd closure returns real per-example losses plus the
+          model's ``logits`` tensor *only*.  Auxiliary outputs are not
+          collected on this path, so ``predictions`` is logits-only even
+          for multi-output models.  A one-time warning is emitted; if you
+          need full multi-output predictions, drop ``"loss"`` from
+          ``include_for_metrics`` and use the standard path.
 
         ``inputs`` is forwarded to the model via ``**inputs`` after
         popping label tensors named in ``self._label_names`` (default:
@@ -1966,6 +1948,20 @@ class DPTrainer:
                     for name, p in self._model.named_parameters()
                     if p.requires_grad
                 }
+            # ``batch_keys`` / ``batch_argnums`` were discovered from the
+            # *train* collator and baked into the vmap'd closure.  If the eval
+            # collator emits a different key set, ``inputs.get(k)`` is ``None``
+            # and vmap fails with an opaque error.  Validate up front and
+            # raise a clear, actionable message instead.
+            missing = [k for k in batch_keys if inputs.get(k) is None]
+            if missing:
+                raise KeyError(
+                    "Per-example eval (include_for_metrics=['loss']) expects the "
+                    f"eval batch to carry the train-discovered keys {list(batch_keys)!r}, "
+                    f"but {missing!r} are absent (or None).  The eval collator/"
+                    "dataset differs from the training one; align them, or drop "
+                    "'loss' from include_for_metrics to use the standard eval path."
+                )
             batch_args = tuple(inputs.get(k) for k in batch_keys)
             with torch.no_grad():
                 was_training = self._model.training
@@ -1977,9 +1973,28 @@ class DPTrainer:
                     if was_training:
                         self._model.train()
             loss = per_example_loss.detach()
-            if prediction_loss_only:
-                return loss, None, None
-            return loss, logits_tensor.detach(), labs
+            # (No ``prediction_loss_only`` early-return here: ``use_per_example_loss``
+            # already requires ``not prediction_loss_only``.)
+            # The per-example path collects only the model's ``logits``
+            # tensor (not the full ``ignore_keys``-filtered output tuple the
+            # standard path builds).  Surface that once so multi-output
+            # users aren't silently handed logits-only predictions, and
+            # honour an explicit ``logits`` entry in ``ignore_keys``.
+            if not getattr(self, "_warned_per_example_logits_only", False):
+                log.warning(
+                    "include_for_metrics=['loss'] uses the per-example eval "
+                    "path, which returns logits-only predictions (auxiliary "
+                    "model outputs are not collected).  Drop 'loss' from "
+                    "include_for_metrics for the full multi-output prediction "
+                    "tuple."
+                )
+                self._warned_per_example_logits_only = True
+            preds = (
+                None
+                if ignore_keys and "logits" in ignore_keys
+                else (logits_tensor.detach() if logits_tensor is not None else None)
+            )
+            return loss, preds, labs
 
         # Batched forward: reduced eval path reads ``output["loss"]``
         # directly (no per-example vmap).  This is the HF-equivalent fast
@@ -2276,10 +2291,47 @@ class DPTrainer:
         Returns a metrics dict with ``{prefix}_loss`` and any keys
         produced by a user-supplied ``compute_metrics`` (auto-prefixed
         with ``metric_key_prefix`` where missing — HF parity).
+
+        Multi-dataset eval (HF parity): pass a ``Mapping`` of
+        ``name -> dataset`` (or set ``eval_dataset`` to one at
+        construction) to evaluate each split independently with metrics
+        namespaced as ``{prefix}_{name}_*`` and merged into one dict;
+        each sub-evaluation logs and fires ``on_evaluate`` on its own.
         """
         dataset = eval_dataset if eval_dataset is not None else self._eval_dataset
         if dataset is None:
             raise ValueError("DPTrainer.evaluate() requires an eval_dataset.")
+
+        # Multi-dataset eval: recurse per split with a namespaced prefix and
+        # merge (mirrors transformers.Trainer.evaluate).
+        if isinstance(dataset, Mapping):
+            merged: dict[str, float] = {}
+            for name, sub_dataset in dataset.items():
+                merged.update(
+                    self.evaluate(
+                        eval_dataset=sub_dataset,
+                        ignore_keys=ignore_keys,
+                        metric_key_prefix=f"{metric_key_prefix}_{name}",
+                    )
+                )
+            return merged
+
+        # DP footgun: evaluating on the (private) training set consumes no
+        # privacy budget, but the reported metrics are computed on private
+        # data and are NOT covered by the DP guarantee — publishing them
+        # leaks.  Warn once so "DP end-to-end" isn't silently assumed.
+        if (
+            self._train_dataset is not None
+            and dataset is self._train_dataset
+            and not getattr(self, "_warned_eval_on_train", False)
+        ):
+            log.warning(
+                "Evaluating on the training dataset: eval consumes no privacy "
+                "budget, but the resulting metrics are computed on private "
+                "data and carry NO differential-privacy guarantee.  Do not "
+                "publish them as DP-protected."
+            )
+            self._warned_eval_on_train = True
 
         result = self._run_evaluation_loop(
             dataset,
@@ -2357,6 +2409,72 @@ class DPTrainer:
         os.makedirs(output_dir, exist_ok=True)
         self._save_trainer_state(output_dir)
 
+    # ------------------------------------------------------------------
+    # Hub publishing (orthogonal to DP — publish the finished model)
+    # ------------------------------------------------------------------
+
+    def init_hf_repo(self, token: str | None = None) -> None:
+        """Create (or validate) the HF Hub repo and populate ``self.hub_model_id``.
+
+        Mirrors ``Trainer.init_hf_repo``.
+        """
+        _hub.init_hf_repo(self, token=token)
+
+    def push_to_hub(
+        self,
+        commit_message: str | None = "End of training",
+        blocking: bool = True,
+        token: str | None = None,
+        revision: str | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Upload the model to the HF Hub.
+
+        Mirrors ``Trainer.push_to_hub``.  Restores in-memory params, writes the
+        model card (with the Opaque DP ε/δ section), then uploads
+        ``args.output_dir`` via ``huggingface_hub.upload_folder``.  Synchronous
+        by default; there is no in-training auto-push.
+        """
+        return _hub.push_to_hub(
+            self,
+            commit_message=commit_message,
+            blocking=blocking,
+            token=token,
+            revision=revision,
+            **kwargs,
+        )
+
+    def create_model_card(
+        self,
+        language: str | None = None,
+        license: str | None = None,  # noqa: A002
+        tags: str | list[str] | None = None,
+        model_name: str | None = None,
+        finetuned_from: str | None = None,
+        tasks: str | list[str] | None = None,
+        dataset_tags: str | list[str] | None = None,
+        dataset: str | list[str] | None = None,
+        dataset_args: str | list[str] | None = None,
+    ) -> None:
+        """Write ``README.md`` to ``args.output_dir`` with HF model card + DP section.
+
+        Mirrors ``Trainer.create_model_card`` with Opaque-specific additions:
+        ``differential-privacy`` + ``opaque`` tags, and a ``## Privacy budget``
+        section listing ε, δ, noise multiplier, and clipping norm.
+        """
+        _hub.create_model_card(
+            self,
+            language=language,
+            license=license,
+            tags=tags,
+            model_name=model_name,
+            finetuned_from=finetuned_from,
+            tasks=tasks,
+            dataset_tags=dataset_tags,
+            dataset=dataset,
+            dataset_args=dataset_args,
+        )
+
     def _run_evaluation_loop(
         self,
         dataset: Dataset,
@@ -2377,6 +2495,24 @@ class DPTrainer:
         loader = self.get_eval_dataloader(dataset)
         self._callback_handler.eval_dataloader = loader
         start_time = time.time()
+        # ``eval_dtype`` casts ``self._model`` in place.  During an active
+        # training run the eval forward goes through the functional
+        # ``ctx.fmodel`` + detached param dicts, which the cast does NOT
+        # reach — so bf16_full_eval is a no-op mid-training (it only takes
+        # effect for the post-training nn.Module path).  Surface that once
+        # instead of letting it pass silently.
+        if (
+            self._ctx is not None
+            and self.args.bf16_full_eval
+            and not getattr(self, "_warned_full_eval_functional", False)
+        ):
+            log.warning(
+                "bf16_full_eval does not apply to in-training evaluation: the "
+                "functional eval forward runs at the training dtype.  Full-cast "
+                "eval takes effect only for evaluation after train() returns "
+                "(the nn.Module path)."
+            )
+            self._warned_full_eval_functional = True
         with eval_dtype(self._model, self.args, self._train_dtype):
             result = self.evaluation_loop(
                 loader,
@@ -2618,9 +2754,9 @@ class DPTrainer:
         Bridges the user-facing override hook (``compute_per_example_loss``,
         kwargs-style) to ``clipped_grad``'s positional contract:
         ``(trainable_params, *batch_args) -> scalar_loss``.  The training
-        loop concerns — autocast, fp16 loss scaling, ``torch.compile`` —
-        wrap around the user's per-example loss math here so subclasses
-        don't have to reimplement them.
+        loop concerns — bf16 autocast and ``torch.compile`` — wrap around
+        the user's per-example loss math here so subclasses don't have to
+        reimplement them.
 
         Args:
             fmodel: Functional model from
@@ -2630,9 +2766,7 @@ class DPTrainer:
             batch_keys: Ordered tuple of tensor keys the collator emits
                 (discovered via :meth:`_discover_batch_keys`).
             return_logits: When ``True``, the closure returns
-                ``(loss, logits)`` instead of just ``loss``.  fp16 loss
-                scaling is skipped in this mode (eval doesn't compose
-                with dynamic loss scaling).
+                ``(loss, logits)`` instead of just ``loss``.
 
         Returns:
             ``(per_example_loss_fn, batch_argnums)``.
@@ -2640,13 +2774,8 @@ class DPTrainer:
         keys = batch_keys
         amp_dtype = self._amp_dtype
         device_type = self._device.type
-        # Skip loss scaling on the eval closure: fp16 dynamic scaling is
-        # a training-side mechanism for gradient underflow, irrelevant
-        # to eval and incompatible with the ``return_logits`` shape.
-        loss_scaler = None if return_logits else self._loss_scaler
-        # autocast(device_type="cpu") only supports bf16; fp16 autocast is
-        # a CUDA-only path.  We let torch raise a clear error on misuse;
-        # nothing extra to validate here.
+        # bf16 autocast only; no loss scaling (bf16 needs none, fp16 training
+        # is unsupported).
         autocast_active = amp_dtype is not None
 
         def per_example_loss(
@@ -2665,21 +2794,7 @@ class DPTrainer:
                     fmodel, merged, inputs, return_logits=return_logits
                 )
 
-            if return_logits:
-                loss, logits = result
-            else:
-                loss = result
-
-            # fp16 dynamic-loss-scale: multiply the loss by the current
-            # scale before returning to vmap(grad(...)).  The matching
-            # unscale runs inside `clipped_grad`'s `pre_clipping_transform`
-            # — applied per-example, before the clip-norm — so the
-            # accountant's sensitivity calibration sees unscaled grads.
-            if loss_scaler is not None:
-                loss = loss_scaler.scale_loss(loss, self._loss_scaler_state)
-            if return_logits:
-                return loss, logits
-            return loss
+            return result
 
         # When `args.torch_compile=True`, compile the loss closure (NOT
         # the model — opaque's functional path goes through
@@ -2826,14 +2941,26 @@ class DPTrainer:
         collate_fn = self._maybe_prime_collate(collate_fn, dataset)
 
         # Under DDP each rank operates on a disjoint shard of the dataset
-        # (``opaque.distributed.local_shard``); the Poisson sampler runs
-        # with the same key on every rank so the union of per-rank batches
-        # is a single global Poisson draw at the user's
-        # ``expected_batch_size`` rate.  ``ctx.sample_rate`` was computed in
+        # (``opaque.distributed.local_shard``) and runs the Poisson sampler
+        # over its shard's *local* positions.  The sampler key is folded by
+        # rank (below) so each rank draws an **independent** Bernoulli(q)
+        # mask: with a shared key every rank would select the *same* local
+        # offsets, perfectly co-including the records that happen to share a
+        # local index across shards — not the i.i.d. global Poisson draw the
+        # design intends (the per-record marginal stays Bernoulli(q) either
+        # way, so the privacy accounting is unaffected; this is a sampling
+        # *diversity* fix).  ``ctx.sample_rate`` was computed in
         # ``_setup_training`` from the same trimmed denominator we use here
         # (see :meth:`_effective_train_dataset_size`), so the rate the
         # sampler is configured with matches the rate the accountant
         # calibrated against — both bind to the post-trim ``q``.
+        #
+        # Resume caveat (multi-GPU only): the sampler snapshot is
+        # self-contained (carries its own key) and is written once on rank
+        # 0, so resuming a DDP run currently restores rank 0's per-rank key
+        # on every rank, re-introducing the cross-rank correlation after the
+        # resume point.  Fully fixing that needs per-rank sampler snapshots;
+        # tracked for the multi-GPU work and validated there.
         if self._ddp.world_size > 1:
             from torch.utils.data import Subset
 
@@ -2853,16 +2980,26 @@ class DPTrainer:
         # ``ctx.current_sampler`` from a registry-deserialised snapshot
         # before calling here, so the loader picks up the right cursor;
         # otherwise build a fresh sampler bound to the resolved
-        # ``sampling_mode`` (one of the five supported modes —
-        # ``poisson``, ``b_min_sep``, ``balls_in_bins``,
-        # ``cyclic_poisson``, ``sequential``) which iterates end-to-end
-        # without per-epoch re-instantiation.  The outer epoch loop is
-        # purely a synthetic boundary layer for HF callbacks, not a
-        # sampling-side concept.
+        # ``sampling_mode``.  Three modes are reachable through
+        # ``TrainingArguments`` (validated by ``_ALLOWED_SAMPLERS``):
+        # ``poisson`` (DP-SGD + ``mf_identity``), ``b_min_sep`` (``mf_band``),
+        # and ``balls_in_bins`` (other MF mechanisms).  ``build_sampler`` also
+        # constructs ``cyclic_poisson`` / ``sequential`` for subclasses that
+        # call it directly, but those are not exposed as config
+        # ``sampling_mode`` values (no matching accountant amplifier) and the
+        # config layer rejects them.  The sampler iterates end-to-end without
+        # per-epoch re-instantiation; the outer epoch loop is purely a
+        # synthetic boundary layer for HF callbacks.
         if ctx.current_sampler is None:
-            from opaque.random import key
+            from opaque.random import fold_in, key
 
             sampler_key = key(a.data_seed if a.data_seed is not None else a.seed)
+            # Per-rank independent sampling: fold the rank into the key so
+            # each shard draws a distinct Bernoulli(q) mask (see the block
+            # comment above).  No-op at world_size == 1, preserving the
+            # single-process seeding bit-for-bit.
+            if self._ddp.world_size > 1:
+                sampler_key = fold_in(sampler_key, self._ddp.rank)
             ctx.current_sampler = _dpftrl.build_sampler(
                 sampling_mode=a.sampling_mode,
                 dataset=dataset,
@@ -2921,6 +3058,32 @@ class DPTrainer:
         if self._ddp.world_size > 1:
             from opaque.distributed import local_shard
 
+            # The distributed eval gather in ``evaluation_loop`` issues one
+            # collective per collected payload (predictions / labels / inputs
+            # / losses) on every rank.  A rank with an *empty* shard produces
+            # ``None`` for those payloads and would skip the matching
+            # collective, desyncing the process group into a hang.  Fail loud
+            # instead: every rank needs at least one eval example.  (Uneven
+            # but non-empty shards are fine — the gather exchanges sizes.)
+            if len(dataset) < self._ddp.world_size:
+                raise ValueError(
+                    f"Distributed evaluation needs at least world_size="
+                    f"{self._ddp.world_size} eval examples (one per rank); got "
+                    f"{len(dataset)}.  A rank with an empty shard would skip the "
+                    "gather collective and deadlock.  Use a larger eval_dataset "
+                    "or evaluate on a single process."
+                )
+            # ``eval_do_concat_batches=False`` returns per-batch *lists*; the
+            # gather then runs one collective per list element, and ranks with
+            # different batch counts issue a different number of collectives →
+            # hang.  Reject it under DDP rather than deadlock.
+            if not self.args.eval_do_concat_batches:
+                raise ValueError(
+                    "eval_do_concat_batches=False is not supported under "
+                    "distributed evaluation (world_size>1): the per-batch list "
+                    "gather issues a data-dependent number of collectives and "
+                    "can deadlock.  Set eval_do_concat_batches=True for DDP eval."
+                )
             dataset = local_shard(
                 dataset,
                 rank=self._ddp.rank,
@@ -3189,23 +3352,7 @@ class DPTrainer:
         expected_batch_size: int,
         microbatch_size: int,
     ) -> Callable[..., Any]:
-        """Create the clipped gradient function based on clipping mode.
-
-        When fp16 autocast is active, the loss closure scales the loss by
-        ``self._loss_scaler_state.scale``; the matching unscale runs as
-        ``pre_clipping_transform`` *inside* vmap, *before* the clip-norm.
-        This preserves the DP sensitivity invariant the accountant relies on.
-        """
-        if self._loss_scaler is not None:
-            scaler = self._loss_scaler
-
-            def pre_clip(g):
-                return scaler.unscale_grads(g, self._loss_scaler_state)
-        else:
-
-            def pre_clip(g):
-                return g
-
+        """Create the clipped gradient function based on clipping mode."""
         ca = a.clipping_kwargs
         target_clip_rate = float(ca.get("target_clipping_rate", 0.5))
         clip_norm_max = float(ca.get("norm_max", 10.0))
@@ -3223,7 +3370,6 @@ class DPTrainer:
                 return_aux=True,
                 key=key(a.seed),
                 normalize_by=expected_batch_size,
-                pre_clipping_transform=pre_clip,
             )
         elif a.clipping_mode == "auto":
             return auto_clipped_grad(
@@ -3235,7 +3381,6 @@ class DPTrainer:
                 normalize_by=expected_batch_size,
                 microbatch_size=microbatch_size,
                 return_aux=True,
-                pre_clipping_transform=pre_clip,
             )
         else:
             return clipped_grad(
@@ -3246,7 +3391,6 @@ class DPTrainer:
                 normalize_by=expected_batch_size,
                 microbatch_size=microbatch_size,
                 return_aux=True,
-                pre_clipping_transform=pre_clip,
             )
 
     def _build_mechanism(
@@ -3700,6 +3844,7 @@ class DPTrainer:
     def save_model(
         self,
         output_dir: str | None = None,
+        _internal_call: bool = False,
     ) -> None:
         """Restore in-memory params into the model and call ``model.save_pretrained``.
 
@@ -3707,6 +3852,9 @@ class DPTrainer:
 
         Args:
             output_dir: Directory to save to.  Defaults to ``args.output_dir``.
+            _internal_call: Set by :meth:`push_to_hub` to avoid push recursion
+                (a direct user ``save_model`` with ``push_to_hub=True`` also
+                publishes; the push path saves with this flag to skip that).
         """
         a = self.args
         target = output_dir or self._effective_output_dir()
@@ -3734,6 +3882,11 @@ class DPTrainer:
                 )
         # Barrier so non-saving ranks don't proceed before the save lands.
         _distributed.barrier(self._ddp)
+        # A direct user save with push_to_hub=True also publishes (HF parity).
+        # ``_internal_call`` short-circuits the push triggered from within
+        # ``push_to_hub`` itself.
+        if a.push_to_hub and not _internal_call:
+            _hub.push_to_hub(self, commit_message="Model save", revision=a.hub_revision)
 
     def _save_checkpoint(self, ctx: "_TrainingContext", step: int) -> str:
         """Write a complete ``checkpoint-<step>`` directory; returns its path.
@@ -3749,14 +3902,25 @@ class DPTrainer:
         if output_dir is None:
             raise ValueError("Saving checkpoints requires args.output_dir to be set")
         ckpt_dir = os.path.join(output_dir, f"{ckpt.PREFIX_CHECKPOINT_DIR}-{step}")
+        # Atomic publish: write everything into a sibling ``*.tmp`` staging
+        # directory, then ``os.replace`` it onto the final ``checkpoint-N``
+        # name only once all artefacts (and every rank's RNG snapshot) have
+        # landed.  A crash mid-write leaves a ``checkpoint-N.tmp`` dir, which
+        # the ``^checkpoint-(\d+)$`` discovery regex ignores — so resume and
+        # rotation never select a half-written checkpoint (which, missing
+        # ``dp_state.pt``, would otherwise route into the save_only_model
+        # noise-reuse path).  Same-directory rename ⇒ atomic on POSIX.
+        staging_dir = ckpt_dir + ".tmp"
         # Rank-0 owns the directory creation + bulk artefacts; every rank
         # restores params (needed for either RNG snapshot writers reading
         # `self._model.state_dict()` shapes consistently in future, and for
         # callbacks below that may inspect params).
         self._restore_params(ctx.trainable_params)
         if _distributed.should_save(a, self._ddp):
-            os.makedirs(ckpt_dir, exist_ok=True)
-            self._save_model_artifacts(ckpt_dir)
+            if os.path.isdir(staging_dir):
+                shutil.rmtree(staging_dir)  # stale leftover from a prior crash
+            os.makedirs(staging_dir, exist_ok=True)
+            self._save_model_artifacts(staging_dir)
 
             # HF parity: register ``best_model_checkpoint`` by *looking up*
             # the folder named ``checkpoint-{best_global_step}`` rather than
@@ -3767,37 +3931,51 @@ class DPTrainer:
             # rotation could delete it because no folder is protected.
             # Resolve *before* writing ``trainer_state.json`` so the file
             # lands once with the final ``best_model_checkpoint`` populated.
+            # The path always uses the *final* ``checkpoint-N`` name (not the
+            # staging dir), since that's what exists after the rename below.
             if self.state.best_global_step is not None:
-                best_dir = os.path.join(
-                    output_dir,
-                    f"{ckpt.PREFIX_CHECKPOINT_DIR}-{self.state.best_global_step}",
-                )
-                if os.path.isdir(best_dir):
-                    self.state.best_model_checkpoint = best_dir
+                if self.state.best_global_step == step:
+                    # This very checkpoint is the best — point at its final
+                    # name (it materialises at the rename).
+                    self.state.best_model_checkpoint = ckpt_dir
                 else:
-                    log.debug(
-                        "best_global_step=%d but no checkpoint-%d/ folder "
-                        "exists (best step fell into a non-saved bucket); "
-                        "leaving best_model_checkpoint unset",
-                        self.state.best_global_step,
-                        self.state.best_global_step,
+                    best_dir = os.path.join(
+                        output_dir,
+                        f"{ckpt.PREFIX_CHECKPOINT_DIR}-{self.state.best_global_step}",
                     )
+                    if os.path.isdir(best_dir):
+                        self.state.best_model_checkpoint = best_dir
+                    else:
+                        log.debug(
+                            "best_global_step=%d but no checkpoint-%d/ folder "
+                            "exists (best step fell into a non-saved bucket); "
+                            "leaving best_model_checkpoint unset",
+                            self.state.best_global_step,
+                            self.state.best_global_step,
+                        )
 
-            self._save_trainer_state(ckpt_dir)
-            self._save_training_args(ckpt_dir)
-            self._save_accountant(ckpt_dir, ctx.accounting)
+            self._save_trainer_state(staging_dir)
+            self._save_training_args(staging_dir)
+            self._save_accountant(staging_dir, ctx.accounting)
             if not a.save_only_model:
-                self._save_optimizer(ckpt_dir, ctx)
-                self._save_dp_runtime(ckpt_dir, ctx)
+                self._save_optimizer(staging_dir, ctx)
+                self._save_dp_runtime(staging_dir, ctx)
 
         # Per-rank RNG snapshot — every rank, after rank-0 has created the
-        # directory.  Barrier guarantees the dir exists before non-zero
+        # staging directory.  Barrier guarantees it exists before non-zero
         # ranks try to write into it.
         _distributed.barrier(self._ddp)
         if not a.save_only_model:
-            self._save_rng_state(ckpt_dir)
+            self._save_rng_state(staging_dir)
+        # All ranks have finished writing into the staging dir; publish it.
+        _distributed.barrier(self._ddp)
 
         if _distributed.should_save(a, self._ddp):
+            if os.path.isdir(ckpt_dir):
+                # Defensive: the only callers target a fresh step, but never
+                # let a stale dir block the atomic rename.
+                shutil.rmtree(ckpt_dir)
+            os.replace(staging_dir, ckpt_dir)
             # Rotation honours ``save_total_limit`` and protects best when set.
             ckpt.rotate_checkpoints(
                 output_dir,
@@ -4022,57 +4200,58 @@ class DPTrainer:
 
     def _read_runtime_for_resume(
         self, ckpt_dir: str
-    ) -> tuple["ckpt.RuntimeCheckpoint | None", "Accountant | None"]:
-        """Pre-load ``dp_state.pt`` and ``accountant.json`` for resume.
+    ) -> tuple["ckpt.RuntimeCheckpoint", "Accountant"]:
+        """Load a *complete* DP checkpoint for resume.
 
-        Returns ``(runtime, accountant)``.  ``runtime`` is ``None`` when
-        the checkpoint was written with ``save_only_model=True``.
-        The runtime file stores flat ``opaque.serialization`` dicts for clip
-        and noise state; they are merged in :meth:`_apply_runtime_state`.
+        A resumable DP checkpoint must carry the full runtime needed to
+        continue a privacy-accounted process: ``dp_state.pt`` (clip /
+        noise / sampler state), ``dp_optimizer.pt`` (optimizer state), and
+        ``accountant.json`` (privacy provenance).  A checkpoint missing
+        any of these is a **weights-only export** — e.g. one written with
+        ``save_only_model=True``, an HF checkpoint, or a plain pretrained
+        model — and is *not resumable*: continuing a DP run from it would
+        rebuild the noise stream from scratch and/or discard the spent
+        budget.
 
-        ``accountant.json`` carries the privacy provenance of all prior
-        training.  Missing-file policy:
+        To start a *fresh* DP run from such weights, load them at
+        construction instead (``model=AutoModel.from_pretrained(...)``).
+        The new run begins with a zero accountant, which is correct only
+        when the prior training had no DP cost (e.g. public-data warmup);
+        for a prior DP run whose accountant was lost, neither resume nor a
+        fresh run is sound — restore ``accountant.json`` from the source
+        of truth.
 
-        - **Default** (``args.privacy_resume_without_accountant=False``):
-          raise ``FileNotFoundError``.  Resuming without a recorded
-          accountant would silently discard the spent privacy budget —
-          surface that as a hard failure so it can't go unnoticed.
-        - **Opt-in** (``args.privacy_resume_without_accountant=True``):
-          install an empty ``Accountant()`` as the prefix and proceed.
-          Calibration runs over the remaining steps as if the prior
-          run had zero DP cost.  Designed for "warmup on public data,
-          then DP-fine-tune" workflows where this is genuinely correct;
-          dangerous to enable in any other context.
+        Raises:
+            RuntimeError: if any required DP runtime file is absent.
         """
-        runtime_path = os.path.join(ckpt_dir, ckpt.DP_STATE_NAME)
-        runtime_payload = (
-            ckpt.load_dp_runtime_state(runtime_path)
-            if os.path.exists(runtime_path)
-            else None
+        required = (
+            ckpt.DP_STATE_NAME,
+            ckpt.DP_OPTIMIZER_NAME,
+            ckpt.DP_ACCOUNTANT_NAME,
         )
+        missing = [
+            name
+            for name in required
+            if not os.path.exists(os.path.join(ckpt_dir, name))
+        ]
+        if missing:
+            raise RuntimeError(
+                f"Cannot resume training from {ckpt_dir}: missing DP runtime "
+                f"file(s) {missing}.  This is a weights-only export (e.g. "
+                "save_only_model=True, an HF checkpoint, or a pretrained "
+                "model), not a resumable DP checkpoint.  To start a fresh DP "
+                "run from these weights, load them at construction "
+                "(model=AutoModel.from_pretrained(...)) — the run begins with "
+                "a zero privacy accountant, sound only when the prior training "
+                "had no DP cost.  resume_from_checkpoint requires a complete DP "
+                "checkpoint produced by this trainer (save_only_model=False)."
+            )
 
-        acct_path = os.path.join(ckpt_dir, ckpt.DP_ACCOUNTANT_NAME)
-        if os.path.exists(acct_path):
-            with open(acct_path) as f:
-                accountant = opaque_from_state_dict(Accountant(), json.load(f))
-        elif self.args.privacy_resume_without_accountant:
-            log.info(
-                "No accountant.json in %s; privacy_resume_without_accountant=True, "
-                "treating prior training as zero DP cost and calibrating remaining "
-                "steps against an empty accountant.",
-                ckpt_dir,
-            )
-            accountant = Accountant()
-        else:
-            raise FileNotFoundError(
-                f"Cannot resume from {ckpt_dir}: accountant.json is missing. "
-                "Resuming without the saved accountant would silently discard "
-                "the spent privacy budget.  Either restore accountant.json from "
-                "the source of truth, or — only when the resumed checkpoint has "
-                "genuinely zero prior DP cost (e.g. warmup on public data) — "
-                "pass privacy_resume_without_accountant=True to opt in to "
-                "recalibration against an empty accountant."
-            )
+        runtime_payload = ckpt.load_dp_runtime_state(
+            os.path.join(ckpt_dir, ckpt.DP_STATE_NAME)
+        )
+        with open(os.path.join(ckpt_dir, ckpt.DP_ACCOUNTANT_NAME)) as f:
+            accountant = opaque_from_state_dict(Accountant(), json.load(f))
         return runtime_payload, accountant
 
     def _read_trainer_state(self, ckpt_dir: str) -> dict[str, Any] | None:
@@ -4250,8 +4429,20 @@ class DPTrainer:
             "target_delta": (
                 ctx.target_delta if ctx is not None else a.privacy_target_delta
             ),
+            # In *calibrated* mode the noise multiplier is recomputed over the
+            # remaining steps and so legitimately differs from the saved one;
+            # comparing them would fire a spurious "drift" warning on every
+            # resume and erode trust in the genuinely-meaningful drift signals.
+            # Return ``None`` (the drift loop skips ``None``) unless the user
+            # pinned a fixed multiplier, where a mismatch is real drift.
             "noise_multiplier": (
-                ctx.noise_multiplier if ctx is not None else a.privacy_noise_multiplier
+                None
+                if (ctx is not None and ctx.noise_multiplier_source == "calibrated")
+                else (
+                    ctx.noise_multiplier
+                    if ctx is not None
+                    else a.privacy_noise_multiplier
+                )
             ),
             "total_steps": (
                 ctx.total_steps if ctx is not None else self._predict_total_steps()

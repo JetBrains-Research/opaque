@@ -1107,15 +1107,11 @@ class TestDPTrainerCheckpointing:
         # Fresh-run semantics: global_step advances from 0, not via resume.
         assert out.global_step > 0
 
-    def test_resume_missing_accountant_raises_by_default(
+    def test_resume_missing_accountant_raises(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
     ):
-        """Missing ``accountant.json`` on resume raises by default.
-
-        The privacy provenance of prior training lives in
-        ``accountant.json``; resuming without it would silently discard
-        the spent budget.  Default policy is hard-fail.
-        """
+        """A checkpoint missing ``accountant.json`` is not a complete DP
+        checkpoint, so resume rejects it as a weights-only export."""
         import os
 
         # Produce a checkpoint, then delete its accountant.json.
@@ -1139,47 +1135,40 @@ class TestDPTrainerCheckpointing:
             train_dataset=tiny_lm_dataset,
             eval_dataset=tiny_lm_dataset,
         )
-        with pytest.raises(FileNotFoundError, match="accountant.json is missing"):
+        with pytest.raises(RuntimeError, match="weights-only export"):
             trainer2.train(resume_from_checkpoint=str(ckpt_dir))
 
-    def test_resume_missing_accountant_opt_in_recalibrates(
+    def test_fresh_run_from_weights_only_checkpoint_via_model_arg(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
     ):
-        """``privacy_resume_without_accountant=True`` permits resume with empty prefix.
-
-        Designed for the warmup-then-DP workflow: prior training had
-        zero DP cost (e.g. trained on public data), so calibration
-        proceeds against an empty accountant over the remaining steps.
-        """
-        import os
-
+        """Starting from a weights-only export is a *fresh* DP run loaded at
+        construction (model=), not a resume.  The new run begins with a zero
+        accountant and trains to its own target."""
         model, tokenizer = gpt2_with_lora
         trainer = DPTrainer(
             model=model,
-            args=self._common_args(tmp_path, max_steps=2, save_steps=2),
+            args=self._common_args(
+                tmp_path, max_steps=2, save_steps=2, save_only_model=True
+            ),
             processing_class=tokenizer,
             train_dataset=tiny_lm_dataset,
             eval_dataset=tiny_lm_dataset,
         )
-        trainer.train()
-        ckpt_dir = tmp_path / "checkpoint-2"
-        os.remove(ckpt_dir / "accountant.json")
+        trainer.train()  # weights-only export (no dp_state / optimizer)
 
-        model2, tokenizer2 = gpt2_with_lora
+        # A fresh run that simply continues using the same in-memory model is
+        # the supported "start from these weights" path — no resume, fresh ε.
+        out2_dir = tmp_path / "fresh"
+        out2_dir.mkdir()
         trainer2 = DPTrainer(
-            model=model2,
-            args=self._common_args(
-                tmp_path,
-                max_steps=4,
-                save_steps=2,
-                privacy_resume_without_accountant=True,
-            ),
-            processing_class=tokenizer2,
+            model=trainer.model,
+            args=self._common_args(out2_dir, max_steps=2, save_steps=2),
+            processing_class=tokenizer,
             train_dataset=tiny_lm_dataset,
             eval_dataset=tiny_lm_dataset,
         )
-        out = trainer2.train(resume_from_checkpoint=str(ckpt_dir))
-        assert out.global_step == 4
+        out = trainer2.train()  # no resume_from_checkpoint
+        assert out.global_step == 2
 
     def test_resume_restores_accountant(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
@@ -1208,14 +1197,15 @@ class TestDPTrainerCheckpointing:
         # Resumed run composes additional steps on top of saved process → ε grows.
         assert out2.metrics["privacy_epsilon"] > eps_after_2
 
-    def test_resume_save_only_model_composes_budget(
+    def test_resume_save_only_model_is_refused(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
     ):
-        """Resuming a ``save_only_model=True`` checkpoint composes ε via the
-        always-saved ``accountant.json``.  Optimizer state and sampler
-        state are absent (resume-only artifacts) but the privacy budget
-        is preserved."""
-        import math
+        """A ``save_only_model=True`` checkpoint omits the DP runtime state
+        (noise/sampler), so resuming *training* from it would rebuild the
+        noise stream at step 0 and reuse the original run's noise on
+        re-sampled data — a silent privacy break.  The trainer must refuse
+        it (export-only), even though ``accountant.json`` is present."""
+        import pytest
 
         model, tokenizer = gpt2_with_lora
         trainer1 = DPTrainer(
@@ -1229,9 +1219,8 @@ class TestDPTrainerCheckpointing:
         )
         trainer1.train()
         ckpt_dir = str(tmp_path / "checkpoint-2")
-        # Interpretability files always present.
+        # Interpretability file always present; resumability files absent.
         assert os.path.exists(os.path.join(ckpt_dir, "accountant.json"))
-        # Resumability files absent under save_only_model.
         assert not os.path.exists(os.path.join(ckpt_dir, "dp_optimizer.pt"))
         assert not os.path.exists(os.path.join(ckpt_dir, "dp_state.pt"))
 
@@ -1251,10 +1240,8 @@ class TestDPTrainerCheckpointing:
             train_dataset=tiny_lm_dataset,
             eval_dataset=tiny_lm_dataset,
         )
-        out2 = trainer2.train(resume_from_checkpoint=ckpt_dir)
-        # The budget composes via the saved accountant — finite, not ∞.
-        assert math.isfinite(out2.metrics["privacy_epsilon"])
-        assert out2.metrics["privacy_epsilon"] > 0
+        with pytest.raises(RuntimeError, match="weights-only export"):
+            trainer2.train(resume_from_checkpoint=ckpt_dir)
 
     def test_ignore_data_skip_runs(self, gpt2_with_lora, tiny_lm_dataset, tmp_path):
         """ignore_data_skip=True still completes training successfully."""
