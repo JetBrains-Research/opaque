@@ -146,11 +146,13 @@ Resume claims:
   with the remaining steps is DP-valid.  Calibration runs over the
   remaining steps to hit the original `privacy_target_epsilon`
   against that prefix.
-- `privacy_resume_without_accountant=True` opts in to the
-  warmup-on-public-data, then-DP workflow — resume from a checkpoint
-  with no `accountant.json` and the trainer treats prior training as
-  zero DP cost.  Without this flag, missing `accountant.json` raises
-  `FileNotFoundError`.
+- `resume_from_checkpoint` requires a **complete DP checkpoint**
+  (`dp_state.pt` + `dp_optimizer.pt` + `accountant.json`).  A
+  weights-only export (`save_only_model=True`, an HF checkpoint, a
+  pretrained model) is rejected — to start a fresh DP run from such
+  weights, load them at construction (`model=...`); the run begins with
+  a zero accountant, which is correct only when the prior training had
+  no DP cost (e.g. public-data warmup).
 - `ignore_data_skip=True` skips sampler-state restore (useful when
   the dataset shape changed between runs); the resumed run starts
   each epoch from a fresh subsample sequence.

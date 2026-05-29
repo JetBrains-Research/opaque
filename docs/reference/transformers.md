@@ -185,7 +185,6 @@ Dataclass surface.  Every field listed here exists on
 | `privacy_noise_radius` | `float` | `3.0` | Calibration search bound. |
 | `privacy_noise_mechanism_kwargs` | `dict[str, Any]` | `{}` | Forwarded into `gaussian_noise` (e.g. `bound` for the bounded variant). |
 | `noise_calibration_kwargs` | `dict[str, Any]` | `{}` | Calibration search bounds; defaults `{"min": 0.01, "max": 10.0, "tolerance": 1e-3}`. |
-| `privacy_resume_without_accountant` | `bool` | `False` | Opt-in to resume from a checkpoint missing `accountant.json`.  Default raises. |
 
 ### Patches and kernels
 
@@ -274,7 +273,7 @@ NPU, XLA) are rejected with a redirect message.
 | `save_total_limit` | `int \| None` | `None` | Older checkpoints rotated; best-checkpoint protected. |
 | `save_safetensors` | `bool` | `True` | Safetensors vs `.bin`.  Load supports both. |
 | `save_on_each_node` | `bool` | `False` | Every node's rank-0 writes a copy. |
-| `save_only_model` | `bool` | `False` | Skip the DP runtime bundle (`dp_state.pt`, `dp_optimizer.pt`).  Resume requires `privacy_resume_without_accountant=True` only when `accountant.json` is also missing. |
+| `save_only_model` | `bool` | `False` | Write a **weights-only export** (skips `dp_state.pt` / `dp_optimizer.pt`).  Not resumable — `resume_from_checkpoint` requires a complete DP checkpoint; load weights-only exports via `model=` for a fresh run. |
 | `restore_callback_states_from_checkpoint` | `bool` | `False` | Restore per-callback state on resume. |
 | `output_dir` | `str \| None` | `None` | Defaults to `"trainer_output"`. |
 | `overwrite_output_dir` | `bool` | `False` | If `False`, warn when `output_dir` already contains checkpoints. |

@@ -425,14 +425,12 @@ class TrainingArguments:
     noise_calibration_kwargs: dict[str, Any] | str = field(default_factory=dict)
 
     # ---- Resume policy --------------------------------------------------
-    # ``accountant.json`` carries the privacy provenance of all prior
-    # training; resuming without it would silently discard the spent
-    # budget.  Default ``False`` → resume raises when the file is
-    # missing.  Set to ``True`` for the legitimate "warmup on public
-    # data, then DP-fine-tune" workflow where the resumed checkpoint
-    # genuinely has zero prior DP cost; calibration then runs over the
-    # remaining steps against an empty accountant.
-    privacy_resume_without_accountant: bool = False
+    # There is no "resume without DP state" opt-in.  ``resume_from_checkpoint``
+    # requires a *complete* DP checkpoint (dp_state + optimizer + accountant);
+    # a weights-only export is not resumable.  To start a fresh DP run from
+    # arbitrary weights (public-data warmup, an HF checkpoint, a pretrained
+    # model), load them at construction via ``model=...`` — the run begins
+    # with a zero accountant.
 
     # =================================================================
     # Validation / coercion

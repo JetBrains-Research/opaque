@@ -832,46 +832,14 @@ class DPTrainer:
         self._ctx = ctx
 
         if resume_path is not None:
-            if runtime_payload is not None:
-                self._apply_runtime_state(
-                    ctx, runtime_payload, prefix_accountant, resume_path
-                )
-                self._warn_on_arg_drift(runtime_payload)
-            elif prefix_accountant is not None:
-                # No ``dp_state.pt`` in the checkpoint.  Reaching here with
-                # ``privacy_resume_without_accountant=False`` means
-                # ``accountant.json`` *was* present (otherwise
-                # ``_read_runtime_for_resume`` would have raised) but the DP
-                # runtime state was not saved — i.e. a ``save_only_model``
-                # checkpoint of a real DP run.  Continuing training from it
-                # would rebuild the noise state at ``_step_counter=0`` and
-                # restart the Poisson cursor, **reusing the same noise draws**
-                # the original run already released on (re-sampled) data.  An
-                # observer of both runs could cancel the shared noise and
-                # recover a noiseless data-dependent gradient — a silent
-                # privacy violation while the accountant still reports a clean
-                # ε.  Refuse it: ``save_only_model`` checkpoints are
-                # export-only.
-                if not self.args.privacy_resume_without_accountant:
-                    raise RuntimeError(
-                        f"Cannot resume training from {resume_path}: the "
-                        "checkpoint has no DP runtime state "
-                        f"({ckpt.DP_STATE_NAME} is missing, as written by "
-                        "save_only_model=True), but it does carry a privacy "
-                        "accountant with prior DP cost.  Continuing training "
-                        "would reuse the original run's noise stream and "
-                        "silently break the privacy guarantee.  save_only_model "
-                        "checkpoints are export-only; resume from a full "
-                        "checkpoint (save_only_model=False).  Only if the "
-                        "checkpoint genuinely has zero prior DP cost (e.g. a "
-                        "public-data warmup) pass "
-                        "privacy_resume_without_accountant=True to opt in."
-                    )
-                # Warmup opt-in path: the user asserts zero prior DP cost, so
-                # there is no released DP noise to collide with — installing the
-                # empty prefix accountant and starting the noise stream fresh is
-                # correct.
-                ctx.accounting = prefix_accountant
+            # ``_read_runtime_for_resume`` guarantees a complete payload
+            # (dp_state + optimizer + accountant) or raises — weights-only
+            # exports are rejected there — so resume always restores the full
+            # DP runtime, never a partial one.
+            self._apply_runtime_state(
+                ctx, runtime_payload, prefix_accountant, resume_path
+            )
+            self._warn_on_arg_drift(runtime_payload)
             self._load_rng_state(resume_path)
             self._load_callback_states()
 
@@ -880,7 +848,9 @@ class DPTrainer:
                 ctx,
                 resume_path=resume_path,
                 saved_sampler_state=(
-                    runtime_payload.sampler_state if runtime_payload else None
+                    runtime_payload.sampler_state
+                    if runtime_payload is not None
+                    else None
                 ),
                 ignore_keys_for_eval=ignore_keys_for_eval,
             )
@@ -4245,57 +4215,58 @@ class DPTrainer:
 
     def _read_runtime_for_resume(
         self, ckpt_dir: str
-    ) -> tuple["ckpt.RuntimeCheckpoint | None", "Accountant | None"]:
-        """Pre-load ``dp_state.pt`` and ``accountant.json`` for resume.
+    ) -> tuple["ckpt.RuntimeCheckpoint", "Accountant"]:
+        """Load a *complete* DP checkpoint for resume.
 
-        Returns ``(runtime, accountant)``.  ``runtime`` is ``None`` when
-        the checkpoint was written with ``save_only_model=True``.
-        The runtime file stores flat ``opaque.serialization`` dicts for clip
-        and noise state; they are merged in :meth:`_apply_runtime_state`.
+        A resumable DP checkpoint must carry the full runtime needed to
+        continue a privacy-accounted process: ``dp_state.pt`` (clip /
+        noise / sampler state), ``dp_optimizer.pt`` (optimizer state), and
+        ``accountant.json`` (privacy provenance).  A checkpoint missing
+        any of these is a **weights-only export** — e.g. one written with
+        ``save_only_model=True``, an HF checkpoint, or a plain pretrained
+        model — and is *not resumable*: continuing a DP run from it would
+        rebuild the noise stream from scratch and/or discard the spent
+        budget.
 
-        ``accountant.json`` carries the privacy provenance of all prior
-        training.  Missing-file policy:
+        To start a *fresh* DP run from such weights, load them at
+        construction instead (``model=AutoModel.from_pretrained(...)``).
+        The new run begins with a zero accountant, which is correct only
+        when the prior training had no DP cost (e.g. public-data warmup);
+        for a prior DP run whose accountant was lost, neither resume nor a
+        fresh run is sound — restore ``accountant.json`` from the source
+        of truth.
 
-        - **Default** (``args.privacy_resume_without_accountant=False``):
-          raise ``FileNotFoundError``.  Resuming without a recorded
-          accountant would silently discard the spent privacy budget —
-          surface that as a hard failure so it can't go unnoticed.
-        - **Opt-in** (``args.privacy_resume_without_accountant=True``):
-          install an empty ``Accountant()`` as the prefix and proceed.
-          Calibration runs over the remaining steps as if the prior
-          run had zero DP cost.  Designed for "warmup on public data,
-          then DP-fine-tune" workflows where this is genuinely correct;
-          dangerous to enable in any other context.
+        Raises:
+            RuntimeError: if any required DP runtime file is absent.
         """
-        runtime_path = os.path.join(ckpt_dir, ckpt.DP_STATE_NAME)
-        runtime_payload = (
-            ckpt.load_dp_runtime_state(runtime_path)
-            if os.path.exists(runtime_path)
-            else None
+        required = (
+            ckpt.DP_STATE_NAME,
+            ckpt.DP_OPTIMIZER_NAME,
+            ckpt.DP_ACCOUNTANT_NAME,
         )
+        missing = [
+            name
+            for name in required
+            if not os.path.exists(os.path.join(ckpt_dir, name))
+        ]
+        if missing:
+            raise RuntimeError(
+                f"Cannot resume training from {ckpt_dir}: missing DP runtime "
+                f"file(s) {missing}.  This is a weights-only export (e.g. "
+                "save_only_model=True, an HF checkpoint, or a pretrained "
+                "model), not a resumable DP checkpoint.  To start a fresh DP "
+                "run from these weights, load them at construction "
+                "(model=AutoModel.from_pretrained(...)) — the run begins with "
+                "a zero privacy accountant, sound only when the prior training "
+                "had no DP cost.  resume_from_checkpoint requires a complete DP "
+                "checkpoint produced by this trainer (save_only_model=False)."
+            )
 
-        acct_path = os.path.join(ckpt_dir, ckpt.DP_ACCOUNTANT_NAME)
-        if os.path.exists(acct_path):
-            with open(acct_path) as f:
-                accountant = opaque_from_state_dict(Accountant(), json.load(f))
-        elif self.args.privacy_resume_without_accountant:
-            log.info(
-                "No accountant.json in %s; privacy_resume_without_accountant=True, "
-                "treating prior training as zero DP cost and calibrating remaining "
-                "steps against an empty accountant.",
-                ckpt_dir,
-            )
-            accountant = Accountant()
-        else:
-            raise FileNotFoundError(
-                f"Cannot resume from {ckpt_dir}: accountant.json is missing. "
-                "Resuming without the saved accountant would silently discard "
-                "the spent privacy budget.  Either restore accountant.json from "
-                "the source of truth, or — only when the resumed checkpoint has "
-                "genuinely zero prior DP cost (e.g. warmup on public data) — "
-                "pass privacy_resume_without_accountant=True to opt in to "
-                "recalibration against an empty accountant."
-            )
+        runtime_payload = ckpt.load_dp_runtime_state(
+            os.path.join(ckpt_dir, ckpt.DP_STATE_NAME)
+        )
+        with open(os.path.join(ckpt_dir, ckpt.DP_ACCOUNTANT_NAME)) as f:
+            accountant = opaque_from_state_dict(Accountant(), json.load(f))
         return runtime_payload, accountant
 
     def _read_trainer_state(self, ckpt_dir: str) -> dict[str, Any] | None:

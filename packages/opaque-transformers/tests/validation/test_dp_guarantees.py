@@ -195,47 +195,8 @@ def test_resume_from_save_only_model_checkpoint_is_refused(
     trainer2 = DPTrainer(
         model=model2, args=args2, train_dataset=lm_dataset, processing_class=tok
     )
-    with pytest.raises(RuntimeError, match="export-only"):
+    with pytest.raises(RuntimeError, match="weights-only export"):
         trainer2.train(resume_from_checkpoint=ckpt_dir)
-
-
-def test_resume_save_only_model_allowed_with_opt_in(gpt2_lora, lm_dataset, tmp_path):
-    """The warmup opt-in (zero prior DP cost) still allows continuing."""
-    model, tok = gpt2_lora
-    args = _args(
-        tmp_path, max_steps=4, save_strategy="steps", save_steps=2, save_only_model=True
-    )
-    trainer = DPTrainer(
-        model=model, args=args, train_dataset=lm_dataset, processing_class=tok
-    )
-    trainer.train()
-    ckpts = sorted(d for d in os.listdir(tmp_path) if d.startswith("checkpoint-"))
-    ckpt_dir = os.path.join(tmp_path, ckpts[0])
-
-    model2 = AutoModelForCausalLM.from_pretrained("gpt2")
-    model2.config.pad_token_id = tok.pad_token_id
-    model2 = get_peft_model(
-        model2,
-        LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            r=8,
-            lora_alpha=16,
-            lora_dropout=0.0,
-            target_modules=["c_attn"],
-            fan_in_fan_out=True,
-        ),
-    )
-    args2 = _args(
-        tmp_path,
-        max_steps=8,
-        save_strategy="no",
-        privacy_resume_without_accountant=True,
-    )
-    trainer2 = DPTrainer(
-        model=model2, args=args2, train_dataset=lm_dataset, processing_class=tok
-    )
-    out = trainer2.train(resume_from_checkpoint=ckpt_dir)  # must not raise
-    assert out.global_step >= 4
 
 
 # ---------------------------------------------------------------------------
