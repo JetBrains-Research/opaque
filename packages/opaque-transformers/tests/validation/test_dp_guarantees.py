@@ -472,3 +472,27 @@ def test_truncated_poisson_accounting_differs_from_plain():
         dpsgd_acc.gaussian(nm), sample_rate=q, truncated_batch_size=3, dataset_size=ds
     )
     assert eps(plain) != pytest.approx(eps(trunc), rel=1e-3)
+
+
+def test_rank_folded_key_decorrelates_per_shard_sampling():
+    """Rank-folding the sampler key (the trainer's DDP fix) makes each shard's
+    Poisson mask independent; a shared key would make them identical."""
+    import torch
+    from torch.utils.data import TensorDataset
+
+    from opaque.dpsgd.sampling import PoissonSampler
+    from opaque.random import fold_in, key
+
+    shard = TensorDataset(torch.arange(100).reshape(-1, 1))
+
+    def stream(k):
+        s = PoissonSampler(shard, sample_rate=0.2, n_steps=10, key=k)
+        return [tuple(b) for b in s]
+
+    base = key(42)
+    # Shared key (the old behaviour): both "ranks" select identical offsets.
+    assert stream(base) == stream(base)
+    # Rank-folded keys (the fix): the two ranks' streams differ.
+    rank0 = stream(fold_in(base, 0))
+    rank1 = stream(fold_in(base, 1))
+    assert rank0 != rank1

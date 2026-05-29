@@ -2894,14 +2894,26 @@ class DPTrainer:
         collate_fn = self._maybe_prime_collate(collate_fn, dataset)
 
         # Under DDP each rank operates on a disjoint shard of the dataset
-        # (``opaque.distributed.local_shard``); the Poisson sampler runs
-        # with the same key on every rank so the union of per-rank batches
-        # is a single global Poisson draw at the user's
-        # ``expected_batch_size`` rate.  ``ctx.sample_rate`` was computed in
+        # (``opaque.distributed.local_shard``) and runs the Poisson sampler
+        # over its shard's *local* positions.  The sampler key is folded by
+        # rank (below) so each rank draws an **independent** Bernoulli(q)
+        # mask: with a shared key every rank would select the *same* local
+        # offsets, perfectly co-including the records that happen to share a
+        # local index across shards — not the i.i.d. global Poisson draw the
+        # design intends (the per-record marginal stays Bernoulli(q) either
+        # way, so the privacy accounting is unaffected; this is a sampling
+        # *diversity* fix).  ``ctx.sample_rate`` was computed in
         # ``_setup_training`` from the same trimmed denominator we use here
         # (see :meth:`_effective_train_dataset_size`), so the rate the
         # sampler is configured with matches the rate the accountant
         # calibrated against — both bind to the post-trim ``q``.
+        #
+        # Resume caveat (multi-GPU only): the sampler snapshot is
+        # self-contained (carries its own key) and is written once on rank
+        # 0, so resuming a DDP run currently restores rank 0's per-rank key
+        # on every rank, re-introducing the cross-rank correlation after the
+        # resume point.  Fully fixing that needs per-rank sampler snapshots;
+        # tracked for the multi-GPU work and validated there.
         if self._ddp.world_size > 1:
             from torch.utils.data import Subset
 
@@ -2928,9 +2940,15 @@ class DPTrainer:
         # purely a synthetic boundary layer for HF callbacks, not a
         # sampling-side concept.
         if ctx.current_sampler is None:
-            from opaque.random import key
+            from opaque.random import fold_in, key
 
             sampler_key = key(a.data_seed if a.data_seed is not None else a.seed)
+            # Per-rank independent sampling: fold the rank into the key so
+            # each shard draws a distinct Bernoulli(q) mask (see the block
+            # comment above).  No-op at world_size == 1, preserving the
+            # single-process seeding bit-for-bit.
+            if self._ddp.world_size > 1:
+                sampler_key = fold_in(sampler_key, self._ddp.rank)
             ctx.current_sampler = _dpftrl.build_sampler(
                 sampling_mode=a.sampling_mode,
                 dataset=dataset,
