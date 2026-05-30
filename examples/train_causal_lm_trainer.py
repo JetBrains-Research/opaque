@@ -351,10 +351,19 @@ def parse_args() -> argparse.Namespace:
     dp_group.add_argument(
         "--sampler",
         type=str,
-        choices=["poisson", "truncated_poisson"],
+        choices=["poisson"],
         default="poisson",
     )
-    dp_group.add_argument("--max-batch-size", type=int, default=None)
+    dp_group.add_argument(
+        "--max-batch-size",
+        type=int,
+        default=None,
+        help=(
+            "Optional upper bound on the per-step Poisson batch. When set, "
+            "the trainer routes through the truncated_poisson_gaussian_pld "
+            "accountant for tighter privacy accounting."
+        ),
+    )
     dp_group.add_argument(
         "--noise-mechanism",
         type=str,
@@ -765,8 +774,8 @@ def main() -> int:
         },
         sampling_mode=args.sampler,
         sampling_kwargs=(
-            {"max_batch_size": max_batch_size}
-            if args.sampler == "truncated_poisson"
+            {"max_batch_size": args.max_batch_size}
+            if args.max_batch_size is not None
             else {}
         ),
         privacy_noise_mechanism=args.noise_mechanism,
