@@ -744,6 +744,18 @@ class TrainingArguments:
                 "'max-autotune-no-cudagraphs'."
             )
 
+        # torch.compile cannot retrace the vmap+grad closure that
+        # auto_find_microbatch_size rebuilds on OOM (PyTorch #128711).
+        if self.torch_compile and self.auto_find_microbatch_size:
+            raise ValueError(
+                "torch_compile=True is incompatible with "
+                "auto_find_microbatch_size=True due to torch._dynamo "
+                "functorch tracing limitations (PyTorch issue #128711). "
+                "Pass an explicit microbatch_size (e.g. "
+                "--microbatch-size 4) and disable "
+                "--auto-find-microbatch-size, or disable --torch-compile."
+            )
+
         # --- 9. Optimizer name validation ----------------------------------
         # Validation/alias normalization is centralized in ``_optim``.
         _resolve_optimizer_name(self.optim)
@@ -836,7 +848,11 @@ class TrainingArguments:
                     f"clipping_mode='adaptive' is incompatible with "
                     f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}: "
                     f"matrix-factorization noise requires constant per-step "
-                    f"sensitivity.  Use clipping_mode='fixed' or 'auto'."
+                    f"sensitivity (adaptive clipping varies the clip norm "
+                    f"each step, which breaks the MF Toeplitz workload "
+                    f"calibration).  Pass clipping_mode='fixed' "
+                    f"(or 'auto', which resolves to fixed for MF mechanisms) "
+                    f"— e.g. add `--clipping-mode fixed` to your invocation."
                 )
             # Auto-fill mechanism kwargs from the Mellum-shaped defaults
             # so a one-line ``privacy_noise_mechanism='mf_band'`` works

@@ -743,6 +743,9 @@ class DPTrainer:
         if self._train_dataset is None:
             raise ValueError("DPTrainer.train() requires a train_dataset.")
         if not self.args.auto_find_microbatch_size:
+            self.state.converged_microbatch_size = max(
+                1, int(self.args.per_device_train_batch_size)
+            )
             return self._train_once(
                 resume_from_checkpoint=resume_from_checkpoint,
                 microbatch_size_override=None,
@@ -758,8 +761,10 @@ class DPTrainer:
         rng_snapshot = ckpt.snapshot_rng_state()
 
         while True:
+            # Stamp before the attempt so a successful run's logs carry it.
+            self.state.converged_microbatch_size = current_microbatch_size
             try:
-                return self._train_once(
+                result = self._train_once(
                     resume_from_checkpoint=resume_from_checkpoint,
                     microbatch_size_override=current_microbatch_size,
                     ignore_keys_for_eval=ignore_keys_for_eval,
@@ -784,6 +789,15 @@ class DPTrainer:
                 self._reset_state_for_batch_size_retry(state_snapshot)
                 self._empty_device_cache_for_retry()
                 current_microbatch_size = next_microbatch_size
+            else:
+                if current_microbatch_size != initial_microbatch_size:
+                    log.info(
+                        "auto_find_microbatch_size: converged at "
+                        "microbatch_size=%d (started at %d)",
+                        current_microbatch_size,
+                        initial_microbatch_size,
+                    )
+                return result
 
     def _train_once(
         self,
@@ -1115,14 +1129,18 @@ class DPTrainer:
             expected_batch_size=expected_batch_size,
             total_steps=total_steps,
         )
+        _sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
+        _trunc_cap = _sk.get("truncated_batch_size", _sk.get("max_batch_size"))
         log.info(
             "Resolved privacy config: delta=%.2e, noise_multiplier=%.4f (%s), "
-            "sample_rate=%.6f, total_steps=%d",
+            "sample_rate=%.6f, total_steps=%d, truncated_batch_size=%s",
             target_delta,
             noise_multiplier,
             noise_multiplier_source,
             sample_rate,
             total_steps,
+            # None ⇒ unbounded Poisson PLD; int ⇒ truncated_poisson_gaussian_pld.
+            int(_trunc_cap) if _trunc_cap is not None else None,
         )
 
         # --- Optimizer ---
@@ -1722,6 +1740,12 @@ class DPTrainer:
                 group_metrics[group_name] = group_values
             if group_metrics:
                 metrics["group_metrics"] = group_metrics
+                # Per-group aggregate: mean engagement + worst group, rather
+                # than the engine's worst-group-only ``clipping_rate``.
+                _rates = [g["clip_rate"] for g in group_metrics.values()]
+                if _rates:
+                    metrics["clip_rate"] = sum(_rates) / len(_rates)
+                    metrics["clip_rate_max"] = max(_rates)
 
         return metrics
 
@@ -3339,8 +3363,16 @@ class DPTrainer:
                 "privacy_noise_std": step_result.get("noise_std", 0.0),
                 "privacy_noise_multiplier": ctx.noise_multiplier,
             }
+            if self.state.converged_microbatch_size is not None:
+                logs["converged_microbatch_size"] = (
+                    self.state.converged_microbatch_size
+                )
+            if "clip_rate_max" in step_result:
+                logs["privacy_clip_rate_max"] = step_result["clip_rate_max"]
             if "clipped_grad_norm" in step_result:
-                logs["privacy_clipped_grad_norm"] = step_result["clipped_grad_norm"]
+                logs["privacy_clipped_grad_norm_mean"] = step_result[
+                    "clipped_grad_norm"
+                ]
             for group_name, group_values in step_result.get(
                 "group_metrics", {}
             ).items():
@@ -4007,6 +4039,7 @@ class DPTrainer:
             self._save_accountant(staging_dir, ctx.accounting)
             if not a.save_only_model:
                 self._save_optimizer(staging_dir, ctx)
+                self._save_lr_scheduler(staging_dir, ctx)
                 self._save_dp_runtime(staging_dir, ctx)
 
         # Per-rank RNG snapshot — every rank, after rank-0 has created the
@@ -4071,6 +4104,13 @@ class DPTrainer:
         torch.save(
             opaque_state_dict(ctx.opt_state),
             os.path.join(ckpt_dir, ckpt.DP_OPTIMIZER_NAME),
+        )
+
+    def _save_lr_scheduler(self, ckpt_dir: str, ctx: "_TrainingContext") -> None:
+        """Persist the LR schedule (a callable dataclass) for resume continuity."""
+        torch.save(
+            opaque_state_dict(ctx.lr_schedule),
+            os.path.join(ckpt_dir, ckpt.LR_SCHEDULER_NAME),
         )
 
     def _save_dp_runtime(self, ckpt_dir: str, ctx: "_TrainingContext") -> None:
@@ -4330,6 +4370,12 @@ class DPTrainer:
                 weights_only=False,
             )
             ctx.opt_state = opaque_from_state_dict(ctx.opt_state, opt_sd)
+
+        sched_path = os.path.join(ckpt_dir, ckpt.LR_SCHEDULER_NAME)
+        if os.path.exists(sched_path):
+            # Missing file tolerated for checkpoints predating LR persistence.
+            sched_sd = torch.load(sched_path, map_location="cpu", weights_only=False)
+            ctx.lr_schedule = opaque_from_state_dict(ctx.lr_schedule, sched_sd)
 
         if accountant is not None:
             ctx.accounting = accountant

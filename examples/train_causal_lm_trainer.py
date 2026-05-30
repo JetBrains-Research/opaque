@@ -470,9 +470,10 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help=(
-            "Optional upper bound on the per-step Poisson batch. When set, "
-            "the trainer routes through the truncated_poisson_gaussian_pld "
-            "accountant for tighter privacy accounting."
+            "Optional upper bound on the per-step Poisson batch. Routes "
+            "through the truncated_poisson_gaussian_pld accountant; ε is "
+            "higher than unbounded Poisson (Gan'25 pessimistic bound) but "
+            "valid under a guaranteed bounded batch size."
         ),
     )
     dp_group.add_argument(
@@ -548,6 +549,18 @@ def parse_args() -> argparse.Namespace:
         "--wandb-entity",
         type=str,
         default=os.environ.get("WANDB_ENTITY"),
+    )
+    tracking_group.add_argument(
+        "--wandb-tags",
+        type=str,
+        nargs="+",
+        default=None,
+        metavar="TAG",
+        help=(
+            "Space-separated W&B tags applied to the run. Forwarded "
+            "as the ``WANDB_TAGS`` environment variable (CSV); equivalent "
+            "to setting ``WANDB_TAGS=tag1,tag2`` before invocation."
+        ),
     )
 
     hub_group = parser.add_argument_group("hub", "Hugging Face Hub publishing")
@@ -684,6 +697,8 @@ def _configure_reporting(args: argparse.Namespace) -> list[str]:
         os.environ["WANDB_PROJECT"] = args.wandb_project
     if args.wandb_entity:
         os.environ["WANDB_ENTITY"] = args.wandb_entity
+    if args.wandb_tags:
+        os.environ["WANDB_TAGS"] = ",".join(args.wandb_tags)
     if not os.environ.get("WANDB_MODE"):
         os.environ["WANDB_MODE"] = (
             "online" if os.environ.get("WANDB_API_KEY") else "offline"

@@ -83,6 +83,21 @@ def test_torch_compile_invalid_mode_rejected_at_args(tmp_path):
         _args(tmp_path, torch_compile_mode="nonsense")
 
 
+def test_torch_compile_with_auto_find_microbatch_size_rejected(tmp_path):
+    with pytest.raises(ValueError, match="torch_compile.*auto_find_microbatch_size"):
+        _args(tmp_path, torch_compile=True, auto_find_microbatch_size=True)
+
+
+def test_torch_compile_with_explicit_no_autofind_accepted(tmp_path):
+    trainer, _ = _tiny_trainer(
+        tmp_path,
+        torch_compile=True,
+        auto_find_microbatch_size=False,
+    )
+    assert trainer.args.torch_compile is True
+    assert trainer.args.auto_find_microbatch_size is False
+
+
 # ----------------------------------------------------------------------------
 # use_performance_kernels — wiring through to apply_model_patches
 # ----------------------------------------------------------------------------
