@@ -7,12 +7,22 @@ project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
-    # Explicit maturin step heals Cadence's per-configName warm .venv cache:
-    # without it, `uv sync` sees opaque-accounting already listed as installed
-    # (editable) and skips the PEP 517 build, leaving the native .so missing.
-    # The sibling manual-loop preset works without this only because its
-    # configName cache was populated historically when this step was explicit.
+    # opaque-accounting ships a PyO3 native extension. Cadence's
+    # per-configName .venv cache poisons easily for this preset
+    # (uv sync alone leaves the .so missing), and the base H200
+    # image doesn't always have rustc or maturin in PATH. Restore
+    # the full pre-eb516e2b build prelude:
+    #   1. install rustup if rustc is missing
+    #   2. install maturin CLI into .venv
+    #   3. force a maturin-develop into .venv so the .so is fresh
+    #   4. smoke-import as a fail-loud assert
+    if ! command -v rustc >/dev/null 2>&1; then
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+    fi
+    export PATH="$HOME/.cargo/bin:$PATH"
+    rustc --version
     uv sync --group dev --group examples --all-packages --extra all
+    uv pip install --quiet "maturin>=1.0,<2.0"
     uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
     uv run python -c "from opaque.api.accounting.core import opaque_accounting as _; print('opaque_accounting native ext OK')"
     uv run python examples/train_causal_lm_trainer.py --preset mellum-kstack $EXTRA_ARGS
