@@ -770,9 +770,33 @@ class DPTrainer:
         }
         rng_snapshot = ckpt.snapshot_rng_state()
 
+        # Under DDP the OOM retry decision MUST be a cluster-wide collective.
+        # Each rank's OOM is triggered by per-rank memory fragmentation at a
+        # non-deterministic physical step, so if ranks halved the microbatch
+        # independently they would fall out of step-lockstep: one rank restarts
+        # at microbatch=4 step 0 while a sibling is still on microbatch=8 step 3.
+        # DP-SGD's per-step collectives (``sum_gradients_`` AllReduce + the
+        # ``ClippedPytree.max_norm`` cross-rank equality assert) then meet at
+        # mismatched logical steps and raise ``max_norm mismatch across ranks``.
+        # Fix: after every attempt, all-reduce a MAX of each rank's
+        # "needs to step down" flag — if ANY rank OOMs, EVERY rank steps down
+        # together and restarts in lockstep. The returned run is the first
+        # attempt at which no rank OOMs, so all ranks ran it at an identical
+        # microbatch and stayed synchronised end-to-end.
+        def _cluster_needs_step_down(local_oom: bool) -> bool:
+            if not self._ddp.is_distributed:
+                return local_oom
+            flag = torch.tensor(
+                [1.0 if local_oom else 0.0], device=self._device
+            )
+            torch.distributed.all_reduce(flag, op=torch.distributed.ReduceOp.MAX)
+            return bool(flag.item() > 0.0)
+
         while True:
             # Stamp before the attempt so a successful run's logs carry it.
             self.state.converged_microbatch_size = current_microbatch_size
+            local_oom = False
+            result = None
             try:
                 result = self._train_once(
                     resume_from_checkpoint=resume_from_checkpoint,
@@ -782,16 +806,29 @@ class DPTrainer:
             except RuntimeError as err:
                 if not self._is_retryable_oom(err):
                     raise
-                if current_microbatch_size <= 1:
-                    raise
+                local_oom = True
 
+            # Cluster-wide retry decision: a rank that succeeded must still
+            # step down (and discard ``result``) if any sibling OOM'd, so the
+            # whole cluster re-runs the next attempt in lockstep.
+            if _cluster_needs_step_down(local_oom):
+                if current_microbatch_size <= 1:
+                    raise RuntimeError(
+                        "auto_find_microbatch_size exhausted: a rank still OOMs "
+                        "at microbatch_size=1. Reduce per_device_train_batch_size "
+                        "(the logical Poisson batch) or the model/sequence length."
+                    )
                 next_microbatch_size = max(1, current_microbatch_size // 2)
                 if next_microbatch_size == current_microbatch_size:
-                    raise
-
+                    raise RuntimeError(
+                        "auto_find_microbatch_size cannot step down below "
+                        f"microbatch_size={current_microbatch_size}."
+                    )
                 log.warning(
-                    "auto_find_microbatch_size: OOM at microbatch_size=%d, retrying with microbatch_size=%d",
+                    "auto_find_microbatch_size: cluster OOM at microbatch_size=%d "
+                    "(local_oom=%s), retrying all ranks with microbatch_size=%d",
                     current_microbatch_size,
+                    local_oom,
                     next_microbatch_size,
                 )
                 self._model.load_state_dict(model_snapshot, strict=False)
@@ -805,15 +842,19 @@ class DPTrainer:
                 self._reset_state_for_batch_size_retry(state_snapshot)
                 self._empty_device_cache_for_retry()
                 current_microbatch_size = next_microbatch_size
-            else:
-                if current_microbatch_size != initial_microbatch_size:
-                    log.info(
-                        "auto_find_microbatch_size: converged at "
-                        "microbatch_size=%d (started at %d)",
-                        current_microbatch_size,
-                        initial_microbatch_size,
-                    )
-                return result
+                continue
+
+            # No rank OOM'd at this size — every rank ran the identical
+            # microbatch in lockstep, so ``result`` is valid on all ranks.
+            assert result is not None  # local_oom is False here on every rank
+            if current_microbatch_size != initial_microbatch_size:
+                log.info(
+                    "auto_find_microbatch_size: converged at "
+                    "microbatch_size=%d (started at %d)",
+                    current_microbatch_size,
+                    initial_microbatch_size,
+                )
+            return result
 
     def _train_once(
         self,
