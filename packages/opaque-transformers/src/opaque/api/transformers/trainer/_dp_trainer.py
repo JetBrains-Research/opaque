@@ -3608,35 +3608,22 @@ class DPTrainer:
     def _restore_params(self, trainable_params: dict[str, Tensor]) -> None:
         """Load trained parameters back into the nn.Module.
 
-        Validates that ``trainable_params`` keys exactly match the
-        model's current set of ``requires_grad=True`` parameters before
-        loading; any divergence raises ``RuntimeError``.  This catches
-        typo'd parameter names in subclass overrides (which
-        ``strict=False`` would silently ignore, leaving the parameter
-        at its initial value) and surfaces mid-run requires_grad
-        churn (a callback freezing / unfreezing layers between snapshot
-        and restore — the snapshot no longer matches the model).
+        Validates that every ``trainable_params`` key exists in the model
+        (catching typo'd names in subclass overrides before the strict
+        load) and overwrites those entries in the model's state dict.
 
-        After validation the merged state dict (model's current state
-        with trainable entries overwritten) is loaded with
-        ``strict=True``; the state dict is sourced from the model
-        itself so every key the model expects is already present.
+        Trainability is NOT re-derived from the live module's
+        ``requires_grad`` flags: the functional param-restore protocol
+        (``_set_module_params``) leaves detached, ``requires_grad=False``
+        tensors on the module after training, so the live flags no longer
+        reflect what was trained.
         """
-        expected = {
-            name for name, p in self._model.named_parameters() if p.requires_grad
-        }
-        got = set(trainable_params)
-        if got != expected:
-            missing = expected - got
-            unexpected = got - expected
-            details = []
-            if missing:
-                details.append(f"missing from trainable_params: {sorted(missing)}")
-            if unexpected:
-                details.append(f"not in model.named_parameters(): {sorted(unexpected)}")
+        model_keys = set(self._model.state_dict())
+        unexpected = set(trainable_params) - model_keys
+        if unexpected:
             raise RuntimeError(
-                "DPTrainer._restore_params: trainable_params keys do not match "
-                "the model's current requires_grad set. " + "; ".join(details)
+                "DPTrainer._restore_params: trainable_params contains keys not "
+                f"present in the model: {sorted(unexpected)}"
             )
         state_dict = self._model.state_dict()
         for name, tensor in trainable_params.items():
