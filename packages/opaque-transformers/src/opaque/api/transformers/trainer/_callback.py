@@ -118,6 +118,7 @@ _PRIVACY_SUMMARY_KEYS = {
     "privacy_epsilon",
     "privacy_delta",
     "privacy_noise_multiplier",
+    "privacy_noise_multiplier_source",
     "privacy_calibration_converged",
     "privacy_calibration_achieved_epsilon",
 }

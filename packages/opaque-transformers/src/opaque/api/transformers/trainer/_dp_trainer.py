@@ -1525,8 +1525,17 @@ class DPTrainer:
                 "privacy_epsilon": final_epsilon,
                 "privacy_delta": ctx.target_delta,
                 "privacy_noise_multiplier": ctx.noise_multiplier,
+                "privacy_noise_multiplier_source": ctx.noise_multiplier_source,
             }
         )
+        if self.state.privacy_calibration_achieved_epsilon is not None:
+            metrics["privacy_calibration_achieved_epsilon"] = (
+                self.state.privacy_calibration_achieved_epsilon
+            )
+        if self.state.privacy_calibration_converged is not None:
+            metrics["privacy_calibration_converged"] = (
+                self.state.privacy_calibration_converged
+            )
         if a.include_num_input_tokens_seen != "no":
             metrics["num_input_tokens_seen"] = self.state.num_input_tokens_seen
         self._memory_tracker.stop_and_update_metrics(metrics)
@@ -3603,6 +3612,8 @@ class DPTrainer:
             result.achieved,
             result.converged,
         )
+        self.state.privacy_calibration_achieved_epsilon = float(result.achieved)
+        self.state.privacy_calibration_converged = bool(result.converged)
         return result.param
 
     def _restore_params(self, trainable_params: dict[str, Tensor]) -> None:
