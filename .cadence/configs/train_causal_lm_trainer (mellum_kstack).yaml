@@ -7,14 +7,13 @@ project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
-    # `uv sync` handles the maturin PEP 517 build internally via uv's
-    # bundled build-environment toolchain. Empirically this works for
-    # the manual-loop preset on the same workers; the trainer preset
-    # was failing because of an explicit `uv run maturin develop` step
-    # that bypassed uv's isolated build env and hit a Cadence worker
-    # that lacks system rustc. Trust uv sync and verify with a smoke
-    # import.
+    # Explicit maturin step heals Cadence's per-configName warm .venv cache:
+    # without it, `uv sync` sees opaque-accounting already listed as installed
+    # (editable) and skips the PEP 517 build, leaving the native .so missing.
+    # The sibling manual-loop preset works without this only because its
+    # configName cache was populated historically when this step was explicit.
     uv sync --group dev --group examples --all-packages --extra all
+    uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
     uv run python -c "from opaque.api.accounting.core import opaque_accounting as _; print('opaque_accounting native ext OK')"
     uv run python examples/train_causal_lm_trainer.py --preset mellum-kstack $EXTRA_ARGS
 provisioning:
