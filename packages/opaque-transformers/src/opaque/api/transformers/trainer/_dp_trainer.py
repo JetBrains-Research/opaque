@@ -1679,12 +1679,18 @@ class DPTrainer:
 
         # Noise σ travels on the ``NoisedPytree`` wrapper now;
         # ``_effective`` handles both scalar and ``PerGroup`` shapes.
-        # Adaptive mode publishes the live threshold via
-        # ``clip_state.clipping_norm``; fixed mode keeps the
-        # configured value on the training context (the new
-        # ``FixedClipState`` carries no fields).
+        # ``grads.max_norm`` is the *realized* per-step clipping
+        # threshold: ``adaptive_clipped_grad`` updates it geometrically
+        # via ``_next_clipping_norm`` each step, and ``FixedClipState``
+        # leaves it equal to the configured ``ctx.clip_norm``.  Reading
+        # it off the ``ClippedPytree`` mirrors the manual-loop reference
+        # (``examples/train_causal_lm.py:1685``) and avoids the stale
+        # ``ctx.clip_norm`` fallback the previous ``getattr`` shape hit
+        # under adaptive mode (``AdaptiveClipState`` carries
+        # ``_current_clipping_norm`` / ``_next_clipping_norm``, not
+        # ``clipping_norm``).
         noise_std = noisy_grads.noise_stddev
-        clipping_norm = getattr(ctx.clip_state, "clipping_norm", ctx.clip_norm)
+        clipping_norm = grads.max_norm
         metrics: dict[str, Any] = {
             "loss": aux.loss_values.mean().item(),
             "batch_size": batch_size,
