@@ -10,7 +10,14 @@ import torch
 from opaque.api.engine.clipping.types import FixedClipState
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
+from opaque.scheduling import (
+    constant_schedule,
+    cosine_schedule,
+    linear_schedule,
+    with_warmup,
+)
 from opaque.serialization import from_state_dict as opaque_from_state_dict
+from opaque.serialization import state_dict as opaque_state_dict
 import opaque.api.transformers.trainer._checkpoint as ckpt
 
 
@@ -234,3 +241,101 @@ class TestDpRuntimeBundle:
         torch.save(fake, path)
         with pytest.raises(ValueError, match="unsupported dp_state"):
             ckpt.load_dp_runtime_state(path)
+
+
+class TestLrSchedulerRoundTrip:
+    """LR schedule (callable dataclass) round-trips through state_dict."""
+
+    def test_lr_scheduler_name_constant_exposed(self):
+        assert ckpt.LR_SCHEDULER_NAME == "lr_scheduler.pt"
+
+    def test_linear_round_trip(self, tmp_path):
+        s = linear_schedule(
+            init_value=1e-4,
+            end_value=0.0,
+            transition_steps=100,
+            transition_begin=10,
+        )
+        path = str(tmp_path / ckpt.LR_SCHEDULER_NAME)
+        torch.save(opaque_state_dict(s), path)
+
+        template = linear_schedule(
+            init_value=0.0,
+            end_value=0.0,
+            transition_steps=1,
+            transition_begin=0,
+        )
+        restored = opaque_from_state_dict(
+            template,
+            torch.load(path, map_location="cpu", weights_only=False),
+        )
+        for step in (0, 5, 10, 25, 50, 75, 100, 109):
+            assert s(step) == restored(step), f"mismatch at step {step}"
+
+    def test_constant_round_trip(self, tmp_path):
+        s = constant_schedule(5e-5)
+        path = str(tmp_path / ckpt.LR_SCHEDULER_NAME)
+        torch.save(opaque_state_dict(s), path)
+        template = constant_schedule(0.0)
+        restored = opaque_from_state_dict(
+            template,
+            torch.load(path, map_location="cpu", weights_only=False),
+        )
+        for step in (0, 1, 100, 10_000):
+            assert s(step) == restored(step) == pytest.approx(5e-5)
+
+    def test_warmup_linear_round_trip_resume_scenario(self, tmp_path):
+        """Phase-1 (50 steps) state overlaid on a fresh phase-2 (100 steps)
+        schedule must reproduce phase-1's LR trajectory."""
+        decay_p1 = linear_schedule(
+            init_value=1e-4,
+            end_value=0.0,
+            transition_steps=50,
+            transition_begin=10,
+        )
+        phase1 = with_warmup(decay_p1, transition_steps=10, ramp="linear", init_value=0.0)
+
+        path = str(tmp_path / ckpt.LR_SCHEDULER_NAME)
+        torch.save(opaque_state_dict(phase1), path)
+
+        # Phase-2 freshly builds the schedule with the NEW max_steps=100,
+        # then ``_apply_runtime_state`` overlays the saved phase-1 state.
+        decay_p2_fresh = linear_schedule(
+            init_value=1e-4,
+            end_value=0.0,
+            transition_steps=100,
+            transition_begin=10,
+        )
+        phase2_fresh = with_warmup(
+            decay_p2_fresh, transition_steps=10, ramp="linear", init_value=0.0
+        )
+        phase2_restored = opaque_from_state_dict(
+            phase2_fresh,
+            torch.load(path, map_location="cpu", weights_only=False),
+        )
+
+        # The inner schedule's transition_steps must reflect phase-1's 50,
+        # not phase-2's freshly-built 100.
+        assert phase2_restored.schedule.transition_steps == 50
+        for step in (0, 5, 10, 25, 40, 50, 60):
+            assert phase1(step) == phase2_restored(step), f"mismatch at step {step}"
+
+    def test_cosine_round_trip(self, tmp_path):
+        s = cosine_schedule(
+            init_value=1e-4,
+            end_value=0.0,
+            transition_steps=100,
+        )
+        path = str(tmp_path / ckpt.LR_SCHEDULER_NAME)
+        torch.save(opaque_state_dict(s), path)
+        template = cosine_schedule(
+            init_value=0.0,
+            end_value=0.0,
+            transition_steps=1,
+        )
+        restored = opaque_from_state_dict(
+            template,
+            torch.load(path, map_location="cpu", weights_only=False),
+        )
+        for step in (0, 25, 50, 75, 100, 150):
+            assert s(step) == pytest.approx(restored(step))
