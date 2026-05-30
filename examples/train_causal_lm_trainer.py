@@ -55,8 +55,20 @@ log = logging.getLogger(__name__)
 
 
 def _select_device() -> tuple[torch.device, str]:
-    """Select best available single-process device with user-facing label."""
+    """Select best available device, honouring ``LOCAL_RANK`` under torchrun.
+
+    Each torchrun rank reads ``LOCAL_RANK`` to pin itself to a distinct CUDA
+    device; without this every rank lands on ``cuda:0`` and NCCL crashes with
+    ``Duplicate GPU detected`` at the first collective.  Mirrors the manual-
+    loop example (``examples/train_causal_lm.py:_select_device``).
+    """
     if torch.cuda.is_available():
+        local_rank_env = os.environ.get("LOCAL_RANK")
+        if local_rank_env is not None:
+            local_rank = int(local_rank_env)
+            torch.cuda.set_device(local_rank)
+            device = torch.device(f"cuda:{local_rank}")
+            return device, torch.cuda.get_device_name(local_rank)
         device = torch.device("cuda")
         return device, torch.cuda.get_device_name(0)
     if torch.backends.mps.is_available():
