@@ -35,17 +35,27 @@ cmd:
     # opaque-accounting ships a PyO3 native extension. Cadence's
     # per-configName .venv cache poisons easily for this preset
     # (uv sync alone leaves the .so missing), and the base A10g
-    # image doesn't always have rustc or maturin in PATH. Restore
-    # the full pre-eb516e2b build prelude:
-    #   1. install rustup if rustc is missing
-    #   2. install maturin CLI into .venv
-    #   3. force a maturin-develop into .venv so the .so is fresh
-    #   4. smoke-import as a fail-loud assert
-    if ! command -v rustc >/dev/null 2>&1; then
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-    fi
+    # image doesn't always have rustc or maturin in PATH.  Build
+    # prelude mirrors the post-9dab79db single-GPU trainer preset:
+    #   1. install rustup unconditionally (the conditional
+    #      ``command -v rustc`` check was flaky on reused workers)
+    #   2. wipe the working-tree .venv so uv sync rebuilds against the
+    #      freshly-rsynced PyO3 source, not the previous run's .so
+    #   3. install maturin CLI into .venv
+    #   4. force a maturin-develop into .venv so the .so is fresh
+    #   5. smoke-import as a fail-loud assert
+    echo "[prelude] HOME=$HOME"
+    echo "[prelude] installing rustup unconditionally"
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh
+    echo "[prelude] curl rc=$?, size=$(wc -c < /tmp/rustup-init.sh 2>/dev/null)"
+    sh /tmp/rustup-init.sh -y --default-toolchain stable --profile minimal --no-modify-path
+    echo "[prelude] rustup-init rc=$?"
+    if [ -f "$HOME/.cargo/env" ]; then . "$HOME/.cargo/env"; fi
     export PATH="$HOME/.cargo/bin:$PATH"
-    rustc --version
+    echo "[prelude] which rustc: $(command -v rustc || echo none)"
+    rustc --version || { echo "[prelude] FATAL: rustc unavailable after rustup-init" >&2; exit 1; }
+    echo "[prelude] wiping working-tree .venv to defeat per-configName cache poisoning"
+    rm -rf .venv
     uv sync --group dev --group examples --all-packages --extra all
     uv pip install --quiet "maturin>=1.0,<2.0"
     uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
