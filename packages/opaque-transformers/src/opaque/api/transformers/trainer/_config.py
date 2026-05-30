@@ -173,7 +173,11 @@ _ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
 # into the factory call.
 _MECH_DEFAULTS: dict[str, dict[str, Any]] = {
     "mf_band": {"bands": 16},
-    "mf_blt": {"max_buffers": 16},
+    # BLT buffer count is a rational-approximation degree (the optimizer
+    # searches up to max_buffers and stops early), NOT a band width; the
+    # BLT math rejects > 15 as ill-conditioned. 10 matches the library's
+    # own optimize() default.
+    "mf_blt": {"max_buffers": 10},
     "mf_bisr": {"bandwidth": 4},
     "mf_bsr": {"bandwidth": 8, "alpha": 1.0, "beta": 0.9},
     "mf_lambda_cgd": {"lambda_": 0.5},
