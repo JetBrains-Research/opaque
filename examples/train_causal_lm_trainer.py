@@ -311,6 +311,91 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="Let DPTrainer retry with smaller physical microbatches on OOM.",
     )
+    train_group.add_argument(
+        "--torch-compile",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable torch.compile on the DP per-example loss closure.",
+    )
+    train_group.add_argument(
+        "--torch-compile-backend",
+        type=str,
+        default=None,
+        help="torch.compile backend (default: inductor when --torch-compile).",
+    )
+    train_group.add_argument(
+        "--torch-compile-mode",
+        type=str,
+        default=None,
+        choices=[
+            "default",
+            "reduce-overhead",
+            "max-autotune",
+            "max-autotune-no-cudagraphs",
+        ],
+        help="torch.compile mode (default: 'default' when --torch-compile).",
+    )
+    train_group.add_argument(
+        "--bf16-full-eval",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Cast the model to bf16 for the final post-training evaluation. "
+            "Only applies outside the training loop (mid-training eval still "
+            "uses the training dtype)."
+        ),
+    )
+    train_group.add_argument(
+        "--use-performance-kernels",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Enable opaque's CUDA + Triton kernel patches "
+            "(rope / rms_norm / activation / cross_entropy). Requires "
+            "CUDA + Triton at runtime."
+        ),
+    )
+    train_group.add_argument(
+        "--lr-scheduler",
+        type=str,
+        default="linear",
+        help=(
+            "HF-style LR scheduler name forwarded to "
+            "TrainingArguments.lr_scheduler.  Supported: constant, "
+            "constant_with_warmup, linear, cosine, polynomial, "
+            "inverse_sqrt, cosine_with_restarts, cosine_with_min_lr, "
+            "cosine_warmup_with_min_lr, warmup_stable_decay.  Compose "
+            "warmup with any of the above via --warmup-ratio / "
+            "--warmup-steps (e.g. `--lr-scheduler linear "
+            "--warmup-ratio 0.1` is with_warmup(linear, ...))."
+        ),
+    )
+    train_group.add_argument(
+        "--warmup-ratio",
+        type=float,
+        default=0.0,
+        help=(
+            "Fraction of training steps used as warmup; ignored when "
+            "--warmup-steps > 0."
+        ),
+    )
+    train_group.add_argument(
+        "--warmup-steps",
+        type=int,
+        default=0,
+        help="Number of warmup steps (overrides --warmup-ratio when > 0).",
+    )
+    train_group.add_argument(
+        "--lr-scheduler-kwargs",
+        type=str,
+        default=None,
+        help=(
+            "JSON object of scheduler-specific kwargs (e.g. "
+            "'{\"num_cycles\": 0.5}' for cosine, "
+            "'{\"min_lr\": 1e-6}' for cosine_with_min_lr).  Empty ⇒ "
+            "scheduler defaults."
+        ),
+    )
 
     lora_group = parser.add_argument_group("lora", "LoRA adapter settings")
     lora_group.add_argument("--lora-r", type=int, default=4)
@@ -730,15 +815,24 @@ def main() -> int:
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
         optim=args.optimizer,
+        lr_scheduler=args.lr_scheduler,
+        lr_scheduler_kwargs=args.lr_scheduler_kwargs,
+        warmup_ratio=args.warmup_ratio,
+        warmup_steps=args.warmup_steps,
         seed=args.seed,
         data_seed=args.data_seed,
         use_cpu=device.type == "cpu",
         use_mps_device=device.type == "mps",
         bf16=dtype_name == "bfloat16",
+        bf16_full_eval=args.bf16_full_eval,
         gradient_checkpointing=args.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         cpu_offload_activations=args.cpu_offload,
         auto_find_microbatch_size=args.auto_find_microbatch_size,
+        torch_compile=args.torch_compile,
+        torch_compile_backend=args.torch_compile_backend,
+        torch_compile_mode=args.torch_compile_mode,
+        use_performance_kernels=args.use_performance_kernels,
         remove_unused_columns=True,
         include_tokens_per_second=True,
         include_num_input_tokens_seen="all",
@@ -782,6 +876,14 @@ def main() -> int:
     print(f"  Target epsilon: {training_args.privacy_target_epsilon}")
     print(f"  Target delta: {training_args.privacy_target_delta or 'auto'}")
     print(f"  Save strategy: {training_args.save_strategy}")
+    print(f"  torch_compile: {training_args.torch_compile}")
+    if training_args.torch_compile:
+        print(
+            f"    backend={training_args.torch_compile_backend or 'inductor'} "
+            f"mode={training_args.torch_compile_mode or 'default'}"
+        )
+    print(f"  bf16_full_eval: {training_args.bf16_full_eval}")
+    print(f"  use_performance_kernels: {training_args.use_performance_kernels}")
 
     trainer = DPTrainer(
         model=model,
