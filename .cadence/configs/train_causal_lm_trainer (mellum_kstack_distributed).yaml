@@ -1,0 +1,141 @@
+# 4-GPU distributed DPTrainer (4×A10g) — validates the trainer-side DDP
+# path that mirrors the manual-loop DDP setup in
+# ``train_causal_lm (mellum_kstack_distributed).yaml``.
+#
+# Run examples:
+#   # DP-SGD, 4 ranks (sharded data — trainer's default and only mode)
+#   RUN_NAME="val/dptrainer/round2/trainer-ddp-dpsgd" \
+#     uv run cadence execution start \
+#     --preset ".cadence/configs/train_causal_lm_trainer (mellum_kstack_distributed).yaml" \
+#     -e EXTRA_ARGS="--max-steps 100 --noise-multiplier 1.0 --seed 42"
+#
+#   # DP-FTRL banded-MF with b_min_sep sampler
+#   RUN_NAME="val/dptrainer/round2/trainer-ddp-dpftrl" \
+#     uv run cadence execution start \
+#     --preset ".cadence/configs/train_causal_lm_trainer (mellum_kstack_distributed).yaml" \
+#     -e EXTRA_ARGS="--max-steps 100 --noise-multiplier 1.0 --noise-mechanism mf_band --noise-mechanism-kwargs bands=16,momentum=0.9 --sampler b_min_sep --seed 42"
+#
+# Phase 10 wiring in _dp_trainer.py:
+#   - Phase 10a topology resolution (L374-379)
+#   - Phase 10c gradient sync (L1599-1614)
+#   - Cluster-wide eval reduction (L2196-2201)
+#   - DDP-aware Poisson sharding (L981-989)
+#
+# Build prelude mirrors the single-GPU trainer preset
+# (train_causal_lm_trainer (mellum_kstack).yaml, restored in f0ba6e0f):
+# rustup install if missing → uv sync → maturin CLI into .venv →
+# force maturin develop → smoke-import.  Required because Cadence's
+# per-configName .venv cache poisons easily for the PyO3-backed
+# opaque-accounting extension.
+
+project_name: jbr-fed
+working_dir: "."
+cmd:
+  - |-
+    # opaque-accounting ships a PyO3 native extension. Cadence's
+    # per-configName .venv cache poisons easily for this preset
+    # (uv sync alone leaves the .so missing), and the base A10g
+    # image doesn't always have rustc or maturin in PATH. Restore
+    # the full pre-eb516e2b build prelude:
+    #   1. install rustup if rustc is missing
+    #   2. install maturin CLI into .venv
+    #   3. force a maturin-develop into .venv so the .so is fresh
+    #   4. smoke-import as a fail-loud assert
+    if ! command -v rustc >/dev/null 2>&1; then
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+    fi
+    export PATH="$HOME/.cargo/bin:$PATH"
+    rustc --version
+    uv sync --group dev --group examples --all-packages --extra all
+    uv pip install --quiet "maturin>=1.0,<2.0"
+    uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
+    uv run python -c "from opaque.api.accounting.core import opaque_accounting as _; print('opaque_accounting native ext OK')"
+    uv run torchrun --nproc_per_node=4 examples/train_causal_lm_trainer.py --preset mellum-kstack --gradient-checkpointing --microbatch-size 4 $EXTRA_ARGS
+provisioning:
+  gpu_type: a10g
+  gpu_count: 4
+  cpu_count: 48
+  ram: 192
+  blank: false
+teamcity:
+  url: https://api.cadence.jetbrains.com
+  build_conf_id: JbrFed_JetTrain
+env:
+  variables:
+    PYTHONUNBUFFERED: "1"
+    WANDB_BASE_URL: https://jetbrains.wandb.io
+    WANDB_ENTITY: federated-compute
+    WANDB_PROJECT: opaque
+    RUN_NAME: "${oc.env:RUN_NAME,mellum-kstack-dptrainer-distributed}"
+    EXTRA_ARGS: ""
+  python:
+    version: 3.11.14
+  secrets:
+    variables:
+      HF_TOKEN: "${oc.env:HF_TOKEN}"
+      WANDB_API_KEY: "${oc.env:WANDB_API_KEY}"
+    ssh_keys: []
+  aws:
+    sync_config: false
+    sync_credentials: false
+    sync_cache: false
+project_sync:
+  local:
+    root: "."
+    storage_name: Cadence Storage
+    uri: ""
+    exclude:
+      - ".git/*"
+      - "**/.git/*"
+      - ".github/*"
+      - "trainer_output/**"
+      - "**/trainer_output/**"
+      - ".venv/*"
+      - "**/.venv/*"
+      - "venv/*"
+      - "**/venv/*"
+      - "target/*"
+      - "**/target/*"
+      - "dist/*"
+      - "**/dist/*"
+      - "build/*"
+      - "**/build/*"
+      - "wheels/*"
+      - "**/wheels/*"
+      - "site/*"
+      - "**/site/*"
+      - ".ruff_cache/*"
+      - "**/.ruff_cache/*"
+      - ".pytest_cache/*"
+      - "**/.pytest_cache/*"
+      - ".mypy_cache/*"
+      - "**/.mypy_cache/*"
+      - "__pycache__/*"
+      - "**/__pycache__/*"
+      - ".idea/*"
+      - "**/.idea/*"
+      - ".vscode/*"
+      - "**/.vscode/*"
+      - ".claude/*"
+      - "**/.claude/*"
+      - ".temp/*"
+      - "**/.temp/*"
+      - "wandb/*"
+      - "**/wandb/*"
+      - "*.jsonl"
+      - "**/*.jsonl"
+      - "*.so"
+      - "**/*.so"
+      - "*.dylib"
+      - "**/*.dylib"
+      - "*.whl"
+      - "**/*.whl"
+    include: []
+    sync_back: false
+    snapshots: true
+    storage_type: DEFAULT
+inputs: []
+outputs: []
+mounts: []
+storages: []
+description: "${oc.env:RUN_NAME,}"

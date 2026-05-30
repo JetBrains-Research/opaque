@@ -436,8 +436,16 @@ def parse_args() -> argparse.Namespace:
     dp_group.add_argument(
         "--sampler",
         type=str,
-        choices=["poisson"],
-        default="poisson",
+        choices=["auto", "poisson", "b_min_sep", "balls_in_bins"],
+        default="auto",
+        help=(
+            "Per-step participation pattern.  ``auto`` (default) lets the "
+            "trainer pick the canonical sampler for the chosen "
+            "``--noise-mechanism`` (poisson for gaussian / mf_identity, "
+            "b_min_sep for mf_band, balls_in_bins for mf_blt / mf_bisr / "
+            "mf_bsr / mf_lambda_cgd).  Explicit overrides are validated "
+            "by ``DPTrainingArguments`` against the mechanism's allow-list."
+        ),
     )
     dp_group.add_argument(
         "--max-batch-size",
