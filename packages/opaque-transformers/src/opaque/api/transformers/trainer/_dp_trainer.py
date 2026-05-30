@@ -758,6 +758,16 @@ class DPTrainer:
         model_snapshot = {
             k: v.detach().to("cpu").clone() for k, v in self._model.state_dict().items()
         }
+        # ``load_state_dict`` restores tensor VALUES but not the
+        # ``requires_grad`` partition.  An OOM raised mid-attempt (e.g.
+        # inside the vmapped functional forward) can leave the trainable
+        # (LoRA) params frozen; without re-asserting the flags the next
+        # attempt's ``make_functional`` captures a different trainable set
+        # and the post-training ``_restore_params`` guard fails with
+        # "keys do not match the model's current requires_grad set".
+        requires_grad_snapshot = {
+            name: p.requires_grad for name, p in self._model.named_parameters()
+        }
         rng_snapshot = ckpt.snapshot_rng_state()
 
         while True:
@@ -785,6 +795,12 @@ class DPTrainer:
                     next_microbatch_size,
                 )
                 self._model.load_state_dict(model_snapshot, strict=False)
+                # Re-assert the trainable/frozen partition the OOM may have
+                # clobbered, so the next attempt rebuilds the same
+                # functional param set (see requires_grad_snapshot above).
+                for name, p in self._model.named_parameters():
+                    if name in requires_grad_snapshot:
+                        p.requires_grad_(requires_grad_snapshot[name])
                 ckpt.restore_rng_state(rng_snapshot)
                 self._reset_state_for_batch_size_retry(state_snapshot)
                 self._empty_device_cache_for_retry()

@@ -182,6 +182,66 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
 
         assert [call[1] for call in calls] == [4, 2]
 
+    def test_auto_find_batch_size_retry_restores_requires_grad_partition(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Regression (R2-BUG-1): an OOM raised mid-attempt that freezes the
+        trainable params must not leak into the next attempt.  Before the
+        fix the retry's ``load_state_dict(strict=False)`` restored values
+        but not ``requires_grad``; the next attempt's ``make_functional``
+        then captured a different trainable set and the post-training
+        ``_restore_params`` guard crashed with "keys do not match the
+        model's current requires_grad set" — which also aborted the
+        step-N checkpoint write inside ``_save_checkpoint``.
+        """
+        dataset = [
+            {"features": torch.zeros(3), "labels": 0},
+            {"features": torch.ones(3), "labels": 1},
+            {"features": torch.full((3,), 0.5), "labels": 0},
+            {"features": torch.full((3,), -0.5), "labels": 1},
+        ]
+        model = _TinyEvalModel()
+        trainer = DPTrainer(
+            model=model,
+            args=_args(
+                tmp_path,
+                auto_find_microbatch_size=True,
+                per_device_train_batch_size=4,
+            ),
+            train_dataset=dataset,
+            eval_dataset=dataset,
+        )
+        trainable_before = {
+            name for name, p in trainer.model.named_parameters() if p.requires_grad
+        }
+        assert trainable_before, "fixture must have at least one trainable param"
+        calls = []
+
+        def fake_train_once(
+            *, resume_from_checkpoint, microbatch_size_override, ignore_keys_for_eval
+        ):
+            calls.append(microbatch_size_override)
+            if len(calls) == 1:
+                # Simulate the real PEFT failure mode: an OOM raised after
+                # the functional forward has frozen the trainable params.
+                for p in trainer.model.parameters():
+                    p.requires_grad_(False)
+                raise torch.OutOfMemoryError("CUDA out of memory")
+            # The retry must see the trainable partition fully restored.
+            trainable_now = {
+                name
+                for name, p in trainer.model.named_parameters()
+                if p.requires_grad
+            }
+            assert trainable_now == trainable_before
+            return TrainOutput(global_step=0, training_loss=0.0, metrics={})
+
+        monkeypatch.setattr(trainer, "_train_once", fake_train_once)
+        trainer.train()
+        assert calls == [4, 2]
+
     def test_feature_only_training_does_not_require_input_ids(self, tmp_path):
         dataset = [
             {"features": torch.zeros(3), "labels": 0},
