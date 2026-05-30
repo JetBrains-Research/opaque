@@ -535,16 +535,6 @@ def _resolve_trainer_batching(args: argparse.Namespace) -> int:
     return args.batch_size
 
 
-def _reject_distributed_runtime() -> None:
-    world_size = int(os.environ.get("WORLD_SIZE", "1"))
-    if world_size > 1:
-        raise ValueError(
-            "This DPTrainer example is single-process. Distributed DPTrainer "
-            "support is tracked in Phase 10 and requires multi-GPU validation. "
-            "Use examples/train_causal_lm.py for the current manual DDP loop."
-        )
-
-
 def _configure_reporting(args: argparse.Namespace) -> list[str]:
     """Set W&B env defaults and return TrainingArguments.report_to."""
     if args.no_wandb:
@@ -567,7 +557,6 @@ def main() -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     args = parse_args()
-    _reject_distributed_runtime()
 
     if args.eval_batch_size is None:
         args.eval_batch_size = args.microbatch_size or args.batch_size
