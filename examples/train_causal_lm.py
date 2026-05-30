@@ -1161,7 +1161,14 @@ def main():
 
     # Define per-example loss
     def per_example_loss_fn(trainable, input_ids):
-        output = fmodel(merged_params(trainable), input_ids, labels=input_ids)
+        # Mask pad positions to ``-100`` so training CE scores only real
+        # tokens — same masking contract the eval path uses (L1211 below)
+        # and the same convention DPTrainer's ``DataCollatorForLanguageModeling``
+        # applies. Without this, the manual loop trains on unmasked labels
+        # while DPTrainer trains on masked labels, producing systematically
+        # different ``train/loss`` curves under identical DP math. ``vmap``-safe.
+        labels = torch.where(input_ids == tokenizer.pad_token_id, -100, input_ids)
+        output = fmodel(merged_params(trainable), input_ids, labels=labels)
         return output.loss
 
     # Build canary DataLoader for auditing
