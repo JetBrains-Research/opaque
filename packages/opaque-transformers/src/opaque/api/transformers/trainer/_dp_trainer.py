@@ -2162,16 +2162,41 @@ class DPTrainer:
 
             # ``loss`` is scalar (default forward) or 1-D per-example
             # (when ``'loss' in include_for_metrics`` triggers the
-            # vmap'd eval closure).  Either way, sum-into-total uses the
-            # same closed form: scalar contributes ``loss * bs``; 1-D
-            # contributes ``loss.sum()`` which equals the same total.
+            # vmap'd eval closure).  The model's per-example CE is already
+            # the mean over real (non-``-100``) tokens, so:
+            #   - scalar branch: ``loss.item() * real_tokens_in_batch`` is
+            #     the total CE; dividing the running sum by the running
+            #     ``loss_samples`` count gives per-real-token mean CE
+            #     (matches the manual loop's eval reduction at
+            #     ``examples/train_causal_lm.py:1227-1231``).
+            #   - 1-D branch: ``loss[i] * real_tokens_in_example[i]`` is
+            #     example i's total CE; summing then dividing by the total
+            #     real-token count gives the same per-token mean.
+            # When labels aren't exposed (rare), fall back to per-example
+            # weighting (the historical reduction).
             if loss is not None:
-                total_loss += (
-                    float(loss.sum().item())
-                    if loss.ndim > 0
-                    else float(loss.item()) * bs
-                )
-                loss_samples += bs
+                if labels is not None:
+                    token_mask = labels != -100
+                    if loss.ndim > 0:
+                        # per-example: weight each by its real-token count
+                        per_example_real = token_mask.sum(
+                            dim=tuple(range(1, labels.ndim))
+                        ).to(loss.dtype)
+                        total_loss += float((loss * per_example_real).sum().item())
+                        loss_samples += int(per_example_real.sum().item())
+                    else:
+                        # scalar: weight by real-token count in the whole batch
+                        real_tokens = int(token_mask.sum().item())
+                        total_loss += float(loss.item()) * real_tokens
+                        loss_samples += real_tokens
+                else:
+                    # labels not exposed: fall back to per-example weighting
+                    total_loss += (
+                        float(loss.sum().item())
+                        if loss.ndim > 0
+                        else float(loss.item()) * bs
+                    )
+                    loss_samples += bs
             total_samples += bs
 
             if logits is not None and self._preprocess_logits is not None:
