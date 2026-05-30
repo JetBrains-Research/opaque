@@ -317,6 +317,67 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Save DPTrainer checkpoints every N steps. Default: disabled.",
     )
+    train_group.add_argument(
+        "--save-strategy",
+        type=str,
+        default=None,
+        choices=["no", "steps", "epoch", "best"],
+        help=(
+            "Checkpoint save strategy forwarded to TrainingArguments. "
+            "Default: inferred ('steps' when --save-steps is set, else 'no')."
+        ),
+    )
+    train_group.add_argument(
+        "--save-total-limit",
+        type=int,
+        default=None,
+        help=(
+            "Keep at most N most-recent checkpoints (best is protected). "
+            "Default: unbounded."
+        ),
+    )
+    train_group.add_argument(
+        "--save-only-model",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Save only model weights (no optimizer / DP runtime / accountant). "
+            "Such a checkpoint is a weights-only export and is NOT resumable."
+        ),
+    )
+    train_group.add_argument(
+        "--load-best-model-at-end",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Reload the best-metric checkpoint at the end of training. "
+            "Requires eval and save strategies to match."
+        ),
+    )
+    train_group.add_argument(
+        "--metric-for-best-model",
+        type=str,
+        default=None,
+        help="Metric used to select the best checkpoint (e.g. eval_loss).",
+    )
+    train_group.add_argument(
+        "--greater-is-better",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Whether a larger metric is better. Default: inferred from "
+            "--metric-for-best-model (False for *loss metrics)."
+        ),
+    )
+    train_group.add_argument(
+        "--resume-from-checkpoint",
+        type=str,
+        default=None,
+        help=(
+            "Resume from a checkpoint directory, or pass 'auto'/'true' to "
+            "auto-detect the latest checkpoint under --output-dir."
+        ),
+    )
     train_group.add_argument("--max-steps", type=int, default=None)
     train_group.add_argument("--seed", type=int, default=42)
     train_group.add_argument(
@@ -877,7 +938,10 @@ def main() -> int:
             f"b{args.batch_size}_eps{args.target_epsilon}_lr{args.learning_rate}"
         )
 
-    save_strategy = "steps" if args.save_steps is not None else "no"
+    if args.save_strategy is not None:
+        save_strategy = args.save_strategy
+    else:
+        save_strategy = "steps" if args.save_steps is not None else "no"
 
     training_args = TrainingArguments(
         output_dir=args.output_dir,
@@ -892,6 +956,11 @@ def main() -> int:
         eval_on_start=args.eval_on_start,
         save_strategy=save_strategy,
         save_steps=args.save_steps or args.eval_steps,
+        save_total_limit=args.save_total_limit,
+        save_only_model=args.save_only_model,
+        load_best_model_at_end=args.load_best_model_at_end,
+        metric_for_best_model=args.metric_for_best_model,
+        greater_is_better=args.greater_is_better,
         max_steps=args.max_steps if args.max_steps is not None else -1,
         num_train_epochs=args.num_epochs,
         per_device_train_batch_size=per_rank_logical_batch,
@@ -987,10 +1056,24 @@ def main() -> int:
         processing_class=tokenizer,
     )
 
+    # Resolve --resume-from-checkpoint: 'auto'/'true' -> bool True (let the
+    # trainer auto-detect the latest checkpoint under output_dir); a path
+    # string is passed through verbatim; absent -> None (fresh run).
+    resume_arg: str | bool | None = None
+    if args.resume_from_checkpoint is not None:
+        token = args.resume_from_checkpoint.strip().lower()
+        if token in ("auto", "true", "latest"):
+            resume_arg = True
+        elif token in ("false", "no", "none", ""):
+            resume_arg = None
+        else:
+            resume_arg = args.resume_from_checkpoint
+
     print("\n" + "=" * 80)
     print("Starting DPTrainer training...")
+    print(f"  resume_from_checkpoint: {resume_arg!r}")
     print("=" * 80)
-    train_output = trainer.train()
+    train_output = trainer.train(resume_from_checkpoint=resume_arg)
 
     print("\n" + "=" * 80)
     print("Training Complete")
