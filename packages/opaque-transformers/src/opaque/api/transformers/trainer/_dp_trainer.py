@@ -1672,13 +1672,49 @@ class DPTrainer:
         # post-step metric bookkeeping below stays outside the scope.
         # ``sp.mark`` records the elapsed time since the previous mark.
         with self._perf_tracker.train(batch_size=step_batch_size) as sp:
-            # Clipped gradients (with optional CPU offload)
-            with ctx.offload_ctx:
-                (grads, aux), ctx.clip_state = ctx.grad_fn(
-                    ctx.trainable_params,
-                    *batch_args,
-                    state=ctx.clip_state,
+            # Clipped gradients (with optional CPU offload).  Under DDP an OOM
+            # here must become a *collective* event: if it propagated as a
+            # plain per-rank exception, the OOM'ing rank would skip the
+            # ``sum_gradients_`` AllReduce below while its siblings issued it,
+            # deadlocking the process group (or, worse, meeting a later
+            # mismatched collective). So we catch a retryable OOM, all-reduce a
+            # MAX flag across ranks, and if ANY rank OOM'd raise a uniform
+            # retryable OOM on EVERY rank — the cluster bails this attempt at
+            # the same step and ``_train_dispatch`` steps the whole cluster
+            # down to a smaller microbatch in lockstep.
+            local_oom_step = False
+            grads = aux = None
+            try:
+                with ctx.offload_ctx:
+                    (grads, aux), ctx.clip_state = ctx.grad_fn(
+                        ctx.trainable_params,
+                        *batch_args,
+                        state=ctx.clip_state,
+                    )
+            except RuntimeError as _grad_err:
+                if not (self._ddp.is_distributed and self._is_retryable_oom(_grad_err)):
+                    raise
+                local_oom_step = True
+
+            if self._ddp.is_distributed:
+                _oom_flag = torch.tensor(
+                    [1.0 if local_oom_step else 0.0], device=self._device
                 )
+                torch.distributed.all_reduce(
+                    _oom_flag, op=torch.distributed.ReduceOp.MAX
+                )
+                if _oom_flag.item() > 0.0:
+                    # Free any partial grads this rank did materialise, then
+                    # raise an identical retryable OOM on every rank so
+                    # ``_train_dispatch`` halves the microbatch cluster-wide.
+                    # Must be ``torch.OutOfMemoryError`` (not a plain
+                    # ``RuntimeError``) so ``_is_retryable_oom`` classifies it
+                    # as retryable on the non-OOM ranks too.
+                    grads = aux = None
+                    raise torch.OutOfMemoryError(
+                        "collective microbatch retry (a rank OOM'd in grad_fn; "
+                        "whole cluster steps down to a smaller microbatch)."
+                    )
 
             # Phase 10c: DDP collectives between clipping and noise.
             # 1. ``sum_gradients_`` — AllReduce SUM the clipped per-example sum;
