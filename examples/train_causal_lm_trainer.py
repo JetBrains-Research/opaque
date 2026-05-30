@@ -286,7 +286,20 @@ def parse_args() -> argparse.Namespace:
         "--optimizer",
         type=str,
         default="adam",
-        choices=["sgd", "adam", "adamw", "adamw-bc"],
+        choices=[
+            "sgd",
+            "adam",
+            "adamw",
+            "adamw-bc",
+            "adagrad",
+            "rmsprop",
+            "lion",
+            "ademamix",
+            "adafactor",
+            "radam",
+            "adadelta",
+            "schedule_free",
+        ],
         help="Torchopt-backed optimizer name passed to TrainingArguments.optim.",
     )
     train_group.add_argument("--weight-decay", type=float, default=0.01)
