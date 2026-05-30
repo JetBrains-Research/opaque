@@ -550,6 +550,32 @@ def parse_args() -> argparse.Namespace:
         default=os.environ.get("WANDB_ENTITY"),
     )
 
+    hub_group = parser.add_argument_group("hub", "Hugging Face Hub publishing")
+    hub_group.add_argument(
+        "--push-to-hub",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Upload the final model + tokenizer + DP model card to the Hub.",
+    )
+    hub_group.add_argument(
+        "--hub-model-id",
+        type=str,
+        default=None,
+        help="Target Hub repo id (e.g. 'org/name'). Required when --push-to-hub.",
+    )
+    hub_group.add_argument(
+        "--hub-private-repo",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Create the Hub repo as private (default: account default).",
+    )
+    hub_group.add_argument(
+        "--hub-revision",
+        type=str,
+        default=None,
+        help="Branch / revision name on the Hub to push to (default: main).",
+    )
+
     args = parser.parse_args()
     provided_dests = _provided_dests(parser)
 
@@ -614,6 +640,9 @@ def parse_args() -> argparse.Namespace:
 
     if args.microbatch_size == 0:
         args.microbatch_size = None
+
+    if args.push_to_hub and not args.hub_model_id:
+        parser.error("--push-to-hub requires --hub-model-id (e.g. 'org/name')")
 
     if args.per_group_clipping:
         parsed: dict[str, float] = {}
@@ -891,6 +920,10 @@ def main() -> int:
         privacy_noise_mechanism=args.noise_mechanism,
         privacy_noise_mechanism_kwargs=args.noise_mechanism_kwargs or {},
         privacy_noise_radius=args.noise_radius,
+        push_to_hub=args.push_to_hub,
+        hub_model_id=args.hub_model_id,
+        hub_private_repo=args.hub_private_repo,
+        hub_revision=args.hub_revision,
     )
 
     print("\nDPTrainer argument summary:")
@@ -911,6 +944,11 @@ def main() -> int:
         )
     print(f"  bf16_full_eval: {training_args.bf16_full_eval}")
     print(f"  use_performance_kernels: {training_args.use_performance_kernels}")
+    print(f"  Push to Hub: {training_args.push_to_hub}")
+    if training_args.push_to_hub:
+        print(f"  Hub model id: {training_args.hub_model_id}")
+        print(f"  Hub private repo: {training_args.hub_private_repo}")
+        print(f"  Hub revision: {training_args.hub_revision or 'main'}")
 
     trainer = DPTrainer(
         model=model,
