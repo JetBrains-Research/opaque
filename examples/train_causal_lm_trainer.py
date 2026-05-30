@@ -293,6 +293,12 @@ def parse_args() -> argparse.Namespace:
     train_group.add_argument("--log-steps", type=int, default=1)
     train_group.add_argument("--eval-steps", type=int, default=10)
     train_group.add_argument(
+        "--eval-on-start",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Run an evaluation pass before the first training step.",
+    )
+    train_group.add_argument(
         "--save-steps",
         type=int,
         default=None,
@@ -826,6 +832,7 @@ def main() -> int:
         logging_steps=args.log_steps,
         eval_strategy="steps" if args.num_eval_samples > 0 else "no",
         eval_steps=args.eval_steps,
+        eval_on_start=args.eval_on_start,
         save_strategy=save_strategy,
         save_steps=args.save_steps or args.eval_steps,
         max_steps=args.max_steps if args.max_steps is not None else -1,
