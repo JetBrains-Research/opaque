@@ -483,6 +483,12 @@ def parse_args() -> argparse.Namespace:
         )
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
+        # DPTrainer has no explicit microbatch_size on TrainingArguments;
+        # auto_find_microbatch_size is the only path that shrinks the vmap
+        # chunk below per_device_train_batch_size (= logical batch = 128).
+        # Without this, the preset's microbatch_size only affects eval and
+        # the training vmap OOMs at ~133 GB on a single H200.
+        _set("auto_find_microbatch_size", True)
     elif args.preset == "custom":
         pass
 
