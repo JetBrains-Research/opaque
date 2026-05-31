@@ -2326,11 +2326,15 @@ class DPTrainer:
             # weighting (the historical reduction).
             if loss is not None:
                 if labels is not None:
-                    token_mask = labels != -100
+                    # HF's ForCausalLMLoss scores ``labels[..., 1:]`` (drops
+                    # position 0 via the internal shift); the per-token-mean
+                    # weighting denominator must match that count.
+                    shifted = labels[..., 1:]
+                    token_mask = shifted != -100
                     if loss.ndim > 0:
                         # per-example: weight each by its real-token count
                         per_example_real = token_mask.sum(
-                            dim=tuple(range(1, labels.ndim))
+                            dim=tuple(range(1, shifted.ndim))
                         ).to(loss.dtype)
                         total_loss += float((loss * per_example_real).sum().item())
                         loss_samples += int(per_example_real.sum().item())
