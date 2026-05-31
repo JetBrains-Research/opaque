@@ -77,7 +77,8 @@ class DPTrainerState:
     # DPTrainer-specific privacy bookkeeping
     privacy_resolved_delta: float | None = None
     privacy_resolved_noise_multiplier: float | None = None
-    privacy_noise_multiplier_source: str | None = None
+    privacy_calibration_source: str | None = None
+    privacy_calibration_noise_multiplier: float | None = None
     privacy_calibration_achieved_epsilon: float | None = None
     privacy_calibration_converged: bool | None = None
     privacy_sample_rate: float | None = None

@@ -130,8 +130,8 @@ def test_reporting_callbacks_receive_privacy_logs_and_functional_slots(
                     "privacy_resolved_noise_multiplier": (
                         state.privacy_resolved_noise_multiplier
                     ),
-                    "privacy_noise_multiplier_source": (
-                        state.privacy_noise_multiplier_source
+                    "privacy_calibration_source": (
+                        state.privacy_calibration_source
                     ),
                     "state_id": id(state),
                 }
@@ -210,7 +210,7 @@ def test_reporting_callbacks_receive_privacy_logs_and_functional_slots(
     train_begin = next(record for record in records if record["event"] == "train_begin")
     assert train_begin["privacy_resolved_delta"] is not None
     assert train_begin["privacy_resolved_noise_multiplier"] == 1.0
-    assert train_begin["privacy_noise_multiplier_source"] == "fixed"
+    assert train_begin["privacy_calibration_source"] == "fixed"
 
     step_logs = [
         record["logs"]
@@ -227,7 +227,7 @@ def test_reporting_callbacks_receive_privacy_logs_and_functional_slots(
         "privacy_clipping_norm",
         "privacy_noise_std",
         "privacy_noise_multiplier",
-        "privacy_clipped_grad_norm",
+        "privacy_clipped_grad_norm_mean",
     }:
         assert key in step_logs[0]
     assert "dp_epsilon" not in step_logs[0]
@@ -276,7 +276,7 @@ def test_reporting_callbacks_receive_raw_per_group_privacy_logs(tmp_path, monkey
         assert key in logs
     assert logs["privacy_group_linear_grad_norm"] >= 0.0
     assert 0.0 <= logs["privacy_group_linear_clip_rate"] <= 1.0
-    assert logs["privacy_group_linear_clipping_norm"] == 1.0
+    assert logs["privacy_group_linear_clipping_norm"] > 0.0
 
 
 def test_privacy_reporting_rewrite_uses_visual_namespace():

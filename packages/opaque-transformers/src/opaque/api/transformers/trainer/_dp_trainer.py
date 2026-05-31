@@ -200,7 +200,7 @@ class _TrainingContext:
     mechanism: Callable
     target_delta: float
     sample_rate: float
-    noise_multiplier_source: str
+    calibration_source: str
     expected_steps_per_epoch: int
     total_steps: int
     num_epochs: int
@@ -957,7 +957,7 @@ class DPTrainer:
         *,
         target_delta: float,
         noise_multiplier: float,
-        noise_multiplier_source: str,
+        calibration_source: str,
         sample_rate: float,
         expected_batch_size: int,
         total_steps: int,
@@ -965,7 +965,7 @@ class DPTrainer:
         """Expose run-resolved privacy constants for reporting callbacks."""
         self.state.privacy_resolved_delta = float(target_delta)
         self.state.privacy_resolved_noise_multiplier = float(noise_multiplier)
-        self.state.privacy_noise_multiplier_source = noise_multiplier_source
+        self.state.privacy_calibration_source = calibration_source
         self.state.privacy_sample_rate = float(sample_rate)
         self.state.privacy_expected_batch_size = int(expected_batch_size)
         self.state.privacy_total_steps = int(total_steps)
@@ -1175,13 +1175,13 @@ class DPTrainer:
             prefix_accountant=prefix_accountant,
             global_step_already_done=global_step_already_done,
         )
-        noise_multiplier_source = (
+        calibration_source = (
             "fixed" if a.privacy_noise_multiplier is not None else "calibrated"
         )
         self._set_resolved_privacy_args(
             target_delta=target_delta,
             noise_multiplier=noise_multiplier,
-            noise_multiplier_source=noise_multiplier_source,
+            calibration_source=calibration_source,
             sample_rate=sample_rate,
             expected_batch_size=expected_batch_size,
             total_steps=total_steps,
@@ -1193,7 +1193,7 @@ class DPTrainer:
             "sample_rate=%.6f, total_steps=%d, truncated_batch_size=%s",
             target_delta,
             noise_multiplier,
-            noise_multiplier_source,
+            calibration_source,
             sample_rate,
             total_steps,
             # None ⇒ unbounded Poisson PLD; int ⇒ truncated_poisson_gaussian_pld.
@@ -1269,7 +1269,7 @@ class DPTrainer:
             mechanism=mechanism,
             target_delta=target_delta,
             sample_rate=sample_rate,
-            noise_multiplier_source=noise_multiplier_source,
+            calibration_source=calibration_source,
             expected_steps_per_epoch=expected_steps_per_epoch,
             total_steps=total_steps,
             num_epochs=num_epochs,
@@ -1301,6 +1301,33 @@ class DPTrainer:
         self._control = self._callback_handler.on_train_begin(
             self.args, self.state, self._control
         )
+
+        # Emit setup-time constants once now so they land in W&B summary
+        # (via _PRIVACY_SUMMARY_KEYS) for cross-run comparison while the run
+        # is still live, instead of waiting for end-of-training.
+        setup_constants: dict[str, Any] = {}
+        if self.state.privacy_calibration_source is not None:
+            setup_constants["privacy_calibration_source"] = (
+                self.state.privacy_calibration_source
+            )
+        if self.state.privacy_calibration_noise_multiplier is not None:
+            setup_constants["privacy_calibration_noise_multiplier"] = (
+                self.state.privacy_calibration_noise_multiplier
+            )
+        if self.state.privacy_calibration_achieved_epsilon is not None:
+            setup_constants["privacy_calibration_achieved_epsilon"] = (
+                self.state.privacy_calibration_achieved_epsilon
+            )
+        if self.state.privacy_calibration_converged is not None:
+            setup_constants["privacy_calibration_converged"] = (
+                self.state.privacy_calibration_converged
+            )
+        if self.state.converged_microbatch_size is not None:
+            setup_constants["converged_microbatch_size"] = (
+                self.state.converged_microbatch_size
+            )
+        if setup_constants:
+            self.log(setup_constants)
 
         log.info(
             "Starting DP-SGD training: %d epochs, ~%d steps/epoch, %d total",
@@ -1582,17 +1609,8 @@ class DPTrainer:
                 "privacy_epsilon": final_epsilon,
                 "privacy_delta": ctx.target_delta,
                 "privacy_noise_multiplier": ctx.noise_multiplier,
-                "privacy_noise_multiplier_source": ctx.noise_multiplier_source,
             }
         )
-        if self.state.privacy_calibration_achieved_epsilon is not None:
-            metrics["privacy_calibration_achieved_epsilon"] = (
-                self.state.privacy_calibration_achieved_epsilon
-            )
-        if self.state.privacy_calibration_converged is not None:
-            metrics["privacy_calibration_converged"] = (
-                self.state.privacy_calibration_converged
-            )
         if a.include_num_input_tokens_seen != "no":
             metrics["num_input_tokens_seen"] = self.state.num_input_tokens_seen
         self._memory_tracker.stop_and_update_metrics(metrics)
@@ -3465,10 +3483,6 @@ class DPTrainer:
                 "privacy_noise_std": step_result.get("noise_std", 0.0),
                 "privacy_noise_multiplier": ctx.noise_multiplier,
             }
-            if self.state.converged_microbatch_size is not None:
-                logs["converged_microbatch_size"] = (
-                    self.state.converged_microbatch_size
-                )
             if "clip_rate_max" in step_result:
                 logs["privacy_clip_rate_max"] = step_result["clip_rate_max"]
             if "clipped_grad_norm" in step_result:
@@ -3705,6 +3719,7 @@ class DPTrainer:
             result.achieved,
             result.converged,
         )
+        self.state.privacy_calibration_noise_multiplier = float(result.param)
         self.state.privacy_calibration_achieved_epsilon = float(result.achieved)
         self.state.privacy_calibration_converged = bool(result.converged)
         return result.param
@@ -4622,7 +4637,7 @@ class DPTrainer:
             # pinned a fixed multiplier, where a mismatch is real drift.
             "noise_multiplier": (
                 None
-                if (ctx is not None and ctx.noise_multiplier_source == "calibrated")
+                if (ctx is not None and ctx.calibration_source == "calibrated")
                 else (
                     ctx.noise_multiplier
                     if ctx is not None

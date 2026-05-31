@@ -118,9 +118,10 @@ _PRIVACY_SUMMARY_KEYS = {
     "privacy_epsilon",
     "privacy_delta",
     "privacy_noise_multiplier",
-    "privacy_noise_multiplier_source",
-    "privacy_calibration_converged",
+    "privacy_calibration_source",
+    "privacy_calibration_noise_multiplier",
     "privacy_calibration_achieved_epsilon",
+    "privacy_calibration_converged",
 }
 _WRAPPED_CALLBACK_CLASSES: dict[type[Any], type[Any]] = {}
 

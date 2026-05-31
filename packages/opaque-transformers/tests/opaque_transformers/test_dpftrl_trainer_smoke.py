@@ -446,7 +446,7 @@ class TestNonPrivateZeroNoise:
         assert math.isinf(out.metrics["privacy_epsilon"])
         assert out.metrics["privacy_noise_multiplier"] == 0.0
         assert trainer.state.privacy_resolved_noise_multiplier == 0.0
-        assert trainer.state.privacy_noise_multiplier_source == "fixed"
+        assert trainer.state.privacy_calibration_source == "fixed"
         assert math.isfinite(out.metrics["train_loss"])
 
     def test_zero_noise_is_deterministic(self, tmp_path):
