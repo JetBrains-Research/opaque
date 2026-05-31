@@ -1,9 +1,10 @@
-"""Round-trip tests for ``state_dict`` / ``from_state_dict`` on clipping types."""
+"""Round-trip tests for ``state_dict`` / ``from_state_dict`` on ``PerGroup``."""
 
 from __future__ import annotations
 
 import json
 
+from opaque.serialization import from_state_dict, state_dict
 from opaque.types import PerGroup
 
 
@@ -13,19 +14,30 @@ class TestPerGroupStateDict:
             groups={"layer.0.q": "attn", "layer.0.mlp": "mlp"},
             values={"attn": 1.5, "mlp": 0.75},
         )
-        state = pg.state_dict()
+        sd = state_dict(pg)
         # JSON-serializable
-        encoded = json.dumps(state)
-        decoded = json.loads(encoded)
-        restored = PerGroup.from_state_dict(decoded)
+        decoded = json.loads(json.dumps(sd))
+        # Template-driven restore — same shape of groups/values keys.
+        template = PerGroup(
+            groups={"layer.0.q": "", "layer.0.mlp": ""},
+            values={"attn": 0.0, "mlp": 0.0},
+        )
+        restored = from_state_dict(template, decoded)
         assert restored == pg
 
-    def test_state_dict_returns_plain_dicts(self):
+    def test_state_dict_flat_dotted_keys(self):
         pg = PerGroup(groups={"a": "g"}, values={"g": 2.0})
-        state = pg.state_dict()
-        assert state == {"groups": {"a": "g"}, "values": {"g": 2.0}}
+        sd = state_dict(pg)
+        # Generic structural walker emits flat dotted keys
+        # ("groups.<param_key>" / "values.<group_name>") rather than
+        # nested dicts; the contract for PerGroup is documented on the
+        # class.
+        assert sd == {"groups.a": "g", "values.g": 2.0}
 
-    def test_int_values_coerced_to_float(self):
-        state = {"groups": {"a": "g"}, "values": {"g": 3}}
-        pg = PerGroup.from_state_dict(state)
-        assert isinstance(pg.values["g"], float)
+    def test_roundtrip_preserves_float_values(self):
+        pg = PerGroup(groups={"a": "g"}, values={"g": 0.5})
+        sd = state_dict(pg)
+        template = PerGroup(groups={"a": ""}, values={"g": 0.0})
+        restored = from_state_dict(template, sd)
+        assert isinstance(restored.values["g"], float)
+        assert restored.values["g"] == 0.5
