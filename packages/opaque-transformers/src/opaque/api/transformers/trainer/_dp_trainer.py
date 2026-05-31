@@ -4736,9 +4736,7 @@ class DPTrainer:
                 else None
             ),
             "mf_max_participations": (
-                int(
-                    ctx.mf.amplifier_factory(ctx.noise_multiplier).max_participations
-                )
+                int(ctx.mf.amplifier_factory(ctx.noise_multiplier).max_participations)
                 if ctx is not None and ctx.mf is not None
                 else None
             ),

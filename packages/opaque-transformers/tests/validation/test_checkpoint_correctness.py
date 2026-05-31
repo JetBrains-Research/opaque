@@ -491,9 +491,7 @@ class TestArgDriftWarnings:
         with caplog.at_level(logging.WARNING):
             trainer._warn_on_arg_drift(runtime)
 
-        total_msgs = [
-            r for r in caplog.records if "total_steps" in r.getMessage()
-        ]
+        total_msgs = [r for r in caplog.records if "total_steps" in r.getMessage()]
         assert not total_msgs, (
             "DP-SGD total_steps extension should be silent; got: "
             f"{[r.getMessage() for r in total_msgs]}"
@@ -527,9 +525,7 @@ class TestArgDriftWarnings:
         model, tokenizer = lora_model
         trainer = DPTrainer(
             model=model,
-            args=_args(
-                tmp_path, per_device_train_batch_size=2, lr_scheduler="linear"
-            ),
+            args=_args(tmp_path, per_device_train_batch_size=2, lr_scheduler="linear"),
             processing_class=tokenizer,
             train_dataset=tiny_dataset,
             eval_dataset=tiny_dataset,

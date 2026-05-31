@@ -311,9 +311,7 @@ class TestDriftDispositionResolution:
                 "default": "dp_relevant",
             }
         }
-        assert (
-            _resolve_drift_disposition(meta, "gaussian") == "intentional_extend"
-        )
+        assert _resolve_drift_disposition(meta, "gaussian") == "intentional_extend"
         assert _resolve_drift_disposition(meta, "mf_band") == "dp_relevant"
         assert _resolve_drift_disposition(meta, "mf_blt") == "dp_relevant"
 
