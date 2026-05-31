@@ -434,11 +434,31 @@ class TestMechanismAndSamplerDefaults:
         with pytest.raises(ValueError, match="sampling_mode"):
             TrainingArguments(privacy_noise_mechanism="mf_blt", sampling_mode="poisson")
 
-    def test_mf_rejects_adaptive_clipping(self):
-        with pytest.raises(ValueError, match="adaptive"):
-            TrainingArguments(
+    def test_mf_auto_resolves_adaptive_to_fixed(self, caplog):
+        """``clipping_mode='adaptive'`` paired with an MF mechanism is auto-
+        resolved to ``'fixed'`` with a warning rather than raising — most
+        users inherit ``adaptive`` from a preset default and shouldn't be
+        blocked from running MF."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            args = TrainingArguments(
                 privacy_noise_mechanism="mf_band", clipping_mode="adaptive"
             )
+        assert args.clipping_mode == "fixed"
+        assert any(
+            "clipping_mode='adaptive' is incompatible" in record.getMessage()
+            and "mf_band" in record.getMessage()
+            for record in caplog.records
+        ), f"expected a clipping_mode auto-resolve warning; got {caplog.records!r}"
+
+    def test_mf_keeps_explicit_fixed_clipping(self):
+        """A user-supplied ``clipping_mode='fixed'`` is not touched by the
+        MF auto-resolve."""
+        args = TrainingArguments(
+            privacy_noise_mechanism="mf_band", clipping_mode="fixed"
+        )
+        assert args.clipping_mode == "fixed"
 
     def test_mf_kwargs_auto_filled(self):
         args = TrainingArguments(privacy_noise_mechanism="mf_band")

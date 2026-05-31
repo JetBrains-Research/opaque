@@ -871,18 +871,18 @@ class TrainingArguments:
             # sensitivity; ``adaptive`` clipping drifts the threshold
             # across steps and breaks the analysis.  ``fixed`` and
             # ``auto`` (AUTO-S smooth scaling) both keep sensitivity
-            # constant by construction.
+            # constant by construction.  ``adaptive`` is auto-resolved
+            # to ``fixed`` with a warning so a user inheriting the
+            # default from a preset isn't blocked from running MF.
             if self.clipping_mode == "adaptive":
-                raise ValueError(
-                    f"clipping_mode='adaptive' is incompatible with "
-                    f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}: "
-                    f"matrix-factorization noise requires constant per-step "
-                    f"sensitivity (adaptive clipping varies the clip norm "
-                    f"each step, which breaks the MF Toeplitz workload "
-                    f"calibration).  Pass clipping_mode='fixed' "
-                    f"(or 'auto', which resolves to fixed for MF mechanisms) "
-                    f"— e.g. add `--clipping-mode fixed` to your invocation."
+                log.warning(
+                    "clipping_mode='adaptive' is incompatible with "
+                    "privacy_noise_mechanism=%r (matrix-factorization "
+                    "requires constant per-step sensitivity); resolving "
+                    "to clipping_mode='fixed'.",
+                    self.privacy_noise_mechanism,
                 )
+                self.clipping_mode = "fixed"
             # Auto-fill mechanism kwargs from the Mellum-shaped defaults
             # so a one-line ``privacy_noise_mechanism='mf_band'`` works
             # out of the box.  User-supplied keys win on collision.
