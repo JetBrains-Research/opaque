@@ -7,32 +7,11 @@ project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
-    # opaque-accounting ships a PyO3 native extension. Cadence's
-    # per-configName .venv cache poisons easily for this preset
-    # (uv sync alone leaves the .so missing), and the base H200
-    # image doesn't always have rustc/maturin. Unconditional rustup
-    # install + .venv wipe (the conditional check trusted a stale cargo
-    # proxy on sticky workers). Mirrors the distributed preset.
-    export CARGO_HOME="$HOME/.cargo"
-    export RUSTUP_HOME="$HOME/.rustup"
-    echo "[prelude] installing rustup unconditionally"
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh
-    echo "[prelude] curl rc=$?, size=$(wc -c < /tmp/rustup-init.sh 2>/dev/null)"
-    sh /tmp/rustup-init.sh -y --default-toolchain stable --profile minimal --no-modify-path
-    echo "[prelude] rustup-init rc=$?"
-    if [ -f "$HOME/.cargo/env" ]; then . "$HOME/.cargo/env"; fi
-    export PATH="$HOME/.cargo/bin:$PATH"
-    echo "[prelude] which rustc: $(command -v rustc || echo none)"
-    rustc --version || { echo "[prelude] FATAL: rustc unavailable after rustup-init" >&2; exit 1; }
-    echo "[prelude] wiping working-tree .venv to defeat per-configName cache poisoning"
-    rm -rf .venv
+    # opaque-accounting (PyO3) needs rustc; the H200 image doesn't ship it.
+    command -v rustc >/dev/null 2>&1 || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    . "$HOME/.cargo/env"
+
     uv sync --group dev --group examples --all-packages --extra all
-    uv pip install --quiet "maturin>=1.0,<2.0"
-    # `uv run` inherits the parent env, including PATH, so the cargo
-    # bin remains reachable inside the .venv subshell.  We also pass
-    # PATH explicitly to be defensive against `uv run` sanitization.
-    PATH="$HOME/.cargo/bin:$PATH" uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
-    uv run python -c "from opaque.api.accounting.core import opaque_accounting as _; print('opaque_accounting native ext OK')"
     uv run python examples/train_causal_lm_trainer.py --preset mellum-kstack $EXTRA_ARGS
 provisioning:
   gpu_type: h200

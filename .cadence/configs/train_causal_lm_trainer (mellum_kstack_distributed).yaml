@@ -20,46 +20,16 @@
 #   - Phase 10c gradient sync (L1599-1614)
 #   - Cluster-wide eval reduction (L2196-2201)
 #   - DDP-aware Poisson sharding (L981-989)
-#
-# Build prelude mirrors the single-GPU trainer preset
-# (train_causal_lm_trainer (mellum_kstack).yaml, restored in f0ba6e0f):
-# rustup install if missing → uv sync → maturin CLI into .venv →
-# force maturin develop → smoke-import.  Required because Cadence's
-# per-configName .venv cache poisons easily for the PyO3-backed
-# opaque-accounting extension.
 
 project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
-    # opaque-accounting ships a PyO3 native extension. Cadence's
-    # per-configName .venv cache poisons easily for this preset
-    # (uv sync alone leaves the .so missing), and the base A10g
-    # image doesn't always have rustc or maturin in PATH.  Build
-    # prelude mirrors the post-9dab79db single-GPU trainer preset:
-    #   1. install rustup unconditionally (the conditional
-    #      ``command -v rustc`` check was flaky on reused workers)
-    #   2. wipe the working-tree .venv so uv sync rebuilds against the
-    #      freshly-rsynced PyO3 source, not the previous run's .so
-    #   3. install maturin CLI into .venv
-    #   4. force a maturin-develop into .venv so the .so is fresh
-    #   5. smoke-import as a fail-loud assert
-    echo "[prelude] HOME=$HOME"
-    echo "[prelude] installing rustup unconditionally"
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh
-    echo "[prelude] curl rc=$?, size=$(wc -c < /tmp/rustup-init.sh 2>/dev/null)"
-    sh /tmp/rustup-init.sh -y --default-toolchain stable --profile minimal --no-modify-path
-    echo "[prelude] rustup-init rc=$?"
-    if [ -f "$HOME/.cargo/env" ]; then . "$HOME/.cargo/env"; fi
-    export PATH="$HOME/.cargo/bin:$PATH"
-    echo "[prelude] which rustc: $(command -v rustc || echo none)"
-    rustc --version || { echo "[prelude] FATAL: rustc unavailable after rustup-init" >&2; exit 1; }
-    echo "[prelude] wiping working-tree .venv to defeat per-configName cache poisoning"
-    rm -rf .venv
+    # opaque-accounting (PyO3) needs rustc; the A10g image doesn't ship it.
+    command -v rustc >/dev/null 2>&1 || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    . "$HOME/.cargo/env"
+
     uv sync --group dev --group examples --all-packages --extra all
-    uv pip install --quiet "maturin>=1.0,<2.0"
-    uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
-    uv run python -c "from opaque.api.accounting.core import opaque_accounting as _; print('opaque_accounting native ext OK')"
     uv run torchrun --nproc_per_node=4 examples/train_causal_lm_trainer.py --preset mellum-kstack --gradient-checkpointing --microbatch-size 4 $EXTRA_ARGS
 provisioning:
   gpu_type: a10g
