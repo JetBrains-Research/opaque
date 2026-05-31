@@ -786,9 +786,7 @@ class DPTrainer:
         def _cluster_needs_step_down(local_oom: bool) -> bool:
             if not self._ddp.is_distributed:
                 return local_oom
-            flag = torch.tensor(
-                [1.0 if local_oom else 0.0], device=self._device
-            )
+            flag = torch.tensor([1.0 if local_oom else 0.0], device=self._device)
             torch.distributed.all_reduce(flag, op=torch.distributed.ReduceOp.MAX)
             return bool(flag.item() > 0.0)
 

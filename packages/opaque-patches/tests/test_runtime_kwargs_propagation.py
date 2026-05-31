@@ -182,6 +182,7 @@ def test_set_module_params_import_path_is_valid():
 def test_checkpoint_patch_applies_all_patches(_reset_checkpoint_flag):
     import torch.autograd.graph as autograd_graph
     import torch.utils.checkpoint as checkpoint
+
     rt = _reset_checkpoint_flag
 
     rt.apply_checkpoint_patch(vmap_checkpointing=True)

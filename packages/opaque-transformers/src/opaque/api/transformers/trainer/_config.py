@@ -1064,13 +1064,13 @@ class TrainingArguments:
         anything ``json`` would refuse.
         """
         out: dict[str, Any] = {}
-        for field in dataclasses.fields(self):
-            value = getattr(self, field.name)
+        for f in dataclasses.fields(self):
+            value = getattr(self, f.name)
             try:
                 json.dumps(value)
-                out[field.name] = value
+                out[f.name] = value
             except (TypeError, ValueError):
-                out[field.name] = str(value)
+                out[f.name] = str(value)
         return out
 
 

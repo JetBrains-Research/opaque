@@ -231,9 +231,7 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
                 raise torch.OutOfMemoryError("CUDA out of memory")
             # The retry must see the trainable partition fully restored.
             trainable_now = {
-                name
-                for name, p in trainer.model.named_parameters()
-                if p.requires_grad
+                name for name, p in trainer.model.named_parameters() if p.requires_grad
             }
             assert trainable_now == trainable_before
             return TrainOutput(global_step=0, training_loss=0.0, metrics={})

@@ -43,8 +43,7 @@ def test_restore_params_succeeds_when_module_requires_grad_neutralized(tmp_path)
         p.requires_grad_(False)
 
     trained = {
-        name: torch.ones_like(p)
-        for name, p in trainer._model.named_parameters()
+        name: torch.ones_like(p) for name, p in trainer._model.named_parameters()
     }
     # Must not raise (old guard raised here).
     trainer._restore_params(trained)

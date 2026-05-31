@@ -293,7 +293,9 @@ class TestLrSchedulerRoundTrip:
             transition_steps=50,
             transition_begin=10,
         )
-        phase1 = with_warmup(decay_p1, transition_steps=10, ramp="linear", init_value=0.0)
+        phase1 = with_warmup(
+            decay_p1, transition_steps=10, ramp="linear", init_value=0.0
+        )
 
         path = str(tmp_path / ckpt.LR_SCHEDULER_NAME)
         torch.save(opaque_state_dict(phase1), path)

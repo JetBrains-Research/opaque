@@ -130,9 +130,7 @@ def test_reporting_callbacks_receive_privacy_logs_and_functional_slots(
                     "privacy_resolved_noise_multiplier": (
                         state.privacy_resolved_noise_multiplier
                     ),
-                    "privacy_calibration_source": (
-                        state.privacy_calibration_source
-                    ),
+                    "privacy_calibration_source": (state.privacy_calibration_source),
                     "state_id": id(state),
                 }
             )
