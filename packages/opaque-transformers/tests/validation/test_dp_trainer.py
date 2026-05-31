@@ -1016,6 +1016,108 @@ class TestDPTrainerCheckpointing:
     # Phase 2c: resume from checkpoint
     # ------------------------------------------------------------------
 
+    def test_lr_schedule_continues_across_resume(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        """Resume with matching args preserves the LR trajectory step-for-step.
+
+        Phase-1 trains 5 of 10 steps then forcibly stops + saves (via a
+        callback, so the LR schedule is built with ``max_steps=10`` from the
+        start).  Phase-2 resumes with the same ``max_steps=10`` and runs to
+        completion.  The per-step LR series logged by ``log_history`` after
+        the chained run must match a continuous max_steps=10 run exactly.
+
+        Catches three classes of bug:
+         * a saved schedule overrides the fresh one on resume (post-resume
+           LR returns to warmup-from-zero);
+         * the optimizer holds a stale schedule reference (LRs applied
+           differ silently from LRs logged);
+         * ``log_history`` is reset on resume (chained series is shorter
+           than continuous).
+        """
+        from transformers.trainer_callback import TrainerCallback
+
+        class StopAtStepCallback(TrainerCallback):
+            def __init__(self, stop_at: int):
+                self.stop_at = stop_at
+
+            def on_step_end(self, args, state, control, **kwargs):
+                if state.global_step >= self.stop_at:
+                    control.should_save = True
+                    control.should_training_stop = True
+
+        common = dict(
+            max_steps=10,
+            lr_scheduler="linear",
+            warmup_steps=2,
+            learning_rate=1e-3,
+            logging_steps=1,
+        )
+
+        # --- continuous baseline ---
+        model_c, tokenizer_c = gpt2_with_lora
+        trainer_c = DPTrainer(
+            model=model_c,
+            args=self._common_args(
+                tmp_path / "continuous", save_strategy="no", **common
+            ),
+            processing_class=tokenizer_c,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        trainer_c.train()
+        lrs_continuous = [
+            e["learning_rate"]
+            for e in trainer_c.state.log_history
+            if "learning_rate" in e
+        ]
+        assert len(lrs_continuous) == 10
+
+        # --- phase 1: same args, stop+save at step 5 via callback ---
+        chain_dir = tmp_path / "chain"
+        model_1, tokenizer_1 = gpt2_with_lora
+        trainer_1 = DPTrainer(
+            model=model_1,
+            args=self._common_args(
+                chain_dir, save_strategy="no", **common
+            ),
+            processing_class=tokenizer_1,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+            callbacks=[StopAtStepCallback(stop_at=5)],
+        )
+        trainer_1.train()
+        ckpt_dir = str(chain_dir / "checkpoint-5")
+        assert os.path.isdir(ckpt_dir), f"checkpoint-5 not written at {chain_dir}"
+
+        # --- phase 2: resume same args, run to step 10 ---
+        model_2, tokenizer_2 = gpt2_with_lora
+        trainer_2 = DPTrainer(
+            model=model_2,
+            args=self._common_args(
+                chain_dir, save_strategy="no", **common
+            ),
+            processing_class=tokenizer_2,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        trainer_2.train(resume_from_checkpoint=ckpt_dir)
+        lrs_chained = [
+            e["learning_rate"]
+            for e in trainer_2.state.log_history
+            if "learning_rate" in e
+        ]
+        assert len(lrs_chained) == 10, (
+            f"chained log_history should cover all 10 steps "
+            f"(phase1's 5 + phase2's 5); got {len(lrs_chained)} entries"
+        )
+
+        for step, (got, exp) in enumerate(zip(lrs_chained, lrs_continuous), start=1):
+            assert got == pytest.approx(exp, abs=1e-9), (
+                f"LR mismatch at global_step={step}: "
+                f"chained={got}, continuous={exp}"
+            )
+
     def test_resume_continues_global_step(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
     ):

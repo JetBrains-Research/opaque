@@ -4155,7 +4155,6 @@ class DPTrainer:
             self._save_accountant(staging_dir, ctx.accounting)
             if not a.save_only_model:
                 self._save_optimizer(staging_dir, ctx)
-                self._save_lr_scheduler(staging_dir, ctx)
                 self._save_dp_runtime(staging_dir, ctx)
 
         # Per-rank RNG snapshot — every rank, after rank-0 has created the
@@ -4220,13 +4219,6 @@ class DPTrainer:
         torch.save(
             opaque_state_dict(ctx.opt_state),
             os.path.join(ckpt_dir, ckpt.DP_OPTIMIZER_NAME),
-        )
-
-    def _save_lr_scheduler(self, ckpt_dir: str, ctx: "_TrainingContext") -> None:
-        """Persist the LR schedule (a callable dataclass) for resume continuity."""
-        torch.save(
-            opaque_state_dict(ctx.lr_schedule),
-            os.path.join(ckpt_dir, ckpt.LR_SCHEDULER_NAME),
         )
 
     def _save_dp_runtime(self, ckpt_dir: str, ctx: "_TrainingContext") -> None:
@@ -4486,12 +4478,6 @@ class DPTrainer:
                 weights_only=False,
             )
             ctx.opt_state = opaque_from_state_dict(ctx.opt_state, opt_sd)
-
-        sched_path = os.path.join(ckpt_dir, ckpt.LR_SCHEDULER_NAME)
-        if os.path.exists(sched_path):
-            # Missing file tolerated for checkpoints predating LR persistence.
-            sched_sd = torch.load(sched_path, map_location="cpu", weights_only=False)
-            ctx.lr_schedule = opaque_from_state_dict(ctx.lr_schedule, sched_sd)
 
         if accountant is not None:
             ctx.accounting = accountant

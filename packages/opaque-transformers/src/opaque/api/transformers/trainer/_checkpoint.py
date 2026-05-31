@@ -35,7 +35,6 @@ DP_OPTIMIZER_NAME = "dp_optimizer.pt"
 DP_STATE_NAME = "dp_state.pt"
 DP_ACCOUNTANT_NAME = "accountant.json"
 RNG_STATE_NAME = "rng_state.pth"
-LR_SCHEDULER_NAME = "lr_scheduler.pt"
 
 DP_STATE_BUNDLE_VERSION = 3
 
@@ -52,7 +51,6 @@ __all__ = [
     "DP_ACCOUNTANT_NAME",
     "DP_STATE_BUNDLE_VERSION",
     "RNG_STATE_NAME",
-    "LR_SCHEDULER_NAME",
     "RuntimeCheckpoint",
     "parse_checkpoint_step",
     "list_checkpoints",
