@@ -7,7 +7,7 @@ project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
-    # opaque-accounting (PyO3) needs rustc; the H200 image doesn't ship it.
+    # opaque-accounting (PyO3) needs rustc; the image doesn't ship it.
     command -v rustc >/dev/null 2>&1 || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
     . "$HOME/.cargo/env"
 
