@@ -956,10 +956,6 @@ def main() -> int:
     else:
         save_strategy = "steps" if args.save_steps is not None else "no"
 
-    extra_ta_kwargs: dict[str, Any] = {}
-    if args.max_grad_norm is not None:
-        extra_ta_kwargs["max_grad_norm"] = args.max_grad_norm
-
     training_args = TrainingArguments(
         output_dir=args.output_dir,
         overwrite_output_dir=True,
@@ -1038,8 +1034,18 @@ def main() -> int:
         hub_model_id=args.hub_model_id,
         hub_private_repo=args.hub_private_repo,
         hub_revision=args.hub_revision,
-        **extra_ta_kwargs,
     )
+
+    # Opaque's ``TrainingArguments`` is a standalone dataclass and does
+    # NOT declare ``max_grad_norm`` — HF's per-step clip_grad_norm_ is
+    # replaced by the per-example DP clipping path.  We still let users
+    # pass ``--max-grad-norm`` to validate that the field is inert: we
+    # stamp it onto the args post-construction so any downstream code
+    # path that read ``args.max_grad_norm`` would surface it.  DPTrainer
+    # currently has zero references to it, so ε must remain bit-exact
+    # against a baseline that did not set the flag.
+    if args.max_grad_norm is not None:
+        object.__setattr__(training_args, "max_grad_norm", args.max_grad_norm)
 
     print("\nDPTrainer argument summary:")
     print(f"  Output dir: {training_args.output_dir}")
