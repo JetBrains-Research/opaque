@@ -5,6 +5,7 @@
 Tests LoRA, IA3, Prefix Tuning, P-Tuning, and Prompt Tuning.
 """
 
+import pytest
 from peft import (
     IA3Config,
     PrefixTuningConfig,
@@ -18,6 +19,7 @@ from transformers import AutoModelForCausalLM
 from ._helpers import prepare_lora_model, run_clipped_grad_test
 
 
+@pytest.mark.slow
 class TestPEFTMethods:
     """Test different PEFT methods."""
 

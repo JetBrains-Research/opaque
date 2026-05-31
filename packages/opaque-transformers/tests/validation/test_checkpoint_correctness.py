@@ -1,4 +1,4 @@
-"""Regression tests for Phase-2 (Step 4) checkpoint correctness fixes.
+"""Regression tests for checkpoint correctness.
 
 Covers:
 
@@ -10,10 +10,10 @@ Covers:
   ``_restore_params`` first).
 - ``DPTrainerState.stateful_callbacks`` round-trip
   through ``to_json`` / ``from_json`` (single schema; no JSON re-parse).
-- ``_warn_on_arg_drift`` surfaces ``expected_batch_size`` drift
-  (Stage-5 extension) so a user resuming with a changed batch size
-  sees the privacy-relevant change instead of having it silently
-  absorbed by the ``sample_rate`` warning.
+- ``_warn_on_arg_drift`` surfaces ``expected_batch_size`` drift so a
+  user resuming with a changed batch size sees the privacy-relevant
+  change instead of having it silently absorbed by the ``sample_rate``
+  warning.
 """
 
 from __future__ import annotations
@@ -136,12 +136,9 @@ class TestLoadBestModelMutates:
     ):
         """``save_model()`` after ``train()`` reflects the loaded best weights.
 
-        Pre-Step-4, ``_load_best_model`` only updated
-        ``ctx.trainable_params`` and the module was reconciled by
-        ``_restore_params`` in ``train()``'s ``finally`` block.  After
-        Step 4 the module is mutated immediately, so a fresh
-        ``save_model()`` call is byte-identical to the recorded best
-        checkpoint regardless of the in-flight functional view.
+        ``_load_best_model`` mutates ``self._model`` directly, so a
+        fresh ``save_model()`` call is byte-identical to the recorded
+        best checkpoint regardless of the in-flight functional view.
         """
         model, tokenizer = lora_model
         ckpt_root = tmp_path / "ckpts"
@@ -179,9 +176,9 @@ class TestLoadBestModelMutates:
             pytest.skip(f"Expected adapter weights under {best_dir} not found")
         best_weights = load_safetensors(adapter_path, device="cpu")
 
-        # Save the in-memory module to a fresh directory.  Under Step-4
-        # semantics this writes the *best* weights — the module was
-        # mutated by ``_load_best_model``.
+        # Save the in-memory module to a fresh directory.  This writes
+        # the *best* weights — the module was mutated by
+        # ``_load_best_model``.
         trainer.save_model(str(save_target))
         new_path = save_target / "adapter_model.safetensors"
         assert new_path.exists(), f"save_model did not produce {new_path}"
@@ -193,10 +190,7 @@ class TestLoadBestModelMutates:
             "checkpoint — module wasn't mutated by _load_best_model"
         )
         # ``atol=1e-3`` allows fp32 round-trip noise from PEFT's
-        # save_pretrained merging.  The pre-Step-4 implementation showed
-        # max diffs an order of magnitude larger because one extra DP-SGD
-        # step would have run between the eval-best step and the final
-        # save.
+        # save_pretrained merging.
         for name, saved in best_weights.items():
             diff = (post_save_weights[name] - saved).abs().max().item()
             assert diff < 1e-3, (
@@ -275,7 +269,7 @@ class TestBestFolderLookup:
 
 
 class TestSaveOnlyModelStillWritesTrainerState:
-    """Stage-1 fix: ``save_only_model=True`` no longer drops trainer_state.json."""
+    """``save_only_model=True`` no longer drops trainer_state.json."""
 
     def test_trainer_state_present_under_save_only_model(
         self,
@@ -311,18 +305,17 @@ class TestSaveOnlyModelStillWritesTrainerState:
 
 
 # ---------------------------------------------------------------------------
-# EarlyStoppingCallback round-trip — Stage-1 fix S1.5.
+# EarlyStoppingCallback round-trip.
 # ---------------------------------------------------------------------------
 
 
 class TestEarlyStoppingExportableState:
     """HF's stock ``EarlyStoppingCallback`` saves under the ExportableState schema.
 
-    Pre-Stage-1 the callback's internal state was lost on resume because
-    the trainer wrote ``callback_states`` (flat ``state_dict()``) but
     HF's callback uses the ``ExportableState`` protocol
-    (``state()`` / ``from_state()``).  The fix: persist via ``state()``
-    when the callback supports it.
+    (``state()`` / ``from_state()``) rather than a flat ``state_dict()``;
+    the trainer must persist via ``state()`` when the callback supports it
+    or the callback's internal counters are lost on resume.
 
     This test pins the *save-side* contract.  The *load-side*
     contract (attribute-set on resume) is covered by the simpler
@@ -375,17 +368,17 @@ class TestEarlyStoppingExportableState:
 
 
 # ---------------------------------------------------------------------------
-# Stage-5: expected_batch_size drift warning.
+# expected_batch_size drift warning + drift-disposition dispatch.
 # ---------------------------------------------------------------------------
 
 
 class TestArgDriftWarnings:
-    """``_warn_on_arg_drift`` surfaces ``expected_batch_size`` drift.
+    """``_warn_on_arg_drift`` surfaces drift per the field disposition.
 
-    The Stage-5 extension adds ``expected_batch_size`` to the drift
-    surface so a user resuming with a different
-    ``per_device_train_batch_size`` sees the privacy-relevant change
-    rather than having it silently absorbed by the ``sample_rate`` warning.
+    ``expected_batch_size`` carries the ``dp_relevant`` disposition so a
+    user resuming with a different ``per_device_train_batch_size`` sees
+    the privacy-relevant change rather than having it silently absorbed
+    by the ``sample_rate`` warning.
 
     Tested at the ``_warn_on_arg_drift`` boundary directly so the
     test doesn't drag in the full save/resume cycle (which is

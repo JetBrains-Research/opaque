@@ -1,4 +1,4 @@
-"""Phase 10 (DDP) end-to-end tests for :class:`DPTrainer`.
+"""DDP end-to-end tests for :class:`DPTrainer`.
 
 Each test launches N rank workers via ``subprocess.Popen`` (one per rank)
 running :mod:`_ddp_runner` with the right ``RANK`` / ``LOCAL_RANK`` /

@@ -1,8 +1,9 @@
 """Trainer-level wiring for ``torch_compile``, ``use_performance_kernels``, and
 compute-precision flags.
 
-These tests target the *plumbing* — Phase 11 features behave correctly when
-flags flip — without running full training (which would require a complete
+These tests target the *plumbing* — compile / kernel features behave
+correctly when flags flip — without running full training (which would
+require a complete
 data collator, sampler, dataset, accountant). The actual training/eval
 behavior is covered by the broader trainer suite.
 """

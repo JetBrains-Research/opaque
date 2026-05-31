@@ -177,9 +177,9 @@ class TestSupportedOptimizersConstruct:
 
         Full ``train()`` LM integration is exercised elsewhere when the
         installed Transformers / functorch stack supports vmap over the
-        model forward; here we lock the Phase-13 contract that each
-        supported name materialises a gradient transform whose ``init``
-        accepts a small parameter pytree.
+        model forward; here we lock the contract that each supported
+        name materialises a gradient transform whose ``init`` accepts a
+        small parameter pytree.
         """
         args = _args(tmp_path, optim=name)
 

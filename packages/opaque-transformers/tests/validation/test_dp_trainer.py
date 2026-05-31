@@ -287,8 +287,8 @@ class TestDPTrainerCallbacks:
         assert "on_evaluate" in fired
 
 
-class TestDPTrainerPhase7Flags:
-    """Focused tests for Phase 7 trainer-contract flags."""
+class TestDPTrainerTrainerContractFlags:
+    """Focused tests for trainer-contract flags."""
 
     def test_explicit_train_ignores_do_train_flag(
         self, gpt2_with_lora, tiny_lm_dataset
@@ -599,7 +599,7 @@ class TestDPTrainerLRScheduling:
 
 
 class TestDPTrainerCheckpointing:
-    """End-to-end checkpoint save / rotation / final-save tests (Phase 2a)."""
+    """End-to-end checkpoint save / rotation / final-save tests."""
 
     def _common_args(self, output_dir, **overrides):
         defaults = dict(
@@ -869,7 +869,7 @@ class TestDPTrainerCheckpointing:
         assert (out / "accountant.json").exists()
 
     # ------------------------------------------------------------------
-    # Phase 2b: best-model tracking
+    # Best-model tracking
     # ------------------------------------------------------------------
 
     def test_load_best_model_at_end_requires_strategies(
@@ -1013,9 +1013,10 @@ class TestDPTrainerCheckpointing:
         assert len(names) >= 1
 
     # ------------------------------------------------------------------
-    # Phase 2c: resume from checkpoint
+    # Resume from checkpoint
     # ------------------------------------------------------------------
 
+    @pytest.mark.slow
     def test_lr_schedule_continues_across_resume(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
     ):

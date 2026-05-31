@@ -1,4 +1,4 @@
-"""Phase 4c tests: eval-only dtype context manager.
+"""Tests for the eval-only dtype context manager.
 
 Covers:
 - ``bf16_full_eval=True``: model is cast to bf16 inside the eval context

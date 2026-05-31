@@ -1,18 +1,17 @@
-"""Regression test for the Composed/Repeated DpProcess registry.
+"""Composed/Repeated DpProcess registration must fire at import time.
 
-The composition module's ``__init__`` previously imported
-:class:`Composed` and :class:`Repeated` only lazily (inside the
-``cached`` factory's late binding), so the dataclass
-``__init_subclass__`` hook that fills ``_PROCESS_REGISTRY`` never
-fired during a plain ``import opaque.accounting``.  Round-tripping a
-tree that contained either node then failed deserialization with
-``ValueError: Unknown nested DpProcess type 'Composed' in field 'inner'``
-inside :func:`opaque.api.accounting.core._process_codec._load_dp_process`.
+``_PROCESS_REGISTRY`` is filled by the dataclass ``__init_subclass__``
+hook on :class:`DpProcess` subclasses; deserialization
+(:func:`opaque.api.accounting.core._process_codec._load_dp_process`)
+looks types up by name from that registry.  If the composition module
+imports :class:`Composed` / :class:`Repeated` lazily, plain
+``import opaque.accounting`` leaves the registry incomplete and
+round-tripping a tree containing those nodes fails with
+``ValueError: Unknown nested DpProcess type 'Composed' in field 'inner'``.
 
-This test reconstructs that minimal failure surface using only
-opaque-accounting-owned process types (EpsDelta, Composed, Repeated,
-CachedProcess), so it does not depend on opaque-dpsgd or opaque-dpftrl
-being installed.
+Tests use only opaque-accounting-owned process types (EpsDelta,
+Composed, Repeated, CachedProcess) so they don't require opaque-dpsgd
+or opaque-dpftrl.
 """
 
 from __future__ import annotations
@@ -27,12 +26,12 @@ from opaque.serialization import from_state_dict, state_dict
 def test_process_registry_contains_composition_nodes() -> None:
     """Plain ``import opaque.accounting`` must register composition nodes."""
     assert "Composed" in _PROCESS_REGISTRY, (
-        "Composed missing from _PROCESS_REGISTRY — checkpoint-resume regression. "
-        "Verify the import side-effect in "
-        "opaque/api/accounting/core/composition/__init__.py."
+        "Composed missing from _PROCESS_REGISTRY. Check the import "
+        "side-effect in opaque/api/accounting/core/composition/__init__.py."
     )
     assert "Repeated" in _PROCESS_REGISTRY, (
-        "Repeated missing from _PROCESS_REGISTRY — checkpoint-resume regression."
+        "Repeated missing from _PROCESS_REGISTRY. Check the import "
+        "side-effect in opaque/api/accounting/core/composition/__init__.py."
     )
     assert "CachedProcess" in _PROCESS_REGISTRY
 

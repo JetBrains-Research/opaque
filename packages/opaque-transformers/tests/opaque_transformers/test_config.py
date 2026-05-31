@@ -28,11 +28,10 @@ class TestLegacyAliases:
     """Deprecated HF kwargs are not accepted on the standalone dataclass."""
 
     def test_no_cuda_no_longer_accepted(self):
-        # Phase 10 follow-up: ``TrainingArguments`` is now standalone (no
-        # HF inheritance).  ``no_cuda`` was a deprecated HF alias for
-        # ``use_cpu``; passing it now raises ``TypeError`` (unexpected kwarg)
-        # rather than emitting a ``FutureWarning``.  Users should use
-        # ``use_cpu`` directly.
+        # ``TrainingArguments`` is a standalone dataclass (no HF
+        # inheritance).  ``no_cuda`` was a deprecated HF alias for
+        # ``use_cpu``; passing it raises ``TypeError`` (unexpected kwarg).
+        # Users should use ``use_cpu`` directly.
         with pytest.raises(TypeError, match="no_cuda"):
             TrainingArguments(no_cuda=True)
 

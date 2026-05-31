@@ -1,4 +1,4 @@
-"""Regression tests for Phase-3 (Step 5) evaluation correctness fixes.
+"""Regression tests for evaluation correctness.
 
 Covers:
 

@@ -260,7 +260,7 @@ class _PredictionAccumulator:
         gather-padding rows distributed gather may introduce.  Pass
         ``None`` to skip truncation.
 
-        ``gather=True`` (Phase 10c) all-gathers each tensor pytree
+        ``gather=True`` all-gathers each tensor pytree
         across DDP ranks via :func:`opaque.distributed.gather_pytree`
         *before* numpify, so per-rank shards are concatenated into the
         cluster-wide result.  Single-process eval should leave the
@@ -306,7 +306,7 @@ class _PredictionAccumulator:
         else:
             losses = None
 
-        # Phase 10c: all-gather each tensor pytree across ranks so the
+        # all-gather each tensor pytree across ranks so the
         # numpy outputs are cluster-wide, not per-rank shards.
         if gather:
             from opaque.api.engine.distributed._state import gather_pytree
@@ -337,8 +337,8 @@ class _PredictionAccumulator:
         # ``compute_metrics`` callbacks see ``predictions.shape[0] ==
         # num_samples`` regardless of any padding the gather/pad path
         # introduced upstream.  No-op for single-process eval (where
-        # ``sum(batch_sizes) == num_samples`` already), but cheap and
-        # forward-compatible with Phase 9 distributed eval.
+        # ``sum(batch_sizes) == num_samples`` already); needed under
+        # distributed eval where the pad makes the gather rectangular.
         if num_samples is not None:
             if predictions is not None:
                 predictions = nested_truncate(predictions, num_samples)

@@ -364,7 +364,7 @@ class TrainingArguments:
     hub_revision: str | None = None
 
     # =================================================================
-    # Compile / kernels (Phase 11 owns wiring; field surface stays)
+    # Compile / kernels
     # =================================================================
     torch_compile: bool = False
     torch_compile_backend: str | None = None

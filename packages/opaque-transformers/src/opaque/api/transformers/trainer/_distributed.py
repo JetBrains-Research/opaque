@@ -2,8 +2,7 @@
 
 Owns the rank/world resolution, the per-process gating for I/O sites
 (logging, saving, hub push), and the small collection of cross-rank
-collectives the trainer's training loop needs at the points described in
-Phase 10 of ``docs/development/dp_training_arguments_plan.md``.
+collectives the trainer's training loop needs.
 
 The trainer never calls ``torch.distributed.init_process_group``; the
 launcher (``torchrun`` or test-side ``mp.spawn``) owns that. We just read

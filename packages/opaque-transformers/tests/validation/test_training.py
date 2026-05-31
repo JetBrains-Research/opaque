@@ -1,8 +1,7 @@
-"""Phase 1A: LoRA + DP Training Validation Tests.
+"""LoRA + DP training validation tests.
 
 These tests validate that Opaque correctly handles DP training with HuggingFace
-models using their built-in loss functions. This is the critical validation for
-production readiness.
+models using their built-in loss functions.
 
 Test Models:
 - GPT-2 (small): Fast validation, JAX-Privacy cross-validation

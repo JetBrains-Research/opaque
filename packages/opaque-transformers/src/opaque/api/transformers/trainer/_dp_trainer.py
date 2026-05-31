@@ -397,7 +397,7 @@ class DPTrainer:
                 f"got device={self._device!r}. "
                 f"Other backends (xpu, npu, mlu, musa, hpu, ...) are not supported."
             )
-        # Phase 10a: resolve rank/world topology immediately after the device
+        # resolve rank/world topology immediately after the device
         # pick so every subsequent setup site (sampler, checkpoint, hub,
         # logging) can read the same snapshot.  Single-process is the trivial
         # case (rank=0, world=1, is_distributed=False).
@@ -455,12 +455,12 @@ class DPTrainer:
         # is the step at which we last drained ``_tr_loss``.  Reset to
         # ``self.state.global_step`` on resume so the first post-resume
         # log row averages over the right window.  The tensor stays on
-        # device so the DDP gather of ``tr_loss`` (Phase 10c) needs no
+        # device so the DDP gather of ``tr_loss`` needs no
         # extra device migration.
         self._tr_loss = torch.tensor(0.0, device=self._device)
         self._total_loss_scalar = 0.0
         self._globalstep_last_logged: int = 0
-        # Token-count bookkeeping (Phase 5c).
+        # Token-count bookkeeping.
         # Populated during the training loop when ``include_num_input_tokens_seen``
         # is set; used by ``log()`` for live tokens/sec and by the training summary.
         self._train_start_time: float | None = None
@@ -572,7 +572,7 @@ class DPTrainer:
         return self._eval_dataset
 
     # ------------------------------------------------------------------
-    # Public Trainer contract helpers (Phase 9)
+    # Public Trainer contract helpers
     # ------------------------------------------------------------------
 
     def add_callback(self, callback: type[TrainerCallback] | TrainerCallback) -> None:
@@ -687,7 +687,7 @@ class DPTrainer:
                 NOT change it.
             self._amp_dtype — None | torch.bfloat16.  Driven into
                 ``torch.autocast(device_type, dtype=self._amp_dtype)``
-                inside the loss closure (Step 5) when set.
+                inside the loss closure when set.
         """
         a = self.args
         # ``tf32`` is a single global flag flip.  HF semantics: ``None`` =
@@ -1507,7 +1507,7 @@ class DPTrainer:
                     # smoothed-over fake curve.
                     tr_loss_step = torch.tensor(float(last_loss), device=self._device)
                     self._tr_loss = self._tr_loss + tr_loss_step
-                # Token counting (Phase 5c).
+                # Token counting.
                 if batch_size != 0 and a.include_num_input_tokens_seen != "no":
                     main_input_name = getattr(
                         self._model, "main_input_name", "input_ids"
@@ -1538,7 +1538,7 @@ class DPTrainer:
                                 n_tokens = batch[main_input_name].numel()
                         else:  # "all"
                             n_tokens = batch[main_input_name].numel()
-                        # Phase 10c: ``average_tokens_across_devices=True``
+                        # ``average_tokens_across_devices=True``
                         # (HF parity) sums the per-rank token count into the
                         # cluster-wide total so ``num_input_tokens_seen`` and
                         # the live tokens/sec rate reflect the whole DDP
@@ -1772,7 +1772,7 @@ class DPTrainer:
                         "whole cluster steps down to a smaller microbatch)."
                     )
 
-            # Phase 10c: DDP collectives between clipping and noise.
+            # DDP collectives between clipping and noise.
             # 1. ``sum_gradients_`` — AllReduce SUM the clipped per-example sum;
             #    after this every rank holds the cluster-wide gradient sum.
             # 2. ``sync(clip_state, aux)`` — under fixed clipping ``clip_state``
@@ -2410,7 +2410,7 @@ class DPTrainer:
             )
 
         # ----- Finalize metrics -----
-        # Phase 10c: under DDP each rank evaluated a disjoint shard of the
+        # under DDP each rank evaluated a disjoint shard of the
         # eval dataset.  Reduce the per-rank loss totals to a cluster-wide
         # mean before reporting; the prediction accumulator's tensors are
         # gathered inside ``finalize()`` below.
@@ -3256,7 +3256,7 @@ class DPTrainer:
     def get_eval_dataloader(self, eval_dataset: Dataset | None = None) -> DataLoader:
         """Standard DataLoader for evaluation.
 
-        Phase 10c: under DDP, the eval dataset is sharded into a contiguous
+        under DDP, the eval dataset is sharded into a contiguous
         per-rank slice via ``opaque.distributed.local_shard`` so each rank
         evaluates a disjoint subset.  Per-batch losses / predictions are
         reduced / gathered in :meth:`evaluation_loop` before metrics are
@@ -3356,9 +3356,7 @@ class DPTrainer:
         # ``seed_worker(worker_id, num_workers, rank)`` consumes
         # ``torch.initial_seed()`` inside the worker process — which
         # itself is set by PyTorch from the base RNG seeded via
-        # ``set_seed(args.seed)`` at trainer construction.  ``rank=0``
-        # is correct for the current single-process path (Phase 9
-        # extends this for DDP).
+        # ``set_seed(args.seed)`` at trainer construction.
         return functools.partial(
             seed_worker,
             num_workers=a.dataloader_num_workers,
@@ -3792,7 +3790,7 @@ class DPTrainer:
         self._model.load_state_dict(state_dict, strict=True)
 
     # ------------------------------------------------------------------
-    # Save / checkpoint  (Phase 2a)
+    # Save / checkpoint
     # ------------------------------------------------------------------
 
     def _effective_train_dataset_size(self) -> int:
@@ -4380,7 +4378,7 @@ class DPTrainer:
             self._save_trainer_state(target)
 
     # ------------------------------------------------------------------
-    # Resume / load  (Phase 2c)
+    # Resume / load
     # ------------------------------------------------------------------
 
     def _resolve_resume_path(self, value: str | bool | None) -> str | None:

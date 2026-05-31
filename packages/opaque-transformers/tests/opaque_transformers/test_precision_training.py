@@ -1,4 +1,4 @@
-"""Phase 4 tests for compute-precision flags on DPTrainer.
+"""Tests for compute-precision flags on DPTrainer.
 
 Covers the full-cast precision path:
 - ``bf16=True`` casts the model to ``torch.bfloat16`` at ``__init__``.
@@ -7,7 +7,7 @@ Covers the full-cast precision path:
 - ``tf32=True``/``False`` flips both ``torch.backends.cuda.matmul.allow_tf32``
   and ``torch.backends.cudnn.allow_tf32``; ``None`` leaves them alone.
 - ``self._train_dtype`` captures the effective post-cast dtype for the
-  eval-time precision context (Phase 4c).
+  eval-time precision context.
 """
 
 from __future__ import annotations

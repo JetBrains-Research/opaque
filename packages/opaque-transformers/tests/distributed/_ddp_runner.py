@@ -1,4 +1,4 @@
-"""Subprocess-launchable DDP test runner for DPTrainer Phase 10.
+"""Subprocess-launchable DDP test runner for DPTrainer.
 
 Launched by ``test_ddp_trainer.py`` via ``subprocess.Popen`` (one process
 per rank). Receives ``RANK`` / ``LOCAL_RANK`` / ``WORLD_SIZE`` /
@@ -12,7 +12,7 @@ renames test modules in a way the spawned worker can't unpickle.
 Self-contained tiny PreTrainedModel subclass so we sidestep the HF
 attention path's ``vmap`` incompatibility with transformers 5.x — the
 bug is in :mod:`transformers.masking_utils._ignore_causal_mask_sdpa`,
-unrelated to Phase 10.
+unrelated to the DDP path under test.
 """
 
 from __future__ import annotations

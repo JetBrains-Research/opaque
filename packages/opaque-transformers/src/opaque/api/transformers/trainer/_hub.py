@@ -81,8 +81,7 @@ def _create_repo(repo_name: str, *, token: str | None, private: bool | None) -> 
 def init_hf_repo(trainer: "DPTrainer", token: str | None = None) -> None:
     """Create (or validate) the Hub repo and set ``trainer.hub_model_id``.
 
-    Mirrors ``Trainer.init_hf_repo``.  Only runs on process-zero (always True
-    in single-process training; will become conditional in Phase 9 DDP).
+    Mirrors ``Trainer.init_hf_repo``.  Only runs on process-zero.
     """
     if not trainer.is_world_process_zero():
         return
@@ -312,8 +311,7 @@ def create_model_card(
 
     # DPTrainingSummary.from_trainer reads trainer.train_dataset,
     # trainer.eval_dataset, trainer.model, trainer.args, trainer.state.
-    # DPTrainer exposes all of these (train_dataset / eval_dataset added
-    # as public properties in Phase 8).
+    # DPTrainer exposes all of these as public properties.
     training_summary = DPTrainingSummary.from_trainer(
         trainer,
         language=language,
