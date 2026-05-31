@@ -303,6 +303,19 @@ def parse_args() -> argparse.Namespace:
         help="Torchopt-backed optimizer name passed to TrainingArguments.optim.",
     )
     train_group.add_argument("--weight-decay", type=float, default=0.01)
+    train_group.add_argument(
+        "--max-grad-norm",
+        type=float,
+        default=None,
+        help=(
+            "HF TrainingArguments.max_grad_norm forwarded verbatim. In "
+            "DPTrainer this field is inert (DP per-example clipping owns "
+            "the clip path; HF's clip_grad_norm_ is never called), but "
+            "exposing the knob lets validators confirm ε is unaffected "
+            "when users carry over a non-DP recipe that sets it. Default: "
+            "leave HF's own default in place (1.0)."
+        ),
+    )
     train_group.add_argument("--log-steps", type=int, default=1)
     train_group.add_argument("--eval-steps", type=int, default=10)
     train_group.add_argument(
@@ -943,6 +956,10 @@ def main() -> int:
     else:
         save_strategy = "steps" if args.save_steps is not None else "no"
 
+    extra_ta_kwargs: dict[str, Any] = {}
+    if args.max_grad_norm is not None:
+        extra_ta_kwargs["max_grad_norm"] = args.max_grad_norm
+
     training_args = TrainingArguments(
         output_dir=args.output_dir,
         overwrite_output_dir=True,
@@ -1021,6 +1038,7 @@ def main() -> int:
         hub_model_id=args.hub_model_id,
         hub_private_repo=args.hub_private_repo,
         hub_revision=args.hub_revision,
+        **extra_ta_kwargs,
     )
 
     print("\nDPTrainer argument summary:")
