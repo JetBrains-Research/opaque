@@ -26,10 +26,15 @@ working_dir: "."
 cmd:
   - |-
     # opaque-accounting (PyO3) needs rustc; the image doesn't ship it.
+    # `uv sync` doesn't reliably trigger the maturin build on cached `.venv`
+    # state, so call maturin develop explicitly to guarantee the .so lands.
     command -v rustc >/dev/null 2>&1 || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
     . "$HOME/.cargo/env"
 
     uv sync --group dev --group examples --all-packages --extra all
+    uv pip install --quiet "maturin>=1.0,<2.0"
+    uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
+
     uv run torchrun --nproc_per_node=4 examples/train_causal_lm_trainer.py --preset mellum-kstack --gradient-checkpointing --microbatch-size 4 $EXTRA_ARGS
 provisioning:
   gpu_type: a10g
