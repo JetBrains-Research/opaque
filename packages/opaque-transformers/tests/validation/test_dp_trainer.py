@@ -1078,9 +1078,7 @@ class TestDPTrainerCheckpointing:
         model_1, tokenizer_1 = gpt2_with_lora
         trainer_1 = DPTrainer(
             model=model_1,
-            args=self._common_args(
-                chain_dir, save_strategy="no", **common
-            ),
+            args=self._common_args(chain_dir, save_strategy="no", **common),
             processing_class=tokenizer_1,
             train_dataset=tiny_lm_dataset,
             eval_dataset=tiny_lm_dataset,
@@ -1094,9 +1092,7 @@ class TestDPTrainerCheckpointing:
         model_2, tokenizer_2 = gpt2_with_lora
         trainer_2 = DPTrainer(
             model=model_2,
-            args=self._common_args(
-                chain_dir, save_strategy="no", **common
-            ),
+            args=self._common_args(chain_dir, save_strategy="no", **common),
             processing_class=tokenizer_2,
             train_dataset=tiny_lm_dataset,
             eval_dataset=tiny_lm_dataset,
@@ -1114,8 +1110,7 @@ class TestDPTrainerCheckpointing:
 
         for step, (got, exp) in enumerate(zip(lrs_chained, lrs_continuous), start=1):
             assert got == pytest.approx(exp, abs=1e-9), (
-                f"LR mismatch at global_step={step}: "
-                f"chained={got}, continuous={exp}"
+                f"LR mismatch at global_step={step}: chained={got}, continuous={exp}"
             )
 
     def test_resume_continues_global_step(
