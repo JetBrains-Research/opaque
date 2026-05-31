@@ -1002,10 +1002,14 @@ class DPTrainer:
         # --- CPU offload context ---
         offload_ctx: Any = contextlib.nullcontext()
         if a.cpu_offload_activations:
-            offload_ctx = torch.autograd.graph.save_on_cpu(
-                pin_memory=a.cpu_offload_pin_memory,
-            )
-            log.info("CPU offload: enabled (pin_memory=%s)", a.cpu_offload_pin_memory)
+            # ``pin_memory=False`` is forced: ``cpu_offload`` exists to
+            # extend batches past the GPU ceiling, and pinning host RAM
+            # would re-cap that expansion at the host limit (host-OOM is
+            # an uncatchable SIGKILL that ``auto_find_microbatch_size``
+            # cannot recover from).  Pageable host RAM is slower per
+            # transfer but the OS can swap.
+            offload_ctx = torch.autograd.graph.save_on_cpu(pin_memory=False)
+            log.info("CPU offload: enabled")
 
         # --- Functional conversion ---
         log.info("Converting model to functional form...")

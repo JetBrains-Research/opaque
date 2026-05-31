@@ -411,18 +411,6 @@ def parse_args() -> argparse.Namespace:
         help="Use DPTrainer cpu_offload_activations.",
     )
     train_group.add_argument(
-        "--cpu-offload-pin-memory",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help=(
-            "Pin offloaded activations in host RAM. Default False — "
-            "cpu_offload exists to extend batches past GPU memory; pinning "
-            "would re-cap that expansion at the host limit. Enable only "
-            "when activations comfortably fit in pinned host RAM and you "
-            "want faster H2D transfer."
-        ),
-    )
-    train_group.add_argument(
         "--auto-find-microbatch-size",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -1006,7 +994,6 @@ def main() -> int:
         gradient_checkpointing=args.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         cpu_offload_activations=args.cpu_offload,
-        cpu_offload_pin_memory=args.cpu_offload_pin_memory,
         auto_find_microbatch_size=args.auto_find_microbatch_size,
         torch_compile=args.torch_compile,
         torch_compile_backend=args.torch_compile_backend,
