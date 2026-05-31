@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import fields
 
 import pytest
 import torch
@@ -234,3 +235,92 @@ class TestDpRuntimeBundle:
         torch.save(fake, path)
         with pytest.raises(ValueError, match="unsupported dp_state"):
             ckpt.load_dp_runtime_state(path)
+
+
+class TestRuntimeCheckpointDriftMetadata:
+    """Per-field ``drift`` disposition on ``RuntimeCheckpoint`` is intact.
+
+    The trainer's ``_warn_on_arg_drift`` reads these metadata keys to
+    dispatch warn / raise / silent actions; if a field loses its
+    ``drift`` tag, drift handling silently regresses to the default
+    (``dp_relevant``), which is the safer side but hides the design
+    intent.
+    """
+
+    def _field(self, name):
+        for f in fields(ckpt.RuntimeCheckpoint):
+            if f.name == name:
+                return f
+        raise AssertionError(f"no field {name!r} on RuntimeCheckpoint")
+
+    @pytest.mark.parametrize(
+        "field_name,expected",
+        [
+            ("sample_rate", "dp_relevant"),
+            ("target_delta", "dp_relevant"),
+            ("noise_multiplier", "dp_relevant"),
+            ("expected_steps_per_epoch", "dp_relevant"),
+            ("expected_batch_size", "dp_relevant"),
+            ("mechanism_kind", "dp_relevant"),
+            ("mf_n_steps", "dp_relevant"),
+            ("mf_min_sep", "dp_relevant"),
+            ("mf_max_participations", "dp_relevant"),
+            ("lr_scheduler", "shape"),
+            ("learning_rate", "shape"),
+            ("warmup_steps", "shape"),
+            ("warmup_ratio", "shape"),
+            ("lr_scheduler_kwargs", "shape"),
+        ],
+    )
+    def test_string_dispositions(self, field_name, expected):
+        meta = self._field(field_name).metadata
+        assert meta.get("compare_on_resume") is True, field_name
+        assert meta.get("drift") == expected, field_name
+
+    def test_total_steps_per_mechanism_override(self):
+        """``total_steps`` is silent for DP-SGD (intentional extend), forbidden
+        for DP-FTRL (MF strategy is shape-locked)."""
+        meta = self._field("total_steps").metadata
+        assert meta.get("compare_on_resume") is True
+        drift = meta.get("drift")
+        assert isinstance(drift, dict)
+        assert drift.get("gaussian") == "intentional_extend"
+        assert drift.get("default") == "dp_relevant"
+
+
+class TestDriftDispositionResolution:
+    """``_resolve_drift_disposition`` picks the right rule per mechanism."""
+
+    def test_string_disposition_passthrough(self):
+        from opaque.api.transformers.trainer._dp_trainer import (
+            _resolve_drift_disposition,
+        )
+
+        meta = {"drift": "shape"}
+        assert _resolve_drift_disposition(meta, "gaussian") == "shape"
+        assert _resolve_drift_disposition(meta, "mf_band") == "shape"
+
+    def test_dict_disposition_per_mechanism(self):
+        from opaque.api.transformers.trainer._dp_trainer import (
+            _resolve_drift_disposition,
+        )
+
+        meta = {
+            "drift": {
+                "gaussian": "intentional_extend",
+                "default": "dp_relevant",
+            }
+        }
+        assert (
+            _resolve_drift_disposition(meta, "gaussian") == "intentional_extend"
+        )
+        assert _resolve_drift_disposition(meta, "mf_band") == "dp_relevant"
+        assert _resolve_drift_disposition(meta, "mf_blt") == "dp_relevant"
+
+    def test_default_disposition_when_missing(self):
+        from opaque.api.transformers.trainer._dp_trainer import (
+            _resolve_drift_disposition,
+        )
+
+        # Missing ``drift`` key falls back to ``dp_relevant`` (safest).
+        assert _resolve_drift_disposition({}, "gaussian") == "dp_relevant"

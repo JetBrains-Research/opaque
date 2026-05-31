@@ -470,3 +470,82 @@ class TestArgDriftWarnings:
             f"no drift was introduced but warnings fired: "
             f"{[r.getMessage() for r in drift_msgs]}"
         )
+
+    def test_total_steps_drift_silent_for_dp_sgd(
+        self, lora_model, tiny_dataset, tmp_path, caplog
+    ):
+        """``total_steps`` drift is silent under DP-SGD — users extend
+        training routinely (intentional_extend disposition).
+        """
+        model, tokenizer = lora_model
+        trainer = DPTrainer(
+            model=model,
+            args=_args(tmp_path, per_device_train_batch_size=2, max_steps=10),
+            processing_class=tokenizer,
+            train_dataset=tiny_dataset,
+            eval_dataset=tiny_dataset,
+        )
+        runtime = self._baseline_runtime(trainer, tiny_dataset)
+        runtime.total_steps = 5  # saved=5, current=10 — clean extension
+
+        with caplog.at_level(logging.WARNING):
+            trainer._warn_on_arg_drift(runtime)
+
+        total_msgs = [
+            r for r in caplog.records if "total_steps" in r.getMessage()
+        ]
+        assert not total_msgs, (
+            "DP-SGD total_steps extension should be silent; got: "
+            f"{[r.getMessage() for r in total_msgs]}"
+        )
+
+    def test_total_steps_drift_raises_for_dp_ftrl(
+        self, lora_model, tiny_dataset, tmp_path
+    ):
+        """``total_steps`` drift under DP-FTRL raises — the MF strategy
+        is shape-locked for the original composition.
+        """
+        model, tokenizer = lora_model
+        trainer = DPTrainer(
+            model=model,
+            args=_args(tmp_path, per_device_train_batch_size=2, max_steps=10),
+            processing_class=tokenizer,
+            train_dataset=tiny_dataset,
+            eval_dataset=tiny_dataset,
+        )
+        runtime = self._baseline_runtime(trainer, tiny_dataset)
+        runtime.mechanism_kind = "mf_band"
+        runtime.total_steps = 5  # saved=5, current=10 — DP-FTRL extension
+
+        with pytest.raises(ValueError, match="DP-FTRL resume forbids drift"):
+            trainer._warn_on_arg_drift(runtime)
+
+    def test_shape_drift_warns_on_lr_scheduler(
+        self, lora_model, tiny_dataset, tmp_path, caplog
+    ):
+        """``lr_scheduler`` drift is a shape-disposition warning."""
+        model, tokenizer = lora_model
+        trainer = DPTrainer(
+            model=model,
+            args=_args(
+                tmp_path, per_device_train_batch_size=2, lr_scheduler="linear"
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_dataset,
+            eval_dataset=tiny_dataset,
+        )
+        runtime = self._baseline_runtime(trainer, tiny_dataset)
+        runtime.lr_scheduler = "cosine"  # saved=cosine, current=linear
+
+        with caplog.at_level(logging.WARNING):
+            trainer._warn_on_arg_drift(runtime)
+
+        shape_msgs = [
+            r
+            for r in caplog.records
+            if "lr_scheduler" in r.getMessage() and "shape" in r.getMessage()
+        ]
+        assert shape_msgs, (
+            f"expected an lr_scheduler shape-drift warning; "
+            f"got records: {[r.getMessage() for r in caplog.records]}"
+        )

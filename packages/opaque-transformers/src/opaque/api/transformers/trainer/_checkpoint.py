@@ -204,34 +204,99 @@ class RuntimeCheckpoint:
     this dataclass; ``_apply_runtime_state`` and ``_warn_on_arg_drift``
     in the trainer pick it up automatically.
 
-    Fields with ``metadata={"compare_on_resume": True}`` are checked
-    against the live ``args`` on resume and emit a warning on drift —
-    used for privacy-relevant scalars where heterogeneous composition
-    still yields a correct ε but the saved-vs-current mismatch is
-    worth surfacing.
+    Each field tagged ``compare_on_resume=True`` carries a ``drift``
+    disposition that controls what happens when phase-2's value differs
+    from phase-1's saved value:
+
+    - ``"dp_relevant"`` — affects privacy accounting.  DP-SGD warns
+      (heterogeneous RDP composition still yields a correct ε); DP-FTRL
+      raises (the matrix-factorization strategy is shape-locked for the
+      original composition, so drift would silently compose a different
+      ε).
+    - ``"shape"`` — affects training trajectory (LR schedule, etc.) but
+      not privacy.  Warns.
+    - ``"intentional_extend"`` — silently allowed.  Used for ``total_steps``
+      in the DP-SGD path where extending training is a normal user action.
+    - dict form, e.g. ``{"gaussian": "intentional_extend", "default":
+      "dp_relevant"}`` — per-mechanism override, resolved by looking up
+      the saved ``mechanism_kind`` (the ``"default"`` key catches
+      anything not listed; ``"gaussian"`` is the DP-SGD path).
     """
 
     version: int
     clip_state: dict[str, Any]
     noise_state: dict[str, Any]
     sampler_state: dict[str, Any] | None
-    sample_rate: float = field(metadata={"compare_on_resume": True})
-    target_delta: float = field(metadata={"compare_on_resume": True})
-    noise_multiplier: float = field(metadata={"compare_on_resume": True})
-    expected_steps_per_epoch: int = field(metadata={"compare_on_resume": True})
-    expected_batch_size: int = field(metadata={"compare_on_resume": True})
-    total_steps: int = field(metadata={"compare_on_resume": True})
-    # DP-FTRL provenance (``"gaussian"`` for the DP-SGD path).
-    # ``mechanism_kind`` is compared against the live args on resume so
-    # a saved ``mf_band`` run can't silently restore into a ``gaussian``
-    # rebuild.  The amplification context lets the resume path
-    # reconstruct the streaming noise matrix exactly as it was built.
-    mechanism_kind: str = field(
-        default="gaussian", metadata={"compare_on_resume": True}
+
+    # --- DP-accounting scalars (privacy-relevant) ---------------------
+    sample_rate: float = field(
+        metadata={"compare_on_resume": True, "drift": "dp_relevant"}
     )
-    mf_n_steps: int | None = None
-    mf_min_sep: int | None = None
-    mf_max_participations: int | None = None
+    target_delta: float = field(
+        metadata={"compare_on_resume": True, "drift": "dp_relevant"}
+    )
+    noise_multiplier: float = field(
+        metadata={"compare_on_resume": True, "drift": "dp_relevant"}
+    )
+    expected_steps_per_epoch: int = field(
+        metadata={"compare_on_resume": True, "drift": "dp_relevant"}
+    )
+    expected_batch_size: int = field(
+        metadata={"compare_on_resume": True, "drift": "dp_relevant"}
+    )
+    # ``total_steps`` differs by mechanism: DP-SGD users extend training
+    # routinely (RDP composes step-by-step); DP-FTRL builds an MF
+    # strategy for a specific T, so extending means a different strategy
+    # and a different ε.
+    total_steps: int = field(
+        metadata={
+            "compare_on_resume": True,
+            "drift": {
+                "gaussian": "intentional_extend",
+                "default": "dp_relevant",
+            },
+        }
+    )
+
+    # --- DP-FTRL provenance + MF strategy params ---------------------
+    mechanism_kind: str = field(
+        default="gaussian",
+        metadata={"compare_on_resume": True, "drift": "dp_relevant"},
+    )
+    mf_n_steps: int | None = field(
+        default=None,
+        metadata={"compare_on_resume": True, "drift": "dp_relevant"},
+    )
+    mf_min_sep: int | None = field(
+        default=None,
+        metadata={"compare_on_resume": True, "drift": "dp_relevant"},
+    )
+    mf_max_participations: int | None = field(
+        default=None,
+        metadata={"compare_on_resume": True, "drift": "dp_relevant"},
+    )
+
+    # --- LR-schedule shape (trajectory-relevant, privacy-neutral) ---
+    lr_scheduler: str | None = field(
+        default=None,
+        metadata={"compare_on_resume": True, "drift": "shape"},
+    )
+    learning_rate: float | None = field(
+        default=None,
+        metadata={"compare_on_resume": True, "drift": "shape"},
+    )
+    warmup_steps: int | None = field(
+        default=None,
+        metadata={"compare_on_resume": True, "drift": "shape"},
+    )
+    warmup_ratio: float | None = field(
+        default=None,
+        metadata={"compare_on_resume": True, "drift": "shape"},
+    )
+    lr_scheduler_kwargs: dict[str, Any] | None = field(
+        default=None,
+        metadata={"compare_on_resume": True, "drift": "shape"},
+    )
 
 
 def save_dp_runtime_state(
@@ -250,6 +315,11 @@ def save_dp_runtime_state(
     mf_n_steps: int | None = None,
     mf_min_sep: int | None = None,
     mf_max_participations: int | None = None,
+    lr_scheduler: str | None = None,
+    learning_rate: float | None = None,
+    warmup_steps: int | None = None,
+    warmup_ratio: float | None = None,
+    lr_scheduler_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Save the DP runtime bundle as a :class:`RuntimeCheckpoint`."""
     if not isinstance(clip_state, ClipState):
@@ -277,6 +347,11 @@ def save_dp_runtime_state(
         mf_max_participations=(
             int(mf_max_participations) if mf_max_participations is not None else None
         ),
+        lr_scheduler=lr_scheduler,
+        learning_rate=(float(learning_rate) if learning_rate is not None else None),
+        warmup_steps=(int(warmup_steps) if warmup_steps is not None else None),
+        warmup_ratio=(float(warmup_ratio) if warmup_ratio is not None else None),
+        lr_scheduler_kwargs=lr_scheduler_kwargs,
     )
     # ``torch.save`` of a dataclass round-trips via pickle.  Kept as
     # pickle to handle the heterogeneous types (tensors inside

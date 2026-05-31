@@ -136,6 +136,32 @@ def _effective(value: Any) -> float:
     return value.effective if hasattr(value, "effective") else float(value)
 
 
+def _drift_differs(saved: Any, current: Any) -> bool:
+    """Equality test used by ``_warn_on_arg_drift``.
+
+    Floats compare with a relative tolerance of 1e-6 (silences spurious
+    drift on benign rounding); everything else compares with ``!=``.
+    """
+    if isinstance(saved, float) and isinstance(current, float):
+        return abs(saved - current) / max(abs(saved), 1e-12) > 1e-6
+    return saved != current
+
+
+def _resolve_drift_disposition(
+    field_metadata: Mapping[str, Any], saved_mechanism: str
+) -> str:
+    """Resolve a field's ``drift`` disposition for the saved mechanism.
+
+    The metadata value is either a string ("dp_relevant" / "shape" /
+    "intentional_extend") or a dict for per-mechanism overrides
+    (``{"gaussian": "intentional_extend", "default": "dp_relevant"}``).
+    """
+    drift = field_metadata.get("drift", "dp_relevant")
+    if isinstance(drift, dict):
+        return drift.get(saved_mechanism, drift.get("default", "dp_relevant"))
+    return drift
+
+
 def _compile_with_fullgraph_fallback(
     fn: Callable, *, backend: str, mode: str
 ) -> Callable:
@@ -4247,6 +4273,7 @@ class DPTrainer:
         else:
             mf_n_steps = mf_min_sep = mf_max_participations = None
 
+        a = self.args
         ckpt.save_dp_runtime_state(
             os.path.join(ckpt_dir, ckpt.DP_STATE_NAME),
             clip_state=ctx.clip_state,
@@ -4256,12 +4283,21 @@ class DPTrainer:
             target_delta=ctx.target_delta,
             noise_multiplier=ctx.noise_multiplier,
             expected_steps_per_epoch=ctx.expected_steps_per_epoch,
-            expected_batch_size=int(self.args.train_batch_size),
+            expected_batch_size=int(a.train_batch_size),
             total_steps=ctx.total_steps,
             mechanism_kind=ctx.mechanism_kind,
             mf_n_steps=mf_n_steps,
             mf_min_sep=mf_min_sep,
             mf_max_participations=mf_max_participations,
+            lr_scheduler=a.lr_scheduler,
+            learning_rate=a.learning_rate,
+            warmup_steps=a.warmup_steps,
+            warmup_ratio=a.warmup_ratio,
+            lr_scheduler_kwargs=(
+                a.lr_scheduler_kwargs
+                if isinstance(a.lr_scheduler_kwargs, dict)
+                else None
+            ),
         )
 
     def _save_accountant(self, ckpt_dir: str, accountant: "Accountant") -> None:
@@ -4560,21 +4596,29 @@ class DPTrainer:
     def _warn_on_arg_drift(self, runtime: "ckpt.RuntimeCheckpoint") -> None:
         """Surface drift between the saved checkpoint and current ``args``.
 
-        Fields with ``metadata={"compare_on_resume": True}`` on
+        Iterates over every ``RuntimeCheckpoint`` field tagged
+        ``compare_on_resume=True``, compares saved vs current, and acts
+        on the per-field ``drift`` disposition (see
         :class:`~opaque.api.transformers.trainer._checkpoint.RuntimeCheckpoint`
-        are checked against current values.  Heterogeneous composition
-        still produces a correct ε, but a saved-vs-current mismatch is
-        worth surfacing.
+        for the vocabulary):
 
-        Adding a new privacy-relevant field becomes a one-line edit on
-        ``RuntimeCheckpoint`` (add ``field(metadata={"compare_on_resume":
-        True})``); the drift iteration picks it up automatically as
-        long as :meth:`_current_value_for_drift` knows where to read
-        the live value from.
+        - ``"dp_relevant"`` + DP-SGD: ``log.warning`` — RDP composition
+          still yields a correct ε.
+        - ``"dp_relevant"`` + DP-FTRL: ``raise ValueError`` — the MF
+          strategy is computed for a specific composition; drift would
+          silently produce a different ε.
+        - ``"shape"``: warn — trajectory differs but privacy is intact.
+        - ``"intentional_extend"``: silent — normal user action (e.g.,
+          extending ``total_steps`` under DP-SGD).
+
+        Dict-valued dispositions resolve via the saved ``mechanism_kind``:
+        the matching key wins; ``"default"`` is the fallback.
         """
         a = self.args
         ctx = self._ctx
         current_by_name = self._current_values_for_drift(a, ctx)
+        saved_mechanism = runtime.mechanism_kind
+
         for f in dataclasses.fields(runtime):
             if not f.metadata.get("compare_on_resume"):
                 continue
@@ -4582,20 +4626,42 @@ class DPTrainer:
             current = current_by_name.get(f.name)
             if saved is None or current is None:
                 continue
-            if isinstance(saved, float) and isinstance(current, float):
-                if abs(saved - current) / max(abs(saved), 1e-12) > 1e-6:
-                    log.warning(
-                        "Resume arg drift on %s: saved=%g, current=%g — "
-                        "heterogeneous composition still gives a correct ε but "
-                        "the saved/current mechanisms differ",
-                        f.name,
-                        saved,
-                        current,
+            if not _drift_differs(saved, current):
+                continue
+
+            disposition = _resolve_drift_disposition(f.metadata, saved_mechanism)
+            if disposition == "intentional_extend":
+                continue
+            if disposition == "dp_relevant":
+                if saved_mechanism != "gaussian":
+                    raise ValueError(
+                        f"DP-FTRL resume forbids drift on {f.name!r}: "
+                        f"saved={saved!r}, current={current!r}. The "
+                        "matrix-factorization strategy is computed for the "
+                        "original composition shape; restart from scratch "
+                        "with the new arg."
                     )
-            elif saved != current:
                 log.warning(
-                    "Resume arg drift on %s: saved=%r, current=%r",
+                    "Resume arg drift on %s (dp_relevant, DP-SGD): "
+                    "saved=%r, current=%r — heterogeneous RDP composition "
+                    "still yields a correct ε.",
                     f.name,
+                    saved,
+                    current,
+                )
+            elif disposition == "shape":
+                log.warning(
+                    "Resume arg drift on %s (shape): saved=%r, current=%r — "
+                    "trajectory will differ from phase-1; using current args.",
+                    f.name,
+                    saved,
+                    current,
+                )
+            else:
+                log.warning(
+                    "Resume arg drift on %s (%s): saved=%r, current=%r",
+                    f.name,
+                    disposition,
                     saved,
                     current,
                 )
@@ -4655,5 +4721,35 @@ class DPTrainer:
             ),
             "mechanism_kind": (
                 ctx.mechanism_kind if ctx is not None else a.privacy_noise_mechanism
+            ),
+            # MF strategy params: live values are derived inside MFContext
+            # construction and surfaced via ctx.mf; before ctx exists we
+            # can't compare, so return None to skip the check.
+            "mf_n_steps": (
+                int(ctx.mf.amplifier_factory(ctx.noise_multiplier).n_steps)
+                if ctx is not None and ctx.mf is not None
+                else None
+            ),
+            "mf_min_sep": (
+                int(ctx.mf.amplifier_factory(ctx.noise_multiplier).min_sep)
+                if ctx is not None and ctx.mf is not None
+                else None
+            ),
+            "mf_max_participations": (
+                int(
+                    ctx.mf.amplifier_factory(ctx.noise_multiplier).max_participations
+                )
+                if ctx is not None and ctx.mf is not None
+                else None
+            ),
+            # LR-schedule shape (privacy-neutral; warn-only drift).
+            "lr_scheduler": a.lr_scheduler,
+            "learning_rate": a.learning_rate,
+            "warmup_steps": a.warmup_steps,
+            "warmup_ratio": a.warmup_ratio,
+            "lr_scheduler_kwargs": (
+                a.lr_scheduler_kwargs
+                if isinstance(a.lr_scheduler_kwargs, dict)
+                else None
             ),
         }
