@@ -1002,8 +1002,12 @@ class DPTrainer:
         # --- CPU offload context ---
         offload_ctx: Any = contextlib.nullcontext()
         if a.cpu_offload_activations:
-            offload_ctx = torch.autograd.graph.save_on_cpu(pin_memory=True)
-            log.info("CPU offload: enabled")
+            offload_ctx = torch.autograd.graph.save_on_cpu(
+                pin_memory=a.cpu_offload_pin_memory,
+            )
+            log.info(
+                "CPU offload: enabled (pin_memory=%s)", a.cpu_offload_pin_memory
+            )
 
         # --- Functional conversion ---
         log.info("Converting model to functional form...")

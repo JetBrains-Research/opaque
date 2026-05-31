@@ -410,6 +410,15 @@ class TrainingArguments:
     # Generic memory optimization (DP-shaped, not DP-specific)
     # =================================================================
     cpu_offload_activations: bool = False
+    # Defaults to ``False``: ``cpu_offload`` exists to enable batches that
+    # don't fit in GPU memory; pinning host RAM would re-cap that
+    # expansion at the host limit (and host-OOM is an uncatchable
+    # SIGKILL — ``auto_find_microbatch_size`` only handles CUDA OOM).
+    # Pageable host RAM is slower per transfer but the OS can swap, so the
+    # extended-batch property holds.  Opt in to ``True`` only when the
+    # activations comfortably fit in pinned host RAM AND maximum H2D
+    # throughput matters.
+    cpu_offload_pin_memory: bool = False
 
     # =================================================================
     # Differential privacy (budget, mechanisms, sampling, DDP data policy)
