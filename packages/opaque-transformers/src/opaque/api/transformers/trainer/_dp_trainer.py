@@ -768,17 +768,29 @@ class DPTrainer:
         """Inner dispatch."""
         if self._train_dataset is None:
             raise ValueError("DPTrainer.train() requires a train_dataset.")
+
+        # ``microbatch_size`` controls the vmap chunk and defaults to
+        # ``per_device_train_batch_size`` (one chunk per rank).
+        # ``auto_find_microbatch_size`` then halves from this value on
+        # CUDA-OOM.
+        effective_microbatch_size = max(
+            1,
+            int(
+                self.args.microbatch_size
+                if self.args.microbatch_size is not None
+                else self.args.per_device_train_batch_size
+            ),
+        )
+
         if not self.args.auto_find_microbatch_size:
-            self.state.converged_microbatch_size = max(
-                1, int(self.args.per_device_train_batch_size)
-            )
+            self.state.converged_microbatch_size = effective_microbatch_size
             return self._train_once(
                 resume_from_checkpoint=resume_from_checkpoint,
-                microbatch_size_override=None,
+                microbatch_size_override=effective_microbatch_size,
                 ignore_keys_for_eval=ignore_keys_for_eval,
             )
 
-        initial_microbatch_size = max(1, int(self.args.per_device_train_batch_size))
+        initial_microbatch_size = effective_microbatch_size
         current_microbatch_size = initial_microbatch_size
         state_snapshot = DPTrainerState.from_json(self.state.to_json())
         model_snapshot = {

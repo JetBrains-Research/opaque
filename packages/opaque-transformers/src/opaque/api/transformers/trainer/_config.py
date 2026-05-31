@@ -231,6 +231,16 @@ class TrainingArguments:
     per_device_eval_batch_size: int = 8
     eval_accumulation_steps: int | None = None
     eval_delay: float = 0.0
+    # Physical vmap chunk fed into the per-example clipping path.  Default
+    # ``None`` chunks at ``per_device_train_batch_size``; a smaller value
+    # processes the per-rank logical batch in
+    # ``per_device_train_batch_size // microbatch_size`` accumulation
+    # passes, reducing peak GPU memory.  Must be in
+    # [1, per_device_train_batch_size].
+    microbatch_size: int | None = None
+    # On a CUDA-OOM raised mid-step, halve the current microbatch and
+    # retry until it fits.  Starting point is ``microbatch_size`` if set,
+    # else ``per_device_train_batch_size``.
     auto_find_microbatch_size: bool = False
 
     # =================================================================
@@ -747,6 +757,21 @@ class TrainingArguments:
                 "'reduce-overhead', 'max-autotune', "
                 "'max-autotune-no-cudagraphs'."
             )
+
+        # microbatch_size must fit in [1, per_device_train_batch_size]
+        # so the per-rank logical batch divides cleanly into
+        # ``per_device_train_batch_size // microbatch_size`` vmap chunks.
+        if self.microbatch_size is not None:
+            if self.microbatch_size < 1:
+                raise ValueError(
+                    f"microbatch_size must be >= 1; got {self.microbatch_size}."
+                )
+            if self.microbatch_size > self.per_device_train_batch_size:
+                raise ValueError(
+                    f"microbatch_size ({self.microbatch_size}) cannot exceed "
+                    f"per_device_train_batch_size "
+                    f"({self.per_device_train_batch_size})."
+                )
 
         # torch.compile cannot retrace the vmap+grad closure that
         # auto_find_microbatch_size rebuilds on OOM (PyTorch #128711).

@@ -396,6 +396,78 @@ class TestDPTrainerTrainerContractFlags:
         assert out.global_step == 1
         assert calls == [8, 4, 2]
 
+    def test_microbatch_size_sets_vmap_chunk_without_auto_find(
+        self, gpt2_with_lora, tiny_lm_dataset, monkeypatch
+    ):
+        """``microbatch_size`` is plumbed to ``_train_once`` even when
+        ``auto_find_microbatch_size=False`` — it's the primary knob, not a
+        side-effect of auto-find."""
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                auto_find_microbatch_size=False,
+                per_device_train_batch_size=32,
+                microbatch_size=4,
+                eval_strategy="no",
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+
+        captured: list[int | None] = []
+
+        def fake_train_once(
+            *, resume_from_checkpoint, microbatch_size_override, ignore_keys_for_eval
+        ):
+            captured.append(microbatch_size_override)
+            return TrainOutput(
+                global_step=1, training_loss=1.0, metrics={"train_loss": 1.0}
+            )
+
+        monkeypatch.setattr(trainer, "_train_once", fake_train_once)
+        trainer.train()
+        assert captured == [4]
+        assert trainer.state.converged_microbatch_size == 4
+
+    def test_microbatch_size_seeds_auto_find_starting_point(
+        self, gpt2_with_lora, tiny_lm_dataset, monkeypatch
+    ):
+        """When ``auto_find_microbatch_size=True``, the user-set
+        ``microbatch_size`` is the starting point — auto-find halves
+        from there, not from ``per_device_train_batch_size``."""
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                auto_find_microbatch_size=True,
+                per_device_train_batch_size=32,
+                microbatch_size=8,
+                eval_strategy="no",
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+
+        calls: list[int | None] = []
+
+        def fake_train_once(
+            *, resume_from_checkpoint, microbatch_size_override, ignore_keys_for_eval
+        ):
+            calls.append(microbatch_size_override)
+            if len(calls) < 2:
+                raise torch.OutOfMemoryError("CUDA out of memory")
+            return TrainOutput(
+                global_step=1, training_loss=1.0, metrics={"train_loss": 1.0}
+            )
+
+        monkeypatch.setattr(trainer, "_train_once", fake_train_once)
+        trainer.train()
+        # Starts at user-set 8 (not 32), halves once on OOM, succeeds at 4.
+        assert calls == [8, 4]
+
     def test_auto_find_batch_size_stops_at_floor(
         self,
         gpt2_with_lora,

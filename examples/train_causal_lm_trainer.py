@@ -728,12 +728,11 @@ def parse_args() -> argparse.Namespace:
             ],
         )
         _set("dtype", "bfloat16")
+        # microbatch_size=16 chunks the per-rank logical batch (=128) into
+        # 8 vmap passes of 16 examples each — fits on a single H200 for
+        # the 4B LLaMA shape.  auto_find=True halves and retries on an
+        # unexpected mid-training CUDA-OOM.
         _set("microbatch_size", 16)
-        # DPTrainer has no explicit microbatch_size on TrainingArguments;
-        # auto_find_microbatch_size is the only path that shrinks the vmap
-        # chunk below per_device_train_batch_size (= logical batch = 128).
-        # Without this, the preset's microbatch_size only affects eval and
-        # the training vmap OOMs at ~133 GB on a single H200.
         _set("auto_find_microbatch_size", True)
     elif args.preset == "custom":
         pass
@@ -994,6 +993,7 @@ def main() -> int:
         gradient_checkpointing=args.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         cpu_offload_activations=args.cpu_offload,
+        microbatch_size=args.microbatch_size,
         auto_find_microbatch_size=args.auto_find_microbatch_size,
         torch_compile=args.torch_compile,
         torch_compile_backend=args.torch_compile_backend,
