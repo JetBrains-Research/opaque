@@ -29,8 +29,10 @@ def test_mps_tiny_clipped_grad_smoke():
 
     grads, _ = grad_fn(params, batch_x, batch_y, state=clip_state)
 
-    assert grads.device.type == "mps"
-    assert torch.isfinite(grads).all()
+    # `clipped_grad` returns a ``ClippedPytree`` wrapper; the tensor is
+    # under ``.pytree``.
+    assert grads.pytree.device.type == "mps"
+    assert torch.isfinite(grads.pytree).all()
 
 
 @pytest.mark.mps

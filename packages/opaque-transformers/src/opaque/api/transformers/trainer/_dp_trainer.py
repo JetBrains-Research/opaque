@@ -794,6 +794,7 @@ class DPTrainer:
             # Stamp before the attempt so a successful run's logs carry it.
             self.state.converged_microbatch_size = current_microbatch_size
             local_oom = False
+            local_oom_error: BaseException | None = None
             result = None
             try:
                 result = self._train_once(
@@ -805,16 +806,23 @@ class DPTrainer:
                 if not self._is_retryable_oom(err):
                     raise
                 local_oom = True
+                local_oom_error = err
 
             # Cluster-wide retry decision: a rank that succeeded must still
             # step down (and discard ``result``) if any sibling OOM'd, so the
             # whole cluster re-runs the next attempt in lockstep.
             if _cluster_needs_step_down(local_oom):
                 if current_microbatch_size <= 1:
+                    # Propagate the original OOM so callers see the actionable
+                    # signal. Fall back to a synthetic message only when this
+                    # rank didn't OOM locally (sibling-OOM-at-floor case).
+                    if local_oom_error is not None:
+                        raise local_oom_error
                     raise RuntimeError(
-                        "auto_find_microbatch_size exhausted: a rank still OOMs "
-                        "at microbatch_size=1. Reduce per_device_train_batch_size "
-                        "(the logical Poisson batch) or the model/sequence length."
+                        "auto_find_microbatch_size exhausted: a sibling rank "
+                        "still OOMs at microbatch_size=1. Reduce "
+                        "per_device_train_batch_size (the logical Poisson batch) "
+                        "or the model/sequence length."
                     )
                 next_microbatch_size = max(1, current_microbatch_size // 2)
                 if next_microbatch_size == current_microbatch_size:
