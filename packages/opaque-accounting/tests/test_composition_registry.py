@@ -1,7 +1,6 @@
 """Regression test for the Composed/Repeated DpProcess registry.
 
-Before commit ``1696e7aa fix(accounting): register Composed/Repeated in
-DpProcess registry`` the composition module's ``__init__`` imported
+The composition module's ``__init__`` previously imported
 :class:`Composed` and :class:`Repeated` only lazily (inside the
 ``cached`` factory's late binding), so the dataclass
 ``__init_subclass__`` hook that fills ``_PROCESS_REGISTRY`` never
@@ -13,8 +12,7 @@ inside :func:`opaque.api.accounting.core._process_codec._load_dp_process`.
 This test reconstructs that minimal failure surface using only
 opaque-accounting-owned process types (EpsDelta, Composed, Repeated,
 CachedProcess), so it does not depend on opaque-dpsgd or opaque-dpftrl
-being installed.  Without A.1 the ``from_state_dict`` call raises;
-with A.1 the tree round-trips clean.
+being installed.
 """
 
 from __future__ import annotations
@@ -29,12 +27,12 @@ from opaque.serialization import from_state_dict, state_dict
 def test_process_registry_contains_composition_nodes() -> None:
     """Plain ``import opaque.accounting`` must register composition nodes."""
     assert "Composed" in _PROCESS_REGISTRY, (
-        "Composed missing from _PROCESS_REGISTRY — round-1 checkpoint-resume bug. "
+        "Composed missing from _PROCESS_REGISTRY — checkpoint-resume regression. "
         "Verify the import side-effect in "
         "opaque/api/accounting/core/composition/__init__.py."
     )
     assert "Repeated" in _PROCESS_REGISTRY, (
-        "Repeated missing from _PROCESS_REGISTRY — round-1 checkpoint-resume bug."
+        "Repeated missing from _PROCESS_REGISTRY — checkpoint-resume regression."
     )
     assert "CachedProcess" in _PROCESS_REGISTRY
 
@@ -46,7 +44,7 @@ def test_cached_composed_repeated_roundtrips_via_json() -> None:
     checkpoint: a cached opaque-boundary at the top, a Composed node
     splicing the prior phase's repeated step, and a Repeated wrapper
     for the homogeneous repetition.  This is the exact tree shape that
-    raised on resume in round-1 before A.1.
+    raised on resume before the registry fix landed.
     """
     leaf_a = acc.eps_delta(0.5, 1e-6)
     leaf_b = acc.eps_delta(0.1, 1e-7)

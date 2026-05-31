@@ -187,7 +187,7 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
         tmp_path,
         monkeypatch,
     ):
-        """Regression (R2-BUG-1): an OOM raised mid-attempt that freezes the
+        """Regression: an OOM raised mid-attempt that freezes the
         trainable params must not leak into the next attempt.  Before the
         fix the retry's ``load_state_dict(strict=False)`` restored values
         but not ``requires_grad``; the next attempt's ``make_functional``
