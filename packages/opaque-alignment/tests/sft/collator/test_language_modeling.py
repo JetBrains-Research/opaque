@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import torch
 
-from opaque.api.alignment.collator._language_modeling import language_modeling_collator
+from opaque.api.alignment.sft.collator._language_modeling import (
+    language_modeling_collator,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers

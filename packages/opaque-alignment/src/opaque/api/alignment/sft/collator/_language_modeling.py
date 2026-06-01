@@ -1,7 +1,7 @@
 """Language-modeling collator — factory function (plan §7.6, §3.1).
 
 Produces a stateless callable that transforms a list of per-example dicts into
-a :class:`~opaque.api.alignment.collator.types.LMBatch` ready for a causal
+a :class:`~opaque.api.alignment.sft.collator.types.LMBatch` ready for a causal
 language model forward pass.
 
 The public API is the factory function :func:`language_modeling_collator`; a
@@ -89,7 +89,7 @@ class _LMCollator:
                 ``0`` elsewhere).
 
         Returns:
-            A :class:`~opaque.api.alignment.collator.types.LMBatch` dict with
+            A :class:`~opaque.api.alignment.sft.collator.types.LMBatch` dict with
             keys ``input_ids``, ``attention_mask``, ``labels``, and optionally
             ``completion_mask``.
         """
@@ -219,7 +219,7 @@ def language_modeling_collator(
 
     Returns:
         A ``collate(examples: list[dict]) -> dict[str, torch.Tensor]``
-        callable.  See :class:`~opaque.api.alignment.collator.types.LMBatch`
+        callable.  See :class:`~opaque.api.alignment.sft.collator.types.LMBatch`
         for the output schema.
 
     Example::

@@ -10,7 +10,6 @@ See ``docs/development/opaque-alignment-plan.md`` for the package design.
 """
 
 from opaque.alignment.collator import (
-    language_modeling_collator,
     preference_collator,
     unpaired_preference_collator,
 )
@@ -48,7 +47,6 @@ __all__ = [
     "KTO_LOSSES",
     "DPSpec",
     "LossAggregateSpec",
-    "language_modeling_collator",
     "preference_collator",
     "unpaired_preference_collator",
     "extract_prompt",
