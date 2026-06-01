@@ -1,0 +1,86 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+"""Standard causal-LM NLL (cross-entropy) loss.
+
+Implements the per-example negative log-likelihood loss used in supervised
+fine-tuning (SFT) for causal language models.  The shifted-labels
+convention matches that of HuggingFace ``transformers`` and TRL:
+
+    shifted_logits = logits[..., :-1, :]
+    shifted_labels = labels[..., 1:]
+
+Tokens with ``shifted_labels == -100`` (the ignore index) are excluded from
+the per-example mean, as in ``torch.nn.CrossEntropyLoss(ignore_index=-100)``.
+
+**DP-purity: Tier 1** (plan §3.3, §8.2).  The per-example divisor is this
+example's own non-ignored token count — a quantity derived purely from this
+example's data.  This guarantees that swapping one example's data changes
+only that example's gradient, satisfying the per-record sensitivity bound
+required by DP-SGD / DP-FTRL.  Unlike TRL's ``SFTTrainer``, which divides
+by a *batch-level* ``num_items_in_batch``, this function performs **pre-clip
+division** by the per-example token count, consistent with the DP-safe
+divisor rule in plan §3.3 and §8.2.
+
+``clamp(min=1)`` on the divisor guards the all-ignored-token edge case
+(prevents division-by-zero and produces 0.0 for an all-masked row).
+
+**Vmap-safety** (plan §3.4): pure tensor operations; no Python control flow
+on tensor values; no ``.item()``; no module state.  Works for batched
+inputs ``(B, T, V)`` / ``(B, T)`` and per-example inputs ``(T, V)`` /
+``(T,)`` under ``torch.func.vmap(torch.func.grad(...))``.
+"""
+
+from __future__ import annotations
+
+import torch
+
+from opaque.api.alignment.logprob._gather import selective_log_softmax
+
+__all__ = ["nll_loss"]
+
+
+def nll_loss(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+) -> torch.Tensor:
+    """Per-example causal-LM NLL loss with per-example DP-safe divisor.
+
+    Shifts ``logits[..., :-1, :]`` against ``labels[..., 1:]`` (standard
+    causal-LM convention), masks positions where the shifted label is
+    ``-100``, computes ``selective_log_softmax`` at the (clamped) shifted
+    labels, and returns the **per-example mean** of the negative per-token
+    log-probabilities over non-ignored tokens.
+
+    The divisor ``mask.sum(-1).clamp(min=1)`` is computed per example from
+    this example's data only (plan §8.2 pre-clip divisor rule).
+
+    Args:
+        logits: Float tensor of shape ``(..., T, V)`` where ``T`` is the
+            sequence length and ``V`` is the vocabulary size.  Leading dims
+            ``(...)`` may be absent (per-example) or a batch axis ``(B,)``.
+        labels: Integer tensor of shape ``(..., T)`` matching the leading
+            dims of ``logits``.  Values of ``-100`` are ignored.
+
+    Returns:
+        Float tensor of shape ``(...)`` (0-dim for a single example, shape
+        ``(B,)`` for a batch).  Each entry is the per-example mean NLL over
+        non-ignored shifted tokens: ``(-logp * mask).sum(-1) /
+        mask.sum(-1).clamp(min=1)``.
+    """
+    # Shift: logits[..., :-1, :] predicts labels[..., 1:]
+    shifted_logits = logits[..., :-1, :]  # (..., T-1, V)
+    shifted_labels = labels[..., 1:]  # (..., T-1)
+
+    # Mask: 1 where the label is a real token (not -100)
+    mask = (shifted_labels != -100).to(shifted_logits.dtype)  # (..., T-1)
+
+    # Clamp -100 → 0 so gather does not receive an out-of-range index.
+    # The mask zeros out the contribution of these positions.
+    clamped_labels = shifted_labels.clamp(min=0)  # (..., T-1)
+
+    # Per-token log-probabilities at the (clamped) target indices
+    logp = selective_log_softmax(shifted_logits, clamped_labels)  # (..., T-1)
+
+    # Per-example mean NLL over non-ignored tokens; clamp divisor ≥ 1
+    nll = (-logp * mask).sum(-1) / mask.sum(-1).clamp(min=1)  # (...)
+    return nll
