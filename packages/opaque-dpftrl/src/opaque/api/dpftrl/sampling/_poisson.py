@@ -239,7 +239,11 @@ def _from_state_dict_cyclic_poisson(
         template.data_source,
         sample_rate=float(sd["sample_rate"]),
         bands=int(sd["bands"]),
-        n_steps=int(sd["n_steps"]),
+        # Take ``n_steps`` from the template — caller may have
+        # extended or shortened the run on resume; the cursor below
+        # fixes the resume position, ``n_steps`` only bounds the
+        # iterator's stopping point.
+        n_steps=int(template.n_steps),
         partition_type=PartitionType[sd["partition_type"]],
         truncated_batch_size=sd.get("truncated_batch_size"),
         key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),

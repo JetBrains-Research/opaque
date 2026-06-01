@@ -181,7 +181,7 @@ OPAQUE_SKIP_TRANSFORMERS_PATCHES=all       # skip all opaque.transformers compat
 OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all # skip the HF kernel patches
 ```
 
-Fine-grained variables also apply:
+Fine-grained variables also apply for the performance stack:
 `OPAQUE_SKIP_PYTORCH_CHECKPOINT_PATCHES`,
 `OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES`,
 `OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES`.
@@ -248,7 +248,7 @@ Three orthogonal markers, declared in the root `pyproject.toml`:
   clause conditionally).
 
 Gated HuggingFace models use `@requires_hf_auth` imported from
-`packages/opaque-transformers/tests/huggingface/_helpers.py`. It is a
+`packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. It is a
 `skipif(not has_hf_token())` mark, not a pytest marker. Set `HF_TOKEN`
 (or `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN`) to run them.
 

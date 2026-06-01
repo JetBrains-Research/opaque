@@ -306,7 +306,14 @@ def gaussian_noise(
     def _clipped_stddev(clipped: ClippedPytree) -> float | PerGroup:
         if isinstance(clipped.max_norm, PerGroup):
             return per_group_noise_stddev(clipped.max_norm, resolved_noise_multiplier)
-        effective = resolved_noise_multiplier * clipped.max_norm
+        # Non-private run: force std = 0 before the ``nm * max_norm`` product so
+        # a disabled clip (max_norm = +inf) gives ``0`` rather than ``0 * inf =
+        # NaN`` (the ``std == 0`` short-circuit in ``_sample`` then fires).
+        effective = (
+            0.0
+            if resolved_noise_multiplier == 0.0
+            else resolved_noise_multiplier * clipped.max_norm
+        )
         _validate_noise_stddev(effective)
         return effective
 

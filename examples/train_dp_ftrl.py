@@ -1221,7 +1221,14 @@ def main():
         return {**frozen_params, **trainable}
 
     def per_example_loss_fn(trainable, input_ids):
-        output = fmodel(merged_params(trainable), input_ids, labels=input_ids)
+        # Mask pad positions to ``-100`` so training CE scores only real
+        # tokens — same masking contract the eval path uses and the same
+        # convention DPTrainer's ``DataCollatorForLanguageModeling`` applies.
+        # Without this, the manual DP-FTRL loop trains on unmasked labels
+        # while DPTrainer trains on masked labels, producing systematically
+        # different ``train/loss`` curves under identical DP math. ``vmap``-safe.
+        labels = torch.where(input_ids == tokenizer.pad_token_id, -100, input_ids)
+        output = fmodel(merged_params(trainable), input_ids, labels=labels)
         return output.loss
 
     # Build canary DataLoader for auditing
@@ -2035,23 +2042,22 @@ def main():
                 # full FFT each time.
                 accounting = acc.cached(accounting)
                 epsilon = accounting.epsilon_at(args.target_delta)
-                print(f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}")
-                if use_wandb:
-                    wandb.log(
-                        {
-                            "eval/loss": current_eval_loss,
-                            "privacy/epsilon": epsilon,
-                        },
-                        step=global_step,
-                    )
-                    audit_auc = audit_estimate.attack_auc()
-                    metrics["privacy/epsilon_audit"] = audit_eps
-                    metrics["privacy/audit_auc"] = audit_auc
-                    eval_msg += (
-                        f", ε_audit[{args.audit_method}]={audit_eps:.4f}"
-                        f", AUC={audit_auc:.4f}"
-                    )
-
+                eval_msg = f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
+                metrics: dict[str, float] = {
+                    "eval/loss": current_eval_loss,
+                    "privacy/epsilon": epsilon,
+                }
+                if args.audit and audit_cf is not None:
+                    audit_estimate = run_audit(trainable_params)
+                    if audit_estimate is not None:
+                        audit_eps = _audit_method(audit_estimate).epsilon
+                        audit_auc = audit_estimate.attack_auc()
+                        metrics["privacy/epsilon_audit"] = audit_eps
+                        metrics["privacy/audit_auc"] = audit_auc
+                        eval_msg += (
+                            f", ε_audit[{args.audit_method}]={audit_eps:.4f}"
+                            f", AUC={audit_auc:.4f}"
+                        )
                 if use_wandb:
                     wandb.log(metrics, step=global_step)
                 print(eval_msg)

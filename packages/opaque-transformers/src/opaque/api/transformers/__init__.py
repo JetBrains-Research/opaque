@@ -1,8 +1,9 @@
-"""HF Transformers integration impl tree.
+"""HF Transformers integration implementation tree.
 
-Skeleton — populated by the parallel HF-trainer branch in
-``opaque-transformers``. The user-facing façade lives at
-:mod:`opaque.transformers`.
+Implementation modules live here; import the public façade from
+:mod:`opaque.transformers` or :mod:`opaque.transformers.trainer`.
 """
+
+from __future__ import annotations
 
 __all__: list[str] = []

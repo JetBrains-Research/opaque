@@ -162,7 +162,14 @@ def mf_gaussian_noise(
         if isinstance(max_norm, PerGroup):
             base_stddev = per_group_noise_stddev(max_norm, resolved_noise_multiplier)
         else:
-            base_stddev = resolved_noise_multiplier * max_norm
+            # Non-private run: force base σ = 0 before the ``nm * max_norm``
+            # product so a disabled clip (max_norm = +inf) gives ``0`` rather
+            # than ``0 * inf = NaN``.
+            base_stddev = (
+                0.0
+                if resolved_noise_multiplier == 0.0
+                else resolved_noise_multiplier * max_norm
+            )
         noisy_tree, new_state = raw_noise_fn(
             clipped_grads.pytree,
             st,

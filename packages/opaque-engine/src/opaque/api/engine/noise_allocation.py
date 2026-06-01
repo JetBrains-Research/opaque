@@ -79,6 +79,12 @@ def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGr
                 "per-group bounds must be non-negative, "
                 f"got {value} for group '{group_name}'."
             )
+    if noise_multiplier == 0.0:
+        # Non-private run: zero noise regardless of the (possibly infinite,
+        # i.e. clipping-disabled) per-group bounds.  Short-circuit before the
+        # ``0 * sqrt(c * sum_c)`` product, which would be NaN when any bound
+        # is +inf.
+        return PerGroup(max_norm.groups, {k: 0.0 for k in max_norm.values})
     sum_c = sum(max_norm.values.values())
     return PerGroup(
         max_norm.groups,

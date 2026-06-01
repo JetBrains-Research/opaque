@@ -71,10 +71,13 @@ class TestCyclicPoissonRoundTrip:
         )
         restored = from_state_dict(template, snapshot)
 
+        # Sample-math args (sample_rate, bands, truncated_batch_size,
+        # key) come from the snapshot.
         assert restored.sample_rate == 0.15
         assert restored.bands == 5
-        assert restored.n_steps == 25
         assert restored.truncated_batch_size == 8
+        # ``n_steps`` follows the template (allows resume + extend).
+        assert restored.n_steps == 10
 
 
 class TestBMinSepRoundTrip:
@@ -127,11 +130,16 @@ class TestBallsInBinsRoundTrip:
     def test_constructor_args_preserved(self):
         sampler = BallsInBinsSampler(_ds(), num_bins=8, n_steps=16, key=key(1))
         snapshot = state_dict(sampler)
-        template = BallsInBinsSampler(_ds(), num_bins=2, n_steps=4, key=key(0))
+        # ``num_bins`` drives the bin assignment — must match across
+        # save/resume to preserve the BnB privacy contract.  Use the
+        # same value on the template so the constructor's
+        # ``n_steps % num_bins == 0`` check passes; ``n_steps`` itself
+        # is the per-run iteration bound and comes from the template.
+        template = BallsInBinsSampler(_ds(), num_bins=8, n_steps=24, key=key(0))
         restored = from_state_dict(template, snapshot)
 
         assert restored.num_bins == 8
-        assert restored.n_steps == 16
+        assert restored.n_steps == 24
 
 
 class TestSequentialRoundTrip:

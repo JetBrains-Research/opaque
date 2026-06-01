@@ -223,3 +223,29 @@ class TestLambdaCgdRealizedSigma:
         )
         for s in sigmas:
             assert s == pytest.approx(nm * max_norm, rel=1e-12)
+
+
+class TestZeroNoiseInfiniteClip:
+    """σ=0 yields zero MF noise even with clipping disabled (max_norm=+inf),
+    guarding the ``0 * inf = NaN`` base-σ product used by ``mf_gaussian_noise``."""
+
+    def test_realized_stddev_is_zero_no_nan(self):
+        sigmas = _step(
+            identity_strategy(), n_steps=8, nm=0.0, max_norm=math.inf, n_calls=3
+        )
+        assert all(s == 0.0 for s in sigmas)
+        assert not any(math.isnan(s) for s in sigmas)
+
+    def test_grads_pass_through_unchanged(self):
+        noise_fn, state = mf_gaussian_noise(
+            {"w": torch.zeros(8)},
+            identity_strategy(),
+            n_steps=8,
+            noise_multiplier=0.0,
+            key=key(0),
+        )
+        grads = clipped({"w": torch.ones(8)}, max_norm=math.inf)
+        out, _ = noise_fn(grads, state)
+        assert not torch.isnan(out.pytree["w"]).any()
+        assert torch.equal(out.pytree["w"], torch.ones(8))
+        assert float(out.noise_stddev) == 0.0
