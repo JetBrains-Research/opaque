@@ -1,8 +1,9 @@
 """opaque.alignment — functional primitives for DP-safe preference learning.
 
-Headline re-exports. The loss-family registries (``DPO_LOSSES``,
-``KTO_LOSSES``, ``SFT_LOSSES``), reference helpers, and packing transforms
-land as their phases ship; this façade grows incrementally.
+Headline re-exports of the full package surface: logprob helpers, the loss
+registries (``DPO_LOSSES``, ``KTO_LOSSES``, ``SFT_LOSSES``), collator factories,
+dataset transforms (prompt extraction, packing, chat templates, KTO rotation),
+reference helpers, and alignment metrics.
 
 See ``docs/development/opaque-alignment-plan.md`` for the package design.
 """
@@ -12,7 +13,15 @@ from opaque.alignment.collator import (
     preference_collator,
     unpaired_preference_collator,
 )
-from opaque.alignment.data import extract_prompt, rotate_kto_completions
+from opaque.alignment.data import (
+    clone_chat_template,
+    extract_prompt,
+    get_training_chat_template,
+    pack_bfd,
+    pack_bfd_split,
+    pack_wrapped,
+    rotate_kto_completions,
+)
 from opaque.alignment.logprob import (
     get_batch_logps,
     selective_log_softmax,
@@ -47,6 +56,11 @@ __all__ = [
     "preference_collator",
     "unpaired_preference_collator",
     "extract_prompt",
+    "pack_bfd",
+    "pack_bfd_split",
+    "pack_wrapped",
+    "clone_chat_template",
+    "get_training_chat_template",
     "rotate_kto_completions",
     "compute_ref_logprobs_for_dataset",
     "null_ref_context",

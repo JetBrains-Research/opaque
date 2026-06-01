@@ -119,12 +119,9 @@ def preference_collator(
 
         **Mandatory keys** (always present):
 
-        - ``chosen_input_ids``: ``(B, Lc)`` long tensor, right-padded with
-          ``pad_token_id``.
-        - ``chosen_attention_mask``: ``(B, Lc)`` long tensor; 1 for real
-          tokens, 0 for padding.
-        - ``chosen_completion_mask``: ``(B, Lc)`` long tensor; 1 within the
-          completion span, 0 elsewhere (including padding).
+        - ``chosen_input_ids``: ``(B, Lc)`` long tensor, right-padded with ``pad_token_id``.
+        - ``chosen_attention_mask``: ``(B, Lc)`` long tensor; 1 for real tokens, 0 for pad.
+        - ``chosen_completion_mask``: ``(B, Lc)`` long tensor; 1 in the completion span, 0 else.
         - ``rejected_input_ids``: ``(B, Lr)`` long tensor.
         - ``rejected_attention_mask``: ``(B, Lr)`` long tensor.
         - ``rejected_completion_mask``: ``(B, Lr)`` long tensor.
