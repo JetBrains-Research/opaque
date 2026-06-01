@@ -117,9 +117,7 @@ Practical consequence: a researcher running DP-FTRL DPO writes the same loss clo
 
 ### 3.3 DP-purity invariant — Tier 1 / Tier 2 / rejected
 
-**Reframed from earlier drafts** following the PR review.
-
-The DP-SGD privacy proof (Abadi et al. 2016) bounds **sensitivity** of the sum-of-clipped-gradients with respect to record swap. The earlier "no cross-batch aggregates" rule was sufficient but unnecessarily restrictive. The actual requirement is that swapping one record changes the released gradient by at most `O(C)`. Three regimes:
+The DP-SGD privacy proof (Abadi et al. 2016) bounds **sensitivity** of the sum-of-clipped-gradients with respect to record swap. A blanket "no cross-batch aggregates" rule would be sufficient but is unnecessarily restrictive: the actual requirement is only that swapping one record changes the released gradient by at most `O(C)`. Three regimes follow:
 
 **Tier 1 — strict per-example.** Loss output for example `i` depends only on example `i`'s data. Sensitivity to record swap is trivially `O(C)` after clipping. Verified by **NaN-injection contract test** (§11.3): replace one example's input with NaN; only that example's gradient is affected. *Examples:* most DPO variants (sigmoid, hinge, ipo, robust, apo_*, exo_pair, nca_pair, bco_pair, sppo_hard, discopop, squarechipo, sigmoid_norm, sft), KTO `apo_zero_unpaired`, SFT `nll`, SFT `dft`.
 
@@ -453,7 +451,7 @@ def apo_zero_unpaired(
 
 ### 7.3 `loss/sft/` — SFT family
 
-Three variants (per research; `chunked_nll` was missing from earlier drafts):
+Three variants:
 
 | Variant | Formula | DPSpec.tier | Note |
 |---|---|---|---|
@@ -729,7 +727,7 @@ Verification: aggregate-detach audit (§11.4) — walk autograd graph, assert no
 
 ### 8.2 Per-loss-family divisor rules (DP-purity pre-clip)
 
-**Reframed from earlier drafts per PR review L127.** Division **before** gradient computation is DP-safe; division **after** clipping must use only public hyperparameters. Concrete per-family rules:
+Division **before** gradient computation is DP-safe; division **after** clipping must use only public hyperparameters. Concrete per-family rules:
 
 | Loss family | Per-example divisor inside loss | Aggregate divisor after clipping |
 |---|---|---|
