@@ -42,3 +42,14 @@ def test_gather_for_metrics_returns_input_non_distributed() -> None:
     out = gather_for_metrics(x)
     assert out is x
     assert torch.equal(out, x)
+
+
+def test_gather_for_metrics_scalar_non_distributed() -> None:
+    # A 0-dim per-rank scalar metric (e.g. KTO's detached KL) must pass through
+    # unchanged when there is no process group. The distributed path promotes
+    # the scalar to 1-D before all_gather/cat so torch.cat does not choke on a
+    # 0-dim tensor (exercised by the CUDA collective tests).
+    s = torch.tensor(3.5)
+    out = gather_for_metrics(s)
+    assert out is s
+    assert out.dim() == 0

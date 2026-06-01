@@ -116,8 +116,11 @@ def gather_for_metrics(tensor: torch.Tensor) -> torch.Tensor:
     if not is_distributed():
         return tensor
     world_size = get_world_size()
-    gathered = [torch.empty_like(tensor) for _ in range(world_size)]
-    dist.all_gather(gathered, tensor.contiguous())
+    # torch.cat cannot concatenate 0-dim tensors; promote a per-rank scalar
+    # metric to 1-D so it gathers into a (world_size,) vector.
+    local = tensor.unsqueeze(0) if tensor.dim() == 0 else tensor
+    gathered = [torch.empty_like(local) for _ in range(world_size)]
+    dist.all_gather(gathered, local.contiguous())
     return torch.cat(gathered, dim=0)
 
 

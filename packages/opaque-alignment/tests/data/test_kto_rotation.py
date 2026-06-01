@@ -239,3 +239,32 @@ def test_extra_columns_preserved() -> None:
         assert col in out.column_names
     # Row count unchanged.
     assert len(out) == 4
+
+
+# --------------------------------------------------------------------------- #
+# batch_size edge cases
+# --------------------------------------------------------------------------- #
+
+
+def test_batch_size_one_multirow_distinct_does_not_raise() -> None:
+    """batch_size=1 on a multi-row dataset with DISTINCT completions.
+
+    Each rotation block holds a single row, so the left-rotation is trivially
+    the identity (KL_completion == completion for every row). This must NOT
+    trip the non-identity guard — the rotation is degenerate by construction
+    of batch_size=1, not because completions are identical.
+    """
+    ds = make_dataset(8)  # distinct completions c0..c7
+    out = rotate_kto_completions(ds, batch_size=1, seed=0)
+    assert "KL_completion" in out.column_names
+    assert len(out) == 8
+    # Identity mapping is expected and acceptable for batch_size=1.
+    assert all(c == k for c, k in zip(out["completion"], out["KL_completion"]))
+
+
+@pytest.mark.parametrize("bad_batch_size", [0, -1, -8])
+def test_nonpositive_batch_size_raises(bad_batch_size: int) -> None:
+    """batch_size <= 0 is rejected up front with a clear ValueError."""
+    ds = make_dataset(4)
+    with pytest.raises(ValueError, match="batch_size must be a positive integer"):
+        rotate_kto_completions(ds, batch_size=bad_batch_size, seed=0)

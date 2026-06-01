@@ -12,9 +12,11 @@ rejected input-ids, attention-masks, completion-masks — all ``(B, L)`` with
 *independent* ``L`` for each side) plus optional ``ref_*_logps`` scalars
 ``(B,)`` when the input dicts carry them.
 
-Padding is right-aligned.  Sequences longer than ``max_length`` are truncated
-from the right (keep-start).  ``pad_to_multiple_of`` rounds each side's
-sequence length up to the nearest multiple (independently), never down.
+Sequences are right-padded: pad tokens are appended after the content, so the
+real tokens are left-aligned and padding fills the tail.  Sequences longer than
+``max_length`` are truncated from the right (keep-start).  ``pad_to_multiple_of``
+rounds each side's sequence length up to the nearest multiple (independently),
+never down.
 """
 
 from __future__ import annotations

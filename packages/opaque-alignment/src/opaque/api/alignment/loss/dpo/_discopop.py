@@ -6,9 +6,11 @@ of DPO-family objectives:
     Azar, M. G., et al. (2024). DiscoPOP: Discovering Preference
     Optimization Procedures Using Self-Supervised Feedback. NeurIPS 2024.
 
-The modulation gate at temperature *τ* selects between a logistic component
-(dominant when ``β·Δ`` is large positive) and an exponential component
-(dominant when ``β·Δ`` is small or negative).
+The modulation gate ``gate = σ(β·Δ / τ)`` blends a logistic component and an
+exponential component via ``L = logistic·(1 − gate) + exp·gate``.  Because
+``gate → 1`` for large positive ``β·Δ`` and ``gate → 0`` for negative ``β·Δ``,
+the **exponential** component dominates when ``β·Δ`` is large positive and the
+**logistic** component dominates when ``β·Δ`` is negative.
 
 **DP-purity: Tier 1.** Strictly per-example. NaN-injection contract holds.
 Vmap-safe.

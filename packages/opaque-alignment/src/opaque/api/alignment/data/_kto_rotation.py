@@ -71,12 +71,16 @@ def rotate_kto_completions(
     completion in the *entire* dataset is identical, because no rotation
     can ever produce distinct KL completions in that case.  Batches that
     are locally degenerate (all-equal *within* the batch) are silently
-    skipped — only a fully-degenerate dataset triggers the error.
+    skipped — only a fully-degenerate dataset triggers the error.  With
+    ``batch_size == 1`` the per-batch rotation is trivially the identity
+    (each block holds one row), so the non-identity check is skipped — pass
+    ``batch_size >= 2`` for a meaningful KL estimate.
 
     Args:
         dataset: A ``datasets.Dataset`` with at least a ``"completion"``
             column (any type — strings, token-ID lists, etc.).
-        batch_size: Number of rows per rotation batch.  Mirrors
+        batch_size: Number of rows per rotation batch (must be ``>= 1``;
+            ``>= 2`` for a non-degenerate rotation).  Mirrors
             ``per_device_train_batch_size`` in TRL's ``KTOTrainer``.
         seed: Integer seed for ``dataset.shuffle``.  Controls row order
             before batching; same seed → identical ``KL_completion`` output.
@@ -87,8 +91,9 @@ def rotate_kto_completions(
         Row count is unchanged.
 
     Raises:
-        ValueError: If every completion in *dataset* is identical (the
-            rotation would be entirely degenerate).
+        ValueError: If ``batch_size <= 0``, or if every completion in
+            *dataset* is identical (the rotation would be entirely
+            degenerate).
 
     Examples:
         Basic rotation with batch_size=4 (seed=0 passes through shuffle)::
@@ -102,6 +107,12 @@ def rotate_kto_completions(
             >>> out["KL_completion"]  # left-rotation of shuffled completions
             [...]
     """
+    if batch_size <= 0:
+        raise ValueError(
+            "rotate_kto_completions: batch_size must be a positive integer, "
+            f"got {batch_size}."
+        )
+
     # ------------------------------------------------------------------ #
     # 1. Global degenerate-dataset guard (before shuffle, on original data)
     # ------------------------------------------------------------------ #
@@ -149,12 +160,16 @@ def rotate_kto_completions(
         _hashable(orig) != _hashable(kl)
         for orig, kl in zip(original_completions, kl_completions)
     )
-    if not any_distinct and len(original_completions) > 1:
-        # This branch is only reachable if the shuffle + rotation still left
-        # every row with the same completion as before — which can only happen
-        # when every completion in the shuffled dataset is identical.  The
-        # global guard above covers the deterministic case; this is a runtime
-        # safety net for edge cases (e.g. seed-driven degenerate shuffle).
+    if not any_distinct and len(original_completions) > 1 and batch_size > 1:
+        # With batch_size == 1 each rotation block holds a single row, so the
+        # left-rotation is trivially the identity regardless of completion
+        # diversity — the non-identity check must not fire there (it is skipped
+        # via the batch_size > 1 guard above). For batch_size > 1 this branch is
+        # only reachable if the shuffle + rotation still left every row with the
+        # same completion as before — which can only happen when every
+        # completion in the shuffled dataset is identical. The global guard
+        # above covers the deterministic case; this is a runtime safety net for
+        # edge cases (e.g. seed-driven degenerate shuffle).
         raise ValueError(
             "rotate_kto_completions: rotation produced an identity mapping — "
             "every KL_completion equals its corresponding completion after "
