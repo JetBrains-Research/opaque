@@ -190,7 +190,7 @@ examples/train_kto.py          (functional)          examples/train_kto_trainer.
 |---|---|
 | Per-example loss math (DPO, KTO, IPO, SquareχPO, …) | `opaque.api.alignment.loss.{dpo,kto,sft}` |
 | `selective_log_softmax`, `sequence_logp`, completion-mask handling | `opaque.api.alignment.logprob` |
-| Preference data collators | `opaque.api.alignment.collators` |
+| Preference data collators | `opaque.api.alignment.collator` (factory functions) |
 | Dataset transforms (prompt extraction, packing, chat templates, KTO rotation) | `opaque.api.alignment.data` |
 | Reference-logp precompute, PEFT-disable adapter context, TR-DPO EMA | `opaque.api.alignment.reference` |
 | Reward metrics, KL estimators, token accuracy | `opaque.api.alignment.metric` |
@@ -240,7 +240,7 @@ This faithfully ports TRL `kto_trainer.py:882-884` and matches the KTO paper's s
 
 **Self-pair degeneracy guard:** add a runtime assertion in `_prepare_dataset` that the rotation produced a non-identity permutation, since dataset chunks of size 1 under `dataset.map(batch_size=N)` could produce identity rotations.
 
-### 4.3 DPO collator layout — `(B, 2, L)`
+### 4.3 DPO collator layout — separate chosen/rejected keys
 
 TRL uses `(2B, L)` with `[chosen..., rejected...]` concatenated along the batch dim, then `chunk(2, dim=0)` (`dpo_trainer.py:174,1189`). The reason is purely single-forward efficiency.
 
@@ -831,12 +831,12 @@ Phase 0.5 can run in parallel with Phase 0 and Phase 0.25.
 
 ### 11.1 `opaque-alignment` primitives landing in Phase 1
 
-- `opaque/api/alignment/logprob.py` — `selective_log_softmax`, `sequence_logp`, `get_batch_logps`.
-- `opaque/api/alignment/losses/_sft.py` — `nll_loss` (per-example, mean over non-ignored tokens) and `dft_loss` (per-example, detached softmax weighting; DP-corrected divisor).
-- `opaque/api/alignment/collators/_language_modeling.py` — `DataCollatorForLanguageModeling` with `completion_mask` and `assistant_masks` support.
+- `opaque/api/alignment/logprob/` — `selective_log_softmax`, `sequence_logp`, `get_batch_logps`.
+- `opaque/api/alignment/loss/sft/` — `nll_loss` (per-example, mean over non-ignored tokens) and `dft_loss` (per-example, detached softmax weighting; DP-corrected divisor) + `SFT_LOSSES` registry (`chunked_nll` aliased to `nll`).
+- `opaque/api/alignment/collator/_language_modeling.py` — `language_modeling_collator(...)` factory returning a callable, with `completion_mask` and `assistant_masks` support.
 - `opaque/api/alignment/data/_prompt.py` — `extract_prompt`.
 - `opaque/api/alignment/data/_chat_template.py` — `apply_chat_template` glue + `get_training_chat_template` for `{% generation %}`-tagged templates. **No** `clone_chat_template` with embedding resize yet (Phase 4).
-- `opaque/api/alignment/metrics.py` — `entropy_from_logits`, `mean_token_accuracy`, `num_tokens` aggregator.
+- `opaque/api/alignment/metric/` — `entropy_from_logits`, `mean_token_accuracy`, `num_tokens` aggregator.
 
 ### 11.2 `OpaqueSFTConfig` (`_sft_config.py`)
 
@@ -864,7 +864,7 @@ Extends `DPTrainingArguments`, inheriting all DP + HF-parity fields — notably 
 
 ### 11.3 `OpaqueSFTTrainer` (`_sft_trainer.py`)
 
-- `__init__`: model load, tokenizer load, optional PEFT wrap, QLoRA bf16, `_prepare_dataset` (uses `extract_prompt` + tokenize + completion-mask + optional assistant-mask), default collator = `DataCollatorForLanguageModeling`, `super().__init__()`.
+- `__init__`: model load, tokenizer load, optional PEFT wrap, QLoRA bf16, `_prepare_dataset` (uses `extract_prompt` + tokenize + completion-mask + optional assistant-mask), default collator = `language_modeling_collator(...)`, `super().__init__()`.
 - `_default_signature_columns`: `["input_ids", "labels", "attention_mask", "completion_mask", "assistant_masks"]`.
 - `compute_per_example_loss` (single hook): dispatches on `loss_type` to `opaque.alignment.loss.sft.{nll,dft}(...)` per example. Both `nll` and `chunked_nll` route to the same `nll_loss` function (math-equivalent; `chunked_nll` selects a memory-efficient kernel path in Phase 4). `dft` uses a **per-example token-count divisor** (`mask.sum()` on the example, not `num_items_in_batch`) per the DP-correct divisor rule (`opaque-alignment-plan.md` §3.3 + §8.2). With `return_logits=True` (eval), the trainer computes `entropy_from_logits`, `mean_token_accuracy`, `num_tokens` from the payload and pushes into `self._metrics["eval"]`.
 - `log` override (from `RLHFMixin`): drains `_metrics[mode]` and merges into logs.
@@ -891,17 +891,14 @@ The heaviest phase. All advanced DPO features land here (except chunked preferen
 
 ### 12.1 `opaque-alignment` primitives landing in Phase 2
 
-- `opaque/api/alignment/losses/_dpo.py` — all 13 DP-safe variants + `LOSSES` dict:
+- `opaque/api/alignment/loss/dpo/` — all 14 Tier-1 DP-safe variants + `DPO_LOSSES` registry + `DPO_SPEC`:
   - `sigmoid`, `ipo`, `hinge`, `robust`, `apo_zero`, `apo_down`, `exo_pair`, `nca_pair`, `bco_pair`, `sppo_hard`, `discopop`, `sft`, `sigmoid_norm`, `squarechipo`.
-- `opaque/api/alignment/losses/_f_divergence.py` — `reverse_kl`, `forward_kl`, `js_divergence`, `alpha_divergence`.
-- `opaque/api/alignment/losses/_mpo.py` — `mpo_combine(losses, weights)` combinator.
-- `opaque/api/alignment/losses/_wpo.py` — `wpo_weights(...)` per-example weight fn (under `no_grad`).
-- `opaque/api/alignment/losses/_ld_dpo.py` — `ld_dpo_split(per_token_logps, mask, alpha)`.
-- `opaque/api/alignment/collators/_preference.py` — `DataCollatorForPreference` with `(B, 2, L)` layout per §4.3.
-- `opaque/api/alignment/reference/_precompute.py` — `compute_ref_logprobs_for_dataset(dataset, ref_model, collator, ..., cache_key, output_columns)` with `.npz` caching.
-- `opaque/api/alignment/reference/_adapter.py` — `null_ref_context(model)` context manager.
+  - DPO-specific helpers live **inside** `loss/dpo/`: `_f_divergence.py` (`reverse_kl`, `forward_kl`, `js_divergence`, `alpha_divergence`), `_mpo.py` (`mpo_combine`), `_wpo.py` (`wpo_weights`, under `no_grad`), `_ld_dpo.py` (`ld_dpo_split`).
+- `opaque/api/alignment/collator/_preference.py` — `preference_collator(...)` factory returning a callable; emits separate `chosen_*` / `rejected_*` keys per §4.3.
+- `opaque/api/alignment/reference/_precompute.py` — `compute_ref_logprobs_for_dataset(dataset, ref, collator, output_columns, ..., cache_key)` with `.npz` caching.
+- `opaque/api/alignment/reference/_adapter.py` — `null_ref_context(model)` context manager (dispatches per RefSpec; `opaque-alignment-plan.md` §7.8).
 - `opaque/api/alignment/reference/_sync.py` — `ema_update_reference(ref_params, policy_params, alpha)` functional EMA.
-- `opaque/api/alignment/metrics.py` — `reward_metrics(chosen_logratios, rejected_logratios, beta) -> dict`.
+- `opaque/api/alignment/metric/` — `reward_metrics(chosen_logratios, rejected_logratios, beta) -> dict`.
 
 ### 12.2 `OpaqueDPOConfig`
 
@@ -934,7 +931,7 @@ Extends `DPTrainingArguments` (inherits the DP + HF-parity fields enumerated in 
 
 - `__init__`: model + ref_model resolution per §4.1 (four paths), tokenizer, PEFT wrap (with QLoRA bf16 + ref-adapter clone if applicable), `_prepare_dataset`, optional `_precompute_ref_logps` via `opaque.alignment.reference.compute_ref_logprobs_for_dataset`. Reject `aot`/`aot_pair` at init.
 - `_prepare_inputs` override: live-ref path computes ref logps under `torch.no_grad()` with `null_ref_context` *outside* vmap, injects into inputs.
-- `compute_per_example_loss` (single hook): forwards `(chosen_*, rejected_*)` through `fmodel` twice per pair, computes `sequence_logp` for each, applies `ld_dpo_split` if `ld_alpha`, applies `f_divergence_remap`, dispatches through `DPO_LOSSES` × `loss_weights`, optional `wpo_weights` multiplication. All math via `opaque.alignment.losses.dpo.*`. With `return_logits=True`, returns the logits payload so the trainer can compute reward metrics (`rewards/chosen`, `rewards/rejected`, `rewards/accuracies`, `rewards/margins`) into `self._metrics["eval"]`.
+- `compute_per_example_loss` (single hook): forwards `(chosen_*, rejected_*)` through `fmodel` twice per pair, computes `sequence_logp` for each, applies `ld_dpo_split` if `ld_alpha`, applies `f_divergence_remap`, dispatches through `DPO_LOSSES` × `loss_weights`, optional `wpo_weights` multiplication. All math via `opaque.alignment.loss.dpo.*`. With `return_logits=True`, returns the logits payload so the trainer can compute reward metrics (`rewards/chosen`, `rewards/rejected`, `rewards/accuracies`, `rewards/margins`) into `self._metrics["eval"]`.
 - `prediction_step` override: surfaces reward metrics at eval (no labels otherwise).
 - TR-DPO: `SyncRefModelCallback` registered when `sync_ref_model=True`. Uses `ema_update_reference` on the captured ref-params dict, not on a bound module.
 
@@ -947,7 +944,8 @@ Extends `DPTrainingArguments` (inherits the DP + HF-parity fields enumerated in 
 
 - Loss-fn unit tests for all 14 variants + 4 f-divergence remaps + MPO combinator.
 - Closure test: vmap'd per-example DPO loss across 4 pairs → finite gradients.
-- DP-purity test: NaN-one-example → only that row's grad affected.
+- DP-purity **Tier-1 NaN-injection** test: NaN-one-example → only that row's grad affected (all DPO variants are Tier 1).
+- Tier-3 rejection test: `loss_type="aot"` raises at init with the `DPSpec.rejection_reason` string.
 - Trainer contract test (one per ref-model path): construct, train 2 steps, eval, save.
 - TR-DPO callback test: ref params change after `ref_model_sync_steps`.
 - TRL parity test on all loss variants at `σ=0, C=∞`.
@@ -960,8 +958,8 @@ Extends `DPTrainingArguments` (inherits the DP + HF-parity fields enumerated in 
 
 ### 13.1 `opaque-alignment` primitives landing in Phase 3
 
-- `opaque/api/alignment/losses/_kto.py` — `kto`, `apo_zero_unpaired` + `LOSSES` dict.
-- `opaque/api/alignment/collators/_unpaired_preference.py` — `DataCollatorForUnpairedPreference`.
+- `opaque/api/alignment/loss/kto/` — `kto_loss` (Tier 2, detached `kl` parameter), `apo_zero_unpaired` (Tier 1) + `KTO_LOSSES` registry + `KTO_SPEC` (marks `kto` Tier 2, `cross_batch_aggregate="kl_mean"`, `aggregate_leverage="O(1/n)"`).
+- `opaque/api/alignment/collator/_unpaired_preference.py` — `unpaired_preference_collator(...)` factory returning a callable.
 - `opaque/api/alignment/data/_kto_rotation.py` — `rotate_kto_completions(dataset, batch_size, seed)` = `_get_kl_dataset` + `concatenate_datasets(axis=1)`.
 - Extension to `compute_ref_logprobs_for_dataset` to emit `reference_KL_logps` when KL is enabled.
 
@@ -1022,7 +1020,7 @@ These are workstreams independent of loss math; separated to keep Phases 1–3 r
 ### 14.1 SFT packing — `bfd`, `bfd_split`, `wrapped`
 
 - `opaque.alignment.data._packing`: port `_pack_bfd` (segment-tree best-fit, ~90 LOC), `_pack_wrapped` (~15 LOC), `_pack_bfd_split` (~25 LOC).
-- Generates `seq_lengths` column for `DataCollatorForLanguageModeling.get_position_ids_from_packed_seq_lengths`.
+- Generates `seq_lengths` column consumed by the `language_modeling_collator` callable's packed-sequence position-id derivation.
 - **Attention requirements:** packing produces `position_ids` with per-doc restarts. The cross-doc attention blocking requires either:
   - **FlashAttention2** via `cu_seq_lens` — fastest, but requires `flash-attn` dep we don't have.
   - **FlexAttention** — PyTorch 2.5+ native, no extra dep, supports arbitrary score mods.
@@ -1089,8 +1087,8 @@ For each trainer:
 ### 15.4 Docs
 
 - `docs/alignment/index.md` — package overview, functional philosophy, mechanism-agnostic posture.
-- `docs/alignment/losses.md` — per-loss reference (formula, paper, DP notes).
-- `docs/alignment/collators.md`.
+- `docs/alignment/loss.md` — per-loss reference (formula, paper, DP notes).
+- `docs/alignment/collator.md`.
 - `docs/alignment/recipes.md` — pointers to functional examples + scripted recipes (decoupled DP-RLHF lives here as a notebook).
 - `docs/trainers/sft.md`, `dpo.md`, `kto.md` — class-API docs, supported features, deferred features with paper-cited justification, ref-model path matrix.
 
@@ -1104,7 +1102,7 @@ Sibling workstreams that become natural under the `opaque-alignment` + `opaque.t
 
 | Item | Effort | Rationale |
 |---|---|---|
-| **`OpaqueRewardTrainer` (DP RM)** | M | Pairwise BT loss on `AutoModelForSequenceClassification`. Direct `DPTrainer` subclass using `opaque.alignment.losses` (add a `_reward.py` with the BT formula). Prerequisite for decoupled DP-RLHF (arXiv:2603.22563). |
+| **`OpaqueRewardTrainer` (DP RM)** | M | Pairwise BT loss on `AutoModelForSequenceClassification`. Direct `DPTrainer` subclass using `opaque.alignment.loss.reward` (new `loss/reward/` sub-concern with the BT formula). Prerequisite for decoupled DP-RLHF (arXiv:2603.22563). |
 | **Decoupled DP-RLHF recipe** | M | Notebook chaining `OpaqueRewardTrainer` → vanilla `trl.PPOTrainer` (non-DP actor). Lives in `opaque.alignment.recipes`. |
 | **`OpaqueORPOTrainer`, `OpaqueCPOTrainer`, `OpaqueSimPOTrainer`** | M each | Different loss heads; thin trainer + new loss module. Pattern established by DPO. |
 | **`OpaqueGRPOTrainer`** | L | Trajectory-level — needs `old_logps` / `ref_logps` plumbing similar to DPO precompute. Worth designing once on top of completed infrastructure. |
@@ -1137,7 +1135,7 @@ Sibling workstreams that become natural under the `opaque-alignment` + `opaque.t
 
 ## 18. DP correctness checklist (used at every loss port)
 
-Apply to every per-example loss closure before it lands in `opaque.alignment.losses.*`:
+Apply to every per-example loss closure before it lands in `opaque.alignment.loss.*`. (This checklist is the Tier-1 subset; Tier-2 losses additionally pass the aggregate-detach audit in `opaque-alignment-plan.md` §11.4.)
 
 - [ ] **No divisor that aggregates across the batch.** Specifically, no `num_items_in_batch`, no `batch_size`, no global token count. Allowed: per-example `mask.sum()`, `args.max_length`, `expected_batch_size`, or drop and let `clipped_grad` normalize.
 - [ ] **No data-dependent computation that crosses examples.** Sorts, ranks, top-k, percentile — all forbidden (this is the `aot` family's failure mode).
@@ -1152,7 +1150,7 @@ Apply to every per-example loss closure before it lands in `opaque.alignment.los
 
 ## 19. Test strategy
 
-### 19.1 Unit tests (per loss function in `opaque.api.alignment.losses`)
+### 19.1 Unit tests (per loss function in `opaque.api.alignment.loss.{dpo,kto,sft}`)
 
 ~10 tests per loss variant against hand-computed reference. Pure, no model.
 
