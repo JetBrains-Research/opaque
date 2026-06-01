@@ -59,12 +59,26 @@ def test_module_exports_match(module_name: str) -> None:
         f"{module_name}: in __all__ but not importable: {sorted(missing)}"
     )
 
+    # A public name "leaks" only if it is part of THIS package's surface but is
+    # absent from __all__: either defined in this module, or re-exported from
+    # within ``opaque.(api.)alignment.*``. Names imported from stdlib/typing/
+    # torch (e.g. ``dataclass``, ``Literal``, ``annotations``) are not part of
+    # the public API and are ignored.
+    def _is_package_surface(value: object) -> bool:
+        origin = getattr(value, "__module__", "") or ""
+        return (
+            origin == module_name
+            or origin.startswith("opaque.alignment")
+            or origin.startswith("opaque.api.alignment")
+        )
+
     leaked = {
         name
         for name in dir(mod)
         if not name.startswith("_")
         and name not in declared
         and not isinstance(getattr(mod, name), types.ModuleType)
+        and _is_package_surface(getattr(mod, name))
     }
     assert not leaked, (
         f"{module_name}: public names not in __all__ (rule 6 violation): "

@@ -1,3 +1,7 @@
-"""opaque-alignment implementation namespace: data."""
+"""Dataset transforms impl — prompt extraction (packing/chat-template
+arrive in later phases).
+"""
 
-__all__: list[str] = []
+from opaque.api.alignment.data._prompt import extract_prompt
+
+__all__ = ["extract_prompt"]

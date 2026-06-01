@@ -1,3 +1,5 @@
-"""opaque.alignment façade: data (re-exports only)."""
+"""opaque.alignment.data façade — re-exports dataset transforms."""
 
-__all__: list[str] = []
+from opaque.api.alignment.data import extract_prompt
+
+__all__ = ["extract_prompt"]
