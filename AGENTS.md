@@ -43,7 +43,7 @@ deps. `pip install opaque-accounting` alone is **torch-free** (only
 
 ## Namespace contract
 
-Five rules (rules 1 + 2 enforced in CI under `tests/contracts/`):
+Nine rules (rules 1 + 2 + 6 enforced in CI under `tests/contracts/`):
 
 1. **No wheel ships `src/opaque/__init__.py`, `src/opaque/api/__init__.py`,
    or `src/opaque/api/accounting/__init__.py`.** All three are pure PEP 420
@@ -70,6 +70,33 @@ Five rules (rules 1 + 2 enforced in CI under `tests/contracts/`):
    an explicit `KNOWN_CROSS_CONE_IMPORTS` allowlist for legitimate
    cross-cutting tests (mutual non-dependency between dpsgd ↔ dpftrl,
    patches ↔ dpsgd). Each refactor phase shrinks the allowlist.
+6. **Every `__init__.py` declares an explicit `__all__`.** Public
+   façades re-export only the names listed in `__all__`; internal
+   `opaque.api.*` `__init__.py` files declare `__all__` for the
+   names they intend to be importable from that level (private
+   `_*.py` helpers are imported by sibling files only). New
+   sub-packages add a `tests/contracts/test_all_exports_match.py`
+   case asserting that `dir(module)` minus dunders equals `__all__`.
+7. **Concern directories use singular names** (`clipping`, `noise`,
+   `sampling`, `scheduling`, `loss`, `collator`, `reference`,
+   `metric`, `kernel`, `data`). The only plural exceptions are
+   wheel-name collections (`opaque-optimizers` → `opaque.optimizers`)
+   that ship a homogeneous family where the collection is the
+   primary surface. When in doubt, choose singular.
+8. **`types.py` lives next to its concern.** Public dataclasses /
+   typed dicts / `Literal` enums for concern `X` live in
+   `opaque.api.<dist>.X.types` and are re-exported from
+   `opaque.<concern>.types`. Cross-cutting types
+   (`ClippedPytree`, `PerGroup`, `MaxNorm`) live in `opaque.types`.
+9. **Prefer factory functions returning callables (or callable
+   dataclasses) over user-instantiated classes.** Match the
+   `opaque.optimizers.adamw(...)`, `opaque.clipping.clipped_grad(...)`
+   pattern. New API surfaces should expose `<verb>(...)` (e.g.
+   `language_modeling_collator(...)` returning a callable) rather
+   than `<Noun>Class(...)`. Class constructors are acceptable for
+   inert state containers (configs, metadata records); they are
+   not the preferred shape for "build me a thing that does X."
+
 
 ## Pull requests
 

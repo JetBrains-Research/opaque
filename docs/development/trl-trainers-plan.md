@@ -178,7 +178,7 @@ examples/train_kto.py          (functional)          examples/train_kto_trainer.
 
 ### 3.3 Why this split
 
-- **Researcher access**: comparing DP-DPO loss variants doesn't require subclassing `DPOTrainer`. Import `from opaque.alignment.losses.dpo import squarechipo, sigmoid`, write a 50-line training loop.
+- **Researcher access**: comparing DP-DPO loss variants doesn't require subclassing `DPOTrainer`. Import `from opaque.alignment.loss.dpo import DPO_LOSSES; DPO_LOSSES["squarechipo"]`, write a 50-line training loop.
 - **Mechanism-agnosticism**: `opaque-alignment` depends only on `opaque-engine` + `opaque-base` + `opaque-patches`. It works with DP-SGD via `opaque-dpsgd` *or* with DP-FTRL via `opaque-dpftrl`. The mechanism is picked by the caller (trainer or example), not by the library.
 - **Thin trainers**: `DPOTrainer.compute_per_example_loss` becomes ~30 lines of orchestration; the loss math lives in one file with citable line numbers.
 - **Reuse for future trainers**: `RewardTrainer`, `ORPOTrainer`, `CPOTrainer`, `SimPOTrainer`, `GRPOTrainer` all reuse the same primitives — no copy-paste of loss math between trainer subclasses.
@@ -188,13 +188,13 @@ examples/train_kto.py          (functional)          examples/train_kto_trainer.
 
 | Concern | Lives in |
 |---|---|
-| Per-example loss math (DPO, KTO, IPO, SquareχPO, …) | `opaque.api.alignment.losses` |
+| Per-example loss math (DPO, KTO, IPO, SquareχPO, …) | `opaque.api.alignment.loss.{dpo,kto,sft}` |
 | `selective_log_softmax`, `sequence_logp`, completion-mask handling | `opaque.api.alignment.logprob` |
 | Preference data collators | `opaque.api.alignment.collators` |
 | Dataset transforms (prompt extraction, packing, chat templates, KTO rotation) | `opaque.api.alignment.data` |
 | Reference-logp precompute, PEFT-disable adapter context, TR-DPO EMA | `opaque.api.alignment.reference` |
-| Reward metrics, KL estimators, token accuracy | `opaque.api.alignment.metrics` |
-| Fused chunked-preference kernels (the Liger memory trick) | `opaque.api.patches.kernels` (base) + dispatcher in `opaque.api.alignment.losses` |
+| Reward metrics, KL estimators, token accuracy | `opaque.api.alignment.metric` |
+| Fused chunked-preference kernels (the Liger memory trick) | `opaque.api.alignment.kernel` (self-contained pure-PyTorch; no `opaque-patches` dep needed for the base) |
 | Trainer classes, configs, signature columns, log() override | `opaque.api.transformers.trl` |
 | DPTrainer generic features (subclass hooks: signature columns, extra forward kwargs, autocast ctx) | `opaque.api.transformers.trainer` (DPTrainer itself) |
 | Cross-rank reductions for metrics / precompute | `opaque.api.engine.distributed` (functional primitives, not Accelerator-shaped) |
@@ -227,7 +227,16 @@ TRL's KTO rotation happens at **dataset-prep time**, not at sampler time (`kto_t
 
 Under Opaque's Poisson sampler, the rotation is already baked into the row, so any sampler that preserves row identity (Poisson does) works. The constraint is realized batch size ≥ 2 (TRL refuses at `<= 1` because rotation by 1 of a 1-element batch is identity, which collapses KL into the chosen log-ratio).
 
-**Adaptation for Poisson:** when a realized batch arrives with size ≤ 1, the KL term falls back to 0 (equivalent to running `apo_zero_unpaired` for that step). Privacy unchanged because the per-example loss remains independent. This is a documented degradation but does not require changing TRL's algorithm.
+**KL term — Tier 2 detached batch-mean.** The `kl` scalar is computed by the trainer in `_prepare_inputs`:
+
+1. Per-microbatch policy KL forward through `fmodel` under `torch.no_grad()`, returning `policy_KL_logps: (B,)`.
+2. Subtract precomputed `reference_KL_logps: (B,)` from the dataset columns.
+3. Reduce: `kl = (policy_KL_logps - reference_KL_logps).mean().detach().clamp(min=0)` — scalar.
+4. Broadcast into the vmap'd `compute_per_example_loss` as a `vmap`-`None` argument; each example sees the same `kl`.
+
+This faithfully ports TRL `kto_trainer.py:882-884` and matches the KTO paper's stop-gradient requirement (Eq. 8). DP-correctness is per `opaque-alignment-plan.md` §3.3 Tier 2: detached aggregate with `O(1/n)` leverage, unreleased private information consumed inside the per-example loss. See also §9 of that doc for the DDP-aware extension (v2).
+
+**Adaptation for Poisson:** when a realized batch arrives with size ≤ 1, the trainer passes `kl=0` (degenerates to `apo_zero_unpaired` math for that step). Privacy unchanged because the per-example loss remains bounded.
 
 **Self-pair degeneracy guard:** add a runtime assertion in `_prepare_dataset` that the rotation produced a non-identity permutation, since dataset chunks of size 1 under `dataset.map(batch_size=N)` could produce identity rotations.
 
@@ -268,9 +277,9 @@ TRL's `num_items_in_batch` is the sum of `(labels != -100)` across the global ac
 | WPO weights | per-example `exp(mean_logps)` under `no_grad` | OK |
 | LD-DPO | per-example `shared_logp + α·tail_logp` decomposition | OK |
 | KTO chosen/rejected losses | per-example `1 - sigmoid(β·(...))` | OK |
-| KTO `kl = (KL_logps - ref_KL_logps).mean()` over batch | **PROBLEMATIC** — this is a batch-level mean | Inside the vmap'd per-example closure, this is `(KL_logp_i - ref_KL_logp_i)` per example. The "cross-batch mean" of TRL emerges naturally from the per-example clipped gradient sum. **Verify during port.** |
+| KTO `kl = (KL_logps - ref_KL_logps).mean().detach().clamp(min=0)` over batch | **Tier 2 — detached batch-mean aggregate, valid under DP-SGD** | Faithful to TRL `kto_trainer.py:882-884` and KTO paper Eq. (8) ("we do not backpropagate through z_0"). The kl scalar is computed **outside the vmap** in `_prepare_inputs` (under `no_grad` for the policy KL forward; ref KL precomputed). The trainer broadcasts it into each per-example closure as a `vmap`-`None` argument. DP-correct because (a) `.detach()` is enforced, (b) `O(1/n)` leverage per Kumar et al. arXiv:2310.03104. **The earlier draft's "per-example kl emerges from vmap" was a different (higher-variance) estimator and is dropped.** See `opaque-alignment-plan.md` §3.3 Tier 2 + §7.2. |
 | `cat(desirable_weight * chosen, undesirable_weight * rejected).nanmean()` (KTO) | `.nanmean()` over batch | The per-example loss is `desirable_weight * chosen_i OR undesirable_weight * rejected_i` (one or the other based on label). Drop the `.mean()`; rely on `normalize_by=expected_batch_size`. |
-| `aot` / `aot_pair` (DPO) | sorts `logratios` across batch, applies sigmoid to sorted delta | **REJECTED** — sort-across-batch fundamentally breaks per-example DP |
+| `aot` / `aot_pair` (DPO) | sorts `logratios` across batch, applies sigmoid to sorted delta | **Tier 3 — rejected.** Sort has `O(1)` leverage per swap; no published DP-safe variant. See `opaque-alignment-plan.md` §3.3 Tier 3. |
 
 **Validation:** every loss closure that lands gets a "DP-purity" unit test: replace one example's data with NaN; verify only that row's gradient is affected. See §19.5.
 
@@ -294,7 +303,7 @@ TRL's `num_items_in_batch` is the sum of `(labels != -100)` across the global ac
 |---|---|---|
 | `nll` (default HF CE via `model(**inputs).loss`) | 1 | none (per-example mean) |
 | `dft` (token-weighted detached CE) | 1 | rewrite `/ num_items_in_batch` to per-example `/ mask.sum()` |
-| `chunked_nll` (logits never materialized) | 4 | implement via Opaque's existing `opaque_linear_cross_entropy_loss` (already vmap-safe; never materializes `(B, T, V)`) — cleaner than TRL's monkey-patch |
+| `chunked_nll` (math-equivalent to `nll`; logits never materialized) | 1 (alias) + 4 (kernel) | Registered as `SFT_LOSSES["chunked_nll"] = nll_loss` in Phase ε; the kernel-level chunked LCE path lands in Phase 4 via `opaque_linear_cross_entropy_loss` (already vmap-safe; never materializes `(B, T, V)`) — cleaner than TRL's monkey-patch. Per the audit, `chunked_nll` is purely a memory optimization, not a different loss. |
 
 **DPO loss types** (per `OpaqueDPOConfig.loss_type` — list, supports MPO):
 
@@ -370,9 +379,21 @@ Existing arg at `_config.py:422` (wired via `torch.autograd.graph.save_on_cpu`) 
 
 ---
 
-## 5. `opaque-alignment` package design
+## 5. `opaque-alignment` package design — pointer
 
-### 5.1 Module layout (api/façade pattern)
+**The authoritative spec lives in `docs/development/opaque-alignment-plan.md`.** That doc owns: module layout (api/façade with `loss/{dpo,kto,sft}/` sub-concerns), dependency pin (mechanism-agnostic; no `opaque-patches` core dep), public API surface, per-module spec, two-tier DP-purity invariant (Tier 1 / Tier 2 / rejected), DDP-aware loss design, per-phase plan (α through ι), test strategy, and functional examples.
+
+Key cross-references this plan uses:
+- §3.3 of opaque-alignment-plan — DP-purity tiers and the divisor rule.
+- §7.1–§7.10 — per-module signatures and DP-correctness notes.
+- §7.10 — alignment kernel catalog (lives inside `opaque-alignment.kernel`, not `opaque-patches`).
+- §8.1 — Tier-1 vs Tier-2 caller responsibilities (relevant to KTO Phase 3).
+- §9 — DDP-aware loss design (`LossAggregateSpec.cross_rank=True`); v2 follow-on.
+
+The remaining sections of this plan reference `opaque.alignment.loss.{dpo,kto,sft}` and `opaque.alignment.{logprob,collator,data,reference,metric,kernel}` symbols by their public façade path. Layout details (which `_*.py` file holds which function) are not load-bearing here.
+
+<details>
+<summary>Original §5 (pre-restructure) — kept here for the diff history; see opaque-alignment-plan.md for the current version.</summary>
 
 ```
 packages/opaque-alignment/
@@ -551,7 +572,9 @@ from opaque.dpftrl.sampling import b_min_sep_sampler
 noise_fn, noise_state = band_mf(...)
 ```
 
-The alignment primitives (`dpo_sigmoid`, `sequence_logp`, `DataCollatorForPreference`, `compute_ref_logprobs_for_dataset`) don't care which mechanism is plugged in. This is the same separation `opaque-engine` already provides for DP-SGD primitives.
+The alignment primitives (`dpo_sigmoid`, `sequence_logp`, `preference_collator`, `compute_ref_logprobs_for_dataset`) don't care which mechanism is plugged in. This is the same separation `opaque-engine` already provides for DP-SGD primitives.
+
+</details>
 
 ---
 
@@ -590,10 +613,10 @@ Trainers are *thin orchestration*. Their job:
 1. **Resolve args** to the appropriate config dataclass.
 2. **Load model** from str via `AutoModelForCausalLM.from_pretrained` if needed; PEFT wrap; QLoRA bf16 promotion.
 3. **Load processing class** (tokenizer / processor); default pad_token.
-4. **Pick a default data collator** from `opaque.alignment.collators`.
+4. **Pick a default data collator** from `opaque.alignment.collator` (factory functions returning callables — `preference_collator(...)`, etc.).
 5. **Preprocess dataset** via `opaque.alignment.data` helpers + own `_prepare_dataset` method.
 6. **Precompute reference logps** (if requested) via `opaque.alignment.reference.compute_ref_logprobs_for_dataset`.
-7. **Implement `compute_per_example_loss(fmodel, params, inputs, *, return_logits=False)`** — the single vmap-safe override hook calling into `opaque.alignment.losses.*` + `opaque.alignment.logprob.*`. Covers both training (vmap'd → clip → noise) and per-example eval by construction.
+7. **Implement `compute_per_example_loss(fmodel, params, inputs, *, return_logits=False)`** — the single vmap-safe override hook calling into `opaque.alignment.loss.{dpo,kto,sft}.*` + `opaque.alignment.logprob.*`. Covers both training (vmap'd → clip → noise) and per-example eval by construction.
 8. **Override `prediction_step`** for DPO/KTO to surface reward metrics at eval (the eval loop already drives `compute_per_example_loss`; the override formats the metric payload).
 9. **Override `log`** to drain `self._metrics["train"|"eval"]` into the logs dict (the `_metrics` accumulator lives on the `RLHFMixin`).
 10. **Override `_default_signature_columns`** with the appropriate fixed list (keeps preference columns through `_remove_unused_columns`).
@@ -625,13 +648,13 @@ class OpaqueDPOTrainer(DPTrainer, RLHFMixin):
         # THE SINGLE override. vmap-safe; covers training and per-example eval.
         # Forwards chosen + rejected through fmodel(params, **kwargs), computes
         # sequence_logp for each, subtracts the (precomputed or live) ref logps,
-        # dispatches through opaque.alignment.losses.dpo.LOSSES[self.args.loss_type[0]].
+        # dispatches through opaque.alignment.loss.dpo.DPO_LOSSES[self.args.loss_type[0]].
         # When return_logits=True (eval), also returns the logits payload so the
         # trainer's eval hook can compute reward metrics.
         ...
 ```
 
-SFT and KTO follow the same single-hook pattern. The loss math lives in `opaque.alignment.losses.*`; the trainer hook only orchestrates. Reward / token-accuracy / KL metrics are computed by the trainer (from the `return_logits=True` payload) and accumulated into `self._metrics`, not inside `compute_per_example_loss`.
+SFT and KTO follow the same single-hook pattern. The loss math lives in `opaque.alignment.loss.{dpo,kto,sft}.*`; the trainer hook only orchestrates. Reward / token-accuracy / KL metrics are computed by the trainer (from the `return_logits=True` payload) and accumulated into `self._metrics`, not inside `compute_per_example_loss`.
 
 ---
 
@@ -649,7 +672,7 @@ SFT and KTO follow the same single-hook pattern. The loss math lives in `opaque.
 
 Liger's `LigerFusedLinearPreferenceBase` (pure PyTorch, nested `torch.func.grad_and_value` inside `autograd.Function`) is the one alignment-specific Liger trick not yet in `opaque-patches`. The win is ~80% peak-memory reduction for DPO/CPO/ORPO/SimPO by chunking the logits computation.
 
-**Port plan:** reconstruct natively as `Opaque_FusedLinearPreference / _FusedLinearPreferenceBackward` in `packages/opaque-patches/src/opaque/api/patches/kernels/fused_linear_preference.py`, following the existing two-level pattern with explicit `vmap` rules. The base kernel is algorithm-agnostic; per-algorithm dispatchers (`opaque_fused_linear_dpo_loss`, `opaque_fused_linear_kto_loss`, etc.) wrap it and live in `opaque.api.alignment.losses._fused`.
+**Port plan:** reconstruct natively as `Opaque_FusedLinearPreference / _FusedLinearPreferenceBackward` in `packages/opaque-alignment/src/opaque/api/alignment/kernel/_fused_linear_preference.py` (per `opaque-alignment-plan.md` §7.10 — alignment-specific kernels live inside alignment, not opaque-patches). Two-level pattern with explicit `vmap` rules. Per-algorithm dispatchers (`opaque_fused_linear_dpo_loss`, `opaque_fused_linear_kto_loss`) wrap it in `opaque.api.alignment.kernel._dpo_dispatch` / `_kto_dispatch`.
 
 ### 7.3 Effort
 
@@ -702,7 +725,7 @@ The old "compute_loss redirect" task and the `compute_loss` eval-only method are
 ```python
 class OpaqueDPOTrainer(DPTrainer, RLHFMixin):
     def compute_per_example_loss(self, fmodel, params, inputs, *, return_logits=False):
-        # The SINGLE override. vmap-safe. Calls opaque.alignment.losses.dpo.LOSSES[...].
+        # The SINGLE override. vmap-safe. Calls opaque.alignment.loss.dpo.DPO_LOSSES[...].
         # Returns scalar per example (training); the eval path returns the same,
         # optionally with logits via return_logits=True for metric collection.
         ...
@@ -843,7 +866,7 @@ Extends `DPTrainingArguments`, inheriting all DP + HF-parity fields — notably 
 
 - `__init__`: model load, tokenizer load, optional PEFT wrap, QLoRA bf16, `_prepare_dataset` (uses `extract_prompt` + tokenize + completion-mask + optional assistant-mask), default collator = `DataCollatorForLanguageModeling`, `super().__init__()`.
 - `_default_signature_columns`: `["input_ids", "labels", "attention_mask", "completion_mask", "assistant_masks"]`.
-- `compute_per_example_loss` (single hook): dispatches on `loss_type` to `opaque.alignment.losses.sft.{nll,dft}(...)` per example. `dft` uses a **per-example token-count divisor** (`mask.sum()` on the example, not `num_items_in_batch`) per DP-purity rule §4.4. With `return_logits=True` (eval), the trainer computes `entropy_from_logits`, `mean_token_accuracy`, `num_tokens` from the payload and pushes into `self._metrics["eval"]`.
+- `compute_per_example_loss` (single hook): dispatches on `loss_type` to `opaque.alignment.loss.sft.{nll,dft}(...)` per example. Both `nll` and `chunked_nll` route to the same `nll_loss` function (math-equivalent; `chunked_nll` selects a memory-efficient kernel path in Phase 4). `dft` uses a **per-example token-count divisor** (`mask.sum()` on the example, not `num_items_in_batch`) per the DP-correct divisor rule (`opaque-alignment-plan.md` §3.3 + §8.2). With `return_logits=True` (eval), the trainer computes `entropy_from_logits`, `mean_token_accuracy`, `num_tokens` from the payload and pushes into `self._metrics["eval"]`.
 - `log` override (from `RLHFMixin`): drains `_metrics[mode]` and merges into logs.
 
 ### 11.4 Examples
@@ -962,14 +985,18 @@ Extends `DPTrainingArguments` (inherits the DP + HF-parity fields enumerated in 
 ### 13.3 `OpaqueKTOTrainer`
 
 - `_prepare_dataset`: extract prompt → `unpair_preference_dataset` if needed → tokenize → if `calculate_KL`: `rotate_kto_completions(...)` → assert non-identity rotation.
+- `_prepare_inputs` override (the Tier-2 aggregate hook): for each microbatch,
+  1. Run policy KL forward: `policy_KL_logps = self._model(**KL_kwargs).logp_via_sequence_logp(...)` under `torch.no_grad()` on bound module — **outside the vmap region**.
+  2. Compute the aggregate: `kl = (policy_KL_logps - inputs["reference_KL_logps"]).mean().detach().clamp(min=0)` — scalar.
+  3. If realized batch size ≤ 1: set `kl=0` (falls back to `apo_zero_unpaired` math for that step).
+  4. Inject as `inputs["kl"]` (a `(1,)` scalar tensor broadcast to all examples via vmap-`None`).
 - `compute_per_example_loss` (single hook):
   1. Forwards `completion_input_ids` through `fmodel` → per-example `completion_logp` via `sequence_logp`.
-  2. Forwards `KL_completion_input_ids` through `fmodel` → per-example `KL_logp` (note: vmap'd, so no `torch.no_grad()` block needed inside the closure; the kl term is `.detach()`-ed before consumption per `opaque.alignment.losses.kto`).
-  3. Reads ref logps from `inputs` (precomputed) or via `_prepare_inputs` + `null_ref_context` pre-vmap.
-  4. Computes `chosen_logratios` / `rejected_logratios` per example, branching on `label` via `torch.where` (no Python `if`).
-  5. Dispatches through `KTO_LOSSES[self.args.loss_type]`, applies `desirable_weight` / `undesirable_weight`.
-  6. Returns per-example scalar (plus logits payload when `return_logits=True` for eval metric collection into `self._metrics["eval"]`).
-- Skip-KL fallback when realized batch size ≤ 1 (Poisson edge case): set `kl=0` for that step.
+  2. Reads ref logps from `inputs["reference_logps"]` (precomputed at trainer init).
+  3. Computes `chosen_logratios` / `rejected_logratios` per example, branching on `label` via `torch.where` (no Python `if`).
+  4. Dispatches through `KTO_LOSSES[self.args.loss_type]`, passing the detached scalar `inputs["kl"]` and `desirable_weight` / `undesirable_weight`.
+  5. Returns per-example scalar (plus logits payload when `return_logits=True` for eval metric collection into `self._metrics["eval"]`).
+- DP audit at construction time: `KTO_SPEC[self.args.loss_type]` is read; if `tier == 2`, the trainer asserts `_prepare_inputs` registers the appropriate aggregate per `LossAggregateSpec`. v2 will extend this with `cross_rank=True` handling (`opaque-alignment-plan.md` §9.4).
 
 ### 13.4 Examples
 
@@ -980,8 +1007,9 @@ Extends `DPTrainingArguments` (inherits the DP + HF-parity fields enumerated in 
 
 - Loss-fn unit tests for `kto`, `apo_zero_unpaired`.
 - Rotation correctness test (assert non-identity permutation after `dataset.map`).
-- Trainer contract test with mixed labels.
-- TRL parity at `σ=0, C=∞`.
+- **Tier-2 aggregate-detach audit** for `kto`: trace autograd graph from `loss` backward; assert `kl` has no path to model parameters; assert leverage is `O(1/n)` via aggregate-swap (`opaque-alignment-plan.md` §11.4).
+- Trainer contract test with mixed labels: confirm `_prepare_inputs` computes `kl` once per microbatch and broadcasts via vmap-`None`; confirm Poisson batch-size-1 falls back to `kl=0`.
+- TRL parity at `σ=0, C=∞`: compare per-example loss to TRL within `1e-3` on identical batches.
 
 **Effort: M–L (4–6 days).**
 
