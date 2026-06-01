@@ -285,7 +285,7 @@ def parse_args() -> argparse.Namespace:
     train_group.add_argument(
         "--optimizer",
         type=str,
-        default="adam",
+        default="adafactor",
         choices=[
             "sgd",
             "adam",
@@ -463,7 +463,7 @@ def parse_args() -> argparse.Namespace:
     train_group.add_argument(
         "--lr-scheduler",
         type=str,
-        default="linear",
+        default="constant",
         help=(
             "HF-style LR scheduler name forwarded to "
             "TrainingArguments.lr_scheduler.  Supported: constant, "
