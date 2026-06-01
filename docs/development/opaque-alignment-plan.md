@@ -64,7 +64,7 @@
                 │  ─────────────────────────                                 │
                 │  SFTTrainer, DPOTrainer, KTOTrainer                        │
                 │  configs, signature columns, log() drain, prediction_step  │
-                │  (~30-line override of _build_per_example_loss + compute_loss)
+                │  (~30-line override of compute_per_example_loss — one hook) │
                 └─────────────────────┬──────────────────────────────────────┘
                                       │ consumes
                                       ▼
@@ -95,7 +95,7 @@
 
 `opaque.transformers.trl` is one consumer. The *other* consumer is the **functional examples** — `train_dpo.py`, `train_kto.py`, `train_sft.py` — which import from `opaque-alignment` directly with no trainer in sight. These are equal first-class deliverables.
 
-Per `trl-trainers-plan.md` §6, the TRL trainers override two surfaces in `DPTrainer`: `_build_per_example_loss` (training, vmap'd) and `compute_loss` (eval, eager). Both override surfaces orchestrate the same `opaque-alignment` primitives — the difference is only the execution context (vmap'd vs eager). This is what makes the primitive layer load-bearing.
+Per `trl-trainers-plan.md` §6/§8.1, the TRL trainers override a **single** unified hook in `DPTrainer`: `compute_per_example_loss(fmodel, params, inputs, *, return_logits)`. The trainer wraps it with `vmap` for both training (→ grad → clip → noise) and per-example eval. The hook orchestrates `opaque-alignment` primitives; that single override point is what makes the primitive layer load-bearing.
 
 ---
 
@@ -731,11 +731,11 @@ Assert both complete one training step without errors. Not a numeric-correctness
 
 - After Phase η: `losses/_fused.py` consumes `Opaque_FusedLinearPreference` from `opaque-patches`.
 - Phase η has a coordinated `opaque-patches` deliverable that adds this kernel.
-- All other kernel usage is implicit through HF model forwards (`use_liger_kernel=True` routes through opaque-patches; transparent to the loss layer).
+- All other kernel usage is implicit through HF model forwards (`use_performance_kernels=True` routes through opaque-patches; transparent to the loss layer).
 
 ### 10.3 With `opaque.transformers.trl`
 
-`opaque-alignment` is consumed by trainer classes per `trl-trainers-plan.md` §6.2. The trainers' `_build_per_example_loss` and `compute_loss` overrides orchestrate `opaque-alignment` primitives. The dependency edge runs `opaque-transformers → opaque-alignment`; never the reverse.
+`opaque-alignment` is consumed by trainer classes per `trl-trainers-plan.md` §6.2. The trainers' single `compute_per_example_loss` override orchestrates `opaque-alignment` primitives (vmap'd for both training and eval). The dependency edge runs `opaque-transformers → opaque-alignment`; never the reverse.
 
 ### 10.4 With `opaque-dpsgd` / `opaque-dpftrl`
 
@@ -882,7 +882,7 @@ None of these require structural changes to the core package. The Greek-letter p
 ## 14. References
 
 ### Within this plan family
-- `docs/development/trl-trainers-plan.md` — sibling plan for the TRL-style class trainers consuming these primitives. See especially §4 (cross-cutting decisions: ref-model paths, KTO rotation, DPO collator, DP-purity rule, PEFT integration, loss-type coverage, kernel optimization), §6 (trainer responsibilities + dual-override pattern), §8 (DPTrainer foundational hooks), §10 (`opaque.distributed` extensions).
+- `docs/development/trl-trainers-plan.md` — sibling plan for the TRL-style class trainers consuming these primitives. See especially §4 (cross-cutting decisions: ref-model paths, KTO rotation, DPO collator, DP-purity rule, PEFT integration, loss-type coverage, kernel optimization), §6 (trainer responsibilities) + §8.1 (the unified `compute_per_example_loss` hook), §8 (DPTrainer foundational hooks), §10 (`opaque.distributed` extensions).
 
 ### Opaque packages on `feat/dptrainer-main-integration`
 - `packages/opaque-engine/src/opaque/api/engine/clipping/_clipped_grad.py` — `clipped_grad`.
