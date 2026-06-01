@@ -6,7 +6,6 @@ current starting points:
 
 - `examples/train_sft.py` — DP-SGD supervised fine-tuning.
 - `examples/train_dpo.py` — DP-SGD DPO with precomputed reference logps.
-- `examples/train_kto.py` — DP-SGD KTO (Tier-2 detached-KL caller pattern).
 
 Each script swaps the DP mechanism at a single call site: import a noise
 mechanism from `opaque.dpsgd.noise` (Gaussian) or `opaque.dpftrl.noise`

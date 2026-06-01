@@ -6,7 +6,7 @@ Covers the three pure logprob helpers:
 
 - :func:`selective_log_softmax` — gather of ``log_softmax`` at indices.
 - :func:`sequence_logp` — DPO/causal-LM per-sequence completion logp.
-- :func:`get_batch_logps` — KTO-style helper with ``-100`` ignore masking.
+- :func:`get_batch_logps` — batched helper with ``-100`` ignore masking.
 
 Each function has >=3 hand-computed reference cases (tiny tensors where the
 expected logp is computed by hand or via a reference ``F.log_softmax`` loop),

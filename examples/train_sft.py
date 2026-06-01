@@ -60,14 +60,19 @@ from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.optimizers import adamw
 from opaque.random import key, fold_in
-from opaque.alignment import language_modeling_collator
-from opaque.alignment.loss.sft import SFT_LOSSES
+from opaque.alignment.sft import dft_loss, language_modeling_collator, nll_loss
 
 # DP-FTRL mechanism swap (plan §3.2): the loss closure is mechanism-agnostic.
 # To run DP-FTRL instead of DP-SGD, replace the two ``opaque.dpsgd`` noise/
 # sampling imports above with their DP-FTRL counterparts, e.g.:
 #   from opaque.dpftrl.noise import band_mf_noise  # matrix-factorized noise
 # and feed it the same ``ClippedPytree`` produced by ``clipped_grad`` below.
+
+# The CLI ``--loss-type`` string is mapped to a loss function here: the example
+# is the config-string consumer, so the tiny name->fn map lives at this
+# call-site boundary. The library (``opaque.alignment.sft``) exposes the direct
+# functions ``nll_loss`` / ``dft_loss``, not a string registry.
+_SFT_LOSSES = {"nll": nll_loss, "dft": dft_loss}
 
 
 def parse_args():
@@ -110,7 +115,7 @@ def parse_args():
         type=str,
         choices=["nll", "dft"],
         default="nll",
-        help="SFT loss variant from opaque.alignment.loss.sft.SFT_LOSSES.",
+        help="SFT loss variant (nll or dft) from opaque.alignment.sft.",
     )
     parser.add_argument(
         "--max-length",
@@ -224,7 +229,7 @@ def _run_smoke(args):
             input_ids=input_ids,
             attention_mask=attention_mask,
         )
-        return SFT_LOSSES[loss_type](out.logits, labels)
+        return _SFT_LOSSES[loss_type](out.logits, labels)
 
     # --- Try the full per-example vmap DP-SGD path; fall back if it breaks ---
     try:
@@ -291,7 +296,7 @@ def _run_smoke(args):
         input_ids, attention_mask, labels = batch
         with torch.no_grad():
             out = model(input_ids=input_ids, attention_mask=attention_mask)
-            loss = SFT_LOSSES[loss_type](out.logits, labels)
+            loss = _SFT_LOSSES[loss_type](out.logits, labels)
         print(f"  non-vmap batch loss (per-example mean): {loss.mean().item():.4f}")
         print("\nSmoke OK (fallback path): loss wiring validated.")
         return 0
@@ -360,7 +365,7 @@ def main():
             input_ids=input_ids,
             attention_mask=attention_mask,
         )
-        return SFT_LOSSES[args.loss_type](out.logits, labels)
+        return _SFT_LOSSES[args.loss_type](out.logits, labels)
 
     # --- DP-SGD glue: clipped_grad -> gaussian_noise -> adamw (mirrors template) ---
     grad_fn, clip_state = clipped_grad(

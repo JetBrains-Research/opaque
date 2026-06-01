@@ -11,7 +11,6 @@ Covers:
   ``torch.equal`` tensors.
 - ``completion_mask`` output key present iff at least one input example carries
   ``"completion_mask"``.
-- ``padding_free=True`` raises ``NotImplementedError`` at factory-call time.
 - Adversarial edge cases: all-zero ``completion_mask`` row, examples longer than
   ``max_length``, and ``pad_to_multiple_of`` interaction with truncated length.
 
@@ -21,10 +20,11 @@ unit β.W.
 
 from __future__ import annotations
 
-import pytest
 import torch
 
-from opaque.api.alignment.collator._language_modeling import language_modeling_collator
+from opaque.api.alignment.sft.collator._language_modeling import (
+    language_modeling_collator,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -41,18 +41,7 @@ def _make_collator(**kwargs):
 
 
 # ---------------------------------------------------------------------------
-# 1. padding_free=True raises immediately at factory time
-# ---------------------------------------------------------------------------
-
-
-def test_padding_free_raises_not_implemented() -> None:
-    """`padding_free=True` must raise `NotImplementedError` at factory-call time."""
-    with pytest.raises(NotImplementedError, match="padding_free"):
-        language_modeling_collator(pad_token_id=_PAD, max_length=16, padding_free=True)
-
-
-# ---------------------------------------------------------------------------
-# 2. Basic padding / truncation on a hand-built batch of 3 ragged examples
+# 1. Basic padding / truncation on a hand-built batch of 3 ragged examples
 # ---------------------------------------------------------------------------
 
 _RAGGED_EXAMPLES = [

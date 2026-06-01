@@ -1,11 +1,8 @@
 """TypedDict output schemas for the alignment collators.
 
-This module owns the output-schema definitions for all collators in the
-``collator/`` sub-package (plan §7.6).  :class:`LMBatch` is the output schema
-for :func:`~opaque.api.alignment.collator._language_modeling.language_modeling_collator`;
-future preference / unpaired-preference collators will add further TypedDicts
-here as they land (per the β.2 ownership note: other collator units do NOT
-touch this file).
+This module owns the output schema for the language-modeling (SFT) collator
+(plan §7.6).  :class:`LMBatch` is the output schema for
+:func:`~opaque.api.alignment.sft.collator._language_modeling.language_modeling_collator`.
 
 TypedDicts are used rather than dataclasses so that downstream code can
 directly consume the dict returned by the collator without any unpacking step.

@@ -1,16 +1,9 @@
-"""opaque.alignment.collator façade — re-exports collator factories.
+"""opaque.alignment.collator façade — the preference (DPO) collator.
 
-Output-schema TypedDicts live in :mod:`opaque.alignment.collator.types`.
+The language-modeling (SFT) collator lives under
+:mod:`opaque.alignment.sft.collator`.
 """
 
-from opaque.api.alignment.collator import (
-    language_modeling_collator,
-    preference_collator,
-    unpaired_preference_collator,
-)
+from opaque.api.alignment.collator import preference_collator
 
-__all__ = [
-    "language_modeling_collator",
-    "preference_collator",
-    "unpaired_preference_collator",
-]
+__all__ = ["preference_collator"]

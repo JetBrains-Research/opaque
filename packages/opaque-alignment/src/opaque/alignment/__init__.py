@@ -1,26 +1,18 @@
 """opaque.alignment — functional primitives for DP-safe preference learning.
 
-Headline re-exports of the full package surface: logprob helpers, the loss
-registries (``DPO_LOSSES``, ``KTO_LOSSES``, ``SFT_LOSSES``), collator factories,
-dataset transforms (prompt extraction, packing, chat templates, KTO rotation),
-reference helpers, and alignment metrics.
+Headline re-exports: logprob helpers, the DPO loss registry (``DPO_LOSSES``),
+the preference (DPO) collator, reference helpers, and alignment metrics. SFT
+primitives live under ``opaque.alignment.sft`` (method-first layout, mirroring
+``opaque.dpsgd``).
 
 See ``docs/development/opaque-alignment-plan.md`` for the package design.
 """
 
-from opaque.alignment.collator import (
-    language_modeling_collator,
-    preference_collator,
-    unpaired_preference_collator,
-)
+from opaque.alignment.collator import preference_collator
 from opaque.alignment.data import (
     clone_chat_template,
     extract_prompt,
     get_training_chat_template,
-    pack_bfd,
-    pack_bfd_split,
-    pack_wrapped,
-    rotate_kto_completions,
 )
 from opaque.alignment.logprob import (
     get_batch_logps,
@@ -28,9 +20,7 @@ from opaque.alignment.logprob import (
     sequence_logp,
 )
 from opaque.alignment.loss.dpo import DPO_LOSSES
-from opaque.alignment.loss.kto import KTO_LOSSES
-from opaque.alignment.loss.sft import SFT_LOSSES
-from opaque.alignment.loss.types import DPSpec, LossAggregateSpec
+from opaque.alignment.loss.types import DPSpec
 from opaque.alignment.metric import (
     entropy_from_logits,
     kl_estimator,
@@ -48,20 +38,11 @@ __all__ = [
     "selective_log_softmax",
     "get_batch_logps",
     "DPO_LOSSES",
-    "KTO_LOSSES",
-    "SFT_LOSSES",
     "DPSpec",
-    "LossAggregateSpec",
-    "language_modeling_collator",
     "preference_collator",
-    "unpaired_preference_collator",
     "extract_prompt",
-    "pack_bfd",
-    "pack_bfd_split",
-    "pack_wrapped",
     "clone_chat_template",
     "get_training_chat_template",
-    "rotate_kto_completions",
     "compute_ref_logprobs_for_dataset",
     "null_ref_context",
     "ema_update_reference",

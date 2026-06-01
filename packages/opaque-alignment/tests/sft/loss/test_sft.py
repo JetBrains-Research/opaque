@@ -30,8 +30,8 @@ import torch
 from torch.func import grad, vmap
 
 from opaque.api.alignment.logprob._gather import selective_log_softmax
-from opaque.api.alignment.loss.sft._dft import dft_loss
-from opaque.api.alignment.loss.sft._nll import nll_loss
+from opaque.api.alignment.sft.loss._dft import dft_loss
+from opaque.api.alignment.sft.loss._nll import nll_loss
 
 # ---------------------------------------------------------------------------
 # Helpers

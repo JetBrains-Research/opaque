@@ -29,7 +29,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from opaque.alignment.loss.sft import SFT_LOSSES
+from opaque.alignment.sft import nll_loss
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
@@ -82,7 +82,7 @@ def test_same_closure_runs_under_dpsgd_and_dpftrl() -> None:
     ) -> torch.Tensor:
         merged = {**frozen, **trainable_params}
         logits = fmodel(merged, ids)
-        return SFT_LOSSES["nll"](logits, labs)
+        return nll_loss(logits, labs)
 
     # Shared clipping (opaque-engine) — produces the per-example-clipped,
     # batch-summed gradient tree fed identically to both mechanisms.

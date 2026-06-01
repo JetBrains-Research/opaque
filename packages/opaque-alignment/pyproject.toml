@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "opaque-alignment"
 dynamic = ["version"]
-description = "Functional primitives for DP-safe preference learning (DPO, KTO, SFT)"
+description = "Functional primitives for DP-safe preference learning (DPO, SFT)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
@@ -14,7 +14,6 @@ keywords = [
     "differential-privacy",
     "preference-learning",
     "dpo",
-    "kto",
     "pytorch",
 ]
 classifiers = [
