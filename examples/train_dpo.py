@@ -48,7 +48,15 @@ USAGE:
   # Smoke test (CPU, ~seconds, no network)
   python examples/train_dpo.py --smoke
 
-  # Full training on a real model + preference dataset
+  # Full training run (downloads model + dataset from HuggingFace)
+  python examples/train_dpo.py \\
+    --model Qwen/Qwen2.5-0.5B-Instruct \\
+    --dataset trl-lib/ultrafeedback_binarized \\
+    --loss-type sigmoid --beta 0.1 --max-length 1024 \\
+    --batch-size 16 --max-steps 100 \\
+    --learning-rate 1e-4 --clip-norm 1.0 --noise-multiplier 0.8
+
+  # Legacy --model-name alias also accepted
   python examples/train_dpo.py \\
     --model-name gpt2 --dataset trl-lib/ultrafeedback_binarized \\
     --loss-type sigmoid --beta 0.1 --max-length 1024 --batch-size 16
@@ -70,9 +78,12 @@ from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.optimizers import adamw
 from opaque.random import key, fold_in
+import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.alignment import (
+    extract_prompt,
     preference_collator,
     compute_ref_logprobs_for_dataset,
+    reward_metrics,
     sequence_logp,
 )
 from opaque.alignment.loss.dpo import DPO_LOSSES
@@ -100,10 +111,13 @@ def parse_args():
         action="store_true",
         help="Run a tiny CPU smoke test (random model, synthetic prefs, 2 steps).",
     )
+    # --model is the canonical flag; --model-name is kept as a legacy alias.
     parser.add_argument(
+        "--model",
         "--model-name",
+        dest="model_name",
         type=str,
-        default="gpt2",
+        default="Qwen/Qwen2.5-0.5B-Instruct",
         help="HuggingFace model name or local path (full mode).",
     )
     parser.add_argument(
@@ -138,7 +152,18 @@ def parse_args():
         help="Expected batch size for Poisson sampling (sets the sample rate).",
     )
     parser.add_argument(
+        "--microbatch-size",
+        type=int,
+        default=None,
+        help=(
+            "Microbatch size for clipped_grad (None=full-batch vmap; pass 0 on "
+            "CLI to mean None). Use when the full batch does not fit in memory."
+        ),
+    )
+    parser.add_argument(
+        "--max-steps",
         "--num-steps",
+        dest="max_steps",
         type=int,
         default=100,
         help="Number of DP-SGD steps to run (full mode).",
@@ -147,7 +172,9 @@ def parse_args():
         "--learning-rate", type=float, default=1e-4, help="AdamW learning rate."
     )
     parser.add_argument(
+        "--clip-norm",
         "--clipping-norm",
+        dest="clipping_norm",
         type=float,
         default=1.0,
         help="Per-example gradient clipping norm C.",
@@ -155,11 +182,23 @@ def parse_args():
     parser.add_argument(
         "--noise-multiplier",
         type=float,
-        default=1.0,
+        default=0.8,
         help="DP-SGD Gaussian noise multiplier (sigma = nm * C / batch_size).",
     )
+    parser.add_argument(
+        "--log-steps",
+        type=int,
+        default=10,
+        help="Log training metrics every N steps.",
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
-    return parser.parse_args()
+
+    args = parser.parse_args()
+    # --microbatch-size 0 on CLI means "no microbatching" (full-batch vmap),
+    # mirroring the train_causal_lm.py convention.
+    if args.microbatch_size == 0:
+        args.microbatch_size = None
+    return args
 
 
 def _make_per_example_loss(fmodel, frozen, *, loss_type, beta):
@@ -457,17 +496,129 @@ def _run_smoke(args):
         return 0
 
 
+def _tokenize_preference_example(example, tokenizer, max_length):
+    """Tokenize a single DPO preference example into model-ready token ids.
+
+    Expects ``example`` to have ``"prompt"``, ``"chosen"``, and ``"rejected"``
+    keys (run ``extract_prompt`` first if the prompt is implicit).  Both
+    ``chosen`` and ``rejected`` may be:
+
+    - A ``list`` of chat messages (``{"role": ..., "content": ...}`` dicts),
+      in which case the tokenizer's chat template is applied.
+    - A plain string, tokenized directly.
+
+    The ``chosen_completion_mask`` / ``rejected_completion_mask`` tensors are
+    ``0`` over prompt tokens and ``1`` over response (completion) tokens.
+    Sequences are truncated to ``max_length`` from the right.
+
+    Returns a dict with keys:
+    - ``chosen_input_ids``: ``list[int]``
+    - ``rejected_input_ids``: ``list[int]``
+    - ``chosen_completion_mask``: ``list[int]``  (0=prompt, 1=completion)
+    - ``rejected_completion_mask``: ``list[int]``
+    """
+    prompt = example.get("prompt", [])
+    chosen = example["chosen"]
+    rejected = example["rejected"]
+
+    def _apply_template(messages):
+        """Apply chat template if messages is a list, otherwise tokenize string."""
+        if isinstance(messages, list):
+            return tokenizer.apply_chat_template(
+                messages,
+                tokenize=True,
+                add_generation_prompt=False,
+            )
+        # Plain string: tokenize directly (no special tokens added here).
+        return tokenizer.encode(messages, add_special_tokens=False)
+
+    # Encode the prompt alone to find the prompt boundary.
+    if isinstance(prompt, list) and prompt:
+        prompt_ids = tokenizer.apply_chat_template(
+            prompt,
+            tokenize=True,
+            add_generation_prompt=True,  # opens the assistant turn
+        )
+    elif isinstance(prompt, str) and prompt:
+        prompt_ids = tokenizer.encode(prompt, add_special_tokens=True)
+    else:
+        prompt_ids = []
+
+    # Encode full chosen / rejected sequences (prompt + completion).
+    if isinstance(chosen, list):
+        # chosen/rejected are message lists (completions only, prompt is separate)
+        full_chosen = prompt + (chosen if isinstance(chosen, list) else [])
+        full_rejected = prompt + (rejected if isinstance(rejected, list) else [])
+        chosen_ids = _apply_template(full_chosen)
+        rejected_ids = _apply_template(full_rejected)
+    else:
+        # chosen/rejected are plain strings
+        chosen_ids = (
+            prompt_ids + tokenizer.encode(chosen, add_special_tokens=False)
+            if prompt_ids
+            else tokenizer.encode(chosen, add_special_tokens=True)
+        )
+        rejected_ids = (
+            prompt_ids + tokenizer.encode(rejected, add_special_tokens=False)
+            if prompt_ids
+            else tokenizer.encode(rejected, add_special_tokens=True)
+        )
+
+    prompt_len = len(prompt_ids)
+
+    # Build completion masks: 0 over prompt tokens, 1 over completion tokens.
+    chosen_cmask = [0] * min(prompt_len, len(chosen_ids)) + [1] * max(
+        0, len(chosen_ids) - prompt_len
+    )
+    rejected_cmask = [0] * min(prompt_len, len(rejected_ids)) + [1] * max(
+        0, len(rejected_ids) - prompt_len
+    )
+
+    # Truncate to max_length (keep-start).
+    chosen_ids = chosen_ids[:max_length]
+    rejected_ids = rejected_ids[:max_length]
+    chosen_cmask = chosen_cmask[:max_length]
+    rejected_cmask = rejected_cmask[:max_length]
+
+    return {
+        "chosen_input_ids": chosen_ids,
+        "rejected_input_ids": rejected_ids,
+        "chosen_completion_mask": chosen_cmask,
+        "rejected_completion_mask": rejected_cmask,
+    }
+
+
 def main():
     args = parse_args()
 
     if args.smoke:
         return _run_smoke(args)
 
-    # --- Full training path (real model + tokenizer) ---
+    # ------------------------------------------------------------------ #
+    # Full training path — real model + tokenizer + HF preference dataset #
+    # ------------------------------------------------------------------ #
+    from datasets import load_dataset
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(args.seed)
 
-    print(f"Loading model + tokenizer: {args.model_name} ...")
+    print("=" * 72)
+    print("train_dpo.py — full DP-DPO training run")
+    print("=" * 72)
+    print(f"  Device      : {device}")
+    print(f"  Model       : {args.model_name}")
+    print(f"  Dataset     : {args.dataset}")
+    print(f"  Loss        : {args.loss_type}  beta={args.beta}")
+    print(f"  Max length  : {args.max_length}")
+    print(f"  Batch size  : {args.batch_size}")
+    print(f"  Max steps   : {args.max_steps}")
+    print(f"  LR          : {args.learning_rate}")
+    print(f"  Clip norm   : {args.clipping_norm}")
+    print(f"  Noise mult. : {args.noise_multiplier}")
+    print(f"  Microbatch  : {args.microbatch_size}")
+
+    # --- 1. Load model + tokenizer -------------------------------------------
+    print(f"\nLoading model + tokenizer: {args.model_name} ...")
     model = AutoModelForCausalLM.from_pretrained(args.model_name)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     if tokenizer.pad_token_id is None:
@@ -475,31 +626,81 @@ def main():
     apply_model_patches(model)
     model.eval()
     model.to(device)
+    print(f"  Parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+    # --- 2. Load dataset + tokenize ------------------------------------------
+    # ultrafeedback_binarized (and similar TRL preference datasets) stores
+    # chosen/rejected as lists of chat messages; extract_prompt pulls out the
+    # shared prompt prefix so chosen/rejected become completion-only lists.
+    print(f"\nLoading dataset: {args.dataset} (streaming) ...")
+    raw = load_dataset(args.dataset, split="train", streaming=True)
+
+    # Stream until we have enough tokenized examples for the run.
+    # We need at least batch_size examples for a meaningful Poisson draw.
+    min_examples = max(args.batch_size * 4, 128)
+    examples = []
+    print(f"  Collecting at least {min_examples} examples ...")
+    for raw_row in raw:
+        row = extract_prompt(raw_row)
+        try:
+            tok = _tokenize_preference_example(row, tokenizer, args.max_length)
+        except Exception:
+            continue
+        # Skip degenerate examples: both sides must have some completion tokens.
+        if sum(tok["chosen_completion_mask"]) == 0:
+            continue
+        if sum(tok["rejected_completion_mask"]) == 0:
+            continue
+        examples.append(tok)
+        # Collect 10× batch_size * max_steps rows, capped at a reasonable limit
+        # so we don't stream the whole dataset before training begins.
+        target = min(args.batch_size * max(args.max_steps, 10) * 2, 50_000)
+        if len(examples) >= target:
+            break
+
+    if not examples:
+        raise SystemExit(
+            f"No usable preference examples found in '{args.dataset}'. "
+            "Check that the dataset has 'chosen' and 'rejected' columns."
+        )
+    print(f"  Materialized {len(examples)} preference examples.")
+
+    # --- 3. Precompute reference logps (frozen policy-as-ref) ----------------
+    # We use the policy model itself as the reference at initialisation — a
+    # common simplification that is correct when the policy is not yet trained
+    # (log-ratios are all 0 at step 0).  In a production run, load a separate
+    # frozen reference checkpoint here.
+    from datasets import Dataset as HFDataset
 
     collate = preference_collator(tokenizer.pad_token_id, args.max_length)
+    hf_dataset = HFDataset.from_list(examples)
 
-    # Reference logps are precomputed ONCE here (outside the vmap loop), using a
-    # frozen copy of the base model as the reference. In a real run the dataset
-    # would be tokenized into chosen/rejected ids + completion masks first (see
-    # opaque.alignment.data.extract_prompt + the preference preprocessing path),
-    # then passed through compute_ref_logprobs_for_dataset:
-    #
-    #   dataset = compute_ref_logprobs_for_dataset(
-    #       dataset,
-    #       _make_ref_callable(ref_model),
-    #       collator=collate,
-    #       output_columns=("ref_chosen_logps", "ref_rejected_logps"),
-    #       cache_key=("dpo", args.model_name),
-    #   )
+    print("\nPrecomputing reference logps (policy-as-ref, cached to disk) ...")
+    hf_dataset = compute_ref_logprobs_for_dataset(
+        hf_dataset,
+        _make_ref_callable(model),
+        collator=collate,
+        output_columns=("ref_chosen_logps", "ref_rejected_logps"),
+        batch_size=args.batch_size,
+        cache_key=("dpo", args.model_name),
+    )
+    rows = list(hf_dataset)
+    print(
+        f"  ref_chosen_logps[0]  = {rows[0]['ref_chosen_logps']:.4f}\n"
+        f"  ref_rejected_logps[0] = {rows[0]['ref_rejected_logps']:.4f}"
+    )
 
+    # --- 4. Functional form + per-example DPO loss ---------------------------
     fmodel, trainable, frozen = make_functional(
         model, disable_autograd_tracking=True, partition_trainable=True
     )
+    print(f"Trainable tensors: {len(trainable)} | frozen: {len(frozen)}")
 
     per_example_loss = _make_per_example_loss(
         fmodel, frozen, loss_type=args.loss_type, beta=args.beta
     )
 
+    # --- 5. DP-SGD glue: clipped_grad -> gaussian_noise -> adamw -------------
     # clipped_grad differentiates argnums=0 (trainable params) over the batch
     # axis of every per-example arg in _BATCH_ARGNUMS = (1..9) = (chosen ids/mask/
     # cmask, rejected ids/mask/cmask, ref_chosen_logps, ref_rejected_logps).
@@ -512,31 +713,93 @@ def main():
         clipping_norm=args.clipping_norm,
         normalize_by=args.batch_size,
         return_aux=True,
+        microbatch_size=args.microbatch_size,
     )
     noise_fn, noise_state = gaussian_noise(
         noise_multiplier=args.noise_multiplier, key=key(args.seed)
     )
     base_opt = adamw(lr=args.learning_rate)
     opt_state = base_opt.init(trainable)
-    del (
-        collate,
-        grad_fn,
-        clip_state,
-        noise_fn,
-        noise_state,
-        opt_state,
-    )  # wired below in real loop (collate feeds the precompute + DataLoader)
 
-    raise SystemExit(
-        "Full-mode training requires a preference dataset tokenized into "
-        "chosen/rejected ids + completion masks, run through "
-        "compute_ref_logprobs_for_dataset (see the commented block above) and "
-        "wired into a PoissonSampler DataLoader (see examples/train_causal_lm.py "
-        "for the full data path). This DPO example ships a runnable --smoke path; "
-        "for a complete production loop use train_causal_lm.py as the data-loading "
-        "template and swap in the preference collator + DPO per-example loss "
-        "(two forwards + sequence_logp + DPO_LOSSES) shown above."
+    # --- 6. Privacy accountant -----------------------------------------------
+    sample_rate = args.batch_size / len(rows)
+    _step_privacy = dpsgd_acc.poisson(
+        dpsgd_acc.gaussian(args.noise_multiplier),
+        sample_rate=sample_rate,
     )
+
+    def _epsilon_so_far(steps_done):
+        """Return privacy ε spent after ``steps_done`` DP-SGD steps at δ=1e-5."""
+        if steps_done == 0:
+            return 0.0
+        delta = 1e-5
+        try:
+            return (_step_privacy * steps_done).epsilon_at(delta)
+        except Exception:
+            return float("nan")
+
+    # --- 7. Poisson-sampled training loop ------------------------------------
+    sampler = PoissonSampler(
+        rows,
+        sample_rate=sample_rate,
+        n_steps=args.max_steps,
+        key=fold_in(key(args.seed), 0, 0),
+    )
+
+    print(
+        f"\nTraining for up to {args.max_steps} DP-SGD steps "
+        f"(loss={args.loss_type}, C={args.clipping_norm}, "
+        f"nm={args.noise_multiplier}, sample_rate={sample_rate:.4f}) ..."
+    )
+    step = 0
+    for indices in sampler:
+        if not indices:  # empty Poisson draw — skip, no gradient to release
+            step += 1
+            continue
+        batch = _collate_to_device(collate, [rows[i] for i in indices], device)
+        (grads, aux), clip_state = grad_fn(trainable, *batch, state=clip_state)
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
+        updates, opt_state = base_opt.update(noisy_grads, opt_state, params=trainable)
+        trainable = torchopt.apply_updates(trainable, updates)
+        step += 1
+
+        if step % args.log_steps == 0 or step == args.max_steps:
+            # Per-batch reward metrics (detached — private internal telemetry).
+            (
+                chosen_ids,
+                _chosen_mask,
+                chosen_cmask,
+                rejected_ids,
+                _rejected_mask,
+                rejected_cmask,
+                ref_chosen_lp,
+                ref_rejected_lp,
+            ) = batch
+            with torch.no_grad():
+                merged = {**frozen, **trainable}
+                c_out = fmodel(
+                    merged, input_ids=chosen_ids, attention_mask=_chosen_mask
+                )
+                r_out = fmodel(
+                    merged, input_ids=rejected_ids, attention_mask=_rejected_mask
+                )
+                c_logp = sequence_logp(c_out.logits, chosen_ids, chosen_cmask)
+                r_logp = sequence_logp(r_out.logits, rejected_ids, rejected_cmask)
+                chosen_lr = c_logp - ref_chosen_lp
+                rejected_lr = r_logp - ref_rejected_lp
+            metrics = reward_metrics(chosen_lr, rejected_lr, beta=args.beta)
+            eps = _epsilon_so_far(step)
+            print(
+                f"  step {step}/{args.max_steps} | "
+                f"bs={batch[0].shape[0]} | "
+                f"dpo_loss={aux.loss_values.mean().item():.4f} | "
+                f"acc={metrics['rewards/accuracies'].item():.3f} | "
+                f"margin={metrics['rewards/margins'].item():.4f} | "
+                f"ε≈{eps:.3f}"
+            )
+
+    print("\nTraining complete.")
+    return 0
 
 
 if __name__ == "__main__":
