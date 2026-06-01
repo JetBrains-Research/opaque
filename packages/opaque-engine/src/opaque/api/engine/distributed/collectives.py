@@ -78,6 +78,49 @@ def barrier() -> None:
         dist.barrier()
 
 
+def is_main_process() -> bool:
+    """Return True on the rank-0 process (always True if not distributed)."""
+    return get_rank() == 0
+
+
+def num_processes() -> int:
+    """Return the world size (1 if not distributed). Alias of ``get_world_size``."""
+    return get_world_size()
+
+
+def process_index() -> int:
+    """Return the current rank (0 if not distributed). Alias of ``get_rank``."""
+    return get_rank()
+
+
+def wait_for_everyone() -> None:
+    """Block until every rank reaches this call (no-op if not distributed).
+
+    Module-level alias of :func:`barrier`, matching the
+    ``accelerator.wait_for_everyone()`` idiom that callers port from.
+    """
+    barrier()
+
+
+def gather_for_metrics(tensor: torch.Tensor) -> torch.Tensor:
+    """All-gather ``tensor`` across ranks and concatenate along dim 0.
+
+    In a non-distributed context returns ``tensor`` unchanged. Intended for
+    metric aggregation (e.g. detached KL means, reference-logprob shards),
+    where duplicate samples from Poisson sampling are not a correctness
+    concern. This is **not** a gradient primitive — do not use it inside the
+    clipped/noised per-example gradient path.
+
+    All ranks must pass tensors of identical shape and dtype.
+    """
+    if not is_distributed():
+        return tensor
+    world_size = get_world_size()
+    gathered = [torch.empty_like(tensor) for _ in range(world_size)]
+    dist.all_gather(gathered, tensor.contiguous())
+    return torch.cat(gathered, dim=0)
+
+
 __all__ = [
     "is_distributed",
     "get_rank",
@@ -85,4 +128,9 @@ __all__ = [
     "all_reduce",
     "all_reduce_",
     "barrier",
+    "is_main_process",
+    "num_processes",
+    "process_index",
+    "wait_for_everyone",
+    "gather_for_metrics",
 ]
