@@ -145,16 +145,22 @@ class TestStrategyCoercion:
 
     def test_unknown_strategy_raises(self):
         with pytest.raises(ValueError):
-            TrainingArguments(privacy_noise_multiplier=1.0, eval_strategy="completely-bogus")
+            TrainingArguments(
+                privacy_noise_multiplier=1.0, eval_strategy="completely-bogus"
+            )
 
     def test_unknown_lr_scheduler_raises(self):
         with pytest.raises(ValueError):
-            TrainingArguments(privacy_noise_multiplier=1.0, lr_scheduler="not-a-real-scheduler")
+            TrainingArguments(
+                privacy_noise_multiplier=1.0, lr_scheduler="not-a-real-scheduler"
+            )
 
 
 class TestHFFieldNormalization:
     def test_debug_string_coerces_to_debug_options(self):
-        args = TrainingArguments(privacy_noise_multiplier=1.0, debug="underflow_overflow")
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0, debug="underflow_overflow"
+        )
         assert args.debug == [DebugOption.UNDERFLOW_OVERFLOW]
 
     @pytest.mark.parametrize(
@@ -162,12 +168,16 @@ class TestHFFieldNormalization:
         [(True, "all"), (False, "no"), ("non_padding", "non_padding")],
     )
     def test_include_num_input_tokens_seen_normalizes(self, value, expected):
-        args = TrainingArguments(privacy_noise_multiplier=1.0, include_num_input_tokens_seen=value)
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0, include_num_input_tokens_seen=value
+        )
         assert args.include_num_input_tokens_seen == expected
 
     def test_include_num_input_tokens_seen_invalid_raises(self):
         with pytest.raises(ValueError, match="include_num_input_tokens_seen"):
-            TrainingArguments(privacy_noise_multiplier=1.0, include_num_input_tokens_seen="sometimes")
+            TrainingArguments(
+                privacy_noise_multiplier=1.0, include_num_input_tokens_seen="sometimes"
+            )
 
     @pytest.mark.parametrize(
         "value,expected",
@@ -276,12 +286,16 @@ class TestEvalStepsFallback:
     """``eval_strategy="steps"`` without ``eval_steps`` falls back to ``logging_steps``."""
 
     def test_eval_steps_falls_back_to_logging_steps(self):
-        args = TrainingArguments(privacy_noise_multiplier=1.0, eval_strategy="steps", logging_steps=10)
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0, eval_strategy="steps", logging_steps=10
+        )
         assert args.eval_steps == 10
 
     def test_eval_strategy_steps_zero_logging_raises(self):
         with pytest.raises(ValueError, match="non-zero"):
-            TrainingArguments(privacy_noise_multiplier=1.0, eval_strategy="steps", logging_steps=0)
+            TrainingArguments(
+                privacy_noise_multiplier=1.0, eval_strategy="steps", logging_steps=0
+            )
 
 
 class TestMaxGradNorm:
@@ -296,7 +310,9 @@ class TestMaxGradNorm:
             TrainingArguments(privacy_noise_multiplier=1.0, clipping_norm=0.0)
 
     def test_dict_fallback_only_normalizes_to_float(self):
-        args = TrainingArguments(privacy_noise_multiplier=1.0, clipping_norm={"fallback": 2.0})
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0, clipping_norm={"fallback": 2.0}
+        )
         assert args.clipping_norm == 2.0
 
     def test_dict_per_group_accepted(self):
@@ -319,7 +335,9 @@ class TestMaxGradNorm:
 
     def test_dict_missing_fallback_raises(self):
         with pytest.raises(ValueError, match="fallback"):
-            TrainingArguments(privacy_noise_multiplier=1.0, clipping_norm={"linear": 1.0})
+            TrainingArguments(
+                privacy_noise_multiplier=1.0, clipping_norm={"linear": 1.0}
+            )
 
     @pytest.mark.parametrize("value", [math.inf, "inf", "Infinity", "1e999"])
     def test_infinity_disables_clipping(self, value):
@@ -370,7 +388,9 @@ class TestClippingAndSamplingSurfaces:
 
     def test_invalid_sampling_mode_raises(self):
         with pytest.raises(ValueError, match="sampling_mode"):
-            TrainingArguments(privacy_noise_multiplier=1.0, sampling_mode="not_a_real_sampler")
+            TrainingArguments(
+                privacy_noise_multiplier=1.0, sampling_mode="not_a_real_sampler"
+            )
 
     def test_sampling_mode_not_allowed_for_mechanism_raises(self):
         # ``sequential`` is a valid sampler name on the wider surface but
@@ -384,15 +404,21 @@ class TestClippingAndSamplingSurfaces:
         # ``"gaussian"`` baseline.
         args = TrainingArguments(privacy_noise_multiplier=1.0)
         assert args.sampling_mode == "poisson"
-        args_explicit = TrainingArguments(privacy_noise_multiplier=1.0, sampling_mode="auto")
+        args_explicit = TrainingArguments(
+            privacy_noise_multiplier=1.0, sampling_mode="auto"
+        )
         assert args_explicit.sampling_mode == "poisson"
 
     def test_clipping_kwargs_json_string_parsed(self):
-        args = TrainingArguments(privacy_noise_multiplier=1.0, clipping_kwargs='{"norm_max": 9.0}')
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0, clipping_kwargs='{"norm_max": 9.0}'
+        )
         assert args.clipping_kwargs == {"norm_max": 9.0}
 
     def test_sampling_kwargs_json_string_parsed(self):
-        args = TrainingArguments(privacy_noise_multiplier=1.0, sampling_kwargs='{"max_batch_size": 8}')
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0, sampling_kwargs='{"max_batch_size": 8}'
+        )
         assert args.sampling_kwargs == {"max_batch_size": 8}
 
     def test_sampling_kwargs_rejects_bands(self):
@@ -424,7 +450,9 @@ class TestMechanismAndSamplerDefaults:
 
     def test_unknown_mechanism_rejected(self):
         with pytest.raises(ValueError, match="privacy_noise_mechanism"):
-            TrainingArguments(privacy_noise_multiplier=1.0, privacy_noise_mechanism="laplace")
+            TrainingArguments(
+                privacy_noise_multiplier=1.0, privacy_noise_mechanism="laplace"
+            )
 
     @pytest.mark.parametrize(
         "mechanism,expected_sampler",
@@ -438,19 +466,26 @@ class TestMechanismAndSamplerDefaults:
         ],
     )
     def test_auto_resolves_per_mechanism(self, mechanism, expected_sampler):
-        args = TrainingArguments(privacy_noise_multiplier=1.0, privacy_noise_mechanism=mechanism)
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0, privacy_noise_mechanism=mechanism
+        )
         assert args.sampling_mode == expected_sampler
 
     def test_mf_band_accepts_poisson_override(self):
         args = TrainingArguments(
             privacy_noise_multiplier=1.0,
-            privacy_noise_mechanism="mf_band", sampling_mode="poisson"
+            privacy_noise_mechanism="mf_band",
+            sampling_mode="poisson",
         )
         assert args.sampling_mode == "poisson"
 
     def test_mf_blt_rejects_poisson_override(self):
         with pytest.raises(ValueError, match="sampling_mode"):
-            TrainingArguments(privacy_noise_multiplier=1.0, privacy_noise_mechanism="mf_blt", sampling_mode="poisson")
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                privacy_noise_mechanism="mf_blt",
+                sampling_mode="poisson",
+            )
 
     def test_mf_auto_resolves_adaptive_to_fixed(self, caplog):
         """``clipping_mode='adaptive'`` paired with an MF mechanism is auto-
@@ -462,7 +497,8 @@ class TestMechanismAndSamplerDefaults:
         with caplog.at_level(logging.WARNING):
             args = TrainingArguments(
                 privacy_noise_multiplier=1.0,
-                privacy_noise_mechanism="mf_band", clipping_mode="adaptive"
+                privacy_noise_mechanism="mf_band",
+                clipping_mode="adaptive",
             )
         assert args.clipping_mode == "fixed"
         assert any(
@@ -476,12 +512,15 @@ class TestMechanismAndSamplerDefaults:
         MF auto-resolve."""
         args = TrainingArguments(
             privacy_noise_multiplier=1.0,
-            privacy_noise_mechanism="mf_band", clipping_mode="fixed"
+            privacy_noise_mechanism="mf_band",
+            clipping_mode="fixed",
         )
         assert args.clipping_mode == "fixed"
 
     def test_mf_kwargs_auto_filled(self):
-        args = TrainingArguments(privacy_noise_multiplier=1.0, privacy_noise_mechanism="mf_band")
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0, privacy_noise_mechanism="mf_band"
+        )
         assert args.privacy_noise_mechanism_kwargs == {"bands": 16}
 
     def test_mf_user_kwargs_win_on_collision(self):
@@ -597,7 +636,10 @@ class TestDictFieldInputContract:
         assert isinstance(args.clipping_kwargs["items"], list)
 
     def test_json_string_input_parses(self):
-        args = TrainingArguments(privacy_noise_multiplier=1.0, clipping_kwargs='{"target_clipping_rate": 0.5}')
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            clipping_kwargs='{"target_clipping_rate": 0.5}',
+        )
         assert args.clipping_kwargs == {"target_clipping_rate": 0.5}
 
     def test_hf_comma_string_input_parses(self):
@@ -611,15 +653,21 @@ class TestDictFieldInputContract:
         }
 
     def test_optim_args_accepts_mapping(self):
-        args = TrainingArguments(privacy_noise_multiplier=1.0, optim_args={"weight_decay": 0.01})
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0, optim_args={"weight_decay": 0.01}
+        )
         assert args.optim_args == {"weight_decay": 0.01}
 
     def test_optim_args_accepts_json_string(self):
-        args = TrainingArguments(privacy_noise_multiplier=1.0, optim_args='{"weight_decay": 0.01}')
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0, optim_args='{"weight_decay": 0.01}'
+        )
         assert args.optim_args == {"weight_decay": 0.01}
 
     def test_optim_args_accepts_hf_comma_string(self):
-        args = TrainingArguments(privacy_noise_multiplier=1.0, optim_args="weight_decay=0.01,nesterov=True")
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0, optim_args="weight_decay=0.01,nesterov=True"
+        )
         assert args.optim_args == {"weight_decay": 0.01, "nesterov": True}
 
     def test_optim_args_none_stays_none(self):

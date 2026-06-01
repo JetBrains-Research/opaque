@@ -183,9 +183,7 @@ class TestStopAtEpsilon:
     halts at the first log boundary where the accumulated ε ≥ target.
     """
 
-    def test_stops_when_target_epsilon_reached(
-        self, gpt2_with_lora, tiny_lm_dataset
-    ):
+    def test_stops_when_target_epsilon_reached(self, gpt2_with_lora, tiny_lm_dataset):
         """A very small target_epsilon halts training before max_steps."""
         model, tokenizer = gpt2_with_lora
         trainer = DPTrainer(
