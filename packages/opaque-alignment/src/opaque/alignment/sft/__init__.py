@@ -8,6 +8,11 @@ reimported where needed.
 """
 
 from opaque.alignment.sft.collator import language_modeling_collator
-from opaque.alignment.sft.loss import dft_loss, nll_loss
+from opaque.alignment.sft.loss import dft_loss, fused_linear_sft_loss, nll_loss
 
-__all__ = ["nll_loss", "dft_loss", "language_modeling_collator"]
+__all__ = [
+    "nll_loss",
+    "dft_loss",
+    "fused_linear_sft_loss",
+    "language_modeling_collator",
+]
