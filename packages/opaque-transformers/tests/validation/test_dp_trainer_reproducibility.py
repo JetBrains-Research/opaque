@@ -331,6 +331,7 @@ class TestPostInitIdempotency:
             output_dir=str(tmp_path),
             use_cpu=True,
             logging_steps=2,
+            privacy_noise_multiplier=0.0,
         )
         # Snapshot post-first-init state.
         before = {
@@ -407,10 +408,18 @@ class TestReportToRaises:
     @pytest.mark.parametrize("value", ["wandb", "tensorboard", "all", ["wandb"]])
     def test_non_default_report_to_no_longer_raises(self, value, tmp_path):
         # Phase 5b removed the ValueError; these values must construct cleanly.
-        TrainingArguments(output_dir=str(tmp_path), report_to=value)
+        TrainingArguments(
+            output_dir=str(tmp_path),
+            report_to=value,
+            privacy_noise_multiplier=0.0,
+        )
 
     @pytest.mark.parametrize("value", [None, "none", [], ["none"]])
     def test_default_report_to_is_silent(self, value, tmp_path):
         # All four sentinels must construct without error.
-        args = TrainingArguments(output_dir=str(tmp_path), report_to=value)
+        args = TrainingArguments(
+            output_dir=str(tmp_path),
+            report_to=value,
+            privacy_noise_multiplier=0.0,
+        )
         assert args.report_to == []

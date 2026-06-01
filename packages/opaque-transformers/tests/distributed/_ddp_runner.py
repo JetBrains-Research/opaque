@@ -236,6 +236,7 @@ def scenario_eval_gather(rank: int, world_size: int, output_dir: str, **_) -> No
         save_strategy="no",
         report_to=[],
         seed=11,
+        privacy_noise_multiplier=0.0,
     )
     train_ds = TinyDataset(n=16, seq_len=4, vocab=cfg.vocab_size)
     eval_ds = TinyDataset(n=20, seq_len=4, vocab=cfg.vocab_size, seed=99)
@@ -282,6 +283,7 @@ def scenario_batch_eval_metrics(
         seed=17,
         batch_eval_metrics=True,
         include_for_metrics=["inputs", "loss"],
+        privacy_noise_multiplier=0.0,
     )
     train_ds = TinyDataset(n=16, seq_len=4, vocab=cfg.vocab_size)
     eval_ds = TinyDataset(n=20, seq_len=4, vocab=cfg.vocab_size, seed=101)
@@ -326,6 +328,7 @@ def scenario_rank_gating_and_worker_seed(
         save_strategy="no",
         report_to=[],
         dataloader_num_workers=2,
+        privacy_noise_multiplier=0.0,
     )
     trainer = DPTrainer(
         model=model,
@@ -399,6 +402,7 @@ def scenario_env_backend_diagnostic(output_dir: str, **_) -> None:
         save_strategy="no",
         report_to=[],
         ddp_backend="xccl",
+        privacy_noise_multiplier=0.0,
     )
     try:
         DPTrainer(
