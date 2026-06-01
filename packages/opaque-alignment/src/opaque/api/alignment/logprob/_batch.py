@@ -1,8 +1,8 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""KTO-style batched log-probability helper.
+"""Batched per-sequence log-probability helper.
 
-:func:`get_batch_logps` is the TRL ``get_batch_logps`` analogue: it applies the
+:func:`get_batch_logps` (the TRL ``get_batch_logps`` analogue) applies the
 causal-LM shift, builds an ignore-index (``-100``) loss mask, gathers per-token
 log-probs while keeping gather indices valid, and reduces over the sequence
 axis (sum, or mask-weighted mean when ``average_log_prob=True``).

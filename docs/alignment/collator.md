@@ -21,13 +21,6 @@ per-example gradient). Output: `chosen_input_ids`/`chosen_attention_mask`/
 `chosen_completion_mask`, the `rejected_*` trio, and optional `ref_chosen_logps`
 / `ref_rejected_logps` `(B,)`.
 
-## `unpaired_preference_collator`
-
-KTO collation. Output: `completion_input_ids`/`completion_attention_mask`/
-`completion_labels`, a bool `label` `(B,)`, and — when `calculate_KL` and the
-rotated `KL_*` fields are present — `KL_completion_*`; optional
-`reference_logps` / `reference_KL_logps`.
-
 ::: opaque.alignment.sft.collator
 
 ::: opaque.alignment.sft.collator.types

@@ -1,6 +1,6 @@
 # Reference-model handling
 
-DPO/KTO need reference log-probabilities. These helpers run **outside vmap**
+DPO needs reference log-probabilities. These helpers run **outside vmap**
 (a forward pass over a dataset, or PEFT adapter toggles).
 
 ## Precompute + cache

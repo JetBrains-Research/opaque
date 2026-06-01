@@ -2,17 +2,17 @@
 
 Per-example preference/SFT losses. Each is a pure, `vmap`-safe function on
 per-example tensors; the caller wraps it with `vmap(grad(...))` → clip → noise.
-Every loss carries a `DPSpec` declaring its DP tier.
+DPO variants carry a `DPSpec` declaring their DP tier.
 
 ## DP-purity tiers
 
-- **Tier 1** — loss for example `i` depends only on example `i`. Verified by a
-  NaN-injection contract test.
-- **Tier 2** — example `i` + a *detached* batch aggregate with `O(1/n)`
-  leverage (KTO's batch-mean KL). The caller computes the aggregate **outside**
-  vmap, `.detach()`-es it, and broadcasts it in. Verified by an autograd-graph
-  detach audit + a leverage test.
-- **Tier 3** — rejected (sort/rank across batch). Not exposed.
+- **Tier 1** — loss for example `i` depends only on example `i`; a single-record
+  swap moves only that row's gradient. Verified by a NaN-injection contract
+  test. Every live loss (SFT `nll`/`dft`, all DPO variants) is Tier 1.
+- **Tier 3** — rejected: the per-example contribution depends on a batch order
+  statistic (sort/rank/quantile, e.g. DPO's `aot*`), so one swap can change a
+  clipped gradient by `O(1)`. Not exposed; `resolve_dpo_loss("aot")` raises
+  `NotImplementedError`.
 
 ## DPO family (`opaque.alignment.loss.dpo`)
 
@@ -26,15 +26,6 @@ are Tier 1: `sigmoid`, `hinge`, `robust`, `ipo`, `sigmoid_norm`, `discopop`,
 `NotImplementedError` for the rejected `aot*` family.
 
 ::: opaque.alignment.loss.dpo
-
-## KTO family (`opaque.alignment.loss.kto`)
-
-`kto_loss` is **Tier 2**: it takes a scalar detached `kl` (the batch-mean KL
-the caller computes outside vmap). `apo_zero_unpaired` is Tier 1. `KTO_SPEC`
-records the tier + `kl_mean` aggregate; `KTO_AGGREGATES` declares the
-`LossAggregateSpec` (per-rank in v1; cross-rank all-reduce is a v2 item).
-
-::: opaque.alignment.loss.kto
 
 ## SFT family (`opaque.alignment.sft.loss`)
 

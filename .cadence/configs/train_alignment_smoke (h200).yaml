@@ -1,5 +1,5 @@
 # GPU smoke for the opaque-alignment functional examples (Phase ε/γ/δ).
-# Runs the SFT / DPO / KTO --smoke paths on a real CUDA device, exercising the
+# Runs the SFT / DPO --smoke paths on a real CUDA device, exercising the
 # full per-example vmap(grad(...)) DP-SGD path (clip -> noise -> optimizer) on
 # GPU. CPU parity for the loss math + fused kernels is covered by the unit
 # suite; this preset is the GPU half of the `example` gate.
@@ -22,7 +22,6 @@ cmd:
 
     echo "=== SFT smoke ===" && uv run python examples/train_sft.py --smoke
     echo "=== DPO smoke ===" && uv run python examples/train_dpo.py --smoke
-    echo "=== KTO smoke ===" && uv run python examples/train_kto.py --smoke
 provisioning:
   gpu_type: h200
   gpu_count: 1

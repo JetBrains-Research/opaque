@@ -1,7 +1,4 @@
-"""opaque.alignment.data façade — prompt extraction + chat-template helpers.
-
-The KTO completion rotation lives under :mod:`opaque.alignment.kto.data`.
-"""
+"""opaque.alignment.data façade — prompt extraction + chat-template helpers."""
 
 from opaque.api.alignment.data import (
     clone_chat_template,

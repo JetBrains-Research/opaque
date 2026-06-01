@@ -1,10 +1,9 @@
 """opaque.alignment — functional primitives for DP-safe preference learning.
 
-Headline re-exports of the full package surface: logprob helpers, the DPO loss
-registry (``DPO_LOSSES``), the preference (DPO) collator, reference helpers, and
-alignment metrics. SFT primitives live under ``opaque.alignment.sft`` and KTO
-primitives under ``opaque.alignment.kto`` (method-first layout, mirroring
-``opaque.dpsgd``); KTO's headline symbols are re-exported here for convenience.
+Headline re-exports: logprob helpers, the DPO loss registry (``DPO_LOSSES``),
+the preference (DPO) collator, reference helpers, and alignment metrics. SFT
+primitives live under ``opaque.alignment.sft`` (method-first layout, mirroring
+``opaque.dpsgd``).
 
 See ``docs/development/opaque-alignment-plan.md`` for the package design.
 """
@@ -15,16 +14,13 @@ from opaque.alignment.data import (
     extract_prompt,
     get_training_chat_template,
 )
-from opaque.alignment.kto.collator import unpaired_preference_collator
-from opaque.alignment.kto.data import rotate_kto_completions
-from opaque.alignment.kto.loss import KTO_LOSSES
 from opaque.alignment.logprob import (
     get_batch_logps,
     selective_log_softmax,
     sequence_logp,
 )
 from opaque.alignment.loss.dpo import DPO_LOSSES
-from opaque.alignment.loss.types import DPSpec, LossAggregateSpec
+from opaque.alignment.loss.types import DPSpec
 from opaque.alignment.metric import (
     entropy_from_logits,
     kl_estimator,
@@ -42,15 +38,11 @@ __all__ = [
     "selective_log_softmax",
     "get_batch_logps",
     "DPO_LOSSES",
-    "KTO_LOSSES",
     "DPSpec",
-    "LossAggregateSpec",
     "preference_collator",
-    "unpaired_preference_collator",
     "extract_prompt",
     "clone_chat_template",
     "get_training_chat_template",
-    "rotate_kto_completions",
     "compute_ref_logprobs_for_dataset",
     "null_ref_context",
     "ema_update_reference",

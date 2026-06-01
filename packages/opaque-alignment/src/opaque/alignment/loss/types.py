@@ -1,9 +1,9 @@
-"""opaque.alignment.loss types façade — re-exports the DP-purity records.
+"""opaque.alignment.loss types façade — re-exports the DP-purity record.
 
-``DPSpec`` and ``LossAggregateSpec`` declare each loss's DP compatibility
-(Tier 1/2/3) and any required cross-batch aggregate (see plan §7.4, §8).
+``DPSpec`` declares each loss's DP compatibility — Tier 1 (strict per-example)
+or Tier 3 (rejected: rank/sort/quantile across the batch). See plan §3.3, §8.
 """
 
-from opaque.api.alignment.loss.types import DPSpec, LossAggregateSpec
+from opaque.api.alignment.loss.types import DPSpec
 
-__all__ = ["DPSpec", "LossAggregateSpec"]
+__all__ = ["DPSpec"]

@@ -1,7 +1,4 @@
-"""Dataset transforms impl — prompt extraction and chat-template helpers.
-
-The KTO completion rotation lives under :mod:`opaque.api.alignment.kto.data`.
-"""
+"""Dataset transforms impl — prompt extraction and chat-template helpers."""
 
 from opaque.api.alignment.data._chat_template import (
     clone_chat_template,
