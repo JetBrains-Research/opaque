@@ -571,6 +571,22 @@ def main():  # noqa: C901
     raw = load_dataset(args.dataset, split="train")
     print(f"  {len(raw)} raw examples.")
 
+    def _encode_chat(value, *, add_generation_prompt: bool = False) -> list[int]:
+        """Encode a prompt/completion that may be a chat-message list or text.
+
+        KTO datasets such as ``trl-lib/kto-mix-14k`` store ``prompt`` and
+        ``completion`` as conversational message lists
+        (``[{"role": ..., "content": ...}]``); plain-text datasets store
+        strings. Mirror the normalization used in ``train_dpo.py``.
+        """
+        if isinstance(value, list):
+            return tokenizer.apply_chat_template(
+                value, tokenize=True, add_generation_prompt=add_generation_prompt
+            )
+        if isinstance(value, str):
+            return tokenizer.encode(value, add_special_tokens=False)
+        return []
+
     def _tokenize(example: dict) -> dict:
         """Tokenize prompt+completion into completion_input_ids / labels.
 
@@ -578,29 +594,36 @@ def main():  # noqa: C901
           - ``completion_input_ids``: all tokens (prompt ++ completion).
           - ``completion_labels``: prompt positions masked to ``-100``,
             completion positions carry the token id as a target.
-        This mirrors the convention in ``_build_smoke_dataset`` / ``_derive_kl_columns``
-        and the unpaired_preference_collator docstring (plan §7.6).
+        Handles both conversational (message-list) and plain-text examples.
         """
-        prompt_ids = tokenizer(
-            example["prompt"],
-            add_special_tokens=False,
-            truncation=False,
-        )["input_ids"]
-        completion_ids = tokenizer(
-            example["completion"],
-            add_special_tokens=False,
-            truncation=False,
-        )["input_ids"]
-        # Concatenate; truncate the combined sequence to max_length.
-        all_ids = (prompt_ids + completion_ids)[: args.max_length]
-        prompt_len = min(len(prompt_ids), args.max_length)
+        prompt = example.get("prompt")
+        completion = example["completion"]
+        if isinstance(prompt, list) and prompt:
+            prompt_ids = tokenizer.apply_chat_template(
+                prompt, tokenize=True, add_generation_prompt=True
+            )
+            full_messages = prompt + (
+                completion if isinstance(completion, list) else []
+            )
+            all_ids = tokenizer.apply_chat_template(
+                full_messages, tokenize=True, add_generation_prompt=False
+            )
+        elif isinstance(prompt, str) and prompt:
+            prompt_ids = tokenizer.encode(prompt, add_special_tokens=True)
+            all_ids = prompt_ids + _encode_chat(completion)
+        else:
+            prompt_ids = []
+            all_ids = _encode_chat(completion)
+        # Truncate the combined sequence to max_length.
+        all_ids = all_ids[: args.max_length]
+        prompt_len = min(len(prompt_ids), len(all_ids))
         # Labels: mask the prompt span (-100), supervise the completion span.
         labels = [-100] * prompt_len + all_ids[prompt_len:]
         return {
             "completion_input_ids": all_ids,
             "completion_labels": labels,
-            # Keep ``completion`` as a string for rotate_kto_completions
-            # (which rotates the raw text within each block, not token ids).
+            # Keep ``completion`` for rotate_kto_completions (it rotates the
+            # raw column within each block, not token ids).
         }
 
     print("Tokenizing completions ...")
@@ -632,12 +655,7 @@ def main():  # noqa: C901
         but without a prompt prefix, since KL completions are used only for the
         KL divergence estimate (Equation 8 of Ethayarajh et al. 2023).
         """
-        kl_ids = tokenizer(
-            example["KL_completion"],
-            add_special_tokens=False,
-            truncation=True,
-            max_length=args.max_length,
-        )["input_ids"]
+        kl_ids = _encode_chat(example["KL_completion"])[: args.max_length]
         return {
             "KL_completion_input_ids": kl_ids,
             "KL_completion_labels": [-100] + kl_ids[1:] if kl_ids else [],
