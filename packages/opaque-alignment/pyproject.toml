@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opaque-alignment"
+dynamic = ["version"]
+description = "Functional primitives for DP-safe preference learning (DPO, KTO, SFT)"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Opaque Contributors" }]
+requires-python = ">=3.11,<3.13"
+keywords = [
+    "differential-privacy",
+    "preference-learning",
+    "dpo",
+    "kto",
+    "pytorch",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
+]
+dependencies = [
+    "torch>=2.10.0",
+    "transformers>=4.57.0,<5",
+    "datasets>=2.0.0",
+    "peft>=0.18.0",
+    "opaque-engine",
+    "opaque-base",
+    # NO opaque-patches: alignment-specific kernels live inside this package
+    #   (Opaque_FusedLinearPreference is self-contained pure-PyTorch).
+    # NO opaque-dpsgd, NO opaque-dpftrl, NO opaque-optimizers
+    #   — mechanism + optimizer are chosen by the caller. Enforced by
+    #   tests/contracts/test_dependency_direction.py.
+]
+
+[project.optional-dependencies]
+# Recipe path for SFT users who want opaque_linear_cross_entropy_loss memory
+# optimization. Not needed for the alignment primitives themselves.
+patches = ["opaque-patches"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["opaque.alignment*", "opaque.api.alignment*"]
+namespaces = true
+
+[tool.setuptools_scm]
+root = "../.."
+fallback_version = "0.0.0"
+git_describe_command = "git describe --dirty --tags --long --match v*"
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+opaque-engine = { workspace = true }
+opaque-base = { workspace = true }
+opaque-patches = { workspace = true }

@@ -41,6 +41,7 @@ dependencies = [
 [project.optional-dependencies]
 auditing = ["opaque-auditing"]
 dpftrl = ["opaque-dpftrl"]
+alignment = ["opaque-alignment"]
 transformers = [
     "opaque-transformers",
     "opaque-patches[transformers]",
@@ -48,6 +49,7 @@ transformers = [
 all = [
     "opaque[auditing]",
     "opaque[dpftrl]",
+    "opaque[alignment]",
     "opaque[transformers]"
 ]
 
@@ -81,6 +83,7 @@ workspace.members = [
     "packages/opaque-transformers",
     "packages/opaque-accounting",
     "packages/opaque-patches",
+    "packages/opaque-alignment",
 ]
 # torch >=2.11 on PyPI pulls nvidia-*-cu13 runtime packages which require a
 # CUDA 13 driver (570+).  Cadence H200 images ship CUDA 12 drivers, so cap
@@ -97,6 +100,7 @@ opaque-auditing = { workspace = true }
 opaque-transformers = { workspace = true }
 opaque-accounting = { workspace = true }
 opaque-patches = { workspace = true }
+opaque-alignment = { workspace = true }
 
 [dependency-groups]
 # Developer tooling (test runner, linter, stats helpers, cross-validation

@@ -16,6 +16,7 @@ resolution-markers = [
 members = [
     "opaque",
     "opaque-accounting",
+    "opaque-alignment",
     "opaque-auditing",
     "opaque-base",
     "opaque-dpftrl",
@@ -2177,7 +2178,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+alignment = [
+    { name = "opaque-alignment" },
+]
 all = [
+    { name = "opaque-alignment" },
     { name = "opaque-auditing" },
     { name = "opaque-dpftrl" },
     { name = "opaque-patches", extra = ["transformers"] },
@@ -2225,10 +2230,12 @@ examples = [
 
 [package.metadata]
 requires-dist = [
+    { name = "opaque", extras = ["alignment"], marker = "extra == 'all'" },
     { name = "opaque", extras = ["auditing"], marker = "extra == 'all'" },
     { name = "opaque", extras = ["dpftrl"], marker = "extra == 'all'" },
     { name = "opaque", extras = ["transformers"], marker = "extra == 'all'" },
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
+    { name = "opaque-alignment", marker = "extra == 'alignment'", editable = "packages/opaque-alignment" },
     { name = "opaque-auditing", marker = "extra == 'auditing'", editable = "packages/opaque-auditing" },
     { name = "opaque-dpftrl", marker = "extra == 'dpftrl'", editable = "packages/opaque-dpftrl" },
     { name = "opaque-dpsgd", editable = "packages/opaque-dpsgd" },
@@ -2238,7 +2245,7 @@ requires-dist = [
     { name = "opaque-patches", extras = ["transformers"], marker = "extra == 'transformers'", editable = "packages/opaque-patches" },
     { name = "opaque-transformers", marker = "extra == 'transformers'", editable = "packages/opaque-transformers" },
 ]
-provides-extras = ["auditing", "dpftrl", "transformers", "all"]
+provides-extras = ["auditing", "dpftrl", "alignment", "transformers", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2279,6 +2286,35 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "opaque-base", editable = "packages/opaque-base" }]
+
+[[package]]
+name = "opaque-alignment"
+source = { editable = "packages/opaque-alignment" }
+dependencies = [
+    { name = "datasets" },
+    { name = "opaque-base" },
+    { name = "opaque-engine" },
+    { name = "peft" },
+    { name = "torch" },
+    { name = "transformers" },
+]
+
+[package.optional-dependencies]
+patches = [
+    { name = "opaque-patches" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "datasets", specifier = ">=2.0.0" },
+    { name = "opaque-base", editable = "packages/opaque-base" },
+    { name = "opaque-engine", editable = "packages/opaque-engine" },
+    { name = "opaque-patches", marker = "extra == 'patches'", editable = "packages/opaque-patches" },
+    { name = "peft", specifier = ">=0.18.0" },
+    { name = "torch", specifier = ">=2.10.0" },
+    { name = "transformers", specifier = ">=4.57.0,<5" },
+]
+provides-extras = ["patches"]
 
 [[package]]
 name = "opaque-auditing"
