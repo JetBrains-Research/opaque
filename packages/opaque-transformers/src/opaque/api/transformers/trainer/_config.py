@@ -426,7 +426,10 @@ class TrainingArguments:
     # =================================================================
 
     # ---- Privacy budget (user targets) ----------------------------------
-    privacy_target_epsilon: float = 8.0
+    # Set ``privacy_noise_multiplier`` (use 0.0 for non-private) or
+    # ``privacy_target_epsilon`` (to calibrate noise).  When both are set,
+    # training halts at the first log boundary where ε ≥ target_epsilon.
+    privacy_target_epsilon: float | None = None
     privacy_target_delta: float | None = None
 
     # ---- Clipping (mode + JSON-style args, HF ``optim_args`` pattern) ---
@@ -793,13 +796,37 @@ class TrainingArguments:
         self.clipping_norm = _coerce_clipping_norm(self.clipping_norm)
 
         # --- 11b. DP mechanism / clipping / sampling surfaces ---------------
-        # Privacy budget must be positive — calibration to ε <= 0 is
-        # ill-posed and would otherwise surface as an opaque solver failure.
-        if self.privacy_noise_multiplier is None and self.privacy_target_epsilon <= 0:
+        # At least one of NM / target_epsilon must be set; NM=0.0 is
+        # allowed as explicit non-private.
+        if (
+            self.privacy_noise_multiplier is None
+            and self.privacy_target_epsilon is None
+        ):
             raise ValueError(
-                "privacy_target_epsilon must be > 0 when calibrating noise "
-                f"(privacy_noise_multiplier is None); got "
-                f"{self.privacy_target_epsilon!r}."
+                "Set either privacy_noise_multiplier (use 0.0 for non-private "
+                "training) or privacy_target_epsilon (to calibrate noise to a "
+                "budget); neither was provided."
+            )
+        # NM=0.0 means non-private; target_epsilon is meaningless on that path.
+        if (
+            self.privacy_noise_multiplier is not None
+            and self.privacy_noise_multiplier == 0.0
+            and self.privacy_target_epsilon is not None
+        ):
+            raise ValueError(
+                "privacy_noise_multiplier=0.0 is the non-private path; "
+                "privacy_target_epsilon is meaningless there.  Drop the target "
+                "or set a positive noise multiplier."
+            )
+        # Calibration target must be > 0.
+        if (
+            self.privacy_noise_multiplier is None
+            and self.privacy_target_epsilon is not None
+            and self.privacy_target_epsilon <= 0
+        ):
+            raise ValueError(
+                "privacy_target_epsilon must be > 0 when calibrating noise; "
+                f"got {self.privacy_target_epsilon!r}."
             )
         if (
             self.privacy_noise_multiplier is not None

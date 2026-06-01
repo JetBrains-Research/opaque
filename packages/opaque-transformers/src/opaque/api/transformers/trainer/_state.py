@@ -84,6 +84,8 @@ class DPTrainerState:
     privacy_sample_rate: float | None = None
     privacy_expected_batch_size: int | None = None
     privacy_total_steps: int | None = None
+    # True if training was halted early because ε reached privacy_target_epsilon.
+    privacy_target_epsilon_reached: bool = False
     # Physical microbatch trained at (post auto-find-microbatch-size OOM search).
     converged_microbatch_size: int | None = None
 

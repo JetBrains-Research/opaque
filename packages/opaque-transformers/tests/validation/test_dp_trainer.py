@@ -136,6 +136,125 @@ class TestDPTrainerInit:
         assert batch["labels"].ndim == 2
 
 
+class TestPrivacyBudgetValidation:
+    """Validation of the ``privacy_noise_multiplier`` / ``privacy_target_epsilon``
+    pairing at ``TrainingArguments.__post_init__``.
+    """
+
+    def test_neither_set_raises(self):
+        with pytest.raises(ValueError, match="Set either privacy_noise_multiplier"):
+            TrainingArguments(use_cpu=True)
+
+    def test_nm_only_is_ok(self):
+        args = TrainingArguments(use_cpu=True, privacy_noise_multiplier=1.0)
+        assert args.privacy_noise_multiplier == 1.0
+        assert args.privacy_target_epsilon is None
+
+    def test_target_only_is_ok(self):
+        args = TrainingArguments(use_cpu=True, privacy_target_epsilon=8.0)
+        assert args.privacy_noise_multiplier is None
+        assert args.privacy_target_epsilon == 8.0
+
+    def test_nm_zero_alone_is_ok(self):
+        args = TrainingArguments(use_cpu=True, privacy_noise_multiplier=0.0)
+        assert args.privacy_noise_multiplier == 0.0
+
+    def test_nm_zero_with_target_raises(self):
+        with pytest.raises(ValueError, match="non-private path"):
+            TrainingArguments(
+                use_cpu=True,
+                privacy_noise_multiplier=0.0,
+                privacy_target_epsilon=8.0,
+            )
+
+    def test_both_set_is_ok(self):
+        """Both set is the stop-at-ε path — no raise at construction."""
+        args = TrainingArguments(
+            use_cpu=True,
+            privacy_noise_multiplier=1.0,
+            privacy_target_epsilon=8.0,
+        )
+        assert args.privacy_noise_multiplier == 1.0
+        assert args.privacy_target_epsilon == 8.0
+
+
+class TestStopAtEpsilon:
+    """Stop-at-ε: when both NM>0 and target_epsilon are set, the trainer
+    halts at the first log boundary where the accumulated ε ≥ target.
+    """
+
+    def test_stops_when_target_epsilon_reached(
+        self, gpt2_with_lora, tiny_lm_dataset
+    ):
+        """A very small target_epsilon halts training before max_steps."""
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                max_steps=20,
+                num_train_epochs=1,
+                eval_strategy="no",
+                logging_steps=1,
+                # NM=1.0 + a tiny target → should stop within the first few logs.
+                privacy_noise_multiplier=1.0,
+                privacy_target_epsilon=0.001,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        out = trainer.train()
+        assert out.global_step < 20, (
+            f"stop-at-ε should have halted before max_steps; got "
+            f"global_step={out.global_step}"
+        )
+        assert trainer.state.privacy_target_epsilon_reached is True
+
+    def test_runs_to_max_steps_when_target_not_reached(
+        self, gpt2_with_lora, tiny_lm_dataset
+    ):
+        """A target that's never reached at max_steps lets training finish."""
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                max_steps=5,
+                num_train_epochs=1,
+                eval_strategy="no",
+                logging_steps=1,
+                privacy_noise_multiplier=1.0,
+                privacy_target_epsilon=100.0,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        out = trainer.train()
+        assert out.global_step == 5
+        assert trainer.state.privacy_target_epsilon_reached is False
+
+    def test_no_stop_when_only_nm_set(self, gpt2_with_lora, tiny_lm_dataset):
+        """NM-only path runs to max_steps regardless of accumulated ε."""
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                max_steps=4,
+                num_train_epochs=1,
+                eval_strategy="no",
+                logging_steps=1,
+                privacy_noise_multiplier=1.0,
+                # No target_epsilon — stop check skipped.
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        out = trainer.train()
+        assert out.global_step == 4
+        assert trainer.state.privacy_target_epsilon_reached is False
+
+
 class TestDPTrainerTrain:
     """Test the full DP-SGD training loop."""
 

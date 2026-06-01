@@ -224,6 +224,8 @@ class _TrainingContext:
     lr_schedule: Callable[[int], float]
     accounting: Accountant
     mechanism: Callable
+    # Cached per-step ``DpProcess`` reused across step compositions.
+    step_process: Any
     target_delta: float
     sample_rate: float
     calibration_source: str
@@ -947,6 +949,32 @@ class DPTrainer:
             self._warn_on_arg_drift(runtime_payload)
             self._load_rng_state(resume_path)
             self._load_callback_states()
+            # Stop-at-ε on resume: if the restored accountant already
+            # exceeds target, skip the training loop.
+            a = self.args
+            if (
+                a.privacy_noise_multiplier is not None
+                and a.privacy_noise_multiplier > 0
+                and a.privacy_target_epsilon is not None
+            ):
+                ctx.accounting = acc.cached(ctx.accounting)
+                resumed_eps = ctx.accounting.epsilon_at(ctx.target_delta)
+                if resumed_eps >= a.privacy_target_epsilon:
+                    self.state.privacy_target_epsilon_reached = True
+                    log.info(
+                        "stop-at-ε hit on resume: ε=%g >= target=%g; "
+                        "skipping training loop",
+                        resumed_eps,
+                        a.privacy_target_epsilon,
+                    )
+                    return TrainOutput(
+                        global_step=self.state.global_step,
+                        training_loss=0.0,
+                        metrics={
+                            "privacy_epsilon": resumed_eps,
+                            "privacy_delta": ctx.target_delta,
+                        },
+                    )
 
         try:
             return self._inner_training_loop(
@@ -1317,6 +1345,7 @@ class DPTrainer:
             lr_schedule=lr_schedule,
             accounting=accounting,
             mechanism=mechanism,
+            step_process=acc.cached(mechanism(noise_multiplier)),
             target_delta=target_delta,
             sample_rate=sample_rate,
             calibration_source=calibration_source,
@@ -1482,8 +1511,8 @@ class DPTrainer:
                     self.args, self.state, self._control
                 )
 
-                # Privacy accounting (data-independent, before execution)
-                ctx.accounting |= ctx.mechanism(ctx.noise_multiplier)
+                # Privacy accounting (data-independent, before execution).
+                ctx.accounting |= ctx.step_process
 
                 # Training step: clip → noise → optimize.  DP-SGD has no
                 # substep concept; each iteration is a full optimizer step
@@ -3492,7 +3521,29 @@ class DPTrainer:
         ctrl = self._control
 
         if ctrl.should_log:
+            # Re-wrap the accountant in ``acc.cached`` at each log boundary
+            # so subsequent ``epsilon_at`` queries within this window are
+            # amortized.  Mirrors ``_after_evaluate`` and the manual loop.
+            ctx.accounting = acc.cached(ctx.accounting)
             epsilon = ctx.accounting.epsilon_at(ctx.target_delta)
+            # Stop-at-ε: only fires on the fixed-NM path; the calibrated NM
+            # was sized to hit target_epsilon at max_steps, so stopping
+            # earlier would mean we over-noised the run.
+            a = self.args
+            if (
+                a.privacy_noise_multiplier is not None
+                and a.privacy_noise_multiplier > 0
+                and a.privacy_target_epsilon is not None
+                and epsilon >= a.privacy_target_epsilon
+            ):
+                self.state.privacy_target_epsilon_reached = True
+                self._control.should_training_stop = True
+                log.info(
+                    "stop-at-ε hit: ε=%g >= target=%g at step %d",
+                    epsilon,
+                    a.privacy_target_epsilon,
+                    global_step,
+                )
             # HF parity: ``loss`` is the *average* per-step loss across the
             # window since the last log boundary, not the per-step
             # instantaneous value.  Smooths out per-step variance that
