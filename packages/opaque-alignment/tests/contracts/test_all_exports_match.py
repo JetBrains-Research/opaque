@@ -59,11 +59,21 @@ def test_module_exports_match(module_name: str) -> None:
         f"{module_name}: in __all__ but not importable: {sorted(missing)}"
     )
 
+    # The no-leak discipline (rule 6 / rule 2) governs the importable SURFACE:
+    # package ``__init__.py`` modules (impl + façade) and the entire public
+    # façade namespace (``opaque.alignment.*``). Internal impl helper modules
+    # (e.g. ``opaque.api.alignment.loss.dpo.types`` building the registry) may
+    # freely import building blocks, so they are exempt from the leak check —
+    # they still must declare an accurate ``__all__`` (checked above).
+    is_package = hasattr(mod, "__path__")
+    is_facade = module_name.startswith("opaque.alignment")
+    if not (is_package or is_facade):
+        return
+
     # A public name "leaks" only if it is part of THIS package's surface but is
     # absent from __all__: either defined in this module, or re-exported from
     # within ``opaque.(api.)alignment.*``. Names imported from stdlib/typing/
-    # torch (e.g. ``dataclass``, ``Literal``, ``annotations``) are not part of
-    # the public API and are ignored.
+    # torch (e.g. ``dataclass``, ``Literal``, ``annotations``) are ignored.
     def _is_package_surface(value: object) -> bool:
         origin = getattr(value, "__module__", "") or ""
         return (

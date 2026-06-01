@@ -1,3 +1,57 @@
-"""opaque.alignment façade: loss/dpo (re-exports only)."""
+"""opaque.alignment.loss.dpo façade — re-exports the DPO family.
 
-__all__: list[str] = []
+Registry + dispatch (``DPO_LOSSES``, ``DPO_SPEC``, ``DpoVariant``,
+``resolve_dpo_loss``) live in :mod:`opaque.alignment.loss.dpo.types`.
+"""
+
+from opaque.api.alignment.loss.dpo import (
+    DPO_LOSSES,
+    DPO_SPEC,
+    DpoVariant,
+    dpo_apo_down,
+    dpo_apo_zero,
+    dpo_bco_pair,
+    dpo_discopop,
+    dpo_exo_pair,
+    dpo_hinge,
+    dpo_ipo,
+    dpo_nca_pair,
+    dpo_robust,
+    dpo_sft,
+    dpo_sigmoid,
+    dpo_sigmoid_norm,
+    dpo_sppo_hard,
+    dpo_squarechipo,
+    f_divergence_logits,
+    f_divergence_remap,
+    ld_dpo_split,
+    mpo_combine,
+    resolve_dpo_loss,
+    wpo_weights,
+)
+
+__all__ = [
+    "DPO_LOSSES",
+    "DPO_SPEC",
+    "DpoVariant",
+    "resolve_dpo_loss",
+    "dpo_sigmoid",
+    "dpo_hinge",
+    "dpo_robust",
+    "dpo_ipo",
+    "dpo_sigmoid_norm",
+    "dpo_discopop",
+    "dpo_sft",
+    "dpo_squarechipo",
+    "dpo_apo_zero",
+    "dpo_apo_down",
+    "dpo_exo_pair",
+    "dpo_nca_pair",
+    "dpo_bco_pair",
+    "dpo_sppo_hard",
+    "f_divergence_remap",
+    "f_divergence_logits",
+    "mpo_combine",
+    "wpo_weights",
+    "ld_dpo_split",
+]

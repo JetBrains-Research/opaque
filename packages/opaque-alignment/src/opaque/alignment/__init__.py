@@ -18,6 +18,7 @@ from opaque.alignment.logprob import (
     selective_log_softmax,
     sequence_logp,
 )
+from opaque.alignment.loss.dpo import DPO_LOSSES
 from opaque.alignment.loss.types import DPSpec, LossAggregateSpec
 from opaque.alignment.metric import (
     entropy_from_logits,
@@ -30,6 +31,7 @@ __all__ = [
     "sequence_logp",
     "selective_log_softmax",
     "get_batch_logps",
+    "DPO_LOSSES",
     "DPSpec",
     "LossAggregateSpec",
     "language_modeling_collator",
