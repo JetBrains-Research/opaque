@@ -1,3 +1,18 @@
-"""opaque.alignment façade: kernel (re-exports only)."""
+"""opaque.alignment.kernel façade — fused-linear preference kernels.
 
-__all__: list[str] = []
+The per-pair loss protocol lives in :mod:`opaque.alignment.kernel.types`.
+"""
+
+from opaque.api.alignment.kernel import (
+    fused_linear_preference,
+    fused_linear_unpaired_preference,
+    opaque_fused_linear_dpo_loss,
+    opaque_fused_linear_kto_loss,
+)
+
+__all__ = [
+    "opaque_fused_linear_dpo_loss",
+    "opaque_fused_linear_kto_loss",
+    "fused_linear_preference",
+    "fused_linear_unpaired_preference",
+]

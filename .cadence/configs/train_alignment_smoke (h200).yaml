@@ -1,0 +1,65 @@
+# GPU smoke for the opaque-alignment functional examples (Phase ε/γ/δ).
+# Runs the SFT / DPO / KTO --smoke paths on a real CUDA device, exercising the
+# full per-example vmap(grad(...)) DP-SGD path (clip -> noise -> optimizer) on
+# GPU. CPU parity for the loss math + fused kernels is covered by the unit
+# suite; this preset is the GPU half of the `example` gate.
+#
+# Run:
+#   RUN_NAME="alignment-smoke" uv run cadence execution start \
+#     --preset ".cadence/configs/train_alignment_smoke (h200).yaml"
+
+project_name: jbr-fed
+working_dir: "."
+cmd:
+  - |-
+    # opaque-accounting (PyO3) needs rustc; the image doesn't ship it.
+    command -v rustc >/dev/null 2>&1 || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    . "$HOME/.cargo/env"
+
+    uv sync --group dev --group examples --all-packages --extra all
+    uv pip install --quiet "maturin>=1.0,<2.0"
+    uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
+
+    echo "=== SFT smoke ===" && uv run python examples/train_sft.py --smoke
+    echo "=== DPO smoke ===" && uv run python examples/train_dpo.py --smoke
+    echo "=== KTO smoke ===" && uv run python examples/train_kto.py --smoke
+provisioning:
+  gpu_type: h200
+  gpu_count: 1
+  cpu_count: 16
+  ram: 200
+teamcity:
+  url: https://api.cadence.jetbrains.com
+  build_conf_id: JbrFed_JetTrain
+env:
+  variables:
+    PYTHONUNBUFFERED: "1"
+    WANDB_BASE_URL: https://jetbrains.wandb.io
+    WANDB_ENTITY: federated-compute
+    WANDB_PROJECT: opaque
+    RUN_NAME: "${oc.env:RUN_NAME,alignment-smoke}"
+    EXTRA_ARGS: ""
+  python:
+    version: 3.11.14
+  secrets:
+    variables:
+      HF_TOKEN: "${oc.env:HF_TOKEN}"
+      WANDB_API_KEY: "${oc.env:WANDB_API_KEY}"
+    ssh_keys: []
+  aws:
+    sync_config: false
+    sync_credentials: false
+    sync_cache: false
+project_sync:
+  local:
+    root: "."
+    storage_name: Cadence Storage
+    uri: ""
+    exclude:
+      - ".git/*"
+      - "**/.git/*"
+      - ".github/*"
+      - "trainer_output/**"
+      - "**/trainer_output/**"
+      - ".venv/*"
+      - "**/.venv/*"

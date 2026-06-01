@@ -49,6 +49,7 @@ plugins:
             - packages/opaque-accounting/src
             - packages/opaque-patches/src
             - packages/opaque-transformers/src
+            - packages/opaque-alignment/src
           options:
             docstring_style: google
             show_source: true
@@ -124,6 +125,12 @@ nav:
       - BSR: mechanisms/dp-ftrl/bsr.md
       - BISR: mechanisms/dp-ftrl/bisr.md
       - DP-λCGD: mechanisms/dp-ftrl/lambda-cgd.md
+  - Alignment:
+    - Overview: alignment/index.md
+    - Losses: alignment/loss.md
+    - Collators: alignment/collator.md
+    - Reference Handling: alignment/reference.md
+    - Recipes: alignment/recipes.md
   - Tutorials:
     - Overview: tutorials/README.md
     - DP-SGD track:
