@@ -48,6 +48,33 @@ smallest noise multiplier that achieves it under the configured
 sampler + composition.  Set `privacy_noise_multiplier` directly to
 skip calibration.
 
+**At least one of `privacy_noise_multiplier` / `privacy_target_epsilon`
+must be set.**  Neither has a silent default — construction raises if
+both are `None`.  The two valid shapes are:
+
+- `privacy_target_epsilon=ε` (NM left as `None`) — calibrate the noise
+  multiplier from the budget at `train()` start.
+- `privacy_noise_multiplier=σ` (target_eps left as `None`) — fix the
+  noise multiplier; accounted ε is reported but not constrained.
+
+Setting `privacy_noise_multiplier=0.0` together with a
+`privacy_target_epsilon` raises: the non-private path can't honour a
+finite ε target, and silently dropping one of them would hide a
+configuration mistake.
+
+### Stop-at-ε
+
+When `privacy_target_epsilon` is set alongside a non-zero
+`privacy_noise_multiplier`, training halts at the first logging
+boundary where the accumulated ε from the privacy accountant meets or
+exceeds the target.  The halt records `state.privacy_target_epsilon_reached
+= True` and surfaces as a normal early-stop control flow (callbacks see
+the final eval / save / log pass).  The check runs every
+`logging_steps` (so setting `logging_steps=0` disables it
+silently — explicit logging is the contract for stop-at-ε visibility).
+A resume against a checkpoint where the budget is already spent
+short-circuits before the first training step.
+
 `clipping_norm` accepts a positive scalar (global clipping), a dict
 keyed by regex on parameter names with a `"fallback"` entry
 (per-group clipping), or a JSON / `key=value,...` string with the

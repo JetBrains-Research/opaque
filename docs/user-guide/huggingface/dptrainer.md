@@ -49,6 +49,12 @@ multiplier is calibrated from `privacy_target_epsilon` at the start of
 `train()` (once the dataset size and step count are known), not at
 construction.  No extra setup calls are needed before `train()`.
 
+At least one of `privacy_noise_multiplier` / `privacy_target_epsilon`
+must be set — neither has a silent default; see the
+[Privacy targets](./training-arguments.md#privacy-targets) section of
+the `TrainingArguments` reference for the two valid shapes and the
+stop-at-ε contract that fires when both are set.
+
 ## Training, evaluation, prediction
 
 ```python
