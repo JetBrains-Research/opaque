@@ -143,8 +143,7 @@ def test_same_closure_runs_under_dpsgd_and_dpftrl() -> None:
 
 def test_dpo_closure_runs_under_both_mechanisms() -> None:
     """A DPO ``sigmoid`` closure (with ``sequence_logp``) is mechanism-agnostic too."""
-    from opaque.alignment.logprob import sequence_logp
-    from opaque.alignment.loss.dpo import DPO_LOSSES
+    from opaque.alignment.dpo import dpo_sigmoid, sequence_logp
 
     torch.manual_seed(_SEED)
 
@@ -168,7 +167,7 @@ def test_dpo_closure_runs_under_both_mechanisms() -> None:
         merged = {**frozen, **trainable_params}
         chosen_logp = sequence_logp(fmodel(merged, c_ids), c_ids, c_mask)
         rejected_logp = sequence_logp(fmodel(merged, r_ids), r_ids, c_mask)
-        return DPO_LOSSES["sigmoid"](
+        return dpo_sigmoid(
             chosen_logp - ref_c, rejected_logp - ref_r, beta=0.1
         )
 

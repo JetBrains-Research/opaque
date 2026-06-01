@@ -19,7 +19,7 @@ passing the eager loss function directly — ``loss_fn=nll_loss`` (default) or
 ``loss_fn=dft_loss`` — so there is no string registry and the fused / eager
 paths stay symmetric (the same function object selects the variant in both).
 
-Design (mirrors :mod:`opaque.api.alignment.kernel._fused_linear_preference`):
+Design (mirrors :mod:`opaque.api.alignment.dpo.kernel._fused_linear_preference`):
 self-contained pure PyTorch, no custom ``autograd.Function``. Chunking is a pure
 partition of the *non-interacting* batch axis, so ``torch.cat`` of the per-chunk
 losses equals the all-at-once form — and so does its gradient. The result is

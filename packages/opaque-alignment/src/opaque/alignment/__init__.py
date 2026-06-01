@@ -1,53 +1,30 @@
 """opaque.alignment — functional primitives for DP-safe preference learning.
 
-Headline re-exports: logprob helpers, the DPO loss registry (``DPO_LOSSES``),
-the preference (DPO) collator, reference helpers, and alignment metrics. SFT
-primitives live under ``opaque.alignment.sft`` (method-first layout, mirroring
-``opaque.dpsgd``).
+Method-first layout, mirroring ``opaque.dpsgd`` / ``opaque.dpftrl``: each
+method owns its primitives under its own namespace —
+
+- :mod:`opaque.alignment.dpo` — DPO loss family, preference collator,
+  fused-linear preference kernel, reference-model helpers, reward telemetry,
+  and preference prompt extraction.
+- :mod:`opaque.alignment.sft` — NLL / DFT losses and the language-modeling
+  collator.
+
+Shared, lower-level primitives (logprob, general token metrics, chat-template
+data transforms) are internal impl under ``opaque.api.alignment.*`` and are
+surfaced through the method that consumes them (e.g. ``sequence_logp`` via
+:mod:`opaque.alignment.dpo`), following the shared-impl re-import pattern of
+``opaque.dpsgd.clipping``.
 
 See ``docs/development/opaque-alignment-plan.md`` for the package design.
 """
 
-from opaque.alignment.collator import preference_collator
-from opaque.alignment.data import (
-    clone_chat_template,
-    extract_prompt,
-    get_training_chat_template,
-)
-from opaque.alignment.logprob import (
-    get_batch_logps,
-    selective_log_softmax,
-    sequence_logp,
-)
-from opaque.alignment.loss.dpo import DPO_LOSSES
-from opaque.alignment.loss.types import DPSpec
-from opaque.alignment.metric import (
-    entropy_from_logits,
-    kl_estimator,
-    mean_token_accuracy,
-    reward_metrics,
-)
-from opaque.alignment.reference import (
-    compute_ref_logprobs_for_dataset,
-    ema_update_reference,
-    null_ref_context,
-)
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-__all__ = [
-    "sequence_logp",
-    "selective_log_softmax",
-    "get_batch_logps",
-    "DPO_LOSSES",
-    "DPSpec",
-    "preference_collator",
-    "extract_prompt",
-    "clone_chat_template",
-    "get_training_chat_template",
-    "compute_ref_logprobs_for_dataset",
-    "null_ref_context",
-    "ema_update_reference",
-    "reward_metrics",
-    "kl_estimator",
-    "entropy_from_logits",
-    "mean_token_accuracy",
-]
+from opaque.alignment import dpo, sft
+
+try:
+    __version__ = _pkg_version("opaque-alignment")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
+
+__all__ = ["__version__", "dpo", "sft"]

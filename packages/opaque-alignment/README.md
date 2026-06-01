@@ -22,24 +22,37 @@ Built on `opaque-engine` (clipping, functional, distributed) and `opaque-base`
   site. This is enforced by `tests/contracts/test_dependency_direction.py`.
 - **DP-purity invariant.** Every public per-example loss is Tier 1 — strict
   per-example, NaN-injection verified (a single-record swap moves only that
-  row's gradient). Tier 3 (rank/sort/quantile across the batch, e.g. DPO's
-  `aot` family) is rejected — `resolve_dpo_loss("aot")` raises
-  `NotImplementedError`.
+  row's gradient). Tier 3 variants (rank/sort/quantile across the batch, e.g.
+  DPO's `aot` family) are simply not shipped.
+- **Direct functions, no registry.** Each method exposes its loss functions
+  directly (`dpo_sigmoid`, `nll_loss`, …) — there is no string registry,
+  resolver, or variant enum. A config-string consumer (trainer / CLI) builds
+  its own name→function mapping at the call site (see `examples/train_dpo.py`).
 
 ## Import layout
 
+Method-first, mirroring `opaque.dpsgd` / `opaque.dpftrl`: each method owns its
+primitives under its own namespace.
+
 ```
-opaque.alignment                         <- public façade (re-exports)
+opaque.alignment                         <- top-level façade (exposes dpo, sft)
 opaque.api.alignment                     <- implementation namespace
+opaque.alignment.dpo                     <- DPO method façade (aggregates the below)
+opaque.alignment.dpo.loss                <- 14 per-pair DPO variants + log-ratio helpers
+opaque.alignment.dpo.collator            <- preference (DPO) collator factory
+opaque.alignment.dpo.kernel              <- fused-linear DPO preference kernel
+opaque.alignment.dpo.reference           <- ref-logp precompute, null_ref_context, EMA
+opaque.alignment.dpo.metric              <- preference reward telemetry
+opaque.alignment.dpo.data                <- preference prompt extraction
 opaque.alignment.sft.{loss,collator}     <- SFT method (nll, dft; LM collator)
-opaque.alignment.loss.dpo                <- DPO per-pair loss family + registry
-opaque.alignment.logprob                 <- selective_log_softmax, sequence_logp
-opaque.alignment.collator                <- preference (DPO) collator factory
-opaque.alignment.data                    <- prompt extraction, chat templates
-opaque.alignment.reference               <- ref-logp precompute, null_ref_context, EMA
-opaque.alignment.metric                  <- rewards, KL, token accuracy
-opaque.alignment.kernel                  <- fused-linear DPO preference kernel
 ```
+
+Shared, lower-level primitives — `selective_log_softmax` / `sequence_logp`
+(logprob), `entropy_from_logits` / `mean_token_accuracy` (token metrics), and
+chat-template helpers — are internal impl under `opaque.api.alignment.*` and are
+surfaced through the method that consumes them (e.g. `sequence_logp` via
+`opaque.alignment.dpo`), following the shared-impl re-import pattern of
+`opaque.dpsgd.clipping`.
 
 ## Status
 

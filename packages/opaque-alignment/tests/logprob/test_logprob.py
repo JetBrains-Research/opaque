@@ -6,7 +6,6 @@ Covers the three pure logprob helpers:
 
 - :func:`selective_log_softmax` — gather of ``log_softmax`` at indices.
 - :func:`sequence_logp` — DPO/causal-LM per-sequence completion logp.
-- :func:`get_batch_logps` — batched helper with ``-100`` ignore masking.
 
 Each function has >=3 hand-computed reference cases (tiny tensors where the
 expected logp is computed by hand or via a reference ``F.log_softmax`` loop),
@@ -24,7 +23,6 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from torch.func import grad, vmap
 
-from opaque.api.alignment.logprob._batch import get_batch_logps
 from opaque.api.alignment.logprob._gather import selective_log_softmax
 from opaque.api.alignment.logprob._sequence import sequence_logp
 
@@ -203,92 +201,6 @@ def test_sequence_logp_shared_prefix_len_ignored_when_alpha_none() -> None:
 
 
 # ---------------------------------------------------------------------------
-# get_batch_logps
-# ---------------------------------------------------------------------------
-
-
-def test_get_batch_logps_hand_sum() -> None:
-    """All labels valid: result is the summed per-token logp (no average)."""
-    logits = torch.tensor(
-        [[[1.0, 0.0], [0.0, 2.0], [3.0, 0.0]]]  # (1, 3, 2)
-    )
-    labels = torch.tensor([[0, 1, 0]])  # shifted targets: [1, 0]
-    lse0 = math.log(math.exp(1.0) + math.exp(0.0))
-    lse1 = math.log(math.exp(0.0) + math.exp(2.0))
-    expected = torch.tensor([(0.0 - lse0) + (0.0 - lse1)])
-    out = get_batch_logps(logits, labels)
-    assert out.shape == (1,)
-    assert torch.allclose(out, expected, atol=1e-6)
-
-
-def test_get_batch_logps_hand_average() -> None:
-    """average_log_prob divides the sum by the non-ignored token count."""
-    logits = torch.tensor(
-        [[[1.0, 0.0], [0.0, 2.0], [3.0, 0.0]]]  # (1, 3, 2)
-    )
-    labels = torch.tensor([[0, 1, 0]])  # 2 valid shifted targets
-    lse0 = math.log(math.exp(1.0) + math.exp(0.0))
-    lse1 = math.log(math.exp(0.0) + math.exp(2.0))
-    summed = (0.0 - lse0) + (0.0 - lse1)
-    expected = torch.tensor([summed / 2.0])
-    out = get_batch_logps(logits, labels, average_log_prob=True)
-    assert torch.allclose(out, expected, atol=1e-6)
-
-
-def test_get_batch_logps_ignore_index_contributes_zero() -> None:
-    """Tokens with label -100 contribute exactly 0 to the sum.
-
-    Build two label rows that differ only at an ignored position; the summed
-    logp must be identical, and equal to the sum over the single valid token.
-    """
-    torch.manual_seed(5)
-    logits = torch.randn(1, 3, 5)
-    # shifted labels positions: [labels[1], labels[2]]; ignore the 2nd one.
-    labels_a = torch.tensor([[0, 2, -100]])
-    labels_b = torch.tensor([[0, 2, -100]]).clone()
-    labels_b[0, 2] = -100  # already ignored; flip the would-be target arbitrarily
-    out_a = get_batch_logps(logits, labels_a)
-    out_b = get_batch_logps(logits, labels_b)
-    assert torch.allclose(out_a, out_b, atol=1e-7)
-
-    # Reference: only the single valid shifted target (labels[1] = 2) counts.
-    shifted = logits[..., :-1, :]
-    logp_valid = F.log_softmax(shifted[0, 0], dim=-1)[2]
-    assert torch.allclose(out_a, logp_valid.reshape(1), atol=1e-6)
-
-
-def test_get_batch_logps_all_ignored_no_divide_by_zero() -> None:
-    """A row where every shifted label is -100: sum is 0, average is finite.
-
-    The mean divisor must be clamped to >=1 so an all-ignored row does not
-    divide by zero (NaN/inf). Sum is 0 (no contributions); average is 0/1 = 0.
-    """
-    torch.manual_seed(6)
-    logits = torch.randn(2, 4, 6)
-    labels = torch.full((2, 4), -100)
-    out_sum = get_batch_logps(logits, labels)
-    out_avg = get_batch_logps(logits, labels, average_log_prob=True)
-    assert torch.isfinite(out_sum).all()
-    assert torch.isfinite(out_avg).all()
-    assert torch.allclose(out_sum, torch.zeros(2), atol=1e-7)
-    assert torch.allclose(out_avg, torch.zeros(2), atol=1e-7)
-
-
-def test_get_batch_logps_per_example_matches_batched() -> None:
-    """Per-example (T, V) call equals the corresponding batched row."""
-    torch.manual_seed(7)
-    logits = torch.randn(3, 5, 4)
-    labels = torch.randint(0, 4, (3, 5))  # valid vocab ids in [0, V)
-    labels[0, 2] = -100  # at least one ignore position
-    labels[1, 4] = -100  # ignore in a different row too
-    batched = get_batch_logps(logits, labels)
-    per_example = torch.stack([get_batch_logps(logits[i], labels[i]) for i in range(3)])
-    single = get_batch_logps(logits[0], labels[0])
-    assert single.shape == ()
-    assert torch.allclose(batched, per_example, atol=1e-6)
-
-
-# ---------------------------------------------------------------------------
 # vmap(grad(...)) contract tests (plan §11.2)
 # ---------------------------------------------------------------------------
 
@@ -310,22 +222,6 @@ def test_sequence_logp_vmap_grad_finite() -> None:
         return sequence_logp(lg, ids, m).sum()
 
     grads = vmap(grad(per_example))(logits, input_ids, completion_mask)
-    assert grads.shape == (b, t, v)
-    assert torch.isfinite(grads).all()
-
-
-def test_get_batch_logps_vmap_grad_finite() -> None:
-    """vmap(grad(get_batch_logps-sum)) over a (B, T, V) batch yields finite grads."""
-    b, t, v = 4, 6, 8
-    torch.manual_seed(9)
-    logits = torch.randn(b, t, v)
-    labels = torch.randint(0, v, (b, t))
-    labels[:, 0] = -100  # exercise the ignore-index path under grad
-
-    def per_example(lg: torch.Tensor, lab: torch.Tensor):
-        return get_batch_logps(lg, lab, average_log_prob=True).sum()
-
-    grads = vmap(grad(per_example))(logits, labels)
     assert grads.shape == (b, t, v)
     assert torch.isfinite(grads).all()
 

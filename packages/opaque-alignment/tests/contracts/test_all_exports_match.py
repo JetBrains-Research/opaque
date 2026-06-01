@@ -62,8 +62,8 @@ def test_module_exports_match(module_name: str) -> None:
     # The no-leak discipline (rule 6 / rule 2) governs the importable SURFACE:
     # package ``__init__.py`` modules (impl + façade) and the entire public
     # façade namespace (``opaque.alignment.*``). Internal impl helper modules
-    # (e.g. ``opaque.api.alignment.loss.dpo.types`` building the registry) may
-    # freely import building blocks, so they are exempt from the leak check —
+    # (e.g. ``opaque.api.alignment.dpo.kernel._dpo_dispatch`` composing building
+    # blocks) may freely import them, so they are exempt from the leak check —
     # they still must declare an accurate ``__all__`` (checked above).
     is_package = hasattr(mod, "__path__")
     is_facade = module_name.startswith("opaque.alignment")

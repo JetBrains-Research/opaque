@@ -17,7 +17,7 @@ are (plan §13):
     content-addressed ``.npz`` (so the expensive ref forward runs at most once).
   * The per-example loss runs TWO forwards (chosen + rejected), turns each into a
     completion logp via ``sequence_logp``, subtracts the precomputed ref logps to
-    form per-example log-ratios, and dispatches through ``DPO_LOSSES[loss_type]``.
+    form per-example log-ratios, and dispatches through ``_DPO_LOSSES[loss_type]``.
     Each loss output for example *i* depends only on example *i*'s data — Tier 1
     (plan §3.3), so per-example sensitivity stays ``O(C)`` after clipping.
 
@@ -39,7 +39,7 @@ temporary directory (no network, no shared state).
 
 A documented fallback exists in ``_run_smoke`` for environments where
 ``vmap(grad(...))`` over the patched model fails on CPU: a single non-vmap
-chosen+rejected forward + ``DPO_LOSSES["sigmoid"]`` to validate the loss wiring,
+chosen+rejected forward + ``_DPO_LOSSES["sigmoid"]`` to validate the loss wiring,
 with a clear note that the full per-example DP-SGD run is validated via the
 Cadence GPU preset. The script never exits non-zero in smoke mode.
 
@@ -79,14 +79,47 @@ from opaque.dpsgd.sampling import PoissonSampler
 from opaque.optimizers import adamw
 from opaque.random import key, fold_in
 import opaque.dpsgd.accounting as dpsgd_acc
-from opaque.alignment import (
+from opaque.alignment.dpo import (
+    compute_ref_logprobs_for_dataset,
+    dpo_apo_down,
+    dpo_apo_zero,
+    dpo_bco_pair,
+    dpo_discopop,
+    dpo_exo_pair,
+    dpo_hinge,
+    dpo_ipo,
+    dpo_nca_pair,
+    dpo_robust,
+    dpo_sft,
+    dpo_sigmoid,
+    dpo_sigmoid_norm,
+    dpo_sppo_hard,
+    dpo_squarechipo,
     extract_prompt,
     preference_collator,
-    compute_ref_logprobs_for_dataset,
     reward_metrics,
     sequence_logp,
 )
-from opaque.alignment.loss.dpo import DPO_LOSSES
+
+# The library (``opaque.alignment.dpo``) exposes direct loss functions, not a
+# string registry. The CLI ``--loss-type`` string is mapped to a function here,
+# at the call site — mirroring ``examples/train_sft.py``'s ``_SFT_LOSSES``.
+_DPO_LOSSES = {
+    "sigmoid": dpo_sigmoid,
+    "hinge": dpo_hinge,
+    "robust": dpo_robust,
+    "ipo": dpo_ipo,
+    "sigmoid_norm": dpo_sigmoid_norm,
+    "discopop": dpo_discopop,
+    "sft": dpo_sft,
+    "squarechipo": dpo_squarechipo,
+    "apo_zero": dpo_apo_zero,
+    "apo_down": dpo_apo_down,
+    "exo_pair": dpo_exo_pair,
+    "nca_pair": dpo_nca_pair,
+    "bco_pair": dpo_bco_pair,
+    "sppo_hard": dpo_sppo_hard,
+}
 
 # DP-FTRL mechanism swap (plan §3.2): the loss closure is mechanism-agnostic.
 # To run DP-FTRL instead of DP-SGD, replace the two ``opaque.dpsgd`` noise/
@@ -131,9 +164,9 @@ def parse_args():
     parser.add_argument(
         "--loss-type",
         type=str,
-        choices=list(DPO_LOSSES.keys()),
+        choices=sorted(_DPO_LOSSES),
         default="sigmoid",
-        help="DPO loss variant from opaque.alignment.loss.dpo.DPO_LOSSES.",
+        help="DPO loss variant (direct functions from opaque.alignment.dpo).",
     )
     parser.add_argument(
         "--beta",
@@ -240,7 +273,7 @@ def _make_per_example_loss(fmodel, frozen, *, loss_type, beta):
         chosen_logp = sequence_logp(chosen_out.logits, chosen_ids, chosen_cmask)
         rejected_logp = sequence_logp(rejected_out.logits, rejected_ids, rejected_cmask)
         # Log-ratios = policy logp - precomputed reference logp (per example).
-        return DPO_LOSSES[loss_type](
+        return _DPO_LOSSES[loss_type](
             chosen_logp - ref_chosen_logps,
             rejected_logp - ref_rejected_logps,
             beta=beta,
@@ -495,7 +528,7 @@ def _run_smoke(args):
             rejected_logp = sequence_logp(
                 rejected_out.logits, rejected_ids, rejected_cmask
             )
-            loss = DPO_LOSSES[loss_type](
+            loss = _DPO_LOSSES[loss_type](
                 chosen_logp - ref_chosen_logps,
                 rejected_logp - ref_rejected_logps,
                 beta=beta,
