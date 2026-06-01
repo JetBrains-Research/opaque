@@ -247,38 +247,45 @@ def _make_per_example_loss(fmodel, frozen, *, loss_type, beta):
     return per_example_loss
 
 
-def _make_ref_callable(model):
+def _make_ref_callable(model, device=None):
     """Wrap a model into a ``ref`` callable for compute_ref_logprobs_for_dataset.
 
     Returns ``ref(batch) -> {"ref_chosen_logps": (B,), "ref_rejected_logps": (B,)}``
     computed via ``sequence_logp`` under ``torch.no_grad()`` (plan §7.8 contract:
     ``ref`` is a plain ``dict[str, Tensor] -> dict[str, Tensor]`` callable, which
     keeps the precompute helper mechanism- and model-agnostic).
+
+    The precompute helper collates on CPU; this callable moves each input to the
+    model's ``device`` before the forward and returns the logps on CPU so they
+    serialize back into the dataset cleanly.
     """
+    dev = device if device is not None else next(model.parameters()).device
 
     def ref(batch):
         with torch.no_grad():
+            chosen_ids = batch["chosen_input_ids"].to(dev)
+            rejected_ids = batch["rejected_input_ids"].to(dev)
             chosen_out = model(
-                input_ids=batch["chosen_input_ids"],
-                attention_mask=batch["chosen_attention_mask"],
+                input_ids=chosen_ids,
+                attention_mask=batch["chosen_attention_mask"].to(dev),
             )
             rejected_out = model(
-                input_ids=batch["rejected_input_ids"],
-                attention_mask=batch["rejected_attention_mask"],
+                input_ids=rejected_ids,
+                attention_mask=batch["rejected_attention_mask"].to(dev),
             )
             chosen_logp = sequence_logp(
                 chosen_out.logits,
-                batch["chosen_input_ids"],
-                batch["chosen_completion_mask"],
+                chosen_ids,
+                batch["chosen_completion_mask"].to(dev),
             )
             rejected_logp = sequence_logp(
                 rejected_out.logits,
-                batch["rejected_input_ids"],
-                batch["rejected_completion_mask"],
+                rejected_ids,
+                batch["rejected_completion_mask"].to(dev),
             )
         return {
-            "ref_chosen_logps": chosen_logp,
-            "ref_rejected_logps": rejected_logp,
+            "ref_chosen_logps": chosen_logp.cpu(),
+            "ref_rejected_logps": rejected_logp.cpu(),
         }
 
     return ref

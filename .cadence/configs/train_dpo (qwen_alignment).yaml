@@ -23,13 +23,14 @@ cmd:
       --model Qwen/Qwen2.5-0.5B-Instruct \
       --dataset trl-lib/ultrafeedback_binarized \
       --beta 0.1 \
-      --max-length 1024 \
-      --batch-size 32 \
-      --max-steps 500 \
+      --max-length 512 \
+      --batch-size 8 \
+      --microbatch-size 2 \
+      --max-steps 50 \
       --learning-rate 1e-4 \
       --clip-norm 1.0 \
       --noise-multiplier 0.8 \
-      --log-steps 10 \
+      --log-steps 5 \
       --seed 42 $EXTRA_ARGS
 provisioning:
   gpu_type: h200
