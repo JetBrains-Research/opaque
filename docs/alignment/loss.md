@@ -36,14 +36,14 @@ records the tier + `kl_mean` aggregate; `KTO_AGGREGATES` declares the
 
 ::: opaque.alignment.loss.kto
 
-## SFT family (`opaque.alignment.loss.sft`)
+## SFT family (`opaque.alignment.sft.loss`)
 
 `nll_loss` (causal-LM CE, per-example mean over non-ignored tokens) and
 `dft_loss` (DFT: detached-softmax-weighted, with a **DP-corrected per-example
-divisor** — `mask.sum()`, not TRL's batch `num_items_in_batch`). `chunked_nll`
-is a math-equivalent alias of `nll`.
+divisor** — `mask.sum()`, not TRL's batch `num_items_in_batch`). Both are
+direct functions (no string registry); both are strict per-example (Tier 1).
 
-::: opaque.alignment.loss.sft
+::: opaque.alignment.sft.loss
 
 ## DP-purity records
 

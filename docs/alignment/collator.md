@@ -4,7 +4,7 @@ Collators are **factory functions returning a callable** (AGENTS.md rule 9) —
 not user-instantiated classes. Each returned `collate(examples)` produces a
 dict of batched tensors.
 
-## `language_modeling_collator`
+## `language_modeling_collator` (`opaque.alignment.sft.collator`)
 
 SFT / causal-LM collation. Output: `input_ids` `(B, L)`, `attention_mask`,
 `labels` (pad → `-100`; `completion_only_loss` also masks non-completion
@@ -28,6 +28,8 @@ KTO collation. Output: `completion_input_ids`/`completion_attention_mask`/
 rotated `KL_*` fields are present — `KL_completion_*`; optional
 `reference_logps` / `reference_KL_logps`.
 
-::: opaque.alignment.collator
+::: opaque.alignment.sft.collator
 
-::: opaque.alignment.collator.types
+::: opaque.alignment.sft.collator.types
+
+::: opaque.alignment.collator

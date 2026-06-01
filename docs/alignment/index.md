@@ -34,8 +34,9 @@ is required.
 | `opaque.alignment.logprob` | `selective_log_softmax`, `sequence_logp`, `get_batch_logps` |
 | `opaque.alignment.loss.dpo` | 14 DPO variants + `DPO_LOSSES`/`DPO_SPEC` + f-divergence/MPO/WPO/LD helpers |
 | `opaque.alignment.loss.kto` | `kto_loss` (Tier 2), `apo_zero_unpaired` + `KTO_LOSSES`/`KTO_SPEC` |
-| `opaque.alignment.loss.sft` | `nll_loss`, `dft_loss` + `SFT_LOSSES` (`chunked_nll` alias) |
-| `opaque.alignment.collator` | `language_modeling_collator`, `preference_collator`, `unpaired_preference_collator` |
+| `opaque.alignment.sft.loss` | `nll_loss`, `dft_loss` (direct functions) |
+| `opaque.alignment.sft.collator` | `language_modeling_collator` |
+| `opaque.alignment.collator` | `preference_collator`, `unpaired_preference_collator` |
 | `opaque.alignment.data` | `extract_prompt`, `rotate_kto_completions`, chat-template helpers |
 | `opaque.alignment.reference` | `compute_ref_logprobs_for_dataset`, `null_ref_context`, `ema_update_reference` |
 | `opaque.alignment.metric` | `reward_metrics`, `kl_estimator`, `entropy_from_logits`, `mean_token_accuracy` |
@@ -43,7 +44,7 @@ is required.
 
 ## Functional examples
 
-- `examples/train_sft.py` — DP-SGD SFT with `language_modeling_collator` + `SFT_LOSSES`.
+- `examples/train_sft.py` — DP-SGD SFT with `language_modeling_collator` + `nll_loss`/`dft_loss`.
 - `examples/train_dpo.py` — DP-SGD DPO with precomputed reference logps.
 - `examples/train_kto.py` — DP-SGD KTO demonstrating the Tier-2 caller pattern.
 
