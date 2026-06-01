@@ -8,8 +8,9 @@ dict of batched tensors.
 
 SFT / causal-LM collation. Output: `input_ids` `(B, L)`, `attention_mask`,
 `labels` (pad → `-100`; `completion_only_loss` also masks non-completion
-tokens), optional `completion_mask`. Supports `pad_to_multiple_of`. The
-`padding_free` (packing) path arrives with the data-pipeline phase.
+tokens), optional `completion_mask`. Supports `pad_to_multiple_of`. Sequences
+longer than `max_length` are truncated keep-start (matching `trl`'s
+`SFTTrainer`); no example is dropped.
 
 ## `preference_collator`
 

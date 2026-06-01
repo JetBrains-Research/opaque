@@ -24,8 +24,6 @@ Design notes
 * **completion_mask output key** — included only when at least one example in
   the batch supplies ``"completion_mask"``.  This preserves backward
   compatibility with simple SFT datasets that do not carry the field.
-* **padding_free=True** — reserved for Phase θ packing path; raises
-  :exc:`NotImplementedError` immediately at factory-call time.
 * **Determinism** — collation is purely functional given the input list;
   identical inputs produce identical output tensors.
 """
@@ -195,7 +193,6 @@ def language_modeling_collator(
     max_length: int,
     *,
     completion_only_loss: bool = False,
-    padding_free: bool = False,
     pad_to_multiple_of: int | None = None,
 ) -> Callable[[list[dict]], dict[str, torch.Tensor]]:
     """Return a callable that collates per-example dicts into a padded :class:`LMBatch`.
@@ -215,9 +212,6 @@ def language_modeling_collator(
             prompt tokens do not contribute to the language-modelling loss.
             Defaults to ``False`` (standard next-token prediction over the
             full sequence).
-        padding_free: Reserved for Phase θ packing (FlexAttention / SDPA
-            block-mask path).  **Must be ``False``**; passing ``True`` raises
-            :exc:`NotImplementedError`.
         pad_to_multiple_of: When set, the padded length ``L`` is rounded up to
             the nearest multiple of this value before the batch tensors are
             allocated.  Useful for tensor-core alignment (e.g. ``8`` or
@@ -228,20 +222,12 @@ def language_modeling_collator(
         callable.  See :class:`~opaque.api.alignment.collator.types.LMBatch`
         for the output schema.
 
-    Raises:
-        NotImplementedError: If ``padding_free=True`` (Phase θ not yet landed).
-
     Example::
 
         collate = language_modeling_collator(pad_token_id=0, max_length=16)
         batch = collate([{"input_ids": [1, 2, 3]}, {"input_ids": [4, 5]}])
         # batch["input_ids"].shape == (2, 3)
     """
-    if padding_free:
-        raise NotImplementedError(
-            "padding_free packing lands in Phase θ; use padding_free=False"
-        )
-
     return _LMCollator(
         pad_token_id=pad_token_id,
         max_length=max_length,

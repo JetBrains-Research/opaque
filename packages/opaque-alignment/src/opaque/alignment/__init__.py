@@ -2,7 +2,7 @@
 
 Headline re-exports of the full package surface: logprob helpers, the loss
 registries (``DPO_LOSSES``, ``KTO_LOSSES``, ``SFT_LOSSES``), collator factories,
-dataset transforms (prompt extraction, packing, chat templates, KTO rotation),
+dataset transforms (prompt extraction, chat templates, KTO rotation),
 reference helpers, and alignment metrics.
 
 See ``docs/development/opaque-alignment-plan.md`` for the package design.
@@ -17,9 +17,6 @@ from opaque.alignment.data import (
     clone_chat_template,
     extract_prompt,
     get_training_chat_template,
-    pack_bfd,
-    pack_bfd_split,
-    pack_wrapped,
     rotate_kto_completions,
 )
 from opaque.alignment.logprob import (
@@ -56,9 +53,6 @@ __all__ = [
     "preference_collator",
     "unpaired_preference_collator",
     "extract_prompt",
-    "pack_bfd",
-    "pack_bfd_split",
-    "pack_wrapped",
     "clone_chat_template",
     "get_training_chat_template",
     "rotate_kto_completions",

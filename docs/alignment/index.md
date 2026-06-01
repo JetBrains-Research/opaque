@@ -36,7 +36,7 @@ is required.
 | `opaque.alignment.loss.kto` | `kto_loss` (Tier 2), `apo_zero_unpaired` + `KTO_LOSSES`/`KTO_SPEC` |
 | `opaque.alignment.loss.sft` | `nll_loss`, `dft_loss` + `SFT_LOSSES` (`chunked_nll` alias) |
 | `opaque.alignment.collator` | `language_modeling_collator`, `preference_collator`, `unpaired_preference_collator` |
-| `opaque.alignment.data` | `extract_prompt`, `rotate_kto_completions`, `pack_bfd`/`pack_bfd_split`/`pack_wrapped`, chat-template helpers |
+| `opaque.alignment.data` | `extract_prompt`, `rotate_kto_completions`, chat-template helpers |
 | `opaque.alignment.reference` | `compute_ref_logprobs_for_dataset`, `null_ref_context`, `ema_update_reference` |
 | `opaque.alignment.metric` | `reward_metrics`, `kl_estimator`, `entropy_from_logits`, `mean_token_accuracy` |
 | `opaque.alignment.kernel` | `opaque_fused_linear_dpo_loss`, `opaque_fused_linear_kto_loss` |
