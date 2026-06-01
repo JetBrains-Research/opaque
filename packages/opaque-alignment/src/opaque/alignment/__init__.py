@@ -1,9 +1,10 @@
 """opaque.alignment — functional primitives for DP-safe preference learning.
 
-Headline re-exports of the full package surface: logprob helpers, the loss
-registries (``DPO_LOSSES``, ``KTO_LOSSES``, ``SFT_LOSSES``), collator factories,
-dataset transforms (prompt extraction, chat templates, KTO rotation),
-reference helpers, and alignment metrics.
+Headline re-exports of the full package surface: logprob helpers, the DPO/KTO
+loss registries (``DPO_LOSSES``, ``KTO_LOSSES``), collator factories, dataset
+transforms (prompt extraction, chat templates, KTO rotation), reference
+helpers, and alignment metrics. SFT primitives live under
+``opaque.alignment.sft`` (method-first layout, mirroring ``opaque.dpsgd``).
 
 See ``docs/development/opaque-alignment-plan.md`` for the package design.
 """
@@ -26,7 +27,6 @@ from opaque.alignment.logprob import (
 )
 from opaque.alignment.loss.dpo import DPO_LOSSES
 from opaque.alignment.loss.kto import KTO_LOSSES
-from opaque.alignment.loss.sft import SFT_LOSSES
 from opaque.alignment.loss.types import DPSpec, LossAggregateSpec
 from opaque.alignment.metric import (
     entropy_from_logits,
@@ -46,7 +46,6 @@ __all__ = [
     "get_batch_logps",
     "DPO_LOSSES",
     "KTO_LOSSES",
-    "SFT_LOSSES",
     "DPSpec",
     "LossAggregateSpec",
     "language_modeling_collator",

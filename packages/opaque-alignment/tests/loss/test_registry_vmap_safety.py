@@ -1,12 +1,14 @@
 """§11.2 — vmap-safety sweep over every public loss registry.
 
-Walks ``DPO_LOSSES``, ``KTO_LOSSES`` and ``SFT_LOSSES`` and verifies each
-entry survives ``torch.func.vmap(torch.func.grad(...))`` on a 4-example
-synthetic batch with finite gradients. Per-variant unit tests check numeric
-values; this registry-wide meta-test is the single guarantee that no loss in
-a public registry silently breaks per-example gradient composition (plan
-§3.4 / §11.2) — e.g. a future variant added without its own vmap check is
-caught here.
+Walks ``DPO_LOSSES`` and ``KTO_LOSSES`` and verifies each entry survives
+``torch.func.vmap(torch.func.grad(...))`` on a 4-example synthetic batch with
+finite gradients. Per-variant unit tests check numeric values; this
+registry-wide meta-test is the single guarantee that no loss in a public
+registry silently breaks per-example gradient composition (plan §3.4 / §11.2)
+— e.g. a future variant added without its own vmap check is caught here.
+
+(SFT exposes direct functions, not a registry; its vmap-safety is covered in
+``tests/sft/loss/test_sft.py``.)
 """
 
 from __future__ import annotations
@@ -19,7 +21,6 @@ from torch.func import grad, vmap
 
 from opaque.alignment.loss.dpo import DPO_LOSSES
 from opaque.alignment.loss.kto import KTO_LOSSES
-from opaque.alignment.loss.sft import SFT_LOSSES
 
 _BETA = 0.1
 
@@ -76,21 +77,6 @@ def test_kto_loss_vmap_grad_finite(name: str) -> None:
     assert torch.isfinite(g_rejected).all(), f"KTO {name}: non-finite rejected grad"
 
 
-@pytest.mark.parametrize("name", sorted(SFT_LOSSES))
-def test_sft_loss_vmap_grad_finite(name: str) -> None:
-    """Every SFT variant: vmap(grad) over per-example logits is finite."""
-    fn = SFT_LOSSES[name]
-    torch.manual_seed(0)
-    logits = torch.randn(4, 6, 8)
-    labels = torch.randint(0, 8, (4, 6))
-
-    def per_example(lg: torch.Tensor, lb: torch.Tensor) -> torch.Tensor:
-        return fn(lg, lb)
-
-    g_logits = vmap(grad(per_example, argnums=0))(logits, labels)
-    assert torch.isfinite(g_logits).all(), f"SFT {name}: non-finite logits grad"
-
-
 def test_registry_coverage_is_complete() -> None:
     """Guard: the sweep covers the full published registries.
 
@@ -100,4 +86,3 @@ def test_registry_coverage_is_complete() -> None:
     """
     assert len(DPO_LOSSES) == 14
     assert set(KTO_LOSSES) == {"kto", "apo_zero_unpaired"}
-    assert set(SFT_LOSSES) == {"nll", "dft", "chunked_nll"}
