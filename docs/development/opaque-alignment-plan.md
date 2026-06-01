@@ -1,6 +1,6 @@
 # opaque-alignment — Package Plan
 
-**Status:** Planning. Sibling doc to `trl-trainers-plan.md`; the two evolve together but address different audiences.
+**Status:** Planning. Sibling doc to `trl-trainers-plan.md`; the two evolve together but address different audiences. Each phase is structured as a Claude Code dynamic-workflow run (parallel work units + adversarial validation — see §10.0).
 
 **Scope:** A new distribution `opaque-alignment` that ships **functional, mechanism-agnostic primitives for DP-safe preference learning**: per-example loss functions (DPO / KTO / SFT families), logprob helpers, preference collators, dataset transforms, reference-model helpers, alignment metrics, and a small alignment-specific kernel catalog. Built on `opaque-engine` (clipping, functional, distributed) and `opaque-base` (serialization); consumed by both functional training scripts (`examples/train_dpo.py`-style) and the TRL-style class trainers in `opaque.transformers.trl`.
 
@@ -825,6 +825,51 @@ The aggregate is `.detach()`-ed and bounded-leverage. The all-reduce is among ra
 
 Phases use Greek letters to keep them separable from the trainer plan's Roman numerals. They sequence loosely: α before everything; β foundation primitives unlock γ/δ/ε in parallel; ζ before any TRL trainer Phase 2/3; η optional optimization; θ + ι finish.
 
+### 10.0 Execution model (Claude Code dynamic workflows)
+
+Each phase below carries a **work-unit DAG** so the phase can be run as a Claude Code **dynamic workflow** (Opus 4.8+, research preview). A dynamic workflow is a JavaScript orchestration script Claude writes from the phase's DAG; a runtime executes it in the background, fanning the units out to parallel subagents. The constraints that shape the DAG ([docs](https://code.claude.com/docs/en/workflows)):
+
+- **≤ 16 concurrent agents, ≤ 1000 total per run** — size each phase's ready-set so no more than 16 units are unblocked at once.
+- **The script holds the DAG, loop, and intermediate results in variables** — deps, the iterate-until-green loop, and the fan-in live in JS, not in any agent's context.
+- **The script has no filesystem/shell; agents do.** Worktree creation, the gate run, and the git merge are *agent actions*, instructed via each agent's prompt. The script only coordinates (spawns, awaits results, branches).
+- **No mid-run user input.** Human sign-off therefore happens **between phases**: each phase is its own workflow run (`/workflow …` or a saved `/<name>` command), approved before it starts. The plan's phase boundaries are the natural approval gates.
+- **Resumable within a session** — completed units return cached results on resume.
+
+**One phase = one workflow run.** Invoke per phase; the cross-phase deps in the §10 totals table are the human-approval boundaries.
+
+**Work-unit schema.** Every unit `<phase>.<n>` declares:
+
+| Field | Meaning |
+|---|---|
+| **Produces** | The `_*.py` files (+ their tests) the unit owns. The agent edits **only** these, inside its own worktree. |
+| **Deps** | Units whose merge must complete before this unit's agent spawns. Encoded as `await` ordering in the script. |
+| **Gate** | One of the gate profiles below; the agent runs it and reports `{pass, diff, gate_output}`. |
+
+**Shared-file ownership (conflict avoidance under 16-way parallelism).** Parallel agents never touch shared files (`__init__.py`, `__all__`, `LOSSES`/`*_SPEC` registries, `pyproject.toml`). Each phase ends with a terminal **wire-up unit** `<phase>.W` (deps = all siblings) whose agent performs the only edits to shared files: re-export public names, populate `__all__`, register variants + `DPSpec`. Every non-wire-up unit is then a pure file-add, so the per-unit worktrees merge without conflict.
+
+**Gate profiles.** A unit's agent reports done only when its gate is fully green in its worktree:
+
+- **`pure`** (loss functions, logprob, metric, f_div/mpo/wpo/ld helpers): unit tests vs hand-computed reference · vmap-safety contract (§11.2) · DP-purity audit — Tier-1 NaN-injection (§11.3) or Tier-2 aggregate-detach + leverage (§11.4) per the unit's `DPSpec` · TRL numeric parity at σ=0,C=∞ within 1e-3 (loss units) · ruff + format + smoke import. **CPU-only.**
+- **`data`** (collator, packing, rotation, prompt, chat-template): unit tests · determinism (same input→same output; collator key-set stability) · rotation non-identity assertion (KTO) · ruff + format. **CPU-only.**
+- **`reference`** (precompute, adapter, sync): unit tests · cache round-trip · `null_ref_context` dispatch per RefSpec · **GPU smoke** (1-step forward on a 2-layer model, via Cadence preset) · ruff + format.
+- **`kernel`** (fused-linear-preference, unpaired): eager-vs-fused parity 1e-4 · vmap-safety composition · **GPU memory benchmark** (peak < `(B,T,V)`) · **GPU smoke train** · `torch.compile`↔vmap interaction · ruff + format.
+- **`example`** (functional `train_*.py`): runs end-to-end · **GPU smoke** (2 DP-SGD steps on a 2-layer model) · **ε-budget regression** (50-step run at ε=10; snapshot final loss for drift tracking) · ruff + format.
+- **`infra`** (skeleton, packaging, distributed extensions): unit/contract tests · namespace-compose smoke import · existing suite green (no regression) · ruff + format.
+
+The GPU gates realize the **full-empirical** validation: no kernel/example/reference unit merges without a real (tiny-model) GPU run, and every example unit posts an ε-budget snapshot.
+
+**Comprehensive validation = adversarial reviewer per unit.** The workflow's signature quality pattern is to pair each implementing agent with an **adversarial reviewer agent** that tries to *refute* the unit before it merges: hunt a DP-purity hole (construct a record-swap that moves the gradient by more than `O(C)`), a vmap break (find an op that silently drops the batch axis), or a parity drift (a config where the σ=0 loss diverges from TRL beyond 1e-3). The implementing agent must answer every refutation or fix the code; the unit merges only when the reviewer cannot break it. The script runs the implement→refute→fix loop until convergence, mirroring `/deep-research`'s cross-check-then-vote pattern.
+
+**Worktree-per-unit isolation (agent-instructed).** Each phase runs on a phase branch `phase/alignment-<greek>` cut from the package branch. The script's per-unit agent prompt instructs the agent to:
+1. `git worktree add worktrees/alignment-<greek>.<n> phase/alignment-<greek>`.
+2. Implement only the unit's *Produces* files + tests in that worktree.
+3. Run the unit's gate; loop with the adversarial reviewer until green.
+4. Emit a patch; the script records `{pass, diff}` in a variable.
+
+The terminal `<phase>.W` agent applies the recorded green diffs to the phase branch, makes the shared-file edits, and runs the closing gate (full namespace smoke + `test_all_exports_match`). Phase done = `<phase>.W` green.
+
+**Orchestrator script shape (what Claude writes).** Topologically sort units by `Deps`; maintain a ready-set; `await` up to 16 unit-agents concurrently; on each returned green diff, recompute the ready-set; finish by spawning `<phase>.W`. The DAG tables below are the direct input to that script — each row is one `spawnAgent({ prompt, deps, gate })` call.
+
 ### Phase α — Package skeleton (S, ≤ 1 day)
 
 - Create `packages/opaque-alignment/` with `pyproject.toml` (§5), `README.md`, the api/façade dir tree (§4) all containing empty `__init__.py` files.
@@ -833,6 +878,12 @@ Phases use Greek letters to keep them separable from the trainer plan's Roman nu
 - Contract test (`tests/contracts/test_all_exports_match.py`): for every submodule under `opaque.alignment.*`, asserts `dir(module) - {dunder}` equals `__all__`. This is the AGENTS.md rule 6 enforcement.
 - Register in workspace tooling: `uv.lock`, all-packages CI matrix entry, ruff/pyright config inheritance.
 - README documenting the api/façade pattern, functional-primitives philosophy, mechanism-agnostic posture, link to forthcoming `examples/train_dpo.py`.
+
+**Work units (DAG).** Single workflow run; one terminal unit (skeleton is irreducible — the whole package tree + tooling must land atomically).
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| α.1 | full dir tree + empty `__init__.py` (`__all__=[]`) + `pyproject.toml` + README + `tests/test_import.py` + `tests/contracts/test_all_exports_match.py` + workspace registration | — | `infra` |
 
 ### Phase β — Foundation primitives (M, 3–4 days)
 
@@ -851,6 +902,18 @@ Tests:
 - Collator determinism: same input → same output (used by `_discover_batch_keys` upstream).
 - Vmap-safety contract test (§11.2) for `sequence_logp`.
 
+**Work units (DAG).** 6 parallel units + wire-up. Max concurrency 6 (well under 16). Deps = α.W.
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| β.1 | `logprob/_gather.py`, `_sequence.py`, `_batch.py` + tests | α.W | `pure` |
+| β.2 | `collator/_language_modeling.py` + tests | α.W | `data` |
+| β.3 | `collator/_preference.py` + tests | α.W | `data` |
+| β.4 | `collator/_unpaired_preference.py` + tests | α.W | `data` |
+| β.5 | `data/_prompt.py` + tests | α.W | `data` |
+| β.6 | `metric/_reward.py`, `_kl.py`, `_token.py` + tests; `loss/types.py` (`DPSpec`, `LossAggregateSpec`) | α.W | `pure` |
+| β.W | `logprob/__init__.py`, `collator/__init__.py`, `data/__init__.py`, `metric/__init__.py`, top-level `__all__` updates | β.1–β.6 | `infra` |
+
 ### Phase γ — DPO loss family + functional example (L, 5–6 days)
 
 - `loss/dpo/`: all 14 variants + helpers (`_f_divergence`, `_mpo`, `_wpo`, `_ld_dpo`) + `LOSSES` registry + `DPO_SPEC` declarations.
@@ -862,6 +925,18 @@ Tests:
 - DP-purity Tier-1 NaN-injection test on every variant.
 - Tier-3 rejection test: instantiating with `loss_type="aot"` raises `NotImplementedError` with the documented rationale.
 - MPO combinator: `loss_type=["sigmoid", "sft"]` with equal weights → matches hand combination.
+
+**Work units (DAG).** Variants clustered to amortize the per-unit parity harness; helpers parallel to variants; example last. Max concurrency 5. Deps = β.W.
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| γ.1 | `loss/dpo/_sigmoid.py`, `_hinge.py`, `_robust.py` + tests | β.W | `pure` |
+| γ.2 | `loss/dpo/_apo.py`, `_exo.py`, `_nca.py`, `_bco.py`, `_sppo.py` + tests | β.W | `pure` |
+| γ.3 | `loss/dpo/_ipo.py`, `_sigmoid_norm.py`, `_discopop.py`, `_sft.py`, `_squarechipo.py` + tests | β.W | `pure` |
+| γ.4 | `loss/dpo/_f_divergence.py` + tests | β.W | `pure` |
+| γ.5 | `loss/dpo/_mpo.py`, `_wpo.py`, `_ld_dpo.py` + tests | β.W | `pure` |
+| γ.W | `loss/dpo/__init__.py` + `loss/dpo/types.py` (`DpoVariant`, `DPO_SPEC`, `DPO_LOSSES`) + Tier-3 rejection wiring; top-level `__all__` | γ.1–γ.5 | `pure` |
+| γ.X | `examples/train_dpo.py` | γ.W | `example` |
 
 ### Phase δ — KTO loss + rotation + functional example (M, 3 days)
 
@@ -876,6 +951,16 @@ Tests:
 - Batch-size-0/1 Poisson edge case: `kl=0` produces sensible behavior.
 - DP-purity Tier-2 aggregate-detach audit (§11.4): autograd graph from `kl` does not reach model params; swapping one example's KL contribution changes per-example loss by `O(1/n)`.
 
+**Work units (DAG).** Max concurrency 3. Deps = β.W (and γ.W only for the `_unpaired_preference.py` KL-key extension, to avoid a collator edit-conflict with γ; sequence after β suffices since γ does not touch collators — keep dep on β.W).
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| δ.1 | `loss/kto/_kto.py` (Tier 2), `_apo_zero_unpaired.py` (Tier 1) + tests | β.W | `pure` |
+| δ.2 | `data/_kto_rotation.py` + tests | β.W | `data` |
+| δ.3 | `collator/_unpaired_preference.py` KL-key extension + tests | β.W | `data` |
+| δ.W | `loss/kto/__init__.py` + `loss/kto/types.py` (`KtoVariant`, `KTO_SPEC`, `KTO_LOSSES`); top-level `__all__` | δ.1–δ.3 | `pure` |
+| δ.X | `examples/train_kto.py` (demonstrates Tier-2 caller pattern) | δ.W, ζ.W | `example` |
+
 ### Phase ε — SFT loss family + functional example (S, 2 days)
 
 - `loss/sft/`: `nll`, `dft` (with DP-corrected per-example divisor), `chunked_nll` (aliased to `nll`, kernel selection deferred), `LOSSES` registry.
@@ -885,6 +970,14 @@ Tests:
 - `dft` vs hand-computed reference matching TRL's formula but with per-example divisor.
 - DP-purity Tier-1 NaN-injection.
 - Document `chunked_nll` as math-alias with TODO for kernel selection.
+
+**Work units (DAG).** Max concurrency 1 (small phase). Deps = β.W.
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| ε.1 | `loss/sft/_nll.py`, `_dft.py` + tests | β.W | `pure` |
+| ε.W | `loss/sft/__init__.py` + `loss/sft/types.py` (`SftVariant`, `SFT_LOSSES` with `chunked_nll`→`nll` alias); top-level `__all__` | ε.1 | `pure` |
+| ε.X | `examples/train_sft.py` | ε.W | `example` |
 
 ### Phase ζ — Reference handling (M, 3 days)
 
@@ -899,6 +992,15 @@ Tests:
 - Precompute round-trip: cache miss → compute + save → cache hit on re-call.
 - `null_ref_context` per dispatch row (separate model, LoRA-with-ref, LoRA-disable, callable).
 - `ema_update_reference` on a small pytree; values match expected formula.
+
+**Work units (DAG).** Max concurrency 3. Deps = β.W; also blocks on `trl-trainers-plan.md` Phase 0.5 (`opaque.distributed` extensions) for the precompute gather.
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| ζ.1 | `reference/_precompute.py`, `reference/types.py` (`RefSpec`) + tests | β.W, trl-0.5 | `reference` |
+| ζ.2 | `reference/_adapter.py` (`null_ref_context`) + tests | β.W | `reference` |
+| ζ.3 | `reference/_sync.py` (`ema_update_reference`) + tests | β.W | `pure` |
+| ζ.W | `reference/__init__.py`; top-level `__all__` | ζ.1–ζ.3 | `infra` |
 
 ### Phase η — Chunked fused-linear preference kernel (L, 4–6 days)
 
@@ -917,12 +1019,31 @@ Tests:
 
 Optional optimization; not blocking for Phase ι. Tier-2 `opaque_selective_log_softmax` deferred.
 
+**Work units (DAG).** The two base kernels parallel; dispatchers each depend on their base. Max concurrency 2. Deps = γ.W (DPO dispatch) / δ.W (KTO dispatch) for the per-variant plugins.
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| η.1 | `kernel/_fused_linear_preference.py` (`Opaque_FusedLinearPreference` + `_Backward`, vmap rules) + `kernel/_utils.py` + tests | β.W | `kernel` |
+| η.2 | `kernel/_fused_linear_unpaired.py` (`Opaque_FusedLinearUnpairedPreference` + `_Backward`) + tests | β.W | `kernel` |
+| η.3 | `kernel/_dpo_dispatch.py` (`opaque_fused_linear_dpo_loss`) + tests | η.1, γ.W | `kernel` |
+| η.4 | `kernel/_kto_dispatch.py` (`opaque_fused_linear_kto_loss`) + tests | η.2, δ.W | `kernel` |
+| η.W | `kernel/__init__.py`, `kernel/types.py`; top-level `__all__` | η.1–η.4 | `infra` |
+
 ### Phase θ — Advanced data pipeline (M, 4–5 days)
 
 - `data/_packing.py`: `pack_bfd`, `pack_wrapped`, `pack_bfd_split`.
 - `data/_chat_template.py`: `clone_chat_template`, `get_training_chat_template`.
 
 Open question (Phase θ design subsection): FlexAttention + vmap composition. If it works, FlexAttention is the documented attention backend for packed data. Otherwise fall back to SDPA with explicit 4D block-diagonal mask.
+
+**Work units (DAG).** Max concurrency 3. Deps = β.W. θ.1 carries a research sub-step (FlexAttention↔vmap fixture) before the packing collator path is finalized.
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| θ.0 | FlexAttention↔vmap composition fixture (decides backend) | β.W | `data` (+ GPU fixture) |
+| θ.1 | `data/_packing.py` (`pack_bfd`, `pack_bfd_split`, `pack_wrapped`) + `seq_lengths` collator support + tests | θ.0 | `data` |
+| θ.2 | `data/_chat_template.py` (`clone_chat_template`, `get_training_chat_template`) + tests | β.W | `data` |
+| θ.W | `data/__init__.py` updates; top-level `__all__` | θ.1, θ.2 | `infra` |
 
 ### Phase ι — Docs and recipe scaffolding (S, 2 days)
 
@@ -931,6 +1052,17 @@ Open question (Phase θ design subsection): FlexAttention + vmap composition. If
 - `docs/alignment/collator.md` — per-collator output schema reference.
 - `docs/alignment/reference.md` — the four ref-model configs.
 - `docs/alignment/recipes.md` — placeholder for future recipe documentation (decoupled DP-RLHF, etc.).
+
+**Work units (DAG).** Docs are independent files → fully parallel. Max concurrency 5. Deps = all prior wire-ups (docs describe shipped API).
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| ι.1 | `docs/alignment/index.md` | γ.W, δ.W, ε.W, ζ.W | `infra` (docs-build) |
+| ι.2 | `docs/alignment/loss.md` | γ.W, δ.W, ε.W | `infra` |
+| ι.3 | `docs/alignment/collator.md` | β.W | `infra` |
+| ι.4 | `docs/alignment/reference.md` | ζ.W | `infra` |
+| ι.5 | `docs/alignment/recipes.md` | — | `infra` |
+| ι.W | mkdocs nav wiring; docs-build green | ι.1–ι.5 | `infra` |
 
 ### Phase totals
 

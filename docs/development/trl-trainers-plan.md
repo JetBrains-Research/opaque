@@ -1,6 +1,6 @@
 # TRL Trainers on Opaque — Implementation Plan
 
-**Status:** Planning. Slow phased implementation against a moving main.
+**Status:** Planning. Phased implementation; each phase is structured as a Claude Code dynamic-workflow run (parallel work units + adversarial validation — see §6.5 and `opaque-alignment-plan.md` §10.0).
 
 **Scope:**
 - A new package `opaque-alignment` providing functional, mechanism-agnostic primitives for DP-safe preference learning (losses, collators, dataset transforms, reference-model helpers, alignment metrics).
@@ -465,6 +465,14 @@ class OpaqueDPOTrainer(DPTrainer, RLHFMixin):
 
 SFT and KTO follow the same single-hook pattern. The loss math lives in `opaque.alignment.loss.{dpo,kto,sft}.*`; the trainer hook only orchestrates. Reward / token-accuracy / KL metrics are computed by the trainer (from the `return_logits=True` payload) and accumulated into `self._metrics`, not inside `compute_per_example_loss`.
 
+### 6.5 Execution model (Claude Code dynamic workflows)
+
+Each phase below carries a **work-unit DAG** so it can be run as a Claude Code dynamic workflow (one phase = one workflow run, with human sign-off between phases). The shared legend — work-unit schema, the 16-concurrent / 1000-total runtime limits, shared-file ownership via a terminal wire-up unit, worktree-per-unit isolation, and the adversarial-reviewer convergence pattern — is defined once in **`opaque-alignment-plan.md` §10.0**; it applies verbatim here. Phase branches are named `phase/trl-<n>`.
+
+One additional gate profile (beyond the six in §10.0) covers the trainer classes:
+
+- **`trainer`** (the TRL trainer classes + configs): construct + 2 training steps + eval + save (contract test) · TRL parity at σ=0,C=∞ within 1e-3 · **GPU smoke train** (2 steps, 2-layer model) · **ε-budget regression** (50-step run at ε=10; snapshot final loss) · end-to-end DP-purity (NaN one example in a real batch; only that row's grad moves) · ruff + format.
+
 ---
 
 ## 7. Phase −1 — Kernel parity pass (`opaque-patches`)
@@ -572,6 +580,13 @@ The eval loop (`_dp_trainer.py:2406-2432`) now weights per-example losses by **r
 
 **Effort: S (1–2 days)** — small: the unified `compute_per_example_loss` hook already exists; Phase 0 only adds the signature-columns hook, the autocast-context shim, the collator factory hook, and the config rename.
 
+**Work units (DAG).** The hooks touch the shared `_dp_trainer.py` / `_config.py`, so units serialize through one agent to avoid intra-file conflict; the test file is a parallel add. Max concurrency 2.
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| 0.1 | `_dp_trainer.py` hooks (`_default_signature_columns`, `compute_loss_context_manager`, `_default_collator`) + `_config.py` rename (`cpu_offload_activations`→`activation_offloading` alias) | — | `infra` (+ GPU smoke, training-path touch) |
+| 0.2 | `tests/opaque_transformers/test_dp_trainer_subclass_hooks.py` | 0.1 | `infra` |
+
 ---
 
 ## 9. Phase 0.25 — `opaque-alignment` package skeleton
@@ -596,6 +611,14 @@ def test_namespace_composes():
 ```
 
 **Effort: S (≤ 1 day).**
+
+> **Note:** Phase 0.25 is the same work as `opaque-alignment-plan.md` Phase α (unit α.1). Run it once from either plan; do not duplicate.
+
+**Work units (DAG).** Single atomic unit (= α.1).
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| 0.25.1 | `packages/opaque-alignment/` skeleton + tooling registration (≡ α.1) | — | `infra` |
 
 ---
 
@@ -631,6 +654,12 @@ self.accelerator.wait_for_everyone()   →  wait_for_everyone()
 **S (1–2 days)** including tests.
 
 Phase 0.5 can run in parallel with Phase 0 and Phase 0.25.
+
+**Work units (DAG).** Single unit (the five functions share `opaque.api.engine.distributed` and its `__init__.py`).
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| 0.5.1 | `opaque/api/engine/distributed/` additions (`gather_for_metrics`, `is_main_process`, `wait_for_everyone`, `num_processes`, `process_index`) + façade re-exports + tests | — | `infra` |
 
 ---
 
@@ -687,6 +716,17 @@ Extends `DPTrainingArguments`, inheriting all DP + HF-parity fields — notably 
 - Closure test: vmap'd per-example SFT loss over 4 examples → finite gradients.
 - Trainer contract test: 2 training steps, eval, save_pretrained.
 - TRL parity test: `OpaqueSFTTrainer(σ=0, C=∞)` vs `trl.SFTTrainer` on identical batch → loss within `1e-3`.
+
+**Work units (DAG).** Consumes alignment ε.W + ε.X (SFT loss + collator). Config and trainer serialize (config feeds trainer); examples + trainer-example parallel. Max concurrency 2. Deps cross into the alignment workflow.
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| 1.1 | `_sft_config.py` (`OpaqueSFTConfig`) | 0.1, ε.W | `infra` |
+| 1.2 | `_sft_trainer.py` (`OpaqueSFTTrainer`) + `_rlhf_mixin.py` + contract test | 1.1, ε.W, β.W, 0.5.1 | `trainer` |
+| 1.3 | `examples/train_sft_trainer.py` | 1.2 | `example` |
+| 1.W | `opaque/api/transformers/trl/__init__.py` + façade `transformers/trl/__init__.py` | 1.1, 1.2 | `infra` |
+
+(The functional `examples/train_sft.py` is alignment unit ε.X — not duplicated here.)
 
 **Effort: M (4–5 days).**
 
@@ -757,6 +797,18 @@ Extends `DPTrainingArguments` (inherits the DP + HF-parity fields enumerated in 
 - TR-DPO callback test: ref params change after `ref_model_sync_steps`.
 - TRL parity test on all loss variants at `σ=0, C=∞`.
 
+**Work units (DAG).** Consumes alignment γ.W (DPO losses) + ζ.W (reference). Config → trainer → callback/example. Max concurrency 3.
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| 2.1 | `_dpo_config.py` (`OpaqueDPOConfig`) | 0.1, γ.W | `infra` |
+| 2.2 | `_dpo_trainer.py` (`OpaqueDPOTrainer`: `__init__` four ref paths, `_prepare_inputs`, `compute_per_example_loss`, `prediction_step`) + contract tests (one per ref path) | 2.1, γ.W, ζ.W, β.W, 0.5.1 | `trainer` |
+| 2.3 | `_callbacks.py` (`SyncRefModelCallback`, TR-DPO) + callback test | 2.2, ζ.W | `infra` (+ GPU smoke) |
+| 2.4 | `examples/train_dpo_trainer.py` | 2.2 | `example` |
+| 2.W | trl façade `__all__` updates for DPO exports | 2.1, 2.2, 2.3 | `infra` |
+
+(Functional `examples/train_dpo.py` is alignment unit γ.X.)
+
 **Effort: L (6–8 days).**
 
 ---
@@ -816,6 +868,17 @@ Extends `DPTrainingArguments` (inherits the DP + HF-parity fields enumerated in 
 - Trainer contract test with mixed labels: confirm `_prepare_inputs` computes `kl` once per microbatch and broadcasts via vmap-`None`; confirm Poisson batch-size-1 falls back to `kl=0`.
 - TRL parity at `σ=0, C=∞`: compare per-example loss to TRL within `1e-3` on identical batches.
 
+**Work units (DAG).** Consumes alignment δ.W (KTO loss + rotation) + ζ.W (reference). Max concurrency 2.
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| 3.1 | `_kto_config.py` (`OpaqueKTOConfig`) | 0.1, δ.W | `infra` |
+| 3.2 | `_kto_trainer.py` (`OpaqueKTOTrainer`: `_prepare_dataset`, Tier-2 `_prepare_inputs` KL hook, `compute_per_example_loss`) + contract test (mixed labels, batch-1 fallback) + Tier-2 audit | 3.1, δ.W, ζ.W, β.W, 0.5.1 | `trainer` |
+| 3.3 | `examples/train_kto_trainer.py` | 3.2 | `example` |
+| 3.W | trl façade `__all__` updates for KTO exports | 3.1, 3.2 | `infra` |
+
+(Functional `examples/train_kto.py` is alignment unit δ.X.)
+
 **Effort: M–L (4–6 days).**
 
 ---
@@ -863,6 +926,15 @@ These are workstreams independent of loss math; separated to keep Phases 1–3 r
 - `chunked_nll` peak-memory test (< `(B, T, V)` materialization).
 - `clone_chat_template` round-trip on a tokenizer.
 
+**Work units (DAG).** Packing/template are alignment θ (units θ.0/θ.1/θ.2); the trainer-side wiring (config flags + `chunked_nll` kernel path + `activation_offloading`) is here. Max concurrency 3.
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| 4.1 | SFT config flag wiring (`packing`, `padding_free`, `chat_template_path`, `activation_offloading`) + `_sft_trainer.py` packing/padding-free dispatch | 1.2, θ.W | `trainer` |
+| 4.2 | `chunked_nll` kernel path via `opaque_linear_cross_entropy_loss` in `_sft_trainer.py` + peak-memory test | 1.2 | `trainer` (+ GPU memory) |
+| 4.3 | `clone_chat_template` trainer hookup (pre-`make_functional` embedding resize) + round-trip test | 1.2, θ.2 | `trainer` |
+| 4.W | doc note on FlexAttention decision (from θ.0) + config validation | 4.1–4.3 | `infra` |
+
 **Effort: L (5–7 days).**
 
 ---
@@ -898,6 +970,16 @@ For each trainer:
 - `docs/alignment/collator.md`.
 - `docs/alignment/recipes.md` — pointers to functional examples + scripted recipes (decoupled DP-RLHF lives here as a notebook).
 - `docs/trainers/sft.md`, `dpo.md`, `kto.md` — class-API docs, supported features, deferred features with paper-cited justification, ref-model path matrix.
+
+**Work units (DAG).** The parity + DP-regression gates run as **dedicated adversarial-validation units** — the workflow's convergence pattern at the whole-trainer level. Max concurrency 5.
+
+| Unit | Produces | Deps | Gate |
+|---|---|---|---|
+| 5.1 | TRL parity test suite (per trainer × per loss variant at σ=0,C=∞) | 1.W, 2.W, 3.W | `trainer` |
+| 5.2 | DP-regression suite (50-step ε=10 snapshots, drift tracking) | 1.W, 2.W, 3.W | `example` |
+| 5.3 | `docs/trainers/{sft,dpo,kto}.md` | 1.W, 2.W, 3.W | `infra` |
+| 5.4 | `docs/alignment/recipes.md` decoupled-DP-RLHF notebook scaffold | ζ.W | `infra` |
+| 5.W | mkdocs nav + final full-suite green (CPU+MPS+GPU smoke) | 5.1–5.4, ι.W | `trainer` |
 
 **Effort: M (3–4 days).**
 
