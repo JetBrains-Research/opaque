@@ -13,8 +13,8 @@ from typing import Callable, Literal
 
 import torch
 
-from opaque.api.alignment.loss.kto._apo_zero_unpaired import apo_zero_unpaired
-from opaque.api.alignment.loss.kto._kto import kto_loss
+from opaque.api.alignment.kto.loss._apo_zero_unpaired import apo_zero_unpaired
+from opaque.api.alignment.kto.loss._kto import kto_loss
 from opaque.api.alignment.loss.types import DPSpec, LossAggregateSpec
 
 LossFn = Callable[..., torch.Tensor]

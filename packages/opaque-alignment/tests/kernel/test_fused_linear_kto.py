@@ -38,7 +38,7 @@ from opaque.api.alignment.kernel._fused_linear_unpaired import (
 )
 from opaque.api.alignment.kernel._kto_dispatch import opaque_fused_linear_kto_loss
 from opaque.api.alignment.logprob._sequence import sequence_logp
-from opaque.api.alignment.loss.kto._kto import kto_loss
+from opaque.api.alignment.kto.loss._kto import kto_loss
 
 # Small, fixed dims per plan §7.10.
 _B = 4  # number of completions (examples)

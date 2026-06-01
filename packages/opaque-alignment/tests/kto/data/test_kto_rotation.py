@@ -9,7 +9,7 @@ Tests cover the full behavioural contract described in the spec:
 - Original columns preserved; row count unchanged.
 - Adversarial: all-equal completions → ValueError raised.
 - Batch-boundary wrapping: last element of each batch maps to first slot.
-- Import path: ``from opaque.api.alignment.data._kto_rotation import ...``
+- Import path: ``from opaque.api.alignment.kto.data._kto_rotation import ...``
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import pytest
 
 from datasets import Dataset
 
-from opaque.api.alignment.data._kto_rotation import rotate_kto_completions
+from opaque.api.alignment.kto.data._kto_rotation import rotate_kto_completions
 
 
 # --------------------------------------------------------------------------- #

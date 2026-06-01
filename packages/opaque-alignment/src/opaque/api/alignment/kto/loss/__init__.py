@@ -1,8 +1,8 @@
 """KTO loss family impl — kto (Tier 2) + apo_zero_unpaired (Tier 1) + registry."""
 
-from opaque.api.alignment.loss.kto._apo_zero_unpaired import apo_zero_unpaired
-from opaque.api.alignment.loss.kto._kto import kto_loss
-from opaque.api.alignment.loss.kto.types import (
+from opaque.api.alignment.kto.loss._apo_zero_unpaired import apo_zero_unpaired
+from opaque.api.alignment.kto.loss._kto import kto_loss
+from opaque.api.alignment.kto.loss.types import (
     KTO_AGGREGATES,
     KTO_LOSSES,
     KTO_SPEC,

@@ -1,15 +1,9 @@
-"""opaque.alignment.collator façade — re-exports preference collator factories.
+"""opaque.alignment.collator façade — the preference (DPO) collator.
 
-The language-modeling (SFT) collator lives under
-:mod:`opaque.alignment.sft.collator`.
+Unpaired-preference (KTO) → :mod:`opaque.alignment.kto.collator`; language-
+modeling (SFT) → :mod:`opaque.alignment.sft.collator`.
 """
 
-from opaque.api.alignment.collator import (
-    preference_collator,
-    unpaired_preference_collator,
-)
+from opaque.api.alignment.collator import preference_collator
 
-__all__ = [
-    "preference_collator",
-    "unpaired_preference_collator",
-]
+__all__ = ["preference_collator"]

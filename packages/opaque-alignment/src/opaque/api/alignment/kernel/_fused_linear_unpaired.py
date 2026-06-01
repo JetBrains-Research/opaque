@@ -29,7 +29,7 @@ Per chunk it does:
    ``completion_labels`` (non-``-100`` positions are completion tokens);
 3. subtract the (precomputed) reference log-probability to form a per-example
    log-ratio, and split it into the chosen / rejected log-ratios that
-   :func:`opaque.api.alignment.loss.kto._kto.kto_loss` expects, using the
+   :func:`opaque.api.alignment.kto.loss._kto.kto_loss` expects, using the
    per-example boolean ``label`` (``chosen_lr = logratio · label``,
    ``rejected_lr = logratio · ~label``);
 4. evaluate :func:`kto_loss` for the chunk, broadcasting the scalar detached
@@ -75,7 +75,7 @@ from __future__ import annotations
 import torch
 
 from opaque.api.alignment.logprob._sequence import sequence_logp
-from opaque.api.alignment.loss.kto._kto import kto_loss
+from opaque.api.alignment.kto.loss._kto import kto_loss
 
 __all__ = ["fused_linear_unpaired_preference"]
 

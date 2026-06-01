@@ -1,31 +1,29 @@
 """opaque.alignment — functional primitives for DP-safe preference learning.
 
-Headline re-exports of the full package surface: logprob helpers, the DPO/KTO
-loss registries (``DPO_LOSSES``, ``KTO_LOSSES``), collator factories, dataset
-transforms (prompt extraction, chat templates, KTO rotation), reference
-helpers, and alignment metrics. SFT primitives live under
-``opaque.alignment.sft`` (method-first layout, mirroring ``opaque.dpsgd``).
+Headline re-exports of the full package surface: logprob helpers, the DPO loss
+registry (``DPO_LOSSES``), the preference (DPO) collator, reference helpers, and
+alignment metrics. SFT primitives live under ``opaque.alignment.sft`` and KTO
+primitives under ``opaque.alignment.kto`` (method-first layout, mirroring
+``opaque.dpsgd``); KTO's headline symbols are re-exported here for convenience.
 
 See ``docs/development/opaque-alignment-plan.md`` for the package design.
 """
 
-from opaque.alignment.collator import (
-    preference_collator,
-    unpaired_preference_collator,
-)
+from opaque.alignment.collator import preference_collator
 from opaque.alignment.data import (
     clone_chat_template,
     extract_prompt,
     get_training_chat_template,
-    rotate_kto_completions,
 )
+from opaque.alignment.kto.collator import unpaired_preference_collator
+from opaque.alignment.kto.data import rotate_kto_completions
+from opaque.alignment.kto.loss import KTO_LOSSES
 from opaque.alignment.logprob import (
     get_batch_logps,
     selective_log_softmax,
     sequence_logp,
 )
 from opaque.alignment.loss.dpo import DPO_LOSSES
-from opaque.alignment.loss.kto import KTO_LOSSES
 from opaque.alignment.loss.types import DPSpec, LossAggregateSpec
 from opaque.alignment.metric import (
     entropy_from_logits,

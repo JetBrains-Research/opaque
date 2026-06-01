@@ -20,7 +20,7 @@ import torch
 from torch.func import grad, vmap
 
 from opaque.alignment.loss.dpo import DPO_LOSSES
-from opaque.alignment.loss.kto import KTO_LOSSES
+from opaque.alignment.kto.loss import KTO_LOSSES
 
 _BETA = 0.1
 

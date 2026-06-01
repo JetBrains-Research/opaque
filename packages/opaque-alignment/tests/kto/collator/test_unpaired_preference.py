@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import torch
 
-from opaque.api.alignment.collator._unpaired_preference import (
+from opaque.api.alignment.kto.collator._unpaired_preference import (
     unpaired_preference_collator,
 )
 

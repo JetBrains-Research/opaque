@@ -6,7 +6,7 @@ import typing
 
 import pytest
 
-from opaque.api.alignment.loss.kto.types import (
+from opaque.api.alignment.kto.loss.types import (
     KTO_AGGREGATES,
     KTO_LOSSES,
     KTO_SPEC,
@@ -45,6 +45,6 @@ def test_resolve_and_unknown() -> None:
 
 def test_facade_and_top_level() -> None:
     import opaque.alignment as top
-    from opaque.alignment.loss.kto import KTO_LOSSES as facade
+    from opaque.alignment.kto.loss import KTO_LOSSES as facade
 
     assert top.KTO_LOSSES is facade
