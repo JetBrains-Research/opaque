@@ -908,18 +908,138 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_13" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_13" id="__nav_3_13_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    HuggingFace Integration
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_13">
+            <span class="md-nav__icon md-icon"></span>
+            HuggingFace Integration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../user-guide/huggingface/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    HuggingFace Compatibility
+    Overview
     
   </span>
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/huggingface/dptrainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/huggingface/training-arguments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    TrainingArguments
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/huggingface/model-patches/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Model Patches
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1888,6 +2008,15 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#huggingface-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      HuggingFace Integration
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2311,6 +2440,29 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="transformers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Transformers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2376,6 +2528,15 @@
   <a href="#validation-debugging" class="md-nav__link">
     <span class="md-ellipsis">
       Validation &amp; Debugging
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#huggingface-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      HuggingFace Integration
     </span>
   </a>
   
@@ -2659,6 +2820,14 @@ user-facing installation target.</p>
 <li><code>sync()</code> - Auto-dispatch sync for any state/aux type</li>
 <li><code>local_shard()</code> - Partition dataset for DDP training</li>
 <li><code>is_distributed()</code>, <code>get_rank()</code>, <code>get_world_size()</code> - Distributed utilities</li>
+</ul>
+<h3 id="huggingface-integration">HuggingFace Integration<a class="headerlink" href="#huggingface-integration" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><a href="transformers/">Transformers</a></strong>: <code>opaque.transformers</code> — DP-SGD for HuggingFace models</li>
+<li><code>DPTrainer</code> — full constructor, methods, callback wiring, overridable hooks</li>
+<li><code>TrainingArguments</code> — every field grouped by concern (privacy, compute, patches, save, eval, …)</li>
+<li><code>EvaluationResult</code>, <code>TrainOutput</code> — return types</li>
+<li><code>patch_all</code>, <code>is_patched</code>, <code>is_vmap_patched</code> — runtime-patch entry points</li>
 </ul>
 <h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link">&para;</a></h2>
 <h3 id="typical-dp-sgd-workflow">Typical DP-SGD Workflow<a class="headerlink" href="#typical-dp-sgd-workflow" title="Permanent link">&para;</a></h3>

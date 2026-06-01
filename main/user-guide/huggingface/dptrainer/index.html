@@ -12,28 +12,28 @@
         <meta name="author" content="Opaque Contributors">
       
       
-        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/user-guide/">
+        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/user-guide/huggingface/dptrainer/">
       
       
-        <link rel="prev" href="../getting-started/quickstart/">
+        <link rel="prev" href="../">
       
       
-        <link rel="next" href="dp-concepts/">
+        <link rel="next" href="../training-arguments/">
       
       
-      <link rel="icon" href="../assets/images/favicon.png">
+      <link rel="icon" href="../../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.23">
     
     
       
-        <title>Overview - Opaque</title>
+        <title>DPTrainer - Opaque</title>
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.84d31ad4.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.84d31ad4.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.06af60db.min.css">
       
       
 
@@ -52,9 +52,9 @@
       
     
     
-      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../../../assets/_mkdocstrings.css">
     
-    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#user-guide" class="md-skip">
+        <a href="#dptrainer" class="md-skip">
           Skip to content
         </a>
       
@@ -98,7 +98,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href=".." title="Opaque" class="md-header__button md-logo" aria-label="Opaque" data-md-component="logo">
+    <a href="../../.." title="Opaque" class="md-header__button md-logo" aria-label="Opaque" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Overview
+              DPTrainer
             
           </span>
         </div>
@@ -231,7 +231,7 @@
   
   
     <li class="md-tabs__item">
-      <a href=".." class="md-tabs__link">
+      <a href="../../.." class="md-tabs__link">
         
   
   
@@ -252,7 +252,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../getting-started/installation/" class="md-tabs__link">
+        <a href="../../../getting-started/installation/" class="md-tabs__link">
           
   
   
@@ -274,7 +274,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+        <a href="../../" class="md-tabs__link">
           
   
   
@@ -294,7 +294,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../mechanisms/" class="md-tabs__link">
+        <a href="../../../mechanisms/" class="md-tabs__link">
           
   
   
@@ -314,7 +314,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../tutorials/" class="md-tabs__link">
+        <a href="../../../tutorials/" class="md-tabs__link">
           
   
   
@@ -334,7 +334,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../reference/" class="md-tabs__link">
+        <a href="../../../reference/" class="md-tabs__link">
           
   
   
@@ -368,7 +368,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href=".." title="Opaque" class="md-nav__button md-logo" aria-label="Opaque" data-md-component="logo">
+    <a href="../../.." title="Opaque" class="md-nav__button md-logo" aria-label="Opaque" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -398,7 +398,7 @@
   
   
     <li class="md-nav__item">
-      <a href=".." class="md-nav__link">
+      <a href="../../.." class="md-nav__link">
         
   
   
@@ -463,7 +463,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../getting-started/installation/" class="md-nav__link">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -486,7 +486,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../getting-started/quickstart/" class="md-nav__link">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -561,32 +561,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    Overview
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../" class="md-nav__link">
         
   
   
@@ -597,104 +575,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#installation-surface" class="md-nav__link">
-    <span class="md-ellipsis">
-      Installation surface
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#end-to-end-pipelines" class="md-nav__link">
-    <span class="md-ellipsis">
-      End-to-end pipelines
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#topics" class="md-nav__link">
-    <span class="md-ellipsis">
-      Topics
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Topics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#foundations" class="md-nav__link">
-    <span class="md-ellipsis">
-      Foundations
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#core-pipeline" class="md-nav__link">
-    <span class="md-ellipsis">
-      Core pipeline
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#integration" class="md-nav__link">
-    <span class="md-ellipsis">
-      Integration
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mechanism-reference" class="md-nav__link">
-    <span class="md-ellipsis">
-      Mechanism reference
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#reference" class="md-nav__link">
-    <span class="md-ellipsis">
-      Reference
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -707,7 +587,7 @@
   
   
     <li class="md-nav__item">
-      <a href="dp-concepts/" class="md-nav__link">
+      <a href="../../dp-concepts/" class="md-nav__link">
         
   
   
@@ -730,7 +610,7 @@
   
   
     <li class="md-nav__item">
-      <a href="rng-key/" class="md-nav__link">
+      <a href="../../rng-key/" class="md-nav__link">
         
   
   
@@ -799,7 +679,7 @@
   
   
     <li class="md-nav__item">
-      <a href="dp-sgd/" class="md-nav__link">
+      <a href="../../dp-sgd/" class="md-nav__link">
         
   
   
@@ -822,7 +702,7 @@
   
   
     <li class="md-nav__item">
-      <a href="dp-ftrl/" class="md-nav__link">
+      <a href="../../dp-ftrl/" class="md-nav__link">
         
   
   
@@ -853,7 +733,7 @@
   
   
     <li class="md-nav__item">
-      <a href="clipping/" class="md-nav__link">
+      <a href="../../clipping/" class="md-nav__link">
         
   
   
@@ -876,7 +756,7 @@
   
   
     <li class="md-nav__item">
-      <a href="noise/" class="md-nav__link">
+      <a href="../../noise/" class="md-nav__link">
         
   
   
@@ -899,7 +779,7 @@
   
   
     <li class="md-nav__item">
-      <a href="precision/" class="md-nav__link">
+      <a href="../../precision/" class="md-nav__link">
         
   
   
@@ -922,7 +802,7 @@
   
   
     <li class="md-nav__item">
-      <a href="accounting/" class="md-nav__link">
+      <a href="../../accounting/" class="md-nav__link">
         
   
   
@@ -945,7 +825,7 @@
   
   
     <li class="md-nav__item">
-      <a href="sampling/" class="md-nav__link">
+      <a href="../../sampling/" class="md-nav__link">
         
   
   
@@ -968,7 +848,7 @@
   
   
     <li class="md-nav__item">
-      <a href="optimizers/" class="md-nav__link">
+      <a href="../../optimizers/" class="md-nav__link">
         
   
   
@@ -991,7 +871,7 @@
   
   
     <li class="md-nav__item">
-      <a href="lr-scheduling/" class="md-nav__link">
+      <a href="../../lr-scheduling/" class="md-nav__link">
         
   
   
@@ -1014,7 +894,7 @@
   
   
     <li class="md-nav__item">
-      <a href="distributed/" class="md-nav__link">
+      <a href="../../distributed/" class="md-nav__link">
         
   
   
@@ -1034,6 +914,8 @@
                 
   
   
+    
+  
   
   
     
@@ -1049,11 +931,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_13" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_13" checked>
         
           
           <label class="md-nav__link" for="__nav_3_13" id="__nav_3_13_label" tabindex="">
@@ -1069,7 +951,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_13_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_13_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3_13">
             <span class="md-nav__icon md-icon"></span>
             HuggingFace Integration
@@ -1083,7 +965,7 @@
   
   
     <li class="md-nav__item">
-      <a href="huggingface/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   
@@ -1103,10 +985,32 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="huggingface/dptrainer/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    DPTrainer
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1117,6 +1021,107 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#minimal-training-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      Minimal training loop
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#training-evaluation-prediction" class="md-nav__link">
+    <span class="md-ellipsis">
+      Training, evaluation, prediction
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-example-eval-losses" class="md-nav__link">
+    <span class="md-ellipsis">
+      Per-example eval losses
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#logging-and-saving" class="md-nav__link">
+    <span class="md-ellipsis">
+      Logging and saving
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#callbacks" class="md-nav__link">
+    <span class="md-ellipsis">
+      Callbacks
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-losses" class="md-nav__link">
+    <span class="md-ellipsis">
+      Custom losses
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#peft-and-lora" class="md-nav__link">
+    <span class="md-ellipsis">
+      PEFT and LoRA
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#non-private-baseline" class="md-nav__link">
+    <span class="md-ellipsis">
+      Non-private baseline
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      See also
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1129,7 +1134,7 @@
   
   
     <li class="md-nav__item">
-      <a href="huggingface/training-arguments/" class="md-nav__link">
+      <a href="../training-arguments/" class="md-nav__link">
         
   
   
@@ -1152,7 +1157,7 @@
   
   
     <li class="md-nav__item">
-      <a href="huggingface/model-patches/" class="md-nav__link">
+      <a href="../model-patches/" class="md-nav__link">
         
   
   
@@ -1183,7 +1188,7 @@
   
   
     <li class="md-nav__item">
-      <a href="memory-optimizations/" class="md-nav__link">
+      <a href="../../memory-optimizations/" class="md-nav__link">
         
   
   
@@ -1206,7 +1211,7 @@
   
   
     <li class="md-nav__item">
-      <a href="auditing/" class="md-nav__link">
+      <a href="../../auditing/" class="md-nav__link">
         
   
   
@@ -1229,7 +1234,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../limitations/" class="md-nav__link">
+      <a href="../../../limitations/" class="md-nav__link">
         
   
   
@@ -1302,7 +1307,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/" class="md-nav__link">
+      <a href="../../../mechanisms/" class="md-nav__link">
         
   
   
@@ -1368,7 +1373,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-sgd/" class="md-nav__link">
+      <a href="../../../mechanisms/dp-sgd/" class="md-nav__link">
         
   
   
@@ -1391,7 +1396,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-sgd/gaussian/" class="md-nav__link">
+      <a href="../../../mechanisms/dp-sgd/gaussian/" class="md-nav__link">
         
   
   
@@ -1465,7 +1470,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-ftrl/" class="md-nav__link">
+      <a href="../../../mechanisms/dp-ftrl/" class="md-nav__link">
         
   
   
@@ -1488,7 +1493,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-ftrl/band-mf/" class="md-nav__link">
+      <a href="../../../mechanisms/dp-ftrl/band-mf/" class="md-nav__link">
         
   
   
@@ -1511,7 +1516,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-ftrl/blt/" class="md-nav__link">
+      <a href="../../../mechanisms/dp-ftrl/blt/" class="md-nav__link">
         
   
   
@@ -1534,7 +1539,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-ftrl/bsr/" class="md-nav__link">
+      <a href="../../../mechanisms/dp-ftrl/bsr/" class="md-nav__link">
         
   
   
@@ -1557,7 +1562,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-ftrl/bisr/" class="md-nav__link">
+      <a href="../../../mechanisms/dp-ftrl/bisr/" class="md-nav__link">
         
   
   
@@ -1580,7 +1585,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-ftrl/lambda-cgd/" class="md-nav__link">
+      <a href="../../../mechanisms/dp-ftrl/lambda-cgd/" class="md-nav__link">
         
   
   
@@ -1661,7 +1666,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/" class="md-nav__link">
+      <a href="../../../tutorials/" class="md-nav__link">
         
   
   
@@ -1727,7 +1732,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/dp_sgd_training/" class="md-nav__link">
+      <a href="../../../tutorials/dp_sgd_training/" class="md-nav__link">
         
   
   
@@ -1750,7 +1755,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/accounting_and_calibration/" class="md-nav__link">
+      <a href="../../../tutorials/accounting_and_calibration/" class="md-nav__link">
         
   
   
@@ -1773,7 +1778,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/sampling_and_microbatching/" class="md-nav__link">
+      <a href="../../../tutorials/sampling_and_microbatching/" class="md-nav__link">
         
   
   
@@ -1796,7 +1801,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/llm_finetuning/" class="md-nav__link">
+      <a href="../../../tutorials/llm_finetuning/" class="md-nav__link">
         
   
   
@@ -1870,7 +1875,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/dp_ftrl_training/" class="md-nav__link">
+      <a href="../../../tutorials/dp_ftrl_training/" class="md-nav__link">
         
   
   
@@ -1944,7 +1949,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/privacy_auditing/" class="md-nav__link">
+      <a href="../../../tutorials/privacy_auditing/" class="md-nav__link">
         
   
   
@@ -1967,7 +1972,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/distributed_training/" class="md-nav__link">
+      <a href="../../../tutorials/distributed_training/" class="md-nav__link">
         
   
   
@@ -2048,7 +2053,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/" class="md-nav__link">
+      <a href="../../../reference/" class="md-nav__link">
         
   
   
@@ -2071,7 +2076,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/serialization/" class="md-nav__link">
+      <a href="../../../reference/serialization/" class="md-nav__link">
         
   
   
@@ -2094,7 +2099,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/clipping/" class="md-nav__link">
+      <a href="../../../reference/clipping/" class="md-nav__link">
         
   
   
@@ -2117,7 +2122,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/noise/" class="md-nav__link">
+      <a href="../../../reference/noise/" class="md-nav__link">
         
   
   
@@ -2140,7 +2145,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/accounting/" class="md-nav__link">
+      <a href="../../../reference/accounting/" class="md-nav__link">
         
   
   
@@ -2163,7 +2168,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/sampling/" class="md-nav__link">
+      <a href="../../../reference/sampling/" class="md-nav__link">
         
   
   
@@ -2186,7 +2191,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/rng/" class="md-nav__link">
+      <a href="../../../reference/rng/" class="md-nav__link">
         
   
   
@@ -2209,7 +2214,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/distributed/" class="md-nav__link">
+      <a href="../../../reference/distributed/" class="md-nav__link">
         
   
   
@@ -2232,7 +2237,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/auditing/" class="md-nav__link">
+      <a href="../../../reference/auditing/" class="md-nav__link">
         
   
   
@@ -2255,7 +2260,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/utilities/" class="md-nav__link">
+      <a href="../../../reference/utilities/" class="md-nav__link">
         
   
   
@@ -2278,7 +2283,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/optimizers/" class="md-nav__link">
+      <a href="../../../reference/optimizers/" class="md-nav__link">
         
   
   
@@ -2301,7 +2306,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/schedules/" class="md-nav__link">
+      <a href="../../../reference/schedules/" class="md-nav__link">
         
   
   
@@ -2324,7 +2329,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/transformers/" class="md-nav__link">
+      <a href="../../../reference/transformers/" class="md-nav__link">
         
   
   
@@ -2374,80 +2379,83 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#installation-surface" class="md-nav__link">
+  <a href="#minimal-training-loop" class="md-nav__link">
     <span class="md-ellipsis">
-      Installation surface
+      Minimal training loop
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#end-to-end-pipelines" class="md-nav__link">
+  <a href="#training-evaluation-prediction" class="md-nav__link">
     <span class="md-ellipsis">
-      End-to-end pipelines
+      Training, evaluation, prediction
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#topics" class="md-nav__link">
+  <a href="#per-example-eval-losses" class="md-nav__link">
     <span class="md-ellipsis">
-      Topics
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Topics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#foundations" class="md-nav__link">
-    <span class="md-ellipsis">
-      Foundations
+      Per-example eval losses
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#core-pipeline" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#logging-and-saving" class="md-nav__link">
     <span class="md-ellipsis">
-      Core pipeline
+      Logging and saving
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#integration" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#callbacks" class="md-nav__link">
     <span class="md-ellipsis">
-      Integration
+      Callbacks
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#mechanism-reference" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#custom-losses" class="md-nav__link">
     <span class="md-ellipsis">
-      Mechanism reference
+      Custom losses
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#reference" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#peft-and-lora" class="md-nav__link">
     <span class="md-ellipsis">
-      Reference
+      PEFT and LoRA
     </span>
   </a>
   
 </li>
-        
-      </ul>
-    </nav>
+      
+        <li class="md-nav__item">
+  <a href="#non-private-baseline" class="md-nav__link">
+    <span class="md-ellipsis">
+      Non-private baseline
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      See also
+    </span>
+  </a>
   
 </li>
       
@@ -2470,86 +2478,157 @@
   
 
 
-<h1 id="user-guide">User Guide<a class="headerlink" href="#user-guide" title="Permanent link">&para;</a></h1>
-<p>This guide explains each component of Opaque's DP training pipeline:
-what it does, how the API works, and the practical decisions you
-need to make. For hands-on practice, see the
-<a href="../tutorials/">Tutorials</a>. For complete function
-signatures, see the <a href="../reference/">API Reference</a>.</p>
-<h2 id="installation-surface">Installation surface<a class="headerlink" href="#installation-surface" title="Permanent link">&para;</a></h2>
-<p>Use <code>pip install opaque</code> (plus <code>opaque[...]</code> extras) as the public
-install target. The <code>opaque.*</code> import modules are implemented across
-namespace sub-packages, but those sub-packages are not documented as
-standalone install targets in user-facing workflows.</p>
-<h2 id="end-to-end-pipelines">End-to-end pipelines<a class="headerlink" href="#end-to-end-pipelines" title="Permanent link">&para;</a></h2>
-<p>Pick the track that matches your problem:</p>
+<h1 id="dptrainer">DPTrainer<a class="headerlink" href="#dptrainer" title="Permanent link">&para;</a></h1>
+<p><code>DPTrainer</code> mirrors HuggingFace's <code>Trainer</code> interface: construct with
+<code>(model, args, datasets, …)</code>, call <code>train()</code> / <code>evaluate()</code> /
+<code>predict()</code>, query the result.  Under the surface the loop runs DP-SGD
+with <code>vmap(grad(...))</code> over per-example losses; the public API is
+designed so a user familiar with <code>Trainer</code> doesn't have to think about
+that.</p>
+<p>This page covers the common usage patterns.  For the full constructor
+signature, every method's parameters / return type, and the public
+state objects (<code>EvaluationResult</code>, <code>DPTrainerState</code>, <code>TrainOutput</code>),
+see <a href="../../../reference/transformers/">API reference — transformers</a>.</p>
+<h2 id="minimal-training-loop">Minimal training loop<a class="headerlink" href="#minimal-training-loop" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoModelForCausalLM</span><span class="p">,</span> <span class="n">AutoTokenizer</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">DPTrainer</span><span class="p">,</span> <span class="n">TrainingArguments</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">tok</span> <span class="o">=</span> <span class="n">AutoTokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;gpt2&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">tok</span><span class="o">.</span><span class="n">pad_token</span> <span class="o">=</span> <span class="n">tok</span><span class="o">.</span><span class="n">eos_token</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;gpt2&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">args</span> <span class="o">=</span> <span class="n">TrainingArguments</span><span class="p">(</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;run-0&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">per_device_train_batch_size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">num_train_epochs</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">learning_rate</span><span class="o">=</span><span class="mf">5e-4</span><span class="p">,</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="n">privacy_target_epsilon</span><span class="o">=</span><span class="mf">8.0</span><span class="p">,</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="n">privacy_target_delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="p">)</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">DPTrainer</span><span class="p">(</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>    <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>    <span class="n">train_dataset</span><span class="o">=</span><span class="n">train_ds</span><span class="p">,</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>    <span class="n">eval_dataset</span><span class="o">=</span><span class="n">eval_ds</span><span class="p">,</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>    <span class="n">processing_class</span><span class="o">=</span><span class="n">tok</span><span class="p">,</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="p">)</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="n">out</span> <span class="o">=</span> <span class="n">trainer</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="nb">print</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">global_step</span><span class="p">,</span> <span class="n">out</span><span class="o">.</span><span class="n">training_loss</span><span class="p">,</span> <span class="n">out</span><span class="o">.</span><span class="n">metrics</span><span class="p">[</span><span class="s2">&quot;privacy_epsilon&quot;</span><span class="p">])</span>
+</code></pre></div>
+<p>Construction immediately moves the model to the resolved device and
+auto-patches it (vmap-safety + optional Triton kernels).  The noise
+multiplier is calibrated from <code>privacy_target_epsilon</code> at the start of
+<code>train()</code> (once the dataset size and step count are known), not at
+construction.  No extra setup calls are needed before <code>train()</code>.</p>
+<p>At least one of <code>privacy_noise_multiplier</code> / <code>privacy_target_epsilon</code>
+must be set — neither has a silent default; see the
+<a href="../training-arguments/#privacy-targets">Privacy targets</a> section of
+the <code>TrainingArguments</code> reference for the two valid shapes and the
+stop-at-ε contract that fires when both are set.</p>
+<h2 id="training-evaluation-prediction">Training, evaluation, prediction<a class="headerlink" href="#training-evaluation-prediction" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">trainer</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>                                  <span class="c1"># full DP-SGD loop</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">trainer</span><span class="o">.</span><span class="n">train</span><span class="p">(</span><span class="n">resume_from_checkpoint</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>       <span class="c1"># auto-find latest checkpoint</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">metrics</span> <span class="o">=</span> <span class="n">trainer</span><span class="o">.</span><span class="n">evaluate</span><span class="p">()</span>                     <span class="c1"># returns dict[str, float]</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">result</span> <span class="o">=</span> <span class="n">trainer</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">test_ds</span><span class="p">)</span>                <span class="c1"># returns EvaluationResult</span>
+</code></pre></div>
+<p>End-of-train metrics always include <code>privacy_epsilon</code>,
+<code>privacy_delta</code>, and <code>privacy_noise_multiplier</code> alongside the usual
+loss / step / runtime fields.  Evaluation and prediction route through
+the same loop; <code>predict()</code> returns the full <code>EvaluationResult</code>
+(predictions + labels + metrics) while <code>evaluate()</code> returns only the
+metrics dict.</p>
+<p><code>resume_from_checkpoint</code> accepts a path string, <code>True</code> to auto-find
+the latest <code>checkpoint-*/</code> under <code>output_dir</code>, or <code>None</code> for a fresh
+run.</p>
+<h2 id="per-example-eval-losses">Per-example eval losses<a class="headerlink" href="#per-example-eval-losses" title="Permanent link">&para;</a></h2>
+<p>Setting <code>args.include_for_metrics=["loss"]</code> switches the eval path to
+the vmap'd per-example closure: <code>EvalPrediction.losses</code> carries real
+per-example losses instead of the batch-mean repeated.  Useful for
+threshold calibration, percentile metrics, or member / non-member
+analyses driven by <code>compute_metrics</code>.</p>
+<h2 id="logging-and-saving">Logging and saving<a class="headerlink" href="#logging-and-saving" title="Permanent link">&para;</a></h2>
+<p>The standard surface from <code>Trainer</code> is preserved:</p>
 <ul>
-<li><strong><a href="dp-sgd/">DP-SGD end-to-end</a></strong> — independent Gaussian noise at
-  every step, per-step privacy composition. The standard DP training
-  recipe. Imports from <code>opaque.dpsgd.*</code>.</li>
-<li><strong><a href="dp-ftrl/">DP-FTRL end-to-end</a></strong> — correlated noise across the
-  whole training run via matrix factorization. Imports from
-  <code>opaque.dpftrl.*</code>.</li>
+<li><code>log(logs)</code> — append to <code>state.log_history</code> and fire <code>on_log</code>
+  callbacks.</li>
+<li><code>save_state()</code> — write <code>trainer_state.json</code> under <code>output_dir</code>.</li>
+<li><code>save_model(output_dir=None)</code> — write weights + tokenizer +
+  <code>training_args.bin</code> + <code>accountant.json</code>.  The accountant always
+  travels with the saved model.</li>
 </ul>
-<p>Both pipelines share the same primitives (clipping, noise, sampling,
-optimizer, accounting). The topic pages below are stack-agnostic
-concept reference; each end-to-end guide picks the right pieces and
-stitches them.</p>
-<h2 id="topics">Topics<a class="headerlink" href="#topics" title="Permanent link">&para;</a></h2>
-<h3 id="foundations">Foundations<a class="headerlink" href="#foundations" title="Permanent link">&para;</a></h3>
+<p>Checkpointing during training is driven by <code>save_strategy</code> /
+<code>save_steps</code> on <code>TrainingArguments</code>; resume from a checkpoint
+preserves the privacy accountant (the saved provenance is the prefix,
+calibration covers the remaining steps).</p>
+<h2 id="callbacks">Callbacks<a class="headerlink" href="#callbacks" title="Permanent link">&para;</a></h2>
+<p>User callbacks are passed via the <code>callbacks=</code> constructor arg or
+added later:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">trainer</span><span class="o">.</span><span class="n">add_callback</span><span class="p">(</span><span class="n">MyCallback</span><span class="p">())</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">trainer</span><span class="o">.</span><span class="n">remove_callback</span><span class="p">(</span><span class="n">MyCallback</span><span class="p">)</span>
+</code></pre></div>
+<p>The trainer auto-registers <code>DefaultFlowCallback</code>, the progress
+callback pair, and <code>BestModelSaveCallback</code> (only when
+<code>save_strategy="best"</code>).  Reporting integrations selected by
+<code>args.report_to</code> (W&amp;B, TensorBoard, MLflow, …) are wrapped so the
+privacy metric keys (<code>privacy/epsilon</code>, <code>privacy/clip_rate</code>, …) land
+as hierarchical paths in backends that support metric trees.</p>
+<p><code>on_substep_end</code> is <strong>not</strong> fired — each DP-SGD step is one atomic
+clip-noise-step over one Poisson sample.</p>
+<h2 id="custom-losses">Custom losses<a class="headerlink" href="#custom-losses" title="Permanent link">&para;</a></h2>
+<p><code>compute_loss_func=</code> on the constructor accepts a callable
+<code>(outputs, labels) -&gt; scalar</code> for one-off losses without subclassing.
+The callable is invoked <strong>per example under vmap</strong> (one example's
+outputs, one example's labels), not once per batch — there's no
+<code>num_items_in_batch</code> argument.  Subclassing for full SFT / DPO / KTO
+trainers is supported but is a more advanced extension point; reach
+out if you need to wire one up.</p>
+<h2 id="peft-and-lora">PEFT and LoRA<a class="headerlink" href="#peft-and-lora" title="Permanent link">&para;</a></h2>
+<p>PEFT-wrapped models work transparently: wrap the model with
+<code>peft.get_peft_model(...)</code> before constructing the trainer.  The
+trainer detects the <code>PeftModel</code> and routes the functional path through
+<code>make_functional(model, partition_trainable=True)</code> internally — only
+LoRA adapters receive per-example gradients (essential for memory at
+multi-billion-parameter scale).  Fused LoRA Triton kernels engage
+automatically when adapters have <code>bias="none"</code> — see
+<a href="../model-patches/#fused-lora-operations">Model patches — Fused LoRA operations</a>.</p>
+<h2 id="non-private-baseline">Non-private baseline<a class="headerlink" href="#non-private-baseline" title="Permanent link">&para;</a></h2>
+<p>To measure the utility cost of differential privacy, run the trainer with
+noise turned off — <code>privacy_noise_multiplier=0.0</code> — keeping everything else
+(mechanism, sampler, optimizer, accounting) identical:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.transformers.trainer</span><span class="w"> </span><span class="kn">import</span> <span class="n">DPTrainer</span><span class="p">,</span> <span class="n">TrainingArguments</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">DPTrainer</span><span class="p">(</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">args</span><span class="o">=</span><span class="n">TrainingArguments</span><span class="p">(</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>        <span class="n">privacy_noise_multiplier</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>   <span class="c1"># σ = 0 → no noise added</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>        <span class="n">clipping_norm</span><span class="o">=</span><span class="n">math</span><span class="o">.</span><span class="n">inf</span><span class="p">,</span>         <span class="c1"># optional: disable clipping for plain SGD</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>        <span class="n">max_steps</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>    <span class="p">),</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    <span class="n">processing_class</span><span class="o">=</span><span class="n">tokenizer</span><span class="p">,</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    <span class="n">train_dataset</span><span class="o">=</span><span class="n">train_dataset</span><span class="p">,</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="p">)</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="n">out</span> <span class="o">=</span> <span class="n">trainer</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="k">assert</span> <span class="n">out</span><span class="o">.</span><span class="n">metrics</span><span class="p">[</span><span class="s2">&quot;privacy_epsilon&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;inf&quot;</span><span class="p">)</span>  <span class="c1"># no guarantee, reported faithfully</span>
+</code></pre></div>
+<p>The accountant composes a non-private step, so <code>privacy_epsilon</code> is <code>inf</code>
+rather than a finite budget — calibration is skipped and the run proceeds
+normally. Clipping stays on by default (set <code>clipping_norm=math.inf</code> to
+disable it as well). See
+<a href="../training-arguments/#non-private-baseline">TrainingArguments — Non-private baseline</a>
+for the full contract.</p>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong><a href="dp-concepts/">Differential Privacy Concepts</a></strong> — What DP
-  guarantees, how DP-SGD works, privacy budgets, composition, and
-  amplification.</li>
-<li><strong><a href="rng-key/">Random Number Generation</a></strong> — Explicit RNG keys,
-  splitting, <code>fold_in</code>, reproducibility in distributed training.</li>
-</ul>
-<h3 id="core-pipeline">Core pipeline<a class="headerlink" href="#core-pipeline" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong><a href="clipping/">Per-Example Gradient Clipping</a></strong> — <code>clipped_grad</code>,
-  <code>auto_clipped_grad</code>, <code>adaptive_clipped_grad</code> (DP-SGD-only),
-  microbatching, per-group clipping.</li>
-<li><strong><a href="noise/">Noise Addition</a></strong> — <code>gaussian_noise</code> (optional
-  <code>bound</code> for the bounded Gaussian mechanism) (DP-SGD); <code>mf_gaussian_noise</code>
-  with strategy factories (DP-FTRL).</li>
-<li><strong><a href="accounting/">Privacy Accounting</a></strong> — Composable <code>DpProcess</code>
-  objects, privacy metrics, calibration, the <code>Accountant</code> helper.</li>
-<li><strong><a href="sampling/">Sampling &amp; Microbatching</a></strong> — Poisson, truncated
-  Poisson, cyclic / b-min-sep / balls-in-bins / sequential samplers.</li>
-</ul>
-<h3 id="integration">Integration<a class="headerlink" href="#integration" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong><a href="optimizers/">Optimizers</a></strong> — TorchOpt functional optimizers
-  with DP-SGD bias correction and the private second-moment story
-  for DP-FTRL.</li>
-<li><strong><a href="../reference/serialization/">Serialization (API reference)</a></strong> —
-  Checkpoint explicit state with
-  <code>opaque.serialization.state_dict</code> / <code>from_state_dict</code>.</li>
-<li><strong><a href="lr-scheduling/">LR Scheduling</a></strong> — Warmup, cosine,
-  inverse-sqrt schedules; composing <code>with_warmup</code> with any decay
-  curve.</li>
-<li><strong><a href="distributed/">Distributed Training</a></strong> — DDP with synchronized
-  noise and gradient aggregation.</li>
-<li><strong><a href="distributed-trainer/">Distributed DPTrainer</a></strong> — DDP setup and
-  <code>ddp_shard</code> behavior for <code>DPTrainer</code>.</li>
-<li><strong><a href="huggingface/">HuggingFace Integration</a></strong> — <code>DPTrainer</code>,
-  <code>TrainingArguments</code>, model patches, and LoRA.</li>
-<li><strong><a href="memory-optimizations/">Memory Optimizations</a></strong> — Microbatching,
-  gradient checkpointing, fused kernels, profiling.</li>
-<li><strong><a href="auditing/">Privacy Auditing</a></strong> — Empirical privacy validation
-  via membership inference.</li>
-</ul>
-<h3 id="mechanism-reference">Mechanism reference<a class="headerlink" href="#mechanism-reference" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong><a href="../mechanisms/dp-sgd/">DP-SGD mechanisms</a></strong> — Gaussian
-  per-step noise.</li>
-<li><strong><a href="../mechanisms/dp-ftrl/">DP-FTRL mechanisms</a></strong> — BandMF,
-  BLT, BSR, BISR, λ-CGD strategies.</li>
-</ul>
-<h3 id="reference">Reference<a class="headerlink" href="#reference" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong><a href="../limitations/">Known Limitations</a></strong> — Flash Attention,
-  DDP-only, in-place operations, other constraints.</li>
+<li><a href="../training-arguments/">TrainingArguments</a> — the most-tuned
+  DP-specific knobs and the batch-size contract.</li>
+<li><a href="../model-patches/">Model patches</a> — what the trainer auto-applies
+  and how to opt parts in or out.</li>
+<li><a href="../../../reference/transformers/">API reference — transformers</a> —
+  full parameter inventory for <code>DPTrainer</code>, <code>TrainingArguments</code>, and
+  the public state objects.</li>
 </ul>
 
 
@@ -2621,10 +2700,10 @@ stitches them.</p>
     
     
       
-      <script id="__config" type="application/json">{"base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
-      <script src="../assets/javascripts/bundle.f55a23d4.min.js"></script>
+      <script src="../../../assets/javascripts/bundle.f55a23d4.min.js"></script>
       
         <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
       

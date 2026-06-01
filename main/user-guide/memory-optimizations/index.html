@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/user-guide/memory-optimizations/">
       
       
-        <link rel="prev" href="../huggingface/">
+        <link rel="prev" href="../huggingface/model-patches/">
       
       
         <link rel="next" href="../auditing/">
@@ -916,18 +916,141 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_13" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_13" id="__nav_3_13_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    HuggingFace Integration
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_13">
+            <span class="md-nav__icon md-icon"></span>
+            HuggingFace Integration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../huggingface/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    HuggingFace Compatibility
+    Overview
     
   </span>
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../huggingface/dptrainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../huggingface/training-arguments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    TrainingArguments
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../huggingface/model-patches/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Model Patches
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -2275,6 +2398,29 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/transformers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Transformers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2529,9 +2675,10 @@ term dominates for large models.</p>
 </tbody>
 </table>
 <p>LoRA dramatically reduces gradient memory because only the adapter
-parameters (~0.1% of model) require per-example gradients. See
-<a href="../huggingface/#using-lora-with-dp-sgd">HuggingFace Compatibility — LoRA</a>
-for details.</p>
+parameters (~0.1% of model) require per-example gradients.  Use
+<code>make_functional(model, partition_trainable=True)</code> to expose only the
+trainable subset to <code>vmap(grad(...))</code> — see <a href="../../reference/utilities/#trainable-frozen-partition-for-peft-and-lora">Utilities reference —
+<code>make_functional</code></a>.</p>
 <h2 id="microbatching">Microbatching<a class="headerlink" href="#microbatching" title="Permanent link">&para;</a></h2>
 <p>Microbatching reduces <span class="arithmatex">\(M\)</span> by processing the batch in chunks. With
 <code>microbatch_size=16</code> and <code>batch_size=256</code>, vmap runs 16 forward-backward
@@ -2673,7 +2820,10 @@ with functorch). No special kwargs needed.</p>
   compatible with higher-order transforms (hessian, jacrev(jacrev)).
   Opaque only uses first-order differentiation, so this is not an issue
   in practice.</li>
-<li>Skip patches with: <code>OPAQUE_SKIP_PYTORCH_CHECKPOINT_PATCHES=all</code></li>
+<li>Opt out at the API layer (no env-var kill switches): pass
+  <code>vmap_checkpointing=False</code> to <code>apply_runtime_patches(...)</code> or
+  <code>apply_model_patches(...)</code>, or <code>performance_kernels_config={"vmap_checkpointing": False}</code>
+  to <code>TrainingArguments</code>.</li>
 </ul>
 <h3 id="cpu-offloading-of-saved-tensors">CPU offloading of saved tensors<a class="headerlink" href="#cpu-offloading-of-saved-tensors" title="Permanent link">&para;</a></h3>
 <p><code>torch.autograd.graph.save_on_cpu</code> moves tensors saved for backward to
@@ -2692,7 +2842,7 @@ runtime patching has been set up.</p>
 passes) and recomputing activations in backward instead of saving them. Each
 kernel also implements native vmap support, so <code>vmap(grad())</code> works without
 fallbacks.</p>
-<p>See <a href="../huggingface/#patched-operations">HuggingFace Compatibility — Patched operations</a>
+<p>See <a href="../huggingface/model-patches/#triton-kernels">Model Patches — Triton kernels</a>
 for per-operation details and per-model support.</p>
 <h3 id="kernel-benchmarks">Kernel benchmarks<a class="headerlink" href="#kernel-benchmarks" title="Permanent link">&para;</a></h3>
 <p>Measured at Mellum-4b scale (batch=4, seq=1024, vocab=128256, LoRA r=16).

@@ -916,18 +916,141 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_13" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_13" id="__nav_3_13_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    HuggingFace Integration
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_13">
+            <span class="md-nav__icon md-icon"></span>
+            HuggingFace Integration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../user-guide/huggingface/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    HuggingFace Compatibility
+    Overview
     
   </span>
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/huggingface/dptrainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/huggingface/training-arguments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    TrainingArguments
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/huggingface/model-patches/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Model Patches
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -2179,6 +2302,29 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/transformers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Transformers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2316,27 +2462,30 @@ which produces dynamic output shapes incompatible with vmap.</p>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">attn_implementation</span><span class="o">=</span><span class="s2">&quot;sdpa&quot;</span><span class="p">,</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="p">)</span>
 </code></pre></div>
-<p>See <a href="../user-guide/huggingface/#attention-implementation-support">HuggingFace Compatibility</a>
+<p>See <a href="../user-guide/huggingface/model-patches/#attention-implementations">Model Patches — Attention implementations</a>
 for supported attention implementations.</p>
 <h2 id="ddp-only">DDP only<a class="headerlink" href="#ddp-only" title="Permanent link">&para;</a></h2>
 <p>Opaque supports <code>torch.nn.parallel.DistributedDataParallel</code> (DDP). FSDP,
 Tensor Parallel, and Pipeline Parallel are not supported. Multi-node DDP
-should work but is not extensively tested. The NCCL backend is recommended;
-Gloo and MPI are not tested.</p>
+should work but is not extensively tested. First-class distributed backends are
+NCCL, Gloo, and MPI. Vendor/runtime-specific backends require external stacks
+and are not covered by default CI.</p>
 <h2 id="kernel-patching-lives-in-opaquepatches">Kernel patching lives in <code>opaque.patches</code><a class="headerlink" href="#kernel-patching-lives-in-opaquepatches" title="Permanent link">&para;</a></h2>
 <p>Kernel optimization and patching for HuggingFace models is part of
 <code>opaque.patches</code> and is CUDA+Triton only.</p>
-<p>Low-level Triton-backed <code>Opaque_*</code> autograd classes (for example,
-<code>Opaque_SwiGLU</code>, <code>Opaque_RoPE_QK</code>, <code>Opaque_LinearCrossEntropyLoss</code>) are
-internal implementation details and should not be imported directly in user
+<p>Low-level Triton-backed autograd primitives are internal
+implementation details and should not be imported directly in user
 code.</p>
-<p>On CPU/MPS (or without Triton), Opaque falls back to non-kernel compatibility
-paths. To control patching behavior, use the <code>OPAQUE_SKIP_PYTORCH_PATCHES</code>,
-<code>OPAQUE_SKIP_TRANSFORMERS_PATCHES</code>, and <code>OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES</code>
-environment variables. See
-<a href="../user-guide/huggingface/#configuration">HuggingFace Compatibility</a>.</p>
-<p>Advanced users can still call kernel wrappers directly via
-<code>opaque.patches.kernels</code>.</p>
+<p>On CPU/MPS (or without Triton), the kernel group is auto-disabled —
+the router forces <code>kernels=False</code> when CUDA + Triton can't be
+imported, so <code>performance=True</code> keeps the pure-Python <code>kv_cache</code>
+patch on those hosts.  Configure the patch surface via the explicit
+flags (see
+<a href="../user-guide/huggingface/model-patches/#dptrainer-integration">Model Patches — DPTrainer integration</a>);
+opaque-patches has no environment-variable kill switches.</p>
+<p>Public standalone kernels (<code>opaque_swiglu</code>, <code>opaque_cross_entropy_loss</code>,
+<code>opaque_lora_w</code>, <code>opaque_lora_qkv</code>, <code>opaque_lora_mlp</code>) are importable
+from <code>opaque.patches.kernels</code>.</p>
 <h2 id="in-place-operations-under-vmap">In-place operations under vmap<a class="headerlink" href="#in-place-operations-under-vmap" title="Permanent link">&para;</a></h2>
 <p><code>torch.func.vmap</code> does not support in-place tensor operations. Models that
 use in-place operations (e.g., <code>x.add_()</code>, <code>x[:, 0] = 0</code>) in their
