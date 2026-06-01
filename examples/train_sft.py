@@ -89,8 +89,9 @@ def parse_args():
     parser.add_argument(
         "--dataset",
         type=str,
-        default="stas/openwebtext-10k",
-        help="HuggingFace dataset name (full mode).",
+        default="roneneldan/TinyStories",
+        help="HuggingFace dataset name (full mode). Must be a non-script "
+        "(Parquet/Arrow) dataset — modern `datasets` rejects script-based ones.",
     )
     parser.add_argument(
         "--dataset-text-field",

@@ -21,7 +21,7 @@ cmd:
 
     uv run python examples/train_sft.py \
       --model-name Qwen/Qwen2.5-0.5B \
-      --dataset stas/openwebtext-10k \
+      --dataset roneneldan/TinyStories \
       --dataset-text-field text \
       --num-train-samples 8000 \
       --loss-type nll \
