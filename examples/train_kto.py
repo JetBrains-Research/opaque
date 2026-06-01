@@ -63,10 +63,12 @@ USAGE:
   # Smoke test (CPU, ~seconds, no network)
   python examples/train_kto.py --smoke
 
-  # Full training on a real model + dataset
+  # Full DP-KTO training on a real model + dataset (downloads from HF)
   python examples/train_kto.py \\
-    --model-name gpt2 --dataset trl-lib/kto-mix-14k \\
-    --max-length 512 --batch-size 16
+    --model Qwen/Qwen2.5-0.5B-Instruct \\
+    --dataset trl-lib/kto-mix-14k \\
+    --max-length 1024 --batch-size 16 --max-steps 100 \\
+    --beta 0.1 --clip-norm 1.0 --noise-multiplier 0.8
 """
 
 from __future__ import annotations
@@ -91,6 +93,7 @@ from opaque.alignment import (
     sequence_logp,
 )
 from opaque.alignment.loss.kto import KTO_LOSSES, KTO_SPEC
+import opaque.dpsgd.accounting as dpsgd_acc
 
 # DP-FTRL mechanism swap (plan §3.2): the Tier-2 loss closure is mechanism-
 # agnostic. To run DP-FTRL instead of DP-SGD, replace the two ``opaque.dpsgd``
@@ -110,18 +113,45 @@ def parse_args():
         action="store_true",
         help="Run a tiny CPU smoke test (random model, synthetic data, 2 steps).",
     )
+    # --- Model / data (full mode) ---
     parser.add_argument(
-        "--model-name",
+        "--model",
         type=str,
-        default="gpt2",
+        default="Qwen/Qwen2.5-0.5B-Instruct",
         help="HuggingFace model name or local path (full mode).",
+    )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="trl-lib/kto-mix-14k",
+        help="HuggingFace unpaired KTO dataset (must have prompt/completion/label cols).",
     )
     parser.add_argument(
         "--max-length",
         type=int,
-        default=512,
+        default=1024,
         help="Maximum sequence length for the collator.",
     )
+    # --- KTO-specific ---
+    parser.add_argument(
+        "--beta",
+        type=float,
+        default=0.1,
+        help="KTO temperature (reference-deviation strength).",
+    )
+    parser.add_argument(
+        "--desirable-weight",
+        type=float,
+        default=1.0,
+        help="Loss weight applied to desirable (label=True) examples.",
+    )
+    parser.add_argument(
+        "--undesirable-weight",
+        type=float,
+        default=1.0,
+        help="Loss weight applied to undesirable (label=False) examples.",
+    )
+    # --- Sampling / training ---
     parser.add_argument(
         "--batch-size",
         type=int,
@@ -130,22 +160,24 @@ def parse_args():
         "also the rotation block size for rotate_kto_completions.",
     )
     parser.add_argument(
-        "--num-steps",
+        "--microbatch-size",
+        type=int,
+        default=None,
+        help="Physical microbatch size for gradient accumulation (None = no split).",
+    )
+    parser.add_argument(
+        "--max-steps",
         type=int,
         default=100,
         help="Number of DP-SGD steps to run (full mode).",
     )
-    parser.add_argument(
-        "--beta",
-        type=float,
-        default=0.1,
-        help="KTO temperature (reference-deviation strength).",
-    )
+    # --- DP-SGD hyper-parameters ---
     parser.add_argument(
         "--learning-rate", type=float, default=1e-4, help="AdamW learning rate."
     )
     parser.add_argument(
-        "--clipping-norm",
+        "--clip-norm",
+        dest="clipping_norm",
         type=float,
         default=1.0,
         help="Per-example gradient clipping norm C.",
@@ -153,7 +185,7 @@ def parse_args():
     parser.add_argument(
         "--noise-multiplier",
         type=float,
-        default=1.0,
+        default=0.8,
         help="DP-SGD Gaussian noise multiplier (sigma = nm * C / batch_size).",
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
@@ -491,41 +523,315 @@ def _run_smoke(args):
         return 0
 
 
-def main():
+def main():  # noqa: C901
     args = parse_args()
 
     if args.smoke:
         return _run_smoke(args)
 
-    # --- Full training path (real model + tokenizer) ---
+    # =========================================================================
+    # FULL DP-KTO TRAINING PATH
+    # Mirrors the Tier-2 caller pattern demonstrated in --smoke:
+    #   (a) rotate KL completions BEFORE ref-logp precompute
+    #   (b) precompute reference_logps + reference_KL_logps ONCE, outside vmap
+    #   (c) compute detached batch-mean ``kl`` OUTSIDE the per-example vmap
+    #       each step, then broadcast into KTO_LOSSES["kto"]
+    # =========================================================================
+    from datasets import load_dataset
     from transformers import AutoTokenizer
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(args.seed)
 
-    print(f"Loading model + tokenizer: {args.model_name} ...")
-    model = AutoModelForCausalLM.from_pretrained(args.model_name)
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    # ---------------------------------------------------------------------- #
+    # 1. Load model + tokenizer                                               #
+    # ---------------------------------------------------------------------- #
+    print(f"Loading model + tokenizer: {args.model} ...")
+    model = AutoModelForCausalLM.from_pretrained(args.model)
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
-    apply_model_patches(model)
+    apply_model_patches(model)  # vmap-safety wrappers for the HF forward
     model.eval()
     model.to(device)
 
-    # A real run would: load an unpaired dataset (completion + label), tokenize
-    # into completion_input_ids / completion_labels, rotate the KL completions,
-    # precompute the reference log-probs, then run the SAME Tier-2 step loop as
-    # the smoke path above.
-    _ = unpaired_preference_collator(tokenizer.pad_token_id, args.max_length)
+    pad_token_id = tokenizer.pad_token_id
 
-    raise SystemExit(
-        "Full-mode training requires an unpaired preference dataset wired into "
-        "a PoissonSampler DataLoader (see examples/train_causal_lm.py for the "
-        "full data path). This KTO example ships a runnable --smoke path that "
-        "demonstrates the complete Tier-2 caller pattern; for a production loop "
-        "use train_causal_lm.py as the data-loading template and swap in the "
-        "unpaired_preference_collator + the detached-kl KTO step shown above."
+    # ---------------------------------------------------------------------- #
+    # 2. Load + tokenize the raw KTO dataset                                  #
+    # Expected columns: prompt (str), completion (str), label (bool).        #
+    # We build:                                                               #
+    #   completion_input_ids  — prompt ++ completion token ids (list[int])   #
+    #   completion_labels     — -100 over the prompt span, token ids over    #
+    #                           the completion span (list[int])               #
+    #   completion            — kept as the raw text for rotate_kto_compl.   #
+    #   label                 — bool                                          #
+    # ---------------------------------------------------------------------- #
+    print(f"Loading dataset: {args.dataset} (split=train) ...")
+    raw = load_dataset(args.dataset, split="train")
+    print(f"  {len(raw)} raw examples.")
+
+    def _tokenize(example: dict) -> dict:
+        """Tokenize prompt+completion into completion_input_ids / labels.
+
+        The collator schema requires:
+          - ``completion_input_ids``: all tokens (prompt ++ completion).
+          - ``completion_labels``: prompt positions masked to ``-100``,
+            completion positions carry the token id as a target.
+        This mirrors the convention in ``_build_smoke_dataset`` / ``_derive_kl_columns``
+        and the unpaired_preference_collator docstring (plan §7.6).
+        """
+        prompt_ids = tokenizer(
+            example["prompt"],
+            add_special_tokens=False,
+            truncation=False,
+        )["input_ids"]
+        completion_ids = tokenizer(
+            example["completion"],
+            add_special_tokens=False,
+            truncation=False,
+        )["input_ids"]
+        # Concatenate; truncate the combined sequence to max_length.
+        all_ids = (prompt_ids + completion_ids)[: args.max_length]
+        prompt_len = min(len(prompt_ids), args.max_length)
+        # Labels: mask the prompt span (-100), supervise the completion span.
+        labels = [-100] * prompt_len + all_ids[prompt_len:]
+        return {
+            "completion_input_ids": all_ids,
+            "completion_labels": labels,
+            # Keep ``completion`` as a string for rotate_kto_completions
+            # (which rotates the raw text within each block, not token ids).
+        }
+
+    print("Tokenizing completions ...")
+    dataset = raw.map(_tokenize, remove_columns=[])
+    # Drop examples that are too short to supervise at least one token.
+    dataset = dataset.filter(
+        lambda ex: sum(1 for t in ex["completion_labels"] if t != -100) >= 1
     )
+    print(f"  {len(dataset)} examples after filtering short completions.")
+
+    # ---------------------------------------------------------------------- #
+    # 3. KTO KL rotation: left-rotate completions within each block           #
+    # rotate_kto_completions reads the ``completion`` column (raw text) and   #
+    # writes ``KL_completion`` (rotated raw text). Rotation MUST happen       #
+    # before the ref-logp precompute so both columns are cached together.     #
+    # ---------------------------------------------------------------------- #
+    print(
+        f"Rotating KL completions (block_size={args.batch_size}, seed={args.seed}) ..."
+    )
+    dataset = rotate_kto_completions(
+        dataset, batch_size=args.batch_size, seed=args.seed
+    )
+
+    def _tokenize_kl(example: dict) -> dict:
+        """Tokenize ``KL_completion`` (rotated text) into KL collator columns.
+
+        rotate_kto_completions produces ``KL_completion`` as raw text (the same
+        type as ``completion``). We tokenize it exactly like the main completion
+        but without a prompt prefix, since KL completions are used only for the
+        KL divergence estimate (Equation 8 of Ethayarajh et al. 2023).
+        """
+        kl_ids = tokenizer(
+            example["KL_completion"],
+            add_special_tokens=False,
+            truncation=True,
+            max_length=args.max_length,
+        )["input_ids"]
+        return {
+            "KL_completion_input_ids": kl_ids,
+            "KL_completion_labels": [-100] + kl_ids[1:] if kl_ids else [],
+        }
+
+    print("Tokenizing KL completions ...")
+    dataset = dataset.map(_tokenize_kl, remove_columns=[])
+
+    # ---------------------------------------------------------------------- #
+    # 4. Precompute frozen reference log-probs ONCE                           #
+    # The policy at init serves as the frozen reference (copy-free: the model #
+    # weights have not been updated yet). Runs outside vmap under no_grad.   #
+    # ---------------------------------------------------------------------- #
+    collate = unpaired_preference_collator(
+        pad_token_id, args.max_length, calculate_KL=True
+    )
+
+    ref = _make_ref_callable(model, device)
+    print("Precomputing reference log-probs (model-as-ref) ...")
+    dataset = compute_ref_logprobs_for_dataset(
+        dataset,
+        ref,
+        collator=collate,
+        output_columns=("reference_logps", "reference_KL_logps"),
+        batch_size=args.batch_size,
+        cache_key=("kto", args.model, args.dataset),
+    )
+    print(
+        f"  Dataset ready: {len(dataset)} rows | "
+        "columns include reference_logps + reference_KL_logps."
+    )
+
+    rows = list(dataset)
+
+    def collate_to_device(examples: list[dict]) -> dict[str, torch.Tensor]:
+        b = collate(examples)
+        return {k: v.to(device) for k, v in b.items()}
+
+    # ---------------------------------------------------------------------- #
+    # 5. Functional model + per-example loss closure (Tier-2)                 #
+    # ---------------------------------------------------------------------- #
+    fmodel, trainable, frozen = make_functional(
+        model, disable_autograd_tracking=True, partition_trainable=True
+    )
+    print(f"Trainable param tensors: {len(trainable)} | frozen: {len(frozen)}")
+
+    def merged(t: dict) -> dict:
+        return {**frozen, **t}
+
+    beta = args.beta
+
+    # === The per-example loss closure (runs UNDER vmap) =====================
+    # Tier-2 contract: ``kl`` is NOT computed here — it arrives pre-detached
+    # as a scalar argument broadcast by the caller (vmap-``None`` axis).
+    def per_example_loss(
+        trainable_params,
+        completion_ids,
+        completion_mask,
+        label,
+        ref_logp,
+        kl,
+    ):
+        out = fmodel(
+            merged(trainable_params),
+            input_ids=completion_ids,
+            attention_mask=completion_mask,
+        )
+        logp = sequence_logp(out.logits, completion_ids, completion_mask)
+        # Per-example log-ratio r = log pi_theta - log pi_ref, split by label
+        # so KTO's chosen/rejected branches each see the right side.
+        chosen_lr = (logp - ref_logp) * label.float()
+        rejected_lr = (logp - ref_logp) * (~label.bool()).float()
+        # kl is computed once over the microbatch OUTSIDE vmap, detached
+        # (Tier-2 §8.1); KTO_SPEC['kto'] declares tier=2, kl_mean aggregate,
+        # O(1/n) leverage.
+        return KTO_LOSSES["kto"](chosen_lr, rejected_lr, label, beta=beta, kl=kl)
+
+    # ---------------------------------------------------------------------- #
+    # 6. DP-SGD glue: clipped_grad -> gaussian_noise -> adamw                 #
+    # ---------------------------------------------------------------------- #
+    grad_fn, clip_state = clipped_grad(
+        per_example_loss,
+        argnums=0,
+        # batch_argnums covers all 5 per-example tensor args after params.
+        batch_argnums=(1, 2, 3, 4, 5),
+        clipping_norm=args.clipping_norm,
+        normalize_by=args.batch_size,
+        return_aux=True,
+    )
+    noise_fn, noise_state = gaussian_noise(
+        noise_multiplier=args.noise_multiplier, key=key(args.seed)
+    )
+    base_opt = adamw(lr=args.learning_rate)
+    opt_state = base_opt.init(trainable)
+
+    # ---------------------------------------------------------------------- #
+    # 7. Privacy accounting setup                                              #
+    # ---------------------------------------------------------------------- #
+    n = len(rows)
+    sample_rate = args.batch_size / n
+    delta = 1.0 / (n**1.1)
+    # Per-step privacy: Poisson-amplified Gaussian mechanism.
+    _step_process = dpsgd_acc.poisson(
+        dpsgd_acc.gaussian(args.noise_multiplier), sample_rate=sample_rate
+    )
+
+    def _epsilon_so_far(steps_done: int) -> float:
+        return (_step_process * steps_done).epsilon_at(delta)
+
+    # ---------------------------------------------------------------------- #
+    # 8. Poisson-sampled DP-SGD training loop                                 #
+    # ---------------------------------------------------------------------- #
+    sampler = PoissonSampler(
+        rows,
+        sample_rate=sample_rate,
+        n_steps=args.max_steps,
+        key=fold_in(key(args.seed), 0, 0),
+    )
+    print(
+        f"\nTraining for up to {args.max_steps} DP-SGD steps "
+        f"(C={args.clipping_norm}, nm={args.noise_multiplier}, "
+        f"sample_rate={sample_rate:.4f}, delta={delta:.2e}) ..."
+    )
+    log_every = max(1, args.max_steps // 10)
+    step = 0
+    for indices in sampler:
+        if not indices:  # empty Poisson draw — skip, no gradient to release
+            step += 1
+            continue
+
+        batch = collate_to_device([rows[i] for i in indices])
+        bs = batch["completion_input_ids"].shape[0]
+
+        # ================================================================= #
+        # TIER-2 CALLER PATTERN (plan §3.3, §8.1) — THE TEACHING POINT.
+        # Compute the detached batch-mean KL ONCE over the microbatch,
+        # OUTSIDE the vmap, then broadcast the scalar into every example.
+        # ================================================================= #
+        with torch.no_grad():
+            # Policy KL-completion log-probs under the CURRENT params.
+            pol_kl_out = fmodel(
+                merged(trainable),
+                input_ids=batch["KL_completion_input_ids"],
+                attention_mask=batch["KL_completion_attention_mask"],
+            )
+            policy_KL_logp_batch = sequence_logp(
+                pol_kl_out.logits,
+                batch["KL_completion_input_ids"],
+                batch["KL_completion_attention_mask"],
+            )
+            kl = (
+                (policy_KL_logp_batch - batch["reference_KL_logps"])
+                .mean()
+                .detach()
+                .clamp(min=0)
+            )
+        # (v2: optional cross-rank reduction when the loss declares
+        #  LossAggregateSpec.cross_rank=True — see plan §9 / §13)
+        #   import opaque.distributed as dist
+        #   kl = dist.all_reduce(kl, op="mean")
+
+        # Broadcast the single detached kl scalar to every example so the
+        # vmap'd grad sees it as a per-example (constant) input.
+        kl_per_example = kl.expand(bs)
+
+        (grads, aux), clip_state = grad_fn(
+            trainable,
+            batch["completion_input_ids"],
+            batch["completion_attention_mask"],
+            batch["label"],
+            batch["reference_logps"],
+            kl_per_example,
+            state=clip_state,
+        )
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
+        updates, opt_state = base_opt.update(noisy_grads, opt_state, params=trainable)
+        trainable = torchopt.apply_updates(trainable, updates)
+        step += 1
+
+        if step % log_every == 0 or step == 1:
+            eps = _epsilon_so_far(step)
+            print(
+                f"  step {step}/{args.max_steps} | bs={bs} | "
+                f"kl={kl.item():.4f} | "
+                f"kto_loss={aux.loss_values.mean().item():.4f} | "
+                f"epsilon={eps:.3f} (delta={delta:.2e})"
+            )
+
+    final_eps = _epsilon_so_far(step)
+    print(
+        f"\nTraining complete. Steps={step}, "
+        f"final epsilon={final_eps:.3f} at delta={delta:.2e}."
+    )
+    return 0
 
 
 if __name__ == "__main__":
