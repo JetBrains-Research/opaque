@@ -87,7 +87,7 @@ def _args(tmp_path, **overrides) -> TrainingArguments:
         logging_steps=1,
         save_strategy="no",
         eval_strategy="no",
-        privacy_target_epsilon=10.0,
+        # NM=0.0 = non-private; target_eps is meaningless on this path.
         privacy_noise_multiplier=0.0,
         clipping_norm=1.0,
         learning_rate=1e-3,

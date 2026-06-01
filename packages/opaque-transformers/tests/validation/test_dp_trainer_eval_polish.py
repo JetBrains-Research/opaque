@@ -81,7 +81,7 @@ def _args(tmp_path, **overrides) -> TrainingArguments:
         output_dir=str(tmp_path),
         per_device_train_batch_size=2,
         per_device_eval_batch_size=4,
-        privacy_target_epsilon=10.0,
+        # NM=0.0 = non-private; target_eps is meaningless on this path.
         privacy_noise_multiplier=0.0,
         clipping_norm=1.0,
         max_steps=1,
