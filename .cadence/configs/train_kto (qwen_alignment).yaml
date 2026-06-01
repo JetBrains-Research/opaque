@@ -73,3 +73,38 @@ project_sync:
       - "**/trainer_output/**"
       - ".venv/*"
       - "**/.venv/*"
+      - "venv/*"
+      - "**/venv/*"
+      - "target/*"
+      - "**/target/*"
+      - "dist/*"
+      - "**/dist/*"
+      - "build/*"
+      - "**/build/*"
+      - "site/*"
+      - "**/site/*"
+      - ".ruff_cache/*"
+      - "**/.ruff_cache/*"
+      - ".pytest_cache/*"
+      - "**/.pytest_cache/*"
+      - "__pycache__/*"
+      - "**/__pycache__/*"
+      - ".idea/*"
+      - "**/.idea/*"
+      - ".claude/*"
+      - "**/.claude/*"
+      - "wandb/*"
+      - "**/wandb/*"
+      - "*.so"
+      - "**/*.so"
+      - "*.whl"
+      - "**/*.whl"
+    include: []
+    sync_back: false
+    snapshots: true
+    storage_type: DEFAULT
+inputs: []
+outputs: []
+mounts: []
+storages: []
+description: "${oc.env:RUN_NAME,}"
