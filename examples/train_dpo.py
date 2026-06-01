@@ -95,10 +95,12 @@ from opaque.alignment.loss.dpo import DPO_LOSSES
 # and feed it the same ``ClippedPytree`` produced by ``clipped_grad`` below.
 
 
-# The 9 per-example loss arguments after the trainable params (argnums=0). The
-# vmap batch axis is taken over all of them, so batch_argnums must list every
-# index 1..9 (adversarial self-review item: cover ALL per-example args).
-_BATCH_ARGNUMS = (1, 2, 3, 4, 5, 6, 7, 8, 9)
+# The 8 per-example loss arguments after the trainable params (argnums=0):
+# chosen_ids, chosen_mask, chosen_cmask, rejected_ids, rejected_mask,
+# rejected_cmask, ref_chosen_logps, ref_rejected_logps. The vmap batch axis is
+# taken over all of them, so batch_argnums lists every index 1..8 (and the
+# microbatch path indexes args[i] for each, so it must not overrun).
+_BATCH_ARGNUMS = (1, 2, 3, 4, 5, 6, 7, 8)
 
 
 def parse_args():
