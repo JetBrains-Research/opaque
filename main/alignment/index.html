@@ -12,28 +12,28 @@
         <meta name="author" content="Opaque Contributors">
       
       
-        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/mechanisms/dp-ftrl/bsr/">
+        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/alignment/">
       
       
-        <link rel="prev" href="../blt/">
+        <link rel="prev" href="../mechanisms/dp-ftrl/lambda-cgd/">
       
       
-        <link rel="next" href="../bisr/">
+        <link rel="next" href="sft/">
       
       
-      <link rel="icon" href="../../../assets/images/favicon.png">
+      <link rel="icon" href="../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.23">
     
     
       
-        <title>BSR - Opaque</title>
+        <title>Overview - Opaque</title>
       
     
     
-      <link rel="stylesheet" href="../../../assets/stylesheets/main.84d31ad4.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.84d31ad4.min.css">
       
         
-        <link rel="stylesheet" href="../../../assets/stylesheets/palette.06af60db.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
       
       
 
@@ -52,9 +52,9 @@
       
     
     
-      <link rel="stylesheet" href="../../../assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
     
-    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#bsr-banded-square-root" class="md-skip">
+        <a href="#alignment-opaquealignment" class="md-skip">
           Skip to content
         </a>
       
@@ -98,7 +98,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../../.." title="Opaque" class="md-header__button md-logo" aria-label="Opaque" data-md-component="logo">
+    <a href=".." title="Opaque" class="md-header__button md-logo" aria-label="Opaque" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              BSR
+              Overview
             
           </span>
         </div>
@@ -231,7 +231,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../../.." class="md-tabs__link">
+      <a href=".." class="md-tabs__link">
         
   
   
@@ -252,7 +252,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../getting-started/installation/" class="md-tabs__link">
+        <a href="../getting-started/installation/" class="md-tabs__link">
           
   
   
@@ -272,11 +272,31 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../user-guide/" class="md-tabs__link">
+        <a href="../user-guide/" class="md-tabs__link">
           
   
   
   User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../mechanisms/" class="md-tabs__link">
+          
+  
+  
+  Mechanisms
 
         </a>
       </li>
@@ -294,27 +314,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="../../" class="md-tabs__link">
-          
-  
-  
-  Mechanisms
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../../alignment/" class="md-tabs__link">
+        <a href="./" class="md-tabs__link">
           
   
   
@@ -334,7 +334,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../tutorials/" class="md-tabs__link">
+        <a href="../tutorials/" class="md-tabs__link">
           
   
   
@@ -354,7 +354,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../reference/" class="md-tabs__link">
+        <a href="../reference/" class="md-tabs__link">
           
   
   
@@ -388,7 +388,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../../.." title="Opaque" class="md-nav__button md-logo" aria-label="Opaque" data-md-component="logo">
+    <a href=".." title="Opaque" class="md-nav__button md-logo" aria-label="Opaque" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -418,7 +418,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../.." class="md-nav__link">
+      <a href=".." class="md-nav__link">
         
   
   
@@ -483,7 +483,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../getting-started/installation/" class="md-nav__link">
+      <a href="../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -506,7 +506,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+      <a href="../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -579,7 +579,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/" class="md-nav__link">
+      <a href="../user-guide/" class="md-nav__link">
         
   
   
@@ -602,7 +602,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/dp-concepts/" class="md-nav__link">
+      <a href="../user-guide/dp-concepts/" class="md-nav__link">
         
   
   
@@ -625,7 +625,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/rng-key/" class="md-nav__link">
+      <a href="../user-guide/rng-key/" class="md-nav__link">
         
   
   
@@ -691,7 +691,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/dp-sgd/" class="md-nav__link">
+      <a href="../user-guide/dp-sgd/" class="md-nav__link">
         
   
   
@@ -714,7 +714,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/dp-ftrl/" class="md-nav__link">
+      <a href="../user-guide/dp-ftrl/" class="md-nav__link">
         
   
   
@@ -745,7 +745,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/clipping/" class="md-nav__link">
+      <a href="../user-guide/clipping/" class="md-nav__link">
         
   
   
@@ -768,7 +768,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/noise/" class="md-nav__link">
+      <a href="../user-guide/noise/" class="md-nav__link">
         
   
   
@@ -791,7 +791,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/precision/" class="md-nav__link">
+      <a href="../user-guide/precision/" class="md-nav__link">
         
   
   
@@ -814,7 +814,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/accounting/" class="md-nav__link">
+      <a href="../user-guide/accounting/" class="md-nav__link">
         
   
   
@@ -837,7 +837,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/sampling/" class="md-nav__link">
+      <a href="../user-guide/sampling/" class="md-nav__link">
         
   
   
@@ -860,7 +860,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/optimizers/" class="md-nav__link">
+      <a href="../user-guide/optimizers/" class="md-nav__link">
         
   
   
@@ -883,7 +883,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/lr-scheduling/" class="md-nav__link">
+      <a href="../user-guide/lr-scheduling/" class="md-nav__link">
         
   
   
@@ -906,7 +906,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/distributed/" class="md-nav__link">
+      <a href="../user-guide/distributed/" class="md-nav__link">
         
   
   
@@ -972,7 +972,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/huggingface/" class="md-nav__link">
+      <a href="../user-guide/huggingface/" class="md-nav__link">
         
   
   
@@ -995,7 +995,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/huggingface/dptrainer/" class="md-nav__link">
+      <a href="../user-guide/huggingface/dptrainer/" class="md-nav__link">
         
   
   
@@ -1018,7 +1018,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/huggingface/training-arguments/" class="md-nav__link">
+      <a href="../user-guide/huggingface/training-arguments/" class="md-nav__link">
         
   
   
@@ -1041,7 +1041,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/huggingface/model-patches/" class="md-nav__link">
+      <a href="../user-guide/huggingface/model-patches/" class="md-nav__link">
         
   
   
@@ -1072,7 +1072,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/memory-optimizations/" class="md-nav__link">
+      <a href="../user-guide/memory-optimizations/" class="md-nav__link">
         
   
   
@@ -1095,7 +1095,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../user-guide/auditing/" class="md-nav__link">
+      <a href="../user-guide/auditing/" class="md-nav__link">
         
   
   
@@ -1118,7 +1118,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../limitations/" class="md-nav__link">
+      <a href="../limitations/" class="md-nav__link">
         
   
   
@@ -1145,31 +1145,26 @@
       
   
   
-    
   
   
-  
     
     
     
     
-      
-        
-        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
         
           
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
             
   
   
@@ -1182,7 +1177,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             Mechanisms
@@ -1196,7 +1191,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../" class="md-nav__link">
+      <a href="../mechanisms/" class="md-nav__link">
         
   
   
@@ -1225,20 +1220,17 @@
       
       
         
-          
-          
-        
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
         <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_2" >
         
           
-          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="">
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
             
   
   
@@ -1265,7 +1257,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dp-sgd/" class="md-nav__link">
+      <a href="../mechanisms/dp-sgd/" class="md-nav__link">
         
   
   
@@ -1288,7 +1280,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dp-sgd/gaussian/" class="md-nav__link">
+      <a href="../mechanisms/dp-sgd/gaussian/" class="md-nav__link">
         
   
   
@@ -1316,31 +1308,26 @@
                 
   
   
-    
   
   
-  
     
     
     
     
       
       
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
         
           
-          
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" checked>
-        
-          
-          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="">
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
             
   
   
@@ -1353,7 +1340,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_4_3">
             <span class="md-nav__icon md-icon"></span>
             DP-FTRL
@@ -1367,7 +1354,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../" class="md-nav__link">
+      <a href="../mechanisms/dp-ftrl/" class="md-nav__link">
         
   
   
@@ -1390,7 +1377,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../band-mf/" class="md-nav__link">
+      <a href="../mechanisms/dp-ftrl/band-mf/" class="md-nav__link">
         
   
   
@@ -1413,7 +1400,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../blt/" class="md-nav__link">
+      <a href="../mechanisms/dp-ftrl/blt/" class="md-nav__link">
         
   
   
@@ -1433,32 +1420,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    BSR
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../mechanisms/dp-ftrl/bsr/" class="md-nav__link">
         
   
   
@@ -1469,86 +1434,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#accounting" class="md-nav__link">
-    <span class="md-ellipsis">
-      Accounting
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Accounting">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#strategy-parameters" class="md-nav__link">
-    <span class="md-ellipsis">
-      Strategy parameters
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#accounting-parameters" class="md-nav__link">
-    <span class="md-ellipsis">
-      Accounting parameters
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#noise-generation" class="md-nav__link">
-    <span class="md-ellipsis">
-      Noise generation
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#assumptions-and-limitations" class="md-nav__link">
-    <span class="md-ellipsis">
-      Assumptions and limitations
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#references" class="md-nav__link">
-    <span class="md-ellipsis">
-      References
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1561,7 +1446,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../bisr/" class="md-nav__link">
+      <a href="../mechanisms/dp-ftrl/bisr/" class="md-nav__link">
         
   
   
@@ -1584,7 +1469,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../lambda-cgd/" class="md-nav__link">
+      <a href="../mechanisms/dp-ftrl/lambda-cgd/" class="md-nav__link">
         
   
   
@@ -1619,26 +1504,31 @@
       
   
   
+    
   
   
+  
     
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
             
   
   
@@ -1651,7 +1541,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             Alignment
@@ -1662,10 +1552,32 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../../alignment/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1676,6 +1588,53 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#design" class="md-nav__link">
+    <span class="md-ellipsis">
+      Design
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#module-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      Module map
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      See also
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1688,7 +1647,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../alignment/sft/" class="md-nav__link">
+      <a href="sft/" class="md-nav__link">
         
   
   
@@ -1711,7 +1670,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../alignment/dpo/" class="md-nav__link">
+      <a href="dpo/" class="md-nav__link">
         
   
   
@@ -1784,7 +1743,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../tutorials/" class="md-nav__link">
+      <a href="../tutorials/" class="md-nav__link">
         
   
   
@@ -1850,7 +1809,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../tutorials/dp_sgd_training/" class="md-nav__link">
+      <a href="../tutorials/dp_sgd_training/" class="md-nav__link">
         
   
   
@@ -1873,7 +1832,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../tutorials/accounting_and_calibration/" class="md-nav__link">
+      <a href="../tutorials/accounting_and_calibration/" class="md-nav__link">
         
   
   
@@ -1896,7 +1855,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../tutorials/sampling_and_microbatching/" class="md-nav__link">
+      <a href="../tutorials/sampling_and_microbatching/" class="md-nav__link">
         
   
   
@@ -1919,7 +1878,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../tutorials/llm_finetuning/" class="md-nav__link">
+      <a href="../tutorials/llm_finetuning/" class="md-nav__link">
         
   
   
@@ -1993,7 +1952,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../tutorials/dp_ftrl_training/" class="md-nav__link">
+      <a href="../tutorials/dp_ftrl_training/" class="md-nav__link">
         
   
   
@@ -2067,7 +2026,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../tutorials/privacy_auditing/" class="md-nav__link">
+      <a href="../tutorials/privacy_auditing/" class="md-nav__link">
         
   
   
@@ -2090,7 +2049,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../tutorials/distributed_training/" class="md-nav__link">
+      <a href="../tutorials/distributed_training/" class="md-nav__link">
         
   
   
@@ -2171,7 +2130,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../reference/" class="md-nav__link">
+      <a href="../reference/" class="md-nav__link">
         
   
   
@@ -2194,7 +2153,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../reference/serialization/" class="md-nav__link">
+      <a href="../reference/serialization/" class="md-nav__link">
         
   
   
@@ -2217,7 +2176,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../reference/clipping/" class="md-nav__link">
+      <a href="../reference/clipping/" class="md-nav__link">
         
   
   
@@ -2240,7 +2199,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../reference/noise/" class="md-nav__link">
+      <a href="../reference/noise/" class="md-nav__link">
         
   
   
@@ -2263,7 +2222,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../reference/accounting/" class="md-nav__link">
+      <a href="../reference/accounting/" class="md-nav__link">
         
   
   
@@ -2286,7 +2245,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../reference/sampling/" class="md-nav__link">
+      <a href="../reference/sampling/" class="md-nav__link">
         
   
   
@@ -2309,7 +2268,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../reference/rng/" class="md-nav__link">
+      <a href="../reference/rng/" class="md-nav__link">
         
   
   
@@ -2332,7 +2291,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../reference/distributed/" class="md-nav__link">
+      <a href="../reference/distributed/" class="md-nav__link">
         
   
   
@@ -2355,7 +2314,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../reference/auditing/" class="md-nav__link">
+      <a href="../reference/auditing/" class="md-nav__link">
         
   
   
@@ -2378,7 +2337,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../reference/utilities/" class="md-nav__link">
+      <a href="../reference/utilities/" class="md-nav__link">
         
   
   
@@ -2401,7 +2360,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../reference/optimizers/" class="md-nav__link">
+      <a href="../reference/optimizers/" class="md-nav__link">
         
   
   
@@ -2424,7 +2383,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../reference/schedules/" class="md-nav__link">
+      <a href="../reference/schedules/" class="md-nav__link">
         
   
   
@@ -2447,7 +2406,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../reference/transformers/" class="md-nav__link">
+      <a href="../reference/transformers/" class="md-nav__link">
         
   
   
@@ -2470,7 +2429,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../reference/alignment/" class="md-nav__link">
+      <a href="../reference/alignment/" class="md-nav__link">
         
   
   
@@ -2520,60 +2479,27 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#accounting" class="md-nav__link">
+  <a href="#design" class="md-nav__link">
     <span class="md-ellipsis">
-      Accounting
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Accounting">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#strategy-parameters" class="md-nav__link">
-    <span class="md-ellipsis">
-      Strategy parameters
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#accounting-parameters" class="md-nav__link">
-    <span class="md-ellipsis">
-      Accounting parameters
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#noise-generation" class="md-nav__link">
-    <span class="md-ellipsis">
-      Noise generation
+      Design
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#assumptions-and-limitations" class="md-nav__link">
+  <a href="#module-map" class="md-nav__link">
     <span class="md-ellipsis">
-      Assumptions and limitations
+      Module map
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#references" class="md-nav__link">
+  <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
-      References
+      See also
     </span>
   </a>
   
@@ -2598,125 +2524,86 @@
   
 
 
-<h1 id="bsr-banded-square-root">BSR (Banded Square Root)<a class="headerlink" href="#bsr-banded-square-root" title="Permanent link">&para;</a></h1>
-<p><strong>BSR</strong> (Kalinin &amp; Lampert, NeurIPS 2024) is a matrix factorization mechanism where the <strong>strategy matrix</strong> is a <strong>banded lower-triangular Toeplitz</strong> matrix obtained from the <strong>matrix square root</strong> of the workload :math:<code>A_{\alpha,\beta}</code> in the paper (multiplicative decay :math:<code>\alpha</code>, Polyak momentum :math:<code>\beta</code>).</p>
-<p>Opaque exposes <strong>closed-form coefficients</strong> (Theorem 1 in the paper): no L-BFGS optimization step at initialization.</p>
+<h1 id="alignment-opaquealignment">Alignment (<code>opaque.alignment</code>)<a class="headerlink" href="#alignment-opaquealignment" title="Permanent link">&para;</a></h1>
+<p><code>opaque-alignment</code> ships <strong>functional, mechanism-agnostic primitives for
+DP-safe preference learning and supervised fine-tuning</strong>: per-example loss
+functions (SFT and DPO), per-sequence log-probability helpers, batch
+collators, dataset transforms, reference-model helpers, and reward metrics.
+Every public symbol is a pure function or a factory returning a callable, so
+each composes cleanly under <code>vmap(grad(...))</code> — the per-example differentiation
+that DP-SGD and DP-FTRL clipping is built on.</p>
+<p>The package builds only on the engine (clipping, functional conversion,
+distributed) and base (serialization) layers. It does <strong>not</strong> depend on a DP
+mechanism or an optimizer: the noise mechanism and optimizer are chosen at the
+call site, so a researcher can assemble a DP-SGD or DP-FTRL alignment run from
+<code>opaque.alignment</code> primitives plus a mechanism plus an optimizer — no trainer
+subclass required. The same loss closure runs under either mechanism; only the
+two noise/sampling imports change.</p>
+<h2 id="design">Design<a class="headerlink" href="#design" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Paper</strong>: <a href="https://arxiv.org/abs/2405.13763">Banded Square Root Matrix Factorization for Differentially Private Model Training</a></li>
-<li><strong>Strategy matrix</strong>: Banded lower-triangular Toeplitz <span class="arithmatex">\(C^{|p|}_{\alpha,\beta}\)</span></li>
-<li><strong>Sensitivity</strong>: Closed form under min-separation participation (Theorem 2; Rust <code>toeplitz_minsep_sensitivity_squared</code>)</li>
-<li><strong>Amplification</strong>: Balls-in-Bins with Monte Carlo PLD (same Gram path as BLT/BISR Toeplitz Gram)</li>
+<li><strong>Functional, no hidden state.</strong> Losses are pure functions of per-example
+  tensors; collators and reference helpers are factories returning callables.
+  The DP-SGD/DP-FTRL pipeline supplies its own clip and noise state.</li>
+<li><strong>Per-example by construction.</strong> Each loss output for example <code>i</code> depends
+  only on example <code>i</code>'s data, so per-example sensitivity stays <code>O(C)</code> after
+  clipping. SFT divisors are per-example token counts (not a batch aggregate),
+  and the DPO collator keeps chosen/rejected as separate <code>(B, ...)</code> tensors so
+  one preference pair maps to one clipped gradient.</li>
+<li><strong>Mechanism-agnostic.</strong> No mechanism or optimizer is imported in the
+  package source; the mechanism is a call-site choice.</li>
+<li><strong>Direct functions, no registries.</strong> Losses are exposed by name as plain
+  functions. Mapping a config string to one of them is the caller's concern —
+  the example scripts keep that tiny <code>name -&gt; fn</code> map at the CLI boundary.</li>
 </ul>
-<p><strong>API (paper-native):</strong> <code>bsr_strategy(..., *, alpha=α, beta=β)</code> — keyword-only, <strong><code>alpha</code> before <code>beta</code></strong>. These are <strong>not</strong> PyTorch <code>AdamW(weight_decay=...)</code> or a generic <code>momentum</code> name from other MF strategies; they are exactly the paper’s <span class="arithmatex">\((\alpha,\beta)\)</span>. Training scripts should <strong>bind</strong> <code>beta</code> from SGD Polyak momentum or Adam’s <span class="arithmatex">\(\beta_1\)</span> when you want the noise workload to match that optimizer choice.</p>
-<h2 id="accounting">Accounting<a class="headerlink" href="#accounting" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">bsr_strategy</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>           <span class="c1"># cross-cutting balls_in_bins</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpftrl.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpftrl_acc</span>  <span class="c1"># DP-FTRL factories</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">bsr_strategy</span><span class="p">(</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">bandwidth</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="n">total_steps</span><span class="p">,</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">min_sep</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">max_participations</span><span class="o">=</span><span class="n">num_epochs</span><span class="p">,</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">alpha</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">beta</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="p">)</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">training</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="n">ftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">strategy</span><span class="p">),</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="n">steps_per_epoch</span> <span class="o">*</span> <span class="n">num_epochs</span><span class="p">,</span>
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="p">)</span>
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
-</code></pre></div>
-<h3 id="strategy-parameters">Strategy parameters<a class="headerlink" href="#strategy-parameters" title="Permanent link">&para;</a></h3>
+<h2 id="module-map">Module map<a class="headerlink" href="#module-map" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Description</th>
+<th>Module</th>
+<th>Contents</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>bandwidth</code></td>
-<td>Bandwidth <span class="arithmatex">\(p\)</span> (≥ 1). Coefficients <span class="arithmatex">\(c_j\)</span> for <span class="arithmatex">\(j \ge p\)</span> are zero.</td>
+<td><code>opaque.alignment.sft.loss</code></td>
+<td><code>nll_loss</code>, <code>dft_loss</code>, and the fused twins <code>fused_nll_loss</code>, <code>fused_dft_loss</code></td>
 </tr>
 <tr>
-<td><code>n_steps</code></td>
-<td>Total training steps</td>
+<td><code>opaque.alignment.sft.collator</code></td>
+<td><code>language_modeling_collator</code> (output schema <code>LMBatch</code> in <code>…collator.types</code>)</td>
 </tr>
 <tr>
-<td><code>min_sep</code></td>
-<td>Minimum separation between participations (typically steps per epoch)</td>
+<td><code>opaque.alignment.dpo.loss</code></td>
+<td>per-sequence logp (<code>sequence_logp</code>, <code>fused_sequence_logp</code>), 14 per-pair heads, and the log-ratio combinators</td>
 </tr>
 <tr>
-<td><code>max_participations</code></td>
-<td>Maximum participations per user (epochs)</td>
+<td><code>opaque.alignment.dpo.collator</code></td>
+<td><code>preference_collator</code></td>
 </tr>
 <tr>
-<td><code>alpha</code></td>
-<td>Paper <span class="arithmatex">\(\alpha \in (0, 1]\)</span></td>
+<td><code>opaque.alignment.dpo.reference</code></td>
+<td><code>compute_ref_logprobs_for_dataset</code>, <code>null_ref_context</code>, <code>with_disabled_adapter</code>, <code>ema_update_reference</code></td>
 </tr>
 <tr>
-<td><code>beta</code></td>
-<td>Paper <span class="arithmatex">\(\beta \in [0, 1)\)</span>; must satisfy <span class="arithmatex">\(\alpha &gt; \beta\)</span></td>
+<td><code>opaque.alignment.dpo.metric</code></td>
+<td><code>reward_metrics</code></td>
+</tr>
+<tr>
+<td><code>opaque.alignment.dpo.data</code></td>
+<td><code>extract_prompt</code></td>
 </tr>
 </tbody>
 </table>
-<h3 id="accounting-parameters">Accounting parameters<a class="headerlink" href="#accounting-parameters" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>noise_multiplier</code></td>
-<td>Raw noise <span class="arithmatex">\(\sigma\)</span></td>
-</tr>
-<tr>
-<td><code>sensitivity</code></td>
-<td>From <code>strategy.sensitivity</code></td>
-</tr>
-<tr>
-<td><code>gram_matrix</code></td>
-<td>From <code>strategy.gram_matrix</code> for BnB Monte Carlo</td>
-</tr>
-</tbody>
-</table>
-<h2 id="noise-generation">Noise generation<a class="headerlink" href="#noise-generation" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_gaussian_noise</span><span class="p">,</span> <span class="n">bsr_strategy</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">bsr_strategy</span><span class="p">(</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">bandwidth</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">min_sep</span><span class="o">=</span><span class="mi">195</span><span class="p">,</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">max_participations</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">alpha</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">beta</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="p">)</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">mf_gaussian_noise</span><span class="p">(</span>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="n">grad_template</span><span class="o">=</span><span class="n">params</span><span class="p">,</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    <span class="n">strategy</span><span class="o">=</span><span class="n">strategy</span><span class="p">,</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span>
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="n">seed</span><span class="p">),</span>
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="p">)</span>
-</code></pre></div>
-<h2 id="assumptions-and-limitations">Assumptions and limitations<a class="headerlink" href="#assumptions-and-limitations" title="Permanent link">&para;</a></h2>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Closed-form regime only</strong>: <span class="arithmatex">\(\beta \in [0,1)\)</span>, <span class="arithmatex">\(\alpha \in (0,1]\)</span>, <span class="arithmatex">\(\alpha &gt; \beta\)</span>. Other hyperparameters raise <code>ValueError</code> with guidance to use <code>band_mf_strategy</code>.</li>
-<li><strong><code>examples/train_dp_ftrl.py</code></strong>: workload <strong><code>--bsr-alpha</code></strong> → <code>alpha</code>; <strong><code>--momentum</code></strong> (SGD) or <strong><code>--beta1</code></strong> (Adam) → <code>beta</code>. Optimizer <strong><code>--weight-decay</code></strong> is separate (default <code>0.0</code>).</li>
-<li><strong>No learning-rate schedule</strong>: BSR coefficients assume the paper’s workload; use BandMF/BLT with <code>lr_schedule</code> if you need schedule-shaped workloads in the optimizer.</li>
-<li><strong>vs BISR</strong>: BISR bands the <strong>inverse</strong> square root of the workload (different coefficient family). BSR bands the <strong>forward</strong> square root factors from Theorem 1.</li>
-<li><strong><code>normalized=True</code></strong>: Not currently supported.</li>
-</ul>
-<h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Kalinin, Lampert (2024) — <a href="https://arxiv.org/abs/2405.13763">arXiv:2405.13763</a></li>
+<li><a href="sft/">SFT end-to-end</a> — build a DP-SGD supervised fine-tuning run from
+  the language-modeling collator and the per-example NLL/DFT losses.</li>
+<li><a href="dpo/">DPO end-to-end</a> — reference-logp precompute, the preference
+  collator, choosing a per-pair head, and reward-metric eval.</li>
+<li><a href="../reference/alignment/">Alignment API reference</a> — every public
+  function with its import path and a one-line description.</li>
+<li><a href="../user-guide/dp-sgd/">DP-SGD end-to-end</a> — the clipping/noise/optimizer
+  pipeline these losses plug into.</li>
 </ul>
 
 
@@ -2788,10 +2675,10 @@
     
     
       
-      <script id="__config" type="application/json">{"base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.f55a23d4.min.js"></script>
+      <script src="../assets/javascripts/bundle.f55a23d4.min.js"></script>
       
         <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
       
