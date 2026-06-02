@@ -79,58 +79,6 @@ def _bind_per_pair_loss_fn(
     return functools.partial(loss_fn, **bound_kwargs)
 
 
-def _lce_fast_path_available(hidden: torch.Tensor) -> bool:
-    """True when the fused linear-CE fast path can run (CUDA + half + ``[patches]``).
-
-    Mirrors the per-call gate the opaque-patches CE component uses: the Triton
-    kernel needs CUDA and half-precision activations, and ``opaque-patches`` is
-    an optional dependency (``opaque-alignment[patches]``). Otherwise the caller
-    falls back to the self-contained pure-PyTorch chunked path.
-    """
-    if not hidden.is_cuda or hidden.dtype not in (torch.float16, torch.bfloat16):
-        return False
-    try:
-        import opaque.api.patches.kernels.linear_cross_entropy  # noqa: F401
-    except Exception:
-        return False
-    return True
-
-
-def _sequence_logp_via_lce(
-    hidden: torch.Tensor,
-    lm_head_weight: torch.Tensor,
-    target_ids: torch.Tensor,
-    completion_mask: torch.Tensor,
-) -> torch.Tensor:
-    """Per-sequence completion log-prob via the fused linear cross-entropy kernel.
-
-    ``sequence_logp = −Σ_completion CE``, so the patches fused linear-CE kernel
-    *is* the preference-logp kernel: encode the completion span as
-    ``ignore_index`` on the labels, evaluate the unreduced fused linear-CE per
-    sequence (``vmap`` over the batch axis), and negate. The ``(N, T, V)`` logits
-    are never materialised — the kernel recomputes the LSE in its backward.
-    """
-    from opaque.api.patches.kernels.linear_cross_entropy import (
-        Opaque_LinearCrossEntropyLoss,
-    )
-
-    # Completion tokens keep their id; everything else → ignore_index (dropped),
-    # exactly reproducing ``sequence_logp``'s completion mask.
-    masked_labels = torch.where(
-        completion_mask.to(torch.bool),
-        target_ids,
-        torch.full_like(target_ids, -100),
-    )
-
-    def _neg_logp(seq_hidden: torch.Tensor, seq_labels: torch.Tensor) -> torch.Tensor:
-        # Unreduced Σ CE over one sequence's completion tokens = −logp.
-        return Opaque_LinearCrossEntropyLoss.apply(
-            seq_hidden, lm_head_weight, seq_labels, -100, 0, 0.0
-        )
-
-    return -torch.vmap(_neg_logp)(hidden, masked_labels)
-
-
 def fused_linear_dpo_loss(
     hidden_states: torch.Tensor,
     lm_head_weight: torch.Tensor,
@@ -144,14 +92,10 @@ def fused_linear_dpo_loss(
     chunk_size: int = 1,
     label_smoothing: float = 0.0,
 ) -> torch.Tensor:
-    """Fused-linear DPO preference loss (auto-selecting).
+    """Chunked fused-linear DPO preference loss.
 
     Computes the per-pair DPO loss without materialising the full
-    ``(2B, T, V)`` logits tensor. On CUDA + half precision with
-    ``opaque-alignment[patches]`` installed it dispatches to the fused
-    linear-CE Triton kernel (recompute-in-backward — the real training-memory
-    win); otherwise it runs the self-contained pure-PyTorch chunked path below.
-    Both paths are numerically equivalent and return the same ``(B,)`` loss. For each chunk of ``chunk_size`` pairs the
+    ``(2B, T, V)`` logits tensor. For each chunk of ``chunk_size`` pairs the
     kernel projects the chosen / rejected hidden states through
     ``lm_head_weight``, reduces to per-sequence completion log-probabilities,
     subtracts the reference log-probabilities to form log-ratios, and evaluates
@@ -226,19 +170,6 @@ def fused_linear_dpo_loss(
         beta=beta,
         label_smoothing=label_smoothing,
     )
-
-    # Fast path (auto-selected): the patches fused linear-CE kernel computes the
-    # per-sequence logp without materialising ``(2B, T, V)`` logits and
-    # recomputes the LSE in its backward (the real training-memory win). Used
-    # only on CUDA + half precision with ``[patches]`` installed; otherwise the
-    # self-contained pure-PyTorch chunked path below runs (so CPU CI is green).
-    if _lce_fast_path_available(hidden_states):
-        seq_logp = _sequence_logp_via_lce(
-            hidden_states, lm_head_weight, target_ids, completion_mask
-        )  # (2B,)
-        chosen_logratio = seq_logp[:batch] - ref_chosen_logp
-        rejected_logratio = seq_logp[batch:] - ref_rejected_logp
-        return bound_loss_fn(chosen_logratio, rejected_logratio)
 
     return fused_linear_preference(
         chosen_hidden,
