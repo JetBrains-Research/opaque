@@ -9,7 +9,7 @@ Implements the BCO-pair variant from:
 The BCO loss frames DPO as a binary classification problem with an optional
 reward baseline ``delta``.  TRL computes ``delta`` as a running cross-batch
 mean reward; in ``opaque-alignment`` it is exposed as an **optional detached
-scalar keyword argument** (default ``0.0``) so the function stays strictly per-example
+scalar keyword argument** (default ``0.0``) so the function stays strictly
 per-example.
 
 Formula:

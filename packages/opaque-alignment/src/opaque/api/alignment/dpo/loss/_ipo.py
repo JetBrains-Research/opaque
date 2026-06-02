@@ -52,7 +52,7 @@ def ipo_loss(
 
     Returns:
         Per-example scalar loss (same shape as inputs).  All operations are
-        element-wise; the function is
+        element-wise; the function is vmap-safe.
     """
     logits = chosen_logratio - rejected_logratio
     return (logits - 1.0 / (2.0 * beta)) ** 2
