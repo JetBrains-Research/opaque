@@ -62,8 +62,10 @@ _VARIANTS = {
 }
 
 # Public ``dpo.loss`` names that are NOT per-pair variants on log-ratios: the
-# log-ratio helpers/combinators.
+# per-sequence logp primitives and the log-ratio combinators.
 _NON_VARIANTS = {
+    "sequence_logp",
+    "fused_sequence_logp",
     "f_divergence_remap",
     "f_divergence_logits",
     "mpo_combine",

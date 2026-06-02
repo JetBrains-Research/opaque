@@ -40,8 +40,7 @@ primitives under its own namespace.
 opaque.alignment                         <- top-level façade (exposes dpo, sft)
 opaque.api.alignment                     <- implementation namespace
 opaque.alignment.dpo                     <- DPO method façade (aggregates the below)
-opaque.alignment.dpo.loss                <- 14 per-pair heads + log-ratio helpers
-opaque.alignment.dpo.logp                <- sequence_logp, fused_sequence_logp (feed the heads)
+opaque.alignment.dpo.loss                <- logp + 14 per-pair heads + log-ratio combinators
 opaque.alignment.dpo.collator            <- preference (DPO) collator factory
 opaque.alignment.dpo.reference           <- ref-logp precompute, null_ref_context, EMA
 opaque.alignment.dpo.metric              <- preference reward telemetry
@@ -50,12 +49,13 @@ opaque.alignment.sft.loss                <- nll_loss, dft_loss + fused_nll_loss,
 opaque.alignment.sft.collator            <- language-modeling (SFT) collator
 ```
 
-The DPO log-prob primitives `sequence_logp` / `fused_sequence_logp` are surfaced
-through `opaque.alignment.dpo.logp` (a sibling of `dpo.loss` — a logp is not a
-loss). The lower-level `selective_log_softmax` building block, `entropy_from_logits`
-/ `mean_token_accuracy` (token metrics), and chat-template helpers stay internal
-impl under `opaque.api.alignment.*`, surfaced through the method that consumes
-them, following the shared-impl re-import pattern of
+`opaque.alignment.dpo.loss` is the DPO loss-construction toolkit: the per-sequence
+log-prob primitives `sequence_logp` / `fused_sequence_logp`, the 14 per-pair
+heads, and the log-ratio combinators all live there (a `per_example_loss` is
+`head(sequence_logp(...) - ref_logp, …)`). The lower-level `selective_log_softmax`
+building block, `entropy_from_logits` / `mean_token_accuracy` (token metrics), and
+chat-template helpers stay internal impl under `opaque.api.alignment.*`, surfaced
+through the method that consumes them, following the shared-impl re-import pattern of
 `opaque.dpsgd.clipping`.
 
 ## Status

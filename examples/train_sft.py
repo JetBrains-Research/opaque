@@ -60,7 +60,8 @@ from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.optimizers import adamw
 from opaque.random import key, fold_in
-from opaque.alignment.sft import dft_loss, language_modeling_collator, nll_loss
+from opaque.alignment.sft.collator import language_modeling_collator
+from opaque.alignment.sft.loss import dft_loss, nll_loss
 
 # DP-FTRL mechanism swap (plan §3.2): the loss closure is mechanism-agnostic.
 # To run DP-FTRL instead of DP-SGD, replace the two ``opaque.dpsgd`` noise/

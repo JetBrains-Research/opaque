@@ -79,32 +79,27 @@ from opaque.dpsgd.sampling import PoissonSampler
 from opaque.optimizers import adamw
 from opaque.random import key, fold_in
 import opaque.dpsgd.accounting as dpsgd_acc
-from opaque.alignment.dpo import (
-    compute_ref_logprobs_for_dataset,
-    extract_prompt,
-    preference_collator,
-    reward_metrics,
-)
+from opaque.alignment.dpo.collator import preference_collator
+from opaque.alignment.dpo.data import extract_prompt
 from opaque.alignment.dpo.loss import (
     apo_down_loss,
     apo_zero_loss,
     bco_loss,
+    chosen_nll_loss,
     discopop_loss,
     exo_loss,
     hinge_loss,
     ipo_loss,
     nca_loss,
     robust_loss,
-    chosen_nll_loss,
+    sequence_logp,
     sigmoid_loss,
     sigmoid_norm_loss,
     sppo_loss,
     squarechipo_loss,
 )
-
-# ``sequence_logp`` (and its fused twin) are the DPO log-prob primitives, exposed
-# next to the per-pair heads under ``opaque.alignment.dpo.logp``.
-from opaque.alignment.dpo.logp import sequence_logp
+from opaque.alignment.dpo.metric import reward_metrics
+from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
 
 # The library (``opaque.alignment.dpo``) exposes direct loss functions, not a
 # string registry. The CLI ``--loss-type`` string is mapped to a function here,

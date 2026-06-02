@@ -1,48 +1,55 @@
-"""opaque.alignment.dpo.loss façade — re-exports the DPO loss family.
+"""opaque.alignment.dpo.loss — the DPO loss-construction toolkit.
 
-Direct functions only (mirrors ``opaque.alignment.sft.loss``): the 14 per-pair
-heads on log-ratios and the ``f_divergence_*`` / ``mpo_combine`` /
-``wpo_weights`` / ``ld_dpo_split`` log-ratio helpers. String dispatch is the
-caller's concern.
+Everything needed to assemble a per-example DPO loss, exposed as direct functions
+(mapping a config string to one of them is the caller's concern):
 
-Naming scheme: ``<method>[_<variant>]_loss``. The pairwise/preference context is
-implied by this namespace and never spelled out (so ``exo_loss``, not
-``exo_pair_loss``); a ``_<variant>`` qualifier appears only to disambiguate
-*co-existing* variants of one method — ``sigmoid_loss`` / ``sigmoid_norm_loss``
-and ``apo_zero_loss`` / ``apo_down_loss``. ``chosen_nll_loss`` is the
-chosen-completion NLL regulariser used in MPO/RPO blends (it is *not* the SFT
-method's loss — that lives in ``opaque.alignment.sft.loss``).
+- Per-sequence log-probabilities: ``sequence_logp`` and its memory-efficient
+  fused drop-in ``fused_sequence_logp`` (projects hidden states through the
+  ``lm_head`` without materialising logits).
+- Per-pair heads on log-ratios: the 14 variants ``sigmoid_loss``, ``hinge_loss``,
+  …, ``chosen_nll_loss``.
+- Log-ratio combinators for composite objectives: ``f_divergence_remap`` /
+  ``f_divergence_logits``, ``mpo_combine``, ``wpo_weights``, ``ld_dpo_split``.
 
-The fused DPO path is *not* a loss here: it is the memory-efficient
-``fused_sequence_logp`` in the sibling :mod:`opaque.alignment.dpo.logp`, composed
-with these per-pair heads exactly as the eager ``sequence_logp`` is — the kernel
-produces logp, the head stays one of these functions.
+A DPO ``per_example_loss`` is ``head(sequence_logp(...) - ref_logp, …)``; see
+``examples/train_dpo.py``.
+
+Naming is ``<method>[_<variant>]_loss``: the preference/pairwise context is
+implied by this namespace, and a ``_<variant>`` qualifier appears only to
+disambiguate co-existing variants (``sigmoid`` / ``sigmoid_norm``, ``apo_zero`` /
+``apo_down``). ``chosen_nll_loss`` is the chosen-completion NLL regulariser used
+in MPO/RPO blends — not the SFT method's loss (that lives in
+``opaque.alignment.sft.loss``).
 """
 
 from opaque.api.alignment.dpo.loss import (
     apo_down_loss,
     apo_zero_loss,
     bco_loss,
+    chosen_nll_loss,
     discopop_loss,
     exo_loss,
+    f_divergence_logits,
+    f_divergence_remap,
     hinge_loss,
     ipo_loss,
+    ld_dpo_split,
+    mpo_combine,
     nca_loss,
     robust_loss,
-    chosen_nll_loss,
     sigmoid_loss,
     sigmoid_norm_loss,
     sppo_loss,
     squarechipo_loss,
-    f_divergence_logits,
-    f_divergence_remap,
-    ld_dpo_split,
-    mpo_combine,
     wpo_weights,
 )
+from opaque.api.alignment.logprob import fused_sequence_logp, sequence_logp
 
 __all__ = [
-    # per-pair variants (on log-ratios)
+    # per-sequence log-probabilities
+    "sequence_logp",
+    "fused_sequence_logp",
+    # per-pair heads (on log-ratios)
     "sigmoid_loss",
     "hinge_loss",
     "robust_loss",
@@ -57,7 +64,7 @@ __all__ = [
     "nca_loss",
     "bco_loss",
     "sppo_loss",
-    # log-ratio helpers
+    # log-ratio combinators (composite objectives)
     "f_divergence_remap",
     "f_divergence_logits",
     "mpo_combine",
