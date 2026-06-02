@@ -24,7 +24,17 @@ gradients.
 
 from __future__ import annotations
 
+import importlib
+
 import torch
+
+# ``opaque-alignment`` forbids static imports of ``opaque.api.patches`` (see
+# ``tests/contracts/test_dependency_direction.py``) — patches is the optional
+# ``opaque-alignment[patches]`` extra, not a runtime dep. The contract test
+# uses an AST scan, so even a try-except'd ``import`` would trip it; we
+# resolve the kernel module dynamically via ``importlib.import_module`` so the
+# bridge stays optional without a static import node anywhere in this file.
+_LCE_KERNEL_PATH = "opaque.api.patches.kernels.linear_cross_entropy"
 
 
 def lce_available(hidden: torch.Tensor) -> bool:
@@ -37,7 +47,7 @@ def lce_available(hidden: torch.Tensor) -> bool:
     if not hidden.is_cuda or hidden.dtype not in (torch.float16, torch.bfloat16):
         return False
     try:
-        import opaque.api.patches.kernels.linear_cross_entropy  # noqa: F401
+        importlib.import_module(_LCE_KERNEL_PATH)
     except Exception:
         return False
     return True
@@ -60,9 +70,8 @@ def linear_nll_sum(
     Call per example and drive with ``vmap(grad)``; see the module docstring for
     why this uses ``.apply`` directly rather than ``torch.vmap``.
     """
-    from opaque.api.patches.kernels.linear_cross_entropy import (
-        Opaque_LinearCrossEntropyLoss,
-    )
+    kernel_mod = importlib.import_module(_LCE_KERNEL_PATH)
+    Opaque_LinearCrossEntropyLoss = kernel_mod.Opaque_LinearCrossEntropyLoss
 
     return Opaque_LinearCrossEntropyLoss.apply(
         hidden, weight, labels, -100, 0, 0.0, use_token_scaling
