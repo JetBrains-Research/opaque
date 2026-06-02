@@ -23,10 +23,11 @@ from opaque.api.alignment.dpo.loss._ipo import ipo_loss
 from opaque.api.alignment.dpo.loss._ld_dpo import ld_dpo_split
 from opaque.api.alignment.dpo.loss._mpo import mpo_combine
 from opaque.api.alignment.dpo.loss._nca import nca_loss
+from opaque.api.alignment.dpo.loss._orpo import odds_ratio_loss
 from opaque.api.alignment.dpo.loss._robust import robust_loss
 from opaque.api.alignment.dpo.loss._chosen_nll import chosen_nll_loss
+from opaque.api.alignment.dpo.loss._simpo import simpo_loss
 from opaque.api.alignment.dpo.loss._sigmoid import sigmoid_loss
-from opaque.api.alignment.dpo.loss._sigmoid_norm import sigmoid_norm_loss
 from opaque.api.alignment.dpo.loss._sppo import sppo_loss
 from opaque.api.alignment.dpo.loss._squarechipo import squarechipo_loss
 from opaque.api.alignment.dpo.loss._wpo import wpo_weights
@@ -37,7 +38,7 @@ __all__ = [
     "hinge_loss",
     "robust_loss",
     "ipo_loss",
-    "sigmoid_norm_loss",
+    "simpo_loss",
     "discopop_loss",
     "chosen_nll_loss",
     "squarechipo_loss",
@@ -47,6 +48,7 @@ __all__ = [
     "nca_loss",
     "bco_loss",
     "sppo_loss",
+    "odds_ratio_loss",
     # helpers
     "f_divergence_remap",
     "f_divergence_logits",

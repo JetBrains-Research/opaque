@@ -33,7 +33,7 @@ from opaque.alignment.dpo.loss import (
     robust_loss,
     chosen_nll_loss,
     sigmoid_loss,
-    sigmoid_norm_loss,
+    simpo_loss,
     sppo_loss,
     squarechipo_loss,
 )
@@ -49,7 +49,7 @@ _VARIANTS = {
     "hinge_loss": hinge_loss,
     "robust_loss": robust_loss,
     "ipo_loss": ipo_loss,
-    "sigmoid_norm_loss": sigmoid_norm_loss,
+    "simpo_loss": simpo_loss,
     "discopop_loss": discopop_loss,
     "chosen_nll_loss": chosen_nll_loss,
     "squarechipo_loss": squarechipo_loss,
@@ -61,11 +61,15 @@ _VARIANTS = {
     "sppo_loss": sppo_loss,
 }
 
-# Public ``dpo.loss`` names that are NOT per-pair variants on log-ratios: the
-# per-sequence logp primitives and the log-ratio combinators.
+# Public ``dpo.loss`` names that are NOT swept by the (chosen, rejected, beta=…)
+# per-pair signature: the logp primitives + length helper, the reference-free
+# ``odds_ratio_loss`` (takes log-probs, no beta — covered in test_orpo), and the
+# log-ratio combinators.
 _NON_VARIANTS = {
     "sequence_logp",
     "fused_sequence_logp",
+    "length_normalize",
+    "odds_ratio_loss",
     "f_divergence_remap",
     "f_divergence_logits",
     "mpo_combine",

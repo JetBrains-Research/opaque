@@ -121,13 +121,12 @@ one sequence and let the outer `vmap` batch it.
 
 ### Choosing a per-pair head
 
-All 14 heads take `(chosen_logratio, rejected_logratio, *, beta, ...)` and
-return a per-example scalar. `sigmoid_loss` is the standard DPO objective
-and the right default. The others trade off robustness, length
-normalization, and reference handling — `hinge_loss`, `robust_loss`
-(label-smoothed), `ipo_loss`, `sigmoid_norm_loss` (length-normalized),
+The per-pair heads take `(chosen_logratio, rejected_logratio, *, beta, ...)`
+and return a per-example scalar. `sigmoid_loss` is the standard DPO objective
+and the right default. The others trade off robustness and reference
+handling — `hinge_loss`, `robust_loss` (label-smoothed cDPO), `ipo_loss`,
 `discopop_loss`, `chosen_nll_loss` (chosen-completion NLL regularizer for
-MPO/RPO blends), `squarechipo_loss`, `apo_zero_loss`/`apo_down_loss`,
+MPO/RPO/CPO blends), `squarechipo_loss`, `apo_zero_loss`/`apo_down_loss`,
 `exo_loss`, `nca_loss`, `bco_loss`, `sppo_loss`. As with SFT, map a config
 string to a head at the CLI boundary (`{"sigmoid": sigmoid_loss, ...}`) —
 the library exposes direct functions, not a registry. For composite
@@ -135,6 +134,45 @@ objectives, the log-ratio combinators (`f_divergence_remap` /
 `f_divergence_logits`, `mpo_combine`, `wpo_weights`, `ld_dpo_split`)
 remap or blend log-ratios before the head; see the
 [reference](../reference/alignment.md#losses).
+
+### Reference-free methods (SimPO, CPO, ORPO)
+
+These need no reference model — they score the policy log-prob directly, so you
+skip the reference precompute (§1) entirely. SimPO and ORPO use the
+**length-normalized** per-token reward `r = log π(y) / |y|`, formed with
+`length_normalize`:
+
+```python
+from opaque.alignment.dpo.loss import (
+    sequence_logp, length_normalize, simpo_loss, odds_ratio_loss,
+    chosen_nll_loss, sigmoid_loss, mpo_combine,
+)
+
+chosen_logp = sequence_logp(chosen_out.logits, chosen_ids, chosen_cmask)
+rejected_logp = sequence_logp(rejected_out.logits, rejected_ids, rejected_cmask)
+c = length_normalize(chosen_logp, chosen_cmask)
+r = length_normalize(rejected_logp, rejected_cmask)
+
+# SimPO — length-normalized sigmoid with a target margin γ:
+loss = simpo_loss(c, r, beta=beta, gamma=gamma)
+
+# ORPO — odds-ratio term + λ·NLL on the chosen completion:
+loss = mpo_combine(
+    {"or": odds_ratio_loss(c, r), "nll": chosen_nll_loss(c)},
+    {"or": 1.0, "nll": orpo_lambda},
+)
+
+# CPO — reference-free sigmoid (raw logp as the log-ratio) + λ·NLL:
+loss = mpo_combine(
+    {"pref": sigmoid_loss(chosen_logp, rejected_logp, beta=beta),
+     "nll": chosen_nll_loss(chosen_logp)},
+    {"pref": 1.0, "nll": cpo_alpha},
+)
+```
+
+`odds_ratio_loss` is the only one with genuinely new math (it works on the
+log-probs, not log-ratios); SimPO is the length-normalized sigmoid plus a margin,
+and CPO is pure composition of existing heads.
 
 ## 4. DP-SGD loop
 

@@ -4,10 +4,15 @@ Everything needed to assemble a per-example DPO loss, exposed as direct function
 (mapping a config string to one of them is the caller's concern):
 
 - Per-sequence log-probabilities: ``sequence_logp`` and its memory-efficient
-  fused drop-in ``fused_sequence_logp`` (projects hidden states through the
-  ``lm_head`` without materialising logits).
-- Per-pair heads on log-ratios: the 14 variants ``sigmoid_loss``, ``hinge_loss``,
-  …, ``chosen_nll_loss``.
+  fused drop-in ``fused_sequence_logp`` (project hidden states through the
+  ``lm_head`` without materialising logits), plus ``length_normalize`` to turn a
+  summed completion logp into the per-token mean reward (SimPO / ORPO).
+- Per-pair heads on log-ratios: ``sigmoid_loss``, ``hinge_loss``, …. Used
+  reference-free by passing the policy logp itself as the log-ratio (CPO is
+  ``mpo_combine`` of a reference-free ``sigmoid_loss`` and ``chosen_nll_loss``).
+- Reference-free heads on (length-normalized) log-probs: ``simpo_loss``
+  (length-normalized sigmoid with a target margin) and ``odds_ratio_loss``
+  (ORPO; takes log-probs directly, not log-ratios).
 - Log-ratio combinators for composite objectives: ``f_divergence_remap`` /
   ``f_divergence_logits``, ``mpo_combine``, ``wpo_weights``, ``ld_dpo_split``.
 
@@ -16,10 +21,9 @@ A DPO ``per_example_loss`` is ``head(sequence_logp(...) - ref_logp, …)``; see
 
 Naming is ``<method>[_<variant>]_loss``: the preference/pairwise context is
 implied by this namespace, and a ``_<variant>`` qualifier appears only to
-disambiguate co-existing variants (``sigmoid`` / ``sigmoid_norm``, ``apo_zero`` /
-``apo_down``). ``chosen_nll_loss`` is the chosen-completion NLL regulariser used
-in MPO/RPO blends — not the SFT method's loss (that lives in
-``opaque.alignment.sft.loss``).
+disambiguate co-existing variants of one method (``apo_zero`` / ``apo_down``).
+``chosen_nll_loss`` is the chosen-completion NLL regulariser used in MPO/RPO/CPO
+blends — not the SFT method's loss (that lives in ``opaque.alignment.sft.loss``).
 """
 
 from opaque.api.alignment.dpo.loss import (
@@ -36,25 +40,30 @@ from opaque.api.alignment.dpo.loss import (
     ld_dpo_split,
     mpo_combine,
     nca_loss,
+    odds_ratio_loss,
     robust_loss,
     sigmoid_loss,
-    sigmoid_norm_loss,
+    simpo_loss,
     sppo_loss,
     squarechipo_loss,
     wpo_weights,
 )
-from opaque.api.alignment.logprob import fused_sequence_logp, sequence_logp
+from opaque.api.alignment.logprob import (
+    fused_sequence_logp,
+    length_normalize,
+    sequence_logp,
+)
 
 __all__ = [
     # per-sequence log-probabilities
     "sequence_logp",
     "fused_sequence_logp",
+    "length_normalize",
     # per-pair heads (on log-ratios)
     "sigmoid_loss",
     "hinge_loss",
     "robust_loss",
     "ipo_loss",
-    "sigmoid_norm_loss",
     "discopop_loss",
     "chosen_nll_loss",
     "squarechipo_loss",
@@ -64,6 +73,9 @@ __all__ = [
     "nca_loss",
     "bco_loss",
     "sppo_loss",
+    # reference-free heads (on length-normalized log-probs)
+    "simpo_loss",
+    "odds_ratio_loss",
     # log-ratio combinators (composite objectives)
     "f_divergence_remap",
     "f_divergence_logits",

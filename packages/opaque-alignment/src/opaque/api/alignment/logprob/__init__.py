@@ -8,6 +8,15 @@ variant is per-example: drive it with ``vmap(grad)``.
 """
 
 from opaque.api.alignment.logprob._gather import selective_log_softmax
-from opaque.api.alignment.logprob._sequence import fused_sequence_logp, sequence_logp
+from opaque.api.alignment.logprob._sequence import (
+    fused_sequence_logp,
+    length_normalize,
+    sequence_logp,
+)
 
-__all__ = ["selective_log_softmax", "sequence_logp", "fused_sequence_logp"]
+__all__ = [
+    "selective_log_softmax",
+    "sequence_logp",
+    "fused_sequence_logp",
+    "length_normalize",
+]

@@ -24,7 +24,11 @@ import torch.nn.functional as F  # noqa: N812
 from torch.func import grad, vmap
 
 from opaque.api.alignment.logprob._gather import selective_log_softmax
-from opaque.api.alignment.logprob._sequence import fused_sequence_logp, sequence_logp
+from opaque.api.alignment.logprob._sequence import (
+    fused_sequence_logp,
+    length_normalize,
+    sequence_logp,
+)
 
 # ---------------------------------------------------------------------------
 # selective_log_softmax
@@ -306,3 +310,36 @@ def test_fused_sequence_logp_lce_path_gpu() -> None:
     )
     assert torch.isfinite(g_fused).all()
     assert torch.allclose(g_fused.float(), g_eager.float(), atol=1e-2, rtol=0.0)
+
+
+# ---------------------------------------------------------------------------
+# length_normalize — summed completion logp → per-token mean
+# ---------------------------------------------------------------------------
+
+
+def test_length_normalize_divides_by_shifted_completion_count() -> None:
+    """Divides by ``completion_mask[..., 1:].sum`` (the same shift as sequence_logp)."""
+    logp = torch.tensor(-6.0)
+    # 5 tokens; completion span = positions [2:]; after the [1:] shift, 3 count.
+    completion_mask = torch.tensor([0.0, 0.0, 1.0, 1.0, 1.0])
+    out = length_normalize(logp, completion_mask)
+    assert math.isclose(out.item(), -2.0, rel_tol=1e-6)
+
+
+def test_length_normalize_clamps_empty_completion() -> None:
+    """An all-prompt mask clamps the divisor to 1 (no division by zero)."""
+    logp = torch.tensor(-4.0)
+    out = length_normalize(logp, torch.zeros(4))
+    assert math.isclose(out.item(), -4.0, rel_tol=1e-6)
+
+
+def test_length_normalize_matches_mean_of_sequence_logp() -> None:
+    """``length_normalize(sequence_logp(...))`` equals the per-token mean logp."""
+    torch.manual_seed(0)
+    logits = torch.randn(7, 11)
+    ids = torch.randint(0, 11, (7,))
+    cmask = torch.tensor([0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0])
+    summed = sequence_logp(logits, ids, cmask)
+    mean = length_normalize(summed, cmask)
+    count = cmask[1:].sum()
+    torch.testing.assert_close(mean, summed / count)

@@ -24,7 +24,32 @@ from opaque.api.alignment._fused_lce import lce_available, linear_nll_sum
 
 from ._gather import selective_log_softmax
 
-__all__ = ["sequence_logp", "fused_sequence_logp"]
+__all__ = ["sequence_logp", "fused_sequence_logp", "length_normalize"]
+
+
+def length_normalize(
+    logp: torch.Tensor,
+    completion_mask: torch.Tensor,
+) -> torch.Tensor:
+    """Divide a summed completion log-prob by its completion-token count.
+
+    Turns a :func:`sequence_logp` / :func:`fused_sequence_logp` output (the
+    *sum* of completion log-probs) into the per-token mean ``(1/|y|)·log π(y)`` —
+    the length-normalized reward used by SimPO and ORPO. The completion length is
+    counted with the same next-token shift as :func:`sequence_logp`
+    (``completion_mask[..., 1:]``), clamped to ``>= 1``.
+
+    Args:
+        logp: Summed completion log-prob, shape ``(...,)`` (per example under
+            ``vmap``, or batched).
+        completion_mask: ``(..., T)``; non-zero on completion-span tokens (the
+            same mask passed to ``sequence_logp``).
+
+    Returns:
+        Per-example length-normalized log-prob, same shape as *logp*.
+    """
+    count = completion_mask[..., 1:].sum(-1).clamp(min=1)
+    return logp / count.to(logp.dtype)
 
 
 def sequence_logp(

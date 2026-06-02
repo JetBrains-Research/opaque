@@ -42,7 +42,6 @@ DPO per-pair heads ([`opaque.alignment.dpo.loss`](#api-documentation)):
 - **`hinge_loss()`** — DPO hinge loss.
 - **`robust_loss()`** — robust (label-smoothed) DPO loss.
 - **`ipo_loss()`** — IPO loss (Azar 2024).
-- **`sigmoid_norm_loss()`** — length-normalized DPO sigmoid loss.
 - **`discopop_loss()`** — DiscoPOP loss.
 - **`chosen_nll_loss()`** — chosen-completion NLL regularizer for MPO/RPO blends.
 - **`squarechipo_loss()`** — SquareChiPO loss (arXiv:2505.21395).
@@ -51,6 +50,12 @@ DPO per-pair heads ([`opaque.alignment.dpo.loss`](#api-documentation)):
 - **`nca_loss()`** — NCA pairwise loss.
 - **`bco_loss()`** — BCO pairwise loss.
 - **`sppo_loss()`** — SPPO hard-label loss.
+
+Reference-free heads ([`opaque.alignment.dpo.loss`](#api-documentation)) — no
+reference model; score the policy log-prob directly:
+
+- **`simpo_loss()`** — SimPO: length-normalized sigmoid with a target margin γ (Meng 2024).
+- **`odds_ratio_loss()`** — ORPO odds-ratio loss on length-normalized log-probs (Hong 2024); pair with `chosen_nll_loss` via `mpo_combine`.
 
 DPO log-ratio combinators ([`opaque.alignment.dpo.loss`](#api-documentation))
 for composite objectives:
@@ -70,6 +75,9 @@ for composite objectives:
 - **`fused_sequence_logp()`** ([`opaque.alignment.dpo.loss`](#api-documentation))
   — memory-efficient `sequence_logp` over hidden states + `lm_head` weight
   (per-example only).
+- **`length_normalize()`** ([`opaque.alignment.dpo.loss`](#api-documentation))
+  — divide a summed completion logp by its completion-token count to form the
+  per-token mean reward `log π(y)/|y|` (SimPO / ORPO).
 
 ### Collators
 

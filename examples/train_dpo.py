@@ -160,7 +160,6 @@ from opaque.alignment.dpo.loss import (
     robust_loss,
     sequence_logp,
     sigmoid_loss,
-    sigmoid_norm_loss,
     sppo_loss,
     squarechipo_loss,
 )
@@ -184,7 +183,6 @@ _DPO_LOSSES = {
     "hinge": hinge_loss,
     "robust": robust_loss,
     "ipo": ipo_loss,
-    "sigmoid_norm": sigmoid_norm_loss,
     "discopop": discopop_loss,
     "chosen_nll": chosen_nll_loss,
     "squarechipo": squarechipo_loss,
