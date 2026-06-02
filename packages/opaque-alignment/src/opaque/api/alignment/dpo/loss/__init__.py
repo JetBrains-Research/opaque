@@ -1,6 +1,6 @@
 """DPO loss family impl — per-pair scalar losses and log-ratio helpers.
 
-All variants are pure, elementwise, Tier-1 per-example functions (plan §7.1):
+All variants are pure, elementwise, per-example functions:
 swapping one example's data changes only that example's gradient, enforced by
 the ``vmap(grad(...))`` NaN-injection sweep in
 ``tests/dpo/loss/test_vmap_safety.py`` rather than carried as loss metadata.

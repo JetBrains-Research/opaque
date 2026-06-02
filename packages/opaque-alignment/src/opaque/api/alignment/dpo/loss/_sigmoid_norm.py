@@ -6,9 +6,9 @@ already been normalised by each completion's token count.  Length
 normalisation corrects for the bias that long completions accumulate more
 per-token log-probability mass, distorting the pair comparison.
 
-**DP-purity: Tier 1.** Strictly per-example; the length-divisor is
+Strictly per-example; the length-divisor is
 per-example data (applied by the caller before this function is invoked).
-NaN-injection contract holds. Vmap-safe.
+NaN-injection contract holds. 
 
 References:
     Standard DPO sigmoid loss — Rafailov et al., "Direct Preference
@@ -57,7 +57,7 @@ def sigmoid_norm_loss(
 
     Returns:
         Per-example scalar loss (same shape as inputs).  All operations are
-        element-wise; the function is vmap-safe.
+        element-wise; the function is 
     """
     logits = chosen_logratio - rejected_logratio
     return (

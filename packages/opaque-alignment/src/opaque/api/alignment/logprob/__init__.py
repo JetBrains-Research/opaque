@@ -5,7 +5,7 @@ modules — ``selective_log_softmax`` by the SFT losses
 (:mod:`opaque.api.alignment.sft.loss`), ``sequence_logp`` by the DPO kernel
 (:mod:`opaque.api.alignment.dpo.kernel`). ``sequence_logp`` is re-exported to
 users through the DPO façade (:mod:`opaque.alignment.dpo`), its public consumer.
-All functions are pure and vmap-safe (see plan §7.5).
+All functions are pure.
 """
 
 from opaque.api.alignment.logprob._gather import selective_log_softmax

@@ -12,7 +12,7 @@ convention matches that of HuggingFace ``transformers`` and TRL:
 Tokens with ``shifted_labels == -100`` (the ignore index) are excluded from
 the per-example mean, as in ``torch.nn.CrossEntropyLoss(ignore_index=-100)``.
 
-**DP-purity: Tier 1** (plan §3.3, §8.2).  The per-example divisor is this
+ The per-example divisor is this
 example's own non-ignored token count — a quantity derived purely from this
 example's data.  This guarantees that swapping one example's data changes
 only that example's gradient, satisfying the per-record sensitivity bound
@@ -24,7 +24,7 @@ divisor rule in plan §3.3 and §8.2.
 ``clamp(min=1)`` on the divisor guards the all-ignored-token edge case
 (prevents division-by-zero and produces 0.0 for an all-masked row).
 
-**Vmap-safety** (plan §3.4): pure tensor operations; no Python control flow
+**Vmap-safety**: pure tensor operations; no Python control flow
 on tensor values; no ``.item()``; no module state.  Works for batched
 inputs ``(B, T, V)`` / ``(B, T)`` and per-example inputs ``(T, V)`` /
 ``(T,)`` under ``torch.func.vmap(torch.func.grad(...))``.
@@ -52,7 +52,7 @@ def nll_loss(
     log-probabilities over non-ignored tokens.
 
     The divisor ``mask.sum(-1).clamp(min=1)`` is computed per example from
-    this example's data only (plan §8.2 pre-clip divisor rule).
+    this example's data only.
 
     Args:
         logits: Float tensor of shape ``(..., T, V)`` where ``T`` is the

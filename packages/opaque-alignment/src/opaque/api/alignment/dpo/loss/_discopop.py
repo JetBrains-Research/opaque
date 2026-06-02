@@ -12,8 +12,8 @@ exponential component via ``L = logistic·(1 − gate) + exp·gate``.  Because
 the **exponential** component dominates when ``β·Δ`` is large positive and the
 **logistic** component dominates when ``β·Δ`` is negative.
 
-**DP-purity: Tier 1.** Strictly per-example. NaN-injection contract holds.
-Vmap-safe.
+Strictly per-example. NaN-injection contract holds.
+
 
 **Numerical note — exp overflow.**  When ``logits = β·Δ`` is large
 *negative* (e.g. ``logits → -∞``), the exponential component
@@ -77,11 +77,11 @@ def discopop_loss(
 
     Returns:
         Per-example scalar loss (same shape as inputs).  All operations are
-        element-wise; the function is vmap-safe.
+        element-wise; the function is 
 
     Note:
         The exponential component overflows float32 when ``logits ≪ 0``.  To
-        prevent NaN/Inf while preserving gradient locality (Tier 1), the
+        prevent NaN/Inf while preserving gradient locality, the
         logits passed to ``torch.exp`` are clamped from below at
         ``-_EXP_CLAMP`` (80).  This keeps ``exp(-logits)`` ≤ ``exp(80)
         ≈ 5.5e34``, which is within the float32 range.  At large negative

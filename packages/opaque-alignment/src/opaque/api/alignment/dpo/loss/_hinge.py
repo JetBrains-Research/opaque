@@ -10,10 +10,10 @@ Implements the hinge variant of the DPO objective from:
         loss = relu(1 − β·Δ)
     where Δ = chosen_logratio − rejected_logratio.
 
-DP purity: **Tier 1** (§3.3). The output for example *i* depends only on
-example *i*'s data. Verified by the NaN-injection contract test (§11.3).
+The output for example *i* depends only on
+example *i*'s data. Verified by the NaN-injection contract test.
 
-vmap-safety (§3.4): uses ``torch.relu`` (a pure tensor op) rather than
+vmap-safety: uses ``torch.relu`` (a pure tensor op) rather than
 ``torch.clamp`` with Python-level branching or ``torch.max`` with a scalar
 comparator. No Python control flow on tensor values.
 """

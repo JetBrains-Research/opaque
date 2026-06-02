@@ -8,7 +8,7 @@ targets ``input_ids[..., 1:]``), gathers per-token log-probs via
 :func:`selective_log_softmax`, masks to the completion span, and sums over the
 sequence axis.
 
-It is a pure, vmap-safe tensor function (plan §3.4): negative-axis indexing is
+It is a pure tensor function: negative-axis indexing is
 used throughout so it works both when called per-example under ``vmap``
 (``logits`` ``(T, V)``, ``input_ids`` ``(T,)``) and when called on a batched
 input (``logits`` ``(B, T, V)``, ``input_ids`` ``(B, T)``).

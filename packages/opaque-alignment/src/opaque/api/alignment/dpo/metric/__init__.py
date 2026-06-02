@@ -1,4 +1,4 @@
-"""DPO metrics impl — preference reward telemetry (plan §7.9).
+"""DPO metrics impl — preference reward telemetry.
 
 Per plan §3.3 telemetry rule, ``reward_metrics`` returns detached tensors for
 logging/accumulation, not for release. General token-level metrics (entropy,

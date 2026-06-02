@@ -1,4 +1,4 @@
-"""Language-modeling collator — factory function (plan §7.6, §3.1).
+"""Language-modeling collator — factory function.
 
 Produces a stateless callable that transforms a list of per-example dicts into
 a :class:`~opaque.api.alignment.sft.collator.types.LMBatch` ready for a causal
@@ -197,7 +197,7 @@ def language_modeling_collator(
 ) -> Callable[[list[dict]], dict[str, torch.Tensor]]:
     """Return a callable that collates per-example dicts into a padded :class:`LMBatch`.
 
-    This is a factory function (plan §3.1, AGENTS.md rule 9): it returns a
+    This is a factory function: it returns a
     plain callable, not a user-instantiated class.  The returned callable is
     stateless and deterministic — the same input list always produces identical
     output tensors.

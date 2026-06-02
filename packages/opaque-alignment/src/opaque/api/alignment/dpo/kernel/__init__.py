@@ -1,4 +1,4 @@
-"""Alignment-specific fused-linear preference kernel impl (plan §7.10).
+"""Alignment-specific fused-linear preference kernel impl.
 
 Chunked, self-contained pure-PyTorch (no Triton): peak logits memory is
 ``O(chunk_size · T · V)`` instead of ``O(B · T · V)``, and the path stays

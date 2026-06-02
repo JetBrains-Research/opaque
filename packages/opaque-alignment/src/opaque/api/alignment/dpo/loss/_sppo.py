@@ -16,7 +16,7 @@ each log-ratio from its target:
 The division ``0.5 / beta`` is a true floating-point division (not integer
 floor division); ``beta`` is ``float`` so this is always correct.
 
-This is a pure, vmap-safe Tier-1 loss (§3.3).
+This is a pure loss.
 """
 
 from __future__ import annotations

@@ -118,20 +118,20 @@ def null_ref_context(
     Configuration             Behaviour
     ========================  ================================================
     Separate model            *ref_model* is not ``None`` and not a PEFT
-    (§7.8 row 1)              model → **no-op** (caller uses *ref_model*
+                 model → **no-op** (caller uses *ref_model*
                               directly; no adapter to toggle).
     LoRA with ``"ref"``       ``is_peft_model(model)`` and ``"ref" in
     adapter clone             model.peft_config`` → call
-    (§7.8 row 2)              ``model.set_adapter("ref")`` on enter; restore
+                 ``model.set_adapter("ref")`` on enter; restore
                               the previously-active adapter(s) on exit via a
                               ``finally`` block.
     LoRA without separate     ``is_peft_model(model)`` and *ref_model* is
     ref                       ``None`` → call ``model.disable_adapter()``
-    (§7.8 row 3)              (base model serves as reference); re-enable on
+                 (base model serves as reference); re-enable on
                               exit via ``finally``.
     Explicit callable /       *model* is not a PEFT model and *ref_model* is
     non-PEFT no-ref           ``None`` → **no-op** (caller-supplied callable
-    (§7.8 row 4)              or frozen base model, nothing to toggle).
+                 or frozen base model, nothing to toggle).
     ========================  ================================================
 
     Args:
@@ -141,10 +141,10 @@ def null_ref_context(
             not itself a PEFT model, the caller is responsible for forwarding
             through *ref_model* directly; this context manager is a no-op.
 
-    .. warning:: **Outside vmap only** (plan §3.4).
+    .. warning:: **Outside vmap only**.
 
         This helper mutates ``nn.Module`` adapter-selection state and is
-        therefore not vmap-safe.  Call it in the outer loop; vmap the pure
+        therefore not Call it in the outer loop; vmap the pure
         forward *inside* the activated context.
 
     Note:
@@ -187,17 +187,17 @@ def with_disabled_adapter(model: Any) -> "Generator[None, None, None]":
     exit (``finally``).  When *model* is not a PEFT model, this is a **no-op**.
 
     Used internally by the LoRA-disable reference path in
-    :func:`null_ref_context` (§7.8 row 3) and exposed publicly for callers
+    :func:`null_ref_context` and exposed publicly for callers
     that want to forward through the base model directly.
 
     Args:
         model: The model whose adapters should be disabled.  May be a PEFT
             :class:`~peft.PeftModel` or an ordinary :class:`torch.nn.Module`.
 
-    .. warning:: **Outside vmap only** (plan §3.4).
+    .. warning:: **Outside vmap only**.
 
         This helper mutates ``nn.Module`` adapter-selection state and is
-        therefore not vmap-safe.
+        therefore not 
 
     Note:
         Modelled on TRL ``utils.use_adapter`` (``trl/trainer/utils.py``).

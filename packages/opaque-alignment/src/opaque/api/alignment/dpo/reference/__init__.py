@@ -1,7 +1,7 @@
 """Reference-model handling impl — precompute, adapter dispatch, EMA sync.
 
 These run **outside vmap** (a forward pass over a dataset / PEFT adapter
-toggles). ``RefSpec`` lives in :mod:`opaque.api.alignment.dpo.reference.types`.
+toggles).
 """
 
 from opaque.api.alignment.dpo.reference._adapter import (

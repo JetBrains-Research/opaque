@@ -16,7 +16,7 @@ Formula:
 
 All three terms use numerically stable :func:`torch.nn.functional.logsigmoid`.
 
-This is a pure, vmap-safe Tier-1 loss (§3.3).
+This is a pure loss.
 """
 
 from __future__ import annotations

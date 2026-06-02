@@ -3,7 +3,7 @@
 """Shared kernel helpers for the alignment fused-linear kernels.
 
 These helpers are **intentionally duplicated** from
-``opaque-patches/src/opaque/api/patches/kernels/_utils.py`` (plan §7.10). The
+``opaque-patches/src/opaque/api/patches/kernels/_utils.py``. The
 duplication is deliberate: making ``opaque-patches`` a hard dependency of
 ``opaque-alignment`` purely for the autocast / dtype-promotion shims is worse
 than copying the ~30 lines we actually use. Only the helpers consumed by the

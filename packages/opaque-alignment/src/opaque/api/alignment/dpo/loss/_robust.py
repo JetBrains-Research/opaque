@@ -16,10 +16,10 @@ At ε = 0.5 the denominator ``(1 − 2ε)`` is zero, causing division by zero.
 The function does not guard against this: callers must enforce ε < 0.5.
 At ε = 0 this reduces to the unsmoothed DPO sigmoid loss.
 
-DP purity: **Tier 1** (§3.3). The output for example *i* depends only on
-example *i*'s data. Verified by the NaN-injection contract test (§11.3).
+The output for example *i* depends only on
+example *i*'s data. Verified by the NaN-injection contract test.
 
-vmap-safety (§3.4): pure tensor operations only; no Python control flow on
+vmap-safety: pure tensor operations only; no Python control flow on
 tensor values; no module state; no ``.item()``.
 """
 

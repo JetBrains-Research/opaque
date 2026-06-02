@@ -1,7 +1,7 @@
 """TypedDict output schemas for the alignment collators.
 
 This module owns the output schema for the language-modeling (SFT) collator
-(plan §7.6).  :class:`LMBatch` is the output schema for
+.  :class:`LMBatch` is the output schema for
 :func:`~opaque.api.alignment.sft.collator._language_modeling.language_modeling_collator`.
 
 TypedDicts are used rather than dataclasses so that downstream code can

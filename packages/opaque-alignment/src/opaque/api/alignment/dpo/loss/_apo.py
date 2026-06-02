@@ -6,7 +6,7 @@ Implements the two APO variants from:
     Zeng et al., "Token-level Direct Preference Optimization" (arXiv:2408.06266).
 
 Both variants operate on per-example ``(chosen_logratio, rejected_logratio)``
-scalars. They are pure, vmap-safe Tier-1 losses (§3.3):
+scalars. They are pure losses:
 
 - :func:`apo_zero_loss` — anchored push: chosen up, rejected down independently.
 - :func:`apo_down_loss` — asymmetric pull: pulls chosen *toward* the chosen side

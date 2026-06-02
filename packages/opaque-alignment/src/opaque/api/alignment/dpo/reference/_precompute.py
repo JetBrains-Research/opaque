@@ -1,4 +1,4 @@
-"""Cached, model-agnostic reference-logprob precomputation (plan §7.8, §11.9).
+"""Cached, model-agnostic reference-logprob precomputation.
 
 :func:`compute_ref_logprobs_for_dataset` runs a single one-shot forward pass
 over a :class:`datasets.Dataset` to materialise per-example reference logprobs
@@ -8,7 +8,7 @@ to the dataset as new columns. Results are persisted to a content-addressed
 ``(dataset, cache_key, output_columns)`` triple.
 
 **Outside vmap only.** This helper deliberately breaks the vmap-safety contract
-(§3.4): it iterates a ``DataLoader``, runs a forward pass under
+: it iterates a ``DataLoader``, runs a forward pass under
 ``torch.no_grad()``, gathers across ranks, and writes a file. It must be called
 *before* the per-example gradient loop, never inside ``vmap``/``grad``.
 
@@ -16,16 +16,16 @@ to the dataset as new columns. Results are persisted to a content-addressed
 ``dict[str, Tensor] -> dict[str, Tensor]``. A :class:`PreTrainedModel` is wrapped
 into such a callable by the caller (the trainer / example), which keeps this
 module independent of any particular model class and trivially unit-testable
-with a synthetic ``ref`` (plan §7.8 contract note).
+with a synthetic ``ref``.
 
-**Cache fingerprint (risk α4).** The cache filename is the SHA-256 of
+**Cache fingerprint.** The cache filename is the SHA-256 of
 ``(dataset._fingerprint or repr(dataset), repr(cache_key), tuple(output_columns))``.
 Including ``cache_key`` and ``output_columns`` in the digest is what prevents
 collisions across model checkpoints, preprocessing variants, and differing
 requested column sets — callers vary ``cache_key`` (e.g. ``("dpo", model_name)``)
 as the escape hatch.
 
-**Cross-rank handling (§12.1).** Per-column shards are concatenated across ranks
+**Cross-rank handling.** Per-column shards are concatenated across ranks
 with :func:`gather_for_metrics`; only :func:`is_main_process` writes the cache;
 :func:`wait_for_everyone` synchronises before the function returns so non-main
 ranks observe the file on the next run. In a single-process context the gather
@@ -70,7 +70,7 @@ def _cache_fingerprint(
     Uses ``dataset._fingerprint`` when present (the ``datasets`` content hash),
     falling back to ``repr(dataset)``. ``cache_key`` and ``output_columns`` are
     folded in so two runs that differ only in the requested columns or in the
-    caller-supplied key get distinct cache files (risk α4).
+    caller-supplied key get distinct cache files.
     """
     dataset_id = getattr(dataset, "_fingerprint", None)
     if dataset_id is None:
@@ -133,7 +133,7 @@ def _save_cache(
     """Flatten ``columns`` through ``state_dict`` and write the ``.npz`` cache.
 
     The parent directory is created if missing. ``state_dict`` flattens the
-    column dict into a flat ``str -> array`` mapping (§12.2); the values are
+    column dict into a flat ``str -> array`` mapping; the values are
     coerced to NumPy arrays for ``numpy.savez``.
     """
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -164,7 +164,7 @@ def compute_ref_logprobs_for_dataset(
     ``output_columns``, and attaches the concatenated per-example results to
     ``dataset`` as new columns. The forward runs under ``torch.no_grad()``.
     Results are cached to a content-addressed ``.npz`` file keyed on
-    ``(dataset._fingerprint, cache_key, output_columns)`` (plan §7.8, §11.9).
+    ``(dataset._fingerprint, cache_key, output_columns)``.
 
     **Outside vmap only** — see the module docstring.
 
@@ -185,7 +185,7 @@ def compute_ref_logprobs_for_dataset(
         batch_size: ``DataLoader`` batch size for the forward pass. Default 8.
         cache_key: Caller-supplied opaque tuple folded into the cache
             fingerprint — the escape hatch against collisions across model
-            checkpoints / preprocessing variants (risk α4). Default ``()``.
+            checkpoints / preprocessing variants. Default ``()``.
         cache_dir: Directory for the ``.npz`` cache. Defaults to
             ``<tempdir>/opaque_ref_cache`` (created on first miss).
 

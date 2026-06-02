@@ -21,10 +21,10 @@ contribution, desensitising the objective to completion length::
 At ``alpha = 1`` this reduces to the plain masked-sum sequence logp; at
 ``alpha = 0`` only the shared-prefix tokens contribute.
 
-**DP-purity: Tier 1** (§3.3).  Strict per-example: the split logp for
+ Strict per-example: the split logp for
 example *i* depends only on example *i*'s tokens, mask, and prefix length.
 
-**vmap-safety (§3.4):** the position weighting is built with ``torch.arange``
+**vmap-safety:** the position weighting is built with ``torch.arange``
 + ``torch.where`` (no Python branching on tensor values).  ``shared_prefix_len``
 may be a Python ``int`` or a per-example tensor; it is broadcast against the
 position axis, so a per-example tensor of shape ``(..., 1)`` (or any shape that

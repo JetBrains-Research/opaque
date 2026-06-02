@@ -1,6 +1,6 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Chunked fused-linear *paired*-preference core (plan §7.10).
+"""Chunked fused-linear *paired*-preference core.
 
 The purpose of this kernel is **peak memory**, not raw FLOPs. A naive paired
 preference loss (DPO/ORPO/CPO/SimPO and the DPO variant family) materialises
@@ -28,7 +28,7 @@ Per chunk it does:
 
 The per-chunk loss tensors are concatenated back to ``(B,)``.
 
-**Design constraints (plan §5, §7.10):**
+**Design constraints:**
 
 - *Self-contained, pure PyTorch.* No Triton, no custom ``autograd.Function``.
   The whole thing is a composition of differentiable tensor ops, so autograd
@@ -44,7 +44,7 @@ The per-chunk loss tensors are concatenated back to ``(B,)``.
 
 The GPU peak-memory win (``< B·T·V``) is validated by a Cadence preset; the
 CPU test-suite validates numeric parity, ``chunk_size`` invariance, and
-``torch.func.grad`` composability (plan §7.10 gate).
+``torch.func.grad`` composability.
 
 **Layout.** ``hidden_states`` carries the chosen and rejected pairs in two
 separate batched arguments (``chosen_hidden`` / ``rejected_hidden``), each
@@ -110,7 +110,7 @@ def fused_linear_preference(
     *,
     chunk_size: int = 1,
 ) -> torch.Tensor:
-    """Chunked paired-preference loss core (plan §7.10).
+    """Chunked paired-preference loss core.
 
     Computes, for every pair ``i``::
 

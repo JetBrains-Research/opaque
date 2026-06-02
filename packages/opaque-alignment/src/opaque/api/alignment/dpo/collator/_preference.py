@@ -1,6 +1,6 @@
 """DPO preference collator — ``(B, ...)`` per-side layout.
 
-.. note:: Layout choice (risk α1)
+.. note:: Layout choice
 
    TRL uses a ``(2B, L)`` concatenated layout; opaque-alignment uses a
    ``(B, ...)`` layout because per-example DP-SGD clips per preference pair —
@@ -99,7 +99,7 @@ def preference_collator(
 ) -> Callable[[list[dict]], dict[str, torch.Tensor]]:
     """DPO preference collator — factory returning a callable.
 
-    .. note:: Layout choice (risk α1)
+    .. note:: Layout choice
 
        TRL uses a ``(2B, L)`` concatenated layout; opaque-alignment uses a
        ``(B, ...)`` layout because per-example DP-SGD clips per preference

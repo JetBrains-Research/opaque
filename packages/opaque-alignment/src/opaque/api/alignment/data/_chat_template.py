@@ -175,7 +175,7 @@ def clone_chat_template(
         logger.debug("clone_chat_template: no new special tokens to add.")
 
     # ------------------------------------------------------------------
-    # 4. Resize model embeddings (risk α10 — see module docstring).
+    # 4. Resize model embeddings.
     #
     # resize_token_embeddings is a no-op when len(tokenizer) matches the
     # current embedding size; it extends the matrix otherwise.

@@ -7,9 +7,9 @@ Implements the squared-loss variant introduced in:
     Understand Learning from Human Feedback. AISTATS 2024.
     https://arxiv.org/abs/2310.12036
 
-**DP-purity: Tier 1.** Loss for example *i* depends only on example *i*'s
+Loss for example *i* depends only on example *i*'s
 data. NaN-injection contract holds: replacing one example's inputs with NaN
-affects only that example's gradient. Vmap-safe.
+affects only that example's gradient. 
 
 **Note on length normalisation.** The IPO paper derives the loss under the
 assumption that log-ratios are normalised by completion length.  The caller
@@ -52,7 +52,7 @@ def ipo_loss(
 
     Returns:
         Per-example scalar loss (same shape as inputs).  All operations are
-        element-wise; the function is vmap-safe.
+        element-wise; the function is 
     """
     logits = chosen_logratio - rejected_logratio
     return (logits - 1.0 / (2.0 * beta)) ** 2

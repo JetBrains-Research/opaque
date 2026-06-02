@@ -5,7 +5,7 @@ reference forward (call counter advances) and attaches the requested columns;
 a second call on the *same* dataset + ``cache_key`` + ``output_columns`` is a
 cache HIT that skips ``ref`` entirely (a fresh counter stays at 0) and returns
 identical column values. Also covers fingerprint sensitivity to ``cache_key``,
-column presence / length / values, ``RefSpec`` construction for all four kinds,
+column presence / length / values,
 and import from the implementation paths.
 """
 
@@ -18,7 +18,6 @@ import torch
 from opaque.api.alignment.dpo.reference._precompute import (
     compute_ref_logprobs_for_dataset,
 )
-from opaque.api.alignment.dpo.reference.types import RefSpec
 
 OUTPUT_COLUMNS = ("ref_chosen_logps", "ref_rejected_logps")
 
@@ -261,37 +260,3 @@ def test_missing_cache_dir_is_created(tmp_path) -> None:
     assert cache_dir.exists(), "cache_dir should be created on first write"
     npz_files = list(cache_dir.glob("*.npz"))
     assert npz_files, "expected a .npz cache file to be written"
-
-
-# ---------------------------------------------------------------------------
-# RefSpec construction (§7.8)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "kind",
-    [
-        "separate_model",
-        "lora_ref_adapter",
-        "lora_disable_adapter",
-        "callable",
-    ],
-)
-def test_refspec_constructs_for_all_kinds(kind: str) -> None:
-    """RefSpec constructs for each of the four §7.8 kinds."""
-    spec = RefSpec(kind=kind)  # type: ignore[arg-type]
-    assert spec.kind == kind
-    assert spec.adapter_name is None
-
-
-def test_refspec_carries_adapter_name() -> None:
-    """The optional adapter_name field is recorded for the LoRA-ref kind."""
-    spec = RefSpec(kind="lora_ref_adapter", adapter_name="ref")
-    assert spec.adapter_name == "ref"
-
-
-def test_refspec_is_frozen() -> None:
-    """RefSpec is an immutable record (frozen dataclass)."""
-    spec = RefSpec(kind="separate_model")
-    with pytest.raises(Exception):
-        spec.kind = "callable"  # type: ignore[misc]

@@ -1,7 +1,4 @@
-"""opaque.alignment.dpo.reference façade — re-exports reference-model helpers.
-
-``RefSpec`` lives in :mod:`opaque.alignment.dpo.reference.types`.
-"""
+"""opaque.alignment.dpo.reference façade — re-exports reference-model helpers."""
 
 from opaque.api.alignment.dpo.reference import (
     compute_ref_logprobs_for_dataset,

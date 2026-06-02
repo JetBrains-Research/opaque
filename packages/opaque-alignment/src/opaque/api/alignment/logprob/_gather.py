@@ -4,7 +4,7 @@
 
 :func:`selective_log_softmax` computes ``log_softmax(logits, dim=-1)`` and
 gathers the entry at ``indices`` along the last (vocabulary) axis. It is a
-pure, vmap-safe tensor operation (see plan §3.4): no Python control flow on
+pure tensor operation: no Python control flow on
 tensor values, no ``.item()``, no module state. It works for any leading
 shape ``(...)`` so it composes under ``torch.func.vmap`` (per-example
 ``(T, V)`` / ``(T,)``) and over a batched input ``(B, T, V)`` / ``(B, T)``.

@@ -22,7 +22,7 @@ When ``label_smoothing=0`` the target denominator ``log(ε)`` diverges, so
 the implementation silently floors ``ε`` to ``1e-3`` — identical to TRL's
 behaviour.
 
-This is a pure, vmap-safe Tier-1 loss (§3.3).
+This is a pure loss.
 """
 
 from __future__ import annotations

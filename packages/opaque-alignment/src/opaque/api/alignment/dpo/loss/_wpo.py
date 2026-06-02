@@ -16,14 +16,14 @@ probability on the completion::
     avg_logp = (per_token_logps * mask).sum(-1) / mask.sum(-1).clamp(min=1)
     weight   = avg_logp.detach().exp()
 
-**DP-purity: Tier 1** (§3.3).  The weight is a strict per-example quantity
+ The weight is a strict per-example quantity
 (it depends only on example *i*'s tokens) **and** it is ``.detach()``-ed, so
 it carries no gradient — it acts purely as a per-example reweighting of the
 loss, not as an additional learnable path.  A non-detached weight would
 couple the gradient through the probability term; detaching keeps the design
-inside Tier 1.  Verified by the detach assertion in the unit tests.
+inside the per-example regime.  Verified by the detach assertion in the unit tests.
 
-**vmap-safety (§3.4):** pure elementwise / reduction tensor ops, negative-axis
+**vmap-safety:** pure elementwise / reduction tensor ops, negative-axis
 indexing, ``clamp`` instead of a Python branch on the token count.  No
 ``.item()``, no module state, no Python control flow on tensor values.
 """
@@ -49,7 +49,7 @@ def wpo_weights(
 
     The result is **detached**: it contributes no gradient and serves only as
     a per-example multiplicative reweighting of the downstream loss, keeping
-    the loss in DP Tier 1 (§3.3).
+    the per-example loss.
 
     Args:
         per_token_logps: Per-token log-probabilities of the completion under

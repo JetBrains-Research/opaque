@@ -20,22 +20,22 @@ weighted term ``-p·logp`` w.r.t. the logits would include a second term
 from the derivative of ``p``, changing the loss landscape and breaking
 numeric parity with the TRL reference implementation.
 
-**DP-corrected divisor (plan §3.3 pre-clip rule, §8.2).**
+**DP-corrected divisor.**
 TRL's ``SFTTrainer`` divides by a *batch-level* ``num_items_in_batch`` (the
 total number of non-ignored tokens across the entire batch).  This is a
 cross-example aggregate and is **not DP-safe** as a pre-clip divisor: its
 value changes when any example in the batch changes, coupling per-example
 gradients.  This implementation instead divides by this example's own
 non-ignored token count — ``mask.sum(-1).clamp(min=1)`` — computed
-**before** gradient clipping.  This matches the Tier-1 per-example
+**before** gradient clipping.  This matches the per-example
 pre-clip divisor rule.
 
 ``clamp(min=1)`` on the divisor guards the all-ignored-token edge case.
 
-**DP-purity: Tier 1** (plan §3.3).  Output depends only on this example's
-data.  Verified by NaN-injection contract (plan §11.3).
+ Output depends only on this example's
+data.  Verified by NaN-injection contract.
 
-**Vmap-safety** (plan §3.4): pure tensor operations; no Python control flow
+**Vmap-safety**: pure tensor operations; no Python control flow
 on tensor values; no ``.item()``; no module state.
 """
 

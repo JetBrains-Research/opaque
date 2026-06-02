@@ -17,10 +17,10 @@ Formula::
 where ``Δ = chosen_logratio − rejected_logratio`` and ``σ`` is the
 logistic sigmoid.
 
-**DP-purity: Tier 1** (§3.3).  Loss for example *i* depends only on
+ Loss for example *i* depends only on
 example *i*'s data.  NaN-injection contract holds: a NaN in one
 example's inputs propagates only to that example's output and gradient.
-Vmap-safe (§3.4): pure elementwise tensor ops, no Python control flow
+Vmap-safe: pure elementwise tensor ops, no Python control flow
 on tensor values, no ``.item()``.
 """
 
@@ -60,7 +60,7 @@ def squarechipo_loss(
 
     Returns:
         Per-example scalar loss (same shape as inputs).  All operations
-        are elementwise; the function is vmap-safe.
+        are elementwise; the function is 
     """
     logits = chosen_logratio - rejected_logratio
     return 0.5 * (torch.sigmoid(beta * logits) - 1.0) ** 2

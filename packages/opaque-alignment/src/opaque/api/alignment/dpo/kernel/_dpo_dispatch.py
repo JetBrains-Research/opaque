@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
 """Public DPO dispatcher for the chunked fused-linear preference kernel
-(plan §7.10).
+.
 
 :func:`fused_linear_dpo_loss` is the user-facing entry point. It takes an
 eager per-pair DPO loss callable (``per_pair_loss_fn``, e.g.
@@ -19,7 +19,7 @@ instead of ``O(B · T · V)``. Chunking is a pure partition of the pairs axis, s
 it does **not** change the numeric result (up to floating-point reduction
 order) nor the gradient — see the parity / invariance tests.
 
-**Validation split (plan §7.10).** The GPU peak-memory win (``< (B,T,V)``) is
+**Validation split.** The GPU peak-memory win (``< (B,T,V)``) is
 validated by a Cadence preset; the CPU test-suite validates numeric parity
 against an all-at-once eager reference, ``chunk_size`` invariance, and
 ``torch.func.grad`` composability.
@@ -92,7 +92,7 @@ def fused_linear_dpo_loss(
     chunk_size: int = 1,
     label_smoothing: float = 0.0,
 ) -> torch.Tensor:
-    """Chunked fused-linear DPO preference loss (plan §7.10).
+    """Chunked fused-linear DPO preference loss.
 
     Computes the per-pair DPO loss without materialising the full
     ``(2B, T, V)`` logits tensor. For each chunk of ``chunk_size`` pairs the
