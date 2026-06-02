@@ -113,6 +113,7 @@ def opaque_linear_ce(
         ignore_index,
         softcap,
         label_smoothing,
+        None,
     )
     shifted_labels = labels[..., 1:].contiguous().flatten()
     n_valid = (shifted_labels != ignore_index).sum().float().clamp(min=1)
@@ -892,6 +893,7 @@ class TestLinearCEWrapper:
             -100,
             0,
             0.0,
+            None,
         )
         shifted = labels[..., 1:].contiguous().flatten()
         n_valid = (shifted != -100).sum().float().clamp(min=1)
@@ -911,6 +913,101 @@ class TestLinearCEWrapper:
             rtol=1e-5,
             atol=1e-5,
             label="loss",
+        )
+
+
+# ============================================================================
+# token_weight: per-token weighting (DFT confidence scaling, soft/turn masks)
+# ============================================================================
+
+
+def _eager_weighted_ce_sum(hidden, weight, labels, token_weight, ignore_index=-100):
+    """Reference: Σ_t w_t · CE(logits_t, target_t) over non-ignored shifted tokens."""
+    logits = hidden[..., :-1, :].float() @ weight.float().t()
+    targets = labels[..., 1:].reshape(-1)
+    tw = token_weight[..., 1:].reshape(-1).float()
+    ce = F.cross_entropy(
+        logits.reshape(-1, logits.size(-1)),
+        targets,
+        ignore_index=ignore_index,
+        reduction="none",
+    )
+    return (ce * tw).sum()
+
+
+class TestLinearCETokenWeight:
+    """Per-token ``token_weight`` parity: weighted CE sum and its gradients."""
+
+    @staticmethod
+    def _inputs(seed=0):
+        torch.manual_seed(seed)
+        b, s, d, v = 2, 24, 64, 32768
+        hidden = torch.randn(b, s, d, device="cuda", dtype=torch.bfloat16)
+        weight = torch.randn(v, d, device="cuda", dtype=torch.bfloat16)
+        labels = torch.randint(0, v, (b, s), device="cuda")
+        labels[:, -4:] = -100  # exercise ignore_index alongside the weights
+        token_weight = torch.rand(b, s, device="cuda", dtype=torch.bfloat16) + 0.1
+        return hidden, weight, labels, token_weight
+
+    def test_unit_weight_matches_plain(self):
+        """``token_weight`` of all ones reproduces the unweighted ``nll_sum`` exactly."""
+        hidden, weight, labels, _ = self._inputs(seed=2)
+        ones = torch.ones_like(labels, dtype=torch.bfloat16)
+        out_w = Opaque_LinearCrossEntropyLoss.apply(
+            hidden, weight, labels, -100, 0, 0.0, ones
+        )
+        out_plain = Opaque_LinearCrossEntropyLoss.apply(
+            hidden, weight, labels, -100, 0, 0.0, None
+        )
+        torch.testing.assert_close(
+            out_w.float(), out_plain.float(), rtol=1e-4, atol=1e-4
+        )
+
+    def test_forward_matches_weighted_reference(self):
+        hidden, weight, labels, tw = self._inputs(seed=1)
+        out = Opaque_LinearCrossEntropyLoss.apply(
+            hidden, weight, labels, -100, 0, 0.0, tw
+        )
+        ref = _eager_weighted_ce_sum(hidden, weight, labels, tw)
+        torch.testing.assert_close(out.float(), ref, rtol=1e-2, atol=5e-3)
+
+    def test_backward_matches_weighted_reference(self):
+        hidden, weight, labels, tw = self._inputs(seed=3)
+        h1 = hidden.clone().requires_grad_(True)
+        w1 = weight.clone().requires_grad_(True)
+        Opaque_LinearCrossEntropyLoss.apply(h1, w1, labels, -100, 0, 0.0, tw).backward()
+
+        h2 = hidden.clone().requires_grad_(True)
+        w2 = weight.clone().requires_grad_(True)
+        _eager_weighted_ce_sum(h2, w2, labels, tw).backward()
+
+        torch.testing.assert_close(
+            h1.grad.float(), h2.grad.float(), rtol=2e-2, atol=5e-3
+        )
+        torch.testing.assert_close(
+            w1.grad.float(), w2.grad.float(), rtol=2e-2, atol=5e-3
+        )
+
+    def test_vmap_grad_per_sample(self):
+        """vmap(grad) over the batch (the DP-SGD path) gives per-sample weighted grads."""
+        hidden, weight, labels, tw = self._inputs(seed=4)
+
+        def loss(h, lab, w_tok):
+            return Opaque_LinearCrossEntropyLoss.apply(
+                h, weight, lab, -100, 0, 0.0, w_tok
+            )
+
+        g = vmap(grad(loss))(hidden, labels, tw)
+        assert g.shape == hidden.shape
+        assert torch.isfinite(g).all()
+
+        # Sample 0 must match a standalone (non-vmap) weighted backward.
+        h0 = hidden[0:1].clone().requires_grad_(True)
+        Opaque_LinearCrossEntropyLoss.apply(
+            h0, weight, labels[0:1], -100, 0, 0.0, tw[0:1]
+        ).backward()
+        torch.testing.assert_close(
+            g[0].float(), h0.grad[0].float(), rtol=2e-2, atol=5e-3
         )
 
 
