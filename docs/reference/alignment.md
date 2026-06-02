@@ -98,6 +98,22 @@ Factory functions returning a `collate(examples)` callable.
   — split an implicit shared prompt out of a preference example before
   tokenizing.
 
+### Data
+
+Shared chat-template data prep ([`opaque.alignment.data`](#api-documentation)).
+Install a training chat template, then tokenize chat turns into `input_ids` +
+a `completion_mask` for completion-only loss.
+
+- **`clone_chat_template()`** — copy a chat template (and its special tokens)
+  from a source tokenizer onto a destination tokenizer and resize the model's
+  embedding matrix to match.
+- **`get_training_chat_template()`** — return a chat-template string carrying
+  assistant-turn `{% generation %}` markers so the assistant-token mask is
+  recoverable at tokenization time.
+- **`apply_chat_template_with_mask()`** — tokenize a chat conversation into
+  `input_ids` + `completion_mask` (`1` on assistant tokens), the mask consumed
+  by `language_modeling_collator(..., completion_only_loss=True)`.
+
 ### Reference handling
 
 Reference-model helpers for DPO. These run **outside** the per-example
@@ -141,6 +157,11 @@ toggles.
       heading_level: 3
 
 ::: opaque.alignment.sft.collator.types
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.alignment.data
     options:
       show_source: true
       heading_level: 3

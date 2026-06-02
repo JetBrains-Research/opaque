@@ -8,21 +8,24 @@ method owns its primitives under its own namespace —
   and preference prompt extraction.
 - :mod:`opaque.alignment.sft` — NLL / DFT losses and the language-modeling
   collator.
+- :mod:`opaque.alignment.data` — shared, method-agnostic chat-template data
+  prep: install a training chat template, then tokenize chat turns into
+  ``input_ids`` + a ``completion_mask`` for completion-only loss.
 
-Shared, lower-level primitives (logprob, general token metrics, chat-template
-data transforms) are internal impl under ``opaque.api.alignment.*`` and are
-surfaced through the method that consumes them (e.g. ``sequence_logp`` via
+Other shared, lower-level primitives (logprob, general token metrics) are
+internal impl under ``opaque.api.alignment.*`` and are surfaced through the
+method that consumes them (e.g. ``sequence_logp`` via
 :mod:`opaque.alignment.dpo`), following the shared-impl re-import pattern of
 ``opaque.dpsgd.clipping``.
 """
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-from opaque.alignment import dpo, sft
+from opaque.alignment import data, dpo, sft
 
 try:
     __version__ = _pkg_version("opaque-alignment")
 except PackageNotFoundError:
     __version__ = "0.0.0"
 
-__all__ = ["__version__", "dpo", "sft"]
+__all__ = ["__version__", "data", "dpo", "sft"]

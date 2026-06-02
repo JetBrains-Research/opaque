@@ -46,6 +46,37 @@ emitted too. Sequences longer than `max_length` are truncated keep-start
 (matching TRL's `SFTTrainer`); no example is dropped. Pass
 `pad_to_multiple_of=` to round the padded length up.
 
+### Completion-only loss from chat data
+
+To train only on assistant turns, the collator needs a `completion_mask`
+(`1` on assistant tokens, `0` on the prompt). Produce it from a chat
+dataset with the `opaque.alignment.data` helpers: install
+`{% generation %}` markers on the tokenizer's chat template with
+`get_training_chat_template`, then tokenize each conversation with
+`apply_chat_template_with_mask`.
+
+```python
+from opaque.alignment.data import (
+    get_training_chat_template,
+    apply_chat_template_with_mask,
+)
+
+tokenizer.chat_template = get_training_chat_template(tokenizer)
+row = apply_chat_template_with_mask(tokenizer, conversation)
+# row -> {"input_ids", "completion_mask", "attention_mask"}
+
+collate = language_modeling_collator(
+    tokenizer.pad_token_id, max_length, completion_only_loss=True
+)
+batch = collate([row, ...])  # labels are -100 on prompt + pad tokens
+```
+
+The collator reads `completion_mask` and sets `labels` to `-100`
+everywhere the mask is `0`, so the loss only sees assistant tokens. The
+markers are mandatory: `apply_chat_template_with_mask` raises if the
+active template lacks `{% generation %}` (HF cannot recover the mask
+otherwise).
+
 ## 2. Per-example loss
 
 The loss runs *inside* `vmap(grad(...))`, so it is written for a single
