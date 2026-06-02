@@ -37,7 +37,7 @@ Method-first, mirroring `opaque.dpsgd` / `opaque.dpftrl`: each method owns its
 primitives under its own namespace.
 
 ```
-opaque.alignment                         <- top-level façade (exposes dpo, sft)
+opaque.alignment                         <- top-level façade (dpo, sft, data, metric)
 opaque.api.alignment                     <- implementation namespace
 opaque.alignment.dpo                     <- DPO method façade (aggregates the below)
 opaque.alignment.dpo.loss                <- logp + 14 per-pair heads + log-ratio combinators
@@ -47,6 +47,8 @@ opaque.alignment.dpo.metric              <- preference reward telemetry
 opaque.alignment.dpo.data                <- preference prompt extraction
 opaque.alignment.sft.loss                <- nll_loss, dft_loss + fused_nll_loss, fused_dft_loss
 opaque.alignment.sft.collator            <- language-modeling (SFT) collator
+opaque.alignment.data                    <- chat-template prep + completion-mask tokenization
+opaque.alignment.metric                  <- shared token metrics (accuracy, entropy)
 ```
 
 `opaque.alignment.dpo.loss` is the DPO loss-construction toolkit: the per-sequence

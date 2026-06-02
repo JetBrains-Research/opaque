@@ -26,8 +26,8 @@ losses cannot use.  (``train_causal_lm.py`` can opt into the fused kernel becaus
 it consumes ``output.loss`` directly.)
 
 Eval reports held-out *language-modeling* quality — mean eval loss + perplexity,
-plus token accuracy / prediction entropy when ``opaque.alignment.metric`` is
-available — NOT reward metrics (those are DPO-specific).
+plus token accuracy / prediction entropy (``opaque.alignment.metric``) — NOT
+reward metrics (those are DPO-specific).
 
 ----------------------------------------------------------------------------
 COMPLETION-ONLY LOSS FROM CHAT DATA (``--completion-only``)
@@ -157,20 +157,8 @@ from opaque.alignment.data import (
     get_training_chat_template,
 )
 
-# Token-level eval telemetry (mean token accuracy / prediction entropy).  These
-# live under the shared-impl ``opaque.api.alignment.metric`` namespace; guard
-# the import so the eval path degrades gracefully if they are unavailable.
-try:
-    from opaque.api.alignment.metric import (
-        entropy_from_logits,
-        mean_token_accuracy,
-    )
-
-    _HAVE_TOKEN_METRICS = True
-except ImportError:  # pragma: no cover - optional telemetry
-    entropy_from_logits = None
-    mean_token_accuracy = None
-    _HAVE_TOKEN_METRICS = False
+# Token-level eval telemetry (mean token accuracy / prediction entropy).
+from opaque.alignment.metric import entropy_from_logits, mean_token_accuracy
 
 # DP-FTRL mechanism swap: the loss closure is mechanism-agnostic.
 # To run DP-FTRL instead of DP-SGD, replace the two ``opaque.dpsgd`` noise/
@@ -1611,9 +1599,9 @@ def main():
         """Held-out language-modeling metrics over the eval set.
 
         Token-weighted mean cross-entropy (pad / non-completion positions masked
-        to ``-100`` by the collator) + its perplexity, and — when
-        ``opaque.alignment.metric`` is available — mean next-token accuracy and
-        prediction entropy over the supervised positions.  All forwards run
+        to ``-100`` by the collator) + its perplexity, plus mean next-token
+        accuracy and prediction entropy (``opaque.alignment.metric``) over the
+        supervised positions.  All forwards run
         under ``torch.no_grad()`` outside the clipped path.  Returns a dict of
         floats; an empty eval set yields ``nan`` loss / accuracy.
         """
@@ -1635,15 +1623,16 @@ def main():
                 ex_tokens = (labels[..., 1:] != -100).sum(-1).clamp(min=1)
                 total_loss += float((per_example_ce * ex_tokens).sum().item())
                 total_tokens += num_tokens
-                if _HAVE_TOKEN_METRICS:
-                    mask = (labels != -100).to(out.logits.dtype)
-                    acc_sum += float(
-                        mean_token_accuracy(out.logits, labels, mask).item()
-                    ) * num_tokens
-                    ent_sum += float(
-                        entropy_from_logits(out.logits[..., :-1, :], mask[..., 1:]).item()
-                    ) * num_tokens
-                    metric_tokens += num_tokens
+                mask = (labels != -100).to(out.logits.dtype)
+                acc_sum += (
+                    float(mean_token_accuracy(out.logits, labels, mask).item())
+                    * num_tokens
+                )
+                ent_sum += (
+                    float(entropy_from_logits(out.logits[..., :-1, :], mask[..., 1:]).item())
+                    * num_tokens
+                )
+                metric_tokens += num_tokens
             if total_tokens == 0:
                 return {
                     "eval/loss": float("nan"),
@@ -1656,7 +1645,7 @@ def main():
                 "eval/loss": mean_loss,
                 "eval/perplexity": float(torch.exp(torch.tensor(mean_loss)).item()),
             }
-            if _HAVE_TOKEN_METRICS and metric_tokens > 0:
+            if metric_tokens > 0:
                 result["eval/token_accuracy"] = acc_sum / metric_tokens
                 result["eval/entropy"] = ent_sum / metric_tokens
             return result

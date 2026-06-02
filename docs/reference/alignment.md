@@ -135,10 +135,18 @@ toggles.
 
 ### Metrics
 
-- **`reward_metrics()`** ([`opaque.alignment.dpo.metric`](#api-documentation))
-  — `rewards/chosen`, `rewards/rejected`, `rewards/accuracies`,
-  `rewards/margins` from per-example log-ratios; every returned tensor is
-  detached so it cannot leak gradient into the mechanism.
+Detached, logging-only telemetry. Shared token metrics
+([`opaque.alignment.metric`](#api-documentation)):
+
+- **`mean_token_accuracy()`** — mean next-token argmax accuracy over the
+  supervised (non-ignored) positions.
+- **`entropy_from_logits()`** — mean per-token predictive entropy.
+
+Preference reward telemetry ([`opaque.alignment.dpo.metric`](#api-documentation)):
+
+- **`reward_metrics()`** — `rewards/chosen`, `rewards/rejected`,
+  `rewards/accuracies`, `rewards/margins` from per-example log-ratios; every
+  returned tensor is detached so it cannot leak gradient into the mechanism.
 
 **See also**: [Alignment overview](../alignment/index.md),
 [SFT end-to-end](../alignment/sft.md), [DPO end-to-end](../alignment/dpo.md).
@@ -186,6 +194,11 @@ toggles.
       heading_level: 3
 
 ::: opaque.alignment.dpo.metric
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.alignment.metric
     options:
       show_source: true
       heading_level: 3
