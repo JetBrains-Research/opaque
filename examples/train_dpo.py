@@ -25,6 +25,12 @@ W&B — and swaps in the DPO-specific loss, data, and reference machinery from
     Each loss output for example *i* depends only on example *i*'s data, so
     per-example sensitivity stays ``O(C)`` after clipping.
 
+The reference-free methods (``simpo``/``cpo``/``orpo``) score the policy
+log-prob directly, so they skip the reference precompute and the two ref-logp
+tensors entirely: their per-example loss takes only the six preference tensors
+(chosen/rejected ids, attention masks, completion masks) and runs the same
+per-example vmap DP-SGD path with ``_BATCH_ARGNUMS_REF_FREE``.
+
 Eval reports *reward metrics* on held-out preference pairs (chosen/rejected
 reward means, accuracy, margin via ``reward_metrics``), NOT perplexity — DPO has
 no token-level CE eval objective.
@@ -156,10 +162,13 @@ from opaque.alignment.dpo.loss import (
     exo_loss,
     hinge_loss,
     ipo_loss,
+    mpo_combine,
     nca_loss,
+    odds_ratio_loss,
     robust_loss,
     sequence_logp,
     sigmoid_loss,
+    simpo_loss,
     sppo_loss,
     squarechipo_loss,
 )
@@ -194,11 +203,21 @@ _DPO_LOSSES = {
     "sppo": sppo_loss,
 }
 
+# Reference-free preference methods score the policy log-prob directly and need
+# no frozen reference model, so they skip the reference precompute and the two
+# ref-logp tensors. Each is mapped to its loss at the call site below.
+_REFERENCE_FREE = {"simpo", "cpo", "orpo"}
+
 # The 8 per-example loss arguments after the trainable params (argnums=0):
 # chosen_ids, chosen_mask, chosen_cmask, rejected_ids, rejected_mask,
 # rejected_cmask, ref_chosen_logps, ref_rejected_logps. The vmap batch axis is
 # taken over all of them, so batch_argnums lists every index 1..8.
 _BATCH_ARGNUMS = (1, 2, 3, 4, 5, 6, 7, 8)
+
+# Reference-free methods take only the six per-example preference tensors —
+# chosen/rejected ids, attention masks, and completion masks — with no ref-logp
+# columns, so the vmap batch axis spans indices 1..6.
+_BATCH_ARGNUMS_REF_FREE = (1, 2, 3, 4, 5, 6)
 
 
 def _effective(value):
@@ -534,6 +553,87 @@ def _make_per_example_loss(fmodel, frozen, *, loss_type, beta):
     return per_example_loss
 
 
+def _make_reference_free_loss(
+    fmodel,
+    frozen,
+    *,
+    loss_type,
+    beta,
+    simpo_gamma=1.0,
+    cpo_alpha=1.0,
+    orpo_lambda=1.0,
+):
+    """Build a reference-free per-example loss closure (TWO forwards, no ref).
+
+    The returned callable has signature::
+
+        per_example_loss(
+            trainable_params,
+            chosen_ids, chosen_mask, chosen_cmask,
+            rejected_ids, rejected_mask, rejected_cmask,
+        ) -> per-example scalar loss
+
+    which is ``argnums=0`` (trainable params) + the 6 per-example preference
+    args in ``_BATCH_ARGNUMS_REF_FREE``. No reference logps appear because SimPO,
+    CPO, and ORPO score the policy log-prob directly. ``frozen`` first in the
+    merge so trainable params win on key collision. Each output depends only on
+    this example's data, so per-example sensitivity stays ``O(C)`` after
+    clipping.
+
+    SimPO and ORPO use length-normalized completion log-probs; CPO uses the raw
+    (un-normalized) chosen/rejected log-probs as the preference signal.
+    """
+
+    def per_example_loss(
+        trainable_params,
+        chosen_ids,
+        chosen_mask,
+        chosen_cmask,
+        rejected_ids,
+        rejected_mask,
+        rejected_cmask,
+    ):
+        merged = {**frozen, **trainable_params}
+        chosen_out = fmodel(merged, input_ids=chosen_ids, attention_mask=chosen_mask)
+        rejected_out = fmodel(
+            merged, input_ids=rejected_ids, attention_mask=rejected_mask
+        )
+        if loss_type == "cpo":
+            # CPO scores the raw (NOT length-normalized) completion log-probs:
+            # a sigmoid preference term blended with a chosen-NLL regulariser.
+            chosen_logp = sequence_logp(chosen_out.logits, chosen_ids, chosen_cmask)
+            rejected_logp = sequence_logp(
+                rejected_out.logits, rejected_ids, rejected_cmask
+            )
+            return mpo_combine(
+                {
+                    "pref": sigmoid_loss(chosen_logp, rejected_logp, beta=beta),
+                    "nll": chosen_nll_loss(chosen_logp),
+                },
+                {"pref": 1.0, "nll": cpo_alpha},
+            )
+
+        # SimPO and ORPO both score length-normalized completion log-probs.
+        chosen_logp = sequence_logp(
+            chosen_out.logits, chosen_ids, chosen_cmask, length_normalized=True
+        )
+        rejected_logp = sequence_logp(
+            rejected_out.logits, rejected_ids, rejected_cmask, length_normalized=True
+        )
+        if loss_type == "simpo":
+            return simpo_loss(chosen_logp, rejected_logp, beta=beta, gamma=simpo_gamma)
+        # ORPO: odds-ratio preference term blended with a chosen-NLL regulariser.
+        return mpo_combine(
+            {
+                "or": odds_ratio_loss(chosen_logp, rejected_logp),
+                "nll": chosen_nll_loss(chosen_logp),
+            },
+            {"or": 1.0, "nll": orpo_lambda},
+        )
+
+    return per_example_loss
+
+
 def _make_ref_callable(model, device=None):
     """Wrap a model into a ``ref`` callable for compute_ref_logprobs_for_dataset.
 
@@ -670,15 +770,36 @@ def parse_args():
     dpo_group.add_argument(
         "--loss-type",
         type=str,
-        choices=sorted(_DPO_LOSSES),
+        choices=sorted(set(_DPO_LOSSES) | _REFERENCE_FREE),
         default="sigmoid",
-        help="DPO loss variant (direct functions from opaque.alignment.dpo).",
+        help="DPO loss variant (direct functions from opaque.alignment.dpo). "
+        "Reference-based heads score policy log-ratios against a frozen "
+        "reference; the reference-free methods simpo/cpo/orpo score the "
+        "policy log-prob directly and skip the reference precompute.",
     )
     dpo_group.add_argument(
         "--beta",
         type=float,
         default=0.1,
         help="DPO temperature beta (reference-deviation strength).",
+    )
+    dpo_group.add_argument(
+        "--simpo-gamma",
+        type=float,
+        default=1.0,
+        help="SimPO target reward margin γ (reference-free --loss-type simpo).",
+    )
+    dpo_group.add_argument(
+        "--cpo-alpha",
+        type=float,
+        default=1.0,
+        help="CPO chosen-NLL regulariser weight α (reference-free --loss-type cpo).",
+    )
+    dpo_group.add_argument(
+        "--orpo-lambda",
+        type=float,
+        default=1.0,
+        help="ORPO chosen-NLL regulariser weight λ (reference-free --loss-type orpo).",
     )
 
     train_group = parser.add_argument_group("training", "Training loop settings")
@@ -1116,12 +1237,15 @@ def parse_args():
 def _run_smoke(args):
     """Tiny CPU smoke test: random Llama, synthetic prefs, 2 real DP-SGD steps.
 
-    Builds a tiny randomly-initialized LlamaForCausalLM (no network), a small
-    synthetic preference dataset, precomputes reference logps (using the model
-    itself as the reference), and runs the full per-example vmap DP-SGD path for
-    2 steps, printing the DPO loss each step. On a genuine vmap failure it falls
-    back to a single non-vmap chosen+rejected forward + DPO loss so the smoke
-    still exits 0 (documented in the module header).
+    Builds a tiny randomly-initialized LlamaForCausalLM (no network) and a small
+    synthetic preference dataset, then runs the full per-example vmap DP-SGD path
+    for 2 steps, printing the loss each step. It respects ``--loss-type``: the
+    reference-based path precomputes reference logps (using the model itself as
+    the reference) and dispatches an 8-tuple batch, while the reference-free path
+    (simpo/cpo/orpo) skips the precompute and dispatches the six preference
+    tensors. On a genuine vmap failure it falls back to a single non-vmap
+    chosen+rejected forward + loss so the smoke still exits 0 (documented in the
+    module header).
     """
     from transformers import LlamaConfig
 
@@ -1192,26 +1316,34 @@ def _run_smoke(args):
 
     collate = preference_collator(pad_token_id, max_length)
 
+    reference_free = loss_type in _REFERENCE_FREE
+
     # --- Precompute reference logps ONCE, outside vmap, to a tmp cache dir ---
-    # For the smoke we use the model itself as the (frozen) reference. The cache
-    # goes to a per-run temp directory so the smoke is hermetic (no network, no
-    # shared state across runs) — adversarial self-review: local cache_dir.
-    print("\nPrecomputing reference logps (model-as-ref, tmp cache)...")
-    with tempfile.TemporaryDirectory(prefix="opaque_dpo_smoke_") as cache_dir:
-        dataset = compute_ref_logprobs_for_dataset(
-            dataset,
-            _make_ref_callable(model),
-            collator=collate,
-            output_columns=("ref_chosen_logps", "ref_rejected_logps"),
-            batch_size=batch_size,
-            cache_key=("dpo", "smoke"),
-            cache_dir=cache_dir,
+    # Reference-based heads need the frozen reference logps; reference-free
+    # methods (simpo/cpo/orpo) score the policy log-prob directly and skip the
+    # precompute entirely. For the smoke the model itself serves as the (frozen)
+    # reference. The cache goes to a per-run temp directory so the smoke is
+    # hermetic (no network, no shared state across runs) — local cache_dir.
+    if reference_free:
+        print("\nReference-free loss (no reference precompute).")
+        rows = list(dataset)
+    else:
+        print("\nPrecomputing reference logps (model-as-ref, tmp cache)...")
+        with tempfile.TemporaryDirectory(prefix="opaque_dpo_smoke_") as cache_dir:
+            dataset = compute_ref_logprobs_for_dataset(
+                dataset,
+                _make_ref_callable(model),
+                collator=collate,
+                output_columns=("ref_chosen_logps", "ref_rejected_logps"),
+                batch_size=batch_size,
+                cache_key=("dpo", "smoke"),
+                cache_dir=cache_dir,
+            )
+        rows = list(dataset)  # each row now carries the ref_*_logps columns
+        print(
+            f"  ref columns added: ref_chosen_logps[0]={rows[0]['ref_chosen_logps']:.4f}, "
+            f"ref_rejected_logps[0]={rows[0]['ref_rejected_logps']:.4f}"
         )
-    rows = list(dataset)  # now each row carries ref_chosen_logps / ref_rejected_logps
-    print(
-        f"  ref columns added: ref_chosen_logps[0]={rows[0]['ref_chosen_logps']:.4f}, "
-        f"ref_rejected_logps[0]={rows[0]['ref_rejected_logps']:.4f}"
-    )
 
     # --- Functional conversion (everything trainable on this tiny model) ---
     fmodel, trainable, frozen = make_functional(
@@ -1219,9 +1351,22 @@ def _run_smoke(args):
     )
     print(f"Trainable param tensors: {len(trainable)} | frozen: {len(frozen)}")
 
-    per_example_loss = _make_per_example_loss(
-        fmodel, frozen, loss_type=loss_type, beta=beta
-    )
+    if reference_free:
+        per_example_loss = _make_reference_free_loss(
+            fmodel,
+            frozen,
+            loss_type=loss_type,
+            beta=beta,
+            simpo_gamma=args.simpo_gamma,
+            cpo_alpha=args.cpo_alpha,
+            orpo_lambda=args.orpo_lambda,
+        )
+        batch_argnums = _BATCH_ARGNUMS_REF_FREE
+    else:
+        per_example_loss = _make_per_example_loss(
+            fmodel, frozen, loss_type=loss_type, beta=beta
+        )
+        batch_argnums = _BATCH_ARGNUMS
 
     # --- Try the full per-example vmap DP-SGD path; fall back if it breaks ---
     try:
@@ -1230,7 +1375,7 @@ def _run_smoke(args):
         grad_fn, clip_state = clipped_grad(
             per_example_loss,
             argnums=0,
-            batch_argnums=_BATCH_ARGNUMS,
+            batch_argnums=batch_argnums,
             clipping_norm=args.clipping_norm,
             normalize_by=batch_size,
             return_aux=True,
@@ -1253,7 +1398,12 @@ def _run_smoke(args):
         )
         step = 0
         for indices in sampler:
-            batch = _collate_to_device(collate, [rows[i] for i in indices], device)
+            batch = _collate_to_device(
+                collate,
+                [rows[i] for i in indices],
+                device,
+                reference_free=reference_free,
+            )
             (grads, aux), clip_state = grad_fn(trainable, *batch, state=clip_state)
             noisy_grads, noise_state = noise_fn(grads, noise_state)
             updates, opt_state = base_opt.update(
@@ -1279,48 +1429,37 @@ def _run_smoke(args):
             "loss to validate the loss wiring. The full per-example DP-SGD run "
             "is validated via the Cadence GPU preset."
         )
-        batch = _collate_to_device(collate, rows[:batch_size], device)
-        (
-            chosen_ids,
-            chosen_mask,
-            chosen_cmask,
-            rejected_ids,
-            rejected_mask,
-            rejected_cmask,
-            ref_chosen_logps,
-            ref_rejected_logps,
-        ) = batch
+        batch = _collate_to_device(
+            collate, rows[:batch_size], device, reference_free=reference_free
+        )
         with torch.no_grad():
-            chosen_out = model(input_ids=chosen_ids, attention_mask=chosen_mask)
-            rejected_out = model(input_ids=rejected_ids, attention_mask=rejected_mask)
-            chosen_logp = sequence_logp(chosen_out.logits, chosen_ids, chosen_cmask)
-            rejected_logp = sequence_logp(
-                rejected_out.logits, rejected_ids, rejected_cmask
-            )
-            loss = _DPO_LOSSES[loss_type](
-                chosen_logp - ref_chosen_logps,
-                rejected_logp - ref_rejected_logps,
-                beta=beta,
-            )
+            loss = per_example_loss(trainable, *batch)
         print(f"  non-vmap batch dpo_loss (per-example mean): {loss.mean().item():.4f}")
         print("\nSmoke OK (fallback path): DPO loss wiring validated.")
         return 0
 
 
-def _collate_to_device(collate, examples, device):
-    """Collate raw preference rows and return the 8-tuple in batch_argnums order.
+def _collate_to_device(collate, examples, device, *, reference_free=False):
+    """Collate raw preference rows into the per-example batch tuple on ``device``.
 
-    The tuple order matches ``_BATCH_ARGNUMS`` and the per-example loss signature:
-    chosen (ids, mask, cmask), rejected (ids, mask, cmask), ref (chosen, rejected).
+    Reference-based mode returns the 8-tuple in ``_BATCH_ARGNUMS`` order: chosen
+    (ids, mask, cmask), rejected (ids, mask, cmask), ref (chosen, rejected).
+    Reference-free mode (SimPO/CPO/ORPO) returns only the six preference tensors
+    in ``_BATCH_ARGNUMS_REF_FREE`` order and does not require the ref columns —
+    the precompute is skipped for those methods.
     """
     b = collate(examples)
-    return (
+    six = (
         b["chosen_input_ids"].to(device),
         b["chosen_attention_mask"].to(device),
         b["chosen_completion_mask"].to(device),
         b["rejected_input_ids"].to(device),
         b["rejected_attention_mask"].to(device),
         b["rejected_completion_mask"].to(device),
+    )
+    if reference_free:
+        return six
+    return six + (
         b["ref_chosen_logps"].to(device),
         b["ref_rejected_logps"].to(device),
     )
@@ -1550,41 +1689,55 @@ def main():
         f"Prepared datasets: {len(train_dataset)} train pairs, {len(eval_dataset)} eval pairs"
     )
 
-    # Preference collator (opaque-alignment primitive: 6 mandatory tensors +
-    # the 2 precomputed ref-logp columns once those are attached).
+    # Reference-free methods (simpo/cpo/orpo) score the policy log-prob directly,
+    # so they skip the reference precompute and the two ref-logp tensors. This
+    # flag selects the per-example batch shape, loss closure, and batch_argnums
+    # everywhere below.
+    reference_free = args.loss_type in _REFERENCE_FREE
+    batch_argnums = _BATCH_ARGNUMS_REF_FREE if reference_free else _BATCH_ARGNUMS
+
+    # Preference collator (opaque-alignment primitive: 6 mandatory tensors, plus
+    # the 2 precomputed ref-logp columns in the reference-based path once those
+    # are attached).
     collate_raw = preference_collator(tokenizer.pad_token_id, args.max_length)
 
     def collate(examples):
-        return _collate_to_device(collate_raw, examples, device)
+        return _collate_to_device(
+            collate_raw, examples, device, reference_free=reference_free
+        )
 
     # --- Precompute reference logps (LoRA base model as frozen reference) -----
     # ``null_ref_context(model)`` disables the LoRA adapter for the duration of
     # the precompute, so the un-adapted base weights serve as the reference
     # policy (the canonical LoRA-DPO reference).  The expensive ref
     # forward runs at most once and is cached to a content-addressed ``.npz``.
-    print("\nPrecomputing reference logps (LoRA base as ref, cached to disk)...")
-    ref_callable = _make_ref_callable(model, device=device)
-    with null_ref_context(model):
-        train_dataset = compute_ref_logprobs_for_dataset(
-            train_dataset,
-            ref_callable,
-            collator=collate_raw,
-            output_columns=("ref_chosen_logps", "ref_rejected_logps"),
-            batch_size=args.eval_batch_size,
-            cache_key=("dpo", args.model_name, "train", args.num_train_samples),
+    # Reference-free methods skip this entirely.
+    if reference_free:
+        print("\nReference-free loss selected (skipping reference precompute).")
+    else:
+        print("\nPrecomputing reference logps (LoRA base as ref, cached to disk)...")
+        ref_callable = _make_ref_callable(model, device=device)
+        with null_ref_context(model):
+            train_dataset = compute_ref_logprobs_for_dataset(
+                train_dataset,
+                ref_callable,
+                collator=collate_raw,
+                output_columns=("ref_chosen_logps", "ref_rejected_logps"),
+                batch_size=args.eval_batch_size,
+                cache_key=("dpo", args.model_name, "train", args.num_train_samples),
+            )
+            eval_dataset = compute_ref_logprobs_for_dataset(
+                eval_dataset,
+                ref_callable,
+                collator=collate_raw,
+                output_columns=("ref_chosen_logps", "ref_rejected_logps"),
+                batch_size=args.eval_batch_size,
+                cache_key=("dpo", args.model_name, "eval", args.num_eval_samples),
+            )
+        print(
+            f"  ref_chosen_logps[0]={train_dataset[0]['ref_chosen_logps']:.4f}, "
+            f"ref_rejected_logps[0]={train_dataset[0]['ref_rejected_logps']:.4f}"
         )
-        eval_dataset = compute_ref_logprobs_for_dataset(
-            eval_dataset,
-            ref_callable,
-            collator=collate_raw,
-            output_columns=("ref_chosen_logps", "ref_rejected_logps"),
-            batch_size=args.eval_batch_size,
-            cache_key=("dpo", args.model_name, "eval", args.num_eval_samples),
-        )
-    print(
-        f"  ref_chosen_logps[0]={train_dataset[0]['ref_chosen_logps']:.4f}, "
-        f"ref_rejected_logps[0]={train_dataset[0]['ref_rejected_logps']:.4f}"
-    )
 
     # Privacy auditing setup: designate canaries and remove held-out ones
     audit_cf = None
@@ -1672,15 +1825,28 @@ def main():
     print(f"Trainable parameters: {len(param_names)} (took {elapsed:.1f}s)")
     print_memory(device, "After functional conversion")
 
-    # Per-example DPO loss closure (TWO forwards: chosen + rejected; log-ratios
-    # against the precomputed reference logps).  Output for example i depends
-    # only on example i's data, so per-example sensitivity is O(C).
-    per_example_loss_fn = _make_per_example_loss(
-        fmodel, frozen_params, loss_type=args.loss_type, beta=args.beta
-    )
+    # Per-example DPO loss closure (TWO forwards: chosen + rejected).  Output for
+    # example i depends only on example i's data, so per-example sensitivity is
+    # O(C).  Reference-based heads form log-ratios against the precomputed
+    # reference logps; reference-free methods score the policy log-prob directly.
+    if reference_free:
+        per_example_loss_fn = _make_reference_free_loss(
+            fmodel,
+            frozen_params,
+            loss_type=args.loss_type,
+            beta=args.beta,
+            simpo_gamma=args.simpo_gamma,
+            cpo_alpha=args.cpo_alpha,
+            orpo_lambda=args.orpo_lambda,
+        )
+    else:
+        per_example_loss_fn = _make_per_example_loss(
+            fmodel, frozen_params, loss_type=args.loss_type, beta=args.beta
+        )
 
     # Build canary DataLoader for auditing (DPO loss-based membership scoring:
-    # the per-example DPO loss is the membership signal, scored over the 8-tuple).
+    # the per-example DPO loss is the membership signal, scored over the
+    # per-example batch tuple).
     canary_loader = None
     if args.audit and audit_cf is not None:
         canary_loader = DataLoader(
@@ -1698,7 +1864,7 @@ def main():
         scores = auditing.loss_scores(
             per_example_loss_fn,
             trainable,
-            batch_argnums=_BATCH_ARGNUMS,
+            batch_argnums=batch_argnums,
             dataloader=canary_loader,
             reference_scores=audit_ref_scores,
         )
@@ -1715,7 +1881,7 @@ def main():
         audit_ref_scores = auditing.loss_scores(
             per_example_loss_fn,
             trainable_params,
-            batch_argnums=_BATCH_ARGNUMS,
+            batch_argnums=batch_argnums,
             dataloader=canary_loader,
         )
         print(
@@ -1728,28 +1894,56 @@ def main():
         For DPO, eval = chosen/rejected reward means, accuracy, and margin on
         held-out preference pairs (NOT perplexity).  Returns a dict of floats;
         empty eval set yields ``nan`` accuracy.
+
+        Reference-based heads report the policy-vs-reference log-ratios as the
+        per-example rewards.  Reference-free methods have no reference, so the
+        reward is the policy completion log-prob directly (length-normalized for
+        simpo/orpo to match their scoring, raw for cpo).
         """
+        length_normalized = args.loss_type in {"simpo", "orpo"}
         with torch.no_grad():
             merged = {**frozen_params, **trainable}
             chosen_lrs = []
             rejected_lrs = []
             for batch in eval_loader:
-                (
-                    chosen_ids,
-                    chosen_mask,
-                    chosen_cmask,
-                    rejected_ids,
-                    rejected_mask,
-                    rejected_cmask,
-                    ref_chosen_lp,
-                    ref_rejected_lp,
-                ) = batch
+                if reference_free:
+                    (
+                        chosen_ids,
+                        chosen_mask,
+                        chosen_cmask,
+                        rejected_ids,
+                        rejected_mask,
+                        rejected_cmask,
+                    ) = batch
+                    ref_chosen_lp = 0.0
+                    ref_rejected_lp = 0.0
+                else:
+                    (
+                        chosen_ids,
+                        chosen_mask,
+                        chosen_cmask,
+                        rejected_ids,
+                        rejected_mask,
+                        rejected_cmask,
+                        ref_chosen_lp,
+                        ref_rejected_lp,
+                    ) = batch
                 c_out = fmodel(merged, input_ids=chosen_ids, attention_mask=chosen_mask)
                 r_out = fmodel(
                     merged, input_ids=rejected_ids, attention_mask=rejected_mask
                 )
-                c_logp = sequence_logp(c_out.logits, chosen_ids, chosen_cmask)
-                r_logp = sequence_logp(r_out.logits, rejected_ids, rejected_cmask)
+                c_logp = sequence_logp(
+                    c_out.logits,
+                    chosen_ids,
+                    chosen_cmask,
+                    length_normalized=length_normalized,
+                )
+                r_logp = sequence_logp(
+                    r_out.logits,
+                    rejected_ids,
+                    rejected_cmask,
+                    length_normalized=length_normalized,
+                )
                 chosen_lrs.append(c_logp - ref_chosen_lp)
                 rejected_lrs.append(r_logp - ref_rejected_lp)
             if not chosen_lrs:
@@ -1825,7 +2019,7 @@ def main():
         grad_fn, clip_state = adaptive_clipped_grad(
             per_example_loss_fn,
             argnums=0,
-            batch_argnums=_BATCH_ARGNUMS,
+            batch_argnums=batch_argnums,
             initial_clipping_norm=clip_norm,
             target_quantile=1.0 - args.target_clipping_rate,
             clipping_norm_max=args.clipping_norm_max,
@@ -1839,7 +2033,7 @@ def main():
         grad_fn, clip_state = auto_clipped_grad(
             per_example_loss_fn,
             argnums=0,
-            batch_argnums=_BATCH_ARGNUMS,
+            batch_argnums=batch_argnums,
             R=clip_norm,
             gamma=args.auto_clipping_gamma,
             normalize_by=args.batch_size,
@@ -1851,7 +2045,7 @@ def main():
         grad_fn, clip_state = clipped_grad(
             per_example_loss_fn,
             argnums=0,
-            batch_argnums=_BATCH_ARGNUMS,
+            batch_argnums=batch_argnums,
             clipping_norm=clip_norm,
             normalize_by=args.batch_size,
             microbatch_size=args.microbatch_size,
