@@ -1,48 +1,56 @@
 # Alignment (`opaque.alignment`)
 
 `opaque-alignment` ships **functional, mechanism-agnostic primitives for
-DP-safe preference learning**: per-example loss functions (DPO / SFT),
-logprob helpers, preference collators, dataset transforms, reference-model
-helpers, alignment metrics, and a chunked fused-linear preference kernel.
+DP-safe preference learning and supervised fine-tuning**: per-example loss
+functions (SFT and DPO), per-sequence log-probability helpers, batch
+collators, dataset transforms, reference-model helpers, and reward metrics.
+Every public symbol is a pure function or a factory returning a callable, so
+each composes cleanly under `vmap(grad(...))` — the per-example differentiation
+that DP-SGD and DP-FTRL clipping is built on.
 
-It builds only on `opaque-engine` (clipping, functional, distributed) and
-`opaque-base` (serialization). It does **not** depend on `opaque-dpsgd`,
-`opaque-dpftrl`, or `opaque-optimizers` — the DP mechanism and optimizer are
-chosen at the call site. A researcher can build a DP-DPO training script using
-only `opaque-alignment` + a mechanism + an optimizer; no `DPTrainer` subclass
-is required.
+The package builds only on the engine (clipping, functional conversion,
+distributed) and base (serialization) layers. It does **not** depend on a DP
+mechanism or an optimizer: the noise mechanism and optimizer are chosen at the
+call site, so a researcher can assemble a DP-SGD or DP-FTRL alignment run from
+`opaque.alignment` primitives plus a mechanism plus an optimizer — no trainer
+subclass required. The same loss closure runs under either mechanism; only the
+two noise/sampling imports change.
 
-## Design principles
+## Design
 
-- **Functional, no hidden state.** Every public symbol is a pure function, a
-  factory returning a callable, or an inert dataclass. `vmap(grad(...))`
-  composes cleanly only over pure functions.
-- **Mechanism-agnostic.** Enforced as a CI gate
-  (`tests/contracts/test_dependency_direction.py` forbids mechanism/optimizer
-  imports in this wheel's source).
-- **DP-purity invariant.** Every public per-example loss is **Tier 1** — strict
-  per-example, NaN-injection verified. **Tier 3** (rank/sort/quantile across the
-  batch, e.g. the DPO `aot` family) is rejected — `resolve_dpo_loss("aot")`
-  raises `NotImplementedError`.
+- **Functional, no hidden state.** Losses are pure functions of per-example
+  tensors; collators and reference helpers are factories returning callables.
+  The DP-SGD/DP-FTRL pipeline supplies its own clip and noise state.
+- **Per-example by construction.** Each loss output for example `i` depends
+  only on example `i`'s data, so per-example sensitivity stays `O(C)` after
+  clipping. SFT divisors are per-example token counts (not a batch aggregate),
+  and the DPO collator keeps chosen/rejected as separate `(B, ...)` tensors so
+  one preference pair maps to one clipped gradient.
+- **Mechanism-agnostic.** No mechanism or optimizer is imported in the
+  package source; the mechanism is a call-site choice.
+- **Direct functions, no registries.** Losses are exposed by name as plain
+  functions. Mapping a config string to one of them is the caller's concern —
+  the example scripts keep that tiny `name -> fn` map at the CLI boundary.
 
 ## Module map
 
 | Module | Contents |
 |---|---|
-| `opaque.alignment.logprob` | `selective_log_softmax`, `sequence_logp`, `get_batch_logps` |
-| `opaque.alignment.loss.dpo` | 14 DPO variants + `DPO_LOSSES`/`DPO_SPEC` + f-divergence/MPO/WPO/LD helpers |
-| `opaque.alignment.sft.loss` | `nll_loss`, `dft_loss` (direct functions) |
-| `opaque.alignment.sft.collator` | `language_modeling_collator` |
-| `opaque.alignment.collator` | `preference_collator` |
-| `opaque.alignment.data` | `extract_prompt`, chat-template helpers |
-| `opaque.alignment.reference` | `compute_ref_logprobs_for_dataset`, `null_ref_context`, `ema_update_reference` |
-| `opaque.alignment.metric` | `reward_metrics`, `kl_estimator`, `entropy_from_logits`, `mean_token_accuracy` |
-| `opaque.alignment.kernel` | `opaque_fused_linear_dpo_loss` |
+| `opaque.alignment.sft.loss` | `nll_loss`, `dft_loss`, and the fused twins `fused_nll_loss`, `fused_dft_loss` |
+| `opaque.alignment.sft.collator` | `language_modeling_collator` (output schema `LMBatch` in `…collator.types`) |
+| `opaque.alignment.dpo.loss` | per-sequence logp (`sequence_logp`, `fused_sequence_logp`), 14 per-pair heads, and the log-ratio combinators |
+| `opaque.alignment.dpo.collator` | `preference_collator` |
+| `opaque.alignment.dpo.reference` | `compute_ref_logprobs_for_dataset`, `null_ref_context`, `with_disabled_adapter`, `ema_update_reference` |
+| `opaque.alignment.dpo.metric` | `reward_metrics` |
+| `opaque.alignment.dpo.data` | `extract_prompt` |
 
-## Functional examples
+## See also
 
-- `examples/train_sft.py` — DP-SGD SFT with `language_modeling_collator` + `nll_loss`/`dft_loss`.
-- `examples/train_dpo.py` — DP-SGD DPO with precomputed reference logps.
-
-See [Losses](loss.md), [Collators](collator.md), and
-[Reference handling](reference.md) for details.
+- [SFT end-to-end](sft.md) — build a DP-SGD supervised fine-tuning run from
+  the language-modeling collator and the per-example NLL/DFT losses.
+- [DPO end-to-end](dpo.md) — reference-logp precompute, the preference
+  collator, choosing a per-pair head, and reward-metric eval.
+- [Alignment API reference](../reference/alignment.md) — every public
+  function with its import path and a one-line description.
+- [DP-SGD end-to-end](../user-guide/dp-sgd.md) — the clipping/noise/optimizer
+  pipeline these losses plug into.

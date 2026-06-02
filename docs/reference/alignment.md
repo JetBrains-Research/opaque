@@ -1,0 +1,163 @@
+# Alignment
+
+Functional, mechanism-agnostic primitives for DP-safe preference learning
+and supervised fine-tuning: per-example SFT and DPO losses, per-sequence
+log-probability helpers, batch collators, dataset transforms,
+reference-model handling, and reward metrics. Every public symbol is a
+pure function or a factory returning a callable, so each composes under
+`vmap(grad(...))` — the per-example differentiation DP-SGD and DP-FTRL
+clipping is built on. Import everything from the `opaque.alignment.*`
+façades; the mechanism and optimizer are chosen at the call site, never
+inside this package. For end-to-end walkthroughs see the
+[SFT](../alignment/sft.md) and [DPO](../alignment/dpo.md) guides.
+
+## Overview
+
+### Losses
+
+Per-example loss functions. SFT losses return the per-example mean over an
+example's own non-ignored tokens (a DP-safe divisor, not a batch
+aggregate). DPO per-pair heads take `(chosen_logratio, rejected_logratio,
+*, beta, ...)` and return a per-example scalar; a DPO loss is
+`head(sequence_logp(...) - ref_logp, ...)`. Eager losses take `logits`;
+the `fused_*` twins take `hidden_states` + the `lm_head` weight and never
+materialize `(T, V)` logits (CUDA + half-precision fused kernel with
+`opaque-alignment[patches]`, eager fallback otherwise).
+
+SFT:
+
+- **`nll_loss()`** ([`opaque.alignment.sft.loss`](#api-documentation)) —
+  per-example causal-LM cross-entropy with a per-example token-count divisor.
+- **`dft_loss()`** ([`opaque.alignment.sft.loss`](#api-documentation)) —
+  Dynamic Fine-Tuning: NLL weighted by the detached softmax probability of
+  each target token.
+- **`fused_nll_loss()`** ([`opaque.alignment.sft.loss`](#api-documentation))
+  — memory-efficient `nll_loss` over hidden states + `lm_head` weight.
+- **`fused_dft_loss()`** ([`opaque.alignment.sft.loss`](#api-documentation))
+  — memory-efficient `dft_loss` over hidden states + `lm_head` weight.
+
+DPO per-pair heads ([`opaque.alignment.dpo.loss`](#api-documentation)):
+
+- **`sigmoid_loss()`** — standard DPO sigmoid (logistic) loss; the default.
+- **`hinge_loss()`** — DPO hinge loss.
+- **`robust_loss()`** — robust (label-smoothed) DPO loss.
+- **`ipo_loss()`** — IPO loss (Azar 2024).
+- **`sigmoid_norm_loss()`** — length-normalized DPO sigmoid loss.
+- **`discopop_loss()`** — DiscoPOP loss.
+- **`chosen_nll_loss()`** — chosen-completion NLL regularizer for MPO/RPO blends.
+- **`squarechipo_loss()`** — SquareChiPO loss (arXiv:2505.21395).
+- **`apo_zero_loss()`** / **`apo_down_loss()`** — APO-zero / APO-down (arXiv:2408.06266).
+- **`exo_loss()`** — EXO pairwise loss.
+- **`nca_loss()`** — NCA pairwise loss.
+- **`bco_loss()`** — BCO pairwise loss.
+- **`sppo_loss()`** — SPPO hard-label loss.
+
+DPO log-ratio combinators ([`opaque.alignment.dpo.loss`](#api-documentation))
+for composite objectives:
+
+- **`f_divergence_remap()`** — remap a per-example log-ratio under the chosen f-divergence.
+- **`f_divergence_logits()`** — form the remapped preference logits under an f-divergence.
+- **`mpo_combine()`** — weighted sum of per-example loss tensors (MPO / TRL `loss_type=list`).
+- **`wpo_weights()`** — per-example WPO weight (arXiv:2406.11827).
+- **`ld_dpo_split()`** — length-desensitized sequence-logp split (LD-DPO, arXiv:2409.10524).
+
+### Log-probabilities
+
+- **`sequence_logp()`** ([`opaque.alignment.dpo.loss`](#api-documentation))
+  — sum of completion-token log-probabilities per sequence; applies the
+  causal-LM shift, masks to the completion span, and sums. Works
+  per-example or on a batch axis.
+- **`fused_sequence_logp()`** ([`opaque.alignment.dpo.loss`](#api-documentation))
+  — memory-efficient `sequence_logp` over hidden states + `lm_head` weight
+  (per-example only).
+
+### Collators
+
+Factory functions returning a `collate(examples)` callable.
+
+- **`language_modeling_collator()`** ([`opaque.alignment.sft.collator`](#api-documentation))
+  — SFT/causal-LM collation: `input_ids`/`attention_mask`/`labels` `(B, L)`
+  with pad and (optionally) prompt tokens masked to `-100`, optional
+  `completion_mask`, keep-start truncation to `max_length`. Output schema
+  `LMBatch` (`opaque.alignment.sft.collator.types`).
+- **`preference_collator()`** ([`opaque.alignment.dpo.collator`](#api-documentation))
+  — DPO collation in a `(B, ...)` layout: the chosen and rejected
+  `input_ids`/`attention_mask`/`completion_mask` trios, plus optional
+  precomputed `ref_chosen_logps` / `ref_rejected_logps` `(B,)`. Chosen and
+  rejected stay separate (not TRL's concatenated `(2B, L)`) so one pair maps
+  to one clipped gradient.
+- **`extract_prompt()`** ([`opaque.alignment.dpo.data`](#api-documentation))
+  — split an implicit shared prompt out of a preference example before
+  tokenizing.
+
+### Reference handling
+
+Reference-model helpers for DPO. These run **outside** the per-example
+`vmap(grad(...))` region — a separate forward pass, or PEFT adapter
+toggles.
+
+- **`compute_ref_logprobs_for_dataset()`** ([`opaque.alignment.dpo.reference`](#api-documentation))
+  — run the reference once over a dataset, attach per-example logp columns,
+  and cache to a content-addressed `.npz` (a cache hit skips the forward).
+- **`null_ref_context()`** ([`opaque.alignment.dpo.reference`](#api-documentation))
+  — context manager that turns a model into its own reference, dispatching
+  over the separate-model / `"ref"`-adapter / disabled-adapter / no-op
+  configurations.
+- **`with_disabled_adapter()`** ([`opaque.alignment.dpo.reference`](#api-documentation))
+  — context manager that disables a PEFT adapter so the base model serves as
+  the reference.
+- **`ema_update_reference()`** ([`opaque.alignment.dpo.reference`](#api-documentation))
+  — TR-DPO: leafwise EMA step `(1 - alpha) * ref + alpha * policy` to move
+  the reference toward the policy.
+
+### Metrics
+
+- **`reward_metrics()`** ([`opaque.alignment.dpo.metric`](#api-documentation))
+  — `rewards/chosen`, `rewards/rejected`, `rewards/accuracies`,
+  `rewards/margins` from per-example log-ratios; every returned tensor is
+  detached so it cannot leak gradient into the mechanism.
+
+**See also**: [Alignment overview](../alignment/index.md),
+[SFT end-to-end](../alignment/sft.md), [DPO end-to-end](../alignment/dpo.md).
+
+## API Documentation
+
+::: opaque.alignment.sft.loss
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.alignment.sft.collator
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.alignment.sft.collator.types
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.alignment.dpo.loss
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.alignment.dpo.collator
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.alignment.dpo.data
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.alignment.dpo.reference
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.alignment.dpo.metric
+    options:
+      show_source: true
+      heading_level: 3

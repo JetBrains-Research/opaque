@@ -127,10 +127,8 @@ nav:
       - DP-λCGD: mechanisms/dp-ftrl/lambda-cgd.md
   - Alignment:
     - Overview: alignment/index.md
-    - Losses: alignment/loss.md
-    - Collators: alignment/collator.md
-    - Reference Handling: alignment/reference.md
-    - Recipes: alignment/recipes.md
+    - SFT: alignment/sft.md
+    - DPO: alignment/dpo.md
   - Tutorials:
     - Overview: tutorials/README.md
     - DP-SGD track:
@@ -157,6 +155,7 @@ nav:
     - Optimizers: reference/optimizers.md
     - Schedules: reference/schedules.md
     - Transformers: reference/transformers.md
+    - Alignment: reference/alignment.md
 extra:
   social:
     - icon: fontawesome/brands/github

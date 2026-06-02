@@ -1,0 +1,164 @@
+# SFT end-to-end
+
+This guide walks through a full DP-SGD supervised fine-tuning (SFT) run
+built from `opaque.alignment` primitives: collate a causal-LM batch,
+compute a per-example loss, differentiate it under `vmap(grad(...))`,
+clip, noise, and step the optimizer. Every alignment import on this page
+comes from the `opaque.alignment.sft.*` public façade; the DP plumbing
+comes from the same `opaque.dpsgd.*` façades the
+[DP-SGD end-to-end](../user-guide/dp-sgd.md) guide uses.
+
+## Why SFT here
+
+SFT is ordinary causal-LM fine-tuning, so the only alignment-specific
+pieces are the **collator** and the **per-example loss**. Everything
+downstream — clipping, noise, optimizer, sampler — is the standard
+[DP-SGD pipeline](../user-guide/dp-sgd.md). The loss is mechanism-agnostic:
+swap the two `opaque.dpsgd` noise/sampling imports for their
+`opaque.dpftrl` counterparts to run [DP-FTRL](../user-guide/dp-ftrl.md)
+instead and the loss closure does not change.
+
+The one DP-relevant subtlety is the loss divisor. Both SFT losses divide
+by *this example's* non-ignored token count, not a batch-level aggregate
+like TRL's `num_items_in_batch`. A batch aggregate would couple
+per-example gradients, breaking the per-record sensitivity bound that
+clipping relies on; the per-example divisor keeps sensitivity `O(C)`
+after clipping.
+
+## 1. Collator
+
+`opaque.alignment.sft.collator.language_modeling_collator` is a factory:
+it returns a `collate(examples)` callable that pads a list of
+tokenized rows into a batch.
+
+```python
+from opaque.alignment.sft.collator import language_modeling_collator
+
+collate = language_modeling_collator(tokenizer.pad_token_id, max_length)
+batch = collate([{"input_ids": ids}, ...])  # LMBatch
+```
+
+The output is an `LMBatch` (`opaque.alignment.sft.collator.types`) with
+`input_ids`/`attention_mask`/`labels` of shape `(B, L)`. Padding and
+(when `completion_only_loss=True`) prompt tokens are set to `-100` in
+`labels` so the loss ignores them; an optional `completion_mask` is
+emitted too. Sequences longer than `max_length` are truncated keep-start
+(matching TRL's `SFTTrainer`); no example is dropped. Pass
+`pad_to_multiple_of=` to round the padded length up.
+
+## 2. Per-example loss
+
+The loss runs *inside* `vmap(grad(...))`, so it is written for a single
+example and returns a per-example scalar (no mean over the batch — the
+clipper sums). Pick `nll_loss` (standard cross-entropy) or `dft_loss`
+(Dynamic Fine-Tuning: NLL weighted by the detached softmax probability of
+each target token):
+
+```python
+from opaque.functional import make_functional
+from opaque.alignment.sft.loss import nll_loss  # or dft_loss
+
+fmodel, trainable, frozen = make_functional(
+    model, disable_autograd_tracking=True, partition_trainable=True
+)
+
+def per_example_loss(trainable_params, input_ids, attention_mask, labels):
+    out = fmodel(
+        {**frozen, **trainable_params},
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+    )
+    return nll_loss(out.logits, labels)
+```
+
+Both `nll_loss(logits, labels)` and `dft_loss(logits, labels)` apply the
+causal-LM shift internally, ignore `-100` positions, and divide by the
+per-example token count (DP-safe, pre-clip). Mapping a config string such
+as `--loss-type` to one of them is the caller's concern — keep a tiny
+`{"nll": nll_loss, "dft": dft_loss}` map at the CLI boundary; the library
+exposes the direct functions, not a registry.
+
+### Fused vs eager
+
+`nll_loss`/`dft_loss` take `logits` `(..., T, V)`. On large vocabularies
+the `(T, V)` logits dominate memory. The fused twins `fused_nll_loss` /
+`fused_dft_loss` take `hidden_states` `(T, H)` and the `lm_head` weight
+`(V, H)` instead, and never materialize logits — on CUDA + half precision
+with `opaque-alignment[patches]` installed they call a fused linear-CE
+kernel and recompute the LSE in the backward; otherwise they fall back to
+the eager projection. They are numerically equivalent to the eager form.
+Unlike the eager losses, the fused ones are strictly per-example (one
+`(T, H)` sequence, batched only by the outer `vmap`); do not call them on
+a batch axis directly. Use the fused path when activation memory is the
+bottleneck and you are on a CUDA half-precision setup, the eager path
+otherwise.
+
+## 3. vmap(grad), clip, noise, optimizer
+
+`opaque.dpsgd.clipping.clipped_grad` wraps the per-example loss in
+`vmap(grad(...))`, clips each per-example gradient to `clipping_norm`, and
+sums. The remaining steps are exactly the DP-SGD pipeline:
+
+```python
+import torchopt
+from opaque.dpsgd.clipping import clipped_grad
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.dpsgd.sampling import PoissonSampler
+from opaque.optimizers import adamw
+from opaque.random import key, fold_in
+
+grad_fn, clip_state = clipped_grad(
+    per_example_loss,
+    argnums=0,
+    batch_argnums=(1, 2, 3),  # input_ids, attention_mask, labels
+    clipping_norm=1.0,
+    normalize_by=batch_size,
+    return_aux=True,
+)
+noise_fn, noise_state = gaussian_noise(noise_multiplier=nm, key=key(seed))
+opt = adamw(lr=1e-4)
+opt_state = opt.init(trainable)
+```
+
+## 4. End-to-end loop
+
+```python
+sampler = PoissonSampler(
+    examples,
+    sample_rate=batch_size / len(examples),
+    n_steps=num_steps,
+    key=fold_in(key(seed), 0, 0),
+)
+
+for indices in sampler:
+    batch = collate_to_device([examples[i] for i in indices])  # (ids, mask, labels)
+    if batch[0].shape[0] == 0:  # empty Poisson draw
+        continue
+    (grads, aux), clip_state = grad_fn(trainable, *batch, state=clip_state)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
+    updates, opt_state = opt.update(noisy_grads, opt_state, params=trainable)
+    trainable = torchopt.apply_updates(trainable, updates)
+```
+
+`return_aux=True` surfaces per-example diagnostics on `aux` (e.g.
+`aux.loss_values.mean()` for the step loss). To run under a target
+privacy budget, calibrate `noise_multiplier` first — see
+[DP-SGD calibration](../user-guide/dp-sgd.md#1-calibration).
+
+## Runnable references
+
+- [`examples/train_sft.py`](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_sft.py)
+  — full DP-SGD SFT script (collator, `nll`/`dft` losses, the per-example
+  `vmap(grad)` loop, and a `--smoke` CPU run on a tiny random model).
+
+## See also
+
+- [Alignment overview](index.md) — the package, its design, and the
+  module map.
+- [DPO end-to-end](dpo.md) — the preference-learning companion guide.
+- [Alignment API reference](../reference/alignment.md) — every public
+  function with its import path.
+- [DP-SGD end-to-end](../user-guide/dp-sgd.md) — calibration, clipping,
+  noise, sampling, and optimizer details the loop above plugs into.
+- [DP-FTRL end-to-end](../user-guide/dp-ftrl.md) — the correlated-noise
+  mechanism swap.
