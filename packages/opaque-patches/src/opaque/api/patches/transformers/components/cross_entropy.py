@@ -277,7 +277,6 @@ def _make_fused_ce_causal_lm_forward(original):
                 ignore_index,
                 softcap,
                 label_smoothing,
-                None,  # token_weight: unused by the HF CE patch
             )
 
             # Always reduce with mean-over-non-ignored-tokens; per-batch

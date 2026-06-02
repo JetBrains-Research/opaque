@@ -741,29 +741,17 @@ class _LinearCEBackward(torch.autograd.Function):
         ignore_index,
         compute_dc,
         label_smoothing,
-        token_weight,
     ):
         # Pre-shift and flatten
         e = hidden_states[..., :-1, :].contiguous().flatten(0, -2)  # (N, D)
         targets = labels[..., 1:].contiguous().flatten()  # (N,)
         valids = _build_flat_valids(targets, ignore_index)
 
-        # Per-token upstream gradient. ``grad_out`` is the scalar loss grad; a
-        # per-token ``token_weight`` scales each token's contribution, so the
-        # per-token gradient is ``grad_out * w_t``. It is full-length (one entry
-        # per shifted token), matching the backward kernel's position-indexed
-        # ``dOut[offs_b]`` gather (``ITEM_DO`` auto-disables once ``do`` is not a
-        # scalar).
-        do = grad_out
-        if token_weight is not None:
-            tw_flat = token_weight[..., 1:].contiguous().flatten().to(torch.float32)
-            do = grad_out * tw_flat
-
         # Recompute LSE (activation checkpointing style)
         lse = _forward_impl(e, weight, targets, valids, softcap, label_smoothing).lse
 
         de, dc = _backward_impl(
-            do,
+            grad_out,
             e,
             weight,
             lse,
@@ -800,7 +788,6 @@ class _LinearCEBackward(torch.autograd.Function):
         ignore_index,
         compute_dc,
         label_smoothing,
-        token_weight,
     ):
         (
             grad_bdim,
@@ -811,7 +798,6 @@ class _LinearCEBackward(torch.autograd.Function):
             ii_bdim,
             dc_bdim,
             ls_bdim,
-            tw_bdim,
         ) = in_dims
 
         assert w_bdim is None, "weight should not be batched"
@@ -840,11 +826,6 @@ class _LinearCEBackward(torch.autograd.Function):
             )
         else:
             do = grad_out.expand(B_vmap * tokens_per_sample)
-
-        # Per-token weighting: scale each token's upstream grad by its weight.
-        if token_weight is not None:
-            tw_flat = token_weight[..., 1:].contiguous().reshape(-1).to(do.dtype)
-            do = do * tw_flat
 
         # Single merged forward
         lse = _forward_impl(e, weight, targets, valids, softcap, label_smoothing).lse
@@ -908,7 +889,6 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         ignore_index=-100,
         logit_softcapping=0,
         label_smoothing=0.0,
-        token_weight=None,
     ):
         softcap = logit_softcapping if logit_softcapping != 0 else None
 
@@ -919,12 +899,6 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
 
         lse_ret = _forward_impl(e, weight, targets, valids, softcap, label_smoothing)
         nll = _per_token_nll_from_lse_ret(lse_ret, weight.shape[0], label_smoothing)
-        if token_weight is not None:
-            # ``nll`` is over valid (non-ignored) tokens in ``valids`` order;
-            # gather the matching per-token weights before summing.
-            tw_flat = token_weight[..., 1:].contiguous().flatten().to(nll.dtype)
-            tw = tw_flat if valids is None else tw_flat[valids.long()]
-            nll = nll * tw
         return nll.sum()
 
     @staticmethod
@@ -936,16 +910,12 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
             ignore_index,
             logit_softcapping,
             label_smoothing,
-            token_weight,
         ) = inputs
 
         ctx.save_for_backward(hidden_states, weight, labels)
         ctx.softcap = logit_softcapping if logit_softcapping != 0 else None
         ctx.ignore_index = ignore_index
         ctx.label_smoothing = float(label_smoothing)
-        # Read-only per-token weight (this Function forbids double-backward, so
-        # stashing it on ``ctx`` rather than ``save_for_backward`` is fine).
-        ctx.token_weight = token_weight
 
     @staticmethod
     def backward(ctx, grad_loss):
@@ -963,7 +933,6 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
             ctx.ignore_index,
             compute_dc,
             ctx.label_smoothing,
-            ctx.token_weight,
         )
 
         # de is (shifted_seq, D) — reshape and pad to match hidden_states shape
@@ -974,7 +943,7 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         pad_shape[-2] = 1
         de = torch.cat([de, de.new_zeros(pad_shape)], dim=-2)
 
-        return de, dc, None, None, None, None, None
+        return de, dc, None, None, None, None
 
     @staticmethod
     def vmap(
@@ -986,10 +955,9 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         ignore_index,
         logit_softcapping,
         label_smoothing,
-        token_weight,
     ):
         """Custom vmap rule for DP-SGD — single merged kernel call."""
-        (h_bdim, w_bdim, lab_bdim, ii_bdim, sc_bdim, ls_bdim, tw_bdim) = in_dims
+        (h_bdim, w_bdim, lab_bdim, ii_bdim, sc_bdim, ls_bdim) = in_dims
 
         if h_bdim != 0:
             raise ValueError(f"hidden_states should be batched at dim 0, got {h_bdim}")
@@ -1020,11 +988,6 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         lse_ret = _forward_impl(e, weight, targets, valids, softcap, label_smoothing)
         nll = _per_token_nll_from_lse_ret(lse_ret, V, label_smoothing)
 
-        if token_weight is not None:
-            tw_flat = token_weight[..., 1:].contiguous().reshape(-1).to(nll.dtype)
-            tw = tw_flat if valids is None else tw_flat[valids.long()]
-            nll = nll * tw
-
         # Split per-sample: scatter NLLs back to sample buckets
         if valids is not None:
             sample_ids = valids.long() // tokens_per_sample
@@ -1043,17 +1006,11 @@ def opaque_linear_cross_entropy_loss(
     ignore_index=-100,
     logit_softcapping=0,
     label_smoothing=0.0,
-    token_weight=None,
 ):
     """Convenience wrapper for fused linear + cross-entropy loss.
 
     The kernel returns nll_sum (unreduced); this wrapper divides by the
     count of non-ignored tokens (mean reduction).
-
-    ``token_weight`` (optional, same shape as ``labels``) multiplies each
-    token's CE before summing — e.g. DFT confidence scaling or soft / turn
-    masks. Its shifted entries align with the ``labels[..., 1:]`` targets;
-    ``ignore_index`` positions are dropped regardless of weight.
 
     Any weight scaling (Granite divisive, Cohere multiplicative) should be
     applied to the weight tensor before calling this function, so that
@@ -1084,7 +1041,6 @@ def opaque_linear_cross_entropy_loss(
         ignore_index,
         logit_softcapping,
         label_smoothing,
-        token_weight,
     )
     shifted_labels = labels[..., 1:].contiguous().flatten()
     n_valid = (shifted_labels != ignore_index).sum().float().clamp(min=1)
