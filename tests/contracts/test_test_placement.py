@@ -84,6 +84,10 @@ WHEEL_IMPORT_ROOTS: dict[str, tuple[str, ...]] = {
         "opaque.transformers",
         "opaque.api.transformers",
     ),
+    "opaque-alignment": (
+        "opaque.alignment",
+        "opaque.api.alignment",
+    ),
 }
 
 

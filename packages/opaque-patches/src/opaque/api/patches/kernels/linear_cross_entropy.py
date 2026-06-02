@@ -546,6 +546,38 @@ def _per_token_nll_from_lse_ret(
     return (1.0 - ls) * hard + ls * (lse_ret.lse - mean_z)
 
 
+def _token_scaling_weight(lse_ret: LSEReturn) -> torch.Tensor:
+    """Detached per-token confidence weight ``p`` for DFT-style token scaling.
+
+    ``p_t = softmax(logits)[target] = exp(logit_target − LSE) = exp(−CE_t)`` —
+    the model's probability of the gold token — returned in the same
+    valids-compacted order as the kernel's per-token NLL. Detached: it is a
+    constant multiplier, so ``Σ p·nll`` has gradient ``Σ p·∂nll`` (no gradient
+    flows through ``p``). Computed from the *hard* CE (``neg_correct_logit +
+    lse``) so it is the true model confidence regardless of label smoothing.
+    """
+    hard = lse_ret.neg_correct_logit + lse_ret.lse
+    return torch.exp(-hard).detach()
+
+
+def _scatter_to_full(
+    compact: torch.Tensor, valids: torch.Tensor | None, n_tokens: int
+) -> torch.Tensor:
+    """Scatter a valids-compacted per-token vector back to full length ``N``.
+
+    The backward kernel indexes the upstream grad ``do`` by absolute (pre-shift)
+    token position, whereas forward per-token quantities (NLL, ``p``) are
+    compacted to non-ignored positions. Ignored positions get ``0`` (the kernel
+    masks them anyway). ``valids is None`` means every token is valid (already
+    full length).
+    """
+    if valids is None:
+        return compact
+    full = compact.new_zeros(n_tokens)
+    full[valids.long()] = compact
+    return full
+
+
 def _forward_impl(
     e: torch.Tensor,
     c: torch.Tensor,
@@ -741,20 +773,30 @@ class _LinearCEBackward(torch.autograd.Function):
         ignore_index,
         compute_dc,
         label_smoothing,
+        use_token_scaling,
     ):
         # Pre-shift and flatten
         e = hidden_states[..., :-1, :].contiguous().flatten(0, -2)  # (N, D)
         targets = labels[..., 1:].contiguous().flatten()  # (N,)
         valids = _build_flat_valids(targets, ignore_index)
 
-        # Recompute LSE (activation checkpointing style)
-        lse = _forward_impl(e, weight, targets, valids, softcap, label_smoothing).lse
+        # Recompute the forward (activation-checkpointing style); under token
+        # scaling we also need the per-token confidence weight from it.
+        lse_ret = _forward_impl(e, weight, targets, valids, softcap, label_smoothing)
+
+        do = grad_out
+        if use_token_scaling:
+            # Scale each token's upstream grad by its (detached) weight p_t. The
+            # backward kernel reads ``do`` position-indexed (full length), so
+            # scatter the valids-compacted ``p`` back before scaling.
+            p = _token_scaling_weight(lse_ret)
+            do = grad_out * _scatter_to_full(p, valids, targets.numel())
 
         de, dc = _backward_impl(
-            grad_out,
+            do,
             e,
             weight,
-            lse,
+            lse_ret.lse,
             targets,
             valids,
             softcap,
@@ -788,6 +830,7 @@ class _LinearCEBackward(torch.autograd.Function):
         ignore_index,
         compute_dc,
         label_smoothing,
+        use_token_scaling,
     ):
         (
             grad_bdim,
@@ -798,6 +841,7 @@ class _LinearCEBackward(torch.autograd.Function):
             ii_bdim,
             dc_bdim,
             ls_bdim,
+            uts_bdim,
         ) = in_dims
 
         assert w_bdim is None, "weight should not be batched"
@@ -805,6 +849,7 @@ class _LinearCEBackward(torch.autograd.Function):
         assert ii_bdim is None, "ignore_index should not be batched"
         assert dc_bdim is None, "compute_dc should not be batched"
         assert ls_bdim is None, "label_smoothing should not be batched"
+        assert uts_bdim is None, "use_token_scaling should not be batched"
 
         B_vmap = hidden_states.shape[0]
         D = hidden_states.shape[-1]
@@ -827,8 +872,14 @@ class _LinearCEBackward(torch.autograd.Function):
         else:
             do = grad_out.expand(B_vmap * tokens_per_sample)
 
-        # Single merged forward
-        lse = _forward_impl(e, weight, targets, valids, softcap, label_smoothing).lse
+        # Single merged forward (full return — token scaling reads its weight).
+        lse_ret = _forward_impl(e, weight, targets, valids, softcap, label_smoothing)
+
+        if use_token_scaling:
+            # Scale each token's upstream grad by its (detached) weight p_t,
+            # scattered back to the full position-indexed length the kernel reads.
+            p = _token_scaling_weight(lse_ret)
+            do = do * _scatter_to_full(p, valids, e.shape[0])
 
         # Single merged backward with per-sample dC (if needed):
         # de is merged (all samples), dc is per-sample via kernel-level sample masking.
@@ -837,7 +888,7 @@ class _LinearCEBackward(torch.autograd.Function):
             do,
             e,
             weight,
-            lse,
+            lse_ret.lse,
             targets,
             valids,
             softcap,
@@ -889,6 +940,7 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         ignore_index=-100,
         logit_softcapping=0,
         label_smoothing=0.0,
+        use_token_scaling=False,
     ):
         softcap = logit_softcapping if logit_softcapping != 0 else None
 
@@ -899,6 +951,10 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
 
         lse_ret = _forward_impl(e, weight, targets, valids, softcap, label_smoothing)
         nll = _per_token_nll_from_lse_ret(lse_ret, weight.shape[0], label_smoothing)
+        if use_token_scaling:
+            # Weight each token's CE by its detached confidence p_t (DFT). ``p``
+            # is already in the valids-compacted order of ``nll``.
+            nll = _token_scaling_weight(lse_ret) * nll
         return nll.sum()
 
     @staticmethod
@@ -910,12 +966,14 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
             ignore_index,
             logit_softcapping,
             label_smoothing,
+            use_token_scaling,
         ) = inputs
 
         ctx.save_for_backward(hidden_states, weight, labels)
         ctx.softcap = logit_softcapping if logit_softcapping != 0 else None
         ctx.ignore_index = ignore_index
         ctx.label_smoothing = float(label_smoothing)
+        ctx.use_token_scaling = bool(use_token_scaling)
 
     @staticmethod
     def backward(ctx, grad_loss):
@@ -933,6 +991,7 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
             ctx.ignore_index,
             compute_dc,
             ctx.label_smoothing,
+            ctx.use_token_scaling,
         )
 
         # de is (shifted_seq, D) — reshape and pad to match hidden_states shape
@@ -943,7 +1002,7 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         pad_shape[-2] = 1
         de = torch.cat([de, de.new_zeros(pad_shape)], dim=-2)
 
-        return de, dc, None, None, None, None
+        return de, dc, None, None, None, None, None
 
     @staticmethod
     def vmap(
@@ -955,9 +1014,10 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         ignore_index,
         logit_softcapping,
         label_smoothing,
+        use_token_scaling,
     ):
         """Custom vmap rule for DP-SGD — single merged kernel call."""
-        (h_bdim, w_bdim, lab_bdim, ii_bdim, sc_bdim, ls_bdim) = in_dims
+        (h_bdim, w_bdim, lab_bdim, ii_bdim, sc_bdim, ls_bdim, uts_bdim) = in_dims
 
         if h_bdim != 0:
             raise ValueError(f"hidden_states should be batched at dim 0, got {h_bdim}")
@@ -967,6 +1027,7 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         assert ii_bdim is None, "ignore_index should not be batched"
         assert sc_bdim is None, "logit_softcapping should not be batched"
         assert ls_bdim is None, "label_smoothing should not be batched"
+        assert uts_bdim is None, "use_token_scaling should not be batched"
 
         softcap = logit_softcapping if logit_softcapping != 0 else None
 
@@ -987,6 +1048,8 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         # Single forward call for entire merged batch
         lse_ret = _forward_impl(e, weight, targets, valids, softcap, label_smoothing)
         nll = _per_token_nll_from_lse_ret(lse_ret, V, label_smoothing)
+        if use_token_scaling:
+            nll = _token_scaling_weight(lse_ret) * nll
 
         # Split per-sample: scatter NLLs back to sample buckets
         if valids is not None:
@@ -1006,6 +1069,7 @@ def opaque_linear_cross_entropy_loss(
     ignore_index=-100,
     logit_softcapping=0,
     label_smoothing=0.0,
+    use_token_scaling=False,
 ):
     """Convenience wrapper for fused linear + cross-entropy loss.
 
@@ -1023,6 +1087,11 @@ def opaque_linear_cross_entropy_loss(
         ignore_index: label value to ignore
         logit_softcapping: Gemma2 softcap value (0 = disabled)
         label_smoothing: same semantics as :func:`torch.nn.functional.cross_entropy`
+        use_token_scaling: when True, weight each token's CE by its detached
+            model confidence ``p_t = softmax(logits)[target]`` before summing
+            (DFT). The weight is computed inside the kernel (no logits are
+            materialised) and treated as a constant in the backward. Intended
+            with ``label_smoothing=0``.
 
     Returns:
         loss: scalar tensor
@@ -1041,6 +1110,7 @@ def opaque_linear_cross_entropy_loss(
         ignore_index,
         logit_softcapping,
         label_smoothing,
+        use_token_scaling,
     )
     shifted_labels = labels[..., 1:].contiguous().flatten()
     n_valid = (shifted_labels != ignore_index).sum().float().clamp(min=1)

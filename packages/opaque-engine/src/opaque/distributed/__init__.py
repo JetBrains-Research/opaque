@@ -12,13 +12,19 @@ power-user primitives directly.
 
 from opaque.api.engine.distributed import (
     all_reduce,
+    barrier,
+    gather_for_metrics,
     get_rank,
     get_world_size,
     is_distributed,
+    is_main_process,
     local_shard,
+    num_processes,
+    process_index,
     sum_gradients,
     sum_gradients_,
     sync,
+    wait_for_everyone,
 )
 from opaque.api.engine.distributed.gradients import reduce_pytree, reduce_pytree_
 
@@ -27,10 +33,16 @@ __all__ = [
     "get_rank",
     "get_world_size",
     "all_reduce",
+    "barrier",
     "sum_gradients",
     "sum_gradients_",
     "reduce_pytree",
     "reduce_pytree_",
     "sync",
     "local_shard",
+    "is_main_process",
+    "num_processes",
+    "process_index",
+    "wait_for_everyone",
+    "gather_for_metrics",
 ]

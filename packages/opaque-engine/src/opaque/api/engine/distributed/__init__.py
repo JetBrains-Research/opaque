@@ -20,9 +20,15 @@ The two documented power-user submodules collect lower-level primitives:
 
 from opaque.api.engine.distributed.collectives import (
     all_reduce,
+    barrier,
+    gather_for_metrics,
     get_rank,
     get_world_size,
     is_distributed,
+    is_main_process,
+    num_processes,
+    process_index,
+    wait_for_everyone,
 )
 from opaque.api.engine.distributed.gradients import sum_gradients, sum_gradients_
 from opaque.api.engine.distributed._shard import local_shard
@@ -33,9 +39,15 @@ __all__ = [
     "get_rank",
     "get_world_size",
     "all_reduce",
+    "barrier",
     "sum_gradients",
     "sum_gradients_",
     "sync",
     "register_sync_type",
     "local_shard",
+    "is_main_process",
+    "num_processes",
+    "process_index",
+    "wait_for_everyone",
+    "gather_for_metrics",
 ]

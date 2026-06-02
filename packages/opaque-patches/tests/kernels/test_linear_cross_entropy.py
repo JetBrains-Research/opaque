@@ -113,6 +113,7 @@ def opaque_linear_ce(
         ignore_index,
         softcap,
         label_smoothing,
+        False,  # use_token_scaling
     )
     shifted_labels = labels[..., 1:].contiguous().flatten()
     n_valid = (shifted_labels != ignore_index).sum().float().clamp(min=1)
@@ -892,6 +893,7 @@ class TestLinearCEWrapper:
             -100,
             0,
             0.0,
+            False,  # use_token_scaling
         )
         shifted = labels[..., 1:].contiguous().flatten()
         n_valid = (shifted != -100).sum().float().clamp(min=1)
