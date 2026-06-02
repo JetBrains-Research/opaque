@@ -1,21 +1,36 @@
 # Fused-linear kernels for opaque-alignment — design note
 
-**Status:** design (no implementation yet). Supersedes the kernel thinking in
-`opaque-alignment-plan.md` §7.10 (which assumed pure-torch, KTO, and a string
-registry — all since changed).
+**Status:** design locked; `token_weight` on LCE shipped (GPU CI pending); the
+alignment fused glue (A/B) is the remaining build. Supersedes
+`opaque-alignment-plan.md` §7.10 (pure-torch, KTO, string registry — all
+changed).
 
-## Decisions (settled)
+## Decisions (locked, post-review)
 
-1. Three workstreams, sequenced **C → A → B**:
-   - **A** — SFT NLL reuses the Triton LCE kernel already in `opaque-patches`.
-   - **B** — a new Triton **`Opaque_FusedLinearSequenceLogp`** preference-logp
-     kernel, **in `opaque-patches`** beside `Opaque_LinearCrossEntropyLoss`;
-     `opaque-alignment` consumes it via the existing `[patches]` extra.
-   - **C** — chunk the no-grad lm-head projection in the reference precompute.
-2. `opaque-alignment` stays Triton-free; the Triton kernels live in
-   `opaque-patches`. Each alignment fused path is an **opt-in fast path gated by
-   `[patches]`, with the existing pure-PyTorch chunked loop as the CPU/no-Triton
-   fallback** (CI is CPU-only).
+1. **No bespoke kernel.** `sequence_logp = −Σ_completion CE`, so the existing
+   `opaque-patches` `Opaque_LinearCrossEntropyLoss` *is* the preference-logp
+   kernel: mask non-completion tokens to `ignore_index`, call it (unreduced),
+   negate. No new Triton.
+2. **`token_weight` on LCE (shipped).** Per-token weight multiplied into the
+   per-token CE; backward scales the per-token `do`. Enables completion masking
+   (0/1) and soft/turn masks. **It does NOT enable DFT** — DFT's weight is
+   `detach(exp(−CE))`, *derived from the logits*, so it needs a kernel-internal
+   `use_token_scaling` mode (deferred). DFT stays eager until then.
+3. **Auto-select inside one entry.** The fused `*_loss` entries pick the LCE
+   fast path (when `[patches]` + CUDA + half) or the pure-torch fallback —
+   mirroring the patches `use_fused_ce` gate. No user branching.
+4. **Signature.** Fused entries take `(hidden_states, lm_head_weight, …)`; eager
+   take `(logits, …)`. Fused requires the model to emit hidden (skip the
+   in-forward `lm_head`).
+5. **Packaging.** `opaque-alignment` stays Triton-free; reuses patches via the
+   `[patches]` extra; the pure-torch chunked loop is the CPU/no-Triton fallback.
+6. **Sequencing.** A-NLL + B (DPO) use `ignore_index` masking, *not*
+   `token_weight`, so they don't depend on the unverified `token_weight` and are
+   buildable now. A-DFT waits on `use_token_scaling`. C (ref precompute) folds
+   into the fused-logp helper (the precompute already batches).
+
+> The original "build a Triton `Opaque_FusedLinearSequenceLogp`" plan below is
+> **superseded** by decision 1 (reuse LCE); kept for the analysis/rationale.
 
 ## 0. Why these and not others (constraint envelope)
 
