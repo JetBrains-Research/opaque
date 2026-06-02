@@ -249,11 +249,13 @@ def get_training_chat_template(tokenizer: PreTrainedTokenizerBase) -> str:
     # ------------------------------------------------------------------
     _GENERATION_TOKEN_EXPR = "{{ generation_token }}"
     if _GENERATION_TOKEN_EXPR in template:
-        return template.replace(
+        candidate = template.replace(
             _GENERATION_TOKEN_EXPR,
             f"{_GEN_START}{_GENERATION_TOKEN_EXPR}{_GEN_END}",
             1,
         )
+        if _generation_block_renders(candidate):
+            return candidate
 
     # ------------------------------------------------------------------
     # Strategy 2: find the assistant content expression inside the assistant
@@ -263,7 +265,25 @@ def get_training_chat_template(tokenizer: PreTrainedTokenizerBase) -> str:
     # inside an assistant branch.  This handles ChatML, Llama-3, Phi-3, etc.
     # ------------------------------------------------------------------
     template_out = _wrap_assistant_content(template)
-    if template_out is not None:
+    if template_out is not None and _generation_block_renders(template_out):
+        return template_out
+
+    # ------------------------------------------------------------------
+    # Strategy 2b: shared OR-clause rendering (Qwen2.5-Instruct pattern).
+    #
+    # Some templates render user, system, and assistant turns through one
+    # shared expression inside a multi-condition ``{%- if (role == "user")
+    # or ... or (role == "assistant" and not tool_calls) %}`` clause.  In
+    # that layout the LAST ``assistant``-mention is an ``elif`` for the
+    # tool-call path and Strategy 2 wraps an unreachable expression — the
+    # resulting template renders with empty ``generation_indices``.
+    #
+    # The fix: rewrite the shared expression with an inner role-guard so the
+    # assistant case renders through a ``{% generation %}``-wrapped branch
+    # while user/system tokens stay outside the mask.
+    # ------------------------------------------------------------------
+    template_out = _wrap_shared_or_clause(template)
+    if template_out is not None and _generation_block_renders(template_out):
         return template_out
 
     # ------------------------------------------------------------------
@@ -346,3 +366,101 @@ def _wrap_assistant_content(template: str) -> str | None:
         + _GEN_END
         + template[abs_end:]
     )
+
+
+def _wrap_shared_or_clause(template: str) -> str | None:
+    """Handle templates that render user/system/assistant via one shared expression.
+
+    Some chat templates (notably Qwen2.5-Instruct) place an OR clause like::
+
+        {%- if (message.role == "user") or (message.role == "system" and not loop.first)
+              or (message.role == "assistant" and not message.tool_calls) %}
+            {{- '<|im_start|>' + message.role + '\\n' + message.content + '<|im_end|>' + '\\n' }}
+
+    inside the message loop.  Wrapping the shared expression with
+    ``{% generation %}`` markers would (incorrectly) flag user and system
+    tokens as assistant tokens.  This helper rewrites the shared expression
+    with an inner ``{%- if message.role == 'assistant' %}`` guard so the
+    assistant case renders through a ``{% generation %}``-wrapped branch and
+    user/system tokens fall through unflagged.
+
+    Returns ``None`` when the template doesn't match the shared-OR-clause
+    pattern (the caller falls back to Strategy 3).
+    """
+    import re
+
+    or_clause_pat = re.compile(
+        r"\{%-?\s*(?:if|elif)\b[^%]*['\"]assistant['\"][^%]*\bor\b[^%]*-?%\}"
+        r"|\{%-?\s*(?:if|elif)\b[^%]*\bor\b[^%]*['\"]assistant['\"][^%]*-?%\}"
+    )
+    match = or_clause_pat.search(template)
+    if match is None:
+        return None
+
+    # Find the FIRST content expression after the OR clause and before the
+    # next Jinja control tag — that's the shared expression we need to split.
+    after = template[match.end() :]
+    next_ctrl = re.search(r"\{%-?\s*(?:elif|else|endif|endfor)\b", after)
+    bound = next_ctrl.start() if next_ctrl else len(after)
+    inner = after[:bound]
+
+    content_pat = re.compile(r"\{\{-?\s*[^}]*\bcontent\b[^}]*-?\}\}")
+    expr_match = content_pat.search(inner)
+    if expr_match is None:
+        return None
+
+    expr = expr_match.group()
+    abs_start = match.end() + expr_match.start()
+    abs_end = match.end() + expr_match.end()
+
+    # Replace the shared expression with a role-guarded variant.  For the
+    # assistant case wrap the WHOLE expression so any token that the shared
+    # expression emits for an assistant turn (content + im_end + newline) is
+    # flagged.  Training the model on im_end is desirable: it learns to stop.
+    guarded = (
+        "{%- if message.role == 'assistant' %}"
+        + _GEN_START
+        + expr
+        + _GEN_END
+        + "{%- else %}"
+        + expr
+        + "{%- endif %}"
+    )
+    return template[:abs_start] + guarded + template[abs_end:]
+
+
+def _generation_block_renders(template: str) -> bool:
+    """Return True iff the candidate template emits non-empty assistant indices.
+
+    Compiles *template* and renders a single ``[user, assistant]`` turn to
+    confirm the ``{% generation %}`` block fires at least once.  This is the
+    final correctness check after each wrap strategy: a wrap that lands
+    inside an unreachable branch (e.g. Qwen2.5-Instruct's tool-call elif)
+    produces empty ``generation_indices`` at render time.
+    """
+    try:
+        from transformers.utils.chat_template_utils import (
+            _compile_jinja_template,
+            _render_with_assistant_indices,
+        )
+    except ImportError:
+        # No transformers installed (e.g. minimal CI env) — skip validation.
+        return True
+
+    try:
+        compiled = _compile_jinja_template(template)
+        msgs = [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi"},
+        ]
+        _, indices = _render_with_assistant_indices(
+            compiled, msgs, None, None, False
+        )
+    except Exception:
+        # Template won't compile or render — treat as failure of this strategy.
+        return False
+
+    # ``indices`` is a list of ``(start, end)`` byte-offset pairs into the
+    # rendered chat string.  Non-empty + at least one non-degenerate span
+    # means the generation block actually fired during the test render.
+    return bool(indices) and any(end > start for start, end in indices)

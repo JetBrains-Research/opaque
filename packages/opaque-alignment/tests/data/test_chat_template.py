@@ -186,6 +186,75 @@ class TestGetTrainingChatTemplate:
             "{% generation %} should appear after the 'assistant:' literal"
         )
 
+    def test_shared_or_clause_qwen_pattern(self) -> None:
+        """OR-clause shared rendering (Qwen2.5-Instruct) wraps assistant only.
+
+        Templates that emit user/system/assistant turns through one shared
+        ``{{ ... message.role ... message.content ... }}`` inside a
+        multi-condition ``{%- if (role == "user") or ... or (role ==
+        "assistant" and not tool_calls) %}`` must NOT have user/system tokens
+        flagged by ``return_assistant_tokens_mask=True``.  Strategy 2b in
+        ``get_training_chat_template`` rewrites the shared expression with an
+        inner role-guard so only the assistant render path goes through the
+        ``{% generation %}`` block.
+        """
+        # Minimal Qwen-style template that triggers Strategy 2b: the OR clause
+        # combines user/system/assistant-without-tool-calls through one shared
+        # expression, while a second elif handles the assistant-with-tool-calls
+        # case (which Strategy 2's "last assistant branch" heuristic would pick
+        # by default, producing an unreachable generation block).
+        qwen_style = (
+            "{% for message in messages %}"
+            '{%- if (message.role == "user") or (message.role == "system" and not loop.first) '
+            'or (message.role == "assistant" and not message.tool_calls) %}'
+            "{{- message.role + ': ' + message.content + '\\n' }}"
+            '{%- elif message.role == "assistant" %}'
+            "{{- message.role + ': ' + message.content + ' (tool-call)\\n' }}"
+            "{%- endif %}"
+            "{% endfor %}"
+        )
+        tokenizer = _make_fast_tokenizer()
+        tokenizer.chat_template = qwen_style
+        result = get_training_chat_template(tokenizer)
+        assert _GEN_START in result
+        assert _GEN_END in result
+
+        # The wrap must include a role-guard so user/system don't enter the
+        # generation block.
+        assert "message.role == 'assistant'" in result, (
+            "Strategy 2b should add an inner role-guard around the shared "
+            "expression"
+        )
+
+        # Validate the wrapped template actually flags assistant content via
+        # HF's tracker when rendered.
+        from transformers.utils.chat_template_utils import (
+            _compile_jinja_template,
+            _render_with_assistant_indices,
+        )
+
+        compiled = _compile_jinja_template(result)
+        msgs = [
+            {"role": "user", "content": "first question"},
+            {"role": "assistant", "content": "first answer"},
+            {"role": "user", "content": "second question"},
+            {"role": "assistant", "content": "second answer"},
+        ]
+        rendered, indices = _render_with_assistant_indices(
+            compiled, msgs, None, None, False
+        )
+        assert indices, "generation block must fire for assistant turns"
+        # Every span must be non-degenerate.
+        assert all(end > start for start, end in indices)
+        # And the spans must cover assistant text, NOT user text.
+        for start, end in indices:
+            span = rendered[start:end]
+            assert "first question" not in span and "second question" not in span, (
+                f"user content leaked into generation span: {span!r}"
+            )
+        joined = "".join(rendered[s:e] for s, e in indices)
+        assert "first answer" in joined and "second answer" in joined
+
 
 # ---------------------------------------------------------------------------
 # Tests: clone_chat_template
