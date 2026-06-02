@@ -222,8 +222,7 @@ class TestGetTrainingChatTemplate:
         # The wrap must include a role-guard so user/system don't enter the
         # generation block.
         assert "message.role == 'assistant'" in result, (
-            "Strategy 2b should add an inner role-guard around the shared "
-            "expression"
+            "Strategy 2b should add an inner role-guard around the shared expression"
         )
 
         # Validate the wrapped template actually flags assistant content via

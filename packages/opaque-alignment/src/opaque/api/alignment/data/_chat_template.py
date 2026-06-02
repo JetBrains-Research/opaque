@@ -453,9 +453,7 @@ def _generation_block_renders(template: str) -> bool:
             {"role": "user", "content": "hello"},
             {"role": "assistant", "content": "hi"},
         ]
-        _, indices = _render_with_assistant_indices(
-            compiled, msgs, None, None, False
-        )
+        _, indices = _render_with_assistant_indices(compiled, msgs, None, None, False)
     except Exception:
         # Template won't compile or render — treat as failure of this strategy.
         return False
