@@ -1131,6 +1131,13 @@ def parse_args():
         default=os.environ.get("WANDB_ENTITY"),
         help="W&B entity/team (default: WANDB_ENTITY env var)",
     )
+    tracking_group.add_argument(
+        "--tags",
+        type=str,
+        nargs="+",
+        default=None,
+        help="W&B run tags (space-separated list); forwarded to wandb.init(tags=...)",
+    )
 
     args = parser.parse_args()
 
@@ -1519,6 +1526,7 @@ def main():
             entity=args.wandb_entity,
             name=run_name,
             config=vars(args),
+            tags=args.tags,
         )
         print(f"W&B initialized (mode: {os.environ.get('WANDB_MODE', 'online')})")
 
