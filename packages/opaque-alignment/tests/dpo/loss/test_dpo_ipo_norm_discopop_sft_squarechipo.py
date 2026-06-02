@@ -285,7 +285,9 @@ class TestDpoSft:
     def test_sft_ignores_extra_keyword_args(self) -> None:
         """Extra keyword arguments (beta, label_smoothing, …) are silently ignored."""
         chosen_logp = torch.tensor(-4.0)
-        out = chosen_nll_loss(chosen_logp, beta=0.1, label_smoothing=0.05, discopop_tau=0.05)
+        out = chosen_nll_loss(
+            chosen_logp, beta=0.1, label_smoothing=0.05, discopop_tau=0.05
+        )
         assert torch.allclose(out, torch.tensor(4.0), atol=1e-7)
 
     def test_sft_ignores_both_extra_args(self) -> None:
