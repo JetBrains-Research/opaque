@@ -2295,6 +2295,7 @@ dependencies = [
     { name = "opaque-base" },
     { name = "opaque-engine" },
     { name = "peft" },
+    { name = "safetensors" },
     { name = "torch" },
     { name = "transformers" },
 ]
@@ -2311,6 +2312,7 @@ requires-dist = [
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "opaque-patches", marker = "extra == 'patches'", editable = "packages/opaque-patches" },
     { name = "peft", specifier = ">=0.18.0" },
+    { name = "safetensors", specifier = ">=0.4" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "transformers", specifier = ">=4.57.0,<5" },
 ]

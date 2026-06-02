@@ -4,8 +4,8 @@
 over a :class:`datasets.Dataset` to materialise per-example reference logprobs
 (e.g. ``ref_chosen_logps`` / ``ref_rejected_logps`` for DPO) and attaches them
 to the dataset as new columns. Results are persisted to a content-addressed
-``.npz`` cache so the (expensive) reference forward runs at most once per
-``(dataset, cache_key, output_columns)`` triple.
+``.safetensors`` cache so the (expensive) reference forward runs at most once
+per ``(dataset, cache_key, output_columns)`` triple.
 
 **Outside vmap only.** This helper iterates a ``DataLoader``, runs a forward
 pass under ``torch.no_grad()``, gathers across ranks, and writes a file. It must
@@ -24,6 +24,14 @@ collisions across model checkpoints, preprocessing variants, and differing
 requested column sets — callers vary ``cache_key`` (e.g. ``("dpo", model_name)``)
 as the escape hatch.
 
+**On-disk format.** ``safetensors`` is the project standard (also used by
+:class:`opaque.transformers.trainer.DPTrainer` for model weights). Native dtype
+round-trip means a bf16 reference forward stores bf16 on disk with no precision
+loss and no implicit conversion. The HF ``Dataset.add_column`` boundary still
+demotes to a Python ``float`` list because PyArrow has no bf16 column type, but
+that demotion is now explicit at the storage boundary, not hidden inside the
+cache writer.
+
 **Cross-rank handling.** Per-column shards are concatenated across ranks
 with :func:`gather_for_metrics`; only :func:`is_main_process` writes the cache;
 :func:`wait_for_everyone` synchronises before the function returns so non-main
@@ -39,8 +47,9 @@ import tempfile
 from collections.abc import Callable, Sequence
 from typing import Any
 
-import numpy as np
 import torch
+from safetensors.torch import load_file as _safetensors_load
+from safetensors.torch import save_file as _safetensors_save
 from torch.utils.data import DataLoader
 
 from opaque.distributed import (
@@ -57,6 +66,7 @@ __all__ = ["compute_ref_logprobs_for_dataset"]
 # system temp dir keeps the cache off the dataset's own storage and lets the
 # OS reclaim it.
 _DEFAULT_CACHE_SUBDIR = "opaque_ref_cache"
+_CACHE_EXT = ".safetensors"
 
 
 def _cache_fingerprint(
@@ -85,17 +95,17 @@ def _cache_path(
     cache_dir: str | None,
     fingerprint: str,
 ) -> str:
-    """Resolve the ``.npz`` path, defaulting to ``<tmp>/opaque_ref_cache``."""
+    """Resolve the ``.safetensors`` path, defaulting to ``<tmp>/opaque_ref_cache``."""
     if cache_dir is None:
         cache_dir = os.path.join(tempfile.gettempdir(), _DEFAULT_CACHE_SUBDIR)
-    return os.path.join(cache_dir, f"{fingerprint}.npz")
+    return os.path.join(cache_dir, f"{fingerprint}{_CACHE_EXT}")
 
 
 def _load_cache(
     path: str,
     output_columns: Sequence[str],
-) -> dict[str, np.ndarray] | None:
-    """Load ``output_columns`` from a ``.npz`` cache, or ``None`` on miss.
+) -> dict[str, torch.Tensor] | None:
+    """Load ``output_columns`` from a ``.safetensors`` cache, or ``None`` on miss.
 
     A miss is any of: file absent, a requested column absent from the archive,
     or a load error (treated as a stale/corrupt cache that should be recomputed
@@ -104,46 +114,46 @@ def _load_cache(
     if not os.path.exists(path):
         return None
     try:
-        with np.load(path) as archive:
-            flat = {key: archive[key] for key in archive.files}
+        flat = _safetensors_load(path)
     except Exception:
         return None
     if any(name not in flat for name in output_columns):
         return None
     # Reconstruct the column dict via the serialization template so the load
     # path mirrors the save path (state_dict round-trip). The template
-    # shape is taken from the archived arrays themselves (the per-example count
-    # is not known statically), so the round-trip validates dtype + structure
-    # without an artificial length assumption.
-    template = {name: np.empty_like(flat[name]) for name in output_columns}
+    # shape is taken from the archived tensors themselves (the per-example
+    # count is not known statically), so the round-trip validates dtype +
+    # structure without an artificial length assumption.
+    template = {name: torch.empty_like(flat[name]) for name in output_columns}
     try:
         restored = from_state_dict(template, flat)
     except Exception:
         return None
     if any(name not in restored for name in output_columns):
         return None
-    return {name: np.asarray(restored[name]) for name in output_columns}
+    return {name: restored[name] for name in output_columns}
 
 
 def _save_cache(
     path: str,
-    columns: dict[str, np.ndarray],
+    columns: dict[str, torch.Tensor],
 ) -> None:
-    """Flatten ``columns`` through ``state_dict`` and write the ``.npz`` cache.
+    """Flatten ``columns`` through ``state_dict`` and write the safetensors cache.
 
     The parent directory is created if missing. ``state_dict`` flattens the
-    column dict into a flat ``str -> array`` mapping; the values are
-    coerced to NumPy arrays for ``numpy.savez``.
+    column dict into a flat ``str -> torch.Tensor`` mapping; the values are
+    written directly via :func:`safetensors.torch.save_file` with no dtype
+    conversion (native bf16/fp16/fp32 round-trip).
     """
     os.makedirs(os.path.dirname(path), exist_ok=True)
     flat = state_dict(columns)
-    arrays: dict[str, np.ndarray] = {}
+    tensors: dict[str, torch.Tensor] = {}
     for key, value in flat.items():
         if isinstance(value, torch.Tensor):
-            arrays[key] = value.detach().cpu().numpy()
+            tensors[key] = value.detach().cpu().contiguous()
         else:
-            arrays[key] = np.asarray(value)
-    np.savez(path, **arrays)
+            tensors[key] = torch.as_tensor(value).cpu().contiguous()
+    _safetensors_save(tensors, path)
 
 
 def compute_ref_logprobs_for_dataset(
@@ -156,13 +166,13 @@ def compute_ref_logprobs_for_dataset(
     cache_key: tuple = (),
     cache_dir: str | None = None,
 ) -> Any:
-    """Compute per-example reference logprobs once, with a ``.npz`` cache.
+    """Compute per-example reference logprobs once, with a ``.safetensors`` cache.
 
     Runs a single pass over ``dataset`` calling ``ref(batch)`` for each
     collated batch, collecting one ``(B,)`` tensor per name in
     ``output_columns``, and attaches the concatenated per-example results to
     ``dataset`` as new columns. The forward runs under ``torch.no_grad()``.
-    Results are cached to a content-addressed ``.npz`` file keyed on
+    Results are cached to a content-addressed ``.safetensors`` file keyed on
     ``(dataset._fingerprint, cache_key, output_columns)``.
 
     **Outside vmap only** — see the module docstring.
@@ -185,7 +195,7 @@ def compute_ref_logprobs_for_dataset(
         cache_key: Caller-supplied opaque tuple folded into the cache
             fingerprint — the escape hatch against collisions across model
             checkpoints / preprocessing variants. Default ``()``.
-        cache_dir: Directory for the ``.npz`` cache. Defaults to
+        cache_dir: Directory for the ``.safetensors`` cache. Defaults to
             ``<tempdir>/opaque_ref_cache`` (created on first miss).
 
     Returns:
@@ -198,10 +208,12 @@ def compute_ref_logprobs_for_dataset(
 
     cached = _load_cache(path, columns)
     if cached is not None:
-        # HIT: attach cached columns WITHOUT calling ``ref``.
+        # HIT: attach cached columns WITHOUT calling ``ref``. PyArrow has no
+        # bf16 column type, so demote to a Python ``float`` list at the
+        # storage boundary (explicit, single conversion).
         result = dataset
         for name in columns:
-            result = result.add_column(name, cached[name].tolist())
+            result = result.add_column(name, cached[name].float().tolist())
         return result
 
     # MISS: run the reference forward once over the dataset.
@@ -236,6 +248,9 @@ def compute_ref_logprobs_for_dataset(
 
     result = dataset
     for name in columns:
-        values = gathered[name].detach().cpu().numpy().tolist()
+        # Same explicit fp32 demotion at the HF/PyArrow boundary as on the
+        # HIT path above. Native dtype is preserved on disk; only the column
+        # exposed to ``datasets`` is downcast.
+        values = gathered[name].detach().cpu().float().tolist()
         result = result.add_column(name, values)
     return result

@@ -213,7 +213,7 @@ def test_output_columns_present_with_correct_length_and_values(tmp_path) -> None
 
 
 def test_cached_values_match_computed_values(tmp_path) -> None:
-    """Values restored from the .npz cache equal the freshly computed ones."""
+    """Values restored from the safetensors cache equal the freshly computed ones."""
     dataset = _make_dataset()
     cache_dir = str(tmp_path / "cache")
     indices = list(dataset["idx"])
@@ -242,6 +242,46 @@ def test_cached_values_match_computed_values(tmp_path) -> None:
         assert got == pytest.approx(_expected(name, indices))
 
 
+def test_bfloat16_ref_logps_round_trip(tmp_path) -> None:
+    """A bf16 ``ref`` callable must not crash the cache writer (regression).
+
+    The original ``.npz`` cache called ``tensor.numpy()`` on the ref-logp
+    tensors before saving, which raises ``TypeError: Got unsupported ScalarType
+    BFloat16`` because numpy cannot serialize bf16. The current safetensors
+    writer round-trips bf16 natively; this test pins the contract.
+    """
+    dataset = _make_dataset()
+    cache_dir = str(tmp_path / "cache_bf16")
+
+    class _Bf16Ref:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def __call__(self, batch):
+            self.calls += 1
+            idx = batch["idx"].to(torch.bfloat16)
+            return {
+                "ref_chosen_logps": idx * 1.0,
+                "ref_rejected_logps": idx * -2.0,
+            }
+
+    result = compute_ref_logprobs_for_dataset(
+        dataset,
+        _Bf16Ref(),
+        _collator,
+        OUTPUT_COLUMNS,
+        batch_size=2,
+        cache_key=("bf16-round-trip",),
+        cache_dir=cache_dir,
+    )
+
+    indices = list(dataset["idx"])
+    for name in OUTPUT_COLUMNS:
+        got = [float(v) for v in result[name]]
+        # bf16 has ~3 decimal digits; tolerate that on the HF-column readback.
+        assert got == pytest.approx(_expected(name, indices), abs=1e-2)
+
+
 def test_missing_cache_dir_is_created(tmp_path) -> None:
     """A non-existent cache_dir is created on the first (miss) write."""
     dataset = _make_dataset()
@@ -258,5 +298,5 @@ def test_missing_cache_dir_is_created(tmp_path) -> None:
         cache_dir=str(cache_dir),
     )
     assert cache_dir.exists(), "cache_dir should be created on first write"
-    npz_files = list(cache_dir.glob("*.npz"))
-    assert npz_files, "expected a .npz cache file to be written"
+    cache_files = list(cache_dir.glob("*.safetensors"))
+    assert cache_files, "expected a .safetensors cache file to be written"

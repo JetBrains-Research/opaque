@@ -32,6 +32,10 @@ dependencies = [
     "transformers>=4.57.0,<5",
     "datasets>=2.0.0",
     "peft>=0.18.0",
+    # safetensors is the on-disk format for the DPO reference-logp cache
+    # (`opaque.api.alignment.dpo.reference._precompute`). Already pulled in
+    # transitively by transformers; declared directly because we import it.
+    "safetensors>=0.4",
     "opaque-engine",
     "opaque-base",
     # NO opaque-patches: alignment-specific kernels live inside this package
