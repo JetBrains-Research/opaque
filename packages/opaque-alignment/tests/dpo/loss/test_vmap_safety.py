@@ -11,7 +11,7 @@ listed explicitly here, and ``test_sweep_covers_full_family`` guards that the
 list stays in sync with the public ``opaque.alignment.dpo.loss`` surface.
 
 SFT exposes direct functions too; its vmap-safety lives in
-``tests/sft/loss/test_sft.py``.
+``tests/sft/loss/test_nll.py`` and ``tests/sft/loss/test_dft.py``.
 """
 
 from __future__ import annotations
