@@ -9,9 +9,9 @@ margin ``gamma``::
 
 It reduces to the length-normalized DPO sigmoid loss at ``gamma=0``. The
 length-normalization and reference-free reward are the caller's responsibility:
-pass log-ratios that are already divided by each completion's token count (see
-:func:`~opaque.api.alignment.logprob.length_normalize`) and, being
-reference-free, formed from the policy log-prob alone (no reference subtraction).
+pass log-ratios already divided by each completion's token count (use
+``sequence_logp(..., length_normalized=True)``) and, being reference-free,
+formed from the policy log-prob alone (no reference subtraction).
 """
 
 from __future__ import annotations

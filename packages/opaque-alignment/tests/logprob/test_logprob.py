@@ -26,7 +26,6 @@ from torch.func import grad, vmap
 from opaque.api.alignment.logprob._gather import selective_log_softmax
 from opaque.api.alignment.logprob._sequence import (
     fused_sequence_logp,
-    length_normalize,
     sequence_logp,
 )
 
@@ -304,36 +303,42 @@ def test_fused_sequence_logp_lce_path_gpu() -> None:
 
 
 # ---------------------------------------------------------------------------
-# length_normalize — summed completion logp → per-token mean
+# sequence_logp — length_normalized (per-token mean reward for SimPO / ORPO)
 # ---------------------------------------------------------------------------
 
 
-def test_length_normalize_divides_by_shifted_completion_count() -> None:
-    """Divides by ``completion_mask[..., 1:].sum`` (the same shift as sequence_logp)."""
-    logp = torch.tensor(-6.0)
-    # 5 tokens; completion span = positions [2:]; after the [1:] shift, 3 count.
-    completion_mask = torch.tensor([0.0, 0.0, 1.0, 1.0, 1.0])
-    out = length_normalize(logp, completion_mask)
-    assert math.isclose(out.item(), -2.0, rel_tol=1e-6)
-
-
-def test_length_normalize_clamps_empty_completion() -> None:
-    """An all-prompt mask clamps the divisor to 1 (no division by zero)."""
-    logp = torch.tensor(-4.0)
-    out = length_normalize(logp, torch.zeros(4))
-    assert math.isclose(out.item(), -4.0, rel_tol=1e-6)
-
-
-def test_length_normalize_matches_mean_of_sequence_logp() -> None:
-    """``length_normalize(sequence_logp(...))`` equals the per-token mean logp."""
+def test_length_normalized_is_per_token_mean() -> None:
+    """length_normalized=True divides the summed logp by the completion count."""
     torch.manual_seed(0)
     logits = torch.randn(7, 11)
     ids = torch.randint(0, 11, (7,))
     cmask = torch.tensor([0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0])
     summed = sequence_logp(logits, ids, cmask)
-    mean = length_normalize(summed, cmask)
-    count = cmask[1:].sum()
+    mean = sequence_logp(logits, ids, cmask, length_normalized=True)
+    count = cmask[1:].sum()  # shifted completion-token count
     torch.testing.assert_close(mean, summed / count)
+
+
+def test_length_normalized_clamps_empty_completion() -> None:
+    """An all-prompt mask clamps the divisor to 1 (no division by zero)."""
+    torch.manual_seed(1)
+    logits = torch.randn(4, 6)
+    ids = torch.randint(0, 6, (4,))
+    cmask = torch.zeros(4)
+    out = sequence_logp(logits, ids, cmask, length_normalized=True)
+    torch.testing.assert_close(out, torch.tensor(0.0))
+
+
+def test_length_normalized_fused_matches_eager() -> None:
+    """fused_sequence_logp(length_normalized) matches the eager mean (CPU fallback)."""
+    torch.manual_seed(2)
+    hidden = torch.randn(7, 5, dtype=torch.float64)
+    weight = torch.randn(11, 5, dtype=torch.float64)
+    ids = torch.randint(0, 11, (7,))
+    cmask = torch.tensor([0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0])
+    got = fused_sequence_logp(hidden, weight, ids, cmask, length_normalized=True)
+    want = sequence_logp(hidden @ weight.T, ids, cmask, length_normalized=True)
+    torch.testing.assert_close(got, want)
 
 
 # ---------------------------------------------------------------------------

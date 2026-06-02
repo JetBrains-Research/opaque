@@ -24,32 +24,7 @@ from opaque.api.alignment._fused_lce import lce_available, linear_nll_sum
 
 from ._gather import selective_log_softmax
 
-__all__ = ["sequence_logp", "fused_sequence_logp", "length_normalize"]
-
-
-def length_normalize(
-    logp: torch.Tensor,
-    completion_mask: torch.Tensor,
-) -> torch.Tensor:
-    """Divide a summed completion log-prob by its completion-token count.
-
-    Turns a :func:`sequence_logp` / :func:`fused_sequence_logp` output (the
-    *sum* of completion log-probs) into the per-token mean ``(1/|y|)·log π(y)`` —
-    the length-normalized reward used by SimPO and ORPO. The completion length is
-    counted with the same next-token shift as :func:`sequence_logp`
-    (``completion_mask[..., 1:]``), clamped to ``>= 1``.
-
-    Args:
-        logp: Summed completion log-prob, shape ``(...,)`` (per example under
-            ``vmap``, or batched).
-        completion_mask: ``(..., T)``; non-zero on completion-span tokens (the
-            same mask passed to ``sequence_logp``).
-
-    Returns:
-        Per-example length-normalized log-prob, same shape as *logp*.
-    """
-    count = completion_mask[..., 1:].sum(-1).clamp(min=1)
-    return logp / count.to(logp.dtype)
+__all__ = ["sequence_logp", "fused_sequence_logp"]
 
 
 def sequence_logp(
@@ -59,8 +34,9 @@ def sequence_logp(
     *,
     ld_alpha: float | None = None,
     shared_prefix_len: torch.Tensor | None = None,
+    length_normalized: bool = False,
 ) -> torch.Tensor:
-    """Sum of completion-token log-probabilities per sequence.
+    """Sum (or per-token mean) of completion-token log-probabilities per sequence.
 
     Applies the causal-LM shift, computes per-token log-probs, multiplies by
     the (shifted) completion mask, and sums over the sequence (last remaining)
@@ -73,8 +49,6 @@ def sequence_logp(
         completion_mask: Tensor of shape ``(..., T)``; non-zero where a token
             belongs to the completion span and should contribute to the logp.
             It is cast to the logits dtype before multiplying.
-        ld_alpha: LD-DPO length-desensitisation coefficient. Must be ``None``;
-            any other value raises :class:`NotImplementedError`.
         ld_alpha: LD-DPO (arXiv:2409.10524) length-desensitisation coefficient.
             When set, completion tokens beyond ``shared_prefix_len`` are weighted
             by ``ld_alpha`` (typically ``∈ [0, 1]``) instead of ``1.0``, damping
@@ -84,9 +58,13 @@ def sequence_logp(
         shared_prefix_len: LD-DPO shared-prefix length (an ``int`` or a
             per-example tensor broadcasting against the shifted position axis).
             Required when ``ld_alpha`` is set; ignored otherwise.
+        length_normalized: Divide the per-sequence logp by its completion-token
+            count, giving the per-token mean reward ``(1/|y|)·log π(y)`` used by
+            the reference-free heads (SimPO / ORPO). Default ``False`` (plain sum).
 
     Returns:
-        Float tensor of shape ``(...)`` (one summed logp per sequence).
+        Float tensor of shape ``(...)`` (one logp per sequence; a per-token mean
+        when ``length_normalized``).
 
     Raises:
         ValueError: If ``ld_alpha`` is set without ``shared_prefix_len``.
@@ -97,6 +75,7 @@ def sequence_logp(
     target_mask = completion_mask[..., 1:].to(shifted_logits.dtype)
     per_token_logp = selective_log_softmax(shifted_logits, target_ids)
 
+    weight = target_mask
     if ld_alpha is not None:
         if shared_prefix_len is None:
             raise ValueError("ld_alpha (LD-DPO) requires shared_prefix_len")
@@ -110,9 +89,12 @@ def sequence_logp(
                 (), ld_alpha, dtype=per_token_logp.dtype, device=per_token_logp.device
             ),
         )
-        return (per_token_logp * target_mask * ld_weight).sum(dim=-1)
+        weight = target_mask * ld_weight
 
-    return (per_token_logp * target_mask).sum(dim=-1)
+    logp = (per_token_logp * weight).sum(dim=-1)
+    if length_normalized:
+        logp = logp / target_mask.sum(-1).clamp(min=1)
+    return logp
 
 
 def fused_sequence_logp(
@@ -120,6 +102,8 @@ def fused_sequence_logp(
     lm_head_weight: torch.Tensor,
     input_ids: torch.Tensor,
     completion_mask: torch.Tensor,
+    *,
+    length_normalized: bool = False,
 ) -> torch.Tensor:
     """Memory-efficient :func:`sequence_logp` over hidden states (fused, per-example).
 
@@ -149,9 +133,12 @@ def fused_sequence_logp(
             ``hidden_states @ lm_head_weight.T``.
         input_ids: Token ids ``(T,)``.
         completion_mask: ``(T,)``; non-zero on completion-span tokens.
+        length_normalized: Divide by the completion-token count for the per-token
+            mean reward (SimPO / ORPO); matches ``sequence_logp``.
 
     Returns:
-        Scalar summed completion log-prob (matches :func:`sequence_logp`).
+        Scalar completion log-prob (per-token mean when ``length_normalized``);
+        matches :func:`sequence_logp`.
     """
     if lce_available(hidden_states):
         # Completion tokens keep their id; everything else → ignore_index, so the
@@ -162,6 +149,12 @@ def fused_sequence_logp(
             input_ids,
             torch.full_like(input_ids, -100),
         )
-        return -linear_nll_sum(hidden_states, lm_head_weight, masked_labels)
+        seq_logp = -linear_nll_sum(hidden_states, lm_head_weight, masked_labels)
+        if length_normalized:
+            count = completion_mask[..., 1:].sum(-1).clamp(min=1)
+            seq_logp = seq_logp / count.to(seq_logp.dtype)
+        return seq_logp
     logits = hidden_states @ lm_head_weight.transpose(-2, -1)
-    return sequence_logp(logits, input_ids, completion_mask)
+    return sequence_logp(
+        logits, input_ids, completion_mask, length_normalized=length_normalized
+    )

@@ -15,8 +15,8 @@ odds-ratio term).
 Unlike the log-ratio heads, this takes the per-completion **length-normalized
 log-probabilities directly** (``log p(y)``, necessarily ``< 0``), because the
 ``log(1 - p)`` term is nonlinear in the log-prob and cannot be expressed from a
-``chosen - rejected`` log-ratio. Use
-:func:`~opaque.api.alignment.logprob.length_normalize` to form the inputs.
+``chosen - rejected`` log-ratio. Use ``sequence_logp(..., length_normalized=True)``
+to form the inputs.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ def odds_ratio_loss(
     Args:
         chosen_logp: Length-normalized log-probability ``log p(y_w)`` of the
             chosen completion (``< 0``). Shape ``(B,)`` or ``()``. Form it with
-            :func:`~opaque.api.alignment.logprob.length_normalize`.
+            ``sequence_logp(..., length_normalized=True)``.
         rejected_logp: Same for the rejected completion.
 
     Returns:

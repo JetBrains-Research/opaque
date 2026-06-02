@@ -5,8 +5,8 @@ Everything needed to assemble a per-example DPO loss, exposed as direct function
 
 - Per-sequence log-probabilities: ``sequence_logp`` and its memory-efficient
   fused drop-in ``fused_sequence_logp`` (project hidden states through the
-  ``lm_head`` without materialising logits), plus ``length_normalize`` to turn a
-  summed completion logp into the per-token mean reward (SimPO / ORPO).
+  ``lm_head`` without materialising logits); pass ``length_normalized=True`` for
+  the per-token mean reward used by SimPO / ORPO.
 - Per-pair heads on log-ratios: ``sigmoid_loss``, ``hinge_loss``, …. Used
   reference-free by passing the policy logp itself as the log-ratio (CPO is
   ``mpo_combine`` of a reference-free ``sigmoid_loss`` and ``chosen_nll_loss``).
@@ -50,7 +50,6 @@ from opaque.api.alignment.dpo.loss import (
 )
 from opaque.api.alignment.logprob import (
     fused_sequence_logp,
-    length_normalize,
     sequence_logp,
 )
 
@@ -58,7 +57,6 @@ __all__ = [
     # per-sequence log-probabilities
     "sequence_logp",
     "fused_sequence_logp",
-    "length_normalize",
     # per-pair heads (on log-ratios)
     "sigmoid_loss",
     "hinge_loss",

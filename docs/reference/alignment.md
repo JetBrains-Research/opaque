@@ -71,13 +71,12 @@ for composite objectives:
 - **`sequence_logp()`** ([`opaque.alignment.dpo.loss`](#api-documentation))
   — sum of completion-token log-probabilities per sequence; applies the
   causal-LM shift, masks to the completion span, and sums. Works
-  per-example or on a batch axis.
+  per-example or on a batch axis. Pass `length_normalized=True` for the
+  per-token mean reward `log π(y)/|y|` (SimPO / ORPO), or `ld_alpha` for the
+  LD-DPO length-desensitized split.
 - **`fused_sequence_logp()`** ([`opaque.alignment.dpo.loss`](#api-documentation))
   — memory-efficient `sequence_logp` over hidden states + `lm_head` weight
-  (per-example only).
-- **`length_normalize()`** ([`opaque.alignment.dpo.loss`](#api-documentation))
-  — divide a summed completion logp by its completion-token count to form the
-  per-token mean reward `log π(y)/|y|` (SimPO / ORPO).
+  (per-example only; same `length_normalized` option).
 
 ### Collators
 

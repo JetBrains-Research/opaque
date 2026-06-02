@@ -138,20 +138,21 @@ remap or blend log-ratios before the head; see the
 ### Reference-free methods (SimPO, CPO, ORPO)
 
 These need no reference model — they score the policy log-prob directly, so you
-skip the reference precompute (§1) entirely. SimPO and ORPO use the
-**length-normalized** per-token reward `r = log π(y) / |y|`, formed with
-`length_normalize`:
+skip the reference precompute (section 1) entirely. SimPO and ORPO use the
+**length-normalized** per-token reward `r = log π(y) / |y|`, via
+`sequence_logp(..., length_normalized=True)`:
 
 ```python
 from opaque.alignment.dpo.loss import (
-    sequence_logp, length_normalize, simpo_loss, odds_ratio_loss,
+    sequence_logp, simpo_loss, odds_ratio_loss,
     chosen_nll_loss, sigmoid_loss, mpo_combine,
 )
 
-chosen_logp = sequence_logp(chosen_out.logits, chosen_ids, chosen_cmask)
+# length_normalized=True → the per-token mean reward log π(y)/|y|
+c = sequence_logp(chosen_out.logits, chosen_ids, chosen_cmask, length_normalized=True)
+r = sequence_logp(rejected_out.logits, rejected_ids, rejected_cmask, length_normalized=True)
+chosen_logp = sequence_logp(chosen_out.logits, chosen_ids, chosen_cmask)  # CPO uses the raw sum
 rejected_logp = sequence_logp(rejected_out.logits, rejected_ids, rejected_cmask)
-c = length_normalize(chosen_logp, chosen_cmask)
-r = length_normalize(rejected_logp, rejected_cmask)
 
 # SimPO — length-normalized sigmoid with a target margin γ:
 loss = simpo_loss(c, r, beta=beta, gamma=gamma)

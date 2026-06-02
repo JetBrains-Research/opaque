@@ -68,7 +68,6 @@ _VARIANTS = {
 _NON_VARIANTS = {
     "sequence_logp",
     "fused_sequence_logp",
-    "length_normalize",
     "odds_ratio_loss",
     "f_divergence_remap",
     "f_divergence_logits",
