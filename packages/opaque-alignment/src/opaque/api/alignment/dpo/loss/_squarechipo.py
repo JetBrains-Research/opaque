@@ -53,8 +53,7 @@ def squarechipo_loss(
             typical values in [0.01, 0.5].
 
     Returns:
-        Per-example scalar loss (same shape as inputs).  All operations
-        are elementwise; the function is vmap-safe.
+        Per-example scalar loss tensor with the same shape as the inputs.
     """
     logits = chosen_logratio - rejected_logratio
     return 0.5 * (torch.sigmoid(beta * logits) - 1.0) ** 2

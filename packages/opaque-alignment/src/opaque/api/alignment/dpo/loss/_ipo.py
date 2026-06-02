@@ -51,8 +51,7 @@ def ipo_loss(
             from the reference to achieve the same reward margin.
 
     Returns:
-        Per-example scalar loss (same shape as inputs).  All operations are
-        element-wise; the function is vmap-safe.
+        Per-example scalar loss tensor with the same shape as the inputs.
     """
     logits = chosen_logratio - rejected_logratio
     return (logits - 1.0 / (2.0 * beta)) ** 2
