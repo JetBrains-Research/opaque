@@ -35,9 +35,9 @@ def reward_metrics(
         - ``"rewards/chosen"``: mean implicit reward for chosen responses.
         - ``"rewards/rejected"``: mean implicit reward for rejected responses.
         - ``"rewards/accuracies"``: fraction of examples where the chosen
-          log-ratio exceeds the rejected one.
+            log-ratio exceeds the rejected one.
         - ``"rewards/margins"``: mean implicit reward margin (chosen minus
-          rejected).
+            rejected).
     """
     chosen_reward = beta * chosen_logratio
     rejected_reward = beta * rejected_logratio
