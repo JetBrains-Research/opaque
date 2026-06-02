@@ -3,13 +3,14 @@
 Mirrors ``opaque.dpsgd`` / ``opaque.dpftrl``: the method's primitives live in
 sub-concern subpackages, and a small curated headline re-exports the primary
 workflow entry points (data prep → collation → reference precompute →
-telemetry). The 14 per-pair losses live in :mod:`opaque.alignment.dpo.loss`;
-the opt-in fused kernel in :mod:`opaque.alignment.dpo.kernel`. Lower-level
-shared primitives (``sequence_logp`` etc.) stay internal under
+telemetry). The per-pair losses and the memory-efficient
+``fused_linear_dpo_loss`` live in :mod:`opaque.alignment.dpo.loss`; the fused
+kernel machinery stays internal under ``opaque.api.alignment.dpo.kernel``.
+Lower-level shared primitives (``sequence_logp`` etc.) stay internal under
 ``opaque.api.alignment`` for power users.
 """
 
-from opaque.alignment.dpo import collator, data, kernel, loss, metric, reference
+from opaque.alignment.dpo import collator, data, loss, metric, reference
 from opaque.alignment.dpo.collator import preference_collator
 from opaque.alignment.dpo.data import extract_prompt
 from opaque.alignment.dpo.metric import reward_metrics
@@ -19,7 +20,6 @@ __all__ = [
     # sub-concern subpackages
     "loss",
     "collator",
-    "kernel",
     "reference",
     "metric",
     "data",

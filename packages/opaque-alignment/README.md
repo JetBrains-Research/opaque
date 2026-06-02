@@ -38,9 +38,8 @@ primitives under its own namespace.
 opaque.alignment                         <- top-level façade (exposes dpo, sft)
 opaque.api.alignment                     <- implementation namespace
 opaque.alignment.dpo                     <- DPO method façade (aggregates the below)
-opaque.alignment.dpo.loss                <- 14 per-pair DPO variants + log-ratio helpers
+opaque.alignment.dpo.loss                <- 14 per-pair variants + helpers + fused_linear_dpo_loss
 opaque.alignment.dpo.collator            <- preference (DPO) collator factory
-opaque.alignment.dpo.kernel              <- fused-linear DPO preference kernel
 opaque.alignment.dpo.reference           <- ref-logp precompute, null_ref_context, EMA
 opaque.alignment.dpo.metric              <- preference reward telemetry
 opaque.alignment.dpo.data                <- preference prompt extraction

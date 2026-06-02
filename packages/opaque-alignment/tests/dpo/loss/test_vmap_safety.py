@@ -61,12 +61,16 @@ _VARIANTS = {
     "sppo_hard_loss": sppo_hard_loss,
 }
 
-_HELPERS = {
+# Public ``dpo.loss`` names that are NOT per-pair variants on log-ratios: the
+# log-ratio helpers/combinators and the memory-efficient fused-linear loss
+# (which operates on hidden states, not log-ratios).
+_NON_VARIANTS = {
     "f_divergence_remap",
     "f_divergence_logits",
     "mpo_combine",
     "wpo_weights",
     "ld_dpo_split",
+    "fused_linear_dpo_loss",
 }
 
 
@@ -91,8 +95,8 @@ def test_sweep_covers_full_family() -> None:
 
     Guards against a new variant landing in ``opaque.alignment.dpo.loss``
     without being added to the vmap-safety sweep: the public ``__all__`` minus
-    the log-ratio helpers must equal the swept variant set.
+    the non-variant names (helpers + fused loss) must equal the swept set.
     """
     public = set(dpo_loss.__all__)
-    assert public - _HELPERS == set(_VARIANTS)
+    assert public - _NON_VARIANTS == set(_VARIANTS)
     assert len(_VARIANTS) == 14
