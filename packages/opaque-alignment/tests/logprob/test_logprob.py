@@ -260,7 +260,12 @@ def _fused_logp_inputs(seed: int, *, dtype=torch.float64, device="cpu"):
     input_ids = torch.randint(0, _FV, (_FB, _FT), generator=gen)
     completion_mask = torch.zeros(_FB, _FT, dtype=dtype)
     completion_mask[:, 3:] = 1.0  # completion span = tokens [3:]
-    return hidden.to(device), weight.to(device), input_ids.to(device), completion_mask.to(device)
+    return (
+        hidden.to(device),
+        weight.to(device),
+        input_ids.to(device),
+        completion_mask.to(device),
+    )
 
 
 def test_fused_sequence_logp_matches_eager_cpu() -> None:

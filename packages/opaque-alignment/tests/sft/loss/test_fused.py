@@ -66,9 +66,9 @@ def test_fused_vmap_grad_matches_eager_cpu(name: str) -> None:
     assert torch.allclose(g_h_fused, g_h_eager, atol=1e-10)
 
     # Grad w.r.t. the shared weight, summed over the per-example batch.
-    g_w_fused = grad(lambda w: vmap(lambda h, lab: fused(h, w, lab))(hidden, labels).sum())(
-        weight
-    )
+    g_w_fused = grad(
+        lambda w: vmap(lambda h, lab: fused(h, w, lab))(hidden, labels).sum()
+    )(weight)
     g_w_eager = grad(
         lambda w: vmap(lambda h, lab: eager(h @ w.T, lab))(hidden, labels).sum()
     )(weight)
