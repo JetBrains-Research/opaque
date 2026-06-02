@@ -24,7 +24,9 @@ class TestSimpo:
         """At Δ = 0 the margin γ gives -log σ(-γ) = softplus(γ)."""
         gamma = 0.7
         out = simpo_loss(torch.tensor(0.0), torch.tensor(0.0), beta=2.0, gamma=gamma)
-        assert math.isclose(out.item(), F.softplus(torch.tensor(gamma)).item(), rel_tol=1e-6)
+        assert math.isclose(
+            out.item(), F.softplus(torch.tensor(gamma)).item(), rel_tol=1e-6
+        )
 
     def test_reduces_to_sigmoid_at_gamma_zero(self) -> None:
         """γ = 0 recovers the standard DPO sigmoid loss on the same log-ratios."""
@@ -51,5 +53,7 @@ class TestSimpo:
     def test_vmap_grad_finite(self) -> None:
         torch.manual_seed(0)
         c, r = torch.randn(5), torch.randn(5)
-        gc, gr = vmap(grad(lambda a, b: simpo_loss(a, b, beta=0.1, gamma=0.3), argnums=(0, 1)))(c, r)
+        gc, gr = vmap(
+            grad(lambda a, b: simpo_loss(a, b, beta=0.1, gamma=0.3), argnums=(0, 1))
+        )(c, r)
         assert torch.isfinite(gc).all() and torch.isfinite(gr).all()
