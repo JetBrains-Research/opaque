@@ -179,3 +179,107 @@ def test_ema_update_preserves_tensor_shape_and_dtype() -> None:
 
     assert result["w"].shape == (3, 4)
     assert result["w"].dtype == torch.float32
+
+
+# ---------------------------------------------------------------------------
+# vmap composition (TR-DPO loop contract)
+# ---------------------------------------------------------------------------
+
+
+def test_ema_update_composes_with_vmap_grad_outside_loop() -> None:
+    """The TR-DPO outer-update + vmap inner-loss pattern produces finite grads.
+
+    Mirrors the production loop:
+
+        ref = ema_update_reference(ref, policy, alpha)   # outside vmap
+        for batch in loader:
+            grads = vmap(grad(loss(policy, *batch, ref=ref)))(batch)
+            ...
+
+    The closure reads ``policy_params`` (the vmapped argument) and the
+    EMA'd ``ref_params`` (captured from the outer scope). The contract is
+    that ``ref_params`` from a pure ``ema_update_reference`` call carries
+    no autograd graph back into the policy update — so ``vmap(grad(...))``
+    must produce finite gradients with the captured ref treated as a
+    constant.
+    """
+    from torch.func import grad, vmap
+
+    torch.manual_seed(0)
+    # Tiny per-parameter-dict pytree: two leaves so structure preservation
+    # under vmap is exercised.
+    ref = {"w": torch.randn(4, 3), "b": torch.randn(4)}
+    policy = {"w": torch.randn(4, 3), "b": torch.randn(4)}
+
+    # One EMA update outside any vmap context.
+    new_ref = ema_update_reference(ref, policy, alpha=0.1)
+    # The new ref must not carry a grad_fn — ema_update_reference is pure
+    # and intended to be safe to use as a captured constant inside vmap.
+    assert new_ref["w"].grad_fn is None
+    assert new_ref["b"].grad_fn is None
+
+    # Per-example synthetic batch: 5 examples, each a (3,)-vector input + scalar
+    # target. Loss: squared error from (policy @ x + bias) − target, with the
+    # EMA'd ref subtracted from policy to produce a TR-DPO-style "deviation"
+    # term. Whatever the closure does, the key invariant is that grad flows
+    # only through policy and produces finite gradients under vmap.
+    B, H, K = 5, 3, 4
+    xs = torch.randn(B, H)
+    ys = torch.randn(B, K)
+
+    def per_example_loss(p, x, y):
+        # `new_ref` captured from outer scope; treated as constant.
+        deviation = p["w"] - new_ref["w"]  # (K, H)
+        pred = p["w"] @ x + p["b"]  # (K,)
+        return ((pred - y) ** 2).sum() + 0.01 * (deviation**2).sum()
+
+    g = vmap(grad(per_example_loss), in_dims=(None, 0, 0))(policy, xs, ys)
+    assert isinstance(g, dict), "grad over a dict pytree must return a dict"
+    assert set(g.keys()) == {"w", "b"}
+    # in_dims=None for the policy means vmap broadcasts it across examples;
+    # each per-example grad contributes a separate (leaf_shape) tensor,
+    # stacked along the batch dim — exactly what DP-SGD per-example
+    # clipping operates on.
+    assert g["w"].shape == (B, *policy["w"].shape), (
+        f"expected (B={B}, *policy['w'].shape={tuple(policy['w'].shape)}), "
+        f"got {tuple(g['w'].shape)}"
+    )
+    assert g["b"].shape == (B, *policy["b"].shape)
+    assert torch.isfinite(g["w"]).all()
+    assert torch.isfinite(g["b"]).all()
+
+
+def test_ema_update_alternated_with_vmap_no_graph_accumulation() -> None:
+    """Alternating EMA updates + vmap(grad(...)) doesn't accumulate autograd graph.
+
+    Simulates several TR-DPO outer-step iterations: EMA-update the reference,
+    take a vmap-grad-based "policy update," EMA-update again with the new
+    policy, etc. After several iterations, the reference pytree must still
+    carry no grad_fn — if EMA accidentally retained a graph through the
+    captured-policy path, this test would surface it via a non-None
+    ``grad_fn`` on the EMA result.
+    """
+    from torch.func import grad, vmap
+
+    torch.manual_seed(1)
+    ref = {"w": torch.randn(3, 2)}
+    policy = {"w": torch.randn(3, 2)}
+
+    B, H, K = 4, 2, 3
+    xs = torch.randn(B, H)
+    ys = torch.randn(B, K)
+
+    def per_example_loss(p, x, y, ref_w):
+        return ((p["w"] @ x - y) ** 2).sum() + 0.01 * ((p["w"] - ref_w) ** 2).sum()
+
+    for _step in range(3):
+        ref = ema_update_reference(ref, policy, alpha=0.2)
+        assert ref["w"].grad_fn is None, (
+            f"EMA reference must not carry grad_fn after step {_step}"
+        )
+        g = vmap(grad(per_example_loss), in_dims=(None, 0, 0, None))(
+            policy, xs, ys, ref["w"]
+        )
+        assert torch.isfinite(g["w"]).all()
+        # Apply a vanilla gradient step on the policy and continue.
+        policy = {"w": policy["w"] - 0.01 * g["w"]}
