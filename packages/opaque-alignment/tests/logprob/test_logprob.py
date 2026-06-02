@@ -178,15 +178,6 @@ def test_sequence_logp_per_example_matches_batched() -> None:
     assert torch.allclose(batched, per_example, atol=1e-6)
 
 
-def test_sequence_logp_ld_alpha_not_implemented() -> None:
-    """ld_alpha is a documented stub: any non-None value raises."""
-    logits = torch.randn(1, 3, 4)
-    input_ids = torch.randint(0, 4, (1, 3))
-    completion_mask = torch.ones(1, 3, dtype=torch.long)
-    with pytest.raises(NotImplementedError, match="ld_alpha"):
-        sequence_logp(logits, input_ids, completion_mask, ld_alpha=1.0)
-
-
 def test_sequence_logp_shared_prefix_len_ignored_when_alpha_none() -> None:
     """shared_prefix_len is accepted and ignored when ld_alpha is None."""
     torch.manual_seed(4)
@@ -343,3 +334,57 @@ def test_length_normalize_matches_mean_of_sequence_logp() -> None:
     mean = length_normalize(summed, cmask)
     count = cmask[1:].sum()
     torch.testing.assert_close(mean, summed / count)
+
+
+# ---------------------------------------------------------------------------
+# sequence_logp — LD-DPO length-desensitization (ld_alpha)
+# ---------------------------------------------------------------------------
+
+
+def test_ld_alpha_one_recovers_plain_sum() -> None:
+    """ld_alpha=1.0 weights every token by 1.0 == the plain masked sum."""
+    torch.manual_seed(0)
+    logits = torch.randn(8, 13)
+    ids = torch.randint(0, 13, (8,))
+    cmask = torch.ones(8)
+    cmask[:3] = 0.0
+    plain = sequence_logp(logits, ids, cmask)
+    ld = sequence_logp(logits, ids, cmask, ld_alpha=1.0, shared_prefix_len=2)
+    torch.testing.assert_close(ld, plain)
+
+
+def test_ld_alpha_zero_keeps_only_prefix() -> None:
+    """ld_alpha=0.0 keeps only shifted positions < shared_prefix_len."""
+    torch.manual_seed(1)
+    logits = torch.randn(8, 13)
+    ids = torch.randint(0, 13, (8,))
+    cmask = torch.ones(8)
+    prefix = 4
+    ld = sequence_logp(logits, ids, cmask, ld_alpha=0.0, shared_prefix_len=prefix)
+    # Reference: per-token logp over shifted positions < prefix, masked-summed.
+    per_token = selective_log_softmax(logits[:-1], ids[1:])
+    pos = torch.arange(per_token.shape[-1])
+    want = (per_token * cmask[1:] * (pos < prefix)).sum(-1)
+    torch.testing.assert_close(ld, want)
+
+
+def test_ld_alpha_requires_shared_prefix_len() -> None:
+    logits = torch.randn(5, 7)
+    ids = torch.randint(0, 7, (5,))
+    cmask = torch.ones(5)
+    with pytest.raises(ValueError, match="shared_prefix_len"):
+        sequence_logp(logits, ids, cmask, ld_alpha=0.5)
+
+
+def test_ld_alpha_vmap_grad_finite() -> None:
+    torch.manual_seed(2)
+    logits = torch.randn(4, 6, 9)
+    ids = torch.randint(0, 9, (4, 6))
+    cmask = torch.ones(4, 6)
+
+    def per_example(lg, i, c):
+        return sequence_logp(lg, i, c, ld_alpha=0.5, shared_prefix_len=2)
+
+    g = vmap(grad(per_example))(logits, ids, cmask)
+    assert g.shape == logits.shape
+    assert torch.isfinite(g).all()

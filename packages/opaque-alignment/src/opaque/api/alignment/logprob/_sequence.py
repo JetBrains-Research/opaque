@@ -75,29 +75,44 @@ def sequence_logp(
             It is cast to the logits dtype before multiplying.
         ld_alpha: LD-DPO length-desensitisation coefficient. Must be ``None``;
             any other value raises :class:`NotImplementedError`.
-        shared_prefix_len: LD-DPO shared-prefix length. Accepted and ignored
-            when ``ld_alpha is None``.
+        ld_alpha: LD-DPO (arXiv:2409.10524) length-desensitisation coefficient.
+            When set, completion tokens beyond ``shared_prefix_len`` are weighted
+            by ``ld_alpha`` (typically ``∈ [0, 1]``) instead of ``1.0``, damping
+            the verbose tail's contribution; ``ld_alpha=1.0`` recovers the plain
+            masked sum. The fused path does not support it — LD-DPO needs the
+            per-token log-probs, so use this eager ``sequence_logp``.
+        shared_prefix_len: LD-DPO shared-prefix length (an ``int`` or a
+            per-example tensor broadcasting against the shifted position axis).
+            Required when ``ld_alpha`` is set; ignored otherwise.
 
     Returns:
         Float tensor of shape ``(...)`` (one summed logp per sequence).
 
     Raises:
-        NotImplementedError: If ``ld_alpha is not None``.
+        ValueError: If ``ld_alpha`` is set without ``shared_prefix_len``.
     """
-    if ld_alpha is not None:
-        raise NotImplementedError(
-            "ld_alpha decomposition lands in Phase γ (_ld_dpo); use ld_alpha=None"
-        )
-    del shared_prefix_len  # accepted, ignored when ld_alpha is None
-
     # Causal-LM shift: predict token t+1 from the logits at position t.
     shifted_logits = logits[..., :-1, :]
     target_ids = input_ids[..., 1:]
-    target_mask = completion_mask[..., 1:]
-
+    target_mask = completion_mask[..., 1:].to(shifted_logits.dtype)
     per_token_logp = selective_log_softmax(shifted_logits, target_ids)
-    masked = per_token_logp * target_mask.to(per_token_logp.dtype)
-    return masked.sum(dim=-1)
+
+    if ld_alpha is not None:
+        if shared_prefix_len is None:
+            raise ValueError("ld_alpha (LD-DPO) requires shared_prefix_len")
+        # Weight shifted positions < shared_prefix_len by 1.0, the rest by
+        # ld_alpha (the dpo.loss.ld_dpo_split weighting, applied from logits).
+        pos = torch.arange(per_token_logp.shape[-1], device=per_token_logp.device)
+        ld_weight = torch.where(
+            pos < shared_prefix_len,
+            torch.ones((), dtype=per_token_logp.dtype, device=per_token_logp.device),
+            torch.full(
+                (), ld_alpha, dtype=per_token_logp.dtype, device=per_token_logp.device
+            ),
+        )
+        return (per_token_logp * target_mask * ld_weight).sum(dim=-1)
+
+    return (per_token_logp * target_mask).sum(dim=-1)
 
 
 def fused_sequence_logp(
