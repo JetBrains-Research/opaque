@@ -26,10 +26,10 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-__all__ = ["dpo_bco_pair"]
+__all__ = ["bco_pair_loss"]
 
 
-def dpo_bco_pair(
+def bco_pair_loss(
     chosen_logratio: torch.Tensor,
     rejected_logratio: torch.Tensor,
     *,

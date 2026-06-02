@@ -40,7 +40,7 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-__all__ = ["dpo_discopop"]
+__all__ = ["discopop_loss"]
 
 # Maximum absolute value of logits passed to torch.exp(-logits).
 # exp(-logits) overflows float32 for logits < -88.7 (exp(88.7) ≈ 3.4e38).
@@ -48,7 +48,7 @@ __all__ = ["dpo_discopop"]
 _EXP_CLAMP: float = 80.0
 
 
-def dpo_discopop(
+def discopop_loss(
     chosen_logratio: torch.Tensor,
     rejected_logratio: torch.Tensor,
     *,

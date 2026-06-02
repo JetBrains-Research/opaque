@@ -21,10 +21,10 @@ from __future__ import annotations
 
 import torch
 
-__all__ = ["dpo_ipo"]
+__all__ = ["ipo_loss"]
 
 
-def dpo_ipo(
+def ipo_loss(
     chosen_logratio: torch.Tensor,
     rejected_logratio: torch.Tensor,
     *,

@@ -23,10 +23,10 @@ from __future__ import annotations
 
 import torch
 
-__all__ = ["dpo_sppo_hard"]
+__all__ = ["sppo_hard_loss"]
 
 
-def dpo_sppo_hard(
+def sppo_hard_loss(
     chosen_logratio: torch.Tensor,
     rejected_logratio: torch.Tensor,
     *,

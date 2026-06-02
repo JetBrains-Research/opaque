@@ -8,8 +8,8 @@ Implements the two APO variants from:
 Both variants operate on per-example ``(chosen_logratio, rejected_logratio)``
 scalars. They are pure, vmap-safe Tier-1 losses (§3.3):
 
-- :func:`dpo_apo_zero` — anchored push: chosen up, rejected down independently.
-- :func:`dpo_apo_down` — asymmetric pull: pulls chosen *toward* the chosen side
+- :func:`apo_zero_loss` — anchored push: chosen up, rejected down independently.
+- :func:`apo_down_loss` — asymmetric pull: pulls chosen *toward* the chosen side
   while simultaneously pulling chosen above rejected by at least the margin.
 
 No cross-example aggregates; NaN-injection contract holds by construction.
@@ -20,10 +20,10 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-__all__ = ["dpo_apo_zero", "dpo_apo_down"]
+__all__ = ["apo_zero_loss", "apo_down_loss"]
 
 
-def dpo_apo_zero(
+def apo_zero_loss(
     chosen_logratio: torch.Tensor,
     rejected_logratio: torch.Tensor,
     *,
@@ -51,7 +51,7 @@ def dpo_apo_zero(
     return losses_chosen + losses_rejected
 
 
-def dpo_apo_down(
+def apo_down_loss(
     chosen_logratio: torch.Tensor,
     rejected_logratio: torch.Tensor,
     *,

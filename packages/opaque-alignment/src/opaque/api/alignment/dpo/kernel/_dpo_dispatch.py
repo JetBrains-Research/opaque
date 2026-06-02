@@ -3,9 +3,9 @@
 """Public DPO dispatcher for the chunked fused-linear preference kernel
 (plan §7.10).
 
-:func:`opaque_fused_linear_dpo_loss` is the user-facing entry point. It takes an
+:func:`fused_linear_dpo_loss` is the user-facing entry point. It takes an
 eager per-pair DPO loss callable (``per_pair_loss_fn``, e.g.
-:func:`opaque.api.alignment.dpo.loss.dpo_sigmoid`), binds its keyword arguments
+:func:`opaque.api.alignment.dpo.loss.sigmoid_loss`), binds its keyword arguments
 (``beta`` and, where applicable, ``label_smoothing``), and delegates the actual
 work to the reusable chunked core
 :func:`opaque.api.alignment.dpo.kernel._fused_linear_preference.fused_linear_preference`.
@@ -52,9 +52,9 @@ from opaque.api.alignment.dpo.kernel._fused_linear_preference import (
     fused_linear_preference,
 )
 from opaque.api.alignment.dpo.kernel._utils import follow_autocast
-from opaque.api.alignment.dpo.loss._sigmoid import dpo_sigmoid
+from opaque.api.alignment.dpo.loss._sigmoid import sigmoid_loss
 
-__all__ = ["opaque_fused_linear_dpo_loss"]
+__all__ = ["fused_linear_dpo_loss"]
 
 
 def _bind_per_pair_loss_fn(
@@ -65,11 +65,11 @@ def _bind_per_pair_loss_fn(
 ) -> PerPairLossFn:
     """Bind a DPO variant's scalar keyword arguments.
 
-    ``loss_fn`` is an eager per-pair DPO loss (e.g. :func:`dpo_sigmoid`); this
+    ``loss_fn`` is an eager per-pair DPO loss (e.g. :func:`sigmoid_loss`); this
     returns a callable ``(chosen_logratio, rejected_logratio) -> Tensor`` (the
     :class:`~opaque.api.alignment.dpo.kernel._fused_linear_preference.PerPairLossFn`
     contract). ``beta`` is bound for every variant; ``label_smoothing`` is bound
-    only for variants that accept it (e.g. :func:`dpo_sigmoid`), so variants
+    only for variants that accept it (e.g. :func:`sigmoid_loss`), so variants
     without it are not passed an unexpected keyword.
     """
     params = inspect.signature(loss_fn).parameters
@@ -79,7 +79,7 @@ def _bind_per_pair_loss_fn(
     return functools.partial(loss_fn, **bound_kwargs)
 
 
-def opaque_fused_linear_dpo_loss(
+def fused_linear_dpo_loss(
     hidden_states: torch.Tensor,
     lm_head_weight: torch.Tensor,
     target_ids: torch.Tensor,
@@ -88,7 +88,7 @@ def opaque_fused_linear_dpo_loss(
     ref_rejected_logp: torch.Tensor,
     *,
     beta: float = 0.1,
-    per_pair_loss_fn: PerPairLossFn = dpo_sigmoid,
+    per_pair_loss_fn: PerPairLossFn = sigmoid_loss,
     chunk_size: int = 1,
     label_smoothing: float = 0.0,
 ) -> torch.Tensor:
@@ -123,8 +123,8 @@ def opaque_fused_linear_dpo_loss(
             ``0.1``.
         per_pair_loss_fn: An eager per-pair DPO loss taking
             ``(chosen_logratio, rejected_logratio, *, beta[, label_smoothing])``
-            and returning a per-pair ``(B,)`` tensor — e.g. :func:`dpo_sigmoid`
-            (default) or :func:`dpo_hinge` from
+            and returning a per-pair ``(B,)`` tensor — e.g. :func:`sigmoid_loss`
+            (default) or :func:`hinge_loss` from
             :mod:`opaque.api.alignment.dpo.loss`. ``beta`` (and
             ``label_smoothing`` where accepted) is bound by the dispatcher.
         chunk_size: Number of pairs whose logits are materialised at once.

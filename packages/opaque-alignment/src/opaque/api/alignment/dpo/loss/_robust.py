@@ -28,10 +28,10 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-__all__ = ["dpo_robust"]
+__all__ = ["robust_loss"]
 
 
-def dpo_robust(
+def robust_loss(
     chosen_logratio: torch.Tensor,
     rejected_logratio: torch.Tensor,
     *,

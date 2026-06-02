@@ -24,10 +24,10 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-__all__ = ["dpo_nca_pair"]
+__all__ = ["nca_pair_loss"]
 
 
-def dpo_nca_pair(
+def nca_pair_loss(
     chosen_logratio: torch.Tensor,
     rejected_logratio: torch.Tensor,
     *,

@@ -30,10 +30,10 @@ from __future__ import annotations
 
 import torch
 
-__all__ = ["dpo_sft"]
+__all__ = ["sft_loss"]
 
 
-def dpo_sft(
+def sft_loss(
     chosen_logp: torch.Tensor,
     /,
     *_args: object,

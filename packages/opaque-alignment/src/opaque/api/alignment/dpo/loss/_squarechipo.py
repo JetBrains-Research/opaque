@@ -28,10 +28,10 @@ from __future__ import annotations
 
 import torch
 
-__all__ = ["dpo_squarechipo"]
+__all__ = ["squarechipo_loss"]
 
 
-def dpo_squarechipo(
+def squarechipo_loss(
     chosen_logratio: torch.Tensor,
     rejected_logratio: torch.Tensor,
     *,

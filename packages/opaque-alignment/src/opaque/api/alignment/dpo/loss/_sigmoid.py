@@ -22,10 +22,10 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-__all__ = ["dpo_sigmoid"]
+__all__ = ["sigmoid_loss"]
 
 
-def dpo_sigmoid(
+def sigmoid_loss(
     chosen_logratio: torch.Tensor,
     rejected_logratio: torch.Tensor,
     *,

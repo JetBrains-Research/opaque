@@ -81,44 +81,50 @@ from opaque.random import key, fold_in
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.alignment.dpo import (
     compute_ref_logprobs_for_dataset,
-    dpo_apo_down,
-    dpo_apo_zero,
-    dpo_bco_pair,
-    dpo_discopop,
-    dpo_exo_pair,
-    dpo_hinge,
-    dpo_ipo,
-    dpo_nca_pair,
-    dpo_robust,
-    dpo_sft,
-    dpo_sigmoid,
-    dpo_sigmoid_norm,
-    dpo_sppo_hard,
-    dpo_squarechipo,
     extract_prompt,
     preference_collator,
     reward_metrics,
-    sequence_logp,
 )
+from opaque.alignment.dpo.loss import (
+    apo_down_loss,
+    apo_zero_loss,
+    bco_pair_loss,
+    discopop_loss,
+    exo_pair_loss,
+    hinge_loss,
+    ipo_loss,
+    nca_pair_loss,
+    robust_loss,
+    sft_loss,
+    sigmoid_loss,
+    sigmoid_norm_loss,
+    sppo_hard_loss,
+    squarechipo_loss,
+)
+
+# ``sequence_logp`` is a shared lower-level primitive (no public façade); power
+# users reach into the ``opaque.api`` surface for it (see opaque-alignment
+# README — logprob is intentionally api-only).
+from opaque.api.alignment.logprob import sequence_logp
 
 # The library (``opaque.alignment.dpo``) exposes direct loss functions, not a
 # string registry. The CLI ``--loss-type`` string is mapped to a function here,
 # at the call site — mirroring ``examples/train_sft.py``'s ``_SFT_LOSSES``.
 _DPO_LOSSES = {
-    "sigmoid": dpo_sigmoid,
-    "hinge": dpo_hinge,
-    "robust": dpo_robust,
-    "ipo": dpo_ipo,
-    "sigmoid_norm": dpo_sigmoid_norm,
-    "discopop": dpo_discopop,
-    "sft": dpo_sft,
-    "squarechipo": dpo_squarechipo,
-    "apo_zero": dpo_apo_zero,
-    "apo_down": dpo_apo_down,
-    "exo_pair": dpo_exo_pair,
-    "nca_pair": dpo_nca_pair,
-    "bco_pair": dpo_bco_pair,
-    "sppo_hard": dpo_sppo_hard,
+    "sigmoid": sigmoid_loss,
+    "hinge": hinge_loss,
+    "robust": robust_loss,
+    "ipo": ipo_loss,
+    "sigmoid_norm": sigmoid_norm_loss,
+    "discopop": discopop_loss,
+    "sft": sft_loss,
+    "squarechipo": squarechipo_loss,
+    "apo_zero": apo_zero_loss,
+    "apo_down": apo_down_loss,
+    "exo_pair": exo_pair_loss,
+    "nca_pair": nca_pair_loss,
+    "bco_pair": bco_pair_loss,
+    "sppo_hard": sppo_hard_loss,
 }
 
 # DP-FTRL mechanism swap (plan §3.2): the loss closure is mechanism-agnostic.

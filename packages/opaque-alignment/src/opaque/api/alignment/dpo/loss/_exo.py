@@ -32,10 +32,10 @@ import math
 import torch
 import torch.nn.functional as F
 
-__all__ = ["dpo_exo_pair"]
+__all__ = ["exo_pair_loss"]
 
 
-def dpo_exo_pair(
+def exo_pair_loss(
     chosen_logratio: torch.Tensor,
     rejected_logratio: torch.Tensor,
     *,

@@ -22,20 +22,20 @@ from torch.func import grad, vmap
 
 import opaque.alignment.dpo.loss as dpo_loss
 from opaque.alignment.dpo.loss import (
-    dpo_apo_down,
-    dpo_apo_zero,
-    dpo_bco_pair,
-    dpo_discopop,
-    dpo_exo_pair,
-    dpo_hinge,
-    dpo_ipo,
-    dpo_nca_pair,
-    dpo_robust,
-    dpo_sft,
-    dpo_sigmoid,
-    dpo_sigmoid_norm,
-    dpo_sppo_hard,
-    dpo_squarechipo,
+    apo_down_loss,
+    apo_zero_loss,
+    bco_pair_loss,
+    discopop_loss,
+    exo_pair_loss,
+    hinge_loss,
+    ipo_loss,
+    nca_pair_loss,
+    robust_loss,
+    sft_loss,
+    sigmoid_loss,
+    sigmoid_norm_loss,
+    sppo_hard_loss,
+    squarechipo_loss,
 )
 
 _BETA = 0.1
@@ -45,20 +45,20 @@ _BETA = 0.1
 # / ``wpo_weights`` / ``ld_dpo_split`` helpers are log-ratio preprocessors, not
 # per-pair losses, so they are excluded from the (chosen, rejected) sweep.
 _VARIANTS = {
-    "dpo_sigmoid": dpo_sigmoid,
-    "dpo_hinge": dpo_hinge,
-    "dpo_robust": dpo_robust,
-    "dpo_ipo": dpo_ipo,
-    "dpo_sigmoid_norm": dpo_sigmoid_norm,
-    "dpo_discopop": dpo_discopop,
-    "dpo_sft": dpo_sft,
-    "dpo_squarechipo": dpo_squarechipo,
-    "dpo_apo_zero": dpo_apo_zero,
-    "dpo_apo_down": dpo_apo_down,
-    "dpo_exo_pair": dpo_exo_pair,
-    "dpo_nca_pair": dpo_nca_pair,
-    "dpo_bco_pair": dpo_bco_pair,
-    "dpo_sppo_hard": dpo_sppo_hard,
+    "sigmoid_loss": sigmoid_loss,
+    "hinge_loss": hinge_loss,
+    "robust_loss": robust_loss,
+    "ipo_loss": ipo_loss,
+    "sigmoid_norm_loss": sigmoid_norm_loss,
+    "discopop_loss": discopop_loss,
+    "sft_loss": sft_loss,
+    "squarechipo_loss": squarechipo_loss,
+    "apo_zero_loss": apo_zero_loss,
+    "apo_down_loss": apo_down_loss,
+    "exo_pair_loss": exo_pair_loss,
+    "nca_pair_loss": nca_pair_loss,
+    "bco_pair_loss": bco_pair_loss,
+    "sppo_hard_loss": sppo_hard_loss,
 }
 
 _HELPERS = {

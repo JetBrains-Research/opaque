@@ -7,15 +7,15 @@ pure-PyTorch chunked-preference kernel on CPU:
 
 - **Eager-vs-fused parity** (within ``1e-4``): an all-at-once reference that
   materialises the full ``(2B, T, V)`` logits → per-sequence logp → DPO loss,
-  compared against :func:`opaque_fused_linear_dpo_loss` with ``chunk_size`` ∈
+  compared against :func:`fused_linear_dpo_loss` with ``chunk_size`` ∈
   {1, 2}. Chunking must not change the result.
 - **chunk_size invariance** (within ``1e-5``): the result is identical across
   ``chunk_size`` ∈ {1, 2, 4} — chunking is a pure partition of the pairs axis.
 - **grad composability** (within ``1e-4``): ``torch.func.grad`` w.r.t.
-  ``hidden_states`` of ``opaque_fused_linear_dpo_loss(...).sum()`` is finite and
+  ``hidden_states`` of ``fused_linear_dpo_loss(...).sum()`` is finite and
   matches the eager-reference gradient. The gradient must flow through the chunk
   boundaries identically.
-- A couple of ``per_pair_loss_fn`` values (:func:`dpo_sigmoid`, :func:`dpo_hinge`).
+- A couple of ``per_pair_loss_fn`` values (:func:`sigmoid_loss`, :func:`hinge_loss`).
 
 The kernel takes an eager per-pair loss *callable* directly (no string registry;
 mirrors ``fused_linear_sft_loss(loss_fn=...)``).
@@ -34,8 +34,8 @@ import pytest
 import torch
 from torch.func import grad
 
-from opaque.api.alignment.dpo.kernel._dpo_dispatch import opaque_fused_linear_dpo_loss
-from opaque.api.alignment.dpo.loss import dpo_hinge, dpo_sigmoid
+from opaque.api.alignment.dpo.kernel._dpo_dispatch import fused_linear_dpo_loss
+from opaque.api.alignment.dpo.loss import hinge_loss, sigmoid_loss
 from opaque.api.alignment.logprob._sequence import sequence_logp
 
 # Small, fixed dims per plan §7.10.
@@ -115,7 +115,7 @@ def _eager_reference(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("per_pair_loss_fn", [dpo_sigmoid, dpo_hinge])
+@pytest.mark.parametrize("per_pair_loss_fn", [sigmoid_loss, hinge_loss])
 @pytest.mark.parametrize("chunk_size", [1, 2])
 def test_eager_vs_fused_parity(per_pair_loss_fn, chunk_size: int) -> None:
     """Fused (chunked) loss matches the all-at-once eager reference."""
@@ -123,7 +123,7 @@ def test_eager_vs_fused_parity(per_pair_loss_fn, chunk_size: int) -> None:
     inputs = _make_inputs(seed=1)
 
     expected = _eager_reference(**inputs, beta=beta, per_pair_loss_fn=per_pair_loss_fn)
-    actual = opaque_fused_linear_dpo_loss(
+    actual = fused_linear_dpo_loss(
         **inputs, beta=beta, per_pair_loss_fn=per_pair_loss_fn, chunk_size=chunk_size
     )
 
@@ -136,17 +136,17 @@ def test_eager_vs_fused_parity(per_pair_loss_fn, chunk_size: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("per_pair_loss_fn", [dpo_sigmoid, dpo_hinge])
+@pytest.mark.parametrize("per_pair_loss_fn", [sigmoid_loss, hinge_loss])
 def test_chunk_size_invariance(per_pair_loss_fn) -> None:
     """Result is identical across chunk_size ∈ {1, 2, 4}."""
     beta = 0.1
     inputs = _make_inputs(seed=2)
 
-    base = opaque_fused_linear_dpo_loss(
+    base = fused_linear_dpo_loss(
         **inputs, beta=beta, per_pair_loss_fn=per_pair_loss_fn, chunk_size=1
     )
     for chunk_size in (2, 4):
-        other = opaque_fused_linear_dpo_loss(
+        other = fused_linear_dpo_loss(
             **inputs,
             beta=beta,
             per_pair_loss_fn=per_pair_loss_fn,
@@ -161,11 +161,11 @@ def test_chunk_size_covers_uneven_partition() -> None:
     """chunk_size=3 with B=4 (an uneven final chunk) still matches chunk_size=1."""
     beta = 0.2
     inputs = _make_inputs(seed=7)
-    base = opaque_fused_linear_dpo_loss(
-        **inputs, beta=beta, per_pair_loss_fn=dpo_sigmoid, chunk_size=1
+    base = fused_linear_dpo_loss(
+        **inputs, beta=beta, per_pair_loss_fn=sigmoid_loss, chunk_size=1
     )
-    uneven = opaque_fused_linear_dpo_loss(
-        **inputs, beta=beta, per_pair_loss_fn=dpo_sigmoid, chunk_size=3
+    uneven = fused_linear_dpo_loss(
+        **inputs, beta=beta, per_pair_loss_fn=sigmoid_loss, chunk_size=3
     )
     assert torch.allclose(base, uneven, atol=_INVARIANCE_ATOL, rtol=0.0)
 
@@ -175,7 +175,7 @@ def test_chunk_size_covers_uneven_partition() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("per_pair_loss_fn", [dpo_sigmoid, dpo_hinge])
+@pytest.mark.parametrize("per_pair_loss_fn", [sigmoid_loss, hinge_loss])
 @pytest.mark.parametrize("chunk_size", [1, 2])
 def test_grad_composability(per_pair_loss_fn, chunk_size: int) -> None:
     """torch.func.grad w.r.t. hidden_states is finite and matches the eager grad.
@@ -190,7 +190,7 @@ def test_grad_composability(per_pair_loss_fn, chunk_size: int) -> None:
     hidden = inputs["hidden_states"]
 
     def fused_sum(h: torch.Tensor) -> torch.Tensor:
-        return opaque_fused_linear_dpo_loss(
+        return fused_linear_dpo_loss(
             h,
             **static,
             beta=beta,
@@ -219,8 +219,8 @@ def test_grad_chunk_size_invariance() -> None:
     hidden = inputs["hidden_states"]
 
     def fused_sum(h: torch.Tensor, chunk_size: int) -> torch.Tensor:
-        return opaque_fused_linear_dpo_loss(
-            h, **static, beta=beta, per_pair_loss_fn=dpo_sigmoid, chunk_size=chunk_size
+        return fused_linear_dpo_loss(
+            h, **static, beta=beta, per_pair_loss_fn=sigmoid_loss, chunk_size=chunk_size
         ).sum()
 
     grad_1 = grad(lambda h: fused_sum(h, 1))(hidden)
@@ -242,14 +242,14 @@ def test_autocast_entry_is_noop_when_inactive_on_cpu() -> None:
     """
     beta = 0.1
     inputs = _make_inputs(seed=5, dtype=torch.float32)
-    out = opaque_fused_linear_dpo_loss(
-        **inputs, beta=beta, per_pair_loss_fn=dpo_sigmoid
+    out = fused_linear_dpo_loss(
+        **inputs, beta=beta, per_pair_loss_fn=sigmoid_loss
     )
     assert out.dtype == torch.float32
     # Recompute under a no-op (disabled) autocast region: still float32, equal.
     with torch.autocast(device_type="cpu", enabled=False):
-        out_disabled = opaque_fused_linear_dpo_loss(
-            **inputs, beta=beta, per_pair_loss_fn=dpo_sigmoid
+        out_disabled = fused_linear_dpo_loss(
+            **inputs, beta=beta, per_pair_loss_fn=sigmoid_loss
         )
     assert out_disabled.dtype == torch.float32
     assert torch.equal(out, out_disabled)
@@ -266,12 +266,12 @@ def test_autocast_entry_follows_active_cpu_autocast() -> None:
     """
     beta = 0.1
     inputs = _make_inputs(seed=5, dtype=torch.float32)
-    plain = opaque_fused_linear_dpo_loss(
-        **inputs, beta=beta, per_pair_loss_fn=dpo_sigmoid
+    plain = fused_linear_dpo_loss(
+        **inputs, beta=beta, per_pair_loss_fn=sigmoid_loss
     )
     with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
-        wrapped = opaque_fused_linear_dpo_loss(
-            **inputs, beta=beta, per_pair_loss_fn=dpo_sigmoid
+        wrapped = fused_linear_dpo_loss(
+            **inputs, beta=beta, per_pair_loss_fn=sigmoid_loss
         )
     assert wrapped.dtype == torch.bfloat16
     assert torch.isfinite(wrapped).all()
@@ -287,4 +287,4 @@ def test_odd_batch_dim_raises() -> None:
     inputs["target_ids"] = inputs["target_ids"][:-1]
     inputs["completion_mask"] = inputs["completion_mask"][:-1]
     with pytest.raises(ValueError, match="2B"):
-        opaque_fused_linear_dpo_loss(**inputs, beta=0.1, per_pair_loss_fn=dpo_sigmoid)
+        fused_linear_dpo_loss(**inputs, beta=0.1, per_pair_loss_fn=sigmoid_loss)

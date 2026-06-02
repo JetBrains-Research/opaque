@@ -3,19 +3,19 @@
 """Tests for DPO APO, EXO, NCA, BCO, and SPPO loss variants (work-unit γ.2).
 
 Covers:
-- :func:`dpo_apo_zero` and :func:`dpo_apo_down` (arXiv:2408.06266)
-- :func:`dpo_exo_pair` (EXO pairwise loss)
-- :func:`dpo_nca_pair` (NCA pairwise loss)
-- :func:`dpo_bco_pair` (BCO pairwise loss)
-- :func:`dpo_sppo_hard` (SPPO hard-label loss)
+- :func:`apo_zero_loss` and :func:`apo_down_loss` (arXiv:2408.06266)
+- :func:`exo_pair_loss` (EXO pairwise loss)
+- :func:`nca_pair_loss` (NCA pairwise loss)
+- :func:`bco_pair_loss` (BCO pairwise loss)
+- :func:`sppo_hard_loss` (SPPO hard-label loss)
 
 For each function:
 - ≥3 hand-computed reference cases (small, analytically tractable inputs).
 - vmap-safety (``torch.func.vmap(torch.func.grad(...))``) for at least
-  ``dpo_apo_zero`` and ``dpo_sppo_hard``.
-- NaN-injection (Tier-1) contract on ``dpo_nca_pair``: a NaN in one example
+  ``apo_zero_loss`` and ``sppo_hard_loss``.
+- NaN-injection (Tier-1) contract on ``nca_pair_loss``: a NaN in one example
   propagates only to that example's loss.
-- ``dpo_bco_pair`` with ``delta != 0`` shifts both terms.
+- ``bco_pair_loss`` with ``delta != 0`` shifts both terms.
 - Imports target the concrete implementation paths (public façade not wired
   for this work-unit; façade wiring is γ.W).
 """
@@ -28,11 +28,11 @@ import torch
 import torch.nn.functional as F
 from torch.func import grad, vmap
 
-from opaque.api.alignment.dpo.loss._apo import dpo_apo_down, dpo_apo_zero
-from opaque.api.alignment.dpo.loss._bco import dpo_bco_pair
-from opaque.api.alignment.dpo.loss._exo import dpo_exo_pair
-from opaque.api.alignment.dpo.loss._nca import dpo_nca_pair
-from opaque.api.alignment.dpo.loss._sppo import dpo_sppo_hard
+from opaque.api.alignment.dpo.loss._apo import apo_down_loss, apo_zero_loss
+from opaque.api.alignment.dpo.loss._bco import bco_pair_loss
+from opaque.api.alignment.dpo.loss._exo import exo_pair_loss
+from opaque.api.alignment.dpo.loss._nca import nca_pair_loss
+from opaque.api.alignment.dpo.loss._sppo import sppo_hard_loss
 
 # ---------------------------------------------------------------------------
 # Helper: build a float tensor from a Python scalar (0-dim)
@@ -42,18 +42,18 @@ _T = torch.tensor
 
 
 # ===========================================================================
-# dpo_apo_zero
+# apo_zero_loss
 # ===========================================================================
 
 
 class TestDpoApoZero:
-    """Hand-computed reference cases for :func:`dpo_apo_zero`."""
+    """Hand-computed reference cases for :func:`apo_zero_loss`."""
 
     def test_symmetric_zero_inputs(self) -> None:
         """c=0, r=0 → (1-sig(0)) + sig(0) = 0.5 + 0.5 = 1.0."""
         c = _T(0.0)
         r = _T(0.0)
-        out = dpo_apo_zero(c, r, beta=0.1)
+        out = apo_zero_loss(c, r, beta=0.1)
         assert out.shape == ()
         assert torch.allclose(out, _T(1.0), atol=1e-6)
 
@@ -61,7 +61,7 @@ class TestDpoApoZero:
         """c=1, r=-1, β=0.5 → (1-sig(0.5)) + sig(-0.5)."""
         c = _T(1.0)
         r = _T(-1.0)
-        out = dpo_apo_zero(c, r, beta=0.5)
+        out = apo_zero_loss(c, r, beta=0.5)
         # sig(-0.5) = 1 - sig(0.5); both terms are equal here.
         expected = (1 - torch.sigmoid(_T(0.5))) + torch.sigmoid(_T(-0.5))
         assert torch.allclose(out, expected, atol=1e-6)
@@ -70,7 +70,7 @@ class TestDpoApoZero:
         """c=2, r=2, β=1 → (1-sig(2)) + sig(2) = 1.0 always."""
         c = _T(2.0)
         r = _T(2.0)
-        out = dpo_apo_zero(c, r, beta=1.0)
+        out = apo_zero_loss(c, r, beta=1.0)
         # For any x: (1-sig(x)) + sig(x) = 1.
         assert torch.allclose(out, _T(1.0), atol=1e-6)
 
@@ -78,19 +78,19 @@ class TestDpoApoZero:
         """(B,) inputs → (B,) output."""
         c = torch.randn(8)
         r = torch.randn(8)
-        out = dpo_apo_zero(c, r, beta=0.1)
+        out = apo_zero_loss(c, r, beta=0.1)
         assert out.shape == (8,)
         assert torch.isfinite(out).all()
 
     def test_vmap_grad_finite(self) -> None:
-        """vmap(grad(dpo_apo_zero-sum)) over (4,) batch yields finite grads."""
+        """vmap(grad(apo_zero_loss-sum)) over (4,) batch yields finite grads."""
         b = 4
         torch.manual_seed(42)
         c = torch.randn(b, requires_grad=False)
         r = torch.randn(b, requires_grad=False)
 
         def per_example(ci: torch.Tensor, ri: torch.Tensor) -> torch.Tensor:
-            return dpo_apo_zero(ci, ri, beta=0.1).sum()
+            return apo_zero_loss(ci, ri, beta=0.1).sum()
 
         grads_c, grads_r = vmap(grad(per_example, argnums=(0, 1)))(c, r)
         assert grads_c.shape == (b,)
@@ -100,18 +100,18 @@ class TestDpoApoZero:
 
 
 # ===========================================================================
-# dpo_apo_down
+# apo_down_loss
 # ===========================================================================
 
 
 class TestDpoApoDown:
-    """Hand-computed reference cases for :func:`dpo_apo_down`."""
+    """Hand-computed reference cases for :func:`apo_down_loss`."""
 
     def test_symmetric_zero_inputs(self) -> None:
         """c=0, r=0 → sig(0) + (1-sig(0)) = 0.5 + 0.5 = 1.0."""
         c = _T(0.0)
         r = _T(0.0)
-        out = dpo_apo_down(c, r, beta=0.1)
+        out = apo_down_loss(c, r, beta=0.1)
         assert out.shape == ()
         assert torch.allclose(out, _T(1.0), atol=1e-6)
 
@@ -119,7 +119,7 @@ class TestDpoApoDown:
         """c=1, r=0, β=0.5 → sig(0.5) + (1-sig(0.5)) = 1.0."""
         c = _T(1.0)
         r = _T(0.0)
-        out = dpo_apo_down(c, r, beta=0.5)
+        out = apo_down_loss(c, r, beta=0.5)
         # b*c = b*(c-r) so lc + lr = sig(x) + (1-sig(x)) = 1
         assert torch.allclose(out, _T(1.0), atol=1e-6)
 
@@ -131,7 +131,7 @@ class TestDpoApoDown:
         expected = torch.sigmoid(_T(beta * 2.0)) + (
             1 - torch.sigmoid(_T(beta * (2.0 - 1.0)))
         )
-        out = dpo_apo_down(c, r, beta=beta)
+        out = apo_down_loss(c, r, beta=beta)
         assert torch.allclose(out, expected, atol=1e-6)
         # Sanity: b*c=1.0 != b*(c-r)=0.5, so result is not trivially 1.
         assert not torch.allclose(out, _T(1.0), atol=1e-4)
@@ -140,7 +140,7 @@ class TestDpoApoDown:
         """(B,) inputs → (B,) output."""
         c = torch.randn(6)
         r = torch.randn(6)
-        out = dpo_apo_down(c, r, beta=0.2)
+        out = apo_down_loss(c, r, beta=0.2)
         assert out.shape == (6,)
         assert torch.isfinite(out).all()
 
@@ -149,18 +149,18 @@ class TestDpoApoDown:
         torch.manual_seed(0)
         c = torch.randn(32)
         r = torch.randn(32)
-        out = dpo_apo_down(c, r, beta=0.1)
+        out = apo_down_loss(c, r, beta=0.1)
         assert (out >= 0).all()
         assert (out <= 2.0 + 1e-6).all()
 
 
 # ===========================================================================
-# dpo_exo_pair
+# exo_pair_loss
 # ===========================================================================
 
 
 class TestDpoExoPair:
-    """Hand-computed reference cases for :func:`dpo_exo_pair`."""
+    """Hand-computed reference cases for :func:`exo_pair_loss`."""
 
     def test_zero_logits_default_ls(self) -> None:
         """c=0, r=0, β=0.1, ls=1e-3 → reference formula evaluated at logits=0."""
@@ -172,7 +172,7 @@ class TestDpoExoPair:
         expected = F.sigmoid(logits) * (
             F.logsigmoid(logits) - math.log(1 - ls)
         ) + F.sigmoid(-logits) * (F.logsigmoid(-logits) - math.log(ls))
-        out = dpo_exo_pair(c, r, beta=beta)
+        out = exo_pair_loss(c, r, beta=beta)
         assert torch.allclose(out, expected, atol=1e-6)
 
     def test_positive_margin(self) -> None:
@@ -185,15 +185,15 @@ class TestDpoExoPair:
         expected = F.sigmoid(logits) * (
             F.logsigmoid(logits) - math.log(1 - ls)
         ) + F.sigmoid(-logits) * (F.logsigmoid(-logits) - math.log(ls))
-        out = dpo_exo_pair(c, r, beta=beta)
+        out = exo_pair_loss(c, r, beta=beta)
         assert torch.allclose(out, expected, atol=1e-5)
 
     def test_label_smoothing_zero_clamped_to_1e3(self) -> None:
         """label_smoothing=0 is silently clamped to 1e-3 (same as default)."""
         c = _T(0.5)
         r = _T(-0.5)
-        out_default = dpo_exo_pair(c, r, beta=1.0, label_smoothing=1e-3)
-        out_zero_ls = dpo_exo_pair(c, r, beta=1.0, label_smoothing=0.0)
+        out_default = exo_pair_loss(c, r, beta=1.0, label_smoothing=1e-3)
+        out_zero_ls = exo_pair_loss(c, r, beta=1.0, label_smoothing=0.0)
         # Both should produce the same output: ls=0 is clamped to 1e-3.
         assert torch.allclose(out_default, out_zero_ls, atol=1e-7)
 
@@ -201,8 +201,8 @@ class TestDpoExoPair:
         """label_smoothing<0 is also clamped to 1e-3 (no log-of-negative)."""
         c = _T(0.5)
         r = _T(-0.5)
-        out_neg = dpo_exo_pair(c, r, beta=1.0, label_smoothing=-0.5)
-        out_ref = dpo_exo_pair(c, r, beta=1.0, label_smoothing=1e-3)
+        out_neg = exo_pair_loss(c, r, beta=1.0, label_smoothing=-0.5)
+        out_ref = exo_pair_loss(c, r, beta=1.0, label_smoothing=1e-3)
         assert torch.allclose(out_neg, out_ref, atol=1e-7)
 
     def test_batched_shape_and_finite(self) -> None:
@@ -210,7 +210,7 @@ class TestDpoExoPair:
         torch.manual_seed(1)
         c = torch.randn(8)
         r = torch.randn(8)
-        out = dpo_exo_pair(c, r, beta=0.2)
+        out = exo_pair_loss(c, r, beta=0.2)
         assert out.shape == (8,)
         assert torch.isfinite(out).all()
 
@@ -219,17 +219,17 @@ class TestDpoExoPair:
         torch.manual_seed(2)
         c = torch.randn(32)
         r = torch.randn(32)
-        out = dpo_exo_pair(c, r, beta=0.1)
+        out = exo_pair_loss(c, r, beta=0.1)
         assert (out >= -1e-5).all(), "EXO loss should be non-negative"
 
 
 # ===========================================================================
-# dpo_nca_pair
+# nca_pair_loss
 # ===========================================================================
 
 
 class TestDpoNcaPair:
-    """Hand-computed reference cases + NaN-injection for :func:`dpo_nca_pair`."""
+    """Hand-computed reference cases + NaN-injection for :func:`nca_pair_loss`."""
 
     def test_zero_inputs_beta01(self) -> None:
         """c=0, r=0, β=0.1 → -logsig(0) - 0.5*logsig(-0) - 0.5*logsig(-0).
@@ -239,7 +239,7 @@ class TestDpoNcaPair:
         """
         c = _T(0.0)
         r = _T(0.0)
-        out = dpo_nca_pair(c, r, beta=0.1)
+        out = nca_pair_loss(c, r, beta=0.1)
         expected = _T(2.0 * math.log(2))
         assert out.shape == ()
         assert torch.allclose(out, expected, atol=1e-6)
@@ -252,7 +252,7 @@ class TestDpoNcaPair:
         cr = _T(beta * 1.0)
         rr = _T(beta * (-1.0))
         expected = -F.logsigmoid(cr) - 0.5 * F.logsigmoid(-cr) - 0.5 * F.logsigmoid(-rr)
-        out = dpo_nca_pair(c, r, beta=beta)
+        out = nca_pair_loss(c, r, beta=beta)
         assert torch.allclose(out, expected, atol=1e-6)
 
     def test_large_positive_chosen(self) -> None:
@@ -263,7 +263,7 @@ class TestDpoNcaPair:
         cr = _T(beta * 2.0)
         rr = _T(beta * 0.0)
         expected = -F.logsigmoid(cr) - 0.5 * F.logsigmoid(-cr) - 0.5 * F.logsigmoid(-rr)
-        out = dpo_nca_pair(c, r, beta=beta)
+        out = nca_pair_loss(c, r, beta=beta)
         assert torch.allclose(out, expected, atol=1e-6)
 
     def test_batched_shape_and_finite(self) -> None:
@@ -271,7 +271,7 @@ class TestDpoNcaPair:
         torch.manual_seed(3)
         c = torch.randn(8)
         r = torch.randn(8)
-        out = dpo_nca_pair(c, r, beta=0.3)
+        out = nca_pair_loss(c, r, beta=0.3)
         assert out.shape == (8,)
         assert torch.isfinite(out).all()
 
@@ -288,7 +288,7 @@ class TestDpoNcaPair:
         c_nan = c.clone()
         c_nan[2] = float("nan")
 
-        out = dpo_nca_pair(c_nan, r, beta=0.5)
+        out = nca_pair_loss(c_nan, r, beta=0.5)
         assert out.shape == (b,)
         # Only index 2 is NaN.
         assert torch.isnan(out[2]), "NaN example should produce NaN loss"
@@ -298,18 +298,18 @@ class TestDpoNcaPair:
 
 
 # ===========================================================================
-# dpo_bco_pair
+# bco_pair_loss
 # ===========================================================================
 
 
 class TestDpoBcoPair:
-    """Hand-computed reference cases + delta-shift for :func:`dpo_bco_pair`."""
+    """Hand-computed reference cases + delta-shift for :func:`bco_pair_loss`."""
 
     def test_zero_inputs_delta0(self) -> None:
         """c=0, r=0, β=0.1, δ=0 → -logsig(0) - logsig(-0) = 2*log(2)."""
         c = _T(0.0)
         r = _T(0.0)
-        out = dpo_bco_pair(c, r, beta=0.1, delta=0.0)
+        out = bco_pair_loss(c, r, beta=0.1, delta=0.0)
         expected = _T(2.0 * math.log(2.0))
         assert out.shape == ()
         assert torch.allclose(out, expected, atol=1e-6)
@@ -320,7 +320,7 @@ class TestDpoBcoPair:
         r = _T(-1.0)
         beta = 0.5
         expected = -F.logsigmoid(_T(beta * 1.0)) - F.logsigmoid(_T(-(beta * (-1.0))))
-        out = dpo_bco_pair(c, r, beta=beta, delta=0.0)
+        out = bco_pair_loss(c, r, beta=beta, delta=0.0)
         assert torch.allclose(out, expected, atol=1e-6)
 
     def test_delta_nonzero_shifts_both_terms(self) -> None:
@@ -343,7 +343,7 @@ class TestDpoBcoPair:
             expected = -F.logsigmoid(_T(beta * 1.0 - delta)) - F.logsigmoid(
                 _T(-(beta * 0.0 - delta))
             )
-            out = dpo_bco_pair(c, r, beta=beta, delta=delta)
+            out = bco_pair_loss(c, r, beta=beta, delta=delta)
             assert torch.allclose(out, expected, atol=1e-6), (
                 f"delta={delta}: got {out.item():.8f}, expected {expected.item():.8f}"
             )
@@ -353,8 +353,8 @@ class TestDpoBcoPair:
         c = _T(1.0)
         r = _T(-1.0)
         beta = 0.5
-        out_d0 = dpo_bco_pair(c, r, beta=beta, delta=0.0)
-        out_d3 = dpo_bco_pair(c, r, beta=beta, delta=0.3)
+        out_d0 = bco_pair_loss(c, r, beta=beta, delta=0.0)
+        out_d3 = bco_pair_loss(c, r, beta=beta, delta=0.3)
         assert not torch.allclose(out_d0, out_d3, atol=1e-4)
 
     def test_batched_shape_and_finite(self) -> None:
@@ -362,24 +362,24 @@ class TestDpoBcoPair:
         torch.manual_seed(5)
         c = torch.randn(8)
         r = torch.randn(8)
-        out = dpo_bco_pair(c, r, beta=0.2, delta=0.1)
+        out = bco_pair_loss(c, r, beta=0.2, delta=0.1)
         assert out.shape == (8,)
         assert torch.isfinite(out).all()
 
 
 # ===========================================================================
-# dpo_sppo_hard
+# sppo_hard_loss
 # ===========================================================================
 
 
 class TestDpoSppoHard:
-    """Hand-computed reference cases for :func:`dpo_sppo_hard`."""
+    """Hand-computed reference cases for :func:`sppo_hard_loss`."""
 
     def test_zero_inputs_beta05(self) -> None:
         """c=0, r=0, β=0.5 → target = 1.0; (0-1)^2 + (0+1)^2 = 2.0."""
         c = _T(0.0)
         r = _T(0.0)
-        out = dpo_sppo_hard(c, r, beta=0.5)
+        out = sppo_hard_loss(c, r, beta=0.5)
         assert out.shape == ()
         assert torch.allclose(out, _T(2.0), atol=1e-6)
 
@@ -389,14 +389,14 @@ class TestDpoSppoHard:
         target = 0.5 / beta  # = 5.0 exactly (float, not int)
         c = _T(target)
         r = _T(-target)
-        out = dpo_sppo_hard(c, r, beta=beta)
+        out = sppo_hard_loss(c, r, beta=beta)
         assert torch.allclose(out, _T(0.0), atol=1e-6)
 
     def test_asymmetric_inputs_beta01(self) -> None:
         """c=1, r=-1, β=0.1 → target=5; (1-5)^2 + (-1+5)^2 = 16+16 = 32."""
         c = _T(1.0)
         r = _T(-1.0)
-        out = dpo_sppo_hard(c, r, beta=0.1)
+        out = sppo_hard_loss(c, r, beta=0.1)
         assert torch.allclose(out, _T(32.0), atol=1e-6)
 
     def test_float_division_not_integer_division(self) -> None:
@@ -408,7 +408,7 @@ class TestDpoSppoHard:
         assert abs(target - 1.0 / 6.0) < 1e-9
         c = _T(target)  # exactly at target
         r = _T(-target)
-        out = dpo_sppo_hard(c, r, beta=beta)
+        out = sppo_hard_loss(c, r, beta=beta)
         assert torch.allclose(out, _T(0.0), atol=1e-6)
 
     def test_batched_shape_and_finite(self) -> None:
@@ -416,19 +416,19 @@ class TestDpoSppoHard:
         torch.manual_seed(6)
         c = torch.randn(8)
         r = torch.randn(8)
-        out = dpo_sppo_hard(c, r, beta=0.5)
+        out = sppo_hard_loss(c, r, beta=0.5)
         assert out.shape == (8,)
         assert torch.isfinite(out).all()
 
     def test_vmap_grad_finite(self) -> None:
-        """vmap(grad(dpo_sppo_hard-sum)) over (4,) batch yields finite grads."""
+        """vmap(grad(sppo_hard_loss-sum)) over (4,) batch yields finite grads."""
         b = 4
         torch.manual_seed(7)
         c = torch.randn(b)
         r = torch.randn(b)
 
         def per_example(ci: torch.Tensor, ri: torch.Tensor) -> torch.Tensor:
-            return dpo_sppo_hard(ci, ri, beta=0.1).sum()
+            return sppo_hard_loss(ci, ri, beta=0.1).sum()
 
         grads_c, grads_r = vmap(grad(per_example, argnums=(0, 1)))(c, r)
         assert grads_c.shape == (b,)
@@ -441,5 +441,5 @@ class TestDpoSppoHard:
         torch.manual_seed(8)
         c = torch.randn(32)
         r = torch.randn(32)
-        out = dpo_sppo_hard(c, r, beta=0.2)
+        out = sppo_hard_loss(c, r, beta=0.2)
         assert (out >= 0).all()

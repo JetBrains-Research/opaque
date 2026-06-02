@@ -48,7 +48,7 @@ CPU test-suite validates numeric parity, ``chunk_size`` invariance, and
 
 **Layout.** ``hidden_states`` carries the chosen and rejected pairs in two
 separate batched arguments (``chosen_hidden`` / ``rejected_hidden``), each
-``(B, T, H)``. The public :func:`opaque_fused_linear_dpo_loss` accepts the
+``(B, T, H)``. The public :func:`fused_linear_dpo_loss` accepts the
 concatenated ``(2B, T, H)`` form documented in the plan and splits it before
 calling this core (see ``_dpo_dispatch``).
 """
