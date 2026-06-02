@@ -1,14 +1,14 @@
 """Logprob helpers impl — selective log-softmax + per-sequence completion logp.
 
-Shared, internal primitives (no public façade): consumed by sibling impl
-modules — ``selective_log_softmax`` by the SFT losses
-(:mod:`opaque.api.alignment.sft.loss`), ``sequence_logp`` by the DPO kernel
-(:mod:`opaque.api.alignment.dpo.kernel`). ``sequence_logp`` is re-exported to
-users through the DPO façade (:mod:`opaque.alignment.dpo`), its public consumer.
-All functions are pure.
+Shared, internal primitives: ``selective_log_softmax`` (used by the SFT losses),
+``sequence_logp`` (the eager DPO/causal-LM per-sequence logp), and
+``fused_sequence_logp`` (its memory-efficient drop-in over hidden states, fused
+through the opaque-patches linear-CE kernel with an eager fallback). All are pure
+and ``torch.func``-composable; the fused variant is per-example (drive with
+``vmap(grad)``).
 """
 
 from opaque.api.alignment.logprob._gather import selective_log_softmax
-from opaque.api.alignment.logprob._sequence import sequence_logp
+from opaque.api.alignment.logprob._sequence import fused_sequence_logp, sequence_logp
 
-__all__ = ["selective_log_softmax", "sequence_logp"]
+__all__ = ["selective_log_softmax", "sequence_logp", "fused_sequence_logp"]

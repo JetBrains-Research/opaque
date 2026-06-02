@@ -43,9 +43,10 @@ from __future__ import annotations
 
 import torch
 
+from opaque.api.alignment._fused_lce import lce_available, linear_ce_sum
 from opaque.api.alignment.logprob._gather import selective_log_softmax
 
-__all__ = ["dft_loss"]
+__all__ = ["dft_loss", "fused_dft_loss"]
 
 
 def dft_loss(
@@ -105,3 +106,41 @@ def dft_loss(
     # Per-example mean over non-ignored tokens; per-example divisor (DP-safe)
     loss = (per_token * mask).sum(-1) / mask.sum(-1).clamp(min=1)  # (...)
     return loss
+
+
+def fused_dft_loss(
+    hidden_states: torch.Tensor,
+    lm_head_weight: torch.Tensor,
+    labels: torch.Tensor,
+) -> torch.Tensor:
+    """Memory-efficient :func:`dft_loss` over hidden states (fused, per-example).
+
+    Mathematically ``dft_loss(hidden_states @ lm_head_weight.T, labels)``, but on
+    CUDA + half precision with ``opaque-alignment[patches]`` installed it computes
+    the detached-confidence-weighted per-token CE against the projection via the
+    patches fused linear-CE kernel in its ``use_token_scaling`` mode — no ``(T,
+    V)`` logits are materialised and the LSE is recomputed in the backward.
+    Otherwise it falls back to the eager form.
+
+    **Per-example.** Pass one example ``(T, H)`` and drive with
+    ``vmap(grad(...))`` (the ``clipped_grad`` DP-SGD path); see
+    :func:`~opaque.api.alignment.sft.loss.fused_nll_loss` for the per-example
+    contract.
+
+    Args:
+        hidden_states: Last-layer hidden states ``(T, H)`` for one example
+            (batched to ``(B, T, H)`` only by an outer ``vmap``).
+        lm_head_weight: LM-head weight ``(V, H)``; logits are
+            ``hidden_states @ lm_head_weight.T``.
+        labels: Token-id targets ``(T,)``; ``-100`` positions are ignored.
+
+    Returns:
+        Scalar per-example DFT loss (matches :func:`dft_loss`).
+    """
+    if lce_available(hidden_states):
+        ce_sum = linear_ce_sum(
+            hidden_states, lm_head_weight, labels, use_token_scaling=True
+        )
+        n_valid = (labels[..., 1:] != -100).sum(-1).clamp(min=1)
+        return ce_sum / n_valid
+    return dft_loss(hidden_states @ lm_head_weight.transpose(-2, -1), labels)

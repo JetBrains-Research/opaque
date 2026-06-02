@@ -22,9 +22,11 @@ from __future__ import annotations
 
 import torch
 
+from opaque.api.alignment._fused_lce import lce_available, linear_ce_sum
+
 from ._gather import selective_log_softmax
 
-__all__ = ["sequence_logp"]
+__all__ = ["sequence_logp", "fused_sequence_logp"]
 
 
 def sequence_logp(
@@ -73,3 +75,55 @@ def sequence_logp(
     per_token_logp = selective_log_softmax(shifted_logits, target_ids)
     masked = per_token_logp * target_mask.to(per_token_logp.dtype)
     return masked.sum(dim=-1)
+
+
+def fused_sequence_logp(
+    hidden_states: torch.Tensor,
+    lm_head_weight: torch.Tensor,
+    input_ids: torch.Tensor,
+    completion_mask: torch.Tensor,
+) -> torch.Tensor:
+    """Memory-efficient :func:`sequence_logp` over hidden states (fused, per-example).
+
+    Mathematically ``sequence_logp(hidden_states @ lm_head_weight.T, input_ids,
+    completion_mask)``, but on CUDA + half precision with
+    ``opaque-alignment[patches]`` installed it computes the completion log-prob
+    via the patches fused linear-CE kernel — no ``(T, V)`` logits are
+    materialised and the LSE is recomputed in the backward. Otherwise it falls
+    back to the eager form.
+
+    Since ``sequence_logp = Σ_completion log p = −Σ_completion CE``, the kernel is
+    the preference-logp kernel: encode the completion span as the kept labels
+    (everything else → ``-100``), take the kernel's CE sum, and negate.
+
+    **Per-example.** Pass one sequence ``(T, H)`` and drive with
+    ``vmap(grad(...))`` (how ``train_dpo`` already computes logp inside
+    ``clipped_grad``); the kernel's merged vmap rules then make the chosen /
+    rejected microbatch one forward + one backward kernel. Unlike
+    :func:`sequence_logp`, it is *not* meant to be called directly on a batch
+    axis. The LD-DPO ``ld_alpha`` split is not supported on the fused path; use
+    the eager :func:`sequence_logp` for that.
+
+    Args:
+        hidden_states: Last-layer hidden states ``(T, H)`` for one sequence
+            (batched to ``(B, T, H)`` only by an outer ``vmap``).
+        lm_head_weight: LM-head weight ``(V, H)``; logits are
+            ``hidden_states @ lm_head_weight.T``.
+        input_ids: Token ids ``(T,)``.
+        completion_mask: ``(T,)``; non-zero on completion-span tokens.
+
+    Returns:
+        Scalar summed completion log-prob (matches :func:`sequence_logp`).
+    """
+    if lce_available(hidden_states):
+        # Completion tokens keep their id; everything else → ignore_index, so the
+        # kernel's CE sum is exactly −Σ_completion logp. The kernel applies the
+        # next-token shift internally, matching sequence_logp's shifted mask.
+        masked_labels = torch.where(
+            completion_mask.to(torch.bool),
+            input_ids,
+            torch.full_like(input_ids, -100),
+        )
+        return -linear_ce_sum(hidden_states, lm_head_weight, masked_labels)
+    logits = hidden_states @ lm_head_weight.transpose(-2, -1)
+    return sequence_logp(logits, input_ids, completion_mask)

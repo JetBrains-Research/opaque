@@ -3,7 +3,9 @@
 Functional, mechanism-agnostic primitives for **DP-safe preference learning**:
 per-example loss functions (DPO / SFT families), logprob helpers, preference
 collators, dataset transforms, reference-model helpers, alignment metrics, and
-an alignment-specific fused-linear preference kernel.
+memory-efficient fused-linear twins (`fused_nll_loss` / `fused_dft_loss` /
+`fused_sequence_logp`) that project hidden states through the `lm_head` via the
+optional opaque-patches linear-CE kernel.
 
 Built on `opaque-engine` (clipping, functional, distributed) and `opaque-base`
 (serialization). Consumed by both functional training scripts
@@ -38,17 +40,19 @@ primitives under its own namespace.
 opaque.alignment                         <- top-level façade (exposes dpo, sft)
 opaque.api.alignment                     <- implementation namespace
 opaque.alignment.dpo                     <- DPO method façade (aggregates the below)
-opaque.alignment.dpo.loss                <- 14 per-pair variants + helpers + fused_linear_dpo_loss
+opaque.alignment.dpo.loss                <- 14 per-pair variants + log-ratio helpers
 opaque.alignment.dpo.collator            <- preference (DPO) collator factory
 opaque.alignment.dpo.reference           <- ref-logp precompute, null_ref_context, EMA
 opaque.alignment.dpo.metric              <- preference reward telemetry
 opaque.alignment.dpo.data                <- preference prompt extraction
-opaque.alignment.sft.{loss,collator}     <- SFT method (nll, dft; LM collator)
+opaque.alignment.sft.loss                <- nll_loss, dft_loss + fused_nll_loss, fused_dft_loss
+opaque.alignment.sft.collator            <- language-modeling (SFT) collator
 ```
 
-Shared, lower-level primitives — `selective_log_softmax` / `sequence_logp`
-(logprob), `entropy_from_logits` / `mean_token_accuracy` (token metrics), and
-chat-template helpers — are internal impl under `opaque.api.alignment.*` and are
+Shared, lower-level primitives — `selective_log_softmax` / `sequence_logp` /
+`fused_sequence_logp` (logprob), `entropy_from_logits` / `mean_token_accuracy`
+(token metrics), and chat-template helpers — are internal impl under
+`opaque.api.alignment.*` and are
 surfaced through the method that consumes them (e.g. `sequence_logp` via
 `opaque.alignment.dpo`), following the shared-impl re-import pattern of
 `opaque.dpsgd.clipping`.

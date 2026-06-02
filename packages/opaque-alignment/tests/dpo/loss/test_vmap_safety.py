@@ -62,15 +62,13 @@ _VARIANTS = {
 }
 
 # Public ``dpo.loss`` names that are NOT per-pair variants on log-ratios: the
-# log-ratio helpers/combinators and the memory-efficient fused-linear loss
-# (which operates on hidden states, not log-ratios).
+# log-ratio helpers/combinators.
 _NON_VARIANTS = {
     "f_divergence_remap",
     "f_divergence_logits",
     "mpo_combine",
     "wpo_weights",
     "ld_dpo_split",
-    "fused_linear_dpo_loss",
 }
 
 

@@ -1,33 +1,47 @@
 # Fused-linear kernels for opaque-alignment — design note
 
-**Status:** design locked; `token_weight` on LCE shipped (GPU CI pending); the
-alignment fused glue (A/B) is the remaining build. Supersedes
+**Status:** implemented (CPU-verified; GPU parity gated in CI). Supersedes
 `opaque-alignment-plan.md` §7.10 (pure-torch, KTO, string registry — all
 changed).
 
-## Decisions (locked, post-review)
+## Decisions (locked, as built)
 
 1. **No bespoke kernel.** `sequence_logp = −Σ_completion CE`, so the existing
    `opaque-patches` `Opaque_LinearCrossEntropyLoss` *is* the preference-logp
    kernel: mask non-completion tokens to `ignore_index`, call it (unreduced),
    negate. No new Triton.
-2. **`token_weight` on LCE (shipped).** Per-token weight multiplied into the
-   per-token CE; backward scales the per-token `do`. Enables completion masking
-   (0/1) and soft/turn masks. **It does NOT enable DFT** — DFT's weight is
-   `detach(exp(−CE))`, *derived from the logits*, so it needs a kernel-internal
-   `use_token_scaling` mode (deferred). DFT stays eager until then.
-3. **Auto-select inside one entry.** The fused `*_loss` entries pick the LCE
-   fast path (when `[patches]` + CUDA + half) or the pure-torch fallback —
-   mirroring the patches `use_fused_ce` gate. No user branching.
+2. **DFT via `use_token_scaling` (shipped).** DFT's weight is `detach(exp(−CE))`,
+   *derived from the logits*, so it cannot be a supplied per-token weight (a
+   float `token_weight` was tried and reverted — no consumer). Instead the kernel
+   has a **binary** `use_token_scaling` flag: it computes `p = exp(−CE).detach()`
+   internally and weights the forward CE / backward `do` by it. NLL = flag off;
+   DFT = flag on.
+3. **Specialized, per-example primitives — no generic dispatcher.** The fused
+   surface mirrors the *eager* surface 1:1, not a `loss_fn`/`per_pair_loss_fn`
+   parameter:
+   - **SFT** (kernel output *is* the loss): `fused_nll_loss`,
+     `fused_dft_loss` — `Σ CE / n_valid`, flag off/on. In `sft.loss`.
+   - **DPO** (kernel output is an *intermediate* logp, head applied after):
+     `fused_sequence_logp` = `−Σ_completion CE`, a drop-in for `sequence_logp`,
+     composed with the **existing** per-pair heads (`sigmoid_loss`, …). In the
+     `logprob` primitives. **No `fused_dpo_loss`** — the DPO “head” is never
+     bundled, exactly as the eager path keeps `sequence_logp` + a per-pair loss
+     separate.
 4. **Signature.** Fused entries take `(hidden_states, lm_head_weight, …)`; eager
    take `(logits, …)`. Fused requires the model to emit hidden (skip the
    in-forward `lm_head`).
-5. **Packaging.** `opaque-alignment` stays Triton-free; reuses patches via the
-   `[patches]` extra; the pure-torch chunked loop is the CPU/no-Triton fallback.
-6. **Sequencing.** A-NLL + B (DPO) use `ignore_index` masking, *not*
-   `token_weight`, so they don't depend on the unverified `token_weight` and are
-   buildable now. A-DFT waits on `use_token_scaling`. C (ref precompute) folds
-   into the fused-logp helper (the precompute already batches).
+5. **Driven by `vmap(grad)`, never `grad(vmap)`.** Each fused primitive is
+   **per-example** (single `(T, H)` → scalar) and calls `LCE.apply` **directly**;
+   the merge to one kernel launch happens in the *outer* `vmap(grad)` (the
+   `clipped_grad` DP-SGD path), via the kernel's `vmap` + `_LinearCEBackward.vmap`
+   rules. ⚠️ `grad(vmap(LCE))` silently returns **zero** gradients — the manual
+   `vmap` rule recomputes the forward with the raw (non-autograd) `_forward_impl`,
+   so grad-of-vmap never reaches `Function.backward`. (An inner `torch.vmap` or a
+   per-example Python loop were both tried and rejected: the former is silently
+   wrong, the latter is `B` kernel launches.)
+6. **Packaging.** `opaque-alignment` stays Triton-free; reuses patches via the
+   `[patches]` extra; each fused primitive falls back to its eager twin
+   (`loss(hidden @ Wᵀ, …)`) on CPU / no-Triton, so CI is green.
 
 > The original "build a Triton `Opaque_FusedLinearSequenceLogp`" plan below is
 > **superseded** by decision 1 (reuse LCE); kept for the analysis/rationale.

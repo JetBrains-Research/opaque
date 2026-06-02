@@ -1,5 +1,14 @@
-"""opaque.alignment.sft.loss façade — re-exports the SFT loss functions."""
+"""opaque.alignment.sft.loss façade — re-exports the SFT loss functions.
 
-from opaque.api.alignment.sft.loss import dft_loss, fused_linear_sft_loss, nll_loss
+``nll_loss`` / ``dft_loss`` (on logits) and their memory-efficient fused twins
+``fused_nll_loss`` / ``fused_dft_loss`` (on hidden states + ``lm_head`` weight).
+"""
 
-__all__ = ["nll_loss", "dft_loss", "fused_linear_sft_loss"]
+from opaque.api.alignment.sft.loss import (
+    dft_loss,
+    fused_dft_loss,
+    fused_nll_loss,
+    nll_loss,
+)
+
+__all__ = ["nll_loss", "dft_loss", "fused_nll_loss", "fused_dft_loss"]

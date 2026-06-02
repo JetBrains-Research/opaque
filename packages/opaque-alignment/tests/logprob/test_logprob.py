@@ -24,7 +24,7 @@ import torch.nn.functional as F  # noqa: N812
 from torch.func import grad, vmap
 
 from opaque.api.alignment.logprob._gather import selective_log_softmax
-from opaque.api.alignment.logprob._sequence import sequence_logp
+from opaque.api.alignment.logprob._sequence import fused_sequence_logp, sequence_logp
 
 # ---------------------------------------------------------------------------
 # selective_log_softmax
@@ -239,3 +239,65 @@ def test_selective_log_softmax_vmap_grad_finite() -> None:
     grads = vmap(grad(per_example))(logits, indices)
     assert grads.shape == (b, t, v)
     assert torch.isfinite(grads).all()
+
+
+# ---------------------------------------------------------------------------
+# fused_sequence_logp — memory-efficient drop-in over hidden states
+# ---------------------------------------------------------------------------
+#
+# Per-example drop-in for ``sequence_logp`` (hidden + lm_head weight instead of
+# logits), driven by ``vmap(grad)``. On CPU it takes its eager fallback
+# (``sequence_logp(hidden @ W.T, …)``), so these assert the contract / shapes /
+# vmap(grad) composability; the GPU test exercises the fused linear-CE kernel.
+
+_FB, _FT, _FH, _FV = 4, 9, 6, 17
+
+
+def _fused_logp_inputs(seed: int, *, dtype=torch.float64, device="cpu"):
+    gen = torch.Generator().manual_seed(seed)
+    hidden = torch.randn(_FB, _FT, _FH, generator=gen, dtype=dtype)
+    weight = torch.randn(_FV, _FH, generator=gen, dtype=dtype)
+    input_ids = torch.randint(0, _FV, (_FB, _FT), generator=gen)
+    completion_mask = torch.zeros(_FB, _FT, dtype=dtype)
+    completion_mask[:, 3:] = 1.0  # completion span = tokens [3:]
+    return hidden.to(device), weight.to(device), input_ids.to(device), completion_mask.to(device)
+
+
+def test_fused_sequence_logp_matches_eager_cpu() -> None:
+    """Per-example forward + vmap(grad) match eager ``sequence_logp(hidden @ W.T, …)``."""
+    hidden, weight, ids, cmask = _fused_logp_inputs(seed=1)
+
+    got = vmap(lambda h, i, c: fused_sequence_logp(h, weight, i, c))(hidden, ids, cmask)
+    want = vmap(lambda h, i, c: sequence_logp(h @ weight.T, i, c))(hidden, ids, cmask)
+    assert got.shape == (_FB,)
+    assert torch.allclose(got, want, atol=1e-10)
+
+    g_fused = vmap(grad(lambda h, i, c: fused_sequence_logp(h, weight, i, c)))(
+        hidden, ids, cmask
+    )
+    g_eager = vmap(grad(lambda h, i, c: sequence_logp(h @ weight.T, i, c)))(
+        hidden, ids, cmask
+    )
+    assert g_fused.shape == hidden.shape
+    assert torch.allclose(g_fused, g_eager, atol=1e-10)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_fused_sequence_logp_lce_path_gpu() -> None:
+    """The fused kernel path (CUDA + bf16) matches eager ``sequence_logp``."""
+    hidden, weight, ids, cmask = _fused_logp_inputs(
+        seed=2, dtype=torch.bfloat16, device="cuda"
+    )
+
+    got = vmap(lambda h, i, c: fused_sequence_logp(h, weight, i, c))(hidden, ids, cmask)
+    want = vmap(lambda h, i, c: sequence_logp(h @ weight.T, i, c))(hidden, ids, cmask)
+    assert torch.allclose(got.float(), want.float(), atol=1e-2, rtol=0.0)
+
+    g_fused = vmap(grad(lambda h, i, c: fused_sequence_logp(h, weight, i, c)))(
+        hidden, ids, cmask
+    )
+    g_eager = vmap(grad(lambda h, i, c: sequence_logp(h @ weight.T, i, c)))(
+        hidden, ids, cmask
+    )
+    assert torch.isfinite(g_fused).all()
+    assert torch.allclose(g_fused.float(), g_eager.float(), atol=1e-2, rtol=0.0)

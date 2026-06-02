@@ -8,7 +8,12 @@ a small curated headline of the primary entry points.
 
 from opaque.alignment.sft import collator, loss
 from opaque.alignment.sft.collator import language_modeling_collator
-from opaque.alignment.sft.loss import dft_loss, fused_linear_sft_loss, nll_loss
+from opaque.alignment.sft.loss import (
+    dft_loss,
+    fused_dft_loss,
+    fused_nll_loss,
+    nll_loss,
+)
 
 __all__ = [
     # sub-concern subpackages
@@ -17,6 +22,7 @@ __all__ = [
     # curated headline
     "nll_loss",
     "dft_loss",
-    "fused_linear_sft_loss",
+    "fused_nll_loss",
+    "fused_dft_loss",
     "language_modeling_collator",
 ]
