@@ -325,7 +325,9 @@ def test_fused_dft_vmap_grad_matches_eager_cpu() -> None:
     """``vmap(grad(...))`` w.r.t. hidden and weight matches the eager reference."""
     hidden, weight, labels = _make_inputs(seed=2)
 
-    g_h_fused = vmap(grad(lambda h, lab: fused_dft_loss(h, weight, lab)))(hidden, labels)
+    g_h_fused = vmap(grad(lambda h, lab: fused_dft_loss(h, weight, lab)))(
+        hidden, labels
+    )
     g_h_eager = vmap(grad(lambda h, lab: dft_loss(h @ weight.T, lab)))(hidden, labels)
     assert g_h_fused.shape == hidden.shape
     assert torch.allclose(g_h_fused, g_h_eager, atol=1e-10)
