@@ -801,6 +801,20 @@ def parse_args():
         default=1.0,
         help="ORPO chosen-NLL regulariser weight λ (reference-free --loss-type orpo).",
     )
+    dpo_group.add_argument(
+        "--ref-cache-dir",
+        type=str,
+        default=None,
+        help=(
+            "Directory for the reference-logp cache (the content-addressed "
+            "safetensors archive written by compute_ref_logprobs_for_dataset). "
+            "Default: ``~/.cache/opaque/ref_logps`` — a persistent path so "
+            "re-runs against the same (model, dataset, sample count) hit the "
+            "cache. Pass an absolute path to override, or pass an explicit "
+            "tempdir-style path for ephemeral caching. Ignored for "
+            "reference-free --loss-type (simpo/cpo/orpo)."
+        ),
+    )
 
     train_group = parser.add_argument_group("training", "Training loop settings")
     train_group.add_argument(
@@ -1723,7 +1737,18 @@ def main():
     if reference_free:
         print("\nReference-free loss selected (skipping reference precompute).")
     else:
-        print("\nPrecomputing reference logps (LoRA base as ref, cached to disk)...")
+        # Resolve --ref-cache-dir. Default to ~/.cache/opaque/ref_logps so
+        # repeat runs against the same (model, dataset, sample count) hit
+        # the cache. compute_ref_logprobs_for_dataset creates the directory
+        # on first miss; we just expanduser here.
+        if args.ref_cache_dir is None:
+            ref_cache_dir = os.path.expanduser("~/.cache/opaque/ref_logps")
+        else:
+            ref_cache_dir = os.path.expanduser(args.ref_cache_dir)
+        print(
+            "\nPrecomputing reference logps (LoRA base as ref, "
+            f"cached to {ref_cache_dir})..."
+        )
         ref_callable = _make_ref_callable(model, device=device)
         with null_ref_context(model):
             train_dataset = compute_ref_logprobs_for_dataset(
@@ -1733,6 +1758,7 @@ def main():
                 output_columns=("ref_chosen_logps", "ref_rejected_logps"),
                 batch_size=args.eval_batch_size,
                 cache_key=("dpo", args.model_name, "train", args.num_train_samples),
+                cache_dir=ref_cache_dir,
             )
             eval_dataset = compute_ref_logprobs_for_dataset(
                 eval_dataset,
@@ -1741,6 +1767,7 @@ def main():
                 output_columns=("ref_chosen_logps", "ref_rejected_logps"),
                 batch_size=args.eval_batch_size,
                 cache_key=("dpo", args.model_name, "eval", args.num_eval_samples),
+                cache_dir=ref_cache_dir,
             )
         print(
             f"  ref_chosen_logps[0]={train_dataset[0]['ref_chosen_logps']:.4f}, "
@@ -2337,9 +2364,15 @@ def main():
         f"margin={initial_metrics['rewards/margins']:.4f}, ε={initial_epsilon:.3f}"
     )
     if use_wandb:
+        # Match the schema used at every later eval_steps boundary (lines
+        # ~2479–2484) so W&B sees a single, dense family of eval metrics
+        # rather than two parallel sparse families.
         wandb.log(
             {
-                **{f"eval/{k.split('/')[-1]}": v for k, v in initial_metrics.items()},
+                "eval/chosen_reward": initial_metrics["rewards/chosen"],
+                "eval/rejected_reward": initial_metrics["rewards/rejected"],
+                "eval/accuracy": initial_metrics["rewards/accuracies"],
+                "eval/margin": initial_metrics["rewards/margins"],
                 "privacy/epsilon": initial_epsilon,
                 "train/noise_std": _effective(initial_noise_std),
                 "train/clipping_norm": _effective(clip_norm),
