@@ -1,10 +1,9 @@
 """Token-level telemetry: prediction entropy and next-token accuracy.
 
-Both functions are masked, per-example-agnostic diagnostics computed during
-training. Per the §3.3 telemetry rule they are private internal state, so
-every returned tensor is detached and never carries gradient back into the
-mechanism. Masked reductions guard against divide-by-zero on an all-masked
-batch via ``mask.sum().clamp(min=1)``.
+Both functions are masked diagnostics computed during training. They are
+private internal state, so every returned tensor is detached and never carries
+gradient back into the mechanism. Masked reductions guard against
+divide-by-zero on an all-masked batch via ``mask.sum().clamp(min=1)``.
 """
 
 from __future__ import annotations

@@ -7,10 +7,9 @@ to the dataset as new columns. Results are persisted to a content-addressed
 ``.npz`` cache so the (expensive) reference forward runs at most once per
 ``(dataset, cache_key, output_columns)`` triple.
 
-**Outside vmap only.** This helper deliberately breaks the vmap-safety contract
-: it iterates a ``DataLoader``, runs a forward pass under
-``torch.no_grad()``, gathers across ranks, and writes a file. It must be called
-*before* the per-example gradient loop, never inside ``vmap``/``grad``.
+**Outside vmap only.** This helper iterates a ``DataLoader``, runs a forward
+pass under ``torch.no_grad()``, gathers across ranks, and writes a file. It must
+be called *before* the per-example gradient loop, never inside ``vmap``/``grad``.
 
 **Mechanism-agnostic by construction.** ``ref`` is a plain callable
 ``dict[str, Tensor] -> dict[str, Tensor]``. A :class:`PreTrainedModel` is wrapped
@@ -112,7 +111,7 @@ def _load_cache(
     if any(name not in flat for name in output_columns):
         return None
     # Reconstruct the column dict via the serialization template so the load
-    # path mirrors the save path (state_dict round-trip, §12.2). The template
+    # path mirrors the save path (state_dict round-trip). The template
     # shape is taken from the archived arrays themselves (the per-example count
     # is not known statically), so the round-trip validates dtype + structure
     # without an artificial length assumption.

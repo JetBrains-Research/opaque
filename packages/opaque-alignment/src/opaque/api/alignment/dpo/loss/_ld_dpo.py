@@ -21,15 +21,11 @@ contribution, desensitising the objective to completion length::
 At ``alpha = 1`` this reduces to the plain masked-sum sequence logp; at
 ``alpha = 0`` only the shared-prefix tokens contribute.
 
- Strict per-example: the split logp for
-example *i* depends only on example *i*'s tokens, mask, and prefix length.
-
-**vmap-safety:** the position weighting is built with ``torch.arange``
-+ ``torch.where`` (no Python branching on tensor values).  ``shared_prefix_len``
-may be a Python ``int`` or a per-example tensor; it is broadcast against the
-position axis, so a per-example tensor of shape ``(..., 1)`` (or any shape that
-broadcasts against ``(T,)``) selects a different prefix per example without
-materialising data-dependent control flow.
+The position weighting is built with ``torch.arange`` + ``torch.where``.
+``shared_prefix_len`` may be a Python ``int`` or a per-example tensor; it is
+broadcast against the position axis, so a per-example tensor of shape
+``(..., 1)`` (or any shape that broadcasts against ``(T,)``) selects a
+different prefix per example.
 """
 
 from __future__ import annotations
@@ -77,7 +73,7 @@ def ld_dpo_split(
     seq_len = per_token_logps.shape[-1]
     pos = torch.arange(seq_len, device=per_token_logps.device)
     # `shared_prefix_len` may be int or a per-example tensor; comparison +
-    # `torch.where` broadcast keep this vmap-safe (no Python branch on tensors).
+    # `torch.where` broadcast against the position axis.
     is_prefix = pos < shared_prefix_len
     weight = torch.where(
         is_prefix,

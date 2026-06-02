@@ -14,11 +14,6 @@ signature as the logratio-based variants without special-casing at the
 call site.  The caller must ensure that the *first* positional argument is
 ``chosen_logp`` (the total sequence log-probability, not a log-ratio).
 
-Output depends only on ``chosen_logp``, which is a
-per-example quantity.  NaN-injection contract holds trivially (the result
-is ``-chosen_logp``; a NaN input yields a NaN output for that example
-only).
-
 References:
     MPO blend: used in TRL's ``loss_type=["sigmoid", "sft"]`` composite
     loss.  The SFT component acts as a KL penalty towards the SFT

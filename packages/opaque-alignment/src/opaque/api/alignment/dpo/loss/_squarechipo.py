@@ -16,12 +16,6 @@ Formula::
 
 where ``Δ = chosen_logratio − rejected_logratio`` and ``σ`` is the
 logistic sigmoid.
-
- Loss for example *i* depends only on
-example *i*'s data.  NaN-injection contract holds: a NaN in one
-example's inputs propagates only to that example's output and gradient.
-Vmap-safe: pure elementwise tensor ops, no Python control flow
-on tensor values, no ``.item()``.
 """
 
 from __future__ import annotations

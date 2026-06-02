@@ -12,22 +12,16 @@ convention matches that of HuggingFace ``transformers`` and TRL:
 Tokens with ``shifted_labels == -100`` (the ignore index) are excluded from
 the per-example mean, as in ``torch.nn.CrossEntropyLoss(ignore_index=-100)``.
 
- The per-example divisor is this
+The per-example divisor is this
 example's own non-ignored token count — a quantity derived purely from this
 example's data.  This guarantees that swapping one example's data changes
 only that example's gradient, satisfying the per-record sensitivity bound
 required by DP-SGD / DP-FTRL.  Unlike TRL's ``SFTTrainer``, which divides
 by a *batch-level* ``num_items_in_batch``, this function performs **pre-clip
-division** by the per-example token count, consistent with the DP-safe
-divisor rule in plan §3.3 and §8.2.
+division** by the per-example token count.
 
 ``clamp(min=1)`` on the divisor guards the all-ignored-token edge case
 (prevents division-by-zero and produces 0.0 for an all-masked row).
-
-**Vmap-safety**: pure tensor operations; no Python control flow
-on tensor values; no ``.item()``; no module state.  Works for batched
-inputs ``(B, T, V)`` / ``(B, T)`` and per-example inputs ``(T, V)`` /
-``(T,)`` under ``torch.func.vmap(torch.func.grad(...))``.
 """
 
 from __future__ import annotations

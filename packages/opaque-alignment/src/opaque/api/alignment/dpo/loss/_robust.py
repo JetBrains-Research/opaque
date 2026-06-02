@@ -15,12 +15,6 @@ in a numerically stable manner. Derived from the label-smoothed extension of:
 At ε = 0.5 the denominator ``(1 − 2ε)`` is zero, causing division by zero.
 The function does not guard against this: callers must enforce ε < 0.5.
 At ε = 0 this reduces to the unsmoothed DPO sigmoid loss.
-
-The output for example *i* depends only on
-example *i*'s data. Verified by the NaN-injection contract test.
-
-vmap-safety: pure tensor operations only; no Python control flow on
-tensor values; no module state; no ``.item()``.
 """
 
 from __future__ import annotations
@@ -41,8 +35,7 @@ def robust_loss(
     """Per-example DPO robust (label-smoothed) loss.
 
     Implements the robust label-smoothed DPO objective. The function is
-    elementwise and works on both batched ``(B,)`` inputs and 0-dim scalars,
-    making it safe to call under ``torch.func.vmap(torch.func.grad(...))``.
+    elementwise and works on both batched ``(B,)`` inputs and 0-dim scalars.
 
     Unlike the sigmoid variant's label smoothing (which simply blends the
     reversed loss in), the robust variant normalises the blended loss by

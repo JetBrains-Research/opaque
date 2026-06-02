@@ -6,9 +6,7 @@ already been normalised by each completion's token count.  Length
 normalisation corrects for the bias that long completions accumulate more
 per-token log-probability mass, distorting the pair comparison.
 
-Strictly per-example; the length-divisor is
-per-example data (applied by the caller before this function is invoked).
-NaN-injection contract holds.
+The length-divisor is applied by the caller before this function is invoked.
 
 References:
     Standard DPO sigmoid loss — Rafailov et al., "Direct Preference

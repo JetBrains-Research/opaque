@@ -32,11 +32,7 @@ pre-clip divisor rule.
 
 ``clamp(min=1)`` on the divisor guards the all-ignored-token edge case.
 
- Output depends only on this example's
-data.  Verified by NaN-injection contract.
-
-**Vmap-safety**: pure tensor operations; no Python control flow
-on tensor values; no ``.item()``; no module state.
+The output depends only on this example's data.
 """
 
 from __future__ import annotations
@@ -58,7 +54,7 @@ def dft_loss(
     Shifts ``logits[..., :-1, :]`` against ``labels[..., 1:]``, computes
     the per-token DFT loss ``-detach(softmax_prob) * logp``, masks positions
     where the shifted label is ``-100``, and returns the **per-example mean**
-    over non-ignored tokens using a per-example divisor (DP-safe, plan §8.2).
+    over non-ignored tokens using a per-example divisor (DP-safe).
 
     The weighting probability ``p`` is detached (stop-gradient), so the
     gradient of the loss w.r.t. ``logits`` equals that of ``-p.detach() *

@@ -1,8 +1,8 @@
 """Reference-adapter context managers for PEFT-backed reference models.
 
 Provides :func:`null_ref_context` and :func:`with_disabled_adapter` — the two
-context managers that implement the four ref-model configurations described in
-``opaque-alignment-plan.md`` §7.8.
+context managers that implement the four ref-model configurations for
+PEFT-backed reference models.
 
 Design is closely modelled on TRL ``utils.use_adapter`` (see
 ``trl/trainer/utils.py``) but expressed as pure context managers rather than
@@ -11,11 +11,11 @@ trainer methods, so they compose cleanly with functional training loops.
 .. warning:: **Outside vmap only.**
 
     Both helpers mutate ``nn.Module`` adapter-selection state (calls to
-    ``model.set_adapter`` / ``model.disable_adapter``).  Per plan §3.4 this
-    breaks vmap-safety because PEFT adapter flags are ``nn.Module`` state, not
-    explicit function arguments.  Call these helpers in the *outer* loop
-    (outside the ``vmap(grad(...))`` region) to switch which weights the
-    forward pass uses, then vmap the pure forward inside the activated context.
+    ``model.set_adapter`` / ``model.disable_adapter``).  PEFT adapter flags are
+    ``nn.Module`` state, not explicit function arguments, so call these helpers
+    in the *outer* loop (outside the ``vmap(grad(...))`` region) to switch which
+    weights the forward pass uses, then vmap the pure forward inside the
+    activated context.
 """
 
 from __future__ import annotations
@@ -112,7 +112,7 @@ def null_ref_context(
 ) -> "Generator[None, None, None]":
     """Context manager that turns *model* into its own reference inside the block.
 
-    Dispatches per the §7.8 design table:
+    Dispatches per the ref-model design table:
 
     ========================  ================================================
     Configuration             Behaviour
@@ -143,9 +143,8 @@ def null_ref_context(
 
     .. warning:: **Outside vmap only**.
 
-        This helper mutates ``nn.Module`` adapter-selection state and is
-        therefore not Call it in the outer loop; vmap the pure
-        forward *inside* the activated context.
+        This helper mutates ``nn.Module`` adapter-selection state. Call it in
+        the outer loop; vmap the pure forward *inside* the activated context.
 
     Note:
         Modelled on TRL ``utils.use_adapter`` (``trl/trainer/utils.py``).
@@ -196,8 +195,8 @@ def with_disabled_adapter(model: Any) -> "Generator[None, None, None]":
 
     .. warning:: **Outside vmap only**.
 
-        This helper mutates ``nn.Module`` adapter-selection state and is
-        therefore not
+        This helper mutates ``nn.Module`` adapter-selection state. Call it in
+        the outer loop; vmap the pure forward *inside* the activated context.
 
     Note:
         Modelled on TRL ``utils.use_adapter`` (``trl/trainer/utils.py``).

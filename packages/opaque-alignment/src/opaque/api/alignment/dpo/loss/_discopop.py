@@ -12,9 +12,6 @@ exponential component via ``L = logistic·(1 − gate) + exp·gate``.  Because
 the **exponential** component dominates when ``β·Δ`` is large positive and the
 **logistic** component dominates when ``β·Δ`` is negative.
 
-Strictly per-example. NaN-injection contract holds.
-
-
 **Numerical note — exp overflow.**  When ``logits = β·Δ`` is large
 *negative* (e.g. ``logits → -∞``), the exponential component
 ``exp(-logits)`` grows without bound.  At the same time the modulation gate

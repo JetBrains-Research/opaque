@@ -9,13 +9,6 @@ Implements the hinge variant of the DPO objective from:
     Formula:
         loss = relu(1 − β·Δ)
     where Δ = chosen_logratio − rejected_logratio.
-
-The output for example *i* depends only on
-example *i*'s data. Verified by the NaN-injection contract test.
-
-vmap-safety: uses ``torch.relu`` (a pure tensor op) rather than
-``torch.clamp`` with Python-level branching or ``torch.max`` with a scalar
-comparator. No Python control flow on tensor values.
 """
 
 from __future__ import annotations
@@ -35,8 +28,7 @@ def hinge_loss(
 
     Implements the hinge variant of the DPO objective from Liu et al. 2023.
     The function is elementwise and works on both batched ``(B,)`` inputs and
-    0-dim scalars, making it safe to call under
-    ``torch.func.vmap(torch.func.grad(...))``.
+    0-dim scalars.
 
     The hinge loss is zero when the margin β·Δ ≥ 1 (chosen is clearly
     preferred over rejected by the temperature-scaled margin). It is linear

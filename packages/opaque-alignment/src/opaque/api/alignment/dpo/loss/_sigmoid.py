@@ -9,12 +9,6 @@ Implements the standard DPO loss from:
     Formula (with optional label smoothing):
         loss = -logsigmoid(β·Δ) · (1 − ε) − logsigmoid(−β·Δ) · ε
     where Δ = chosen_logratio − rejected_logratio.
-
-The output for example *i* depends only on
-example *i*'s data. Verified by the NaN-injection contract test.
-
-vmap-safety: pure tensor operations only; no Python control flow on
-tensor values; no module state; no ``.item()``.
 """
 
 from __future__ import annotations
@@ -36,8 +30,7 @@ def sigmoid_loss(
 
     Implements the original DPO objective from Rafailov et al. 2023 with
     optional label smoothing. The function is elementwise and works on both
-    batched ``(B,)`` inputs and 0-dim scalars, making it safe to call under
-    ``torch.func.vmap(torch.func.grad(...))``.
+    batched ``(B,)`` inputs and 0-dim scalars.
 
     Args:
         chosen_logratio: Per-example log-ratio for the chosen response,

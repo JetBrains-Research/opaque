@@ -3,11 +3,9 @@
 """Selective log-softmax gather.
 
 :func:`selective_log_softmax` computes ``log_softmax(logits, dim=-1)`` and
-gathers the entry at ``indices`` along the last (vocabulary) axis. It is a
-pure tensor operation: no Python control flow on
-tensor values, no ``.item()``, no module state. It works for any leading
-shape ``(...)`` so it composes under ``torch.func.vmap`` (per-example
-``(T, V)`` / ``(T,)``) and over a batched input ``(B, T, V)`` / ``(B, T)``.
+gathers the entry at ``indices`` along the last (vocabulary) axis. It works for
+any leading shape ``(...)``, both per-example (``(T, V)`` / ``(T,)``) and over a
+batched input (``(B, T, V)`` / ``(B, T)``).
 
 Numerical stability comes from :func:`torch.log_softmax`, which uses the
 log-sum-exp trick internally; we never materialise ``exp(logits)`` so large
@@ -25,8 +23,7 @@ def selective_log_softmax(logits: torch.Tensor, indices: torch.Tensor) -> torch.
     """Gather per-position log-probabilities at ``indices``.
 
     Equivalent to ``log_softmax(logits, dim=-1).gather(-1, indices[..., None])``
-    followed by ``squeeze(-1)``, but written so it is numerically stable and
-    safe under ``vmap``/``grad``.
+    followed by ``squeeze(-1)``, but written so it is numerically stable.
 
     Args:
         logits: Float tensor of shape ``(..., V)`` where ``V`` is the

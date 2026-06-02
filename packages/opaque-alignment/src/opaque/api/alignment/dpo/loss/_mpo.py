@@ -12,16 +12,9 @@ combinator that performs the blend.
     (``dpo_trainer.py``); MPO mixed-objective formulation as used by the
     Qwen2-VL / InternVL preference-tuning recipes.
 
- The combinator is a fixed-weight linear
-combination of per-example loss tensors; the output for example *i* depends
-only on the per-example loss values for example *i*.  No cross-example
-aggregate is introduced.
-
-**vmap-safety:** pure elementwise tensor arithmetic — broadcasting
-multiply-add only.  The key-subset check happens on the *static* ``weights``
-dict keys (Python strings), never on tensor values, so there is no Python
-control flow on tensor data and the body is safe under
-``torch.func.vmap(torch.func.grad(...))``.
+The combinator is a fixed-weight linear combination of per-example loss
+tensors. The key-subset check happens on the static ``weights`` dict keys
+(Python strings), never on tensor values.
 """
 
 from __future__ import annotations

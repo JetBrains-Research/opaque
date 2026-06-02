@@ -7,8 +7,7 @@ policy via an exponential moving average (EMA):
 
 This "soft" reference update is described in the TR-DPO paper and is the
 primary mechanism for preventing the policy from straying too far from the
-reference distribution during DP-DPO training (see opaque-alignment-plan.md
-§7.8 and arXiv:2502.18014 §3).
+reference distribution during DP-DPO training (arXiv:2502.18014 §3).
 
 This module exposes a single pure function, :func:`ema_update_reference`, that
 applies the update leafwise over an arbitrary parameter pytree without
@@ -62,9 +61,9 @@ def ema_update_reference(
 
     Note:
         This function is **pure** (no in-place mutation) and is intended to
-        be called **outside** the per-example gradient loop (vmap-irrelevant).
-        It is safe to call under ``torch.no_grad()`` to avoid accumulating
-        an autograd graph over the reference parameters.
+        be called **outside** the per-example gradient loop. It is safe to
+        call under ``torch.no_grad()`` to avoid accumulating an autograd graph
+        over the reference parameters.
     """
     return optree.tree_map(
         lambda r, p: (1 - alpha) * r + alpha * p,

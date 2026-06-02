@@ -81,8 +81,7 @@ def f_divergence_remap(
       requires ``alpha != 1`` (the ``alpha == 1`` limit is ``reverse_kl``).
 
     The function is elementwise and works on batched ``(B,)`` inputs as well as
-    0-dim scalars, making it safe to call under
-    ``torch.func.vmap(torch.func.grad(...))``.
+    0-dim scalars.
 
     Args:
         logratio: Per-example log-ratio ``log π(y | x) − log π_ref(y | x)``.
@@ -143,8 +142,7 @@ def f_divergence_logits(
     variants. Under ``reverse_kl`` this reduces exactly to that plain difference.
 
     The function is elementwise and works on batched ``(B,)`` inputs as well as
-    0-dim scalars, making it safe to call under
-    ``torch.func.vmap(torch.func.grad(...))``.
+    0-dim scalars.
 
     Args:
         chosen_logratio: Per-example log-ratio for the chosen response. Shape

@@ -15,11 +15,11 @@ the kernel is unavailable (e.g. CPU CI).
 These are **per-example** helpers: call them on a single example ``(T, H)`` and
 drive them with ``vmap(grad(...))`` (the ``clipped_grad`` DP-SGD path); the
 kernel's merged forward/backward vmap rules then make the whole microbatch one
-forward + one backward kernel launch. They call ``.apply`` directly — *not*
-``torch.vmap`` — because the kernel's manual vmap rule recomputes the forward
-with the raw (non-autograd) ``_forward_impl``, so ``grad(vmap(...))`` silently
-yields *zero* gradients; the outer ``vmap(grad)`` instead dispatches through the
-kernel's merged vmap rules.
+forward + one backward kernel launch. They call ``.apply`` directly rather than
+wrapping in ``torch.vmap``: use ``vmap(grad(...))``, not ``grad(vmap(...))``,
+because the kernel's manual vmap rule recomputes the forward with the raw
+(non-autograd) ``_forward_impl``, so ``grad(vmap(...))`` silently yields *zero*
+gradients.
 """
 
 from __future__ import annotations

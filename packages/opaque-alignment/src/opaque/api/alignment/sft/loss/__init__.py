@@ -2,8 +2,6 @@
 each with a memory-efficient fused twin.
 
 Direct functions only: there is no string registry / resolver / variant enum.
-A name→function resolver is reintroduced only when a config-string consumer
-(e.g. a trainer or CLI) actually needs one.
 
 ``nll_loss`` / ``dft_loss`` are **strict per-example** (swapping one example's
 data changes only that example's gradient, enforced by the NaN-injection test in

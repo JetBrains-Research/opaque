@@ -14,8 +14,6 @@ data transforms) are internal impl under ``opaque.api.alignment.*`` and are
 surfaced through the method that consumes them (e.g. ``sequence_logp`` via
 :mod:`opaque.alignment.dpo`), following the shared-impl re-import pattern of
 ``opaque.dpsgd.clipping``.
-
-See ``docs/development/opaque-alignment-plan.md`` for the package design.
 """
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version

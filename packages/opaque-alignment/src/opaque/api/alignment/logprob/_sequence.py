@@ -8,14 +8,12 @@ targets ``input_ids[..., 1:]``), gathers per-token log-probs via
 :func:`selective_log_softmax`, masks to the completion span, and sums over the
 sequence axis.
 
-It is a pure tensor function: negative-axis indexing is
-used throughout so it works both when called per-example under ``vmap``
-(``logits`` ``(T, V)``, ``input_ids`` ``(T,)``) and when called on a batched
-input (``logits`` ``(B, T, V)``, ``input_ids`` ``(B, T)``).
+Negative-axis indexing is used throughout so it works both when called
+per-example (``logits`` ``(T, V)``, ``input_ids`` ``(T,)``) and when called on a
+batched input (``logits`` ``(B, T, V)``, ``input_ids`` ``(B, T)``).
 
 The ``ld_alpha`` (LD-DPO, arXiv:2409.10524) length-desensitised logp split is
-a documented stub here; the real decomposition lands in Phase γ
-(``loss/dpo/_ld_dpo.py``).
+not implemented here; pass ``ld_alpha=None``.
 """
 
 from __future__ import annotations
@@ -50,8 +48,8 @@ def sequence_logp(
         completion_mask: Tensor of shape ``(..., T)``; non-zero where a token
             belongs to the completion span and should contribute to the logp.
             It is cast to the logits dtype before multiplying.
-        ld_alpha: LD-DPO length-desensitisation coefficient. Must be ``None``
-            in this phase; any other value raises :class:`NotImplementedError`.
+        ld_alpha: LD-DPO length-desensitisation coefficient. Must be ``None``;
+            any other value raises :class:`NotImplementedError`.
         shared_prefix_len: LD-DPO shared-prefix length. Accepted and ignored
             when ``ld_alpha is None``.
 

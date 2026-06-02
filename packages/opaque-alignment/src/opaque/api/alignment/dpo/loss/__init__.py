@@ -1,9 +1,6 @@
 """DPO loss family impl — per-pair scalar losses and log-ratio helpers.
 
-All variants are pure, elementwise, per-example functions:
-swapping one example's data changes only that example's gradient, enforced by
-the ``vmap(grad(...))`` NaN-injection sweep in
-``tests/dpo/loss/test_vmap_safety.py`` rather than carried as loss metadata.
+All variants are pure, elementwise, per-example functions.
 
 Direct functions only — there is no string registry / resolver / variant enum
 (mirrors ``opaque.api.alignment.sft.loss``). A name→function dispatch is the

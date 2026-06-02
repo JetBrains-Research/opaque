@@ -3,9 +3,8 @@
 Computes the standard ``rewards/*`` diagnostics (chosen, rejected,
 accuracies, margins) from per-example chosen/rejected log-ratios.
 
-Per the §3.3 telemetry rule, training-time metrics are private internal
-state: every returned tensor is detached so it can never leak gradient back
-into the mechanism. Explicit DP-aware metric release is a roadmap item.
+Training-time metrics are private internal state: every returned tensor is
+detached so it can never leak gradient back into the mechanism.
 """
 
 from __future__ import annotations

@@ -16,16 +16,9 @@ probability on the completion::
     avg_logp = (per_token_logps * mask).sum(-1) / mask.sum(-1).clamp(min=1)
     weight   = avg_logp.detach().exp()
 
- The weight is a strict per-example quantity
-(it depends only on example *i*'s tokens) **and** it is ``.detach()``-ed, so
-it carries no gradient — it acts purely as a per-example reweighting of the
-loss, not as an additional learnable path.  A non-detached weight would
-couple the gradient through the probability term; detaching keeps the design
-inside the per-example regime.  Verified by the detach assertion in the unit tests.
-
-**vmap-safety:** pure elementwise / reduction tensor ops, negative-axis
-indexing, ``clamp`` instead of a Python branch on the token count.  No
-``.item()``, no module state, no Python control flow on tensor values.
+The weight is ``.detach()``-ed, so it carries no gradient — it acts purely as
+a per-example reweighting of the loss, not as an additional learnable path.  A
+non-detached weight would couple the gradient through the probability term.
 """
 
 from __future__ import annotations
