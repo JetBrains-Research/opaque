@@ -1,13 +1,11 @@
-"""TypedDict output schemas for the alignment collators.
+"""Output schema for the language-modeling (SFT) collator.
 
-This module owns the output schema for the language-modeling (SFT) collator
-.  :class:`LMBatch` is the output schema for
-:func:`~opaque.api.alignment.sft.collator._language_modeling.language_modeling_collator`.
-
-TypedDicts are used rather than dataclasses so that downstream code can
-directly consume the dict returned by the collator without any unpacking step.
-All tensor shapes use the comment convention ``(B, L)`` where ``B`` is the
-micro-batch size and ``L`` is the padded sequence length.
+:class:`LMBatch` is the return shape of
+:func:`~opaque.api.alignment.sft.collator._language_modeling.language_modeling_collator`,
+re-exported publicly at ``opaque.alignment.sft.collator.types`` so callers can
+type-hint the collator's output. It is a ``TypedDict`` (not a dataclass) so
+downstream code consumes the returned dict directly, with no unpacking step. All
+tensor shapes use ``(B, L)`` for micro-batch size ``B`` and padded length ``L``.
 """
 
 from __future__ import annotations
