@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import torch
 
-from opaque.api.alignment._fused_lce import lce_available, linear_ce_sum
+from opaque.api.alignment._fused_lce import lce_available, linear_nll_sum
 from opaque.api.alignment.logprob._gather import selective_log_softmax
 
 __all__ = ["nll_loss", "fused_nll_loss"]
@@ -117,7 +117,7 @@ def fused_nll_loss(
         Scalar per-example mean NLL (matches :func:`nll_loss`).
     """
     if lce_available(hidden_states):
-        ce_sum = linear_ce_sum(hidden_states, lm_head_weight, labels)
+        ce_sum = linear_nll_sum(hidden_states, lm_head_weight, labels)
         n_valid = (labels[..., 1:] != -100).sum(-1).clamp(min=1)
         return ce_sum / n_valid
     return nll_loss(hidden_states @ lm_head_weight.transpose(-2, -1), labels)

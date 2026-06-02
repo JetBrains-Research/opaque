@@ -40,7 +40,8 @@ primitives under its own namespace.
 opaque.alignment                         <- top-level façade (exposes dpo, sft)
 opaque.api.alignment                     <- implementation namespace
 opaque.alignment.dpo                     <- DPO method façade (aggregates the below)
-opaque.alignment.dpo.loss                <- 14 per-pair variants + log-ratio helpers
+opaque.alignment.dpo.loss                <- 14 per-pair heads + log-ratio helpers
+opaque.alignment.dpo.logp                <- sequence_logp, fused_sequence_logp (feed the heads)
 opaque.alignment.dpo.collator            <- preference (DPO) collator factory
 opaque.alignment.dpo.reference           <- ref-logp precompute, null_ref_context, EMA
 opaque.alignment.dpo.metric              <- preference reward telemetry
@@ -49,12 +50,12 @@ opaque.alignment.sft.loss                <- nll_loss, dft_loss + fused_nll_loss,
 opaque.alignment.sft.collator            <- language-modeling (SFT) collator
 ```
 
-Shared, lower-level primitives — `selective_log_softmax` / `sequence_logp` /
-`fused_sequence_logp` (logprob), `entropy_from_logits` / `mean_token_accuracy`
-(token metrics), and chat-template helpers — are internal impl under
-`opaque.api.alignment.*` and are
-surfaced through the method that consumes them (e.g. `sequence_logp` via
-`opaque.alignment.dpo`), following the shared-impl re-import pattern of
+The DPO log-prob primitives `sequence_logp` / `fused_sequence_logp` are surfaced
+through `opaque.alignment.dpo.logp` (a sibling of `dpo.loss` — a logp is not a
+loss). The lower-level `selective_log_softmax` building block, `entropy_from_logits`
+/ `mean_token_accuracy` (token metrics), and chat-template helpers stay internal
+impl under `opaque.api.alignment.*`, surfaced through the method that consumes
+them, following the shared-impl re-import pattern of
 `opaque.dpsgd.clipping`.
 
 ## Status

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import torch
 
-from opaque.api.alignment._fused_lce import lce_available, linear_ce_sum
+from opaque.api.alignment._fused_lce import lce_available, linear_nll_sum
 
 from ._gather import selective_log_softmax
 
@@ -124,6 +124,6 @@ def fused_sequence_logp(
             input_ids,
             torch.full_like(input_ids, -100),
         )
-        return -linear_ce_sum(hidden_states, lm_head_weight, masked_labels)
+        return -linear_nll_sum(hidden_states, lm_head_weight, masked_labels)
     logits = hidden_states @ lm_head_weight.transpose(-2, -1)
     return sequence_logp(logits, input_ids, completion_mask)

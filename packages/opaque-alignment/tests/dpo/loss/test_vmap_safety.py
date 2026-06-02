@@ -24,17 +24,17 @@ import opaque.alignment.dpo.loss as dpo_loss
 from opaque.alignment.dpo.loss import (
     apo_down_loss,
     apo_zero_loss,
-    bco_pair_loss,
+    bco_loss,
     discopop_loss,
-    exo_pair_loss,
+    exo_loss,
     hinge_loss,
     ipo_loss,
-    nca_pair_loss,
+    nca_loss,
     robust_loss,
-    sft_loss,
+    chosen_nll_loss,
     sigmoid_loss,
     sigmoid_norm_loss,
-    sppo_hard_loss,
+    sppo_loss,
     squarechipo_loss,
 )
 
@@ -51,14 +51,14 @@ _VARIANTS = {
     "ipo_loss": ipo_loss,
     "sigmoid_norm_loss": sigmoid_norm_loss,
     "discopop_loss": discopop_loss,
-    "sft_loss": sft_loss,
+    "chosen_nll_loss": chosen_nll_loss,
     "squarechipo_loss": squarechipo_loss,
     "apo_zero_loss": apo_zero_loss,
     "apo_down_loss": apo_down_loss,
-    "exo_pair_loss": exo_pair_loss,
-    "nca_pair_loss": nca_pair_loss,
-    "bco_pair_loss": bco_pair_loss,
-    "sppo_hard_loss": sppo_hard_loss,
+    "exo_loss": exo_loss,
+    "nca_loss": nca_loss,
+    "bco_loss": bco_loss,
+    "sppo_loss": sppo_loss,
 }
 
 # Public ``dpo.loss`` names that are NOT per-pair variants on log-ratios: the

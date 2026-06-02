@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import torch
 
-from opaque.api.alignment._fused_lce import lce_available, linear_ce_sum
+from opaque.api.alignment._fused_lce import lce_available, linear_nll_sum
 from opaque.api.alignment.logprob._gather import selective_log_softmax
 
 __all__ = ["dft_loss", "fused_dft_loss"]
@@ -138,7 +138,7 @@ def fused_dft_loss(
         Scalar per-example DFT loss (matches :func:`dft_loss`).
     """
     if lce_available(hidden_states):
-        ce_sum = linear_ce_sum(
+        ce_sum = linear_nll_sum(
             hidden_states, lm_head_weight, labels, use_token_scaling=True
         )
         n_valid = (labels[..., 1:] != -100).sum(-1).clamp(min=1)

@@ -88,24 +88,23 @@ from opaque.alignment.dpo import (
 from opaque.alignment.dpo.loss import (
     apo_down_loss,
     apo_zero_loss,
-    bco_pair_loss,
+    bco_loss,
     discopop_loss,
-    exo_pair_loss,
+    exo_loss,
     hinge_loss,
     ipo_loss,
-    nca_pair_loss,
+    nca_loss,
     robust_loss,
-    sft_loss,
+    chosen_nll_loss,
     sigmoid_loss,
     sigmoid_norm_loss,
-    sppo_hard_loss,
+    sppo_loss,
     squarechipo_loss,
 )
 
-# ``sequence_logp`` is a shared lower-level primitive (no public façade); power
-# users reach into the ``opaque.api`` surface for it (see opaque-alignment
-# README — logprob is intentionally api-only).
-from opaque.api.alignment.logprob import sequence_logp
+# ``sequence_logp`` (and its fused twin) are the DPO log-prob primitives, exposed
+# next to the per-pair heads under ``opaque.alignment.dpo.logp``.
+from opaque.alignment.dpo.logp import sequence_logp
 
 # The library (``opaque.alignment.dpo``) exposes direct loss functions, not a
 # string registry. The CLI ``--loss-type`` string is mapped to a function here,
@@ -117,14 +116,14 @@ _DPO_LOSSES = {
     "ipo": ipo_loss,
     "sigmoid_norm": sigmoid_norm_loss,
     "discopop": discopop_loss,
-    "sft": sft_loss,
+    "chosen_nll": chosen_nll_loss,
     "squarechipo": squarechipo_loss,
     "apo_zero": apo_zero_loss,
     "apo_down": apo_down_loss,
-    "exo_pair": exo_pair_loss,
-    "nca_pair": nca_pair_loss,
-    "bco_pair": bco_pair_loss,
-    "sppo_hard": sppo_hard_loss,
+    "exo": exo_loss,
+    "nca": nca_loss,
+    "bco": bco_loss,
+    "sppo": sppo_loss,
 }
 
 # DP-FTRL mechanism swap (plan §3.2): the loss closure is mechanism-agnostic.

@@ -43,7 +43,7 @@ def lce_available(hidden: torch.Tensor) -> bool:
     return True
 
 
-def linear_ce_sum(
+def linear_nll_sum(
     hidden: torch.Tensor,
     weight: torch.Tensor,
     labels: torch.Tensor,

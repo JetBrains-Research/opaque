@@ -23,10 +23,11 @@ changed).
      `fused_dft_loss` — `Σ CE / n_valid`, flag off/on. In `sft.loss`.
    - **DPO** (kernel output is an *intermediate* logp, head applied after):
      `fused_sequence_logp` = `−Σ_completion CE`, a drop-in for `sequence_logp`,
-     composed with the **existing** per-pair heads (`sigmoid_loss`, …). In the
-     `logprob` primitives. **No `fused_dpo_loss`** — the DPO “head” is never
-     bundled, exactly as the eager path keeps `sequence_logp` + a per-pair loss
-     separate.
+     composed with the **existing** per-pair heads (`sigmoid_loss`, …). Exposed
+     via `opaque.alignment.dpo.logp` (sibling of `dpo.loss` — a logp is not a
+     loss); impl in the shared `opaque.api.alignment.logprob` concern. **No
+     `fused_dpo_loss`** — the DPO “head” is never bundled, exactly as the eager
+     path keeps `sequence_logp` + a per-pair loss separate.
 4. **Signature.** Fused entries take `(hidden_states, lm_head_weight, …)`; eager
    take `(logits, …)`. Fused requires the model to emit hidden (skip the
    in-forward `lm_head`).
