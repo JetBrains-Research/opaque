@@ -77,7 +77,7 @@ def discopop_loss(
 
     Returns:
         Per-example scalar loss (same shape as inputs).  All operations are
-        element-wise; the function is 
+        element-wise; the function is
 
     Note:
         The exponential component overflows float32 when ``logits ≪ 0``.  To

@@ -242,9 +242,7 @@ def test_autocast_entry_is_noop_when_inactive_on_cpu() -> None:
     """
     beta = 0.1
     inputs = _make_inputs(seed=5, dtype=torch.float32)
-    out = fused_linear_dpo_loss(
-        **inputs, beta=beta, per_pair_loss_fn=sigmoid_loss
-    )
+    out = fused_linear_dpo_loss(**inputs, beta=beta, per_pair_loss_fn=sigmoid_loss)
     assert out.dtype == torch.float32
     # Recompute under a no-op (disabled) autocast region: still float32, equal.
     with torch.autocast(device_type="cpu", enabled=False):
@@ -266,9 +264,7 @@ def test_autocast_entry_follows_active_cpu_autocast() -> None:
     """
     beta = 0.1
     inputs = _make_inputs(seed=5, dtype=torch.float32)
-    plain = fused_linear_dpo_loss(
-        **inputs, beta=beta, per_pair_loss_fn=sigmoid_loss
-    )
+    plain = fused_linear_dpo_loss(**inputs, beta=beta, per_pair_loss_fn=sigmoid_loss)
     with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
         wrapped = fused_linear_dpo_loss(
             **inputs, beta=beta, per_pair_loss_fn=sigmoid_loss

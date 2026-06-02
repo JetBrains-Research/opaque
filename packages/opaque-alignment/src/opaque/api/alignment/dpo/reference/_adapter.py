@@ -197,7 +197,7 @@ def with_disabled_adapter(model: Any) -> "Generator[None, None, None]":
     .. warning:: **Outside vmap only**.
 
         This helper mutates ``nn.Module`` adapter-selection state and is
-        therefore not 
+        therefore not
 
     Note:
         Modelled on TRL ``utils.use_adapter`` (``trl/trainer/utils.py``).
