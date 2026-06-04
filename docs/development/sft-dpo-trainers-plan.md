@@ -22,8 +22,8 @@ mixed-norm MPO). Contract tests green; runs on CPU, CUDA, and MPS CI.
   per-head mixed normalization**; f-divergence remap; RPO; **LD-DPO** (ld_alpha
   with a per-pair `shared_prefix_len`); **WPO** (`use_weighting`); **TR-DPO**
   (`sync_ref_model` — per-step EMA reference via the new
-  `DPTrainer._augment_inputs` pre-vmap hook); reward-metric telemetry
-  (`get_batch_loss_metrics`).
+  `DPTrainer._augment_inputs` pre-vmap hook); reward telemetry (`rewards/*`) for
+  both train and eval via the generic `(loss, aux)` seam.
 
 **Reward telemetry — via a generic `(loss, aux)` harness seam.** `DPTrainer`
 exposes a single rich seam, `compute_per_example_loss_and_metrics(fmodel,
@@ -68,7 +68,7 @@ opaque-idiomatic end state:
   `DPOTrainer` as closely as the DP substrate allows: same **class structure,
   method names, config field names, and per-method responsibilities**
   (`_prepare_dataset`, `tokenize_row`, `concatenated_forward`, `dpo_loss`,
-  `get_batch_loss_metrics`, `compute_loss`, `DataCollatorForPreference`, …).
+  reward telemetry, `compute_loss`, `DataCollatorForPreference`, …).
   The goal is a **close, diffable baseline** against upstream TRL, so a reviewer
   can read the two side by side and see exactly what changed and why. The DP
   loss/collator math is the merged `opaque-alignment` primitives (which already
@@ -233,7 +233,7 @@ keeping a vestigial parity shell.
 | `DataCollatorForLanguageModeling` / `DataCollatorForPreference` | same class names, wrapping `language_modeling_collator` / `preference_collator` | ⚠️ wraps opaque primitive (layout differs — §3.3) |
 | `compute_ref_log_probs` / precompute | same name; runs `compute_ref_logprobs_for_dataset` | ⚠️ precompute-only (§3.2) |
 | `dpo_loss(loss_type, …)` / SFT `dft_loss` | same name; enumerates the supported `loss_type`s and dispatches to the matching `opaque.alignment.dpo.loss` head | ✅ structure preserved |
-| `get_batch_loss_metrics` | same name; assembles loss + `reward_metrics`/accuracy for eval logging | ✅ direct (eval path) |
+| `get_batch_loss_metrics` (TRL's reward block) | the per-example `rewards/*` ride the generic `(loss, aux)` seam — logged each train step (clipped-grad aux) and aggregated in the eval loop (`eval_rewards/*`); no standalone method | ➖ adapted (seam, not a method) |
 | `concatenated_forward` | **folded into `compute_per_example_loss`**, not reproduced as a standalone batched method. A batched `(2B,L)` forward that never drives the gradient would be dead weight under per-example DP. Its responsibility (two forwards → `{chosen_logps, rejected_logps}`) lives in the hook. | ➖ adapted (no vestigial shell) |
 | `compute_loss` | the training gradient goes through `compute_per_example_loss` + `vmap`; we do **not** add a parallel batched `compute_loss` for grads. Any eval-only loss is read off the same per-example hook (`_get_eval_per_example_loss_fn`). | ➖ adapted |
 
@@ -607,7 +607,7 @@ by tests, and lands on a sub-branch off this one.
 - **Phase 0 — scaffolding. ✅ done.** Added `opaque-alignment` dependency + workspace source; created `trl` impl + façade packages; `SFTConfig`/`DPOConfig` dataclasses carrying the *supported* TRL fields only (incompatible fields simply absent — §3.3); `__post_init__` forces `remove_unused_columns=False` and defaults `loss_weights`. Contract tests green.
 - **Phase 1 — `SFTTrainer` (nll/dft). ✅ done.** TRL-shaped `_prepare_dataset`/`tokenize_row` + language-modeling collator; `compute_per_example_loss` override; completion-only loss; activation-offloading alias. Example + cadence config. *Remaining:* eval token-accuracy/entropy logging; TRL numeric parity at σ=0/C=∞.
 - **Phase 2 — `DPOTrainer` (core heads + precompute). ✅ done.** TRL-shaped `_prepare_dataset`/`tokenize_row`/`compute_ref_log_probs`/`dpo_loss`; the two-forwards step is folded into `compute_per_example_loss`, not a standalone batched method (§2.1a). Precompute reference (explicit ref + PEFT null-ref + auto-load); reference-free; sigmoid/hinge/ipo/robust/apo/sigmoid_norm + MPO. Example + cadence config. *Remaining:* reward-metric eval logging; TRL numeric parity.
-- **Phase 3 — DPO breadth. ✅ done.** exo/nca/bco/sppo/discopop/sft/squarechipo heads, f-divergence remap, RPO, **LD-DPO** (ld_alpha + per-pair `shared_prefix_len`), reference-free, **WPO** (`use_weighting`), **mixed-normalization MPO** (per-head normalization; reference precomputed summed), and **TR-DPO** (`sync_ref_model`, via the new `DPTrainer._augment_inputs` pre-vmap hook + per-step EMA reference); reward-metric telemetry via `get_batch_loss_metrics`. *Out of scope:* ORPO/SimPO/CPO are separate TRL trainer classes, not DPO `loss_type`s.
+- **Phase 3 — DPO breadth. ✅ done.** exo/nca/bco/sppo/discopop/sft/squarechipo heads, f-divergence remap, RPO, **LD-DPO** (ld_alpha + per-pair `shared_prefix_len`), reference-free, **WPO** (`use_weighting`), **mixed-normalization MPO** (per-head normalization; reference precomputed summed), and **TR-DPO** (`sync_ref_model`, via the new `DPTrainer._augment_inputs` pre-vmap hook + per-step EMA reference); `rewards/*` telemetry (train + eval) via the generic `(loss, aux)` seam. *Out of scope:* ORPO/SimPO/CPO are separate TRL trainer classes, not DPO `loss_type`s.
 - **Phase 4 — SFT breadth. ✅ done.** `assistant_only_loss` (chat-template mask), `chat_template_path` (clone + embedding resize), and **`chunked_nll`** (model's fused logits-free CE via the `fused_linear_cross_entropy` patch) wired.
 
 **🛑 Iteration-1 checkpoint — stop and reconsider.** With both trainers running
