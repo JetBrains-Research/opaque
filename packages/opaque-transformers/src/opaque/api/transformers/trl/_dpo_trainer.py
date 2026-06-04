@@ -294,7 +294,9 @@ class DPOTrainer(DPTrainer):
                 )
             else:
                 chosen_ids = processing_class.encode(chosen, add_special_tokens=True)
-                rejected_ids = processing_class.encode(rejected, add_special_tokens=True)
+                rejected_ids = processing_class.encode(
+                    rejected, add_special_tokens=True
+                )
 
         prompt_len = len(prompt_ids)
         chosen_cmask = [0] * min(prompt_len, len(chosen_ids)) + [1] * max(
@@ -452,9 +454,7 @@ class DPOTrainer(DPTrainer):
 
         parts: dict[str, torch.Tensor] = {}
         weights: dict[str, float] = {}
-        for name, weight, head in zip(
-            self._loss_type, self._loss_weights, self._heads
-        ):
+        for name, weight, head in zip(self._loss_type, self._loss_weights, self._heads):
             if name == "sft":
                 parts[name] = chosen_nll_loss(chosen_logp)
             else:
@@ -550,9 +550,11 @@ class DPOTrainer(DPTrainer):
         shifted_mask = completion_mask[..., 1:]
         # Per-token logp of the realised next token (public log_softmax + gather;
         # equivalent to selective_log_softmax, kept on the public boundary).
-        per_token_logps = torch.log_softmax(shifted_logits, dim=-1).gather(
-            -1, shifted_ids.unsqueeze(-1)
-        ).squeeze(-1)
+        per_token_logps = (
+            torch.log_softmax(shifted_logits, dim=-1)
+            .gather(-1, shifted_ids.unsqueeze(-1))
+            .squeeze(-1)
+        )
         return wpo_weights(per_token_logps, shifted_mask)
 
     def get_batch_loss_metrics(

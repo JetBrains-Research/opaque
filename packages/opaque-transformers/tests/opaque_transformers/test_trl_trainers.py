@@ -94,9 +94,7 @@ def test_sft_config_forces_remove_unused_columns_and_lr():
 
 
 def test_dpo_config_coerces_loss_type_and_defaults_weights():
-    cfg = DPOConfig(
-        output_dir="x", loss_type="sigmoid", privacy_noise_multiplier=0.0
-    )
+    cfg = DPOConfig(output_dir="x", loss_type="sigmoid", privacy_noise_multiplier=0.0)
     assert cfg.loss_type == ["sigmoid"]
     assert cfg.loss_weights == [1.0]
     assert cfg.remove_unused_columns is False
@@ -114,9 +112,7 @@ def test_unsupported_param_is_absent_not_rejected():
     # No bespoke rejection: an unsupported field is simply not on the surface,
     # so passing it raises the standard dataclass TypeError.
     with pytest.raises(TypeError):
-        DPOConfig(
-            output_dir="x", sync_ref_model=True, privacy_noise_multiplier=0.0
-        )
+        DPOConfig(output_dir="x", sync_ref_model=True, privacy_noise_multiplier=0.0)
 
 
 def test_robust_label_smoothing_validation():
@@ -220,9 +216,7 @@ def _per_example_losses(trainer, batch):
     """vmap ``compute_per_example_loss`` over a collated batch (the DP path)."""
     from opaque.functional import make_functional
 
-    fmodel, trainable, frozen = make_functional(
-        trainer.model, partition_trainable=True
-    )
+    fmodel, trainable, frozen = make_functional(trainer.model, partition_trainable=True)
     keys = [k for k, v in batch.items() if isinstance(v, torch.Tensor)]
 
     def fn(tp, *batch_args):
@@ -313,9 +307,7 @@ def test_dpo_loss_matches_direct_sigmoid(tmp_path):
     trainer = DPOTrainer(
         model=_tiny_model(),
         ref_model=_tiny_model(),
-        args=_args(
-            DPOConfig, tmp_path, max_length=8, loss_type="sigmoid", beta=beta
-        ),
+        args=_args(DPOConfig, tmp_path, max_length=8, loss_type="sigmoid", beta=beta),
         train_dataset=_pref_dataset(),
         processing_class=_stub_tokenizer(),
     )
