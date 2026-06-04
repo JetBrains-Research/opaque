@@ -1,8 +1,18 @@
 # SFT & DPO Trainers on `DPTrainer` — Implementation Plan
 
-**Status:** Planning. Scoped to two class trainers — `SFTTrainer` and
+**Status:** In progress. Scoped to two class trainers — `SFTTrainer` and
 `DPOTrainer` — built on the in-house `DPTrainer` and consuming the
 already-merged `opaque-alignment` primitives (PR #251).
+
+**Implementation status (iteration 1):** Phases 0–2 landed on
+`claude/modest-gates-WpC4d` — `opaque.transformers.trl.{SFTConfig, SFTTrainer,
+DPOConfig, DPOTrainer}` with the `opaque-alignment` dependency wired in,
+hermetic offline smoke + config tests passing, contract tests green, and
+`examples/train_{sft,dpo}_trainer.py` + matching cadence presets. DPO ships more
+than the Phase-2 core (extended heads, f-divergence, RPO, LD-DPO α,
+reference-free) where the head signatures were uniform; WPO (`use_weighting`),
+TR-DPO sync, SFT `chunked_nll` / `assistant_only_loss`, and TRL numeric-parity
+tests remain (Phases 3–4 + test strategy §9).
 
 **Author context:** Written against `main` at `909ed54` (opaque-alignment in
 place) on branch `claude/modest-gates-WpC4d`. Supersedes the pre-merge draft
@@ -559,10 +569,10 @@ close structural ports of TRL, wiring the merged `opaque-alignment` primitives
 through TRL-named methods (§2.1a). Each phase is independently shippable, gated
 by tests, and lands on a sub-branch off this one.
 
-- **Phase 0 — scaffolding.** Add `opaque-alignment` dependency; create `trl` impl + façade packages; `SFTConfig`/`DPOConfig` dataclasses carrying the *supported* TRL fields only (incompatible fields simply absent — §3.3); `__post_init__` forces `remove_unused_columns=False` and defaults `loss_weights`. Contract tests (façade discipline, dependency direction) green. No trainer behavior yet.
-- **Phase 1 — `SFTTrainer` (nll/dft).** Port TRL's `_prepare_dataset`/`tokenize_row`/`DataCollatorForLanguageModeling`/`compute_loss` structure; `compute_per_example_loss` override; completion-only loss; eval token-accuracy/entropy via `get_batch_loss_metrics`. Parity vs `examples/train_sft.py` and vs TRL at σ=0/C=∞. Example + cadence config.
-- **Phase 2 — `DPOTrainer` (core heads + precompute).** Port `_prepare_dataset`/`tokenize_row`/`DataCollatorForPreference`/`compute_ref_log_probs`/`dpo_loss`/`get_batch_loss_metrics`; the two-forwards step (`concatenated_forward`'s job) is folded into `compute_per_example_loss`, not a standalone batched method (§2.1a). Precompute reference (explicit ref + PEFT null-ref); sigmoid/hinge/ipo/robust/apo/sigmoid_norm; MPO; reward metrics in eval. Parity vs `examples/train_dpo.py` and TRL. Example + cadence config.
-- **Phase 3 — DPO breadth.** Remaining heads (exo/nca/bco/sppo/discopop/sft/squarechipo); f-divergence; WPO; LD-DPO; RPO; reference-free/CPO/ORPO/SimPO.
+- **Phase 0 — scaffolding. ✅ done.** Added `opaque-alignment` dependency + workspace source; created `trl` impl + façade packages; `SFTConfig`/`DPOConfig` dataclasses carrying the *supported* TRL fields only (incompatible fields simply absent — §3.3); `__post_init__` forces `remove_unused_columns=False` and defaults `loss_weights`. Contract tests green.
+- **Phase 1 — `SFTTrainer` (nll/dft). ✅ done.** TRL-shaped `_prepare_dataset`/`tokenize_row` + language-modeling collator; `compute_per_example_loss` override; completion-only loss; activation-offloading alias. Example + cadence config. *Remaining:* eval token-accuracy/entropy logging; TRL numeric parity at σ=0/C=∞.
+- **Phase 2 — `DPOTrainer` (core heads + precompute). ✅ done.** TRL-shaped `_prepare_dataset`/`tokenize_row`/`compute_ref_log_probs`/`dpo_loss`; the two-forwards step is folded into `compute_per_example_loss`, not a standalone batched method (§2.1a). Precompute reference (explicit ref + PEFT null-ref + auto-load); reference-free; sigmoid/hinge/ipo/robust/apo/sigmoid_norm + MPO. Example + cadence config. *Remaining:* reward-metric eval logging; TRL numeric parity.
+- **Phase 3 — DPO breadth.** ⏳ *Partly landed* (exo/nca/bco/sppo/discopop/sft/squarechipo heads, f-divergence remap, RPO, LD-DPO α, reference-free are wired). *Remaining:* WPO (`use_weighting`), ORPO/SimPO/CPO reference-free heads, mixed-normalization MPO.
 - **Phase 4 — SFT breadth.** `chunked_nll` (fused), `assistant_only_loss` (chat-template mask), `chat_template_path` cloning.
 
 **🛑 Iteration-1 checkpoint — stop and reconsider.** With both trainers running
