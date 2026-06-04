@@ -130,3 +130,9 @@ class DPOConfig(TrainingArguments):
                 "sync_ref_model (TR-DPO) is incompatible with reference_free: "
                 "there is no reference to sync."
             )
+        # DPO eval must route through the per-example loss path: a preference
+        # batch has ``chosen_input_ids`` / ``rejected_input_ids`` (no single
+        # ``input_ids``), so the standard single-forward prediction path can't
+        # run. ``'loss' in include_for_metrics`` selects the per-example path.
+        if "loss" not in self.include_for_metrics:
+            self.include_for_metrics = [*self.include_for_metrics, "loss"]

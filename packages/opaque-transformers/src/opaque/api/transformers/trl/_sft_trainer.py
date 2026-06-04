@@ -313,12 +313,14 @@ class SFTTrainer(DPTrainer):
         inputs: dict[str, Any],
         *,
         return_logits: bool = False,
+        return_aux: bool = False,
     ) -> Any:
         """One example's SFT loss (vmap-batched by :class:`DPTrainer`).
 
         The collator already folds ``completion_mask`` into ``-100`` labels, so
         this is a single forward + the configured head (``nll`` / ``dft``); both
-        heads use a DP-safe per-example divisor.
+        heads use a DP-safe per-example divisor. SFT emits no extra training
+        telemetry, so ``return_aux`` yields an empty aux dict.
         """
         if self._loss_type == "chunked_nll":
             # The model computes the (logits-free, fused) NLL when given labels.
@@ -338,6 +340,8 @@ class SFTTrainer(DPTrainer):
             )
             loss = self._loss_fn(out.logits, inputs["labels"])
             logits = out.logits
+        if return_aux:
+            return loss, {}
         if return_logits:
             return loss, logits
         return loss

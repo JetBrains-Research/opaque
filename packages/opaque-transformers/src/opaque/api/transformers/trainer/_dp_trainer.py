@@ -1101,10 +1101,16 @@ class DPTrainer:
         # Subclasses override :meth:`compute_per_example_loss` for
         # domain-specific losses; ``_build_per_example_loss`` here just
         # wraps it with autocast / torch.compile.
+        # Subclasses that emit per-example training telemetry (e.g. DPO rewards)
+        # set ``_emit_loss_aux``; the loss closure then returns ``(loss, aux)``
+        # and the grad fn is built with ``has_aux=True``. Default ``False`` keeps
+        # the standard path bit-identical.
+        wants_loss_aux = bool(getattr(self, "_emit_loss_aux", False))
         per_example_loss_fn, batch_argnums = self._build_per_example_loss(
             fmodel,
             frozen_params,
             batch_keys,
+            return_aux=wants_loss_aux,
         )
 
         # --- Sampling & step calculations ---
@@ -1194,6 +1200,7 @@ class DPTrainer:
             clip_norm,
             expected_batch_size,
             microbatch_size,
+            has_aux=wants_loss_aux,
         )
 
         # --- LR schedule ---
@@ -1952,6 +1959,16 @@ class DPTrainer:
                     metrics["clip_rate"] = sum(_rates) / len(_rates)
                     metrics["clip_rate_max"] = max(_rates)
 
+        # Per-example training telemetry from the loss closure (e.g. DPO
+        # rewards). ``aux.loss_aux`` is a dict of per-example tensors, already
+        # summed/gathered across ranks by ``sync(aux)``; mean each into a scalar.
+        # Same un-noised diagnostic posture as the logged ``loss`` mean above.
+        loss_aux = getattr(aux, "loss_aux", None)
+        if loss_aux:
+            metrics["loss_aux"] = {
+                name: value.float().mean().item() for name, value in loss_aux.items()
+            }
+
         return metrics
 
     # ------------------------------------------------------------------
@@ -1977,6 +1994,7 @@ class DPTrainer:
         inputs: dict[str, Tensor],
         *,
         return_logits: bool = False,
+        return_aux: bool = False,
     ) -> Tensor | tuple[Tensor, Any]:
         """Compute one example's loss; vmap-batched by the caller.
 
@@ -2086,6 +2104,13 @@ class DPTrainer:
                     label_smoothing=smoothing,
                 )
 
+        # ``return_aux`` is the per-example training-telemetry channel: the loss
+        # closure returns ``(loss, aux_dict)`` and ``clipped_grad(has_aux=True)``
+        # forwards ``aux_dict`` per-example into ``ClippedGradAux.loss_aux``
+        # (DDP-synced like ``loss_values``). The base trainer has no extra
+        # telemetry; subclasses (e.g. DPO rewards) override this to populate it.
+        if return_aux:
+            return loss, {}
         if return_logits:
             return loss, output_logits
         return loss
@@ -3024,6 +3049,7 @@ class DPTrainer:
         batch_keys: tuple[str, ...],
         *,
         return_logits: bool = False,
+        return_aux: bool = False,
     ) -> tuple[Callable[..., Any], tuple[int, ...]]:
         """Wrap :meth:`compute_per_example_loss` for ``vmap(grad(...))``.
 
@@ -3043,6 +3069,10 @@ class DPTrainer:
                 (discovered via :meth:`_discover_batch_keys`).
             return_logits: When ``True``, the closure returns
                 ``(loss, logits)`` instead of just ``loss``.
+            return_aux: When ``True``, the closure returns ``(loss, aux_dict)``
+                of per-example telemetry; the caller pairs this with
+                ``_create_grad_fn(..., has_aux=True)`` so ``clipped_grad``
+                forwards ``aux_dict`` into ``ClippedGradAux.loss_aux``.
 
         Returns:
             ``(per_example_loss_fn, batch_argnums)``.
@@ -3063,11 +3093,19 @@ class DPTrainer:
             if autocast_active:
                 with torch.autocast(device_type=device_type, dtype=amp_dtype):
                     result = self.compute_per_example_loss(
-                        fmodel, merged, inputs, return_logits=return_logits
+                        fmodel,
+                        merged,
+                        inputs,
+                        return_logits=return_logits,
+                        return_aux=return_aux,
                     )
             else:
                 result = self.compute_per_example_loss(
-                    fmodel, merged, inputs, return_logits=return_logits
+                    fmodel,
+                    merged,
+                    inputs,
+                    return_logits=return_logits,
+                    return_aux=return_aux,
                 )
 
             return result
@@ -3615,6 +3653,9 @@ class DPTrainer:
             ).items():
                 for metric_name, value in group_values.items():
                     logs[f"privacy_group_{group_name}_{metric_name}"] = value
+            # Subclass training telemetry (e.g. DPO ``rewards/*``) surfaced by
+            # ``training_step`` from the clipped-grad ``loss_aux`` channel.
+            logs.update(step_result.get("loss_aux", {}))
             # Opaque per-step performance metrics (step_time_sec,
             # samples_per_second, memory_*, clip_sec / noise_sec /
             # optimizer_sec from ``sp.mark(...)``).  Bare keys; the
@@ -3651,8 +3692,14 @@ class DPTrainer:
         clip_norm: Any,
         expected_batch_size: int,
         microbatch_size: int,
+        *,
+        has_aux: bool = False,
     ) -> Callable[..., Any]:
-        """Create the clipped gradient function based on clipping mode."""
+        """Create the clipped gradient function based on clipping mode.
+
+        When ``has_aux`` is set, ``loss_fn`` returns ``(loss, aux_dict)`` and the
+        per-example ``aux_dict`` is forwarded into ``ClippedGradAux.loss_aux``.
+        """
         ca = a.clipping_kwargs
         target_clip_rate = float(ca.get("target_clipping_rate", 0.5))
         clip_norm_max = float(ca.get("norm_max", 10.0))
@@ -3662,6 +3709,7 @@ class DPTrainer:
             return adaptive_clipped_grad(
                 loss_fn,
                 argnums=0,
+                has_aux=has_aux,
                 batch_argnums=batch_argnums,
                 initial_clipping_norm=clip_norm,
                 target_quantile=1.0 - target_clip_rate,
@@ -3675,6 +3723,7 @@ class DPTrainer:
             return auto_clipped_grad(
                 loss_fn,
                 argnums=0,
+                has_aux=has_aux,
                 batch_argnums=batch_argnums,
                 R=clip_norm,
                 gamma=auto_gamma,
@@ -3686,6 +3735,7 @@ class DPTrainer:
             return clipped_grad(
                 loss_fn,
                 argnums=0,
+                has_aux=has_aux,
                 batch_argnums=batch_argnums,
                 clipping_norm=clip_norm,
                 normalize_by=expected_batch_size,
