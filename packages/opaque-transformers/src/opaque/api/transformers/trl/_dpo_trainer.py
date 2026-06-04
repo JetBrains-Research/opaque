@@ -3,11 +3,12 @@
 Mirrors ``trl.DPOTrainer`` (``trl/trainer/dpo_trainer.py``) in structure and
 method names — ``_prepare_dataset`` / ``tokenize_row`` for data prep,
 ``compute_ref_log_probs`` for the reference pass, ``dpo_loss`` for the loss
-dispatch — but routes the training gradient through Opaque's per-example
-:meth:`DPTrainer.compute_per_example_loss` hook. TRL's batched
-``concatenated_forward`` has no per-example DP meaning, so the two forwards
-(chosen + rejected) are folded into the hook rather than kept as a standalone
-batched method (plan §2.1a).
+dispatch — but routes the gradient through Opaque's per-example
+:meth:`DPTrainer.compute_per_example_loss_and_metrics` seam (loss + reward
+telemetry in one forward; rewards ride the clipped-grad aux channel and the
+symmetric eval aux). TRL's batched ``concatenated_forward`` has no per-example
+DP meaning, so the two forwards (chosen + rejected) are folded into the seam
+rather than kept as a standalone batched method (plan §2.1a).
 
 The reference policy enters via **precompute** (plan §3.2): a one-shot pass
 attaches per-example ``ref_chosen_logps`` / ``ref_rejected_logps`` columns the
@@ -47,7 +48,6 @@ from opaque.alignment.dpo.loss import (
     squarechipo_loss,
     wpo_weights,
 )
-from opaque.alignment.dpo.metric import reward_metrics
 from opaque.alignment.dpo.reference import (
     compute_ref_logprobs_for_dataset,
     ema_update_reference,
@@ -526,11 +526,24 @@ class DPOTrainer(DPTrainer):
     def _augment_inputs(
         self, inputs: dict[str, torch.Tensor]
     ) -> dict[str, torch.Tensor]:
+        # Training step: advance the EMA reference on cadence, then refresh the
+        # per-step ref logps from it (overwriting the seeded columns).
         if not self._sync_ref_model or self._tr_ref is None:
             return inputs
         step = int(self.state.global_step)
         if step > 0 and step % self._ref_sync_steps == 0:
             self._ema_update_reference()
+        return self._inject_tr_ref_logps(inputs)
+
+    def _inject_tr_ref_logps(
+        self, inputs: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
+        """Overwrite ``ref_*_logps`` with the *current* EMA reference (no EMA step).
+
+        Used by both the training augment hook and eval ``prediction_step`` so
+        eval scores against the same evolving reference as training, not the
+        stale seed columns.
+        """
         with torch.no_grad():
             refs = self.compute_ref_log_probs(
                 inputs, self._tr_ref, null_ref=False, to_cpu=False
@@ -768,27 +781,6 @@ class DPOTrainer(DPTrainer):
         )
         return wpo_weights(per_token_logps, shifted_mask)
 
-    def get_batch_loss_metrics(
-        self,
-        chosen_logp: torch.Tensor,
-        rejected_logp: torch.Tensor,
-        ref_chosen_logps: torch.Tensor | None = None,
-        ref_rejected_logps: torch.Tensor | None = None,
-    ) -> dict[str, torch.Tensor]:
-        """Reward telemetry for a batch of logps (eager; for eval logging).
-
-        Mirrors ``trl.DPOTrainer.get_batch_loss_metrics``' reward block: returns
-        chosen/rejected rewards, their margin, and the preference accuracy via
-        :func:`opaque.alignment.dpo.metric.reward_metrics`. Detached — telemetry
-        only, never released.
-        """
-        if self._reference_free or ref_chosen_logps is None:
-            chosen_lr, rejected_lr = chosen_logp, rejected_logp
-        else:
-            chosen_lr = chosen_logp - ref_chosen_logps
-            rejected_lr = rejected_logp - ref_rejected_logps
-        return reward_metrics(chosen_lr, rejected_lr, beta=self._beta)
-
     # ------------------------------------------------------------------
     # Evaluation: plug into the inherited eval harness via prediction_step
     # ------------------------------------------------------------------
@@ -824,6 +816,10 @@ class DPOTrainer(DPTrainer):
         params = {**frozen, **trainable}
 
         inputs = self._prepare_input(inputs)
+        # TR-DPO: score eval against the current EMA reference, not the seed
+        # columns (mirrors training's _augment_inputs, without an EMA step).
+        if self._sync_ref_model and self._tr_ref is not None:
+            inputs = self._inject_tr_ref_logps(inputs)
         batch_args = tuple(inputs[k] for k in keys)
 
         def per_example(p, *args):

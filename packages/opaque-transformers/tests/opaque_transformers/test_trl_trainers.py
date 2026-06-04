@@ -239,6 +239,7 @@ def test_dpo_tr_dpo_syncs_reference(tmp_path):
             ref_model_mixup_alpha=0.5,
         ),
         train_dataset=_pref_dataset(),
+        eval_dataset=_pref_dataset(),
         processing_class=_stub_tokenizer(),
     )
     name, param = next(iter(trainer._tr_ref.named_parameters()))
@@ -247,6 +248,11 @@ def test_dpo_tr_dpo_syncs_reference(tmp_path):
     after = dict(trainer._tr_ref.named_parameters())[name].detach()
     assert out.global_step == 2
     assert not torch.allclose(before, after)  # EMA moved the reference
+    # Eval scores against the current EMA reference (exercises _inject_tr_ref_logps
+    # in prediction_step), not the stale seed columns.
+    metrics = trainer.evaluate()
+    assert "eval_loss" in metrics
+    assert "eval_rewards/accuracies" in metrics
 
 
 def test_dpo_logs_train_reward_metrics(tmp_path):
