@@ -19,11 +19,15 @@ mixed-norm MPO). Contract tests green; runs on CPU, CUDA, and MPS CI.
 - **DPO:** precompute reference (explicit / PEFT null-ref / auto-load) +
   reference-free; heads sigmoid / hinge / ipo / robust / apo* / sigmoid_norm /
   exo / nca / bco / sppo / discopop / squarechipo / sft; **MPO with
-  per-head mixed normalization**; f-divergence remap; RPO; **LD-DPO** (ld_alpha
+  per-head mixed normalization**; f-divergence remap; **LD-DPO** (ld_alpha
   with a per-pair `shared_prefix_len`); **WPO** (`use_weighting`); **TR-DPO**
   (`sync_ref_model` — per-step EMA reference via the new
-  `DPTrainer._augment_inputs` pre-vmap hook); reward telemetry (`rewards/*`) for
-  both train and eval via the generic `(loss, aux)` seam.
+  `DPTrainer._augment_inputs` pre-vmap hook); full TRL telemetry (`rewards/*`,
+  `logps/*`, `logits/*`, `entropy`, `mean_token_accuracy`) for both train and
+  eval via the generic `(loss, aux)` seam. (See the parity-completion pass below
+  for the 2026-06-04 follow-up: `rpo_alpha` dropped to match current TRL, SFT
+  telemetry + `compute_loss_func`, `model_init_kwargs`, PEFT added-token
+  trainability.)
 
 **Reward telemetry — via a generic `(loss, aux)` harness seam.** `DPTrainer`
 exposes a single rich seam, `compute_per_example_loss_and_metrics(fmodel,
@@ -48,6 +52,63 @@ fixes DPO eval end-to-end: a preference batch — `chosen_input_ids` /
 prediction path at all.) TRL-as-test-dep numeric parity stays out: the heads are
 unit-tested in `opaque-alignment` and the trainer is parity-tested against a
 direct computation.
+
+### Iteration 1 — parity-completion pass (2026-06-04)
+
+A follow-up audit of the iteration-1 trainers against current TRL `main`
+surfaced a handful of remaining gaps. Decisions (all kept inside iteration 1 —
+faithful-TRL-baseline — not the iteration-2 redesign):
+
+- **Verification posture.** No `trl` test dependency. Parity is established by
+  re-derivation (heads unit-tested in `opaque-alignment`) plus a hand-checked
+  HF-golden comparison, consistent with the iteration-1 stance above.
+- **`rpo_alpha` — dropped.** It is **not** part of current TRL (`dpo_config.py`
+  has no such field; it was removed upstream), so the config field
+  (`_dpo_config.py`), the captured `self._rpo_alpha`, and the `dpo_loss` RPO
+  block are gone. RPO-style chosen-NLL blending remains available explicitly via
+  MPO (`loss_type=["sigmoid", "sft"]`).
+- **Full DPO logged-metric parity.** `_reward_aux` now emits the complete TRL
+  set — `rewards/*` **plus** `logps/{chosen,rejected}`, `logits/{chosen,rejected}`
+  (masked-mean completion logit, `_masked_mean_logit`, vmap-safe), `entropy`, and
+  `mean_token_accuracy` — all detached, riding the **same** clipped-grad
+  `loss_aux` channel in training and the symmetric `_pending_eval_aux` at eval.
+  No second forward: they are read off the chosen/rejected forwards already run.
+  (TRL also tracks a cumulative `num_tokens` counter; that is a running session
+  total, orthogonal to the per-example-mean aux channel, and is left to a
+  separate trainer counter — deferred.)
+- **SFT telemetry seam.** `SFTTrainer` now overrides
+  `compute_per_example_loss_and_metrics` to emit `entropy` + `mean_token_accuracy`
+  over the supervised (`!= -100`) tokens, computed from the model logits and so
+  **independent of the loss head**. When logits are unavailable (the CUDA fused
+  `chunked_nll` path) the aux dict is empty (fail-safe). The loss value and its
+  gradient are unchanged — telemetry is detached.
+- **`compute_loss_func` — supported per-example (was silently ignored).** On the
+  `nll` path `SFTTrainer.compute_per_example_loss` now honours
+  `compute_loss_func(outputs, labels) -> scalar` (the existing `DPTrainer`
+  contract; runs inside `vmap`, so it must be a pure per-example op with no
+  `num_items_in_batch` / batch coupling). `dft` / `chunked_nll` reject a custom
+  loss at construction (they reduce their own loss; no logits to hand it). The
+  **aux fail-safe** the reviewer asked for: telemetry is computed from logits, so
+  a custom loss returning only a scalar still yields telemetry — the seam never
+  depends on the loss fn providing aux.
+- **`model_init_kwargs` added** to both configs and threaded into the
+  string-`model` load path (`AutoModelForCausalLM.from_pretrained(model,
+  **model_init_kwargs)`), matching TRL.
+- **PEFT added-token trainability.** `clone_chat_template` now returns
+  `(model, tokenizer, added_token_ids)`; `SFTTrainer` marks exactly those new
+  embedding rows trainable (`peft_config.trainable_token_indices['embed_tokens']`)
+  and keeps `lm_head` in `modules_to_save` (with a warning) before
+  `get_peft_model`, mirroring `trl.SFTTrainer` (`sft_trainer.py:1064-1084`) — a
+  frozen base would never learn an embedding for a token absent at pre-training.
+- **`truncation_mode='keep_end'` — left cut.** Confirmed deprecated upstream
+  (TRL warns and removes it in v2.0.0; `dpo_config.py:335-338`,
+  `sft_config.py:297-300`). Tokenization keeps `keep_start` (TRL's default and
+  forward path); the knob stays absent and is documented as such in both configs.
+- **Stricter validations — kept.** Where Opaque raises and TRL warns/falls back
+  (`f_alpha_divergence_coef == 1`; `robust` `label_smoothing` outside `[0, 0.5)`)
+  we keep the fail-fast raise (`_f_divergence.py`, `_dpo_config.py`).
+- **Deferred to iteration 2:** `IterableDataset` / streaming datasets, and the
+  cumulative `num_tokens` counter.
 
 **Author context:** Written against `main` at `909ed54` (opaque-alignment in
 place) on branch `claude/modest-gates-WpC4d`. Supersedes the pre-merge draft

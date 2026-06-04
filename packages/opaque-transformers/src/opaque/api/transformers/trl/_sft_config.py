@@ -31,9 +31,20 @@ class SFTConfig(TrainingArguments):
     # ---- Learning rate override (TRL default differs from HF) ------------
     learning_rate: float = 2e-5  # sft_config.py:137
 
+    # ---- Model loading ---------------------------------------------------
+    #: Extra kwargs forwarded to ``AutoModelForCausalLM.from_pretrained`` when
+    #: ``model`` is passed as a string (e.g. ``torch_dtype``, ``attn_implementation``).
+    #: Ignored when ``model`` is an already-instantiated module. (sft_config.py:145)
+    model_init_kwargs: dict | None = None
+
     # ---- Data preparation ------------------------------------------------
     #: Name of the column holding raw text on a language-modeling dataset.
     dataset_text_field: str = "text"  # sft_config.py:163
+    # ``truncation_mode`` is intentionally absent: tokenization keeps the start
+    # of the sequence (``keep_start``), which is TRL's default and forward path.
+    # TRL deprecated ``keep_end`` (warns, removes it in v2.0.0;
+    # sft_config.py:297-300), so there is no DP-meaningful reason to add a knob
+    # upstream is dropping — passing it is a standard unexpected-keyword TypeError.
     #: Maximum tokenized sequence length; ``None`` disables truncation.
     max_length: int | None = 1024  # sft_config.py:186
     #: Compute the loss only over completion tokens (prompt-completion data).
