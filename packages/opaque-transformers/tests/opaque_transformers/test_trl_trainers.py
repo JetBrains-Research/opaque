@@ -249,6 +249,40 @@ def test_dpo_tr_dpo_syncs_reference(tmp_path):
     assert not torch.allclose(before, after)  # EMA moved the reference
 
 
+def test_dpo_logs_train_reward_metrics(tmp_path):
+    # Reward telemetry rides the clipped-grad aux channel and is logged each step.
+    torch.manual_seed(0)
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        ref_model=_tiny_model(),
+        args=_args(DPOConfig, tmp_path, max_length=8, loss_type="sigmoid"),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    trainer.train()
+    logged = set().union(*(row.keys() for row in trainer.state.log_history))
+    assert "rewards/chosen" in logged
+    assert "rewards/rejected" in logged
+    assert "rewards/accuracies" in logged
+    assert "rewards/margins" in logged
+
+
+def test_dpo_evaluate_logs_reward_metrics(tmp_path):
+    torch.manual_seed(0)
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        ref_model=_tiny_model(),
+        args=_args(DPOConfig, tmp_path, max_length=8, loss_type="sigmoid"),
+        train_dataset=_pref_dataset(),
+        eval_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    metrics = trainer.evaluate()
+    assert "eval_loss" in metrics
+    assert "eval_rewards/accuracies" in metrics
+    assert "eval_rewards/chosen" in metrics
+
+
 def test_dpo_reference_free_trains_without_precompute(tmp_path):
     torch.manual_seed(0)
     trainer = DPOTrainer(

@@ -22,6 +22,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import uuid
+from collections.abc import Mapping
 from typing import Any, Callable
 
 import torch
@@ -140,6 +141,10 @@ class DPOTrainer(DPTrainer):
         # Per-head normalization (mixed MPO supported); the reference is always
         # precomputed summed, and normalized log-ratios are derived in dpo_loss.
         self._any_norm = any(lt in _NORM_LOSSES for lt in self._loss_type)
+        # Emit per-example DPO reward telemetry through the clipped-grad aux
+        # channel so ``rewards/*`` are logged every training step (TR-parity),
+        # computed in the same clipped forward (live weights, DDP-synced).
+        self._emit_loss_aux = True
         # Build the head dispatch eagerly so an unknown loss_type fails now.
         self._heads = [_DPO_HEADS[name] for name in self._loss_type]
 
@@ -652,6 +657,7 @@ class DPOTrainer(DPTrainer):
         inputs: dict[str, Any],
         *,
         return_logits: bool = False,
+        return_aux: bool = False,
     ) -> Any:
         """One preference pair's DPO loss (vmap-batched by :class:`DPTrainer`).
 
@@ -659,6 +665,10 @@ class DPOTrainer(DPTrainer):
         configured head(s). The reference enters as the constant ``ref_*_logps``
         (precomputed, or TR-DPO's per-step values injected by
         :meth:`_augment_inputs`), so no second model runs inside ``vmap``.
+
+        With ``return_aux=True`` also returns the per-example ``rewards/*``
+        telemetry dict (the clipped-grad aux channel), which ``training_step``
+        means + logs each step; the eval reward pass reuses the same producer.
         """
         c_cmask = inputs["chosen_completion_mask"]
         r_cmask = inputs["rejected_completion_mask"]
@@ -714,9 +724,29 @@ class DPOTrainer(DPTrainer):
             )
             loss = loss * weight
 
+        if return_aux:
+            return loss, self._reward_aux(chosen_lr, rejected_lr)
         if return_logits:
             return loss, chosen_out.logits
         return loss
+
+    def _reward_aux(
+        self, chosen_logratio: torch.Tensor, rejected_logratio: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
+        """Per-example ``rewards/*`` components (detached telemetry).
+
+        These are the per-example quantities ``reward_metrics`` averages; the
+        trainer means them across the (DDP-synced) batch when logging.
+        """
+        beta = self._beta
+        return {
+            "rewards/chosen": (beta * chosen_logratio).detach(),
+            "rewards/rejected": (beta * rejected_logratio).detach(),
+            "rewards/accuracies": (chosen_logratio > rejected_logratio)
+            .to(chosen_logratio.dtype)
+            .detach(),
+            "rewards/margins": (beta * (chosen_logratio - rejected_logratio)).detach(),
+        }
 
     @staticmethod
     def _wpo_weight(
@@ -757,3 +787,103 @@ class DPOTrainer(DPTrainer):
             chosen_lr = chosen_logp - ref_chosen_logps
             rejected_lr = rejected_logp - ref_rejected_logps
         return reward_metrics(chosen_lr, rejected_lr, beta=self._beta)
+
+    # ------------------------------------------------------------------
+    # Evaluation (DPO-shaped: own functional loss + reward pass)
+    # ------------------------------------------------------------------
+    def evaluate(
+        self,
+        eval_dataset: Any = None,
+        ignore_keys: list[str] | None = None,
+        metric_key_prefix: str = "eval",
+    ) -> dict[str, float]:
+        """Functional DPO eval — ``{prefix}_loss`` + ``{prefix}_rewards/*``.
+
+        A preference batch carries ``chosen_input_ids`` / ``rejected_input_ids``
+        (no single ``input_ids`` / ``labels``), so the inherited LM-shaped
+        ``prediction_step`` can't run it. This computes the loss and reward
+        telemetry directly through :meth:`compute_per_example_loss`
+        (``return_aux``) using the **same** functional context the training step
+        uses (``self._ctx``) — so in-training eval scores the *live* policy
+        weights, not the stale ``self.model`` — then logs + fires ``on_evaluate``
+        via :meth:`DPTrainer._after_evaluate`.
+        """
+        dataset = eval_dataset if eval_dataset is not None else self._eval_dataset
+        if dataset is None:
+            raise ValueError("DPOTrainer.evaluate() requires an eval_dataset.")
+        # Multi-dataset eval: recurse per split with a namespaced prefix.
+        if isinstance(dataset, Mapping):
+            merged: dict[str, float] = {}
+            for name, sub in dataset.items():
+                merged.update(
+                    self.evaluate(
+                        eval_dataset=sub,
+                        ignore_keys=ignore_keys,
+                        metric_key_prefix=f"{metric_key_prefix}_{name}",
+                    )
+                )
+            return merged
+
+        metrics = self._dpo_eval_metrics(dataset, metric_key_prefix)
+        self._after_evaluate(metrics)
+        return metrics
+
+    def _dpo_eval_metrics(
+        self, dataset: Any, metric_key_prefix: str
+    ) -> dict[str, float]:
+        """Mean loss + ``rewards/*`` over ``dataset`` (functional, live weights)."""
+        from opaque.distributed import gather_for_metrics
+        from opaque.functional import make_functional
+
+        ctx = self._ctx
+        if ctx is not None:
+            fmodel, frozen, keys = ctx.fmodel, ctx.frozen_params, ctx.batch_keys
+            trainable = ctx.trainable_params
+        else:
+            fmodel, trainable, frozen = make_functional(
+                self._model, partition_trainable=True
+            )
+            keys = self._discover_batch_keys()
+        params = {**frozen, **trainable}
+
+        def per_example(p, *batch_args):
+            inputs = dict(zip(keys, batch_args))
+            return self.compute_per_example_loss(fmodel, p, inputs, return_aux=True)
+
+        vmapped = torch.vmap(per_example, in_dims=(None,) + (0,) * len(keys))
+
+        amp_dtype = self._amp_dtype
+        device_type = self._device.type
+        loader = self.get_eval_dataloader(dataset)
+        losses: list[torch.Tensor] = []
+        collected: dict[str, list[torch.Tensor]] = {}
+        was_training = self._model.training
+        if was_training:
+            self._model.eval()
+        try:
+            with torch.no_grad():
+                for batch in loader:
+                    batch = self._prepare_input(batch)
+                    batch_args = tuple(batch[k] for k in keys)
+                    if amp_dtype is not None:
+                        with torch.autocast(device_type=device_type, dtype=amp_dtype):
+                            loss, aux = vmapped(params, *batch_args)
+                    else:
+                        loss, aux = vmapped(params, *batch_args)
+                    losses.append(loss.detach())
+                    for name, value in aux.items():
+                        collected.setdefault(name, []).append(value.detach())
+        finally:
+            if was_training:
+                self._model.train()
+
+        metrics: dict[str, float] = {}
+        if losses:
+            all_loss = gather_for_metrics(torch.cat(losses))
+            metrics[f"{metric_key_prefix}_loss"] = float(all_loss.float().mean().item())
+        for name, chunks in collected.items():
+            gathered = gather_for_metrics(torch.cat(chunks))
+            metrics[f"{metric_key_prefix}_{name}"] = float(
+                gathered.float().mean().item()
+            )
+        return metrics

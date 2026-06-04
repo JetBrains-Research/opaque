@@ -25,16 +25,20 @@ mixed-norm MPO). Contract tests green; runs on CPU, CUDA, and MPS CI.
   `DPTrainer._augment_inputs` pre-vmap hook); reward-metric telemetry
   (`get_batch_loss_metrics`).
 
-**One telemetry item intentionally left for iteration 2 (with reason):**
-*auto-logging* reward metrics inside the DP eval loop. The computation
-(`get_batch_loss_metrics`) is provided, but correct in-training eval needs the
-**functional** per-example path (the live policy weights live in
-`ctx.trainable_params`, not in `self.model`), so a naive eager reward pass would
-score stale weights. Surfacing DPO logps through the DP eval machinery is a
-core-eval design item, not a baseline add — so it waits for the iteration-2
-reconsider. (TRL-as-test-dep numeric parity also stays out: the heads are
-unit-tested in `opaque-alignment` and the trainer is parity-tested against a
-direct computation.)
+**Reward telemetry — done, via the clipped-grad aux channel.** Per-step
+**training** `rewards/*` (chosen, rejected, accuracies, margins) ride out of the
+*same* clipped forward as constant per-example aux: `compute_per_example_loss(…,
+return_aux=True)` returns `(loss, aux)`, a gated `has_aux` flag threads through
+`_build_per_example_loss` → `_create_grad_fn` → `clipped_grad(has_aux=True)`,
+and the per-example `loss_aux` is DDP-summed by the existing `sync(aux)` and
+meaned in `training_step`. No second pass, live weights, distributed-correct;
+the default (non-DPO) path is bit-identical (gated off). **Eval** rewards (+ the
+eval *loss*) come from a self-contained `DPOTrainer.evaluate()` functional pass
+that reuses the same `return_aux` producer through `self._ctx` (live weights),
+because a preference batch (`chosen_input_ids`/`rejected_input_ids`, no
+`labels`) can't run the inherited LM-shaped `prediction_step`. (TRL-as-test-dep
+numeric parity stays out: the heads are unit-tested in `opaque-alignment` and
+the trainer is parity-tested against a direct computation.)
 
 **Author context:** Written against `main` at `909ed54` (opaque-alignment in
 place) on branch `claude/modest-gates-WpC4d`. Supersedes the pre-merge draft
