@@ -28,7 +28,7 @@ vocabulary expansion will be invisible to the functional forward pass.
 
 .. code-block:: python
 
-    model, tokenizer = clone_chat_template(model, tokenizer, source_path)
+    model, tokenizer, added_tokens = clone_chat_template(model, tokenizer, source_path)
     # ONLY NOW snapshot the model:
     fmodel, params, buffers = make_functional(model)
 
@@ -64,7 +64,7 @@ def clone_chat_template(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     source_tokenizer_or_path: PreTrainedTokenizerBase | str,
-) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
+) -> tuple[PreTrainedModel, PreTrainedTokenizerBase, list[int]]:
     """Copy a chat template and special tokens from *source* onto *tokenizer*.
 
     The function:
@@ -99,8 +99,14 @@ def clone_chat_template(
             ``AutoTokenizer.from_pretrained``.
 
     Returns:
-        A ``(model, tokenizer)`` tuple.  Both objects are mutated in-place and
-        also returned for convenient chaining.
+        A ``(model, tokenizer, added_token_ids)`` tuple.  ``model`` and
+        ``tokenizer`` are mutated in-place and also returned for convenient
+        chaining.  ``added_token_ids`` is the list of vocabulary indices of the
+        special tokens newly added to *tokenizer* (empty when none were added).
+        Callers fine-tuning with PEFT use it to mark the new embedding rows
+        trainable (mirrors ``trl.SFTTrainer``'s ``clone_chat_template`` →
+        ``trainable_token_indices`` handoff), since a frozen base would never
+        learn an embedding for a token that did not exist at pre-training time.
 
     Raises:
         ValueError: If *source_tokenizer_or_path* does not have a
@@ -162,10 +168,19 @@ def clone_chat_template(
         if is_special and token_str not in existing_vocab:
             tokens_to_add.append(token_str)
 
+    added_token_ids: list[int] = []
     if tokens_to_add:
         n_added = tokenizer.add_special_tokens(
             {"additional_special_tokens": tokens_to_add}
         )
+        # Resolve the vocabulary indices of the tokens we just added so PEFT
+        # callers can mark exactly those embedding rows trainable. Filter out
+        # any ``unk``-mapped id defensively (a well-behaved add never yields it).
+        unk_id = getattr(tokenizer, "unk_token_id", None)
+        for token_str in tokens_to_add:
+            tid = tokenizer.convert_tokens_to_ids(token_str)
+            if tid is not None and tid != unk_id:
+                added_token_ids.append(int(tid))
         logger.info(
             "clone_chat_template: added %d new special token(s) to tokenizer: %s",
             n_added,
@@ -192,7 +207,7 @@ def clone_chat_template(
             "tokenizer vocabulary size."
         )
 
-    return model, tokenizer
+    return model, tokenizer, added_token_ids
 
 
 def get_training_chat_template(tokenizer: PreTrainedTokenizerBase) -> str:

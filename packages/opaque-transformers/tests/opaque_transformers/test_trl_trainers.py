@@ -116,6 +116,25 @@ def test_unsupported_param_is_absent_not_rejected():
         DPOConfig(output_dir="x", padding_free=True, privacy_noise_multiplier=0.0)
 
 
+def test_rpo_alpha_is_dropped():
+    # rpo_alpha is not part of current TRL (removed upstream); the field is gone,
+    # so passing it is a standard unexpected-keyword TypeError.
+    with pytest.raises(TypeError):
+        DPOConfig(output_dir="x", rpo_alpha=1.0, privacy_noise_multiplier=0.0)
+
+
+def test_model_init_kwargs_field_present():
+    # TRL-parity field for string-model loading; defaults to None on both configs.
+    assert (
+        DPOConfig(output_dir="x", privacy_noise_multiplier=0.0).model_init_kwargs
+        is None
+    )
+    assert (
+        SFTConfig(output_dir="x", privacy_noise_multiplier=0.0).model_init_kwargs
+        is None
+    )
+
+
 def test_duplicate_loss_type_fails_fast():
     with pytest.raises(ValueError):
         DPOConfig(
@@ -186,6 +205,92 @@ def test_sft_trains_a_couple_steps(tmp_path, loss_type):
     out = trainer.train()
     assert out.global_step == 2
     assert torch.isfinite(torch.tensor(out.training_loss))
+
+
+def test_sft_logs_train_telemetry(tmp_path):
+    # SFT rides the same (loss, aux) seam: entropy + mean_token_accuracy over the
+    # supervised tokens are logged each step.
+    torch.manual_seed(0)
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(SFTConfig, tmp_path, max_length=8, loss_type="nll"),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    trainer.train()
+    logged = set().union(*(row.keys() for row in trainer.state.log_history))
+    assert "entropy" in logged
+    assert "mean_token_accuracy" in logged
+
+
+def test_sft_metrics_seam_failsafe_on_missing_logits(tmp_path):
+    # Fail-safe: when the forward yields no logits (the CUDA fused logits-free
+    # path), the telemetry dict is empty rather than crashing. On the CPU eager
+    # fallback logits are present, so this is exercised with a stub forward.
+    torch.manual_seed(0)
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(SFTConfig, tmp_path, max_length=8, loss_type="chunked_nll"),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+
+    def fake_fmodel(_params, **_kw):
+        return {"loss": torch.tensor(1.23), "logits": None}
+
+    inputs = {
+        "input_ids": torch.tensor([1, 2, 3]),
+        "attention_mask": torch.tensor([1, 1, 1]),
+        "labels": torch.tensor([-100, 2, 3]),
+    }
+    loss, aux = trainer.compute_per_example_loss_and_metrics(fake_fmodel, {}, inputs)
+    assert aux == {}
+    assert float(loss) == pytest.approx(1.23)
+
+
+def test_sft_honors_custom_compute_loss_func(tmp_path):
+    # A custom per-example compute_loss_func(outputs, labels) -> scalar is routed
+    # through the vmap path (previously silently ignored).
+    torch.manual_seed(0)
+    called = {"n": 0}
+
+    def custom_loss(outputs, labels):
+        called["n"] += 1
+        logits = outputs.logits[..., :-1, :]
+        tgt = labels[..., 1:]
+        mask = tgt != -100
+        tok = torch.nn.functional.cross_entropy(
+            logits.reshape(-1, logits.shape[-1]),
+            tgt.clamp(min=0).reshape(-1),
+            reduction="none",
+        ).reshape(tgt.shape)
+        return (tok * mask).sum() / mask.sum().clamp(min=1)
+
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(SFTConfig, tmp_path, max_length=8, loss_type="nll"),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+        compute_loss_func=custom_loss,
+    )
+    out = trainer.train()
+    assert out.global_step == 2
+    assert called["n"] > 0  # the custom loss actually ran
+    assert torch.isfinite(torch.tensor(out.training_loss))
+
+
+@pytest.mark.parametrize("loss_type", ["dft", "chunked_nll"])
+def test_sft_self_reducing_loss_rejects_custom_loss_func(tmp_path, loss_type):
+    # dft / chunked_nll compute their own loss; a custom loss has no logits to
+    # work with, so it is rejected at construction (TRL parity).
+    with pytest.raises(ValueError, match="custom compute_loss_func"):
+        SFTTrainer(
+            model=_tiny_model(),
+            args=_args(SFTConfig, tmp_path, max_length=8, loss_type=loss_type),
+            train_dataset=_sft_dataset(),
+            processing_class=_stub_tokenizer(),
+            compute_loss_func=lambda o, _labels: o.logits.sum(),
+        )
 
 
 # ----------------------------------------------------------------------
@@ -267,10 +372,21 @@ def test_dpo_logs_train_reward_metrics(tmp_path):
     )
     trainer.train()
     logged = set().union(*(row.keys() for row in trainer.state.log_history))
-    assert "rewards/chosen" in logged
-    assert "rewards/rejected" in logged
-    assert "rewards/accuracies" in logged
-    assert "rewards/margins" in logged
+    # Full TRL-parity logged set: rewards/* plus logps/*, logits/*, entropy and
+    # mean_token_accuracy, all riding the same clipped-grad aux channel.
+    for key in (
+        "rewards/chosen",
+        "rewards/rejected",
+        "rewards/accuracies",
+        "rewards/margins",
+        "logps/chosen",
+        "logps/rejected",
+        "logits/chosen",
+        "logits/rejected",
+        "entropy",
+        "mean_token_accuracy",
+    ):
+        assert key in logged, f"missing train telemetry: {key}"
 
 
 def test_dpo_evaluate_logs_reward_metrics(tmp_path):
@@ -285,8 +401,16 @@ def test_dpo_evaluate_logs_reward_metrics(tmp_path):
     )
     metrics = trainer.evaluate()
     assert "eval_loss" in metrics
-    assert "eval_rewards/accuracies" in metrics
-    assert "eval_rewards/chosen" in metrics
+    # The same telemetry dict aggregates symmetrically at eval (eval_* prefix).
+    for key in (
+        "eval_rewards/accuracies",
+        "eval_rewards/chosen",
+        "eval_logps/chosen",
+        "eval_logits/chosen",
+        "eval_entropy",
+        "eval_mean_token_accuracy",
+    ):
+        assert key in metrics, f"missing eval telemetry: {key}"
 
 
 def test_dpo_reference_free_trains_without_precompute(tmp_path):

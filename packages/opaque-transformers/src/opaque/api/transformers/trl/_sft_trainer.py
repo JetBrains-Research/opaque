@@ -19,6 +19,7 @@ from opaque.alignment.data import (
     clone_chat_template,
     get_training_chat_template,
 )
+from opaque.alignment.metric import entropy_from_logits, mean_token_accuracy
 from opaque.alignment.sft.collator import language_modeling_collator
 from opaque.alignment.sft.loss import dft_loss, nll_loss
 from opaque.api.transformers.trainer import DPTrainer
@@ -88,14 +89,17 @@ class SFTTrainer(DPTrainer):
         if isinstance(model, str):
             from transformers import AutoModelForCausalLM
 
-            model = AutoModelForCausalLM.from_pretrained(model)
+            model = AutoModelForCausalLM.from_pretrained(
+                model, **(args.model_init_kwargs or {})
+            )
 
         # ---- tokenizer / processing_class ---------------------------------
         processing_class = self._resolve_tokenizer(model, processing_class, args)
 
         # ---- chat template clone (resizes embeddings) ---------------------
+        added_tokens: list[int] = []
         if args.chat_template_path is not None:
-            model, processing_class = clone_chat_template(
+            model, processing_class, added_tokens = clone_chat_template(
                 model, processing_class, args.chat_template_path
             )
 
@@ -103,17 +107,29 @@ class SFTTrainer(DPTrainer):
         if peft_config is not None:
             from peft import get_peft_model
 
+            # Newly cloned-in special tokens have randomly-initialised embedding
+            # rows a frozen base would never learn. Mark exactly those rows
+            # trainable and (with a warning) keep the lm_head in modules_to_save
+            # so the model can learn to emit them — mirrors trl.SFTTrainer
+            # (sft_trainer.py:1064-1084).
+            if added_tokens:
+                self._mark_added_tokens_trainable(peft_config, added_tokens)
             model = get_peft_model(model, peft_config)
 
         # ---- activation offloading alias ----------------------------------
         if args.activation_offloading:
             args.cpu_offload_activations = True
 
-        # ---- DFT custom-loss guard (TRL parity, sft_trainer.py:1295) ------
-        if args.loss_type == "dft" and compute_loss_func is not None:
+        # ---- custom-loss guard --------------------------------------------
+        # A custom compute_loss_func is only meaningful on the standard ``nll``
+        # path, where this trainer has the model logits to hand it. ``dft``
+        # computes its own token-weighted loss (TRL parity, sft_trainer.py:1267),
+        # and ``chunked_nll`` is logits-free (the fused kernel reduces the loss
+        # inside the forward), so neither can route a custom loss.
+        if args.loss_type in ("dft", "chunked_nll") and compute_loss_func is not None:
             raise ValueError(
-                "loss_type='dft' computes its own loss; pass loss_type='nll' to "
-                "use a custom compute_loss_func."
+                f"loss_type={args.loss_type!r} computes its own loss; pass "
+                "loss_type='nll' to use a custom compute_loss_func."
             )
         # Resolve the loss path. ``chunked_nll`` lets the model compute its own
         # loss via the fused linear-CE kernel (logits-free on CUDA, eager
@@ -164,6 +180,44 @@ class SFTTrainer(DPTrainer):
             optimizer_cls_and_kwargs=optimizer_cls_and_kwargs,
             preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         )
+
+    # ------------------------------------------------------------------
+    # PEFT: trainability of cloned-in token embeddings
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _mark_added_tokens_trainable(peft_config: Any, added_tokens: list[int]) -> None:
+        """Make newly cloned-in token embeddings trainable under PEFT.
+
+        Points ``peft_config.trainable_token_indices['embed_tokens']`` at the new
+        token ids and ensures ``lm_head`` is in ``modules_to_save`` (warning when
+        it has to be added), mirroring ``trl.SFTTrainer`` (sft_trainer.py:1064-1084).
+        A no-op when ``added_tokens`` is empty.
+        """
+        if not added_tokens:
+            return
+        tti = getattr(peft_config, "trainable_token_indices", None)
+        if tti is None:
+            peft_config.trainable_token_indices = {"embed_tokens": list(added_tokens)}
+        elif "embed_tokens" not in tti:
+            tti["embed_tokens"] = list(added_tokens)
+        else:
+            tti["embed_tokens"] = list(tti["embed_tokens"]) + list(added_tokens)
+
+        mts = getattr(peft_config, "modules_to_save", None)
+        if mts is None or "lm_head" not in mts:
+            import warnings
+
+            warnings.warn(
+                "New tokens were added to the chat template but 'lm_head' is not "
+                "in the PEFT config's modules_to_save; adding it so the model can "
+                "learn to generate them. Pass modules_to_save=['lm_head'] to "
+                "silence this.",
+                stacklevel=2,
+            )
+            if mts is None:
+                peft_config.modules_to_save = ["lm_head"]
+            else:
+                mts.append("lm_head")
 
     # ------------------------------------------------------------------
     # Tokenizer / format resolution
@@ -318,8 +372,13 @@ class SFTTrainer(DPTrainer):
 
         The collator already folds ``completion_mask`` into ``-100`` labels, so
         this is a single forward + the configured head (``nll`` / ``dft``); both
-        heads use a DP-safe per-example divisor. SFT emits no extra training
-        telemetry, so it overrides only this simple hook (not the metrics seam).
+        heads use a DP-safe per-example divisor. A custom ``compute_loss_func``
+        (only valid on the ``nll`` path; ``dft`` / ``chunked_nll`` are guarded at
+        init) is honoured here per ``DPTrainer``'s contract
+        ``compute_loss_func(outputs, labels) -> scalar`` — it runs inside vmap,
+        so it must be a pure per-example tensor op (no ``num_items_in_batch`` /
+        batch coupling). Per-example telemetry lives in
+        :meth:`compute_per_example_loss_and_metrics`.
         """
         if self._loss_type == "chunked_nll":
             # The model computes the (logits-free, fused) NLL when given labels.
@@ -337,8 +396,40 @@ class SFTTrainer(DPTrainer):
                 input_ids=inputs["input_ids"],
                 attention_mask=inputs["attention_mask"],
             )
-            loss = self._loss_fn(out.logits, inputs["labels"])
             logits = out.logits
+            if self._compute_loss_func is not None:
+                loss = self._compute_loss_func(out, inputs["labels"])
+            else:
+                loss = self._loss_fn(out.logits, inputs["labels"])
         if return_logits:
             return loss, logits
         return loss
+
+    def compute_per_example_loss_and_metrics(
+        self,
+        fmodel: Callable[..., Any],
+        params: dict[str, Any],
+        inputs: dict[str, Any],
+    ) -> tuple[Any, dict[str, Any]]:
+        """One example's SFT ``(loss, telemetry)`` (vmap-batched).
+
+        Adds the per-example diagnostics TRL logs each step — ``entropy`` and
+        ``mean_token_accuracy`` over the supervised (non-``-100``) tokens —
+        riding the clipped-grad aux channel (and the symmetric eval aux). They
+        are computed from the model logits, **independent of the loss head**, so
+        a custom ``compute_loss_func`` that returns only a scalar still gets
+        telemetry (the aux fail-safe). When logits are unavailable (the
+        logits-free ``chunked_nll`` path) the telemetry dict is empty and only
+        the loss is logged — the harness handles an empty aux dict.
+        """
+        loss, logits = self.compute_per_example_loss(
+            fmodel, params, inputs, return_logits=True
+        )
+        if logits is None:
+            return loss, {}
+        labels = inputs["labels"]
+        mask = labels != -100
+        return loss, {
+            "entropy": entropy_from_logits(logits, mask),
+            "mean_token_accuracy": mean_token_accuracy(logits, labels, mask),
+        }

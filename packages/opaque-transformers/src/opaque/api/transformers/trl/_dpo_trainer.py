@@ -53,6 +53,7 @@ from opaque.alignment.dpo.reference import (
     ema_update_reference,
     null_ref_context,
 )
+from opaque.alignment.metric import entropy_from_logits, mean_token_accuracy
 from opaque.api.transformers.trainer import DPTrainer
 
 # Single source of truth for PEFT detection (handles PeftModel + PeftMixedModel).
@@ -118,7 +119,9 @@ class DPOTrainer(DPTrainer):
         if isinstance(model, str):
             from transformers import AutoModelForCausalLM
 
-            model = AutoModelForCausalLM.from_pretrained(model)
+            model = AutoModelForCausalLM.from_pretrained(
+                model, **(args.model_init_kwargs or {})
+            )
         if model is ref_model and ref_model is not None:
             raise ValueError(
                 "`model` and `ref_model` must be different objects (the reference "
@@ -134,7 +137,6 @@ class DPOTrainer(DPTrainer):
         self._f_alpha_coef = float(args.f_alpha_divergence_coef)
         self._ld_alpha = args.ld_alpha
         self._discopop_tau = float(args.discopop_tau)
-        self._rpo_alpha = args.rpo_alpha
         self._reference_free = bool(args.reference_free)
         self._use_weighting = bool(args.use_weighting)
         # Per-head normalization (mixed MPO supported); the reference is always
@@ -619,8 +621,8 @@ class DPOTrainer(DPTrainer):
         ``policy_logp - ref_logp`` (or the policy logp itself when
         ``reference_free``). Length-normalized heads (``ipo`` / ``sigmoid_norm``)
         use the log-ratio divided by the completion length — so an MPO list may
-        mix normalized and summed variants. The ``sft`` head and RPO regulariser
-        consume ``chosen_logp`` directly.
+        mix normalized and summed variants. The ``sft`` head consumes
+        ``chosen_logp`` directly.
         """
         chosen_norm = rejected_norm = None
         if self._any_norm:
@@ -653,9 +655,6 @@ class DPOTrainer(DPTrainer):
                 )
             parts[name] = head(clr, rlr, beta=self._beta, **self._head_kwargs(name))
             weights[name] = weight
-        if self._rpo_alpha:
-            parts["rpo_nll"] = chosen_nll_loss(chosen_logp)
-            weights["rpo_nll"] = float(self._rpo_alpha)
         return mpo_combine(parts, weights)
 
     def compute_per_example_loss_and_metrics(
@@ -728,7 +727,17 @@ class DPOTrainer(DPTrainer):
             )
             loss = loss * weight
 
-        return loss, self._reward_aux(chosen_lr, rejected_lr)
+        return loss, self._reward_aux(
+            chosen_logratio=chosen_lr,
+            rejected_logratio=rejected_lr,
+            chosen_logp=chosen_logp,
+            rejected_logp=rejected_logp,
+            chosen_logits=chosen_out.logits,
+            rejected_logits=rejected_out.logits,
+            chosen_input_ids=inputs["chosen_input_ids"],
+            chosen_completion_mask=c_cmask,
+            rejected_completion_mask=r_cmask,
+        )
 
     def compute_per_example_loss(
         self,
@@ -744,15 +753,50 @@ class DPOTrainer(DPTrainer):
             return loss, None  # DPO eval routes through prediction_step, not logits
         return loss
 
-    def _reward_aux(
-        self, chosen_logratio: torch.Tensor, rejected_logratio: torch.Tensor
-    ) -> dict[str, torch.Tensor]:
-        """Per-example ``rewards/*`` components (detached telemetry).
+    @staticmethod
+    def _masked_mean_logit(
+        logits: torch.Tensor, completion_mask: torch.Tensor
+    ) -> torch.Tensor:
+        """Mean logit over (shifted) completion positions — TRL ``logits/*``.
 
-        These are the per-example quantities ``reward_metrics`` averages; the
-        trainer means them across the (DDP-synced) batch when logging.
+        vmap-safe: a masked weighted mean (no boolean/dynamic indexing), so it
+        runs inside the per-example closure. For one example ``logits`` is
+        ``(T, V)`` and ``completion_mask`` is ``(T,)``.
+        """
+        shifted = logits[..., :-1, :]
+        mask = (completion_mask[..., 1:] != 0).to(shifted.dtype)
+        pos_mean = shifted.mean(dim=-1)
+        return (pos_mean * mask).sum(-1) / mask.sum(-1).clamp(min=1)
+
+    def _reward_aux(
+        self,
+        *,
+        chosen_logratio: torch.Tensor,
+        rejected_logratio: torch.Tensor,
+        chosen_logp: torch.Tensor,
+        rejected_logp: torch.Tensor,
+        chosen_logits: torch.Tensor,
+        rejected_logits: torch.Tensor,
+        chosen_input_ids: torch.Tensor,
+        chosen_completion_mask: torch.Tensor,
+        rejected_completion_mask: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        """Per-example DPO telemetry (detached) — the full TRL logged set.
+
+        ``rewards/*`` from the implicit-reward log-ratios, plus the diagnostics
+        TRL also logs every step: ``logps/*`` (summed policy sequence logps),
+        ``logits/*`` (mean completion logit), ``entropy`` (mean next-token
+        entropy over completions), and ``mean_token_accuracy`` (chosen
+        completion). Every tensor is ``detach()``-ed, so the telemetry rides the
+        clipped-grad aux channel without leaking gradient into the mechanism; the
+        harness means each across the DDP-synced batch (train) and aggregates the
+        same dict in the eval loop (``eval_*``).
         """
         beta = self._beta
+        entropy = 0.5 * (
+            entropy_from_logits(chosen_logits, chosen_completion_mask)
+            + entropy_from_logits(rejected_logits, rejected_completion_mask)
+        )
         return {
             "rewards/chosen": (beta * chosen_logratio).detach(),
             "rewards/rejected": (beta * rejected_logratio).detach(),
@@ -760,6 +804,18 @@ class DPOTrainer(DPTrainer):
             .to(chosen_logratio.dtype)
             .detach(),
             "rewards/margins": (beta * (chosen_logratio - rejected_logratio)).detach(),
+            "logps/chosen": chosen_logp.detach(),
+            "logps/rejected": rejected_logp.detach(),
+            "logits/chosen": self._masked_mean_logit(
+                chosen_logits, chosen_completion_mask
+            ).detach(),
+            "logits/rejected": self._masked_mean_logit(
+                rejected_logits, rejected_completion_mask
+            ).detach(),
+            "entropy": entropy.detach(),
+            "mean_token_accuracy": mean_token_accuracy(
+                chosen_logits, chosen_input_ids, chosen_completion_mask
+            ),
         }
 
     @staticmethod

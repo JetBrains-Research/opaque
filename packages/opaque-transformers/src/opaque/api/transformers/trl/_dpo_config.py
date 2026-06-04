@@ -28,6 +28,12 @@ class DPOConfig(TrainingArguments):
     # ---- Learning rate override (TRL default differs from HF) ------------
     learning_rate: float = 1e-6  # dpo_config.py:142
 
+    # ---- Model loading ---------------------------------------------------
+    #: Extra kwargs forwarded to ``AutoModelForCausalLM.from_pretrained`` when
+    #: ``model`` is passed as a string (e.g. ``torch_dtype``, ``attn_implementation``).
+    #: Ignored when ``model`` is an already-instantiated module. (dpo_config.py:148)
+    model_init_kwargs: dict | None = None
+
     # ---- Loss ------------------------------------------------------------
     #: One or more loss variants (list ⇒ MPO via ``mpo_combine``). TRL-style
     #: names: ``sigmoid``, ``hinge``, ``ipo``, ``robust``, ``exo_pair``,
@@ -52,8 +58,6 @@ class DPOConfig(TrainingArguments):
     ld_alpha: float | None = None  # dpo_config.py:228
     #: WPO length-normalized probability weighting.
     use_weighting: bool = False  # dpo_config.py:268
-    #: RPO chosen-NLL regulariser weight; ``None`` ⇒ off.
-    rpo_alpha: float | None = None
     #: DiscoPOP temperature.
     discopop_tau: float = 0.05  # dpo_config.py:275
     #: Score against the policy's own logp instead of a reference (CPO/ORPO/SimPO).
@@ -81,6 +85,11 @@ class DPOConfig(TrainingArguments):
     ref_model_sync_steps: int = 512  # dpo_config.py:304
 
     # ---- Data preparation ------------------------------------------------
+    # ``truncation_mode`` is intentionally absent: tokenization keeps the start
+    # of the sequence (``keep_start``), which is TRL's default and forward path.
+    # TRL deprecated ``keep_end`` (warns, removes it in v2.0.0;
+    # dpo_config.py:335-338), so there is no DP-meaningful reason to add a knob
+    # upstream is dropping — passing it is a standard unexpected-keyword TypeError.
     #: Maximum tokenized sequence length; ``None`` disables truncation.
     max_length: int | None = 1024  # dpo_config.py:165
     #: Pad the collated batch length up to a multiple of this value.
