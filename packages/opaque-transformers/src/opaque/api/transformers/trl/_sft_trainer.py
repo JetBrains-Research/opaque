@@ -235,9 +235,7 @@ class SFTTrainer(DPTrainer):
             )
 
         def tokenize_row(example: dict) -> dict:
-            return self.tokenize_row(
-                example, processing_class, args, chat_col=chat_col
-            )
+            return self.tokenize_row(example, processing_class, args, chat_col=chat_col)
 
         return dataset.map(
             tokenize_row,
@@ -271,12 +269,15 @@ class SFTTrainer(DPTrainer):
             return {"input_ids": ids, "completion_mask": cmask}
 
         if "prompt" in example and "completion" in example:
-            prompt_ids = processing_class(
-                example["prompt"], add_special_tokens=True
-            )["input_ids"]
-            full_ids = prompt_ids + processing_class(
-                example["completion"], add_special_tokens=False
-            )["input_ids"]
+            prompt_ids = processing_class(example["prompt"], add_special_tokens=True)[
+                "input_ids"
+            ]
+            full_ids = (
+                prompt_ids
+                + processing_class(example["completion"], add_special_tokens=False)[
+                    "input_ids"
+                ]
+            )
             cmask = [0] * len(prompt_ids) + [1] * (len(full_ids) - len(prompt_ids))
             if max_length is not None:
                 full_ids, cmask = full_ids[:max_length], cmask[:max_length]
