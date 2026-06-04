@@ -2451,6 +2451,7 @@ source = { editable = "packages/opaque-transformers" }
 dependencies = [
     { name = "datasets" },
     { name = "opaque-accounting" },
+    { name = "opaque-alignment" },
     { name = "opaque-dpftrl" },
     { name = "opaque-dpsgd" },
     { name = "opaque-engine" },
@@ -2464,6 +2465,7 @@ dependencies = [
 requires-dist = [
     { name = "datasets", specifier = ">=2.0.0" },
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
+    { name = "opaque-alignment", editable = "packages/opaque-alignment" },
     { name = "opaque-dpftrl", editable = "packages/opaque-dpftrl" },
     { name = "opaque-dpsgd", editable = "packages/opaque-dpsgd" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
