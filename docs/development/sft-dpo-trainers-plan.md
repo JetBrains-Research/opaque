@@ -173,11 +173,13 @@ Three consequences for the trainers:
 
 ### 2.1a TRL method-name mirroring (iteration 1)
 
-`compute_per_example_loss` is the *only* hook the DP substrate strictly
-requires — but iteration 1 deliberately does **not** collapse the whole trainer
-into that one method. Instead, each trainer keeps TRL's method decomposition so
-the classes read as line-by-line analogues of upstream, with the DP forward as
-the single structural adaptation:
+Mirror TRL's method decomposition **where each method carries real
+responsibility** under DP, so the classes read as close analogues of upstream
+and diff cleanly. The guiding rule (per design feedback): *don't manufacture a
+structure that makes no sense under DP just to look like TRL.* Opaque and
+`DPTrainer` differ in logic and approach — where TRL's batched shape is
+meaningless for per-example DP, adapt or fold it into the hook rather than
+keeping a vestigial parity shell.
 
 | TRL method (`*_trainer.py`) | Iteration-1 analogue | Faithful? |
 |---|---|---|
@@ -185,17 +187,16 @@ the single structural adaptation:
 | `tokenize_row` / `_tokenize` | same | ✅ direct |
 | `DataCollatorForLanguageModeling` / `DataCollatorForPreference` | same class names, wrapping `language_modeling_collator` / `preference_collator` | ⚠️ wraps opaque primitive (layout differs — §3.3) |
 | `compute_ref_log_probs` / precompute | same name; runs `compute_ref_logprobs_for_dataset` | ⚠️ precompute-only (§3.2) |
-| `concatenated_forward` | same name & return shape (`{chosen_logps, rejected_logps, …}`), but the model forward runs **per-example under vmap** inside `compute_per_example_loss`, not on a batched `(2B,L)` tensor | ⚠️ **the one unavoidable deviation** |
 | `dpo_loss(loss_type, …)` / SFT `dft_loss` | same name; enumerates the supported `loss_type`s and dispatches to the matching `opaque.alignment.dpo.loss` head | ✅ structure preserved |
-| `get_batch_loss_metrics` | same name; assembles loss + `reward_metrics`/accuracy | ✅ direct (eval path) |
-| `compute_loss` | present for HF/eval parity; the **training** gradient path routes through `compute_per_example_loss` | ⚠️ split: batched path for metrics, per-example path for grads |
+| `get_batch_loss_metrics` | same name; assembles loss + `reward_metrics`/accuracy for eval logging | ✅ direct (eval path) |
+| `concatenated_forward` | **folded into `compute_per_example_loss`**, not reproduced as a standalone batched method. A batched `(2B,L)` forward that never drives the gradient would be dead weight under per-example DP. Its responsibility (two forwards → `{chosen_logps, rejected_logps}`) lives in the hook. | ➖ adapted (no vestigial shell) |
+| `compute_loss` | the training gradient goes through `compute_per_example_loss` + `vmap`; we do **not** add a parallel batched `compute_loss` for grads. Any eval-only loss is read off the same per-example hook (`_get_eval_per_example_loss_fn`). | ➖ adapted |
 
-The honest deviation to call out for iteration 2: TRL's batched
-`concatenated_forward` + `dpo_loss().mean()` cannot literally drive the DP
-gradient (which must be per-example, pre-`vmap`). Iteration 1 keeps the *names
-and responsibilities* of those methods and implements the gradient forward
-through `compute_per_example_loss`; whether to keep both surfaces or unify on
-the per-example hook is an explicit iteration-2 question.
+So the only methods that change shape are exactly the ones whose TRL form is a
+batched forward — and those are *adapted into the hook*, not kept as no-op
+parity. Everything upstream of the forward (data prep, tokenization, collation,
+ref precompute) and downstream of it (loss dispatch, reward/metric assembly)
+keeps TRL's names and responsibilities verbatim.
 
 ### 2.2 Where the code lives (api/façade discipline)
 
@@ -560,22 +561,22 @@ by tests, and lands on a sub-branch off this one.
 
 - **Phase 0 — scaffolding.** Add `opaque-alignment` dependency; create `trl` impl + façade packages; `SFTConfig`/`DPOConfig` dataclasses carrying the *supported* TRL fields only (incompatible fields simply absent — §3.3); `__post_init__` forces `remove_unused_columns=False` and defaults `loss_weights`. Contract tests (façade discipline, dependency direction) green. No trainer behavior yet.
 - **Phase 1 — `SFTTrainer` (nll/dft).** Port TRL's `_prepare_dataset`/`tokenize_row`/`DataCollatorForLanguageModeling`/`compute_loss` structure; `compute_per_example_loss` override; completion-only loss; eval token-accuracy/entropy via `get_batch_loss_metrics`. Parity vs `examples/train_sft.py` and vs TRL at σ=0/C=∞. Example + cadence config.
-- **Phase 2 — `DPOTrainer` (core heads + precompute).** Port `_prepare_dataset`/`tokenize_row`/`DataCollatorForPreference`/`compute_ref_log_probs`/`concatenated_forward`/`dpo_loss`/`get_batch_loss_metrics`. Precompute reference (explicit ref + PEFT null-ref); override with sigmoid/hinge/ipo/robust/apo/sigmoid_norm; MPO; reward metrics in eval. Parity vs `examples/train_dpo.py` and TRL. Example + cadence config.
+- **Phase 2 — `DPOTrainer` (core heads + precompute).** Port `_prepare_dataset`/`tokenize_row`/`DataCollatorForPreference`/`compute_ref_log_probs`/`dpo_loss`/`get_batch_loss_metrics`; the two-forwards step (`concatenated_forward`'s job) is folded into `compute_per_example_loss`, not a standalone batched method (§2.1a). Precompute reference (explicit ref + PEFT null-ref); sigmoid/hinge/ipo/robust/apo/sigmoid_norm; MPO; reward metrics in eval. Parity vs `examples/train_dpo.py` and TRL. Example + cadence config.
 - **Phase 3 — DPO breadth.** Remaining heads (exo/nca/bco/sppo/discopop/sft/squarechipo); f-divergence; WPO; LD-DPO; RPO; reference-free/CPO/ORPO/SimPO.
 - **Phase 4 — SFT breadth.** `chunked_nll` (fused), `assistant_only_loss` (chat-template mask), `chat_template_path` cloning.
 
 **🛑 Iteration-1 checkpoint — stop and reconsider.** With both trainers running
 and matching TRL, pause. Audit method by method: which TRL methods are
 *auxiliary* HF/Accelerate plumbing the DP path never exercises (candidates for
-deletion); where the per-example/`vmap` substrate makes the batched
-`concatenated_forward`/`compute_loss` surface redundant (candidate for
-unification on `compute_per_example_loss`); what opaque/opaque-alignment offers
-that TRL has no concept of (accounting hooks, mechanism-agnostic DP-SGD↔DP-FTRL
-swap, per-example DP telemetry). The output of this checkpoint is the
-**iteration-2 redesign brief** — not planned here.
+deletion); which TRL-named methods we kept only for diff-against-upstream and
+could now rename/merge into the opaque-native flow; what opaque/opaque-alignment
+offers that TRL has no concept of (accounting hooks, mechanism-agnostic
+DP-SGD↔DP-FTRL swap, per-example DP telemetry). The output of this checkpoint is
+the **iteration-2 redesign brief** — not planned here.
 
 **Iteration 2 (post-checkpoint) = opaque-native redesign.** Driven by the brief
-above. Likely items (not committed): collapse the dual loss surface; converge or
+above. Likely items (not committed): rename/prune the TRL-shaped methods kept for
+the baseline diff; converge or
 formalize the collator-layout divergence; on-the-fly references (`_augment_batch`
 core hook §6.4 + TR-DPO `ema_update_reference`); packing/padding-free decision
 (§11); prune auxiliary config/methods.
