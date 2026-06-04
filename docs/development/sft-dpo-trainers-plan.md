@@ -14,6 +14,46 @@ File:line references below point at `trl/trainer/sft_trainer.py`,
 `sft_config.py`, `dpo_trainer.py`, `dpo_config.py`, `data_utils.py`,
 `utils.py`, `callbacks.py`.
 
+### Iteration model (read this first)
+
+This is a **two-iteration** effort, and iteration 1 is deliberately *not* the
+opaque-idiomatic end state:
+
+- **Iteration 1 — faithful TRL baseline.** Mirror TRL's `SFTTrainer` /
+  `DPOTrainer` as closely as the DP substrate allows: same **class structure,
+  method names, config field names, and per-method responsibilities**
+  (`_prepare_dataset`, `tokenize_row`, `concatenated_forward`, `dpo_loss`,
+  `get_batch_loss_metrics`, `compute_loss`, `DataCollatorForPreference`, …).
+  The goal is a **close, diffable baseline** against upstream TRL, so a reviewer
+  can read the two side by side and see exactly what changed and why. The DP
+  loss/collator math is the merged `opaque-alignment` primitives (which already
+  mirror TRL's formulas); the trainer just wires them through TRL-shaped methods.
+- **Iteration 2 — reconsider & redesign (separate effort).** Once the baseline
+  runs and matches TRL numerically, **stop**. Step back and decide, method by
+  method, what is *auxiliary* (HF/Accelerate plumbing that DP doesn't need),
+  what is *missing* relative to opaque / opaque-alignment (per-example DP
+  semantics, accounting, mechanism-agnosticism), and redesign toward an
+  opaque-native shape. This doc plans iteration 1 and only *flags* iteration-2
+  candidates; it does not pre-commit the redesign.
+
+### Design philosophy: a replica that is its own thing
+
+`DPTrainer` is an HF-`Trainer` replica but deliberately **not a full-surface
+mimic** — it cuts parameters and values that are incompatible with, or
+meaningless under, per-example DP. The trainers inherit that stance:
+
+- **No bespoke "rejection" code.** We do **not** write validation that raises
+  hand-authored "X is rejected because DP" errors. Anything we don't support is
+  simply **absent from the config surface** (so passing it is a standard
+  unexpected-keyword `TypeError`) or **not wired into a dispatch table** (so an
+  unsupported *value* like `loss_type="aot"` fails with an ordinary
+  `KeyError`/lookup error). Unsupported = unknown, handled by standard Python /
+  dataclass errors — not a curated rejection list.
+- **Cut, don't stub.** Incompatible TRL features (DeepSpeed/FSDP/Accelerate,
+  VLM, batch-coupled losses like `aot`/`aot_unpaired`, on-the-fly TR-DPO sync,
+  padding-free) are left out of the config dataclass entirely rather than
+  accepted-and-ignored. Their absence *is* the contract.
+
 ---
 
 ## Table of contents
@@ -131,6 +171,32 @@ Three consequences for the trainers:
 - **`params` arrives pre-merged** (`frozen | trainable`); call `fmodel(params, input_ids=..., attention_mask=...)`. DPO calls it twice (chosen, rejected); SFT once.
 - **Never divide by a cross-example batch quantity.** The DP-correct divisor is `expected_batch_size`, applied *outside* the per-example closure by `clipped_grad(normalize_by=...)` (`_dp_trainer.py:3654/3663/3673`). The per-example loss returns a per-example scalar; the batch `.mean()` emerges from the clipped-gradient sum ÷ `expected_batch_size`. This is the structural reason the alignment heads return per-example scalars and never `.mean()` internally.
 
+### 2.1a TRL method-name mirroring (iteration 1)
+
+`compute_per_example_loss` is the *only* hook the DP substrate strictly
+requires — but iteration 1 deliberately does **not** collapse the whole trainer
+into that one method. Instead, each trainer keeps TRL's method decomposition so
+the classes read as line-by-line analogues of upstream, with the DP forward as
+the single structural adaptation:
+
+| TRL method (`*_trainer.py`) | Iteration-1 analogue | Faithful? |
+|---|---|---|
+| `_prepare_dataset` | same name, same job (extract prompt, add EOS, tokenize → columns) | ✅ direct |
+| `tokenize_row` / `_tokenize` | same | ✅ direct |
+| `DataCollatorForLanguageModeling` / `DataCollatorForPreference` | same class names, wrapping `language_modeling_collator` / `preference_collator` | ⚠️ wraps opaque primitive (layout differs — §3.3) |
+| `compute_ref_log_probs` / precompute | same name; runs `compute_ref_logprobs_for_dataset` | ⚠️ precompute-only (§3.2) |
+| `concatenated_forward` | same name & return shape (`{chosen_logps, rejected_logps, …}`), but the model forward runs **per-example under vmap** inside `compute_per_example_loss`, not on a batched `(2B,L)` tensor | ⚠️ **the one unavoidable deviation** |
+| `dpo_loss(loss_type, …)` / SFT `dft_loss` | same name; enumerates the supported `loss_type`s and dispatches to the matching `opaque.alignment.dpo.loss` head | ✅ structure preserved |
+| `get_batch_loss_metrics` | same name; assembles loss + `reward_metrics`/accuracy | ✅ direct (eval path) |
+| `compute_loss` | present for HF/eval parity; the **training** gradient path routes through `compute_per_example_loss` | ⚠️ split: batched path for metrics, per-example path for grads |
+
+The honest deviation to call out for iteration 2: TRL's batched
+`concatenated_forward` + `dpo_loss().mean()` cannot literally drive the DP
+gradient (which must be per-example, pre-`vmap`). Iteration 1 keeps the *names
+and responsibilities* of those methods and implements the gradient forward
+through `compute_per_example_loss`; whether to keep both surfaces or unify on
+the per-example hook is an explicit iteration-2 question.
+
 ### 2.2 Where the code lives (api/façade discipline)
 
 `opaque-transformers` owns `opaque.api.transformers.*` (impl) and re-exports
@@ -219,14 +285,27 @@ on-the-fly refs → deferred to a later phase that adds a pre-vmap batch hook
 (§6.4) or a callback re-running precompute on a cadence. Incompatible with
 precompute and PEFT in TRL too (`dpo_config.py:287`).
 
-### 3.3 Reject batch-coupled losses
+### 3.3 Unsupported losses/params are *absent*, not rejected
 
-`aot` and `aot_unpaired` sort log-ratios *across the batch*
-(`dpo_trainer.py` loss block) before applying the sigmoid. Cross-example
-ordering makes the per-example gradient depend on other examples → breaks
-per-example DP composition. **Reject at config validation** with a documented
-error. (Mirrors the deferred plan's stance; `opaque-alignment` already ships no
-`aot` head.)
+Per the design philosophy (top of doc), we do not author rejection branches.
+Batch-coupled losses (`aot`, `aot_unpaired`) sort log-ratios *across the batch*
+before the sigmoid (`dpo_trainer.py` loss block), so the per-example gradient
+would depend on other examples — meaningless under per-example DP. Rather than
+"reject" them:
+
+- `opaque-alignment` already ships **no** `aot` head, so the `dpo_loss`
+  dispatch table simply has no `"aot"` key. `loss_type=["aot"]` fails with an
+  ordinary `KeyError`/lookup error at dispatch — standard "unknown value", no
+  curated message.
+- Likewise, config fields with no DP meaning (DeepSpeed/FSDP/Accelerate knobs,
+  VLM args, `sync_ref_model` for now, `padding_free` for now) are **omitted
+  from the `SFTConfig`/`DPOConfig` dataclasses**, so passing them is a standard
+  unexpected-keyword `TypeError`. Their absence is the contract.
+
+The collator layout also already diverges at the primitive layer (separate
+`chosen_*`/`rejected_*` keys vs TRL's `(2B, L)` concat); iteration 1 keeps the
+TRL class name `DataCollatorForPreference` but wraps `preference_collator`.
+Whether to converge or keep the divergence is an iteration-2 question.
 
 ### 3.4 Loss-type list = MPO for free
 
@@ -277,8 +356,11 @@ Add TRL-parity fields (defaults from `sft_config.py`). Grouped:
 | `activation_offloading: bool` | `False` | map to existing DPTrainer offload. |
 | `learning_rate` override | `2e-5` | `sft_config.py:137`. |
 
-`__post_init__`: force `remove_unused_columns=False`; validate `loss_type ∈
-{nll, dft, chunked_nll}`; reject `packing`/`padding_free` until their phase.
+`__post_init__`: force `remove_unused_columns=False` (the one DP-driven
+override). No `packing`/`padding_free` fields exist on the dataclass at this
+phase, so passing them is a standard unexpected-keyword `TypeError`; an unknown
+`loss_type` value fails at the `nll`/`dft`/`chunked_nll` dispatch table, not via
+a curated check.
 
 ### 4.2 `SFTTrainer.__init__`
 
@@ -341,10 +423,12 @@ divisors. No `num_items_in_batch`. ✔
 | `disable_dropout: bool` | `True` | `:155` | dropout off on policy+ref |
 | `learning_rate` override | `1e-6` | `:142` | — |
 
-`__post_init__`: force `remove_unused_columns=False`; **reject `aot` /
-`aot_unpaired`** (§3.3); reject `sync_ref_model` until its phase; validate
-`label_smoothing ∈ [0,0.5)` for robust, `> 0` for exo (`dpo_trainer.py:680-694`);
-default `loss_weights` to `[1.0]*len(loss_type)`.
+`__post_init__`: force `remove_unused_columns=False`; default `loss_weights` to
+`[1.0]*len(loss_type)`; keep TRL's *own* faithful validations (`label_smoothing
+∈ [0,0.5)` for robust, `> 0` for exo — `dpo_trainer.py:680-694`). No DP-driven
+rejections: `aot`/`aot_unpaired` have no dispatch key and fail at lookup (§3.3);
+`sync_ref_model` is absent from the dataclass until its iteration-2 phase, so it
+fails as a standard unexpected-keyword `TypeError`.
 
 ### 5.2 `DPOTrainer.__init__`
 
@@ -457,7 +541,7 @@ The hook exists; the changes are small and additive.
 | `discopop` | `discopop_loss` (`tau=discopop_tau`) | 2 |
 | `sft` | `chosen_nll_loss` (CE on chosen completion) | 2 |
 | — (SquareχPO, optimal-rate DP-DPO) | `squarechipo_loss` | 2 |
-| `aot`, `aot_unpaired` | **REJECTED** (batch sort) | — |
+| `aot`, `aot_unpaired` | *no dispatch key* — `loss_type=["aot"]` fails with a standard `KeyError` (batch-sort, no DP meaning; not rejected by bespoke code) | — |
 
 **Cross-features:** MPO (`loss_weights`) → `mpo_combine` (1); f-divergence →
 `f_divergence_remap` (2); WPO (`use_weighting`) → `wpo_weights` (2); LD-DPO
@@ -469,16 +553,32 @@ The hook exists; the changes are small and additive.
 
 ## 8. Phasing
 
-Each phase is independently shippable, gated by tests, and lands on a sub-branch
-off this one.
+**Iteration 1 (Phases 0–4) = faithful TRL baseline.** Build the two trainers as
+close structural ports of TRL, wiring the merged `opaque-alignment` primitives
+through TRL-named methods (§2.1a). Each phase is independently shippable, gated
+by tests, and lands on a sub-branch off this one.
 
-- **Phase 0 — scaffolding.** Add dependency; create `trl` impl + façade packages; `SFTConfig`/`DPOConfig` skeletons (fields + `__post_init__` validation only); contract tests (façade discipline, dependency direction) green. No trainer behavior yet.
-- **Phase 1 — `SFTTrainer` (nll/dft).** Dataset tokenize + `language_modeling_collator` wiring; `compute_per_example_loss` override; completion-only loss; eval token-accuracy/entropy via `compute_metrics`. Numeric parity vs `examples/train_sft.py` and vs TRL at σ=0/C=∞. Example + cadence config.
-- **Phase 2 — `DPOTrainer` (core heads + precompute).** Tokenize; `compute_ref_logprobs_for_dataset` precompute (explicit ref + PEFT null-ref); `preference_collator`; override with sigmoid/hinge/ipo/robust/apo/sigmoid_norm; MPO; reward metrics in eval. Parity vs `examples/train_dpo.py` and TRL. Example + cadence config.
+- **Phase 0 — scaffolding.** Add `opaque-alignment` dependency; create `trl` impl + façade packages; `SFTConfig`/`DPOConfig` dataclasses carrying the *supported* TRL fields only (incompatible fields simply absent — §3.3); `__post_init__` forces `remove_unused_columns=False` and defaults `loss_weights`. Contract tests (façade discipline, dependency direction) green. No trainer behavior yet.
+- **Phase 1 — `SFTTrainer` (nll/dft).** Port TRL's `_prepare_dataset`/`tokenize_row`/`DataCollatorForLanguageModeling`/`compute_loss` structure; `compute_per_example_loss` override; completion-only loss; eval token-accuracy/entropy via `get_batch_loss_metrics`. Parity vs `examples/train_sft.py` and vs TRL at σ=0/C=∞. Example + cadence config.
+- **Phase 2 — `DPOTrainer` (core heads + precompute).** Port `_prepare_dataset`/`tokenize_row`/`DataCollatorForPreference`/`compute_ref_log_probs`/`concatenated_forward`/`dpo_loss`/`get_batch_loss_metrics`. Precompute reference (explicit ref + PEFT null-ref); override with sigmoid/hinge/ipo/robust/apo/sigmoid_norm; MPO; reward metrics in eval. Parity vs `examples/train_dpo.py` and TRL. Example + cadence config.
 - **Phase 3 — DPO breadth.** Remaining heads (exo/nca/bco/sppo/discopop/sft/squarechipo); f-divergence; WPO; LD-DPO; RPO; reference-free/CPO/ORPO/SimPO.
 - **Phase 4 — SFT breadth.** `chunked_nll` (fused), `assistant_only_loss` (chat-template mask), `chat_template_path` cloning.
-- **Phase 5 — on-the-fly references.** `_augment_batch` core hook (§6.4) + TR-DPO `ema_update_reference` callback.
-- **Phase 6 — polish.** Packing/padding-free decision (§11), docs, final parity sweep.
+
+**🛑 Iteration-1 checkpoint — stop and reconsider.** With both trainers running
+and matching TRL, pause. Audit method by method: which TRL methods are
+*auxiliary* HF/Accelerate plumbing the DP path never exercises (candidates for
+deletion); where the per-example/`vmap` substrate makes the batched
+`concatenated_forward`/`compute_loss` surface redundant (candidate for
+unification on `compute_per_example_loss`); what opaque/opaque-alignment offers
+that TRL has no concept of (accounting hooks, mechanism-agnostic DP-SGD↔DP-FTRL
+swap, per-example DP telemetry). The output of this checkpoint is the
+**iteration-2 redesign brief** — not planned here.
+
+**Iteration 2 (post-checkpoint) = opaque-native redesign.** Driven by the brief
+above. Likely items (not committed): collapse the dual loss surface; converge or
+formalize the collator-layout divergence; on-the-fly references (`_augment_batch`
+core hook §6.4 + TR-DPO `ema_update_reference`); packing/padding-free decision
+(§11); prune auxiliary config/methods.
 
 ---
 
@@ -492,7 +592,7 @@ Leverage existing unit coverage; add trainer-level tests.
 4. **Functional-example parity.** Trainer per-step loss must match the manual loops in `examples/train_{sft,dpo}.py` (same seed, same data) — these are the ground truth.
 5. **DP-purity (NaN injection).** Replace one example's tensors with NaN; assert only that row's per-example gradient is affected (no cross-example leakage). One test per loss family. This is the structural DP-correctness guard.
 6. **Reference precompute.** Verify cache keying (`cache_key`), that ref columns are populated for every row, and that `reference_free` skips them.
-7. **Config validation.** `aot`/`aot_unpaired` rejected; `remove_unused_columns` forced False; label-smoothing bounds.
+7. **Unsupported-arg behavior.** Assert `loss_type=["aot"]` raises a standard `KeyError` at dispatch (no bespoke rejection); assert an omitted field like `DPOConfig(sync_ref_model=True)` raises the standard dataclass `TypeError`; assert `remove_unused_columns` is forced `False`.
 8. **DDP** (later): one short-run parity test under the existing `tests/distributed/` harness.
 
 ---
@@ -521,7 +621,7 @@ existing `train_{sft,dpo} (qwen_alignment).yaml` and swap the entrypoint.
 **Open questions (decide before Phase 0):**
 
 - **Namespace:** `opaque.transformers.trl` vs `opaque.transformers.alignment`. `trl` signals parity-of-intent; `alignment` avoids implying a TRL runtime dependency (there is none). *Recommendation: `opaque.transformers.trl`* (matches the pre-merge `trl-trainers-plan.md` §6).
-- **Class names:** TRL-parity `SFTTrainer`/`DPOTrainer`/`SFTConfig`/`DPOConfig` (used throughout this doc) vs the `Opaque`-prefixed `OpaqueSFTTrainer`/`OpaqueSFTConfig` that the pre-merge `trl-trainers-plan.md` (§11.2–11.3, §12.2) proposed to avoid name collision when both TRL and Opaque are importable. *Decide before Phase 0; the prefix is the safer default if users may `import trl` in the same process.*
+- **Class names:** since iteration 1 mirrors TRL, use the **TRL-parity names** `SFTTrainer`/`DPOTrainer`/`SFTConfig`/`DPOConfig` (recognizability beats collision-avoidance for a baseline; they live under the distinct `opaque.transformers.trl` namespace, so `from opaque.transformers.trl import SFTTrainer` never clashes with `from trl import SFTTrainer` at the symbol level — only if both are `import *`-ed). The `Opaque`-prefixed alternative from the pre-merge `trl-trainers-plan.md` (§11.2–11.3) is an iteration-2 reconsideration item, not a Phase-0 blocker.
 - **`DPOConfig.loss_type` length-normalized naming:** confirm the exact `simpo`/`ipo`/`sigmoid_norm` flag that toggles `sequence_logp(length_normalized=True)` vs `_norm` suffix handling.
 - **DPO eval logits contract:** returning `chosen_out.logits` to satisfy `return_logits=True` is a convention, not a true "prediction"; confirm it doesn't confuse `compute_metrics` consumers.
 
@@ -532,9 +632,10 @@ padding-free.
 **Non-goals:** VLM/multimodal trainers and collators; DeepSpeed / FSDP /
 Accelerate (Opaque has its own DDP layer — TRL `self.accelerator.*` and
 `is_deepspeed_enabled`/`is_fsdp_enabled` guards are dropped); Liger as a runtime
-dep (kernels reimplemented in `opaque-patches`); `aot`/`aot_unpaired` (DP-incompatible);
-DP-PPO / trajectory-level DP; `KTOTrainer` (reuses the same primitives — natural
-next trainer, but out of this plan's scope).
+dep (kernels reimplemented in `opaque-patches`); `aot`/`aot_unpaired` (no
+dispatch key — they have no per-example DP meaning; §3.3); DP-PPO /
+trajectory-level DP; `KTOTrainer` (reuses the same primitives — natural next
+trainer, but out of this plan's scope).
 
 ---
 
