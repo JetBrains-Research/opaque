@@ -4,31 +4,37 @@
 `DPOTrainer` — built on the in-house `DPTrainer` and consuming the
 already-merged `opaque-alignment` primitives (PR #251).
 
-**Implementation status (iteration 1 — essentially complete):** Phases 0–4
-landed on `claude/modest-gates-WpC4d` — `opaque.transformers.trl.{SFTConfig,
+**Implementation status (iteration 1 — complete):** landed on
+`claude/modest-gates-WpC4d` (PR #253) — `opaque.transformers.trl.{SFTConfig,
 SFTTrainer, DPOConfig, DPOTrainer}` with the `opaque-alignment` dependency wired
 in, `examples/train_{sft,dpo}_trainer.py` + matching cadence presets, and a
-hermetic test suite (17 tests: smoke, config-behavior, **DP-purity**
-NaN/perturbation per-example independence, and **numeric parity** of the vmapped
-per-example loss vs a direct eager computation). Contract tests green.
+hermetic test suite (28 tests: smoke, config-behavior, **DP-purity**
+perturbation per-example independence, **numeric parity** of the vmapped
+per-example loss vs a direct eager computation, plus TR-DPO / chunked_nll /
+mixed-norm MPO). Contract tests green; runs on CPU, CUDA, and MPS CI.
 
-- **SFT:** `nll` / `dft`; completion-only; `assistant_only_loss`;
+- **SFT:** `nll` / `dft` / `chunked_nll` (fused logits-free CE via the
+  `fused_linear_cross_entropy` patch); completion-only; `assistant_only_loss`;
   `chat_template_path` (clone + embedding resize); `activation_offloading` alias.
 - **DPO:** precompute reference (explicit / PEFT null-ref / auto-load) +
   reference-free; heads sigmoid / hinge / ipo / robust / apo* / sigmoid_norm /
-  exo / nca / bco / sppo / discopop / squarechipo / sft; MPO; f-divergence remap;
-  RPO; LD-DPO α; **WPO** (`use_weighting`); reward-metric telemetry
+  exo / nca / bco / sppo / discopop / squarechipo / sft; **MPO with
+  per-head mixed normalization**; f-divergence remap; RPO; **LD-DPO** (ld_alpha
+  with a per-pair `shared_prefix_len`); **WPO** (`use_weighting`); **TR-DPO**
+  (`sync_ref_model` — per-step EMA reference via the new
+  `DPTrainer._augment_inputs` pre-vmap hook); reward-metric telemetry
   (`get_batch_loss_metrics`).
 
-**Deliberately deferred to iteration 2:** SFT `chunked_nll` (needs a logits-free
-forward patch — a naive `output_hidden_states` path still materialises the
-`(T, V)` logits via the lm-head, so it buys nothing; wiring the fused
-logits-free kernel through the trainer is a design item, not a baseline tweak);
-TR-DPO on-the-fly sync (needs the §6.4 pre-vmap batch hook); auto-logging
-reward metrics inside the DP eval loop (the method exists; the eval-loop hook is
-core surgery); mixed-normalization MPO (one `length_normalized` flag per run);
-TRL-as-test-dep numeric parity (the heads are already unit-tested in
-`opaque-alignment`; the trainer is parity-tested against direct computation).
+**One telemetry item intentionally left for iteration 2 (with reason):**
+*auto-logging* reward metrics inside the DP eval loop. The computation
+(`get_batch_loss_metrics`) is provided, but correct in-training eval needs the
+**functional** per-example path (the live policy weights live in
+`ctx.trainable_params`, not in `self.model`), so a naive eager reward pass would
+score stale weights. Surfacing DPO logps through the DP eval machinery is a
+core-eval design item, not a baseline add — so it waits for the iteration-2
+reconsider. (TRL-as-test-dep numeric parity also stays out: the heads are
+unit-tested in `opaque-alignment` and the trainer is parity-tested against a
+direct computation.)
 
 **Author context:** Written against `main` at `909ed54` (opaque-alignment in
 place) on branch `claude/modest-gates-WpC4d`. Supersedes the pre-merge draft
@@ -588,8 +594,8 @@ by tests, and lands on a sub-branch off this one.
 - **Phase 0 — scaffolding. ✅ done.** Added `opaque-alignment` dependency + workspace source; created `trl` impl + façade packages; `SFTConfig`/`DPOConfig` dataclasses carrying the *supported* TRL fields only (incompatible fields simply absent — §3.3); `__post_init__` forces `remove_unused_columns=False` and defaults `loss_weights`. Contract tests green.
 - **Phase 1 — `SFTTrainer` (nll/dft). ✅ done.** TRL-shaped `_prepare_dataset`/`tokenize_row` + language-modeling collator; `compute_per_example_loss` override; completion-only loss; activation-offloading alias. Example + cadence config. *Remaining:* eval token-accuracy/entropy logging; TRL numeric parity at σ=0/C=∞.
 - **Phase 2 — `DPOTrainer` (core heads + precompute). ✅ done.** TRL-shaped `_prepare_dataset`/`tokenize_row`/`compute_ref_log_probs`/`dpo_loss`; the two-forwards step is folded into `compute_per_example_loss`, not a standalone batched method (§2.1a). Precompute reference (explicit ref + PEFT null-ref + auto-load); reference-free; sigmoid/hinge/ipo/robust/apo/sigmoid_norm + MPO. Example + cadence config. *Remaining:* reward-metric eval logging; TRL numeric parity.
-- **Phase 3 — DPO breadth. ✅ done.** exo/nca/bco/sppo/discopop/sft/squarechipo heads, f-divergence remap, RPO, LD-DPO α, reference-free, and **WPO** (`use_weighting`) wired; reward-metric telemetry via `get_batch_loss_metrics`. *Out of scope:* ORPO/SimPO/CPO are separate TRL trainer classes, not DPO `loss_type`s. *Iteration-2:* mixed-normalization MPO (one `length_normalized` flag per run today).
-- **Phase 4 — SFT breadth. ◑ mostly done.** `assistant_only_loss` (chat-template mask) and `chat_template_path` (clone + embedding resize) wired. `chunked_nll` deferred to iteration 2 (needs a logits-free forward patch — see status note).
+- **Phase 3 — DPO breadth. ✅ done.** exo/nca/bco/sppo/discopop/sft/squarechipo heads, f-divergence remap, RPO, **LD-DPO** (ld_alpha + per-pair `shared_prefix_len`), reference-free, **WPO** (`use_weighting`), **mixed-normalization MPO** (per-head normalization; reference precomputed summed), and **TR-DPO** (`sync_ref_model`, via the new `DPTrainer._augment_inputs` pre-vmap hook + per-step EMA reference); reward-metric telemetry via `get_batch_loss_metrics`. *Out of scope:* ORPO/SimPO/CPO are separate TRL trainer classes, not DPO `loss_type`s.
+- **Phase 4 — SFT breadth. ✅ done.** `assistant_only_loss` (chat-template mask), `chat_template_path` (clone + embedding resize), and **`chunked_nll`** (model's fused logits-free CE via the `fused_linear_cross_entropy` patch) wired.
 
 **🛑 Iteration-1 checkpoint — stop and reconsider.** With both trainers running
 and matching TRL, pause. Audit method by method: which TRL methods are
