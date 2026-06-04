@@ -22,6 +22,7 @@ dependencies = [
     "opaque-dpftrl",
     "opaque-accounting",
     "opaque-optimizers",
+    "opaque-alignment",
 ]
 
 [tool.setuptools]
@@ -47,3 +48,4 @@ opaque-dpsgd = { workspace = true }
 opaque-dpftrl = { workspace = true }
 opaque-accounting = { workspace = true }
 opaque-optimizers = { workspace = true }
+opaque-alignment = { workspace = true }
