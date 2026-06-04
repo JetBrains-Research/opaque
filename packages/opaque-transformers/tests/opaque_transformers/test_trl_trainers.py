@@ -110,9 +110,29 @@ def test_dpo_config_coerces_loss_type_and_defaults_weights():
 
 def test_unsupported_param_is_absent_not_rejected():
     # No bespoke rejection: an unsupported field is simply not on the surface,
-    # so passing it raises the standard dataclass TypeError.
+    # so passing it raises the standard dataclass TypeError. ``padding_free`` is
+    # a TRL field with no DP meaning and is intentionally absent.
     with pytest.raises(TypeError):
-        DPOConfig(output_dir="x", sync_ref_model=True, privacy_noise_multiplier=0.0)
+        DPOConfig(output_dir="x", padding_free=True, privacy_noise_multiplier=0.0)
+
+
+def test_duplicate_loss_type_fails_fast():
+    with pytest.raises(ValueError):
+        DPOConfig(
+            output_dir="x",
+            loss_type=["sigmoid", "sigmoid"],
+            privacy_noise_multiplier=0.0,
+        )
+
+
+def test_sync_ref_model_incompatible_with_reference_free():
+    with pytest.raises(ValueError):
+        DPOConfig(
+            output_dir="x",
+            sync_ref_model=True,
+            reference_free=True,
+            privacy_noise_multiplier=0.0,
+        )
 
 
 def test_robust_label_smoothing_validation():
@@ -140,6 +160,20 @@ def test_unknown_loss_type_fails_at_dispatch(tmp_path):
 # ----------------------------------------------------------------------
 # SFT training
 # ----------------------------------------------------------------------
+def test_sft_chunked_nll_trains(tmp_path):
+    # chunked_nll lets the model compute its own (fused, logits-free) loss.
+    torch.manual_seed(0)
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(SFTConfig, tmp_path, max_length=8, loss_type="chunked_nll"),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    out = trainer.train()
+    assert out.global_step == 2
+    assert torch.isfinite(torch.tensor(out.training_loss))
+
+
 @pytest.mark.parametrize("loss_type", ["nll", "dft"])
 def test_sft_trains_a_couple_steps(tmp_path, loss_type):
     torch.manual_seed(0)
@@ -170,6 +204,49 @@ def test_dpo_trains_with_explicit_reference(tmp_path, loss_type):
     out = trainer.train()
     assert out.global_step == 2
     assert torch.isfinite(torch.tensor(out.training_loss))
+
+
+def test_dpo_mixed_normalization_mpo_trains(tmp_path):
+    # An MPO list mixing a summed (sigmoid) and a length-normalized (ipo) head
+    # must work — normalization is per-head, not a single run-wide flag.
+    torch.manual_seed(0)
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        ref_model=_tiny_model(),
+        args=_args(DPOConfig, tmp_path, max_length=8, loss_type=["sigmoid", "ipo"]),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    out = trainer.train()
+    assert out.global_step == 2
+    assert torch.isfinite(torch.tensor(out.training_loss))
+
+
+def test_dpo_tr_dpo_syncs_reference(tmp_path):
+    # TR-DPO: full FT, reference recomputed per step from an EMA reference that
+    # tracks the policy. With sync_steps=1 the reference must move during training.
+    torch.manual_seed(0)
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        ref_model=_tiny_model(),
+        args=_args(
+            DPOConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="sigmoid",
+            sync_ref_model=True,
+            ref_model_sync_steps=1,
+            ref_model_mixup_alpha=0.5,
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    name, param = next(iter(trainer._tr_ref.named_parameters()))
+    before = param.detach().clone()
+    out = trainer.train()
+    after = dict(trainer._tr_ref.named_parameters())[name].detach()
+    assert out.global_step == 2
+    assert not torch.allclose(before, after)  # EMA moved the reference
 
 
 def test_dpo_reference_free_trains_without_precompute(tmp_path):
@@ -212,10 +289,21 @@ def test_dpo_wpo_weighting_trains(tmp_path):
 # ----------------------------------------------------------------------
 # DP-purity: the per-example loss for example i depends only on example i.
 # ----------------------------------------------------------------------
+def _to_device(trainer, batch):
+    device = next(trainer.model.parameters()).device
+    return {
+        k: (v.to(device) if isinstance(v, torch.Tensor) else v)
+        for k, v in batch.items()
+    }
+
+
 def _per_example_losses(trainer, batch):
     """vmap ``compute_per_example_loss`` over a collated batch (the DP path)."""
     from opaque.functional import make_functional
 
+    # The collator emits CPU tensors; move to the model device (the trainer's
+    # _prepare_input does this in the real path — bypassed here).
+    batch = _to_device(trainer, batch)
     fmodel, trainable, frozen = make_functional(trainer.model, partition_trainable=True)
     keys = [k for k, v in batch.items() if isinstance(v, torch.Tensor)]
 
@@ -288,7 +376,7 @@ def test_sft_loss_matches_direct_nll(tmp_path):
     )
     trainer.model.eval()
     rows = [trainer.train_dataset[i] for i in range(4)]
-    batch = trainer.data_collator(rows)
+    batch = _to_device(trainer, trainer.data_collator(rows))
     losses, _ = _per_example_losses(trainer, batch)
 
     with torch.no_grad():
@@ -313,7 +401,7 @@ def test_dpo_loss_matches_direct_sigmoid(tmp_path):
     )
     trainer.model.eval()
     rows = [trainer.train_dataset[i] for i in range(4)]
-    batch = trainer.data_collator(rows)
+    batch = _to_device(trainer, trainer.data_collator(rows))
     losses, _ = _per_example_losses(trainer, batch)
 
     with torch.no_grad():

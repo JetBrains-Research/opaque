@@ -60,15 +60,25 @@ class DPOConfig(TrainingArguments):
     reference_free: bool = False
 
     # ---- Reference model -------------------------------------------------
-    #: Precompute reference log-probs over the dataset before training. Under
-    #: the DP substrate this is the universal path for *static* references
-    #: (explicit ref or PEFT base-as-reference); see plan §3.2.
-    precompute_ref_log_probs: bool = False  # dpo_config.py:193
     #: Batch size for the reference precompute pass; defaults to the train
-    #: per-device batch size when ``None``.
+    #: per-device batch size when ``None``. (There is no ``precompute_ref_log_probs``
+    #: toggle: under the per-example DP substrate a *static* reference is always
+    #: precomputed — the ``vmap`` loss can only read it as a constant column —
+    #: so the toggle would be misleading. ``reference_free`` skips it; TR-DPO
+    #: (``sync_ref_model``) recomputes per step.)
     precompute_ref_batch_size: int | None = None  # dpo_config.py:201
     #: Disable dropout in policy (and reference) before training.
     disable_dropout: bool = True  # dpo_config.py:155
+
+    # ---- TR-DPO (reference sync, arXiv:2502.18014) -----------------------
+    #: Periodically move the reference toward the policy by an EMA step
+    #: (recomputed per training step, outside vmap). Incompatible with
+    #: ``reference_free``; full fine-tuning only (not PEFT, mirroring TRL).
+    sync_ref_model: bool = False  # dpo_config.py:287
+    #: EMA mixup α: ``ref ← (1 - α)·ref + α·policy``.
+    ref_model_mixup_alpha: float = 0.6  # dpo_config.py:296
+    #: Apply the EMA update every ``ref_model_sync_steps`` steps.
+    ref_model_sync_steps: int = 512  # dpo_config.py:304
 
     # ---- Data preparation ------------------------------------------------
     #: Maximum tokenized sequence length; ``None`` disables truncation.
@@ -107,4 +117,16 @@ class DPOConfig(TrainingArguments):
             raise ValueError(
                 "loss_weights must have the same length as loss_type: "
                 f"{len(self.loss_weights)} != {len(self.loss_type)}."
+            )
+        # MPO terms are keyed by loss name; duplicates would silently collapse
+        # and change the objective. Fail fast (review feedback).
+        if len(set(self.loss_type)) != len(self.loss_type):
+            raise ValueError(
+                f"loss_type contains duplicates: {self.loss_type}. Each loss "
+                "variant may appear at most once in an MPO combination."
+            )
+        if self.sync_ref_model and self.reference_free:
+            raise ValueError(
+                "sync_ref_model (TR-DPO) is incompatible with reference_free: "
+                "there is no reference to sync."
             )

@@ -1742,6 +1742,12 @@ class DPTrainer:
                 "DPTrainer's functional context is not initialised."
             )
         inputs = self._prepare_input(inputs)
+        # Subclass hook: augment the batch with tensors computed *outside* vmap
+        # (e.g. TR-DPO's per-step reference logps). Default is a no-op. Any keys
+        # it adds must already be present in ``ctx.batch_keys`` (discovered at
+        # setup), so subclasses seed placeholder columns at construction and the
+        # hook overwrites their values here.
+        inputs = self._augment_inputs(inputs)
         # Positional batch tensors in the order discovered at
         # ``_setup_training`` time.  Matches the ``batch_argnums`` the
         # loss builder published, so ``vmap`` batches correctly.
@@ -1951,6 +1957,18 @@ class DPTrainer:
     # ------------------------------------------------------------------
     # evaluate() — functional forward, no param restoration
     # ------------------------------------------------------------------
+
+    def _augment_inputs(self, inputs: dict[str, Tensor]) -> dict[str, Tensor]:
+        """Hook to augment a prepared batch before the per-example vmap.
+
+        Runs once per step in :meth:`training_step`, *outside* ``vmap`` and on
+        the trainer device. The default is a no-op. Subclasses use it to
+        overwrite placeholder batch tensors with quantities that must be
+        recomputed each step from an evolving non-``vmap`` artefact — e.g.
+        TR-DPO's reference log-probs from an EMA reference model. Keys it writes
+        must already exist in ``ctx.batch_keys`` (seed them at construction).
+        """
+        return inputs
 
     def compute_per_example_loss(
         self,

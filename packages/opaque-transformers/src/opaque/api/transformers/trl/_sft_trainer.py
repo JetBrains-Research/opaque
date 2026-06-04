@@ -27,8 +27,8 @@ from ._sft_config import SFTConfig
 
 # Loss dispatch (TRL ``loss_type`` → ``opaque.alignment.sft.loss`` head). An
 # unknown ``loss_type`` raises ``KeyError`` here — the "standard unknown value"
-# behavior, no curated rejection (plan §3.3). ``chunked_nll`` (fused) lands in a
-# later phase.
+# behavior, no curated rejection (plan §3.3). ``chunked_nll`` is handled
+# separately (the model's fused linear-CE forward computes the loss logits-free).
 _SFT_LOSSES: dict[str, Callable] = {"nll": nll_loss, "dft": dft_loss}
 
 # Columns that may carry chat-format conversations.
@@ -115,10 +115,18 @@ class SFTTrainer(DPTrainer):
                 "loss_type='dft' computes its own loss; pass loss_type='nll' to "
                 "use a custom compute_loss_func."
             )
-        # Resolve the per-example loss head now so an unknown loss_type fails
-        # immediately with a standard KeyError.
-        self._loss_fn: Callable = _SFT_LOSSES[args.loss_type]
+        # Resolve the loss path. ``chunked_nll`` lets the model compute its own
+        # loss via the fused linear-CE kernel (logits-free on CUDA, eager
+        # fallback elsewhere); ``nll`` / ``dft`` dispatch to an alignment head.
+        # An unknown loss_type fails with a standard KeyError (plan §3.3).
         self._loss_type: str = args.loss_type
+        if args.loss_type == "chunked_nll":
+            self._loss_fn: Callable | None = None
+            cfg = dict(args.performance_kernels_config or {})
+            cfg["fused_linear_cross_entropy"] = True
+            args.performance_kernels_config = cfg
+        else:
+            self._loss_fn = _SFT_LOSSES[args.loss_type]
 
         # ---- dataset preprocessing (before super().__init__) --------------
         self._formatting_func = formatting_func
@@ -283,10 +291,13 @@ class SFTTrainer(DPTrainer):
                 full_ids, cmask = full_ids[:max_length], cmask[:max_length]
             return {"input_ids": full_ids, "completion_mask": cmask}
 
-        # Plain text field.
+        # Plain text field. Append EOS whenever the tokenizer has one (TRL
+        # parity) so the model learns to stop — not only when ``args.eos_token``
+        # was explicitly overridden.
         text = example[args.dataset_text_field]
-        if args.eos_token is not None and not text.endswith(processing_class.eos_token):
-            text = text + processing_class.eos_token
+        eos = processing_class.eos_token
+        if eos is not None and not text.endswith(eos):
+            text = text + eos
         ids = processing_class(
             text, truncation=max_length is not None, max_length=max_length
         )["input_ids"]
@@ -309,12 +320,24 @@ class SFTTrainer(DPTrainer):
         this is a single forward + the configured head (``nll`` / ``dft``); both
         heads use a DP-safe per-example divisor.
         """
-        out = fmodel(
-            params,
-            input_ids=inputs["input_ids"],
-            attention_mask=inputs["attention_mask"],
-        )
-        loss = self._loss_fn(out.logits, inputs["labels"])
+        if self._loss_type == "chunked_nll":
+            # The model computes the (logits-free, fused) NLL when given labels.
+            out = fmodel(
+                params,
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                labels=inputs["labels"],
+            )
+            loss = out["loss"]
+            logits = out.get("logits")  # None on the fused path
+        else:
+            out = fmodel(
+                params,
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+            )
+            loss = self._loss_fn(out.logits, inputs["labels"])
+            logits = out.logits
         if return_logits:
-            return loss, out.logits
+            return loss, logits
         return loss
