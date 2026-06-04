@@ -25,20 +25,29 @@ mixed-norm MPO). Contract tests green; runs on CPU, CUDA, and MPS CI.
   `DPTrainer._augment_inputs` pre-vmap hook); reward-metric telemetry
   (`get_batch_loss_metrics`).
 
-**Reward telemetry — done, via the clipped-grad aux channel.** Per-step
-**training** `rewards/*` (chosen, rejected, accuracies, margins) ride out of the
-*same* clipped forward as constant per-example aux: `compute_per_example_loss(…,
-return_aux=True)` returns `(loss, aux)`, a gated `has_aux` flag threads through
-`_build_per_example_loss` → `_create_grad_fn` → `clipped_grad(has_aux=True)`,
-and the per-example `loss_aux` is DDP-summed by the existing `sync(aux)` and
-meaned in `training_step`. No second pass, live weights, distributed-correct;
-the default (non-DPO) path is bit-identical (gated off). **Eval** rewards (+ the
-eval *loss*) come from a self-contained `DPOTrainer.evaluate()` functional pass
-that reuses the same `return_aux` producer through `self._ctx` (live weights),
-because a preference batch (`chosen_input_ids`/`rejected_input_ids`, no
-`labels`) can't run the inherited LM-shaped `prediction_step`. (TRL-as-test-dep
-numeric parity stays out: the heads are unit-tested in `opaque-alignment` and
-the trainer is parity-tested against a direct computation.)
+**Reward telemetry — via a generic `(loss, aux)` harness seam.** `DPTrainer`
+exposes a single rich seam, `compute_per_example_loss_and_metrics(fmodel,
+params, inputs) -> (loss, telemetry_dict)`, defaulting to `(compute_per_example_loss(...), {})`
+— so the simple trainers (SFT/causal-LM) override only the plain
+`compute_per_example_loss` and are untouched, while a trainer that overrides the
+seam auto-enables the aux path (detected by override; no flag). **Training:** the
+per-example telemetry rides the clipped-grad `loss_aux` channel
+(`_build_per_example_loss(with_metrics=…)` → `_create_grad_fn(has_aux=…)` →
+`clipped_grad(has_aux=True)`), is DDP-summed by the existing `sync(aux)`, meaned
+in `training_step`, and logged each step — same forward, live weights, and the
+default (no-aux) path is **bit-identical** (gated off; reproducibility verified).
+**Eval:** symmetric — `DPOTrainer` overrides the designed `prediction_step` seam
+to produce per-example `(loss, rewards)` through the same functional context
+(`self._ctx`, live weights), publishing rewards on `self._pending_eval_aux`;
+`evaluation_loop` aggregates them into `eval_rewards/*` alongside `eval_loss`,
+reusing the whole eval harness (memory/speed metrics, multi-dataset recursion,
+`_after_evaluate`, accounting barrier). DPO supplies only content; the harness
+does carry/aggregate/log for both train and eval — reusable for KTO. (This also
+fixes DPO eval end-to-end: a preference batch — `chosen_input_ids` /
+`rejected_input_ids`, no `labels` — couldn't run the inherited LM-shaped
+prediction path at all.) TRL-as-test-dep numeric parity stays out: the heads are
+unit-tested in `opaque-alignment` and the trainer is parity-tested against a
+direct computation.
 
 **Author context:** Written against `main` at `909ed54` (opaque-alignment in
 place) on branch `claude/modest-gates-WpC4d`. Supersedes the pre-merge draft

@@ -22,7 +22,6 @@ from __future__ import annotations
 import copy
 import dataclasses
 import uuid
-from collections.abc import Mapping
 from typing import Any, Callable
 
 import torch
@@ -141,10 +140,6 @@ class DPOTrainer(DPTrainer):
         # Per-head normalization (mixed MPO supported); the reference is always
         # precomputed summed, and normalized log-ratios are derived in dpo_loss.
         self._any_norm = any(lt in _NORM_LOSSES for lt in self._loss_type)
-        # Emit per-example DPO reward telemetry through the clipped-grad aux
-        # channel so ``rewards/*`` are logged every training step (TR-parity),
-        # computed in the same clipped forward (live weights, DDP-synced).
-        self._emit_loss_aux = True
         # Build the head dispatch eagerly so an unknown loss_type fails now.
         self._heads = [_DPO_HEADS[name] for name in self._loss_type]
 
@@ -650,25 +645,21 @@ class DPOTrainer(DPTrainer):
             weights["rpo_nll"] = float(self._rpo_alpha)
         return mpo_combine(parts, weights)
 
-    def compute_per_example_loss(
+    def compute_per_example_loss_and_metrics(
         self,
         fmodel: Callable[..., Any],
         params: dict[str, Any],
         inputs: dict[str, Any],
-        *,
-        return_logits: bool = False,
-        return_aux: bool = False,
-    ) -> Any:
-        """One preference pair's DPO loss (vmap-batched by :class:`DPTrainer`).
+    ) -> tuple[Any, dict[str, Any]]:
+        """One preference pair's DPO ``(loss, rewards/*)`` (vmap-batched).
 
-        Two policy forwards (chosen, rejected) → per-sequence summed logps → the
-        configured head(s). The reference enters as the constant ``ref_*_logps``
-        (precomputed, or TR-DPO's per-step values injected by
+        This is the rich :class:`DPTrainer` seam: two policy forwards (chosen,
+        rejected) → per-sequence summed logps → the configured head(s), plus the
+        per-example reward telemetry. The harness carries the telemetry through
+        the clipped-grad aux channel (logged every training step) and aggregates
+        it in the eval loop (``eval_rewards/*``). The reference enters as the
+        constant ``ref_*_logps`` (precomputed, or TR-DPO's per-step values from
         :meth:`_augment_inputs`), so no second model runs inside ``vmap``.
-
-        With ``return_aux=True`` also returns the per-example ``rewards/*``
-        telemetry dict (the clipped-grad aux channel), which ``training_step``
-        means + logs each step; the eval reward pass reuses the same producer.
         """
         c_cmask = inputs["chosen_completion_mask"]
         r_cmask = inputs["rejected_completion_mask"]
@@ -724,10 +715,20 @@ class DPOTrainer(DPTrainer):
             )
             loss = loss * weight
 
-        if return_aux:
-            return loss, self._reward_aux(chosen_lr, rejected_lr)
+        return loss, self._reward_aux(chosen_lr, rejected_lr)
+
+    def compute_per_example_loss(
+        self,
+        fmodel: Callable[..., Any],
+        params: dict[str, Any],
+        inputs: dict[str, Any],
+        *,
+        return_logits: bool = False,
+    ) -> Any:
+        """Loss-only view of the seam (the DP grad path uses the rich seam)."""
+        loss, _aux = self.compute_per_example_loss_and_metrics(fmodel, params, inputs)
         if return_logits:
-            return loss, chosen_out.logits
+            return loss, None  # DPO eval routes through prediction_step, not logits
         return loss
 
     def _reward_aux(
@@ -789,50 +790,26 @@ class DPOTrainer(DPTrainer):
         return reward_metrics(chosen_lr, rejected_lr, beta=self._beta)
 
     # ------------------------------------------------------------------
-    # Evaluation (DPO-shaped: own functional loss + reward pass)
+    # Evaluation: plug into the inherited eval harness via prediction_step
     # ------------------------------------------------------------------
-    def evaluate(
+    def prediction_step(
         self,
-        eval_dataset: Any = None,
+        model: Any,
+        inputs: dict[str, Any],
+        prediction_loss_only: bool,
         ignore_keys: list[str] | None = None,
-        metric_key_prefix: str = "eval",
-    ) -> dict[str, float]:
-        """Functional DPO eval — ``{prefix}_loss`` + ``{prefix}_rewards/*``.
+    ) -> tuple[Any, None, None]:
+        """One eval batch → per-example DPO loss (+ rewards via the aux channel).
 
-        A preference batch carries ``chosen_input_ids`` / ``rejected_input_ids``
-        (no single ``input_ids`` / ``labels``), so the inherited LM-shaped
-        ``prediction_step`` can't run it. This computes the loss and reward
-        telemetry directly through :meth:`compute_per_example_loss`
-        (``return_aux``) using the **same** functional context the training step
-        uses (``self._ctx``) — so in-training eval scores the *live* policy
-        weights, not the stale ``self.model`` — then logs + fires ``on_evaluate``
-        via :meth:`DPTrainer._after_evaluate`.
+        A preference batch (``chosen_input_ids`` / ``rejected_input_ids``, no
+        ``labels``) can't run the inherited LM-shaped prediction path, so DPO
+        plugs in here: it computes per-example ``(loss, rewards)`` through the
+        rich seam, using the **same** functional context as training
+        (``self._ctx`` → live policy weights, not the stale ``self.model``), and
+        publishes the per-example rewards on ``self._pending_eval_aux`` for
+        :meth:`DPTrainer.evaluation_loop` to aggregate into ``eval_rewards/*``.
+        Returns ``(per_example_loss, None, None)`` — no predictions/labels.
         """
-        dataset = eval_dataset if eval_dataset is not None else self._eval_dataset
-        if dataset is None:
-            raise ValueError("DPOTrainer.evaluate() requires an eval_dataset.")
-        # Multi-dataset eval: recurse per split with a namespaced prefix.
-        if isinstance(dataset, Mapping):
-            merged: dict[str, float] = {}
-            for name, sub in dataset.items():
-                merged.update(
-                    self.evaluate(
-                        eval_dataset=sub,
-                        ignore_keys=ignore_keys,
-                        metric_key_prefix=f"{metric_key_prefix}_{name}",
-                    )
-                )
-            return merged
-
-        metrics = self._dpo_eval_metrics(dataset, metric_key_prefix)
-        self._after_evaluate(metrics)
-        return metrics
-
-    def _dpo_eval_metrics(
-        self, dataset: Any, metric_key_prefix: str
-    ) -> dict[str, float]:
-        """Mean loss + ``rewards/*`` over ``dataset`` (functional, live weights)."""
-        from opaque.distributed import gather_for_metrics
         from opaque.functional import make_functional
 
         ctx = self._ctx
@@ -846,44 +823,30 @@ class DPOTrainer(DPTrainer):
             keys = self._discover_batch_keys()
         params = {**frozen, **trainable}
 
-        def per_example(p, *batch_args):
-            inputs = dict(zip(keys, batch_args))
-            return self.compute_per_example_loss(fmodel, p, inputs, return_aux=True)
+        inputs = self._prepare_input(inputs)
+        batch_args = tuple(inputs[k] for k in keys)
+
+        def per_example(p, *args):
+            return self.compute_per_example_loss_and_metrics(
+                fmodel, p, dict(zip(keys, args))
+            )
 
         vmapped = torch.vmap(per_example, in_dims=(None,) + (0,) * len(keys))
 
         amp_dtype = self._amp_dtype
-        device_type = self._device.type
-        loader = self.get_eval_dataloader(dataset)
-        losses: list[torch.Tensor] = []
-        collected: dict[str, list[torch.Tensor]] = {}
         was_training = self._model.training
         if was_training:
             self._model.eval()
         try:
             with torch.no_grad():
-                for batch in loader:
-                    batch = self._prepare_input(batch)
-                    batch_args = tuple(batch[k] for k in keys)
-                    if amp_dtype is not None:
-                        with torch.autocast(device_type=device_type, dtype=amp_dtype):
-                            loss, aux = vmapped(params, *batch_args)
-                    else:
+                if amp_dtype is not None:
+                    with torch.autocast(device_type=self._device.type, dtype=amp_dtype):
                         loss, aux = vmapped(params, *batch_args)
-                    losses.append(loss.detach())
-                    for name, value in aux.items():
-                        collected.setdefault(name, []).append(value.detach())
+                else:
+                    loss, aux = vmapped(params, *batch_args)
         finally:
             if was_training:
                 self._model.train()
 
-        metrics: dict[str, float] = {}
-        if losses:
-            all_loss = gather_for_metrics(torch.cat(losses))
-            metrics[f"{metric_key_prefix}_loss"] = float(all_loss.float().mean().item())
-        for name, chunks in collected.items():
-            gathered = gather_for_metrics(torch.cat(chunks))
-            metrics[f"{metric_key_prefix}_{name}"] = float(
-                gathered.float().mean().item()
-            )
-        return metrics
+        self._pending_eval_aux = {name: v.detach() for name, v in aux.items()}
+        return loss.detach(), None, None

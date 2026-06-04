@@ -351,6 +351,10 @@ class DPTrainer:
         # ``None`` here so model rebinding can invalidate the cache.
         self._eval_per_example_loss_fn: Callable | None = None
         self._eval_per_example_loss_fn_model: Any = None
+        # Per-batch eval telemetry channel: a subclass ``prediction_step`` sets
+        # this to a per-example dict that ``evaluation_loop`` collects + means
+        # into the eval metrics (symmetric with the train-step aux channel).
+        self._pending_eval_aux: dict[str, Tensor] | None = None
 
         # Default label_names so the eval loop can identify label tensors in
         # the batch dict.  HF parity (trainer.py:789-797): inspect the
@@ -1101,16 +1105,16 @@ class DPTrainer:
         # Subclasses override :meth:`compute_per_example_loss` for
         # domain-specific losses; ``_build_per_example_loss`` here just
         # wraps it with autocast / torch.compile.
-        # Subclasses that emit per-example training telemetry (e.g. DPO rewards)
-        # set ``_emit_loss_aux``; the loss closure then returns ``(loss, aux)``
-        # and the grad fn is built with ``has_aux=True``. Default ``False`` keeps
-        # the standard path bit-identical.
-        wants_loss_aux = bool(getattr(self, "_emit_loss_aux", False))
+        # Subclasses that override ``compute_per_example_loss_and_metrics`` emit
+        # per-example telemetry; the loss closure then returns ``(loss, aux)`` and
+        # the grad fn is built with ``has_aux=True``. Detected by override (no
+        # flag); ``False`` keeps the standard path bit-identical.
+        wants_metrics = self._overrides_metrics_seam()
         per_example_loss_fn, batch_argnums = self._build_per_example_loss(
             fmodel,
             frozen_params,
             batch_keys,
-            return_aux=wants_loss_aux,
+            with_metrics=wants_metrics,
         )
 
         # --- Sampling & step calculations ---
@@ -1200,7 +1204,7 @@ class DPTrainer:
             clip_norm,
             expected_batch_size,
             microbatch_size,
-            has_aux=wants_loss_aux,
+            has_aux=wants_metrics,
         )
 
         # --- LR schedule ---
@@ -1994,7 +1998,6 @@ class DPTrainer:
         inputs: dict[str, Tensor],
         *,
         return_logits: bool = False,
-        return_aux: bool = False,
     ) -> Tensor | tuple[Tensor, Any]:
         """Compute one example's loss; vmap-batched by the caller.
 
@@ -2104,16 +2107,40 @@ class DPTrainer:
                     label_smoothing=smoothing,
                 )
 
-        # ``return_aux`` is the per-example training-telemetry channel: the loss
-        # closure returns ``(loss, aux_dict)`` and ``clipped_grad(has_aux=True)``
-        # forwards ``aux_dict`` per-example into ``ClippedGradAux.loss_aux``
-        # (DDP-synced like ``loss_values``). The base trainer has no extra
-        # telemetry; subclasses (e.g. DPO rewards) override this to populate it.
-        if return_aux:
-            return loss, {}
         if return_logits:
             return loss, output_logits
         return loss
+
+    def compute_per_example_loss_and_metrics(
+        self,
+        fmodel: Callable[..., Any],
+        params: dict[str, Tensor],
+        inputs: dict[str, Tensor],
+    ) -> tuple[Tensor, dict[str, Tensor]]:
+        """Per-example ``(loss, telemetry)`` seam — the rich training/eval hook.
+
+        Returns one example's loss **and** a dict of per-example telemetry
+        tensors (e.g. DPO ``rewards/*``). The harness carries the telemetry
+        through the clipped-grad ``loss_aux`` channel (DDP-summed by
+        ``sync(aux)``), means it per logged step, and aggregates it in the eval
+        loop — so a subclass that overrides this gets ``rewards/*`` logged in
+        both train and eval from a single forward, with no extra wiring.
+
+        The default has no extra telemetry: it delegates to
+        :meth:`compute_per_example_loss`, so trainers whose per-example loss
+        emits no metrics (SFT / causal-LM) override only that simpler hook and
+        are unaffected by this seam. Overriding *this* method auto-enables the
+        aux path (no flag): the trainer detects the override and threads
+        ``has_aux`` accordingly.
+        """
+        return self.compute_per_example_loss(fmodel, params, inputs), {}
+
+    def _overrides_metrics_seam(self) -> bool:
+        """Whether a subclass overrides :meth:`compute_per_example_loss_and_metrics`."""
+        return (
+            type(self).compute_per_example_loss_and_metrics
+            is not DPTrainer.compute_per_example_loss_and_metrics
+        )
 
     def prediction_step(
         self,
@@ -2411,11 +2438,17 @@ class DPTrainer:
         total_loss = 0.0
         loss_samples = 0
         total_samples = 0
+        # Symmetric per-example eval telemetry: a subclass ``prediction_step``
+        # populates ``self._pending_eval_aux`` with the same per-example dict the
+        # training aux channel carries (e.g. DPO ``rewards/*``); collect + mean it
+        # into the eval metrics, mirroring the train-step aux logging.
+        eval_aux_chunks: dict[str, list[Tensor]] = {}
 
         for batch in dataloader:
             bs = _eval.find_batch_size(batch) or 0
             if bs == 0:
                 continue
+            self._pending_eval_aux = None
             with self._perf_tracker.eval(batch_size=bs):
                 loss, logits, labels = self.prediction_step(
                     self._model,
@@ -2423,6 +2456,11 @@ class DPTrainer:
                     prediction_loss_only=ploss_only,
                     ignore_keys=ignore_keys,
                 )
+            step_aux = self._pending_eval_aux
+            self._pending_eval_aux = None
+            if step_aux:
+                for name, value in step_aux.items():
+                    eval_aux_chunks.setdefault(name, []).append(value.detach())
 
             # Per-batch progress hook (HF parity); progress bars / NES
             # callbacks rely on this firing once per eval batch.
@@ -2511,6 +2549,17 @@ class DPTrainer:
         metrics: dict[str, Any] = {}
         if loss_samples > 0:
             metrics["loss"] = total_loss / loss_samples
+
+        # Per-example eval telemetry (e.g. DPO ``rewards/*``): gather each
+        # accumulated per-example tensor across ranks and mean. Bare keys here;
+        # ``with_metric_prefix`` below namespaces them as ``{prefix}_<key>``.
+        if eval_aux_chunks:
+            from opaque.distributed import gather_for_metrics
+
+            for name, chunks in eval_aux_chunks.items():
+                gathered = gather_for_metrics(torch.cat(chunks))
+                if gathered.numel() > 0:
+                    metrics[name] = float(gathered.float().mean().item())
 
         # HF parity: under DDP each rank's dataloader sees a per-rank
         # shard (``local_shard``) so ``len(dataset)`` reports per-rank
@@ -3049,16 +3098,16 @@ class DPTrainer:
         batch_keys: tuple[str, ...],
         *,
         return_logits: bool = False,
-        return_aux: bool = False,
+        with_metrics: bool = False,
     ) -> tuple[Callable[..., Any], tuple[int, ...]]:
-        """Wrap :meth:`compute_per_example_loss` for ``vmap(grad(...))``.
+        """Wrap the per-example loss hook for ``vmap(grad(...))``.
 
-        Bridges the user-facing override hook (``compute_per_example_loss``,
-        kwargs-style) to ``clipped_grad``'s positional contract:
-        ``(trainable_params, *batch_args) -> scalar_loss``.  The training
-        loop concerns — bf16 autocast and ``torch.compile`` — wrap around
-        the user's per-example loss math here so subclasses don't have to
-        reimplement them.
+        Bridges the user-facing override hooks (``compute_per_example_loss`` or,
+        when ``with_metrics``, the richer ``compute_per_example_loss_and_metrics``)
+        to ``clipped_grad``'s positional contract
+        ``(trainable_params, *batch_args) -> scalar_loss``. The training-loop
+        concerns — bf16 autocast and ``torch.compile`` — wrap around the user's
+        per-example loss math here so subclasses don't have to reimplement them.
 
         Args:
             fmodel: Functional model from
@@ -3069,10 +3118,11 @@ class DPTrainer:
                 (discovered via :meth:`_discover_batch_keys`).
             return_logits: When ``True``, the closure returns
                 ``(loss, logits)`` instead of just ``loss``.
-            return_aux: When ``True``, the closure returns ``(loss, aux_dict)``
-                of per-example telemetry; the caller pairs this with
-                ``_create_grad_fn(..., has_aux=True)`` so ``clipped_grad``
-                forwards ``aux_dict`` into ``ClippedGradAux.loss_aux``.
+            with_metrics: When ``True``, the closure returns ``(loss, aux_dict)``
+                via :meth:`compute_per_example_loss_and_metrics`; the caller
+                pairs this with ``_create_grad_fn(..., has_aux=True)`` so
+                ``clipped_grad`` forwards ``aux_dict`` into
+                ``ClippedGradAux.loss_aux``.
 
         Returns:
             ``(per_example_loss_fn, batch_argnums)``.
@@ -3084,6 +3134,13 @@ class DPTrainer:
         # is unsupported).
         autocast_active = amp_dtype is not None
 
+        def _call(merged: dict[str, Tensor], inputs: dict[str, Tensor]) -> Any:
+            if with_metrics:
+                return self.compute_per_example_loss_and_metrics(fmodel, merged, inputs)
+            return self.compute_per_example_loss(
+                fmodel, merged, inputs, return_logits=return_logits
+            )
+
         def per_example_loss(
             trainable: dict[str, Tensor],
             *batch_args: Tensor,
@@ -3092,21 +3149,9 @@ class DPTrainer:
             inputs = dict(zip(keys, batch_args, strict=True))
             if autocast_active:
                 with torch.autocast(device_type=device_type, dtype=amp_dtype):
-                    result = self.compute_per_example_loss(
-                        fmodel,
-                        merged,
-                        inputs,
-                        return_logits=return_logits,
-                        return_aux=return_aux,
-                    )
+                    result = _call(merged, inputs)
             else:
-                result = self.compute_per_example_loss(
-                    fmodel,
-                    merged,
-                    inputs,
-                    return_logits=return_logits,
-                    return_aux=return_aux,
-                )
+                result = _call(merged, inputs)
 
             return result
 
