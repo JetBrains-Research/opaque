@@ -194,6 +194,159 @@ def test_dpo_reference_free_trains_without_precompute(tmp_path):
     assert out.global_step == 2
 
 
+def test_dpo_wpo_weighting_trains(tmp_path):
+    torch.manual_seed(0)
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        ref_model=_tiny_model(),
+        args=_args(
+            DPOConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="sigmoid",
+            use_weighting=True,
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    out = trainer.train()
+    assert out.global_step == 2
+
+
+# ----------------------------------------------------------------------
+# DP-purity: the per-example loss for example i depends only on example i.
+# ----------------------------------------------------------------------
+def _per_example_losses(trainer, batch):
+    """vmap ``compute_per_example_loss`` over a collated batch (the DP path)."""
+    from opaque.functional import make_functional
+
+    fmodel, trainable, frozen = make_functional(
+        trainer.model, partition_trainable=True
+    )
+    keys = [k for k, v in batch.items() if isinstance(v, torch.Tensor)]
+
+    def fn(tp, *batch_args):
+        merged = {**frozen, **tp}
+        return trainer.compute_per_example_loss(
+            fmodel, merged, dict(zip(keys, batch_args))
+        )
+
+    vmapped = torch.vmap(fn, in_dims=(None,) + (0,) * len(keys))
+    return vmapped(trainable, *[batch[k] for k in keys]), keys
+
+
+def test_sft_dp_purity_per_example_independence(tmp_path):
+    torch.manual_seed(0)
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(SFTConfig, tmp_path, max_length=8, loss_type="nll"),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    trainer.model.eval()
+    rows = [trainer.train_dataset[i] for i in range(4)]
+    batch = trainer.data_collator(rows)
+    losses0, _ = _per_example_losses(trainer, batch)
+
+    # Perturb only example 0's tokens; examples 1..3 must be untouched.
+    batch2 = {k: v.clone() for k, v in batch.items()}
+    batch2["input_ids"][0, 1] = (batch2["input_ids"][0, 1] + 1) % 64
+    losses1, _ = _per_example_losses(trainer, batch2)
+
+    assert not torch.allclose(losses0[0], losses1[0])
+    assert torch.allclose(losses0[1:], losses1[1:])
+
+
+def test_dpo_dp_purity_per_example_independence(tmp_path):
+    torch.manual_seed(0)
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        ref_model=_tiny_model(),
+        args=_args(DPOConfig, tmp_path, max_length=8, loss_type="sigmoid"),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    trainer.model.eval()
+    rows = [trainer.train_dataset[i] for i in range(4)]
+    batch = trainer.data_collator(rows)
+    losses0, _ = _per_example_losses(trainer, batch)
+
+    batch2 = {k: v.clone() for k, v in batch.items()}
+    batch2["chosen_input_ids"][0, 3] = (batch2["chosen_input_ids"][0, 3] + 1) % 64
+    losses1, _ = _per_example_losses(trainer, batch2)
+
+    assert not torch.allclose(losses0[0], losses1[0])
+    assert torch.allclose(losses0[1:], losses1[1:])
+
+
+# ----------------------------------------------------------------------
+# Numeric parity: the trainer wires the primitives correctly.
+# ----------------------------------------------------------------------
+def test_sft_loss_matches_direct_nll(tmp_path):
+    from opaque.alignment.sft.loss import nll_loss
+
+    torch.manual_seed(0)
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(SFTConfig, tmp_path, max_length=8, loss_type="nll"),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    trainer.model.eval()
+    rows = [trainer.train_dataset[i] for i in range(4)]
+    batch = trainer.data_collator(rows)
+    losses, _ = _per_example_losses(trainer, batch)
+
+    with torch.no_grad():
+        out = trainer.model(
+            input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
+        )
+        expected = nll_loss(out.logits, batch["labels"])
+    assert torch.allclose(losses, expected, atol=1e-4)
+
+
+def test_dpo_loss_matches_direct_sigmoid(tmp_path):
+    from opaque.alignment.dpo.loss import sequence_logp, sigmoid_loss
+
+    torch.manual_seed(0)
+    beta = 0.1
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        ref_model=_tiny_model(),
+        args=_args(
+            DPOConfig, tmp_path, max_length=8, loss_type="sigmoid", beta=beta
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    trainer.model.eval()
+    rows = [trainer.train_dataset[i] for i in range(4)]
+    batch = trainer.data_collator(rows)
+    losses, _ = _per_example_losses(trainer, batch)
+
+    with torch.no_grad():
+        c = trainer.model(
+            input_ids=batch["chosen_input_ids"],
+            attention_mask=batch["chosen_attention_mask"],
+        )
+        r = trainer.model(
+            input_ids=batch["rejected_input_ids"],
+            attention_mask=batch["rejected_attention_mask"],
+        )
+        c_lp = sequence_logp(
+            c.logits, batch["chosen_input_ids"], batch["chosen_completion_mask"]
+        )
+        r_lp = sequence_logp(
+            r.logits, batch["rejected_input_ids"], batch["rejected_completion_mask"]
+        )
+        expected = sigmoid_loss(
+            c_lp - batch["ref_chosen_logps"],
+            r_lp - batch["ref_rejected_logps"],
+            beta=beta,
+        )
+    assert torch.allclose(losses, expected, atol=1e-4)
+
+
 def test_dpo_precompute_attaches_reference_columns(tmp_path):
     # The reference precompute should add the constant ref logp columns the
     # collator emits; verified indirectly by a successful non-reference-free run

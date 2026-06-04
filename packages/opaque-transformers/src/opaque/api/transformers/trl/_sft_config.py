@@ -45,6 +45,13 @@ class SFTConfig(TrainingArguments):
     pad_to_multiple_of: int | None = None  # sft_config.py:232
     #: Number of processes for ``datasets.map`` during preprocessing.
     dataset_num_proc: int | None = None  # sft_config.py:176
+    #: Compute the loss only over assistant turns (conversational data). Uses
+    #: the ``{% generation %}``-marked training chat template + the assistant
+    #: token mask. Implies completion-only masking for chat data.
+    assistant_only_loss: bool = False  # sft_config.py:254
+    #: Path to a tokenizer dir or Jinja file whose chat template (and special
+    #: tokens) is cloned onto ``processing_class`` before tokenization.
+    chat_template_path: str | None = None  # sft_config.py:152
 
     # ---- Loss ------------------------------------------------------------
     #: ``"nll"`` (standard CE) or ``"dft"`` (Dynamic Fine-Tuning). The fused,

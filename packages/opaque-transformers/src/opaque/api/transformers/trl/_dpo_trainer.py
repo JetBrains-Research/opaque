@@ -41,7 +41,9 @@ from opaque.alignment.dpo.loss import (
     sigmoid_loss,
     sppo_loss,
     squarechipo_loss,
+    wpo_weights,
 )
+from opaque.alignment.dpo.metric import reward_metrics
 from opaque.alignment.dpo.reference import (
     compute_ref_logprobs_for_dataset,
     null_ref_context,
@@ -125,15 +127,9 @@ class DPOTrainer(DPTrainer):
         self._rpo_alpha = args.rpo_alpha
         self._reference_free = bool(args.reference_free)
         self._length_normalized = any(lt in _NORM_LOSSES for lt in self._loss_type)
+        self._use_weighting = bool(args.use_weighting)
         # Build the head dispatch eagerly so an unknown loss_type fails now.
         self._heads = [_DPO_HEADS[name] for name in self._loss_type]
-        if args.use_weighting:
-            # WPO is not DP-incompatible — just not wired yet (lands in the DPO
-            # breadth phase). Fail with a plain not-implemented signal.
-            raise NotImplementedError(
-                "use_weighting (WPO) is not implemented yet; it lands in the "
-                "DPO-breadth phase."
-            )
 
         # ---- tokenizer ----------------------------------------------------
         processing_class = self._resolve_tokenizer(model, processing_class)
@@ -521,9 +517,64 @@ class DPOTrainer(DPTrainer):
             rejected_lr = rejected_logp - inputs["ref_rejected_logps"]
 
         loss = self.dpo_loss(chosen_lr, rejected_lr, chosen_logp=chosen_logp)
+
+        # WPO (arXiv:2406.11827): reweight by the policy's detached average
+        # completion probability on each side. The weight is per-example and
+        # carries no gradient (``wpo_weights`` detaches), so per-example DP is
+        # preserved.
+        if self._use_weighting:
+            weight = self._wpo_weight(
+                chosen_out.logits,
+                inputs["chosen_input_ids"],
+                inputs["chosen_completion_mask"],
+            ) * self._wpo_weight(
+                rejected_out.logits,
+                inputs["rejected_input_ids"],
+                inputs["rejected_completion_mask"],
+            )
+            loss = loss * weight
+
         if return_logits:
             return loss, chosen_out.logits
         return loss
+
+    @staticmethod
+    def _wpo_weight(
+        logits: torch.Tensor,
+        input_ids: torch.Tensor,
+        completion_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Detached WPO weight for one side (causal-LM shift + completion mask)."""
+        shifted_logits = logits[..., :-1, :]
+        shifted_ids = input_ids[..., 1:]
+        shifted_mask = completion_mask[..., 1:]
+        # Per-token logp of the realised next token (public log_softmax + gather;
+        # equivalent to selective_log_softmax, kept on the public boundary).
+        per_token_logps = torch.log_softmax(shifted_logits, dim=-1).gather(
+            -1, shifted_ids.unsqueeze(-1)
+        ).squeeze(-1)
+        return wpo_weights(per_token_logps, shifted_mask)
+
+    def get_batch_loss_metrics(
+        self,
+        chosen_logp: torch.Tensor,
+        rejected_logp: torch.Tensor,
+        ref_chosen_logps: torch.Tensor | None = None,
+        ref_rejected_logps: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Reward telemetry for a batch of logps (eager; for eval logging).
+
+        Mirrors ``trl.DPOTrainer.get_batch_loss_metrics``' reward block: returns
+        chosen/rejected rewards, their margin, and the preference accuracy via
+        :func:`opaque.alignment.dpo.metric.reward_metrics`. Detached — telemetry
+        only, never released.
+        """
+        if self._reference_free or ref_chosen_logps is None:
+            chosen_lr, rejected_lr = chosen_logp, rejected_logp
+        else:
+            chosen_lr = chosen_logp - ref_chosen_logps
+            rejected_lr = rejected_logp - ref_rejected_logps
+        return reward_metrics(chosen_lr, rejected_lr, beta=self._beta)
 
 
 def _is_peft_model(model: Any) -> bool:
