@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 from opaque.alignment.data import (
     apply_chat_template_with_mask,
+    clone_chat_template,
     get_training_chat_template,
 )
 from opaque.alignment.sft.collator import language_modeling_collator
@@ -91,6 +92,12 @@ class SFTTrainer(DPTrainer):
 
         # ---- tokenizer / processing_class ---------------------------------
         processing_class = self._resolve_tokenizer(model, processing_class, args)
+
+        # ---- chat template clone (resizes embeddings) ---------------------
+        if args.chat_template_path is not None:
+            model, processing_class = clone_chat_template(
+                model, processing_class, args.chat_template_path
+            )
 
         # ---- PEFT ----------------------------------------------------------
         if peft_config is not None:
@@ -177,6 +184,8 @@ class SFTTrainer(DPTrainer):
         TRL parity (sft_trainer.py:1160-1173): ``True`` for prompt-completion or
         chat datasets (an assistant/completion mask exists), else ``False``.
         """
+        if args.assistant_only_loss:
+            return True
         if args.completion_only_loss is not None:
             return bool(args.completion_only_loss)
         if dataset is None or len(dataset) == 0:
