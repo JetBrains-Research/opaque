@@ -124,4 +124,3 @@ def loss_scores(
         scores = scores - reference_scores
 
     return scores
-
