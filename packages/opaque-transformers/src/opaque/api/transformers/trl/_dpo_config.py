@@ -134,8 +134,7 @@ class DPOConfig(TrainingArguments):
             self.loss_weights = [1.0] * len(self.loss_type)
         super().__post_init__()
 
-        # TRL's own faithful validations (dpo_trainer.py:680-694). Not
-        # DP-driven rejections — kept because iteration 1 mirrors TRL.
+        # TRL's own validations (dpo_trainer.py:680-694), not DP-driven rejections.
         if "robust" in self.loss_type and not 0.0 <= self.label_smoothing < 0.5:
             raise ValueError(
                 "Robust DPO (loss_type='robust') requires label_smoothing in "

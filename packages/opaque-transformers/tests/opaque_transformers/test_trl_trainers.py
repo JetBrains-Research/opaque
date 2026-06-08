@@ -256,9 +256,9 @@ def test_sft_log_completion_metrics_false_skips_completion_keys(tmp_path):
 
 
 def test_sft_activation_offloading_inherited_base_field(tmp_path):
-    # ``activation_offloading`` is the single inherited base field (the SFT
-    # duplicate + alias shim were removed). The config accepts it on SFTConfig
-    # and the base DPTrainer reader sees the same flag — no SFT-side wiring.
+    # ``activation_offloading`` is inherited from the base ``TrainingArguments``
+    # — the config accepts it on ``SFTConfig`` and the base ``DPTrainer`` reader
+    # sees the same flag; no SFT-side override.
     args = _args(
         SFTConfig, tmp_path, max_length=8, loss_type="nll", activation_offloading=True
     )
@@ -361,7 +361,7 @@ def test_sft_metrics_seam_failsafe_on_missing_logits(tmp_path):
 
 def test_sft_honors_custom_compute_loss_func(tmp_path):
     # A custom per-example compute_loss_func(outputs, labels) -> scalar is routed
-    # through the vmap path (previously silently ignored).
+    # through the vmap path.
     torch.manual_seed(0)
     called = {"n": 0}
 
