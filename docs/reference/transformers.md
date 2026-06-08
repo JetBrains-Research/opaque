@@ -328,7 +328,7 @@ NPU, XLA) are rejected with a redirect message.
 | `include_tokens_per_second` | `bool` | `False` | Emit `train_tokens_per_second` in end-of-train metrics. |
 | `include_num_input_tokens_seen` | `bool \| str` | `False` | `{"no", "all", "non_padding"}`.  `"non_padding"` uses `attention_mask` or `pad_token_id`. |
 | `skip_memory_metrics` | `bool` | `True` | Skip HF-borrowed `TrainerMemoryTracker` snapshots. |
-| `cpu_offload_activations` | `bool` | `False` | Offload activations to CPU between forward and backward. |
+| `activation_offloading` | `bool` | `False` | Offload activations to CPU between forward and backward. |
 | `debug` | `list \| str \| None` | `""` | HF debug flags.  Supports `"underflow_overflow"`. |
 
 ### Validation
@@ -389,6 +389,166 @@ class TrainOutput(NamedTuple):
 
 Returned by `train()`.  Mirrors HF's `TrainOutput`.
 
+## `opaque.transformers.trl` — SFT/DPO trainers
+
+TRL-style class trainers built on `DPTrainer`.  Import the stable façade:
+
+```python
+from opaque.transformers.trl import (
+    SFTConfig,
+    SFTTrainer,
+    DPOConfig,
+    DPOTrainer,
+)
+```
+
+| Symbol | Purpose |
+|---|---|
+| `SFTTrainer` | DP supervised fine-tuning trainer; mirrors `trl.SFTTrainer`. |
+| `SFTConfig` | SFT training arguments — **extends `TrainingArguments`**. |
+| `DPOTrainer` | DP Direct Preference Optimization trainer; mirrors `trl.DPOTrainer`. |
+| `DPOConfig` | DPO training arguments — **extends `TrainingArguments`**. |
+
+`SFTConfig` / `DPOConfig` subclass
+[`TrainingArguments`](#trainingarguments), so **every** inherited field
+(privacy / clipping / sampling, optimizer / LR / schedule, eval / save,
+`activation_offloading`, …) is settable directly on them.  Only the
+SFT/DPO-specific fields are listed below; for task-shaped usage see the
+[SFT & DPO trainers guide](../alignment/trainers.md).
+
+!!! note "`gradient_accumulation_steps`"
+    Inherited from the base config as a read-only property pinned to `1`
+    (no field).  Passing it to a config raises `TypeError`: under Poisson
+    per-example DP, one round is one optimizer step.
+
+### `SFTTrainer`
+
+```python
+SFTTrainer(
+    model: PreTrainedModel | str | None = None,
+    args: SFTConfig | None = None,
+    data_collator: Callable | None = None,
+    train_dataset: Dataset | None = None,
+    eval_dataset: Dataset | None = None,
+    processing_class: PreTrainedTokenizerBase | None = None,
+    compute_loss_func: Callable | None = None,
+    compute_metrics: Callable | None = None,
+    callbacks: list[TrainerCallback] | None = None,
+    optimizers: tuple[Any | None, Any | None] = (None, None),
+    optimizer_cls_and_kwargs: tuple[Callable, dict] | None = None,
+    preprocess_logits_for_metrics: Callable | None = None,
+    peft_config: Any = None,
+    formatting_func: Callable[[dict], str] | None = None,
+)
+```
+
+| Argument | Notes |
+|---|---|
+| `model` | Module, or a **string** name/path loaded via `AutoModelForCausalLM.from_pretrained(model, **args.model_init_kwargs)`. |
+| `args` | A plain `TrainingArguments` is upcast to `SFTConfig` field-by-field; `None` ⇒ `SFTConfig(output_dir="trainer_output")`. |
+| `processing_class` | Tokenizer; loaded from the model's `_name_or_path` when omitted.  Pad token falls back to EOS. |
+| `compute_loss_func` | Per-example `(outputs, labels) -> scalar`, run **under vmap**.  Honoured only on `loss_type="nll"`; rejected for `dft` / `chunked_nll`. |
+| `peft_config` | When set, wraps the model with `get_peft_model`; chat-template-added tokens are marked trainable. |
+| `formatting_func` | `example -> str`, rendered into `dataset_text_field` before tokenization. |
+
+`optimizers` (non-`None`) is rejected — `DPTrainer` owns the functional
+optimizer.
+
+### `SFTConfig`
+
+SFT-specific fields on top of `TrainingArguments`.
+
+| Field | Type | Default | Purpose |
+|---|---|---|---|
+| `learning_rate` | `float` | `2e-5` | TRL default (overrides the base `5e-5`). |
+| `model_init_kwargs` | `dict \| None` | `None` | Forwarded to `from_pretrained` when `model` is a string; ignored for a module. |
+| `dataset_text_field` | `str` | `"text"` | Column holding raw text on a language-modeling dataset. |
+| `max_length` | `int \| None` | `1024` | Tokenized sequence length cap; `None` disables truncation (keep-start). |
+| `completion_only_loss` | `bool \| None` | `None` | Score only completion tokens.  `None` auto-detects from the dataset format. |
+| `assistant_only_loss` | `bool` | `False` | Score only assistant turns of chat data (installs the `{% generation %}` template + mask). |
+| `eos_token` | `str \| None` | `None` | EOS appended to plain-text examples; overrides `tokenizer.eos_token` when set, else the tokenizer's own EOS is used. |
+| `pad_to_multiple_of` | `int \| None` | `None` | Round the padded batch length up to a multiple. |
+| `dataset_num_proc` | `int \| None` | `None` | Processes for `datasets.map` preprocessing. |
+| `chat_template_path` | `str \| None` | `None` | Tokenizer dir / Jinja file whose chat template + special tokens are cloned onto `processing_class` (resizes embeddings). |
+| `loss_type` | `str` | `"nll"` | `"nll"` (CE) or `"dft"` (Dynamic Fine-Tuning).  Unknown values fail at the loss dispatch. |
+| `log_completion_metrics` | `bool` | `True` | Log per-step `entropy` / `mean_token_accuracy`; `False` skips them. |
+| `logging_steps` | `float` | `10` | TRL default (overrides base `500`). |
+| `gradient_checkpointing` | `bool` | `True` | TRL default (overrides base `False`). |
+
+`__post_init__` pins `remove_unused_columns=False` (the collator consumes
+raw columns) and auto-enables `bf16` when the hardware supports it and no
+precision was explicitly chosen.
+
+### `DPOTrainer`
+
+```python
+DPOTrainer(
+    model: PreTrainedModel | str | None = None,
+    ref_model: PreTrainedModel | str | None = None,
+    args: DPOConfig | None = None,
+    data_collator: Callable | None = None,
+    train_dataset: Dataset | None = None,
+    eval_dataset: Dataset | None = None,
+    processing_class: PreTrainedTokenizerBase | None = None,
+    compute_metrics: Callable | None = None,
+    callbacks: list[TrainerCallback] | None = None,
+    optimizers: tuple[Any | None, Any | None] = (None, None),
+    optimizer_cls_and_kwargs: tuple[Callable, dict] | None = None,
+    preprocess_logits_for_metrics: Callable | None = None,
+    peft_config: Any = None,
+)
+```
+
+| Argument | Notes |
+|---|---|
+| `model` | Module or string name/path (loaded with `model_init_kwargs`). |
+| `ref_model` | Module, a **string** name/path (loaded with `model_init_kwargs`), or `None`.  `None` ⇒ PEFT null-ref (adapter disabled), an auto-loaded copy for a string/path policy, or skipped for a reference-free `loss_type`.  Must be a different object from `model`. |
+| `args` | A plain `TrainingArguments` is upcast to `DPOConfig`; `None` ⇒ `DPOConfig(output_dir="trainer_output")`. |
+| `peft_config` | Wraps the model with `get_peft_model`.  TR-DPO (`sync_ref_model`) is rejected under PEFT. |
+
+There is **no `compute_loss_func`** (the DPO loss is built from the
+configured heads) and **no `reference_free` flag** — reference-need is
+derived from `loss_type`.
+
+### `DPOConfig`
+
+DPO-specific fields on top of `TrainingArguments`.
+
+| Field | Type | Default | Purpose |
+|---|---|---|---|
+| `learning_rate` | `float` | `1e-6` | TRL default. |
+| `model_init_kwargs` | `dict \| None` | `None` | Forwarded to `from_pretrained` for a string `model` **and** a string `ref_model`. |
+| `loss_type` | `list[str] \| str` | `["sigmoid"]` | One or more head names (a list ⇒ MPO).  A bare string is coerced to a one-element list.  See the [head menu](../alignment/trainers.md#the-loss_type-menu). |
+| `loss_weights` | `list[float] \| None` | `None` | Per-loss MPO weights; `None` ⇒ all-ones.  Must match `len(loss_type)`. |
+| `beta` | `float` | `0.1` | Policy–reference KL strength (τ for IPO). |
+| `label_smoothing` | `float` | `0.0` | Robust-DPO flip prob `[0, 0.5)`; ε for EXO. |
+| `f_divergence_type` | `str` | `"reverse_kl"` | `reverse_kl` / `forward_kl` / `js_divergence` / `alpha_divergence`. |
+| `f_alpha_divergence_coef` | `float` | `0.5` | α coefficient for `alpha_divergence`. |
+| `ld_alpha` | `float \| None` | `None` | LD-DPO verbose-token weight `[0, 1]`; `None` ⇒ standard DPO. |
+| `use_weighting` | `bool` | `False` | WPO length-normalized probability weighting. |
+| `discopop_tau` | `float` | `0.05` | DiscoPOP temperature. |
+| `simpo_gamma` | `float` | `0.5` | SimPO target reward margin γ. |
+| `cpo_alpha` | `float` | `1.0` | CPO chosen-NLL regularizer weight. |
+| `orpo_lambda` | `float` | `1.0` | ORPO odds-ratio term weight. |
+| `precompute_ref_batch_size` | `int \| None` | `None` | Reference-precompute batch size; defaults to the train batch size. |
+| `disable_dropout` | `bool` | `True` | Zero dropout in policy + reference before training. |
+| `sync_ref_model` | `bool` | `False` | TR-DPO: EMA-sync the reference toward the policy (full FT only; reference-using `loss_type`). |
+| `ref_model_mixup_alpha` | `float` | `0.6` | TR-DPO EMA mixup α: `ref ← (1-α)·ref + α·policy`. |
+| `ref_model_sync_steps` | `int` | `512` | TR-DPO sync cadence (steps). |
+| `max_length` | `int \| None` | `1024` | Tokenized sequence length cap (keep-start). |
+| `pad_to_multiple_of` | `int \| None` | `None` | Round the padded batch length up to a multiple. |
+| `dataset_num_proc` | `int \| None` | `None` | Processes for `datasets.map` preprocessing. |
+| `log_completion_metrics` | `bool` | `True` | Log per-step `logits/*` / `entropy` / `mean_token_accuracy`; rewards + `logps/*` are always logged. |
+| `logging_steps` | `float` | `10` | TRL default. |
+| `gradient_checkpointing` | `bool` | `True` | TRL default. |
+
+The reference-free heads are `{"sft", "simpo", "cpo", "orpo"}`; a run is
+reference-free iff *every* configured head is in that set.
+`__post_init__` coerces `loss_type` to a list, defaults `loss_weights`,
+pins `remove_unused_columns=False`, validates label-smoothing bounds /
+weight lengths / duplicate heads / TR-DPO reference-need, and auto-enables
+`bf16` on supporting hardware.
+
 ## Runtime patches
 
 ```python
@@ -411,6 +571,11 @@ For per-model patches and the kernel surface, see
       heading_level: 3
 
 ::: opaque.transformers.trainer
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.transformers.trl
     options:
       show_source: true
       heading_level: 3

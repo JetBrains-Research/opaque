@@ -88,6 +88,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `TrainingArguments` — every field grouped by concern (privacy, compute, patches, save, eval, …)
   - `EvaluationResult`, `TrainOutput` — return types
   - `patch_all`, `is_patched`, `is_vmap_patched` — runtime-patch entry points
+  - `opaque.transformers.trl` — TRL-style `SFTTrainer` / `DPOTrainer` (+ `SFTConfig` / `DPOConfig`), built on `DPTrainer`
 
 ## Quick Reference
 
