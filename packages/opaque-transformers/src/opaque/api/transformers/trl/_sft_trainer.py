@@ -278,8 +278,11 @@ class SFTTrainer(DPTrainer):
         datasets, optionally apply a ``formatting_func``, then dispatch by
         format (plain text / prompt-completion / chat).
         """
-        if dataset is None:
-            return None
+        if dataset is None or len(dataset) == 0:
+            # Empty dataset: skip tokenization so ``DPTrainer``'s clearer
+            # "train_dataset is empty" validation fires later, rather than an
+            # IndexError on the ``dataset[0]`` chat-column probe below.
+            return dataset
         column_names = list(getattr(dataset, "column_names", []) or [])
         if "input_ids" in column_names:
             return dataset  # already tokenized

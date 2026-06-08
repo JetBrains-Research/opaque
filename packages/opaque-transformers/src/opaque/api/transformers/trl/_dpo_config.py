@@ -8,10 +8,10 @@ Design philosophy (plan §3.3): no bespoke "rejection" code. Batch-coupled
 losses (``aot`` / ``aot_unpaired``) have no per-example DP meaning — there is no
 ``aot`` head in ``opaque-alignment``, so ``loss_type=["aot"]`` fails with an
 ordinary ``KeyError`` at the trainer's dispatch table. TR-DPO sync
-(``sync_ref_model`` …) and ``padding_free`` are absent from this surface (they
-land in iteration 2), so passing them is a standard unexpected-keyword
-``TypeError``. TRL's *own* faithful validations (label-smoothing bounds) are
-kept, since iteration 1 mirrors TRL.
+(``sync_ref_model`` / ``ref_model_mixup_alpha`` / ``ref_model_sync_steps``) *is*
+supported (see the fields below); ``padding_free`` is absent from this surface,
+so passing it is a standard unexpected-keyword ``TypeError``. TRL's *own*
+faithful validations (label-smoothing bounds) are kept.
 """
 
 from __future__ import annotations
