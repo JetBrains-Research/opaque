@@ -137,6 +137,10 @@ This section records the resolved questions and the agreed work.
   the top of `__init__` (before tokenization) so it fails fast, and reconsider
   whether the magic auto-load fallback should exist at all vs. requiring explicit
   `ref_model=`/`reference_free=True` (opaque-native: no magic).
+  - **Implemented:** the no-reference check is **hoisted** to the top of
+    `__init__` (fails fast before tokenize/precompute); the auto-load fallback is
+    **kept** (now threading `model_init_kwargs`). The message points at the
+    reference-free `loss_type`s instead of the removed `reference_free` flag.
 - **`model_init_kwargs` is reverted.** It is net-new in `e9ccca8` (not a
   resurfaced feature — the only other history hits are the package add #251 and
   these plan docs), only parameterises the pre-existing string-`model` load path
@@ -145,6 +149,12 @@ This section records the resolved questions and the agreed work.
   flow is "pass an instantiated model". Action: **drop the `model_init_kwargs`
   field** from both configs and the `**` in the load path; keep the bare
   `from_pretrained(model)` string convenience.
+  - **Implemented (revised — maintainer review):** *kept*, not dropped.
+    `model_init_kwargs` gives TRL parity for the string-`model` load and is now
+    also **threaded into the reference load** (the auto-loaded copy *and* a
+    string `ref_model`), so policy and reference instantiate consistently
+    (matching TRL, which reuses one dict for both). The "pass an instantiated
+    model" flow is unaffected.
 - **CPO / ORPO / SimPO fit as reference-free `DPOTrainer` heads, not new
   trainers.** Current TRL keeps them as *separate experimental* trainers
   (`trl/experimental/{cpo,orpo}/`); SimPO is a CPO loss variant; all are
@@ -156,6 +166,14 @@ This section records the resolved questions and the agreed work.
   reference-free `["sigmoid","sft"]` MPO blend) plus the few extra hyperparams
   (`simpo_gamma`, `cpo_alpha`, `orpo_lambda`). One DP preference trainer, many
   heads — matches opaque's functional philosophy and avoids TRL's trainer sprawl.
+  - **Implemented (revised):** the public `reference_free` flag was **removed**
+    entirely (not used as the surface). Reference-need is **derived from
+    `loss_type`** via `_REFERENCE_FREE_HEADS = {sft, simpo, cpo, orpo}` — `sft`
+    already proved the per-head pattern. `simpo` is a registry head; `cpo`/`orpo`
+    are trainer-composed reference-free objectives (reusing `sigmoid_loss` /
+    `odds_ratio_loss` / `chosen_nll_loss`, not new exported heads). `dpo_loss`
+    takes both the log-ratio pair and the policy-logp pair so mixed MPO lists stay
+    coherent. Flat params `simpo_gamma`/`cpo_alpha`/`orpo_lambda` as planned.
 - **`aot` / unsupported `loss_type` keeps the bare `KeyError`** (no curated
   message, no shim). Confirmed maintainer decision — overrides the audit's
   "friendlier error" suggestion. Unsupported = the head does not exist.
@@ -195,6 +213,13 @@ This section records the resolved questions and the agreed work.
   `_config.py:1048`). It has no meaning under the Poisson per-example substrate;
   passing it should be an unknown-keyword `TypeError`, not a silently-honoured-as-1
   property. (Base-config change — coordinate with any DPTrainer callers.)
+  - **Implemented (revised):** it is *already* a non-settable read-only property
+    shim — a deliberate HF-utility compat (`transformers.modelcard`'s
+    `extract_hyperparameters_from_trainer` and reporting callbacks read it off the
+    args), so passing it as a kwarg **already raises `TypeError`** and it is not a
+    field. Fully deleting the property would break those HF utilities for no
+    user-visible gain, so it is kept; the actual work was removing the stale
+    "usable knob" mentions from `docs/user-guide/huggingface/training-arguments.md`.
 - **`per_device_train_batch_size` keeps its Poisson-expected-batch semantics** —
   by design, and not identical across samplers. No code change; document the
   meaning at the field level so a porting user isn't misled.
