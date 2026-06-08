@@ -41,9 +41,11 @@ from opaque.alignment.dpo.loss import (
     ipo_loss,
     mpo_combine,
     nca_loss,
+    odds_ratio_loss,
     robust_loss,
     sequence_logp,
     sigmoid_loss,
+    simpo_loss,
     sppo_loss,
     squarechipo_loss,
     wpo_weights,
@@ -59,7 +61,7 @@ from opaque.api.transformers.trainer import DPTrainer
 # Single source of truth for PEFT detection (handles PeftModel + PeftMixedModel).
 from opaque.api.transformers.trainer._dp_trainer import _is_peft_model
 
-from ._dpo_config import DPOConfig
+from ._dpo_config import _REFERENCE_FREE_HEADS, DPOConfig
 
 # TRL ``loss_type`` name → ``opaque.alignment.dpo.loss`` head. An unknown value
 # (e.g. ``"aot"`` — batch-sort, no per-example DP meaning) raises a standard
@@ -78,13 +80,27 @@ _DPO_HEADS: dict[str, Callable] = {
     "sppo_hard": sppo_loss,
     "discopop": discopop_loss,
     "squarechipo": squarechipo_loss,
+    "simpo": simpo_loss,  # reference-free, length-normalized policy logps
     "sft": chosen_nll_loss,  # special-cased: consumes chosen_logp, not the ratio
+    # ``cpo`` / ``orpo`` are reference-free composites (a preference/odds-ratio
+    # term plus a per-token-mean NLL on the chosen completion); they don't fit
+    # the plain ``head(clr, rlr, *, beta, **kw)`` signature and are special-cased
+    # in ``dpo_loss`` like ``sft``, so they have no registry entry.
 }
 
-# Loss variants that score the *length-normalized* log-ratio (per-token mean).
-# Normalization is applied per head in ``dpo_loss`` so an MPO list may mix
-# normalized and summed variants (the reference is always precomputed summed).
-_NORM_LOSSES = frozenset({"ipo", "sigmoid_norm"})
+# Loss variants that score the *length-normalized* log-ratio / policy logp
+# (per-token mean). Normalization is applied per head in ``dpo_loss`` so an MPO
+# list may mix normalized and summed variants (the reference is always
+# precomputed summed). ``simpo`` consumes the length-normalized reference-free
+# policy logp pair.
+_NORM_LOSSES = frozenset({"ipo", "sigmoid_norm", "simpo"})
+
+# Heads ``dpo_loss`` builds by hand (they combine a preference / odds-ratio term
+# with a per-token-mean NLL, so they don't fit the plain
+# ``head(clr, rlr, *, beta, **kw)`` signature). ``sft`` keeps a registry entry
+# for documentation symmetry but is also assembled directly; ``cpo`` / ``orpo``
+# have no registry entry at all and are exempt from the eager head lookup.
+_SPECIAL_CASED_HEADS = frozenset({"cpo", "orpo"})
 
 _REF_COLUMNS = ("ref_chosen_logps", "ref_rejected_logps")
 
@@ -116,11 +132,15 @@ class DPOTrainer(DPTrainer):
                 **{f.name: getattr(args, f.name) for f in dataclasses.fields(args)}
             )
 
+        # Kwargs reused for both the string-policy load and the string/auto
+        # reference load (TRL reuses one ``model_init_kwargs`` for both).
+        self._model_init_kwargs = args.model_init_kwargs or {}
+
         if isinstance(model, str):
             from transformers import AutoModelForCausalLM
 
             model = AutoModelForCausalLM.from_pretrained(
-                model, **(args.model_init_kwargs or {})
+                model, **self._model_init_kwargs
             )
         if model is ref_model and ref_model is not None:
             raise ValueError(
@@ -137,13 +157,40 @@ class DPOTrainer(DPTrainer):
         self._f_alpha_coef = float(args.f_alpha_divergence_coef)
         self._ld_alpha = args.ld_alpha
         self._discopop_tau = float(args.discopop_tau)
-        self._reference_free = bool(args.reference_free)
+        self._simpo_gamma = float(args.simpo_gamma)
+        self._cpo_alpha = float(args.cpo_alpha)
+        self._orpo_lambda = float(args.orpo_lambda)
         self._use_weighting = bool(args.use_weighting)
-        # Per-head normalization (mixed MPO supported); the reference is always
-        # precomputed summed, and normalized log-ratios are derived in dpo_loss.
-        self._any_norm = any(lt in _NORM_LOSSES for lt in self._loss_type)
-        # Build the head dispatch eagerly so an unknown loss_type fails now.
-        self._heads = [_DPO_HEADS[name] for name in self._loss_type]
+        self._log_completion_metrics = bool(args.log_completion_metrics)
+        # FUSED-PATH GATE (plan §E, deferred — see report). The logits-free fused
+        # log-prob primitive may be selected only when telemetry is off *and* no
+        # logits-consuming feature is active (LD-DPO needs per-token logits; WPO
+        # reads per-token logps; a non-reverse-KL f-divergence remaps them). The
+        # actual kernel swap in compute_per_example_loss_and_metrics is not yet
+        # wired (CUDA-only, not CPU-testable), so this stays False for now.
+        self._fused_logp_eligible = (
+            not self._log_completion_metrics
+            and self._ld_alpha is None
+            and not self._use_weighting
+            and self._f_divergence_type == "reverse_kl"
+        )
+        self._use_fused_logp = False  # TODO(plan §E): enable once the kernel swap lands
+        # Reference-need is intrinsic to each head: a run needs a reference iff
+        # any configured head is *not* in the reference-free set. (Replaces the
+        # old public ``reference_free`` flag.)
+        self._needs_reference = any(
+            lt not in _REFERENCE_FREE_HEADS for lt in self._loss_type
+        )
+        # Per-head normalization (mixed MPO supported) is derived lazily in
+        # ``dpo_loss`` — the reference is always precomputed summed.
+        # Build the head dispatch eagerly so an unknown loss_type fails now with
+        # a standard KeyError (plan §3.3). ``cpo`` / ``orpo`` are special-cased
+        # in dpo_loss and have no registry entry, so they're exempt from the
+        # eager lookup; everything else must resolve to a registered head.
+        self._heads = [
+            _DPO_HEADS[name] if name not in _SPECIAL_CASED_HEADS else None
+            for name in self._loss_type
+        ]
 
         # ---- TR-DPO ----
         self._sync_ref_model = bool(args.sync_ref_model)
@@ -169,6 +216,34 @@ class DPOTrainer(DPTrainer):
                 "(the EMA reference tracks the full policy)."
             )
 
+        # ---- reference resolvability (hoisted before tokenize/precompute) --
+        # Cache fingerprint: include max_length (the collator truncates to it at
+        # precompute time, so different lengths must not alias) and a stable
+        # model id. For in-memory models (empty _name_or_path) use a per-run
+        # nonce so distinct models never collide on the cache (review feedback).
+        self._precompute_device = args.device
+        name_or_path = getattr(model.config, "_name_or_path", "") or ""
+        model_id = name_or_path or f"inmemory-{uuid.uuid4().hex}"
+        cache_key = ("dpo", model_id, args.max_length)
+        batch_size = args.precompute_ref_batch_size or args.per_device_train_batch_size
+
+        # A reference-using loss needs a resolvable reference. When none can be
+        # auto-loaded (in-memory policy with no path, no explicit ref_model, not
+        # PEFT) fail *now*, before the (potentially long) tokenize/precompute —
+        # not deep inside _precompute_ref_logps after the work is done.
+        if (
+            self._needs_reference
+            and ref_model is None
+            and not self._is_peft
+            and (not name_or_path or model_id.startswith("inmemory-"))
+        ):
+            raise ValueError(
+                "No reference available for a reference-using loss_type: pass "
+                "ref_model=, use a PEFT policy, use a reference-free loss_type "
+                "(simpo/cpo/orpo), or load the policy from a path so a reference "
+                "copy can be auto-loaded."
+            )
+
         # ---- collator (reused for precompute and training) ---------------
         if data_collator is None:
             data_collator = preference_collator(
@@ -183,16 +258,6 @@ class DPOTrainer(DPTrainer):
             eval_dataset = self._prepare_dataset(eval_dataset, processing_class, args)
 
         # ---- reference logps (precompute, or seed for TR-DPO) -------------
-        # Cache fingerprint: include max_length (the collator truncates to it at
-        # precompute time, so different lengths must not alias) and a stable
-        # model id. For in-memory models (empty _name_or_path) use a per-run
-        # nonce so distinct models never collide on the cache (review feedback).
-        self._precompute_device = args.device
-        name_or_path = getattr(model.config, "_name_or_path", "") or ""
-        model_id = name_or_path or f"inmemory-{uuid.uuid4().hex}"
-        cache_key = ("dpo", model_id, args.max_length)
-        batch_size = args.precompute_ref_batch_size or args.per_device_train_batch_size
-
         if self._sync_ref_model:
             train_dataset, eval_dataset = self._setup_tr_dpo(
                 model,
@@ -203,7 +268,7 @@ class DPOTrainer(DPTrainer):
                 batch_size=batch_size,
                 disable_dropout=args.disable_dropout,
             )
-        elif not self._reference_free:
+        elif self._needs_reference:
             train_dataset = self._precompute_ref_logps(
                 train_dataset,
                 model=model,
@@ -377,15 +442,26 @@ class DPOTrainer(DPTrainer):
     ) -> Any:
         """Attach ``ref_{chosen,rejected}_logps`` columns via a one-shot pass.
 
-        Resolves the reference per plan §3.2: an explicit ``ref_model``, the
-        PEFT base model (adapter disabled via ``null_ref_context``), or an
-        auto-loaded copy of the policy. A user-supplied ``ref_model`` is left in
-        the device/mode it started in (review feedback); only an auto-loaded
-        copy is freed to CPU.
+        Resolves the reference per plan §3.2: an explicit ``ref_model`` (an
+        object or a path string), the PEFT base model (adapter disabled via
+        ``null_ref_context``), or an auto-loaded copy of the policy. A
+        user-supplied ``ref_model`` *object* is left in the device/mode it
+        started in (review feedback); a string ``ref_model`` and an auto-loaded
+        copy are both instantiated here and freed to CPU after the pass.
+
+        The no-reference-available case is checked early in ``__init__`` (before
+        tokenization), so it never reaches here.
         """
         null_ref = False
-        owns_ref = False  # auto-loaded by us → safe to drop / move to CPU
-        if ref_model is not None:
+        owns_ref = False  # loaded by us → safe to drop / move to CPU
+        if isinstance(ref_model, str):
+            from transformers import AutoModelForCausalLM
+
+            ref = AutoModelForCausalLM.from_pretrained(
+                ref_model, **self._model_init_kwargs
+            )
+            owns_ref = True
+        elif ref_model is not None:
             ref = ref_model
         elif self._is_peft:
             ref = model  # base model with the adapter disabled at forward time
@@ -393,13 +469,9 @@ class DPOTrainer(DPTrainer):
         else:
             from transformers import AutoModelForCausalLM
 
-            if not model_id or model_id.startswith("inmemory-"):
-                raise ValueError(
-                    "No reference available: pass ref_model=, use a PEFT policy, "
-                    "set reference_free=True, or load the policy from a path so a "
-                    "reference copy can be auto-loaded."
-                )
-            ref = AutoModelForCausalLM.from_pretrained(model_id)
+            ref = AutoModelForCausalLM.from_pretrained(
+                model_id, **self._model_init_kwargs
+            )
             owns_ref = True
 
         orig_device = next(ref.parameters()).device
@@ -580,6 +652,11 @@ class DPOTrainer(DPTrainer):
     def _head_kwargs(self, name: str) -> dict[str, Any]:
         if name in ("sigmoid", "sigmoid_norm", "robust", "exo_pair"):
             return {"label_smoothing": self._label_smoothing}
+        if name == "simpo":
+            return {
+                "gamma": self._simpo_gamma,
+                "label_smoothing": self._label_smoothing,
+            }
         if name == "discopop":
             return {"discopop_tau": self._discopop_tau}
         return {}
@@ -612,34 +689,79 @@ class DPOTrainer(DPTrainer):
         rejected_logratio: torch.Tensor,
         *,
         chosen_logp: torch.Tensor,
+        rejected_logp: torch.Tensor,
         chosen_completion_mask: torch.Tensor,
         rejected_completion_mask: torch.Tensor,
     ) -> torch.Tensor:
         """Combine the configured loss head(s) into one per-example scalar.
 
-        ``chosen_logratio`` / ``rejected_logratio`` are the *summed*
-        ``policy_logp - ref_logp`` (or the policy logp itself when
-        ``reference_free``). Length-normalized heads (``ipo`` / ``sigmoid_norm``)
-        use the log-ratio divided by the completion length — so an MPO list may
-        mix normalized and summed variants. The ``sft`` head consumes
-        ``chosen_logp`` directly.
+        Two input pairs flow in so a mixed MPO list stays coherent:
+
+        - ``chosen_logratio`` / ``rejected_logratio`` are the *summed*
+          ``policy_logp - ref_logp`` — consumed by the **reference-using** heads
+          (``sigmoid``, ``ipo``, …). They equal the policy logps when the run is
+          reference-free (no head needs a reference).
+        - ``chosen_logp`` / ``rejected_logp`` are the *summed* policy logps —
+          consumed by the **reference-free** heads (``sft``, ``simpo``, ``cpo``,
+          ``orpo``), which score the policy's own (length-normalized) logp.
+
+        Length-normalized heads (``ipo`` / ``sigmoid_norm`` on the log-ratio,
+        ``simpo`` on the policy logp) divide by the completion length, so an MPO
+        list may freely mix normalized and summed variants. ``sft`` / ``cpo`` /
+        ``orpo`` are assembled by hand (NLL + a preference / odds-ratio term).
         """
-        chosen_norm = rejected_norm = None
-        if self._any_norm:
-            chosen_norm = chosen_logratio / self._completion_len(chosen_completion_mask)
-            rejected_norm = rejected_logratio / self._completion_len(
-                rejected_completion_mask
-            )
+        c_len = self._completion_len(chosen_completion_mask)
+        r_len = self._completion_len(rejected_completion_mask)
+
+        # Length-normalized views, computed lazily only when a head needs them.
+        lr_norm: tuple[torch.Tensor, torch.Tensor] | None = None
+        logp_norm: tuple[torch.Tensor, torch.Tensor] | None = None
+
+        def _lr_norm() -> tuple[torch.Tensor, torch.Tensor]:
+            nonlocal lr_norm
+            if lr_norm is None:
+                lr_norm = (chosen_logratio / c_len, rejected_logratio / r_len)
+            return lr_norm
+
+        def _logp_norm() -> tuple[torch.Tensor, torch.Tensor]:
+            nonlocal logp_norm
+            if logp_norm is None:
+                logp_norm = (chosen_logp / c_len, rejected_logp / r_len)
+            return logp_norm
 
         parts: dict[str, torch.Tensor] = {}
         weights: dict[str, float] = {}
         for name, weight, head in zip(self._loss_type, self._loss_weights, self._heads):
+            weights[name] = weight
+            # ---- reference-free composites (assembled by hand) ----
             if name == "sft":
                 parts[name] = chosen_nll_loss(chosen_logp)
-                weights[name] = weight
                 continue
+            if name == "cpo":
+                # sigmoid on the SUMMED policy logps + per-token-mean chosen NLL.
+                c_norm, _ = _logp_norm()
+                parts[name] = sigmoid_loss(
+                    chosen_logp, rejected_logp, beta=self._beta
+                ) + self._cpo_alpha * chosen_nll_loss(c_norm)
+                continue
+            if name == "orpo":
+                # per-token-mean chosen NLL + odds-ratio on normalized policy logps.
+                c_norm, r_norm = _logp_norm()
+                parts[name] = chosen_nll_loss(c_norm) + self._orpo_lambda * (
+                    odds_ratio_loss(c_norm, r_norm)
+                )
+                continue
+            if name == "simpo":
+                # reference-free, length-normalized policy logps; no f-divergence.
+                c_norm, r_norm = _logp_norm()
+                parts[name] = head(
+                    c_norm, r_norm, beta=self._beta, **self._head_kwargs(name)
+                )
+                continue
+
+            # ---- reference-using heads (log-ratio pair) ----
             if name in _NORM_LOSSES:
-                clr, rlr = chosen_norm, rejected_norm
+                clr, rlr = _lr_norm()
             else:
                 clr, rlr = chosen_logratio, rejected_logratio
             if self._f_divergence_type != "reverse_kl":
@@ -654,7 +776,6 @@ class DPOTrainer(DPTrainer):
                     alpha=self._f_alpha_coef,
                 )
             parts[name] = head(clr, rlr, beta=self._beta, **self._head_kwargs(name))
-            weights[name] = weight
         return mpo_combine(parts, weights)
 
     def compute_per_example_loss_and_metrics(
@@ -694,6 +815,13 @@ class DPOTrainer(DPTrainer):
             c_lp_kwargs = {"ld_alpha": self._ld_alpha, "shared_prefix_len": c_sp}
             r_lp_kwargs = {"ld_alpha": self._ld_alpha, "shared_prefix_len": r_sp}
 
+        # FUSED-PATH HOOK (plan §E, deferred — see report). When
+        # ``self._use_fused_logp`` is True the policy logp should be computed via
+        # ``fused_sequence_logp(hidden_states, lm_head_weight, ids, mask)`` (no
+        # ``(T, V)`` logits materialised). That requires the forward to expose
+        # ``output_hidden_states`` and the lm_head weight to be pulled from
+        # ``params`` — a non-trivial, CUDA-only, not-CPU-testable change, so the
+        # eager logits path below is kept authoritative for now.
         chosen_logp = sequence_logp(
             chosen_out.logits, inputs["chosen_input_ids"], c_cmask, **c_lp_kwargs
         )
@@ -701,16 +829,19 @@ class DPOTrainer(DPTrainer):
             rejected_out.logits, inputs["rejected_input_ids"], r_cmask, **r_lp_kwargs
         )
 
-        if self._reference_free:
-            chosen_lr, rejected_lr = chosen_logp, rejected_logp
-        else:
+        # Log-ratio pair for reference-using heads (== policy logp when the run
+        # has no reference). Reference-free heads read the policy-logp pair.
+        if self._needs_reference:
             chosen_lr = chosen_logp - inputs["ref_chosen_logps"]
             rejected_lr = rejected_logp - inputs["ref_rejected_logps"]
+        else:
+            chosen_lr, rejected_lr = chosen_logp, rejected_logp
 
         loss = self.dpo_loss(
             chosen_lr,
             rejected_lr,
             chosen_logp=chosen_logp,
+            rejected_logp=rejected_logp,
             chosen_completion_mask=c_cmask,
             rejected_completion_mask=r_cmask,
         )
@@ -783,21 +914,19 @@ class DPOTrainer(DPTrainer):
     ) -> dict[str, torch.Tensor]:
         """Per-example DPO telemetry (detached) — the full TRL logged set.
 
-        ``rewards/*`` from the implicit-reward log-ratios, plus the diagnostics
-        TRL also logs every step: ``logps/*`` (summed policy sequence logps),
-        ``logits/*`` (mean completion logit), ``entropy`` (mean next-token
-        entropy over completions), and ``mean_token_accuracy`` (chosen
-        completion). Every tensor is ``detach()``-ed, so the telemetry rides the
-        clipped-grad aux channel without leaking gradient into the mechanism; the
-        harness means each across the DDP-synced batch (train) and aggregates the
-        same dict in the eval loop (``eval_*``).
+        ``rewards/*`` from the implicit-reward log-ratios and ``logps/*`` (summed
+        policy sequence logps) are always logged — they're free byproducts of the
+        loss. The logits-consuming diagnostics — ``logits/*`` (mean completion
+        logit), ``entropy`` (mean next-token entropy), and ``mean_token_accuracy``
+        — are gated on ``log_completion_metrics`` (default on); when off they're
+        skipped so the loss path stays logits-light (and a future fused,
+        logits-free primitive can be selected). Every tensor is ``detach()``-ed,
+        so the telemetry rides the clipped-grad aux channel without leaking
+        gradient; the harness means each across the DDP-synced batch (train) and
+        aggregates the same dict in the eval loop (``eval_*``).
         """
         beta = self._beta
-        entropy = 0.5 * (
-            entropy_from_logits(chosen_logits, chosen_completion_mask)
-            + entropy_from_logits(rejected_logits, rejected_completion_mask)
-        )
-        return {
+        aux = {
             "rewards/chosen": (beta * chosen_logratio).detach(),
             "rewards/rejected": (beta * rejected_logratio).detach(),
             "rewards/accuracies": (chosen_logratio > rejected_logratio)
@@ -806,17 +935,27 @@ class DPOTrainer(DPTrainer):
             "rewards/margins": (beta * (chosen_logratio - rejected_logratio)).detach(),
             "logps/chosen": chosen_logp.detach(),
             "logps/rejected": rejected_logp.detach(),
-            "logits/chosen": self._masked_mean_logit(
-                chosen_logits, chosen_completion_mask
-            ).detach(),
-            "logits/rejected": self._masked_mean_logit(
-                rejected_logits, rejected_completion_mask
-            ).detach(),
-            "entropy": entropy.detach(),
-            "mean_token_accuracy": mean_token_accuracy(
-                chosen_logits, chosen_input_ids, chosen_completion_mask
-            ),
         }
+        if self._log_completion_metrics:
+            entropy = 0.5 * (
+                entropy_from_logits(chosen_logits, chosen_completion_mask)
+                + entropy_from_logits(rejected_logits, rejected_completion_mask)
+            )
+            aux.update(
+                {
+                    "logits/chosen": self._masked_mean_logit(
+                        chosen_logits, chosen_completion_mask
+                    ).detach(),
+                    "logits/rejected": self._masked_mean_logit(
+                        rejected_logits, rejected_completion_mask
+                    ).detach(),
+                    "entropy": entropy.detach(),
+                    "mean_token_accuracy": mean_token_accuracy(
+                        chosen_logits, chosen_input_ids, chosen_completion_mask
+                    ),
+                }
+            )
+        return aux
 
     @staticmethod
     def _wpo_weight(
