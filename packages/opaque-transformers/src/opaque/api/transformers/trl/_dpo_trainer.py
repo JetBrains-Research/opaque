@@ -37,6 +37,7 @@ from opaque.alignment.dpo.loss import (
     discopop_loss,
     exo_loss,
     f_divergence_remap,
+    fused_sequence_logp,
     hinge_loss,
     ipo_loss,
     mpo_combine,
@@ -105,6 +106,37 @@ _SPECIAL_CASED_HEADS = frozenset({"cpo", "orpo"})
 _REF_COLUMNS = ("ref_chosen_logps", "ref_rejected_logps")
 
 
+def _resolve_fused_handles(model: Any, eligible: bool) -> tuple[str | None, str | None]:
+    """Resolve the backbone-prefix + lm_head param-key for the fused logp path.
+
+    Returns ``(backbone_prefix, lm_head_param_name)`` — the attribute name of the
+    backbone submodule (``model.base_model_prefix``, e.g. ``"model"``) and the
+    key of the lm_head weight in ``model.named_parameters()``. The latter is found
+    by id-matching ``get_output_embeddings().weight`` against the named params, so
+    it resolves correctly even under **tied embeddings** (where ``lm_head.weight``
+    is absent and the key is the embedding's ``model.embed_tokens.weight``).
+
+    Returns ``(None, None)`` when the run is ineligible or the model does not
+    expose the ``backbone + output-embeddings`` shape the fused path needs (in
+    which case the seam keeps the eager logits path).
+    """
+    if not eligible or model is None:
+        return None, None
+    prefix = getattr(model, "base_model_prefix", None)
+    get_oe = getattr(model, "get_output_embeddings", None)
+    if not prefix or get_oe is None or getattr(model, prefix, None) is None:
+        return None, None
+    output_embeddings = get_oe()
+    weight = getattr(output_embeddings, "weight", None) if output_embeddings else None
+    if weight is None:
+        return None, None
+    name_by_id = {id(p): n for n, p in model.named_parameters()}
+    lm_head_param_name = name_by_id.get(id(weight))
+    if lm_head_param_name is None:
+        return None, None
+    return prefix, lm_head_param_name
+
+
 class DPOTrainer(DPTrainer):
     """DP Direct Preference Optimization trainer."""
 
@@ -162,19 +194,35 @@ class DPOTrainer(DPTrainer):
         self._orpo_lambda = float(args.orpo_lambda)
         self._use_weighting = bool(args.use_weighting)
         self._log_completion_metrics = bool(args.log_completion_metrics)
-        # FUSED-PATH GATE (plan §E, deferred — see report). The logits-free fused
-        # log-prob primitive may be selected only when telemetry is off *and* no
-        # logits-consuming feature is active (LD-DPO needs per-token logits; WPO
-        # reads per-token logps; a non-reverse-KL f-divergence remaps them). The
-        # actual kernel swap in compute_per_example_loss_and_metrics is not yet
-        # wired (CUDA-only, not CPU-testable), so this stays False for now.
+        # FUSED-PATH GATE (plan §E). The logits-free fused log-prob primitive may
+        # be selected only when telemetry is off *and* no logits-consuming feature
+        # is active (LD-DPO needs per-token logits; WPO reads per-token logps; a
+        # non-reverse-KL f-divergence remaps them). When eligible the seam routes
+        # the policy logp through ``fused_sequence_logp`` over the last hidden
+        # state, never materialising the ``(T, V)`` logits; the primitive's own
+        # ``lce_available`` does the final CUDA/half check and falls back to the
+        # eager projection on CPU (so this stays correct + CPU-testable).
         self._fused_logp_eligible = (
             not self._log_completion_metrics
             and self._ld_alpha is None
             and not self._use_weighting
             and self._f_divergence_type == "reverse_kl"
         )
-        self._use_fused_logp = False  # TODO(plan §E): enable once the kernel swap lands
+        # The fused path needs only the backbone's last hidden state ``(T, H)`` —
+        # NOT all ``L+1`` layers (``output_hidden_states`` returns the full stack,
+        # which for a deep model can exceed the ``(T, V)`` logits we are avoiding).
+        # We resolve the backbone submodule prefix and the lm_head weight's
+        # *param-dict key* once here. ``get_output_embeddings().weight`` id-matched
+        # against ``named_parameters()`` resolves the key robustly, including tied
+        # embeddings (where ``lm_head.weight`` is absent and the key is
+        # ``model.embed_tokens.weight``). When the model does not expose that shape
+        # the handles come back ``None`` and the seam keeps the eager logits path.
+        self._backbone_prefix, self._lm_head_param_name = _resolve_fused_handles(
+            model, self._fused_logp_eligible
+        )
+        self._use_fused_logp = (
+            self._fused_logp_eligible and self._lm_head_param_name is not None
+        )
         # Reference-need is intrinsic to each head: a run needs a reference iff
         # any configured head is *not* in the reference-free set. (Replaces the
         # old public ``reference_free`` flag.)
@@ -778,6 +826,72 @@ class DPOTrainer(DPTrainer):
             parts[name] = head(clr, rlr, beta=self._beta, **self._head_kwargs(name))
         return mpo_combine(parts, weights)
 
+    # ------------------------------------------------------------------
+    # Fused logits-free policy logp (plan §E)
+    # ------------------------------------------------------------------
+    def _last_hidden_state(
+        self,
+        params: dict[str, Any],
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Backbone last hidden state ``(T, H)`` only — no lm_head, no all-layers.
+
+        Calls the backbone submodule (``getattr(self._model, base_model_prefix)``)
+        functionally with the backbone-scoped slice of ``params`` (the keys under
+        the ``"<prefix>."`` namespace, re-rooted to the submodule). This returns
+        just the last-layer hidden state — unlike ``output_hidden_states=True``,
+        which stacks all ``L+1`` layers and can exceed the ``(T, V)`` logits the
+        fused path is avoiding. The HF backbones in scope return the hidden state
+        as ``out[0]`` / ``out.last_hidden_state``.
+
+        The ``batchify`` vmap-safety patch is applied to the *causal-LM* class,
+        not the backbone, so under ``vmap`` (per-example ``(T,)`` inputs) we add
+        the batch dim here and strip it on exit — mirroring
+        ``with_batch_dim(min_ndim=2)``. Already-batched ``(B, T)`` inputs (the
+        eager-equivalence test path) pass through untouched.
+        """
+        prefix = self._backbone_prefix + "."
+        backbone_params = {
+            k[len(prefix) :]: v for k, v in params.items() if k.startswith(prefix)
+        }
+        backbone = getattr(self._model, self._backbone_prefix)
+        unbatched = input_ids.ndim < 2
+        if unbatched:
+            input_ids = input_ids.unsqueeze(0)
+            attention_mask = attention_mask.unsqueeze(0)
+        out = torch.func.functional_call(
+            backbone,
+            backbone_params,
+            (),
+            {"input_ids": input_ids, "attention_mask": attention_mask},
+        )
+        hidden = out[0] if isinstance(out, tuple) else out.last_hidden_state
+        return hidden.squeeze(0) if unbatched else hidden
+
+    def _fused_logp(
+        self,
+        fmodel: Callable[..., Any],
+        params: dict[str, Any],
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        completion_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """One side's summed policy logp via the logits-free fused primitive.
+
+        ``length_normalized=False`` (summed): ``dpo_loss`` derives any per-token
+        mean per head, so a single summed logp serves every head — matching the
+        eager ``sequence_logp`` call it replaces. ``fmodel`` is accepted for
+        signature symmetry with the eager branch but unused (we call the backbone
+        directly to avoid the lm_head projection).
+        """
+        del fmodel  # the backbone forward is what we need, not the lm_head forward
+        hidden = self._last_hidden_state(params, input_ids, attention_mask)
+        lm_head_weight = params[self._lm_head_param_name]
+        return fused_sequence_logp(
+            hidden, lm_head_weight, input_ids, completion_mask, length_normalized=False
+        )
+
     def compute_per_example_loss_and_metrics(
         self,
         fmodel: Callable[..., Any],
@@ -797,37 +911,60 @@ class DPOTrainer(DPTrainer):
         c_cmask = inputs["chosen_completion_mask"]
         r_cmask = inputs["rejected_completion_mask"]
 
-        chosen_out = fmodel(
-            params,
-            input_ids=inputs["chosen_input_ids"],
-            attention_mask=inputs["chosen_attention_mask"],
-        )
-        rejected_out = fmodel(
-            params,
-            input_ids=inputs["rejected_input_ids"],
-            attention_mask=inputs["rejected_attention_mask"],
-        )
+        # FUSED PATH (plan §E): eligible run (telemetry off, no logits-consuming
+        # feature) → compute the policy logps through ``fused_sequence_logp`` over
+        # the backbone's last hidden state, never materialising the ``(T, V)``
+        # logits. The full forward (model + lm_head) is skipped entirely; the
+        # only logits-consuming consumers below (WPO weighting, the logits
+        # telemetry) are gated off in this branch, so no logits are ever needed.
+        # ``fused_sequence_logp`` itself falls back to the eager projection on CPU
+        # / non-half (``lce_available`` is False), staying numerically identical
+        # and CPU-testable. LD-DPO (``ld_alpha``) is excluded from eligibility, so
+        # the fused branch never needs the ``ld_alpha`` weighting kwargs.
+        if self._use_fused_logp:
+            chosen_logp = self._fused_logp(
+                fmodel,
+                params,
+                inputs["chosen_input_ids"],
+                inputs["chosen_attention_mask"],
+                c_cmask,
+            )
+            rejected_logp = self._fused_logp(
+                fmodel,
+                params,
+                inputs["rejected_input_ids"],
+                inputs["rejected_attention_mask"],
+                r_cmask,
+            )
+            chosen_out = rejected_out = None
+        else:
+            chosen_out = fmodel(
+                params,
+                input_ids=inputs["chosen_input_ids"],
+                attention_mask=inputs["chosen_attention_mask"],
+            )
+            rejected_out = fmodel(
+                params,
+                input_ids=inputs["rejected_input_ids"],
+                attention_mask=inputs["rejected_attention_mask"],
+            )
 
-        c_lp_kwargs: dict[str, Any] = {}
-        r_lp_kwargs: dict[str, Any] = {}
-        if self._ld_alpha is not None:
-            c_sp, r_sp = self._ld_shared_prefix(c_cmask, r_cmask)
-            c_lp_kwargs = {"ld_alpha": self._ld_alpha, "shared_prefix_len": c_sp}
-            r_lp_kwargs = {"ld_alpha": self._ld_alpha, "shared_prefix_len": r_sp}
+            c_lp_kwargs: dict[str, Any] = {}
+            r_lp_kwargs: dict[str, Any] = {}
+            if self._ld_alpha is not None:
+                c_sp, r_sp = self._ld_shared_prefix(c_cmask, r_cmask)
+                c_lp_kwargs = {"ld_alpha": self._ld_alpha, "shared_prefix_len": c_sp}
+                r_lp_kwargs = {"ld_alpha": self._ld_alpha, "shared_prefix_len": r_sp}
 
-        # FUSED-PATH HOOK (plan §E, deferred — see report). When
-        # ``self._use_fused_logp`` is True the policy logp should be computed via
-        # ``fused_sequence_logp(hidden_states, lm_head_weight, ids, mask)`` (no
-        # ``(T, V)`` logits materialised). That requires the forward to expose
-        # ``output_hidden_states`` and the lm_head weight to be pulled from
-        # ``params`` — a non-trivial, CUDA-only, not-CPU-testable change, so the
-        # eager logits path below is kept authoritative for now.
-        chosen_logp = sequence_logp(
-            chosen_out.logits, inputs["chosen_input_ids"], c_cmask, **c_lp_kwargs
-        )
-        rejected_logp = sequence_logp(
-            rejected_out.logits, inputs["rejected_input_ids"], r_cmask, **r_lp_kwargs
-        )
+            chosen_logp = sequence_logp(
+                chosen_out.logits, inputs["chosen_input_ids"], c_cmask, **c_lp_kwargs
+            )
+            rejected_logp = sequence_logp(
+                rejected_out.logits,
+                inputs["rejected_input_ids"],
+                r_cmask,
+                **r_lp_kwargs,
+            )
 
         # Log-ratio pair for reference-using heads (== policy logp when the run
         # has no reference). Reference-free heads read the policy-logp pair.
@@ -858,13 +995,19 @@ class DPOTrainer(DPTrainer):
             )
             loss = loss * weight
 
+        # On the fused branch ``chosen_out`` / ``rejected_out`` are ``None`` (no
+        # logits were materialised). The logits-consuming telemetry inside
+        # ``_reward_aux`` is gated on ``log_completion_metrics`` — off whenever the
+        # fused path is active — so passing ``None`` here is safe.
+        chosen_logits = chosen_out.logits if chosen_out is not None else None
+        rejected_logits = rejected_out.logits if rejected_out is not None else None
         return loss, self._reward_aux(
             chosen_logratio=chosen_lr,
             rejected_logratio=rejected_lr,
             chosen_logp=chosen_logp,
             rejected_logp=rejected_logp,
-            chosen_logits=chosen_out.logits,
-            rejected_logits=rejected_out.logits,
+            chosen_logits=chosen_logits,
+            rejected_logits=rejected_logits,
             chosen_input_ids=inputs["chosen_input_ids"],
             chosen_completion_mask=c_cmask,
             rejected_completion_mask=r_cmask,
