@@ -110,6 +110,124 @@ faithful-TRL-baseline — not the iteration-2 redesign):
 - **Deferred to iteration 2:** `IterableDataset` / streaming datasets, and the
   cumulative `num_tokens` counter.
 
+### Iteration 2 — usage-driven refinement (2026-06-08)
+
+Driven by a four-agent **usage** audit (examples/cadence, API ergonomics vs TRL,
+docs, and the `opaque-alignment` functional layer) plus a maintainer review. The
+implementation is correct but *ahead of its surface*: features are undocumented,
+unexercised by examples, and a few primitives the trainers need aren't exposed.
+This section records the resolved questions and the agreed work.
+
+#### 2.1 Resolved questions (investigation)
+
+- **Base `TrainingArguments` is already public and inherited.** It is re-exported
+  from `opaque.transformers` (`transformers/__init__.py:23`) *and*
+  `opaque.transformers.trainer`, and `SFTConfig`/`DPOConfig` extend it — so every
+  base knob (`privacy_*`, clipping, sampling, lr/schedule, eval/save) is settable
+  directly on the trainer configs. The audit's "P0: re-export the base config"
+  is **withdrawn** — it is a *documentation* gap (users don't know the inherited
+  fields exist), not an access gap. Action: the trainer docs (§2.4) point at the
+  inherited surface; no façade re-export needed.
+- **The DPO "late `ValueError`"** (`_dpo_trainer.py:396-401`) fires inside
+  `__init__`'s `_precompute_ref_logps` (after dataset tokenization) when
+  `ref_model=None`, the policy is not PEFT, and the model was passed **in-memory**
+  (empty `_name_or_path` ⇒ no path to auto-load a reference from). Static
+  precompute itself is intrinsic to per-example DP (the `vmap` loss can only read
+  the reference as a constant column). Action: **hoist** the no-reference check to
+  the top of `__init__` (before tokenization) so it fails fast, and reconsider
+  whether the magic auto-load fallback should exist at all vs. requiring explicit
+  `ref_model=`/`reference_free=True` (opaque-native: no magic).
+- **`model_init_kwargs` is reverted.** It is net-new in `e9ccca8` (not a
+  resurfaced feature — the only other history hits are the package add #251 and
+  these plan docs), only parameterises the pre-existing string-`model` load path
+  (`from_pretrained(**kwargs)`, itself from `d826668`), and is unused by any
+  example. opaque deliberately cleaned the HPO model-init surface and the native
+  flow is "pass an instantiated model". Action: **drop the `model_init_kwargs`
+  field** from both configs and the `**` in the load path; keep the bare
+  `from_pretrained(model)` string convenience.
+- **CPO / ORPO / SimPO fit as reference-free `DPOTrainer` heads, not new
+  trainers.** Current TRL keeps them as *separate experimental* trainers
+  (`trl/experimental/{cpo,orpo}/`); SimPO is a CPO loss variant; all are
+  reference-free. `opaque-alignment` already exports `simpo_loss` and
+  `odds_ratio_loss`, and `examples/train_dpo.py` already treats `simpo`/`cpo`/
+  `orpo` as reference-free loss types (`_REFERENCE_FREE`, `train_dpo.py:209`).
+  Action: surface them as `loss_type` values on `DPOTrainer` under
+  `reference_free=True` (add `simpo`, `orpo`→`odds_ratio_loss`, and CPO as the
+  reference-free `["sigmoid","sft"]` MPO blend) plus the few extra hyperparams
+  (`simpo_gamma`, `cpo_alpha`, `orpo_lambda`). One DP preference trainer, many
+  heads — matches opaque's functional philosophy and avoids TRL's trainer sprawl.
+- **`aot` / unsupported `loss_type` keeps the bare `KeyError`** (no curated
+  message, no shim). Confirmed maintainer decision — overrides the audit's
+  "friendlier error" suggestion. Unsupported = the head does not exist.
+
+#### 2.2 Quick-win fixes (correctness / parity — land in PR #253 or a fast follow-up)
+
+- **Entropy telemetry off-by-one.** `entropy_from_logits` does not shift while
+  `mean_token_accuracy` does, so the logged `entropy` mask is misaligned by one
+  vs the next-token distribution. Fix in the primitive (`metric/_token.py`): shift
+  `logits[...,:-1,:]` / `mask[...,1:]` like `mean_token_accuracy`, update both
+  callers (`_sft_trainer.py`, `_dpo_trainer.py`) to pass the full-length mask, and
+  re-check `examples/train_sft.py`'s usage.
+- **`activation_offloading` everywhere, no back-compat.** Rename the base config
+  field `cpu_offload_activations` → `activation_offloading` *directly* (drop the
+  one-release deprecated-alias plan of §8.3/§4.12), remove `SFTConfig`'s separate
+  `activation_offloading` field and the `_sft_trainer.py:120` alias shim. Both SFT
+  and DPO then inherit the single field — closes the DPOConfig gap by construction.
+- **Match TRL base defaults** on the trainer configs: `logging_steps=10`,
+  `gradient_checkpointing=True`. `bf16`: TRL defaults it on when `fp16` is unset,
+  but opaque raises on non-Ampere/CPU — so default it **conditionally** (on only
+  when `torch.cuda.is_bf16_supported()`), not unconditionally; document the
+  divergence otherwise.
+- **Fix the doc prose drifts:** `docs/reference/alignment.md:106`
+  (`clone_chat_template` now returns the 3-tuple `(model, tokenizer,
+  added_token_ids)`) and `docs/alignment/index.md:41` ("14 heads" → 15 exported).
+- **Unify DPO loss names + functional telemetry.** Rename
+  `examples/train_dpo.py`'s `_DPO_LOSSES` keys to the TRL-canonical/trainer set
+  (`exo_pair`, `nca_pair`, `bco_pair`, `sft`, `sigmoid_norm`) so a `--loss-type`
+  copies cleanly between the functional and trainer styles; update `train_dpo.py`
+  to emit the full telemetry set (it still imports only the legacy
+  `reward_metrics`).
+
+#### 2.3 Base / `DPTrainer` surface changes
+
+- **Drop `gradient_accumulation_steps` entirely** from the `DPTrainer` /
+  `TrainingArguments` surface (currently a read-only property pinned to `1`,
+  `_config.py:1048`). It has no meaning under the Poisson per-example substrate;
+  passing it should be an unknown-keyword `TypeError`, not a silently-honoured-as-1
+  property. (Base-config change — coordinate with any DPTrainer callers.)
+- **`per_device_train_batch_size` keeps its Poisson-expected-batch semantics** —
+  by design, and not identical across samplers. No code change; document the
+  meaning at the field level so a porting user isn't misled.
+
+#### 2.4 Coverage work (examples, cadence, docs)
+
+- **Examples & cadence.** The trainer scripts (`examples/train_{sft,dpo}_trainer.py`
+  + their cadence configs) should exercise the trainer-level features that have
+  zero coverage: `compute_loss_func`, `chunked_nll`, the PEFT added-token path
+  (`chat_template_path` + `peft_config=` together), TR-DPO, MPO/`loss_weights`,
+  WPO, LD-DPO, f-divergence, `assistant_only_loss`, and the new telemetry. Add a
+  **mix** of trainer SFT/DPO examples + matching cadence presets. For features
+  that live in opaque *itself* (the functional path), fold them into
+  `examples/train_{sft,dpo}.py` where it makes sense.
+- **Fused-path auto-activation.** The fused alignment primitives
+  (`fused_sequence_logp`, `fused_nll_loss`, `fused_dft_loss`) should be selected
+  **automatically when possible** (CUDA available *and* no logits-consuming
+  feature is active), mirroring how `DPTrainer` resolves kernels — so
+  `train_sft`/`train_dpo` and the trainers use the memory-efficient path by
+  default "when no extra is assumed". **Tension to resolve:** the telemetry added
+  in iteration-1 (`entropy`, `mean_token_accuracy`, `logits/*`) needs logits, so
+  it must become **gated** (e.g. a `log_completion_metrics` toggle, default on)
+  and the trainer falls back to the eager path when telemetry/`return_logits` is
+  requested, fused otherwise.
+- **User-facing docs (matching existing style/quality).** The TRL trainers have
+  no guide, no reference autodoc, no `mkdocs.yml` nav entry, no README mention.
+  Add: (a) an "SFT/DPO trainers" guide under `docs/alignment/` in the walkthrough
+  style of `docs/alignment/sft.md`; (b) a structured reference section for
+  `opaque.transformers.trl` in the prose style of `docs/reference/transformers.md`
+  (which hand-documents `DPTrainer`/`TrainingArguments` by section) plus the
+  inherited-base-config pointer from §2.1; (c) `mkdocs.yml` nav entries; (d) an
+  `opaque-alignment` row + SFT/DPO mention in `README.md`'s package table.
+
 **Author context:** Written against `main` at `909ed54` (opaque-alignment in
 place) on branch `claude/modest-gates-WpC4d`. Supersedes the pre-merge draft
 `docs/development/trl-trainers-plan.md` (which also covered building the
