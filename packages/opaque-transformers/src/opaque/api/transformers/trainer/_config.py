@@ -419,7 +419,11 @@ class TrainingArguments:
     # =================================================================
     # Generic memory optimization (DP-shaped, not DP-specific)
     # =================================================================
-    cpu_offload_activations: bool = False
+    #: Offload saved activations to CPU during the backward pass to extend the
+    #: trainable batch past the GPU activation ceiling (host RAM is left
+    #: pageable — never pinned — so the OS can swap; see ``_setup_training``).
+    #: Trades host-transfer bandwidth for GPU memory; off by default.
+    activation_offloading: bool = False
 
     # =================================================================
     # Differential privacy (budget, mechanisms, sampling, DDP data policy)

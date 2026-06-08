@@ -1071,7 +1071,7 @@ class DPTrainer:
 
         # --- CPU offload context ---
         offload_ctx: Any = contextlib.nullcontext()
-        if a.cpu_offload_activations:
+        if a.activation_offloading:
             # ``pin_memory=False`` is forced: ``cpu_offload`` exists to
             # extend batches past the GPU ceiling, and pinning host RAM
             # would re-cap that expansion at the host limit (host-OOM is
