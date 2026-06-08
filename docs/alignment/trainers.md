@@ -290,6 +290,98 @@ channel without leaking gradient; the eval loop aggregates the same dict under
 
 `activation_offloading` (inherited base field) applies to DPO too.
 
+## Converting from HF / TRL
+
+Pipelines that already construct an HF `TrainingArguments` or a
+`trl.SFTConfig` / `trl.DPOConfig` can hand the existing config to the
+opaque equivalents through three classmethods:
+
+- `TrainingArguments.from_hf(hf_args, ...)` — base HF translation.
+- `SFTConfig.from_trl(trl_sft_cfg, ...)` — TRL SFT translation.
+  Requires the optional `trl` extra: `pip install opaque[trl]`.
+- `DPOConfig.from_trl(trl_dpo_cfg, ...)` — TRL DPO translation. Same
+  extra.
+
+Each classmethod accepts the same DP-knob kwargs as a regular opaque
+config — at least one of `privacy_noise_multiplier` or
+`privacy_target_epsilon` is required, the rest have sensible defaults.
+
+```python
+from trl import SFTConfig as TrlSFTConfig
+from opaque.transformers.trl import SFTConfig
+
+trl_cfg = TrlSFTConfig(
+    output_dir="trainer_output/sft",
+    per_device_train_batch_size=2,
+    gradient_accumulation_steps=4,
+    learning_rate=1e-4,
+    max_steps=50,
+    bf16=True,
+    dataset_text_field="text",
+    loss_type="nll",
+)
+
+opaque_cfg = SFTConfig.from_trl(
+    trl_cfg,
+    privacy_noise_multiplier=0.8,
+    clipping_norm=1.0,
+)
+# opaque_cfg.per_device_train_batch_size == 8   (2 × 4: privacy-relevant batch)
+# opaque_cfg.microbatch_size             == 2   (HF microbatch → vmap chunk)
+```
+
+### Batch semantics
+
+DP-SGD's sample-rate denominator (and therefore $\epsilon$) is the
+**logical batch** — the unit over which one gradient + noise step
+applies. In HF terms that's `per_device_train_batch_size ×
+gradient_accumulation_steps`; in opaque terms it's
+`per_device_train_batch_size` alone. The converter collapses HF's
+two-field expression into opaque's one-field expression by multiplying,
+and folds the HF microbatch into opaque's `microbatch_size` (the vmap
+chunk inside the per-example clipped-gradient pass). Dropping
+`gradient_accumulation_steps` on the floor would under-account the
+sampling amplification and emit a too-optimistic $\epsilon$.
+
+### Rejected fields (raise `ValueError`)
+
+The converter raises with a per-field rationale when the source config
+sets any of these:
+
+| HF / TRL field | Why rejected |
+|---|---|
+| `fp16=True`, `fp16_*` | DP-SGD is bf16-only; use `bf16=True`. |
+| `fsdp`, `fsdp_config`, `fsdp_*` | FSDP is not on the per-example DP path. |
+| `deepspeed` | DeepSpeed is not on the per-example DP path. |
+| `accelerator_config` | Accelerate-driven config is not used. |
+| `neftune_noise_alpha` | NEFTune would interact with the privacy accountant. |
+| `max_grad_norm` (non-default) | Pre-step global norm clipping has no opaque analogue; use `clipping_norm` for per-example DP clipping instead. |
+| `optim="paged_adamw_*"`, `*_8bit`, `*_apex_fused` | Quantized / Apex-fused optimizers are not in opaque-engine's torchopt path. |
+| `use_liger_kernel`, `liger_kernel_config` | Liger fused kernels are not on the DP-SGD path. |
+| TRL `packing=True`, `padding_free=True`, `eval_packing=True` | Sequence packing / unpadded forwards break the fixed per-example batch shape DP-SGD's vmap requires. |
+| TRL `shuffle_dataset=True` | Opaque's Poisson sampler controls ordering. |
+| TRL `truncation_mode="keep_end"` | Opaque only supports `keep_start`. |
+| TRL `pad_token=...` | Set `tokenizer.pad_token` directly. |
+| DPO `loss_type=["aot", ...]` | TRL 1.x added Adversarial Optimal Transport heads opaque doesn't implement. |
+
+### Dropped fields (silent + `RuntimeWarning` when non-default)
+
+HF fields that have no opaque effect get silently dropped — the
+converter emits a `RuntimeWarning` if the user set them to a
+non-baseline value. Examples: `do_train`, `do_eval`, `tpu_*`,
+`ray_scope`, `optim_target_modules`, `batch_eval_metrics`,
+`eval_use_gather_object`, `hub_strategy`, `accelerator_config`.
+
+Pass `strict=False` to suppress the warnings entirely.
+
+### Round-trip is one-way
+
+The classmethods only translate HF/TRL → opaque. Opaque-only fields
+(every DP knob, `microbatch_size > per_device_eval_batch_size`,
+opaque-specific clipping / sampling / noise-mechanism families) cannot
+be expressed in HF or TRL terms, so the reverse conversion is not
+supported and not implemented.
+
 ## Runnable references
 
 - [`examples/train_sft_trainer.py`](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_sft_trainer.py)

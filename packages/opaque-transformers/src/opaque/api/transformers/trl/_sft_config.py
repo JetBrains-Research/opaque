@@ -15,6 +15,7 @@ curated check here.
 from __future__ import annotations
 
 import dataclasses
+from typing import Any
 
 from opaque.api.transformers.trainer._config import TrainingArguments
 
@@ -107,3 +108,79 @@ class SFTConfig(TrainingArguments):
             if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
                 self.bf16 = True
         super().__post_init__()
+
+    @classmethod
+    def from_trl(
+        cls,
+        trl_cfg: Any,
+        *,
+        # DP knobs (one of noise_multiplier / target_epsilon required)
+        privacy_noise_multiplier: float | None = None,
+        privacy_target_epsilon: float | None = None,
+        privacy_target_delta: float | None = None,
+        clipping_norm: float | dict[str, float] = 1.0,
+        privacy_noise_mechanism: str = "gaussian",
+        privacy_noise_radius: float = 3.0,
+        clipping_mode: str = "fixed",
+        clipping_kwargs: dict[str, Any] | None = None,
+        sampling_mode: str = "auto",
+        sampling_kwargs: dict[str, Any] | None = None,
+        noise_calibration_kwargs: dict[str, Any] | None = None,
+        # Behavior
+        strict: bool = True,
+        **opaque_overrides: Any,
+    ) -> "SFTConfig":
+        """Convert a ``trl.SFTConfig`` to an opaque ``SFTConfig``.
+
+        Requires the optional ``trl`` extra:
+        ``pip install opaque[trl]``.
+
+        TRL-specific fields (``dataset_text_field``, ``chat_template_path``,
+        ``completion_only_loss``, ``assistant_only_loss``, ``loss_type``,
+        ``eos_token``, ``max_length``, ``pad_to_multiple_of``,
+        ``dataset_num_proc``, ``model_init_kwargs``) are copied directly.
+
+        Fields TRL has that opaque does not implement raise
+        ``ValueError``: ``packing``, ``padding_free``, ``eval_packing``,
+        ``shuffle_dataset``, ``truncation_mode='keep_end'``, ``pad_token``.
+
+        HF-inherited fields go through the same translation as
+        :meth:`TrainingArguments.from_hf` — same DP-knob requirement, same
+        ``per_device * gradient_accumulation_steps`` → opaque logical
+        batch collapse.
+
+        Raises
+        ------
+        ImportError
+            If the optional ``trl`` dependency is not installed.
+        TypeError
+            If ``trl_cfg`` is not a ``trl.SFTConfig`` instance.
+        ValueError
+            If a required DP knob is missing, or any REJECT_IF_SET field
+            is set to a non-default value.
+        """
+        from ..compat._trl import convert_trl_sft_config
+
+        dp_overrides: dict[str, Any] = {
+            "privacy_noise_multiplier": privacy_noise_multiplier,
+            "privacy_target_epsilon": privacy_target_epsilon,
+            "clipping_norm": clipping_norm,
+            "privacy_noise_mechanism": privacy_noise_mechanism,
+            "privacy_noise_radius": privacy_noise_radius,
+            "clipping_mode": clipping_mode,
+            "sampling_mode": sampling_mode,
+        }
+        if privacy_target_delta is not None:
+            dp_overrides["privacy_target_delta"] = privacy_target_delta
+        if clipping_kwargs is not None:
+            dp_overrides["clipping_kwargs"] = clipping_kwargs
+        if sampling_kwargs is not None:
+            dp_overrides["sampling_kwargs"] = sampling_kwargs
+        if noise_calibration_kwargs is not None:
+            dp_overrides["noise_calibration_kwargs"] = noise_calibration_kwargs
+
+        converted = convert_trl_sft_config(
+            trl_cfg, strict=strict, **dp_overrides
+        )
+        converted.update(opaque_overrides)
+        return cls(**converted)

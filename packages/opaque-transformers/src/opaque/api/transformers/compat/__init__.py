@@ -26,6 +26,20 @@ from ._hf import (
     HF_TRANSFORM_MAP,
     convert_hf_training_arguments,
 )
+from ._trl import (
+    TRL_DPO_DIRECT_FIELDS,
+    TRL_DPO_DROP_FIELDS,
+    TRL_DPO_REJECTED_FIELDS,
+    TRL_DPO_RENAME_MAP,
+    TRL_DPO_TRANSFORM_MAP,
+    TRL_SFT_DIRECT_FIELDS,
+    TRL_SFT_DROP_FIELDS,
+    TRL_SFT_REJECTED_FIELDS,
+    TRL_SFT_RENAME_MAP,
+    TRL_SFT_TRANSFORM_MAP,
+    convert_trl_dpo_config,
+    convert_trl_sft_config,
+)
 
 __all__ = [
     "DPOverrides",
@@ -36,4 +50,16 @@ __all__ = [
     "HF_RENAME_MAP",
     "HF_TRANSFORM_MAP",
     "convert_hf_training_arguments",
+    "TRL_SFT_DIRECT_FIELDS",
+    "TRL_SFT_DROP_FIELDS",
+    "TRL_SFT_REJECTED_FIELDS",
+    "TRL_SFT_RENAME_MAP",
+    "TRL_SFT_TRANSFORM_MAP",
+    "TRL_DPO_DIRECT_FIELDS",
+    "TRL_DPO_DROP_FIELDS",
+    "TRL_DPO_REJECTED_FIELDS",
+    "TRL_DPO_RENAME_MAP",
+    "TRL_DPO_TRANSFORM_MAP",
+    "convert_trl_sft_config",
+    "convert_trl_dpo_config",
 ]
