@@ -52,10 +52,11 @@ def _make_fused_lora_mlp_forward(original_forward, activation_type):
         Wu, Au, Bu, Su = _extract_lora_params(self.up_proj)
         Wd, Ad, Bd, Sd = _extract_lora_params(self.down_proj)
 
-        # Cast all kernel operands (base W and LoRA A/B) to the active kernel dtype.
-        # Required because the vmap backward does `grad_out @ W` directly, bypassing
-        # autocast dispatch — a still-fp32 W mismatches the bf16 grad_out under
-        # autocast. See peft.components._utils._active_lora_dtype.
+        # Cast all kernel operands (X, base W, LoRA A/B) to the active kernel
+        # dtype. Mirror follow_autocast in the public wrapper: the vmap backward
+        # does `grad_out @ W` directly (no autocast dispatch), and saved X is
+        # reused as a same-dtype output buffer — all must share the autocast dtype.
+        x = x.to(dtype)
         Wg, Wu, Wd = Wg.to(dtype), Wu.to(dtype), Wd.to(dtype)
         if Ag is not None:
             Ag, Bg = Ag.to(dtype), Bg.to(dtype)

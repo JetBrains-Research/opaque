@@ -44,11 +44,14 @@ def _make_lora_linear_forward(original):
         if not dropout_is_noop:
             return original(self, x, *args, **kwargs)
 
-        # Cast all kernel operands (base W, LoRA A, LoRA B) to the active dtype.
-        # Under autocast the kernel's vmap backward does `grad_out @ W` directly
-        # (bypassing autocast dispatch), so a still-fp32 W mismatches a bf16
-        # grad_out. Mirror what autocast does for `F.linear` by casting W here.
+        # Cast all kernel operands (X, base W, LoRA A, LoRA B) to the active
+        # dtype. Mirror the public ``opaque_lora_w`` wrapper's ``follow_autocast``
+        # behaviour: under autocast the kernel's interior matmuls and the vmap
+        # backward ``grad_out @ W`` / ``mm(..., out=X_flat)`` patterns all expect
+        # operands in the autocast dtype, including the saved X (which would
+        # otherwise be reused as a same-dtype output buffer in the backward).
         target_dtype = _active_lora_dtype(x)
+        x = x.to(target_dtype)
         W = self.base_layer.weight
         # Conv1D stores weight as (in_features, out_features); F.linear expects
         # (out_features, in_features).  PEFT sets fan_in_fan_out=True for Conv1D.
