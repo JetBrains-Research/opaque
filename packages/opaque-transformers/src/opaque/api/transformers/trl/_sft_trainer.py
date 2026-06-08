@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+import torch
+
 from opaque.alignment.data import (
     apply_chat_template_with_mask,
     clone_chat_template,
@@ -21,7 +23,7 @@ from opaque.alignment.data import (
 )
 from opaque.alignment.metric import entropy_from_logits, mean_token_accuracy
 from opaque.alignment.sft.collator import language_modeling_collator
-from opaque.alignment.sft.loss import dft_loss, nll_loss
+from opaque.alignment.sft.loss import dft_loss, fused_dft_loss, nll_loss
 from opaque.api.transformers.trainer import DPTrainer
 
 from ._sft_config import SFTConfig
@@ -49,6 +51,37 @@ def _detect_chat_column(row: dict) -> str | None:
         ):
             return col
     return None
+
+
+def _resolve_fused_handles(model: Any, eligible: bool) -> tuple[str | None, str | None]:
+    """Resolve the backbone-prefix + lm_head param-key for the fused loss path.
+
+    Returns ``(backbone_prefix, lm_head_param_name)`` — the attribute name of the
+    backbone submodule (``model.base_model_prefix``, e.g. ``"model"``) and the
+    key of the lm_head weight in ``model.named_parameters()``. The latter is found
+    by id-matching ``get_output_embeddings().weight`` against the named params, so
+    it resolves correctly even under **tied embeddings** (where ``lm_head.weight``
+    is absent and the key is the embedding's ``model.embed_tokens.weight``).
+
+    Returns ``(None, None)`` when the run is ineligible or the model does not
+    expose the ``backbone + output-embeddings`` shape the fused path needs (in
+    which case the seam keeps the eager logits path).
+    """
+    if not eligible or model is None:
+        return None, None
+    prefix = getattr(model, "base_model_prefix", None)
+    get_oe = getattr(model, "get_output_embeddings", None)
+    if not prefix or get_oe is None or getattr(model, prefix, None) is None:
+        return None, None
+    output_embeddings = get_oe()
+    weight = getattr(output_embeddings, "weight", None) if output_embeddings else None
+    if weight is None:
+        return None, None
+    name_by_id = {id(p): n for n, p in model.named_parameters()}
+    lm_head_param_name = name_by_id.get(id(weight))
+    if lm_head_param_name is None:
+        return None, None
+    return prefix, lm_head_param_name
 
 
 class SFTTrainer(DPTrainer):
@@ -141,8 +174,43 @@ class SFTTrainer(DPTrainer):
         # (and clears the way for the future fused logits-free loss — see the
         # FUSED PATH hook in ``compute_per_example_loss_and_metrics``).
         self._log_completion_metrics: bool = args.log_completion_metrics
-        if args.loss_type == "chunked_nll":
-            self._loss_fn: Callable | None = None
+
+        # FUSED PATH GATE (plan §E). When telemetry is off and no logits-consuming
+        # feature is active, the loss can be computed logits-free:
+        #   - ``nll`` reuses the tested model-level ``fused_linear_cross_entropy``
+        #     forward (exactly what ``chunked_nll`` does) — per-example it yields
+        #     the same mean NLL as ``nll_loss`` (verified by the equivalence test).
+        #   - ``dft`` uses the ``fused_dft_loss`` primitive over the backbone's
+        #     last hidden state (the model-level fused forward only does plain CE).
+        # A custom ``compute_loss_func`` needs the logits, and ``compute_metrics``
+        # / ``preprocess_logits_for_metrics`` read logits in the eval/metrics path,
+        # so any of those keeps the eager logits path. ``chunked_nll`` is already
+        # logits-free and is handled by its own branch.
+        self._fused_loss_eligible = (
+            args.loss_type in ("nll", "dft")
+            and not self._log_completion_metrics
+            and compute_loss_func is None
+            and compute_metrics is None
+            and preprocess_logits_for_metrics is None
+        )
+        # ``nll`` rides the model-level fused forward (enable the kernel patch as
+        # ``chunked_nll`` does); ``dft`` rides the primitive over the last hidden
+        # state. Both fall back to eager on CPU / non-half automatically.
+        self._fused_nll = self._fused_loss_eligible and args.loss_type == "nll"
+        self._fused_dft = self._fused_loss_eligible and args.loss_type == "dft"
+        # Resolve the backbone-prefix + lm_head param-key once for the ``dft``
+        # fused primitive (robust to tied embeddings); ``None`` → stay eager.
+        self._backbone_prefix, self._lm_head_param_name = _resolve_fused_handles(
+            model, self._fused_dft
+        )
+        self._fused_dft = self._fused_dft and self._lm_head_param_name is not None
+
+        if args.loss_type == "chunked_nll" or self._fused_nll:
+            # ``chunked_nll`` (always) and an eligible ``nll`` (telemetry off) both
+            # let the model compute its own loss via the fused linear-CE forward.
+            self._loss_fn: Callable | None = (
+                None if args.loss_type == "chunked_nll" else _SFT_LOSSES[args.loss_type]
+            )
             cfg = dict(args.performance_kernels_config or {})
             cfg["fused_linear_cross_entropy"] = True
             args.performance_kernels_config = cfg
@@ -368,6 +436,49 @@ class SFTTrainer(DPTrainer):
         return {"input_ids": ids}
 
     # ------------------------------------------------------------------
+    # Fused logits-free loss (plan §E) — last hidden state only
+    # ------------------------------------------------------------------
+    def _last_hidden_state(
+        self,
+        params: dict[str, Any],
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Backbone last hidden state ``(T, H)`` only — no lm_head, no all-layers.
+
+        Calls the backbone submodule (``getattr(self._model, base_model_prefix)``)
+        functionally with the backbone-scoped slice of ``params`` (the keys under
+        the ``"<prefix>."`` namespace, re-rooted to the submodule). This returns
+        just the last-layer hidden state — unlike ``output_hidden_states=True``,
+        which stacks all ``L+1`` layers and can exceed the ``(T, V)`` logits the
+        fused path is avoiding. The HF backbones in scope return the hidden state
+        as ``out[0]`` / ``out.last_hidden_state``.
+
+        The ``batchify`` vmap-safety patch is applied to the *causal-LM* class,
+        not the backbone, so under ``vmap`` (per-example ``(T,)`` inputs) we add
+        the batch dim here and strip it on exit — mirroring
+        ``with_batch_dim(min_ndim=2)``. Already-batched ``(B, T)`` inputs pass
+        through untouched.
+        """
+        prefix = self._backbone_prefix + "."
+        backbone_params = {
+            k[len(prefix) :]: v for k, v in params.items() if k.startswith(prefix)
+        }
+        backbone = getattr(self._model, self._backbone_prefix)
+        unbatched = input_ids.ndim < 2
+        if unbatched:
+            input_ids = input_ids.unsqueeze(0)
+            attention_mask = attention_mask.unsqueeze(0)
+        out = torch.func.functional_call(
+            backbone,
+            backbone_params,
+            (),
+            {"input_ids": input_ids, "attention_mask": attention_mask},
+        )
+        hidden = out[0] if isinstance(out, tuple) else out.last_hidden_state
+        return hidden.squeeze(0) if unbatched else hidden
+
+    # ------------------------------------------------------------------
     # Loss (DP per-example hook)
     # ------------------------------------------------------------------
     def compute_per_example_loss(
@@ -390,8 +501,14 @@ class SFTTrainer(DPTrainer):
         batch coupling). Per-example telemetry lives in
         :meth:`compute_per_example_loss_and_metrics`.
         """
-        if self._loss_type == "chunked_nll":
+        # FUSED PATH (plan §E): logits-free per-example loss when eligible.
+        if self._loss_type == "chunked_nll" or self._fused_nll:
             # The model computes the (logits-free, fused) NLL when given labels.
+            # ``chunked_nll`` always; an eligible ``nll`` (telemetry off, no
+            # custom loss / metrics) reuses the same tested model-level forward —
+            # per-example it equals ``nll_loss``. The fused forward falls back to
+            # the eager projection on CPU / non-half, staying numerically
+            # identical (and CPU-testable).
             out = fmodel(
                 params,
                 input_ids=inputs["input_ids"],
@@ -400,6 +517,17 @@ class SFTTrainer(DPTrainer):
             )
             loss = out["loss"]
             logits = out.get("logits")  # None on the fused path
+        elif self._fused_dft:
+            # ``dft`` has no model-level fused forward, so project the backbone's
+            # last hidden state (only ``(T, H)`` — never all ``L+1`` layers)
+            # through ``fused_dft_loss``; the primitive falls back to the eager
+            # logits form on CPU / non-half.
+            hidden = self._last_hidden_state(
+                params, inputs["input_ids"], inputs["attention_mask"]
+            )
+            lm_head_weight = params[self._lm_head_param_name]
+            loss = fused_dft_loss(hidden, lm_head_weight, inputs["labels"])
+            logits = None  # logits-free path
         else:
             out = fmodel(
                 params,
@@ -437,11 +565,12 @@ class SFTTrainer(DPTrainer):
         # entirely. The loss path still runs (and may use the logits-free
         # forward), so we do not even request logits here.
         if not self._log_completion_metrics:
-            # FUSED PATH HOOK: with telemetry off and no logits-consuming
-            # feature active, this is the point where a fused logits-free
-            # primitive (``fused_nll_loss`` / ``fused_dft_loss``) would be
-            # selected. See the module-level note / report; today the
-            # logits-free reduction is reached via ``loss_type="chunked_nll"``.
+            # FUSED PATH (plan §E): with telemetry off and no logits-consuming
+            # feature active, ``compute_per_example_loss`` takes the logits-free
+            # route — ``nll`` via the model-level ``fused_linear_cross_entropy``
+            # forward (as ``chunked_nll``), ``dft`` via the ``fused_dft_loss``
+            # primitive over the last hidden state. Both fall back to the eager
+            # projection on CPU / non-half, so the loss is identical there.
             return self.compute_per_example_loss(fmodel, params, inputs), {}
         loss, logits = self.compute_per_example_loss(
             fmodel, params, inputs, return_logits=True

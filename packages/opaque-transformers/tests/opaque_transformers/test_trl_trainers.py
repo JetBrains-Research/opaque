@@ -977,3 +977,394 @@ def test_dpo_no_reference_available_raises_early(tmp_path):
             train_dataset=_pref_dataset(),
             processing_class=_stub_tokenizer(),
         )
+
+
+# ----------------------------------------------------------------------
+# Fused logits-free path (plan §E): eligibility gating + CPU fallback-equivalence.
+#
+# On CPU the fused primitives' ``lce_available`` is False, so they fall back to
+# the eager ``hidden @ Wᵀ`` projection — numerically identical to the eager
+# logits path. These tests assert that equivalence (proving the wiring is
+# correct) and that an ineligible config keeps the eager path.
+# ----------------------------------------------------------------------
+def _tiny_model_tied() -> LlamaForCausalLM:
+    """A tiny Llama with tied input/output embeddings (no ``lm_head.weight``)."""
+    cfg = LlamaConfig(
+        vocab_size=64,
+        hidden_size=32,
+        intermediate_size=64,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=4,
+        max_position_embeddings=128,
+        tie_word_embeddings=True,
+    )
+    return LlamaForCausalLM(cfg)
+
+
+# ---- SFT: eligibility gating -----------------------------------------
+def test_sft_fused_eligible_when_telemetry_off(tmp_path):
+    # nll + telemetry off → routes through the model-level fused forward.
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(
+            SFTConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="nll",
+            log_completion_metrics=False,
+        ),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    assert trainer._fused_loss_eligible is True
+    assert trainer._fused_nll is True
+    assert trainer._fused_dft is False
+    # The kernel config is flipped on so the model computes its own NLL.
+    assert trainer.args.performance_kernels_config["fused_linear_cross_entropy"] is True
+
+
+def test_sft_dft_fused_eligible_resolves_lm_head(tmp_path):
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(
+            SFTConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="dft",
+            log_completion_metrics=False,
+        ),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    assert trainer._fused_dft is True
+    assert trainer._fused_nll is False
+    assert trainer._backbone_prefix == "model"
+    assert trainer._lm_head_param_name == "lm_head.weight"
+
+
+@pytest.mark.parametrize("loss_type", ["nll", "dft"])
+def test_sft_telemetry_on_keeps_eager(tmp_path, loss_type):
+    # Telemetry on (the default) is logits-consuming → no fused path.
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(SFTConfig, tmp_path, max_length=8, loss_type=loss_type),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    assert trainer._fused_loss_eligible is False
+    assert trainer._fused_nll is False
+    assert trainer._fused_dft is False
+    # No fused-CE forced for an eager nll/dft run.
+    assert not (trainer.args.performance_kernels_config or {}).get(
+        "fused_linear_cross_entropy", False
+    )
+
+
+def test_sft_custom_loss_func_keeps_eager(tmp_path):
+    # A custom compute_loss_func needs the logits → ineligible even telemetry-off.
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(
+            SFTConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="nll",
+            log_completion_metrics=False,
+        ),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+        compute_loss_func=lambda outputs, labels: outputs.logits.sum() * 0.0,
+    )
+    assert trainer._fused_loss_eligible is False
+    assert trainer._fused_nll is False
+
+
+# ---- SFT: CPU fallback-equivalence -----------------------------------
+@pytest.mark.parametrize("model_factory", [_tiny_model, _tiny_model_tied])
+def test_sft_fused_nll_matches_eager_on_cpu(tmp_path, model_factory):
+    # The fused (model-level) NLL path == the eager nll_loss on logits, on CPU.
+    from opaque.alignment.sft.loss import nll_loss
+
+    torch.manual_seed(0)
+    trainer = SFTTrainer(
+        model=model_factory(),
+        args=_args(
+            SFTConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="nll",
+            log_completion_metrics=False,
+        ),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    assert trainer._fused_nll is True
+    trainer.model.eval()
+    rows = [trainer.train_dataset[i] for i in range(4)]
+    batch = _to_device(trainer, trainer.data_collator(rows))
+    fused_losses, _ = _per_example_losses(trainer, batch)
+
+    with torch.no_grad():
+        out = trainer.model(
+            input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
+        )
+        expected = nll_loss(out.logits, batch["labels"])
+    assert torch.allclose(fused_losses, expected, atol=1e-4)
+
+
+@pytest.mark.parametrize("model_factory", [_tiny_model, _tiny_model_tied])
+def test_sft_fused_dft_matches_eager_on_cpu(tmp_path, model_factory):
+    # The fused dft primitive (over the last hidden state) == eager dft_loss.
+    from opaque.alignment.sft.loss import dft_loss
+
+    torch.manual_seed(0)
+    trainer = SFTTrainer(
+        model=model_factory(),
+        args=_args(
+            SFTConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="dft",
+            log_completion_metrics=False,
+        ),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    assert trainer._fused_dft is True
+    trainer.model.eval()
+    rows = [trainer.train_dataset[i] for i in range(4)]
+    batch = _to_device(trainer, trainer.data_collator(rows))
+    fused_losses, _ = _per_example_losses(trainer, batch)
+
+    with torch.no_grad():
+        out = trainer.model(
+            input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
+        )
+        expected = dft_loss(out.logits, batch["labels"])
+    assert torch.allclose(fused_losses, expected, atol=1e-4)
+
+
+def test_sft_fused_last_hidden_state_is_last_layer_only(tmp_path):
+    # The fused path must obtain ONLY the last hidden state (T, H) — not the full
+    # (L+1, T, H) stack that output_hidden_states would return. Assert the helper
+    # returns one (T, H) tensor that equals the model's final hidden state.
+    from opaque.functional import make_functional
+
+    torch.manual_seed(0)
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(
+            SFTConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="dft",
+            log_completion_metrics=False,
+        ),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    trainer.model.eval()
+    rows = [trainer.train_dataset[i] for i in range(2)]
+    batch = _to_device(trainer, trainer.data_collator(rows))
+    fmodel, trainable, frozen = make_functional(trainer.model, partition_trainable=True)
+    params = {**frozen, **trainable}
+    hidden = trainer._last_hidden_state(
+        params, batch["input_ids"], batch["attention_mask"]
+    )
+    with torch.no_grad():
+        full = trainer.model(
+            input_ids=batch["input_ids"],
+            attention_mask=batch["attention_mask"],
+            output_hidden_states=True,
+        )
+    assert hidden.shape == full.hidden_states[-1].shape  # (B, T, H) — NOT (L+1, ...)
+    assert torch.allclose(hidden, full.hidden_states[-1], atol=1e-5)
+
+
+# ---- DPO: eligibility gating -----------------------------------------
+def test_dpo_fused_eligible_resolves_handles(tmp_path):
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        ref_model=_tiny_model(),
+        args=_args(
+            DPOConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="sigmoid",
+            log_completion_metrics=False,
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    assert trainer._fused_logp_eligible is True
+    assert trainer._use_fused_logp is True
+    assert trainer._backbone_prefix == "model"
+    assert trainer._lm_head_param_name == "lm_head.weight"
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {},  # telemetry on (default) → ineligible
+        {"log_completion_metrics": False, "use_weighting": True},  # WPO reads logps
+        {
+            "log_completion_metrics": False,
+            "f_divergence_type": "js_divergence",
+        },  # non-reverse-KL remaps logps
+        {"log_completion_metrics": False, "ld_alpha": 0.5},  # LD-DPO needs per-token
+    ],
+)
+def test_dpo_ineligible_configs_keep_eager(tmp_path, extra):
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        ref_model=_tiny_model(),
+        args=_args(DPOConfig, tmp_path, max_length=8, loss_type="sigmoid", **extra),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    assert trainer._use_fused_logp is False
+
+
+# ---- DPO: CPU fallback-equivalence -----------------------------------
+def _dpo_fused_logps(trainer, batch):
+    """vmap the fused ``_fused_logp`` over a collated batch (chosen + rejected)."""
+    from opaque.functional import make_functional
+
+    batch = _to_device(trainer, batch)
+    fmodel, trainable, frozen = make_functional(trainer.model, partition_trainable=True)
+
+    def fn(tp, c_ids, c_mask, c_cmask, r_ids, r_mask, r_cmask):
+        params = {**frozen, **tp}
+        c = trainer._fused_logp(fmodel, params, c_ids, c_mask, c_cmask)
+        r = trainer._fused_logp(fmodel, params, r_ids, r_mask, r_cmask)
+        return c, r
+
+    vmapped = torch.vmap(fn, in_dims=(None,) + (0,) * 6)
+    return vmapped(
+        trainable,
+        batch["chosen_input_ids"],
+        batch["chosen_attention_mask"],
+        batch["chosen_completion_mask"],
+        batch["rejected_input_ids"],
+        batch["rejected_attention_mask"],
+        batch["rejected_completion_mask"],
+    )
+
+
+@pytest.mark.parametrize("model_factory", [_tiny_model, _tiny_model_tied])
+def test_dpo_fused_logp_matches_eager_on_cpu(tmp_path, model_factory):
+    # The fused chosen/rejected logps == the eager sequence_logp on logits, on CPU.
+    from opaque.alignment.dpo.loss import sequence_logp
+
+    torch.manual_seed(0)
+    trainer = DPOTrainer(
+        model=model_factory(),
+        ref_model=model_factory(),
+        args=_args(
+            DPOConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="sigmoid",
+            log_completion_metrics=False,
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    assert trainer._use_fused_logp is True
+    trainer.model.eval()
+    rows = [trainer.train_dataset[i] for i in range(4)]
+    batch = _to_device(trainer, trainer.data_collator(rows))
+
+    fused_c, fused_r = _dpo_fused_logps(trainer, batch)
+    with torch.no_grad():
+        c = trainer.model(
+            input_ids=batch["chosen_input_ids"],
+            attention_mask=batch["chosen_attention_mask"],
+        )
+        r = trainer.model(
+            input_ids=batch["rejected_input_ids"],
+            attention_mask=batch["rejected_attention_mask"],
+        )
+        eager_c = sequence_logp(
+            c.logits, batch["chosen_input_ids"], batch["chosen_completion_mask"]
+        )
+        eager_r = sequence_logp(
+            r.logits, batch["rejected_input_ids"], batch["rejected_completion_mask"]
+        )
+    assert torch.allclose(fused_c, eager_c, atol=1e-4)
+    assert torch.allclose(fused_r, eager_r, atol=1e-4)
+
+
+@pytest.mark.parametrize("model_factory", [_tiny_model, _tiny_model_tied])
+def test_dpo_fused_loss_matches_eager_on_cpu(tmp_path, model_factory):
+    # End-to-end: the eligible (fused) per-example DPO loss == the eager logits
+    # loss. We compare the fused trainer to an eager trainer built identically
+    # (telemetry on forces eager) on the same weights and batch.
+    from opaque.alignment.dpo.loss import sequence_logp, sigmoid_loss
+
+    torch.manual_seed(0)
+    beta = 0.1
+    trainer = DPOTrainer(
+        model=model_factory(),
+        ref_model=model_factory(),
+        args=_args(
+            DPOConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="sigmoid",
+            beta=beta,
+            log_completion_metrics=False,
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    assert trainer._use_fused_logp is True
+    trainer.model.eval()
+    rows = [trainer.train_dataset[i] for i in range(4)]
+    batch = _to_device(trainer, trainer.data_collator(rows))
+    fused_losses, _ = _per_example_losses(trainer, batch)
+
+    with torch.no_grad():
+        c = trainer.model(
+            input_ids=batch["chosen_input_ids"],
+            attention_mask=batch["chosen_attention_mask"],
+        )
+        r = trainer.model(
+            input_ids=batch["rejected_input_ids"],
+            attention_mask=batch["rejected_attention_mask"],
+        )
+        c_lp = sequence_logp(
+            c.logits, batch["chosen_input_ids"], batch["chosen_completion_mask"]
+        )
+        r_lp = sequence_logp(
+            r.logits, batch["rejected_input_ids"], batch["rejected_completion_mask"]
+        )
+        expected = sigmoid_loss(
+            c_lp - batch["ref_chosen_logps"],
+            r_lp - batch["ref_rejected_logps"],
+            beta=beta,
+        )
+    assert torch.allclose(fused_losses, expected, atol=1e-4)
+
+
+def test_dpo_fused_trains_a_couple_steps(tmp_path):
+    # The fused-eligible run trains end-to-end through the DP step machinery.
+    torch.manual_seed(0)
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        ref_model=_tiny_model(),
+        args=_args(
+            DPOConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="sigmoid",
+            log_completion_metrics=False,
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    assert trainer._use_fused_logp is True
+    out = trainer.train()
+    assert out.global_step == 2
+    assert torch.isfinite(torch.tensor(out.training_loss))
