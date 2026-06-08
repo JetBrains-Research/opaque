@@ -1145,6 +1145,58 @@ def test_sft_fused_dft_matches_eager_on_cpu(tmp_path, model_factory):
     assert torch.allclose(fused_losses, expected, atol=1e-4)
 
 
+def test_sft_fused_dft_matches_eager_on_cpu_under_peft(tmp_path):
+    """Regression for c539763b: the fused-dft path under PEFT must walk the
+    PEFT wrapper to the real backbone (``BaseModelOutputWithPast``), not the
+    inner causal-LM (which would return ``CausalLMOutputWithPast`` and crash
+    with ``AttributeError: ... has no attribute 'last_hidden_state'``).
+
+    Verifies that with ``peft_config=LoraConfig(...)`` the fused-dft loss
+    matches eager ``dft_loss(model.logits, labels)`` on the PEFT-wrapped
+    forward — i.e. the resolver returns the correct dotted prefix, the
+    ``_last_hidden_state`` helper walks it via ``attrgetter``, and the
+    end-to-end loss is numerically equivalent to the eager path.
+    """
+    peft = pytest.importorskip("peft")
+    from opaque.alignment.sft.loss import dft_loss
+
+    torch.manual_seed(0)
+    peft_cfg = peft.LoraConfig(
+        r=4, lora_alpha=8, target_modules=["q_proj", "v_proj"], bias="none"
+    )
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(
+            SFTConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="dft",
+            log_completion_metrics=False,
+        ),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+        peft_config=peft_cfg,
+    )
+    # The resolver must have detected PEFT and produced a dotted prefix; the
+    # fused-dft seam stays eligible (PEFT-aware lm_head lookup resolves).
+    assert trainer._fused_dft is True
+    assert trainer._backbone_prefix == "base_model.model.model"
+    assert trainer._lm_head_param_name is not None
+    assert trainer._lm_head_param_name.startswith("base_model.model.")
+
+    trainer.model.eval()
+    rows = [trainer.train_dataset[i] for i in range(4)]
+    batch = _to_device(trainer, trainer.data_collator(rows))
+    fused_losses, _ = _per_example_losses(trainer, batch)
+
+    with torch.no_grad():
+        out = trainer.model(
+            input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
+        )
+        expected = dft_loss(out.logits, batch["labels"])
+    assert torch.allclose(fused_losses, expected, atol=1e-4)
+
+
 def test_sft_fused_last_hidden_state_is_last_layer_only(tmp_path):
     # The fused path must obtain ONLY the last hidden state (T, H) — not the full
     # (L+1, T, H) stack that output_hidden_states would return. Assert the helper

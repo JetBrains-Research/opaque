@@ -44,10 +44,30 @@ Examples::
 from __future__ import annotations
 
 import argparse
+import os
 
 import torch
 from datasets import Dataset, load_dataset
 from peft import LoraConfig
+
+
+def _configure_reporting(no_wandb: bool) -> list[str]:
+    """Set W&B env defaults and return TrainingArguments.report_to.
+
+    Matches the pattern in ``train_causal_lm_trainer.py`` so Cadence presets
+    that plumb ``WANDB_NAME`` / ``WANDB_PROJECT`` / ``WANDB_ENTITY`` /
+    ``WANDB_TAGS`` actually surface on the W&B dashboard. Without this, the
+    HF Trainer's wandb integration only auto-init's when ``WANDB_PROJECT`` is
+    set in the environment AND ``report_to`` includes ``"wandb"``; the
+    DPOConfig default is ``[]``, so runs were stdout-only.
+    """
+    if no_wandb:
+        return []
+    if not os.environ.get("WANDB_MODE"):
+        os.environ["WANDB_MODE"] = (
+            "online" if os.environ.get("WANDB_API_KEY") else "offline"
+        )
+    return ["wandb"]
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from opaque.transformers.trl import DPOConfig, DPOTrainer
@@ -153,6 +173,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lora-r", type=int, default=8)
     p.add_argument("--lora-alpha", type=int, default=16)
     p.add_argument("--seed", type=int, default=42)
+    # --- W&B ---------------------------------------------------------------
+    p.add_argument(
+        "--no-wandb",
+        action="store_true",
+        help="Disable W&B logging; defaults to enabled when WANDB_PROJECT / "
+        "WANDB_API_KEY env vars are set (the Cadence presets plumb these).",
+    )
     return p.parse_args()
 
 
@@ -197,6 +224,9 @@ def main() -> int:
     rows = [row for _, row in zip(range(args.num_train_samples), raw)]
     train_dataset = Dataset.from_list(rows)
 
+    report_to = _configure_reporting(args.no_wandb)
+    run_name = os.environ.get("WANDB_NAME") or os.environ.get("RUN_NAME")
+
     dpo_args = DPOConfig(
         output_dir=args.output_dir,
         overwrite_output_dir=True,
@@ -229,6 +259,9 @@ def main() -> int:
         seed=args.seed,
         use_cpu=not torch.cuda.is_available(),
         bf16=torch.cuda.is_available(),
+        # W&B
+        report_to=report_to,
+        run_name=run_name,
         # DP knobs
         clipping_norm=args.clipping_norm,
         privacy_noise_multiplier=args.noise_multiplier,
