@@ -105,7 +105,11 @@ a `completion_mask` for completion-only loss.
 
 - **`clone_chat_template()`** — copy a chat template (and its special tokens)
   from a source tokenizer onto a destination tokenizer and resize the model's
-  embedding matrix to match.
+  embedding matrix to match. Returns the 3-tuple `(model, tokenizer,
+  added_token_ids)` — the (possibly resized) model, the updated tokenizer, and
+  the ids of any newly added special tokens (mark these trainable when the rest
+  of the model is frozen). Call it **before** `make_functional` (the embedding
+  resize must be captured in the functional snapshot).
 - **`get_training_chat_template()`** — return a chat-template string carrying
   assistant-turn `{% generation %}` markers so the assistant-token mask is
   recoverable at tokenization time.

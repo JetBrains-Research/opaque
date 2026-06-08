@@ -129,6 +129,7 @@ nav:
     - Overview: alignment/index.md
     - SFT: alignment/sft.md
     - DPO: alignment/dpo.md
+    - SFT & DPO Trainers: alignment/trainers.md
   - Tutorials:
     - Overview: tutorials/README.md
     - DP-SGD track:

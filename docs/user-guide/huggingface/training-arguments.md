@@ -17,7 +17,8 @@ this once before tuning:
 
 - `per_device_train_batch_size` is the **per-rank logical Poisson
   batch** — the expected sample size drawn on each rank for one DP-SGD
-  step.  Matches HF semantics at `gradient_accumulation_steps=1`.
+  step.  (This matches the HF interpretation when gradient accumulation
+  is one step — DPTrainer is permanently in that regime; see below.)
 - Cluster-wide logical batch is `per_device_train_batch_size *
   world_size` (exposed as the HF property `train_batch_size`).  The
   sample rate `q = train_batch_size / N_total` drives privacy
@@ -27,8 +28,15 @@ this once before tuning:
   per-rank logical batch into smaller vmap calls without changing the
   logical batch or the sample rate (privacy-neutral).
 
-DPTrainer has **no `gradient_accumulation_steps`** — every step is
-one atomic clip-noise-step over one Poisson sample.
+`gradient_accumulation_steps` is **not a usable knob.**  Under Poisson
+per-example DP, one round *is* one optimizer step, so accumulation does
+not apply.  It exists only as a read-only property pinned to `1` (so HF
+utilities that read it off the args keep working) — there is no field,
+so passing `gradient_accumulation_steps=` to the constructor raises
+`TypeError`.  Grow the effective batch with
+`per_device_train_batch_size` instead; the physical vmap chunk
+(`microbatch_size`, auto-shrunk under `auto_find_microbatch_size`) is
+decoupled from it and privacy-neutral.
 
 ## Privacy targets
 
@@ -251,7 +259,7 @@ porting an HF script, remove or translate these:
 
 | HF argument | Why it's unsupported | DPTrainer alternative |
 | --- | --- | --- |
-| `gradient_accumulation_steps` | One optimizer step must be exactly one Poisson round for the accountant to compose correctly | Increase `per_device_train_batch_size` (the expected Poisson round size) for a larger effective batch; the physical vmap chunk (microbatch) is decoupled from it and auto-shrinks under `auto_find_microbatch_size=True` for OOM relief — accounting is unaffected |
+| `gradient_accumulation_steps` | One optimizer step must be exactly one Poisson round for the accountant to compose correctly, so it is **pinned to 1** (a read-only property, not a field) — passing it raises `TypeError` | Increase `per_device_train_batch_size` (the expected Poisson round size) for a larger effective batch; the physical vmap chunk (microbatch) is decoupled from it and auto-shrinks under `auto_find_microbatch_size=True` for OOM relief — accounting is unaffected |
 | `group_by_length`, `length_column_name` | Length-bucketed batching breaks the equal per-example inclusion probability Poisson amplification relies on | Leave examples unsorted; Poisson sampling handles variable lengths |
 | `dataloader_drop_last` | The Poisson / random samplers produce variable-size batches, so dropping a "last batch" is meaningless; the sequential batch sampler already enforces drop-last internally where it matters for correctness | n/a (handled by the sampler) |
 | `deepspeed`, `fsdp`, `fsdp_config`, `accelerator_config`, `parallelism_config` | Parameter/gradient sharding is incompatible with vmap per-example gradients | Use Opaque's built-in DDP (`torchrun` + sharded data) |
