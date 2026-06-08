@@ -68,9 +68,10 @@ class SFTConfig(TrainingArguments):
     chat_template_path: str | None = None  # sft_config.py:152
 
     # ---- Loss ------------------------------------------------------------
-    #: ``"nll"`` (standard CE) or ``"dft"`` (Dynamic Fine-Tuning). The fused,
-    #: logits-free ``"chunked_nll"`` lands in a later phase. Unknown values
-    #: fail at the trainer's loss-dispatch table (no curated check here).
+    #: ``"nll"`` (standard CE), ``"dft"`` (Dynamic Fine-Tuning), or the fused,
+    #: logits-free ``"chunked_nll"`` (enables the ``fused_linear_cross_entropy``
+    #: kernel). Unknown values fail at the trainer's loss-dispatch table (no
+    #: curated check here).
     loss_type: str = "nll"  # sft_config.py:264
 
     # ``activation_offloading`` is inherited from the base ``TrainingArguments``
