@@ -6,14 +6,39 @@ DP-SGD loop; this one hands the same primitives to
 :class:`opaque.transformers.trl.DPOTrainer`, which precomputes the reference
 log-probs and orchestrates the per-example DP path on top of ``DPTrainer``.
 
-Example::
+The reference need is derived from ``loss_type`` (there is no ``reference_free``
+flag): the reference-free heads ``simpo`` / ``cpo`` / ``orpo`` (and ``sft``)
+skip the reference precompute, every other head requires one. A reference is
+resolved from ``--ref-model`` (a path/repo id), from the PEFT base model when
+``--peft`` is set, or auto-loaded from the policy's own path.
 
+This example exposes the DPO features that otherwise have no example coverage:
+TR-DPO reference sync (``--sync-ref-model``), MPO multi-loss blends
+(``--loss-type a b ... --loss-weights w1 w2 ...``), WPO weighting
+(``--use-weighting``), LD-DPO (``--ld-alpha``), f-divergence regularisers
+(``--f-divergence-type``), the reference-free heads, and the completion-metric
+telemetry gate (``--no-log-completion-metrics``).
+
+Examples::
+
+    # Vanilla DPO (LoRA policy, base model as the reference)
     uv run python examples/train_dpo_trainer.py \\
       --model Qwen/Qwen2.5-0.5B-Instruct \\
       --dataset trl-lib/ultrafeedback_binarized \\
       --beta 0.1 --max-length 512 --batch-size 8 --microbatch-size 2 \\
-      --max-steps 50 --learning-rate 1e-4 \\
+      --max-steps 50 --learning-rate 1e-4 --peft \\
       --clipping-norm 1.0 --noise-multiplier 0.8 --log-steps 5 --seed 42
+
+    # Reference-free SimPO (no reference precompute)
+    uv run python examples/train_dpo_trainer.py --loss-type simpo --simpo-gamma 0.5
+
+    # MPO blend: weighted sigmoid + sft regulariser
+    uv run python examples/train_dpo_trainer.py \\
+      --loss-type sigmoid sft --loss-weights 1.0 0.5
+
+    # TR-DPO (EMA reference sync; full fine-tuning, not PEFT)
+    uv run python examples/train_dpo_trainer.py \\
+      --sync-ref-model --ref-model-mixup-alpha 0.6 --ref-model-sync-steps 64
 """
 
 from __future__ import annotations
@@ -22,21 +47,91 @@ import argparse
 
 import torch
 from datasets import Dataset, load_dataset
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from opaque.transformers.trl import DPOConfig, DPOTrainer
+
+# Reference-free heads (mirror ``opaque.transformers.trl._dpo_config``): a run is
+# reference-free only when *every* head is in this set, so the trainer skips the
+# reference precompute and ``--ref-model`` is not required.
+_REFERENCE_FREE_HEADS = frozenset({"sft", "simpo", "cpo", "orpo"})
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="DP DPO with the class-based DPOTrainer")
     p.add_argument("--model", default="Qwen/Qwen2.5-0.5B-Instruct")
+    p.add_argument(
+        "--ref-model",
+        default=None,
+        help="Reference policy path/repo id. Defaults to the policy's own path "
+        "(auto-loaded) for reference-using heads; ignored for reference-free "
+        "heads and when --peft is set (the PEFT base serves as the reference).",
+    )
     p.add_argument("--dataset", default="trl-lib/ultrafeedback_binarized")
     p.add_argument("--dataset-split", default="train")
     p.add_argument("--num-train-samples", type=int, default=2000)
-    p.add_argument("--loss-type", nargs="+", default=["sigmoid"])
+    # --- Loss --------------------------------------------------------------
+    p.add_argument(
+        "--loss-type",
+        nargs="+",
+        default=["sigmoid"],
+        help="One or more TRL-canonical heads. Multiple ⇒ MPO blend "
+        "(pair with --loss-weights). Reference-free: simpo/cpo/orpo/sft.",
+    )
+    p.add_argument(
+        "--loss-weights",
+        nargs="+",
+        type=float,
+        default=None,
+        help="Per-head weights for an MPO blend; must match --loss-type length.",
+    )
     p.add_argument("--beta", type=float, default=0.1)
-    p.add_argument("--reference-free", action="store_true")
+    p.add_argument("--label-smoothing", type=float, default=0.0)
+    p.add_argument(
+        "--f-divergence-type",
+        default="reverse_kl",
+        choices=["reverse_kl", "forward_kl", "js_divergence", "alpha_divergence"],
+        help="f-divergence regulariser on the log-ratios.",
+    )
+    p.add_argument(
+        "--f-alpha-divergence-coef",
+        type=float,
+        default=0.5,
+        help="alpha coefficient for --f-divergence-type alpha_divergence.",
+    )
+    p.add_argument(
+        "--ld-alpha",
+        type=float,
+        default=None,
+        help="LD-DPO verbose-token weight in [0, 1]; None disables LD-DPO.",
+    )
+    p.add_argument(
+        "--use-weighting",
+        action="store_true",
+        help="WPO: reweight each pair by the policy's average completion prob.",
+    )
+    p.add_argument("--simpo-gamma", type=float, default=0.5)
+    p.add_argument("--cpo-alpha", type=float, default=1.0)
+    p.add_argument("--orpo-lambda", type=float, default=1.0)
+    # --- TR-DPO (reference sync) ------------------------------------------
+    p.add_argument(
+        "--sync-ref-model",
+        action="store_true",
+        help="TR-DPO: EMA-sync the reference toward the policy (full FT, not PEFT).",
+    )
+    p.add_argument("--ref-model-mixup-alpha", type=float, default=0.6)
+    p.add_argument("--ref-model-sync-steps", type=int, default=512)
+    # --- Telemetry ---------------------------------------------------------
+    p.add_argument(
+        "--no-log-completion-metrics",
+        dest="log_completion_metrics",
+        action="store_false",
+        help="Skip the logits-consuming completion telemetry "
+        "(entropy / mean_token_accuracy / logits/*).",
+    )
+    p.set_defaults(log_completion_metrics=True)
+    # --- Training ----------------------------------------------------------
     p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--microbatch-size", type=int, default=2)
@@ -47,6 +142,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--target-epsilon", type=float, default=None)
     p.add_argument("--log-steps", type=int, default=5)
     p.add_argument("--output-dir", default="trainer_output/dpo")
+    # --- PEFT --------------------------------------------------------------
+    p.add_argument(
+        "--peft",
+        action="store_true",
+        help="Train a LoRA adapter (the frozen base serves as the reference via "
+        "the PEFT null-ref path; incompatible with --sync-ref-model).",
+    )
     p.add_argument("--lora-modules", nargs="+", default=["q_proj", "v_proj"])
     p.add_argument("--lora-r", type=int, default=8)
     p.add_argument("--lora-alpha", type=int, default=16)
@@ -57,30 +159,39 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
+    loss_type = list(args.loss_type)
+    reference_free = all(lt in _REFERENCE_FREE_HEADS for lt in loss_type)
+
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(args.model)
-    model = get_peft_model(
-        model,
+
+    # PEFT policy: pass the LoRA config to the trainer (it calls get_peft_model),
+    # so the frozen base can serve as the reference via the null-ref path.
+    peft_config = (
         LoraConfig(
             r=args.lora_r,
             lora_alpha=args.lora_alpha,
             target_modules=args.lora_modules,
             lora_dropout=0.0,
-        ),
+        )
+        if args.peft
+        else None
     )
-    model.print_trainable_parameters()
 
-    # A frozen reference policy (skipped when --reference-free). With a LoRA
-    # policy the base model can also serve as the reference via the PEFT
-    # null-ref path (pass ref_model=None and let DPOTrainer disable the adapter).
-    ref_model = (
-        None
-        if args.reference_free
-        else AutoModelForCausalLM.from_pretrained(args.model)
-    )
+    # Reference policy. Reference-free heads need none. With a PEFT policy the
+    # frozen base serves as the reference (ref_model=None + null-ref path). For
+    # full fine-tuning, --ref-model (a path/repo id) is loaded; DPOConfig threads
+    # model_init_kwargs into this load, and ref_model may itself be a string.
+    if reference_free or args.peft:
+        ref_model = None
+    elif args.ref_model is not None:
+        ref_model = args.ref_model  # DPOTrainer accepts a string and loads it
+    else:
+        # Auto-load a frozen copy from the policy's own path.
+        ref_model = AutoModelForCausalLM.from_pretrained(args.model)
 
     raw = load_dataset(args.dataset, split=args.dataset_split, streaming=True)
     rows = [row for _, row in zip(range(args.num_train_samples), raw)]
@@ -89,9 +200,25 @@ def main() -> int:
     dpo_args = DPOConfig(
         output_dir=args.output_dir,
         overwrite_output_dir=True,
-        loss_type=list(args.loss_type),
+        # --- Loss ---
+        loss_type=loss_type,
+        loss_weights=args.loss_weights,
         beta=args.beta,
-        reference_free=args.reference_free,
+        label_smoothing=args.label_smoothing,
+        f_divergence_type=args.f_divergence_type,
+        f_alpha_divergence_coef=args.f_alpha_divergence_coef,
+        ld_alpha=args.ld_alpha,
+        use_weighting=args.use_weighting,
+        simpo_gamma=args.simpo_gamma,
+        cpo_alpha=args.cpo_alpha,
+        orpo_lambda=args.orpo_lambda,
+        # --- TR-DPO (reference sync) ---
+        sync_ref_model=args.sync_ref_model,
+        ref_model_mixup_alpha=args.ref_model_mixup_alpha,
+        ref_model_sync_steps=args.ref_model_sync_steps,
+        # --- Telemetry ---
+        log_completion_metrics=args.log_completion_metrics,
+        # --- Training ---
         max_length=args.max_length,
         per_device_train_batch_size=args.batch_size,
         microbatch_size=args.microbatch_size,
@@ -116,6 +243,7 @@ def main() -> int:
         args=dpo_args,
         train_dataset=train_dataset,
         processing_class=tokenizer,
+        peft_config=peft_config,
     )
     out = trainer.train()
     print("Training complete:", out)

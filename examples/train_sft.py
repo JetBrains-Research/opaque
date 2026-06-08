@@ -1629,7 +1629,7 @@ def main():
                     * num_tokens
                 )
                 ent_sum += (
-                    float(entropy_from_logits(out.logits[..., :-1, :], mask[..., 1:]).item())
+                    float(entropy_from_logits(out.logits, mask).item())
                     * num_tokens
                 )
                 metric_tokens += num_tokens

@@ -173,6 +173,7 @@ from opaque.alignment.dpo.loss import (
     squarechipo_loss,
 )
 from opaque.alignment.dpo.metric import reward_metrics
+from opaque.alignment.metric import entropy_from_logits, mean_token_accuracy
 from opaque.alignment.dpo.reference import (
     compute_ref_logprobs_for_dataset,
     null_ref_context,
@@ -187,25 +188,43 @@ from opaque.alignment.dpo.reference import (
 # The library (``opaque.alignment.dpo``) exposes direct loss functions, not a
 # string registry. The CLI ``--loss-type`` string is mapped to a function here,
 # at the call site — mirroring ``examples/train_sft.py``'s ``_SFT_LOSSES``.
+# Keys are the TRL/trainer-canonical ``loss_type`` names (mirroring
+# ``opaque.api.transformers.trl._dpo_trainer._DPO_HEADS``) so a ``--loss-type``
+# string copies cleanly into the class-based ``DPOConfig``. The pair heads use
+# the ``_pair`` suffix (``exo_pair``/``nca_pair``/``bco_pair``), the chosen-NLL
+# regulariser is ``sft``, ``sppo_hard`` is the hard-margin SPPO, and
+# ``sigmoid_norm`` is the length-normalized sigmoid (same loss fn as
+# ``sigmoid``; normalization is applied to the log-ratio at the call site).
 _DPO_LOSSES = {
     "sigmoid": sigmoid_loss,
+    "sigmoid_norm": sigmoid_loss,  # length-normalized log-ratio (TRL parity)
     "hinge": hinge_loss,
     "robust": robust_loss,
     "ipo": ipo_loss,
     "discopop": discopop_loss,
-    "chosen_nll": chosen_nll_loss,
+    "sft": chosen_nll_loss,  # chosen-NLL regulariser (TRL ``loss_type="sft"``)
     "squarechipo": squarechipo_loss,
     "apo_zero": apo_zero_loss,
     "apo_down": apo_down_loss,
-    "exo": exo_loss,
-    "nca": nca_loss,
-    "bco": bco_loss,
-    "sppo": sppo_loss,
+    "exo_pair": exo_loss,
+    "nca_pair": nca_loss,
+    "bco_pair": bco_loss,
+    "sppo_hard": sppo_loss,
+    # Reference-free heads. ``simpo`` fits the plain ``head(clr, rlr, *, beta)``
+    # signature (so it has a direct entry mirroring the trainer); ``cpo`` and
+    # ``orpo`` are composites (preference / odds-ratio term + chosen-NLL) that
+    # don't fit it, so they are special-cased in ``_make_reference_free_loss``
+    # and never indexed here — the ``None`` entry documents them as selectable
+    # ``--loss-type`` values and keeps this dict the single name source.
+    "simpo": simpo_loss,
+    "cpo": None,
+    "orpo": None,
 }
 
 # Reference-free preference methods score the policy log-prob directly and need
 # no frozen reference model, so they skip the reference precompute and the two
-# ref-logp tensors. Each is mapped to its loss at the call site below.
+# ref-logp tensors. They are dispatched through ``_make_reference_free_loss``
+# (not ``_DPO_LOSSES[...]``) at the call site below.
 _REFERENCE_FREE = {"simpo", "cpo", "orpo"}
 
 # The 8 per-example loss arguments after the trainable params (argnums=0):
@@ -813,6 +832,17 @@ def parse_args():
             "cache. Pass an absolute path to override, or pass an explicit "
             "tempdir-style path for ephemeral caching. Ignored for "
             "reference-free --loss-type (simpo/cpo/orpo)."
+        ),
+    )
+    dpo_group.add_argument(
+        "--log-completion-metrics",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Log the logits-consuming completion telemetry (entropy, "
+            "mean_token_accuracy, logits/*) alongside rewards/* and logps/*. "
+            "Mirrors DPOConfig.log_completion_metrics; --no-log-completion-metrics "
+            "skips those metrics so the eval path stays logits-light."
         ),
     )
 
@@ -1923,23 +1953,48 @@ def main():
             f"  Reference scores: mean={audit_ref_scores.mean():.4f}, std={audit_ref_scores.std():.4f}"
         )
 
+    def _masked_mean_logit(logits, completion_mask):
+        """Mean logit over (shifted) completion positions — TRL ``logits/*``.
+
+        Mirrors ``DPOTrainer._masked_mean_logit``: a masked weighted mean over
+        the shifted completion positions (no boolean indexing). ``logits`` is
+        ``(B, T, V)`` and ``completion_mask`` is ``(B, T)``; returns ``(B,)``.
+        """
+        shifted = logits[..., :-1, :]
+        mask = (completion_mask[..., 1:] != 0).to(shifted.dtype)
+        pos_mean = shifted.mean(dim=-1)
+        return (pos_mean * mask).sum(-1) / mask.sum(-1).clamp(min=1)
+
     def eval_reward_metrics(trainable):
-        """Reward metrics over the held-out preference eval set.
+        """Full DPO telemetry over the held-out preference eval set.
 
         For DPO, eval = chosen/rejected reward means, accuracy, and margin on
-        held-out preference pairs (NOT perplexity).  Returns a dict of floats;
-        empty eval set yields ``nan`` accuracy.
+        held-out preference pairs (NOT perplexity). Mirrors the class-based
+        ``DPOTrainer._reward_aux`` logged set: ``rewards/*`` and the summed
+        policy ``logps/*`` are always reported; the logits-consuming
+        diagnostics (``logits/*``, ``entropy``, ``mean_token_accuracy``) are
+        gated on ``--log-completion-metrics``. Returns a dict of floats; an
+        empty eval set yields ``nan`` rewards.
 
         Reference-based heads report the policy-vs-reference log-ratios as the
-        per-example rewards.  Reference-free methods have no reference, so the
+        per-example rewards. Reference-free methods have no reference, so the
         reward is the policy completion log-prob directly (length-normalized for
-        simpo/orpo to match their scoring, raw for cpo).
+        simpo/orpo to match their scoring, raw for cpo). The ``logps/*``
+        telemetry is always the summed (un-normalized) sequence log-prob, as in
+        the trainer.
         """
         length_normalized = args.loss_type in {"simpo", "orpo"}
+        log_metrics = args.log_completion_metrics
         with torch.no_grad():
             merged = {**frozen_params, **trainable}
             chosen_lrs = []
             rejected_lrs = []
+            chosen_logps = []
+            rejected_logps = []
+            logits_chosen = []
+            logits_rejected = []
+            entropies = []
+            accuracies = []
             for batch in eval_loader:
                 if reference_free:
                     (
@@ -1981,6 +2036,30 @@ def main():
                 )
                 chosen_lrs.append(c_logp - ref_chosen_lp)
                 rejected_lrs.append(r_logp - ref_rejected_lp)
+                # logps/* is always the summed (un-normalized) sequence logp.
+                chosen_logps.append(sequence_logp(c_out.logits, chosen_ids, chosen_cmask))
+                rejected_logps.append(
+                    sequence_logp(r_out.logits, rejected_ids, rejected_cmask)
+                )
+                if log_metrics:
+                    logits_chosen.append(
+                        _masked_mean_logit(c_out.logits, chosen_cmask)
+                    )
+                    logits_rejected.append(
+                        _masked_mean_logit(r_out.logits, rejected_cmask)
+                    )
+                    # entropy_from_logits / mean_token_accuracy shift internally,
+                    # so pass FULL-length logits + completion mask.
+                    entropies.append(
+                        0.5
+                        * (
+                            entropy_from_logits(c_out.logits, chosen_cmask)
+                            + entropy_from_logits(r_out.logits, rejected_cmask)
+                        )
+                    )
+                    accuracies.append(
+                        mean_token_accuracy(c_out.logits, chosen_ids, chosen_cmask)
+                    )
             if not chosen_lrs:
                 return {
                     "rewards/chosen": float("nan"),
@@ -1991,7 +2070,16 @@ def main():
             chosen_lr = torch.cat(chosen_lrs)
             rejected_lr = torch.cat(rejected_lrs)
             m = reward_metrics(chosen_lr, rejected_lr, beta=args.beta)
-            return {k: v.item() for k, v in m.items()}
+            result = {k: v.item() for k, v in m.items()}
+            result["logps/chosen"] = torch.cat(chosen_logps).mean().item()
+            result["logps/rejected"] = torch.cat(rejected_logps).mean().item()
+            if log_metrics:
+                result["logits/chosen"] = torch.cat(logits_chosen).mean().item()
+                result["logits/rejected"] = torch.cat(logits_rejected).mean().item()
+                # entropy / accuracy are per-batch scalars; mean over batches.
+                result["entropy"] = torch.stack(entropies).mean().item()
+                result["mean_token_accuracy"] = torch.stack(accuracies).mean().item()
+            return result
 
     # Build clipping norm (scalar or per-group)
     if args.per_group_clipping:
