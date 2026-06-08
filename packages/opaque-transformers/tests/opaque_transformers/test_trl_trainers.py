@@ -144,14 +144,22 @@ def test_duplicate_loss_type_fails_fast():
         )
 
 
-def test_sync_ref_model_incompatible_with_reference_free():
+def test_sync_ref_model_requires_reference_using_loss():
+    # TR-DPO has nothing to sync toward when every head is reference-free.
     with pytest.raises(ValueError):
         DPOConfig(
             output_dir="x",
             sync_ref_model=True,
-            reference_free=True,
+            loss_type="simpo",
             privacy_noise_multiplier=0.0,
         )
+
+
+def test_reference_free_flag_is_gone():
+    # ``reference_free`` is dropped as a public flag — reference-need is derived
+    # from ``loss_type``; passing it is a standard unexpected-keyword TypeError.
+    with pytest.raises(TypeError):
+        DPOConfig(output_dir="x", reference_free=True, privacy_noise_multiplier=0.0)
 
 
 def test_robust_label_smoothing_validation():
@@ -296,16 +304,31 @@ def test_sft_self_reducing_loss_rejects_custom_loss_func(tmp_path, loss_type):
 # ----------------------------------------------------------------------
 # DPO training
 # ----------------------------------------------------------------------
-@pytest.mark.parametrize("loss_type", ["sigmoid", "ipo", ["sigmoid", "hinge"]])
-def test_dpo_trains_with_explicit_reference(tmp_path, loss_type):
+@pytest.mark.parametrize(
+    ("loss_type", "needs_ref"),
+    [
+        ("sigmoid", True),
+        ("ipo", True),
+        (["sigmoid", "hinge"], True),
+        ("simpo", False),
+        ("cpo", False),
+        ("orpo", False),
+    ],
+)
+def test_dpo_trains_a_couple_steps(tmp_path, loss_type, needs_ref):
+    # Reference-using heads pass a ref_model; reference-free heads (simpo / cpo /
+    # orpo) pass none and must train all the same.
     torch.manual_seed(0)
     trainer = DPOTrainer(
         model=_tiny_model(),
-        ref_model=_tiny_model(),
+        ref_model=_tiny_model() if needs_ref else None,
         args=_args(DPOConfig, tmp_path, max_length=8, loss_type=loss_type),
         train_dataset=_pref_dataset(),
         processing_class=_stub_tokenizer(),
     )
+    # Reference-free runs attach no ref columns.
+    cols = trainer.train_dataset.column_names
+    assert ("ref_chosen_logps" in cols) is needs_ref
     out = trainer.train()
     assert out.global_step == 2
     assert torch.isfinite(torch.tensor(out.training_loss))
@@ -389,6 +412,32 @@ def test_dpo_logs_train_reward_metrics(tmp_path):
         assert key in logged, f"missing train telemetry: {key}"
 
 
+def test_dpo_log_completion_metrics_off_skips_logits_telemetry(tmp_path):
+    # With log_completion_metrics=False the logits-consuming telemetry
+    # (entropy / mean_token_accuracy / logits/*) is not computed, but the free
+    # reward + logp telemetry still rides the aux channel.
+    torch.manual_seed(0)
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        ref_model=_tiny_model(),
+        args=_args(
+            DPOConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="sigmoid",
+            log_completion_metrics=False,
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    trainer.train()
+    logged = set().union(*(row.keys() for row in trainer.state.log_history))
+    assert "rewards/chosen" in logged
+    assert "logps/chosen" in logged
+    for key in ("entropy", "mean_token_accuracy", "logits/chosen", "logits/rejected"):
+        assert key not in logged, f"unexpected logits telemetry when off: {key}"
+
+
 def test_dpo_evaluate_logs_reward_metrics(tmp_path):
     torch.manual_seed(0)
     trainer = DPOTrainer(
@@ -414,19 +463,18 @@ def test_dpo_evaluate_logs_reward_metrics(tmp_path):
 
 
 def test_dpo_reference_free_trains_without_precompute(tmp_path):
+    # A reference-free loss_type (here ORPO) needs no ref_model and skips the
+    # reference precompute entirely — no ref_* columns are attached.
     torch.manual_seed(0)
     trainer = DPOTrainer(
         model=_tiny_model(),
-        args=_args(
-            DPOConfig,
-            tmp_path,
-            max_length=8,
-            loss_type="sigmoid",
-            reference_free=True,
-        ),
+        args=_args(DPOConfig, tmp_path, max_length=8, loss_type="orpo"),
         train_dataset=_pref_dataset(),
         processing_class=_stub_tokenizer(),
     )
+    cols = trainer.train_dataset.column_names
+    assert "ref_chosen_logps" not in cols
+    assert "ref_rejected_logps" not in cols
     out = trainer.train()
     assert out.global_step == 2
 
@@ -591,6 +639,150 @@ def test_dpo_loss_matches_direct_sigmoid(tmp_path):
     assert torch.allclose(losses, expected, atol=1e-4)
 
 
+def _completion_len(mask: torch.Tensor) -> torch.Tensor:
+    """Mirror of DPOTrainer._completion_len (shifted completion-token count)."""
+    return (mask[..., 1:] != 0).sum(-1).clamp(min=1)
+
+
+def test_dpo_simpo_loss_matches_formula(tmp_path):
+    # SimPO: -logσ(β·(c_avg − r_avg) − γ) with label smoothing, on the
+    # length-normalized, reference-free policy logps.
+    from opaque.alignment.dpo.loss import sequence_logp, simpo_loss
+
+    torch.manual_seed(0)
+    beta, gamma, eps = 2.0, 0.5, 0.1
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        args=_args(
+            DPOConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="simpo",
+            beta=beta,
+            simpo_gamma=gamma,
+            label_smoothing=eps,
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    trainer.model.eval()
+    rows = [trainer.train_dataset[i] for i in range(4)]
+    batch = _to_device(trainer, trainer.data_collator(rows))
+    losses, _ = _per_example_losses(trainer, batch)
+
+    with torch.no_grad():
+        c = trainer.model(
+            input_ids=batch["chosen_input_ids"],
+            attention_mask=batch["chosen_attention_mask"],
+        )
+        r = trainer.model(
+            input_ids=batch["rejected_input_ids"],
+            attention_mask=batch["rejected_attention_mask"],
+        )
+        c_lp = sequence_logp(
+            c.logits, batch["chosen_input_ids"], batch["chosen_completion_mask"]
+        )
+        r_lp = sequence_logp(
+            r.logits, batch["rejected_input_ids"], batch["rejected_completion_mask"]
+        )
+        c_avg = c_lp / _completion_len(batch["chosen_completion_mask"])
+        r_avg = r_lp / _completion_len(batch["rejected_completion_mask"])
+        expected = simpo_loss(
+            c_avg, r_avg, beta=beta, gamma=gamma, label_smoothing=eps
+        )
+    assert torch.allclose(losses, expected, atol=1e-4)
+
+
+def test_dpo_cpo_loss_matches_formula(tmp_path):
+    # CPO: sigmoid_loss(c_sum, r_sum, β) + cpo_alpha · meanNLL(chosen), with
+    # meanNLL = −c_sum / completion_len (per-token mean).
+    from opaque.alignment.dpo.loss import sequence_logp, sigmoid_loss
+
+    torch.manual_seed(0)
+    beta, cpo_alpha = 0.1, 0.7
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        args=_args(
+            DPOConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="cpo",
+            beta=beta,
+            cpo_alpha=cpo_alpha,
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    trainer.model.eval()
+    rows = [trainer.train_dataset[i] for i in range(4)]
+    batch = _to_device(trainer, trainer.data_collator(rows))
+    losses, _ = _per_example_losses(trainer, batch)
+
+    with torch.no_grad():
+        c = trainer.model(
+            input_ids=batch["chosen_input_ids"],
+            attention_mask=batch["chosen_attention_mask"],
+        )
+        r = trainer.model(
+            input_ids=batch["rejected_input_ids"],
+            attention_mask=batch["rejected_attention_mask"],
+        )
+        c_lp = sequence_logp(
+            c.logits, batch["chosen_input_ids"], batch["chosen_completion_mask"]
+        )
+        r_lp = sequence_logp(
+            r.logits, batch["rejected_input_ids"], batch["rejected_completion_mask"]
+        )
+        c_avg = c_lp / _completion_len(batch["chosen_completion_mask"])
+        expected = sigmoid_loss(c_lp, r_lp, beta=beta) + cpo_alpha * (-c_avg)
+    assert torch.allclose(losses, expected, atol=1e-4)
+
+
+def test_dpo_orpo_loss_matches_formula(tmp_path):
+    # ORPO: meanNLL(chosen) + orpo_lambda · odds_ratio_loss(c_norm, r_norm) on
+    # length-normalized, reference-free policy logps.
+    from opaque.alignment.dpo.loss import odds_ratio_loss, sequence_logp
+
+    torch.manual_seed(0)
+    orpo_lambda = 0.3
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        args=_args(
+            DPOConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="orpo",
+            orpo_lambda=orpo_lambda,
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    trainer.model.eval()
+    rows = [trainer.train_dataset[i] for i in range(4)]
+    batch = _to_device(trainer, trainer.data_collator(rows))
+    losses, _ = _per_example_losses(trainer, batch)
+
+    with torch.no_grad():
+        c = trainer.model(
+            input_ids=batch["chosen_input_ids"],
+            attention_mask=batch["chosen_attention_mask"],
+        )
+        r = trainer.model(
+            input_ids=batch["rejected_input_ids"],
+            attention_mask=batch["rejected_attention_mask"],
+        )
+        c_lp = sequence_logp(
+            c.logits, batch["chosen_input_ids"], batch["chosen_completion_mask"]
+        )
+        r_lp = sequence_logp(
+            r.logits, batch["rejected_input_ids"], batch["rejected_completion_mask"]
+        )
+        c_avg = c_lp / _completion_len(batch["chosen_completion_mask"])
+        r_avg = r_lp / _completion_len(batch["rejected_completion_mask"])
+        expected = (-c_avg) + orpo_lambda * odds_ratio_loss(c_avg, r_avg)
+    assert torch.allclose(losses, expected, atol=1e-4)
+
+
 def test_dpo_precompute_attaches_reference_columns(tmp_path):
     # The reference precompute should add the constant ref logp columns the
     # collator emits; verified indirectly by a successful non-reference-free run
@@ -606,3 +798,77 @@ def test_dpo_precompute_attaches_reference_columns(tmp_path):
     cols = trainer.train_dataset.column_names
     assert "ref_chosen_logps" in cols
     assert "ref_rejected_logps" in cols
+
+
+# ----------------------------------------------------------------------
+# Reference loading: string ref_model + model_init_kwargs threading
+# ----------------------------------------------------------------------
+def test_dpo_string_ref_model_loads_and_trains(tmp_path):
+    # A string ref_model is loaded via AutoModelForCausalLM.from_pretrained,
+    # attaches the ref columns, and trains.
+    torch.manual_seed(0)
+    ref_dir = tmp_path / "ref"
+    _tiny_model().save_pretrained(str(ref_dir))
+
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        ref_model=str(ref_dir),
+        args=_args(DPOConfig, tmp_path, max_length=8, loss_type="sigmoid"),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    cols = trainer.train_dataset.column_names
+    assert "ref_chosen_logps" in cols
+    out = trainer.train()
+    assert out.global_step == 2
+    assert torch.isfinite(torch.tensor(out.training_loss))
+
+
+def test_dpo_model_init_kwargs_reach_reference(tmp_path, monkeypatch):
+    # model_init_kwargs (here a dtype) is threaded into the string-ref load — the
+    # reference instantiates with the requested dtype. Spy on from_pretrained to
+    # capture the model it returns and assert a param dtype.
+    import transformers
+
+    captured = {}
+    orig = transformers.AutoModelForCausalLM.from_pretrained
+
+    def spy(path, *a, **kw):
+        model = orig(path, *a, **kw)
+        captured["kwargs"] = kw
+        captured["dtype"] = next(model.parameters()).dtype
+        return model
+
+    monkeypatch.setattr(transformers.AutoModelForCausalLM, "from_pretrained", spy)
+
+    torch.manual_seed(0)
+    ref_dir = tmp_path / "ref"
+    _tiny_model().save_pretrained(str(ref_dir))
+
+    DPOTrainer(
+        model=_tiny_model(),  # in-memory policy → no extra from_pretrained
+        ref_model=str(ref_dir),
+        args=_args(
+            DPOConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="sigmoid",
+            model_init_kwargs={"torch_dtype": torch.float64},
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    assert captured["kwargs"].get("torch_dtype") is torch.float64
+    assert captured["dtype"] is torch.float64
+
+
+def test_dpo_no_reference_available_raises_early(tmp_path):
+    # An in-memory policy with no path, no ref_model, not PEFT, reference-using
+    # loss → fail before tokenize/precompute, pointing at reference-free heads.
+    with pytest.raises(ValueError, match="reference-free loss_type"):
+        DPOTrainer(
+            model=_tiny_model(),
+            args=_args(DPOConfig, tmp_path, max_length=8, loss_type="sigmoid"),
+            train_dataset=_pref_dataset(),
+            processing_class=_stub_tokenizer(),
+        )
