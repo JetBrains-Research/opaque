@@ -955,6 +955,10 @@ def test_dpo_model_init_kwargs_reach_reference(tmp_path, monkeypatch):
             max_length=8,
             loss_type="sigmoid",
             model_init_kwargs={"torch_dtype": torch.float64},
+            # Pin to CPU: float64 verifies the kwarg threading but MPS (CI's
+            # Apple-silicon lane) can't hold a float64 tensor, so the reference's
+            # ``.to(device)`` would raise there. The dtype path is device-agnostic.
+            use_cpu=True,
         ),
         train_dataset=_pref_dataset(),
         processing_class=_stub_tokenizer(),
