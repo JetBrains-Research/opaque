@@ -44,18 +44,20 @@ def _make_lora_linear_forward(original):
         if not dropout_is_noop:
             return original(self, x, *args, **kwargs)
 
+        # Cast all kernel operands (base W, LoRA A, LoRA B) to the active dtype.
+        # Under autocast the kernel's vmap backward does `grad_out @ W` directly
+        # (bypassing autocast dispatch), so a still-fp32 W mismatches a bf16
+        # grad_out. Mirror what autocast does for `F.linear` by casting W here.
+        target_dtype = _active_lora_dtype(x)
         W = self.base_layer.weight
         # Conv1D stores weight as (in_features, out_features); F.linear expects
         # (out_features, in_features).  PEFT sets fan_in_fan_out=True for Conv1D.
         if getattr(self, "fan_in_fan_out", False):
             W = W.T
-        # PEFT stores lora_A as (rank, in_features), kernel expects (in_features, rank).
-        # Cast to the active dtype: under autocast that's the autocast dtype (the
-        # kernel's interior matmuls are autocast-intercepted to that dtype, and a
-        # still-fp32 B would mismatch at addmm_); otherwise follow x.dtype.
-        target_dtype = _active_lora_dtype(x)
+        W = W.to(target_dtype)
+        # PEFT stores lora_A as (rank, in_features), kernel expects (in_features, rank);
+        # lora_B as (out_features, rank), kernel expects (rank, out_features).
         A = self.lora_A[active].weight.T.to(target_dtype)
-        # PEFT stores lora_B as (out_features, rank), kernel expects (rank, out_features)
         B = self.lora_B[active].weight.T.to(target_dtype)
         scaling = self.scaling[active]
 

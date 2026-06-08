@@ -29,8 +29,11 @@ def _opaque_fused_lora_qkv(self, hidden_states):
     Wk, Ak, Bk, Sk = _extract_lora_params(self.k_proj)
     Wv, Av, Bv, Sv = _extract_lora_params(self.v_proj)
 
-    # Cast LoRA A/B to the active kernel dtype (autocast dtype when active, else
-    # the input dtype). See peft.components._utils._active_lora_dtype.
+    # Cast all kernel operands (base W and LoRA A/B) to the active kernel dtype.
+    # Required because the vmap backward does `grad_out @ W` directly, bypassing
+    # autocast dispatch — a still-fp32 W mismatches the bf16 grad_out under
+    # autocast. See peft.components._utils._active_lora_dtype.
+    Wq, Wk, Wv = Wq.to(dtype), Wk.to(dtype), Wv.to(dtype)
     if Aq is not None:
         Aq, Bq = Aq.to(dtype), Bq.to(dtype)
     if Ak is not None:
