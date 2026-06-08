@@ -116,9 +116,8 @@ class SFTTrainer(DPTrainer):
                 self._mark_added_tokens_trainable(peft_config, added_tokens)
             model = get_peft_model(model, peft_config)
 
-        # ---- activation offloading alias ----------------------------------
-        if args.activation_offloading:
-            args.cpu_offload_activations = True
+        # ``activation_offloading`` is a single inherited base field — the base
+        # ``DPTrainer`` reads it directly, so no alias wiring is needed here.
 
         # ---- custom-loss guard --------------------------------------------
         # A custom compute_loss_func is only meaningful on the standard ``nll``
@@ -136,6 +135,12 @@ class SFTTrainer(DPTrainer):
         # fallback elsewhere); ``nll`` / ``dft`` dispatch to an alignment head.
         # An unknown loss_type fails with a standard KeyError (plan §3.3).
         self._loss_type: str = args.loss_type
+        # Gate logits-derived completion telemetry (entropy / mean_token_accuracy
+        # / logits/*). When off, the rich (loss, aux) seam returns an empty aux
+        # dict so the standard loss path runs without materialising those metrics
+        # (and clears the way for the future fused logits-free loss — see the
+        # FUSED PATH hook in ``compute_per_example_loss_and_metrics``).
+        self._log_completion_metrics: bool = args.log_completion_metrics
         if args.loss_type == "chunked_nll":
             self._loss_fn: Callable | None = None
             cfg = dict(args.performance_kernels_config or {})
@@ -345,11 +350,11 @@ class SFTTrainer(DPTrainer):
                 full_ids, cmask = full_ids[:max_length], cmask[:max_length]
             return {"input_ids": full_ids, "completion_mask": cmask}
 
-        # Plain text field. Append EOS whenever the tokenizer has one (TRL
-        # parity) so the model learns to stop — not only when ``args.eos_token``
-        # was explicitly overridden.
+        # Plain text field. Append the EOS token so the model learns to stop:
+        # the explicit ``args.eos_token`` when set, else the tokenizer's own
+        # ``eos_token`` (TRL parity). When neither exists, nothing is appended.
         text = example[args.dataset_text_field]
-        eos = processing_class.eos_token
+        eos = args.eos_token if args.eos_token is not None else processing_class.eos_token
         if eos is not None and not text.endswith(eos):
             text = text + eos
         ids = processing_class(
@@ -419,15 +424,29 @@ class SFTTrainer(DPTrainer):
         are computed from the model logits, **independent of the loss head**, so
         a custom ``compute_loss_func`` that returns only a scalar still gets
         telemetry (the aux fail-safe). When logits are unavailable (the
-        logits-free ``chunked_nll`` path) the telemetry dict is empty and only
-        the loss is logged — the harness handles an empty aux dict.
+        logits-free ``chunked_nll`` path), or when ``log_completion_metrics`` is
+        ``False``, the telemetry dict is empty and only the loss is logged — the
+        harness handles an empty aux dict.
         """
+        # Telemetry gated off: skip materialising logits-derived metrics
+        # entirely. The loss path still runs (and may use the logits-free
+        # forward), so we do not even request logits here.
+        if not self._log_completion_metrics:
+            # FUSED PATH HOOK: with telemetry off and no logits-consuming
+            # feature active, this is the point where a fused logits-free
+            # primitive (``fused_nll_loss`` / ``fused_dft_loss``) would be
+            # selected. See the module-level note / report; today the
+            # logits-free reduction is reached via ``loss_type="chunked_nll"``.
+            return self.compute_per_example_loss(fmodel, params, inputs), {}
         loss, logits = self.compute_per_example_loss(
             fmodel, params, inputs, return_logits=True
         )
         if logits is None:
             return loss, {}
         labels = inputs["labels"]
+        # ``mask`` is the FULL-length supervised mask; ``entropy_from_logits`` and
+        # ``mean_token_accuracy`` both shift internally to next-token alignment
+        # (logits[..., :-1, :] vs mask[..., 1:]), so we pass the full mask here.
         mask = labels != -100
         return loss, {
             "entropy": entropy_from_logits(logits, mask),
