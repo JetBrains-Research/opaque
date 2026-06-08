@@ -50,7 +50,10 @@ class SFTConfig(TrainingArguments):
     #: Compute the loss only over completion tokens (prompt-completion data).
     #: ``None`` auto-detects from the dataset format at trainer-init time.
     completion_only_loss: bool | None = None  # sft_config.py:242
-    #: EOS token appended to text examples; ``None`` uses ``tokenizer.eos_token``.
+    #: EOS token appended to plain-text examples so the model learns to stop.
+    #: When set, this exact token is used (and overrides ``tokenizer.eos_token``);
+    #: when ``None`` (the default), the tokenizer's own ``eos_token`` is used. If
+    #: the tokenizer has no EOS token either, nothing is appended.
     eos_token: str | None = None  # sft_config.py:180
     #: Pad the collated batch length up to a multiple of this value.
     pad_to_multiple_of: int | None = None  # sft_config.py:232
@@ -70,11 +73,22 @@ class SFTConfig(TrainingArguments):
     #: fail at the trainer's loss-dispatch table (no curated check here).
     loss_type: str = "nll"  # sft_config.py:264
 
-    # ---- Memory ----------------------------------------------------------
-    #: Offload saved activations to CPU during the backward pass. Maps onto
-    #: ``DPTrainer``'s existing ``cpu_offload_activations`` (the trainer wires
-    #: the alias through at construction).
-    activation_offloading: bool = False  # sft_config.py:275
+    # ``activation_offloading`` is inherited from the base ``TrainingArguments``
+    # (one field, shared by SFT and DPO); the base ``DPTrainer`` reads it.
+
+    # ---- Telemetry -------------------------------------------------------
+    #: Log the per-step completion-metric telemetry (``entropy``,
+    #: ``mean_token_accuracy``, ``logits/*``). When ``False`` these logits-derived
+    #: diagnostics are skipped, which also clears the way for the fused,
+    #: logits-free loss path (see :class:`SFTTrainer`).
+    log_completion_metrics: bool = True
+
+    # ---- TRL base-default overrides (override inherited defaults; the shared
+    # base default is unchanged for other trainers) ----------------------
+    #: TRL logs every 10 steps by default (vs. HF's 500). (sft_config.py)
+    logging_steps: float = 10
+    #: TRL enables gradient checkpointing by default to fit larger batches.
+    gradient_checkpointing: bool = True
 
     def __post_init__(self) -> None:
         # The one DP-driven override: the collator consumes raw dataset
@@ -82,4 +96,13 @@ class SFTConfig(TrainingArguments):
         # are not ``model.forward`` parameters and would be stripped by HF-style
         # column pruning. See plan §3.1.
         self.remove_unused_columns = False
+        # TRL parity: default to bf16 mixed precision when the hardware supports
+        # it and the user hasn't explicitly chosen a precision. The base's
+        # ``__post_init__`` still raises if bf16 was *explicitly* requested on
+        # unsupported hardware, so only auto-enable when it's actually available.
+        if not self.bf16 and not self.bf16_full_eval:
+            import torch
+
+            if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+                self.bf16 = True
         super().__post_init__()
