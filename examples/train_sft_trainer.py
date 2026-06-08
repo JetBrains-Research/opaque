@@ -6,8 +6,18 @@ script wires ``opaque.alignment`` primitives into a hand-rolled DP-SGD loop;
 this one hands the same primitives to :class:`opaque.transformers.trl.SFTTrainer`,
 which orchestrates the per-example DP path on top of ``DPTrainer``.
 
-Example::
+This example exposes the SFT features that otherwise have no example coverage:
+the loss paths (``nll`` / ``dft`` / the fused logits-free ``chunked_nll``), a
+custom ``compute_loss_func`` (``--compute-loss-func``, valid only on ``nll``),
+the PEFT added-token path (``--chat-template-path`` clones a chat template and
+its special tokens, then the LoRA config keeps those new embedding rows
+trainable), assistant-only masking on chat data (``--assistant-only-loss``), a
+meaningful ``--eos-token``, and the completion-metric telemetry gate
+(``--no-log-completion-metrics``).
 
+Examples::
+
+    # Plain LoRA SFT on raw text
     uv run python examples/train_sft_trainer.py \\
       --model-name Qwen/Qwen2.5-0.5B \\
       --dataset roneneldan/TinyStories --dataset-text-field text \\
@@ -16,6 +26,17 @@ Example::
       --learning-rate 1e-4 --clipping-norm 1.0 --noise-multiplier 0.8 \\
       --lora-modules q_proj k_proj v_proj o_proj gate_proj up_proj down_proj \\
       --seed 42
+
+    # Fused logits-free loss (CUDA fast path, eager fallback elsewhere)
+    uv run python examples/train_sft_trainer.py --loss-type chunked_nll
+
+    # Custom per-example loss (nll path only)
+    uv run python examples/train_sft_trainer.py --loss-type nll --compute-loss-func
+
+    # PEFT added-token path: clone a chat template + special tokens, train the
+    # new embedding rows alongside the LoRA adapter, mask to assistant turns.
+    uv run python examples/train_sft_trainer.py \\
+      --chat-template-path Qwen/Qwen2.5-0.5B-Instruct --assistant-only-loss
 """
 
 from __future__ import annotations
@@ -23,8 +44,9 @@ from __future__ import annotations
 import argparse
 
 import torch
+import torch.nn.functional as F
 from datasets import Dataset, load_dataset
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from opaque.transformers.trl import SFTConfig, SFTTrainer
@@ -38,8 +60,43 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dataset-split", default="train")
     p.add_argument("--dataset-text-field", default="text")
     p.add_argument("--num-train-samples", type=int, default=2000)
-    p.add_argument("--loss-type", default="nll", choices=["nll", "dft"])
+    # --- Loss --------------------------------------------------------------
+    p.add_argument(
+        "--loss-type",
+        default="nll",
+        choices=["nll", "dft", "chunked_nll"],
+        help="nll = standard CE; dft = Dynamic Fine-Tuning; chunked_nll = fused "
+        "logits-free linear-CE (CUDA fast path, eager fallback).",
+    )
+    p.add_argument(
+        "--compute-loss-func",
+        action="store_true",
+        help="Wire a custom per-example loss (label-smoothed CE). Valid only on "
+        "--loss-type nll (dft / chunked_nll compute their own loss).",
+    )
     p.add_argument("--completion-only", action="store_true")
+    p.add_argument(
+        "--assistant-only-loss",
+        action="store_true",
+        help="Mask the loss to assistant turns on conversational data "
+        "(uses the generation-marked training chat template).",
+    )
+    p.add_argument(
+        "--eos-token",
+        default=None,
+        help="EOS token appended to plain-text examples (overrides the "
+        "tokenizer's eos_token); None uses the tokenizer's own.",
+    )
+    # --- Telemetry ---------------------------------------------------------
+    p.add_argument(
+        "--no-log-completion-metrics",
+        dest="log_completion_metrics",
+        action="store_false",
+        help="Skip the logits-consuming completion telemetry "
+        "(entropy / mean_token_accuracy / logits/*).",
+    )
+    p.set_defaults(log_completion_metrics=True)
+    # --- Training ----------------------------------------------------------
     p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--microbatch-size", type=int, default=None)
@@ -50,11 +107,39 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--target-epsilon", type=float, default=None)
     p.add_argument("--log-steps", type=int, default=5)
     p.add_argument("--output-dir", default="trainer_output/sft")
+    # --- PEFT --------------------------------------------------------------
+    p.add_argument(
+        "--chat-template-path",
+        default=None,
+        help="Tokenizer dir / Jinja file whose chat template + special tokens "
+        "are cloned onto the tokenizer before training. New tokens' embedding "
+        "rows are kept trainable alongside the LoRA adapter.",
+    )
     p.add_argument("--lora-modules", nargs="+", default=["q_proj", "v_proj"])
     p.add_argument("--lora-r", type=int, default=8)
     p.add_argument("--lora-alpha", type=int, default=16)
     p.add_argument("--seed", type=int, default=42)
     return p.parse_args()
+
+
+def label_smoothed_ce(outputs, labels: torch.Tensor) -> torch.Tensor:
+    """Custom per-example loss: label-smoothed next-token cross-entropy.
+
+    Runs inside the trainer's per-example ``vmap`` path, so it sees a single
+    example's ``outputs.logits`` ``(T, V)`` and ``labels`` ``(T,)`` and must
+    return a scalar. Standard causal-LM shift (predict token ``t+1`` from ``t``)
+    with ``-100`` ignored positions. Only valid on ``--loss-type nll``.
+    """
+    logits = outputs.logits[..., :-1, :]
+    shift_labels = labels[..., 1:]
+    mask = shift_labels != -100
+    safe_labels = shift_labels.clamp(min=0)
+    logp = F.log_softmax(logits, dim=-1)
+    nll = -logp.gather(-1, safe_labels.unsqueeze(-1)).squeeze(-1)
+    smooth = -logp.mean(dim=-1)
+    loss = 0.9 * nll + 0.1 * smooth
+    masked = loss * mask
+    return masked.sum() / mask.sum().clamp(min=1)
 
 
 def main() -> int:
@@ -65,16 +150,17 @@ def main() -> int:
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(args.model_name)
-    model = get_peft_model(
-        model,
-        LoraConfig(
-            r=args.lora_r,
-            lora_alpha=args.lora_alpha,
-            target_modules=args.lora_modules,
-            lora_dropout=0.0,
-        ),
+
+    # PEFT config is handed to the trainer (it calls get_peft_model). When a chat
+    # template is cloned in, the trainer marks the freshly added tokens' embedding
+    # rows trainable on this config (trainable_token_indices + lm_head), so the
+    # new special tokens are actually learned under DP.
+    peft_config = LoraConfig(
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        target_modules=args.lora_modules,
+        lora_dropout=0.0,
     )
-    model.print_trainable_parameters()
 
     raw = load_dataset(
         args.dataset, args.dataset_config, split=args.dataset_split, streaming=True
@@ -87,7 +173,11 @@ def main() -> int:
         overwrite_output_dir=True,
         dataset_text_field=args.dataset_text_field,
         completion_only_loss=True if args.completion_only else None,
+        assistant_only_loss=args.assistant_only_loss,
+        chat_template_path=args.chat_template_path,
+        eos_token=args.eos_token,
         loss_type=args.loss_type,
+        log_completion_metrics=args.log_completion_metrics,
         max_length=args.max_length,
         per_device_train_batch_size=args.batch_size,
         microbatch_size=args.microbatch_size,
@@ -106,11 +196,17 @@ def main() -> int:
         optim_args="noise_bias_correction=True",
     )
 
+    # A custom compute_loss_func is only meaningful on the standard ``nll`` path
+    # (dft / chunked_nll compute their own loss); the trainer guards this.
+    compute_loss_func = label_smoothed_ce if args.compute_loss_func else None
+
     trainer = SFTTrainer(
         model=model,
         args=sft_args,
         train_dataset=train_dataset,
         processing_class=tokenizer,
+        compute_loss_func=compute_loss_func,
+        peft_config=peft_config,
     )
     out = trainer.train()
     print("Training complete:", out)

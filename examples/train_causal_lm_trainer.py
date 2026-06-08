@@ -408,7 +408,7 @@ def parse_args() -> argparse.Namespace:
         "--cpu-offload",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Use DPTrainer cpu_offload_activations.",
+        help="Use DPTrainer activation_offloading.",
     )
     train_group.add_argument(
         "--auto-find-microbatch-size",
@@ -992,7 +992,7 @@ def main() -> int:
         bf16_full_eval=args.bf16_full_eval,
         gradient_checkpointing=args.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False},
-        cpu_offload_activations=args.cpu_offload,
+        activation_offloading=args.cpu_offload,
         microbatch_size=args.microbatch_size,
         auto_find_microbatch_size=args.auto_find_microbatch_size,
         torch_compile=args.torch_compile,
