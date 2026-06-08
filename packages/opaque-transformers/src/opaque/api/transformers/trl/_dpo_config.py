@@ -18,7 +18,15 @@ from __future__ import annotations
 
 import dataclasses
 
+import torch
+
 from opaque.api.transformers.trainer._config import TrainingArguments
+
+# Loss heads that score the policy's own logp(s) — no reference model is
+# resolved or precomputed for them. ``self._needs_reference`` is derived from
+# the configured ``loss_type`` against this set (a run is reference-free only
+# when *every* head is in it), replacing the old public ``reference_free`` flag.
+_REFERENCE_FREE_HEADS = frozenset({"sft", "simpo", "cpo", "orpo"})
 
 
 @dataclasses.dataclass
@@ -27,6 +35,10 @@ class DPOConfig(TrainingArguments):
 
     # ---- Learning rate override (TRL default differs from HF) ------------
     learning_rate: float = 1e-6  # dpo_config.py:142
+
+    # ---- TRL base defaults (override the inherited HF/base values) -------
+    logging_steps: float = 10  # dpo_config.py / TRL parity
+    gradient_checkpointing: bool = True  # TRL parity
 
     # ---- Model loading ---------------------------------------------------
     #: Extra kwargs forwarded to ``AutoModelForCausalLM.from_pretrained`` when
@@ -60,24 +72,30 @@ class DPOConfig(TrainingArguments):
     use_weighting: bool = False  # dpo_config.py:268
     #: DiscoPOP temperature.
     discopop_tau: float = 0.05  # dpo_config.py:275
-    #: Score against the policy's own logp instead of a reference (CPO/ORPO/SimPO).
-    reference_free: bool = False
+    #: SimPO target reward margin γ subtracted inside the sigmoid (dpo_config.py).
+    simpo_gamma: float = 0.5
+    #: CPO supervised-NLL regulariser weight on the chosen completion.
+    cpo_alpha: float = 1.0
+    #: ORPO odds-ratio term weight (maps to TRL ORPO's ``beta``).
+    orpo_lambda: float = 1.0
 
     # ---- Reference model -------------------------------------------------
     #: Batch size for the reference precompute pass; defaults to the train
     #: per-device batch size when ``None``. (There is no ``precompute_ref_log_probs``
     #: toggle: under the per-example DP substrate a *static* reference is always
     #: precomputed — the ``vmap`` loss can only read it as a constant column —
-    #: so the toggle would be misleading. ``reference_free`` skips it; TR-DPO
-    #: (``sync_ref_model``) recomputes per step.)
+    #: so the toggle would be misleading. A reference-free ``loss_type``
+    #: (``simpo``/``cpo``/``orpo``/``sft``) skips it; TR-DPO (``sync_ref_model``)
+    #: recomputes per step.)
     precompute_ref_batch_size: int | None = None  # dpo_config.py:201
     #: Disable dropout in policy (and reference) before training.
     disable_dropout: bool = True  # dpo_config.py:155
 
     # ---- TR-DPO (reference sync, arXiv:2502.18014) -----------------------
     #: Periodically move the reference toward the policy by an EMA step
-    #: (recomputed per training step, outside vmap). Incompatible with
-    #: ``reference_free``; full fine-tuning only (not PEFT, mirroring TRL).
+    #: (recomputed per training step, outside vmap). Requires a reference-using
+    #: ``loss_type`` (nothing to sync toward otherwise); full fine-tuning only
+    #: (not PEFT, mirroring TRL).
     sync_ref_model: bool = False  # dpo_config.py:287
     #: EMA mixup α: ``ref ← (1 - α)·ref + α·policy``.
     ref_model_mixup_alpha: float = 0.6  # dpo_config.py:296
@@ -96,6 +114,14 @@ class DPOConfig(TrainingArguments):
     pad_to_multiple_of: int | None = None  # dpo_config.py:189
     #: Number of processes for ``datasets.map`` during preprocessing.
     dataset_num_proc: int | None = None  # dpo_config.py:161
+
+    # ---- Telemetry -------------------------------------------------------
+    #: Log the logits-consuming completion telemetry (``entropy``,
+    #: ``mean_token_accuracy``, ``logits/*``) each step. Default ``True`` (the
+    #: eager path). When ``False`` these are skipped, which also lets the trainer
+    #: select the fused, logits-free log-prob primitives when CUDA is available
+    #: and no other logits-consuming feature is active.
+    log_completion_metrics: bool = True
 
     def __post_init__(self) -> None:
         # DP-driven: the preference collator consumes non-``forward`` columns
@@ -134,8 +160,23 @@ class DPOConfig(TrainingArguments):
                 f"loss_type contains duplicates: {self.loss_type}. Each loss "
                 "variant may appear at most once in an MPO combination."
             )
-        if self.sync_ref_model and self.reference_free:
+        # TR-DPO has nothing to sync toward when every head is reference-free.
+        if self.sync_ref_model and all(
+            lt in _REFERENCE_FREE_HEADS for lt in self.loss_type
+        ):
+            names = ", ".join(self.loss_type)
             raise ValueError(
-                "sync_ref_model (TR-DPO) is incompatible with reference_free: "
-                "there is no reference to sync."
+                "TR-DPO (sync_ref_model) requires a reference-using loss_type; "
+                f"{names} are reference-free."
             )
+
+        # TRL parity: default bf16 on when the hardware supports it and the user
+        # did not opt in/out explicitly. Set after the loss validation and only
+        # when supported, so the base's explicit-bf16-on-unsupported-hw raise
+        # (already run in super().__post_init__) is not retriggered.
+        if (
+            not self.bf16
+            and torch.cuda.is_available()
+            and torch.cuda.is_bf16_supported()
+        ):
+            self.bf16 = True
