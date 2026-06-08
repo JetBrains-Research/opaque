@@ -231,6 +231,108 @@ def test_sft_logs_train_telemetry(tmp_path):
     assert "mean_token_accuracy" in logged
 
 
+def test_sft_log_completion_metrics_false_skips_completion_keys(tmp_path):
+    # log_completion_metrics=False trains fine and emits NO completion-metric
+    # telemetry; the default (True) emits it (covered above).
+    torch.manual_seed(0)
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(
+            SFTConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="nll",
+            log_completion_metrics=False,
+        ),
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    out = trainer.train()
+    assert out.global_step == 2
+    assert torch.isfinite(torch.tensor(out.training_loss))
+    logged = set().union(*(row.keys() for row in trainer.state.log_history))
+    assert "entropy" not in logged
+    assert "mean_token_accuracy" not in logged
+
+
+def test_sft_activation_offloading_inherited_base_field(tmp_path):
+    # ``activation_offloading`` is the single inherited base field (the SFT
+    # duplicate + alias shim were removed). The config accepts it on SFTConfig
+    # and the base DPTrainer reader sees the same flag — no SFT-side wiring.
+    args = _args(
+        SFTConfig, tmp_path, max_length=8, loss_type="nll", activation_offloading=True
+    )
+    assert args.activation_offloading is True
+    torch.manual_seed(0)
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=args,
+        train_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    # The reader in DPTrainer._setup_training reads ``args.activation_offloading``.
+    assert trainer.args.activation_offloading is True
+    out = trainer.train()
+    assert out.global_step == 2
+    assert torch.isfinite(torch.tensor(out.training_loss))
+
+
+def test_sft_eos_token_honored_when_set_else_tokenizer(tmp_path):
+    # The ``eos_token`` field is meaningful for plain-text rows: when explicitly
+    # set, that token's id is appended; when unset, the tokenizer's eos is used.
+    text_rows = Dataset.from_list([{"text": "hello world"} for _ in range(4)])
+
+    class _TextTokenizer:
+        # Tiny tokenizer: split words on whitespace; the (no-whitespace) eos
+        # string is appended directly to the text, so peel it off the tail.
+        pad_token_id = 0
+        pad_token = "<pad>"
+        eos_token = "</s>"
+
+        _vocab = {"hello": 5, "world": 6, "</s>": 2, "<eos2>": 3}
+        _specials = ("</s>", "<eos2>")
+
+        def save_pretrained(self, *a, **k):
+            return None
+
+        def __call__(self, text, add_special_tokens=True, truncation=False,
+                     max_length=None):
+            trailing = []
+            for special in self._specials:
+                if text.endswith(special):
+                    text = text[: -len(special)]
+                    trailing = [self._vocab[special]]
+                    break
+            ids = [self._vocab[tok] for tok in text.split()] + trailing
+            if max_length is not None and truncation:
+                ids = ids[:max_length]
+            return {"input_ids": ids}
+
+    # Default: falls back to tokenizer.eos_token ("</s>" -> id 2).
+    args_default = _args(SFTConfig, tmp_path, max_length=16, loss_type="nll")
+    tok_default = _TextTokenizer()
+    trainer_default = SFTTrainer(
+        model=_tiny_model(),
+        args=args_default,
+        train_dataset=text_rows,
+        processing_class=tok_default,
+    )
+    assert trainer_default.train_dataset[0]["input_ids"][-1] == 2
+
+    # Explicit eos_token overrides the tokenizer's eos ("<eos2>" -> id 3).
+    args_explicit = _args(
+        SFTConfig, tmp_path, max_length=16, loss_type="nll", eos_token="<eos2>"
+    )
+    tok_explicit = _TextTokenizer()
+    trainer_explicit = SFTTrainer(
+        model=_tiny_model(),
+        args=args_explicit,
+        train_dataset=text_rows,
+        processing_class=tok_explicit,
+    )
+    assert trainer_explicit.train_dataset[0]["input_ids"][-1] == 3
+
+
 def test_sft_metrics_seam_failsafe_on_missing_logits(tmp_path):
     # Fail-safe: when the forward yields no logits (the CUDA fused logits-free
     # path), the telemetry dict is empty rather than crashing. On the CPU eager
