@@ -18,9 +18,7 @@ from opaque.transformers.trl import DPOConfig  # noqa: E402
 def _trl_dpo_args(tmp_path, **overrides):
     return trl.DPOConfig(
         output_dir=str(tmp_path),
-        per_device_train_batch_size=overrides.pop(
-            "per_device_train_batch_size", 8
-        ),
+        per_device_train_batch_size=overrides.pop("per_device_train_batch_size", 8),
         learning_rate=overrides.pop("learning_rate", 1e-6),
         max_steps=overrides.pop("max_steps", 10),
         seed=overrides.pop("seed", 42),
@@ -104,9 +102,7 @@ def test_loss_type_sigmoid_passes(tmp_path):
 
 def test_loss_type_mpo_blend_passes(tmp_path):
     cfg = DPOConfig.from_trl(
-        _trl_dpo_args(
-            tmp_path, loss_type=["sigmoid", "sft"], loss_weights=[1.0, 0.5]
-        ),
+        _trl_dpo_args(tmp_path, loss_type=["sigmoid", "sft"], loss_weights=[1.0, 0.5]),
         privacy_noise_multiplier=0.8,
         clipping_norm=1.0,
     )

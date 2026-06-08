@@ -317,12 +317,8 @@ def _convert_trl_config(
 
     hf_values = {k: v for k, v in source_values.items() if k in hf_field_names}
     hf_defaults = {k: v for k, v in source_defaults.items() if k in hf_field_names}
-    trl_values = {
-        k: v for k, v in source_values.items() if k not in hf_field_names
-    }
-    trl_defaults = {
-        k: v for k, v in source_defaults.items() if k not in hf_field_names
-    }
+    trl_values = {k: v for k, v in source_values.items() if k not in hf_field_names}
+    trl_defaults = {k: v for k, v in source_defaults.items() if k not in hf_field_names}
 
     # Layer 1: HF base translation.
     hf_converted = apply_manifest(
@@ -368,8 +364,7 @@ def convert_trl_sft_config(
     trl = _import_trl()
     if not isinstance(trl_cfg, trl.SFTConfig):
         raise TypeError(
-            f"Expected ``trl.SFTConfig`` instance, got "
-            f"{type(trl_cfg).__name__}."
+            f"Expected ``trl.SFTConfig`` instance, got {type(trl_cfg).__name__}."
         )
 
     dp_layer = normalize_dp_overrides(dp_overrides)
@@ -396,8 +391,7 @@ def convert_trl_dpo_config(
     trl = _import_trl()
     if not isinstance(trl_cfg, trl.DPOConfig):
         raise TypeError(
-            f"Expected ``trl.DPOConfig`` instance, got "
-            f"{type(trl_cfg).__name__}."
+            f"Expected ``trl.DPOConfig`` instance, got {type(trl_cfg).__name__}."
         )
 
     dp_layer = normalize_dp_overrides(dp_overrides)

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-import warnings
 
 import pytest
 
@@ -23,9 +21,7 @@ def _trl_args(tmp_path, **overrides):
     """Construct a TRL SFTConfig with the smallest set of explicit args."""
     return trl.SFTConfig(
         output_dir=str(tmp_path),
-        per_device_train_batch_size=overrides.pop(
-            "per_device_train_batch_size", 8
-        ),
+        per_device_train_batch_size=overrides.pop("per_device_train_batch_size", 8),
         learning_rate=overrides.pop("learning_rate", 1e-4),
         max_steps=overrides.pop("max_steps", 10),
         seed=overrides.pop("seed", 42),
