@@ -12,6 +12,7 @@ primitives; this class is the orchestration layer.
 
 from __future__ import annotations
 
+from operator import attrgetter
 from typing import Any, Callable
 
 import torch
@@ -56,12 +57,23 @@ def _detect_chat_column(row: dict) -> str | None:
 def _resolve_fused_handles(model: Any, eligible: bool) -> tuple[str | None, str | None]:
     """Resolve the backbone-prefix + lm_head param-key for the fused loss path.
 
-    Returns ``(backbone_prefix, lm_head_param_name)`` — the attribute name of the
-    backbone submodule (``model.base_model_prefix``, e.g. ``"model"``) and the
-    key of the lm_head weight in ``model.named_parameters()``. The latter is found
-    by id-matching ``get_output_embeddings().weight`` against the named params, so
-    it resolves correctly even under **tied embeddings** (where ``lm_head.weight``
-    is absent and the key is the embedding's ``model.embed_tokens.weight``).
+    Returns ``(backbone_prefix, lm_head_param_name)`` — the **dotted attribute
+    path** from ``model`` to the backbone submodule (e.g. ``"model"`` on a bare
+    causal-LM, ``"base_model.model.model"`` on a PEFT-wrapped one) and the key of
+    the lm_head weight in ``model.named_parameters()``. The path doubles as the
+    params-key prefix when slicing the backbone-scoped sub-dict. The lm_head
+    key is found by id-matching ``get_output_embeddings().weight`` against the
+    named params, so it resolves correctly even under **tied embeddings** (where
+    ``lm_head.weight`` is absent and the key is the embedding's
+    ``model.embed_tokens.weight``).
+
+    Under PEFT, ``getattr(peft_model, base_model_prefix)`` is the inner causal-LM
+    (still has ``lm_head``) — calling it functionally returns
+    ``CausalLMOutputWithPast`` instead of ``BaseModelOutputWithPast``, breaking
+    ``_last_hidden_state``. We detect PEFT via the ``peft_config`` marker, walk
+    to the inner causal-LM at ``peft_model.base_model.model``, and prepend the
+    ``base_model.model.`` PEFT path so the returned dotted prefix walks all the
+    way to the real backbone.
 
     Returns ``(None, None)`` when the run is ineligible or the model does not
     expose the ``backbone + output-embeddings`` shape the fused path needs (in
@@ -69,19 +81,35 @@ def _resolve_fused_handles(model: Any, eligible: bool) -> tuple[str | None, str 
     """
     if not eligible or model is None:
         return None, None
-    prefix = getattr(model, "base_model_prefix", None)
-    get_oe = getattr(model, "get_output_embeddings", None)
-    if not prefix or get_oe is None or getattr(model, prefix, None) is None:
+    # Unwrap PEFT: PeftModel.base_model is the adapter wrapper (LoraModel etc.),
+    # whose ``.model`` is the original *ForCausalLM whose ``base_model_prefix``
+    # we actually want. ``hasattr(model, "peft_config")`` is the PEFT marker
+    # (PreTrainedModel.base_model also exists but as a self-reference, so we
+    # cannot use it for PEFT detection).
+    if hasattr(model, "peft_config"):
+        inner = getattr(getattr(model, "base_model", None), "model", None)
+        path_to_inner = "base_model.model."
+    else:
+        inner = model
+        path_to_inner = ""
+    if inner is None:
+        return None, None
+    prefix = getattr(inner, "base_model_prefix", None)
+    get_oe = getattr(inner, "get_output_embeddings", None)
+    if not prefix or get_oe is None or getattr(inner, prefix, None) is None:
         return None, None
     output_embeddings = get_oe()
     weight = getattr(output_embeddings, "weight", None) if output_embeddings else None
     if weight is None:
         return None, None
+    # ``params`` at training time is keyed off the OUTER model's named_parameters
+    # tree (PEFT-wrapped keys live under ``base_model.model.``), so the id-lookup
+    # must run on the outer model — not the unwrapped inner.
     name_by_id = {id(p): n for n, p in model.named_parameters()}
     lm_head_param_name = name_by_id.get(id(weight))
     if lm_head_param_name is None:
         return None, None
-    return prefix, lm_head_param_name
+    return path_to_inner + prefix, lm_head_param_name
 
 
 class SFTTrainer(DPTrainer):
@@ -446,13 +474,19 @@ class SFTTrainer(DPTrainer):
     ) -> torch.Tensor:
         """Backbone last hidden state ``(T, H)`` only — no lm_head, no all-layers.
 
-        Calls the backbone submodule (``getattr(self._model, base_model_prefix)``)
+        Calls the backbone submodule (resolved via :func:`_resolve_fused_handles`)
         functionally with the backbone-scoped slice of ``params`` (the keys under
         the ``"<prefix>."`` namespace, re-rooted to the submodule). This returns
         just the last-layer hidden state — unlike ``output_hidden_states=True``,
         which stacks all ``L+1`` layers and can exceed the ``(T, V)`` logits the
         fused path is avoiding. The HF backbones in scope return the hidden state
         as ``out[0]`` / ``out.last_hidden_state``.
+
+        The backbone-prefix is a **dotted path** (``"model"`` on a bare causal-LM,
+        ``"base_model.model.model"`` on a PEFT-wrapped one) so ``attrgetter``
+        walks PEFT wrappers correctly — calling the unwrapped backbone (not the
+        inner causal-LM) is what guarantees ``BaseModelOutputWithPast`` rather
+        than ``CausalLMOutputWithPast``.
 
         The ``batchify`` vmap-safety patch is applied to the *causal-LM* class,
         not the backbone, so under ``vmap`` (per-example ``(T,)`` inputs) we add
@@ -464,7 +498,7 @@ class SFTTrainer(DPTrainer):
         backbone_params = {
             k[len(prefix) :]: v for k, v in params.items() if k.startswith(prefix)
         }
-        backbone = getattr(self._model, self._backbone_prefix)
+        backbone = attrgetter(self._backbone_prefix)(self._model)
         unbatched = input_ids.ndim < 2
         if unbatched:
             input_ids = input_ids.unsqueeze(0)

@@ -1368,3 +1368,63 @@ def test_dpo_fused_trains_a_couple_steps(tmp_path):
     out = trainer.train()
     assert out.global_step == 2
     assert torch.isfinite(torch.tensor(out.training_loss))
+
+
+# ----------------------------------------------------------------------
+# PEFT unwrap — fused-dft / fused-logp backbone resolution under PEFT
+# Regression coverage: pre-fix the resolver returned ``"model"`` on a
+# ``PeftModelForCausalLM`` and ``getattr(peft_model, "model")`` resolved to
+# the inner causal-LM (still with ``lm_head``), so ``functional_call``
+# returned ``CausalLMOutputWithPast`` instead of ``BaseModelOutputWithPast``
+# and ``_last_hidden_state`` crashed with ``AttributeError`` on every
+# PEFT-wrapped fused-dft / fused-logp run.
+# ----------------------------------------------------------------------
+def _tiny_peft_model():
+    peft = pytest.importorskip("peft")
+    base = _tiny_model()
+    cfg = peft.LoraConfig(
+        r=4, lora_alpha=8, target_modules=["q_proj", "v_proj"], bias="none"
+    )
+    return peft.get_peft_model(base, cfg)
+
+
+def test_sft_resolve_fused_handles_unwraps_peft():
+    from opaque.api.transformers.trl._sft_trainer import _resolve_fused_handles
+
+    peft_model = _tiny_peft_model()
+    prefix, lm_head_name = _resolve_fused_handles(peft_model, eligible=True)
+    # PEFT-aware dotted path that ``attrgetter`` walks all the way to the
+    # real backbone (LlamaModel), not the wrapped causal-LM.
+    assert prefix == "base_model.model.model"
+    # lm_head param-name resolves on the OUTER model — under PEFT, every key
+    # in named_parameters lives under ``base_model.model.``.
+    assert lm_head_name is not None
+    assert lm_head_name.startswith("base_model.model.")
+    # Walking the returned prefix yields the unwrapped backbone — calling it
+    # functionally returns a BaseModelOutputWithPast (with last_hidden_state),
+    # which is what _last_hidden_state requires.
+    from operator import attrgetter
+
+    backbone = attrgetter(prefix)(peft_model)
+    assert backbone.__class__.__name__ == "LlamaModel"
+
+
+def test_dpo_resolve_fused_handles_unwraps_peft():
+    from opaque.api.transformers.trl._dpo_trainer import _resolve_fused_handles
+
+    peft_model = _tiny_peft_model()
+    prefix, lm_head_name = _resolve_fused_handles(peft_model, eligible=True)
+    assert prefix == "base_model.model.model"
+    assert lm_head_name is not None
+    assert lm_head_name.startswith("base_model.model.")
+
+
+def test_sft_resolve_fused_handles_bare_model_unchanged():
+    """Non-PEFT path still returns the bare ``base_model_prefix`` (no regression)."""
+    from opaque.api.transformers.trl._sft_trainer import _resolve_fused_handles
+
+    bare = _tiny_model()
+    prefix, lm_head_name = _resolve_fused_handles(bare, eligible=True)
+    assert prefix == "model"  # LlamaForCausalLM.base_model_prefix == "model"
+    assert lm_head_name is not None
+    assert not lm_head_name.startswith("base_model.")
