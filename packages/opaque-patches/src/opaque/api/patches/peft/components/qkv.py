@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from ._utils import _extract_lora_params
+from ._utils import _active_lora_dtype, _extract_lora_params
 
 _FUSEABLE_QKV_ATTENTION_CLASSES = {
     "LlamaAttention",
@@ -23,13 +23,14 @@ def _opaque_fused_lora_qkv(self, hidden_states):
     """
     from opaque.api.patches.kernels.lora import Opaque_LoRA_QKV
 
-    dtype = hidden_states.dtype
+    dtype = _active_lora_dtype(hidden_states)
 
     Wq, Aq, Bq, Sq = _extract_lora_params(self.q_proj)
     Wk, Ak, Bk, Sk = _extract_lora_params(self.k_proj)
     Wv, Av, Bv, Sv = _extract_lora_params(self.v_proj)
 
-    # Cast LoRA weights to input dtype for mixed precision
+    # Cast LoRA A/B to the active kernel dtype (autocast dtype when active, else
+    # the input dtype). See peft.components._utils._active_lora_dtype.
     if Aq is not None:
         Aq, Bq = Aq.to(dtype), Bq.to(dtype)
     if Ak is not None:

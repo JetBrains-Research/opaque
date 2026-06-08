@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
-from ._utils import _extract_lora_params
+from ._utils import _active_lora_dtype, _extract_lora_params
 
 _MLP_ACTIVATION_MAP = {
     "LlamaMLP": 0,  # ACTIVATION_SWIGLU
@@ -46,13 +46,14 @@ def _make_fused_lora_mlp_forward(original_forward, activation_type):
             return original_forward(x)
         from opaque.api.patches.kernels.lora import Opaque_LoRA_MLP
 
-        dtype = x.dtype
+        dtype = _active_lora_dtype(x)
 
         Wg, Ag, Bg, Sg = _extract_lora_params(self.gate_proj)
         Wu, Au, Bu, Su = _extract_lora_params(self.up_proj)
         Wd, Ad, Bd, Sd = _extract_lora_params(self.down_proj)
 
-        # Cast LoRA weights to input dtype for mixed precision
+        # Cast LoRA A/B to the active kernel dtype (autocast dtype when active, else
+        # the input dtype). See peft.components._utils._active_lora_dtype.
         if Ag is not None:
             Ag, Bg = Ag.to(dtype), Bg.to(dtype)
         if Au is not None:

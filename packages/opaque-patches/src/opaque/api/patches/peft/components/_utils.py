@@ -5,6 +5,22 @@ from __future__ import annotations
 import torch
 
 
+def _active_lora_dtype(x: torch.Tensor) -> torch.dtype:
+    """Dtype that LoRA A/B weights must use for the fused kernel call.
+
+    When ``torch.autocast(device_type="cuda")`` is active the kernel's
+    autocast-intercepted matmuls (``F.linear``, ``@``) produce tensors
+    in the autocast dtype, so the still-fp32 LoRA weights would mismatch
+    at the subsequent ``addmm_``. Mirror the public ``opaque_*`` wrappers'
+    :func:`follow_autocast` behaviour by casting to the autocast dtype
+    when active; otherwise honour the input dtype (mixed-precision via
+    explicit model cast).
+    """
+    if x.is_cuda and torch.is_autocast_enabled("cuda"):
+        return torch.get_autocast_dtype("cuda")
+    return x.dtype
+
+
 def _extract_lora_params(lora_linear):
     """Extract (W, A, B, scaling) from a peft LoRA Linear module.
 

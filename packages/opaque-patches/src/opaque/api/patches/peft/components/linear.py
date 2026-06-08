@@ -5,6 +5,8 @@ from __future__ import annotations
 import torch
 import logging
 
+from ._utils import _active_lora_dtype
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,11 +49,14 @@ def _make_lora_linear_forward(original):
         # (out_features, in_features).  PEFT sets fan_in_fan_out=True for Conv1D.
         if getattr(self, "fan_in_fan_out", False):
             W = W.T
-        # PEFT stores lora_A as (rank, in_features), kernel expects (in_features, rank)
-        # Cast to input dtype for mixed precision compatibility
-        A = self.lora_A[active].weight.T.to(x.dtype)
+        # PEFT stores lora_A as (rank, in_features), kernel expects (in_features, rank).
+        # Cast to the active dtype: under autocast that's the autocast dtype (the
+        # kernel's interior matmuls are autocast-intercepted to that dtype, and a
+        # still-fp32 B would mismatch at addmm_); otherwise follow x.dtype.
+        target_dtype = _active_lora_dtype(x)
+        A = self.lora_A[active].weight.T.to(target_dtype)
         # PEFT stores lora_B as (out_features, rank), kernel expects (rank, out_features)
-        B = self.lora_B[active].weight.T.to(x.dtype)
+        B = self.lora_B[active].weight.T.to(target_dtype)
         scaling = self.scaling[active]
 
         result = Opaque_LoRA_W.apply(x, W, A, B, scaling)
@@ -65,8 +70,8 @@ def _make_lora_linear_forward(original):
             if adapter in self.lora_A:
                 dropout_i = self.lora_dropout[adapter]
                 x_i = dropout_i(x)
-                A_i = self.lora_A[adapter].weight.T.to(x.dtype)
-                B_i = self.lora_B[adapter].weight.T.to(x.dtype)
+                A_i = self.lora_A[adapter].weight.T.to(target_dtype)
+                B_i = self.lora_B[adapter].weight.T.to(target_dtype)
                 scaling_i = self.scaling[adapter]
                 lora_out = (x_i @ A_i) @ B_i * scaling_i
                 result = result + lora_out
