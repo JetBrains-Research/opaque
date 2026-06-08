@@ -31,6 +31,63 @@ from opaque.api.transformers.compat._hf import (  # noqa: E402
     HF_RENAME_MAP,
     HF_TRANSFORM_MAP,
 )
+from opaque.api.transformers.compat._trl import (  # noqa: E402
+    TRL_DPO_DIRECT_FIELDS,
+    TRL_DPO_DROP_FIELDS,
+    TRL_DPO_REJECTED_FIELDS,
+    TRL_DPO_RENAME_MAP,
+    TRL_DPO_TRANSFORM_MAP,
+    TRL_SFT_DIRECT_FIELDS,
+    TRL_SFT_DROP_FIELDS,
+    TRL_SFT_REJECTED_FIELDS,
+    TRL_SFT_RENAME_MAP,
+    TRL_SFT_TRANSFORM_MAP,
+)
+
+# TRL is an optional ``opaque[trl]`` extra; skip TRL-side checks if absent.
+trl = pytest.importorskip("trl")
+
+
+def _hf_inherited_field_names() -> set[str]:
+    """Field names handled by the HF base manifest (inherited by TRL configs)."""
+    return (
+        set(HF_DIRECT_FIELDS)
+        | set(HF_RENAME_MAP.keys())
+        | set(HF_TRANSFORM_MAP.keys())
+        | set(HF_REJECTED_FIELDS.keys())
+        | set(HF_DROP_FIELDS.keys())
+    )
+
+
+def _trl_sft_only_field_names() -> set[str]:
+    """TRL SFT field names NOT inherited from HF TrainingArguments."""
+    all_trl_sft = {f.name for f in dataclasses.fields(trl.SFTConfig)}
+    return all_trl_sft - _hf_inherited_field_names()
+
+
+def _trl_dpo_only_field_names() -> set[str]:
+    all_trl_dpo = {f.name for f in dataclasses.fields(trl.DPOConfig)}
+    return all_trl_dpo - _hf_inherited_field_names()
+
+
+def _opaque_buckets_for_trl_sft() -> set[str]:
+    return (
+        set(TRL_SFT_DIRECT_FIELDS)
+        | set(TRL_SFT_RENAME_MAP.keys())
+        | set(TRL_SFT_TRANSFORM_MAP.keys())
+        | set(TRL_SFT_REJECTED_FIELDS.keys())
+        | set(TRL_SFT_DROP_FIELDS.keys())
+    )
+
+
+def _opaque_buckets_for_trl_dpo() -> set[str]:
+    return (
+        set(TRL_DPO_DIRECT_FIELDS)
+        | set(TRL_DPO_RENAME_MAP.keys())
+        | set(TRL_DPO_TRANSFORM_MAP.keys())
+        | set(TRL_DPO_REJECTED_FIELDS.keys())
+        | set(TRL_DPO_DROP_FIELDS.keys())
+    )
 
 
 def _all_hf_field_names() -> set[str]:
@@ -94,6 +151,74 @@ def test_hf_manifest_covers_every_upstream_field():
         f"  - HF_REJECTED_FIELDS: unsupported on the DP-SGD path\n"
         f"  - HF_DROP_FIELDS: irrelevant on opaque path (drop with warning)"
     )
+
+
+def test_trl_sft_manifest_covers_every_upstream_field():
+    """Every TRL ``SFTConfig`` field is bucketed by HF base OR TRL SFT manifest."""
+    upstream_trl_only = _trl_sft_only_field_names()
+    covered = _opaque_buckets_for_trl_sft()
+    missing = upstream_trl_only - covered
+    assert not missing, (
+        f"TRL ``SFTConfig`` has SFT-specific fields not classified by the "
+        f"opaque compat manifest:\n  {sorted(missing)}\n\n"
+        f"For each missing field, add it to a constant in "
+        f"``opaque.api.transformers.compat._trl``: TRL_SFT_DIRECT_FIELDS, "
+        f"TRL_SFT_RENAME_MAP, TRL_SFT_TRANSFORM_MAP, TRL_SFT_REJECTED_FIELDS, "
+        f"or TRL_SFT_DROP_FIELDS."
+    )
+
+
+def test_trl_dpo_manifest_covers_every_upstream_field():
+    """Every TRL ``DPOConfig`` field is bucketed by HF base OR TRL DPO manifest."""
+    upstream_trl_only = _trl_dpo_only_field_names()
+    covered = _opaque_buckets_for_trl_dpo()
+    missing = upstream_trl_only - covered
+    assert not missing, (
+        f"TRL ``DPOConfig`` has DPO-specific fields not classified by the "
+        f"opaque compat manifest:\n  {sorted(missing)}\n\n"
+        f"For each missing field, add it to a constant in "
+        f"``opaque.api.transformers.compat._trl``: TRL_DPO_DIRECT_FIELDS, "
+        f"TRL_DPO_RENAME_MAP, TRL_DPO_TRANSFORM_MAP, TRL_DPO_REJECTED_FIELDS, "
+        f"or TRL_DPO_DROP_FIELDS."
+    )
+
+
+def test_trl_sft_manifest_buckets_are_disjoint():
+    buckets = {
+        "DIRECT": set(TRL_SFT_DIRECT_FIELDS),
+        "RENAME": set(TRL_SFT_RENAME_MAP.keys()),
+        "TRANSFORM": set(TRL_SFT_TRANSFORM_MAP.keys()),
+        "REJECT_IF_SET": set(TRL_SFT_REJECTED_FIELDS.keys()),
+        "DROP_WITH_WARN": set(TRL_SFT_DROP_FIELDS.keys()),
+    }
+    for name_a, set_a in buckets.items():
+        for name_b, set_b in buckets.items():
+            if name_a >= name_b:
+                continue
+            overlap = set_a & set_b
+            assert not overlap, (
+                f"TRL SFT manifest bucket overlap between {name_a} and "
+                f"{name_b}: {sorted(overlap)}."
+            )
+
+
+def test_trl_dpo_manifest_buckets_are_disjoint():
+    buckets = {
+        "DIRECT": set(TRL_DPO_DIRECT_FIELDS),
+        "RENAME": set(TRL_DPO_RENAME_MAP.keys()),
+        "TRANSFORM": set(TRL_DPO_TRANSFORM_MAP.keys()),
+        "REJECT_IF_SET": set(TRL_DPO_REJECTED_FIELDS.keys()),
+        "DROP_WITH_WARN": set(TRL_DPO_DROP_FIELDS.keys()),
+    }
+    for name_a, set_a in buckets.items():
+        for name_b, set_b in buckets.items():
+            if name_a >= name_b:
+                continue
+            overlap = set_a & set_b
+            assert not overlap, (
+                f"TRL DPO manifest bucket overlap between {name_a} and "
+                f"{name_b}: {sorted(overlap)}."
+            )
 
 
 def test_hf_manifest_does_not_have_phantom_fields():

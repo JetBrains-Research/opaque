@@ -17,6 +17,7 @@ faithful validations (label-smoothing bounds) are kept.
 from __future__ import annotations
 
 import dataclasses
+from typing import Any
 
 import torch
 
@@ -179,3 +180,87 @@ class DPOConfig(TrainingArguments):
             and torch.cuda.is_bf16_supported()
         ):
             self.bf16 = True
+
+    @classmethod
+    def from_trl(
+        cls,
+        trl_cfg: Any,
+        *,
+        # DP knobs (one of noise_multiplier / target_epsilon required)
+        privacy_noise_multiplier: float | None = None,
+        privacy_target_epsilon: float | None = None,
+        privacy_target_delta: float | None = None,
+        clipping_norm: float | dict[str, float] = 1.0,
+        privacy_noise_mechanism: str = "gaussian",
+        privacy_noise_radius: float = 3.0,
+        clipping_mode: str = "fixed",
+        clipping_kwargs: dict[str, Any] | None = None,
+        sampling_mode: str = "auto",
+        sampling_kwargs: dict[str, Any] | None = None,
+        noise_calibration_kwargs: dict[str, Any] | None = None,
+        # Behavior
+        strict: bool = True,
+        **opaque_overrides: Any,
+    ) -> "DPOConfig":
+        """Convert a ``trl.DPOConfig`` to an opaque ``DPOConfig``.
+
+        Requires the optional ``trl`` extra:
+        ``pip install opaque[trl]``.
+
+        TRL-specific fields (``loss_type``, ``loss_weights``, ``beta``,
+        ``label_smoothing``, ``f_divergence_type``, ``ld_alpha``,
+        ``use_weighting``, ``simpo_gamma``, ``cpo_alpha``, ``orpo_lambda``,
+        ``sync_ref_model``, ``ref_model_mixup_alpha``,
+        ``ref_model_sync_steps``, ``precompute_ref_batch_size``,
+        ``disable_dropout``, ``max_length``, ``pad_to_multiple_of``,
+        ``dataset_num_proc``, ``model_init_kwargs``) are copied directly.
+
+        ``loss_type`` is validated per-element against opaque's implemented
+        heads; the TRL 1.x ``aot`` / ``aot_unpaired`` Adversarial Optimal
+        Transport family raises ``ValueError`` because opaque does not
+        implement them.
+
+        Fields TRL has that opaque does not implement raise
+        ``ValueError``: ``padding_free``, ``truncation_mode='keep_end'``,
+        ``pad_token``.
+
+        HF-inherited fields go through the same translation as
+        :meth:`TrainingArguments.from_hf` — same DP-knob requirement, same
+        batch-collapse, same rejection set.
+
+        Raises
+        ------
+        ImportError
+            If the optional ``trl`` dependency is not installed.
+        TypeError
+            If ``trl_cfg`` is not a ``trl.DPOConfig`` instance.
+        ValueError
+            If a required DP knob is missing, any REJECT_IF_SET field is
+            set to a non-default value, or ``loss_type`` contains an
+            opaque-unsupported head.
+        """
+        from ..compat._trl import convert_trl_dpo_config
+
+        dp_overrides: dict[str, Any] = {
+            "privacy_noise_multiplier": privacy_noise_multiplier,
+            "privacy_target_epsilon": privacy_target_epsilon,
+            "clipping_norm": clipping_norm,
+            "privacy_noise_mechanism": privacy_noise_mechanism,
+            "privacy_noise_radius": privacy_noise_radius,
+            "clipping_mode": clipping_mode,
+            "sampling_mode": sampling_mode,
+        }
+        if privacy_target_delta is not None:
+            dp_overrides["privacy_target_delta"] = privacy_target_delta
+        if clipping_kwargs is not None:
+            dp_overrides["clipping_kwargs"] = clipping_kwargs
+        if sampling_kwargs is not None:
+            dp_overrides["sampling_kwargs"] = sampling_kwargs
+        if noise_calibration_kwargs is not None:
+            dp_overrides["noise_calibration_kwargs"] = noise_calibration_kwargs
+
+        converted = convert_trl_dpo_config(
+            trl_cfg, strict=strict, **dp_overrides
+        )
+        converted.update(opaque_overrides)
+        return cls(**converted)
