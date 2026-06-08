@@ -63,6 +63,20 @@ def test_entropy_detached() -> None:
     assert ent.ndim == 0
 
 
+def test_entropy_shifts_like_accuracy() -> None:
+    # Position 0 is peaked (~0 entropy), positions 1,2 are uniform (entropy
+    # log V). The shift drops position 2's logits and uses mask[1:], so only
+    # positions {0, 1} contribute: (0 + log V) / 2 = log(V) / 2. The old,
+    # unshifted reduction would have averaged all three -> 2 log(V) / 3, so
+    # this case discriminates the next-token alignment.
+    vocab = 4
+    logits = torch.zeros(3, vocab)
+    logits[0] = torch.tensor([100.0, 0.0, 0.0, 0.0])  # peaked -> ~0 entropy
+    mask = torch.ones(3)
+    ent = entropy_from_logits(logits, mask)
+    assert ent.item() == pytest.approx(math.log(vocab) / 2.0, abs=1e-6)
+
+
 # --------------------------------------------------------------------------- #
 # mean_token_accuracy
 # --------------------------------------------------------------------------- #
