@@ -22,11 +22,13 @@ from trl import SFTConfig, SFTTrainer
 SEED = 42
 MODEL_NAME = "Qwen/Qwen2.5-0.5B"
 DATASET = "roneneldan/TinyStories"
-NUM_TRAIN_SAMPLES = 2000
+NUM_TRAIN_SAMPLES = int(os.environ.get("NUM_TRAIN_SAMPLES", "2000"))
+NUM_EVAL_SAMPLES = int(os.environ.get("NUM_EVAL_SAMPLES", "0"))
 MAX_LENGTH = 512
 BATCH_SIZE = 8
 LR = 1e-4
-NUM_STEPS = 50
+NUM_STEPS = int(os.environ.get("NUM_STEPS", "50"))
+EVAL_STEPS = int(os.environ.get("EVAL_STEPS", "0")) or None
 LORA_R = 8
 LORA_ALPHA = 16
 LORA_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
@@ -83,8 +85,22 @@ def main() -> int:
     )
 
     raw = load_dataset(DATASET, split="train", streaming=True)
-    rows = [row for _, row in zip(range(NUM_TRAIN_SAMPLES), raw)]
-    train_dataset = Dataset.from_list(rows)
+    take_total = NUM_TRAIN_SAMPLES + (NUM_EVAL_SAMPLES if EVAL_STEPS else 0)
+    all_rows = [row for _, row in zip(range(take_total), raw)]
+    train_dataset = Dataset.from_list(all_rows[:NUM_TRAIN_SAMPLES])
+    eval_dataset = (
+        Dataset.from_list(all_rows[NUM_TRAIN_SAMPLES:])
+        if EVAL_STEPS
+        else None
+    )
+
+    eval_kwargs: dict = {}
+    if EVAL_STEPS:
+        eval_kwargs = {
+            "eval_strategy": "steps",
+            "eval_steps": EVAL_STEPS,
+            "per_device_eval_batch_size": BATCH_SIZE,
+        }
 
     sft_args = SFTConfig(
         output_dir="trainer_output/sft_trl_baseline",
@@ -102,12 +118,14 @@ def main() -> int:
         report_to=[],  # we log to wandb manually via the callback so opaque/baseline
                       # share the same entity/project/name plumbing
         optim="adamw_torch",
+        **eval_kwargs,
     )
 
     trainer = SFTTrainer(
         model=model,
         args=sft_args,
         train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         processing_class=tokenizer,
         peft_config=peft_config,
         callbacks=[WandbStepLossCallback()],

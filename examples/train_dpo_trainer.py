@@ -173,6 +173,34 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lora-r", type=int, default=8)
     p.add_argument("--lora-alpha", type=int, default=16)
     p.add_argument("--seed", type=int, default=42)
+    # --- Eval --------------------------------------------------------------
+    p.add_argument(
+        "--eval-steps",
+        type=int,
+        default=None,
+        help="If set, evaluate every N steps on a held-out slice (uses a "
+        "disjoint slice of the same dataset, after the --num-train-samples).",
+    )
+    p.add_argument(
+        "--num-eval-samples",
+        type=int,
+        default=200,
+        help="Held-out preference-pair count for eval; ignored if --eval-steps is unset.",
+    )
+    p.add_argument(
+        "--per-device-eval-batch-size",
+        type=int,
+        default=None,
+        help="Eval batch size; defaults to --batch-size.",
+    )
+    # --- Optim -------------------------------------------------------------
+    p.add_argument(
+        "--noise-bias-correction",
+        action="store_true",
+        help="Enable DP-noise-aware Adam bias correction in the opaque AdamW "
+        "variant. Only meaningful at noise_multiplier > 0; default off so the "
+        "noise=0 path matches stock PyTorch AdamW semantics.",
+    )
     # --- W&B ---------------------------------------------------------------
     p.add_argument(
         "--no-wandb",
@@ -221,11 +249,31 @@ def main() -> int:
         ref_model = AutoModelForCausalLM.from_pretrained(args.model)
 
     raw = load_dataset(args.dataset, split=args.dataset_split, streaming=True)
-    rows = [row for _, row in zip(range(args.num_train_samples), raw)]
-    train_dataset = Dataset.from_list(rows)
+    eval_count = args.num_eval_samples if args.eval_steps is not None else 0
+    take_total = args.num_train_samples + eval_count
+    all_rows = [row for _, row in zip(range(take_total), raw)]
+    train_dataset = Dataset.from_list(all_rows[: args.num_train_samples])
+    eval_dataset = (
+        Dataset.from_list(all_rows[args.num_train_samples : take_total])
+        if eval_count
+        else None
+    )
 
     report_to = _configure_reporting(args.no_wandb)
     run_name = os.environ.get("WANDB_NAME") or os.environ.get("RUN_NAME")
+
+    optim_args = (
+        "noise_bias_correction=True" if args.noise_bias_correction else None
+    )
+    eval_kwargs: dict = {}
+    if args.eval_steps is not None:
+        eval_kwargs = {
+            "eval_strategy": "steps",
+            "eval_steps": args.eval_steps,
+            "per_device_eval_batch_size": (
+                args.per_device_eval_batch_size or args.batch_size
+            ),
+        }
 
     dpo_args = DPOConfig(
         output_dir=args.output_dir,
@@ -267,7 +315,8 @@ def main() -> int:
         privacy_noise_multiplier=args.noise_multiplier,
         privacy_target_epsilon=args.target_epsilon,
         optim="adamw",
-        optim_args="noise_bias_correction=True",
+        optim_args=optim_args,
+        **eval_kwargs,
     )
 
     trainer = DPOTrainer(
@@ -275,6 +324,7 @@ def main() -> int:
         ref_model=ref_model,
         args=dpo_args,
         train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         processing_class=tokenizer,
         peft_config=peft_config,
     )
