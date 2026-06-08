@@ -354,7 +354,9 @@ class SFTTrainer(DPTrainer):
         # the explicit ``args.eos_token`` when set, else the tokenizer's own
         # ``eos_token`` (TRL parity). When neither exists, nothing is appended.
         text = example[args.dataset_text_field]
-        eos = args.eos_token if args.eos_token is not None else processing_class.eos_token
+        eos = (
+            args.eos_token if args.eos_token is not None else processing_class.eos_token
+        )
         if eos is not None and not text.endswith(eos):
             text = text + eos
         ids = processing_class(

@@ -295,8 +295,9 @@ def test_sft_eos_token_honored_when_set_else_tokenizer(tmp_path):
         def save_pretrained(self, *a, **k):
             return None
 
-        def __call__(self, text, add_special_tokens=True, truncation=False,
-                     max_length=None):
+        def __call__(
+            self, text, add_special_tokens=True, truncation=False, max_length=None
+        ):
             trailing = []
             for special in self._specials:
                 if text.endswith(special):
@@ -789,9 +790,7 @@ def test_dpo_simpo_loss_matches_formula(tmp_path):
         )
         c_avg = c_lp / _completion_len(batch["chosen_completion_mask"])
         r_avg = r_lp / _completion_len(batch["rejected_completion_mask"])
-        expected = simpo_loss(
-            c_avg, r_avg, beta=beta, gamma=gamma, label_smoothing=eps
-        )
+        expected = simpo_loss(c_avg, r_avg, beta=beta, gamma=gamma, label_smoothing=eps)
     assert torch.allclose(losses, expected, atol=1e-4)
 
 
