@@ -24,7 +24,6 @@ from typing import Any, Callable
 
 from ._common import (
     apply_manifest,
-    get_dataclass_field_defaults,
     get_dataclass_field_values,
     normalize_dp_overrides,
 )
@@ -299,9 +298,7 @@ HF_REJECTED_FIELDS: dict[str, Callable[[Any], str | None]] = {
     "fsdp_transformer_layer_cls_to_wrap": _reject_if_truthy(
         "FSDP layer-class wrapping is not supported."
     ),
-    "fsdp_min_num_params": _reject_if_truthy(
-        "FSDP wrapping policy is not supported."
-    ),
+    "fsdp_min_num_params": _reject_if_truthy("FSDP wrapping policy is not supported."),
     "deepspeed": _reject_if_truthy(
         "DeepSpeed is not supported on the per-example DP-SGD path."
     ),

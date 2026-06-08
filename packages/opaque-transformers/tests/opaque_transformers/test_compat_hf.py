@@ -7,14 +7,6 @@ import warnings
 import pytest
 
 from opaque.api.transformers.compat._common import normalize_dp_overrides
-from opaque.api.transformers.compat._hf import (
-    HF_DIRECT_FIELDS,
-    HF_DROP_FIELDS,
-    HF_REJECTED_FIELDS,
-    HF_RENAME_MAP,
-    HF_TRANSFORM_MAP,
-    convert_hf_training_arguments,
-)
 from opaque.api.transformers.trainer import TrainingArguments
 
 # All HF tests assume ``transformers`` is installed (it's a required dep of
@@ -31,9 +23,7 @@ def _hf_args(tmp_path, **overrides):
     """Construct an HF TrainingArguments with sensible defaults for tests."""
     return hf.TrainingArguments(
         output_dir=str(tmp_path),
-        per_device_train_batch_size=overrides.pop(
-            "per_device_train_batch_size", 8
-        ),
+        per_device_train_batch_size=overrides.pop("per_device_train_batch_size", 8),
         learning_rate=overrides.pop("learning_rate", 1e-4),
         max_steps=overrides.pop("max_steps", 10),
         seed=overrides.pop("seed", 42),
@@ -257,9 +247,7 @@ def test_drop_silent_in_lenient_mode(tmp_path):
             strict=False,
         )
     # ``strict=False`` should suppress the drop warnings entirely.
-    assert not any(
-        "do_train" in str(w.message) for w in caught
-    )
+    assert not any("do_train" in str(w.message) for w in caught)
 
 
 # ---------------------------------------------------------------------------
