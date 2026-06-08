@@ -259,8 +259,6 @@ class DPOConfig(TrainingArguments):
         if noise_calibration_kwargs is not None:
             dp_overrides["noise_calibration_kwargs"] = noise_calibration_kwargs
 
-        converted = convert_trl_dpo_config(
-            trl_cfg, strict=strict, **dp_overrides
-        )
+        converted = convert_trl_dpo_config(trl_cfg, strict=strict, **dp_overrides)
         converted.update(opaque_overrides)
         return cls(**converted)
