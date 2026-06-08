@@ -48,6 +48,8 @@ env:
     WANDB_ENTITY: federated-compute
     WANDB_PROJECT: opaque
     RUN_NAME: "${oc.env:RUN_NAME,sft-trainer-qwen-chunked-nll}"
+    WANDB_NAME: "${oc.env:RUN_NAME,sft-trainer-qwen-chunked-nll}"
+    WANDB_TAGS: "${oc.env:WANDB_TAGS,val/trl-trainers-r1}"
     EXTRA_ARGS: ""
   python:
     version: 3.11.14
