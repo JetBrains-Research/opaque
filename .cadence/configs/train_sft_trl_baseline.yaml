@@ -1,0 +1,87 @@
+# V5b SFT TRL upstream baseline. Trains the same Qwen-0.5B + TinyStories
+# slice as the opaque SFTTrainer at noise=0/clip=1e9, but with vanilla
+# upstream trl.SFTTrainer (no opaque imports), to validate parity.
+project_name: jbr-fed
+working_dir: "."
+cmd:
+  - |-
+    # Use the project's uv-managed venv so torch is available, then layer on
+    # the upstream trl stack (we run a fresh trl.SFTTrainer with no opaque imports).
+    uv sync --group dev --group examples --all-packages --extra all
+    uv pip install --quiet --upgrade "trl>=0.13" "transformers>=4.45" "datasets>=2.20" "peft>=0.12" "accelerate>=0.34" "wandb>=0.17"
+
+    uv run python examples/train_sft_trl_baseline.py
+provisioning:
+  gpu_type: h200
+  gpu_count: 1
+  cpu_count: 16
+  ram: 200
+teamcity:
+  url: https://api.cadence.jetbrains.com
+  build_conf_id: JbrFed_JetTrain
+env:
+  variables:
+    PYTHONUNBUFFERED: "1"
+    WANDB_BASE_URL: https://jetbrains.wandb.io
+    WANDB_ENTITY: federated-compute
+    WANDB_PROJECT: opaque
+    RUN_NAME: "${oc.env:RUN_NAME,trl-sft-baseline}"
+  python:
+    version: 3.11.14
+  secrets:
+    variables:
+      HF_TOKEN: "${oc.env:HF_TOKEN}"
+      WANDB_API_KEY: "${oc.env:WANDB_API_KEY}"
+    ssh_keys: []
+  aws:
+    sync_config: false
+    sync_credentials: false
+    sync_cache: false
+project_sync:
+  local:
+    root: "."
+    storage_name: Cadence Storage
+    uri: ""
+    exclude:
+      - ".git/*"
+      - "**/.git/*"
+      - ".github/*"
+      - "trainer_output/**"
+      - "**/trainer_output/**"
+      - ".venv/*"
+      - "**/.venv/*"
+      - "venv/*"
+      - "**/venv/*"
+      - "target/*"
+      - "**/target/*"
+      - "dist/*"
+      - "**/dist/*"
+      - "build/*"
+      - "**/build/*"
+      - "site/*"
+      - "**/site/*"
+      - ".ruff_cache/*"
+      - "**/.ruff_cache/*"
+      - ".pytest_cache/*"
+      - "**/.pytest_cache/*"
+      - "__pycache__/*"
+      - "**/__pycache__/*"
+      - ".idea/*"
+      - "**/.idea/*"
+      - ".claude/*"
+      - "**/.claude/*"
+      - "wandb/*"
+      - "**/wandb/*"
+      - "*.so"
+      - "**/*.so"
+      - "*.whl"
+      - "**/*.whl"
+    include: []
+    sync_back: false
+    snapshots: true
+    storage_type: DEFAULT
+inputs: []
+outputs: []
+mounts: []
+storages: []
+description: "${oc.env:RUN_NAME,}"
