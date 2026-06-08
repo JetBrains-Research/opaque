@@ -1129,6 +1129,114 @@ class TrainingArguments:
                 out[f.name] = str(value)
         return out
 
+    @classmethod
+    def from_hf(
+        cls,
+        hf_args: Any,
+        *,
+        # DP knobs (one of noise_multiplier / target_epsilon required)
+        privacy_noise_multiplier: float | None = None,
+        privacy_target_epsilon: float | None = None,
+        privacy_target_delta: float | None = None,
+        clipping_norm: float | dict[str, float] = 1.0,
+        privacy_noise_mechanism: str = "gaussian",
+        privacy_noise_radius: float = 3.0,
+        clipping_mode: str = "fixed",
+        clipping_kwargs: dict[str, Any] | None = None,
+        sampling_mode: str = "auto",
+        sampling_kwargs: dict[str, Any] | None = None,
+        noise_calibration_kwargs: dict[str, Any] | None = None,
+        # Behavior
+        strict: bool = True,
+        **opaque_overrides: Any,
+    ) -> "TrainingArguments":
+        """Convert an HF ``TrainingArguments`` to opaque ``TrainingArguments``.
+
+        Required: exactly one of ``privacy_noise_multiplier=<float>``
+        (fixed-noise mode) or ``privacy_target_epsilon=<float>`` (calibrated
+        noise) must be set — opaque's runtime requires one to instantiate.
+
+        Translates HF fields by bucketed manifest (see
+        ``opaque.api.transformers.compat._hf``):
+
+        - **DIRECT**: ~80 fields with identical name and semantics — copied.
+        - **RENAME**: ``evaluation_strategy`` → ``eval_strategy``,
+          ``per_gpu_train_batch_size`` → ``per_device_train_batch_size``,
+          ``lr_scheduler_type`` → ``lr_scheduler``.
+        - **TRANSFORM**: HF's ``(per_device_train_batch_size, gradient_accumulation_steps)``
+          collapses into opaque's ``per_device_train_batch_size = product``
+          and ``microbatch_size = per_device``. This is *required* for
+          privacy-correct ε accounting — see "Batch semantics" below.
+        - **REJECT_IF_SET**: raises ``ValueError`` with a per-field
+          explanation if the user set ``fp16=True``, ``fsdp=...``,
+          ``deepspeed=...``, ``neftune_noise_alpha=...``,
+          ``optim='paged_adamw_8bit'``, etc.
+        - **DROP_WITH_WARN**: silently drops HF fields that have no opaque
+          equivalent (``do_train``, ``tpu_*``, ``group_by_length``, …);
+          emits ``RuntimeWarning`` if non-default and ``strict=True``.
+
+        Batch semantics
+        ----------------
+        DP-SGD's sample rate (and therefore ε via subsampling
+        amplification) is computed from the *logical* batch — the unit
+        over which one gradient + noise step occurs. In HF, that's
+        ``per_device_train_batch_size × gradient_accumulation_steps``;
+        in opaque, that's ``per_device_train_batch_size`` alone. The
+        converter collapses HF's two-field expression into opaque's
+        one-field expression with the multiplication, and sets
+        ``microbatch_size = per_device`` so the per-step memory
+        footprint matches HF's microbatch.
+
+        ``opaque_overrides`` allow setting any opaque-only field
+        (e.g. ``microbatch_size=4`` to override the derived value,
+        ``activation_offloading=True``). These take precedence over both
+        HF-derived and DP-default values.
+
+        Raises
+        ------
+        ImportError
+            If ``transformers`` is not installed.
+        TypeError
+            If ``hf_args`` is not a ``transformers.TrainingArguments`` instance.
+        ValueError
+            If neither ``privacy_noise_multiplier`` nor
+            ``privacy_target_epsilon`` is set, or if any REJECT_IF_SET
+            HF field is set to a non-default value.
+        """
+        # Local import to keep this module decoupled from the compat package
+        # (avoids circulars and keeps the compat package optional-by-policy).
+        from ..compat._hf import convert_hf_training_arguments
+
+        # Collect the DP-knob kwargs into one dict the converter forwards.
+        dp_overrides: dict[str, Any] = {
+            "privacy_noise_multiplier": privacy_noise_multiplier,
+            "privacy_target_epsilon": privacy_target_epsilon,
+            "clipping_norm": clipping_norm,
+            "privacy_noise_mechanism": privacy_noise_mechanism,
+            "privacy_noise_radius": privacy_noise_radius,
+            "clipping_mode": clipping_mode,
+            "sampling_mode": sampling_mode,
+        }
+        if privacy_target_delta is not None:
+            dp_overrides["privacy_target_delta"] = privacy_target_delta
+        if clipping_kwargs is not None:
+            dp_overrides["clipping_kwargs"] = clipping_kwargs
+        if sampling_kwargs is not None:
+            dp_overrides["sampling_kwargs"] = sampling_kwargs
+        if noise_calibration_kwargs is not None:
+            dp_overrides["noise_calibration_kwargs"] = noise_calibration_kwargs
+
+        converted = convert_hf_training_arguments(
+            hf_args,
+            strict=strict,
+            **dp_overrides,
+        )
+
+        # ``opaque_overrides`` win over both HF-derived values and DP defaults.
+        converted.update(opaque_overrides)
+
+        return cls(**converted)
+
 
 # =====================================================================
 # Helpers
