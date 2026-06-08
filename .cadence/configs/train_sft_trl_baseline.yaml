@@ -6,11 +6,19 @@ working_dir: "."
 cmd:
   - |-
     # Use the project's uv-managed venv so torch is available, then layer on
-    # the upstream trl stack (we run a fresh trl.SFTTrainer with no opaque imports).
+    # the upstream trl stack via ``uv run --with`` (which actually adds those
+    # packages to the run's ephemeral environment — plain ``uv pip install``
+    # is reverted by ``uv run``'s pre-sync step).
     uv sync --group dev --group examples --all-packages --extra all
-    uv pip install --quiet --upgrade "trl>=0.13" "transformers>=4.45" "datasets>=2.20" "peft>=0.12" "accelerate>=0.34" "wandb>=0.17"
 
-    uv run python examples/train_sft_trl_baseline.py
+    uv run \
+      --with "trl>=0.13" \
+      --with "transformers>=4.45" \
+      --with "datasets>=2.20" \
+      --with "peft>=0.12" \
+      --with "accelerate>=0.34" \
+      --with "wandb>=0.17" \
+      python examples/train_sft_trl_baseline.py
 provisioning:
   gpu_type: h200
   gpu_count: 1
