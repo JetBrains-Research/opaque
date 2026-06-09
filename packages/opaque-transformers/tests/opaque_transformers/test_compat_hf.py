@@ -94,6 +94,10 @@ def test_direct_field_max_steps_carries_through(tmp_path):
     assert opaque.max_steps == 123
 
 
+# bf16 needs a bf16-capable GPU: HF's TrainingArguments rejects ``bf16=True`` at
+# construction on CPU/MPS runners, so this carry-through check can only exercise a
+# real bf16 input on the CUDA lane.
+@pytest.mark.cuda
 def test_direct_field_bf16_carries_through(tmp_path):
     opaque = TrainingArguments.from_hf(
         _hf_args(tmp_path, bf16=True),
