@@ -123,8 +123,27 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--num-steps", type=int, default=50)
     p.add_argument("--learning-rate", type=float, default=1e-4)
     p.add_argument("--clipping-norm", type=float, default=1.0)
-    p.add_argument("--noise-multiplier", type=float, default=0.8)
-    p.add_argument("--target-epsilon", type=float, default=None)
+    p.add_argument(
+        "--noise-multiplier",
+        type=float,
+        default=None,
+        help=(
+            "Fixed noise multiplier (skips calibration). Set to 0 for a "
+            "non-private baseline: the chosen mechanism/sampler are kept, no "
+            "noise is added, and the accountant reports epsilon=inf. Leave "
+            "unset (the default) to let ``--target-epsilon`` drive calibration."
+        ),
+    )
+    p.add_argument(
+        "--target-epsilon",
+        type=float,
+        default=3.0,
+        help=(
+            "Target ε for noise calibration. Active when ``--noise-multiplier`` "
+            "is left unset; the accountant solves for the σ that achieves this "
+            "ε at the configured ``(num_steps, batch_size, num_train_samples)``."
+        ),
+    )
     p.add_argument("--log-steps", type=int, default=5)
     p.add_argument("--output-dir", default="trainer_output/sft")
     # --- PEFT --------------------------------------------------------------
