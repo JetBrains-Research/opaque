@@ -32,6 +32,19 @@ class CachedProcess(DpProcess):
 
     inner: DpProcess
 
+    def __hash__(self) -> int:
+        # The dataclass-auto ``__hash__`` recursively calls
+        # ``hash(self.inner)``, which on a deeply-nested ``Composed``
+        # chain re-enters ``Composed.__hash__`` and produces an
+        # alternating call-stack cycle that exceeds
+        # ``sys.getrecursionlimit()`` after a few thousand DP-SGD
+        # composition steps with periodic ``cached(...)`` snapshots
+        # (the standard incremental-accounting pattern). Delegate to
+        # the iterative walker instead.
+        from ._iter_hash import iter_hash
+
+        return iter_hash(self)
+
     @functools.lru_cache(maxsize=16)
     def pld(
         self,

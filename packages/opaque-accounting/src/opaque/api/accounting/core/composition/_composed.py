@@ -16,14 +16,15 @@ class Composed(DpProcess):
     right: DpProcess
 
     def __hash__(self) -> int:
-        # Walk the left spine iteratively to avoid RecursionError
-        # on deeply nested left-skewed trees from ``|=`` composition.
-        h = 0
-        node: DpProcess = self
-        while isinstance(node, Composed):
-            h = hash((h, hash(node.right)))
-            node = node.left
-        return hash((h, hash(node)))
+        # Delegate to the shared iterative walker. The previous
+        # left-spine-only iteration still hit ``RecursionError`` when its
+        # leaves (or right children) were themselves ``Repeated`` /
+        # ``CachedProcess`` wrappers whose dataclass-auto-hash recursed
+        # back into ``Composed.__hash__`` on a nested chain. See
+        # ``_iter_hash.py``.
+        from ._iter_hash import iter_hash
+
+        return iter_hash(self)
 
     @functools.lru_cache(maxsize=8)
     def pld(

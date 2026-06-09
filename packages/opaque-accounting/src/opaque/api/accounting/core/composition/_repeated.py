@@ -15,6 +15,17 @@ class Repeated(DpProcess):
     inner: DpProcess
     count: int
 
+    def __hash__(self) -> int:
+        # The dataclass-auto ``__hash__`` recursively calls
+        # ``hash(self.inner)``, which on a deeply-nested ``Composed``
+        # chain re-enters ``Composed.__hash__`` and produces an
+        # alternating call-stack cycle that exceeds
+        # ``sys.getrecursionlimit()`` after a few thousand DP-SGD
+        # composition steps. Delegate to the iterative walker instead.
+        from ._iter_hash import iter_hash
+
+        return iter_hash(self)
+
     def _leaf_and_count(self) -> tuple[DpProcess, int]:
         return (self.inner, self.count)
 
