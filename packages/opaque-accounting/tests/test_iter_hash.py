@@ -1,14 +1,12 @@
-"""Regression: hashing deeply nested ``DpProcess`` trees doesn't crash.
+"""Hashing arbitrarily deep ``DpProcess`` composition trees is safe.
 
-The previous left-spine-only iteration in ``Composed.__hash__`` worked
-for ``acct | step`` accumulation but blew up at scale (4940+ DP-SGD
-steps on the V6 SFT long run) because its terminal leaves were
-``Repeated`` / ``CachedProcess`` wrappers, whose dataclass-auto
-``__hash__`` recursively called back into the next ``Composed`` chain.
-The alternating call-stack cycle exceeded ``sys.getrecursionlimit()``.
-
-These tests build the worst-case shapes and assert ``hash(tree)`` is
-finite — i.e. no ``RecursionError`` is raised.
+Builds the worst-case shapes — long left-skewed and right-skewed
+``Composed`` chains, periodic ``cached(...)`` barriers, and
+``Repeated`` wrappers around deep inner chains — and asserts
+``hash(tree)`` returns a finite value (no ``RecursionError``). Also
+asserts the hash / equality contract: structurally-equal trees
+produce equal hashes, structurally-distinct trees produce distinct
+hashes.
 """
 
 from __future__ import annotations
@@ -45,13 +43,11 @@ def test_deeply_nested_composed_hashable():
 
 
 def test_deeply_nested_cached_inside_composed_hashable():
-    """Mirror the V6 SFT pattern: long Composed chain with periodic cached() barriers.
+    """Long ``Composed`` chain with periodic ``cached(...)`` barriers is hashable.
 
-    This is the incremental-accounting pattern recommended by
-    ``cached``'s docstring (cache every N steps to compose deltas on
-    top of a precomputed PLD). Each ``cached(...)`` wraps the
-    accumulated chain into a ``CachedProcess`` whose dataclass-auto
-    ``__hash__`` was the culprit in the original bug.
+    Mirrors the incremental-accounting pattern from ``cached``'s
+    docstring — cache every N steps to compose deltas on top of a
+    precomputed PLD.
     """
     chain = _leaf()
     for i in range(10_000):
@@ -73,12 +69,7 @@ def test_deeply_nested_repeated_inside_composed_hashable():
 
 
 def test_right_skewed_composed_hashable():
-    """Right-skewed chain (less common but possible) also hashes safely.
-
-    The pre-fix ``Composed.__hash__`` only iterated the left spine; a
-    pathologically right-skewed tree (``Composed(a, Composed(b,
-    Composed(c, ...)))``) would have recursed via ``hash(node.right)``.
-    """
+    """A 10 000-deep right-skewed ``Composed`` chain hashes without recursion."""
     leaf = _leaf()
     chain = leaf
     for _ in range(10_000):

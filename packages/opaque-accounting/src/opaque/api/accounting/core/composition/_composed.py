@@ -16,12 +16,8 @@ class Composed(DpProcess):
     right: DpProcess
 
     def __hash__(self) -> int:
-        # Delegate to the shared iterative walker. The previous
-        # left-spine-only iteration still hit ``RecursionError`` when its
-        # leaves (or right children) were themselves ``Repeated`` /
-        # ``CachedProcess`` wrappers whose dataclass-auto-hash recursed
-        # back into ``Composed.__hash__`` on a nested chain. See
-        # ``_iter_hash.py``.
+        # Iterative tree walk — depth bounded by heap, not stack.
+        # See ``_iter_hash``.
         from ._iter_hash import iter_hash
 
         return iter_hash(self)
