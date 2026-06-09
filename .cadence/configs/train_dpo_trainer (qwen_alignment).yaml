@@ -29,7 +29,6 @@ cmd:
       --max-steps 50 \
       --learning-rate 1e-4 \
       --clipping-norm 1.0 \
-      --noise-multiplier 0.8 \
       --log-steps 5 \
       --seed 42 $EXTRA_ARGS
 provisioning:
