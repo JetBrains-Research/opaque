@@ -185,6 +185,35 @@ class TestSlowRoPEPositionIds:
         torch.testing.assert_close(out_op, out_ref, rtol=1e-6, atol=1e-6)
         torch.testing.assert_close(Q_op.grad, Q_ref.grad, rtol=1e-6, atol=1e-6)
 
+    def test_vmap_grad_with_batched_position_ids(self):
+        """vmap(grad) with per-example position_ids matches the eager loop."""
+        from opaque.api.patches.kernels.rope_embedding import opaque_slow_rope
+
+        torch.manual_seed(1)
+        B, n_heads, seq_len, head_dim = 3, 4, 16, 32
+        Q = torch.randn(B, n_heads, seq_len, head_dim, device="cuda")
+        half_cos, half_sin = generate_cos_sin(
+            seq_len * 2, head_dim, dtype=torch.float32
+        )
+        cos = torch.cat([half_cos, half_cos], dim=-1)
+        sin = torch.cat([half_sin, half_sin], dim=-1)
+        position_ids = torch.stack(
+            [torch.randperm(seq_len * 2, device="cuda")[:seq_len] for _ in range(B)]
+        )
+
+        def loss(q, pos):
+            # add the per-example batch dim back: (1, heads, seq, dim)
+            out = opaque_slow_rope(
+                q.unsqueeze(0), cos, sin, position_ids=pos.unsqueeze(0)
+            )
+            return out.square().mean()
+
+        g_vmap = vmap(grad(loss))(Q, position_ids)
+        g_loop = torch.stack(
+            [grad(loss)(Q[i], position_ids[i]) for i in range(B)]
+        )
+        torch.testing.assert_close(g_vmap, g_loop, rtol=1e-6, atol=1e-6)
+
 
 # ============================================================================
 # Vmap Tests

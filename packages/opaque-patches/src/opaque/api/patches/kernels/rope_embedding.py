@@ -658,16 +658,18 @@ class Opaque_RoPE_QK(torch.autograd.Function):
 def _slow_rope_cos_sin(cos, sin, position_ids):
     """Select cos/sin rows by position (HF apply_rotary_pos_emb semantics).
 
-    Returns (bs, 1, seq_len, head_dim) caches that broadcast over the heads
-    dim of a (batch, n_heads, seq_len, head_dim) tensor. Identity when
+    Returns (..., 1, seq_len, head_dim) caches that broadcast over the heads
+    dim of a (..., n_heads, seq_len, head_dim) tensor. ``unsqueeze(-3)``
+    rather than ``unsqueeze(1)`` so extra leading batch dims (e.g. a vmap
+    batch in front of ``position_ids``) stay aligned. Identity when
     position_ids is None.
     """
     if position_ids is None:
         return cos, sin
     cos = cos.squeeze(1).squeeze(0)  # (seq_len, head_dim)
     sin = sin.squeeze(1).squeeze(0)
-    cos = cos[position_ids].unsqueeze(1)  # (bs, 1, seq_len, head_dim)
-    sin = sin[position_ids].unsqueeze(1)
+    cos = cos[position_ids].unsqueeze(-3)  # (..., 1, seq_len, head_dim)
+    sin = sin[position_ids].unsqueeze(-3)
     return cos, sin
 
 
@@ -727,7 +729,9 @@ class Opaque_SlowRoPE(torch.autograd.Function):
         if cos_bdim is not None or sin_bdim is not None:
             raise ValueError("cos and sin should not be batched")
         if pos_bdim is not None:
-            raise ValueError("position_ids should not be batched")
+            # Align the vmap batch of position_ids with Q's; the indexed
+            # caches then broadcast per-sample via unsqueeze(-3).
+            position_ids = position_ids.movedim(pos_bdim, 0)
 
         output = Opaque_SlowRoPE.apply(Q, cos, sin, position_ids)
         return output, Q_bdim
