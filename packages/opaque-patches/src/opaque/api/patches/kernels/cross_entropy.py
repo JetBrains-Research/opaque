@@ -424,6 +424,12 @@ class _CrossEntropyBackward(torch.autograd.Function):
         assert sc_bdim is None, "logit_softcapping should not be batched"
         assert ls_bdim is None, "logit_scaling should not be batched"
         assert smooth_bdim is None, "label_smoothing should not be batched"
+        if logits_bdim != 0 or lse_bdim != 0 or labels_bdim != 0 or grad_bdim != 0:
+            # Non-leading batch dims would pair rows with the wrong labels/LSE.
+            raise ValueError(
+                "CrossEntropy backward vmap requires all tensors batched at "
+                f"dim 0, got in_dims={in_dims}"
+            )
 
         original_shape = logits.shape
         # Merge vmap batch into rows, in-place (kernel writes dlogits into logits buffer)

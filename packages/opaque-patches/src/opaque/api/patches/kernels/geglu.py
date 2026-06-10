@@ -165,6 +165,12 @@ class _GeGLUExactBackward(torch.autograd.Function):
     def vmap(info, in_dims, grad_h_flat, gate_flat, up_flat):
         grad_h_bdim, gate_bdim, up_bdim = in_dims
 
+        if not (grad_h_bdim == gate_bdim == up_bdim):
+            # Mismatched batch dims would silently pair elements across examples.
+            raise ValueError(
+                f"GeGLU backward vmap requires matching batch dims, got {in_dims}"
+            )
+
         batched_shape = gate_flat.shape
         grad_h_merged = grad_h_flat.reshape(-1)
         gate_merged = gate_flat.reshape(-1)
@@ -419,6 +425,12 @@ class _GeGLUApproxBackward(torch.autograd.Function):
     @staticmethod
     def vmap(info, in_dims, grad_h_flat, gate_flat, up_flat):
         grad_h_bdim, gate_bdim, up_bdim = in_dims
+
+        if not (grad_h_bdim == gate_bdim == up_bdim):
+            # Mismatched batch dims would silently pair elements across examples.
+            raise ValueError(
+                f"GeGLU backward vmap requires matching batch dims, got {in_dims}"
+            )
 
         batched_shape = gate_flat.shape
         grad_h_merged = grad_h_flat.reshape(-1)

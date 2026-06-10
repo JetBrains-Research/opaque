@@ -277,12 +277,12 @@ class TestCheckpointWithClippedGrad:
         )
         grads_b, _ = grad_fn_b(train_b, frozen_b, input_ids, labels, state=state_b)
 
-        for k in grads_a:
+        for k in grads_a.pytree:
             # Checkpoint recomputation under vmap can cause small numerical
             # differences (~0.5%) due to different execution contexts.
             torch.testing.assert_close(
-                grads_a[k],
-                grads_b[k],
+                grads_a.pytree[k],
+                grads_b.pytree[k],
                 rtol=1e-2,
                 atol=5e-3,
                 msg=f"Gradient mismatch for {k}",
