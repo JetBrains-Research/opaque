@@ -1,15 +1,8 @@
 """Full fine-tuning vmap(grad) parity for the patched RMSNorm kernel (DP-SGD).
 
-Mirrors ``tests/peft/test_fused_lora_mlp.py::test_fused_lora_mlp_vmap_grad_matches_eager``
-(PR #255) but with *trainable* RMSNorm weights: full fine-tuning, no PEFT.
-
-Regression for the ``_RMSNormBackward.vmap`` batch-summed dW bug: the vmap
-rule computed dW on the merged (B*T, H) batch and returned it with
-``out_dim=None``, so under ``vmap(grad(...))`` every example received the
-batch-sum as its "per-example" norm-weight gradient.  Each example's clipped
-DP contribution then contained every other example's data — a
-privacy-correctness violation of the per-example sensitivity bound, invisible
-to LoRA runs (norm weights frozen → dW never consumed).
+Regression for the ``_RMSNormBackward.vmap`` batch-summed dW bug: with
+trainable norm weights, every example received the batch-sum as its
+"per-example" dW.  Invisible to LoRA runs (norm weights frozen).
 """
 
 import pytest
@@ -28,17 +21,9 @@ pytestmark = pytest.mark.skipif(
 @pytest.mark.cuda
 class TestRMSNormFullFTVmapGrad:
     def test_full_ft_vmap_grad_matches_eager(self, device):
-        """Per-sample grads via vmap(grad(...)) must match plain autograd.
-
-        Full-FT setup: every parameter (including ``input_layernorm`` /
-        ``post_attention_layernorm`` / final ``norm`` weights) is trainable,
-        so the per-example dW path of the patched RMSNorm kernel is actually
-        consumed by the DP clipper.  Compared against a per-sample
-        plain-autograd loop through the SAME patched model.
-        """
-        # TF32 (default-on in NVIDIA containers) rounds fp32 matmuls to ~1e-3
-        # relative; the vmap path and the eager loop round differently, which
-        # would swamp the tolerance below.
+        """Full-FT per-sample grads via vmap(grad(...)) must match plain autograd."""
+        # TF32 rounds fp32 matmuls differently in the vmap path vs the eager
+        # loop, which would swamp the tolerance below.
         tf32_prev = torch.backends.cuda.matmul.allow_tf32
         torch.backends.cuda.matmul.allow_tf32 = False
         try:
@@ -93,10 +78,8 @@ class TestRMSNormFullFTVmapGrad:
                 for k, ref in tp.items():
                     got = vmap_grads[k][i]
                     rel = (got - ref.grad).norm() / ref.grad.norm().clamp(min=1e-12)
-                    # The batch-sum bug produced per-example norm dW equal to
-                    # the sum over all B examples — rel error O(1); a 1e-2
-                    # ceiling leaves ample margin over fp32 kernel-vs-eager
-                    # numerics.
+                    # The batch-sum bug gave rel error O(1); 1e-2 leaves ample
+                    # margin over fp32 kernel-vs-eager numerics.
                     assert rel < 1e-2, (
                         f"vmap per-sample grad mismatch for {k}[{i}]: "
                         f"rel={rel:.3e} max diff {(got - ref.grad).abs().max():.3e}"

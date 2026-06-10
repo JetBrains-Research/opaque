@@ -158,16 +158,8 @@ class TestRMSNormVmapForward:
 
 
 class TestRMSNormVmapGradPerExampleDW:
-    """Regression test: vmap(grad) per-example dW must match an eager per-sample loop.
-
-    Under DP-SGD with a trainable RMSNorm weight (full fine-tuning), the
-    per-example weight gradient fed to the DP clipper must contain only that
-    example's contribution.  The bug was that _RMSNormBackward.vmap summed dW
-    over the entire merged (B*T, H) batch and returned it with out_dim=None,
-    giving every example the batch-sum as its "per-example" dW.
-
-    Small shapes are used deliberately so the test runs without the 24 GB GPU
-    required by the mellum stress suite.
+    """Regression: with trainable W, _RMSNormBackward.vmap returned the
+    batch-summed dW (out_dim=None) as every example's "per-example" gradient.
     """
 
     @pytest.mark.parametrize("casting_mode", ["llama", "gemma"])

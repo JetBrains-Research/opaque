@@ -129,12 +129,7 @@ class TestFusedAddRMSNormVmapForward:
 
 
 class TestFusedAddRMSNormVmapGradPerExampleDW:
-    """Regression test: vmap(grad) per-example dW must match an eager per-sample loop.
-
-    Same DP-SGD correctness concern as for plain RMSNorm: the fused-add variant
-    was also returning the batch-sum dW with out_dim=None.  Small shapes are
-    used so the test runs without the 24 GB GPU required by the mellum suite.
-    """
+    """Regression: same batch-summed dW bug as plain RMSNorm, fused-add variant."""
 
     @pytest.mark.parametrize("casting_mode", ["llama", "gemma"])
     @pytest.mark.parametrize("in_place", [False, True])

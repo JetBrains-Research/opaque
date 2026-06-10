@@ -167,8 +167,7 @@ class _SwiGLUBackward(torch.autograd.Function):
         grad_h_bdim, gate_bdim, up_bdim = in_dims
 
         if not (grad_h_bdim == gate_bdim == up_bdim):
-            # reshape(-1) merges in physical order; mismatched batch-dim
-            # placement would silently pair elements across examples.
+            # Mismatched batch dims would silently pair elements across examples.
             raise ValueError(
                 f"SwiGLU backward vmap requires matching batch dims, got {in_dims}"
             )

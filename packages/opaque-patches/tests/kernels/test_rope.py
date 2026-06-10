@@ -142,11 +142,8 @@ class TestRoPEBackward:
 
 
 class TestSlowRoPEPositionIds:
-    """Regression for the Opaque_SlowRoPE position_ids path.
-
-    Two bugs lived here: forward unsqueezed the indexed caches at dim 2
-    instead of dim 1 (misaligned against (batch, heads, seq, dim) Q), and
-    backward rotated with the raw caches, ignoring position_ids entirely.
+    """Regression for the Opaque_SlowRoPE position_ids path: forward unsqueezed
+    the indexed caches at the wrong dim and backward ignored position_ids.
     """
 
     def test_forward_backward_match_reference(self):

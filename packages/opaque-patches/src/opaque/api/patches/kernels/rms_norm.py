@@ -385,31 +385,22 @@ class _RMSNormBackward(torch.autograd.Function):
         W_use = W if (W is not None and W.numel() > 0) else None
         casting_mode = int(meta_i[0].item())
 
-        # Default to trainable when the flag is absent: computing per-example
-        # dW unnecessarily only costs memory, while skipping it when W is
-        # consumed would silently reintroduce the batch-sum privacy bug.
+        # Missing flag defaults to trainable: a spurious per-example dW only
+        # costs memory; a spurious batch-sum dW leaks across examples.
         w_trainable = bool(meta_i[5].item()) if meta_i.numel() > 5 else True
         dW_out = None
-        # Per-example dW is only needed when W is trainable (full fine-tuning
-        # under DP-SGD).  Under vmap(grad()) with frozen norm weights (LoRA),
-        # grad() detaches W (requires_grad=False) and dW is never consumed, so
-        # skip the (B, T, H) float32 intermediate below.
         if W_use is not None and w_trainable:
-            # Compute per-example dW so each example carries only its own rows'
-            # contribution.  The Triton call below sums dW over the entire
-            # merged (B*T, H) batch; using that as "per-example" dW would give
-            # every example the batch-sum gradient, violating DP-SGD
-            # per-example sensitivity bounds.  Must run before the Triton call:
-            # with in_place=True the kernel overwrites dY with dX.
+            # Per-example dW: the Triton call sums dW over the merged (B*T, H)
+            # batch, which would hand every example the batch-sum gradient.
+            # Must run before the Triton call — in_place overwrites dY with dX.
             T_flat = dY_m.shape[0] // B
             dY_3d = dY_m.view(B, T_flat, H)
             X_3d = X_m.view(B, T_flat, H)
             R_3d = R_m.view(B, T_flat)
-            # Mirror the Triton kernel's accumulation: X is always upcast to f32.
             x_normed = X_3d.float() * R_3d.unsqueeze(-1)  # (B, T_flat, H)
-            if casting_mode == 0:  # llama: (X_f32 * rstd) cast back to X_dtype
+            if casting_mode == 0:  # llama: cast normed X back to X dtype
                 dW_per = (dY_3d * x_normed.to(X_3d.dtype)).float().sum(dim=1)
-            else:  # gemma / none: accumulate fully in float32
+            else:  # gemma / none: accumulate in float32
                 dW_per = (dY_3d.float() * x_normed).sum(dim=1)
             dW_out = dW_per.to(W.dtype)  # (B, H)
 
@@ -429,10 +420,8 @@ class _RMSNormBackward(torch.autograd.Function):
         if dW_out is not None:
             return (dX_out, dW_out), (dy_b, 0)
         if W_use is not None:
-            # W frozen: dW is never consumed.  Return zeros rather than the
-            # kernel's batch-sum as defense in depth — if it were ever
-            # consumed, zeros stall training visibly instead of silently
-            # leaking cross-example data into the DP clipper.
+            # W frozen: zeros, not the kernel's batch-sum — if ever consumed,
+            # zeros stall training visibly instead of leaking across examples.
             return (dX_out, torch.zeros_like(dW)), (dy_b, None)
         return (dX_out, dW), (dy_b, None)
 
@@ -469,11 +458,8 @@ class Opaque_RMSNorm(torch.autograd.Function):
 
         bs, nw = calculate_settings(dim)
         ctx.original_shape = orig_shape
-        # meta_i[5]: W trainability, recorded at forward time (same mechanism
-        # as the LoRA kernels — under vmap(grad()) grad() detaches captured
-        # frozen weights, so requires_grad here reliably distinguishes full
-        # fine-tuning from LoRA).  _RMSNormBackward.vmap uses it to decide
-        # whether per-example dW must be computed.
+        # meta_i[5]: W trainability — under vmap(grad()) frozen weights arrive
+        # detached, so this tells the vmap rule whether per-example dW is needed.
         ctx.meta_i = torch.tensor(
             [
                 cm,
