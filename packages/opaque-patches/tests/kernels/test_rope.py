@@ -209,9 +209,7 @@ class TestSlowRoPEPositionIds:
             return out.square().mean()
 
         g_vmap = vmap(grad(loss))(Q, position_ids)
-        g_loop = torch.stack(
-            [grad(loss)(Q[i], position_ids[i]) for i in range(B)]
-        )
+        g_loop = torch.stack([grad(loss)(Q[i], position_ids[i]) for i in range(B)])
         torch.testing.assert_close(g_vmap, g_loop, rtol=1e-6, atol=1e-6)
 
 
