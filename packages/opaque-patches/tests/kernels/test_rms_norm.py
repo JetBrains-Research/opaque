@@ -157,6 +157,59 @@ class TestRMSNormVmapForward:
         assert_perf_benefit(pt_stats, op_stats, label="rmsnorm vmap forward")
 
 
+class TestRMSNormVmapGradPerExampleDW:
+    """Regression test: vmap(grad) per-example dW must match an eager per-sample loop.
+
+    Under DP-SGD with a trainable RMSNorm weight (full fine-tuning), the
+    per-example weight gradient fed to the DP clipper must contain only that
+    example's contribution.  The bug was that _RMSNormBackward.vmap summed dW
+    over the entire merged (B*T, H) batch and returned it with out_dim=None,
+    giving every example the batch-sum as its "per-example" dW.
+
+    Small shapes are used deliberately so the test runs without the 24 GB GPU
+    required by the mellum stress suite.
+    """
+
+    @pytest.mark.parametrize("casting_mode", ["llama", "gemma"])
+    @pytest.mark.parametrize("in_place", [False, True])
+    def test_vmap_grad_matches_eager_loop(self, casting_mode, in_place):
+        torch.manual_seed(7)
+        B, T, H = 4, 8, 64
+        eps = 1e-5
+        offset = 1.0 if casting_mode == "gemma" else 0.0
+
+        x = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16)
+        w = torch.randn(H, device="cuda", dtype=torch.bfloat16)
+
+        def f(xi, wt):
+            return Opaque_RMSNorm.apply(
+                xi, wt, eps, offset, casting_mode, in_place, None
+            ).mean()
+
+        # vmap path (the fix under test)
+        gx_vmap, gw_vmap = vmap(grad(f, argnums=(0, 1)), in_dims=(0, None))(x, w)
+
+        # Eager per-sample loop (ground truth)
+        gx_eager = torch.stack([grad(f, argnums=0)(x[i], w) for i in range(B)])
+        gw_eager = torch.stack([grad(f, argnums=1)(x[i], w) for i in range(B)])
+
+        torch.testing.assert_close(
+            gx_vmap,
+            gx_eager,
+            rtol=RTOL_B,
+            atol=ATOL_B,
+            msg=f"per-example dX mismatch ({casting_mode})",
+        )
+        torch.testing.assert_close(
+            gw_vmap,
+            gw_eager,
+            rtol=RTOL_B,
+            atol=ATOL_B,
+            msg=f"per-example dW mismatch ({casting_mode}) — "
+            "vmap dW must not be the batch-sum",
+        )
+
+
 class TestRMSNormVmapGrad:
     """vmap(grad): per-example gradients (Llama)."""
 

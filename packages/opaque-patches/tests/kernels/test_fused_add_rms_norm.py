@@ -128,6 +128,66 @@ class TestFusedAddRMSNormVmapForward:
         assert_perf_benefit(pt_stats, op_stats, label="fused add rms vmap forward")
 
 
+class TestFusedAddRMSNormVmapGradPerExampleDW:
+    """Regression test: vmap(grad) per-example dW must match an eager per-sample loop.
+
+    Same DP-SGD correctness concern as for plain RMSNorm: the fused-add variant
+    was also returning the batch-sum dW with out_dim=None.  Small shapes are
+    used so the test runs without the 24 GB GPU required by the mellum suite.
+    """
+
+    @pytest.mark.parametrize("casting_mode", ["llama", "gemma"])
+    @pytest.mark.parametrize("in_place", [False, True])
+    def test_vmap_grad_matches_eager_loop(self, casting_mode, in_place):
+        torch.manual_seed(13)
+        B, T, H = 4, 8, 64
+        eps = 1e-5
+        offset = 1.0 if casting_mode == "gemma" else 0.0
+
+        x = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16)
+        r = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16)
+        w = torch.randn(H, device="cuda", dtype=torch.bfloat16)
+
+        def f(xi, ri, wt):
+            y, s_ = Opaque_FusedAddRMSNorm.apply(
+                xi, ri, wt, eps, offset, casting_mode, in_place
+            )
+            return (y + s_).mean()
+
+        # vmap path (the fix under test) — batch over (x, r), w is shared
+        gx_vmap, gr_vmap, gw_vmap = vmap(
+            grad(f, argnums=(0, 1, 2)), in_dims=(0, 0, None)
+        )(x, r, w)
+
+        # Eager per-sample loop (ground truth)
+        gx_eager = torch.stack([grad(f, argnums=0)(x[i], r[i], w) for i in range(B)])
+        gr_eager = torch.stack([grad(f, argnums=1)(x[i], r[i], w) for i in range(B)])
+        gw_eager = torch.stack([grad(f, argnums=2)(x[i], r[i], w) for i in range(B)])
+
+        torch.testing.assert_close(
+            gx_vmap,
+            gx_eager,
+            rtol=RTOL_B,
+            atol=ATOL_B,
+            msg=f"per-example dX mismatch ({casting_mode})",
+        )
+        torch.testing.assert_close(
+            gr_vmap,
+            gr_eager,
+            rtol=RTOL_B,
+            atol=ATOL_B,
+            msg=f"per-example dR mismatch ({casting_mode})",
+        )
+        torch.testing.assert_close(
+            gw_vmap,
+            gw_eager,
+            rtol=RTOL_B,
+            atol=ATOL_B,
+            msg=f"per-example dW mismatch ({casting_mode}) — "
+            "vmap dW must not be the batch-sum",
+        )
+
+
 class TestFusedAddRMSNormVmapGrad:
     def test_vmap_grad_precision(self, assert_precision, mellum_config):
         torch.manual_seed(42)

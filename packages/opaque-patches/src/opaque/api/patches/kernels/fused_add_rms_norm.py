@@ -382,6 +382,7 @@ class _FusedAddRMSNormBackward(torch.autograd.Function):
             raise ValueError("dY, S, RSTD must be vmapped at dim 0")
         H = S.shape[-1]
         head_dy = dY.shape[:-1]
+        B = dY.shape[0]
         dY_m = dY.reshape(-1, H)
         if dS_out is None:
             dS_m = None
@@ -393,20 +394,55 @@ class _FusedAddRMSNormBackward(torch.autograd.Function):
             dS_m = dS_out.reshape(-1, H)
         S_m = S.reshape(-1, H)
         R_m = RSTD.reshape(-1)
-        dComb, dW = _fused_add_rms_norm_backward_triton(
+        casting_mode = int(meta_i[0].item())
+
+        # Per-example dW is only needed when W is trainable (full fine-tuning
+        # under DP-SGD).  Under vmap(grad()) with frozen norm weights (LoRA),
+        # grad() detaches W (requires_grad=False) and dW is never consumed, so
+        # skip the (B, T, H) float32 intermediate below.  Default to trainable
+        # when the flag is absent: computing per-example dW unnecessarily only
+        # costs memory, while skipping it when W is consumed would silently
+        # reintroduce the batch-sum privacy bug.
+        w_trainable = bool(meta_i[4].item()) if meta_i.numel() > 4 else True
+        dW_out = None
+        if w_trainable:
+            # Compute per-example dW: the Triton call below sums dW over the
+            # entire merged (B*T, H) batch.  Under vmap(grad(...)) for DP-SGD
+            # each example must carry only its own rows' contribution so the
+            # per-example sensitivity bound is correct at the DP clipping step.
+            # Must run before the Triton call: with in_place=True the kernel
+            # overwrites dY with dComb.
+            T_flat = dY_m.shape[0] // B
+            dY_3d = dY_m.view(B, T_flat, H)
+            S_3d = S_m.view(B, T_flat, H)
+            R_3d = R_m.view(B, T_flat)
+            s_normed = S_3d.float() * R_3d.unsqueeze(-1)  # (B, T_flat, H)
+            if casting_mode == 0:  # llama: (S_f32 * rstd) cast back to S_dtype
+                dW_per = (dY_3d * s_normed.to(S_3d.dtype)).float().sum(dim=1)
+            else:  # gemma / none: accumulate fully in float32
+                dW_per = (dY_3d.float() * s_normed).sum(dim=1)
+            dW_out = dW_per.to(W.dtype)  # (B, H)
+
+        dComb, dW_summed = _fused_add_rms_norm_backward_triton(
             dY_m,
             dS_m,
             S_m,
             W,
             R_m,
             float(offset_tensor.item()),
-            int(meta_i[0].item()),
+            casting_mode,
             int(meta_i[1].item()),
             int(meta_i[2].item()),
             bool(meta_i[3].item()),
         )
         dComb_out = dComb.view(*head_dy, H)
-        return (dComb_out, dW), (dy_b, None)
+        if dW_out is not None:
+            return (dComb_out, dW_out), (dy_b, 0)
+        # W frozen: dW is never consumed.  Return zeros rather than the
+        # kernel's batch-sum as defense in depth — if it were ever consumed,
+        # zeros stall training visibly instead of silently leaking
+        # cross-example data into the DP clipper.
+        return (dComb_out, torch.zeros_like(dW_summed)), (dy_b, None)
 
 
 class Opaque_FusedAddRMSNorm(torch.autograd.Function):
@@ -433,8 +469,13 @@ class Opaque_FusedAddRMSNorm(torch.autograd.Function):
         RSTD = _torch_rstd(S2d, float(eps), cm)
         bs, nw = calculate_settings(dim)
         ctx.original_shape = S_saved.shape
+        # meta_i[4]: W trainability, recorded at forward time (same mechanism
+        # as the LoRA kernels — under vmap(grad()) grad() detaches captured
+        # frozen weights, so requires_grad here reliably distinguishes full
+        # fine-tuning from LoRA).  _FusedAddRMSNormBackward.vmap uses it to
+        # decide whether per-example dW must be computed.
         ctx.meta_i = torch.tensor(
-            [cm, bs, nw, int(in_place)],
+            [cm, bs, nw, int(in_place), int(W.requires_grad)],
             device=S_saved.device,
             dtype=torch.int64,
         )
