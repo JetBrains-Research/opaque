@@ -21,7 +21,7 @@ import pytest
 from transformers.debug_utils import DebugOption
 
 from opaque.transformers.trainer import TrainingArguments
-from opaque.api.transformers.trainer._config import _DP_OPTIMIZERS
+from opaque.api.transformers.trainer._training_arguments import _DP_OPTIMIZERS
 
 
 class TestLegacyAliases:

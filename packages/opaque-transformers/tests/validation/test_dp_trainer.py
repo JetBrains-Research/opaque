@@ -16,9 +16,9 @@ import torch
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import TrainerCallback as _HFTrainerCallback
-from opaque.transformers import EvaluationResult
+from opaque.transformers.trainer.types import EvaluationResult, TrainOutput
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments, TrainOutput
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.api.transformers.trainer._state import DPTrainerState
 
 from _hf_shared import build_lm_dataset  # noqa: E402

@@ -2,7 +2,7 @@
 
 TRL ``SFTConfig`` / ``DPOConfig`` subclass HF ``TrainingArguments``, so each
 converter delegates the HF-inherited subset of fields to the HF manifest in
-:mod:`opaque.api.transformers.trainer.training_arguments` and only classifies
+:mod:`opaque.api.transformers.trainer._hf_convert` and only classifies
 the TRL-specific fields with its own per-flavor manifest (defined alongside the
 config class in ``_sft_config.py`` / ``_dpo_config.py``).
 
@@ -16,18 +16,18 @@ from __future__ import annotations
 import tempfile
 from typing import Any, Callable
 
-from ..trainer.training_arguments import (
+from ..trainer._convert import (  # noqa: F401  (_reject_if_truthy re-exported)
+    _apply_manifest,
+    _get_dataclass_field_values,
+    _reject_if_truthy,
+)
+from ..trainer._hf_convert import (
     HF_DIRECT_FIELDS,
     HF_DROP_FIELDS,
     HF_REJECTED_FIELDS,
     HF_RENAME_MAP,
     HF_TRANSFORM_MAP,
-    _apply_manifest,
-    _get_dataclass_field_values,
 )
-
-# Shared with the HF manifest — reject only when the user set a truthy value.
-from ..trainer.training_arguments import _reject_if_truthy  # noqa: F401
 
 
 def _import_trl() -> Any:

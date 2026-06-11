@@ -9,12 +9,8 @@ usage guides, see [HuggingFace Integration](../user-guide/huggingface/index.md).
 The `opaque.transformers` namespace re-exports the trainer surface:
 
 ```python
-from opaque.transformers import (
-    DPTrainer,
-    TrainingArguments,
-    EvaluationResult,
-    TrainOutput,
-)
+from opaque.transformers import DPTrainer, TrainingArguments
+from opaque.transformers.trainer.types import EvaluationResult, TrainOutput
 from opaque.transformers.trl import SFTConfig, SFTTrainer, DPOConfig, DPOTrainer
 
 # Global HF runtime shims (only needed when using HF primitives without DPTrainer):
@@ -25,8 +21,8 @@ from opaque.patches import apply_runtime_patches
 |---|---|
 | `DPTrainer` | DP-SGD trainer mirroring the HuggingFace `Trainer` interface. |
 | `TrainingArguments` | Standalone dataclass — full HF parity for the subset DPTrainer honours, plus DP-specific fields. |
-| `EvaluationResult` | Unified return type for `evaluation_loop` / `evaluate` / `predict`. |
-| `TrainOutput` | NamedTuple returned by `train()` — `(global_step, training_loss, metrics)`. |
+| `opaque.transformers.trainer.types.EvaluationResult` | Return type for `evaluation_loop` / `evaluate` / `predict`. |
+| `opaque.transformers.trainer.types.TrainOutput` | NamedTuple returned by `train()` — `(global_step, training_loss, metrics)`. |
 | `opaque.transformers.trl` | TRL-style configs/trainers: `SFTConfig`, `SFTTrainer`, `DPOConfig`, `DPOTrainer`. |
 | `opaque.patches.apply_runtime_patches` | Install the global HF runtime shims (only needed when using HF primitives without `DPTrainer`). |
 

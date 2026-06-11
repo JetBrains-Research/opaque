@@ -16,9 +16,7 @@ from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from opaque.api.transformers.trainer import (
     DPTrainer,
-    EvaluationResult,
     TrainingArguments,
-    TrainOutput,
 )
 
 from . import trl
@@ -32,7 +30,5 @@ __all__ = [
     "__version__",
     "DPTrainer",
     "TrainingArguments",
-    "EvaluationResult",
-    "TrainOutput",
     "trl",
 ]

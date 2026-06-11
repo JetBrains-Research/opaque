@@ -3,7 +3,7 @@
 Drift catcher for the opaque argument manifest. A new upstream
 ``TrainingArguments`` / ``SFTConfig`` / ``DPOConfig`` field that no bucket set
 classifies fails the test; the fix is to add it to the right constant in
-``opaque.api.transformers.trainer.training_arguments`` (or the TRL manifests in
+``opaque.api.transformers.trainer._hf_convert`` (or the TRL manifests in
 ``opaque.api.transformers.trl``).
 """
 
@@ -16,21 +16,21 @@ import pytest
 # Required upstream — HF transformers is a runtime dep of opaque-transformers.
 hf = pytest.importorskip("transformers")
 
-from opaque.api.transformers.trainer.training_arguments import (  # noqa: E402
+from opaque.api.transformers.trainer._hf_convert import (  # noqa: E402
     HF_DIRECT_FIELDS,
     HF_DROP_FIELDS,
     HF_REJECTED_FIELDS,
     HF_RENAME_MAP,
     HF_TRANSFORM_MAP,
 )
-from opaque.api.transformers.trl._dpo_config import (  # noqa: E402
+from opaque.api.transformers.trl._dpo_convert import (  # noqa: E402
     TRL_DPO_DIRECT_FIELDS,
     TRL_DPO_DROP_FIELDS,
     TRL_DPO_REJECTED_FIELDS,
     TRL_DPO_RENAME_MAP,
     TRL_DPO_TRANSFORM_MAP,
 )
-from opaque.api.transformers.trl._sft_config import (  # noqa: E402
+from opaque.api.transformers.trl._sft_convert import (  # noqa: E402
     TRL_SFT_DIRECT_FIELDS,
     TRL_SFT_DROP_FIELDS,
     TRL_SFT_REJECTED_FIELDS,
@@ -127,7 +127,7 @@ def test_hf_manifest_covers_every_upstream_field():
     Drift case: HF adds a new field on a future release; this test
     surfaces it as the unclassified-field list. The fix is to add the
     new field to one of the constants in
-    ``opaque.api.transformers.trainer.training_arguments``.
+    ``opaque.api.transformers.trainer._hf_convert``.
     """
     upstream = _all_hf_field_names()
     covered = _opaque_buckets_for_hf()
@@ -138,7 +138,7 @@ def test_hf_manifest_covers_every_upstream_field():
         f"This usually means upstream transformers added new fields on a "
         f"release the opaque manifest hasn't tracked yet. For each missing "
         f"field, decide its bucket and add it to the right constant in "
-        f"``opaque.api.transformers.trainer.training_arguments``:\n"
+        f"``opaque.api.transformers.trainer._hf_convert``:\n"
         f"  - HF_DIRECT_FIELDS: same name + semantics as opaque\n"
         f"  - HF_RENAME_MAP: different name in opaque\n"
         f"  - HF_TRANSFORM_MAP: needs a derivation callable\n"
@@ -230,5 +230,5 @@ def test_hf_manifest_does_not_have_phantom_fields():
         f"upstream:\n  {sorted(phantoms)}\n\n"
         f"This means HF removed a field that opaque's manifest still "
         f"tracks. Remove the phantom entry from the corresponding constant "
-        f"in ``opaque.api.transformers.trainer.training_arguments``."
+        f"in ``opaque.api.transformers.trainer._hf_convert``."
     )

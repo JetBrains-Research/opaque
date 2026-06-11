@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     # types as our standalone ``TrainingArguments`` without taking a runtime
     # dependency from ``_callback`` on ``_config`` (today there is no cycle;
     # this is defensive for future evolution).
-    from ._config import TrainingArguments
+    from ._training_arguments import TrainingArguments
 
 
 __all__ = [

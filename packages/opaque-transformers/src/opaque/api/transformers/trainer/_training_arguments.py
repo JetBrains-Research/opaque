@@ -1154,7 +1154,7 @@ class TrainingArguments:
         noise) must be set — opaque's runtime requires one to instantiate.
 
         Translates HF fields by bucketed manifest (see
-        ``opaque.api.transformers.trainer.training_arguments``):
+        ``opaque.api.transformers.trainer._hf_convert``):
 
         - **DIRECT**: ~80 fields with identical name and semantics — copied.
         - **RENAME**: ``evaluation_strategy`` → ``eval_strategy``,
@@ -1201,8 +1201,8 @@ class TrainingArguments:
             HF field is set to a non-default value.
         """
         # Local import keeps module load fast and avoids a hard import cycle
-        # (training_arguments imports nothing from this module at load time).
-        from .training_arguments import _convert_hf_training_arguments
+        # (_hf_convert imports nothing from this module at load time).
+        from ._hf_convert import _convert_hf_training_arguments
 
         # Collect the DP-knob kwargs into one dict the converter forwards.
         dp_overrides: dict[str, Any] = {

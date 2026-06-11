@@ -25,7 +25,7 @@ import os
 import shutil
 import time
 from collections.abc import Mapping
-from typing import Any, Callable, NamedTuple
+from typing import Any, Callable
 
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
@@ -55,8 +55,9 @@ from ._callback import (
     is_metric_improved,
     resolve_eval_metric,
 )
-from ._config import TrainingArguments
-from ._eval import EvalPrediction, EvaluationResult
+from ._training_arguments import TrainingArguments
+from ._eval import EvalPrediction
+from .types import EvaluationResult, TrainOutput
 from ._precision import eval_dtype
 from ._scheduler import build_lr_schedule
 from ._state import DPTrainerState
@@ -197,14 +198,6 @@ def _compile_with_fullgraph_fallback(
             return fallback(*args, **kwargs)
 
     return wrapper
-
-
-class TrainOutput(NamedTuple):
-    """Return type of ``DPTrainer.train()``, mirroring HF's TrainOutput."""
-
-    global_step: int
-    training_loss: float
-    metrics: dict[str, float]
 
 
 @dataclasses.dataclass

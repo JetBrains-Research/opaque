@@ -7,7 +7,7 @@ import warnings
 import pytest
 
 from opaque.api.transformers.trainer import TrainingArguments
-from opaque.api.transformers.trainer.training_arguments import _normalize_dp_overrides
+from opaque.api.transformers.trainer._convert import _normalize_dp_overrides
 
 # ``transformers`` is a required dep of opaque-transformers.
 hf = pytest.importorskip("transformers")
