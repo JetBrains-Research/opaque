@@ -46,16 +46,13 @@ SMOKE MODE (``--smoke``)
 randomly-initialized LlamaForCausalLM (no network, no HF download) over a small
 synthetic preference dataset (~8 examples). It precomputes reference logps
 (using the model itself as the reference for the smoke), then executes 2 real
-DP-SGD steps and prints the DPO loss each step. This is the path this script
-lands on — it has been verified to run clean on CPU; the per-step loss output is
-shown in the work-unit report. The ref-logp cache is written to a per-run
-temporary directory (no network, no shared state).
+DP-SGD steps and prints the DPO loss each step. The ref-logp cache is written to
+a per-run temporary directory (no network, no shared state).
 
-A documented fallback exists in ``_run_smoke`` for environments where
-``vmap(grad(...))`` over the patched model fails on CPU: a single non-vmap
-chosen+rejected forward + ``_DPO_LOSSES["sigmoid"]`` to validate the loss wiring,
-with a clear note that the full per-example DP-SGD run is validated via the
-Cadence GPU preset. The script never exits non-zero in smoke mode.
+``_run_smoke`` has a fallback for environments where ``vmap(grad(...))`` over
+the patched model fails on CPU: a single non-vmap chosen+rejected forward +
+``_DPO_LOSSES["sigmoid"]`` to validate the loss wiring. The script never exits
+non-zero in smoke mode.
 
 USAGE:
 
@@ -86,9 +83,8 @@ USAGE:
 
 from __future__ import annotations
 
-# E402: ``apply_runtime_patches()`` must run before transformers/opaque
-# submodules are imported (it monkeypatches their runtime behavior), so the
-# remaining imports intentionally follow that call — same as train_dp_ftrl.py.
+# E402: ``apply_runtime_patches()`` must run before transformers/opaque submodules
+# are imported, so the remaining imports intentionally follow that call.
 # ruff: noqa: E402
 
 import argparse
@@ -179,11 +175,10 @@ from opaque.alignment.dpo.reference import (
     null_ref_context,
 )
 
-# DP-FTRL mechanism swap: the loss closure is mechanism-agnostic.
-# To run DP-FTRL instead of DP-SGD, replace the two ``opaque.dpsgd`` noise/
-# sampling imports above with their DP-FTRL counterparts, e.g.:
-#   from opaque.dpftrl.noise import band_mf_noise  # matrix-factorized noise
-# and feed it the same ``ClippedPytree`` produced by ``clipped_grad`` below.
+# DP-FTRL mechanism swap: replace the two ``opaque.dpsgd`` noise/sampling imports
+# above with their DP-FTRL counterparts (e.g. ``opaque.dpftrl.noise.band_mf_noise``)
+# and feed the same ``ClippedPytree`` from ``clipped_grad`` below. The loss is
+# mechanism-agnostic.
 
 # Maps the CLI ``--loss-type`` string to a loss function. Keys are opaque's
 # ``loss_type`` names (matching ``trl._dpo_trainer._DPO_HEADS``) so a string
@@ -213,21 +208,17 @@ _DPO_LOSSES = {
     "orpo": None,
 }
 
-# Reference-free preference methods score the policy log-prob directly and need
-# no frozen reference model, so they skip the reference precompute and the two
-# ref-logp tensors. They are dispatched through ``_make_reference_free_loss``
-# (not ``_DPO_LOSSES[...]``) at the call site below.
+# Reference-free methods score the policy log-prob directly: no frozen reference,
+# no ref-logp tensors. Dispatched through ``_make_reference_free_loss`` (not
+# ``_DPO_LOSSES[...]``).
 _REFERENCE_FREE = {"simpo", "cpo", "orpo"}
 
-# The 8 per-example loss arguments after the trainable params (argnums=0):
-# chosen_ids, chosen_mask, chosen_cmask, rejected_ids, rejected_mask,
-# rejected_cmask, ref_chosen_logps, ref_rejected_logps. The vmap batch axis is
-# taken over all of them, so batch_argnums lists every index 1..8.
+# vmap batch axis over the 8 per-example loss args (after params at argnums=0):
+# chosen/rejected ids, attention masks, completion masks, plus the two ref logps.
 _BATCH_ARGNUMS = (1, 2, 3, 4, 5, 6, 7, 8)
 
-# Reference-free methods take only the six per-example preference tensors —
-# chosen/rejected ids, attention masks, and completion masks — with no ref-logp
-# columns, so the vmap batch axis spans indices 1..6.
+# Reference-free methods take only the six preference tensors (no ref logps),
+# so the vmap batch axis spans indices 1..6.
 _BATCH_ARGNUMS_REF_FREE = (1, 2, 3, 4, 5, 6)
 
 
@@ -1320,9 +1311,8 @@ def _run_smoke(args):
     loss_type = args.loss_type
 
     # --- Tiny synthetic preference dataset: 8 examples (no network) ---
-    # Each example carries chosen/rejected token ids + completion masks. A
-    # prompt prefix is shared between chosen and rejected; the completion mask
-    # marks the (differing) response span, mirroring real DPO preprocessing.
+    # Each example shares a prompt prefix between chosen/rejected; the completion
+    # mask marks the differing response span, mirroring real DPO preprocessing.
     rng = torch.Generator().manual_seed(args.seed)
 
     def _make_example():
@@ -1362,11 +1352,9 @@ def _run_smoke(args):
     reference_free = loss_type in _REFERENCE_FREE
 
     # --- Precompute reference logps ONCE, outside vmap, to a tmp cache dir ---
-    # Reference-based heads need the frozen reference logps; reference-free
-    # methods (simpo/cpo/orpo) score the policy log-prob directly and skip the
-    # precompute entirely. For the smoke the model itself serves as the (frozen)
-    # reference. The cache goes to a per-run temp directory so the smoke is
-    # hermetic (no network, no shared state across runs) — local cache_dir.
+    # Reference-based heads need frozen reference logps (here the model itself is
+    # the reference); reference-free methods skip the precompute. The per-run temp
+    # cache keeps the smoke hermetic (no network, no shared state).
     if reference_free:
         print("\nReference-free loss (no reference precompute).")
         rows = list(dataset)
@@ -1463,9 +1451,8 @@ def _run_smoke(args):
         return 0
 
     except Exception as exc:  # pragma: no cover - defensive fallback path
-        # Documented fallback (module header): vmap(grad(...)) over the patched
-        # model failed on this CPU host. Validate the loss wiring with a single
-        # non-vmap chosen+rejected forward + DPO loss so the smoke still exits 0.
+        # Fallback when vmap(grad(...)) over the patched model fails on this host:
+        # validate loss wiring with one non-vmap forward + DPO loss, still exit 0.
         print(f"\nNote: full vmap DP-SGD path raised: {type(exc).__name__}: {exc}")
         print(
             "Falling back to a single non-vmap chosen+rejected forward + DPO "
@@ -1733,16 +1720,13 @@ def main():
         f"Prepared datasets: {len(train_dataset)} train pairs, {len(eval_dataset)} eval pairs"
     )
 
-    # Reference-free methods (simpo/cpo/orpo) score the policy log-prob directly,
-    # so they skip the reference precompute and the two ref-logp tensors. This
-    # flag selects the per-example batch shape, loss closure, and batch_argnums
-    # everywhere below.
+    # This flag selects the per-example batch shape, loss closure, and
+    # batch_argnums everywhere below (reference-free skips the ref-logp tensors).
     reference_free = args.loss_type in _REFERENCE_FREE
     batch_argnums = _BATCH_ARGNUMS_REF_FREE if reference_free else _BATCH_ARGNUMS
 
-    # Preference collator (opaque-alignment primitive: 6 mandatory tensors, plus
-    # the 2 precomputed ref-logp columns in the reference-based path once those
-    # are attached).
+    # Preference collator: 6 mandatory tensors, plus the 2 ref-logp columns in
+    # the reference-based path once attached.
     collate_raw = preference_collator(tokenizer.pad_token_id, args.max_length)
 
     def collate(examples):
@@ -1751,18 +1735,15 @@ def main():
         )
 
     # --- Precompute reference logps (LoRA base model as frozen reference) -----
-    # ``null_ref_context(model)`` disables the LoRA adapter for the duration of
-    # the precompute, so the un-adapted base weights serve as the reference
-    # policy (the canonical LoRA-DPO reference).  The expensive ref
-    # forward runs at most once and is cached to a content-addressed ``.npz``.
+    # ``null_ref_context(model)`` disables the LoRA adapter so the un-adapted base
+    # weights serve as the reference policy (the canonical LoRA-DPO reference). The
+    # ref forward runs at most once, cached to a content-addressed ``.npz``.
     # Reference-free methods skip this entirely.
     if reference_free:
         print("\nReference-free loss selected (skipping reference precompute).")
     else:
-        # Resolve --ref-cache-dir. Default to ~/.cache/opaque/ref_logps so
-        # repeat runs against the same (model, dataset, sample count) hit
-        # the cache. compute_ref_logprobs_for_dataset creates the directory
-        # on first miss; we just expanduser here.
+        # Default --ref-cache-dir to ~/.cache/opaque/ref_logps so repeat runs over
+        # the same (model, dataset, sample count) hit the cache.
         if args.ref_cache_dir is None:
             ref_cache_dir = os.path.expanduser("~/.cache/opaque/ref_logps")
         else:
@@ -1830,10 +1811,10 @@ def main():
         drop_last=False,
     )
 
-    # For training: Poisson sampling (not uniform shuffling!)
-    # Poisson: each example independently sampled with probability sample_rate each step.
-    # In parallel Poisson mode each rank samples independently from the full dataset,
-    # so we divide by world_size to keep the global expected batch size = args.batch_size.
+    # Training uses Poisson sampling: each example independently sampled with
+    # probability sample_rate each step. In parallel Poisson mode each rank samples
+    # independently from the full dataset, so divide by world_size to keep the
+    # global expected batch size = args.batch_size.
     truncated_batch_size = args.truncated_batch_size
     sample_rate = args.batch_size / global_train_size
     if use_parallel_poisson:
@@ -1882,10 +1863,8 @@ def main():
     print(f"Trainable parameters: {len(param_names)} (took {elapsed:.1f}s)")
     print_memory(device, "After functional conversion")
 
-    # Per-example DPO loss closure (TWO forwards: chosen + rejected).  Output for
-    # example i depends only on example i's data, so per-example sensitivity is
-    # O(C).  Reference-based heads form log-ratios against the precomputed
-    # reference logps; reference-free methods score the policy log-prob directly.
+    # Per-example DPO loss closure (TWO forwards: chosen + rejected). Output for
+    # example i depends only on example i's data, so per-example sensitivity is O(C).
     if reference_free:
         per_example_loss_fn = _make_reference_free_loss(
             fmodel,
@@ -1901,9 +1880,8 @@ def main():
             fmodel, frozen_params, loss_type=args.loss_type, beta=args.beta
         )
 
-    # Build canary DataLoader for auditing (DPO loss-based membership scoring:
-    # the per-example DPO loss is the membership signal, scored over the
-    # per-example batch tuple).
+    # Canary DataLoader for auditing: the per-example DPO loss is the membership
+    # signal, scored over the per-example batch tuple.
     canary_loader = None
     if args.audit and audit_cf is not None:
         canary_loader = DataLoader(
@@ -2109,10 +2087,8 @@ def main():
     print(f"  Epochs: {args.num_epochs}")
     print(f"  Expected total steps: ~{args.num_epochs * expected_steps_per_epoch}")
 
-    # Cross-flag validation for --second-moment: warn-and-disable on
-    # mismatch instead of raising.  The squared-gradient stream is
-    # auxiliary; silently dropping to single-stream noise on an
-    # incompatible optimizer beats failing the run outright.
+    # --second-moment needs an optimizer that consumes the squared-gradient
+    # stream; on a mismatch warn and drop to single-stream noise rather than fail.
     _SECOND_MOMENT_OPTIMIZERS = frozenset(
         {"adam", "adamw", "ademamix", "rmsprop", "radam", "adadelta"}
     )
@@ -2128,9 +2104,8 @@ def main():
 
     # Create gradient function based on clipping mode.
     if args.clipping_mode == "adaptive":
-        # ``second_moment`` flows through ``**clipped_grad_kwargs`` to the
-        # inner ``clipped_grad`` call; the adaptive threshold update reads
-        # the first-stream gradient norms regardless of paired-stream output.
+        # ``second_moment`` flows to the inner ``clipped_grad``; the adaptive
+        # threshold update reads first-stream gradient norms regardless.
         grad_fn, clip_state = adaptive_clipped_grad(
             per_example_loss_fn,
             argnums=0,
@@ -2168,23 +2143,19 @@ def main():
             second_moment=use_second_moment,
         )
 
-    # Calibrate noise multiplier from target privacy budget
-    # sample_rate already computed above
+    # Calibrate noise multiplier from target privacy budget.
     total_steps = args.num_epochs * expected_steps_per_epoch
 
-    # Compute delta from training set size: δ = 1/n^1.1 (keeps δ below 1/n while
-    # being less conservative than the previous 1/n² heuristic on smaller runs).
+    # Compute delta from training set size: δ = 1/n^1.1 (keeps δ below 1/n).
     if args.target_delta is None:
         args.target_delta = 1.0 / (global_train_size**1.1)
     if use_wandb:
         wandb.config.update({"target_delta": args.target_delta}, allow_val_change=True)
 
-    # Noise injection — bind mechanism-specific parameters once.
-    # Chain: base mechanism → adaclip (optional) → amplification.
-    # Bounded Gaussian noise (Chen and Hale, 2024) confines per-coordinate
-    # support but accounting collapses to ordinary Gaussian at training
-    # scale (ℓ₂-ball clip, not a product of intervals), so we use
-    # dpsgd_acc.gaussian() for accounting either way.
+    # Noise injection chain: base mechanism → adaclip (optional) → amplification.
+    # Bounded Gaussian noise (Chen and Hale, 2024) confines per-coordinate support
+    # but accounts as ordinary Gaussian at training scale (ℓ₂-ball clip, not a
+    # product of intervals), so accounting uses dpsgd_acc.gaussian() either way.
     _num_groups = len(clip_norm.values) if isinstance(clip_norm, PerGroup) else 1
     if args.noise_multiplier == 0:
 
@@ -2203,10 +2174,9 @@ def main():
                 _base_mechanism(nm), expected_batch_size=ebs, num_groups=ng
             )
 
-    # No paired-stream wrap: joint Mahalanobis allocation makes
-    # the second moment release "free" at the runtime σ allocation
-    # level; calibration uses the same gaussian(nm) PLD as the
-    # first-moment-only release.
+    # No paired-stream wrap: joint Mahalanobis allocation makes the second-moment
+    # release "free" at runtime σ allocation, so calibration uses the same
+    # gaussian(nm) PLD as the first-moment-only release.
 
     _unamplified = mechanism
     if truncated_batch_size is not None:
@@ -2275,14 +2245,10 @@ def main():
             f"(iterations={calibration.iterations}, converged={calibration.converged})"
         )
 
-    # Build LR schedule using opaque.scheduling primitives.  Each curve
-    # returns a ``Callable[[int], float]`` and ``with_warmup`` composes a
-    # 0→1 linear ramp during the warmup window; torchopt's
-    # ``scale_by_neg_lr`` accepts either a callable or a scalar.  We
-    # share ``total_steps`` with the privacy calibration above so the
-    # schedule and accounting agree on the run length.  ``--max-steps``
-    # (when set) only truncates training — the schedule is laid out over
-    # the full planned epoch count, same as accounting.
+    # Build LR schedule using opaque.scheduling primitives. Shares ``total_steps``
+    # with the privacy calibration above so the schedule and accounting agree on
+    # run length; ``--max-steps`` only truncates training (the schedule still
+    # spans the full planned epoch count).
     if not 0.0 <= args.lr_min_ratio <= 1.0:
         raise ValueError(f"--lr-min-ratio must be in [0, 1], got {args.lr_min_ratio}")
     peak_lr = args.learning_rate
@@ -2306,10 +2272,8 @@ def main():
             transition_begin=warmup,
         )
     elif args.lr_schedule == "sqrt":
-        # Inverse-sqrt timescale defaults to warmup when set, otherwise
-        # to the full training run (gives a gentle ~1/sqrt(2) decay over
-        # the run rather than the very aggressive 1/sqrt(t) that would
-        # come from a tiny timescale).
+        # Inverse-sqrt timescale defaults to warmup when set, otherwise the full
+        # run (a gentle ~1/sqrt(2) decay rather than an aggressive 1/sqrt(t)).
         base = inverse_sqrt_schedule(
             init_value=peak_lr,
             transition_steps=warmup if warmup > 0 else max(1, total_steps),
@@ -2331,11 +2295,10 @@ def main():
             f"(peak={peak_lr:g}, min={lr_min:g}, warmup={warmup}, total={total_steps})"
         )
 
-    # Setup optimizer.  Noise metadata travels with ``NoisedPytree`` updates,
-    # so optimizer construction does not need a precomputed stddev;
-    # ``--noise-bias-correction`` only controls whether the optimizer's
-    # DP-aware path consumes that metadata.  For optimizers without a BC
-    # path (sgd/lion) the flag is silently ignored.
+    # Setup optimizer. Noise metadata travels with ``NoisedPytree`` updates, so
+    # construction needs no precomputed stddev; ``--noise-bias-correction`` only
+    # gates whether the optimizer's DP-aware path consumes it (ignored for
+    # optimizers without a BC path, e.g. sgd/lion).
     if args.optimizer == "adam":
         from opaque.optimizers import adam
 
@@ -2405,10 +2368,9 @@ def main():
     # NoisedPytree updates carrying the realized per-step stddev.
     initial_bound = clip_norm / args.batch_size
     if args.noise_mechanism == "bounded_gaussian":
-        # Pass ``bound`` unconditionally — at ``noise_multiplier=0`` the
-        # bounded path clamps the input to the interval (vs. the unbounded
-        # path which returns it unchanged), so the mechanism stays
-        # consistent for the user's chosen flag.
+        # Pass ``bound`` unconditionally: at ``noise_multiplier=0`` the bounded
+        # path still clamps the input to the interval, keeping the mechanism
+        # consistent with the user's chosen flag.
         noise_fn, noise_state = gaussian_noise(
             noise_multiplier=noise_multiplier,
             bound=args.noise_bound,
@@ -2444,9 +2406,8 @@ def main():
         f"margin={initial_metrics['rewards/margins']:.4f}, ε={initial_epsilon:.3f}"
     )
     if use_wandb:
-        # Match the schema used at every later eval_steps boundary (lines
-        # ~2479–2484) so W&B sees a single, dense family of eval metrics
-        # rather than two parallel sparse families.
+        # Match the schema used at every later eval_steps boundary so W&B sees a
+        # single dense family of eval metrics rather than two sparse families.
         wandb.log(
             {
                 "eval/chosen_reward": initial_metrics["rewards/chosen"],
