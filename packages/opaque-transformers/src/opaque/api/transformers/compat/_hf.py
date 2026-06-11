@@ -20,6 +20,7 @@ sets. Drift in upstream HF fails that test.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable
 
 from ._common import (
@@ -27,6 +28,8 @@ from ._common import (
     get_dataclass_field_values,
     normalize_dp_overrides,
 )
+
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -155,26 +158,27 @@ HF_RENAME_MAP: dict[str, str] = {
 # TRANSFORM — multi-field derivations.
 # ---------------------------------------------------------------------------
 def _batch_collapse(hf: dict[str, Any]) -> dict[str, Any]:
-    """Collapse HF ``(per_device, grad_accum)`` into opaque logical batch.
+    """Collapse HF ``(per_device, grad_accum, auto_find_batch_size)`` into the
+    opaque logical Poisson batch + vmap chunk.
 
-    Opaque's ``per_device_train_batch_size`` is the *logical Poisson batch*
-    — the privacy-relevant unit. HF's effective batch (``per_device ×
-    grad_accum``) IS the privacy-relevant batch. Dropping ``grad_accum``
-    on the floor would under-account the sampling amplification and emit
-    a wrong (too-optimistic) ε.
-
-    The HF microbatch becomes the opaque vmap chunk.
+    HF's effective batch (``per_device × grad_accum``) IS the privacy-relevant
+    unit, so it becomes opaque's logical ``per_device_train_batch_size``;
+    dropping ``grad_accum`` would under-account the amplification and emit a
+    too-optimistic ε. The HF per-device size becomes the opaque vmap chunk
+    (``microbatch_size``), and HF's ``auto_find_batch_size`` maps to opaque's
+    ``auto_find_microbatch_size`` (shrinks the vmap chunk on OOM, not the
+    logical batch — privacy-neutral).
     """
     per_device = int(hf.get("per_device_train_batch_size", 8))
     grad_accum = int(hf.get("gradient_accumulation_steps", 1) or 1)
     out: dict[str, Any] = {
         "per_device_train_batch_size": per_device * grad_accum,
+        "auto_find_microbatch_size": bool(hf.get("auto_find_batch_size", False)),
     }
     if grad_accum > 1:
-        # Only set microbatch_size when grad_accum > 1; at grad_accum=1
-        # the HF and opaque batch concepts are identical and we leave
-        # opaque's ``microbatch_size`` at its default (None → vmap on the
-        # full batch).
+        # Only set the vmap chunk when grad_accum > 1; at grad_accum=1 the
+        # logical batch == per_device, so leave microbatch_size at its
+        # default (None → vmap over the full batch).
         out["microbatch_size"] = per_device
     return out
 
@@ -233,10 +237,42 @@ def _optim_collapse(hf: dict[str, Any]) -> dict[str, Any]:
     return {"optim": optim_str}
 
 
+def _max_grad_norm_to_clipping(hf: dict[str, Any]) -> dict[str, Any]:
+    """Loosely map HF's global grad-norm clip → opaque ``clipping_norm``.
+
+    Not semantically identical (HF clips the aggregate gradient; opaque
+    clips per example for DP), but it's the closest knob and a sensible
+    default. A ``clipping_norm`` DP override wins (applied after the manifest).
+    """
+    v = hf.get("max_grad_norm")
+    return {"clipping_norm": float(v)} if v is not None else {}
+
+
+def _liger_to_perf_kernels(hf: dict[str, Any]) -> dict[str, Any]:
+    """Map HF Liger fused kernels → opaque performance kernels."""
+    if not hf.get("use_liger_kernel"):
+        return {}
+    out: dict[str, Any] = {"use_performance_kernels": True}
+    cfg = hf.get("liger_kernel_config")
+    if cfg:
+        out["performance_kernels_config"] = dict(cfg)
+    return out
+
+
+def _adafactor_to_optim(hf: dict[str, Any]) -> dict[str, Any]:
+    """Legacy ``adafactor=True`` boolean → opaque ``optim='adafactor'``."""
+    return {"optim": "adafactor"} if hf.get("adafactor") else {}
+
+
 HF_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "per_device_train_batch_size": _batch_collapse,
     "gradient_accumulation_steps": _batch_collapse,
+    "auto_find_batch_size": _batch_collapse,
     "optim": _optim_collapse,
+    "max_grad_norm": _max_grad_norm_to_clipping,
+    "use_liger_kernel": _liger_to_perf_kernels,
+    "liger_kernel_config": _liger_to_perf_kernels,
+    "adafactor": _adafactor_to_optim,
 }
 
 
@@ -253,20 +289,6 @@ def _reject_if_truthy(message: str) -> Callable[[Any], str | None]:
         return None
 
     return inner
-
-
-def _reject_max_grad_norm(value: Any) -> str | None:
-    # HF's default is 1.0; we treat that as benign at the dispatcher level
-    # via ``_is_default``. Any other non-default value here means the
-    # user wired up HF's pre-DP gradient norm clipping, which has no
-    # analogue on opaque's DP path — opaque's ``clipping_norm`` is the
-    # per-example DP clipping bound, not a global pre-step norm clip.
-    return (
-        "HF's ``max_grad_norm`` is a pre-step global gradient norm clip; "
-        "opaque has no equivalent. Per-example DP clipping is controlled by "
-        "``clipping_norm`` (passed as a kwarg to ``from_hf``). Drop "
-        "``max_grad_norm`` from your HF config."
-    )
 
 
 HF_REJECTED_FIELDS: dict[str, Callable[[Any], str | None]] = {
@@ -307,33 +329,15 @@ HF_REJECTED_FIELDS: dict[str, Callable[[Any], str | None]] = {
         "NEFTune embedding noise is not wired through the DP-SGD path "
         "(it would interact with the privacy accountant)."
     ),
-    # Optimizer rejections — the ``optim`` field itself is handled in the
-    # TRANSFORM (``_optim_collapse``) which raises on paged variants.
-    "adafactor": _reject_if_truthy(
-        "Use ``optim='adafactor'`` directly (the legacy ``adafactor=True`` "
-        "boolean flag is collapsed in opaque)."
-    ),
     # Hub auto-push.
     "hub_always_push": _reject_if_truthy(
         "Per-checkpoint auto-push is not supported; use ``push_to_hub=True`` "
         "for the end-of-training push."
     ),
-    # Pre-step global gradient norm clip (HF) has no opaque equivalent.
-    "max_grad_norm": _reject_max_grad_norm,
-    # Liger fused kernels — not on the per-example DP path.
-    "use_liger_kernel": _reject_if_truthy(
-        "Liger fused kernels are not on the opaque per-example DP-SGD path."
-    ),
-    "liger_kernel_config": _reject_if_truthy(
-        "Liger fused kernels are not on the opaque per-example DP-SGD path."
-    ),
-    # Auto batch size — different semantics in opaque.
-    "auto_find_batch_size": _reject_if_truthy(
-        "Opaque uses ``auto_find_microbatch_size`` (different semantics: "
-        "the vmap chunk shrinks on OOM, not the logical batch). Either "
-        "pass ``auto_find_microbatch_size=True`` via ``opaque_overrides`` "
-        "or omit."
-    ),
+    # NOTE: ``adafactor`` (→ optim), ``max_grad_norm`` (→ clipping_norm),
+    # ``use_liger_kernel`` / ``liger_kernel_config`` (→ performance kernels),
+    # and ``auto_find_batch_size`` (→ auto_find_microbatch_size) are now
+    # remapped in HF_TRANSFORM_MAP rather than rejected.
 }
 
 
@@ -464,8 +468,22 @@ def convert_hf_training_arguments(
         strict=strict,
     )
 
-    # Layer DP overrides on top.
-    dp_layer = normalize_dp_overrides(dp_overrides)
-    converted.update(dp_layer)
+    # Performance kernels are off in HF/TRL but on by default in opaque. We
+    # can't tell an HF default from an explicit value, so on conversion we
+    # default them OFF to match upstream behaviour (the Liger transform sets
+    # True when Liger was on; a name override below can force either way).
+    converted.setdefault("use_performance_kernels", False)
 
+    # Layer overrides on top — these win over every converted/derived value
+    # (the privacy knobs plus any opaque field overridden by name, e.g.
+    # ``use_performance_kernels=True`` even though HF had no such field).
+    overrides = normalize_dp_overrides(dp_overrides)
+    converted.update(overrides)
+
+    log.info(
+        "compat: converted hf_training_arguments → %d opaque fields "
+        "(%d overridden by name)",
+        len(converted),
+        len(overrides),
+    )
     return converted
