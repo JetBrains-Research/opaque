@@ -12,9 +12,9 @@ Ordering invariant: :func:`clone_chat_template` mutates the embedding matrix
 via ``resize_token_embeddings``. A functional snapshot
 (``make_functional`` / ``torch.func.functional_call``) captures the embedding
 tensor at snapshot time, so clone the template **before** snapshotting;
-otherwise the snapshot keeps the old, smaller matrix and the expanded
-vocabulary is invisible to the functional forward, producing a silent shape
-mismatch.
+otherwise the snapshot keeps the old, smaller matrix and the functional forward
+errors at runtime (index-out-of-range in the embedding lookup) the first time a
+newly-added token id is seen.
 """
 
 from __future__ import annotations
@@ -56,7 +56,8 @@ def clone_chat_template(
     Ordering invariant: this mutates the model's embedding matrix and must be
     called before any ``make_functional`` / ``torch.func.functional_call``
     snapshot, otherwise the snapshot keeps the old (smaller) matrix and the
-    expanded vocabulary is invisible to the functional forward.
+    functional forward errors at runtime (embedding index-out-of-range) when a
+    newly-added token id is first seen.
 
     Args:
         model: The :class:`~transformers.PreTrainedModel` whose embedding
