@@ -1,29 +1,12 @@
 """Tests for :mod:`opaque.api.alignment.data._chat_template`.
 
-Plan §7.7 + risk α10 (resize_token_embeddings ordering).
+Covers :func:`get_training_chat_template` (inserting / preserving the
+``{% generation %}`` markers, error cases) and :func:`clone_chat_template`
+(copying the template and special tokens, and the resize invariant
+``embedding rows == len(tokenizer)``).
 
-Coverage:
-
-- :func:`get_training_chat_template`
-
-  * Returns a template string containing ``{% generation %}``.
-  * Idempotent when the template already contains ``{% generation %}``.
-  * Raises ``ValueError`` on an unset (``None``) template.
-  * Works on ChatML-style and simple role-conditional templates.
-
-- :func:`clone_chat_template`
-
-  * Chat template is copied from source onto destination tokenizer.
-  * New special tokens from source are added to destination.
-  * ``model.get_input_embeddings().weight.shape[0] == len(tokenizer)``
-    (the resize invariant — risk α10).
-  * No-op when destination tokenizer already has all of source's special
-    tokens; vocab length and embedding size are unchanged.
-  * Works with a pre-loaded source tokenizer object (not just a path string).
-
-All tests are CPU-only, network-free, and use the smallest possible tokenizer
-and model configs.  ``transformers`` is required; tests are skipped when it is
-not installed via ``pytest.importorskip``.
+All tests are CPU-only and network-free with the smallest possible tokenizer
+and model configs. ``transformers`` is required (``pytest.importorskip``).
 """
 
 from __future__ import annotations
@@ -304,7 +287,7 @@ class TestCloneChatTemplate:
         dst = _make_fast_tokenizer()
         model = _make_tiny_model(len(dst))
 
-        model, dst = clone_chat_template(model, dst, src)
+        model, dst, _added = clone_chat_template(model, dst, src)
 
         embed_rows = model.get_input_embeddings().weight.shape[0]
         assert embed_rows == len(dst), (
@@ -319,7 +302,7 @@ class TestCloneChatTemplate:
         len_before = len(dst)
         model = _make_tiny_model(len_before)
 
-        model, dst = clone_chat_template(model, dst, src)
+        model, dst, _added = clone_chat_template(model, dst, src)
 
         assert len(dst) == len_before
         assert model.get_input_embeddings().weight.shape[0] == len_before
@@ -331,21 +314,38 @@ class TestCloneChatTemplate:
         dst = _make_fast_tokenizer(extra_specials=["<|im_start|>"])
         model = _make_tiny_model(len(dst))
 
-        model, dst = clone_chat_template(model, dst, src)
+        model, dst, _added = clone_chat_template(model, dst, src)
 
         assert model.get_input_embeddings().weight.shape[0] == len(dst)
 
-    def test_returns_model_and_tokenizer(self) -> None:
-        """Return value is a (model, tokenizer) tuple of the same objects passed in."""
+    def test_returns_model_tokenizer_and_added_tokens(self) -> None:
+        """Return value is a (model, tokenizer, added_token_ids) triple."""
         src = _make_fast_tokenizer()
         src.chat_template = "t"
         dst = _make_fast_tokenizer()
         model = _make_tiny_model(len(dst))
 
-        ret_model, ret_tok = clone_chat_template(model, dst, src)
+        ret_model, ret_tok, added = clone_chat_template(model, dst, src)
 
         assert ret_model is model
         assert ret_tok is dst
+        assert added == []  # no new special tokens in this case
+
+    def test_added_token_ids_reported(self) -> None:
+        """The added-token ids index exactly the newly added special tokens."""
+        src = _make_fast_tokenizer(extra_specials=["<|im_start|>", "<|im_end|>"])
+        src.chat_template = "template"
+        dst = _make_fast_tokenizer()
+        model = _make_tiny_model(len(dst))
+
+        _model, dst, added = clone_chat_template(model, dst, src)
+
+        assert sorted(added) == sorted(
+            dst.convert_tokens_to_ids(["<|im_start|>", "<|im_end|>"])
+        )
+        # Every reported id is a real vocab row inside the resized embedding.
+        n_rows = _model.get_input_embeddings().weight.shape[0]
+        assert all(0 <= tid < n_rows for tid in added)
 
     def test_raises_on_source_without_chat_template(self) -> None:
         """ValueError is raised when the source tokenizer has no chat_template."""
