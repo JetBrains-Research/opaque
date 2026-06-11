@@ -1,11 +1,13 @@
-# Full DP-SFT run for opaque-alignment (Phase ε example) on a real model +
-# real dataset. Streams an SFT corpus through the per-example vmap DP-SGD path
+# Full DP-SFT run via the class-based SFTTrainer on JetBrains/Mellum-4b-base
+# + KStack. Streams a code corpus through the per-example vmap DP-SGD path
 # (clipped_grad -> gaussian_noise -> adamw) using opaque.alignment's SFT_LOSSES.
+# Mirrors ``train_sft (mellum_kstack).yaml`` but exercises the class-based
+# SFTTrainer instead of the loop-based ``train_sft.py``.
 #
 # Run:
-#   RUN_NAME="sft-qwen-1" uv run cadence execution start \
-#     --preset ".cadence/configs/train_sft (qwen_alignment).yaml" \
-#     -e EXTRA_ARGS="--num-steps 1000"
+#   RUN_NAME="sft-trainer-mellum-1" uv run cadence execution start \
+#     --preset ".cadence/configs/train_sft_trainer (mellum_kstack).yaml" \
+#     -e EXTRA_ARGS="--noise-multiplier 0"
 
 project_name: jbr-fed
 working_dir: "."
@@ -19,19 +21,24 @@ cmd:
     uv pip install --quiet "maturin>=1.0,<2.0"
     uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
 
-    uv run python examples/train_sft.py \
-      --model-name Qwen/Qwen2.5-0.5B \
-      --dataset roneneldan/TinyStories \
-      --dataset-text-field text \
-      --num-train-samples 2000 \
+    # No preset on the class-based trainer script — pass Mellum + KStack
+    # parameters explicitly. LoRA targets all attention + MLP linears, matching
+    # the loop-based ``mellum-kstack`` preset.
+    uv run python examples/train_sft_trainer.py \
+      --model-name JetBrains/Mellum-4b-base \
+      --dataset JetBrains/KStack \
+      --dataset-text-field content \
+      --num-train-samples 10000 \
       --loss-type nll \
-      --max-length 512 \
-      --batch-size 8 \
-      --num-steps 50 \
-      --learning-rate 1e-4 \
+      --max-length 1024 \
+      --batch-size 32 \
+      --microbatch-size 4 \
+      --num-steps 100 \
+      --learning-rate 5e-5 \
       --clipping-norm 1.0 \
-      --noise-multiplier 0.8 \
+      --target-epsilon 10.0 \
       --lora-modules q_proj k_proj v_proj o_proj gate_proj up_proj down_proj \
+      --lora-r 16 --lora-alpha 32 \
       --seed 42 $EXTRA_ARGS
 provisioning:
   gpu_type: h200
@@ -47,7 +54,7 @@ env:
     WANDB_BASE_URL: https://jetbrains.wandb.io
     WANDB_ENTITY: federated-compute
     WANDB_PROJECT: opaque
-    RUN_NAME: "${oc.env:RUN_NAME,sft-qwen-alignment}"
+    RUN_NAME: "${oc.env:RUN_NAME,sft-trainer-mellum-kstack}"
     EXTRA_ARGS: ""
   python:
     version: 3.11.14

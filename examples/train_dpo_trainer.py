@@ -72,6 +72,41 @@ from opaque.transformers.trl import DPOConfig, DPOTrainer
 _REFERENCE_FREE_HEADS = frozenset({"sft", "simpo", "cpo", "orpo"})
 
 
+def _to_trl_canonical_dpo(row: dict) -> dict:
+    """Collapse non-TRL preference shapes into (prompt, chosen, rejected).
+
+    Two non-canonical schemas we handle:
+
+    - CyberNative/Code_Vulnerability_Security_DPO: (system, question, chosen,
+      rejected). Non-empty ``system`` prefixed onto ``question`` as a free-text
+      preamble.
+    - zed-industries/zeta (Next Edit Prediction): (events, input, output,
+      rejected, assertions). ``events`` carries the user-edit history,
+      ``input`` is the cursor-positioned code, ``output`` is the chosen next
+      edit, ``rejected`` is a wrong edit.
+
+    chosen/rejected are passed through as plain strings (no chat template).
+    """
+    if "output" in row and "input" in row and "rejected" in row:
+        # zed-industries/zeta NES shape
+        events = (row.get("events") or "").strip()
+        input_code = row["input"]
+        prompt = f"{events}\n\n{input_code}" if events else input_code
+        return {
+            "prompt": prompt,
+            "chosen": row["output"],
+            "rejected": row["rejected"],
+        }
+    # CyberNative-style (system, question, chosen, rejected)
+    system = (row.get("system") or "").strip()
+    question = row["question"]
+    return {
+        "prompt": f"{system}\n\n{question}" if system else question,
+        "chosen": row["chosen"],
+        "rejected": row["rejected"],
+    }
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="DP DPO with the class-based DPOTrainer")
     p.add_argument("--model", default="Qwen/Qwen2.5-0.5B-Instruct")
@@ -249,6 +284,17 @@ def main() -> int:
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
+    if tokenizer.chat_template is None:
+        # Base models (e.g. JetBrains/Mellum-4b-base) ship no chat template, but
+        # DPOTrainer.tokenize_row calls apply_chat_template on list-of-message
+        # preference rows (ultrafeedback). Install a minimal ChatML so the run
+        # validates DPO mechanics without depending on an instruct variant.
+        tokenizer.chat_template = (
+            "{% for message in messages %}"
+            "<|im_start|>{{ message['role'] }}\n{{ message['content'] }}<|im_end|>\n"
+            "{% endfor %}"
+            "{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}"
+        )
 
     model = AutoModelForCausalLM.from_pretrained(args.model)
 
@@ -280,6 +326,15 @@ def main() -> int:
     eval_count = args.num_eval_samples if args.eval_steps is not None else 0
     take_total = args.num_train_samples + eval_count
     all_rows = [row for _, row in zip(range(take_total), raw)]
+    # Canonicalize column shape so non-TRL-canonical code-DPO datasets work
+    # without a fork. CyberNative ships (system, question, chosen, rejected);
+    # zed-industries/zeta (NES) ships (events, input, output, rejected); both
+    # are remapped to (prompt, chosen, rejected) so the collator + tokenize_row
+    # see a TRL-canonical row. ultrafeedback already has ``prompt``.
+    if all_rows and "prompt" not in all_rows[0] and (
+        "question" in all_rows[0] or "input" in all_rows[0]
+    ):
+        all_rows = [_to_trl_canonical_dpo(row) for row in all_rows]
     train_dataset = Dataset.from_list(all_rows[: args.num_train_samples])
     eval_dataset = (
         Dataset.from_list(all_rows[args.num_train_samples : take_total])
