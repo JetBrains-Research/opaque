@@ -1,17 +1,11 @@
 """``DPOConfig`` — training arguments for :class:`DPOTrainer`.
 
-Mirrors ``trl.DPOConfig`` (``trl/trainer/dpo_config.py:211-304``) for the subset
-that is meaningful under per-example DP, extending Opaque's standalone
-:class:`~opaque.api.transformers.trainer._config.TrainingArguments`.
-
-Design philosophy (plan §3.3): no bespoke "rejection" code. Batch-coupled
-losses (``aot`` / ``aot_unpaired``) have no per-example DP meaning — there is no
-``aot`` head in ``opaque-alignment``, so ``loss_type=["aot"]`` fails with an
-ordinary ``KeyError`` at the trainer's dispatch table. TR-DPO sync
-(``sync_ref_model`` / ``ref_model_mixup_alpha`` / ``ref_model_sync_steps``) *is*
-supported (see the fields below); ``padding_free`` is absent from this surface,
-so passing it is a standard unexpected-keyword ``TypeError``. TRL's *own*
-faithful validations (label-smoothing bounds) are kept.
+Mirrors ``trl.DPOConfig`` for the subset meaningful under per-example DP,
+extending Opaque's standalone
+:class:`~opaque.api.transformers.trainer._config.TrainingArguments`. Batch-coupled
+losses (``aot`` / ``aot_unpaired``) and ``padding_free`` are absent from this
+surface, so passing them fails as an ordinary ``KeyError`` / ``TypeError``.
+TR-DPO sync is supported (see the fields below).
 """
 
 from __future__ import annotations
@@ -32,10 +26,9 @@ from ._convert import (
     _reject_truncation_mode,
 )
 
-# Loss heads that score the policy's own logp(s) — no reference model is
-# resolved or precomputed for them. ``self._needs_reference`` is derived from
-# the configured ``loss_type`` against this set (a run is reference-free only
-# when *every* head is in it), replacing the old public ``reference_free`` flag.
+# Loss heads that score the policy's own logp(s); no reference model is resolved
+# or precomputed. ``self._needs_reference`` is derived from ``loss_type`` against
+# this set (reference-free only when *every* head is in it).
 _REFERENCE_FREE_HEADS = frozenset({"chosen_nll", "simpo", "cpo", "orpo"})
 
 
@@ -44,25 +37,24 @@ class DPOConfig(TrainingArguments):
     """Arguments for Direct Preference Optimization on :class:`DPTrainer`."""
 
     # ---- Learning rate override (TRL default differs from HF) ------------
-    learning_rate: float = 1e-6  # dpo_config.py:142
+    learning_rate: float = 1e-6
 
     # ---- TRL base defaults (override the inherited HF/base values) -------
-    logging_steps: float = 10  # dpo_config.py / TRL parity
+    logging_steps: float = 10
     #: GC disabled by default: vmap recomputes activations per microbatch, so
     #: GC adds recompute overhead without memory benefit on models that fit.
     gradient_checkpointing: bool = False
     #: Opaque-specific (no TRL analogue): enable model-level Triton kernels
     #: (``rope`` / ``rms_norm`` / ``activation`` / non-fused ``cross_entropy``)
-    #: by default — numerically non-critical but practically important under the
-    #: per-example ``vmap`` DP path (cuts per-sample-gradient memory/compute).
-    #: CUDA + Triton only; no-op on CPU/MPS. Opt out with
-    #: ``use_performance_kernels=False``. Base default stays ``False``.
+    #: by default — they cut per-sample-gradient memory/compute under the vmap DP
+    #: path. CUDA + Triton only; no-op on CPU/MPS. Opt out with
+    #: ``use_performance_kernels=False``.
     use_performance_kernels: bool = True
 
     # ---- Model loading ---------------------------------------------------
     #: Extra kwargs forwarded to ``AutoModelForCausalLM.from_pretrained`` when
     #: ``model`` is passed as a string (e.g. ``torch_dtype``, ``attn_implementation``).
-    #: Ignored when ``model`` is an already-instantiated module. (dpo_config.py:148)
+    #: Ignored when ``model`` is an already-instantiated module.
     model_init_kwargs: dict | None = None
 
     # ---- Loss ------------------------------------------------------------
@@ -72,27 +64,25 @@ class DPOConfig(TrainingArguments):
     #: ``discopop``, ``chosen_nll``, ``sigmoid_norm`` (TRL's ``sft`` head is
     #: ``chosen_nll`` here; the TRL converter translates it). A bare string is
     #: coerced to a one-element list in ``__post_init__``.
-    loss_type: list[str] | str = dataclasses.field(
-        default_factory=lambda: ["sigmoid"]
-    )  # dpo_config.py:211
+    loss_type: list[str] | str = dataclasses.field(default_factory=lambda: ["sigmoid"])
     #: Per-loss weights for multi-loss (MPO) combination; defaults to all-ones.
-    loss_weights: list[float] | None = None  # dpo_config.py:220
+    loss_weights: list[float] | None = None
     #: Policy–reference KL penalty strength (τ for IPO).
-    beta: float = 0.1  # dpo_config.py:260
+    beta: float = 0.1
     #: Robust-DPO label-flip probability in ``[0, 0.5)``; ε for EXO.
-    label_smoothing: float = 0.0  # dpo_config.py:251
+    label_smoothing: float = 0.0
     #: f-divergence regulariser: ``reverse_kl`` (default), ``forward_kl``,
     #: ``js_divergence``, ``alpha_divergence``.
-    f_divergence_type: str = "reverse_kl"  # dpo_config.py:237
+    f_divergence_type: str = "reverse_kl"
     #: α coefficient for ``alpha_divergence``.
-    f_alpha_divergence_coef: float = 0.5  # dpo_config.py:244
+    f_alpha_divergence_coef: float = 0.5
     #: LD-DPO verbose-token weight in ``[0, 1]``; ``None`` ⇒ standard DPO.
-    ld_alpha: float | None = None  # dpo_config.py:228
+    ld_alpha: float | None = None
     #: WPO length-normalized probability weighting.
-    use_weighting: bool = False  # dpo_config.py:268
+    use_weighting: bool = False
     #: DiscoPOP temperature.
-    discopop_tau: float = 0.05  # dpo_config.py:275
-    #: SimPO target reward margin γ subtracted inside the sigmoid (dpo_config.py).
+    discopop_tau: float = 0.05
+    #: SimPO target reward margin γ subtracted inside the sigmoid.
     simpo_gamma: float = 0.5
     #: CPO supervised-NLL regulariser weight on the chosen completion.
     cpo_alpha: float = 1.0
@@ -101,51 +91,46 @@ class DPOConfig(TrainingArguments):
 
     # ---- Reference model -------------------------------------------------
     #: Batch size for the reference precompute pass; defaults to the train
-    #: per-device batch size when ``None``. (There is no ``precompute_ref_log_probs``
-    #: toggle: under the per-example DP substrate a *static* reference is always
-    #: precomputed — the ``vmap`` loss can only read it as a constant column —
-    #: so the toggle would be misleading. A reference-free ``loss_type``
-    #: (``simpo``/``cpo``/``orpo``/``chosen_nll``) skips it; TR-DPO
-    #: (``sync_ref_model``) recomputes per step.)
-    precompute_ref_batch_size: int | None = None  # dpo_config.py:201
+    #: per-device batch size when ``None``. Under DP a static reference is always
+    #: precomputed (the ``vmap`` loss reads it as a constant column), so there is
+    #: no ``precompute_ref_log_probs`` toggle. Reference-free heads skip it;
+    #: TR-DPO (``sync_ref_model``) recomputes per step.
+    precompute_ref_batch_size: int | None = None
     #: Disable dropout in policy (and reference) before training.
-    disable_dropout: bool = True  # dpo_config.py:155
+    disable_dropout: bool = True
 
     # ---- TR-DPO (reference sync, arXiv:2502.18014) -----------------------
     #: Periodically move the reference toward the policy by an EMA step
     #: (recomputed per training step, outside vmap). Requires a reference-using
-    #: ``loss_type`` (nothing to sync toward otherwise); full fine-tuning only
-    #: (not PEFT, mirroring TRL).
-    sync_ref_model: bool = False  # dpo_config.py:287
+    #: ``loss_type``; full fine-tuning only (not PEFT, mirroring TRL).
+    sync_ref_model: bool = False
     #: EMA mixup α: ``ref ← (1 - α)·ref + α·policy``.
-    ref_model_mixup_alpha: float = 0.6  # dpo_config.py:296
+    ref_model_mixup_alpha: float = 0.6
     #: Apply the EMA update every ``ref_model_sync_steps`` steps.
-    ref_model_sync_steps: int = 512  # dpo_config.py:304
+    ref_model_sync_steps: int = 512
 
     # ---- Data preparation ------------------------------------------------
     # ``truncation_mode`` is intentionally absent: tokenization keeps the start
-    # of the sequence (``keep_start``), which is TRL's default and forward path.
-    # TRL deprecated ``keep_end`` (warns, removes it in v2.0.0;
-    # dpo_config.py:335-338), so there is no DP-meaningful reason to add a knob
-    # upstream is dropping — passing it is a standard unexpected-keyword TypeError.
+    # of the sequence (``keep_start``, TRL's default and forward path); TRL's
+    # deprecated ``keep_end`` is not offered, so passing it is a TypeError.
     #: Maximum tokenized sequence length; ``None`` disables truncation.
-    max_length: int | None = 1024  # dpo_config.py:165
+    max_length: int | None = 1024
     #: Pad the collated batch length up to a multiple of this value.
-    pad_to_multiple_of: int | None = None  # dpo_config.py:189
+    pad_to_multiple_of: int | None = None
     #: Number of processes for ``datasets.map`` during preprocessing.
-    dataset_num_proc: int | None = None  # dpo_config.py:161
+    dataset_num_proc: int | None = None
 
     # ---- Telemetry -------------------------------------------------------
     #: Log the logits-consuming completion telemetry (``entropy``,
-    #: ``mean_token_accuracy``, ``logits/*``) each step. Default ``True`` (the
-    #: eager path). When ``False`` these are skipped, which also lets the trainer
-    #: select the fused, logits-free log-prob primitives when CUDA is available
-    #: and no other logits-consuming feature is active.
+    #: ``mean_token_accuracy``, ``logits/*``) each step. When ``False`` these are
+    #: skipped, which also lets the trainer select the fused, logits-free log-prob
+    #: primitives when CUDA is available and no other logits-consuming feature is
+    #: active.
     log_completion_metrics: bool = True
 
     def __post_init__(self) -> None:
         # DP-driven: the preference collator consumes non-``forward`` columns
-        # (``chosen_input_ids`` … ``ref_chosen_logps``); keep them (plan §3.1).
+        # (``chosen_input_ids`` … ``ref_chosen_logps``); keep them.
         self.remove_unused_columns = False
         # TRL parity: ``loss_type`` is always a list internally.
         if isinstance(self.loss_type, str):
@@ -154,7 +139,7 @@ class DPOConfig(TrainingArguments):
             self.loss_weights = [1.0] * len(self.loss_type)
         super().__post_init__()
 
-        # TRL's own validations (dpo_trainer.py:680-694), not DP-driven rejections.
+        # TRL's own validations, not DP-driven rejections.
         if "robust" in self.loss_type and not 0.0 <= self.label_smoothing < 0.5:
             raise ValueError(
                 "Robust DPO (loss_type='robust') requires label_smoothing in "
@@ -173,7 +158,7 @@ class DPOConfig(TrainingArguments):
                 f"{len(self.loss_weights)} != {len(self.loss_type)}."
             )
         # MPO terms are keyed by loss name; duplicates would silently collapse
-        # and change the objective. Fail fast (review feedback).
+        # and change the objective. Fail fast.
         if len(set(self.loss_type)) != len(self.loss_type):
             raise ValueError(
                 f"loss_type contains duplicates: {self.loss_type}. Each loss "
@@ -189,10 +174,9 @@ class DPOConfig(TrainingArguments):
                 f"{names} are reference-free."
             )
 
-        # TRL parity: default bf16 on when the hardware supports it and the user
-        # did not opt in/out explicitly. Set after the loss validation and only
-        # when supported, so the base's explicit-bf16-on-unsupported-hw raise
-        # (already run in super().__post_init__) is not retriggered.
+        # TRL parity: default bf16 on when supported and not set explicitly. Set
+        # only when supported, so the base's explicit-bf16-on-unsupported-hw raise
+        # is not retriggered.
         if (
             not self.bf16
             and torch.cuda.is_available()
@@ -312,11 +296,9 @@ TRL_DPO_DIRECT_FIELDS: frozenset[str] = frozenset(
         "sync_ref_model",
         "ref_model_mixup_alpha",
         "ref_model_sync_steps",
-        # TRL's DPOConfig also exposes activation_offloading (not on HF
-        # base TrainingArguments).
+        # On TRL's DPOConfig but not on HF base TrainingArguments.
         "activation_offloading",
-        # TRL 1.x SimPO / CPO / ORPO head-specific tunables. Opaque has
-        # them on its own DPOConfig with the same names and semantics.
+        # SimPO / CPO / ORPO head-specific tunables (same names/semantics here).
         "simpo_gamma",
         "cpo_alpha",
         "orpo_lambda",
@@ -343,8 +325,8 @@ _OPAQUE_DPO_LOSS_TYPES = frozenset(
         "discopop",
         "chosen_nll",
         "sigmoid_norm",
-        # CPO / ORPO / SimPO are assembled specially in opaque but
-        # appear in ``DPOConfig.loss_type`` as accepted values.
+        # CPO / ORPO / SimPO are assembled specially but are accepted
+        # ``DPOConfig.loss_type`` values.
         "cpo",
         "orpo",
         "simpo",
@@ -361,9 +343,8 @@ def _loss_type_transform(trl: dict[str, Any]) -> dict[str, Any]:
     """Translate + validate every entry in ``loss_type`` against opaque's heads.
 
     TRL's ``"sft"`` head is renamed to opaque's ``"chosen_nll"`` (see
-    ``_TRL_TO_OPAQUE_LOSS_TYPE``). TRL 1.x added Adversarial Optimal Transport
-    heads (``aot``, ``aot_unpaired``) that opaque does not implement; those are
-    rejected so the user knows opaque's surface is narrower than upstream TRL.
+    ``_TRL_TO_OPAQUE_LOSS_TYPE``). Adversarial Optimal Transport heads (``aot``,
+    ``aot_unpaired``), which opaque does not implement, are rejected.
     """
     loss_type = trl.get("loss_type")
     if loss_type is None:
@@ -393,10 +374,9 @@ TRL_DPO_REJECTED_FIELDS: dict[str, Callable[[Any], str | None]] = {
     "padding_free": _reject_if_truthy(
         "``padding_free`` is not supported for DPO — see the SFT rationale."
     ),
-    # NB: ``precompute_ref_log_probs`` is not flagged as REJECT here because
-    # opaque's default of always-precompute matches TRL's "True" mode for
-    # reference-using heads. A False setting in TRL doesn't translate, but
-    # the trainer-side runtime check provides the user-facing error.
+    # ``precompute_ref_log_probs`` is not rejected here: opaque always
+    # precomputes, matching TRL's True mode; a False setting is caught by the
+    # trainer-side runtime check.
     "pad_token": _reject_pad_token,
 }
 

@@ -1,19 +1,16 @@
 """DP Direct Preference Optimization via the class-based ``DPOTrainer``.
 
-Trainer-based sibling of the functional ``examples/train_dpo.py``. The
-functional script wires ``opaque.alignment`` DPO primitives into a hand-rolled
-DP-SGD loop; this one hands the same primitives to
+Hands ``opaque.alignment`` DPO primitives to
 :class:`opaque.transformers.trl.DPOTrainer`, which precomputes the reference
 log-probs and orchestrates the per-example DP path on top of ``DPTrainer``.
 
-The reference need is derived from ``loss_type`` (there is no ``reference_free``
-flag): the reference-free heads ``simpo`` / ``cpo`` / ``orpo`` (and ``sft``)
-skip the reference precompute, every other head requires one. A reference is
-resolved from ``--ref-model`` (a path/repo id), from the PEFT base model when
-``--peft`` is set, or auto-loaded from the policy's own path.
+The reference need is derived from ``loss_type``: the reference-free heads
+``simpo`` / ``cpo`` / ``orpo`` / ``sft`` skip the reference precompute, every
+other head requires one. A reference is resolved from ``--ref-model`` (a
+path/repo id), from the PEFT base model when ``--peft`` is set, or auto-loaded
+from the policy's own path.
 
-This example exposes the DPO features that otherwise have no example coverage:
-TR-DPO reference sync (``--sync-ref-model``), MPO multi-loss blends
+Exposes TR-DPO reference sync (``--sync-ref-model``), MPO multi-loss blends
 (``--loss-type a b ... --loss-weights w1 w2 ...``), WPO weighting
 (``--use-weighting``), LD-DPO (``--ld-alpha``), f-divergence regularisers
 (``--f-divergence-type``), the reference-free heads, and the completion-metric
@@ -54,12 +51,10 @@ from peft import LoraConfig
 def _configure_reporting(no_wandb: bool) -> list[str]:
     """Set W&B env defaults and return TrainingArguments.report_to.
 
-    Matches the pattern in ``train_causal_lm_trainer.py`` so Cadence presets
-    that plumb ``WANDB_NAME`` / ``WANDB_PROJECT`` / ``WANDB_ENTITY`` /
-    ``WANDB_TAGS`` actually surface on the W&B dashboard. Without this, the
-    HF Trainer's wandb integration only auto-init's when ``WANDB_PROJECT`` is
-    set in the environment AND ``report_to`` includes ``"wandb"``; the
-    DPOConfig default is ``[]``, so runs were stdout-only.
+    Enables ``"wandb"`` reporting so Cadence presets that plumb ``WANDB_NAME`` /
+    ``WANDB_PROJECT`` / ``WANDB_ENTITY`` / ``WANDB_TAGS`` surface on the
+    dashboard; the DPOConfig default of ``[]`` would otherwise keep runs
+    stdout-only.
     """
     if no_wandb:
         return []
@@ -72,9 +67,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from opaque.transformers.trl import DPOConfig, DPOTrainer
 
-# Reference-free heads (mirror ``opaque.transformers.trl._dpo_config``): a run is
-# reference-free only when *every* head is in this set, so the trainer skips the
-# reference precompute and ``--ref-model`` is not required.
+# A run is reference-free only when *every* head is in this set, so the trainer
+# skips the reference precompute and ``--ref-model`` is not required.
 _REFERENCE_FREE_HEADS = frozenset({"sft", "simpo", "cpo", "orpo"})
 
 
@@ -271,10 +265,9 @@ def main() -> int:
         else None
     )
 
-    # Reference policy. Reference-free heads need none. With a PEFT policy the
-    # frozen base serves as the reference (ref_model=None + null-ref path). For
-    # full fine-tuning, --ref-model (a path/repo id) is loaded; DPOConfig threads
-    # model_init_kwargs into this load, and ref_model may itself be a string.
+    # Reference policy. Reference-free heads need none; a PEFT policy uses the
+    # frozen base via the null-ref path (ref_model=None). For full fine-tuning,
+    # --ref-model is loaded (DPOTrainer also accepts a path/repo-id string).
     if reference_free or args.peft:
         ref_model = None
     elif args.ref_model is not None:

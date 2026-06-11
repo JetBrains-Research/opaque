@@ -1,19 +1,16 @@
 """DP Supervised Fine-Tuning via the class-based ``SFTTrainer``.
 
-Trainer-based sibling of the functional ``examples/train_sft.py`` (the same way
-``train_causal_lm_trainer.py`` mirrors ``train_causal_lm.py``). The functional
-script wires ``opaque.alignment`` primitives into a hand-rolled DP-SGD loop;
-this one hands the same primitives to :class:`opaque.transformers.trl.SFTTrainer`,
-which orchestrates the per-example DP path on top of ``DPTrainer``.
+Hands ``opaque.alignment`` primitives to
+:class:`opaque.transformers.trl.SFTTrainer`, which orchestrates the per-example
+DP path on top of ``DPTrainer``.
 
-This example exposes the SFT features that otherwise have no example coverage:
-the loss paths (``nll`` / ``dft`` / the fused logits-free ``chunked_nll``), a
-custom ``compute_loss_func`` (``--compute-loss-func``, valid only on ``nll``),
-the PEFT added-token path (``--chat-template-path`` clones a chat template and
-its special tokens, then the LoRA config keeps those new embedding rows
-trainable), assistant-only masking on chat data (``--assistant-only-loss``), a
-meaningful ``--eos-token``, and the completion-metric telemetry gate
-(``--no-log-completion-metrics``).
+Exposes the loss paths (``nll`` / ``dft`` / the fused logits-free
+``chunked_nll``), a custom ``compute_loss_func`` (``--compute-loss-func``, valid
+only on ``nll``), the PEFT added-token path (``--chat-template-path`` clones a
+chat template and its special tokens, then the LoRA config keeps those new
+embedding rows trainable), assistant-only masking on chat data
+(``--assistant-only-loss``), a meaningful ``--eos-token``, and the
+completion-metric telemetry gate (``--no-log-completion-metrics``).
 
 Examples::
 
@@ -56,12 +53,10 @@ from opaque.transformers.trl import SFTConfig, SFTTrainer
 def _configure_reporting(no_wandb: bool) -> list[str]:
     """Set W&B env defaults and return TrainingArguments.report_to.
 
-    Matches the pattern in ``train_causal_lm_trainer.py`` so Cadence presets
-    that plumb ``WANDB_NAME`` / ``WANDB_PROJECT`` / ``WANDB_ENTITY`` /
-    ``WANDB_TAGS`` actually surface on the W&B dashboard. Without this, the
-    HF Trainer's wandb integration only auto-init's when ``WANDB_PROJECT`` is
-    set in the environment AND ``report_to`` includes ``"wandb"``; the
-    SFTConfig default is ``[]``, so runs were stdout-only.
+    Enables ``"wandb"`` reporting so Cadence presets that plumb ``WANDB_NAME`` /
+    ``WANDB_PROJECT`` / ``WANDB_ENTITY`` / ``WANDB_TAGS`` surface on the
+    dashboard; the SFTConfig default of ``[]`` would otherwise keep runs
+    stdout-only.
     """
     if no_wandb:
         return []
@@ -225,10 +220,9 @@ def main() -> int:
 
     model = AutoModelForCausalLM.from_pretrained(args.model_name)
 
-    # PEFT config is handed to the trainer (it calls get_peft_model). When a chat
-    # template is cloned in, the trainer marks the freshly added tokens' embedding
-    # rows trainable on this config (trainable_token_indices + lm_head), so the
-    # new special tokens are actually learned under DP.
+    # When a chat template is cloned in, the trainer marks the added tokens'
+    # embedding rows trainable on this config (trainable_token_indices + lm_head)
+    # so the new special tokens are learned under DP.
     peft_config = LoraConfig(
         r=args.lora_r,
         lora_alpha=args.lora_alpha,

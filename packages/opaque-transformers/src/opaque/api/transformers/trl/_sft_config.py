@@ -1,15 +1,11 @@
 """``SFTConfig`` — training arguments for :class:`SFTTrainer`.
 
-Mirrors ``trl.SFTConfig`` (``trl/trainer/sft_config.py``) for the subset that
-is meaningful under per-example DP, extending Opaque's standalone
-:class:`~opaque.api.transformers.trainer._config.TrainingArguments`.
-
-Per the trainers' design philosophy (``docs/development/sft-dpo-trainers-plan.md``
-§3.3): fields that have no DP meaning (DeepSpeed/FSDP/Accelerate knobs, VLM
-args, packing / padding-free — for now) are simply **absent** from this
-surface, so passing them is a standard unexpected-keyword ``TypeError``; an
-unknown ``loss_type`` value fails at the trainer's dispatch table, not via a
-curated check here.
+Mirrors ``trl.SFTConfig`` for the subset meaningful under per-example DP,
+extending Opaque's standalone
+:class:`~opaque.api.transformers.trainer._config.TrainingArguments`. Fields with
+no DP meaning (DeepSpeed/FSDP/Accelerate knobs, VLM args, packing / padding-free)
+are absent, so passing them is an unexpected-keyword ``TypeError``; an unknown
+``loss_type`` fails at the trainer's dispatch table, not a curated check here.
 """
 
 from __future__ import annotations
@@ -34,58 +30,54 @@ class SFTConfig(TrainingArguments):
     """Arguments for supervised fine-tuning on :class:`DPTrainer`.
 
     Adds TRL-parity data-prep / loss fields on top of
-    :class:`TrainingArguments`. The TRL field names and defaults are kept so the
-    two configs read as analogues (``sft_config.py:137-275``).
+    :class:`TrainingArguments`, keeping the TRL field names and defaults so the
+    two configs read as analogues.
     """
 
     # ---- Learning rate override (TRL default differs from HF) ------------
-    learning_rate: float = 2e-5  # sft_config.py:137
+    learning_rate: float = 2e-5
 
     # ---- Model loading ---------------------------------------------------
     #: Extra kwargs forwarded to ``AutoModelForCausalLM.from_pretrained`` when
     #: ``model`` is passed as a string (e.g. ``torch_dtype``, ``attn_implementation``).
-    #: Ignored when ``model`` is an already-instantiated module. (sft_config.py:145)
+    #: Ignored when ``model`` is an already-instantiated module.
     model_init_kwargs: dict | None = None
 
     # ---- Data preparation ------------------------------------------------
     #: Name of the column holding raw text on a language-modeling dataset.
-    dataset_text_field: str = "text"  # sft_config.py:163
+    dataset_text_field: str = "text"
     # ``truncation_mode`` is intentionally absent: tokenization keeps the start
-    # of the sequence (``keep_start``), which is TRL's default and forward path.
-    # TRL deprecated ``keep_end`` (warns, removes it in v2.0.0;
-    # sft_config.py:297-300), so there is no DP-meaningful reason to add a knob
-    # upstream is dropping — passing it is a standard unexpected-keyword TypeError.
+    # of the sequence (``keep_start``, TRL's default and forward path); TRL's
+    # deprecated ``keep_end`` is not offered, so passing it is a TypeError.
     #: Maximum tokenized sequence length; ``None`` disables truncation.
-    max_length: int | None = 1024  # sft_config.py:186
+    max_length: int | None = 1024
     #: Compute the loss only over completion tokens (prompt-completion data).
     #: ``None`` auto-detects from the dataset format at trainer-init time.
-    completion_only_loss: bool | None = None  # sft_config.py:242
+    completion_only_loss: bool | None = None
     #: EOS token appended to plain-text examples so the model learns to stop.
-    #: When set, this exact token is used (and overrides ``tokenizer.eos_token``);
-    #: when ``None`` (the default), the tokenizer's own ``eos_token`` is used. If
-    #: the tokenizer has no EOS token either, nothing is appended.
-    eos_token: str | None = None  # sft_config.py:180
+    #: When set, this exact token overrides ``tokenizer.eos_token``; when ``None``
+    #: the tokenizer's own ``eos_token`` is used, or nothing if it has none.
+    eos_token: str | None = None
     #: Pad the collated batch length up to a multiple of this value.
-    pad_to_multiple_of: int | None = None  # sft_config.py:232
+    pad_to_multiple_of: int | None = None
     #: Number of processes for ``datasets.map`` during preprocessing.
-    dataset_num_proc: int | None = None  # sft_config.py:176
+    dataset_num_proc: int | None = None
     #: Compute the loss only over assistant turns (conversational data). Uses
     #: the ``{% generation %}``-marked training chat template + the assistant
     #: token mask. Implies completion-only masking for chat data.
-    assistant_only_loss: bool = False  # sft_config.py:254
+    assistant_only_loss: bool = False
     #: Path to a tokenizer dir or Jinja file whose chat template (and special
     #: tokens) is cloned onto ``processing_class`` before tokenization.
-    chat_template_path: str | None = None  # sft_config.py:152
+    chat_template_path: str | None = None
 
     # ---- Loss ------------------------------------------------------------
     #: ``"nll"`` (standard CE), ``"dft"`` (Dynamic Fine-Tuning), or the fused,
     #: logits-free ``"chunked_nll"`` (enables the ``fused_linear_cross_entropy``
-    #: kernel). Unknown values fail at the trainer's loss-dispatch table (no
-    #: curated check here).
-    loss_type: str = "nll"  # sft_config.py:264
+    #: kernel). Unknown values fail at the trainer's loss-dispatch table.
+    loss_type: str = "nll"
 
     # ``activation_offloading`` is inherited from the base ``TrainingArguments``
-    # (one field, shared by SFT and DPO); the base ``DPTrainer`` reads it.
+    # (shared by SFT and DPO); the base ``DPTrainer`` reads it.
 
     # ---- Telemetry -------------------------------------------------------
     #: Log the per-step completion-metric telemetry (``entropy``,
@@ -94,38 +86,31 @@ class SFTConfig(TrainingArguments):
     #: logits-free loss path (see :class:`SFTTrainer`).
     log_completion_metrics: bool = True
 
-    # ---- TRL base-default overrides (override inherited defaults; the shared
-    # base default is unchanged for other trainers) ----------------------
-    #: TRL logs every 10 steps by default (vs. HF's 500). (sft_config.py)
+    # ---- TRL base-default overrides (shared base default unchanged for
+    # other trainers) ----------------------------------------------------
+    #: TRL logs every 10 steps by default (vs. HF's 500).
     logging_steps: float = 10
-    #: TRL enables gradient checkpointing by default to fit larger batches.
-    #: Opaque disables it by default because the vmap DP path recomputes
-    #: activations once per microbatch (B/microbatch times per step), so GC
-    #: multiplies that cost — pure overhead for models that already fit in VRAM.
-    #: Enable explicitly when memory is the bottleneck.
+    #: GC disabled by default: the vmap DP path recomputes activations once per
+    #: microbatch, so GC multiplies that cost without memory benefit on models
+    #: that fit. Enable explicitly when memory is the bottleneck.
     gradient_checkpointing: bool = False
     #: Opaque-specific (no TRL analogue): enable the model-level Triton kernels
     #: (``rope`` / ``rms_norm`` / ``activation`` / non-fused ``cross_entropy``)
-    #: by default. They are numerically non-critical but practically important
-    #: under the per-example ``vmap`` DP path — they cut the activation memory
-    #: and compute of per-sample gradients. CUDA + Triton only; on CPU/MPS
-    #: ``apply_model_patches`` forces them off, so this is a no-op there. The
+    #: by default — they cut per-sample-gradient memory/compute under the vmap DP
+    #: path. CUDA + Triton only; no-op on CPU/MPS. The
     #: ``fused_linear_cross_entropy`` kernel stays opt-in (it returns
     #: ``logits=None``, incompatible with the eager nll/dft loss + telemetry).
-    #: Opt out with ``use_performance_kernels=False``. The base
-    #: ``TrainingArguments`` default stays ``False`` for other trainers.
+    #: Opt out with ``use_performance_kernels=False``.
     use_performance_kernels: bool = True
 
     def __post_init__(self) -> None:
-        # The one DP-driven override: the collator consumes raw dataset
-        # columns (``completion_mask`` is folded into ``-100`` labels), which
-        # are not ``model.forward`` parameters and would be stripped by HF-style
-        # column pruning. See plan §3.1.
+        # DP-driven: the collator consumes raw dataset columns
+        # (``completion_mask`` is folded into ``-100`` labels) that are not
+        # ``model.forward`` parameters and would be stripped by column pruning.
         self.remove_unused_columns = False
-        # TRL parity: default to bf16 mixed precision when the hardware supports
-        # it and the user hasn't explicitly chosen a precision. The base's
-        # ``__post_init__`` still raises if bf16 was *explicitly* requested on
-        # unsupported hardware, so only auto-enable when it's actually available.
+        # TRL parity: default bf16 on when supported and no precision was set.
+        # The base still raises if bf16 was set explicitly on unsupported
+        # hardware, so only auto-enable when it's actually available.
         if not self.bf16 and not self.bf16_full_eval:
             import torch
 
@@ -231,9 +216,8 @@ TRL_SFT_DIRECT_FIELDS: frozenset[str] = frozenset(
         "completion_only_loss",
         "assistant_only_loss",
         "loss_type",
-        # TRL adds activation_offloading on SFTConfig/DPOConfig (not on HF
-        # base ``TrainingArguments``); opaque's base TrainingArguments has
-        # the same field with the same semantics.
+        # On TRL's SFTConfig/DPOConfig but not on HF base ``TrainingArguments``;
+        # opaque's base has the same field with the same semantics.
         "activation_offloading",
     }
 )

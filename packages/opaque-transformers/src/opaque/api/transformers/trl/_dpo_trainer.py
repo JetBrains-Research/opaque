@@ -1,21 +1,19 @@
 """``DPOTrainer`` — Direct Preference Optimization on :class:`DPTrainer`.
 
-Mirrors ``trl.DPOTrainer`` (``trl/trainer/dpo_trainer.py``) in structure and
-method names — ``_prepare_dataset`` / ``tokenize_row`` for data prep,
-``compute_ref_log_probs`` for the reference pass, ``dpo_loss`` for the loss
-dispatch — but routes the gradient through Opaque's per-example
-:meth:`DPTrainer.compute_per_example_loss_and_metrics` seam (loss + reward
-telemetry in one forward; rewards ride the clipped-grad aux channel and the
-symmetric eval aux). TRL's batched ``concatenated_forward`` has no per-example
-DP meaning, so the two forwards (chosen + rejected) are folded into the seam
-rather than kept as a standalone batched method (plan §2.1a).
+Mirrors ``trl.DPOTrainer`` in structure and method names — ``_prepare_dataset``
+/ ``tokenize_row`` for data prep, ``compute_ref_log_probs`` for the reference
+pass, ``dpo_loss`` for the loss dispatch — but routes the gradient through
+Opaque's per-example :meth:`DPTrainer.compute_per_example_loss_and_metrics` seam
+(loss + reward telemetry in one forward; rewards ride the clipped-grad aux
+channel and the symmetric eval aux). The two forwards (chosen + rejected) are
+folded into the seam since a batched forward has no per-example DP meaning.
 
-The reference policy enters via **precompute** (plan §3.2): a one-shot pass
-attaches per-example ``ref_chosen_logps`` / ``ref_rejected_logps`` columns the
-collator emits as constants, so the per-example loss reads them without a
-second model inside ``vmap``. TR-DPO (``sync_ref_model``) instead recomputes the
-reference logps each step from an EMA reference, via the
-:meth:`DPTrainer._augment_inputs` pre-``vmap`` hook.
+The reference policy enters via precompute: a one-shot pass attaches per-example
+``ref_chosen_logps`` / ``ref_rejected_logps`` columns the collator emits as
+constants, so the per-example loss reads them without a second model inside
+``vmap``. TR-DPO (``sync_ref_model``) instead recomputes the reference logps
+each step from an EMA reference, via the :meth:`DPTrainer._augment_inputs`
+pre-``vmap`` hook.
 """
 
 from __future__ import annotations
@@ -66,8 +64,7 @@ from opaque.api.transformers.trainer._dp_trainer import _is_peft_model
 from ._dpo_config import _REFERENCE_FREE_HEADS, DPOConfig
 
 # TRL ``loss_type`` name → ``opaque.alignment.dpo.loss`` head. An unknown value
-# (e.g. ``"aot"`` — batch-sort, no per-example DP meaning) raises a standard
-# ``KeyError`` at dispatch, not a curated rejection (plan §3.3).
+# raises a standard ``KeyError`` at dispatch.
 _DPO_HEADS: dict[str, Callable] = {
     "sigmoid": sigmoid_loss,
     "sigmoid_norm": sigmoid_loss,  # length-normalized log-ratio (see dpo_loss)
@@ -84,10 +81,8 @@ _DPO_HEADS: dict[str, Callable] = {
     "squarechipo": squarechipo_loss,
     "simpo": simpo_loss,  # reference-free, length-normalized policy logps
     "chosen_nll": chosen_nll_loss,  # special-cased: consumes chosen_logp, not the ratio
-    # ``cpo`` / ``orpo`` are reference-free composites (a preference/odds-ratio
-    # term plus a per-token-mean NLL on the chosen completion); they don't fit
-    # the plain ``head(clr, rlr, *, beta, **kw)`` signature and are special-cased
-    # in ``dpo_loss`` like ``chosen_nll``, so they have no registry entry.
+    # ``cpo`` / ``orpo`` are reference-free composites (preference/odds-ratio term
+    # plus a per-token-mean NLL); special-cased in ``dpo_loss``, no registry entry.
 }
 
 # Loss variants that score the *length-normalized* log-ratio / policy logp
@@ -97,11 +92,9 @@ _DPO_HEADS: dict[str, Callable] = {
 # policy logp pair.
 _NORM_LOSSES = frozenset({"ipo", "sigmoid_norm", "simpo"})
 
-# Heads ``dpo_loss`` builds by hand (they combine a preference / odds-ratio term
-# with a per-token-mean NLL, so they don't fit the plain
-# ``head(clr, rlr, *, beta, **kw)`` signature). ``chosen_nll`` keeps a registry
-# entry for documentation symmetry but is also assembled directly; ``cpo`` /
-# ``orpo`` have no registry entry at all and are exempt from the eager head lookup.
+# Heads ``dpo_loss`` builds by hand (preference / odds-ratio term plus a
+# per-token-mean NLL); they have no registry entry and are exempt from the eager
+# head lookup.
 _SPECIAL_CASED_HEADS = frozenset({"cpo", "orpo"})
 
 _REF_COLUMNS = ("ref_chosen_logps", "ref_rejected_logps")
@@ -110,23 +103,21 @@ _REF_COLUMNS = ("ref_chosen_logps", "ref_rejected_logps")
 def _resolve_fused_handles(model: Any, eligible: bool) -> tuple[str | None, str | None]:
     """Resolve the backbone-prefix + lm_head param-key for the fused logp path.
 
-    Returns ``(backbone_prefix, lm_head_param_name)`` — the **dotted attribute
-    path** from ``model`` to the backbone submodule (e.g. ``"model"`` on a bare
+    Returns ``(backbone_prefix, lm_head_param_name)`` — the dotted attribute path
+    from ``model`` to the backbone submodule (e.g. ``"model"`` on a bare
     causal-LM, ``"base_model.model.model"`` on a PEFT-wrapped one) and the key of
     the lm_head weight in ``model.named_parameters()``. The path doubles as the
-    params-key prefix when slicing the backbone-scoped sub-dict. The lm_head
-    key is found by id-matching ``get_output_embeddings().weight`` against the
-    named params, so it resolves correctly even under **tied embeddings** (where
+    params-key prefix when slicing the backbone-scoped sub-dict. The lm_head key
+    is found by id-matching ``get_output_embeddings().weight`` against the named
+    params, so it resolves correctly even under tied embeddings (where
     ``lm_head.weight`` is absent and the key is the embedding's
     ``model.embed_tokens.weight``).
 
-    Under PEFT, ``getattr(peft_model, base_model_prefix)`` is the inner causal-LM
-    (still has ``lm_head``) — calling it functionally returns
-    ``CausalLMOutputWithPast`` instead of ``BaseModelOutputWithPast``, breaking
-    ``_last_hidden_state``. We detect PEFT via the ``peft_config`` marker, walk
-    to the inner causal-LM at ``peft_model.base_model.model``, and prepend the
-    ``base_model.model.`` PEFT path so the returned dotted prefix walks all the
-    way to the real backbone.
+    Under PEFT the inner causal-LM at ``peft_model.base_model.model`` is the
+    target: calling the backbone (not the inner causal-LM) functionally yields
+    ``BaseModelOutputWithPast`` rather than ``CausalLMOutputWithPast``. PEFT is
+    detected via the ``peft_config`` marker and the ``base_model.model.`` path is
+    prepended so the returned dotted prefix walks all the way to the backbone.
 
     Returns ``(None, None)`` when the run is ineligible or the model does not
     expose the ``backbone + output-embeddings`` shape the fused path needs (in
@@ -134,11 +125,10 @@ def _resolve_fused_handles(model: Any, eligible: bool) -> tuple[str | None, str 
     """
     if not eligible or model is None:
         return None, None
-    # Unwrap PEFT: PeftModel.base_model is the adapter wrapper (LoraModel etc.),
-    # whose ``.model`` is the original *ForCausalLM whose ``base_model_prefix``
-    # we actually want. ``hasattr(model, "peft_config")`` is the PEFT marker
-    # (PreTrainedModel.base_model also exists but as a self-reference, so we
-    # cannot use it for PEFT detection).
+    # Unwrap PEFT: PeftModel.base_model is the adapter wrapper, whose ``.model``
+    # is the original *ForCausalLM whose ``base_model_prefix`` we want.
+    # ``peft_config`` is the PEFT marker (PreTrainedModel.base_model also exists
+    # but as a self-reference, so it cannot be used for detection).
     if hasattr(model, "peft_config"):
         inner = getattr(getattr(model, "base_model", None), "model", None)
         path_to_inner = "base_model.model."
@@ -193,7 +183,7 @@ class DPOTrainer(DPTrainer):
             )
 
         # Kwargs reused for both the string-policy load and the string/auto
-        # reference load (TRL reuses one ``model_init_kwargs`` for both).
+        # reference load.
         self._model_init_kwargs = args.model_init_kwargs or {}
 
         if isinstance(model, str):
@@ -222,29 +212,19 @@ class DPOTrainer(DPTrainer):
         self._orpo_lambda = float(args.orpo_lambda)
         self._use_weighting = bool(args.use_weighting)
         self._log_completion_metrics = bool(args.log_completion_metrics)
-        # FUSED-PATH GATE (plan §E). The logits-free fused log-prob primitive may
-        # be selected only when telemetry is off *and* no logits-consuming feature
-        # is active (LD-DPO needs per-token logits; WPO reads per-token logps; a
-        # non-reverse-KL f-divergence remaps them). When eligible the seam routes
-        # the policy logp through ``fused_sequence_logp`` over the last hidden
-        # state, never materialising the ``(T, V)`` logits; the primitive's own
-        # ``lce_available`` does the final CUDA/half check and falls back to the
-        # eager projection on CPU (so this stays correct + CPU-testable).
+        # FUSED-PATH GATE. The logits-free fused log-prob primitive may be
+        # selected only when telemetry is off and no logits-consuming feature is
+        # active (LD-DPO needs per-token logits; WPO reads per-token logps; a
+        # non-reverse-KL f-divergence remaps them).
         self._fused_logp_eligible = (
             not self._log_completion_metrics
             and self._ld_alpha is None
             and not self._use_weighting
             and self._f_divergence_type == "reverse_kl"
         )
-        # The fused path needs only the backbone's last hidden state ``(T, H)`` —
-        # NOT all ``L+1`` layers (``output_hidden_states`` returns the full stack,
-        # which for a deep model can exceed the ``(T, V)`` logits we are avoiding).
-        # We resolve the backbone submodule prefix and the lm_head weight's
-        # *param-dict key* once here. ``get_output_embeddings().weight`` id-matched
-        # against ``named_parameters()`` resolves the key robustly, including tied
-        # embeddings (where ``lm_head.weight`` is absent and the key is
-        # ``model.embed_tokens.weight``). When the model does not expose that shape
-        # the handles come back ``None`` and the seam keeps the eager logits path.
+        # Resolve the backbone submodule prefix and the lm_head weight's
+        # param-dict key once here. When the model does not expose the required
+        # shape the handles come back ``None`` and the seam keeps the eager path.
         self._backbone_prefix, self._lm_head_param_name = _resolve_fused_handles(
             model, self._fused_logp_eligible
         )
@@ -252,17 +232,13 @@ class DPOTrainer(DPTrainer):
             self._fused_logp_eligible and self._lm_head_param_name is not None
         )
         # Reference-need is intrinsic to each head: a run needs a reference iff
-        # any configured head is *not* in the reference-free set. (Replaces the
-        # old public ``reference_free`` flag.)
+        # any configured head is *not* in the reference-free set.
         self._needs_reference = any(
             lt not in _REFERENCE_FREE_HEADS for lt in self._loss_type
         )
-        # Per-head normalization (mixed MPO supported) is derived lazily in
-        # ``dpo_loss`` — the reference is always precomputed summed.
-        # Build the head dispatch eagerly so an unknown loss_type fails now with
-        # a standard KeyError (plan §3.3). ``cpo`` / ``orpo`` are special-cased
-        # in dpo_loss and have no registry entry, so they're exempt from the
-        # eager lookup; everything else must resolve to a registered head.
+        # Build the head dispatch eagerly so an unknown loss_type fails now with a
+        # standard KeyError. ``cpo`` / ``orpo`` are special-cased in dpo_loss and
+        # have no registry entry, so they're exempt from the eager lookup.
         self._heads = [
             _DPO_HEADS[name] if name not in _SPECIAL_CASED_HEADS else None
             for name in self._loss_type
@@ -292,11 +268,11 @@ class DPOTrainer(DPTrainer):
                 "(the EMA reference tracks the full policy)."
             )
 
-        # ---- reference resolvability (hoisted before tokenize/precompute) --
+        # ---- reference resolvability (before tokenize/precompute) ---------
         # Cache fingerprint: include max_length (the collator truncates to it at
         # precompute time, so different lengths must not alias) and a stable
         # model id. For in-memory models (empty _name_or_path) use a per-run
-        # nonce so distinct models never collide on the cache (review feedback).
+        # nonce so distinct models never collide on the cache.
         self._precompute_device = args.device
         name_or_path = getattr(model.config, "_name_or_path", "") or ""
         model_id = name_or_path or f"inmemory-{uuid.uuid4().hex}"
@@ -305,8 +281,7 @@ class DPOTrainer(DPTrainer):
 
         # A reference-using loss needs a resolvable reference. When none can be
         # auto-loaded (in-memory policy with no path, no explicit ref_model, not
-        # PEFT) fail *now*, before the (potentially long) tokenize/precompute —
-        # not deep inside _precompute_ref_logps after the work is done.
+        # PEFT) fail now, before the (potentially long) tokenize/precompute.
         if (
             self._needs_reference
             and ref_model is None
@@ -518,12 +493,12 @@ class DPOTrainer(DPTrainer):
     ) -> Any:
         """Attach ``ref_{chosen,rejected}_logps`` columns via a one-shot pass.
 
-        Resolves the reference per plan §3.2: an explicit ``ref_model`` (an
-        object or a path string), the PEFT base model (adapter disabled via
-        ``null_ref_context``), or an auto-loaded copy of the policy. A
-        user-supplied ``ref_model`` *object* is left in the device/mode it
-        started in (review feedback); a string ``ref_model`` and an auto-loaded
-        copy are both instantiated here and freed to CPU after the pass.
+        Resolves the reference as an explicit ``ref_model`` (an object or a path
+        string), the PEFT base model (adapter disabled via ``null_ref_context``),
+        or an auto-loaded copy of the policy. A user-supplied ``ref_model``
+        *object* is left in the device/mode it started in; a string ``ref_model``
+        and an auto-loaded copy are both instantiated here and freed to CPU after
+        the pass.
 
         The no-reference-available case is checked early in ``__init__`` (before
         tokenization), so it never reaches here.
@@ -874,17 +849,15 @@ class DPOTrainer(DPTrainer):
         fused path is avoiding. The HF backbones in scope return the hidden state
         as ``out[0]`` / ``out.last_hidden_state``.
 
-        The backbone-prefix is a **dotted path** (``"model"`` on a bare causal-LM,
-        ``"base_model.model.model"`` on a PEFT-wrapped one) so ``attrgetter``
-        walks PEFT wrappers correctly — calling the unwrapped backbone (not the
-        inner causal-LM) is what guarantees ``BaseModelOutputWithPast`` rather
-        than ``CausalLMOutputWithPast``.
+        The backbone-prefix is a dotted path so ``attrgetter`` walks PEFT wrappers
+        correctly — calling the unwrapped backbone (not the inner causal-LM)
+        guarantees ``BaseModelOutputWithPast`` rather than
+        ``CausalLMOutputWithPast``.
 
-        The ``batchify`` vmap-safety patch is applied to the *causal-LM* class,
-        not the backbone, so under ``vmap`` (per-example ``(T,)`` inputs) we add
-        the batch dim here and strip it on exit — mirroring
-        ``with_batch_dim(min_ndim=2)``. Already-batched ``(B, T)`` inputs (the
-        eager-equivalence test path) pass through untouched.
+        The ``batchify`` vmap-safety patch is applied to the causal-LM class, not
+        the backbone, so under ``vmap`` (per-example ``(T,)`` inputs) the batch
+        dim is added here and stripped on exit. Already-batched ``(B, T)`` inputs
+        pass through untouched.
         """
         prefix = self._backbone_prefix + "."
         backbone_params = {
@@ -946,16 +919,11 @@ class DPOTrainer(DPTrainer):
         c_cmask = inputs["chosen_completion_mask"]
         r_cmask = inputs["rejected_completion_mask"]
 
-        # FUSED PATH (plan §E): eligible run (telemetry off, no logits-consuming
-        # feature) → compute the policy logps through ``fused_sequence_logp`` over
-        # the backbone's last hidden state, never materialising the ``(T, V)``
-        # logits. The full forward (model + lm_head) is skipped entirely; the
-        # only logits-consuming consumers below (WPO weighting, the logits
-        # telemetry) are gated off in this branch, so no logits are ever needed.
-        # ``fused_sequence_logp`` itself falls back to the eager projection on CPU
-        # / non-half (``lce_available`` is False), staying numerically identical
-        # and CPU-testable. LD-DPO (``ld_alpha``) is excluded from eligibility, so
-        # the fused branch never needs the ``ld_alpha`` weighting kwargs.
+        # FUSED PATH: on an eligible run compute the policy logps through
+        # ``fused_sequence_logp`` over the backbone's last hidden state, never
+        # materialising the ``(T, V)`` logits. The logits-consuming consumers
+        # below (WPO weighting, logits telemetry) and LD-DPO are all gated off
+        # under eligibility, so no logits are ever needed.
         if self._use_fused_logp:
             chosen_logp = self._fused_logp(
                 fmodel,
@@ -1097,11 +1065,10 @@ class DPOTrainer(DPTrainer):
         loss. The logits-consuming diagnostics — ``logits/*`` (mean completion
         logit), ``entropy`` (mean next-token entropy), and ``mean_token_accuracy``
         — are gated on ``log_completion_metrics`` (default on); when off they're
-        skipped so the loss path stays logits-light (and a future fused,
-        logits-free primitive can be selected). Every tensor is ``detach()``-ed,
-        so the telemetry rides the clipped-grad aux channel without leaking
-        gradient; the harness means each across the DDP-synced batch (train) and
-        aggregates the same dict in the eval loop (``eval_*``).
+        skipped so the loss path stays logits-light. Every tensor is
+        ``detach()``-ed, so the telemetry rides the clipped-grad aux channel
+        without leaking gradient; the harness means each across the DDP-synced
+        batch (train) and aggregates the same dict in the eval loop (``eval_*``).
         """
         beta = self._beta
         aux = {
