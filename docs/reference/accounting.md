@@ -539,6 +539,32 @@ for i in range(num_steps):
 **Methods:** `epsilon_at(delta)`, `delta_at(epsilon)`, `advantage()`,
 `beta_at(alpha)`, `risk_at(prior)`, `budget_exceeded` (property).
 
+### Seeding with a prior process
+
+Pass `prefix` to start from an already-executed process instead of the
+zero-cost identity. This is sequential composition across runs: use it when a
+second training stage (e.g. DPO after SFT) touches the same dataset, so the
+new run's budget checks and reported ε include the earlier run's cost. The
+prefix composes at the PLD level — much tighter than adding the two stages'
+epsilons.
+
+```python
+import json
+
+from opaque.accounting import Accountant
+from opaque.serialization import from_state_dict
+
+with open("sft_checkpoint/accountant.json") as f:
+    sft = from_state_dict(Accountant(), json.load(f))
+
+acct = Accountant(budget=budget, prefix=sft.process)
+acct = acct | dpo_step  # composes on top of the SFT prefix
+```
+
+If the two stages train on disjoint records (and the privacy unit is the
+record), no prefix is needed — parallel composition applies and the overall
+guarantee is the pointwise max of the two stages' ε(δ) curves.
+
 ### Serialization
 
 ```python
