@@ -47,7 +47,6 @@ from transformers import (
     DataCollatorForLanguageModeling,
 )
 
-from opaque.patches import is_runtime_patched
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 log = logging.getLogger(__name__)
@@ -129,9 +128,7 @@ def _kernel_mode_summary(device: torch.device, dtype_name: str) -> tuple[str, st
         return "disabled", "triton package not installed"
     if dtype_name != "bfloat16":
         return "partial", f"dtype={dtype_name} (fused CE prefers bf16 here)"
-    if is_runtime_patched():
-        return "enabled", "global kernel patches applied"
-    return "partial", "kernel patch state unavailable"
+    return "enabled", "applied by DPTrainer"
 
 
 def _print_runtime_mode_report(
@@ -143,7 +140,6 @@ def _print_runtime_mode_report(
 ) -> None:
     """Print active runtime mode so fallback behavior is explicit."""
     kernel_mode, kernel_reason = _kernel_mode_summary(device, dtype_name)
-    kernels_on = device.type == "cuda" and is_runtime_patched()
 
     print("\nRuntime mode:")
     print(f"  Device: {device} ({device_label})")
@@ -151,7 +147,6 @@ def _print_runtime_mode_report(
     if dtype_warning:
         print(f"  Dtype fallback: {dtype_warning}")
     print(f"  Kernel optimizations: {kernel_mode} ({kernel_reason})")
-    print(f"  Patches: transformers={is_runtime_patched()}, kernels={kernels_on}")
 
     if device.type == "cpu":
         print("  Note: CPU path prioritizes correctness over throughput.")
