@@ -68,7 +68,13 @@ class Accountant:
     Seeding with a previously executed process (sequential composition
     across runs, e.g. SFT followed by DPO on the same dataset)::
 
-        sft = opaque_from_state_dict(Accountant(), json.load(f))
+        import json
+
+        from opaque.serialization import from_state_dict
+
+        with open("sft_checkpoint/accountant.json") as f:
+            sft = from_state_dict(Accountant(), json.load(f))
+
         acct = Accountant(budget=budget, prefix=sft.process)
 
         for i in range(num_dpo_steps):
