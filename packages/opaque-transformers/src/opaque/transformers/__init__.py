@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
+from opaque.api.transformers._from_config import from_hf_config
 from opaque.api.transformers._runtime_bootstrap import (
     is_patched,
     is_vmap_patched,
@@ -35,6 +36,7 @@ __all__ = [
     "EvaluationResult",
     "TrainingArguments",
     "TrainOutput",
+    "from_hf_config",
     "is_patched",
     "is_vmap_patched",
     "patch_all",

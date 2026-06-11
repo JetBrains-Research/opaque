@@ -15,9 +15,18 @@ curated check here.
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
+from typing import Any, Callable
 
 from opaque.api.transformers.trainer._config import TrainingArguments
+from opaque.api.transformers.trainer.training_arguments import normalize_dp_overrides
+
+from ._convert import (
+    _convert_trl_config,
+    _import_trl,
+    _reject_if_truthy,
+    _reject_pad_token,
+    _reject_truncation_mode,
+)
 
 
 @dataclasses.dataclass
@@ -174,8 +183,6 @@ class SFTConfig(TrainingArguments):
             If a required DP knob is missing, or any REJECT_IF_SET field
             is set to a non-default value.
         """
-        from ..compat._trl import convert_trl_sft_config
-
         dp_overrides: dict[str, Any] = {
             "privacy_noise_multiplier": privacy_noise_multiplier,
             "privacy_target_epsilon": privacy_target_epsilon,
@@ -201,3 +208,104 @@ class SFTConfig(TrainingArguments):
         converted = convert_trl_sft_config(trl_cfg, strict=strict, **dp_overrides)
         converted.update(opaque_overrides)
         return cls(**converted)
+
+
+# ===========================================================================
+# trl.SFTConfig → opaque SFTConfig manifest + converter
+# ===========================================================================
+#
+# TRL-specific fields only; the HF-inherited subset is delegated to the HF
+# manifest by ``_convert_trl_config``. Every TRL ``SFTConfig`` field appears in
+# exactly one bucket, enforced by ``test_compat_manifest_exhaustive.py``.
+
+# DIRECT — TRL field name matches opaque, same semantics.
+TRL_SFT_DIRECT_FIELDS: frozenset[str] = frozenset(
+    {
+        "model_init_kwargs",
+        "chat_template_path",
+        "dataset_text_field",
+        "dataset_num_proc",
+        "eos_token",
+        "max_length",
+        "pad_to_multiple_of",
+        "completion_only_loss",
+        "assistant_only_loss",
+        "loss_type",
+        # TRL adds activation_offloading on SFTConfig/DPOConfig (not on HF
+        # base ``TrainingArguments``); opaque's base TrainingArguments has
+        # the same field with the same semantics.
+        "activation_offloading",
+    }
+)
+
+
+# RENAME — TRL SFT field name differs from opaque.
+TRL_SFT_RENAME_MAP: dict[str, str] = {}
+
+
+# TRANSFORM — TRL SFT field requires a derivation step.
+TRL_SFT_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {}
+
+
+# REJECT_IF_SET — TRL has the field but opaque does not implement it.
+TRL_SFT_REJECTED_FIELDS: dict[str, Callable[[Any], str | None]] = {
+    "truncation_mode": _reject_truncation_mode,
+    "packing": _reject_if_truthy(
+        "Sequence packing breaks the fixed per-example batch shape DP-SGD's "
+        "per-example vmap requires. Disable ``packing`` or use opaque without "
+        "the converter."
+    ),
+    "padding_free": _reject_if_truthy(
+        "``padding_free`` flattens the batch and skips the attention mask "
+        "DP-SGD's per-example accounting depends on. Not supported."
+    ),
+    "eval_packing": _reject_if_truthy(
+        "Eval-side sequence packing is not supported for the same reason as "
+        "``packing``."
+    ),
+    "shuffle_dataset": _reject_if_truthy(
+        "Opaque's Poisson sampler controls ordering; explicit shuffling "
+        "would defeat the DP accounting."
+    ),
+    "pad_token": _reject_pad_token,
+}
+
+
+# DROP_WITH_WARN — TRL has the field but it's irrelevant on opaque path.
+TRL_SFT_DROP_FIELDS: dict[str, str] = {
+    "dataset_kwargs": (
+        "Opaque does not expose a ``datasets.map`` hook; the collator and "
+        "tokenizer handle preprocessing."
+    ),
+    "packing_strategy": (
+        "Only meaningful with ``packing=True``, which opaque does not "
+        "support; silently dropped."
+    ),
+}
+
+
+def convert_trl_sft_config(
+    trl_cfg: Any,
+    *,
+    strict: bool = True,
+    **dp_overrides: Any,
+) -> dict[str, Any]:
+    """Translate a ``trl.SFTConfig`` instance into opaque ``SFTConfig`` kwargs."""
+    trl = _import_trl()
+    if not isinstance(trl_cfg, trl.SFTConfig):
+        raise TypeError(
+            f"Expected ``trl.SFTConfig`` instance, got {type(trl_cfg).__name__}."
+        )
+
+    dp_layer = normalize_dp_overrides(dp_overrides)
+    return _convert_trl_config(
+        trl_cfg,
+        trl_direct=TRL_SFT_DIRECT_FIELDS,
+        trl_rename=TRL_SFT_RENAME_MAP,
+        trl_transform=TRL_SFT_TRANSFORM_MAP,
+        trl_reject=TRL_SFT_REJECTED_FIELDS,
+        trl_drop=TRL_SFT_DROP_FIELDS,
+        source_label="trl_sft_config",
+        strict=strict,
+        dp_overrides=dp_layer,
+    )

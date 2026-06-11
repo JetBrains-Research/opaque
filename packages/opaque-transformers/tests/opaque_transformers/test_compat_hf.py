@@ -6,8 +6,8 @@ import warnings
 
 import pytest
 
-from opaque.api.transformers.compat._common import normalize_dp_overrides
 from opaque.api.transformers.trainer import TrainingArguments
+from opaque.api.transformers.trainer.training_arguments import normalize_dp_overrides
 
 # All HF tests assume ``transformers`` is installed (it's a required dep of
 # opaque-transformers). The CI image has it.
