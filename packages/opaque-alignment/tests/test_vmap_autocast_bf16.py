@@ -27,17 +27,23 @@ For each:
 2. The autocast'd result matches the eager bf16 reference within bf16
    tolerance (bf16 matmul is coarse — atol=1e-2).
 
-CUDA-only: ``torch.autocast`` with ``device_type="cuda"`` requires a CUDA
-device, and the fused-linear Triton kernel is CUDA-only. Skipped cleanly on
-non-CUDA hosts.
+The production case is a bf16 hidden against an fp32 lm_head ``weight``;
+``linear_nll_sum`` must reconcile them (via ``follow_autocast``) or the
+kernel's ``tl.dot(e, c)`` mismatches. Covered by the fp32-weight CUDA test and
+the CPU wiring guard (cuda-autocast cannot be enabled on a CPU host).
+
+CUDA tests are CUDA-only and skip cleanly on non-CUDA hosts.
 """
 
 from __future__ import annotations
+
+import importlib
 
 import pytest
 import torch
 from torch.func import grad, vmap
 
+from opaque.api.alignment import _fused_lce
 from opaque.api.alignment.logprob._sequence import fused_sequence_logp
 from opaque.api.alignment.sft.loss._dft import fused_dft_loss
 from opaque.api.alignment.sft.loss._nll import fused_nll_loss
@@ -79,6 +85,43 @@ def _hidden_weight_ids_cmask(seed: int):
     cmask = torch.zeros(_B, _T, dtype=torch.long, device="cuda")
     cmask[:, 2:] = 1
     return hidden, weight, ids, cmask
+
+
+# ---------------------------------------------------------------------------
+# CPU wiring guard (cuda-autocast cannot be enabled on a CPU host, so stub the
+# kernel + follow_autocast to assert linear_nll_sum reconciles dtypes first).
+# ---------------------------------------------------------------------------
+
+
+def test_linear_nll_sum_casts_weight_to_match_under_autocast(monkeypatch):
+    """``linear_nll_sum`` routes hidden+weight through ``follow_autocast`` so the
+    kernel never receives a bf16/fp32 ``tl.dot`` pair (the reported crash)."""
+    kernel_mod = importlib.import_module(_fused_lce._LCE_KERNEL_PATH)
+    seen: dict[str, torch.dtype] = {}
+
+    class _RecordingKernel:
+        @staticmethod
+        def apply(hidden, weight, *_rest):
+            seen["hidden"], seen["weight"] = hidden.dtype, weight.dtype
+            return hidden.new_zeros(())
+
+    def _fake_follow_autocast(*tensors):  # stand in for active bf16 autocast
+        return tuple(
+            t.to(torch.bfloat16) if torch.is_tensor(t) and t.is_floating_point() else t
+            for t in tensors
+        )
+
+    monkeypatch.setattr(kernel_mod, "Opaque_LinearCrossEntropyLoss", _RecordingKernel)
+    monkeypatch.setattr(kernel_mod, "follow_autocast", _fake_follow_autocast)
+
+    hidden = torch.randn(4, 8, dtype=torch.bfloat16)
+    weight = torch.randn(16, 8, dtype=torch.float32)  # fp32 lm_head parameter
+    labels = torch.randint(0, 16, (4,))
+
+    _fused_lce.linear_nll_sum(hidden, weight, labels)
+
+    assert seen["hidden"] == torch.bfloat16
+    assert seen["weight"] == torch.bfloat16  # cast off fp32, not passed raw
 
 
 # ---------------------------------------------------------------------------
@@ -152,4 +195,26 @@ class TestVmapAutocastBf16:
         assert torch.isfinite(g_autocast).all()
 
         g_eager = vmap(grad(per_example))(hidden, ids, cmask)
+        assert torch.allclose(g_autocast.float(), g_eager.float(), atol=1e-2, rtol=0.0)
+
+    def test_fused_sequence_logp_fp32_weight_under_autocast(self) -> None:
+        """fp32 lm_head weight vs bf16 hidden under autocast: the kernel raises
+        ``tl.dot ... Got bf16 and fp32`` unless ``follow_autocast`` reconciles."""
+        hidden, weight, ids, cmask = _hidden_weight_ids_cmask(seed=4)
+        weight = weight.float()  # lm_head stays fp32 under autocast
+
+        def per_example(h, i, c):
+            return fused_sequence_logp(h, weight, i, c)
+
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            g_autocast = vmap(grad(per_example))(hidden, ids, cmask)
+
+        assert g_autocast.shape == hidden.shape
+        assert torch.isfinite(g_autocast).all()
+
+        # Reference: both arms already bf16 (no autocast needed).
+        def per_example_bf16(h, i, c):
+            return fused_sequence_logp(h, weight.bfloat16(), i, c)
+
+        g_eager = vmap(grad(per_example_bf16))(hidden, ids, cmask)
         assert torch.allclose(g_autocast.float(), g_eager.float(), atol=1e-2, rtol=0.0)

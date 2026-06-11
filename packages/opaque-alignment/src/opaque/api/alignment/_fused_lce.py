@@ -73,6 +73,11 @@ def linear_nll_sum(
     kernel_mod = importlib.import_module(_LCE_KERNEL_PATH)
     Opaque_LinearCrossEntropyLoss = kernel_mod.Opaque_LinearCrossEntropyLoss
 
+    # We bypass the public wrapper, so apply its autocast policy ourselves:
+    # under autocast ``hidden`` is half but the lm_head ``weight`` is fp32, which
+    # would mismatch the kernel's ``tl.dot``. No-op when autocast is inactive.
+    hidden, weight = kernel_mod.follow_autocast(hidden, weight)
+
     return Opaque_LinearCrossEntropyLoss.apply(
         hidden, weight, labels, -100, 0, 0.0, use_token_scaling
     )
