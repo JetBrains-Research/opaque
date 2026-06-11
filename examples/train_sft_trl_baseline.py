@@ -9,13 +9,12 @@ Logs train/loss to W&B at every step. No DP — this is the upstream baseline.
 from __future__ import annotations
 
 import os
-import sys
 
 import torch
 import wandb
 from datasets import Dataset, load_dataset
 from peft import LoraConfig
-from transformers import AutoModelForCausalLM, AutoTokenizer, TrainerCallback
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import SFTConfig, SFTTrainer
 
 
@@ -33,19 +32,6 @@ LORA_R = 8
 LORA_ALPHA = 16
 LORA_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
-
-class WandbStepLossCallback(TrainerCallback):
-    """Mirror trainer ``logs`` (which include ``loss``) to W&B at every step."""
-
-    def on_log(self, args, state, control, logs=None, **kwargs):
-        if logs is None or not wandb.run:
-            return
-        payload = {f"train/{k}": v for k, v in logs.items() if isinstance(v, (int, float))}
-        if "loss" in logs:
-            payload["train/loss"] = logs["loss"]
-        if payload:
-            payload["train/global_step"] = state.global_step
-            wandb.log(payload, step=state.global_step)
 
 
 def main() -> int:
@@ -115,8 +101,10 @@ def main() -> int:
         seed=SEED,
         use_cpu=not torch.cuda.is_available(),
         bf16=torch.cuda.is_available(),
-        report_to=[],  # we log to wandb manually via the callback so opaque/baseline
-                      # share the same entity/project/name plumbing
+        # Native HF W&B integration reuses the run opened by wandb.init() above
+        # and logs train/* and eval/* under the same keys the opaque trainers
+        # use, so baseline and opaque overlay on one panel. No custom callback.
+        report_to=["wandb"],
         optim="adamw_torch",
         **eval_kwargs,
     )
@@ -128,7 +116,6 @@ def main() -> int:
         eval_dataset=eval_dataset,
         processing_class=tokenizer,
         peft_config=peft_config,
-        callbacks=[WandbStepLossCallback()],
     )
     out = trainer.train()
     print("Training complete:", out)

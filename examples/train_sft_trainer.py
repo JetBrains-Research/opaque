@@ -291,7 +291,11 @@ def main() -> int:
         # DP knobs
         clipping_norm=args.clipping_norm,
         privacy_noise_multiplier=args.noise_multiplier,
-        privacy_target_epsilon=args.target_epsilon,
+        # ε target drives calibration only when no fixed multiplier is given;
+        # at a fixed nm (incl. nm=0) the config layer rejects a dangling target.
+        privacy_target_epsilon=(
+            args.target_epsilon if args.noise_multiplier is None else None
+        ),
         optim="adamw",
         optim_args=optim_args,
         **eval_kwargs,
