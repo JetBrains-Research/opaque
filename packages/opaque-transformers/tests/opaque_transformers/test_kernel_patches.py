@@ -258,9 +258,9 @@ class TestConfiguration:
 
     def test_kernel_patched_flag(self):
         """is_kernel_patched() should return True after import opaque."""
-        from opaque.api.transformers._runtime_bootstrap import is_patched
+        from opaque.patches import is_runtime_patched
 
-        assert isinstance(is_patched(), bool)
+        assert isinstance(is_runtime_patched(), bool)
 
 
 # =============================================================================

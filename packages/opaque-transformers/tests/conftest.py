@@ -27,9 +27,9 @@ from _hf_shared import MODEL_CONFIGS, STANDARD_LORA_CONFIG  # noqa: E402
 # Apply global runtime compat patches (same env semantics as
 # DPTrainer.__init__) so test collection matches the trainer's runtime.
 try:
-    from opaque.api.transformers._runtime_bootstrap import patch_all
+    from opaque.patches import apply_runtime_patches
 
-    patch_all()
+    apply_runtime_patches(compat=True)
 except ImportError:
     pass
 

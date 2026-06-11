@@ -410,9 +410,9 @@ class DPTrainer:
         # Explicit patch sites (no import-time mutation of HF globals):
         # 1) global runtime compat (masking / collator / checkpoint hooks)
         # 2) ``apply_model_patches(..., compat=use_compat_patches, performance=True, kernels=use_performance_kernels)``
-        from opaque.api.transformers import _runtime_bootstrap as _opaque_rt
+        from opaque.patches import apply_runtime_patches
 
-        _opaque_rt.apply_transformers_runtime_compat_patches()
+        apply_runtime_patches(compat=True)
         self._apply_opaque_model_patches()
 
         # Compute precision: bf16 autocast for training, full-cast only for

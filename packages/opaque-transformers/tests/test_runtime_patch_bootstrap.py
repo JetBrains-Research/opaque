@@ -1,6 +1,6 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Explicit runtime patch bootstrap (no env-driven toggles)."""
+"""Explicit runtime patch bootstrap (no import side-effects)."""
 
 from __future__ import annotations
 
@@ -18,16 +18,19 @@ def _run(code: str) -> str:
     return result.stdout.strip()
 
 
-_BOOTSTRAP = "from opaque.api.transformers import _runtime_bootstrap as b"
-
-
 def test_subprocess_import_alone_not_patched():
-    out = _run(f"import opaque.transformers; {_BOOTSTRAP}; print(b.is_patched())")
+    out = _run(
+        "import opaque.transformers\n"
+        "from opaque.patches import is_runtime_patched\n"
+        "print(is_runtime_patched())"
+    )
     assert out == "False"
 
 
-def test_subprocess_patch_all_applies_runtime_compat():
+def test_subprocess_apply_runtime_patches_sets_state():
     out = _run(
-        f"{_BOOTSTRAP}\nb.patch_all()\nprint(b.is_patched(), b.is_vmap_patched())"
+        "from opaque.patches import apply_runtime_patches, is_runtime_patched\n"
+        "apply_runtime_patches(compat=True)\n"
+        "print(is_runtime_patched())"
     )
-    assert out == "True True"
+    assert out == "True"

@@ -133,9 +133,20 @@ def apply_runtime_patches(
             pass
 
 
+def is_runtime_patched() -> bool:
+    """``True`` once :func:`apply_runtime_patches` has run in this interpreter.
+
+    ``DPTrainer`` applies the runtime patches during construction; this lets a
+    script that drives HF primitives without ``DPTrainer`` check whether the
+    global shims are installed.
+    """
+    return _runtime_patches_applied
+
+
 __all__ = [
     "apply_model_patches",
     "apply_runtime_patches",
     "apply_transformers_model_patches",
     "apply_peft_model_patches",
+    "is_runtime_patched",
 ]
