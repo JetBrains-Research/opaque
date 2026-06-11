@@ -14,18 +14,25 @@ __all__ = ["entropy_from_logits", "mean_token_accuracy"]
 
 
 def entropy_from_logits(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    """Mean per-position Shannon entropy over masked positions.
+    """Mean per-position Shannon entropy over masked (shifted) positions.
+
+    Logits and mask are shifted so that position ``t`` scores the predictive
+    distribution over the token at ``t + 1`` (standard causal-LM next-token
+    alignment), matching :func:`mean_token_accuracy`. Callers therefore pass the
+    full-length logits and mask; the shift happens here.
 
     Args:
-        logits: Logits of shape ``(..., vocab)``; the last axis is the
+        logits: Logits of shape ``(..., seq, vocab)``; the last axis is the
             categorical distribution per position.
-        mask: Boolean/float mask broadcastable to the per-position entropy,
-            selecting which positions contribute to the mean.
+        mask: Boolean/float mask of shape ``(..., seq)`` selecting which
+            (shifted) target positions contribute to the mean.
 
     Returns:
-        A detached scalar tensor: the entropy averaged over positions where
-        ``mask`` is truthy (``0`` when no position is unmasked).
+        A detached scalar tensor: the entropy averaged over positions where the
+        shifted ``mask`` is truthy (``0`` when no position is unmasked).
     """
+    logits = logits[..., :-1, :]
+    mask = mask[..., 1:]
     probs = logits.softmax(dim=-1)
     log_probs = logits.log_softmax(dim=-1)
     entropy = -(probs * log_probs).sum(dim=-1)

@@ -1,4 +1,4 @@
-"""Unit tests for the shared token-level metrics (§7.9).
+"""Unit tests for the shared token-level metrics.
 
 Hand-computed reference cases for the general LM telemetry primitives:
 
@@ -6,9 +6,9 @@ Hand-computed reference cases for the general LM telemetry primitives:
   entropy ``log(V)``; masking selects the contributing positions.
 - :func:`mean_token_accuracy` — a hand-built shifted next-token case.
 
-Every metric is telemetry (§3.3 telemetry rule), so each test also asserts
-the returned tensor is detached (``requires_grad is False``) and that masked
-reductions do not divide by zero on an all-masked input.
+Every metric is telemetry, so each test also asserts the returned tensor is
+detached (``requires_grad is False``) and that masked reductions do not divide
+by zero on an all-masked input.
 """
 
 from __future__ import annotations
@@ -61,6 +61,18 @@ def test_entropy_detached() -> None:
     ent = entropy_from_logits(logits, mask)
     assert ent.requires_grad is False
     assert ent.ndim == 0
+
+
+def test_entropy_shifts_like_accuracy() -> None:
+    # Position 0 is peaked (~0 entropy), positions 1,2 are uniform (entropy
+    # log V). The shift drops position 2's logits and uses mask[1:], so only
+    # positions {0, 1} contribute: (0 + log V) / 2 = log(V) / 2.
+    vocab = 4
+    logits = torch.zeros(3, vocab)
+    logits[0] = torch.tensor([100.0, 0.0, 0.0, 0.0])  # peaked -> ~0 entropy
+    mask = torch.ones(3)
+    ent = entropy_from_logits(logits, mask)
+    assert ent.item() == pytest.approx(math.log(vocab) / 2.0, abs=1e-6)
 
 
 # --------------------------------------------------------------------------- #
