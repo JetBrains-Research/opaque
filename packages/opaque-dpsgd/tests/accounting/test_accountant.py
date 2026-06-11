@@ -55,6 +55,58 @@ class TestAccountantBasics:
         assert isinstance(result, Accountant)
 
 
+class TestAccountantPrefix:
+    """Test seeding an Accountant with an already-executed process."""
+
+    def test_prefix_seeds_process(self):
+        """Accountant(prefix=p) starts at p's privacy cost."""
+        step = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), 0.01) * 100
+        acct = Accountant(prefix=step)
+        assert acct.process is step
+        assert acct.epsilon_at(1e-5) == step.epsilon_at(1e-5)
+
+    def test_prefix_default_is_identity(self):
+        """Without a prefix the accountant still starts at zero cost."""
+        assert Accountant().epsilon_at(1e-5) < 1e-10
+
+    def test_prefix_equivalent_to_composing(self):
+        """Accountant(prefix=p) | q matches Accountant() | p | q."""
+        sft = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), 0.01) * 50
+        dpo_step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.02)
+
+        seeded = Accountant(prefix=sft)
+        plain = Accountant() | sft
+        for _ in range(10):
+            seeded = seeded | dpo_step
+            plain = plain | dpo_step
+
+        assert abs(seeded.epsilon_at(1e-5) - plain.epsilon_at(1e-5)) < 1e-10
+
+    def test_prefix_counts_against_budget(self):
+        """budget_exceeded accounts for the prefix."""
+        budget = epsilon_budget(0.1, delta=1e-5)
+        prefix = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), 0.01) * 1000
+        acct = Accountant(budget=budget, prefix=prefix)
+        assert acct.budget_exceeded
+
+    def test_prefix_from_executed_accountant(self):
+        """A finished run's process seeds a new accountant exactly."""
+        sft = Accountant() | (dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), 0.01) * 100)
+
+        dpo = Accountant(prefix=sft.process)
+        assert dpo.epsilon_at(1e-5) == sft.epsilon_at(1e-5)
+
+    def test_prefix_survives_serialization(self):
+        """state_dict round-trip preserves a prefixed process tree."""
+        from opaque.serialization import from_state_dict, state_dict
+
+        prefix = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), 0.01) * 100
+        acct = Accountant(prefix=prefix) | dpsgd_acc.gaussian(0.5)
+
+        restored = from_state_dict(Accountant(), state_dict(acct))
+        assert restored.epsilon_at(1e-5) == acct.epsilon_at(1e-5)
+
+
 # ============================================================================
 # Metric queries
 # ============================================================================

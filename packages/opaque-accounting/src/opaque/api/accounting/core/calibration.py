@@ -85,6 +85,7 @@ def calibrate(
     param_max: float,
     tolerance: float = 1e-6,
     max_iterations: int = 100,
+    prefix: DpProcess | None = None,
 ) -> CalibrateResult:
     """Binary search for parameter achieving target privacy metric.
 
@@ -128,6 +129,10 @@ def calibrate(
             - Each iteration halves the search space
             - 100 iterations gives ~1e-30 precision (rarely needed)
             - If not converged after max_iterations, returns False for converged
+
+        prefix: Optional already-executed process; each probe evaluates
+            ``prefix | process(param)``, so the budget is the total across
+            both. Cached internally — its PLD is computed once per search.
 
     Returns:
         CalibrateResult with:
@@ -182,7 +187,28 @@ def calibrate(
             tolerance=0.01,
         )
 
-    **Example 3: Different privacy metrics**::
+    **Example 3: Calibrating a second stage over a prefix**::
+
+        # SFT already ran; load its executed process from the saved accountant
+        import json
+
+        from opaque.accounting import Accountant
+        from opaque.serialization import from_state_dict
+
+        with open("sft_checkpoint/accountant.json") as f:
+            sft = from_state_dict(Accountant(), json.load(f))
+
+        # Find the DPO noise multiplier so that the *total* (SFT + DPO)
+        # privacy cost hits the budget.
+        result = cal.calibrate(
+            cal.epsilon_budget(8.0, delta=1e-6),
+            lambda nm: acc.poisson(acc.gaussian(nm), 0.02) * 2000,
+            param_min=0.5,
+            param_max=5.0,
+            prefix=sft.process,
+        )
+
+    **Example 4: Different privacy metrics**::
 
         process = lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000
 
@@ -204,6 +230,15 @@ def calibrate(
     - *Not converging within max_iterations*
       → Increase tolerance or max_iterations; check that param changes actually affect metric
     """
+    if prefix is not None:
+        from opaque.api.accounting.core.composition._cached import cached
+
+        cached_prefix = cached(prefix)
+        inner = process
+
+        def process(param: float) -> DpProcess:
+            return cached_prefix | inner(param)
+
     try:
         return _calibrate_impl(
             budget,
