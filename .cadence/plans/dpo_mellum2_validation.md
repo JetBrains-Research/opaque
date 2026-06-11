@@ -115,8 +115,32 @@ LOSS DIVERGES / NaN
 | P2    | P2A-dpo-loop-mellum4b-zeta-noDP-100s              | 55423   | QUEUED   | num_epochs 50 so max_steps binds |
 | P2    | P2B-dpo-class-mellum4b-zeta-noDP-100s             | 55424   | QUEUED   | parity-trio member |
 | P2    | P2C-dpo-trl-mellum4b-zeta-baseline-100s           | 55425   | QUEUED   | parity anchor (Mellum-4b matches opaque path) |
-| P2    | P2D-dpo-trl-mellum2-zeta-baseline-100s            | 55426   | QUEUED   | Mellum2 longer-horizon sanity |
-| P3    | _pending Phase-2 noDP anchor_                     |         |          |          |
+| P2    | P2D-dpo-trl-mellum2-zeta-baseline-100s            | 55426   | FINISHED | train_loss 0.563; Mellum2 trains 8% lower than Mellum-4b at same horizon |
+| P3    | P3a-class-mellum4b-zeta-noDP-clip0.1              | 55427   | QUEUED   | clip-bias control (tight) |
+| P3    | P3b-class-mellum4b-zeta-noDP-clip1.0              | 55428   | QUEUED   | clip-bias control (mid) |
+| P3    | P3c-class-mellum4b-zeta-noDP-clip10               | 55429   | QUEUED   | clip-bias control (loose) |
+| P3    | P3d-class-mellum4b-zeta-DP-clip1.0-eps3           | 55430   | QUEUED   | tight DP budget |
+| P3    | P3e-class-mellum4b-zeta-DP-clip1.0-eps8           | 55431   | QUEUED   | standard DP budget |
+
+## Phase 2 results (2026-06-11)
+
+| Run | Final train/loss (W&B) | HF-agg train_loss | rewards/margins | rewards/acc | Notes |
+|---|---|---|---|---|---|
+| P2A loop noDP | 0.363 | n/a | n/a | n/a | adaptive clip → 0.000625 (effectively unclipped) |
+| P2B class noDP | 0.594 | **0.614** | +0.88 | 0.11 | fixed clipping_norm 1e9 (no-op clip) |
+| P2C TRL Mellum-4b | 0.650 | **0.605** | +0.76 | 0.13 | parity anchor |
+| P2D TRL Mellum2 | 0.541 | 0.563 | +0.97 | 0.31 | Mellum2 trains better on NES (rewards/acc 0.31 vs 0.13) |
+
+**Verdict (parity): PASS.** Opaque class trainer HF-aggregated train_loss 0.614 vs
+TRL anchor 0.605 — **1.5% gap, within tolerance.** rewards/margins ~15% higher
+on opaque, consistent with the historical "overconfidence/overfitting" note
+([[dpo-trl-comparison]]). The loop trainer's adaptive clipping was too
+aggressive to allow direct comparison — fixed-mode runs at known clip values
+needed (Phase 3).
+
+**Bonus finding:** Mellum2 trains visibly better on Zeta NES than Mellum-4b
+(rewards/acc 0.31 vs 0.13). When the opaque transformers-v5 migration lands,
+Mellum2 is the right NES model to ship.
 
 ## Phase 3 staged commands (fire after Phase 2 lands)
 
