@@ -957,7 +957,7 @@ def parse_args():
         help="Enable gradient checkpointing for memory savings (trades compute for memory)",
     )
     train_group.add_argument(
-        "--cpu-offload",
+        "--activation-offloading",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Offload saved tensors to CPU via save_on_cpu (works with or without checkpointing)",
@@ -1868,10 +1868,10 @@ def main():
 
     offload_ctx = (
         torch.autograd.graph.save_on_cpu(pin_memory=True)
-        if args.cpu_offload
+        if args.activation_offloading
         else contextlib.nullcontext()
     )
-    if args.cpu_offload:
+    if args.activation_offloading:
         print(
             f"CPU offload: enabled (save_on_cpu, works {'with' if args.gradient_checkpointing else 'without'} checkpointing)"
         )
