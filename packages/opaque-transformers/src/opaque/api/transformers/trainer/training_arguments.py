@@ -693,8 +693,7 @@ def convert_hf_training_arguments(
     converted.update(overrides)
 
     log.info(
-        "converted hf_training_arguments → %d opaque fields "
-        "(%d overridden by name)",
+        "converted hf_training_arguments → %d opaque fields (%d overridden by name)",
         len(converted),
         len(overrides),
     )
