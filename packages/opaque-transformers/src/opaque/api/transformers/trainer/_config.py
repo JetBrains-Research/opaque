@@ -1157,7 +1157,7 @@ class TrainingArguments:
         noise) must be set — opaque's runtime requires one to instantiate.
 
         Translates HF fields by bucketed manifest (see
-        ``opaque.api.transformers.compat._hf``):
+        ``opaque.api.transformers.trainer.training_arguments``):
 
         - **DIRECT**: ~80 fields with identical name and semantics — copied.
         - **RENAME**: ``evaluation_strategy`` → ``eval_strategy``,
@@ -1203,9 +1203,9 @@ class TrainingArguments:
             ``privacy_target_epsilon`` is set, or if any REJECT_IF_SET
             HF field is set to a non-default value.
         """
-        # Local import to keep this module decoupled from the compat package
-        # (avoids circulars and keeps the compat package optional-by-policy).
-        from ..compat._hf import convert_hf_training_arguments
+        # Local import keeps module load fast and avoids a hard import cycle
+        # (training_arguments imports nothing from this module at load time).
+        from .training_arguments import convert_hf_training_arguments
 
         # Collect the DP-knob kwargs into one dict the converter forwards.
         dp_overrides: dict[str, Any] = {

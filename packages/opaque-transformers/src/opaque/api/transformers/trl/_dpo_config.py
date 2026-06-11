@@ -17,11 +17,20 @@ faithful validations (label-smoothing bounds) are kept.
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
+from typing import Any, Callable
 
 import torch
 
 from opaque.api.transformers.trainer._config import TrainingArguments
+from opaque.api.transformers.trainer.training_arguments import normalize_dp_overrides
+
+from ._convert import (
+    _convert_trl_config,
+    _import_trl,
+    _reject_if_truthy,
+    _reject_pad_token,
+    _reject_truncation_mode,
+)
 
 # Loss heads that score the policy's own logp(s) — no reference model is
 # resolved or precomputed for them. ``self._needs_reference`` is derived from
@@ -248,8 +257,6 @@ class DPOConfig(TrainingArguments):
             set to a non-default value, or ``loss_type`` contains an
             opaque-unsupported head.
         """
-        from ..compat._trl import convert_trl_dpo_config
-
         dp_overrides: dict[str, Any] = {
             "privacy_noise_multiplier": privacy_noise_multiplier,
             "privacy_target_epsilon": privacy_target_epsilon,
@@ -275,3 +282,148 @@ class DPOConfig(TrainingArguments):
         converted = convert_trl_dpo_config(trl_cfg, strict=strict, **dp_overrides)
         converted.update(opaque_overrides)
         return cls(**converted)
+
+
+# ===========================================================================
+# trl.DPOConfig → opaque DPOConfig manifest + converter
+# ===========================================================================
+#
+# TRL-specific fields only; the HF-inherited subset is delegated to the HF
+# manifest by ``_convert_trl_config``. Every TRL ``DPOConfig`` field appears in
+# exactly one bucket, enforced by ``test_compat_manifest_exhaustive.py``.
+
+TRL_DPO_DIRECT_FIELDS: frozenset[str] = frozenset(
+    {
+        "model_init_kwargs",
+        "disable_dropout",
+        "dataset_num_proc",
+        "max_length",
+        "pad_to_multiple_of",
+        "precompute_ref_batch_size",
+        "beta",
+        "label_smoothing",
+        "loss_weights",
+        "f_divergence_type",
+        "f_alpha_divergence_coef",
+        "ld_alpha",
+        "use_weighting",
+        "discopop_tau",
+        "sync_ref_model",
+        "ref_model_mixup_alpha",
+        "ref_model_sync_steps",
+        # TRL's DPOConfig also exposes activation_offloading (not on HF
+        # base TrainingArguments).
+        "activation_offloading",
+        # TRL 1.x SimPO / CPO / ORPO head-specific tunables. Opaque has
+        # them on its own DPOConfig with the same names and semantics.
+        "simpo_gamma",
+        "cpo_alpha",
+        "orpo_lambda",
+    }
+)
+
+
+TRL_DPO_RENAME_MAP: dict[str, str] = {}
+
+
+_OPAQUE_DPO_LOSS_TYPES = frozenset(
+    {
+        "sigmoid",
+        "hinge",
+        "ipo",
+        "robust",
+        "exo_pair",
+        "nca_pair",
+        "bco_pair",
+        "sppo_hard",
+        "apo_zero",
+        "apo_down",
+        "discopop",
+        "sft",
+        "sigmoid_norm",
+        # CPO / ORPO / SimPO are assembled specially in opaque but
+        # appear in ``DPOConfig.loss_type`` as accepted values.
+        "cpo",
+        "orpo",
+        "simpo",
+    }
+)
+
+
+def _loss_type_transform(trl: dict[str, Any]) -> dict[str, Any]:
+    """Validate every entry in ``loss_type`` is a head opaque implements.
+
+    TRL 1.x added Adversarial Optimal Transport heads (``aot``,
+    ``aot_unpaired``) that opaque does not implement. Reject those
+    explicitly so the user knows opaque's surface is narrower than
+    upstream TRL.
+    """
+    loss_type = trl.get("loss_type")
+    if loss_type is None:
+        return {}
+    # TRL stores loss_type as list[str] in 1.x; coerce singletons.
+    values = [loss_type] if isinstance(loss_type, str) else list(loss_type)
+    unsupported = [v for v in values if v not in _OPAQUE_DPO_LOSS_TYPES]
+    if unsupported:
+        raise ValueError(
+            f"trl_dpo_config.loss_type contains unsupported heads: "
+            f"{sorted(set(unsupported))}. Opaque implements: "
+            f"{sorted(_OPAQUE_DPO_LOSS_TYPES)}. The Adversarial Optimal "
+            f"Transport family (``aot``, ``aot_unpaired``) added in TRL 1.x "
+            f"is not in opaque."
+        )
+    return {"loss_type": values}
+
+
+TRL_DPO_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    "loss_type": _loss_type_transform,
+}
+
+
+TRL_DPO_REJECTED_FIELDS: dict[str, Callable[[Any], str | None]] = {
+    "truncation_mode": _reject_truncation_mode,
+    "padding_free": _reject_if_truthy(
+        "``padding_free`` is not supported for DPO — see the SFT rationale."
+    ),
+    # NB: ``precompute_ref_log_probs`` is not flagged as REJECT here because
+    # opaque's default of always-precompute matches TRL's "True" mode for
+    # reference-using heads. A False setting in TRL doesn't translate, but
+    # the trainer-side runtime check provides the user-facing error.
+    "pad_token": _reject_pad_token,
+}
+
+
+TRL_DPO_DROP_FIELDS: dict[str, str] = {
+    "precompute_ref_log_probs": (
+        "Opaque always precomputes reference logps under DP for static-"
+        "reference heads; this TRL flag is silently honored at its True "
+        "mode and ignored otherwise."
+    ),
+}
+
+
+def convert_trl_dpo_config(
+    trl_cfg: Any,
+    *,
+    strict: bool = True,
+    **dp_overrides: Any,
+) -> dict[str, Any]:
+    """Translate a ``trl.DPOConfig`` instance into opaque ``DPOConfig`` kwargs."""
+    trl = _import_trl()
+    if not isinstance(trl_cfg, trl.DPOConfig):
+        raise TypeError(
+            f"Expected ``trl.DPOConfig`` instance, got {type(trl_cfg).__name__}."
+        )
+
+    dp_layer = normalize_dp_overrides(dp_overrides)
+    return _convert_trl_config(
+        trl_cfg,
+        trl_direct=TRL_DPO_DIRECT_FIELDS,
+        trl_rename=TRL_DPO_RENAME_MAP,
+        trl_transform=TRL_DPO_TRANSFORM_MAP,
+        trl_reject=TRL_DPO_REJECTED_FIELDS,
+        trl_drop=TRL_DPO_DROP_FIELDS,
+        source_label="trl_dpo_config",
+        strict=strict,
+        dp_overrides=dp_layer,
+    )

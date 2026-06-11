@@ -1,6 +1,6 @@
 """Canary test: every upstream HF / TRL config field is bucketed exactly once.
 
-This is the **drift catcher** for the opaque compat manifest. When upstream
+This is the **drift catcher** for the opaque argument manifest. When upstream
 HF or TRL ships a new ``TrainingArguments`` / ``SFTConfig`` / ``DPOConfig``
 field on a release whose manifest opaque hasn't been updated for, the new
 field will be unclassified by the bucket sets and this test fails.
@@ -9,8 +9,8 @@ The failure tells the maintainer:
 1. Which new field appeared upstream.
 2. To decide its bucket (DIRECT / RENAME / TRANSFORM / REJECT_IF_SET /
    DROP_WITH_WARN) and add it to the right constant in
-   ``opaque.api.transformers.compat._hf`` (or ``_trl`` for the TRL surfaces
-   once those land).
+   ``opaque.api.transformers.trainer.training_arguments`` (or the TRL
+   manifests in ``opaque.api.transformers.trl``).
 
 The test is the discipline that keeps the manifest in sync with upstream.
 """
@@ -24,19 +24,21 @@ import pytest
 # Required upstream — HF transformers is a runtime dep of opaque-transformers.
 hf = pytest.importorskip("transformers")
 
-from opaque.api.transformers.compat._hf import (  # noqa: E402
+from opaque.api.transformers.trainer.training_arguments import (  # noqa: E402
     HF_DIRECT_FIELDS,
     HF_DROP_FIELDS,
     HF_REJECTED_FIELDS,
     HF_RENAME_MAP,
     HF_TRANSFORM_MAP,
 )
-from opaque.api.transformers.compat._trl import (  # noqa: E402
+from opaque.api.transformers.trl._dpo_config import (  # noqa: E402
     TRL_DPO_DIRECT_FIELDS,
     TRL_DPO_DROP_FIELDS,
     TRL_DPO_REJECTED_FIELDS,
     TRL_DPO_RENAME_MAP,
     TRL_DPO_TRANSFORM_MAP,
+)
+from opaque.api.transformers.trl._sft_config import (  # noqa: E402
     TRL_SFT_DIRECT_FIELDS,
     TRL_SFT_DROP_FIELDS,
     TRL_SFT_REJECTED_FIELDS,
@@ -133,18 +135,18 @@ def test_hf_manifest_covers_every_upstream_field():
     Drift case: HF adds a new field on a future release; this test
     surfaces it as the unclassified-field list. The fix is to add the
     new field to one of the constants in
-    ``opaque.api.transformers.compat._hf``.
+    ``opaque.api.transformers.trainer.training_arguments``.
     """
     upstream = _all_hf_field_names()
     covered = _opaque_buckets_for_hf()
     missing = upstream - covered
     assert not missing, (
         f"HF ``TrainingArguments`` has fields not classified by the opaque "
-        f"compat manifest:\n  {sorted(missing)}\n\n"
+        f"argument manifest:\n  {sorted(missing)}\n\n"
         f"This usually means upstream transformers added new fields on a "
         f"release the opaque manifest hasn't tracked yet. For each missing "
         f"field, decide its bucket and add it to the right constant in "
-        f"``opaque.api.transformers.compat._hf``:\n"
+        f"``opaque.api.transformers.trainer.training_arguments``:\n"
         f"  - HF_DIRECT_FIELDS: same name + semantics as opaque\n"
         f"  - HF_RENAME_MAP: different name in opaque\n"
         f"  - HF_TRANSFORM_MAP: needs a derivation callable\n"
@@ -160,9 +162,9 @@ def test_trl_sft_manifest_covers_every_upstream_field():
     missing = upstream_trl_only - covered
     assert not missing, (
         f"TRL ``SFTConfig`` has SFT-specific fields not classified by the "
-        f"opaque compat manifest:\n  {sorted(missing)}\n\n"
+        f"opaque argument manifest:\n  {sorted(missing)}\n\n"
         f"For each missing field, add it to a constant in "
-        f"``opaque.api.transformers.compat._trl``: TRL_SFT_DIRECT_FIELDS, "
+        f"``opaque.api.transformers.trl._sft_config``: TRL_SFT_DIRECT_FIELDS, "
         f"TRL_SFT_RENAME_MAP, TRL_SFT_TRANSFORM_MAP, TRL_SFT_REJECTED_FIELDS, "
         f"or TRL_SFT_DROP_FIELDS."
     )
@@ -175,9 +177,9 @@ def test_trl_dpo_manifest_covers_every_upstream_field():
     missing = upstream_trl_only - covered
     assert not missing, (
         f"TRL ``DPOConfig`` has DPO-specific fields not classified by the "
-        f"opaque compat manifest:\n  {sorted(missing)}\n\n"
+        f"opaque argument manifest:\n  {sorted(missing)}\n\n"
         f"For each missing field, add it to a constant in "
-        f"``opaque.api.transformers.compat._trl``: TRL_DPO_DIRECT_FIELDS, "
+        f"``opaque.api.transformers.trl._dpo_config``: TRL_DPO_DIRECT_FIELDS, "
         f"TRL_DPO_RENAME_MAP, TRL_DPO_TRANSFORM_MAP, TRL_DPO_REJECTED_FIELDS, "
         f"or TRL_DPO_DROP_FIELDS."
     )
@@ -232,9 +234,9 @@ def test_hf_manifest_does_not_have_phantom_fields():
     covered = _opaque_buckets_for_hf()
     phantoms = covered - upstream
     assert not phantoms, (
-        f"opaque compat manifest references HF fields that no longer exist "
+        f"opaque argument manifest references HF fields that no longer exist "
         f"upstream:\n  {sorted(phantoms)}\n\n"
         f"This means HF removed a field that opaque's manifest still "
         f"tracks. Remove the phantom entry from the corresponding constant "
-        f"in ``opaque.api.transformers.compat._hf``."
+        f"in ``opaque.api.transformers.trainer.training_arguments``."
     )
