@@ -90,7 +90,22 @@ class SFTConfig(TrainingArguments):
     #: TRL logs every 10 steps by default (vs. HF's 500). (sft_config.py)
     logging_steps: float = 10
     #: TRL enables gradient checkpointing by default to fit larger batches.
-    gradient_checkpointing: bool = True
+    #: Opaque disables it by default because the vmap DP path recomputes
+    #: activations once per microbatch (B/microbatch times per step), so GC
+    #: multiplies that cost — pure overhead for models that already fit in VRAM.
+    #: Enable explicitly when memory is the bottleneck.
+    gradient_checkpointing: bool = False
+    #: Opaque-specific (no TRL analogue): enable the model-level Triton kernels
+    #: (``rope`` / ``rms_norm`` / ``activation`` / non-fused ``cross_entropy``)
+    #: by default. They are numerically non-critical but practically important
+    #: under the per-example ``vmap`` DP path — they cut the activation memory
+    #: and compute of per-sample gradients. CUDA + Triton only; on CPU/MPS
+    #: ``apply_model_patches`` forces them off, so this is a no-op there. The
+    #: ``fused_linear_cross_entropy`` kernel stays opt-in (it returns
+    #: ``logits=None``, incompatible with the eager nll/dft loss + telemetry).
+    #: Opt out with ``use_performance_kernels=False``. The base
+    #: ``TrainingArguments`` default stays ``False`` for other trainers.
+    use_performance_kernels: bool = True
 
     def __post_init__(self) -> None:
         # The one DP-driven override: the collator consumes raw dataset
