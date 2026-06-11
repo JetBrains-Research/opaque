@@ -18,15 +18,16 @@ def _run(code: str) -> str:
     return result.stdout.strip()
 
 
+_BOOTSTRAP = "from opaque.api.transformers import _runtime_bootstrap as b"
+
+
 def test_subprocess_import_alone_not_patched():
-    out = _run("import opaque.transformers as t; print(t.is_patched())")
+    out = _run(f"import opaque.transformers; {_BOOTSTRAP}; print(b.is_patched())")
     assert out == "False"
 
 
 def test_subprocess_patch_all_applies_runtime_compat():
     out = _run(
-        "import opaque.transformers as t\n"
-        "t.patch_all()\n"
-        "print(t.is_patched(), t.is_vmap_patched())"
+        f"{_BOOTSTRAP}\nb.patch_all()\nprint(b.is_patched(), b.is_vmap_patched())"
     )
     assert out == "True True"

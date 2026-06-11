@@ -1,29 +1,27 @@
 """Hugging Face Trainer integration for Opaque.
 
-This module is a thin façade over the trainer implementation package shipped
-in the same wheel. Importing it does **not** mutate Hugging Face globals:
-:class:`~opaque.transformers.trainer.DPTrainer` applies runtime compat patches
-and ``apply_model_patches(..., compat=use_compat_patches, performance=True, kernels=use_performance_kernels)``
-during construction. For scripts that use HF primitives without
-``DPTrainer``, call :func:`patch_all` once for global runtime shims.
+Small root over the trainer implementation package: the core
+:class:`~opaque.transformers.trainer.DPTrainer` primitives are re-exported here,
+and the TRL-style trainers live under :mod:`opaque.transformers.trl`.
+
+Importing this module does **not** mutate Hugging Face globals — ``DPTrainer``
+applies the runtime + per-model patches during construction. Scripts that use
+HF primitives without ``DPTrainer`` should call
+:func:`opaque.patches.apply_runtime_patches` once for the global runtime shims.
 """
 
 from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-from opaque.api.transformers._from_config import from_hf_config
-from opaque.api.transformers._runtime_bootstrap import (
-    is_patched,
-    is_vmap_patched,
-    patch_all,
-)
 from opaque.api.transformers.trainer import (
     DPTrainer,
     EvaluationResult,
     TrainingArguments,
     TrainOutput,
 )
+
+from . import trl
 
 try:
     __version__ = _pkg_version("opaque-transformers")
@@ -33,11 +31,8 @@ except PackageNotFoundError:
 __all__ = [
     "__version__",
     "DPTrainer",
-    "EvaluationResult",
     "TrainingArguments",
+    "EvaluationResult",
     "TrainOutput",
-    "from_hf_config",
-    "is_patched",
-    "is_vmap_patched",
-    "patch_all",
+    "trl",
 ]

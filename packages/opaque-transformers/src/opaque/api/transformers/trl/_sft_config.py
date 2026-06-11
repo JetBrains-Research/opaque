@@ -14,7 +14,7 @@ import dataclasses
 from typing import Any, Callable
 
 from opaque.api.transformers.trainer._config import TrainingArguments
-from opaque.api.transformers.trainer.training_arguments import normalize_dp_overrides
+from opaque.api.transformers.trainer.training_arguments import _normalize_dp_overrides
 
 from ._convert import (
     _convert_trl_config,
@@ -190,7 +190,7 @@ class SFTConfig(TrainingArguments):
         if noise_calibration_kwargs is not None:
             dp_overrides["noise_calibration_kwargs"] = noise_calibration_kwargs
 
-        converted = convert_trl_sft_config(trl_cfg, strict=strict, **dp_overrides)
+        converted = _convert_trl_sft_config(trl_cfg, strict=strict, **dp_overrides)
         converted.update(opaque_overrides)
         return cls(**converted)
 
@@ -268,7 +268,7 @@ TRL_SFT_DROP_FIELDS: dict[str, str] = {
 }
 
 
-def convert_trl_sft_config(
+def _convert_trl_sft_config(
     trl_cfg: Any,
     *,
     strict: bool = True,
@@ -281,7 +281,7 @@ def convert_trl_sft_config(
             f"Expected ``trl.SFTConfig`` instance, got {type(trl_cfg).__name__}."
         )
 
-    dp_layer = normalize_dp_overrides(dp_overrides)
+    dp_layer = _normalize_dp_overrides(dp_overrides)
     return _convert_trl_config(
         trl_cfg,
         trl_direct=TRL_SFT_DIRECT_FIELDS,

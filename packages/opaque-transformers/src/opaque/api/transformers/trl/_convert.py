@@ -22,8 +22,8 @@ from ..trainer.training_arguments import (
     HF_REJECTED_FIELDS,
     HF_RENAME_MAP,
     HF_TRANSFORM_MAP,
-    apply_manifest,
-    get_dataclass_field_values,
+    _apply_manifest,
+    _get_dataclass_field_values,
 )
 
 # Shared with the HF manifest — reject only when the user set a truthy value.
@@ -81,14 +81,14 @@ def _convert_trl_config(
     by the HF manifest) and the TRL-specific subset (handled by the
     per-flavor manifest passed in). Then merges DP overrides on top.
     """
-    source_values = get_dataclass_field_values(trl_cfg)
+    source_values = _get_dataclass_field_values(trl_cfg)
 
     # Construct a baseline TRL instance to detect "user-set vs default".
     baseline_output_dir = source_values.get("output_dir") or tempfile.mkdtemp(
         prefix="opaque_trl_baseline_"
     )
     baseline = type(trl_cfg)(output_dir=baseline_output_dir)
-    source_defaults = get_dataclass_field_values(baseline)
+    source_defaults = _get_dataclass_field_values(baseline)
 
     # The HF-base field names are the union of the HF manifest's buckets
     # — those are handled by the HF dispatcher with HF's own buckets.
@@ -106,7 +106,7 @@ def _convert_trl_config(
     trl_defaults = {k: v for k, v in source_defaults.items() if k not in hf_field_names}
 
     # Layer 1: HF base translation.
-    hf_converted = apply_manifest(
+    hf_converted = _apply_manifest(
         source_values=hf_values,
         source_defaults=hf_defaults,
         direct=HF_DIRECT_FIELDS,
@@ -119,7 +119,7 @@ def _convert_trl_config(
     )
 
     # Layer 2: TRL-specific field translation.
-    trl_converted = apply_manifest(
+    trl_converted = _apply_manifest(
         source_values=trl_values,
         source_defaults=trl_defaults,
         direct=trl_direct,

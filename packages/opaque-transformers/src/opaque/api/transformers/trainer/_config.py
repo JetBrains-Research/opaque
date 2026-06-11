@@ -1202,7 +1202,7 @@ class TrainingArguments:
         """
         # Local import keeps module load fast and avoids a hard import cycle
         # (training_arguments imports nothing from this module at load time).
-        from .training_arguments import convert_hf_training_arguments
+        from .training_arguments import _convert_hf_training_arguments
 
         # Collect the DP-knob kwargs into one dict the converter forwards.
         dp_overrides: dict[str, Any] = {
@@ -1227,7 +1227,7 @@ class TrainingArguments:
         if noise_calibration_kwargs is not None:
             dp_overrides["noise_calibration_kwargs"] = noise_calibration_kwargs
 
-        converted = convert_hf_training_arguments(
+        converted = _convert_hf_training_arguments(
             hf_args,
             strict=strict,
             **dp_overrides,

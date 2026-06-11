@@ -15,7 +15,10 @@ from opaque.transformers import (
     EvaluationResult,
     TrainOutput,
 )
-from opaque.transformers import is_patched, is_vmap_patched, patch_all
+from opaque.transformers.trl import SFTConfig, SFTTrainer, DPOConfig, DPOTrainer
+
+# Global HF runtime shims (only needed when using HF primitives without DPTrainer):
+from opaque.patches import apply_runtime_patches
 ```
 
 | Symbol | Purpose |
@@ -24,8 +27,8 @@ from opaque.transformers import is_patched, is_vmap_patched, patch_all
 | `TrainingArguments` | Standalone dataclass — full HF parity for the subset DPTrainer honours, plus DP-specific fields. |
 | `EvaluationResult` | Unified return type for `evaluation_loop` / `evaluate` / `predict`. |
 | `TrainOutput` | NamedTuple returned by `train()` — `(global_step, training_loss, metrics)`. |
-| `patch_all` | Convenience entry point for `apply_runtime_patches()` (use directly when not going through DPTrainer). |
-| `is_patched` / `is_vmap_patched` | Query whether runtime / vmap-safety patches are installed. |
+| `opaque.transformers.trl` | TRL-style configs/trainers: `SFTConfig`, `SFTTrainer`, `DPOConfig`, `DPOTrainer`. |
+| `opaque.patches.apply_runtime_patches` | Install the global HF runtime shims (only needed when using HF primitives without `DPTrainer`). |
 
 ## `DPTrainer`
 
@@ -553,13 +556,13 @@ weight lengths / duplicate heads / TR-DPO reference-need, and auto-enables
 ## Runtime patches
 
 ```python
-from opaque.transformers import patch_all, is_patched, is_vmap_patched
+from opaque.patches import apply_runtime_patches
+
+apply_runtime_patches(compat=True)  # install the global HF shims once
 ```
 
-`patch_all()` is a thin alias for `apply_runtime_patches()` — install
-the global HF shims once at process startup if you're driving DP-SGD
-over HF models without going through DPTrainer.  `is_patched()` /
-`is_vmap_patched()` query whether the patches have been installed.
+`DPTrainer` applies these (and the per-model patches) during construction, so
+you only need this when driving DP-SGD over HF models **without** `DPTrainer`.
 
 For per-model patches and the kernel surface, see
 [Model Patches and Kernels](../user-guide/huggingface/model-patches.md).

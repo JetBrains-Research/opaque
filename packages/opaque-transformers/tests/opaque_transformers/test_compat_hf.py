@@ -7,7 +7,7 @@ import warnings
 import pytest
 
 from opaque.api.transformers.trainer import TrainingArguments
-from opaque.api.transformers.trainer.training_arguments import normalize_dp_overrides
+from opaque.api.transformers.trainer.training_arguments import _normalize_dp_overrides
 
 # ``transformers`` is a required dep of opaque-transformers.
 hf = pytest.importorskip("transformers")
@@ -346,14 +346,14 @@ def test_typeerror_on_non_hf_input(tmp_path):
 
 def test_normalize_dp_overrides_rejects_empty():
     with pytest.raises(ValueError, match="privacy_noise_multiplier"):
-        normalize_dp_overrides({})
+        _normalize_dp_overrides({})
 
 
 def test_normalize_dp_overrides_accepts_noise_only():
-    result = normalize_dp_overrides({"privacy_noise_multiplier": 0.5})
+    result = _normalize_dp_overrides({"privacy_noise_multiplier": 0.5})
     assert result["privacy_noise_multiplier"] == 0.5
 
 
 def test_normalize_dp_overrides_accepts_epsilon_only():
-    result = normalize_dp_overrides({"privacy_target_epsilon": 8.0})
+    result = _normalize_dp_overrides({"privacy_target_epsilon": 8.0})
     assert result["privacy_target_epsilon"] == 8.0

@@ -47,9 +47,11 @@ from transformers import (
     DataCollatorForLanguageModeling,
 )
 
-from opaque.transformers import is_patched as is_transformers_patched
+from opaque.api.transformers._runtime_bootstrap import is_patched as is_kernel_patched
+from opaque.api.transformers._runtime_bootstrap import (
+    is_patched as is_transformers_patched,
+)
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
-from opaque.transformers import is_patched as is_kernel_patched
 
 log = logging.getLogger(__name__)
 

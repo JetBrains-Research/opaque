@@ -2,7 +2,7 @@
 
 This module holds two things:
 
-1. The **manifest engine** (:func:`apply_manifest` + helpers) that every
+1. The **manifest engine** (:func:`_apply_manifest` + helpers) that every
    converter — HF here, TRL in :mod:`opaque.api.transformers.trl` — drives
    with its own DIRECT/RENAME/TRANSFORM/REJECT/DROP buckets.
 2. The **HF manifest** itself, classifying every field on
@@ -43,7 +43,7 @@ log = logging.getLogger(__name__)
 # ===========================================================================
 
 
-def normalize_dp_overrides(
+def _normalize_dp_overrides(
     overrides: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Validate and return a dict of opaque-side DP fields from kwargs.
@@ -107,7 +107,7 @@ def _is_default(value: Any, default: Any) -> bool:
     return False
 
 
-def get_dataclass_field_values(
+def _get_dataclass_field_values(
     obj: Any,
 ) -> dict[str, Any]:
     """Return a name→value dict for every field of a dataclass instance."""
@@ -119,22 +119,7 @@ def get_dataclass_field_values(
     return {f.name: getattr(obj, f.name) for f in dataclasses.fields(obj)}
 
 
-def get_dataclass_field_defaults(
-    cls: type,
-) -> dict[str, Any]:
-    """Return a name→default-value dict for the dataclass type ``cls``."""
-    out: dict[str, Any] = {}
-    for f in dataclasses.fields(cls):
-        if f.default is not dataclasses.MISSING:
-            out[f.name] = f.default
-        elif f.default_factory is not dataclasses.MISSING:
-            out[f.name] = f.default_factory()
-        else:
-            out[f.name] = None
-    return out
-
-
-def apply_manifest(
+def _apply_manifest(
     *,
     source_values: Mapping[str, Any],
     source_defaults: Mapping[str, Any],
@@ -614,7 +599,7 @@ HF_DROP_FIELDS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Public API: convert an HF TrainingArguments instance to an opaque dict.
 # ---------------------------------------------------------------------------
-def convert_hf_training_arguments(
+def _convert_hf_training_arguments(
     hf_args: Any,
     *,
     strict: bool = True,
@@ -630,7 +615,7 @@ def convert_hf_training_arguments(
         from transformers import TrainingArguments as HFTrainingArguments
     except ImportError as e:
         raise ImportError(
-            "convert_hf_training_arguments requires the ``transformers`` "
+            "_convert_hf_training_arguments requires the ``transformers`` "
             "package. Install it with ``pip install transformers``."
         ) from e
 
@@ -641,7 +626,7 @@ def convert_hf_training_arguments(
             "``TrainingArguments(**your_dict)`` first."
         )
 
-    source_values = get_dataclass_field_values(hf_args)
+    source_values = _get_dataclass_field_values(hf_args)
     # HF's ``__post_init__`` rewrites several field defaults at runtime, so
     # ``dataclasses.fields()`` defaults don't match what an unconfigured user
     # sees. Build a baseline instance and use its field values as the
@@ -652,10 +637,10 @@ def convert_hf_training_arguments(
         prefix="opaque_baseline_"
     )
     baseline = type(hf_args)(output_dir=baseline_output_dir)
-    source_defaults = get_dataclass_field_values(baseline)
+    source_defaults = _get_dataclass_field_values(baseline)
 
     # Wrap REJECT and TRANSFORM signatures into the dispatcher contract.
-    converted = apply_manifest(
+    converted = _apply_manifest(
         source_values=source_values,
         source_defaults=source_defaults,
         direct=HF_DIRECT_FIELDS,
@@ -675,7 +660,7 @@ def convert_hf_training_arguments(
     # Overrides win over every converted/derived value (the privacy knobs plus
     # any opaque field overridden by name, e.g. ``use_performance_kernels=True``
     # even though HF had no such field).
-    overrides = normalize_dp_overrides(dp_overrides)
+    overrides = _normalize_dp_overrides(dp_overrides)
     converted.update(overrides)
 
     log.info(

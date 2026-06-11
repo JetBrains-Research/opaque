@@ -246,20 +246,20 @@ rank-gated checkpointing, see
 
 ## Converting from HF / TRL configs
 
-Rather than hand-port an upstream config, convert it. One dispatch entry point
-covers all three input types:
+Rather than hand-port an upstream config, convert it with the classmethod on
+the matching opaque config:
 
 ```python
-from opaque.transformers import from_hf_config
+from opaque.transformers import TrainingArguments
 
-args = from_hf_config(hf_or_trl_config, privacy_target_epsilon=8.0)
+args = TrainingArguments.from_hf(hf_args, privacy_target_epsilon=8.0)
 ```
 
-`from_hf_config` type-dispatches: a `trl.DPOConfig` / `trl.SFTConfig` →
-opaque `DPOConfig` / `SFTConfig`, a `transformers.TrainingArguments` → opaque
-`TrainingArguments`. The per-class converters are also public if you already
-know the type: `TrainingArguments.from_hf(...)`, `SFTConfig.from_trl(...)`,
-`DPOConfig.from_trl(...)`.
+- `TrainingArguments.from_hf(hf_args, …)` — from `transformers.TrainingArguments`
+- `SFTConfig.from_trl(trl_cfg, …)` — from `trl.SFTConfig`
+- `DPOConfig.from_trl(trl_cfg, …)` — from `trl.DPOConfig`
+
+(`SFTConfig` / `DPOConfig` live in `opaque.transformers.trl`.)
 
 What the converter does:
 
