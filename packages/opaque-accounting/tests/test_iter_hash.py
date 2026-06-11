@@ -12,9 +12,11 @@ hashes.
 from __future__ import annotations
 
 import opaque.accounting as acc
-from opaque.api.accounting.core.composition._cached import CachedProcess
-from opaque.api.accounting.core.composition._composed import Composed
-from opaque.api.accounting.core.composition._repeated import Repeated
+from opaque.api.accounting.core.composition.types import (
+    CachedProcess,
+    Composed,
+    Repeated,
+)
 
 
 def _leaf():
@@ -108,7 +110,12 @@ def test_hash_consistent_with_eq_for_cached():
 
 
 def test_hash_distinguishes_different_depths():
-    """Two chains of different depth should produce different hashes."""
+    """The hash is structure-sensitive: different depths → different hashes.
+
+    The hash is a deterministic digest of the tree, so for these fixed inputs
+    the inequality is stable (not a probabilistic non-collision claim) — it
+    guards against a degenerate hash that ignores depth.
+    """
     leaf = _leaf()
     a = _build_left_skewed(leaf, 100)
     b = _build_left_skewed(leaf, 101)
@@ -117,7 +124,12 @@ def test_hash_distinguishes_different_depths():
 
 
 def test_hash_distinguishes_composed_from_repeated():
-    """``Composed(x, x)`` and ``Repeated(x, 2)`` are structurally distinct."""
+    """``Composed(x, x)`` and ``Repeated(x, 2)`` hash differently.
+
+    Deterministic for these fixed inputs (sentinel tags keep the two node
+    kinds from colliding) — guards against the wrapper kind being dropped from
+    the digest, not a universal non-collision guarantee.
+    """
     leaf = _leaf()
     c = Composed(leaf, leaf)
     r = Repeated(leaf, 2)
