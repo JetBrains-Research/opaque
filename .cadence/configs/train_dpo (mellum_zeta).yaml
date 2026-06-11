@@ -1,32 +1,30 @@
-# Full DP-DPO run for opaque-alignment on JetBrains/Mellum2-12B-A2.5B-Base
-# (12B MoE, 2.5B active) + zed-industries/zeta (Next Edit Prediction, 132 DPO
-# pairs in the ``dpo`` split). Precomputes reference logps, then trains
-# through the per-example vmap DP-SGD path with DPO_LOSSES["sigmoid"].
+# Full DP-DPO run for opaque-alignment on JetBrains/Mellum-4b-base (Llama
+# arch, transformers 4.57.x compatible) + zed-industries/zeta (Next Edit
+# Prediction, 132 DPO pairs in the ``dpo`` split). Precomputes reference
+# logps, then trains through the per-example vmap DP-SGD path with
+# DPO_LOSSES["sigmoid"]. The example loader remaps Zeta's
+# (events, input, output, rejected) to (prompt, chosen, rejected).
 #
-# Mellum2 is a code-completion model built for IDE-side use; Zeta is the Zed
-# editor's NES preference dataset (chosen=correct-next-edit, rejected=wrong
-# edit). The example loader remaps Zeta's (events, input, output, rejected)
-# to (prompt, chosen, rejected).
+# Mellum2 (12B MoE) was the original target but its custom MellumForCausalLM
+# architecture is gated on transformers≥5.10, while the project pins
+# transformers<5 for opaque-trainer compat. Mellum-4b-base shares the same
+# code-completion training distribution and works on the current pin —
+# enough to validate DPOTrainer mechanics. The TRL baseline yaml separately
+# probes Mellum2 (it has no opaque imports and can use transformers≥5.10).
 #
-# Mellum2 needs transformers≥5.10 — newer than the project's 4.57.x pin —
-# so the cmd block re-installs the right transformers into the synced venv
-# AFTER ``uv sync`` (which would otherwise pin it back). The opaque trainer
-# was last validated at 4.57.x; cross-major exposure here is intentional —
-# Phase-1 smoke tests double as a transformers-v5 compat probe.
-#
-# Counterpart to ``train_dpo_trainer (mellum2_zeta).yaml`` (class-based) and
-# ``train_dpo_trl_baseline.yaml`` (upstream TRL DPOTrainer); the three share
-# Mellum2 + Zeta + (batch, LR, length, beta, steps) so train/loss curves
-# overlay directly.
+# Counterpart to ``train_dpo_trainer (mellum_zeta).yaml`` (class-based) and
+# ``train_dpo_trl_baseline.yaml`` (upstream TRL DPOTrainer on Mellum2);
+# loop + class share Mellum-4b + Zeta + (batch 16, LR 5e-5, length 1024,
+# beta 0.1, steps 100) so their train/loss curves overlay directly.
 #
 # Run (non-private baseline):
-#   RUN_NAME="dpo-mellum2-noDP" uv run cadence execution start \
-#     --preset ".cadence/configs/train_dpo (mellum2_zeta).yaml" \
-#     -e EXTRA_ARGS="--noise-multiplier 0"
+#   RUN_NAME="dpo-mellum-noDP" uv run cadence execution start \
+#     --preset ".cadence/configs/train_dpo (mellum_zeta).yaml" \
+#     -e EXTRA_ARGS="--noise-multiplier 0 --clipping-norm 1e9"
 #
 # Run (DP at ε=8):
-#   RUN_NAME="dpo-mellum2-DP-eps8" uv run cadence execution start \
-#     --preset ".cadence/configs/train_dpo (mellum2_zeta).yaml"
+#   RUN_NAME="dpo-mellum-DP-eps8" uv run cadence execution start \
+#     --preset ".cadence/configs/train_dpo (mellum_zeta).yaml"
 
 project_name: jbr-fed
 working_dir: "."
@@ -39,22 +37,12 @@ cmd:
     uv sync --group dev --group examples --all-packages --extra all
     uv pip install --quiet "maturin>=1.0,<2.0"
     uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
-    # Mellum2 (custom MellumForCausalLM) needs transformers≥5.10 — bump AFTER
-    # ``uv sync`` since sync would re-pin to the 4.57.x in pyproject.toml.
-    # peft / trl / accelerate moved on as well; pull recent versions for
-    # compatibility with the bumped transformers.
-    uv pip install --quiet \
-      "transformers>=5.10,<6" \
-      "peft>=0.14" \
-      "accelerate>=1.0" \
-      "trl>=0.13" \
-      "datasets>=3.0"
 
-    # The mellum2-zeta preset wires model/dataset/LoRA/dtype/microbatch in
+    # The mellum-zeta preset wires model/dataset/LoRA/dtype/microbatch in
     # one place (examples/train_dpo.py); override knobs via $EXTRA_ARGS —
     # e.g. ``-e EXTRA_ARGS="--noise-multiplier 0 --max-steps 20"`` for a
     # short non-private smoke run.
-    uv run python examples/train_dpo.py --preset mellum2-zeta \
+    uv run python examples/train_dpo.py --preset mellum-zeta \
       --max-steps 100 \
       --log-steps 2 \
       --seed 42 $EXTRA_ARGS
@@ -72,7 +60,7 @@ env:
     WANDB_BASE_URL: https://jetbrains.wandb.io
     WANDB_ENTITY: federated-compute
     WANDB_PROJECT: opaque
-    RUN_NAME: "${oc.env:RUN_NAME,dpo-mellum2-zeta}"
+    RUN_NAME: "${oc.env:RUN_NAME,dpo-mellum-zeta}"
     EXTRA_ARGS: ""
   python:
     version: 3.11.14

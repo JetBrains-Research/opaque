@@ -1,27 +1,27 @@
-# Full DP-DPO run via the class-based DPOTrainer on JetBrains/Mellum2-12B-
-# A2.5B-Base (12B MoE, 2.5B active) + zed-industries/zeta (Next Edit
-# Prediction, 132 DPO pairs in the ``dpo`` split). Precomputes reference
-# logps, then trains through the per-example vmap DP-SGD path with
-# DPO_LOSSES["sigmoid"]. Mirrors the loop-based
-# ``train_dpo (mellum2_zeta).yaml`` but exercises the class-based DPOTrainer.
+# Full DP-DPO run via the class-based DPOTrainer on JetBrains/Mellum-4b-base
+# (Llama arch, transformers 4.57.x compatible) + zed-industries/zeta (Next
+# Edit Prediction, 132 DPO pairs in the ``dpo`` split). Precomputes
+# reference logps, then trains through the per-example vmap DP-SGD path
+# with DPO_LOSSES["sigmoid"]. Mirrors the loop-based
+# ``train_dpo (mellum_zeta).yaml`` but exercises the class-based DPOTrainer.
 #
 # Zeta ships (events, input, output, rejected); the example script remaps
 # (events, input) → ``prompt`` and (output, rejected) → (chosen, rejected)
 # for the collator. chosen/rejected are plain strings (no chat template).
 #
-# Mellum2 needs transformers≥5.10 — newer than the project's 4.57.x pin —
-# so the cmd block re-installs the right transformers AFTER ``uv sync``.
-# The opaque trainer was last validated at 4.57.x; cross-major exposure here
-# is intentional — Phase-1 smoke runs double as a transformers-v5 compat probe.
+# Mellum2 (12B MoE) was the original target but its custom
+# MellumForCausalLM architecture is gated on transformers≥5.10, while
+# opaque-transformers is pinned to 4.57.x. The opaque DPO yamls fall back
+# to Mellum-4b-base; the TRL baseline yaml separately probes Mellum2.
 #
 # Run (non-private baseline; matches train_dpo_trl_baseline.yaml shape):
-#   RUN_NAME="dpo-trainer-mellum2-noDP" uv run cadence execution start \
-#     --preset ".cadence/configs/train_dpo_trainer (mellum2_zeta).yaml" \
+#   RUN_NAME="dpo-trainer-mellum-noDP" uv run cadence execution start \
+#     --preset ".cadence/configs/train_dpo_trainer (mellum_zeta).yaml" \
 #     -e EXTRA_ARGS="--noise-multiplier 0 --clipping-norm 1e9"
 #
 # Run (DP at ε=8):
-#   RUN_NAME="dpo-trainer-mellum2-DP-eps8" uv run cadence execution start \
-#     --preset ".cadence/configs/train_dpo_trainer (mellum2_zeta).yaml"
+#   RUN_NAME="dpo-trainer-mellum-DP-eps8" uv run cadence execution start \
+#     --preset ".cadence/configs/train_dpo_trainer (mellum_zeta).yaml"
 
 project_name: jbr-fed
 working_dir: "."
@@ -34,28 +34,20 @@ cmd:
     uv sync --group dev --group examples --all-packages --extra all
     uv pip install --quiet "maturin>=1.0,<2.0"
     uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
-    # Mellum2 (custom MellumForCausalLM) needs transformers≥5.10 — bump AFTER
-    # ``uv sync`` since sync would re-pin to the 4.57.x in pyproject.toml.
-    uv pip install --quiet \
-      "transformers>=5.10,<6" \
-      "peft>=0.14" \
-      "accelerate>=1.0" \
-      "trl>=0.13" \
-      "datasets>=3.0"
 
-    # No preset on the class-based trainer script — pass Mellum2 + Zeta
-    # parameters explicitly. LoRA enabled (matches train_dpo.py mellum2-zeta
+    # No preset on the class-based trainer script — pass Mellum-4b-base + Zeta
+    # parameters explicitly. LoRA enabled (matches train_dpo.py mellum-zeta
     # preset); LoRA targets all attention + MLP linears. Zeta DPO split has
     # 132 pairs so num-train-samples is capped to that.
     uv run python examples/train_dpo_trainer.py \
-      --model JetBrains/Mellum2-12B-A2.5B-Base \
+      --model JetBrains/Mellum-4b-base \
       --dataset zed-industries/zeta \
       --dataset-split dpo \
       --num-train-samples 132 \
       --beta 0.1 \
       --max-length 1024 \
       --batch-size 16 \
-      --microbatch-size 2 \
+      --microbatch-size 4 \
       --precompute-ref-batch-size 4 \
       --max-steps 100 \
       --learning-rate 5e-5 \
@@ -80,7 +72,7 @@ env:
     WANDB_BASE_URL: https://jetbrains.wandb.io
     WANDB_ENTITY: federated-compute
     WANDB_PROJECT: opaque
-    RUN_NAME: "${oc.env:RUN_NAME,dpo-trainer-mellum2-zeta}"
+    RUN_NAME: "${oc.env:RUN_NAME,dpo-trainer-mellum-zeta}"
     EXTRA_ARGS: ""
   python:
     version: 3.11.14

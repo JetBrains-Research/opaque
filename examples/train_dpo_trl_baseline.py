@@ -172,9 +172,12 @@ def main() -> int:
             "per_device_eval_batch_size": PER_DEVICE_BATCH,
         }
 
+    # NOTE: TRL DPOConfig dropped ``overwrite_output_dir`` in 0.13+ (it lives on
+    # HF TrainingArguments, but TRL no longer re-exports it). Keep the output
+    # dir unique per run via run-name suffix; trainer_output is anyway wiped on
+    # each Cadence boot.
     dpo_args = DPOConfig(
-        output_dir="trainer_output/dpo_trl_baseline",
-        overwrite_output_dir=True,
+        output_dir=f"trainer_output/dpo_trl_baseline/{os.environ.get('RUN_NAME', 'run')}",
         beta=BETA,
         loss_type="sigmoid",
         max_length=MAX_LENGTH,

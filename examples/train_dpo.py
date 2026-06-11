@@ -740,6 +740,7 @@ def parse_args():
             "smoke",
             "qwen-0.5b-ultrafeedback",
             "qwen-7b-ultrafeedback",
+            "mellum-zeta",
             "mellum2-zeta",
         ],
         default="smoke",
@@ -747,6 +748,8 @@ def parse_args():
         "smoke=quick test Qwen2.5-0.5B + ultrafeedback at ε=8, "
         "qwen-0.5b-ultrafeedback=same as smoke, "
         "qwen-7b-ultrafeedback=Qwen2.5-7B + ultrafeedback at ε=8 with adafactor @ 5e-5, "
+        "mellum-zeta=JetBrains/Mellum-4b-base (Llama arch, transformers 4.57.x) + "
+        "zed-industries/zeta NES DPO split at ε=8 with LoRA, "
         "mellum2-zeta=JetBrains/Mellum2-12B-A2.5B-Base + zed-industries/zeta NES "
         "DPO split at ε=8 with LoRA — requires transformers≥5.10 for the Mellum2 "
         "architecture, layered on at run time via uv pip install).",
@@ -1286,6 +1289,44 @@ def parse_args():
             ],
         )
         _set("dtype", "bfloat16")
+    elif args.preset == "mellum-zeta":
+        # JetBrains/Mellum-4b-base (Llama arch, transformers 4.57.x compatible)
+        # + zed-industries/zeta NES DPO LoRA fine-tuning. Same dataset as
+        # mellum2-zeta but on the older 4b model so the existing
+        # transformers<5 project pin holds — no version bump required.
+        # The example loader remaps Zeta's (events, input, output, rejected)
+        # to (prompt, chosen, rejected).
+        _set("model_name", "JetBrains/Mellum-4b-base")
+        _set("dataset", "zed-industries/zeta")
+        _set("dataset_split", "dpo")
+        _set("num_train_samples", 132)
+        _set("num_eval_samples", 0)
+        _set("num_epochs", 1)
+        _set("batch_size", 16)
+        _set("microbatch_size", 4)
+        _set("log_steps", 2)
+        _set("eval_steps", 10)
+        _set("target_epsilon", 8.0)
+        _set("learning_rate", 5e-5)
+        _set("loss_type", "sigmoid")
+        _set("beta", 0.1)
+        _set("lora_r", 16)
+        _set("lora_alpha", 32)
+        _set("max_length", 1024)
+        _set(
+            "lora_modules",
+            [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+        )
+        _set("dtype", "bfloat16")
+        _set("audit", False)
     elif args.preset == "mellum2-zeta":
         # JetBrains/Mellum2-12B-A2.5B-Base + zed-industries/zeta DPO LoRA
         # fine-tuning. Mellum2 is a 12B/2.5B-active MoE built for IDE-side
