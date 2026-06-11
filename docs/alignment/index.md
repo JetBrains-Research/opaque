@@ -44,9 +44,10 @@ two noise/sampling imports change.
 | `opaque.alignment.dpo.metric` | `reward_metrics` |
 | `opaque.alignment.dpo.data` | `extract_prompt` |
 
-The `DPOTrainer` dispatcher (`opaque.transformers.trl`) maps **15** TRL
+The `DPOTrainer` dispatcher (`opaque.transformers.trl`) maps **15**
 `loss_type` names to these exported heads — the 13 per-pair heads, plus `simpo`
-(added to the dispatcher) and `sft` (which reuses `chosen_nll_loss`). The
+(added to the dispatcher) and `chosen_nll` (opaque's name for TRL's `sft`,
+reusing `chosen_nll_loss`). The
 reference-free composites `cpo` / `orpo` are assembled in the trainer from
 existing heads (a preference / odds-ratio term plus a per-token-mean NLL), so
 they are **not** separate exported heads.

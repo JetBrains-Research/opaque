@@ -101,12 +101,13 @@ def test_loss_type_sigmoid_passes(tmp_path):
 
 
 def test_loss_type_mpo_blend_passes(tmp_path):
+    # TRL's ``sft`` head is translated to opaque's ``chosen_nll`` convention.
     cfg = DPOConfig.from_trl(
         _trl_dpo_args(tmp_path, loss_type=["sigmoid", "sft"], loss_weights=[1.0, 0.5]),
         privacy_noise_multiplier=0.8,
         clipping_norm=1.0,
     )
-    assert cfg.loss_type == ["sigmoid", "sft"]
+    assert cfg.loss_type == ["sigmoid", "chosen_nll"]
     assert cfg.loss_weights == [1.0, 0.5]
 
 

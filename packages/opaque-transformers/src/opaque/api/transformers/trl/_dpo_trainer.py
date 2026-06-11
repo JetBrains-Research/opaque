@@ -83,11 +83,11 @@ _DPO_HEADS: dict[str, Callable] = {
     "discopop": discopop_loss,
     "squarechipo": squarechipo_loss,
     "simpo": simpo_loss,  # reference-free, length-normalized policy logps
-    "sft": chosen_nll_loss,  # special-cased: consumes chosen_logp, not the ratio
+    "chosen_nll": chosen_nll_loss,  # special-cased: consumes chosen_logp, not the ratio
     # ``cpo`` / ``orpo`` are reference-free composites (a preference/odds-ratio
     # term plus a per-token-mean NLL on the chosen completion); they don't fit
     # the plain ``head(clr, rlr, *, beta, **kw)`` signature and are special-cased
-    # in ``dpo_loss`` like ``sft``, so they have no registry entry.
+    # in ``dpo_loss`` like ``chosen_nll``, so they have no registry entry.
 }
 
 # Loss variants that score the *length-normalized* log-ratio / policy logp
@@ -99,9 +99,9 @@ _NORM_LOSSES = frozenset({"ipo", "sigmoid_norm", "simpo"})
 
 # Heads ``dpo_loss`` builds by hand (they combine a preference / odds-ratio term
 # with a per-token-mean NLL, so they don't fit the plain
-# ``head(clr, rlr, *, beta, **kw)`` signature). ``sft`` keeps a registry entry
-# for documentation symmetry but is also assembled directly; ``cpo`` / ``orpo``
-# have no registry entry at all and are exempt from the eager head lookup.
+# ``head(clr, rlr, *, beta, **kw)`` signature). ``chosen_nll`` keeps a registry
+# entry for documentation symmetry but is also assembled directly; ``cpo`` /
+# ``orpo`` have no registry entry at all and are exempt from the eager head lookup.
 _SPECIAL_CASED_HEADS = frozenset({"cpo", "orpo"})
 
 _REF_COLUMNS = ("ref_chosen_logps", "ref_rejected_logps")
@@ -778,13 +778,14 @@ class DPOTrainer(DPTrainer):
           (``sigmoid``, ``ipo``, …). They equal the policy logps when the run is
           reference-free (no head needs a reference).
         - ``chosen_logp`` / ``rejected_logp`` are the *summed* policy logps —
-          consumed by the **reference-free** heads (``sft``, ``simpo``, ``cpo``,
-          ``orpo``), which score the policy's own (length-normalized) logp.
+          consumed by the **reference-free** heads (``chosen_nll``, ``simpo``,
+          ``cpo``, ``orpo``), which score the policy's own (length-normalized) logp.
 
         Length-normalized heads (``ipo`` / ``sigmoid_norm`` on the log-ratio,
         ``simpo`` on the policy logp) divide by the completion length, so an MPO
-        list may freely mix normalized and summed variants. ``sft`` / ``cpo`` /
-        ``orpo`` are assembled by hand (NLL + a preference / odds-ratio term).
+        list may freely mix normalized and summed variants. ``chosen_nll`` /
+        ``cpo`` / ``orpo`` are assembled by hand (NLL + a preference / odds-ratio
+        term).
         """
         c_len = self._completion_len(chosen_completion_mask)
         r_len = self._completion_len(rejected_completion_mask)
@@ -810,7 +811,7 @@ class DPOTrainer(DPTrainer):
         for name, weight, head in zip(self._loss_type, self._loss_weights, self._heads):
             weights[name] = weight
             # ---- reference-free composites (assembled by hand) ----
-            if name == "sft":
+            if name == "chosen_nll":
                 parts[name] = chosen_nll_loss(chosen_logp)
                 continue
             if name == "cpo":

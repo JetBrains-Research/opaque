@@ -185,24 +185,19 @@ from opaque.alignment.dpo.reference import (
 #   from opaque.dpftrl.noise import band_mf_noise  # matrix-factorized noise
 # and feed it the same ``ClippedPytree`` produced by ``clipped_grad`` below.
 
-# The library (``opaque.alignment.dpo``) exposes direct loss functions, not a
-# string registry. The CLI ``--loss-type`` string is mapped to a function here,
-# at the call site — mirroring ``examples/train_sft.py``'s ``_SFT_LOSSES``.
-# Keys are the TRL/trainer-canonical ``loss_type`` names (mirroring
-# ``opaque.api.transformers.trl._dpo_trainer._DPO_HEADS``) so a ``--loss-type``
-# string copies cleanly into the class-based ``DPOConfig``. The pair heads use
-# the ``_pair`` suffix (``exo_pair``/``nca_pair``/``bco_pair``), the chosen-NLL
-# regulariser is ``sft``, ``sppo_hard`` is the hard-margin SPPO, and
-# ``sigmoid_norm`` is the length-normalized sigmoid (same loss fn as
-# ``sigmoid``; normalization is applied to the log-ratio at the call site).
+# Maps the CLI ``--loss-type`` string to a loss function. Keys are opaque's
+# ``loss_type`` names (matching ``trl._dpo_trainer._DPO_HEADS``) so a string
+# copies cleanly into the class-based ``DPOConfig``. ``chosen_nll`` is the
+# chosen-completion NLL regulariser (TRL calls it ``sft``); ``sigmoid_norm``
+# shares ``sigmoid``'s loss fn with normalization applied to the log-ratio.
 _DPO_LOSSES = {
     "sigmoid": sigmoid_loss,
-    "sigmoid_norm": sigmoid_loss,  # length-normalized log-ratio (TRL parity)
+    "sigmoid_norm": sigmoid_loss,
     "hinge": hinge_loss,
     "robust": robust_loss,
     "ipo": ipo_loss,
     "discopop": discopop_loss,
-    "sft": chosen_nll_loss,  # chosen-NLL regulariser (TRL ``loss_type="sft"``)
+    "chosen_nll": chosen_nll_loss,
     "squarechipo": squarechipo_loss,
     "apo_zero": apo_zero_loss,
     "apo_down": apo_down_loss,
@@ -210,12 +205,9 @@ _DPO_LOSSES = {
     "nca_pair": nca_loss,
     "bco_pair": bco_loss,
     "sppo_hard": sppo_loss,
-    # Reference-free heads. ``simpo`` fits the plain ``head(clr, rlr, *, beta)``
-    # signature (so it has a direct entry mirroring the trainer); ``cpo`` and
-    # ``orpo`` are composites (preference / odds-ratio term + chosen-NLL) that
-    # don't fit it, so they are special-cased in ``_make_reference_free_loss``
-    # and never indexed here — the ``None`` entry documents them as selectable
-    # ``--loss-type`` values and keeps this dict the single name source.
+    # ``cpo`` / ``orpo`` are composites special-cased in
+    # ``_make_reference_free_loss``; the ``None`` entries keep them selectable
+    # ``--loss-type`` values without a direct loss fn.
     "simpo": simpo_loss,
     "cpo": None,
     "orpo": None,

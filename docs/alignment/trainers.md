@@ -213,10 +213,10 @@ fails with a `KeyError` at the dispatch table. The supported names:
 | `simpo` | SimPO: length-normalized sigmoid with a target margin. | **no** |
 | `cpo` | CPO: reference-free sigmoid + `cpo_alpha`·chosen-NLL. | **no** |
 | `orpo` | ORPO: odds-ratio + `orpo_lambda`·chosen-NLL. | **no** |
-| `sft` | Chosen-completion NLL only. | **no** |
+| `chosen_nll` | Chosen-completion NLL only (TRL calls this `sft`). | **no** |
 
 **Reference-free heads.** The four reference-free names —
-`simpo`, `cpo`, `orpo`, `sft` — score the policy's own (length-normalized)
+`simpo`, `cpo`, `orpo`, `chosen_nll` — score the policy's own (length-normalized)
 log-prob, so the reference precompute is **skipped entirely**. Reference-need
 is intrinsic to the configured heads: a run needs a reference iff *any*
 configured head is reference-using. Their flat parameters live on `DPOConfig`:
@@ -245,7 +245,7 @@ summed and normalized per head at loss time.
 # MPO: weighted DPO sigmoid + a chosen-NLL (RPO-style) regularizer.
 args = DPOConfig(
     output_dir="out",
-    loss_type=["sigmoid", "sft"],
+    loss_type=["sigmoid", "chosen_nll"],
     loss_weights=[1.0, 0.1],
     beta=0.1,
 )
