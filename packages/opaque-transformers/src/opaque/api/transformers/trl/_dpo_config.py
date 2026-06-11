@@ -39,7 +39,16 @@ class DPOConfig(TrainingArguments):
 
     # ---- TRL base defaults (override the inherited HF/base values) -------
     logging_steps: float = 10  # dpo_config.py / TRL parity
-    gradient_checkpointing: bool = True  # TRL parity
+    #: GC disabled by default: vmap recomputes activations per microbatch, so
+    #: GC adds recompute overhead without memory benefit on models that fit.
+    gradient_checkpointing: bool = False
+    #: Opaque-specific (no TRL analogue): enable model-level Triton kernels
+    #: (``rope`` / ``rms_norm`` / ``activation`` / non-fused ``cross_entropy``)
+    #: by default — numerically non-critical but practically important under the
+    #: per-example ``vmap`` DP path (cuts per-sample-gradient memory/compute).
+    #: CUDA + Triton only; no-op on CPU/MPS. Opt out with
+    #: ``use_performance_kernels=False``. Base default stays ``False``.
+    use_performance_kernels: bool = True
 
     # ---- Model loading ---------------------------------------------------
     #: Extra kwargs forwarded to ``AutoModelForCausalLM.from_pretrained`` when
