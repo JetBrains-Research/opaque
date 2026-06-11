@@ -647,10 +647,8 @@ def test_dpo_wpo_weighting_trains(tmp_path):
 # Regression: under LoRA the backbone prefix must reach the backbone
 # (Qwen2Model, returns last_hidden_state), not the inner causal-LM.
 # ----------------------------------------------------------------------
-@pytest.mark.parametrize("use_peft", [False, True])
-def test_dpo_fused_logp_resolves_backbone_and_matches_eager(tmp_path, use_peft):
-    torch.manual_seed(0)
-    trainer = DPOTrainer(
+def _fused_dpo_trainer(tmp_path, use_peft):
+    return DPOTrainer(
         model=_tiny_qwen2(),
         args=_args(
             DPOConfig,
@@ -663,25 +661,45 @@ def test_dpo_fused_logp_resolves_backbone_and_matches_eager(tmp_path, use_peft):
         processing_class=_stub_tokenizer(),
         peft_config=_maybe_lora(use_peft),
     )
+
+
+@pytest.mark.parametrize("use_peft", [False, True])
+def test_dpo_fused_logp_resolves_backbone(tmp_path, use_peft):
+    # The PEFT-wrap regression: handles resolve on the FINAL model so the prefix
+    # reaches the backbone (Qwen2Model, returns last_hidden_state), not the inner
+    # causal-LM. CPU-runnable — no Triton kernel involved.
+    torch.manual_seed(0)
+    trainer = _fused_dpo_trainer(tmp_path, use_peft)
     assert trainer._fused_logp_eligible
     assert trainer._use_fused_logp
     assert trainer._is_peft is use_peft
 
-    # The resolved prefix must reach the backbone, never the inner causal-LM.
     backbone = attrgetter(trainer._backbone_prefix)(trainer.model)
     assert type(backbone).__name__ == "Qwen2Model"
     params = dict(trainer.model.named_parameters())
     assert trainer._lm_head_param_name in params
 
-    ids = torch.tensor([1, 2, 3, 7, 8])
+    device = next(trainer.model.parameters()).device
+    ids = torch.tensor([1, 2, 3, 7, 8], device=device)
     attn = torch.ones_like(ids)
-    cmask = torch.tensor([0, 0, 0, 1, 1])
-
     # Backbone forward yields per-token hidden states (T, H) — the crash site.
     hidden = trainer._last_hidden_state(params, ids, attn)
     assert hidden.shape == (ids.shape[0], trainer.model.config.hidden_size)
 
-    # Fused summed logp matches the eager sequence_logp (CPU eager fallback).
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("use_peft", [False, True])
+def test_dpo_fused_logp_matches_eager(tmp_path, use_peft):
+    # The fused summed logp routes through the CUDA-only Triton linear-CE kernel;
+    # it must match the eager sequence_logp to the bit.
+    torch.manual_seed(0)
+    trainer = _fused_dpo_trainer(tmp_path, use_peft)
+    params = dict(trainer.model.named_parameters())
+    device = next(trainer.model.parameters()).device
+    ids = torch.tensor([1, 2, 3, 7, 8], device=device)
+    attn = torch.ones_like(ids)
+    cmask = torch.tensor([0, 0, 0, 1, 1], device=device)
+
     fused = trainer._fused_logp(None, params, ids, attn, cmask)
     logits = torch.func.functional_call(
         trainer.model,
