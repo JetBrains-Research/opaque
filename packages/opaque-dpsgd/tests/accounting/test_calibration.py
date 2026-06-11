@@ -131,6 +131,63 @@ class TestCalibrateErrors:
             )
 
 
+# -- Prefix (sequential composition across runs) ------------------------------
+
+
+class TestCalibratePrefix:
+    """Calibrate a second stage over an already-executed prefix."""
+
+    def _stage(self, nm):
+        return dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.02) * 200
+
+    def _prefix(self):
+        return dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), 0.01) * 100
+
+    def test_matches_manual_closure(self):
+        """prefix= is equivalent to composing inside the objective."""
+        prefix = self._prefix()
+        budget = cal.epsilon_budget(6.0, delta=1e-5)
+
+        via_param = cal.calibrate(budget, self._stage, 0.3, 3.0, prefix=prefix)
+        via_closure = cal.calibrate(
+            budget, lambda nm: prefix | self._stage(nm), 0.3, 3.0
+        )
+        assert via_param.param == pytest.approx(via_closure.param)
+        assert via_param.achieved == pytest.approx(via_closure.achieved)
+
+    def test_total_hits_budget(self):
+        """The composed total (prefix | stage) achieves the target."""
+        prefix = self._prefix()
+        result = cal.calibrate(
+            cal.epsilon_budget(6.0, delta=1e-5), self._stage, 0.3, 3.0, prefix=prefix
+        )
+        assert result.converged
+
+        total = prefix | self._stage(result.param)
+        assert abs(total.epsilon_at(1e-5) - 6.0) < 1e-4
+
+    def test_prefix_demands_more_noise(self):
+        """Same budget with a prefix → larger noise multiplier."""
+        budget = cal.epsilon_budget(6.0, delta=1e-5)
+        without = cal.calibrate(budget, self._stage, 0.3, 3.0)
+        with_prefix = cal.calibrate(
+            budget, self._stage, 0.3, 3.0, prefix=self._prefix()
+        )
+        assert with_prefix.param > without.param
+
+    def test_prefix_exhausting_budget_raises(self):
+        """Prefix alone above the target → bounds can't bracket."""
+        prefix = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.6), 0.02) * 2000
+        with pytest.raises(ValueError):
+            cal.calibrate(
+                cal.epsilon_budget(0.5, delta=1e-5),
+                self._stage,
+                0.3,
+                3.0,
+                prefix=prefix,
+            )
+
+
 # -- Calibration roundtrip ---------------------------------------------------
 
 

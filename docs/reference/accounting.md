@@ -590,7 +590,7 @@ from opaque.accounting import calibration as cal
 
 Binary search for finding parameter values that achieve a target privacy budget.
 
-### `calibrate(budget, process, param_min, param_max, tolerance=1e-6, max_iterations=100) -> CalibrateResult`
+### `calibrate(budget, process, param_min, param_max, tolerance=1e-6, max_iterations=100, prefix=None) -> CalibrateResult`
 
 Binary search for a parameter value such that `process(param)` produces a
 `DpProcess` achieving the given privacy budget.
@@ -603,6 +603,7 @@ Binary search for a parameter value such that `process(param)` produces a
 | `param_max`      |         | Upper bound for search                                   |
 | `tolerance`      | `1e-6`  | Convergence threshold on `abs(achieved - target)`        |
 | `max_iterations` | `100`   | Maximum binary search iterations                         |
+| `prefix`         | `None`  | Already-executed `DpProcess` composed into every probe   |
 
 The `process` callable takes a single float parameter and returns a `DpProcess`.
 The default parameter range is tuned for noise_multiplier search, but
@@ -621,6 +622,22 @@ result = cal.calibrate(
     param_max=5.0,
 )
 print(f"noise_multiplier = {result.param:.4f}, epsilon = {result.achieved:.6f}")
+```
+
+Calibrating a second stage against the remaining budget (see
+[Seeding with a prior process](#seeding-with-a-prior-process)): pass the
+earlier run's executed process as `prefix`. Each probe evaluates
+`prefix | process(param)`, so the budget is the total across both stages.
+The prefix's PLD is computed once for the whole search.
+
+```python
+result = cal.calibrate(
+    cal.epsilon_budget(8.0, delta=1e-6),
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.02) * 2000,
+    param_min=0.5,
+    param_max=5.0,
+    prefix=sft.process,  # from the SFT run's accountant.json
+)
 ```
 
 Calibrating a different parameter (e.g., sample rate):
