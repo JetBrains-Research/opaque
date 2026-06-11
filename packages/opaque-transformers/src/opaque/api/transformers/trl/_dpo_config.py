@@ -36,7 +36,7 @@ from ._convert import (
 # resolved or precomputed for them. ``self._needs_reference`` is derived from
 # the configured ``loss_type`` against this set (a run is reference-free only
 # when *every* head is in it), replacing the old public ``reference_free`` flag.
-_REFERENCE_FREE_HEADS = frozenset({"sft", "simpo", "cpo", "orpo"})
+_REFERENCE_FREE_HEADS = frozenset({"chosen_nll", "simpo", "cpo", "orpo"})
 
 
 @dataclasses.dataclass
@@ -66,11 +66,12 @@ class DPOConfig(TrainingArguments):
     model_init_kwargs: dict | None = None
 
     # ---- Loss ------------------------------------------------------------
-    #: One or more loss variants (list ⇒ MPO via ``mpo_combine``). TRL-style
-    #: names: ``sigmoid``, ``hinge``, ``ipo``, ``robust``, ``exo_pair``,
+    #: One or more loss variants (list ⇒ MPO via ``mpo_combine``). Names:
+    #: ``sigmoid``, ``hinge``, ``ipo``, ``robust``, ``exo_pair``,
     #: ``nca_pair``, ``bco_pair``, ``sppo_hard``, ``apo_zero``, ``apo_down``,
-    #: ``discopop``, ``sft``, ``sigmoid_norm``. A bare string is coerced to a
-    #: one-element list in ``__post_init__``.
+    #: ``discopop``, ``chosen_nll``, ``sigmoid_norm`` (TRL's ``sft`` head is
+    #: ``chosen_nll`` here; the TRL converter translates it). A bare string is
+    #: coerced to a one-element list in ``__post_init__``.
     loss_type: list[str] | str = dataclasses.field(
         default_factory=lambda: ["sigmoid"]
     )  # dpo_config.py:211
@@ -104,8 +105,8 @@ class DPOConfig(TrainingArguments):
     #: toggle: under the per-example DP substrate a *static* reference is always
     #: precomputed — the ``vmap`` loss can only read it as a constant column —
     #: so the toggle would be misleading. A reference-free ``loss_type``
-    #: (``simpo``/``cpo``/``orpo``/``sft``) skips it; TR-DPO (``sync_ref_model``)
-    #: recomputes per step.)
+    #: (``simpo``/``cpo``/``orpo``/``chosen_nll``) skips it; TR-DPO
+    #: (``sync_ref_model``) recomputes per step.)
     precompute_ref_batch_size: int | None = None  # dpo_config.py:201
     #: Disable dropout in policy (and reference) before training.
     disable_dropout: bool = True  # dpo_config.py:155
@@ -326,6 +327,7 @@ TRL_DPO_DIRECT_FIELDS: frozenset[str] = frozenset(
 TRL_DPO_RENAME_MAP: dict[str, str] = {}
 
 
+# Opaque's implemented DPO heads (opaque's own naming convention).
 _OPAQUE_DPO_LOSS_TYPES = frozenset(
     {
         "sigmoid",
@@ -339,7 +341,7 @@ _OPAQUE_DPO_LOSS_TYPES = frozenset(
         "apo_zero",
         "apo_down",
         "discopop",
-        "sft",
+        "chosen_nll",
         "sigmoid_norm",
         # CPO / ORPO / SimPO are assembled specially in opaque but
         # appear in ``DPOConfig.loss_type`` as accepted values.
@@ -349,21 +351,27 @@ _OPAQUE_DPO_LOSS_TYPES = frozenset(
     }
 )
 
+# TRL head name → opaque head name, where opaque pursues its own (clearer)
+# convention. TRL's ``"sft"`` is the chosen-completion NLL regulariser, which
+# opaque calls ``"chosen_nll"``. The converter translates on the way in.
+_TRL_TO_OPAQUE_LOSS_TYPE = {"sft": "chosen_nll"}
+
 
 def _loss_type_transform(trl: dict[str, Any]) -> dict[str, Any]:
-    """Validate every entry in ``loss_type`` is a head opaque implements.
+    """Translate + validate every entry in ``loss_type`` against opaque's heads.
 
-    TRL 1.x added Adversarial Optimal Transport heads (``aot``,
-    ``aot_unpaired``) that opaque does not implement. Reject those
-    explicitly so the user knows opaque's surface is narrower than
-    upstream TRL.
+    TRL's ``"sft"`` head is renamed to opaque's ``"chosen_nll"`` (see
+    ``_TRL_TO_OPAQUE_LOSS_TYPE``). TRL 1.x added Adversarial Optimal Transport
+    heads (``aot``, ``aot_unpaired``) that opaque does not implement; those are
+    rejected so the user knows opaque's surface is narrower than upstream TRL.
     """
     loss_type = trl.get("loss_type")
     if loss_type is None:
         return {}
     # TRL stores loss_type as list[str] in 1.x; coerce singletons.
     values = [loss_type] if isinstance(loss_type, str) else list(loss_type)
-    unsupported = [v for v in values if v not in _OPAQUE_DPO_LOSS_TYPES]
+    mapped = [_TRL_TO_OPAQUE_LOSS_TYPE.get(v, v) for v in values]
+    unsupported = [v for v in mapped if v not in _OPAQUE_DPO_LOSS_TYPES]
     if unsupported:
         raise ValueError(
             f"trl_dpo_config.loss_type contains unsupported heads: "
@@ -372,7 +380,7 @@ def _loss_type_transform(trl: dict[str, Any]) -> dict[str, Any]:
             f"Transport family (``aot``, ``aot_unpaired``) added in TRL 1.x "
             f"is not in opaque."
         )
-    return {"loss_type": values}
+    return {"loss_type": mapped}
 
 
 TRL_DPO_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {

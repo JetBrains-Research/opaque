@@ -155,6 +155,18 @@ def test_sync_ref_model_requires_reference_using_loss():
         )
 
 
+def test_chosen_nll_is_a_reference_free_head():
+    # ``chosen_nll`` (opaque's name for TRL's ``sft`` head) scores the policy's
+    # own logp, so it is reference-free — TR-DPO has nothing to sync toward.
+    with pytest.raises(ValueError):
+        DPOConfig(
+            output_dir="x",
+            sync_ref_model=True,
+            loss_type="chosen_nll",
+            privacy_noise_multiplier=0.0,
+        )
+
+
 def test_reference_free_flag_is_gone():
     # ``reference_free`` is dropped as a public flag — reference-need is derived
     # from ``loss_type``; passing it is a standard unexpected-keyword TypeError.

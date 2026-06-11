@@ -542,8 +542,9 @@ DPO-specific fields on top of `TrainingArguments`.
 | `logging_steps` | `float` | `10` | TRL default. |
 | `gradient_checkpointing` | `bool` | `True` | TRL default. |
 
-The reference-free heads are `{"sft", "simpo", "cpo", "orpo"}`; a run is
-reference-free iff *every* configured head is in that set.
+The reference-free heads are `{"chosen_nll", "simpo", "cpo", "orpo"}` (TRL's
+`sft` is `chosen_nll` here); a run is reference-free iff *every* configured
+head is in that set.
 `__post_init__` coerces `loss_type` to a list, defaults `loss_weights`,
 pins `remove_unused_columns=False`, validates label-smoothing bounds /
 weight lengths / duplicate heads / TR-DPO reference-need, and auto-enables
