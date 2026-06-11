@@ -37,8 +37,6 @@ CUDA tests are CUDA-only and skip cleanly on non-CUDA hosts.
 
 from __future__ import annotations
 
-import importlib
-
 import pytest
 import torch
 from torch.func import grad, vmap
@@ -96,10 +94,10 @@ def _hidden_weight_ids_cmask(seed: int):
 def test_linear_nll_sum_casts_weight_to_match_under_autocast(monkeypatch):
     """``linear_nll_sum`` routes hidden+weight through ``follow_autocast`` so the
     kernel never receives a bf16/fp32 ``tl.dot`` pair (the reported crash)."""
-    # The kernel module imports Triton at module load; skip where it's absent
-    # (the monkeypatched kernel needs the module object to exist to patch onto).
-    pytest.importorskip("triton")
-    kernel_mod = importlib.import_module(_fused_lce._LCE_KERNEL_PATH)
+    # Skip cleanly if the kernel module can't import (Triton absent, or the
+    # patches extra not installed) — the monkeypatched kernel still needs the
+    # real module object to patch onto.
+    kernel_mod = pytest.importorskip(_fused_lce._LCE_KERNEL_PATH)
     seen: dict[str, torch.dtype] = {}
 
     class _RecordingKernel:
