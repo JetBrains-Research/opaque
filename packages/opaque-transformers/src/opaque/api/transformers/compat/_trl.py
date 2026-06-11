@@ -350,6 +350,10 @@ def _convert_trl_config(
     converted: dict[str, Any] = {}
     converted.update(hf_converted)
     converted.update(trl_converted)
+    # Performance kernels are off in HF/TRL, on by default in opaque; default
+    # them OFF on conversion to match upstream (Liger, handled in the HF
+    # manifest, sets True). A name override below can force either way.
+    converted.setdefault("use_performance_kernels", False)
     converted.update(dp_overrides)
     return converted
 

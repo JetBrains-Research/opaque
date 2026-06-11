@@ -199,7 +199,7 @@ class DPOConfig(TrainingArguments):
         privacy_noise_multiplier: float | None = None,
         privacy_target_epsilon: float | None = None,
         privacy_target_delta: float | None = None,
-        clipping_norm: float | dict[str, float] = 1.0,
+        clipping_norm: float | dict[str, float] | None = None,
         privacy_noise_mechanism: str = "gaussian",
         privacy_noise_radius: float = 3.0,
         clipping_mode: str = "fixed",
@@ -253,12 +253,16 @@ class DPOConfig(TrainingArguments):
         dp_overrides: dict[str, Any] = {
             "privacy_noise_multiplier": privacy_noise_multiplier,
             "privacy_target_epsilon": privacy_target_epsilon,
-            "clipping_norm": clipping_norm,
             "privacy_noise_mechanism": privacy_noise_mechanism,
             "privacy_noise_radius": privacy_noise_radius,
             "clipping_mode": clipping_mode,
             "sampling_mode": sampling_mode,
         }
+        # ``clipping_norm`` only overrides when explicitly passed; otherwise the
+        # value derived from HF ``max_grad_norm`` (or opaque's own default)
+        # stands.
+        if clipping_norm is not None:
+            dp_overrides["clipping_norm"] = clipping_norm
         if privacy_target_delta is not None:
             dp_overrides["privacy_target_delta"] = privacy_target_delta
         if clipping_kwargs is not None:

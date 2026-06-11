@@ -171,6 +171,45 @@ def test_inherits_hf_base_rejection_of_fp16(tmp_path):
         )
 
 
+def test_inherits_max_grad_norm_to_clipping_norm(tmp_path):
+    """HF ``max_grad_norm`` flows through the base manifest to opaque
+    ``clipping_norm`` when no explicit ``clipping_norm`` override is given."""
+    cfg = SFTConfig.from_trl(
+        _trl_args(tmp_path, max_grad_norm=0.5),
+        privacy_noise_multiplier=0.8,
+    )
+    assert cfg.clipping_norm == 0.5
+
+
+def test_inherits_perf_kernels_off_by_default(tmp_path):
+    """Converting a TRL config leaves perf-kernels OFF to match upstream,
+    even though opaque's own SFT default is True. A name override wins."""
+    cfg = SFTConfig.from_trl(
+        _trl_args(tmp_path),
+        privacy_noise_multiplier=0.8,
+        clipping_norm=1.0,
+    )
+    assert cfg.use_performance_kernels is False
+    cfg2 = SFTConfig.from_trl(
+        _trl_args(tmp_path),
+        privacy_noise_multiplier=0.8,
+        clipping_norm=1.0,
+        use_performance_kernels=True,
+    )
+    assert cfg2.use_performance_kernels is True
+
+
+def test_inherits_liger_to_perf_kernels(tmp_path):
+    """HF ``use_liger_kernel`` flows through to opaque
+    ``use_performance_kernels=True``."""
+    cfg = SFTConfig.from_trl(
+        _trl_args(tmp_path, use_liger_kernel=True),
+        privacy_noise_multiplier=0.8,
+        clipping_norm=1.0,
+    )
+    assert cfg.use_performance_kernels is True
+
+
 # ---------------------------------------------------------------------------
 # Optional dependency gate
 # ---------------------------------------------------------------------------
