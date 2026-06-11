@@ -250,6 +250,7 @@ jobs:
           - opaque-dpsgd
           - opaque-dpftrl
           - opaque-auditing
+          - opaque-alignment
           - opaque-patches
           - opaque-transformers
     steps:
