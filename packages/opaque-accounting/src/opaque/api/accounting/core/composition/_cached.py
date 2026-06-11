@@ -25,12 +25,19 @@ class CachedProcess(DpProcess):
     optimizer from looking through the cache boundary. Cached wrappers
     can still merge via structural equality of their inner processes.
 
-    Note: All DpProcess.pld() methods now have automatic caching.
-    This wrapper's primary purpose is to serve as a merge barrier,
-    not to add caching (though it does increase the cache size to 16).
+    Since every :meth:`DpProcess.pld` already caches, this wrapper's
+    primary purpose is the merge barrier rather than caching (though it
+    does raise the cache size to 16).
     """
 
     inner: DpProcess
+
+    def __hash__(self) -> int:
+        # Iterative tree walk — depth bounded by heap, not stack.
+        # See ``_iter_hash``.
+        from ._iter_hash import iter_hash
+
+        return iter_hash(self)
 
     @functools.lru_cache(maxsize=16)
     def pld(
@@ -101,7 +108,9 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
 
     match process:
         case Accountant():
-            return Accountant(budget=process._budget, prefix=cached(process.process))
+            new_acct = Accountant(budget=process._budget)
+            new_acct.process = cached(process.process)
+            return new_acct
         case CachedProcess():
             return process
         case _:

@@ -15,6 +15,13 @@ class Repeated(DpProcess):
     inner: DpProcess
     count: int
 
+    def __hash__(self) -> int:
+        # Iterative tree walk — depth bounded by heap, not stack.
+        # See ``_iter_hash``.
+        from ._iter_hash import iter_hash
+
+        return iter_hash(self)
+
     def _leaf_and_count(self) -> tuple[DpProcess, int]:
         return (self.inner, self.count)
 
