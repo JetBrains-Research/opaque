@@ -240,8 +240,8 @@ class _TrainingContext:
     save_steps_resolved: int = 0
     # Configured clip threshold (scalar or PerGroup).  Adaptive mode
     # overrides this each step via ``clip_state.clipping_norm``; fixed
-    # mode reads the configured value directly because the new
-    # ``FixedClipState`` is a marker without per-state fields.
+    # mode reads the configured value directly because ``FixedClipState``
+    # is a marker without per-state fields.
     clip_norm: Any = None
     mechanism_kind: str = "gaussian"
     mf: _dpftrl.MFContext | None = None
@@ -357,12 +357,12 @@ class DPTrainer:
         self._pending_eval_aux: dict[str, Tensor] | None = None
 
         # Default label_names so the eval loop can identify label tensors in
-        # the batch dict.  HF parity (trainer.py:789-797): inspect the
-        # model's forward signature for parameters whose name contains
-        # "label" — for ``*ForQuestionAnswering`` models additionally pick
-        # up ``start_positions`` / ``end_positions``.  Walk through the
-        # PEFT wrapper to the base model so the inspected signature is the
-        # one that actually consumes the labels.  Snapshot to a private
+        # the batch dict.  HF parity: inspect the model's forward signature
+        # for parameters whose name contains "label" — for
+        # ``*ForQuestionAnswering`` models additionally pick up
+        # ``start_positions`` / ``end_positions``.  Walk through the PEFT
+        # wrapper to the base model so the inspected signature is the one
+        # that actually consumes the labels.  Snapshot to a private
         # attribute so the user-supplied ``args`` is never mutated.
         if args.label_names is not None:
             self._label_names: list[str] = list(args.label_names)
@@ -820,13 +820,13 @@ class DPTrainer:
         # independently they would fall out of step-lockstep: one rank restarts
         # at microbatch=4 step 0 while a sibling is still on microbatch=8 step 3.
         # DP-SGD's per-step collectives (``sum_gradients_`` AllReduce + the
-        # ``ClippedPytree.max_norm`` cross-rank equality assert) then meet at
-        # mismatched logical steps and raise ``max_norm mismatch across ranks``.
-        # Fix: after every attempt, all-reduce a MAX of each rank's
-        # "needs to step down" flag — if ANY rank OOMs, EVERY rank steps down
-        # together and restarts in lockstep. The returned run is the first
-        # attempt at which no rank OOMs, so all ranks ran it at an identical
-        # microbatch and stayed synchronised end-to-end.
+        # ``ClippedPytree.max_norm`` cross-rank equality assert) would then
+        # meet at mismatched logical steps and raise ``max_norm mismatch
+        # across ranks``.  So after every attempt, all-reduce a MAX of each
+        # rank's "needs to step down" flag — if ANY rank OOMs, EVERY rank
+        # steps down together and restarts in lockstep.  The returned run is
+        # the first attempt at which no rank OOMs, so all ranks ran it at an
+        # identical microbatch and stayed synchronised end-to-end.
         def _cluster_needs_step_down(local_oom: bool) -> bool:
             if not self._ddp.is_distributed:
                 return local_oom
@@ -1320,11 +1320,9 @@ class DPTrainer:
                 key=key(a.seed),
             )
         else:
-            # DP-FTRL: pull the participation context off the raw
-            # amplifier (matches the legacy script's
-            # ``_amp.n_steps`` / ``min_sep`` / ``max_participations``
-            # pattern) so the streaming noise matrix tracks the
-            # calibrated PLD exactly.
+            # DP-FTRL: pull the participation context (``n_steps`` /
+            # ``min_sep`` / ``max_participations``) off the raw amplifier so
+            # the streaming noise matrix tracks the calibrated PLD exactly.
             assert mf is not None
             _amp = mf.amplifier_factory(noise_multiplier)
             noise_fn, noise_state = mf_gaussian_noise(
@@ -1467,8 +1465,8 @@ class DPTrainer:
         if a.eval_on_start:
             self.evaluate(ignore_keys=ignore_keys_for_eval)
 
-        # Build the train loader ONCE.  Under the new sampler contract,
-        # a single ``PoissonSampler(n_steps=total_steps)`` drives every
+        # Build the train loader ONCE: a single
+        # ``PoissonSampler(n_steps=total_steps)`` drives every
         # epoch; the outer loop's role is purely callback synthesis
         # (``on_epoch_begin`` / ``on_epoch_end``) and per-epoch break
         # handling.  Resume restores the sampler's ``consumed`` cursor
@@ -1543,12 +1541,12 @@ class DPTrainer:
 
                 # Empty Poisson round: no loss / tokens to accumulate.  The
                 # optimizer still applied a pure-noise update and
-                # ``global_step`` already advanced, so we must NOT skip the
-                # log/save/eval gate below — a save or eval boundary landing
-                # exactly on an empty round used to be silently dropped.
-                # ``step_result`` carries only ``{loss: 0, batch_size: 0}``
-                # here, which the gate reads via ``.get`` defaults (the logged
-                # loss is the windowed average, unaffected by this step).
+                # ``global_step`` already advanced, so the log/save/eval gate
+                # below must still run — a save or eval boundary can land
+                # exactly on an empty round.  ``step_result`` carries only
+                # ``{loss: 0, batch_size: 0}`` here, which the gate reads via
+                # ``.get`` defaults (the logged loss is the windowed average,
+                # unaffected by this step).
                 if batch_size != 0:
                     last_loss = step_result["loss"]
                     last_step_result = step_result
@@ -1777,9 +1775,9 @@ class DPTrainer:
         # collectives below run unchanged on a zero-grad pytree — every
         # rank issues a SUM AllReduce on identical-zero tensors, so the
         # cluster stays in lockstep even when individual ranks see empty
-        # Poisson rounds.  This matches ``examples/train_causal_lm.py``'s
-        # handling: privacy budget is consumed for every step regardless
-        # of realized batch size (Poisson accounting is data-independent).
+        # Poisson rounds.  Privacy budget is consumed for every step
+        # regardless of realized batch size (Poisson accounting is
+        # data-independent).
         leading = batch_args[0]
         step_batch_size = int(leading.shape[0])
         # Per-step perf tracker covers clip → DDP sync → noise → optimizer;
@@ -1911,18 +1909,15 @@ class DPTrainer:
         if batch_size == 0:
             return {"loss": 0.0, "batch_size": 0}
 
-        # Noise σ travels on the ``NoisedPytree`` wrapper now;
-        # ``_effective`` handles both scalar and ``PerGroup`` shapes.
-        # ``grads.max_norm`` is the *realized* per-step clipping
-        # threshold: ``adaptive_clipped_grad`` updates it geometrically
-        # via ``_next_clipping_norm`` each step, and ``FixedClipState``
-        # leaves it equal to the configured ``ctx.clip_norm``.  Reading
-        # it off the ``ClippedPytree`` mirrors the manual-loop reference
-        # (``examples/train_causal_lm.py:1685``) and avoids the stale
-        # ``ctx.clip_norm`` fallback the previous ``getattr`` shape hit
-        # under adaptive mode (``AdaptiveClipState`` carries
+        # Noise σ travels on the ``NoisedPytree`` wrapper; ``_effective``
+        # handles both scalar and ``PerGroup`` shapes.  ``grads.max_norm``
+        # is the *realized* per-step clipping threshold: ``adaptive_clipped_grad``
+        # updates it geometrically via ``_next_clipping_norm`` each step, and
+        # ``FixedClipState`` leaves it equal to the configured ``ctx.clip_norm``.
+        # Read it off the ``ClippedPytree`` rather than ``ctx.clip_norm`` —
+        # under adaptive mode ``AdaptiveClipState`` carries
         # ``_current_clipping_norm`` / ``_next_clipping_norm``, not
-        # ``clipping_norm``).
+        # ``clipping_norm``.
         noise_std = noisy_grads.noise_stddev
         clipping_norm = grads.max_norm
         metrics: dict[str, Any] = {
@@ -2404,9 +2399,8 @@ class DPTrainer:
         include_inputs = "inputs" in include_for
         include_losses = "loss" in include_for
 
-        # HF parity (trainer.py:4863-4866 → ``EvalPrediction.inputs``):
-        # ``inputs`` exposed to ``compute_metrics`` carries only the
-        # model's *primary* input column, not the entire batch dict.
+        # HF parity: ``inputs`` exposed to ``compute_metrics`` carries only
+        # the model's *primary* input column, not the entire batch dict.
         main_input_name = getattr(self._model, "main_input_name", "input_ids")
 
         # HF-parity entry log so train-time eval, final eval, and predict
@@ -2476,14 +2470,12 @@ class DPTrainer:
             # the mean over real (non-``-100``) tokens, so:
             #   - scalar branch: ``loss.item() * real_tokens_in_batch`` is
             #     the total CE; dividing the running sum by the running
-            #     ``loss_samples`` count gives per-real-token mean CE
-            #     (matches the manual loop's eval reduction at
-            #     ``examples/train_causal_lm.py:1227-1231``).
+            #     ``loss_samples`` count gives per-real-token mean CE.
             #   - 1-D branch: ``loss[i] * real_tokens_in_example[i]`` is
             #     example i's total CE; summing then dividing by the total
             #     real-token count gives the same per-token mean.
             # When labels aren't exposed (rare), fall back to per-example
-            # weighting (the historical reduction).
+            # weighting.
             if loss is not None:
                 if labels is not None:
                     # HF's ForCausalLMLoss scores ``labels[..., 1:]`` (drops

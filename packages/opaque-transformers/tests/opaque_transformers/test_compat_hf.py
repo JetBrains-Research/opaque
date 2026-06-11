@@ -9,8 +9,7 @@ import pytest
 from opaque.api.transformers.trainer import TrainingArguments
 from opaque.api.transformers.trainer.training_arguments import normalize_dp_overrides
 
-# All HF tests assume ``transformers`` is installed (it's a required dep of
-# opaque-transformers). The CI image has it.
+# ``transformers`` is a required dep of opaque-transformers.
 hf = pytest.importorskip("transformers")
 
 

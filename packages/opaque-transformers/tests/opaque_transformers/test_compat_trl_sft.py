@@ -1,4 +1,4 @@
-"""Tests for ``opaque.transformers.trl.SFTConfig.from_trl`` (Piece 2)."""
+"""Tests for ``opaque.transformers.trl.SFTConfig.from_trl``."""
 
 from __future__ import annotations
 

@@ -4,10 +4,8 @@
 ``transformers.TrainingArguments`` inheritance). The field surface is the
 intersection of "what makes sense for DP-SGD" and "what HF utilities we
 use (modelcard, reporting callbacks, ``state.compute_steps``, ...) read
-off the args object". Anything we previously rejected at construction
-just doesn't exist — passing the field as a kwarg now raises
-``TypeError: unexpected keyword argument`` (louder, harder to miss when
-porting from HF Trainer scripts).
+off the args object". Unsupported HF fields don't exist on the dataclass,
+so passing one as a kwarg raises ``TypeError: unexpected keyword argument``.
 
 The field surface stays close to HF for things we honour (``output_dir``,
 ``per_device_train_batch_size``, ``logging_strategy``, ``hub_*``,
@@ -526,8 +524,7 @@ class TrainingArguments:
             _nc.setdefault(_k, _default)
 
         # --- 2. Strategy validation -----------------------------------------
-        # Plain-string strategies; the HF enum round-trip was dropped
-        # alongside the enum imports.
+        # Plain-string strategies (no HF enum round-trip).
         if self.eval_strategy not in _INTERVAL_STRATEGIES:
             raise ValueError(
                 f"eval_strategy={self.eval_strategy!r}; "
@@ -678,7 +675,7 @@ class TrainingArguments:
         if self.greater_is_better is None and self.metric_for_best_model is not None:
             self.greater_is_better = not self.metric_for_best_model.endswith("loss")
 
-        # --- 5b. Cross-field invariants (formerly trainer-side) -------------
+        # --- 5b. Cross-field invariants -------------------------------------
         # ``save_strategy='best'`` requires eval to be configured so we
         # can actually pick a best checkpoint.
         if self.save_strategy == "best" and self.eval_strategy == "no":
@@ -977,7 +974,7 @@ class TrainingArguments:
 
         # ``include_for_metrics`` opts into populating optional fields on
         # ``EvalPrediction`` — currently ``{"inputs", "loss"}``.  Fail fast on
-        # unknown keys (HF's runtime ValueError; moved here for consistency).
+        # unknown keys (HF raises this at runtime; raised here instead).
         _allowed_include_for_metrics = frozenset({"inputs", "loss"})
         _bad = [
             k for k in self.include_for_metrics if k not in _allowed_include_for_metrics
@@ -1047,7 +1044,7 @@ class TrainingArguments:
     # constructor still raises ``TypeError``); they exist only so HF
     # utilities that read off the args object — ``transformers.modelcard``'s
     # ``extract_hyperparameters_from_trainer``, reporting callbacks — keep
-    # working after the corresponding fields were intentionally dropped.
+    # working without the corresponding dataclass fields.
 
     @property
     def gradient_accumulation_steps(self) -> int:
