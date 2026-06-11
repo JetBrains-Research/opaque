@@ -145,7 +145,8 @@ def test_batch_collapse_grad_accum_multiplies_into_logical_batch(tmp_path):
 
 
 def test_batch_no_collapse_when_grad_accum_is_one(tmp_path):
-    """At grad_accum=1, HF and opaque batch concepts are identical."""
+    """At grad_accum=1, logical batch == per_device and microbatch_size
+    stays at its default (None → vmap over the full batch)."""
     opaque = TrainingArguments.from_hf(
         _hf_args(
             tmp_path,
@@ -156,7 +157,6 @@ def test_batch_no_collapse_when_grad_accum_is_one(tmp_path):
         clipping_norm=1.0,
     )
     assert opaque.per_device_train_batch_size == 8
-    # microbatch_size stays at the dataclass default (None → vmap on full batch).
     assert opaque.microbatch_size is None
 
 
@@ -202,13 +202,53 @@ def test_reject_neftune_noise_alpha(tmp_path):
         )
 
 
-def test_reject_auto_find_batch_size(tmp_path):
-    with pytest.raises(ValueError, match="auto_find_microbatch_size"):
-        TrainingArguments.from_hf(
-            _hf_args(tmp_path, auto_find_batch_size=True),
-            privacy_noise_multiplier=0.8,
-            clipping_norm=1.0,
-        )
+def test_auto_find_batch_size_maps_to_microbatch(tmp_path):
+    """HF ``auto_find_batch_size`` → opaque ``auto_find_microbatch_size``."""
+    opaque = TrainingArguments.from_hf(
+        _hf_args(tmp_path, auto_find_batch_size=True),
+        privacy_noise_multiplier=0.8,
+        clipping_norm=1.0,
+    )
+    assert opaque.auto_find_microbatch_size is True
+
+
+def test_max_grad_norm_maps_to_clipping_norm(tmp_path):
+    """HF ``max_grad_norm`` loosely maps to opaque ``clipping_norm`` (no DP
+    override given, so it isn't overwritten)."""
+    opaque = TrainingArguments.from_hf(
+        _hf_args(tmp_path, max_grad_norm=0.5),
+        privacy_noise_multiplier=0.8,
+    )
+    assert opaque.clipping_norm == 0.5
+
+
+def test_liger_maps_to_performance_kernels(tmp_path):
+    """HF ``use_liger_kernel`` → opaque ``use_performance_kernels=True``."""
+    opaque = TrainingArguments.from_hf(
+        _hf_args(tmp_path, use_liger_kernel=True),
+        privacy_noise_multiplier=0.8,
+        clipping_norm=1.0,
+    )
+    assert opaque.use_performance_kernels is True
+
+
+def test_performance_kernels_off_by_default_on_conversion(tmp_path):
+    """Converting an HF config (no Liger) leaves perf-kernels OFF to match
+    upstream, even though opaque's own default is True."""
+    opaque = TrainingArguments.from_hf(
+        _hf_args(tmp_path),
+        privacy_noise_multiplier=0.8,
+        clipping_norm=1.0,
+    )
+    assert opaque.use_performance_kernels is False
+    # ...but a name override wins.
+    opaque2 = TrainingArguments.from_hf(
+        _hf_args(tmp_path),
+        privacy_noise_multiplier=0.8,
+        clipping_norm=1.0,
+        use_performance_kernels=True,
+    )
+    assert opaque2.use_performance_kernels is True
 
 
 def test_reject_paged_optim(tmp_path):
