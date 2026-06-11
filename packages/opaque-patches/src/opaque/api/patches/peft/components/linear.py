@@ -5,6 +5,8 @@ from __future__ import annotations
 import torch
 import logging
 
+from ._utils import _active_lora_dtype
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,10 +32,9 @@ def _make_lora_linear_forward(original):
             return self.base_layer(x)
 
         dropout = self.lora_dropout[active]
-        # Fused kernel passes x to both base linear and adapter. This is only
-        # correct when dropout is a no-op; otherwise dropout would leak into
-        # the base projection. Fall back to PEFT's original forward when
-        # dropout is active (training with lora_dropout > 0).
+        # The fused kernel passes x to both base linear and adapter, so it is
+        # correct only when dropout is a no-op; otherwise dropout would leak
+        # into the base projection. Fall back to PEFT otherwise.
         dropout_is_noop = (
             isinstance(dropout, torch.nn.Identity)
             or (isinstance(dropout, torch.nn.Dropout) and dropout.p == 0.0)
@@ -42,16 +43,23 @@ def _make_lora_linear_forward(original):
         if not dropout_is_noop:
             return original(self, x, *args, **kwargs)
 
+        # Cast all kernel operands (X, base W, LoRA A, LoRA B) to the active
+        # dtype, mirroring the public ``opaque_lora_w`` wrapper's
+        # ``follow_autocast``: the vmap backward's ``grad_out @ W`` /
+        # ``mm(..., out=X_flat)`` patterns expect operands in the autocast
+        # dtype, including saved X (reused as a same-dtype output buffer).
+        target_dtype = _active_lora_dtype(x)
+        x = x.to(target_dtype)
         W = self.base_layer.weight
         # Conv1D stores weight as (in_features, out_features); F.linear expects
         # (out_features, in_features).  PEFT sets fan_in_fan_out=True for Conv1D.
         if getattr(self, "fan_in_fan_out", False):
             W = W.T
-        # PEFT stores lora_A as (rank, in_features), kernel expects (in_features, rank)
-        # Cast to input dtype for mixed precision compatibility
-        A = self.lora_A[active].weight.T.to(x.dtype)
-        # PEFT stores lora_B as (out_features, rank), kernel expects (rank, out_features)
-        B = self.lora_B[active].weight.T.to(x.dtype)
+        W = W.to(target_dtype)
+        # PEFT stores lora_A as (rank, in_features), kernel expects (in_features, rank);
+        # lora_B as (out_features, rank), kernel expects (rank, out_features).
+        A = self.lora_A[active].weight.T.to(target_dtype)
+        B = self.lora_B[active].weight.T.to(target_dtype)
         scaling = self.scaling[active]
 
         result = Opaque_LoRA_W.apply(x, W, A, B, scaling)
@@ -65,8 +73,8 @@ def _make_lora_linear_forward(original):
             if adapter in self.lora_A:
                 dropout_i = self.lora_dropout[adapter]
                 x_i = dropout_i(x)
-                A_i = self.lora_A[adapter].weight.T.to(x.dtype)
-                B_i = self.lora_B[adapter].weight.T.to(x.dtype)
+                A_i = self.lora_A[adapter].weight.T.to(target_dtype)
+                B_i = self.lora_B[adapter].weight.T.to(target_dtype)
                 scaling_i = self.scaling[adapter]
                 lora_out = (x_i @ A_i) @ B_i * scaling_i
                 result = result + lora_out
