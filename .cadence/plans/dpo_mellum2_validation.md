@@ -120,7 +120,12 @@ LOSS DIVERGES / NaN
 | P3    | P3b-class-mellum4b-zeta-noDP-clip1.0              | 55428   | QUEUED   | clip-bias control (mid) |
 | P3    | P3c-class-mellum4b-zeta-noDP-clip10               | 55429   | QUEUED   | clip-bias control (loose) |
 | P3    | P3d-class-mellum4b-zeta-DP-clip1.0-eps3           | 55430   | QUEUED   | tight DP budget |
-| P3    | P3e-class-mellum4b-zeta-DP-clip1.0-eps8           | 55431   | QUEUED   | standard DP budget |
+| P3    | P3e-class-mellum4b-zeta-DP-clip1.0-eps8           | 55431   | FINISHED | flat at noise floor |
+| P4    | P4a-class-mellum4b-zeta-DP-clip1.0-eps8-b128      | 55432   | FINISHED | B=128 on tiny dataset; nm exploded to 4.21 → still flat |
+| P4    | P4b-class-mellum4b-zeta-DP-clip1.0-eps32-b16      | 55433   | FINISHED | ε=32 not enough on Zeta |
+| P4    | P4c-class-mellum4b-zeta-DP-clip1.0-eps32-b128     | 55434   | FINISHED | B=128 + ε=32 still flat on Zeta |
+| P4    | **P4d-class-mellum4b-cybernative-DP-eps8-b16**    | 55435   | FINISHED | **rewards/acc 0.917 — TRAINS** |
+| P4    | **P4e-class-mellum4b-cybernative-DP-eps8-b128**   | 55436   | FINISHED | **rewards/acc 0.979 — BEST** |
 
 ## Phase 2 results (2026-06-11)
 
@@ -141,6 +146,45 @@ needed (Phase 3).
 **Bonus finding:** Mellum2 trains visibly better on Zeta NES than Mellum-4b
 (rewards/acc 0.31 vs 0.13). When the opaque transformers-v5 migration lands,
 Mellum2 is the right NES model to ship.
+
+## Phase 4 results — DP-that-trains search (2026-06-11)
+
+| Run | Dataset | Pairs | Batch | ε | nm | train_loss | rewards/margins | rewards/acc | TRAINS? |
+|---|---|---|---|---|---|---|---|---|---|
+| P4a | Zeta-dpo | 132 | 128 | 8 | 4.21 | 0.692 | +0.002 | 0.124 | ❌ |
+| P4b | Zeta-dpo | 132 | 16 | 32 | 0.44 | 0.692 | +0.002 | 0.111 | ❌ |
+| P4c | Zeta-dpo | 132 | 128 | 32 | 1.64 | 0.691 | +0.007 | 0.140 | ❌ |
+| **P4d** | **CyberNative** | 4000 | 16 | 8 | 0.36 | 0.663 | +0.057 | **0.917** | ✅ |
+| **P4e** | **CyberNative** | 4000 | **128** | 8 | 0.56 | **0.585** | **+0.244** | **0.979** | ✅ **BEST** |
+
+**Working DP DPO recipe (ε=8, ~98% rewards/acc):**
+
+```
+model:           JetBrains/Mellum-4b-base
+peft:            LoRA r=16, alpha=32, q/k/v/o + gate/up/down
+dataset:         CyberNative/Code_Vulnerability_Security_DPO  (≥4000 train pairs)
+batch_size:      128
+microbatch_size: 4
+max_length:      1024
+learning_rate:   5e-5
+beta:            0.1
+clipping_norm:   1.0  (fixed mode)
+target_epsilon:  8.0
+max_steps:       100
+seed:            42
+```
+
+**Key insight: dataset size dominates.** On Zeta's 132-pair split, q = batch/N
+forces the accountant to demand huge noise (nm=4.21 at B=128 ε=8). On
+CyberNative's 4000-pair train split, q ≪ 1 lets nm drop to 0.36–0.56 — signal
+survives the noise floor. Bigger batch helps THEN (more signal per noisy step)
+but only after the dataset is big enough.
+
+**Recommendation for production NES DP DPO:** Mellum2 + Zeta (when opaque's
+transformers-v5 migration lands) needs a code preference dataset ≥4k pairs to
+calibrate DP at ε=8. The 132-pair Zeta `dpo` split alone is insufficient.
+Either combine multiple code-DPO datasets or generate synthetic rejections to
+expand it.
 
 ## Phase 3 results (2026-06-11)
 
