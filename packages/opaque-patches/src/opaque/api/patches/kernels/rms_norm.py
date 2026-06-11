@@ -378,23 +378,51 @@ class _RMSNormBackward(torch.autograd.Function):
             raise ValueError("dY, X, RSTD must be vmapped at dim 0")
         H = X.shape[-1]
         head = dY.shape[:-1]
+        B = dY.shape[0]
         dY_m = dY.reshape(-1, H)
         X_m = X.reshape(-1, H)
         R_m = RSTD.reshape(-1)
         W_use = W if (W is not None and W.numel() > 0) else None
+        casting_mode = int(meta_i[0].item())
+
+        # Missing flag defaults to trainable: a spurious per-example dW only
+        # costs memory; a spurious batch-sum dW leaks across examples.
+        w_trainable = bool(meta_i[5].item()) if meta_i.numel() > 5 else True
+        dW_out = None
+        if W_use is not None and w_trainable:
+            # Per-example dW: the Triton call sums dW over the merged (B*T, H)
+            # batch, which would hand every example the batch-sum gradient.
+            # Must run before the Triton call — in_place overwrites dY with dX.
+            T_flat = dY_m.shape[0] // B
+            dY_3d = dY_m.view(B, T_flat, H)
+            X_3d = X_m.view(B, T_flat, H)
+            R_3d = R_m.view(B, T_flat)
+            x_normed = X_3d.float() * R_3d.unsqueeze(-1)  # (B, T_flat, H)
+            if casting_mode == 0:  # llama: cast normed X back to X dtype
+                dW_per = (dY_3d * x_normed.to(X_3d.dtype)).float().sum(dim=1)
+            else:  # gemma / none: accumulate in float32
+                dW_per = (dY_3d.float() * x_normed).sum(dim=1)
+            dW_out = dW_per.to(W.dtype)  # (B, H)
+
         dX, dW = _rms_norm_backward_triton(
             dY_m,
             X_m,
             W_use,
             R_m,
             float(offset_tensor.item()),
-            int(meta_i[0].item()),
+            casting_mode,
             int(meta_i[1].item()),
             int(meta_i[2].item()),
             bool(meta_i[3].item()),
             None,
         )
         dX_out = dX.view(*head, H)
+        if dW_out is not None:
+            return (dX_out, dW_out), (dy_b, 0)
+        if W_use is not None:
+            # W frozen: zeros, not the kernel's batch-sum — if ever consumed,
+            # zeros stall training visibly instead of leaking across examples.
+            return (dX_out, torch.zeros_like(dW)), (dy_b, None)
         return (dX_out, dW), (dy_b, None)
 
 
@@ -430,8 +458,17 @@ class Opaque_RMSNorm(torch.autograd.Function):
 
         bs, nw = calculate_settings(dim)
         ctx.original_shape = orig_shape
+        # meta_i[5]: W trainability — under vmap(grad()) frozen weights arrive
+        # detached, so this tells the vmap rule whether per-example dW is needed.
         ctx.meta_i = torch.tensor(
-            [cm, bs, nw, int(in_place), int(W is not None)],
+            [
+                cm,
+                bs,
+                nw,
+                int(in_place),
+                int(W is not None),
+                int(W is not None and W.requires_grad),
+            ],
             device=X_saved.device,
             dtype=torch.int64,
         )

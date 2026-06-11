@@ -899,16 +899,12 @@ class _LoRAMLPBackward(torch.autograd.Function):
         act_backward_fused = _ACTIVATION_BACKWARD_FUSED[activation_type]
         h, dgate, dup = act_backward_fused(dh, gate_flat, up_flat)
 
-        # dX from base weights (merged — spatially parallel)
-        torch.mm(dgate, Wg, out=X_flat)
-        X_flat.addmm_(dup, Wu, beta=1, alpha=1)
-        if Ag is not None and Bg is not None:
-            X_flat.addmm_(dgate @ Bg.t(), Ag.t(), alpha=Sg, beta=1)
-        if Au is not None and Bu is not None:
-            X_flat.addmm_(dup @ Bu.t(), Au.t(), alpha=Su, beta=1)
-        dX = X_flat.reshape(X.shape)
-
-        # Per-sample LoRA weight grads using bmm (NOT merged!)
+        # Per-sample LoRA weight grads using bmm (NOT merged!).  MUST run
+        # before the dX buffer reuse below: ``torch.mm(..., out=X_flat)``
+        # overwrites X's storage (X_flat / X_3d are reshape views of the
+        # input X), so any read of X after that point sees dX values, not
+        # activations.  The eager impl (``_lora_mlp_backward_impl``) orders
+        # the same way — weight grads first, dX last.
         X_3d = X.reshape(B_vmap, -1, hidden_dim)
         grad_out_3d = grad_out.reshape(B_vmap, -1, grad_out.shape[-1])
         h_3d = h.reshape(B_vmap, -1, inter_dim)
@@ -930,6 +926,17 @@ class _LoRAMLPBackward(torch.autograd.Function):
         dAg, dBg = _per_sample_lora_grads(X_3d, dgate_3d, Ag, Bg, Sg)
         # Up LoRA grads use X as input, dup as gradient
         dAu, dBu = _per_sample_lora_grads(X_3d, dup_3d, Au, Bu, Su)
+
+        # dX from base weights (merged — spatially parallel).  Reuses X's
+        # storage as the output buffer; safe only now that every read of
+        # X_3d above has completed.
+        torch.mm(dgate, Wg, out=X_flat)
+        X_flat.addmm_(dup, Wu, beta=1, alpha=1)
+        if Ag is not None and Bg is not None:
+            X_flat.addmm_(dgate @ Bg.t(), Ag.t(), alpha=Sg, beta=1)
+        if Au is not None and Bu is not None:
+            X_flat.addmm_(dup @ Bu.t(), Au.t(), alpha=Su, beta=1)
+        dX = X_flat.reshape(X.shape)
 
         def _bdim(t):
             return 0 if t is not None else None

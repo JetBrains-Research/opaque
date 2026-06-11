@@ -43,7 +43,7 @@ class TestSaveOnCpuWithClippedGrad:
         with torch.autograd.graph.save_on_cpu(pin_memory=True):
             grads_offload, _ = grad_fn(W, x, state=state)
 
-        torch.testing.assert_close(grads_offload, grads_vanilla)
+        torch.testing.assert_close(grads_offload.pytree, grads_vanilla.pytree)
 
     def test_clipped_grad_with_checkpoint(self):
         """save_on_cpu + checkpoint produces correct clipped gradients."""
@@ -72,7 +72,7 @@ class TestSaveOnCpuWithClippedGrad:
         with torch.autograd.graph.save_on_cpu(pin_memory=True):
             grads_offload, _ = grad_fn(W1, W2, x, state=state)
 
-        for g_v, g_o in zip(grads_vanilla, grads_offload):
+        for g_v, g_o in zip(grads_vanilla.pytree, grads_offload.pytree):
             torch.testing.assert_close(g_o, g_v)
 
     def test_no_pin_memory(self):
@@ -94,7 +94,7 @@ class TestSaveOnCpuWithClippedGrad:
         with torch.autograd.graph.save_on_cpu(pin_memory=False):
             grads_offload, _ = grad_fn(W, x, state=state)
 
-        torch.testing.assert_close(grads_offload, grads_vanilla)
+        torch.testing.assert_close(grads_offload.pytree, grads_vanilla.pytree)
 
     def test_offload_reduces_gpu_memory(self):
         """save_on_cpu moves saved activations to CPU, reducing GPU peak.

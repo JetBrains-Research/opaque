@@ -64,17 +64,39 @@ class Accountant:
             if acct.budget_exceeded:
                 print("Privacy budget exhausted!")
                 break
+
+    Seeding with a previously executed process (sequential composition
+    across runs, e.g. SFT followed by DPO on the same dataset)::
+
+        import json
+
+        from opaque.serialization import from_state_dict
+
+        with open("sft_checkpoint/accountant.json") as f:
+            sft = from_state_dict(Accountant(), json.load(f))
+
+        acct = Accountant(budget=budget, prefix=sft.process)
+
+        for i in range(num_dpo_steps):
+            acct = acct | dpo_step   # composes on top of the SFT prefix
     """
 
-    def __init__(self, budget: Budget | None = None) -> None:
+    def __init__(
+        self, budget: Budget | None = None, prefix: DpProcess | None = None
+    ) -> None:
         """Initialize an Accountant.
 
         Args:
             budget: Optional privacy budget. If provided, enables
                 budget_exceeded checks. Should be a Budget from the
                 budgets module (e.g., epsilon_budget(3.0, delta=1e-5)).
+            prefix: Optional already-executed process to seed the
+                accountant with, instead of the default zero-cost
+                :class:`Identity`. Subsequent compositions and all
+                metrics (``epsilon_at``, ``budget_exceeded``, ...)
+                account for the prefix.
         """
-        self.process: DpProcess = Identity()
+        self.process: DpProcess = Identity() if prefix is None else prefix
         self._budget: Budget | None = budget
 
     def __or__(self, process: DpProcess) -> Accountant:
@@ -100,9 +122,7 @@ class Accountant:
             acct = acct | step  # One step
             acct = acct | step  # Collapsed into Repeated(step, 2)
         """
-        new_acct = Accountant(budget=self._budget)
-        new_acct.process = self.process | process
-        return new_acct
+        return Accountant(budget=self._budget, prefix=self.process | process)
 
     def epsilon_at(self, delta: float) -> float:
         """Get epsilon for a target delta.
@@ -209,9 +229,7 @@ def _accountant_from_state_dict(state: dict[str, Any]) -> Accountant:
     budget = None
     if "budget" in state:
         budget = _deserialize_budget(dict(state["budget"]))
-    acct = Accountant(budget=budget)
-    acct.process = _load_dp_process(dict(state["process"]))
-    return acct
+    return Accountant(budget=budget, prefix=_load_dp_process(dict(state["process"])))
 
 
 _BUDGET_REGISTRY: dict[str, type] = {

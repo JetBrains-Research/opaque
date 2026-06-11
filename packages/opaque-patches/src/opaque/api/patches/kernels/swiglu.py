@@ -166,6 +166,12 @@ class _SwiGLUBackward(torch.autograd.Function):
     def vmap(info, in_dims, grad_h_flat, gate_flat, up_flat):
         grad_h_bdim, gate_bdim, up_bdim = in_dims
 
+        if not (grad_h_bdim == gate_bdim == up_bdim):
+            # Mismatched batch dims would silently pair elements across examples.
+            raise ValueError(
+                f"SwiGLU backward vmap requires matching batch dims, got {in_dims}"
+            )
+
         # Merge vmap batch dim into flat dim (element-wise kernel)
         batched_shape = gate_flat.shape
         grad_h_merged = grad_h_flat.reshape(-1)

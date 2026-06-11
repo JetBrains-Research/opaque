@@ -539,6 +539,32 @@ for i in range(num_steps):
 **Methods:** `epsilon_at(delta)`, `delta_at(epsilon)`, `advantage()`,
 `beta_at(alpha)`, `risk_at(prior)`, `budget_exceeded` (property).
 
+### Seeding with a prior process
+
+Pass `prefix` to start from an already-executed process instead of the
+zero-cost identity. This is sequential composition across runs: use it when a
+second training stage (e.g. DPO after SFT) touches the same dataset, so the
+new run's budget checks and reported ε include the earlier run's cost. The
+prefix composes at the PLD level — much tighter than adding the two stages'
+epsilons.
+
+```python
+import json
+
+from opaque.accounting import Accountant
+from opaque.serialization import from_state_dict
+
+with open("sft_checkpoint/accountant.json") as f:
+    sft = from_state_dict(Accountant(), json.load(f))
+
+acct = Accountant(budget=budget, prefix=sft.process)
+acct = acct | dpo_step  # composes on top of the SFT prefix
+```
+
+If the two stages train on disjoint records (and the privacy unit is the
+record), no prefix is needed — parallel composition applies and the overall
+guarantee is the pointwise max of the two stages' ε(δ) curves.
+
 ### Serialization
 
 ```python
@@ -564,7 +590,7 @@ from opaque.accounting import calibration as cal
 
 Binary search for finding parameter values that achieve a target privacy budget.
 
-### `calibrate(budget, process, param_min, param_max, tolerance=1e-6, max_iterations=100) -> CalibrateResult`
+### `calibrate(budget, process, param_min, param_max, tolerance=1e-6, max_iterations=100, prefix=None) -> CalibrateResult`
 
 Binary search for a parameter value such that `process(param)` produces a
 `DpProcess` achieving the given privacy budget.
@@ -577,6 +603,7 @@ Binary search for a parameter value such that `process(param)` produces a
 | `param_max`      |         | Upper bound for search                                   |
 | `tolerance`      | `1e-6`  | Convergence threshold on `abs(achieved - target)`        |
 | `max_iterations` | `100`   | Maximum binary search iterations                         |
+| `prefix`         | `None`  | Already-executed `DpProcess` composed into every probe   |
 
 The `process` callable takes a single float parameter and returns a `DpProcess`.
 The default parameter range is tuned for noise_multiplier search, but
@@ -595,6 +622,22 @@ result = cal.calibrate(
     param_max=5.0,
 )
 print(f"noise_multiplier = {result.param:.4f}, epsilon = {result.achieved:.6f}")
+```
+
+Calibrating a second stage against the remaining budget (see
+[Seeding with a prior process](#seeding-with-a-prior-process)): pass the
+earlier run's executed process as `prefix`. Each probe evaluates
+`prefix | process(param)`, so the budget is the total across both stages.
+The prefix's PLD is computed once for the whole search.
+
+```python
+result = cal.calibrate(
+    cal.epsilon_budget(8.0, delta=1e-6),
+    lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.02) * 2000,
+    param_min=0.5,
+    param_max=5.0,
+    prefix=sft.process,  # from the SFT run's accountant.json
+)
 ```
 
 Calibrating a different parameter (e.g., sample rate):

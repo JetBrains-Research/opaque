@@ -16,14 +16,11 @@ class Composed(DpProcess):
     right: DpProcess
 
     def __hash__(self) -> int:
-        # Walk the left spine iteratively to avoid RecursionError
-        # on deeply nested left-skewed trees from ``|=`` composition.
-        h = 0
-        node: DpProcess = self
-        while isinstance(node, Composed):
-            h = hash((h, hash(node.right)))
-            node = node.left
-        return hash((h, hash(node)))
+        # Iterative tree walk — depth bounded by heap, not stack.
+        # See ``_iter_hash``.
+        from ._iter_hash import iter_hash
+
+        return iter_hash(self)
 
     @functools.lru_cache(maxsize=8)
     def pld(
