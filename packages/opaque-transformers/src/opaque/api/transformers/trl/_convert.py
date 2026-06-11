@@ -7,12 +7,8 @@ the TRL-specific fields with its own per-flavor manifest (defined alongside the
 config class in ``_sft_config.py`` / ``_dpo_config.py``).
 
 This module holds the bits both flavors share: the optional-dependency import
-gate, the rejectors common to SFT and DPO, and the two-layer dispatcher
-:func:`_convert_trl_config`.
-
-The ``trl`` package is an optional dependency (``pip install opaque[trl]``);
-the import gate raises a clear ``ImportError`` with an install hint when it's
-missing.
+gate (``trl`` is the ``pip install opaque[trl]`` extra), the rejectors common
+to SFT and DPO, and the two-layer dispatcher :func:`_convert_trl_config`.
 """
 
 from __future__ import annotations
@@ -139,9 +135,8 @@ def _convert_trl_config(
     converted: dict[str, Any] = {}
     converted.update(hf_converted)
     converted.update(trl_converted)
-    # Performance kernels are off in HF/TRL, on by default in opaque; default
-    # them OFF on conversion to match upstream (Liger, handled in the HF
-    # manifest, sets True). A name override below can force either way.
+    # Performance kernels default ON in opaque but OFF in HF/TRL; default OFF on
+    # conversion to match upstream (Liger in the HF manifest may set True).
     converted.setdefault("use_performance_kernels", False)
     converted.update(dp_overrides)
     return converted

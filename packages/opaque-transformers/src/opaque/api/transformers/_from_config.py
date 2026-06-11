@@ -52,9 +52,8 @@ def from_hf_config(config: Any, *, strict: bool = True, **overrides: Any) -> Any
     ValueError
         If no DP knob is supplied, or a field has no opaque equivalent.
     """
-    # TRL configs subclass HF ``TrainingArguments`` — match them before the
-    # HF base. ``trl`` is the optional ``opaque[trl]`` extra; absence just
-    # means the input can't be a TRL config.
+    # TRL configs subclass HF ``TrainingArguments``, so match them first; a
+    # missing ``trl`` extra just means the input can't be a TRL config.
     try:
         import trl
     except ImportError:

@@ -164,14 +164,9 @@ def apply_manifest(
     errors: list[str] = []
 
     for name, value in source_values.items():
-        # Layer 1: REJECT_IF_SET — if non-default, run the rejector callable.
-        # If the value IS the default, treat the field as a silent drop
-        # (the user did not set it; we have nothing to complain about).
-        # If the callable returns ``None`` on a non-default value, the value
-        # is benign for this REJECT rule — fall through to the next bucket
-        # (e.g. ``optim="lion"`` is non-default + non-paged, so the
-        # paged-optim rejector returns None and we want the TRANSFORM /
-        # DIRECT pass to handle it).
+        # Layer 1: REJECT_IF_SET — default value is a silent drop; a non-default
+        # value runs the rejector, which returns an error message or None
+        # (benign, falls through to the next bucket).
         if name in reject:
             if _is_default(value, source_defaults.get(name)):
                 continue  # default value → silent drop
@@ -187,11 +182,9 @@ def apply_manifest(
                 _warn_drop(source_label, name, value, drop[name], strict)
             continue
 
-        # Layer 3: TRANSFORM — multi-field derivation.
+        # Layer 3: TRANSFORM — multi-field derivation. Each transform callable
+        # runs once below, regardless of how many source fields it inspects.
         if name in transform:
-            # Transforms run once; the dispatcher invokes each transform
-            # callable exactly once, regardless of how many source fields
-            # it inspects.
             continue
 
         # Layer 4: RENAME — name swap, value preserved.
@@ -546,10 +539,9 @@ HF_REJECTED_FIELDS: dict[str, Callable[[Any], str | None]] = {
         "Per-checkpoint auto-push is not supported; use ``push_to_hub=True`` "
         "for the end-of-training push."
     ),
-    # NOTE: ``adafactor`` (→ optim), ``max_grad_norm`` (→ clipping_norm),
-    # ``use_liger_kernel`` / ``liger_kernel_config`` (→ performance kernels),
-    # and ``auto_find_batch_size`` (→ auto_find_microbatch_size) are now
-    # remapped in HF_TRANSFORM_MAP rather than rejected.
+    # ``adafactor``, ``max_grad_norm``, ``use_liger_kernel`` /
+    # ``liger_kernel_config``, and ``auto_find_batch_size`` are remapped in
+    # HF_TRANSFORM_MAP, not rejected here.
 }
 
 
@@ -633,9 +625,7 @@ def convert_hf_training_arguments(
     The DP-override kwargs are merged onto the converted dict last (they
     take precedence over both HF values and HF-derived defaults).
     """
-    # Local import — HF is a runtime dep of opaque-transformers but we want
-    # the converter module to be importable even if HF is missing (it
-    # wouldn't be useful, but it shouldn't error at import time).
+    # Local import so this module stays importable when HF is absent.
     try:
         from transformers import TrainingArguments as HFTrainingArguments
     except ImportError as e:
@@ -652,13 +642,10 @@ def convert_hf_training_arguments(
         )
 
     source_values = get_dataclass_field_values(hf_args)
-    # HF's ``__post_init__`` rewrites several field defaults at runtime
-    # (``fsdp: None → []``, ``fsdp_config: None → {'min_num_params': 0, ...}``,
-    # ``accelerator_config: None → AcceleratorConfig(...)``, …). The
-    # field-level defaults from ``dataclasses.fields()`` are therefore
-    # NOT the values the user sees when they don't customize. Construct
-    # a baseline instance with the same ``output_dir`` and use its field
-    # values as the canonical "user didn't set this" baseline.
+    # HF's ``__post_init__`` rewrites several field defaults at runtime, so
+    # ``dataclasses.fields()`` defaults don't match what an unconfigured user
+    # sees. Build a baseline instance and use its field values as the
+    # "user didn't set this" defaults.
     import tempfile
 
     baseline_output_dir = source_values.get("output_dir") or tempfile.mkdtemp(
@@ -680,15 +667,14 @@ def convert_hf_training_arguments(
         strict=strict,
     )
 
-    # Performance kernels are off in HF/TRL but on by default in opaque. We
-    # can't tell an HF default from an explicit value, so on conversion we
-    # default them OFF to match upstream behaviour (the Liger transform sets
-    # True when Liger was on; a name override below can force either way).
+    # Performance kernels default ON in opaque but OFF in HF/TRL; default them
+    # OFF here to match upstream (the Liger transform sets True when Liger was
+    # on; a name override below can force either way).
     converted.setdefault("use_performance_kernels", False)
 
-    # Layer overrides on top — these win over every converted/derived value
-    # (the privacy knobs plus any opaque field overridden by name, e.g.
-    # ``use_performance_kernels=True`` even though HF had no such field).
+    # Overrides win over every converted/derived value (the privacy knobs plus
+    # any opaque field overridden by name, e.g. ``use_performance_kernels=True``
+    # even though HF had no such field).
     overrides = normalize_dp_overrides(dp_overrides)
     converted.update(overrides)
 
