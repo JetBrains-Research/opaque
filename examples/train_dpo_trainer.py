@@ -155,6 +155,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--microbatch-size", type=int, default=2)
+    p.add_argument(
+        "--precompute-ref-batch-size",
+        type=int,
+        default=None,
+        help="Batch for the one-shot reference-logp precompute (a regular "
+        "batched forward, NOT vmap). Defaults to --batch-size; set small "
+        "(e.g. 8) when --batch-size is large to avoid lm_head OOM in precompute.",
+    )
     p.add_argument("--max-steps", type=int, default=50)
     p.add_argument("--learning-rate", type=float, default=1e-4)
     p.add_argument("--clipping-norm", type=float, default=1.0)
@@ -181,6 +189,14 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--log-steps", type=int, default=5)
     p.add_argument("--output-dir", default="trainer_output/dpo")
+    p.add_argument(
+        "--no-performance-kernels",
+        action="store_true",
+        help="Disable the model-level Triton kernels (rope/rms_norm/activation/"
+        "cross_entropy). Use to isolate kernel-vs-eager behaviour — e.g. the "
+        "RMSNorm vmap dW is batch-summed (DP-sensitivity bug for full-FT), so "
+        "eager gives correct per-example norm-weight grads.",
+    )
     # --- PEFT --------------------------------------------------------------
     p.add_argument(
         "--peft",
@@ -319,6 +335,7 @@ def main() -> int:
         max_length=args.max_length,
         per_device_train_batch_size=args.batch_size,
         microbatch_size=args.microbatch_size,
+        precompute_ref_batch_size=args.precompute_ref_batch_size,
         max_steps=args.max_steps,
         learning_rate=args.learning_rate,
         logging_steps=args.log_steps,
@@ -326,13 +343,19 @@ def main() -> int:
         seed=args.seed,
         use_cpu=not torch.cuda.is_available(),
         bf16=torch.cuda.is_available(),
+        use_performance_kernels=not args.no_performance_kernels,
         # W&B
         report_to=report_to,
         run_name=run_name,
         # DP knobs
         clipping_norm=args.clipping_norm,
         privacy_noise_multiplier=args.noise_multiplier,
-        privacy_target_epsilon=args.target_epsilon,
+        # ε target drives calibration only when no fixed multiplier is given;
+        # at a fixed nm (incl. the nm=0 non-private path) the config layer
+        # rejects a dangling target.
+        privacy_target_epsilon=(
+            args.target_epsilon if args.noise_multiplier is None else None
+        ),
         optim="adamw",
         optim_args=optim_args,
         **eval_kwargs,
