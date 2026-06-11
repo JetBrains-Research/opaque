@@ -222,15 +222,8 @@ class DPOTrainer(DPTrainer):
             and not self._use_weighting
             and self._f_divergence_type == "reverse_kl"
         )
-        # Resolve the backbone submodule prefix and the lm_head weight's
-        # param-dict key once here. When the model does not expose the required
-        # shape the handles come back ``None`` and the seam keeps the eager path.
-        self._backbone_prefix, self._lm_head_param_name = _resolve_fused_handles(
-            model, self._fused_logp_eligible
-        )
-        self._use_fused_logp = (
-            self._fused_logp_eligible and self._lm_head_param_name is not None
-        )
+        # Fused-path handles (backbone prefix + lm_head key) are resolved after
+        # the PEFT wrapping below, so the prefix targets the final module tree.
         # Reference-need is intrinsic to each head: a run needs a reference iff
         # any configured head is *not* in the reference-free set.
         self._needs_reference = any(
@@ -262,6 +255,18 @@ class DPOTrainer(DPTrainer):
 
             model = get_peft_model(model, peft_config)
         self._is_peft = _is_peft_model(model)
+
+        # Resolve fused-path handles on the FINAL model: with a ``peft_config``
+        # the policy was just wrapped above, so resolving earlier would record the
+        # unwrapped ``"model"`` prefix and ``attrgetter`` would hit the inner
+        # causal-LM (``CausalLMOutputWithPast``, no ``last_hidden_state``) at fused
+        # time. ``None`` handles (ineligible / no backbone) keep the eager path.
+        self._backbone_prefix, self._lm_head_param_name = _resolve_fused_handles(
+            model, self._fused_logp_eligible
+        )
+        self._use_fused_logp = (
+            self._fused_logp_eligible and self._lm_head_param_name is not None
+        )
         if self._sync_ref_model and self._is_peft:
             raise ValueError(
                 "sync_ref_model (TR-DPO) requires full fine-tuning, not PEFT "

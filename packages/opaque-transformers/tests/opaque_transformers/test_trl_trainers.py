@@ -10,6 +10,7 @@ patch fixture in ``conftest.py`` installs the vmap-safety runtime patches.
 from __future__ import annotations
 
 import types
+from operator import attrgetter
 
 import pytest
 
@@ -18,8 +19,14 @@ pytest.importorskip("datasets")
 
 import torch  # noqa: E402
 from datasets import Dataset  # noqa: E402
-from transformers import LlamaConfig, LlamaForCausalLM  # noqa: E402
+from transformers import (  # noqa: E402
+    LlamaConfig,
+    LlamaForCausalLM,
+    Qwen2Config,
+    Qwen2ForCausalLM,
+)
 
+from opaque.alignment.dpo.loss import sequence_logp  # noqa: E402
 from opaque.transformers.trl import (  # noqa: E402
     DPOConfig,
     DPOTrainer,
@@ -39,6 +46,21 @@ def _tiny_model() -> LlamaForCausalLM:
         max_position_embeddings=128,
     )
     return LlamaForCausalLM(cfg)
+
+
+def _tiny_qwen2() -> Qwen2ForCausalLM:
+    # Qwen2 backbone is ``Qwen2Model`` (base_model_prefix ``"model"``), so the
+    # PEFT-resolved fused-path prefix is ``base_model.model.model``.
+    cfg = Qwen2Config(
+        vocab_size=64,
+        hidden_size=32,
+        intermediate_size=64,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        max_position_embeddings=128,
+    )
+    return Qwen2ForCausalLM(cfg)
 
 
 def _stub_tokenizer() -> types.SimpleNamespace:
@@ -82,6 +104,14 @@ def _pref_dataset() -> Dataset:
             for _ in range(8)
         ]
     )
+
+
+def _maybe_lora(use_peft: bool):
+    """A tiny LoRA config (or ``None`` for full FT). Skips if PEFT is absent."""
+    if not use_peft:
+        return None
+    lora = pytest.importorskip("peft")
+    return lora.LoraConfig(target_modules=["q_proj", "v_proj"], task_type="CAUSAL_LM")
 
 
 # ----------------------------------------------------------------------
@@ -610,6 +640,98 @@ def test_dpo_wpo_weighting_trains(tmp_path):
     )
     out = trainer.train()
     assert out.global_step == 2
+
+
+# ----------------------------------------------------------------------
+# Fused logits-free policy-logp path (telemetry off → _use_fused_logp).
+# Regression: under LoRA the backbone prefix must reach the backbone
+# (Qwen2Model, returns last_hidden_state), not the inner causal-LM.
+# ----------------------------------------------------------------------
+def _fused_dpo_trainer(tmp_path, use_peft):
+    return DPOTrainer(
+        model=_tiny_qwen2(),
+        args=_args(
+            DPOConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="simpo",  # reference-free: no precompute, fused-eligible
+            log_completion_metrics=False,
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+        peft_config=_maybe_lora(use_peft),
+    )
+
+
+@pytest.mark.parametrize("use_peft", [False, True])
+def test_dpo_fused_logp_resolves_backbone(tmp_path, use_peft):
+    # The PEFT-wrap regression: handles resolve on the FINAL model so the prefix
+    # reaches the backbone (Qwen2Model, returns last_hidden_state), not the inner
+    # causal-LM. CPU-runnable — no Triton kernel involved.
+    torch.manual_seed(0)
+    trainer = _fused_dpo_trainer(tmp_path, use_peft)
+    assert trainer._fused_logp_eligible
+    assert trainer._use_fused_logp
+    assert trainer._is_peft is use_peft
+
+    backbone = attrgetter(trainer._backbone_prefix)(trainer.model)
+    assert type(backbone).__name__ == "Qwen2Model"
+    params = dict(trainer.model.named_parameters())
+    assert trainer._lm_head_param_name in params
+
+    device = next(trainer.model.parameters()).device
+    ids = torch.tensor([1, 2, 3, 7, 8], device=device)
+    attn = torch.ones_like(ids)
+    # Backbone forward yields per-token hidden states (T, H) — the crash site.
+    hidden = trainer._last_hidden_state(params, ids, attn)
+    assert hidden.shape == (ids.shape[0], trainer.model.config.hidden_size)
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("use_peft", [False, True])
+def test_dpo_fused_logp_matches_eager(tmp_path, use_peft):
+    # The fused summed logp routes through the CUDA-only Triton linear-CE kernel;
+    # it must match the eager sequence_logp to the bit.
+    torch.manual_seed(0)
+    trainer = _fused_dpo_trainer(tmp_path, use_peft)
+    params = dict(trainer.model.named_parameters())
+    device = next(trainer.model.parameters()).device
+    ids = torch.tensor([1, 2, 3, 7, 8], device=device)
+    attn = torch.ones_like(ids)
+    cmask = torch.tensor([0, 0, 0, 1, 1], device=device)
+
+    fused = trainer._fused_logp(None, params, ids, attn, cmask)
+    logits = torch.func.functional_call(
+        trainer.model,
+        params,
+        (),
+        {"input_ids": ids.unsqueeze(0), "attention_mask": attn.unsqueeze(0)},
+    ).logits.squeeze(0)
+    eager = sequence_logp(logits, ids, cmask)
+    assert torch.allclose(fused, eager, atol=1e-5, rtol=1e-4)
+
+
+@pytest.mark.parametrize("use_peft", [False, True])
+def test_dpo_fused_path_trains_end_to_end(tmp_path, use_peft):
+    # The fused logp runs through the full DP vmap seam for a couple of steps.
+    torch.manual_seed(0)
+    trainer = DPOTrainer(
+        model=_tiny_qwen2(),
+        args=_args(
+            DPOConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="simpo",
+            log_completion_metrics=False,
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+        peft_config=_maybe_lora(use_peft),
+    )
+    assert trainer._use_fused_logp
+    out = trainer.train()
+    assert out.global_step == 2
+    assert torch.isfinite(torch.tensor(out.training_loss))
 
 
 # ----------------------------------------------------------------------
