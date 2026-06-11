@@ -246,25 +246,44 @@ rank-gated checkpointing, see
 
 ## Converting from HF / TRL configs
 
-Rather than hand-port an upstream config, convert it:
-
-- `TrainingArguments.from_hf(hf_args, **dp_overrides)` — from `transformers.TrainingArguments`
-- `SFTConfig.from_trl(trl_cfg, **dp_overrides)` — from `trl.SFTConfig`
-- `DPOConfig.from_trl(trl_cfg, **dp_overrides)` — from `trl.DPOConfig`
-
-Each maps upstream fields to their opaque equivalents: renamed fields are
-mapped, the HF effective batch (`per_device_train_batch_size ×
-gradient_accumulation_steps`) collapses into the logical Poisson batch,
-irrelevant fields are dropped (with a `RuntimeWarning` when non-default),
-and unsupported fields raise with a per-field rationale. A DP knob is
-required as an override (`privacy_noise_multiplier=` or
-`privacy_target_epsilon=`) — upstream configs carry no privacy budget:
+Rather than hand-port an upstream config, convert it. One dispatch entry point
+covers all three input types:
 
 ```python
-from opaque.transformers import TrainingArguments
+from opaque.transformers import from_hf_config
 
-args = TrainingArguments.from_hf(hf_args, privacy_target_epsilon=8.0)
+args = from_hf_config(hf_or_trl_config, privacy_target_epsilon=8.0)
 ```
+
+`from_hf_config` type-dispatches: a `trl.DPOConfig` / `trl.SFTConfig` →
+opaque `DPOConfig` / `SFTConfig`, a `transformers.TrainingArguments` → opaque
+`TrainingArguments`. The per-class converters are also public if you already
+know the type: `TrainingArguments.from_hf(...)`, `SFTConfig.from_trl(...)`,
+`DPOConfig.from_trl(...)`.
+
+What the converter does:
+
+- **renames** legacy names (`per_gpu_train_batch_size`, `lr_scheduler_type`, …);
+- **collapses** the HF effective batch (`per_device_train_batch_size ×
+  gradient_accumulation_steps`) into the logical Poisson batch, with
+  `per_device_train_batch_size` becoming the vmap `microbatch_size` and
+  `auto_find_batch_size → auto_find_microbatch_size`;
+- **loosely maps** `max_grad_norm → clipping_norm` (no warning — pass an
+  explicit `clipping_norm=` to override);
+- **remaps** optimizers (`adamw_torch`/`adamw_hf → adamw`,
+  `adamw_torch_fused → adamw` + `optim_args={"fused": True}`,
+  `adafactor=True → optim="adafactor"`) and `use_liger_kernel →
+  use_performance_kernels`;
+- **drops** irrelevant fields (with a `RuntimeWarning` when non-default), and
+  **raises** with a per-field rationale on unsupported ones (`fp16`, `fsdp`,
+  paged optimizers, …).
+
+A DP knob is required as an override (`privacy_noise_multiplier=` or
+`privacy_target_epsilon=`) — upstream configs carry no privacy budget. Any
+other keyword overrides the converted field **by name** after translation
+(e.g. `use_performance_kernels=True`); performance kernels default OFF on
+conversion to match HF/TRL since their default can't be distinguished from an
+explicit value.
 
 ## Migrating from HF: unsupported arguments
 
@@ -283,9 +302,10 @@ these for you). For reference, the notable ones:
 | `optim="adamw_8bit"` / paged / Apex-fused | No functional torchopt equivalent | A supported `optim` name (see the optimizer table) |
 | `batch_eval_metrics` | Streaming metric reduction not implemented | Use `eval_accumulation_steps` to bound eval memory |
 
-`per_gpu_*`, `adafactor` (bool), `torchdynamo`, and the various
-deprecated `push_to_hub_*` aliases are likewise dropped — use their
-modern replacements.
+`per_gpu_*` and the deprecated `push_to_hub_*` aliases are *renamed* to their
+modern equivalents; `adafactor=True` is *mapped* to `optim="adafactor"`.
+`torchdynamo` and other superseded flags are dropped — use their modern
+replacements.
 
 ## See also
 
