@@ -53,9 +53,9 @@ def _make_fused_lora_mlp_forward(original_forward, activation_type):
         Wd, Ad, Bd, Sd = _extract_lora_params(self.down_proj)
 
         # Cast all kernel operands (X, base W, LoRA A/B) to the active kernel
-        # dtype. Mirror follow_autocast in the public wrapper: the vmap backward
-        # does `grad_out @ W` directly (no autocast dispatch), and saved X is
-        # reused as a same-dtype output buffer — all must share the autocast dtype.
+        # dtype, mirroring follow_autocast: the vmap backward does `grad_out @ W`
+        # with no autocast dispatch and reuses saved X as a same-dtype output
+        # buffer, so all operands must share the autocast dtype.
         x = x.to(dtype)
         Wg, Wu, Wd = Wg.to(dtype), Wu.to(dtype), Wd.to(dtype)
         if Ag is not None:

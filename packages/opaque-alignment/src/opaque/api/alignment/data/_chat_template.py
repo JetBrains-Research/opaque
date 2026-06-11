@@ -1,40 +1,20 @@
 """Chat-template helpers for alignment training.
 
-Ported from ``trl/chat_template_utils.py`` (TRL ≥ 0.12, lines 28-119).
-The two public functions here support:
+- :func:`clone_chat_template` copies a chat template (and associated special
+  tokens, e.g. ``<|im_start|>``) from a source tokenizer onto a destination
+  tokenizer, then resizes the model's input-embedding matrix to the new vocab.
+- :func:`get_training_chat_template` returns a Jinja2 chat template that wraps
+  the assistant turn with ``{% generation %}`` / ``{% endgeneration %}`` so
+  ``apply_chat_template(..., return_assistant_tokens_mask=True)`` yields a
+  boolean mask usable for ``assistant_only_loss``.
 
-1. :func:`clone_chat_template` — copy a chat template (and any associated
-   special tokens, e.g. ``<|im_start|>``) from a source tokenizer onto a
-   destination tokenizer, then resize the model's input-embedding matrix to
-   match the new vocabulary size.
-
-2. :func:`get_training_chat_template` — return a Jinja2 chat-template string
-   that wraps the assistant-turn content with ``{% generation %}`` /
-   ``{% endgeneration %}`` markers so that
-   ``tokenizer.apply_chat_template(..., return_assistant_tokens_mask=True)``
-   yields a boolean mask usable for ``assistant_only_loss``.
-
-**Risk α10 — ordering invariant (MUST READ before use):**
-:func:`clone_chat_template` calls ``model.resize_token_embeddings(len(tokenizer))``
-which *mutates* the model's embedding matrix (adds new rows initialised from a
-multivariate-normal distribution fitted to the existing rows). Any functional
-snapshot taken with ``opaque.engine.functional.make_functional`` (or
-``torch.func.functional_call``) captures the embedding-weight tensor *at
-snapshot time*. If you call :func:`clone_chat_template` **after** taking a
-snapshot the snapshot will contain the *old*, smaller embedding matrix and the
-vocabulary expansion will be invisible to the functional forward pass.
-
-**Correct order:**
-
-.. code-block:: python
-
-    model, tokenizer, added_tokens = clone_chat_template(model, tokenizer, source_path)
-    # ONLY NOW snapshot the model:
-    fmodel, params, buffers = make_functional(model)
-
-Calling ``clone_chat_template`` after ``make_functional`` will silently
-produce a shape mismatch when ``fmodel`` is applied to token IDs that require
-the expanded vocabulary.
+Ordering invariant: :func:`clone_chat_template` mutates the embedding matrix
+via ``resize_token_embeddings``. A functional snapshot
+(``make_functional`` / ``torch.func.functional_call``) captures the embedding
+tensor at snapshot time, so clone the template **before** snapshotting;
+otherwise the snapshot keeps the old, smaller matrix and the expanded
+vocabulary is invisible to the functional forward, producing a silent shape
+mismatch.
 """
 
 from __future__ import annotations
@@ -52,12 +32,6 @@ logger = logging.getLogger(__name__)
 # Sentinel strings used by Jinja2 chat-template generation markers.
 _GEN_START = "{% generation %}"
 _GEN_END = "{% endgeneration %}"
-
-# The marker block that encloses the content expression of an assistant turn.
-# We wrap *the entire generation span* (content plus surrounding whitespace
-# captured by the template) with these markers so that
-# ``apply_chat_template(..., return_assistant_tokens_mask=True)`` produces a
-# correct per-token boolean mask.
 
 
 def clone_chat_template(
@@ -79,13 +53,10 @@ def clone_chat_template(
     4. Calls ``model.resize_token_embeddings(len(tokenizer))`` to extend (or
        confirm the size of) the model's input-embedding matrix.
 
-    **Risk α10 — CRITICAL ordering invariant:**
-    This function mutates the model's embedding matrix.  It **MUST** be called
-    **before** any ``make_functional`` / ``torch.func.functional_call``
-    snapshot is taken.  If you call it after snapshotting, the snapshot will
-    contain the old (smaller) embedding matrix and the expanded vocabulary will
-    be invisible to the functional forward pass, producing silent shape
-    mismatches at runtime.
+    Ordering invariant: this mutates the model's embedding matrix and must be
+    called before any ``make_functional`` / ``torch.func.functional_call``
+    snapshot, otherwise the snapshot keeps the old (smaller) matrix and the
+    expanded vocabulary is invisible to the functional forward.
 
     Args:
         model: The :class:`~transformers.PreTrainedModel` whose embedding
@@ -104,9 +75,8 @@ def clone_chat_template(
         chaining.  ``added_token_ids`` is the list of vocabulary indices of the
         special tokens newly added to *tokenizer* (empty when none were added).
         Callers fine-tuning with PEFT use it to mark the new embedding rows
-        trainable (mirrors ``trl.SFTTrainer``'s ``clone_chat_template`` →
-        ``trainable_token_indices`` handoff), since a frozen base would never
-        learn an embedding for a token that did not exist at pre-training time.
+        trainable, since a frozen base would never learn an embedding for a
+        token that did not exist at pre-training time.
 
     Raises:
         ValueError: If *source_tokenizer_or_path* does not have a
@@ -114,9 +84,7 @@ def clone_chat_template(
         TypeError: If *source_tokenizer_or_path* is neither a string nor a
             :class:`~transformers.PreTrainedTokenizerBase`.
     """
-    # ------------------------------------------------------------------
-    # 1. Resolve source tokenizer.
-    # ------------------------------------------------------------------
+    # Resolve source tokenizer.
     if isinstance(source_tokenizer_or_path, str):
         from transformers import AutoTokenizer  # lazy import
 
@@ -134,9 +102,7 @@ def clone_chat_template(
             )
         source_tokenizer = source_tokenizer_or_path
 
-    # ------------------------------------------------------------------
-    # 2. Copy chat template.
-    # ------------------------------------------------------------------
+    # Copy chat template.
     chat_template = getattr(source_tokenizer, "chat_template", None)
     if chat_template is None:
         raise ValueError(
@@ -146,14 +112,9 @@ def clone_chat_template(
         )
     tokenizer.chat_template = chat_template
 
-    # ------------------------------------------------------------------
-    # 3. Collect new special tokens from source.
-    #
-    # We use added_tokens_decoder (available since transformers ≥ 4.30) to
-    # enumerate tokens that the source tokenizer added to its vocabulary.
-    # We only propagate tokens flagged as special=True (e.g. <|im_start|>,
-    # <|im_end|>, <bos>, <eos>); regular sub-word tokens are not copied.
-    # ------------------------------------------------------------------
+    # Collect new special tokens from source. Only tokens flagged special=True
+    # (e.g. <|im_start|>, <|im_end|>, <bos>, <eos>) are propagated; regular
+    # sub-word tokens are not copied.
     tokens_to_add: list[str] = []
 
     added_tokens_decoder: dict = {}
@@ -189,15 +150,9 @@ def clone_chat_template(
     else:
         logger.debug("clone_chat_template: no new special tokens to add.")
 
-    # ------------------------------------------------------------------
-    # 4. Resize model embeddings.
-    #
-    # resize_token_embeddings is a no-op when len(tokenizer) matches the
-    # current embedding size; it extends the matrix otherwise.
-    # We call it unconditionally so the invariant
-    #   model.get_input_embeddings().weight.shape[0] == len(tokenizer)
-    # holds on exit even if no new tokens were added.
-    # ------------------------------------------------------------------
+    # Resize model embeddings. Called unconditionally so the invariant
+    # ``get_input_embeddings().weight.shape[0] == len(tokenizer)`` holds on
+    # exit even when no new tokens were added (resize is a no-op then).
     if hasattr(model, "resize_token_embeddings"):
         model.resize_token_embeddings(len(tokenizer))
     else:
@@ -253,15 +208,11 @@ def get_training_chat_template(tokenizer: PreTrainedTokenizerBase) -> str:
             "get_training_chat_template."
         )
 
-    # ------------------------------------------------------------------
     # Idempotency: already has the marker.
-    # ------------------------------------------------------------------
     if _GEN_START in template:
         return template
 
-    # ------------------------------------------------------------------
     # Strategy 1: wrap {{ generation_token }} — TRL v2 canonical placeholder.
-    # ------------------------------------------------------------------
     _GENERATION_TOKEN_EXPR = "{{ generation_token }}"
     if _GENERATION_TOKEN_EXPR in template:
         candidate = template.replace(
@@ -272,41 +223,24 @@ def get_training_chat_template(tokenizer: PreTrainedTokenizerBase) -> str:
         if _generation_block_renders(candidate):
             return candidate
 
-    # ------------------------------------------------------------------
-    # Strategy 2: find the assistant content expression inside the assistant
-    # conditional block.
-    #
-    # We look for the *last* occurrence of '{{ message[' (or '{{message[')
-    # inside an assistant branch.  This handles ChatML, Llama-3, Phi-3, etc.
-    # ------------------------------------------------------------------
+    # Strategy 2: wrap the assistant content expression inside the assistant
+    # conditional block. Handles ChatML, Llama-3, Phi-3, etc.
     template_out = _wrap_assistant_content(template)
     if template_out is not None and _generation_block_renders(template_out):
         return template_out
 
-    # ------------------------------------------------------------------
-    # Strategy 2b: shared OR-clause rendering (Qwen2.5-Instruct pattern).
-    #
-    # Some templates render user, system, and assistant turns through one
-    # shared expression inside a multi-condition ``{%- if (role == "user")
-    # or ... or (role == "assistant" and not tool_calls) %}`` clause.  In
-    # that layout the LAST ``assistant``-mention is an ``elif`` for the
-    # tool-call path and Strategy 2 wraps an unreachable expression — the
-    # resulting template renders with empty ``generation_indices``.
-    #
-    # The fix: rewrite the shared expression with an inner role-guard so the
-    # assistant case renders through a ``{% generation %}``-wrapped branch
-    # while user/system tokens stay outside the mask.
-    # ------------------------------------------------------------------
+    # Strategy 2b: shared OR-clause rendering (Qwen2.5-Instruct pattern). When
+    # user/system/assistant turns share one expression inside a multi-condition
+    # ``or`` clause, the last assistant mention is the tool-call ``elif`` and
+    # Strategy 2 would wrap an unreachable expression (empty
+    # ``generation_indices``). Rewrite the shared expression with an inner
+    # role-guard so only the assistant case renders inside the mask.
     template_out = _wrap_shared_or_clause(template)
     if template_out is not None and _generation_block_renders(template_out):
         return template_out
 
-    # ------------------------------------------------------------------
-    # Strategy 3: best-effort fallback.  Wrap everything between the final
-    # loop body and the end of the template with generation markers.  This
-    # is unlikely to yield a correct assistant-only mask but at least
-    # produces a syntactically valid template.
-    # ------------------------------------------------------------------
+    # Strategy 3: best-effort fallback. Wrap the whole template body; unlikely
+    # to yield a correct assistant-only mask but stays syntactically valid.
     logger.warning(
         "get_training_chat_template: could not locate the assistant-turn "
         "content expression in the chat template.  Falling back to wrapping "
@@ -316,9 +250,7 @@ def get_training_chat_template(tokenizer: PreTrainedTokenizerBase) -> str:
     return f"{_GEN_START}{template}{_GEN_END}"
 
 
-# ---------------------------------------------------------------------------
 # Private helpers
-# ---------------------------------------------------------------------------
 
 
 def _wrap_assistant_content(template: str) -> str | None:
@@ -333,12 +265,7 @@ def _wrap_assistant_content(template: str) -> str | None:
     """
     import re
 
-    # Locate the last occurrence of an assistant branch.
-    # We look for something like: {% if ... 'assistant' ... %} or
-    #                             {% elif ... 'assistant' ... %}
-    # then find the content expression within it.
-
-    # Find all positions where 'assistant' appears inside Jinja tags.
+    # Find all assistant branch tags ({% if/elif ... 'assistant' ... %}).
     assistant_block_pat = re.compile(
         r"\{%-?\s*(?:if|elif)\b[^%]*['\"]assistant['\"][^%]*-?%\}"
     )
@@ -362,10 +289,8 @@ def _wrap_assistant_content(template: str) -> str | None:
     # Take the last assistant branch start.
     last_branch_start = matches[-1].end()
 
-    # Within the substring from last_branch_start onward, find the first
-    # content expression.  (Using the first, not the last, because we want
-    # the expression that renders the assistant reply — typically the very
-    # next {{ … }} after the branch tag.)
+    # Find the first content expression after the branch tag — the one that
+    # renders the assistant reply (typically the next {{ … }}).
     substring = template[last_branch_start:]
     content_pat = re.compile(r"\{\{-?\s*[^}]*\bcontent\b[^}]*-?\}\}")
     m = content_pat.search(substring)
@@ -428,10 +353,9 @@ def _wrap_shared_or_clause(template: str) -> str | None:
     abs_start = match.end() + expr_match.start()
     abs_end = match.end() + expr_match.end()
 
-    # Replace the shared expression with a role-guarded variant.  For the
-    # assistant case wrap the WHOLE expression so any token that the shared
-    # expression emits for an assistant turn (content + im_end + newline) is
-    # flagged.  Training the model on im_end is desirable: it learns to stop.
+    # Role-guarded variant: wrap the whole expression for the assistant case so
+    # every token it emits (content + im_end + newline) is flagged. Flagging
+    # im_end is desirable — the model learns to stop.
     guarded = (
         "{%- if message.role == 'assistant' %}"
         + _GEN_START
@@ -473,7 +397,6 @@ def _generation_block_renders(template: str) -> bool:
         # Template won't compile or render — treat as failure of this strategy.
         return False
 
-    # ``indices`` is a list of ``(start, end)`` byte-offset pairs into the
-    # rendered chat string.  Non-empty + at least one non-degenerate span
-    # means the generation block actually fired during the test render.
+    # ``indices`` is a list of ``(start, end)`` byte-offset spans; a non-empty,
+    # non-degenerate span means the generation block fired during the render.
     return bool(indices) and any(end > start for start, end in indices)

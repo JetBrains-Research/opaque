@@ -109,16 +109,15 @@ def test_dpo_config_coerces_loss_type_and_defaults_weights():
 
 
 def test_unsupported_param_is_absent_not_rejected():
-    # No bespoke rejection: an unsupported field is simply not on the surface,
-    # so passing it raises the standard dataclass TypeError. ``padding_free`` is
-    # a TRL field with no DP meaning and is intentionally absent.
+    # ``padding_free`` is a TRL field with no DP meaning and is intentionally
+    # absent, so passing it raises the standard dataclass TypeError.
     with pytest.raises(TypeError):
         DPOConfig(output_dir="x", padding_free=True, privacy_noise_multiplier=0.0)
 
 
 def test_rpo_alpha_is_dropped():
-    # rpo_alpha is not part of current TRL (removed upstream); the field is gone,
-    # so passing it is a standard unexpected-keyword TypeError.
+    # rpo_alpha is not a field, so passing it is a standard unexpected-keyword
+    # TypeError.
     with pytest.raises(TypeError):
         DPOConfig(output_dir="x", rpo_alpha=1.0, privacy_noise_multiplier=0.0)
 
@@ -992,12 +991,11 @@ def test_dpo_no_reference_available_raises_early(tmp_path):
 
 
 # ----------------------------------------------------------------------
-# Fused logits-free path (plan §E): eligibility gating + CPU fallback-equivalence.
-#
+# Fused logits-free path: eligibility gating + CPU fallback-equivalence.
 # On CPU the fused primitives' ``lce_available`` is False, so they fall back to
 # the eager ``hidden @ Wᵀ`` projection — numerically identical to the eager
-# logits path. These tests assert that equivalence (proving the wiring is
-# correct) and that an ineligible config keeps the eager path.
+# logits path. These tests assert that equivalence and that an ineligible
+# config keeps the eager path.
 # ----------------------------------------------------------------------
 def _tiny_model_tied() -> LlamaForCausalLM:
     """A tiny Llama with tied input/output embeddings (no ``lm_head.weight``)."""
@@ -1158,16 +1156,10 @@ def test_sft_fused_dft_matches_eager_on_cpu(tmp_path, model_factory):
 
 
 def test_sft_fused_dft_matches_eager_on_cpu_under_peft(tmp_path):
-    """Regression for c539763b: the fused-dft path under PEFT must walk the
-    PEFT wrapper to the real backbone (``BaseModelOutputWithPast``), not the
-    inner causal-LM (which would return ``CausalLMOutputWithPast`` and crash
-    with ``AttributeError: ... has no attribute 'last_hidden_state'``).
-
-    Verifies that with ``peft_config=LoraConfig(...)`` the fused-dft loss
-    matches eager ``dft_loss(model.logits, labels)`` on the PEFT-wrapped
-    forward — i.e. the resolver returns the correct dotted prefix, the
-    ``_last_hidden_state`` helper walks it via ``attrgetter``, and the
-    end-to-end loss is numerically equivalent to the eager path.
+    """The fused-dft path under PEFT must walk the PEFT wrapper to the real
+    backbone (``BaseModelOutputWithPast``), not the inner causal-LM. With
+    ``peft_config=LoraConfig(...)`` the fused-dft loss must match eager
+    ``dft_loss(model.logits, labels)`` on the PEFT-wrapped forward.
     """
     peft = pytest.importorskip("peft")
     from opaque.alignment.sft.loss import dft_loss
@@ -1435,13 +1427,10 @@ def test_dpo_fused_trains_a_couple_steps(tmp_path):
 
 
 # ----------------------------------------------------------------------
-# PEFT unwrap — fused-dft / fused-logp backbone resolution under PEFT
-# Regression coverage: pre-fix the resolver returned ``"model"`` on a
-# ``PeftModelForCausalLM`` and ``getattr(peft_model, "model")`` resolved to
-# the inner causal-LM (still with ``lm_head``), so ``functional_call``
-# returned ``CausalLMOutputWithPast`` instead of ``BaseModelOutputWithPast``
-# and ``_last_hidden_state`` crashed with ``AttributeError`` on every
-# PEFT-wrapped fused-dft / fused-logp run.
+# PEFT unwrap — fused-dft / fused-logp backbone resolution under PEFT.
+# The resolver must walk a ``PeftModelForCausalLM`` to the real backbone
+# (``BaseModelOutputWithPast``), not the inner causal-LM, so that
+# ``_last_hidden_state`` finds ``last_hidden_state``.
 # ----------------------------------------------------------------------
 def _tiny_peft_model():
     peft = pytest.importorskip("peft")

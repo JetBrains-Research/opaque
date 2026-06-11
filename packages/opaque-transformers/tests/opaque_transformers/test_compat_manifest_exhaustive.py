@@ -1,18 +1,10 @@
 """Canary test: every upstream HF / TRL config field is bucketed exactly once.
 
-This is the **drift catcher** for the opaque argument manifest. When upstream
-HF or TRL ships a new ``TrainingArguments`` / ``SFTConfig`` / ``DPOConfig``
-field on a release whose manifest opaque hasn't been updated for, the new
-field will be unclassified by the bucket sets and this test fails.
-
-The failure tells the maintainer:
-1. Which new field appeared upstream.
-2. To decide its bucket (DIRECT / RENAME / TRANSFORM / REJECT_IF_SET /
-   DROP_WITH_WARN) and add it to the right constant in
-   ``opaque.api.transformers.trainer.training_arguments`` (or the TRL
-   manifests in ``opaque.api.transformers.trl``).
-
-The test is the discipline that keeps the manifest in sync with upstream.
+Drift catcher for the opaque argument manifest. A new upstream
+``TrainingArguments`` / ``SFTConfig`` / ``DPOConfig`` field that no bucket set
+classifies fails the test; the fix is to add it to the right constant in
+``opaque.api.transformers.trainer.training_arguments`` (or the TRL manifests in
+``opaque.api.transformers.trl``).
 """
 
 from __future__ import annotations

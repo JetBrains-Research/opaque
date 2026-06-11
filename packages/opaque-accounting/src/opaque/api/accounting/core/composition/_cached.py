@@ -25,9 +25,9 @@ class CachedProcess(DpProcess):
     optimizer from looking through the cache boundary. Cached wrappers
     can still merge via structural equality of their inner processes.
 
-    Note: All DpProcess.pld() methods now have automatic caching.
-    This wrapper's primary purpose is to serve as a merge barrier,
-    not to add caching (though it does increase the cache size to 16).
+    Since every :meth:`DpProcess.pld` already caches, this wrapper's
+    primary purpose is the merge barrier rather than caching (though it
+    does raise the cache size to 16).
     """
 
     inner: DpProcess

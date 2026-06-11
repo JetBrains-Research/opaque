@@ -32,10 +32,9 @@ def _make_lora_linear_forward(original):
             return self.base_layer(x)
 
         dropout = self.lora_dropout[active]
-        # Fused kernel passes x to both base linear and adapter. This is only
-        # correct when dropout is a no-op; otherwise dropout would leak into
-        # the base projection. Fall back to PEFT's original forward when
-        # dropout is active (training with lora_dropout > 0).
+        # The fused kernel passes x to both base linear and adapter, so it is
+        # correct only when dropout is a no-op; otherwise dropout would leak
+        # into the base projection. Fall back to PEFT otherwise.
         dropout_is_noop = (
             isinstance(dropout, torch.nn.Identity)
             or (isinstance(dropout, torch.nn.Dropout) and dropout.p == 0.0)
@@ -45,11 +44,10 @@ def _make_lora_linear_forward(original):
             return original(self, x, *args, **kwargs)
 
         # Cast all kernel operands (X, base W, LoRA A, LoRA B) to the active
-        # dtype. Mirror the public ``opaque_lora_w`` wrapper's ``follow_autocast``
-        # behaviour: under autocast the kernel's interior matmuls and the vmap
-        # backward ``grad_out @ W`` / ``mm(..., out=X_flat)`` patterns all expect
-        # operands in the autocast dtype, including the saved X (which would
-        # otherwise be reused as a same-dtype output buffer in the backward).
+        # dtype, mirroring the public ``opaque_lora_w`` wrapper's
+        # ``follow_autocast``: the vmap backward's ``grad_out @ W`` /
+        # ``mm(..., out=X_flat)`` patterns expect operands in the autocast
+        # dtype, including saved X (reused as a same-dtype output buffer).
         target_dtype = _active_lora_dtype(x)
         x = x.to(target_dtype)
         W = self.base_layer.weight

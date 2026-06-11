@@ -1,29 +1,12 @@
 """Tests for :mod:`opaque.api.alignment.data._chat_template`.
 
-Plan §7.7 + risk α10 (resize_token_embeddings ordering).
+Covers :func:`get_training_chat_template` (inserting / preserving the
+``{% generation %}`` markers, error cases) and :func:`clone_chat_template`
+(copying the template and special tokens, and the resize invariant
+``embedding rows == len(tokenizer)``).
 
-Coverage:
-
-- :func:`get_training_chat_template`
-
-  * Returns a template string containing ``{% generation %}``.
-  * Idempotent when the template already contains ``{% generation %}``.
-  * Raises ``ValueError`` on an unset (``None``) template.
-  * Works on ChatML-style and simple role-conditional templates.
-
-- :func:`clone_chat_template`
-
-  * Chat template is copied from source onto destination tokenizer.
-  * New special tokens from source are added to destination.
-  * ``model.get_input_embeddings().weight.shape[0] == len(tokenizer)``
-    (the resize invariant — risk α10).
-  * No-op when destination tokenizer already has all of source's special
-    tokens; vocab length and embedding size are unchanged.
-  * Works with a pre-loaded source tokenizer object (not just a path string).
-
-All tests are CPU-only, network-free, and use the smallest possible tokenizer
-and model configs.  ``transformers`` is required; tests are skipped when it is
-not installed via ``pytest.importorskip``.
+All tests are CPU-only and network-free with the smallest possible tokenizer
+and model configs. ``transformers`` is required (``pytest.importorskip``).
 """
 
 from __future__ import annotations
