@@ -11,7 +11,7 @@ Updated each loop cycle. Will be the morning-report deliverable.
 | A (Mellum-4b DP-DPO) | 1 | 1 (`55452`/`6itmyoxi`) | 0 | 0 | step ~560: train/rewards/acc=0.90, train/margins=1.6, train/loss=0.32, ε=4.64/8 | T01: lr=5e-5, bs=128, beta=0.1, clip=1.0 |
 | B (Mellum-2.0 DP-DPO) | 3 (2 failed) | 1 (`55459` mb=4 retry) | 0 | 2 failed (`55453` RMSNorm, `55456` OOM) | n/a — retry just queued | T01: lr=5e-5, bs=128, beta=0.1, clip=1.0, r=16, mb=4 |
 | C (Mellum-2.0 SFT) | 2 (1 failed) | 1 (`55457`) | 0 | 1 failed (`55454`) | step ~220: train/loss=0.70, ε=7.1/10 (will overshoot to ~13) | T01: lr=5e-5, r=16, mb=8 |
-| D (Mellum-4b SFT) | 1 | 1 (`55455`) | 0 | 0 | step ~755: train/loss=0.67, ε=9.3/10 — projected finish ~00:15 UTC | T01: lr=5e-5, r=16 |
+| D (Mellum-4b SFT) | 2 | 1 (`55461` T02) | 0 | **1 done** (`55455`/`xii5leqq`) | T01: train/loss=**0.647**, train/mean_token_acc=**0.839**, ε=10.06 (target nailed) | T01: lr=5e-5, r=16 (baseline) |
 
 ## Known issues
 
@@ -29,3 +29,4 @@ Updated each loop cycle. Will be the morning-report deliverable.
 
   No terminal trials this cycle. Concurrency full at 4/4. ScheduleWakeup 1800s.
 - **2026-06-12 23:45 UTC** — Cycle 4. **B-T01 (55456, Mellum-2.0 DPO) FAILED at 21:23 UTC with CUDA OOM** (23.98 GiB allocation, ~step 175): microbatch=8 too tight for Mellum-2.0 12B on H200's 139 GiB with DPO's 2× pass + ref logp eval at step 100. Retrying with **microbatch=4** as 55459 (HP-B-T01-..._mb4). The other 3 (A-T01 55452, D-T01 55455, C-T01 55457) still healthy.
+- **2026-06-13 00:19 UTC** — Cycle 5. **D-T01 FINISHED ✓** (xii5leqq, 2h13m runtime): train/loss=**0.647**, train/mean_token_acc=**0.839**, privacy/epsilon=**10.06** (target 10 nailed), nm=0.418 calibrated. Submitted **D-T02** (55461, --learning-rate 1e-4) to fill the slot. B-T01 retry (55459) healthy at step 50 with mb=4 but slower (~30s/step → projected ~12.5h end-to-end; will partially complete by morning). A-T01 + C-T01 still on track.
