@@ -102,8 +102,12 @@ def assert_vmap_grad(model, device, dtype=None):
 # ----------------------------------------------------------------------------
 
 
-def build_moe_model(family, device, **config_overrides):
+def build_moe_model(family, device, attn_impl="sdpa", **config_overrides):
     """Build + patch a tiny MoE model. Returns ``(model, modeling_module)``.
+
+    Defaults to ``attn_impl="sdpa"`` — the transformers production default — so
+    the suite exercises the SDPA path; pass ``attn_impl="eager"`` for the eager
+    reference validation.
 
     The Opaque MoE patch targets the stacked-weight ``*Experts`` module
     (transformers v5+). On versions where the family still uses the old
@@ -140,8 +144,16 @@ def build_moe_model(family, device, **config_overrides):
     kwargs = get_tiny_config_kwargs()
     kwargs.update(config_overrides)
     config = config_cls(**kwargs)
-    config._attn_implementation = "eager"
-    model = causal_lm_cls(config).to(device)
+    config._attn_implementation = attn_impl
+    try:
+        model = causal_lm_cls(config).to(device)
+    except ValueError as e:
+        # Some architectures (gpt_oss, deepseek_v4) are eager-only — HF rejects
+        # sdpa at init. Fall back to eager rather than fail the family.
+        if attn_impl == "eager" or "scaled_dot_product" not in str(e):
+            raise
+        config._attn_implementation = "eager"
+        model = causal_lm_cls(config).to(device)
     apply_model_patches(model, eager_attention=True)
     return model, mod
 

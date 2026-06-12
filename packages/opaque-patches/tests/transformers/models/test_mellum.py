@@ -56,7 +56,7 @@ def test_original_mellum_routes_via_llama(device):
     from opaque.api.patches.transformers._family import family_name
 
     config = LlamaConfig(**get_tiny_config_kwargs())
-    config._attn_implementation = "eager"
+    config._attn_implementation = "sdpa"
     model = LlamaForCausalLM(config).to(device)
     assert family_name(model) == "llama"
     apply_model_patches(model, eager_attention=True)

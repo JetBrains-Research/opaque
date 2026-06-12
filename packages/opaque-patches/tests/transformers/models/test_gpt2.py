@@ -30,6 +30,8 @@ def tiny_model(device):
         n_layer=1,
         n_head=4,
     )
+    # GPT-2 is the compat-only/legacy family (LayerNorm, learned pos-emb, no
+    # kernels); its SDPA path doesn't compose under vmap(grad), so it stays eager.
     config._attn_implementation = "eager"
     model = GPT2LMHeadModel(config).to(device)
     apply_model_patches(model, eager_attention=True)

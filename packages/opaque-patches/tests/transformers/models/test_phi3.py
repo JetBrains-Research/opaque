@@ -26,7 +26,7 @@ def tiny_model(device):
     kwargs = get_tiny_config_kwargs()
 
     config = Phi3Config(**kwargs)
-    config._attn_implementation = "eager"
+    config._attn_implementation = "sdpa"
     model = Phi3ForCausalLM(config).to(device)
     apply_model_patches(model, eager_attention=True)
     return model
