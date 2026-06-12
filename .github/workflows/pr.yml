@@ -353,15 +353,18 @@ jobs:
     needs: [build-preview-python, build-preview-opaque, build-preview-accounting]
     runs-on: ubuntu-latest
     steps:
+      # Best-effort: merge the per-package wheels into one artifact and delete
+      # the sources so a single ``preview-wheels`` is left. ``continue-on-error``
+      # tolerates the delete step 404ing when a concurrent/cancelled run
+      # (cancel-in-progress on rapid pushes) already removed a source artifact —
+      # a flake unrelated to the build. This job is a leaf (nothing depends on
+      # the merged artifact), so not gating on it is safe.
       - uses: actions/upload-artifact/merge@v6
+        continue-on-error: true
         with:
           name: preview-wheels
           pattern: preview-wheels-*
-          # Don't delete the per-package source artifacts after merging: the
-          # delete step 404s when a concurrent/cancelled run (cancel-in-progress
-          # on rapid pushes) already removed them, failing the job on a flake.
-          # The sources are harmless and expire on their own via retention-days.
-          delete-merged: false
+          delete-merged: true
           retention-days: 14
 
 # Lint & format live in `autoformat.yml`. That workflow auto-applies
