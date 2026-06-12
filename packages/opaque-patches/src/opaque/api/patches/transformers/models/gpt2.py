@@ -4,8 +4,10 @@
 
 GPT-2 uses absolute positional embeddings, standard GELU activations,
 and standard LayerNorm (no SwiGLU/GeGLU, no RMSNorm, no RoPE).  The
-family-level kernel patches (eager attention, RoPE) are all no-ops for
-this architecture; only the per-model concerns apply:
+family-level shims are disabled (``*_replacement=None``): GPT-2 attention
+is not the llama-shaped GQA ``eager_attention_forward`` the default vmap
+shim expects (it has no ``num_key_value_groups``), so applying it raises.
+Only the per-model concerns apply:
 
 - ``batchify`` (compat): transformers ≥ 4.47 added a ``logits_to_keep``
   slice (``hidden_states[:, slice_indices, :]``) that assumes a 3-D
@@ -31,6 +33,9 @@ _MODULE_PATH = "transformers.models.gpt2.modeling_gpt2"
 apply_gpt2_family_patches = make_apply_family_patches(
     family="gpt2",
     module_path=_MODULE_PATH,
+    repeat_kv_replacement=None,
+    eager_attention_replacement=None,
+    rope_replacement=None,
 )
 
 

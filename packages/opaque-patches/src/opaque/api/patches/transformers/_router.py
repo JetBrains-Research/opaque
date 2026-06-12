@@ -146,6 +146,15 @@ def apply_transformers_model_patches(
     )
     logger.debug("opaque: Applied model patches for %s", family)
 
+    # ``dropout`` (compat): zero the model's dropout. DP-SGD trains without it,
+    # and SDPA's fused dropout breaks vmap(grad). Model-wide traversal, so it
+    # runs here rather than in the per-class factory. Opt out with
+    # ``dropout=False`` (keeps the model's dropout).
+    if kwargs.get("dropout", compat) and model is not None:
+        from opaque.api.patches.transformers.components.dropout import disable_dropout
+
+        disable_dropout(model)
+
     batchify = kwargs.get("batchify", compat)
     # Apply batchify to PeftModel classes if needed
     if batchify and model is not None:

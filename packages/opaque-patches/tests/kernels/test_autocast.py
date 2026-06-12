@@ -19,6 +19,7 @@ from __future__ import annotations
 import pytest
 import torch
 import torch.nn as nn
+from torch.utils._pytree import tree_leaves
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.functional import make_functional
@@ -164,7 +165,7 @@ def test_kernels_under_autocast_dp_step_finite(amp_dtype: torch.dtype):
         loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0
     )
     grads, _ = grad_fn(params, x, y, state=clip_state)
-    for g in grads:
+    for g in tree_leaves(grads.pytree):
         assert torch.isfinite(g).all(), f"non-finite grad under autocast({amp_dtype})"
 
 
@@ -325,7 +326,11 @@ def test_kernels_autocast_under_compile(backend: str, amp_dtype: torch.dtype):
     )
     compiled_grads, _ = grad_fn_c(params, x, y, state=st_c)
 
-    for a, b in zip(eager_grads, compiled_grads, strict=True):
+    for a, b in zip(
+        tree_leaves(eager_grads.pytree),
+        tree_leaves(compiled_grads.pytree),
+        strict=True,
+    ):
         diff = (a.float() - b.float()).pow(2).mean().item()
         assert diff < 1e-3, f"compile×autocast mse {diff:.5f} too large"
 
@@ -405,7 +410,7 @@ def test_tiny_llama_under_autocast_dp_step(amp_dtype: torch.dtype):
         loss_fn, argnums=0, batch_argnums=(1,), clipping_norm=1.0
     )
     grads, _ = grad_fn(params, input_ids, state=st)
-    for g in grads:
+    for g in tree_leaves(grads.pytree):
         assert torch.isfinite(g).all(), (
             f"non-finite grad in DP step under autocast({amp_dtype}) on tiny Llama"
         )

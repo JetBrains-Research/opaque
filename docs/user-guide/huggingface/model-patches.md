@@ -110,14 +110,25 @@ Concrete patch targets:
 
 | Attention type | Status | Notes |
 |---|---|---|
-| `sdpa` | **Recommended** | Fused CUDA kernels (flash / efficient / cuDNN) with O(N) memory. |
-| `eager` | Supported | Materialises full attention matrix — O(N²) memory. |
+| `sdpa` | **Recommended (default)** | Works under `vmap(grad)`; O(N) memory. Backend nuances below. |
+| `eager` | Supported | vmap-safe but materialises the full O(N²) attention matrix. |
 | `flash_attention_2` | **Not compatible** | Uses `torch.nonzero` for unpadding (dynamic shapes break vmap). |
 | `flex_attention` | **Not compatible** | HigherOrderOperator has no vmap support (upstream PyTorch limitation). |
 
-SDPA is the Transformers default and requires no configuration.  It
-provides significant memory savings over eager because fused kernels
-avoid materialising the `(heads, seq, seq)` attention matrix.
+SDPA is the Transformers default and works under DP/`vmap(grad)` out of the box
+(no configuration). Behaviour by `torch.nn.attention` backend:
+
+| SDPA backend | Under `vmap(grad)` | Notes |
+|---|---|---|
+| `MATH` | ✅ vmap-native | decomposes to primitives vmap batches directly — no fallback |
+| `EFFICIENT_ATTENTION` | ✅ correct, slower | functorch has no batching rule for `_scaled_dot_product_efficient_attention_backward` yet, so the backward runs as a **per-example loop** (a "performance drop" warning) — removed by the upstream PyTorch batching-rule patch |
+| `CUDNN_ATTENTION` | ✅ correct, slower | same per-example-loop fallback as efficient |
+| `FLASH_ATTENTION` | ⚠️ not selected | rejected under vmap (`No available kernel`) |
+
+PyTorch's backend selector picks among these; the fused backends are correct
+under vmap and only pay the loop-fallback until the upstream batching rule lands.
+SDPA still saves significant memory over eager by avoiding the
+`(heads, seq, seq)` attention matrix.
 Measured at Qwen2-0.5B scale with LoRA:
 
 | seq_len | Microbatch | Eager memory | SDPA memory | Savings |
@@ -177,8 +188,34 @@ because their decoder layers apply `post_attention_layernorm`
 *between* the attention output and the residual add (the fused
 primitive expects residual-first ordering).
 
-**Not supported** by default patching: expert-routed decoder stacks
-such as GPT-OSS.
+### Mixture-of-Experts (MoE) models
+
+MoE families are supported via the `moe` patch — a **vmap-safety enabler**
+(under the `compat` bucket, not a CUDA kernel): it swaps HF v5's stacked-weight
+`*Experts.forward` onto `Opaque_MoE`, which is `vmap(grad)`-safe. HF's own
+experts forward is *not* vmap-able, so this patch is what makes **DP-SGD MoE
+training possible** at all. The router, load-balancing aux loss, and parameters
+are left untouched. Disable with `apply_model_patches(model, moe=False)`.
+
+| Model | `model_type` | Experts | RMSNorm | RoPE | CE | Notes |
+|---|---|---|---|---|---|---|
+| Mellum 2.0 | `mellum` | SwiGLU | Yes | Yes | Yes | Qwen3-MoE-derived; transformers ≥ 5.8 |
+| Mixtral | `mixtral` | SwiGLU | Yes | Yes | Yes | |
+| Qwen3-MoE | `qwen3_moe` | SwiGLU | Yes | Yes | Yes | |
+| Qwen3.5-MoE | `qwen3_5_moe` | SwiGLU | Yes | HF | Yes | non-standard rope left to HF |
+| Qwen3-Next | `qwen3_next` | SwiGLU | Yes | HF | Yes | hybrid linear-attention |
+| HunYuan-V1-MoE | `hunyuan_v1_moe` | SwiGLU | Yes | Yes | Yes | |
+| GPT-OSS | `gpt_oss` | — | Yes | Yes | Yes | clamped-SwiGLU/MXFP4 experts left to HF |
+| DeepSeek-V4 | `deepseek_v4` | — | Yes | HF | Yes | partial RoPE; scaled experts left to HF |
+
+GPT-OSS and DeepSeek-V4 use custom expert activations (clamped SwiGLU + MXFP4 /
+scaled experts), so their experts are intentionally left to HF — only RMSNorm,
+RoPE (where standard), and cross-entropy are patched (mirrors Liger's choices).
+The current `Opaque_MoE` is dense (correctness + DP/vmap compatibility); a fused
+Triton grouped-GEMM kernel is the planned performance follow-up.
+
+The original dense **Mellum** (`Mellum-4b`, `model_type="llama"`) needs no MoE
+support — it is a Llama checkpoint served by the `llama` family.
 
 **Deferred families:** Nemotron —
 `transformers.models.nemotron.modeling_nemotron` in `4.57.1` ships
