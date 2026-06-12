@@ -47,6 +47,7 @@ from opaque.api.patches.transformers._factory import (
     make_apply_model_patches,
     register_activation_kind,
     register_fused_add_rms_kind,
+    register_moe_kind,
     register_rms_norm_kind,
 )
 from opaque.api.patches.transformers._family import (
@@ -75,6 +76,7 @@ __all__ = [
     "register_activation_kind",
     "register_family",
     "register_fused_add_rms_kind",
+    "register_moe_kind",
     "register_rms_norm_kind",
     "supported_families",
 ]

@@ -42,6 +42,9 @@ from opaque.api.patches.transformers.components.geglu import (
     _make_geglu_exact_mlp_forward,
 )
 from opaque.api.patches.transformers.components.kv_cache import apply_kv_cache_patch
+from opaque.api.patches.transformers.components.moe import (
+    _make_moe_experts_forward,
+)
 from opaque.api.patches.transformers.components.rms_norm import (
     _rmsnorm_fac_gemma,
     _rmsnorm_fac_gemma2,
@@ -64,12 +67,20 @@ log = logging.getLogger(__name__)
 ActivationKind = Literal["swiglu", "phi3_swiglu", "geglu_exact", "geglu_approx"]
 RmsNormKind = Literal["llama", "gemma", "gemma2", "olmo2", "glm4"]
 FusedAddRmsKind = Literal["llama", "gemma", "phi3", "granite"]
+MoeKind = Literal["swiglu"]
 
 _ACTIVATION_FACTORIES = {
     "swiglu": _make_swiglu_mlp_forward,
     "phi3_swiglu": _make_phi3_mlp_forward,
     "geglu_exact": _make_geglu_exact_mlp_forward,
     "geglu_approx": _make_geglu_approx_mlp_forward,
+}
+
+# Stacked-weight MoE experts (HF v5 ``*Experts`` modules). The expert FFN is
+# SwiGLU, so the single registered kind dispatches to the vmap/DP-safe MoE
+# kernel; register more here for non-SwiGLU expert activations.
+_MOE_FACTORIES = {
+    "swiglu": _make_moe_experts_forward,
 }
 
 _RMSNORM_FACTORIES = {
@@ -121,6 +132,12 @@ def register_fused_add_rms_kind(name: str, factory: Callable) -> None:
     _FUSED_ADD_RMS_FACTORIES[name] = factory
 
 
+def register_moe_kind(name: str, factory: Callable) -> None:
+    """Register a custom MoE experts-forward factory under ``name`` (read by
+    ``make_apply_model_patches(moe_kind=name)``)."""
+    _MOE_FACTORIES[name] = factory
+
+
 def _resolve(spec, registry: dict[str, Callable]) -> Callable | None:
     """Convert a kind-spec to a factory callable.
 
@@ -148,6 +165,7 @@ def make_apply_model_patches(
     activation_kind: str | Callable | None = None,
     rms_norm_kind: str | Callable | None = None,
     fused_add_rms_kind: str | Callable | None = None,
+    moe_kind: str | Callable | None = None,
 ) -> Callable:
     """Build an ``apply_X_patches`` function for a given family.
 
@@ -176,6 +194,10 @@ def make_apply_model_patches(
         rms_norm_kind: Same shape — registered name, callable, or ``None``.
         fused_add_rms_kind: Same shape — for the DecoderLayer fused-add
             variant.
+        moe_kind: Same shape — for the stacked-weight MoE experts module
+            (``classes["experts"]``). Gated by the ``moe`` kwarg, which
+            defaults from ``compat`` (it is a vmap-safety patch required for
+            DP-SGD, not a CUDA kernel). ``None`` for dense models.
 
     Returns:
         Callable with signature
@@ -194,6 +216,7 @@ def make_apply_model_patches(
     activation_factory = _resolve(activation_kind, _ACTIVATION_FACTORIES)
     rms_norm_factory = _resolve(rms_norm_kind, _RMSNORM_FACTORIES)
     fused_add_rms_factory = _resolve(fused_add_rms_kind, _FUSED_ADD_RMS_FACTORIES)
+    moe_factory = _resolve(moe_kind, _MOE_FACTORIES)
 
     def apply(
         model=None,
@@ -224,6 +247,18 @@ def make_apply_model_patches(
             mlp_class = classes.get("mlp")
             if mlp_class is not None:
                 _patch_forward(getattr(mod, mlp_class, None), activation_factory, model)
+
+        # Stacked-weight MoE experts (HF v5 ``*Experts`` module). This is a
+        # vmap-safety patch, not a CUDA kernel: HF's experts forward isn't
+        # vmap(grad)-able (DP-SGD breaks without it), and the replacement runs on
+        # CPU too — so it lives in the ``compat`` bucket, NOT ``kernels`` (which
+        # auto-disables off-CUDA). The ``moe`` gate is separate from
+        # ``activation`` since a model may have both routed experts and dense MLP
+        # layers. Absent ``Experts`` class (dense-only / pre-v5) no-ops below.
+        if moe_factory is not None and kwargs.get("moe", compat):
+            experts_class = classes.get("experts")
+            if experts_class is not None:
+                _patch_forward(getattr(mod, experts_class, None), moe_factory, model)
 
         # RMSNorm (unified standalone + fused-add). Triton kernel — gated
         # on ``kernels``.
@@ -293,7 +328,9 @@ __all__ = [
     "register_activation_kind",
     "register_rms_norm_kind",
     "register_fused_add_rms_kind",
+    "register_moe_kind",
     "ActivationKind",
     "RmsNormKind",
     "FusedAddRmsKind",
+    "MoeKind",
 ]

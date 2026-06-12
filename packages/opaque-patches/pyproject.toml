@@ -28,7 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 transformers = [
-  "transformers==4.57.1",
+  "transformers>=4.57.0,<6",
   "peft>=0.13.0",
 ]
 

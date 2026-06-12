@@ -17,6 +17,7 @@ from __future__ import annotations
 import pytest
 import torch
 import torch.nn as nn
+from torch.utils._pytree import tree_leaves
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.functional import make_functional
@@ -73,16 +74,18 @@ def _run(
 
 
 def _assert_close(a, b, *, rtol: float, atol: float):
-    assert len(a) == len(b)
-    for la, lb in zip(a, b, strict=True):
-        torch.testing.assert_close(la, lb, rtol=rtol, atol=atol)
+    # clipped_grad returns a ClippedPytree; compare the leaf tensors.
+    la, lb = tree_leaves(a.pytree), tree_leaves(b.pytree)
+    assert len(la) == len(lb)
+    for x, y in zip(la, lb, strict=True):
+        torch.testing.assert_close(x, y, rtol=rtol, atol=atol)
 
 
 def test_kernels_eager_baseline_no_nan_cuda():
     """Sanity: eager kernel path produces finite gradients before we ask about compile."""
     model, x, y = _build()
     eager = _run(model, x, y, compile_backend=None)
-    for g in eager:
+    for g in tree_leaves(eager.pytree):
         assert torch.isfinite(g).all(), "kernel produced non-finite eager gradient"
 
 

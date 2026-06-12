@@ -62,19 +62,19 @@ USAGE:
   # Smoke test (CPU, ~seconds, no network)
   python examples/train_dpo.py --smoke
 
-  # Quick test preset (Qwen2.5-0.5B + ultrafeedback)
+  # Quick test preset (Qwen2.5-Coder-0.5B + code-security DPO)
   python examples/train_dpo.py --preset smoke
 
-  # Full production training on Qwen2.5-7B + ultrafeedback at ε=8
-  python examples/train_dpo.py --preset qwen-7b-ultrafeedback
+  # Full production training on Qwen2.5-Coder-7B + code-security DPO at ε=8
+  python examples/train_dpo.py --preset qwen-7b-codesec
 
   # 4-GPU distributed run with torchrun
-  torchrun --nproc_per_node=4 examples/train_dpo.py --preset qwen-7b-ultrafeedback
+  torchrun --nproc_per_node=4 examples/train_dpo.py --preset qwen-7b-codesec
 
   # Or customize individual parameters:
   python examples/train_dpo.py \\
-    --model-name "Qwen/Qwen2.5-0.5B-Instruct" \\
-    --dataset "trl-lib/ultrafeedback_binarized" \\
+    --model-name "Qwen/Qwen2.5-Coder-0.5B-Instruct" \\
+    --dataset "CyberNative/Code_Vulnerability_Security_DPO" \\
     --loss-type sigmoid --beta 0.1 \\
     --num-train-samples 5000 --num-eval-samples 500 \\
     --num-epochs 1 --batch-size 16 --eval-steps 50 \\
@@ -416,6 +416,22 @@ def _load_streaming_subset(
     return Dataset.from_list(rows)
 
 
+def _normalize_preference_row(row):
+    """Map dataset-specific schemas onto ``{prompt, chosen, rejected}``.
+
+    CyberNative/Code_Vulnerability_Security_DPO carries ``(system, question,
+    chosen, rejected)``; collapse ``(system, question)`` into a single string
+    prompt (a base model has no chat template). Rows already carrying a
+    ``prompt`` (or only ``chosen``/``rejected``) pass through unchanged.
+    """
+    if "prompt" in row or "question" not in row:
+        return row
+    system = (row.get("system") or "").strip()
+    question = row["question"]
+    prompt = f"{system}\n\n{question}" if system else question
+    return {**row, "prompt": prompt}
+
+
 def _tokenize_preference_example(example, tokenizer, max_length):
     """Tokenize a single DPO preference example into model-ready token ids.
 
@@ -695,12 +711,19 @@ def parse_args():
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["custom", "smoke", "qwen-0.5b-ultrafeedback", "qwen-7b-ultrafeedback"],
+        choices=[
+            "custom",
+            "smoke",
+            "qwen-7b-codesec",
+            "mellum-codesec",
+            "mellum2-codesec",
+        ],
         default="smoke",
         help="Apply preset configuration (custom=keep explicit args, "
-        "smoke=quick test Qwen2.5-0.5B + ultrafeedback at ε=8, "
-        "qwen-0.5b-ultrafeedback=same as smoke, "
-        "qwen-7b-ultrafeedback=Qwen2.5-7B + ultrafeedback at ε=8 with adafactor @ 5e-5).",
+        "smoke=quick test Qwen2.5-Coder-0.5B + code-security DPO at ε=8, "
+        "qwen-7b-codesec=Qwen2.5-Coder-7B + code-security DPO at ε=8 with adafactor @ 5e-5, "
+        "mellum-codesec=Mellum-4b dense + code-security DPO at ε=8, "
+        "mellum2-codesec=Mellum2-12B-A2.5B MoE + code-security DPO at ε=8).",
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
@@ -731,7 +754,7 @@ def parse_args():
     data_group.add_argument(
         "--dataset",
         type=str,
-        default="trl-lib/ultrafeedback_binarized",
+        default="CyberNative/Code_Vulnerability_Security_DPO",
         help="HuggingFace preference dataset name (must have chosen/rejected columns)",
     )
     data_group.add_argument(
@@ -1173,11 +1196,12 @@ def parse_args():
         if name not in provided_dests:
             setattr(args, name, value)
 
-    # Apply preset configurations (CLI args take precedence)
-    if args.preset in ("smoke", "qwen-0.5b-ultrafeedback"):
-        # Quick test with Qwen2.5-0.5B-Instruct + ultrafeedback.
-        _set("model_name", "Qwen/Qwen2.5-0.5B-Instruct")
-        _set("dataset", "trl-lib/ultrafeedback_binarized")
+    # Code models train on code-security preference pairs, not general chat.
+    # The loader collapses (system, question) -> prompt.
+    _CODESEC = "CyberNative/Code_Vulnerability_Security_DPO"
+    if args.preset == "smoke":
+        _set("model_name", "Qwen/Qwen2.5-Coder-0.5B-Instruct")
+        _set("dataset", _CODESEC)
         _set("num_train_samples", 1000)
         _set("num_eval_samples", 100)
         _set("num_epochs", 1)
@@ -1194,14 +1218,14 @@ def parse_args():
         _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
         _set("audit", False)
-    elif args.preset == "qwen-7b-ultrafeedback":
-        # Qwen2.5-7B + ultrafeedback DPO LoRA fine-tuning at ε=8.
-        _set("model_name", "Qwen/Qwen2.5-7B-Instruct")
-        _set("dataset", "trl-lib/ultrafeedback_binarized")
-        _set("num_train_samples", 50000)
-        _set("num_eval_samples", 1000)
-        _set("num_epochs", 1)
-        _set("batch_size", 64)
+    elif args.preset == "qwen-7b-codesec":
+        # Qwen2.5-Coder-7B + code-security DPO at ε=8.
+        _set("model_name", "Qwen/Qwen2.5-Coder-7B-Instruct")
+        _set("dataset", _CODESEC)
+        _set("num_train_samples", 4000)
+        _set("num_eval_samples", 500)
+        _set("num_epochs", 2)
+        _set("batch_size", 128)
         _set("microbatch_size", 8)
         _set("log_steps", 2)
         _set("eval_steps", 25)
@@ -1215,15 +1239,55 @@ def parse_args():
         _set("max_length", 1024)
         _set(
             "lora_modules",
-            [
-                "q_proj",
-                "k_proj",
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-            ],
+            ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        )
+        _set("dtype", "bfloat16")
+    elif args.preset == "mellum2-codesec":
+        # Mellum2-12B-A2.5B (MoE) DP-DPO at ε=8. At batch=128 the Rényi accountant
+        # calibrates nm≈0.557, so the preference signal survives. LoRA on attention
+        # projections only — routed experts are stacked nn.Parameter weights.
+        _set("model_name", "JetBrains/Mellum2-12B-A2.5B-Base")
+        _set("dataset", _CODESEC)
+        _set("num_train_samples", 4000)
+        _set("num_eval_samples", 500)
+        _set("num_epochs", 2)
+        _set("batch_size", 128)
+        _set("microbatch_size", 8)
+        _set("log_steps", 2)
+        _set("eval_steps", 25)
+        _set("target_epsilon", 8.0)
+        _set("learning_rate", 5e-5)
+        _set("optimizer", "adafactor")
+        _set("loss_type", "sigmoid")
+        _set("beta", 0.1)
+        _set("lora_r", 16)
+        _set("lora_alpha", 32)
+        _set("max_length", 1024)
+        _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
+        _set("dtype", "bfloat16")
+    elif args.preset == "mellum-codesec":
+        # Mellum-4b (dense Llama) + code-security DPO at ε=8. Dense MLP, so LoRA
+        # also targets gate/up/down_proj.
+        _set("model_name", "JetBrains/Mellum-4b-base")
+        _set("dataset", _CODESEC)
+        _set("num_train_samples", 4000)
+        _set("num_eval_samples", 500)
+        _set("num_epochs", 2)
+        _set("batch_size", 128)
+        _set("microbatch_size", 16)
+        _set("log_steps", 2)
+        _set("eval_steps", 25)
+        _set("target_epsilon", 8.0)
+        _set("learning_rate", 5e-5)
+        _set("optimizer", "adafactor")
+        _set("loss_type", "sigmoid")
+        _set("beta", 0.1)
+        _set("lora_r", 16)
+        _set("lora_alpha", 32)
+        _set("max_length", 1024)
+        _set(
+            "lora_modules",
+            ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
         )
         _set("dtype", "bfloat16")
     elif args.preset == "custom":
@@ -1685,7 +1749,7 @@ def main():
     def _tokenize_split(rows_iter, desc):
         out = []
         for raw_row in rows_iter:
-            row = extract_prompt(raw_row)
+            row = extract_prompt(_normalize_preference_row(raw_row))
             try:
                 tok = _tokenize_preference_example(row, tokenizer, args.max_length)
             except Exception:

@@ -17,15 +17,35 @@ def _active_mask_dtype(input_embeds: torch.Tensor) -> torch.dtype:
     return input_embeds.dtype
 
 
+def _safe_seq_length(past_key_values) -> int:
+    """``get_seq_length`` that tolerates hybrid / linear-attention caches.
+
+    Some caches (e.g. qwen3_next's GatedDeltaNet) raise when queried globally;
+    for mask building an unknown length is equivalent to no cached tokens.
+    """
+    if past_key_values is None:
+        return 0
+    get = getattr(past_key_values, "get_seq_length", None)
+    if get is not None:
+        try:
+            return get()
+        except Exception:
+            return 0
+    return getattr(past_key_values, "seen_tokens", 0)
+
+
 def vmap_create_causal_mask(
     config,
-    input_embeds: torch.Tensor,
-    attention_mask: torch.Tensor | None,
-    cache_position: torch.Tensor,
-    past_key_values,
+    inputs_embeds: torch.Tensor | None = None,
+    attention_mask: torch.Tensor | None = None,
+    past_key_values=None,
     position_ids: torch.Tensor | None = None,
     or_mask_function=None,
     and_mask_function=None,
+    *,
+    cache_position: torch.Tensor | None = None,
+    input_embeds: torch.Tensor | None = None,
+    **kwargs,
 ) -> torch.Tensor | None:
     """vmap-compatible create_causal_mask.
 
@@ -34,7 +54,13 @@ def vmap_create_causal_mask(
     Original: inputs_embeds (batch, seq, hidden) -> mask (batch, 1, seq, seq)
     Under vmap with with_batch_dim: inputs_embeds (1, seq, hidden) -> mask (1, 1, seq, seq)
     Under vmap without with_batch_dim: inputs_embeds (seq, hidden) -> mask (1, 1, seq, seq)
+
+    Signature spans v4 and v5: v4 passes ``input_embeds`` + ``cache_position``;
+    v5 renames to ``inputs_embeds``, drops ``cache_position``, and may add
+    ``block_sequence_ids``. All callers use keywords, so the flexible signature
+    handles both.
     """
+    input_embeds = inputs_embeds if inputs_embeds is not None else input_embeds
     # When no padding mask is provided AND the attention backend handles
     # causality internally (SDPA uses is_causal=True, flash uses masking
     # kernels), return None to avoid materializing the full mask tensor.
@@ -44,12 +70,7 @@ def vmap_create_causal_mask(
     # so we check for actual cached data rather than just None.
     attn_impl = getattr(config, "_attn_implementation", None)
     if attention_mask is None and attn_impl != "eager":
-        has_cached_data = (
-            past_key_values is not None
-            and hasattr(past_key_values, "get_seq_length")
-            and past_key_values.get_seq_length() > 0
-        )
-        if not has_cached_data:
+        if _safe_seq_length(past_key_values) <= 0:
             return None
 
     # Detect batchless input (under vmap without with_batch_dim) vs batched
@@ -63,16 +84,19 @@ def vmap_create_causal_mask(
         seq_len = input_embeds.shape[1]
 
     # Determine target_length (total sequence length including cache)
-    past_seen_tokens = 0
-    if past_key_values is not None:
-        if hasattr(past_key_values, "get_seq_length"):
-            past_seen_tokens = past_key_values.get_seq_length()
-        elif hasattr(past_key_values, "seen_tokens"):
-            past_seen_tokens = past_key_values.seen_tokens
+    past_seen_tokens = _safe_seq_length(past_key_values)
     target_length = past_seen_tokens + seq_len
+
+    # v5 drops cache_position; synthesize contiguous positions so the logic below
+    # is version-agnostic. v4 supplies it and skips this branch.
+    if cache_position is None:
+        cache_position = torch.arange(
+            past_seen_tokens, target_length, device=input_embeds.device
+        )
 
     # Mask dtype follows autocast so SDPA's attn_mask matches the bf16 query.
     mask_dtype = _active_mask_dtype(input_embeds)
+    # Create causal mask
     causal_mask = torch.full(
         (batch_size, 1, seq_len, target_length),
         torch.finfo(mask_dtype).min,
@@ -151,13 +175,16 @@ def vmap_create_causal_mask(
 
 def vmap_create_sliding_window_causal_mask(
     config,
-    input_embeds: torch.Tensor,
-    attention_mask: torch.Tensor | None,
-    cache_position: torch.Tensor,
-    past_key_values,
+    inputs_embeds: torch.Tensor | None = None,
+    attention_mask: torch.Tensor | None = None,
+    past_key_values=None,
     position_ids: torch.Tensor | None = None,
     or_mask_function=None,
     and_mask_function=None,
+    *,
+    cache_position: torch.Tensor | None = None,
+    input_embeds: torch.Tensor | None = None,
+    **kwargs,
 ) -> torch.Tensor | None:
     """vmap-compatible ``create_sliding_window_causal_mask``.
 
@@ -174,13 +201,13 @@ def vmap_create_sliding_window_causal_mask(
     """
     return vmap_create_causal_mask(
         config,
-        input_embeds,
-        attention_mask,
-        cache_position,
-        past_key_values,
+        inputs_embeds=inputs_embeds if inputs_embeds is not None else input_embeds,
+        attention_mask=attention_mask,
+        past_key_values=past_key_values,
         position_ids=position_ids,
         or_mask_function=or_mask_function,
         and_mask_function=and_mask_function,
+        cache_position=cache_position,
     )
 
 
