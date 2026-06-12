@@ -14,6 +14,9 @@ match independent references within bf16 noise across:
 5. opaque_moe dispatches CUDA bf16 → the fused path.
 """
 
+# ``I`` is the intermediate dim in the (E, K, H, I, T) shape tuple — intentional.
+# ruff: noqa: E741
+
 import pytest
 import torch
 import torch.nn.functional as F

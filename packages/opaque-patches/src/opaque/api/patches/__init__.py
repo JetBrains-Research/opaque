@@ -94,7 +94,8 @@ def apply_runtime_patches(
     Per-concern compat flags (default-on with ``compat=True``):
     ``vmap_masking`` (vmap-safe causal-mask builders),
     ``empty_batches`` (collator handling for Poisson-sampled empty
-    batches), ``vmap_checkpointing`` (gradient-checkpointing shim).
+    batches), ``vmap_checkpointing`` (gradient-checkpointing shim),
+    ``vmap_grouped_mm`` (vmap-safe grouped-GEMM gate for MoE experts).
     Per-model CE patches live on :func:`apply_model_patches`.
     """
     global _runtime_patches_applied
@@ -103,6 +104,7 @@ def apply_runtime_patches(
     vmap_masking = kwargs.get("vmap_masking", compat)
     empty_batches = kwargs.get("empty_batches", compat)
     vmap_checkpointing = kwargs.get("vmap_checkpointing", compat)
+    vmap_grouped_mm = kwargs.get("vmap_grouped_mm", compat)
 
     if vmap_masking:
         try:
@@ -111,6 +113,16 @@ def apply_runtime_patches(
             )
 
             apply_masking_patches(vmap_masking=vmap_masking)
+        except ImportError:
+            pass
+
+    if vmap_grouped_mm:
+        try:
+            from opaque.api.patches.transformers.runtime.moe import (
+                apply_grouped_mm_patches,
+            )
+
+            apply_grouped_mm_patches(vmap_grouped_mm=vmap_grouped_mm)
         except ImportError:
             pass
 

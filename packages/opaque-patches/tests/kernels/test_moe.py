@@ -9,6 +9,9 @@
 5. CPU fallback path
 """
 
+# ``I`` is the intermediate dim in the (E, K, H, I, T) shape tuple — intentional.
+# ruff: noqa: E741
+
 import pytest
 import torch
 import torch.nn.functional as F
@@ -67,7 +70,7 @@ def test_forward_matches_sparse_reference(assert_precision):
 
 
 def test_dense_masked_equals_sparse():
-    """Dense-masked == sparse gather (exact)."""
+    """Dense-masked == sparse gather (within bf16 tolerance)."""
     x, gate_up, down, ti, tw = _inputs()
     ref = _sparse_gather_moe(x, gate_up, down, ti, tw)
     out = torch_reference_moe(x, gate_up, down, ti, tw)
@@ -123,7 +126,7 @@ def test_vmap_grad_per_example(assert_precision):
 
 
 def test_cpu_fallback():
-    """On CPU the kernel falls back to the torch path without Triton."""
+    """CPU inputs take the torch fallback (even on a CUDA+Triton host)."""
     x, gate_up, down, ti, tw = (t.cpu() if torch.is_tensor(t) else t for t in _inputs(device="cpu", dtype=torch.float32))
     out = opaque_moe(x, gate_up, down, ti, tw)
     ref = _sparse_gather_moe(x, gate_up, down, ti, tw)

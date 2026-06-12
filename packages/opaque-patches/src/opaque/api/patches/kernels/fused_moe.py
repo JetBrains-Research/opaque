@@ -23,6 +23,10 @@ summed across the batch. The forward/dx GEMMs index the *shared* weights by the
 real expert (``group % E``).
 """
 
+# ``I`` is the per-expert intermediate dim throughout (paired with ``2I`` for the
+# fused gate+up projection); single-letter tensor-shape names are intentional here.
+# ruff: noqa: E741
+
 from __future__ import annotations
 
 import torch

@@ -12,6 +12,9 @@ This catches a silent regression where a kernel starts doing a reduction in bf16
 see.
 """
 
+# ``I`` is the intermediate dim in the (E, K, H, I, T) shape tuple — intentional.
+# ruff: noqa: E741
+
 import pytest
 import torch
 import torch.nn.functional as F

@@ -4030,8 +4030,8 @@ class DPTrainer:
                 "produces at least one improving step."
             )
         log.info("Loading best model from %s", ckpt_dir)
-        new_state, mutated = self._read_weights_file(ckpt_dir)
-        if not new_state and not mutated:
+        new_state = self._read_weights_file(ckpt_dir)
+        if not new_state:
             raise RuntimeError(
                 f"load_best_model_at_end=True: best checkpoint recorded at "
                 f"{ckpt_dir!r} but no weights file (model.safetensors / "
@@ -4042,13 +4042,10 @@ class DPTrainer:
 
         # Mutate the underlying module so ``save_model()`` and any callback
         # firing on ``on_train_end`` observe the best weights immediately.
-        # Sharded loads have already mutated the model in place — skip
-        # the redundant ``load_state_dict`` call.  PEFT detection drives
-        # ``strict``: adapter dirs ship only adapter weights, full-model
-        # dirs ship the full state dict.
-        if not mutated:
-            strict = not self._is_peft
-            self._model.load_state_dict(new_state, strict=strict)
+        # PEFT detection drives ``strict``: adapter dirs ship only adapter
+        # weights, full-model dirs ship the full state dict.
+        strict = not self._is_peft
+        self._model.load_state_dict(new_state, strict=strict)
 
         # Rebuild the functional view from the (now-mutated) module.  Keep
         # ``ctx.trainable_params`` keyed by the same names as before — i.e.
@@ -4060,8 +4057,8 @@ class DPTrainer:
     def _read_weights_file(
         self,
         ckpt_dir: str,
-    ) -> tuple[dict[str, torch.Tensor], bool]:
-        """Load weights from a checkpoint directory.
+    ) -> dict[str, torch.Tensor]:
+        """Load a checkpoint directory's weights into a single state dict.
 
         Supports four on-disk shapes:
 
@@ -4072,22 +4069,32 @@ class DPTrainer:
         - Sharded safetensors with index ``model.safetensors.index.json``.
         - Sharded pickle with index ``pytorch_model.bin.index.json``.
 
-        Returns ``(state_dict, model_already_mutated)``.  In the
-        single-file cases ``state_dict`` carries the loaded tensors and
-        ``model_already_mutated`` is ``False`` (the caller must call
-        ``self._model.load_state_dict(state_dict, ...)`` itself).  In
-        the sharded case ``load_sharded_checkpoint`` has already
-        mutated ``self._model`` in place, so the state dict comes back
-        empty and ``model_already_mutated`` is ``True`` to signal "no
-        further ``load_state_dict`` needed".  Returns ``({}, False)``
+        Returns the loaded tensors; the caller runs the
+        ``self._model.load_state_dict(...)`` call.  Returns an empty dict
         when no checkpoint files were found.
+
+        Sharded checkpoints are reassembled here by reading the index and
+        merging every referenced shard, rather than delegating to
+        ``transformers.modeling_utils.load_sharded_checkpoint`` (removed in
+        transformers v5).
         """
+        import json
+
         from safetensors.torch import load_file as load_safetensors
-        from transformers.modeling_utils import load_sharded_checkpoint
         from transformers.utils import (
             SAFE_WEIGHTS_INDEX_NAME,
             WEIGHTS_INDEX_NAME,
         )
+
+        def _load_one(path: str) -> dict[str, torch.Tensor]:
+            if path.endswith(".safetensors"):
+                return load_safetensors(path, device=str(self._device))
+            # ``weights_only=False``: ``pytorch_model.bin`` is a pickled
+            # state-dict that may carry ``torch.dtype`` / ``torch.device``
+            # markers (HF historically stamps these into checkpoints) —
+            # PyTorch 2.6's safe-load default rejects them.  Pinning the
+            # explicit ``False`` keeps the behaviour we tested against.
+            return torch.load(path, map_location=self._device, weights_only=False)
 
         # Single-file shapes win over sharded indices (HF parity:
         # ``save_pretrained`` writes a single file when the model fits
@@ -4099,36 +4106,23 @@ class DPTrainer:
             os.path.join(ckpt_dir, "adapter_model.bin"),
         ]
         for path in candidates:
-            if not os.path.exists(path):
-                continue
-            if path.endswith(".safetensors"):
-                return load_safetensors(path, device=str(self._device)), False
-            # ``weights_only=False``: ``pytorch_model.bin`` is a pickled
-            # state-dict that may carry ``torch.dtype`` / ``torch.device``
-            # markers (HF historically stamps these into checkpoints) —
-            # PyTorch 2.6's safe-load default rejects them.  Pinning the
-            # explicit ``False`` keeps the behaviour we tested against.
-            return (
-                torch.load(path, map_location=self._device, weights_only=False),
-                False,
-            )
+            if os.path.exists(path):
+                return _load_one(path)
 
-        # Sharded checkpoints: ``load_sharded_checkpoint`` mutates the
-        # model in place.  ``strict=False`` mirrors the PEFT-friendly
-        # single-file path so partial-key checkpoints still load.
-        sharded_indices = (
-            os.path.join(ckpt_dir, SAFE_WEIGHTS_INDEX_NAME),
-            os.path.join(ckpt_dir, WEIGHTS_INDEX_NAME),
-        )
-        if any(os.path.exists(p) for p in sharded_indices):
-            load_sharded_checkpoint(
-                self._model,
-                ckpt_dir,
-                strict=False,
-                prefer_safe=True,
-            )
-            return {}, True
-        return {}, False
+        # Sharded checkpoints: read the index's ``weight_map`` and merge
+        # every referenced shard into one state dict.  Safetensors index
+        # wins over pickle (mirrors the old ``prefer_safe=True``).
+        for index_name in (SAFE_WEIGHTS_INDEX_NAME, WEIGHTS_INDEX_NAME):
+            index_path = os.path.join(ckpt_dir, index_name)
+            if not os.path.exists(index_path):
+                continue
+            with open(index_path) as fh:
+                weight_map = json.load(fh)["weight_map"]
+            merged: dict[str, torch.Tensor] = {}
+            for shard in sorted(set(weight_map.values())):
+                merged.update(_load_one(os.path.join(ckpt_dir, shard)))
+            return merged
+        return {}
 
     def save_model(
         self,
@@ -4484,18 +4478,15 @@ class DPTrainer:
 
     def _load_model_weights(self, ckpt_dir: str) -> None:
         """Load saved weights into ``self._model`` so make_functional starts from them."""
-        new_state, mutated = self._read_weights_file(ckpt_dir)
-        if not new_state and not mutated:
+        new_state = self._read_weights_file(ckpt_dir)
+        if not new_state:
             log.warning("No weights file in %s; model untouched", ckpt_dir)
             return
-        # Sharded loads already mutated ``self._model`` in place — skip
-        # the redundant ``load_state_dict`` call.  ``strict`` follows
-        # PEFT detection: adapter checkpoints store only adapter
-        # parameters (subset → ``strict=False``); full-model checkpoints
-        # surface mismatched keys as errors (``strict=True``).
-        if not mutated:
-            strict = not self._is_peft
-            self._model.load_state_dict(new_state, strict=strict)
+        # ``strict`` follows PEFT detection: adapter checkpoints store only
+        # adapter parameters (subset → ``strict=False``); full-model
+        # checkpoints surface mismatched keys as errors (``strict=True``).
+        strict = not self._is_peft
+        self._model.load_state_dict(new_state, strict=strict)
 
     def _read_runtime_for_resume(
         self, ckpt_dir: str

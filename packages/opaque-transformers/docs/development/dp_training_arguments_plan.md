@@ -102,7 +102,9 @@ Highlights of what landed:
   way) — this is a deliberate variance-reduction trick that avoids
   O(steps) replay cost.  See ``DPTrainer.train`` docstring.  Sharded
   safetensors (`model.safetensors.index.json`) and pickle index loads
-  are supported via HF's `load_sharded_checkpoint`.  Optimizer state
+  are supported by reading the index `weight_map` and merging every
+  referenced shard into one state dict (transformers v5 removed HF's
+  `load_sharded_checkpoint`).  Optimizer state
   loads on CPU first and migrates lazily on the next step (HF
   memory-profile parity).
 - **Callback round-trip** — HF parity: `stateful_callbacks` field on
