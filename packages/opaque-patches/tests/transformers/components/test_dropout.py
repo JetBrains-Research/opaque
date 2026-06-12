@@ -43,13 +43,13 @@ def test_disable_dropout_via_apply_model_patches():
 
 
 def test_disable_dropout_opt_out():
-    """``disable_dropout=False`` keeps the model's dropout."""
+    """``dropout=False`` keeps the model's dropout."""
     from transformers.models.gpt2.modeling_gpt2 import GPT2Config, GPT2LMHeadModel
     from opaque.patches import apply_model_patches
 
     config = GPT2Config(vocab_size=64, n_positions=64, n_embd=32, n_layer=1, n_head=2)
     model = GPT2LMHeadModel(config)
-    apply_model_patches(model, eager_attention=True, disable_dropout=False)
+    apply_model_patches(model, eager_attention=True, dropout=False)
     assert any(
         mod.p > 0.0 for mod in model.modules() if isinstance(mod, nn.Dropout)
     )
