@@ -357,7 +357,11 @@ jobs:
         with:
           name: preview-wheels
           pattern: preview-wheels-*
-          delete-merged: true
+          # Don't delete the per-package source artifacts after merging: the
+          # delete step 404s when a concurrent/cancelled run (cancel-in-progress
+          # on rapid pushes) already removed them, failing the job on a flake.
+          # The sources are harmless and expire on their own via retention-days.
+          delete-merged: false
           retention-days: 14
 
 # Lint & format live in `autoformat.yml`. That workflow auto-applies
