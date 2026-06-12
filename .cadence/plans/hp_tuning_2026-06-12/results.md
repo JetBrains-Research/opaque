@@ -8,10 +8,10 @@ Updated each loop cycle. Will be the morning-report deliverable.
 
 | Sweep | Submitted | Running | Queued | Finished | Best metric | Best HPs |
 |---|---|---|---|---|---|---|
-| A (Mellum-4b DP-DPO) | 1 | 1 (`55452`/`6itmyoxi`) | 0 | 0 | step ~390: train/rewards/acc=**0.95**, train/loss=0.39 | T01: lr=5e-5, bs=128, beta=0.1, clip=1.0 |
-| B (Mellum-2.0 DP-DPO) | 2 (1 failed) | 1 (`55456`) | 0 | 1 failed (`55453`) | step ~65: train/rewards/acc=0.65, train/loss=0.69 | T01: lr=5e-5, bs=128, beta=0.1, clip=1.0, r=16, mb=8 |
-| C (Mellum-2.0 SFT) | 2 (1 failed) | 1 (`55457`) | 0 | 1 failed (`55454`) | step ~95: train/loss=0.71 | T01: lr=5e-5, r=16, mb=8 |
-| D (Mellum-4b SFT) | 1 | 1 (`55455`) | 0 | 0 | step ~510: train/loss=0.65 | T01: lr=5e-5, r=16 |
+| A (Mellum-4b DP-DPO) | 1 | 1 (`55452`/`6itmyoxi`) | 0 | 0 | step ~560: train/rewards/acc=0.90, train/margins=1.6, train/loss=0.32, ε=4.64/8 | T01: lr=5e-5, bs=128, beta=0.1, clip=1.0 |
+| B (Mellum-2.0 DP-DPO) | 3 (2 failed) | 1 (`55459` mb=4 retry) | 0 | 2 failed (`55453` RMSNorm, `55456` OOM) | n/a — retry just queued | T01: lr=5e-5, bs=128, beta=0.1, clip=1.0, r=16, mb=4 |
+| C (Mellum-2.0 SFT) | 2 (1 failed) | 1 (`55457`) | 0 | 1 failed (`55454`) | step ~220: train/loss=0.70, ε=7.1/10 (will overshoot to ~13) | T01: lr=5e-5, r=16, mb=8 |
+| D (Mellum-4b SFT) | 1 | 1 (`55455`) | 0 | 0 | step ~755: train/loss=0.67, ε=9.3/10 — projected finish ~00:15 UTC | T01: lr=5e-5, r=16 |
 
 ## Known issues
 
@@ -28,3 +28,4 @@ Updated each loop cycle. Will be the morning-report deliverable.
   - **C-T01 (55457, Mellum-2.0 SFT, --no-performance-kernels):** step ~95/1000, train/loss=0.71, ε=6.2/10, ~15s/step. Training cleanly; ε accumulating slightly fast (likely lands at ~13 vs target 10 — calibrator was for full horizon; will hold under target by step 1000 if rate slows). Projected finish ~00:50 UTC.
 
   No terminal trials this cycle. Concurrency full at 4/4. ScheduleWakeup 1800s.
+- **2026-06-12 23:45 UTC** — Cycle 4. **B-T01 (55456, Mellum-2.0 DPO) FAILED at 21:23 UTC with CUDA OOM** (23.98 GiB allocation, ~step 175): microbatch=8 too tight for Mellum-2.0 12B on H200's 139 GiB with DPO's 2× pass + ref logp eval at step 100. Retrying with **microbatch=4** as 55459 (HP-B-T01-..._mb4). The other 3 (A-T01 55452, D-T01 55455, C-T01 55457) still healthy.
