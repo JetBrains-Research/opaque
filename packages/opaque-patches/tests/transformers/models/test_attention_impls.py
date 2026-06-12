@@ -12,6 +12,7 @@ import os
 import sys
 
 import pytest
+import torch
 
 pytest.importorskip("transformers")
 
@@ -24,6 +25,48 @@ from _test_utils import (  # noqa: E402
 )
 
 IMPLS = ["eager", "sdpa"]
+
+
+def _build_llama(device, impl="sdpa"):
+    from transformers.models.llama.modeling_llama import LlamaConfig, LlamaForCausalLM
+    from opaque.patches import apply_model_patches
+
+    config = LlamaConfig(**get_tiny_config_kwargs())
+    config._attn_implementation = impl
+    model = LlamaForCausalLM(config).to(device)
+    apply_model_patches(model, eager_attention=True)
+    return model
+
+
+def _sdpa_backends():
+    from torch.nn.attention import SDPBackend
+
+    return [
+        pytest.param(SDPBackend.MATH, id="math"),
+        pytest.param(SDPBackend.EFFICIENT_ATTENTION, id="efficient"),
+        pytest.param(SDPBackend.CUDNN_ATTENTION, id="cudnn"),
+        # Flash isn't selectable under vmap ("No available kernel"); xfail
+        # non-strict so it auto-passes if a future torch enables it.
+        pytest.param(
+            SDPBackend.FLASH_ATTENTION,
+            id="flash",
+            marks=pytest.mark.xfail(reason="flash not selected under vmap", strict=False),
+        ),
+    ]
+
+
+@pytest.mark.cuda
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="SDPA backends need CUDA")
+@pytest.mark.parametrize("backend", _sdpa_backends())
+def test_sdpa_backends_under_vmap(backend, device):
+    """Every selectable SDPA backend works under DP vmap(grad). MATH is
+    vmap-native; efficient/cudnn run via the per-example-loop fallback until the
+    upstream batching-rule patch lands; flash isn't selected (xfail)."""
+    from torch.nn.attention import sdpa_kernel
+
+    model = _build_llama(device, "sdpa")
+    with sdpa_kernel([backend]):
+        assert_vmap_grad(model, device, dtype=torch.bfloat16)
 
 
 @pytest.mark.parametrize("impl", IMPLS)
