@@ -44,6 +44,45 @@ def test_vmap_causal_mask():
     assert mask_vmap.shape == (1, 1, 4, 4)
 
 
+def test_vmap_causal_mask_follows_autocast(monkeypatch):
+    """Mask dtype mirrors autocast so SDPA's attn_mask matches a bf16 query."""
+    from opaque.api.patches.transformers.runtime import masking
+
+    apply_runtime_patches(vmap_masking=True)
+    import transformers.masking_utils as masking_utils
+
+    create_causal_mask = masking_utils.create_causal_mask
+    input_embeds = torch.randn(1, 4, 16, dtype=torch.float32)
+
+    class DummyConfig:
+        _attn_implementation = "eager"
+
+    mask = create_causal_mask(
+        config=DummyConfig(),
+        input_embeds=input_embeds,
+        attention_mask=None,
+        cache_position=torch.arange(4),
+        past_key_values=None,
+    )
+    assert mask.dtype == torch.float32
+
+    # Simulate CUDA autocast through the helper used by vmap_create_causal_mask;
+    # ``torch.is_autocast_enabled("cuda")`` only flips inside a real CUDA ctx.
+    monkeypatch.setattr(
+        masking,
+        "_active_mask_dtype",
+        lambda _ie: torch.bfloat16,
+    )
+    mask_bf16 = create_causal_mask(
+        config=DummyConfig(),
+        input_embeds=input_embeds,
+        attention_mask=None,
+        cache_position=torch.arange(4),
+        past_key_values=None,
+    )
+    assert mask_bf16.dtype == torch.bfloat16
+
+
 def test_masking_runtime_patch_idempotent_for_ignore_causal_mask_sdpa():
     apply_runtime_patches(vmap_masking=True)
 

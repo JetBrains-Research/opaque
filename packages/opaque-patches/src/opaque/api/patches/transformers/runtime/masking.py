@@ -4,6 +4,19 @@ import torch
 from opaque.api.patches.transformers.components.attention import vmap_repeat_kv
 
 
+def _active_mask_dtype(input_embeds: torch.Tensor) -> torch.dtype:
+    """Dtype the causal mask must use under autocast.
+
+    Mirrors ``_active_lora_dtype``: follow autocast when active, otherwise
+    honour the input dtype. Without this the attention block's q_proj casts
+    query to bf16 while the mask stays fp32, and SDPA raises
+    ``invalid dtype for bias - should match query's dtype``.
+    """
+    if input_embeds.is_cuda and torch.is_autocast_enabled("cuda"):
+        return torch.get_autocast_dtype("cuda")
+    return input_embeds.dtype
+
+
 def vmap_create_causal_mask(
     config,
     input_embeds: torch.Tensor,
@@ -58,11 +71,12 @@ def vmap_create_causal_mask(
             past_seen_tokens = past_key_values.seen_tokens
     target_length = past_seen_tokens + seq_len
 
-    # Create causal mask
+    # Mask dtype follows autocast so SDPA's attn_mask matches the bf16 query.
+    mask_dtype = _active_mask_dtype(input_embeds)
     causal_mask = torch.full(
         (batch_size, 1, seq_len, target_length),
-        torch.finfo(input_embeds.dtype).min,
-        dtype=input_embeds.dtype,
+        torch.finfo(mask_dtype).min,
+        dtype=mask_dtype,
         device=input_embeds.device,
     )
 
@@ -110,7 +124,7 @@ def vmap_create_causal_mask(
 
         causal_mask[..., :seq_len, :target_length] = torch.where(
             mask_cond,
-            torch.tensor(0.0, dtype=input_embeds.dtype, device=input_embeds.device),
+            torch.tensor(0.0, dtype=mask_dtype, device=input_embeds.device),
             causal_mask[..., :seq_len, :target_length],
         )
     else:
@@ -129,7 +143,7 @@ def vmap_create_causal_mask(
 
         # Combine: set padding positions to -inf
         causal_mask = causal_mask.masked_fill(
-            attention_mask == 0, torch.finfo(input_embeds.dtype).min
+            attention_mask == 0, torch.finfo(mask_dtype).min
         )
 
     return causal_mask
