@@ -1,9 +1,13 @@
 {
   "name": "Opaque (DevContainer)",
-  "image": "ubuntu:24.04",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
   "features": {
     "ghcr.io/devcontainers/features/common-utils": {
-      "username": "dev"
+      "username": "dev",
+      "userUid": "1001",
+      "userGid": "1001"
     },
     "ghcr.io/devcontainers/features/python": {
       "version": "3.11"
