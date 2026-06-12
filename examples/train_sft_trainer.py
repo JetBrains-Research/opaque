@@ -153,6 +153,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lora-r", type=int, default=8)
     p.add_argument("--lora-alpha", type=int, default=16)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument(
+        "--no-performance-kernels",
+        action="store_true",
+        help="Disable Opaque's fused performance kernels (RMSNorm, LoRA QKV, "
+        "fused linear+CE). Needed for models like Mellum-2.0 whose q_norm/k_norm "
+        "shapes don't fit the current Triton row/block path.",
+    )
     # --- Eval --------------------------------------------------------------
     p.add_argument(
         "--eval-steps",
@@ -292,6 +299,7 @@ def main() -> int:
         ),
         optim="adamw",
         optim_args=optim_args,
+        use_performance_kernels=not args.no_performance_kernels,
         **eval_kwargs,
     )
 
