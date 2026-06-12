@@ -5,8 +5,9 @@
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
     </content>
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="module" module-name="opaque-core" exported="" />
     <orderEntry type="module" module-name="opaque-dpsgd" exported="" />
+    <orderEntry type="module" module-name="opaque-engine" exported="" />
+    <orderEntry type="module" module-name="opaque-optimizers" exported="" />
     <orderEntry type="module" module-name="opaque-accounting" exported="" />
     <orderEntry type="module" module-name="opaque-patches" exported="" />
     <orderEntry type="jdk" jdkName="uv (opaque)" jdkType="Python SDK" />

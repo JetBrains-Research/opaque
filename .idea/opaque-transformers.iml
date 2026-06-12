@@ -2,10 +2,15 @@
 <module external.system.id="pyproject.toml" type="PYTHON_MODULE" version="4">
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$/packages/opaque-transformers">
-      <sourceFolder url="file://$MODULE_DIR$/packages/opaque-transformers/src" />
+      <sourceFolder url="file://$MODULE_DIR$/packages/opaque-transformers/src" isTestSource="false" />
     </content>
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="module" module-name="opaque-core" exported="" />
+    <orderEntry type="module" module-name="opaque-dpsgd" exported="" />
+    <orderEntry type="module" module-name="opaque-engine" exported="" />
+    <orderEntry type="module" module-name="opaque-optimizers" exported="" />
+    <orderEntry type="module" module-name="opaque-accounting" exported="" />
+    <orderEntry type="module" module-name="opaque-patches" exported="" />
+    <orderEntry type="module" module-name="opaque-dpftrl" exported="" />
     <orderEntry type="jdk" jdkName="uv (opaque)" jdkType="Python SDK" />
   </component>
 </module>
