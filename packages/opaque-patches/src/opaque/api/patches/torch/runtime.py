@@ -42,10 +42,28 @@ logger = logging.getLogger(__name__)
 _is_checkpoint_patched = False
 
 
+def _under_functorch_transform() -> bool:
+    """True when running inside a functorch transform (vmap/grad/vjp/...).
+
+    Opaque's ``clipped_grad`` is ``vmap(grad(...))``; while that transform is
+    active, ``torch._C._functorch.peek_interpreter_stack()`` returns a live
+    interpreter (and ``None`` otherwise). Used to make the input-require-grads
+    hook a no-op under the transform, where ``Tensor.requires_grad_()`` is both
+    forbidden by functorch and redundant (the functional transform already
+    tracks differentiability).
+    """
+    try:
+        from torch._C._functorch import peek_interpreter_stack
+
+        return peek_interpreter_stack() is not None
+    except Exception:  # pragma: no cover - defensive: API moved/unavailable
+        return False
+
+
 def apply_checkpoint_patch(*, vmap_checkpointing: bool = True) -> None:
     """Patch PyTorch to allow gradient checkpointing under vmap(grad(...)).
 
-    Applies eight patches:
+    Applies nine patches:
     1. Remove doesnt_support_saved_tensors_hooks from grad/vjp internals
     2. Add vmap batching rule to checkpoint's _NoopSaveInputs
     3. Disable checkpoint tensor-count validation (fails under vmap)
@@ -54,6 +72,7 @@ def apply_checkpoint_patch(*, vmap_checkpointing: bool = True) -> None:
     6. Force use_reentrant=False in HuggingFace's gradient_checkpointing_enable
     7. Post-set params after functional_call for backward recomputation
     8. Transparent checkpoint wrapper for HF binding compatibility
+    9. Make HF's input-require-grads hook a no-op under functorch transforms
 
     Args:
         vmap_checkpointing: If True, applies the patch. If False, skips it.
@@ -308,6 +327,42 @@ def apply_checkpoint_patch(*, vmap_checkpointing: bool = True) -> None:
 
         transformers.PreTrainedModel.gradient_checkpointing_enable = (
             _gradient_checkpointing_enable_nonreentrant
+        )
+
+        # Patch 9: Make HF's input-require-grads hook vmap-safe.
+        # enable_input_require_grads() registers a forward hook that runs
+        # output.requires_grad_(True) on the input embeddings. transformers 5.x
+        # rewrote it to register on every sub-model's embeddings, so the hook
+        # now fires inside vmap(grad(...)) — where requires_grad_() raises. We
+        # rewrap each registered hook to skip it under a functorch transform
+        # (redundant there: the transform tracks differentiability, and the
+        # forced use_reentrant=False path needs no grad-requiring inputs).
+        # Handles both 4.x (_require_grads_hook) and 5.x (_require_grads_hooks).
+        _orig_enable_irg = transformers.PreTrainedModel.enable_input_require_grads
+
+        def _vmap_safe_hook(hook):  # type: ignore[no-untyped-def]
+            def wrapped(module, args, output):  # type: ignore[no-untyped-def]
+                if _under_functorch_transform():
+                    return output
+                return hook(module, args, output)
+
+            return wrapped
+
+        def _enable_input_require_grads_vmap_safe(self):  # type: ignore[no-untyped-def]
+            _orig_enable_irg(self)
+            handles = getattr(self, "_require_grads_hooks", None)
+            if not handles:
+                single = getattr(self, "_require_grads_hook", None)
+                handles = [single] if single is not None else []
+            for handle in handles:
+                # Rewrap in place so handle.remove() keeps working.
+                hooks_dict = handle.hooks_dict_ref()
+                if hooks_dict is None or handle.id not in hooks_dict:
+                    continue
+                hooks_dict[handle.id] = _vmap_safe_hook(hooks_dict[handle.id])
+
+        transformers.PreTrainedModel.enable_input_require_grads = (
+            _enable_input_require_grads_vmap_safe
         )
     except ImportError:
         logger.info(
