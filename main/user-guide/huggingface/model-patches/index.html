@@ -1152,6 +1152,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Model compatibility">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mixture-of-experts-moe-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mixture-of-Experts (MoE) models
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2688,6 +2703,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Model compatibility">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mixture-of-experts-moe-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mixture-of-Experts (MoE) models
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2974,13 +3004,13 @@ that break under vmap.</p>
 <tbody>
 <tr>
 <td><code>sdpa</code></td>
-<td><strong>Recommended</strong></td>
-<td>Fused CUDA kernels (flash / efficient / cuDNN) with O(N) memory.</td>
+<td><strong>Recommended (default)</strong></td>
+<td>Works under <code>vmap(grad)</code>; O(N) memory. Backend nuances below.</td>
 </tr>
 <tr>
 <td><code>eager</code></td>
 <td>Supported</td>
-<td>Materialises full attention matrix — O(N²) memory.</td>
+<td>vmap-safe but materialises the full O(N²) attention matrix.</td>
 </tr>
 <tr>
 <td><code>flash_attention_2</code></td>
@@ -2994,9 +3024,43 @@ that break under vmap.</p>
 </tr>
 </tbody>
 </table>
-<p>SDPA is the Transformers default and requires no configuration.  It
-provides significant memory savings over eager because fused kernels
-avoid materialising the <code>(heads, seq, seq)</code> attention matrix.
+<p>SDPA is the Transformers default and works under DP/<code>vmap(grad)</code> out of the box
+(no configuration). Behaviour by <code>torch.nn.attention</code> backend:</p>
+<table>
+<thead>
+<tr>
+<th>SDPA backend</th>
+<th>Under <code>vmap(grad)</code></th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MATH</code></td>
+<td>✅ vmap-native</td>
+<td>decomposes to primitives vmap batches directly — no fallback</td>
+</tr>
+<tr>
+<td><code>EFFICIENT_ATTENTION</code></td>
+<td>✅ correct, slower</td>
+<td>functorch has no batching rule for <code>_scaled_dot_product_efficient_attention_backward</code> yet, so the backward runs as a <strong>per-example loop</strong> (a "performance drop" warning) — removed by the upstream PyTorch batching-rule patch</td>
+</tr>
+<tr>
+<td><code>CUDNN_ATTENTION</code></td>
+<td>✅ correct, slower</td>
+<td>same per-example-loop fallback as efficient</td>
+</tr>
+<tr>
+<td><code>FLASH_ATTENTION</code></td>
+<td>⚠️ not selected</td>
+<td>rejected under vmap (<code>No available kernel</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>PyTorch's backend selector picks among these; the fused backends are correct
+under vmap and only pay the loop-fallback until the upstream batching rule lands.
+SDPA still saves significant memory over eager by avoiding the
+<code>(heads, seq, seq)</code> attention matrix.
 Measured at Qwen2-0.5B scale with LoRA:</p>
 <table>
 <thead>
@@ -3242,8 +3306,107 @@ picked up automatically because the kernel patcher rebinds
 because their decoder layers apply <code>post_attention_layernorm</code>
 <em>between</em> the attention output and the residual add (the fused
 primitive expects residual-first ordering).</p>
-<p><strong>Not supported</strong> by default patching: expert-routed decoder stacks
-such as GPT-OSS.</p>
+<h3 id="mixture-of-experts-moe-models">Mixture-of-Experts (MoE) models<a class="headerlink" href="#mixture-of-experts-moe-models" title="Permanent link">&para;</a></h3>
+<p>MoE families are supported via the <code>moe</code> patch — a <strong>vmap-safety enabler</strong>
+(under the <code>compat</code> bucket, not a CUDA kernel): it swaps HF v5's stacked-weight
+<code>*Experts.forward</code> onto <code>Opaque_MoE</code>, which is <code>vmap(grad)</code>-safe. HF's own
+experts forward is <em>not</em> vmap-able, so this patch is what makes <strong>DP-SGD MoE
+training possible</strong> at all. The router, load-balancing aux loss, and parameters
+are left untouched. Disable with <code>apply_model_patches(model, moe=False)</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th><code>model_type</code></th>
+<th>Experts</th>
+<th>RMSNorm</th>
+<th>RoPE</th>
+<th>CE</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Mellum 2.0</td>
+<td><code>mellum</code></td>
+<td>SwiGLU</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Qwen3-MoE-derived; transformers ≥ 5.8</td>
+</tr>
+<tr>
+<td>Mixtral</td>
+<td><code>mixtral</code></td>
+<td>SwiGLU</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td></td>
+</tr>
+<tr>
+<td>Qwen3-MoE</td>
+<td><code>qwen3_moe</code></td>
+<td>SwiGLU</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td></td>
+</tr>
+<tr>
+<td>Qwen3.5-MoE</td>
+<td><code>qwen3_5_moe</code></td>
+<td>SwiGLU</td>
+<td>Yes</td>
+<td>HF</td>
+<td>Yes</td>
+<td>non-standard rope left to HF</td>
+</tr>
+<tr>
+<td>Qwen3-Next</td>
+<td><code>qwen3_next</code></td>
+<td>SwiGLU</td>
+<td>Yes</td>
+<td>HF</td>
+<td>Yes</td>
+<td>hybrid linear-attention</td>
+</tr>
+<tr>
+<td>HunYuan-V1-MoE</td>
+<td><code>hunyuan_v1_moe</code></td>
+<td>SwiGLU</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td></td>
+</tr>
+<tr>
+<td>GPT-OSS</td>
+<td><code>gpt_oss</code></td>
+<td>—</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>clamped-SwiGLU/MXFP4 experts left to HF</td>
+</tr>
+<tr>
+<td>DeepSeek-V4</td>
+<td><code>deepseek_v4</code></td>
+<td>—</td>
+<td>Yes</td>
+<td>HF</td>
+<td>Yes</td>
+<td>partial RoPE; scaled experts left to HF</td>
+</tr>
+</tbody>
+</table>
+<p>GPT-OSS and DeepSeek-V4 use custom expert activations (clamped SwiGLU + MXFP4 /
+scaled experts), so their experts are intentionally left to HF — only RMSNorm,
+RoPE (where standard), and cross-entropy are patched (mirrors Liger's choices).
+The current <code>Opaque_MoE</code> is dense (correctness + DP/vmap compatibility); a fused
+Triton grouped-GEMM kernel is the planned performance follow-up.</p>
+<p>The original dense <strong>Mellum</strong> (<code>Mellum-4b</code>, <code>model_type="llama"</code>) needs no MoE
+support — it is a Llama checkpoint served by the <code>llama</code> family.</p>
 <p><strong>Deferred families:</strong> Nemotron —
 <code>transformers.models.nemotron.modeling_nemotron</code> in <code>4.57.1</code> ships
 only legacy <code>NemotronAttention</code> / <code>NemotronSdpaAttention</code> /
