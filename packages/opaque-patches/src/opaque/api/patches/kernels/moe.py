@@ -24,6 +24,13 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
+try:
+    import triton  # noqa: F401
+
+    _TRITON_AVAILABLE = True
+except ImportError:
+    _TRITON_AVAILABLE = False
+
 
 def _route_weights(top_k_index, top_k_weights, num_experts):
     """(.., K) routing -> (.., E) dense per-expert weight (0 for unrouted)."""
@@ -140,7 +147,27 @@ class Opaque_MoE(torch.autograd.Function):
 
 def opaque_moe(x, gate_up_proj, down_proj, top_k_index, top_k_weights):
     """MoE expert FFN. Autograd + ``vmap(grad)`` (DP-SGD) flow through the
-    two-Function pair above."""
+    two-Function pair above.
+
+    Always dispatches to the sparse grouped-GEMM Triton path
+    (:func:`opaque_fused_moe`) when the tensors are CUDA bf16/fp16 with Triton
+    present, and to the dense torch ``Opaque_MoE`` otherwise (CPU, fp32). The two
+    are numerically equivalent — forward is bit-identical, backward matches within
+    the bf16 floor (see ``test_kernel_precision``) — so the fused path runs
+    whenever the hardware supports it; no opt-out knob.
+    """
+    if _TRITON_AVAILABLE and x.is_cuda:
+        from ._utils import follow_autocast
+
+        x, gate_up_proj, down_proj, top_k_weights = follow_autocast(
+            x, gate_up_proj, down_proj, top_k_weights
+        )
+        if x.dtype in (torch.bfloat16, torch.float16):
+            from .fused_moe import Opaque_FusedMoE
+
+            return Opaque_FusedMoE.apply(
+                x, gate_up_proj, down_proj, top_k_index, top_k_weights
+            )
     return Opaque_MoE.apply(x, gate_up_proj, down_proj, top_k_index, top_k_weights)
 
 

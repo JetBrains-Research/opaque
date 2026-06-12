@@ -35,6 +35,12 @@ try:
     )
     from .rms_norm import opaque_rms_norm
     from .fused_add_rms_norm import opaque_fused_add_rms_norm
+
+    # MoE expert FFN — single public op. ``opaque_moe`` transparently uses the
+    # sparse grouped-GEMM Triton kernel on CUDA bf16/fp16 and the dense torch path
+    # otherwise; fused-ness is an internal detail (like ``opaque_cross_entropy_loss``
+    # chunking over large vocab), not a separate op, so it is not exported.
+    from .moe import opaque_moe
 except ModuleNotFoundError as import_error:
     if import_error.name != "triton":
         raise
@@ -210,11 +216,16 @@ except ModuleNotFoundError as import_error:
         )
         return y, S
 
+    # MoE: the dense path is pure-torch (Triton-free) and is the public op.
+    from .moe import opaque_moe
+
 
 __all__ = [
     # Loss
     "opaque_cross_entropy_loss",
     "opaque_linear_cross_entropy_loss",
+    # MoE expert FFN
+    "opaque_moe",
     # Activations
     "opaque_swiglu",
     "opaque_geglu_exact",

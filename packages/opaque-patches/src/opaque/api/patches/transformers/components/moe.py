@@ -4,9 +4,12 @@
 
 Swaps only ``forward(hidden_states, top_k_index, top_k_weights)`` onto the
 vmap/DP-safe :func:`opaque_moe`, leaving the router, aux loss, and
-parameters untouched. This is a vmap-safety patch (DP-SGD needs it), not a CUDA
-kernel — ``opaque_moe`` is pure torch and runs on CPU too, so there is no
-device fallback to HF's (vmap-broken) forward.
+parameters untouched. The patch is a vmap-safety enabler (DP-SGD needs it) and
+always applies — ``opaque_moe`` runs on CPU/fp32 via a pure-torch dense path, so
+there is no device fallback to HF's (vmap-broken) forward. On CUDA bf16/fp16 it
+transparently uses the sparse grouped-GEMM Triton kernel, which is numerically
+equivalent to the dense path (see :func:`opaque_moe`), so there is no separate
+opt-in/opt-out.
 """
 
 from __future__ import annotations

@@ -197,7 +197,9 @@ def make_apply_model_patches(
         moe_kind: Same shape — for the stacked-weight MoE experts module
             (``classes["experts"]``). Gated by the ``moe`` kwarg, which
             defaults from ``compat`` (it is a vmap-safety patch required for
-            DP-SGD, not a CUDA kernel). ``None`` for dense models.
+            DP-SGD, not a CUDA kernel). ``opaque_moe`` transparently uses the
+            sparse grouped-GEMM Triton kernel on CUDA bf16/fp16. ``None`` for
+            dense models.
 
     Returns:
         Callable with signature
@@ -252,9 +254,12 @@ def make_apply_model_patches(
         # vmap-safety patch, not a CUDA kernel: HF's experts forward isn't
         # vmap(grad)-able (DP-SGD breaks without it), and the replacement runs on
         # CPU too — so it lives in the ``compat`` bucket, NOT ``kernels`` (which
-        # auto-disables off-CUDA). The ``moe`` gate is separate from
-        # ``activation`` since a model may have both routed experts and dense MLP
-        # layers. Absent ``Experts`` class (dense-only / pre-v5) no-ops below.
+        # auto-disables off-CUDA). ``opaque_moe`` itself uses the sparse
+        # grouped-GEMM Triton kernel on CUDA bf16/fp16 (numerically equivalent to
+        # the dense path) and dense torch elsewhere — no extra gate. The ``moe``
+        # gate is separate from ``activation`` since a model may have both routed
+        # experts and dense MLP layers. Absent ``Experts`` class (dense-only /
+        # pre-v5) no-ops below.
         if moe_factory is not None and kwargs.get("moe", compat):
             experts_class = classes.get("experts")
             if experts_class is not None:
