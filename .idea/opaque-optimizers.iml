@@ -4,7 +4,6 @@
     <content url="file://$MODULE_DIR$/packages/opaque-optimizers">
       <sourceFolder url="file://$MODULE_DIR$/packages/opaque-optimizers/src" />
     </content>
-    <orderEntry type="jdk" jdkName="uv (opaque)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>
