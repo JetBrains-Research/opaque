@@ -61,7 +61,15 @@ def assert_vmap_forward(model, device):
     assert vmapped.shape == (batch,)
 
 
-def assert_vmap_grad(model, device):
+def assert_vmap_grad(model, device, dtype=None):
+    """Run the real DP-SGD ``clipped_grad`` (vmap(grad)) pipeline.
+
+    ``dtype`` casts the model first — pass ``torch.bfloat16`` on CUDA to exercise
+    the Triton kernel paths (e.g. the fused MoE kernel), which only engage for
+    bf16/fp16 CUDA tensors; the default (fp32) runs the pure-torch fallbacks.
+    """
+    if dtype is not None:
+        model = model.to(dtype)
     model.train()
     torch.manual_seed(0)
     batch, seq, vocab = 4, 12, model.config.vocab_size
@@ -85,6 +93,7 @@ def assert_vmap_grad(model, device):
         trainable, frozen, input_ids, attention_mask, labels, state=clip_state
     )
     assert len(grads.pytree) > 0
+    assert all(torch.isfinite(g).all() for g in grads.pytree.values())
 
 
 # ----------------------------------------------------------------------------
@@ -94,12 +103,29 @@ def assert_vmap_grad(model, device):
 
 
 def build_moe_model(family, device, **config_overrides):
-    """Build + patch a tiny MoE model. Returns ``(model, modeling_module)``."""
+    """Build + patch a tiny MoE model. Returns ``(model, modeling_module)``.
+
+    The Opaque MoE patch targets the stacked-weight ``*Experts`` module
+    (transformers v5+). On versions where the family still uses the old
+    ``*SparseMoeBlock`` (a ModuleList of per-expert MLPs, no stacked experts),
+    DP-SGD MoE isn't supported — skip rather than exercise the vmap-broken HF
+    forward. Capability check (presence of a ``*Experts`` class), not a version
+    number, so it tracks the API rather than the release.
+    """
     import importlib
+
+    import pytest
 
     from opaque.patches import apply_model_patches
 
     mod = importlib.import_module(f"transformers.models.{family}.modeling_{family}")
+    if not any(n.endswith("Experts") for n in dir(mod)):
+        import transformers
+
+        pytest.skip(
+            f"{family}: stacked *Experts module absent in transformers "
+            f"{transformers.__version__} (v5+ feature)"
+        )
     cfg_mod = importlib.import_module(
         f"transformers.models.{family}.configuration_{family}"
     )

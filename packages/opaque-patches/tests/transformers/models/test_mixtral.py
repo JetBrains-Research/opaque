@@ -6,6 +6,7 @@ import os
 import sys
 
 import pytest
+import torch
 
 pytest.importorskip("transformers")
 
@@ -43,3 +44,11 @@ def test_mixtral_vmap_forward(tiny, device):
 
 def test_mixtral_vmap_grad(tiny, device):
     assert_vmap_grad(tiny[0], device)
+
+
+@pytest.mark.cuda
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_mixtral_vmap_grad_bf16_fused(tiny, device):
+    """bf16 on CUDA engages the sparse fused-MoE Triton path through the real
+    clipped_grad (DP-SGD) pipeline end-to-end."""
+    assert_vmap_grad(tiny[0], device, dtype=torch.bfloat16)
