@@ -23,19 +23,16 @@ from _test_utils import (  # noqa: E402
 
 @pytest.fixture
 def tiny_model(device):
+    # GPT-2 keeps its default 0.1 dropout on purpose: the compat ``disable_dropout``
+    # patch zeros it during model-prep, which is what lets gpt2 run on sdpa under
+    # vmap (active dropout's RNG otherwise trips vmap's "same randomness"). This
+    # fixture is thus also the integration proof that the patch works.
     config = GPT2Config(
         vocab_size=128,
         n_positions=128,
         n_embd=64,
         n_layer=1,
         n_head=4,
-        # GPT-2 defaults to 0.1 dropout (modern models default 0.0). Active
-        # dropout's RNG trips vmap ("same randomness with a batched input") — the
-        # only thing that blocked gpt2 under sdpa(vmap). DP training disables
-        # dropout anyway, so turn it off and gpt2 runs on sdpa like the rest.
-        attn_pdrop=0.0,
-        resid_pdrop=0.0,
-        embd_pdrop=0.0,
     )
     config._attn_implementation = "sdpa"
     model = GPT2LMHeadModel(config).to(device)
