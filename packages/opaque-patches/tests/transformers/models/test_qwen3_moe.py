@@ -22,7 +22,15 @@ from _test_utils import (  # noqa: E402
 
 @pytest.fixture
 def tiny(device):
-    return build_moe_model("qwen3_moe", device, num_experts=8, num_experts_per_tok=2, moe_intermediate_size=64, decoder_sparse_step=1, norm_topk_prob=True)
+    return build_moe_model(
+        "qwen3_moe",
+        device,
+        num_experts=8,
+        num_experts_per_tok=2,
+        moe_intermediate_size=64,
+        decoder_sparse_step=1,
+        norm_topk_prob=True,
+    )
 
 
 def test_qwen3_moe_experts_patched(tiny):

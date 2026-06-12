@@ -25,8 +25,11 @@ from _test_utils import (  # noqa: E402
 @pytest.fixture
 def tiny(device):
     return build_moe_model(
-        "qwen3_next", device,
-        num_experts=8, num_experts_per_tok=2, moe_intermediate_size=64,
+        "qwen3_next",
+        device,
+        num_experts=8,
+        num_experts_per_tok=2,
+        moe_intermediate_size=64,
         num_hidden_layers=4,
     )
 

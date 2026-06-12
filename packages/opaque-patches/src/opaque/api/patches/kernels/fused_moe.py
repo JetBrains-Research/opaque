@@ -96,8 +96,15 @@ def _grouped_AtB_kernel(
 
         acc = tl.dot(a_blk, b_blk, acc=acc)
 
-    o_ptrs = out_ptr + g * stride_o_g + p_idx[:, None] * stride_o_p + q_idx[None, :] * stride_o_q
-    tl.store(o_ptrs, acc.to(out_ptr.dtype.element_ty), mask=p_mask[:, None] & q_mask[None, :])
+    o_ptrs = (
+        out_ptr
+        + g * stride_o_g
+        + p_idx[:, None] * stride_o_p
+        + q_idx[None, :] * stride_o_q
+    )
+    tl.store(
+        o_ptrs, acc.to(out_ptr.dtype.element_ty), mask=p_mask[:, None] & q_mask[None, :]
+    )
 
 
 def _grouped_AtB(A, B, seg_offs, G):
@@ -182,7 +189,21 @@ def _fused_moe_forward(x_flat, W1, W2, expert_of_row, tok_of_row, tw_row, E, N, 
     return out.to(dt)
 
 
-def _fused_moe_backward(grad_flat, x_flat, W1, W2, real_eor, tok_of_row, tw_row, group_of_row, n_groups, N, H, I, K):
+def _fused_moe_backward(
+    grad_flat,
+    x_flat,
+    W1,
+    W2,
+    real_eor,
+    tok_of_row,
+    tw_row,
+    group_of_row,
+    n_groups,
+    N,
+    H,
+    I,
+    K,
+):
     """Manual grouped MoE backward. Returns ``dx`` (N,H), ``dW1`` (n_groups,2I,H),
     ``dW2`` (n_groups,H,I), ``dtw`` (N,K).
 
@@ -260,8 +281,19 @@ class _FusedMoEBackward(torch.autograd.Function):
         tor = _flat_routing(N, K, x.device)
         # Summed weight grads: group == real expert.
         dx, dW1, dW2, dtw = _fused_moe_backward(
-            grad_out, x, gate_up_proj, down_proj, eor, tor, top_k_weights.reshape(-1),
-            group_of_row=eor, n_groups=E, N=N, H=H, I=I, K=K,
+            grad_out,
+            x,
+            gate_up_proj,
+            down_proj,
+            eor,
+            tor,
+            top_k_weights.reshape(-1),
+            group_of_row=eor,
+            n_groups=E,
+            N=N,
+            H=H,
+            I=I,
+            K=K,
         )
         return dx, dW1, dW2, dtw
 
@@ -274,7 +306,9 @@ class _FusedMoEBackward(torch.autograd.Function):
         raise NotImplementedError("Double backward not supported for fused MoE")
 
     @staticmethod
-    def vmap(info, in_dims, grad_out, x, gate_up_proj, down_proj, top_k_index, top_k_weights):
+    def vmap(
+        info, in_dims, grad_out, x, gate_up_proj, down_proj, top_k_index, top_k_weights
+    ):
         # DP-SGD contract: grad_out/x/top_k batched at 0; shared weights unbatched.
         B, T, H = x.shape
         K = top_k_index.shape[-1]
@@ -288,18 +322,36 @@ class _FusedMoEBackward(torch.autograd.Function):
         twf = top_k_weights.reshape(N, K)
 
         tor = _flat_routing(N, K, x.device)
-        eor = tif.reshape(-1)  # (NK,) real expert ids — used for the shared-weight GEMMs
+        eor = tif.reshape(
+            -1
+        )  # (NK,) real expert ids — used for the shared-weight GEMMs
         # Virtual experts: sample b's tokens for real expert e -> group b*E + e, so
         # the per-group weight grad lands per-sample (never summed across the batch).
         virtual = (tor // T) * E + eor  # (NK,)
 
         dx, dW1, dW2, dtw = _fused_moe_backward(
-            gf, xf, gate_up_proj, down_proj, eor, tor, twf.reshape(-1),
-            group_of_row=virtual, n_groups=B * E, N=N, H=H, I=I, K=K,
+            gf,
+            xf,
+            gate_up_proj,
+            down_proj,
+            eor,
+            tor,
+            twf.reshape(-1),
+            group_of_row=virtual,
+            n_groups=B * E,
+            N=N,
+            H=H,
+            I=I,
+            K=K,
         )
         # dx/dtw per-token (merged batch); dW1/dW2 per-sample (kept, for DP-SGD).
         return (
-            (dx.reshape(B, T, H), dW1.reshape(B, E, 2 * I, H), dW2.reshape(B, E, H, I), dtw.reshape(B, T, K)),
+            (
+                dx.reshape(B, T, H),
+                dW1.reshape(B, E, 2 * I, H),
+                dW2.reshape(B, E, H, I),
+                dtw.reshape(B, T, K),
+            ),
             (0, 0, 0, 0),
         )
 
@@ -316,8 +368,16 @@ class Opaque_FusedMoE(torch.autograd.Function):
         eor = top_k_index.reshape(-1)
         tor = _flat_routing(N, K, x.device)
         return _fused_moe_forward(
-            x, gate_up_proj, down_proj, eor, tor, top_k_weights.reshape(-1),
-            E=gate_up_proj.shape[0], N=N, H=H, I=I,
+            x,
+            gate_up_proj,
+            down_proj,
+            eor,
+            tor,
+            top_k_weights.reshape(-1),
+            E=gate_up_proj.shape[0],
+            N=N,
+            H=H,
+            I=I,
         )
 
     @staticmethod
@@ -343,8 +403,16 @@ class Opaque_FusedMoE(torch.autograd.Function):
         eor = tif.reshape(-1)
         tor = _flat_routing(N, K, x.device)
         out = _fused_moe_forward(
-            xf, gate_up_proj, down_proj, eor, tor, twf.reshape(-1),
-            E=gate_up_proj.shape[0], N=N, H=H, I=I,
+            xf,
+            gate_up_proj,
+            down_proj,
+            eor,
+            tor,
+            twf.reshape(-1),
+            E=gate_up_proj.shape[0],
+            N=N,
+            H=H,
+            I=I,
         )
         return out.reshape(B, T, H), 0
 

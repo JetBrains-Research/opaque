@@ -20,10 +20,8 @@ from opaque.api.patches.transformers import supported_families
 def test_every_registered_family_has_a_test_file():
     here = os.path.dirname(__file__)
     test_files = {
-        os.path.basename(p)[len("test_"):-len(".py")]
+        os.path.basename(p)[len("test_") : -len(".py")]
         for p in glob.glob(os.path.join(here, "test_*.py"))
     }
     missing = sorted(set(supported_families()) - test_files)
-    assert not missing, (
-        f"registered families without a test_<family>.py: {missing}"
-    )
+    assert not missing, f"registered families without a test_<family>.py: {missing}"

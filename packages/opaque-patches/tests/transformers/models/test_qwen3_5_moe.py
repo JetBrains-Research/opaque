@@ -13,6 +13,8 @@ import pytest
 pytest.importorskip("transformers")
 
 
-@pytest.mark.skip(reason="qwen3_5_moe tiny config not constructible in tf5.11; same patch path as qwen3_moe")
+@pytest.mark.skip(
+    reason="qwen3_5_moe tiny config not constructible in tf5.11; same patch path as qwen3_moe"
+)
 def test_qwen3_5_moe_forward():
     pass

@@ -50,7 +50,9 @@ def _sdpa_backends():
         pytest.param(
             SDPBackend.FLASH_ATTENTION,
             id="flash",
-            marks=pytest.mark.xfail(reason="flash not selected under vmap", strict=False),
+            marks=pytest.mark.xfail(
+                reason="flash not selected under vmap", strict=False
+            ),
         ),
     ]
 
@@ -85,8 +87,12 @@ def test_llama_attention_impl(impl, device):
 @pytest.mark.parametrize("impl", IMPLS)
 def test_mellum_attention_impl(impl, device):
     model, _ = build_moe_model(
-        "mellum", device, attn_impl=impl,
-        num_experts=8, num_experts_per_tok=2, moe_intermediate_size=64,
+        "mellum",
+        device,
+        attn_impl=impl,
+        num_experts=8,
+        num_experts_per_tok=2,
+        moe_intermediate_size=64,
     )
     assert_forward_no_grad(model, device)
     assert_vmap_grad(model, device)

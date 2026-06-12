@@ -22,7 +22,14 @@ from _test_utils import (  # noqa: E402
 
 @pytest.fixture
 def tiny(device):
-    return build_moe_model("hunyuan_v1_moe", device, num_experts=8, moe_topk=2, num_experts_per_tok=2, head_dim=16)
+    return build_moe_model(
+        "hunyuan_v1_moe",
+        device,
+        num_experts=8,
+        moe_topk=2,
+        num_experts_per_tok=2,
+        head_dim=16,
+    )
 
 
 def test_hunyuan_v1_moe_experts_patched(tiny):

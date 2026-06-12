@@ -50,7 +50,9 @@ def _err(actual_bf16, truth_fp32):
 def _assert_at_or_below_floor(name, opaque_bf16, eager_bf16, truth_fp32):
     e_op = _err(opaque_bf16, truth_fp32)
     e_floor = _err(eager_bf16, truth_fp32)
-    print(f"\n{name}: opaque_err={e_op:.3e}  eager_floor={e_floor:.3e}  ratio={e_op/(e_floor+EPS):.2f}")
+    print(
+        f"\n{name}: opaque_err={e_op:.3e}  eager_floor={e_floor:.3e}  ratio={e_op / (e_floor + EPS):.2f}"
+    )
     assert e_op <= e_floor * SLACK + EPS, (
         f"{name}: bf16 error {e_op:.3e} exceeds {SLACK}x eager floor {e_floor:.3e} "
         "— a reduction may have dropped to bf16."
@@ -59,7 +61,7 @@ def _assert_at_or_below_floor(name, opaque_bf16, eager_bf16, truth_fp32):
 
 def _rand(*shape, seed=0, scale=1.0):
     g = torch.Generator(device="cuda").manual_seed(seed)
-    return (torch.randn(*shape, generator=g, device="cuda", dtype=torch.float32) * scale)
+    return torch.randn(*shape, generator=g, device="cuda", dtype=torch.float32) * scale
 
 
 def test_rms_norm_precision():

@@ -28,7 +28,9 @@ from _test_utils import (  # noqa: E402
 
 @pytest.fixture
 def tiny(device):
-    return build_moe_model("gpt_oss", device, num_local_experts=8, num_experts_per_tok=2)
+    return build_moe_model(
+        "gpt_oss", device, num_local_experts=8, num_experts_per_tok=2
+    )
 
 
 def test_gpt_oss_experts_not_patched(tiny):

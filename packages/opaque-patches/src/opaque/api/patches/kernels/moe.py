@@ -46,7 +46,10 @@ def _moe_forward(x, gate_up_proj, down_proj, w_te):
     out = torch.zeros(x.shape, dtype=torch.float32, device=x.device)
     for e in range(gate_up_proj.shape[0]):
         gate_up = F.linear(x, gate_up_proj[e])
-        h = F.silu(gate_up[..., :intermediate].float()).to(x.dtype) * gate_up[..., intermediate:]
+        h = (
+            F.silu(gate_up[..., :intermediate].float()).to(x.dtype)
+            * gate_up[..., intermediate:]
+        )
         out = out + (F.linear(h, down_proj[e]) * w_te[..., e : e + 1]).float()
     return out.to(x.dtype)
 
@@ -75,8 +78,12 @@ def _moe_backward(grad_out, x, gate_up_proj, down_proj, w_te, batch_dims):
         dgu = torch.cat([dh * up * dsilu, dh * silu], dim=-1)
         dx = dx + F.linear(dgu, gate_up_proj[e].t()).float()
         # weight grads: sum the token dim, keep the batch dim per ``batch_dims``.
-        ddown.append(torch.einsum(f"{bspec}th,{bspec}ti->{bspec}hi", dy.float(), h.float()))
-        dgate_up.append(torch.einsum(f"{bspec}tj,{bspec}th->{bspec}jh", dgu.float(), x.float()))
+        ddown.append(
+            torch.einsum(f"{bspec}th,{bspec}ti->{bspec}hi", dy.float(), h.float())
+        )
+        dgate_up.append(
+            torch.einsum(f"{bspec}tj,{bspec}th->{bspec}jh", dgu.float(), x.float())
+        )
 
     dgate_up = torch.stack(dgate_up, dim=batch_dims).to(gate_up_proj.dtype)
     ddown = torch.stack(ddown, dim=batch_dims).to(down_proj.dtype)
@@ -97,7 +104,12 @@ class _MoEBackward(torch.autograd.Function):
         dx, dgate_up, ddown, dw_te = _moe_backward(
             grad_out, x, gate_up_proj, down_proj, w_te, batch_dims=0
         )
-        return dx, dgate_up, ddown, _dw_te_to_dtw(dw_te, top_k_index, top_k_weights.dtype)
+        return (
+            dx,
+            dgate_up,
+            ddown,
+            _dw_te_to_dtw(dw_te, top_k_index, top_k_weights.dtype),
+        )
 
     @staticmethod
     def setup_context(ctx, inputs, output):
@@ -108,7 +120,9 @@ class _MoEBackward(torch.autograd.Function):
         raise NotImplementedError("Double backward not supported for MoE")
 
     @staticmethod
-    def vmap(info, in_dims, grad_out, x, gate_up_proj, down_proj, top_k_index, top_k_weights):
+    def vmap(
+        info, in_dims, grad_out, x, gate_up_proj, down_proj, top_k_index, top_k_weights
+    ):
         w_te = _route_weights(top_k_index, top_k_weights, gate_up_proj.shape[0])
         dx, dgate_up, ddown, dw_te = _moe_backward(
             grad_out, x, gate_up_proj, down_proj, w_te, batch_dims=1

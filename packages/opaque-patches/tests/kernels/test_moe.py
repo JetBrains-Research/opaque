@@ -79,7 +79,11 @@ def test_dense_masked_equals_sparse():
 
 def test_backward_matches_reference(assert_precision):
     x, gate_up, down, ti, tw = _inputs(requires_grad=True)
-    xr, gr, dr = x.clone().detach().requires_grad_(True), gate_up.clone().detach().requires_grad_(True), down.clone().detach().requires_grad_(True)
+    xr, gr, dr = (
+        x.clone().detach().requires_grad_(True),
+        gate_up.clone().detach().requires_grad_(True),
+        down.clone().detach().requires_grad_(True),
+    )
     _sparse_gather_moe(xr, gr, dr, ti, tw).square().mean().backward()
     opaque_moe(x, gate_up, down, ti, tw).square().mean().backward()
     assert_precision(x.grad, xr.grad, rtol=2e-2, atol=2e-2, label="dx")
@@ -114,9 +118,11 @@ def test_vmap_grad_per_example(assert_precision):
     g_op = vmap(grad(loss))(xb, tib, twb)
     g_ref = torch.stack(
         [
-            grad(lambda xs, t, w: torch_reference_moe(xs, gate_up, down, t, w).square().mean())(
-                xb[i], tib[i], twb[i]
-            )
+            grad(
+                lambda xs, t, w: (
+                    torch_reference_moe(xs, gate_up, down, t, w).square().mean()
+                )
+            )(xb[i], tib[i], twb[i])
             for i in range(B)
         ]
     )
@@ -127,7 +133,10 @@ def test_vmap_grad_per_example(assert_precision):
 
 def test_cpu_fallback():
     """CPU inputs take the torch fallback (even on a CUDA+Triton host)."""
-    x, gate_up, down, ti, tw = (t.cpu() if torch.is_tensor(t) else t for t in _inputs(device="cpu", dtype=torch.float32))
+    x, gate_up, down, ti, tw = (
+        t.cpu() if torch.is_tensor(t) else t
+        for t in _inputs(device="cpu", dtype=torch.float32)
+    )
     out = opaque_moe(x, gate_up, down, ti, tw)
     ref = _sparse_gather_moe(x, gate_up, down, ti, tw)
     torch.testing.assert_close(out, ref, rtol=1e-5, atol=1e-5)

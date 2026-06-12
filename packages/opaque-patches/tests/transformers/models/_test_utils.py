@@ -138,9 +138,7 @@ def build_moe_model(family, device, attn_impl="sdpa", **config_overrides):
         for n in dir(cfg_mod)
         if n.endswith("Config") and "PreTrained" not in n
     )
-    causal_lm_cls = next(
-        getattr(mod, n) for n in dir(mod) if n.endswith("ForCausalLM")
-    )
+    causal_lm_cls = next(getattr(mod, n) for n in dir(mod) if n.endswith("ForCausalLM"))
     kwargs = get_tiny_config_kwargs()
     kwargs.update(config_overrides)
     config = config_cls(**kwargs)
@@ -161,7 +159,11 @@ def build_moe_model(family, device, attn_impl="sdpa", **config_overrides):
 def experts_forward_patched(modeling_module):
     """True if the family's stacked ``*Experts`` forward is on the Opaque kernel."""
     cls = next(
-        (getattr(modeling_module, n) for n in dir(modeling_module) if n.endswith("Experts")),
+        (
+            getattr(modeling_module, n)
+            for n in dir(modeling_module)
+            if n.endswith("Experts")
+        ),
         None,
     )
     return cls is not None and hasattr(cls.forward, "__opaque_patched__")

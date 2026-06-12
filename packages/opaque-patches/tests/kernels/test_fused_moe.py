@@ -38,9 +38,9 @@ E, K, H, I, T = 8, 2, 256, 128, 64
 def _inputs(device="cuda", dtype=torch.bfloat16, seed=0, requires_grad=False):
     torch.manual_seed(seed)
     x = torch.randn(T, H, device=device, dtype=dtype, requires_grad=requires_grad)
-    gate_up = (torch.randn(E, 2 * I, H, device=device, dtype=dtype) * 0.05).requires_grad_(
-        requires_grad
-    )
+    gate_up = (
+        torch.randn(E, 2 * I, H, device=device, dtype=dtype) * 0.05
+    ).requires_grad_(requires_grad)
     down = (torch.randn(E, H, I, device=device, dtype=dtype) * 0.05).requires_grad_(
         requires_grad
     )
@@ -68,8 +68,20 @@ def _sparse_gather_moe(x, gate_up, down, ti, tw):
 def test_forward_matches_references(assert_precision):
     x, gate_up, down, ti, tw = _inputs()
     out = opaque_fused_moe(x, gate_up, down, ti, tw)
-    assert_precision(out, _sparse_gather_moe(x, gate_up, down, ti, tw), rtol=1e-2, atol=1e-2, label="vs sparse")
-    assert_precision(out, torch_reference_moe(x, gate_up, down, ti, tw), rtol=1e-2, atol=1e-2, label="vs dense")
+    assert_precision(
+        out,
+        _sparse_gather_moe(x, gate_up, down, ti, tw),
+        rtol=1e-2,
+        atol=1e-2,
+        label="vs sparse",
+    )
+    assert_precision(
+        out,
+        torch_reference_moe(x, gate_up, down, ti, tw),
+        rtol=1e-2,
+        atol=1e-2,
+        label="vs dense",
+    )
 
 
 def test_dispatch_cuda_bf16_uses_fused():
@@ -78,7 +90,8 @@ def test_dispatch_cuda_bf16_uses_fused():
     torch.testing.assert_close(
         opaque_moe(x, gate_up, down, ti, tw),
         opaque_fused_moe(x, gate_up, down, ti, tw),
-        rtol=0, atol=0,
+        rtol=0,
+        atol=0,
     )
 
 
@@ -106,7 +119,9 @@ def test_vmap_forward(assert_precision):
     tib = ti.unsqueeze(0).expand(B, -1, -1).contiguous()
     twb = tw.unsqueeze(0).expand(B, -1, -1).contiguous()
     out = vmap(lambda xs, t, w: opaque_fused_moe(xs, gate_up, down, t, w))(xb, tib, twb)
-    ref = vmap(lambda xs, t, w: torch_reference_moe(xs, gate_up, down, t, w))(xb, tib, twb)
+    ref = vmap(lambda xs, t, w: torch_reference_moe(xs, gate_up, down, t, w))(
+        xb, tib, twb
+    )
     assert_precision(out, ref, rtol=1e-2, atol=1e-2, label="vmap forward")
 
 
@@ -129,7 +144,10 @@ def test_vmap_grad_per_sample(assert_precision):
     g_op = vmap(grad(loss, argnums=(0, 3, 4)), in_dims=(0, 0, 0, None, None))(
         xb, tib, twb, gate_up, down
     )
-    refs = [grad(rloss, argnums=(0, 3, 4))(xb[i], tib[i], twb[i], gate_up, down) for i in range(B)]
+    refs = [
+        grad(rloss, argnums=(0, 3, 4))(xb[i], tib[i], twb[i], gate_up, down)
+        for i in range(B)
+    ]
     dx_r = torch.stack([r[0] for r in refs])
     dgu_r = torch.stack([r[1] for r in refs])
     ddn_r = torch.stack([r[2] for r in refs])
