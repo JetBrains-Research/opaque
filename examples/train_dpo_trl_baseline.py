@@ -39,6 +39,7 @@ LR = float(os.environ.get("LR", "5e-5"))
 BETA = float(os.environ.get("BETA", "0.1"))
 NUM_STEPS = int(os.environ.get("NUM_STEPS", "100"))
 EVAL_STEPS = int(os.environ.get("EVAL_STEPS", "0")) or None
+EVAL_ON_START = os.environ.get("EVAL_ON_START", "0") == "1"
 # WITH_REPLACEMENT=1 → iid with-replacement train sampling (no epochs), matching
 # the opaque trainer's Poisson sampler. Removes the epoch-boundary memorization
 # STEP that without-replacement epoch shuffling produces (the step's size scales
@@ -170,6 +171,7 @@ def main() -> int:
             "eval_strategy": "steps",
             "eval_steps": EVAL_STEPS,
             "per_device_eval_batch_size": PER_DEVICE_BATCH,
+            "eval_on_start": EVAL_ON_START,
         }
 
     # NOTE: TRL DPOConfig dropped ``overwrite_output_dir`` in 0.13+ (it lives on

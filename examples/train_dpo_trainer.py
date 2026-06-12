@@ -257,6 +257,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Eval batch size; defaults to --batch-size.",
     )
+    p.add_argument(
+        "--eval-on-start",
+        action="store_true",
+        help="Run eval at step 0 before training begins, so the eval curve has "
+        "a pre-training anchor for the noDP/DP/baseline overlay.",
+    )
     # --- Optim -------------------------------------------------------------
     p.add_argument(
         "--noise-bias-correction",
@@ -356,6 +362,7 @@ def main() -> int:
             "per_device_eval_batch_size": (
                 args.per_device_eval_batch_size or args.batch_size
             ),
+            "eval_on_start": args.eval_on_start,
         }
 
     dpo_args = DPOConfig(
