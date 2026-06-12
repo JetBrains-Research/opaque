@@ -36,7 +36,7 @@ def tiny_model(device):
         }
     )
     config = Gemma3TextConfig(**kwargs)
-    config._attn_implementation = "eager"
+    config._attn_implementation = "sdpa"
     model = Gemma3ForCausalLM(config).to(device)
     apply_model_patches(model, eager_attention=True)
     return model

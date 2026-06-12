@@ -1,4 +1,4 @@
-"""Fused Triton kernels — SwiGLU, GeGLU, RoPE, RMSNorm, fused CE, LoRA."""
+"""Fused Triton kernels — SwiGLU, GeGLU, RoPE, RMSNorm, fused CE, MoE, LoRA."""
 
 from opaque.api.patches.kernels import (
     ACTIVATION_GEGLU_APPROX,
@@ -12,6 +12,7 @@ from opaque.api.patches.kernels import (
     opaque_lora_mlp,
     opaque_lora_qkv,
     opaque_lora_w,
+    opaque_moe,
     opaque_rms_norm,
     opaque_rope,
     opaque_rope_qk,
@@ -22,6 +23,7 @@ from opaque.api.patches.kernels import (
 __all__ = [
     "opaque_cross_entropy_loss",
     "opaque_linear_cross_entropy_loss",
+    "opaque_moe",
     "opaque_swiglu",
     "opaque_geglu_exact",
     "opaque_geglu_approx",

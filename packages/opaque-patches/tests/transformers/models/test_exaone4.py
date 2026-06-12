@@ -29,7 +29,7 @@ def tiny_model(device):
     kwargs = get_tiny_config_kwargs()
     kwargs.update({"head_dim": 16})
     config = Exaone4Config(**kwargs)
-    config._attn_implementation = "eager"
+    config._attn_implementation = "sdpa"
     model = Exaone4ForCausalLM(config).to(device)
     apply_model_patches(model, eager_attention=True)
     return model

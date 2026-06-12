@@ -59,19 +59,19 @@ USAGE:
   # Smoke test (CPU, ~seconds, no network)
   python examples/train_dpo.py --smoke
 
-  # Quick test preset (Qwen2.5-0.5B + ultrafeedback)
+  # Quick test preset (Qwen2.5-Coder-0.5B + code-security DPO)
   python examples/train_dpo.py --preset smoke
 
-  # Full production training on Qwen2.5-7B + ultrafeedback at ε=8
-  python examples/train_dpo.py --preset qwen-7b-ultrafeedback
+  # Full production training on Qwen2.5-Coder-7B + code-security DPO at ε=8
+  python examples/train_dpo.py --preset qwen-7b-codesec
 
   # 4-GPU distributed run with torchrun
-  torchrun --nproc_per_node=4 examples/train_dpo.py --preset qwen-7b-ultrafeedback
+  torchrun --nproc_per_node=4 examples/train_dpo.py --preset qwen-7b-codesec
 
   # Or customize individual parameters:
   python examples/train_dpo.py \\
-    --model-name "Qwen/Qwen2.5-0.5B-Instruct" \\
-    --dataset "trl-lib/ultrafeedback_binarized" \\
+    --model-name "Qwen/Qwen2.5-Coder-0.5B-Instruct" \\
+    --dataset "CyberNative/Code_Vulnerability_Security_DPO" \\
     --loss-type sigmoid --beta 0.1 \\
     --num-train-samples 5000 --num-eval-samples 500 \\
     --num-epochs 1 --batch-size 16 --eval-steps 50 \\
@@ -415,45 +415,23 @@ def _load_streaming_subset(
             f"(train + eval)."
         )
 
-    # Canonicalize non-TRL-canonical code-DPO datasets so the rest of the
-    # pipeline only deals with (prompt, chosen, rejected). CyberNative ships
-    # (system, question, chosen, rejected); zed-industries/zeta (NES) ships
-    # (events, input, output, rejected). Both are remapped to TRL-canonical.
-    # ultrafeedback already has ``prompt`` and passes through.
-    if rows and "prompt" not in rows[0] and (
-        "question" in rows[0] or "input" in rows[0]
-    ):
-        rows = [_to_trl_canonical_dpo(row) for row in rows]
-
     return Dataset.from_list(rows)
 
 
-def _to_trl_canonical_dpo(row: dict) -> dict:
-    """Collapse non-TRL preference shapes into (prompt, chosen, rejected).
+def _normalize_preference_row(row):
+    """Map dataset-specific schemas onto ``{prompt, chosen, rejected}``.
 
-    Handles:
-    - CyberNative/Code_Vulnerability_Security_DPO: (system, question, chosen,
-      rejected). ``system`` is prefixed onto ``question`` when non-empty.
-    - zed-industries/zeta NES: (events, input, output, rejected, assertions).
-      ``events`` (user-edit history) is prefixed onto ``input``
-      (cursor-positioned code); ``output`` is the chosen next edit.
+    CyberNative/Code_Vulnerability_Security_DPO carries ``(system, question,
+    chosen, rejected)``; collapse ``(system, question)`` into a single string
+    prompt (a base model has no chat template). Rows already carrying a
+    ``prompt`` (or only ``chosen``/``rejected``) pass through unchanged.
     """
-    if "output" in row and "input" in row and "rejected" in row:
-        events = (row.get("events") or "").strip()
-        input_code = row["input"]
-        prompt = f"{events}\n\n{input_code}" if events else input_code
-        return {
-            "prompt": prompt,
-            "chosen": row["output"],
-            "rejected": row["rejected"],
-        }
+    if "prompt" in row or "question" not in row:
+        return row
     system = (row.get("system") or "").strip()
     question = row["question"]
-    return {
-        "prompt": f"{system}\n\n{question}" if system else question,
-        "chosen": row["chosen"],
-        "rejected": row["rejected"],
-    }
+    prompt = f"{system}\n\n{question}" if system else question
+    return {**row, "prompt": prompt}
 
 
 def _tokenize_preference_example(example, tokenizer, max_length):
@@ -738,21 +716,16 @@ def parse_args():
         choices=[
             "custom",
             "smoke",
-            "qwen-0.5b-ultrafeedback",
-            "qwen-7b-ultrafeedback",
-            "mellum-zeta",
-            "mellum2-zeta",
+            "qwen-7b-codesec",
+            "mellum-codesec",
+            "mellum2-codesec",
         ],
         default="smoke",
         help="Apply preset configuration (custom=keep explicit args, "
-        "smoke=quick test Qwen2.5-0.5B + ultrafeedback at ε=8, "
-        "qwen-0.5b-ultrafeedback=same as smoke, "
-        "qwen-7b-ultrafeedback=Qwen2.5-7B + ultrafeedback at ε=8 with adafactor @ 5e-5, "
-        "mellum-zeta=JetBrains/Mellum-4b-base (Llama arch, transformers 4.57.x) + "
-        "zed-industries/zeta NES DPO split at ε=8 with LoRA, "
-        "mellum2-zeta=JetBrains/Mellum2-12B-A2.5B-Base + zed-industries/zeta NES "
-        "DPO split at ε=8 with LoRA — requires transformers≥5.10 for the Mellum2 "
-        "architecture, layered on at run time via uv pip install).",
+        "smoke=quick test Qwen2.5-Coder-0.5B + code-security DPO at ε=8, "
+        "qwen-7b-codesec=Qwen2.5-Coder-7B + code-security DPO at ε=8 with adafactor @ 5e-5, "
+        "mellum-codesec=Mellum-4b dense + code-security DPO at ε=8, "
+        "mellum2-codesec=Mellum2-12B-A2.5B MoE + code-security DPO at ε=8).",
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
@@ -783,7 +756,7 @@ def parse_args():
     data_group.add_argument(
         "--dataset",
         type=str,
-        default="trl-lib/ultrafeedback_binarized",
+        default="CyberNative/Code_Vulnerability_Security_DPO",
         help="HuggingFace preference dataset name (must have chosen/rejected columns)",
     )
     data_group.add_argument(
@@ -1236,11 +1209,12 @@ def parse_args():
         if name not in provided_dests:
             setattr(args, name, value)
 
-    # Apply preset configurations (CLI args take precedence)
-    if args.preset in ("smoke", "qwen-0.5b-ultrafeedback"):
-        # Quick test with Qwen2.5-0.5B-Instruct + ultrafeedback.
-        _set("model_name", "Qwen/Qwen2.5-0.5B-Instruct")
-        _set("dataset", "trl-lib/ultrafeedback_binarized")
+    # Code models train on code-security preference pairs, not general chat.
+    # The loader collapses (system, question) -> prompt.
+    _CODESEC = "CyberNative/Code_Vulnerability_Security_DPO"
+    if args.preset == "smoke":
+        _set("model_name", "Qwen/Qwen2.5-Coder-0.5B-Instruct")
+        _set("dataset", _CODESEC)
         _set("num_train_samples", 1000)
         _set("num_eval_samples", 100)
         _set("num_epochs", 1)
@@ -1257,14 +1231,14 @@ def parse_args():
         _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
         _set("audit", False)
-    elif args.preset == "qwen-7b-ultrafeedback":
-        # Qwen2.5-7B + ultrafeedback DPO LoRA fine-tuning at ε=8.
-        _set("model_name", "Qwen/Qwen2.5-7B-Instruct")
-        _set("dataset", "trl-lib/ultrafeedback_binarized")
-        _set("num_train_samples", 50000)
-        _set("num_eval_samples", 1000)
-        _set("num_epochs", 1)
-        _set("batch_size", 64)
+    elif args.preset == "qwen-7b-codesec":
+        # Qwen2.5-Coder-7B + code-security DPO at ε=8.
+        _set("model_name", "Qwen/Qwen2.5-Coder-7B-Instruct")
+        _set("dataset", _CODESEC)
+        _set("num_train_samples", 4000)
+        _set("num_eval_samples", 500)
+        _set("num_epochs", 2)
+        _set("batch_size", 128)
         _set("microbatch_size", 8)
         _set("log_steps", 2)
         _set("eval_steps", 25)
@@ -1278,82 +1252,47 @@ def parse_args():
         _set("max_length", 1024)
         _set(
             "lora_modules",
-            [
-                "q_proj",
-                "k_proj",
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-            ],
+            ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
         )
         _set("dtype", "bfloat16")
-    elif args.preset == "mellum-zeta":
-        # JetBrains/Mellum-4b-base (Llama arch, transformers 4.57.x compatible)
-        # + zed-industries/zeta NES DPO LoRA fine-tuning. Same dataset as
-        # mellum2-zeta but on the older 4b model so the existing
-        # transformers<5 project pin holds — no version bump required.
-        # The example loader remaps Zeta's (events, input, output, rejected)
-        # to (prompt, chosen, rejected).
-        _set("model_name", "JetBrains/Mellum-4b-base")
-        _set("dataset", "zed-industries/zeta")
-        _set("dataset_split", "dpo")
-        _set("num_train_samples", 132)
-        _set("num_eval_samples", 0)
-        _set("num_epochs", 1)
-        _set("batch_size", 16)
-        _set("microbatch_size", 4)
-        _set("log_steps", 2)
-        _set("eval_steps", 10)
-        _set("target_epsilon", 8.0)
-        _set("learning_rate", 5e-5)
-        _set("loss_type", "sigmoid")
-        _set("beta", 0.1)
-        _set("lora_r", 16)
-        _set("lora_alpha", 32)
-        _set("max_length", 1024)
-        _set(
-            "lora_modules",
-            [
-                "q_proj",
-                "k_proj",
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-            ],
-        )
-        _set("dtype", "bfloat16")
-        _set("audit", False)
-    elif args.preset == "mellum2-zeta":
-        # JetBrains/Mellum2-12B-A2.5B-Base + zed-industries/zeta DPO LoRA
-        # fine-tuning. Mellum2 is a 12B/2.5B-active MoE built for IDE-side
-        # code completion; Zeta is the Zed editor's Next Edit Prediction
-        # dataset (132 DPO pairs in the ``dpo`` split). The example loader
-        # remaps Zeta's (events, input, output, rejected) to
-        # (prompt, chosen, rejected).
-        #
-        # Mellum2 needs transformers≥5.10 (custom MellumForCausalLM
-        # architecture), which the project pins below — Cadence YAML layers
-        # the bumped version on at run time via ``uv pip install --with``.
-        # Conservative microbatch (2) + max_length (1024) so the run fits on
-        # one H200 with the precomputed reference logps.
+    elif args.preset == "mellum2-codesec":
+        # Mellum2-12B-A2.5B (MoE) DP-DPO at ε=8. At batch=128 the Rényi accountant
+        # calibrates nm≈0.557, so the preference signal survives. LoRA on attention
+        # projections only — routed experts are stacked nn.Parameter weights.
         _set("model_name", "JetBrains/Mellum2-12B-A2.5B-Base")
-        _set("dataset", "zed-industries/zeta")
-        _set("dataset_split", "dpo")
-        # The ``dpo`` split only holds 132 preference pairs, so any larger
-        # cap is a no-op — the streamer will deliver only what exists.
-        _set("num_train_samples", 132)
-        _set("num_eval_samples", 0)
-        _set("num_epochs", 1)
-        _set("batch_size", 16)
-        _set("microbatch_size", 2)
+        _set("dataset", _CODESEC)
+        _set("num_train_samples", 4000)
+        _set("num_eval_samples", 500)
+        _set("num_epochs", 2)
+        _set("batch_size", 128)
+        _set("microbatch_size", 8)
         _set("log_steps", 2)
-        _set("eval_steps", 10)
+        _set("eval_steps", 25)
         _set("target_epsilon", 8.0)
         _set("learning_rate", 5e-5)
+        _set("optimizer", "adafactor")
+        _set("loss_type", "sigmoid")
+        _set("beta", 0.1)
+        _set("lora_r", 16)
+        _set("lora_alpha", 32)
+        _set("max_length", 1024)
+        _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
+        _set("dtype", "bfloat16")
+    elif args.preset == "mellum-codesec":
+        # Mellum-4b (dense Llama) + code-security DPO at ε=8. Dense MLP, so LoRA
+        # also targets gate/up/down_proj.
+        _set("model_name", "JetBrains/Mellum-4b-base")
+        _set("dataset", _CODESEC)
+        _set("num_train_samples", 4000)
+        _set("num_eval_samples", 500)
+        _set("num_epochs", 2)
+        _set("batch_size", 128)
+        _set("microbatch_size", 16)
+        _set("log_steps", 2)
+        _set("eval_steps", 25)
+        _set("target_epsilon", 8.0)
+        _set("learning_rate", 5e-5)
+        _set("optimizer", "adafactor")
         _set("loss_type", "sigmoid")
         _set("beta", 0.1)
         _set("lora_r", 16)
@@ -1361,18 +1300,9 @@ def parse_args():
         _set("max_length", 1024)
         _set(
             "lora_modules",
-            [
-                "q_proj",
-                "k_proj",
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-            ],
+            ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
         )
         _set("dtype", "bfloat16")
-        _set("audit", False)
     elif args.preset == "custom":
         # Keep all user-provided/default CLI arguments unchanged.
         pass
@@ -1775,10 +1705,10 @@ def main():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     if tokenizer.chat_template is None:
-        # Base models (e.g. JetBrains/Mellum-4b-base) ship no chat template, but
-        # _tokenize_preference_example calls apply_chat_template on list-of-
-        # message preference rows (ultrafeedback). Install a minimal ChatML so
-        # the run validates DPO mechanics without an instruct variant.
+        # Base models (e.g. JetBrains/Mellum-4b-base) ship no chat template;
+        # _tokenize_preference_example calls apply_chat_template when a row's
+        # chosen/rejected is a list-of-message dicts. Install a minimal ChatML
+        # so those datasets still work without an instruct variant.
         tokenizer.chat_template = (
             "{% for message in messages %}"
             "<|im_start|>{{ message['role'] }}\n{{ message['content'] }}<|im_end|>\n"
@@ -1839,7 +1769,7 @@ def main():
     def _tokenize_split(rows_iter, desc):
         out = []
         for raw_row in rows_iter:
-            row = extract_prompt(raw_row)
+            row = extract_prompt(_normalize_preference_row(raw_row))
             try:
                 tok = _tokenize_preference_example(row, tokenizer, args.max_length)
             except Exception:

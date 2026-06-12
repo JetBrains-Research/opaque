@@ -459,11 +459,12 @@ def parse_args():
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["custom", "smoke", "mellum-kstack", "qwen-7b-kstack"],
+        choices=["custom", "smoke", "mellum-kstack", "mellum2-kstack", "qwen-7b-kstack"],
         default="smoke",
         help="Apply preset configuration (custom=keep explicit args, "
         "smoke=quick test GPT-2 + ag_news at ε=8, "
         "mellum-kstack=Mellum-4b + KStack at ε=10 with adafactor @ 5e-5, "
+        "mellum2-kstack=Mellum2-12B-A2.5B MoE + KStack at ε=10 with adafactor @ 5e-5, "
         "qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at ε=3 with adafactor @ 5e-4).",
     )
 
@@ -955,6 +956,29 @@ def parse_args():
                 "down_proj",
             ],
         )
+        _set("dtype", "bfloat16")
+    elif args.preset == "mellum2-kstack":
+        # Mellum2-12B-A2.5B (MoE) + KStack SFT LoRA fine-tuning at ε=10.
+        # LoRA targets attention projections only: the routed experts are stacked
+        # nn.Parameter weights (gate_up_proj/down_proj), which PEFT can't adapt.
+        _set("model_name", "JetBrains/Mellum2-12B-A2.5B-Base")
+        _set("dataset", "JetBrains/KStack")
+        _set("dataset_text_field", "content")
+        _set("num_train_samples", 50000)
+        _set("num_eval_samples", 1000)
+        _set("num_epochs", 3)
+        _set("batch_size", 128)
+        _set("microbatch_size", 8)
+        _set("log_steps", 2)
+        _set("eval_steps", 10)
+        _set("target_epsilon", 10.0)
+        _set("learning_rate", 5e-5)
+        _set("optimizer", "adafactor")
+        _set("loss_type", "nll")
+        _set("lora_r", 16)
+        _set("lora_alpha", 32)
+        _set("max_length", 1024)
+        _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
     elif args.preset == "qwen-7b-kstack":
         # Qwen2.5-Coder-7B + KStack SFT LoRA fine-tuning at ε=3.

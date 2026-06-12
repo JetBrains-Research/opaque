@@ -61,7 +61,15 @@ def assert_vmap_forward(model, device):
     assert vmapped.shape == (batch,)
 
 
-def assert_vmap_grad(model, device):
+def assert_vmap_grad(model, device, dtype=None):
+    """Run the real DP-SGD ``clipped_grad`` (vmap(grad)) pipeline.
+
+    ``dtype`` casts the model first — pass ``torch.bfloat16`` on CUDA to exercise
+    the Triton kernel paths (e.g. the fused MoE kernel), which only engage for
+    bf16/fp16 CUDA tensors; the default (fp32) runs the pure-torch fallbacks.
+    """
+    if dtype is not None:
+        model = model.to(dtype)
     model.train()
     torch.manual_seed(0)
     batch, seq, vocab = 4, 12, model.config.vocab_size
@@ -85,3 +93,77 @@ def assert_vmap_grad(model, device):
         trainable, frozen, input_ids, attention_mask, labels, state=clip_state
     )
     assert len(grads.pytree) > 0
+    assert all(torch.isfinite(g).all() for g in grads.pytree.values())
+
+
+# ----------------------------------------------------------------------------
+# MoE helpers — the stacked-weight ``*Experts`` families resolve their HF
+# Config / ForCausalLM by ``model_type`` so per-family test files stay thin.
+# ----------------------------------------------------------------------------
+
+
+def build_moe_model(family, device, attn_impl="sdpa", **config_overrides):
+    """Build + patch a tiny MoE model. Returns ``(model, modeling_module)``.
+
+    Defaults to ``attn_impl="sdpa"`` — the transformers production default — so
+    the suite exercises the SDPA path; pass ``attn_impl="eager"`` for the eager
+    reference validation.
+
+    The Opaque MoE patch targets the stacked-weight ``*Experts`` module
+    (transformers v5+). On versions where the family still uses the old
+    ``*SparseMoeBlock`` (a ModuleList of per-expert MLPs, no stacked experts),
+    DP-SGD MoE isn't supported — skip rather than exercise the vmap-broken HF
+    forward. Capability check (presence of a ``*Experts`` class), not a version
+    number, so it tracks the API rather than the release.
+    """
+    import importlib
+
+    import pytest
+
+    from opaque.patches import apply_model_patches
+
+    mod = importlib.import_module(f"transformers.models.{family}.modeling_{family}")
+    if not any(n.endswith("Experts") for n in dir(mod)):
+        import transformers
+
+        pytest.skip(
+            f"{family}: stacked *Experts module absent in transformers "
+            f"{transformers.__version__} (v5+ feature)"
+        )
+    cfg_mod = importlib.import_module(
+        f"transformers.models.{family}.configuration_{family}"
+    )
+    config_cls = next(
+        getattr(cfg_mod, n)
+        for n in dir(cfg_mod)
+        if n.endswith("Config") and "PreTrained" not in n
+    )
+    causal_lm_cls = next(getattr(mod, n) for n in dir(mod) if n.endswith("ForCausalLM"))
+    kwargs = get_tiny_config_kwargs()
+    kwargs.update(config_overrides)
+    config = config_cls(**kwargs)
+    config._attn_implementation = attn_impl
+    try:
+        model = causal_lm_cls(config).to(device)
+    except ValueError as e:
+        # Some architectures (gpt_oss, deepseek_v4) are eager-only — HF rejects
+        # sdpa at init. Fall back to eager rather than fail the family.
+        if attn_impl == "eager" or "scaled_dot_product" not in str(e):
+            raise
+        config._attn_implementation = "eager"
+        model = causal_lm_cls(config).to(device)
+    apply_model_patches(model, eager_attention=True)
+    return model, mod
+
+
+def experts_forward_patched(modeling_module):
+    """True if the family's stacked ``*Experts`` forward is on the Opaque kernel."""
+    cls = next(
+        (
+            getattr(modeling_module, n)
+            for n in dir(modeling_module)
+            if n.endswith("Experts")
+        ),
+        None,
+    )
+    return cls is not None and hasattr(cls.forward, "__opaque_patched__")

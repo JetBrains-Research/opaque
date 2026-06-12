@@ -4181,11 +4181,18 @@ class DPTrainer:
         when no checkpoint files were found.
         """
         from safetensors.torch import load_file as load_safetensors
-        from transformers.modeling_utils import load_sharded_checkpoint
         from transformers.utils import (
             SAFE_WEIGHTS_INDEX_NAME,
             WEIGHTS_INDEX_NAME,
         )
+
+        # ``load_sharded_checkpoint`` relocated across our supported range:
+        # ``transformers.modeling_utils`` in v4, ``transformers.trainer_utils``
+        # in v5.  Import from wherever it lives rather than pinning a module.
+        try:
+            from transformers.modeling_utils import load_sharded_checkpoint
+        except ImportError:  # transformers >= 5
+            from transformers.trainer_utils import load_sharded_checkpoint
 
         # Single-file shapes win over sharded indices (HF parity:
         # ``save_pretrained`` writes a single file when the model fits

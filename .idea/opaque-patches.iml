@@ -5,7 +5,7 @@
       <sourceFolder url="file://$MODULE_DIR$/packages/opaque-patches/src" isTestSource="false" />
     </content>
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="module" module-name="opaque-core" exported="" />
+    <orderEntry type="module" module-name="opaque-engine" exported="" />
     <orderEntry type="jdk" jdkName="uv (opaque)" jdkType="Python SDK" />
   </component>
 </module>

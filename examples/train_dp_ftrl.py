@@ -359,7 +359,7 @@ def parse_args():
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["custom", "smoke", "mellum-kstack"],
+        choices=["custom", "smoke", "mellum-kstack", "mellum2-kstack"],
         default="smoke",
         help="Preset configuration.",
     )
@@ -781,6 +781,30 @@ def parse_args():
         _set("band_mf_sampling", "b_min_sep")
         # ~5% of total steps as warmup; the preset's defaults give the same
         # number of steps as the old ``warmup_frac=0.05``.
+        _set("lr_warmup_steps", 0)
+    elif args.preset == "mellum2-kstack":
+        # Mellum2-12B-A2.5B (MoE) + KStack under DP-FTRL (band-MF) at ε=3. LoRA on
+        # attention projections only; routed experts are stacked nn.Parameter weights.
+        _set("model_name", "JetBrains/Mellum2-12B-A2.5B-Base")
+        _set("dataset", "JetBrains/KStack")
+        _set("dataset_text_field", "content")
+        _set("num_train_samples", 500000)
+        _set("num_eval_samples", 1000)
+        _set("num_epochs", 8)
+        _set("batch_size", 256)
+        _set("log_steps", 10)
+        _set("eval_steps", 25)
+        _set("target_epsilon", 3.0)
+        _set("learning_rate", 2e-3)
+        _set("lora_r", 16)
+        _set("lora_alpha", 32)
+        _set("max_seq_len", 1024)
+        _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
+        _set("dtype", "bfloat16")
+        _set("microbatch_size", 8)
+        _set("bands", 64)
+        _set("mechanism", "band_mf")
+        _set("band_mf_sampling", "b_min_sep")
         _set("lr_warmup_steps", 0)
     if args.microbatch_size == 0:
         args.microbatch_size = None

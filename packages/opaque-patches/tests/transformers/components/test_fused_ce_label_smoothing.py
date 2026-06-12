@@ -74,6 +74,7 @@ def test_fused_for_causal_lm_forwards_label_smoothing(monkeypatch):
         ignore_index,
         logit_softcapping,
         label_smoothing,
+        use_token_scaling=False,
     ):
         captured["hidden_dtype"] = hidden_states.dtype
         captured["weight_dtype"] = weight.dtype

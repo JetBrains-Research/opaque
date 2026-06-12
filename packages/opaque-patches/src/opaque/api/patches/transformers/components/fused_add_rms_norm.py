@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import torch
 
+from opaque.api.patches.transformers._compat import IS_TRANSFORMERS_V5
+
 
 def _post_attn_eps_and_weight(layer) -> tuple[torch.Tensor, float]:
     norm = layer.post_attention_layernorm
@@ -218,11 +220,12 @@ def _fused_add_rms_fac_granite(orig):
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states * self.residual_multiplier
 
+        # v4 GraniteDecoderLayer returns a tuple; v5 returns a bare tensor.
+        if IS_TRANSFORMERS_V5:
+            return hidden_states
         outputs = (hidden_states,)
         if kwargs.get("output_attentions"):
-            # Opaque does not return attention weights from fused kernels
             outputs += (None,)
-
         return outputs
 
     return forward
