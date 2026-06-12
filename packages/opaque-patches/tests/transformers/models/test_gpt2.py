@@ -29,10 +29,15 @@ def tiny_model(device):
         n_embd=64,
         n_layer=1,
         n_head=4,
+        # GPT-2 defaults to 0.1 dropout (modern models default 0.0). Active
+        # dropout's RNG trips vmap ("same randomness with a batched input") — the
+        # only thing that blocked gpt2 under sdpa(vmap). DP training disables
+        # dropout anyway, so turn it off and gpt2 runs on sdpa like the rest.
+        attn_pdrop=0.0,
+        resid_pdrop=0.0,
+        embd_pdrop=0.0,
     )
-    # GPT-2 is the compat-only/legacy family (LayerNorm, learned pos-emb, no
-    # kernels); its SDPA path doesn't compose under vmap(grad), so it stays eager.
-    config._attn_implementation = "eager"
+    config._attn_implementation = "sdpa"
     model = GPT2LMHeadModel(config).to(device)
     apply_model_patches(model, eager_attention=True)
     return model
