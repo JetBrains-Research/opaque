@@ -8,10 +8,10 @@ Updated each loop cycle. Will be the morning-report deliverable.
 
 | Sweep | Submitted | Running | Queued | Finished | Best metric | Best HPs |
 |---|---|---|---|---|---|---|
-| A (Mellum-4b DP-DPO) | 1 | 1 (`55452`/`6itmyoxi`) | 0 | 0 | **eval @ 1300**: eval/loss=**0.277**, eval/rewards/acc=**0.896**, eval/margins=**4.4**, ε=7.46/8 | T01: lr=5e-5, bs=128, beta=0.1, clip=1.0 |
-| B (Mellum-2.0 DP-DPO) | 4 (3 failed) | 1 (`55463` mb=4+evalb=4) | 0 | 3 failed (`55453` RMSNorm, `55456`+`55459` eval-time OOM) | n/a — retry queued | T01: lr=5e-5, bs=128, beta=0.1, clip=1.0, r=16, mb=4, eval_b=4 |
-| C (Mellum-2.0 SFT) | 2 (1 failed) | 1 (`55457`) | 0 | 1 failed (`55454`) | step ~220: train/loss=0.70, ε=7.1/10 (will overshoot to ~13) | T01: lr=5e-5, r=16, mb=8 |
-| D (Mellum-4b SFT) | 2 | 1 (`55461` T02) | 0 | **1 done** (`55455`/`xii5leqq`) | T01: train/loss=**0.647**, train/mean_token_acc=**0.839**, ε=10.06 (target nailed) | T01: lr=5e-5, r=16 (baseline) |
+| A (Mellum-4b DP-DPO) | 3 | 2 (`55464` T02, `55465` T03) | 0 | **1 done** (`55452`/`6itmyoxi`) | **T01 final**: eval/loss=**0.274**, eval/rewards/acc=**0.898**, eval/margins=**4.58**, ε=**8.05** (vs P5c eval/loss=0.397) | T01 winning: lr=5e-5, bs=128, beta=0.1, clip=1.0 |
+| B (Mellum-2.0 DP-DPO) | 4 (3 failed) | 1 (`55463` mb=4+evalb=4) | 0 | 3 failed (`55453` RMSNorm, `55456`+`55459` eval-time OOM) | n/a — retry still running | T01: lr=5e-5, bs=128, beta=0.1, clip=1.0, r=16, mb=4, eval_b=4 |
+| C (Mellum-2.0 SFT) | 3 (1 failed) | 1 (`55466` T02) | 0 | **1 done** (`55457`/`k565ady9`), 1 failed | T01 final: train/loss=**0.707**, train/mean_token_acc=**0.820**, ε=10.06 | T01: lr=5e-5, r=16, mb=8 |
+| D (Mellum-4b SFT) | 2 | 0 | 0 | **2 done** (`55455`/`xii5leqq`, `55461`/`zo9bwaa1`) | T01: loss=**0.647**, acc=**0.839**; T02 (lr=1e-4): loss=**0.644**, acc=**0.840** — tied | **sweep converged**: lr-insensitive between 5e-5 and 1e-4 |
 
 ## Fixed issues
 
@@ -30,5 +30,12 @@ Updated each loop cycle. Will be the morning-report deliverable.
 
   No terminal trials this cycle. Concurrency full at 4/4. ScheduleWakeup 1800s.
 - **2026-06-12 23:45 UTC** — Cycle 4. **B-T01 (55456, Mellum-2.0 DPO) FAILED at 21:23 UTC with CUDA OOM** (23.98 GiB allocation, ~step 175): microbatch=8 too tight for Mellum-2.0 12B on H200's 139 GiB with DPO's 2× pass + ref logp eval at step 100. Retrying with **microbatch=4** as 55459 (HP-B-T01-..._mb4). The other 3 (A-T01 55452, D-T01 55455, C-T01 55457) still healthy.
+
+- **2026-06-13 04:05 UTC** — Cycle 7. **THREE TERMINALS:**
+  - **A-T01** (Mellum-4b DP-DPO, 1500 steps): eval/loss=**0.274**, eval/rewards/acc=**0.898**, eval/margins=**4.58**, ε=**8.05/8** (calibrator nailed target). Compared to P5c's 500-step run (eval/loss=0.397, eval/rewards/acc=0.915 train but lower stability), the 1500-step horizon clearly improves loss and matches/exceeds reward gating. Runtime 4.9h.
+  - **D-T01** (Mellum-4b SFT lr=5e-5) and **D-T02** (lr=1e-4) **tied at train/loss=0.647 vs 0.644** and mean_token_acc=0.839 vs 0.840 — sweep D is lr-insensitive in this range, **converged**.
+  - **C-T01** (Mellum-2.0 SFT lr=5e-5): train/loss=**0.707**, mean_token_acc=**0.820**, ε=10.06. Mellum-2.0 lags Mellum-4b SFT (0.707 vs 0.647) at fixed steps, likely needs higher lr or longer horizon.
+
+  Submitted 3 new probes: **A-T02** (55464, lr=1e-5/bs=64/beta=0.05), **A-T03** (55465, lr=1e-4/beta=0.3), **C-T02** (55466, Mellum-2.0 SFT lr=1e-4, lora_r=32, **dropped --no-performance-kernels** to test the RMSNorm fix in production). B-T01 retry (55463) still running. Concurrency 4/4.
 - **2026-06-13 00:19 UTC** — Cycle 5. **D-T01 FINISHED ✓** (xii5leqq, 2h13m runtime): train/loss=**0.647**, train/mean_token_acc=**0.839**, privacy/epsilon=**10.06** (target 10 nailed), nm=0.418 calibrated. Submitted **D-T02** (55461, --learning-rate 1e-4) to fill the slot. B-T01 retry (55459) healthy at step 50 with mb=4 but slower (~30s/step → projected ~12.5h end-to-end; will partially complete by morning). A-T01 + C-T01 still on track.
 - **2026-06-13 01:33 UTC** — Cycle 6. **B-T01 retry (55459, mb=4) FAILED again** with the same 23.98 GiB OOM at step ~120. Diagnosis: OOM was during **eval** (eval-batch defaulted to `--batch-size 128`, way too big for Mellum-2.0 12B). Microbatch reduction doesn't help eval. Resubmitted as **55463** with `--per-device-eval-batch-size 4 --num-eval-samples 100`. **A-T01 first eval at step 1300**: eval/loss=**0.277**, eval/rewards/accuracies=**0.896**, eval/margins=**4.4** — Mellum-4b DP-DPO is clearly working at these HPs. C-T01 step 790/1000 (loss=0.70, ε=9.4), D-T02 step 610/1000 (loss=0.65, ε=8.8).
