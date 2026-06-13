@@ -31,6 +31,14 @@ Updated each loop cycle. Will be the morning-report deliverable.
   No terminal trials this cycle. Concurrency full at 4/4. ScheduleWakeup 1800s.
 - **2026-06-12 23:45 UTC** — Cycle 4. **B-T01 (55456, Mellum-2.0 DPO) FAILED at 21:23 UTC with CUDA OOM** (23.98 GiB allocation, ~step 175): microbatch=8 too tight for Mellum-2.0 12B on H200's 139 GiB with DPO's 2× pass + ref logp eval at step 100. Retrying with **microbatch=4** as 55459 (HP-B-T01-..._mb4). The other 3 (A-T01 55452, D-T01 55455, C-T01 55457) still healthy.
 
+- **2026-06-13 06:42 UTC** — Cycle 9. **A-T03 first eval at step 300 — stunning:**
+  - eval/loss=**0.175**, eval/rewards/acc=**0.926**, eval/margins=**4.85** at step 300/1500
+  - A-T03 at step 300 already beats A-T01's final at step 1500 (eval/loss 0.175 vs 0.274)
+  - HPs: lr=1e-4, β=0.3, clip=2.0 — the more aggressive corner of the grid
+  - Train (loss=0.17) and eval (loss=0.175) tracking tight; no overfit yet
+  - Sweep A's clear lead candidate. A-T02 (lr=1e-5) still slow at step 300/0.91 rewards/acc.
+  - B-T01 retry at step ~580/1500: train/rewards/acc=0.94 (Mellum-2.0 DPO works). C-T02 RMSNorm fix stable.
+
 - **2026-06-13 04:05 UTC** — Cycle 7. **THREE TERMINALS:**
   - **A-T01** (Mellum-4b DP-DPO, 1500 steps): eval/loss=**0.274**, eval/rewards/acc=**0.898**, eval/margins=**4.58**, ε=**8.05/8** (calibrator nailed target). Compared to P5c's 500-step run (eval/loss=0.397, eval/rewards/acc=0.915 train but lower stability), the 1500-step horizon clearly improves loss and matches/exceeds reward gating. Runtime 4.9h.
   - **D-T01** (Mellum-4b SFT lr=5e-5) and **D-T02** (lr=1e-4) **tied at train/loss=0.647 vs 0.644** and mean_token_acc=0.839 vs 0.840 — sweep D is lr-insensitive in this range, **converged**.
