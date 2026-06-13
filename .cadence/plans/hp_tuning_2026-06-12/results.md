@@ -31,6 +31,12 @@ Updated each loop cycle. Will be the morning-report deliverable.
   No terminal trials this cycle. Concurrency full at 4/4. ScheduleWakeup 1800s.
 - **2026-06-12 23:45 UTC** — Cycle 4. **B-T01 (55456, Mellum-2.0 DPO) FAILED at 21:23 UTC with CUDA OOM** (23.98 GiB allocation, ~step 175): microbatch=8 too tight for Mellum-2.0 12B on H200's 139 GiB with DPO's 2× pass + ref logp eval at step 100. Retrying with **microbatch=4** as 55459 (HP-B-T01-..._mb4). The other 3 (A-T01 55452, D-T01 55455, C-T01 55457) still healthy.
 
+- **2026-06-13 11:36 UTC** — Cycle 17. **TWO TERMINALS:**
+  - **A-T03 (Mellum-4b DP-DPO, lr=1e-4 / β=0.3 / clip=2.0) FINAL — sweep A winner:** eval/loss=**0.088**, eval/rewards/acc=**0.964**, eval/rewards/margins=**12.20**, ε=8.05/8. Beats A-T01 baseline (loss 0.274, margins 4.58) by ~3× on margins; vs P5c's 500-step run (eval/loss 0.397) the verdict is decisive. Runtime 4.9h. W&B `80t6wrwi`.
+  - **C-T02 (Mellum-2.0 SFT lr=1e-4 + lora_r=32, perf kernels ON via RMSNorm fix):** train/loss=**0.699**, mean_token_acc=**0.822**, ε=10.06. Essentially tied with C-T01 (loss 0.707 at lr=5e-5). **Sweep C verdict: Mellum-2.0 SFT lr-insensitive in [5e-5, 1e-4]**. RMSNorm fix verified in production — kernels-on ran cleanly with ~30% perf penalty from row kernel launches. Runtime 5.3h. W&B `2v0j351h`.
+
+  Slots freed: A-T04 (β=0.5 probe) still in flight, B-T01 retry (Mellum-2.0 DPO) still in flight. No new submissions — sweep A's winner is clear, sweep C is converged.
+
 - **2026-06-13 06:42 UTC** — Cycle 9. **A-T03 first eval at step 300 — stunning:**
   - eval/loss=**0.175**, eval/rewards/acc=**0.926**, eval/margins=**4.85** at step 300/1500
   - A-T03 at step 300 already beats A-T01's final at step 1500 (eval/loss 0.175 vs 0.274)
