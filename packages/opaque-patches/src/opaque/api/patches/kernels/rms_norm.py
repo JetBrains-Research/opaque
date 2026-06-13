@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 
 import torch
 import triton
@@ -196,6 +197,25 @@ def _rms_norm_backward_kernel(
         tl.store(dW_ptr + row_block_id * dW_row_stride + col_offsets, dW_row, mask=mask)
 
 
+_SLOW_ROW_KERNEL_WARNED: set[tuple[int, int]] = set()
+
+
+def _warn_slow_row_kernel(block_size: int, n_rows: int) -> None:
+    """Warn once per ``(block_size, n_rows_bucket)`` shape that the row kernel
+    is launching a large number of tiny programs.  Bucketed so vmap shape
+    drift between training steps doesn't spam the log."""
+    key = (block_size, 1 << max(0, n_rows.bit_length() - 1))
+    if key in _SLOW_ROW_KERNEL_WARNED:
+        return
+    _SLOW_ROW_KERNEL_WARNED.add(key)
+    warnings.warn(
+        f"Opaque RMSNorm: BLOCK_SIZE={block_size}, n_rows={n_rows} launches "
+        "the row kernel at one program per row.  Output is correct, but a "
+        "Liger-style block kernel would amortize launch overhead.",
+        stacklevel=3,
+    )
+
+
 def _rms_norm_forward_triton(
     X: torch.Tensor,
     W: torch.Tensor | None,
@@ -221,11 +241,17 @@ def _rms_norm_forward_triton(
     def grid(meta):
         return (n_rows,)
 
+    # Forward grid is ``(n_rows,)`` — one Triton program per row — so the
+    # kernel is correctness-safe at any shape.  The combination
+    # ``BLOCK_SIZE <= 256`` (small hidden dim, e.g. Mellum-2.0 q_norm /
+    # k_norm at head_dim=128) and ``n_rows >= 32k`` (vmapped microbatch
+    # * seq_len * num_heads under DP-SGD) launches an unhealthy number of
+    # tiny programs; a Liger-style block kernel that processes
+    # ``rows_per_sm`` rows per program would close the gap.  Until that
+    # lands, warn once per process so the perf hit is visible and keep
+    # going.
     if not (BLOCK_SIZE > 256 or n_rows < 4096 * 8 or row_mode):
-        raise RuntimeError(
-            "Opaque RMSNorm: enable row_mode or use hidden dim / batch sizes that "
-            "trigger the row kernel (see Liger block-kernel path to add)."
-        )
+        _warn_slow_row_kernel(BLOCK_SIZE, n_rows)
 
     with torch_gpu_device(X.device):
         _rms_norm_forward_kernel[grid](
