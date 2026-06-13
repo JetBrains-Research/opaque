@@ -55,7 +55,8 @@ cmd:
       --lora-r 16 --lora-alpha 32 \
       --lora-modules q_proj k_proj v_proj o_proj gate_proj up_proj down_proj \
       --log-steps 5 \
-      --eval-steps 100 \
+      --eval-steps 50 \
+      --eval-on-start \
       --seed 42 $EXTRA_ARGS
 provisioning:
   gpu_type: h200

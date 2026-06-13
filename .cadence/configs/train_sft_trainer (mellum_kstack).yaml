@@ -45,6 +45,8 @@ cmd:
       --target-epsilon 10.0 \
       --lora-modules q_proj k_proj v_proj o_proj gate_proj up_proj down_proj \
       --lora-r 16 --lora-alpha 32 \
+      --eval-steps 50 \
+      --num-eval-samples 200 \
       --seed 42 $EXTRA_ARGS
 provisioning:
   gpu_type: h200
