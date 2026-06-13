@@ -13,9 +13,10 @@ Updated each loop cycle. Will be the morning-report deliverable.
 | C (Mellum-2.0 SFT) | 2 (1 failed) | 1 (`55457`) | 0 | 1 failed (`55454`) | step ~220: train/loss=0.70, ε=7.1/10 (will overshoot to ~13) | T01: lr=5e-5, r=16, mb=8 |
 | D (Mellum-4b SFT) | 2 | 1 (`55461` T02) | 0 | **1 done** (`55455`/`xii5leqq`) | T01: train/loss=**0.647**, train/mean_token_acc=**0.839**, ε=10.06 (target nailed) | T01: lr=5e-5, r=16 (baseline) |
 
-## Known issues
+## Fixed issues
 
-- **Mellum-2.0 + Opaque RMSNorm:** Mellum-2.0's `q_norm` / `k_norm` use head_dim ~128 with many rows (`microbatch * seq_len * num_heads` > 32k), which falls outside Opaque RMSNorm's Triton row/block coverage. Triton kernel raises `Opaque RMSNorm: enable row_mode or use hidden dim / batch sizes that trigger the row kernel` at `packages/opaque-patches/.../kernels/rms_norm.py:225`. **Workaround:** pass `--no-performance-kernels` to both `train_dpo_trainer.py` and `train_sft_trainer.py` (DP-SGD path runs ~30% slower but is correct). Mellum-4b (Llama, no q_norm/k_norm) is unaffected.
+- **Mellum-2.0 + Opaque RMSNorm:** Mellum-2.0's `q_norm` / `k_norm` (head_dim=128, n_rows>32k under vmap) hit a misclassified `RuntimeError` at `rms_norm.py:225`. The kernel's grid is `(n_rows,)` and the row kernel produces correct output at any shape — the guard was a launch-overhead warning incorrectly raised as an error. **Fixed in commit `5695b733`:** replaced with a one-shot `warnings.warn` bucketed by shape. Future Mellum-2.0 runs no longer need `--no-performance-kernels`. A Liger-style block kernel would amortize launch overhead in this regime; that's the follow-up.
+- **Eval batch silently defaulted to HF stock 8:** `TrainingArguments.per_device_eval_batch_size` is now `Optional[int]` and `__post_init__` resolves `None` to `per_device_train_batch_size`. Callers who bump train batch for a big model get eval scaled to match unless they explicitly override (and they still can with `--per-device-eval-batch-size`).
 
 ## Loop event log
 
