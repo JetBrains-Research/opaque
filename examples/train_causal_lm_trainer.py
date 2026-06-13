@@ -315,8 +315,10 @@ def parse_args() -> argparse.Namespace:
     train_group.add_argument(
         "--eval-on-start",
         action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Run an evaluation pass before the first training step.",
+        default=True,
+        help="Run an evaluation pass at step 0 before training begins, "
+        "providing a pre-training anchor for the eval curve. "
+        "``--no-eval-on-start`` skips it.",
     )
     train_group.add_argument(
         "--save-steps",
@@ -598,7 +600,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     privacy_group = parser.add_argument_group("privacy", "Privacy accounting")
-    privacy_group.add_argument("--target-epsilon", type=float, default=3.0)
+    privacy_group.add_argument("--target-epsilon", type=float, default=8.0)
     privacy_group.add_argument("--target-delta", type=float, default=None)
     privacy_group.add_argument(
         "--noise-multiplier",

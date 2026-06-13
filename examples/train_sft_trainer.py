@@ -113,10 +113,19 @@ def parse_args() -> argparse.Namespace:
     p.set_defaults(log_completion_metrics=True)
     # --- Training ----------------------------------------------------------
     p.add_argument("--max-length", type=int, default=512)
-    p.add_argument("--batch-size", type=int, default=8)
+    p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--microbatch-size", type=int, default=None)
-    p.add_argument("--num-steps", type=int, default=50)
-    p.add_argument("--learning-rate", type=float, default=1e-4)
+    # ``--num-steps`` is the historical SFT-trainer flag name; ``--max-steps``
+    # matches train_dpo_trainer.py / train_causal_lm_trainer.py / HF.
+    p.add_argument(
+        "--max-steps",
+        "--num-steps",
+        dest="num_steps",
+        type=int,
+        default=50,
+        help="Number of optimizer steps. ``--num-steps`` accepted as alias.",
+    )
+    p.add_argument("--learning-rate", type=float, default=1e-5)
     p.add_argument("--clipping-norm", type=float, default=1.0)
     p.add_argument(
         "--noise-multiplier",
@@ -132,14 +141,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--target-epsilon",
         type=float,
-        default=3.0,
+        default=8.0,
         help=(
             "Target ε for noise calibration. Active when ``--noise-multiplier`` "
             "is left unset; the accountant solves for the σ that achieves this "
             "ε at the configured ``(num_steps, batch_size, num_train_samples)``."
         ),
     )
-    p.add_argument("--log-steps", type=int, default=5)
+    p.add_argument("--log-steps", type=int, default=1)
     p.add_argument("--output-dir", default="trainer_output/sft")
     # --- PEFT --------------------------------------------------------------
     p.add_argument(
@@ -164,15 +173,26 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--eval-steps",
         type=int,
-        default=None,
-        help="If set, evaluate every N steps on a held-out slice (uses a "
-        "disjoint slice of the same dataset, after the --num-train-samples).",
+        default=10,
+        help="Evaluate every N steps on a held-out slice (disjoint slice of "
+        "the same dataset, after the --num-train-samples). Set to ``0`` to "
+        "disable eval entirely. Default matches train_sft.py / "
+        "train_causal_lm_trainer.py.",
     )
     p.add_argument(
         "--num-eval-samples",
         type=int,
-        default=200,
-        help="Held-out sample count for eval; ignored if --eval-steps is unset.",
+        default=100,
+        help="Held-out sample count for eval. Default matches "
+        "train_sft.py / train_causal_lm_trainer.py.",
+    )
+    p.add_argument(
+        "--eval-on-start",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run an evaluation pass at step 0 before training begins, "
+        "providing a pre-training anchor for the eval curve. "
+        "``--no-eval-on-start`` skips it.",
     )
     p.add_argument(
         "--per-device-eval-batch-size",
@@ -240,7 +260,7 @@ def main() -> int:
     raw = load_dataset(
         args.dataset, args.dataset_config, split=args.dataset_split, streaming=True
     )
-    eval_count = args.num_eval_samples if args.eval_steps is not None else 0
+    eval_count = args.num_eval_samples if args.eval_steps else 0
     take_total = args.num_train_samples + eval_count
     all_rows = [row for _, row in zip(range(take_total), raw)]
     train_dataset = Dataset.from_list(all_rows[: args.num_train_samples])
@@ -257,13 +277,14 @@ def main() -> int:
         "noise_bias_correction=True" if args.noise_bias_correction else None
     )
     eval_kwargs: dict = {}
-    if args.eval_steps is not None:
+    if args.eval_steps:
         eval_kwargs = {
             "eval_strategy": "steps",
             "eval_steps": args.eval_steps,
             "per_device_eval_batch_size": (
                 args.per_device_eval_batch_size or args.batch_size
             ),
+            "eval_on_start": args.eval_on_start,
         }
 
     sft_args = SFTConfig(

@@ -617,7 +617,7 @@ def parse_args():
     privacy_group.add_argument(
         "--target-epsilon",
         type=float,
-        default=3.0,
+        default=8.0,
         help="Target epsilon used to calibrate noise_multiplier",
     )
     privacy_group.add_argument(
