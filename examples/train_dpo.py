@@ -779,8 +779,10 @@ def parse_args():
     data_group.add_argument(
         "--num-eval-samples",
         type=int,
-        default=500,
-        help="Number of held-out preference pairs for periodic reward-metric eval",
+        default=2000,
+        help="Held-out preference-pair count for periodic reward-metric eval. "
+        "rewards/accuracies is a binary signal so wants a larger eval set than "
+        "scalar loss; 2000 pairs ≈ 0.7%% std-err on the accuracy estimate.",
     )
     data_group.add_argument(
         "--max-length",
@@ -948,12 +950,13 @@ def parse_args():
         help="Log eval reward metrics and privacy every N steps",
     )
     train_group.add_argument(
-        "--max-steps",
-        "--num-steps",
-        dest="max_steps",
+        "--stop-at-step",
         type=int,
         default=None,
-        help="Maximum training steps (overrides num_epochs if set)",
+        help="Stop the training loop after this many optimizer steps "
+        "(early-stop knob, not a privacy-accounting target — privacy is "
+        "calibrated from target_epsilon × steps × sample_rate regardless). "
+        "Overrides --num-epochs when set.",
     )
     train_group.add_argument("--seed", type=int, default=42, help="Random seed")
     train_group.add_argument(
@@ -2656,13 +2659,15 @@ def main():
                     wandb.log(metrics, step=global_step)
                 print(eval_msg)
 
-            # Early exit if max_steps reached
-            if args.max_steps is not None and global_step >= args.max_steps:
-                print(f"\nReached max_steps={args.max_steps}, stopping training.")
+            # Early exit if --stop-at-step reached
+            if args.stop_at_step is not None and global_step >= args.stop_at_step:
+                print(
+                    f"\nReached --stop-at-step={args.stop_at_step}, stopping training."
+                )
                 break
 
-        # Break outer epoch loop if max_steps reached
-        if args.max_steps is not None and global_step >= args.max_steps:
+        # Break outer epoch loop if --stop-at-step reached
+        if args.stop_at_step is not None and global_step >= args.stop_at_step:
             break
 
     # Final summary

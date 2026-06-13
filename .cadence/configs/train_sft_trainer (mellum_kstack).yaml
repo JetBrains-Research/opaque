@@ -13,7 +13,7 @@
 # Sweep override pattern:
 #   RUN_NAME="HP-D-T03-lr3e-5_lora32" uv run cadence execution start \
 #     --preset ".cadence/configs/train_sft_trainer (mellum_kstack).yaml" \
-#     -e EXTRA_ARGS="--learning-rate 3e-5 --lora-r 32 --lora-alpha 64 --num-steps 1000"
+#     -e EXTRA_ARGS="--learning-rate 3e-5 --lora-r 32 --lora-alpha 64 --stop-at-step 1000"
 
 project_name: jbr-fed
 working_dir: "."
@@ -39,7 +39,7 @@ cmd:
       --max-length 1024 \
       --batch-size 128 \
       --microbatch-size 16 \
-      --num-steps 1000 \
+      --stop-at-step 1000 \
       --learning-rate 5e-5 \
       --clipping-norm 1.0 \
       --target-epsilon 10.0 \

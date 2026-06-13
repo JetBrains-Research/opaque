@@ -115,15 +115,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--microbatch-size", type=int, default=None)
-    # ``--num-steps`` is the historical SFT-trainer flag name; ``--max-steps``
-    # matches train_dpo_trainer.py / train_causal_lm_trainer.py / HF.
     p.add_argument(
-        "--max-steps",
-        "--num-steps",
-        dest="num_steps",
+        "--stop-at-step",
         type=int,
         default=50,
-        help="Number of optimizer steps. ``--num-steps`` accepted as alias.",
+        help="Stop the training loop after this many optimizer steps "
+        "(early-stop knob, not a privacy-accounting target — privacy is "
+        "calibrated from target_epsilon × steps × sample_rate regardless).",
     )
     p.add_argument("--learning-rate", type=float, default=1e-5)
     p.add_argument("--clipping-norm", type=float, default=1.0)
@@ -182,9 +180,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--num-eval-samples",
         type=int,
-        default=100,
-        help="Held-out sample count for eval. Default matches "
-        "train_sft.py / train_causal_lm_trainer.py.",
+        default=1000,
+        help="Held-out sample count for eval. Matches train_sft.py / "
+        "train_causal_lm_trainer.py. At 100 the per-eval loss is too noisy "
+        "to read learning dynamics; 1000 keeps the per-eval std-err around 3%%.",
     )
     p.add_argument(
         "--eval-on-start",
@@ -300,7 +299,7 @@ def main() -> int:
         max_length=args.max_length,
         per_device_train_batch_size=args.batch_size,
         microbatch_size=args.microbatch_size,
-        max_steps=args.num_steps,
+        max_steps=args.stop_at_step,
         learning_rate=args.learning_rate,
         logging_steps=args.log_steps,
         save_strategy="no",

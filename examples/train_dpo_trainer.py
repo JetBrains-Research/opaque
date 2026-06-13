@@ -195,7 +195,14 @@ def parse_args() -> argparse.Namespace:
         "batched forward, NOT vmap). Defaults to --batch-size; set small "
         "(e.g. 8) when --batch-size is large to avoid lm_head OOM in precompute.",
     )
-    p.add_argument("--max-steps", type=int, default=50)
+    p.add_argument(
+        "--stop-at-step",
+        type=int,
+        default=50,
+        help="Stop the training loop after this many optimizer steps "
+        "(early-stop knob, not a privacy-accounting target — privacy is "
+        "calibrated from target_epsilon × steps × sample_rate regardless).",
+    )
     p.add_argument("--learning-rate", type=float, default=5e-5)
     p.add_argument("--clipping-norm", type=float, default=1.0)
     p.add_argument(
@@ -254,10 +261,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--num-eval-samples",
         type=int,
-        default=500,
-        help="Held-out preference-pair count for eval. Default matches "
-        "train_dpo.py — rewards/accuracies are noisy on small eval sets, "
-        "so the larger default keeps the held-out signal informative.",
+        default=2000,
+        help="Held-out preference-pair count for eval. Matches train_dpo.py. "
+        "rewards/accuracies is a binary signal so wants a larger eval set than "
+        "scalar loss; 2000 pairs ≈ 0.7%% std-err on the accuracy estimate.",
     )
     p.add_argument(
         "--per-device-eval-batch-size",
@@ -401,7 +408,7 @@ def main() -> int:
         per_device_train_batch_size=args.batch_size,
         microbatch_size=args.microbatch_size,
         precompute_ref_batch_size=args.precompute_ref_batch_size,
-        max_steps=args.max_steps,
+        max_steps=args.stop_at_step,
         learning_rate=args.learning_rate,
         logging_steps=args.log_steps,
         save_strategy="no",

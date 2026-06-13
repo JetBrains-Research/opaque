@@ -254,7 +254,7 @@ def parse_args() -> argparse.Namespace:
         "--num-eval-samples-alt",
         dest="num_eval_samples",
         type=int,
-        default=100,
+        default=1000,
     )
     data_group.add_argument("--max-seq-len", type=int, default=512)
 
@@ -387,7 +387,14 @@ def parse_args() -> argparse.Namespace:
             "auto-detect the latest checkpoint under --output-dir."
         ),
     )
-    train_group.add_argument("--max-steps", type=int, default=None)
+    train_group.add_argument(
+        "--stop-at-step",
+        type=int,
+        default=None,
+        help="Stop the training loop after this many optimizer steps "
+        "(early-stop knob, not a privacy-accounting target — privacy is "
+        "calibrated from target_epsilon × steps × sample_rate regardless).",
+    )
     train_group.add_argument("--seed", type=int, default=42)
     train_group.add_argument(
         "--data-seed",
@@ -990,7 +997,7 @@ def main() -> int:
         load_best_model_at_end=args.load_best_model_at_end,
         metric_for_best_model=args.metric_for_best_model,
         greater_is_better=args.greater_is_better,
-        max_steps=args.max_steps if args.max_steps is not None else -1,
+        max_steps=args.stop_at_step if args.stop_at_step is not None else -1,
         num_train_epochs=args.num_epochs,
         per_device_train_batch_size=per_rank_logical_batch,
         per_device_eval_batch_size=args.eval_batch_size,
