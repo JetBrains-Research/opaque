@@ -238,8 +238,8 @@ def parse_args() -> argparse.Namespace:
         "the PEFT null-ref path; incompatible with --sync-ref-model).",
     )
     p.add_argument("--lora-modules", nargs="+", default=["q_proj", "v_proj"])
-    p.add_argument("--lora-r", type=int, default=8)
-    p.add_argument("--lora-alpha", type=int, default=16)
+    p.add_argument("--lora-r", type=int, default=16)
+    p.add_argument("--lora-alpha", type=int, default=32)
     p.add_argument("--seed", type=int, default=42)
     # --- Eval --------------------------------------------------------------
     p.add_argument(
