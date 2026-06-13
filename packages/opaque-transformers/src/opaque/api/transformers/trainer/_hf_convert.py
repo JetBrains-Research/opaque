@@ -123,6 +123,12 @@ HF_DIRECT_FIELDS: frozenset[str] = frozenset(
         "disable_tqdm",
         "run_name",
         "project",
+        # Trackio (HF's W&B-style tracker) config — surfaced through the
+        # ``report_to=['trackio']`` callback, which opaque inherits via HF
+        # Trainer's reporting machinery.  No DP-specific handling needed.
+        "trackio_space_id",
+        "trackio_bucket_id",
+        "trackio_static_space_id",
         # Optimizer kwargs string / dict
         "optim_args",
         # Hub
@@ -363,18 +369,44 @@ HF_DROP_FIELDS: dict[str, str] = {
         "Length-grouped batching is incompatible with Poisson subsampling "
         "and is not used by opaque."
     ),
+    "train_sampling_strategy": (
+        "Opaque uses ``sampling_mode`` (poisson / b_min_sep / balls_in_bins) "
+        "to pair the train-time sampler with the privacy mechanism for DP "
+        "guarantees; HF's 'random' / 'sequential' / 'group_by_length' don't "
+        "map onto that namespace."
+    ),
     # HF stats output paths opaque does not honor.
     "logging_nan_inf_filter": "Opaque's logging path computes NaN/Inf filtering separately.",
     # DDP knobs opaque doesn't expose.
     "ddp_find_unused_parameters": "Opaque's per-example DDP path doesn't use this knob.",
     "ddp_bucket_cap_mb": "Opaque's per-example DDP path doesn't use bucket sizing.",
     "ddp_broadcast_buffers": "Opaque's per-example DDP path manages buffer sync internally.",
+    "ddp_static_graph": (
+        "Opaque doesn't wrap the model in ``DistributedDataParallel``; it "
+        "manages cross-rank sync via direct ``torch.distributed.all_reduce`` "
+        "calls, so PyTorch's DDP static-graph optimization has no effect here."
+    ),
     # HF stats / metric callbacks not in opaque.
     "include_inputs_for_metrics": (
         "Opaque does not feed inputs into ``compute_metrics``; use "
         "``include_for_metrics=['inputs']`` instead."
     ),
     "jit_mode_eval": "JIT mode is not supported on opaque's per-example path.",
+    "use_cache": (
+        "Opaque's per-example vmap+grad path can't carry the stateful "
+        "``past_key_values`` cache, and training rarely needs it anyway. "
+        "Opaque forces ``model.config.use_cache = False`` regardless."
+    ),
+    "enable_jit_checkpoint": (
+        "HF's JITCheckpointCallback (preemption SIGTERM handler) calls "
+        "``trainer._save_checkpoint(model, trial=None)`` — the HF signature — "
+        "but opaque's override is ``_save_checkpoint(ctx, step)`` so it can "
+        "capture the DP accountant + sampler RNG + optimizer state together "
+        "(a DP snapshot without those is unresumable). A signature adapter "
+        "would unblock this; until then, a SIGTERM under "
+        "``enable_jit_checkpoint=True`` would crash or write an incomplete "
+        "snapshot."
+    ),
     "use_legacy_prediction_loop": (
         "Opaque uses its own prediction loop; the HF legacy flag has no effect."
     ),
@@ -385,7 +417,6 @@ HF_DROP_FIELDS: dict[str, str] = {
     "_n_gpu": "Private HF field, runtime-computed; opaque computes its own.",
     # New HF features outside the opaque path.
     "parallelism_config": "HF parallelism config is not used by opaque.",
-    "trackio_space_id": "HF trackio tracking is not used by opaque (use report_to=['wandb']).",
     "torchdynamo": "Deprecated; use ``torch_compile=True``.",
     "ray_scope": "Ray Tune integration is not used by opaque.",
     "optim_target_modules": "Galore-target-modules selection is not on the opaque optim path.",

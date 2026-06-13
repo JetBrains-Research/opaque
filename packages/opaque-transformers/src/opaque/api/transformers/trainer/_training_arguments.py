@@ -360,6 +360,12 @@ class TrainingArguments:
     disable_tqdm: bool | None = None
     run_name: str | None = None
     project: str | None = None
+    # Trackio (HF's W&B-style tracker) config — consumed by HF Trainer's
+    # ``report_to=['trackio']`` callback path that opaque inherits.  Mirrors
+    # the HF spelling so HF-style configs flow through unchanged.
+    trackio_space_id: str | None = None
+    trackio_bucket_id: str | None = None
+    trackio_static_space_id: str | None | bool = None
 
     # =================================================================
     # Hub publishing (orthogonal to DP — publish the finished model)
