@@ -3707,7 +3707,7 @@ class DPTrainer:
             ctrl.should_evaluate = False
 
         if ctrl.should_save:
-            self._save_checkpoint(ctx, global_step)
+            self._save_checkpoint()
             ctrl.should_save = False
 
     # ------------------------------------------------------------------
@@ -4282,7 +4282,7 @@ class DPTrainer:
         if a.push_to_hub and not _internal_call:
             _hub.push_to_hub(self, commit_message="Model save", revision=a.hub_revision)
 
-    def _save_checkpoint(self, ctx: "_TrainingContext", step: int) -> str:
+    def _save_checkpoint(self, model: Any = None, trial: Any = None) -> str:
         """Write a complete ``checkpoint-<step>`` directory; returns its path.
 
         Under DDP, the rank-0 process writes shared artefacts (model weights,
@@ -4290,7 +4290,27 @@ class DPTrainer:
         every rank writes its own RNG snapshot (per-rank file so each rank
         can resume its own non-DP RNG), and a barrier at the end keeps all
         ranks in lockstep before any continues.
+
+        Signature mirrors HF ``Trainer._save_checkpoint(model, trial)`` so
+        HF-side callbacks that invoke it directly — notably
+        :class:`transformers.trainer_jit_checkpoint.JITCheckpointCallback`
+        on SIGTERM under ``enable_jit_checkpoint=True`` — compose without
+        an adapter. ``model`` and ``trial`` are accepted and ignored: opaque
+        tracks the live model and HP-search trial on ``self`` already.
+        DP-aware state (accountant, sampler RNG, optimizer) is pulled from
+        :attr:`self._ctx` (the active training context); a call outside an
+        active ``train()`` invocation raises.
         """
+        del model, trial  # HF parity; opaque uses ``self._ctx`` / ``self._model``.
+        ctx = self._ctx
+        if ctx is None:
+            raise RuntimeError(
+                "DPTrainer._save_checkpoint called with no active training "
+                "context. Checkpoints carry DP accountant + sampler RNG + "
+                "optimizer state, which only exist while ``train()`` is "
+                "running."
+            )
+        step = int(self.state.global_step)
         a = self.args
         output_dir = self._effective_output_dir()
         if output_dir is None:
@@ -4532,7 +4552,7 @@ class DPTrainer:
         target = os.path.join(output_dir, f"{ckpt.PREFIX_CHECKPOINT_DIR}-{global_step}")
         if os.path.isdir(target):
             return
-        self._save_checkpoint(ctx, global_step)
+        self._save_checkpoint()
 
     def _refresh_final_checkpoint_state(self, global_step: int) -> None:
         """Refresh final checkpoint metadata after final logs update callbacks."""

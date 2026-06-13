@@ -129,6 +129,12 @@ HF_DIRECT_FIELDS: frozenset[str] = frozenset(
         "trackio_space_id",
         "trackio_bucket_id",
         "trackio_static_space_id",
+        # Preemption: HF's JITCheckpointCallback installs a SIGTERM handler
+        # that calls ``trainer._save_checkpoint(model, trial)``; opaque's
+        # override matches that signature and routes through the active
+        # training context, so the DP accountant + sampler RNG land in the
+        # snapshot intact.  No transform needed.
+        "enable_jit_checkpoint",
         # Optimizer kwargs string / dict
         "optim_args",
         # Hub
@@ -396,16 +402,6 @@ HF_DROP_FIELDS: dict[str, str] = {
         "Opaque's per-example vmap+grad path can't carry the stateful "
         "``past_key_values`` cache, and training rarely needs it anyway. "
         "Opaque forces ``model.config.use_cache = False`` regardless."
-    ),
-    "enable_jit_checkpoint": (
-        "HF's JITCheckpointCallback (preemption SIGTERM handler) calls "
-        "``trainer._save_checkpoint(model, trial=None)`` — the HF signature — "
-        "but opaque's override is ``_save_checkpoint(ctx, step)`` so it can "
-        "capture the DP accountant + sampler RNG + optimizer state together "
-        "(a DP snapshot without those is unresumable). A signature adapter "
-        "would unblock this; until then, a SIGTERM under "
-        "``enable_jit_checkpoint=True`` would crash or write an incomplete "
-        "snapshot."
     ),
     "use_legacy_prediction_loop": (
         "Opaque uses its own prediction loop; the HF legacy flag has no effect."

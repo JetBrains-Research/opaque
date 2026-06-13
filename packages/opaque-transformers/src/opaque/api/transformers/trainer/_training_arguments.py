@@ -478,6 +478,17 @@ class TrainingArguments:
     # with a zero accountant.
 
     # =================================================================
+    # Preemption
+    # =================================================================
+    # HF's just-in-time SIGTERM-triggered checkpoint save. The HF callback
+    # at :class:`transformers.trainer_jit_checkpoint.JITCheckpointCallback`
+    # calls ``trainer._save_checkpoint(model, trial)``; opaque's override
+    # accepts that signature and routes through ``self._ctx`` so the DP
+    # accountant + sampler RNG + optimizer state are captured intact in the
+    # snapshot, leaving the run resumable after preemption.
+    enable_jit_checkpoint: bool = False
+
+    # =================================================================
     # Validation / coercion
     # =================================================================
 
