@@ -229,6 +229,28 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--log-steps", type=int, default=1)
     p.add_argument("--output-dir", default="trainer_output/dpo")
+    # --- Memory knobs ------------------------------------------------------
+    p.add_argument(
+        "--gradient-checkpointing",
+        action="store_true",
+        help="Recompute activations during the backward pass instead of "
+        "storing them. Trades compute (~25%% slower) for memory (typically "
+        "2-4× less activation memory). Necessary for big models at large batch.",
+    )
+    p.add_argument(
+        "--activation-offloading",
+        action="store_true",
+        help="Offload saved-for-backward activations to CPU via "
+        "``torch.autograd.graph.save_on_cpu``. Adds PCIe transfer overhead "
+        "but lets activations exceed the GPU memory cap.",
+    )
+    p.add_argument(
+        "--auto-find-microbatch-size",
+        action="store_true",
+        help="On CUDA OOM mid-step, halve ``microbatch-size`` and retry "
+        "until the step fits (the per-rank logical batch is preserved, "
+        "so privacy accounting is unchanged).",
+    )
     p.add_argument(
         "--no-performance-kernels",
         action="store_true",
@@ -416,6 +438,9 @@ def main() -> int:
         use_cpu=not torch.cuda.is_available(),
         bf16=torch.cuda.is_available(),
         use_performance_kernels=not args.no_performance_kernels,
+        gradient_checkpointing=args.gradient_checkpointing,
+        activation_offloading=args.activation_offloading,
+        auto_find_microbatch_size=args.auto_find_microbatch_size,
         # W&B
         report_to=report_to,
         run_name=run_name,

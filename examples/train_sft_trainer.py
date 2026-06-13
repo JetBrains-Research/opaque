@@ -167,6 +167,27 @@ def parse_args() -> argparse.Namespace:
         "fused linear+CE). Needed for models like Mellum-2.0 whose q_norm/k_norm "
         "shapes don't fit the current Triton row/block path.",
     )
+    p.add_argument(
+        "--gradient-checkpointing",
+        action="store_true",
+        help="Recompute activations during the backward pass instead of "
+        "storing them. Trades compute (~25%% slower) for memory (typically "
+        "2-4× less activation memory). Necessary for big models at large batch.",
+    )
+    p.add_argument(
+        "--activation-offloading",
+        action="store_true",
+        help="Offload saved-for-backward activations to CPU via "
+        "``torch.autograd.graph.save_on_cpu``. Adds PCIe transfer overhead "
+        "but lets activations exceed the GPU memory cap.",
+    )
+    p.add_argument(
+        "--auto-find-microbatch-size",
+        action="store_true",
+        help="On CUDA OOM mid-step, halve ``microbatch-size`` and retry "
+        "until the step fits (the per-rank logical batch is preserved, "
+        "so privacy accounting is unchanged).",
+    )
     # --- Eval --------------------------------------------------------------
     p.add_argument(
         "--eval-steps",
@@ -320,6 +341,9 @@ def main() -> int:
         optim="adamw",
         optim_args=optim_args,
         use_performance_kernels=not args.no_performance_kernels,
+        gradient_checkpointing=args.gradient_checkpointing,
+        activation_offloading=args.activation_offloading,
+        auto_find_microbatch_size=args.auto_find_microbatch_size,
         **eval_kwargs,
     )
 
