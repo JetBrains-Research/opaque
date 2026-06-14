@@ -196,7 +196,9 @@ def test_vmap_grad_frozen_experts(assert_precision):
     dtw_r = torch.stack([r[1] for r in refs])
 
     assert_precision(g_op[0], dx_r, rtol=2e-2, atol=2e-2, label="frozen dx")
-    assert_precision(g_op[1], dtw_r, rtol=2e-2, atol=2e-2, label="frozen dtop_k_weights")
+    assert_precision(
+        g_op[1], dtw_r, rtol=2e-2, atol=2e-2, label="frozen dtop_k_weights"
+    )
     # Per-sample dx still genuinely distinct across the batch.
     assert (g_op[0][0] - g_op[0][1]).abs().max().item() > 0
 
