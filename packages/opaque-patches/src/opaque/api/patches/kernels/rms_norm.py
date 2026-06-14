@@ -18,7 +18,7 @@ import torch
 import triton
 import triton.language as tl
 
-from ._utils import calculate_settings, follow_autocast, torch_gpu_device
+from ._utils import calculate_settings, follow_autocast, torch_gpu_device, triton_cast
 
 try:
     _tv = tuple(int(p) for p in triton.__version__.split(".")[:3] if p.isdigit())
@@ -76,9 +76,12 @@ def _rms_norm_forward_kernel(
     col_offsets = tl.arange(0, BLOCK_SIZE)
     mask = col_offsets < n_cols
 
-    y_base = Y_ptr + row_idx * Y_row_stride
-    x_base = X_ptr + row_idx * X_row_stride
-    rstd_base = RSTD_ptr + row_idx * RSTD_row_stride
+    # int64 stride math: at vmap-mb=1024, seq=1024, hidden=4096 the row offset
+    # reaches 1M * 4096 ≈ 4.3e9 elements and overflows int32 → CUDA IMA. Mirrors
+    # the ``cross_entropy.py`` pattern for the same reason.
+    y_base = Y_ptr + row_idx * triton_cast(Y_row_stride, tl.int64)
+    x_base = X_ptr + row_idx * triton_cast(X_row_stride, tl.int64)
+    rstd_base = RSTD_ptr + row_idx * triton_cast(RSTD_row_stride, tl.int64)
 
     X_row = tl.load(x_base + col_offsets, mask=mask, other=0)
     X_row_dtype = X_row.dtype
@@ -151,11 +154,17 @@ def _rms_norm_backward_kernel(
         W_row = tl.load(W_ptr + col_offsets, mask=mask, other=0.0)
         W_row = W_row + offset
 
+    # int64 stride math — same int32-overflow guard as the forward kernel.
+    dy_stride64 = triton_cast(dY_row_stride, tl.int64)
+    dx_stride64 = triton_cast(dX_row_stride, tl.int64)
+    x_stride64 = triton_cast(X_row_stride, tl.int64)
+    rstd_stride64 = triton_cast(RSTD_row_stride, tl.int64)
+
     for row_idx in range(row_start, row_end):
-        dy_base = dY_ptr + row_idx * dY_row_stride
-        dx_base = dX_ptr + row_idx * dX_row_stride
-        x_base = X_ptr + row_idx * X_row_stride
-        rstd_base = RSTD_ptr + row_idx * RSTD_row_stride
+        dy_base = dY_ptr + row_idx * dy_stride64
+        dx_base = dX_ptr + row_idx * dx_stride64
+        x_base = X_ptr + row_idx * x_stride64
+        rstd_base = RSTD_ptr + row_idx * rstd_stride64
 
         dY_row = tl.load(dy_base + col_offsets, mask=mask, other=0.0)
         X_row = tl.load(x_base + col_offsets, mask=mask, other=0.0)

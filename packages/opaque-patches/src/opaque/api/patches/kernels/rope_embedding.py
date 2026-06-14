@@ -76,10 +76,14 @@ def _rope_embedding_kernel(
     head_start = group_head_position * ROPE_GROUP_SIZE
     head_end = min((head_start + ROPE_GROUP_SIZE), n_heads)
 
+    # int64 stride math — at vmap-mb=1024 × seq=1024 × hidden=4096 the row
+    # offset overflows int32. Cast the stride once; reused per head.
+    q_row_stride_i64 = tl.cast(Q_row_stride, tl.int64)
+
     for k in range(head_start, head_end):
-        offs_q1 = row_position * Q_row_stride + k * head_dim + col_offsets
+        offs_q1 = row_position * q_row_stride_i64 + k * head_dim + col_offsets
         offs_q2 = (
-            row_position * Q_row_stride + k * head_dim + col_offsets + half_head_dim
+            row_position * q_row_stride_i64 + k * head_dim + col_offsets + half_head_dim
         )
 
         Q1 = tl.load(Q + offs_q1, mask=mask, other=0).to(sin1.dtype)
@@ -137,10 +141,15 @@ def _rope_embedding_qk_kernel(
     batch_id = row_position // seqlen
     seq_index = row_position - batch_id * seqlen
 
+    # int64 stride math — at vmap-mb=1024 × seq=1024 the per-batch offset
+    # overflows int32. Per-head and per-seq strides stay int32 (small bound).
+    q_batch_stride_i64 = tl.cast(Q_batch_stride, tl.int64)
+    k_batch_stride_i64 = tl.cast(K_batch_stride, tl.int64)
+
     # Process Q
     q_ptr = (
         Q
-        + batch_id * Q_batch_stride
+        + batch_id * q_batch_stride_i64
         + head_position * Q_head_stride
         + seq_index * Q_seq_stride
     )
@@ -153,7 +162,7 @@ def _rope_embedding_qk_kernel(
     if head_position < n_heads_K:
         k_ptr = (
             K
-            + batch_id * K_batch_stride
+            + batch_id * k_batch_stride_i64
             + head_position * K_head_stride
             + seq_index * K_seq_stride
         )
