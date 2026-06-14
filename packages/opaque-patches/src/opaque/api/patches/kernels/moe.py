@@ -159,16 +159,25 @@ class Opaque_MoE(torch.autograd.Function):
         return _moe_forward(x, gate_up_proj, down_proj, w_te), 0
 
 
+# Sparse pays off only past a break-even expert count: its routing / gather /
+# grouped-weight-grad-loop overhead beats the dense O(T*E) work once E is large
+# enough. Measured crossover on MPS is ~16 experts (dense scales linearly in E,
+# sparse sub-linearly: ~2x at E=128); below it the dense path is faster, so a
+# small-expert MoE (e.g. Mixtral-8) stays dense. Config-dependent heuristic.
+_SPARSE_MOE_MIN_EXPERTS = 16
+
+
 def opaque_moe(x, gate_up_proj, down_proj, top_k_index, top_k_weights):
     """MoE expert FFN. Autograd + ``vmap(grad)`` (DP-SGD) flow through the
     two-Function pair above.
 
-    Always dispatches to the sparse grouped-GEMM Triton path
-    (:func:`opaque_fused_moe`) when the tensors are CUDA bf16/fp16 with Triton
-    present, and to the dense torch ``Opaque_MoE`` otherwise (CPU, fp32). The two
-    are numerically equivalent — forward is bit-identical, backward matches within
-    the bf16 floor (see ``test_kernel_precision``) — so the fused path runs
-    whenever the hardware supports it; no opt-out knob.
+    Dispatches to the sparse grouped-GEMM Triton path (:func:`opaque_fused_moe`)
+    on CUDA bf16/fp16 with Triton; to the **non-Triton** sparse grouped path
+    (:class:`~opaque.api.patches.kernels._grouped_moe.Opaque_GroupedMoE`, built on
+    ``torch._grouped_mm``) on other hosts when ``E >= _SPARSE_MOE_MIN_EXPERTS`` and
+    grouped-mm is available (MPS/CPU large-expert MoE); and to the dense torch
+    ``Opaque_MoE`` otherwise. All three are numerically equivalent (forward
+    bit-identical, backward within the bf16 floor — see ``test_kernel_precision``).
     """
     if _TRITON_AVAILABLE and x.is_cuda:
         from ._utils import follow_autocast
@@ -180,6 +189,13 @@ def opaque_moe(x, gate_up_proj, down_proj, top_k_index, top_k_weights):
             from .fused_moe import Opaque_FusedMoE
 
             return Opaque_FusedMoE.apply(
+                x, gate_up_proj, down_proj, top_k_index, top_k_weights
+            )
+    elif gate_up_proj.shape[0] >= _SPARSE_MOE_MIN_EXPERTS:
+        from ._grouped_moe import Opaque_GroupedMoE, grouped_mm_available
+
+        if grouped_mm_available():
+            return Opaque_GroupedMoE.apply(
                 x, gate_up_proj, down_proj, top_k_index, top_k_weights
             )
     return Opaque_MoE.apply(x, gate_up_proj, down_proj, top_k_index, top_k_weights)
