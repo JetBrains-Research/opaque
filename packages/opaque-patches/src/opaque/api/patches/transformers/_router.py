@@ -106,12 +106,13 @@ def apply_transformers_model_patches(
     if kernels is None:
         kernels = performance
 
-    # Auto-disable kernel-group patches when CUDA / Triton aren't there;
-    # the broader ``performance`` bucket is left alone so pure-Python
-    # performance shims (kv_cache) still apply on CPU / MPS hosts.
+    # Auto-disable the Triton kernel group when CUDA / Triton aren't there; the
+    # broader ``performance`` bucket is left alone so pure-Python shims (kv_cache)
+    # still apply on CPU / MPS. ``fused_linear_cross_entropy`` is NOT disabled:
+    # it has a pure-PyTorch chunked kernel (``_linear_ce_chunked``) that runs on
+    # MPS/CPU, so the caller's opt-in is honored on any host.
     if not _has_kernel_runtime():
         kernels = False
-        fused_linear_cross_entropy = False
 
     family = detect_family(model)
     if family is None:

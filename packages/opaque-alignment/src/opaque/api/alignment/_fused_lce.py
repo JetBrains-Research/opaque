@@ -35,19 +35,28 @@ import torch
 # resolve the kernel module dynamically via ``importlib.import_module`` so the
 # bridge stays optional without a static import node anywhere in this file.
 _LCE_KERNEL_PATH = "opaque.api.patches.kernels.linear_cross_entropy"
+# Pure-PyTorch chunked kernel (Triton-free): the fused-CE path on MPS/CPU.
+_LCE_CHUNKED_PATH = "opaque.api.patches.kernels._linear_ce_chunked"
 
 
 def lce_available(hidden: torch.Tensor) -> bool:
-    """True when the patches fused linear-CE kernel can run for ``hidden``.
+    """True when a fused linear-CE kernel can run for ``hidden``.
 
-    The Triton kernel needs CUDA + half precision (bf16/fp16), and
-    ``opaque-patches`` must be importable (the ``[patches]`` extra). Otherwise
-    the caller uses its eager fallback, so CPU / no-Triton CI stays green.
+    CUDA + half precision routes to the Triton kernel; any other host (MPS/CPU)
+    routes to the pure-PyTorch chunked kernel, which streams the LSE in fp32 and
+    works in any float dtype. ``opaque-patches`` must be importable either way
+    (the ``[patches]`` extra); otherwise the caller uses its eager fallback.
     """
-    if not hidden.is_cuda or hidden.dtype not in (torch.float16, torch.bfloat16):
+    if not hidden.is_floating_point():
         return False
+    if hidden.is_cuda:
+        if hidden.dtype not in (torch.float16, torch.bfloat16):
+            return False
+        path = _LCE_KERNEL_PATH
+    else:
+        path = _LCE_CHUNKED_PATH
     try:
-        importlib.import_module(_LCE_KERNEL_PATH)
+        importlib.import_module(path)
     except Exception:
         return False
     return True
@@ -70,14 +79,19 @@ def linear_nll_sum(
     Call per example and drive with ``vmap(grad)``; see the module docstring for
     why this uses ``.apply`` directly rather than ``torch.vmap``.
     """
-    kernel_mod = importlib.import_module(_LCE_KERNEL_PATH)
-    Opaque_LinearCrossEntropyLoss = kernel_mod.Opaque_LinearCrossEntropyLoss
+    if hidden.is_cuda:
+        kernel_mod = importlib.import_module(_LCE_KERNEL_PATH)
+        # We bypass the public wrapper, so apply its autocast policy ourselves:
+        # under autocast ``hidden`` is half but the lm_head ``weight`` is fp32,
+        # which would mismatch the kernel's ``tl.dot``. No-op when autocast off.
+        hidden, weight = kernel_mod.follow_autocast(hidden, weight)
+        return kernel_mod.Opaque_LinearCrossEntropyLoss.apply(
+            hidden, weight, labels, -100, 0, 0.0, use_token_scaling
+        )
 
-    # We bypass the public wrapper, so apply its autocast policy ourselves:
-    # under autocast ``hidden`` is half but the lm_head ``weight`` is fp32, which
-    # would mismatch the kernel's ``tl.dot``. No-op when autocast is inactive.
-    hidden, weight = kernel_mod.follow_autocast(hidden, weight)
-
-    return Opaque_LinearCrossEntropyLoss.apply(
+    # Non-CUDA: the chunked kernel streams the matmul + LSE in fp32 itself, so a
+    # mixed bf16-hidden / fp32-weight pair needs no follow_autocast reconciliation.
+    chunked_mod = importlib.import_module(_LCE_CHUNKED_PATH)
+    return chunked_mod.linear_nll_sum_chunked(
         hidden, weight, labels, -100, 0, 0.0, use_token_scaling
     )
