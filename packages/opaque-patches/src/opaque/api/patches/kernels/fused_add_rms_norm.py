@@ -16,7 +16,7 @@ import torch
 import triton
 import triton.language as tl
 
-from ._utils import calculate_settings, follow_autocast, torch_gpu_device
+from ._utils import calculate_settings, follow_autocast, torch_gpu_device, triton_cast
 
 try:
     _tv = tuple(int(p) for p in triton.__version__.split(".")[:3] if p.isdigit())
@@ -77,11 +77,12 @@ def _fused_add_rms_norm_forward_kernel(
     col_offsets = tl.arange(0, BLOCK_SIZE)
     mask = col_offsets < n_cols
 
-    Y_ptr += row_idx * Y_row_stride
-    S_ptr += row_idx * S_row_stride
-    X_ptr += row_idx * X_row_stride
-    R_ptr += row_idx * R_row_stride
-    RSTD_ptr += row_idx * RSTD_row_stride
+    # int64 stride math — vmap-mb=1024 × seq=1024 × hidden=4096 overflows int32.
+    Y_ptr += row_idx * triton_cast(Y_row_stride, tl.int64)
+    S_ptr += row_idx * triton_cast(S_row_stride, tl.int64)
+    X_ptr += row_idx * triton_cast(X_row_stride, tl.int64)
+    R_ptr += row_idx * triton_cast(R_row_stride, tl.int64)
+    RSTD_ptr += row_idx * triton_cast(RSTD_row_stride, tl.int64)
 
     X_row = tl.load(X_ptr + col_offsets, mask=mask, other=0)
     R_row = tl.load(R_ptr + col_offsets, mask=mask, other=0)
@@ -154,11 +155,18 @@ def _fused_add_rms_norm_backward_kernel(
     W_row = tl.load(W_ptr + col_offsets, mask=mask, other=0.0)
     W_row = W_row + offset
 
+    # int64 stride math — same int32-overflow guard as the forward kernel.
+    dy_stride64 = triton_cast(dY_row_stride, tl.int64)
+    dx_stride64 = triton_cast(dX_row_stride, tl.int64)
+    x_stride64 = triton_cast(X_row_stride, tl.int64)
+    rstd_stride64 = triton_cast(RSTD_row_stride, tl.int64)
+    ds_out_stride64 = triton_cast(dS_out_row_stride, tl.int64)
+
     for row_idx in range(row_start, row_end):
-        dy_base = dY_ptr + row_idx * dY_row_stride
-        dx_base = dX_ptr + row_idx * dX_row_stride
-        x_base = X_ptr + row_idx * X_row_stride
-        rstd_base = RSTD_ptr + row_idx * RSTD_row_stride
+        dy_base = dY_ptr + row_idx * dy_stride64
+        dx_base = dX_ptr + row_idx * dx_stride64
+        x_base = X_ptr + row_idx * x_stride64
+        rstd_base = RSTD_ptr + row_idx * rstd_stride64
 
         dY_row = tl.load(dy_base + col_offsets, mask=mask, other=0.0)
         X_row = tl.load(x_base + col_offsets, mask=mask, other=0.0)
@@ -184,7 +192,7 @@ def _fused_add_rms_norm_backward_kernel(
         dX_row = rstd_row * m + c * X_row
 
         if has_dS_out:
-            ds_base = dS_out_ptr + row_idx * dS_out_row_stride
+            ds_base = dS_out_ptr + row_idx * ds_out_stride64
             dS_out_row = tl.load(ds_base + col_offsets, mask=mask, other=0.0)
             dX_row += dS_out_row
 
