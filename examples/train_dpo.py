@@ -963,10 +963,9 @@ def parse_args():
         "--gradient-checkpointing",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Enable gradient checkpointing (trades compute for memory). OFF by "
-        "default: under DP-SGD the step is ~99%% per-sample-grad clipping, so the "
-        "recompute is pure overhead (~25-30%% slower) and rarely buys useful "
-        "microbatch headroom. Only enable if a config genuinely OOMs without it.",
+        help="Recompute activations in backward instead of storing them "
+        "(trades compute for memory). Off by default; enable only when a config "
+        "would otherwise run out of memory.",
     )
     train_group.add_argument(
         "--activation-offloading",
@@ -1262,19 +1261,10 @@ def parse_args():
         )
         _set("dtype", "bfloat16")
     elif args.preset == "mellum2-codesec":
-        # Mellum2-12B-A2.5B (MoE) DP-DPO at ε=8. LoRA on attention projections
-        # only — the routed experts are frozen stacked nn.Parameter weights, which
-        # also lets the fused-MoE backward skip the per-sample expert weight grads,
-        # so the policy fits microbatch=16 with NO gradient checkpointing.
-        # HPs are the validated B-T04 point (lr=5e-5 / beta=0.3 / clipping_norm=1.0):
-        # beta=0.3 beat beta=0.1 (B-T01) on eval/loss and margins at equal
-        # accuracy/epsilon. The aggressive corner that won on Mellum-4b
-        # (lr=1e-4 / clip=2.0) is unconfirmed here — cross-check in flight; bump
-        # lr/clip only if it proves out.
-        #
-        # gradient checkpointing stays OFF: the DP step is ~99% per-sample-grad
-        # clipping, so gc's recompute is pure overhead (~25-30% slower) and buys
-        # no useful microbatch headroom at batch=128.
+        # Mellum2-12B-A2.5B (MoE) DP-DPO at ε=8. LoRA targets the attention
+        # projections only; the routed experts are frozen stacked nn.Parameter
+        # weights, so the fused-MoE backward skips their per-sample gradients and
+        # the policy fits microbatch=16 without gradient checkpointing.
         _set("model_name", "JetBrains/Mellum2-12B-A2.5B-Base")
         _set("dataset", _CODESEC)
         _set("num_train_samples", 4000)
@@ -1296,11 +1286,8 @@ def parse_args():
         _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
     elif args.preset == "mellum-codesec":
-        # Mellum-4b (dense Llama) + code-security DPO at ε=8. Dense MLP, so LoRA
-        # also targets gate/up/down_proj. HPs locked to the A-T03/T04 sweep
-        # winners (CyberNative DP-DPO HP sweep, 2026-06-13): lr=1e-4 / beta=0.3
-        # / clipping_norm=2.0 produces eval/loss=0.088 (vs 0.274 at the prior
-        # 5e-5 / 0.1 / 1.0 defaults) and eval/rewards/margins=12.2 (vs 4.58).
+        # Mellum-4b (dense Llama) DP-DPO at ε=8. Dense MLP, so LoRA targets the
+        # gate/up/down projections alongside the attention projections.
         _set("model_name", "JetBrains/Mellum-4b-base")
         _set("dataset", _CODESEC)
         _set("num_train_samples", 4000)
