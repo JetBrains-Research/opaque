@@ -164,6 +164,43 @@ def test_vmap_grad_per_sample(assert_precision):
     assert (g_op[2][0] - g_op[2][1]).abs().max().item() > 0
 
 
+def test_vmap_grad_frozen_experts(assert_precision):
+    """DP-SGD LoRA-on-attention case: experts frozen, only ``x``/``tw`` need grad.
+
+    ``ctx.needs_input_grad`` reports the experts as frozen, so the backward skips
+    the per-sample ``(B, E, ...)`` weight-grad buffers (``compute_wgrad=False``).
+    ``dx`` and ``dtw`` must still match the loop reference; the expert weights are
+    never differentiated so their grad is structurally absent."""
+    B = 4
+    _, gate_up, down, ti, tw = _inputs()
+    xb = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16)
+    tib = ti.unsqueeze(0).expand(B, -1, -1).contiguous()
+    twb = tw.unsqueeze(0).expand(B, -1, -1).contiguous()
+
+    def loss(xs, t, w, g1, g2):
+        return opaque_fused_moe(xs, g1, g2, t, w).square().mean()
+
+    def rloss(xs, t, w, g1, g2):
+        return torch_reference_moe(xs, g1, g2, t, w).square().mean()
+
+    # Only x (0) and top_k_weights (4) are differentiated; experts (g1, g2) shared
+    # and frozen — exercises the compute_wgrad=False skip.
+    g_op = vmap(grad(loss, argnums=(0, 4)), in_dims=(0, 0, 0, None, None))(
+        xb, tib, twb, gate_up, down
+    )
+    refs = [
+        grad(rloss, argnums=(0, 4))(xb[i], tib[i], twb[i], gate_up, down)
+        for i in range(B)
+    ]
+    dx_r = torch.stack([r[0] for r in refs])
+    dtw_r = torch.stack([r[1] for r in refs])
+
+    assert_precision(g_op[0], dx_r, rtol=2e-2, atol=2e-2, label="frozen dx")
+    assert_precision(g_op[1], dtw_r, rtol=2e-2, atol=2e-2, label="frozen dtop_k_weights")
+    # Per-sample dx still genuinely distinct across the batch.
+    assert (g_op[0][0] - g_op[0][1]).abs().max().item() > 0
+
+
 def test_empty_expert_routing(assert_precision):
     """Routing that leaves some experts with zero tokens still matches the ref."""
     x, gate_up, down, _, _ = _inputs()
