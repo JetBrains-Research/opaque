@@ -53,3 +53,27 @@ Updated each loop cycle. Will be the morning-report deliverable.
   Submitted 3 new probes: **A-T02** (55464, lr=1e-5/bs=64/beta=0.05), **A-T03** (55465, lr=1e-4/beta=0.3), **C-T02** (55466, Mellum-2.0 SFT lr=1e-4, lora_r=32, **dropped --no-performance-kernels** to test the RMSNorm fix in production). B-T01 retry (55463) still running. Concurrency 4/4.
 - **2026-06-13 00:19 UTC** — Cycle 5. **D-T01 FINISHED ✓** (xii5leqq, 2h13m runtime): train/loss=**0.647**, train/mean_token_acc=**0.839**, privacy/epsilon=**10.06** (target 10 nailed), nm=0.418 calibrated. Submitted **D-T02** (55461, --learning-rate 1e-4) to fill the slot. B-T01 retry (55459) healthy at step 50 with mb=4 but slower (~30s/step → projected ~12.5h end-to-end; will partially complete by morning). A-T01 + C-T01 still on track.
 - **2026-06-13 01:33 UTC** — Cycle 6. **B-T01 retry (55459, mb=4) FAILED again** with the same 23.98 GiB OOM at step ~120. Diagnosis: OOM was during **eval** (eval-batch defaulted to `--batch-size 128`, way too big for Mellum-2.0 12B). Microbatch reduction doesn't help eval. Resubmitted as **55463** with `--per-device-eval-batch-size 4 --num-eval-samples 100`. **A-T01 first eval at step 1300**: eval/loss=**0.277**, eval/rewards/accuracies=**0.896**, eval/margins=**4.4** — Mellum-4b DP-DPO is clearly working at these HPs. C-T01 step 790/1000 (loss=0.70, ε=9.4), D-T02 step 610/1000 (loss=0.65, ε=8.8).
+
+- **2026-06-13 21:28 UTC** — Cycle 37. **A-T08 (ORPO at lr=1e-5) FINISHED — negative finding.** Full 1500 steps, eval/loss=**1.294**, eval/rewards/accuracies=**0.162**, eval/rewards/margins=**−3.27**, ε=8.05. Model **regressed toward rejected** (negative margins, sub-random accuracy). A-T07 (ORPO at lr=1e-4, cancelled at step 290) showed the same trajectory at the early checkpoint: margins=**−2.45**, accuracies=0.23. **Verdict: ORPO under DP-SGD at ε=8 is fundamentally broken in this regime** — the NLL anchor on chosen-token logp is dominated by DP noise, and the reference-free loss surface drives the model away from chosen. Vanilla DPO (A-T03/T04) remains the right loss; no ORPO follow-up planned. Slot freed; concurrency now 3/4. Other 3 still healthy (A-T06 at ~step 920/1500, B-T03 at step ~470/1500, B-T04 at step ~370/1500).
+
+## Morning summary (in flight as of 2026-06-13 ~21:30 UTC)
+
+**Concurrency:** 3 RUNNING, 1 slot open (left for user direction).
+
+| ID | Model | HPs | Status | ETA / metrics |
+|---|---|---|---|---|
+| A-T06 (55472) | Mellum-4b | bs=256, gc only, lr=1e-4/β=0.3/clip=2.0 | RUNNING | ~step 920/1500, ~3.5h to terminal |
+| B-T03 (55473) | Mellum-2.0 | bs=192, gc only, lr=5e-5/β=0.1/clip=1.0/r=16 | RUNNING | slow (~65s/step), projected ~6h to terminal |
+| B-T04 (55474) | Mellum-2.0 | bs=128, mb=4, lr=5e-5/β=0.3/clip=1.0/r=16 | RUNNING | ~step 370/1500, ~5h to terminal |
+| A-T07 (55475) | Mellum-4b | ORPO lr=1e-4 | CANCELLED at step 290 | negative margins (regressing) |
+| A-T08 (55476) | Mellum-4b | ORPO lr=1e-5 | **FINISHED** | eval/loss=1.294, margins=−3.27, ε=8.05 |
+
+**Sweep A (Mellum-4b DP-DPO) verdict so far:**
+- **Winner: A-T03/A-T04** (β=0.3 / 0.5 co-winners) at lr=1e-4, clip=2.0, bs=128, 1500 steps: eval/loss≈0.08, margins≈12, accuracies=0.96
+- ORPO arm (A-T07/T08) fails — DP noise + NLL anchor → negative margins
+- A-T06 (bs=256, gc) testing whether bumping batch from 128→256 improves convergence speed; preliminary look needed at terminal
+
+**Next steps to consider in the morning:**
+1. **Performance work** (user's stated priority): chunked log-softmax+gather kernel mirroring MoE's two-tier pattern — would lift DPO microbatch from 16 → ~causal_lm's 192 ceiling.
+2. Decide whether A-T06's larger batch produces better margins per step than A-T03's bs=128 — if yes, the new operating point for DP-DPO is bs=256+gc; if not, A-T03 stands.
+3. Cross-model verdict for Mellum-2.0 DPO (B-T03 vs B-T04) once both terminal.
