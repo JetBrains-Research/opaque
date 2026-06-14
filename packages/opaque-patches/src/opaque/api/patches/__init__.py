@@ -138,11 +138,15 @@ def apply_runtime_patches(
 
     if vmap_checkpointing:
         try:
-            from opaque.api.patches.torch.runtime import apply_checkpoint_patch
+            from opaque.api.patches.torch import apply_checkpoint_patch
 
             apply_checkpoint_patch(vmap_checkpointing=vmap_checkpointing)
         except ImportError:
-            pass
+            logger.warning(
+                "opaque: checkpoint+functorch patches unavailable; "
+                "gradient checkpointing under vmap(grad(...)) may break.",
+                exc_info=True,
+            )
 
 
 def is_runtime_patched() -> bool:

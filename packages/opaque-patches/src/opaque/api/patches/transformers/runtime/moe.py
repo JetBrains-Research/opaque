@@ -19,7 +19,7 @@ so this is a CPU-under-vmap shim only.
 
 from __future__ import annotations
 
-from opaque.api.patches.torch.runtime import _under_functorch_transform
+from opaque.api.patches.torch.functorch_transform import under_functorch_transform
 
 
 def apply_grouped_mm_patches(*, vmap_grouped_mm: bool = True) -> None:
@@ -47,7 +47,7 @@ def apply_grouped_mm_patches(*, vmap_grouped_mm: bool = True) -> None:
             # No-storage tensor under functorch: the 16-byte-alignment guard
             # can't read data_ptr(). Alignment is irrelevant for synthetic
             # transform tensors, so fall back to availability-only.
-            if _under_functorch_transform():
+            if under_functorch_transform():
                 return hasattr(torch.nn.functional, "grouped_mm") or hasattr(
                     torch, "_grouped_mm"
                 )

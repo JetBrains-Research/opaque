@@ -12,50 +12,6 @@ import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 
 
-def _set_module_params(module: nn.Module, params_dict: dict[str, torch.Tensor]) -> None:
-    """Set named parameters/buffers directly on a module.
-
-    Unlike ``torch.func.functional_call``, this does NOT restore the original
-    parameters after the forward pass. This is required for gradient
-    checkpointing compatibility: checkpoint recomputation during backward
-    accesses ``self.weight`` etc. on the module, and ``functional_call``
-    would have already restored the originals by then.
-
-    Uses a per-module cache to avoid repeated string splitting and getattr
-    traversal on subsequent calls.
-    """
-    # Build or retrieve cached (target_dict, key) resolution for this module.
-    cache = getattr(module, "_opaque_param_cache", None)
-    if cache is None:
-        cache = {}
-        # Build from ALL named params/buffers so the cache works for any
-        # subset (e.g. scoped per-layer dicts from _scope_params).
-        for name, _ in (*module.named_parameters(), *module.named_buffers()):
-            parts = name.split(".")
-            obj = module
-            for part in parts[:-1]:
-                obj = getattr(obj, part)
-            leaf = parts[-1]
-            if leaf in obj._parameters:
-                cache[name] = (obj._parameters, leaf)
-            elif leaf in obj._buffers:
-                cache[name] = (obj._buffers, leaf)
-            else:
-                cache[name] = (None, (obj, leaf))
-        module._opaque_param_cache = cache  # type: ignore[attr-defined]
-
-    for name, value in params_dict.items():
-        target, key = cache[name]
-        if target is not None:
-            # Fast path: direct dict assignment (_parameters or _buffers)
-            if target.get(key) is not value:
-                target[key] = value
-        else:
-            # Fallback: setattr
-            obj, attr = key
-            setattr(obj, attr, value)
-
-
 def make_functional(
     mod: nn.Module,
     disable_autograd_tracking: bool = False,
@@ -174,12 +130,13 @@ def make_functional(
         ...     # ... assign grads and step optimizer
 
     Note:
-        Gradient checkpointing compatibility is handled by Patches 7-8 in
-        ``opaque.patches.torch.runtime``.  Those patches make
-        ``functional_call`` record its (module, params) on a thread-local
-        stack, and make ``checkpoint`` replay that context before
-        recomputation.  This wrapper is purely functional — it delegates
-        entirely to ``torch.func.functional_call``.
+        Gradient checkpointing compatibility is handled by the
+        ``reparametrize_recompute`` patch in
+        ``opaque.api.patches.torch.checkpoint``, which re-binds the
+        ``functional_call`` parameters during checkpoint recomputation in
+        backward (on a PyTorch with native support the patch is skipped and
+        torch handles this itself).  This wrapper is purely functional — it
+        delegates entirely to ``torch.func.functional_call``.
 
     See Also:
         - PyTorch migration guide: https://pytorch.org/docs/master/func.migrating.html

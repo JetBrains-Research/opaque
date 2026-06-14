@@ -26,7 +26,7 @@ members = [
     "opaque-patches",
     "opaque-transformers",
 ]
-constraints = [{ name = "torch", specifier = "<2.11" }]
+constraints = [{ name = "torch", specifier = "<2.13" }]
 
 [[package]]
 name = "absl-py"
