@@ -76,6 +76,50 @@ def test_grouped_moe_parity_mps():
     _check_parity("mps")
 
 
+def _frob(a, b):
+    a, b = a.float(), b.float()
+    return (a - b).norm().item() / b.norm().clamp(min=1e-6).item()
+
+
+def _check_bf16_within_floor(device: str) -> None:
+    """bf16 sparse vs dense within the bf16 floor (relative Frobenius — the
+    DP-relevant metric; per-element max-relative is meaningless on the near-zero
+    grad entries). The dense oracle is itself bf16 (matmuls) + fp32 expert-sum, so
+    the bar is bf16 precision, not fp32."""
+    gu, dn, x3, idx3, w3, B, T, H = _inputs(device, E=16)
+    gu, dn, x3, w3 = (t.to(torch.bfloat16) for t in (gu, dn, x3, w3))
+    N = B * T
+    x2, idx2, w2 = x3.reshape(N, H), idx3.reshape(N, -1), w3.reshape(N, -1)
+    assert (
+        _frob(
+            Opaque_GroupedMoE.apply(x2, gu, dn, idx2, w2),
+            Opaque_MoE.apply(x2, gu, dn, idx2, w2),
+        )
+        < 1e-2
+    ), "forward"
+
+    def f_s(xx, gg, dd, ii, ww):
+        return Opaque_GroupedMoE.apply(xx, gg, dd, ii, ww).float().sum()
+
+    def f_d(xx, gg, dd, ii, ww):
+        return Opaque_MoE.apply(xx, gg, dd, ii, ww).float().sum()
+
+    in_dims = (0, None, None, 0, 0)
+    gs = vmap(grad(f_s, argnums=(0, 1, 2)), in_dims=in_dims)(x3, gu, dn, idx3, w3)
+    gd = vmap(grad(f_d, argnums=(0, 1, 2)), in_dims=in_dims)(x3, gu, dn, idx3, w3)
+    for name, a, b in zip(("dx", "d_gate_up", "d_down"), gs, gd):
+        assert _frob(a, b) < 1e-2, f"vmap(grad) {name}"
+
+
+def test_grouped_moe_bf16_cpu():
+    _check_bf16_within_floor("cpu")
+
+
+@pytest.mark.mps
+def test_grouped_moe_bf16_mps():
+    _check_bf16_within_floor("mps")
+
+
 def _check_dispatch(device: str) -> None:
     # opaque_moe routes large-E to the sparse path and small-E to dense; both must
     # match the dense oracle. (Only correctness is asserted; the E threshold is a
