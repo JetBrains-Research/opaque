@@ -8,7 +8,6 @@ import logging
 import types
 from typing import Callable
 
-import torch
 import torch.nn as nn
 
 from opaque.api.patches.transformers._registry import detect_family, get_family_apply_fn
@@ -31,14 +30,15 @@ _KERNEL_KWARGS = (
 
 
 def _has_kernel_runtime() -> bool:
-    """Return True iff CUDA + Triton are importable on this host."""
-    if not torch.cuda.is_available():
-        return False
-    try:
-        import triton  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    """Return True iff CUDA + Triton are importable on this host.
+
+    Delegates to :func:`opaque.api.engine.device.fused_kernels_available` so
+    the "what runs the fused kernels?" question has a single source of truth
+    shared with the trainer, examples, and capability reporting.
+    """
+    from opaque.api.engine.device import fused_kernels_available
+
+    return fused_kernels_available()
 
 
 def _patch_forward(
