@@ -239,18 +239,18 @@ def _make_fused_ce_causal_lm_forward(original):
         )
         hidden_states = outputs[0]
 
-        # CUDA + half precision routes to the Triton kernel; MPS routes to the
-        # pure-PyTorch chunked kernel, which streams the log-sum-exp over vocab
-        # chunks (no full-logit materialization). CPU keeps the standard
-        # logits-materializing path: it isn't memory-constrained the way the MPS
-        # unified-memory dev box is, and the fused path returns ``logits=None``,
-        # which CPU eval/metrics callers rely on having.
+        # CUDA + half precision routes to the Triton kernel; any other host
+        # (MPS/CPU) routes to the pure-PyTorch chunked kernel, which streams the
+        # log-sum-exp over vocab chunks (no full-logit materialization). The
+        # fused path returns ``logits=None`` — but ``fused_linear_cross_entropy``
+        # is opt-in (default off) precisely because of that, so a caller that
+        # enables it has accepted loss-only outputs regardless of device.
         use_fused_ce = _fused_linear_ce_loss_is_supported(logits_to_keep, kwargs) and (
             (
                 hidden_states.is_cuda
                 and hidden_states.dtype in (torch.bfloat16, torch.float16)
             )
-            or hidden_states.device.type == "mps"
+            or not hidden_states.is_cuda
         )
 
         if use_fused_ce:
