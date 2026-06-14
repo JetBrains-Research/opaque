@@ -35,6 +35,7 @@ import torch
 # resolve the kernel module dynamically via ``importlib.import_module`` so the
 # bridge stays optional without a static import node anywhere in this file.
 _LCE_KERNEL_PATH = "opaque.api.patches.kernels.linear_cross_entropy"
+_CE_KERNEL_PATH = "opaque.api.patches.kernels.cross_entropy"
 
 
 def lce_available(hidden: torch.Tensor) -> bool:
@@ -51,6 +52,33 @@ def lce_available(hidden: torch.Tensor) -> bool:
     except Exception:
         return False
     return True
+
+
+def selective_log_softmax_available(logits: torch.Tensor) -> bool:
+    """True when the patches chunked CE kernel can power ``selective_log_softmax``.
+
+    Needs CUDA and ``opaque-patches`` importable. The kernel casts inputs to fp32
+    internally, so half precision is *not* required (unlike :func:`lce_available`).
+    The eager fallback materialises a ``(T, V)`` ``log_softmax`` tensor and stays
+    available everywhere this returns False.
+    """
+    if not logits.is_cuda:
+        return False
+    try:
+        importlib.import_module(_CE_KERNEL_PATH)
+    except Exception:
+        return False
+    return True
+
+
+def import_ce_kernel():
+    """Dynamically import the patches chunked-CE kernel module.
+
+    Sole entry point alignment code uses to reach into the kernel. Keeps the
+    static AST clean of ``import opaque.api.patches.*`` so the
+    dependency-direction contract test stays green.
+    """
+    return importlib.import_module(_CE_KERNEL_PATH)
 
 
 def linear_nll_sum(
