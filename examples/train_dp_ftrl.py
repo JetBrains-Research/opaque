@@ -179,6 +179,36 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 
+def _compile_grad_fn(grad_fn, *, backend, mode):
+    """Caller-applied ``torch.compile`` of the DP grad transform.
+
+    Compiles the whole ``vmap(grad(loss))`` + clipping step (functorch *inside*
+    the compiled region — the supported, fusing pattern; ``vmap(grad)`` *outside*
+    a compiled loss is the unsupported ``grad(compiled_fn)`` case). Tries
+    ``fullgraph=True`` first and lazily falls back to ``fullgraph=False`` on the
+    first graph break (the failure is lazy — it surfaces on first execution).
+    """
+    full = torch.compile(grad_fn, backend=backend, mode=mode, fullgraph=True)
+    fallback = []
+
+    def wrapper(*args, **kwargs):
+        if fallback:
+            return fallback[0](*args, **kwargs)
+        try:
+            return full(*args, **kwargs)
+        except Exception as e:  # noqa: BLE001 — any compile failure → fallback
+            print(
+                f"WARNING: torch.compile(fullgraph=True) failed "
+                f"({type(e).__name__}: {e}); falling back to fullgraph=False."
+            )
+            fallback.append(
+                torch.compile(grad_fn, backend=backend, mode=mode, fullgraph=False)
+            )
+            return fallback[0](*args, **kwargs)
+
+    return wrapper
+
+
 def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
     """Select best available device with user-facing label."""
     if torch.cuda.is_available():
@@ -594,6 +624,28 @@ def parse_args():
         "MF ``mf_gaussian_noise`` uses the same Mahalanobis allocation as DP-SGD Gaussian.",
     )
     dp_g.add_argument("--microbatch-size", type=int, default=None)
+    dp_g.add_argument(
+        "--torch-compile",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="torch.compile the DP per-example grad step (vmap(grad) + clipping). "
+        "Off by default; a large speedup on GPU/MPS once warm (the first step "
+        "pays the compile cost).",
+    )
+    dp_g.add_argument(
+        "--torch-compile-backend", type=str, default="inductor",
+        help="torch.compile backend (default: inductor).",
+    )
+    dp_g.add_argument(
+        "--torch-compile-mode", type=str, default="default",
+        choices=[
+            "default",
+            "reduce-overhead",
+            "max-autotune",
+            "max-autotune-no-cudagraphs",
+        ],
+        help="torch.compile mode (default: 'default').",
+    )
     dp_g.add_argument(
         "--bands",
         type=int,
@@ -1342,6 +1394,15 @@ def main():
             return_aux=True,
             second_moment=args.second_moment,
         )
+
+    # Caller-applied torch.compile of the whole DP grad transform (opt-in).
+    if args.torch_compile:
+        grad_fn = _compile_grad_fn(
+            grad_fn,
+            backend=args.torch_compile_backend,
+            mode=args.torch_compile_mode,
+        )
+
     zeta = (
         clip_norm.effective / args.batch_size
         if isinstance(clip_norm, PerGroup)
