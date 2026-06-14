@@ -963,7 +963,10 @@ def parse_args():
         "--gradient-checkpointing",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Enable gradient checkpointing for memory savings (trades compute for memory)",
+        help="Enable gradient checkpointing (trades compute for memory). OFF by "
+        "default: under DP-SGD the step is ~99%% per-sample-grad clipping, so the "
+        "recompute is pure overhead (~25-30%% slower) and rarely buys useful "
+        "microbatch headroom. Only enable if a config genuinely OOMs without it.",
     )
     train_group.add_argument(
         "--activation-offloading",
@@ -1259,29 +1262,34 @@ def parse_args():
         )
         _set("dtype", "bfloat16")
     elif args.preset == "mellum2-codesec":
-        # Mellum2-12B-A2.5B (MoE) DP-DPO at ε=8. At batch=128 the Rényi accountant
-        # calibrates nm≈0.557, so the preference signal survives. LoRA on attention
-        # projections only — routed experts are stacked nn.Parameter weights.
-        # HPs transferred from the A-T03/T04 Mellum-4b winners (lr=1e-4 / beta=0.3
-        # / clipping_norm=2.0); B-T04 (Mellum-2.0 at beta=0.3) showed strong
-        # margin growth mid-training before this commit. Promote ahead of B-T04
-        # terminal so the preset reflects current best evidence; reconsider once
-        # the Mellum-2.0 cross-check completes.
+        # Mellum2-12B-A2.5B (MoE) DP-DPO at ε=8. LoRA on attention projections
+        # only — the routed experts are frozen stacked nn.Parameter weights, which
+        # also lets the fused-MoE backward skip the per-sample expert weight grads,
+        # so the policy fits microbatch=16 with NO gradient checkpointing.
+        # HPs are the validated B-T04 point (lr=5e-5 / beta=0.3 / clipping_norm=1.0):
+        # beta=0.3 beat beta=0.1 (B-T01) on eval/loss and margins at equal
+        # accuracy/epsilon. The aggressive corner that won on Mellum-4b
+        # (lr=1e-4 / clip=2.0) is unconfirmed here — cross-check in flight; bump
+        # lr/clip only if it proves out.
+        #
+        # gradient checkpointing stays OFF: the DP step is ~99% per-sample-grad
+        # clipping, so gc's recompute is pure overhead (~25-30% slower) and buys
+        # no useful microbatch headroom at batch=128.
         _set("model_name", "JetBrains/Mellum2-12B-A2.5B-Base")
         _set("dataset", _CODESEC)
         _set("num_train_samples", 4000)
         _set("num_eval_samples", 500)
         _set("num_epochs", 2)
         _set("batch_size", 128)
-        _set("microbatch_size", 8)
+        _set("microbatch_size", 16)
         _set("log_steps", 2)
         _set("eval_steps", 25)
         _set("target_epsilon", 8.0)
-        _set("learning_rate", 1e-4)
+        _set("learning_rate", 5e-5)
         _set("optimizer", "adafactor")
         _set("loss_type", "sigmoid")
         _set("beta", 0.3)
-        _set("clipping_norm", 2.0)
+        _set("clipping_norm", 1.0)
         _set("lora_r", 16)
         _set("lora_alpha", 32)
         _set("max_length", 1024)
