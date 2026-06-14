@@ -20,6 +20,7 @@ dispatch to SwiGLU.
 
 from __future__ import annotations
 
+import functools
 import importlib
 import logging
 from collections.abc import Callable
@@ -206,10 +207,14 @@ def make_apply_model_patches(
         ``apply(model=None, *, performance=True, compat=True,
         kernels=None, **kwargs) -> None``.
         Per-concern kwargs default into the right group:
-        ``rope``, ``rms_norm``, ``activation``, ``cross_entropy`` →
-        ``kernels`` (itself defaulting to ``performance`` when ``None``);
-        ``kv_cache`` → ``performance``; ``eager_attention``,
-        ``batchify`` → ``compat``. ``fused_linear_cross_entropy``
+        ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
+        ``fused_moe`` → ``kernels`` (itself defaulting to ``performance``
+        when ``None``); ``kv_cache`` → ``performance``;
+        ``eager_attention``, ``batchify``, ``moe`` → ``compat``.
+        ``moe`` installs the vmap-safe experts forward (DP-SGD needs it);
+        ``fused_moe`` only chooses its grouped-GEMM fast path (CUDA Triton
+        / MPS-CPU ``torch._grouped_mm``) vs the dense compat path, so an
+        eager run keeps a correct, vmap-safe MoE. ``fused_linear_cross_entropy``
         defaults to ``False`` because the fused path returns
         ``logits=None``, which is incompatible with callers that read
         logits (e.g. SFTTrainer with ``compute_metrics`` /
@@ -250,20 +255,31 @@ def make_apply_model_patches(
             if mlp_class is not None:
                 _patch_forward(getattr(mod, mlp_class, None), activation_factory, model)
 
-        # Stacked-weight MoE experts (HF v5 ``*Experts`` module). This is a
-        # vmap-safety patch, not a CUDA kernel: HF's experts forward isn't
-        # vmap(grad)-able (DP-SGD breaks without it), and the replacement runs on
-        # CPU too — so it lives in the ``compat`` bucket, NOT ``kernels`` (which
-        # auto-disables off-CUDA). ``opaque_moe`` itself uses the sparse
-        # grouped-GEMM Triton kernel on CUDA bf16/fp16 (numerically equivalent to
-        # the dense path) and dense torch elsewhere — no extra gate. The ``moe``
-        # gate is separate from ``activation`` since a model may have both routed
-        # experts and dense MLP layers. Absent ``Experts`` class (dense-only /
-        # pre-v5) no-ops below.
+        # Stacked-weight MoE experts (HF v5 ``*Experts`` module). Two gates:
+        #
+        #   1. INSTALLING the replacement forward is a vmap-safety patch — HF's
+        #      experts forward isn't vmap(grad)-able and DP-SGD breaks without it.
+        #      So it lives in the ``compat`` bucket (``moe`` -> ``compat``), NOT
+        #      ``kernels`` (which auto-disables off-CUDA): the vmap-safe forward
+        #      must be present even for an eager run.
+        #   2. WHICH path that forward takes is a performance gate: ``fused_moe``
+        #      (-> ``kernels``) picks the grouped-GEMM fast path — sparse Triton
+        #      on CUDA bf16/fp16, ``torch._grouped_mm`` on MPS/CPU — while
+        #      ``fused_moe=False`` forces the dense, always-correct ``Opaque_MoE``.
+        #      Both grouped paths are performance variations; only dense is compat.
+        #
+        # The ``moe`` gate is separate from ``activation`` since a model may have
+        # both routed experts and dense MLP layers. Absent ``Experts`` class
+        # (dense-only / pre-v5) no-ops below.
         if moe_factory is not None and kwargs.get("moe", compat):
             experts_class = classes.get("experts")
             if experts_class is not None:
-                _patch_forward(getattr(mod, experts_class, None), moe_factory, model)
+                fused_moe = kwargs.get("fused_moe", kernels)
+                _patch_forward(
+                    getattr(mod, experts_class, None),
+                    functools.partial(moe_factory, fused=fused_moe),
+                    model,
+                )
 
         # RMSNorm (unified standalone + fused-add). Triton kernel — gated
         # on ``kernels``.
