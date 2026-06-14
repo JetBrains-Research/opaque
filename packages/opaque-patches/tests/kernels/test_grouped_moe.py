@@ -120,6 +120,40 @@ def test_grouped_moe_bf16_mps():
     _check_bf16_within_floor("mps")
 
 
+def _check_frozen_experts(device: str) -> None:
+    """DP-SGD LoRA-on-attention: experts frozen, only hidden + router differentiated.
+
+    Exercises the ``compute_wgrad=False`` skip (mirrors the Triton fused path): the
+    backward must NOT build the per-sample ``(B, E, ...)`` weight grads, yet ``dx``
+    and ``d_router`` must still match the dense oracle bit-for-bit-within-_TOL."""
+    gu, dn, x3, idx3, w3, B, T, H = _inputs(device, E=16)
+
+    def f_s(xx, gg, dd, ii, ww):
+        return Opaque_GroupedMoE.apply(xx, gg, dd, ii, ww).sum()
+
+    def f_d(xx, gg, dd, ii, ww):
+        return Opaque_MoE.apply(xx, gg, dd, ii, ww).sum()
+
+    # argnums=(0, 4): only hidden + router weights need grad — experts (1, 2) stay
+    # frozen, so ctx.needs_input_grad makes compute_wgrad False.
+    in_dims = (0, None, None, 0, 0)
+    gs = vmap(grad(f_s, argnums=(0, 4)), in_dims=in_dims)(x3, gu, dn, idx3, w3)
+    gd = vmap(grad(f_d, argnums=(0, 4)), in_dims=in_dims)(x3, gu, dn, idx3, w3)
+    for name, a, b in zip(("dx", "d_router"), gs, gd):
+        assert (a - b).abs().max().item() < _TOL, f"frozen vmap(grad) {name}"
+    # Per-sample dx still genuinely distinct across the batch.
+    assert (gs[0][0] - gs[0][1]).abs().max().item() > 0
+
+
+def test_grouped_moe_frozen_experts_cpu():
+    _check_frozen_experts("cpu")
+
+
+@pytest.mark.mps
+def test_grouped_moe_frozen_experts_mps():
+    _check_frozen_experts("mps")
+
+
 def _check_dispatch(device: str) -> None:
     # opaque_moe routes large-E to the sparse path and small-E to dense; both must
     # match the dense oracle. (Only correctness is asserted; the E threshold is a
