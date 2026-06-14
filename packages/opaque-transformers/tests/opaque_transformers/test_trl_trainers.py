@@ -1384,7 +1384,8 @@ def test_dpo_fused_eligible_resolves_handles(tmp_path):
 @pytest.mark.parametrize(
     "extra",
     [
-        {},  # telemetry on (default) → ineligible
+        # Three intrinsic blockers: features that read per-token logps from logits
+        # and thus can't run on the logits-free fused path.
         {"log_completion_metrics": False, "use_weighting": True},  # WPO reads logps
         {
             "log_completion_metrics": False,
@@ -1402,6 +1403,28 @@ def test_dpo_ineligible_configs_keep_eager(tmp_path, extra):
         processing_class=_stub_tokenizer(),
     )
     assert trainer._use_fused_logp is False
+
+
+def test_dpo_log_completion_metrics_keeps_static_eligibility(tmp_path):
+    # Telemetry no longer disables ``_use_fused_logp`` wholesale; the per-step
+    # branch in ``compute_per_example_loss_and_metrics`` is what falls back to
+    # the eager path when telemetry is on. Static eligibility stays True so
+    # toggling --log-completion-metrics doesn't reshape the trainer.
+    trainer = DPOTrainer(
+        model=_tiny_model(),
+        ref_model=_tiny_model(),
+        args=_args(
+            DPOConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="sigmoid",
+            log_completion_metrics=True,
+        ),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    assert trainer._use_fused_logp is True
+    assert trainer._log_completion_metrics is True
 
 
 # ---- DPO: CPU fallback-equivalence -----------------------------------

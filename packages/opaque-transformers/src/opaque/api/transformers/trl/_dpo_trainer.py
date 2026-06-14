@@ -212,13 +212,15 @@ class DPOTrainer(DPTrainer):
         self._orpo_lambda = float(args.orpo_lambda)
         self._use_weighting = bool(args.use_weighting)
         self._log_completion_metrics = bool(args.log_completion_metrics)
-        # FUSED-PATH GATE. The logits-free fused log-prob primitive may be
-        # selected only when telemetry is off and no logits-consuming feature is
-        # active (LD-DPO needs per-token logits; WPO reads per-token logps; a
-        # non-reverse-KL f-divergence remaps them).
+        # FUSED-PATH GATE (static eligibility). The logits-free fused log-prob
+        # primitive may be selected only when no logits-consuming feature is
+        # active in the loss path: LD-DPO needs per-token logits; WPO reads
+        # per-token logps; a non-reverse-KL f-divergence remaps them. Rich
+        # completion telemetry (``log_completion_metrics``) still needs logits,
+        # but it is gated per-step at the call site rather than disabling the
+        # fused path wholesale.
         self._fused_logp_eligible = (
-            not self._log_completion_metrics
-            and self._ld_alpha is None
+            self._ld_alpha is None
             and not self._use_weighting
             and self._f_divergence_type == "reverse_kl"
         )
@@ -926,10 +928,12 @@ class DPOTrainer(DPTrainer):
 
         # FUSED PATH: on an eligible run compute the policy logps through
         # ``fused_sequence_logp`` over the backbone's last hidden state, never
-        # materialising the ``(T, V)`` logits. The logits-consuming consumers
-        # below (WPO weighting, logits telemetry) and LD-DPO are all gated off
-        # under eligibility, so no logits are ever needed.
-        if self._use_fused_logp:
+        # materialising the ``(T, V)`` logits. Static eligibility (LD-DPO / WPO /
+        # f-divergence) is captured in ``_use_fused_logp``; the per-step
+        # ``log_completion_metrics`` check disables the fused branch when rich
+        # telemetry is on, because ``entropy`` / ``logits/*`` / ``mean_token_acc``
+        # all consume full logits.
+        if self._use_fused_logp and not self._log_completion_metrics:
             chosen_logp = self._fused_logp(
                 fmodel,
                 params,
