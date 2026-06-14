@@ -74,6 +74,7 @@ from functools import cached_property
 from typing import Any
 
 import torch
+from opaque.api.engine.device import device_capabilities
 from opaque.scheduling.types import Schedule
 from transformers.debug_utils import DebugOption
 from transformers.trainer_utils import SchedulerType
@@ -741,10 +742,24 @@ class TrainingArguments:
         # it adds a per-example unscale-before-clip landmine for no benefit on
         # the bf16-capable hardware this targets.
         if (self.bf16 or self.bf16_full_eval) and not self.use_cpu:
-            if not is_torch_bf16_gpu_available() and not is_torch_xla_available():
+            # bf16 is valid on any accelerator that can actually run it.  HF's
+            # ``is_torch_bf16_gpu_available()`` only recognizes CUDA on older
+            # ``transformers``, so consult opaque's capability probe too — this
+            # is what keeps bf16 a first-class option on Apple Silicon (MPS),
+            # independent of the installed transformers version.
+            mps_bf16_ok = (
+                torch.backends.mps.is_available()
+                and device_capabilities("mps").supports_bf16
+            )
+            if (
+                not is_torch_bf16_gpu_available()
+                and not is_torch_xla_available()
+                and not mps_bf16_ok
+            ):
                 raise ValueError(
-                    "Your setup doesn't support bf16/gpu. Set use_cpu=True for CPU bf16, "
-                    "or use an Ampere+ CUDA GPU."
+                    "Your setup doesn't support bf16. Set use_cpu=True for CPU "
+                    "bf16, use an Ampere+ CUDA GPU, or run on Apple Silicon "
+                    "(MPS) with a PyTorch build that supports bf16 on Metal."
                 )
 
         # --- 8. torch_compile_mode whitelist --------------------------------
@@ -1071,9 +1086,7 @@ class TrainingArguments:
             self._n_gpu = 0
             return torch.device("cpu")
         if getattr(self, "use_mps_device", False) or (
-            hasattr(torch.backends, "mps")
-            and torch.backends.mps.is_available()
-            and not torch.cuda.is_available()
+            torch.backends.mps.is_available() and not torch.cuda.is_available()
         ):
             self._n_gpu = 0
             return torch.device("mps")

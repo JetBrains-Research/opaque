@@ -47,6 +47,7 @@ from transformers import (
     DataCollatorForLanguageModeling,
 )
 
+from opaque.device import device_capabilities
 from opaque.transformers import is_patched as is_transformers_patched
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.transformers import is_patched as is_kernel_patched
@@ -76,46 +77,32 @@ def _select_device() -> tuple[torch.device, str]:
     return torch.device("cpu"), "CPU"
 
 
-def _is_dtype_supported(device: torch.device, dtype: torch.dtype) -> bool:
-    """Check whether a dtype can be allocated on a specific device."""
-    try:
-        torch.empty((1,), device=device, dtype=dtype)
-        return True
-    except (RuntimeError, TypeError):
-        return False
-
-
 def _resolve_trainer_dtype(
     requested_name: str,
     device: torch.device,
 ) -> tuple[str, torch.dtype, str | None]:
-    """Resolve dtype for DPTrainer's current full-cast precision support."""
+    """Resolve dtype for DPTrainer, honouring bf16 wherever the device runs it.
+
+    DPTrainer's full-cast precision supports float32 everywhere and bf16 on any
+    accelerator that can actually execute it — CUDA (Ampere+) and Apple Silicon
+    (MPS) on a recent PyTorch.  We ask :func:`device_capabilities` rather than
+    hard-coding a per-device table so MPS bf16 stays enabled as PyTorch's Metal
+    support advances, instead of being silently downgraded to fp32.
+    """
     dtype_map = {
         "float32": torch.float32,
         "bfloat16": torch.bfloat16,
     }
     requested_dtype = dtype_map[requested_name]
-    if _is_dtype_supported(device, requested_dtype):
+    if requested_name == "float32" or device_capabilities(device).supports_bf16:
         return requested_name, requested_dtype, None
 
-    fallback_order = {
-        "cuda": ["bfloat16", "float32"],
-        "mps": ["float32"],
-        "cpu": ["float32", "bfloat16"],
-    }
-    for fallback_name in fallback_order.get(device.type, ["float32"]):
-        fallback_dtype = dtype_map[fallback_name]
-        if _is_dtype_supported(device, fallback_dtype):
-            reason = (
-                f"Requested dtype '{requested_name}' is not supported on "
-                f"{device.type} for DPTrainer; using '{fallback_name}' instead."
-            )
-            return fallback_name, fallback_dtype, reason
-
-    raise RuntimeError(
-        f"No supported dtype found for device={device.type}. "
-        f"Requested dtype was '{requested_name}'."
+    # bf16 requested but this device can't run it → fall back to fp32.
+    reason = (
+        f"Requested dtype '{requested_name}' is not supported on "
+        f"{device.type} for DPTrainer; using 'float32' instead."
     )
+    return "float32", torch.float32, reason
 
 
 def _kernel_mode_summary(device: torch.device, dtype_name: str) -> tuple[str, str]:
@@ -157,7 +144,10 @@ def _print_runtime_mode_report(
     if device.type == "cpu":
         print("  Note: CPU path prioritizes correctness over throughput.")
     elif device.type == "mps":
-        print("  Note: MPS uses compatibility fallbacks for CUDA-only kernels.")
+        print(
+            "  Note: Apple Silicon (MPS) runs bf16 with eager kernels; the "
+            "Triton fused kernels fall back to pure-PyTorch equivalents."
+        )
 
 
 def _load_streaming_subset(
