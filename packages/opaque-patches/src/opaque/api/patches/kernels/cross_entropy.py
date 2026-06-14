@@ -592,3 +592,94 @@ def opaque_cross_entropy_loss(
         logits, labels, logit_softcapping, logit_scaling, label_smoothing
     )
     return losses
+
+
+class Opaque_SelectiveLogSoftmax(torch.autograd.Function):
+    """Per-token log-prob lookup ``log_softmax(logits)[indices]`` with vmap support.
+
+    Reuses :func:`_ce_forward_impl` — the per-token NLL the chunked CE kernel
+    already returns is ``-log p_target``, so the per-token log-prob is its
+    negation. The backward kernel is reused unchanged: gradient of
+    ``log p_t`` w.r.t. ``logits[v]`` equals ``-1 ×`` the gradient of
+    ``NLL_t``, achieved by passing ``-grad_logp`` as the upstream
+    ``grad_losses``.
+    """
+
+    @staticmethod
+    def forward(logits, indices):
+        original_shape = logits.shape[:-1]
+        vocab_size = logits.shape[-1]
+        logits_flat = logits.reshape(-1, vocab_size)
+        indices_flat = indices.reshape(-1)
+        n_rows = logits_flat.shape[0]
+        losses, logsumexp = _ce_forward_impl(
+            logits_flat,
+            indices_flat,
+            n_rows,
+            vocab_size,
+            logits.device,
+        )
+        log_p = (-losses).reshape(original_shape)
+        logsumexp = logsumexp.reshape(original_shape)
+        return log_p, logsumexp
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        logits, indices = inputs
+        _log_p, logsumexp = output
+        ctx.save_for_backward(logits, logsumexp, indices)
+        ctx.vocab_size = logits.shape[-1]
+
+    @staticmethod
+    def backward(ctx, grad_log_p, grad_logsumexp):
+        logits, logsumexp, indices = ctx.saved_tensors
+        grad_logits = _CrossEntropyBackward.apply(
+            -grad_log_p,
+            logits,
+            logsumexp,
+            indices,
+            ctx.vocab_size,
+            0,
+            0,
+            0.0,
+        )
+        return grad_logits, None
+
+    @staticmethod
+    def vmap(info, in_dims, logits, indices):
+        logits_bdim, indices_bdim = in_dims
+        if logits_bdim != 0:
+            raise ValueError(f"logits should be batched at dim 0, got {logits_bdim}")
+        if indices_bdim != 0:
+            raise ValueError(f"indices should be batched at dim 0, got {indices_bdim}")
+        batched_shape = logits.shape[:-1]
+        vocab_size = logits.shape[-1]
+        logits_flat = logits.reshape(-1, vocab_size)
+        indices_flat = indices.reshape(-1)
+        n_rows = logits_flat.shape[0]
+        losses, logsumexp = _ce_forward_impl(
+            logits_flat, indices_flat, n_rows, vocab_size, logits.device
+        )
+        log_p = (-losses).reshape(batched_shape)
+        logsumexp = logsumexp.reshape(batched_shape)
+        return (log_p, logsumexp), (logits_bdim, logits_bdim)
+
+
+def opaque_selective_log_softmax(logits, indices):
+    """Per-token ``log_softmax(logits, dim=-1).gather(-1, indices[..., None]).squeeze(-1)``.
+
+    Logits-light: routes through the chunked CE Triton kernel, never
+    materialising a second ``(T, V)`` ``log_softmax`` tensor. Drop-in for
+    :func:`opaque.api.alignment.logprob.selective_log_softmax`'s contract on
+    its compatible callers (per-token logp at ``indices`` in ``[0, V)``).
+
+    Indices in the ignored-position sentinel ``-100`` return ``0`` (matching
+    the underlying CE kernel's ignore convention) — callers that previously
+    indexed with ``-100`` and treated the result as garbage are unaffected;
+    callers that masked the result afterward (the standard
+    :func:`sequence_logp` pattern) are unaffected too.
+    """
+    ensure_cuda_tensors(logits, indices, fn_name="opaque_selective_log_softmax")
+    (logits,) = follow_autocast(logits)
+    log_p, _ = Opaque_SelectiveLogSoftmax.apply(logits, indices)
+    return log_p
