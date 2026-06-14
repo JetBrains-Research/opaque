@@ -14,7 +14,7 @@ Exposes TR-DPO reference sync (``--sync-ref-model``), MPO multi-loss blends
 (``--loss-type a b ... --loss-weights w1 w2 ...``), WPO weighting
 (``--use-weighting``), LD-DPO (``--ld-alpha``), f-divergence regularisers
 (``--f-divergence-type``), the reference-free heads, and the completion-metric
-telemetry gate (``--no-log-completion-metrics``).
+telemetry opt-in (``--log-completion-metrics``).
 
 Examples::
 
@@ -173,13 +173,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--ref-model-sync-steps", type=int, default=512)
     # --- Telemetry ---------------------------------------------------------
     p.add_argument(
-        "--no-log-completion-metrics",
+        "--log-completion-metrics",
         dest="log_completion_metrics",
-        action="store_false",
-        help="Skip the logits-consuming completion telemetry "
-        "(entropy / mean_token_accuracy / logits/*).",
+        action="store_true",
+        help="Log entropy / mean_token_accuracy / logits/* per-pair. "
+        "Forces the eager logits-materialising loss path (~12x microbatch hit "
+        "on big-vocab models) — rewards/* and logps/* are still logged "
+        "unconditionally on the fused path.",
     )
-    p.set_defaults(log_completion_metrics=True)
+    p.set_defaults(log_completion_metrics=False)
     # --- Training ----------------------------------------------------------
     p.add_argument("--max-length", type=int, default=1024)
     p.add_argument("--batch-size", type=int, default=16)
