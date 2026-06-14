@@ -301,3 +301,54 @@ class TestRMSNormPerformance:
         pt_stats = measure_time_and_memory(pt_fn, x, w)
         op_stats = measure_time_and_memory(op_fn, x, w)
         assert_perf_benefit(pt_stats, op_stats, label="rmsnorm backward")
+
+
+class TestRMSNormBlockKernel:
+    """Force the block-kernel forward path: small hidden dim (head_dim-like) +
+    many rows — e.g. Mellum-2.0 q_norm / k_norm at head_dim=128 under vmapped
+    DP-SGD. This is the regime that used to raise (now routed to the block kernel
+    instead of the launch-bound per-row kernel). Parity with eager must hold.
+    """
+
+    # n_rows (40960) >= 4096*8 and BLOCK_SIZE (=128) <= 256 -> use_block is True.
+    _DIM = 128
+    _ROWS = 40 * 1024
+
+    def test_block_llama_forward(self, assert_precision):
+        torch.manual_seed(3)
+        x = torch.randn(self._ROWS, self._DIM, device="cuda", dtype=torch.bfloat16)
+        w = torch.randn(self._DIM, device="cuda", dtype=torch.bfloat16)
+        eps = 1e-5
+        y_o = opaque_llama(x, w, eps)
+        y_r = ref_llama_rms(x, w, eps)
+        assert_precision(y_o, y_r, rtol=RTOL_F, atol=ATOL_F, label="block llama fwd")
+
+    def test_block_gemma_forward(self, assert_precision):
+        torch.manual_seed(4)
+        x = torch.randn(self._ROWS, self._DIM, device="cuda", dtype=torch.bfloat16)
+        w = torch.randn(self._DIM, device="cuda", dtype=torch.bfloat16)
+        eps, off = 1e-6, 1.0
+        y_o = opaque_gemma(x, w, eps, off)
+        y_r = ref_gemma_rms(x, w, eps, off)
+        assert_precision(y_o, y_r, rtol=RTOL_F, atol=ATOL_F, label="block gemma fwd")
+
+    def test_block_backward(self, assert_precision):
+        # The forward hits the block kernel; the (unchanged) block backward must
+        # still match the eager grads at this shape.
+        torch.manual_seed(6)
+        eps = 1e-5
+        x0 = torch.randn(
+            self._ROWS, self._DIM, device="cuda", dtype=torch.bfloat16,
+            requires_grad=True,
+        )
+        w0 = torch.randn(
+            self._DIM, device="cuda", dtype=torch.bfloat16, requires_grad=True
+        )
+        ref_llama_rms(x0, w0, eps).mean().backward()
+
+        x1 = x0.detach().clone().requires_grad_(True)
+        w1 = w0.detach().clone().requires_grad_(True)
+        opaque_llama(x1, w1, eps).mean().backward()
+
+        assert_precision(x1.grad, x0.grad, rtol=RTOL_B, atol=ATOL_B, label="block dx")
+        assert_precision(w1.grad, w0.grad, rtol=RTOL_B, atol=ATOL_B, label="block dw")

@@ -12,7 +12,6 @@
 from __future__ import annotations
 
 import math
-import warnings
 
 import torch
 import triton
@@ -121,6 +120,88 @@ def _rms_norm_forward_kernel(
 
 
 @triton.jit
+def _rms_norm_forward_block_kernel(
+    Y_ptr,
+    Y_row_stride,
+    X_ptr,
+    X_row_stride,
+    W_ptr,
+    W_row_stride,
+    RSTD_ptr,
+    RSTD_row_stride,
+    n_rows,
+    n_cols,
+    eps,
+    offset,
+    rows_per_program,
+    casting_mode: tl.constexpr,
+    elementwise_affine: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+):
+    """Block variant of the forward: one program per SM, each looping
+    ``rows_per_program`` rows — mirrors :func:`_rms_norm_backward_kernel`.
+
+    Used for the small-hidden-dim + many-rows regime (e.g. Mellum-2.0 q_norm /
+    k_norm at head_dim=128 under vmapped DP-SGD) where the per-row kernel would
+    launch one tiny program per row.  The per-row body is identical to
+    :func:`_rms_norm_forward_kernel`; only the grid/loop differs.  The shared
+    weight is loaded once (loop-invariant)."""
+    row_block_id = tl.program_id(0)
+    row_start = row_block_id * rows_per_program
+    row_end = tl.minimum((row_block_id + 1) * rows_per_program, n_rows)
+    col_offsets = tl.arange(0, BLOCK_SIZE)
+    mask = col_offsets < n_cols
+
+    if elementwise_affine:
+        W_row = tl.load(W_ptr + col_offsets, mask=mask, other=0)
+        if casting_mode == 1:
+            W_row = W_row.to(tl.float32)
+
+    # int64 stride math — same int32-overflow guard as the per-row kernel.
+    y_stride64 = triton_cast(Y_row_stride, tl.int64)
+    x_stride64 = triton_cast(X_row_stride, tl.int64)
+    rstd_stride64 = triton_cast(RSTD_row_stride, tl.int64)
+
+    for row_idx in range(row_start, row_end):
+        y_base = Y_ptr + row_idx * y_stride64
+        x_base = X_ptr + row_idx * x_stride64
+        rstd_base = RSTD_ptr + row_idx * rstd_stride64
+
+        X_row = tl.load(x_base + col_offsets, mask=mask, other=0)
+        X_row_dtype = X_row.dtype
+
+        if casting_mode == 0:
+            X_row = X_row.to(tl.float32)
+        if casting_mode == 1:
+            X_row = X_row.to(tl.float32)
+        if casting_mode == -1:
+            eps_r = eps.to(X_row_dtype)
+            offset_r = offset.to(X_row_dtype)
+        else:
+            eps_r = eps
+            offset_r = offset
+
+        mean_square = tl.sum(X_row * X_row, axis=0) / n_cols
+        row_rstd = rsqrt(mean_square + eps_r)
+        tl.store(rstd_base, row_rstd)
+
+        X_row = X_row * row_rstd
+
+        if casting_mode == 0:
+            X_row = X_row.to(X_row_dtype)
+
+        if elementwise_affine:
+            Y_row = X_row * (offset_r + W_row)
+        else:
+            Y_row = X_row
+
+        if casting_mode == 1:
+            Y_row = Y_row.to(X_row_dtype)
+
+        tl.store(y_base + col_offsets, Y_row, mask=mask)
+
+
+@triton.jit
 def _rms_norm_backward_kernel(
     dY_ptr,
     dY_row_stride,
@@ -206,25 +287,6 @@ def _rms_norm_backward_kernel(
         tl.store(dW_ptr + row_block_id * dW_row_stride + col_offsets, dW_row, mask=mask)
 
 
-_SLOW_ROW_KERNEL_WARNED: set[tuple[int, int]] = set()
-
-
-def _warn_slow_row_kernel(block_size: int, n_rows: int) -> None:
-    """Warn once per ``(block_size, n_rows_bucket)`` shape that the row kernel
-    is launching a large number of tiny programs.  Bucketed so vmap shape
-    drift between training steps doesn't spam the log."""
-    key = (block_size, 1 << max(0, n_rows.bit_length() - 1))
-    if key in _SLOW_ROW_KERNEL_WARNED:
-        return
-    _SLOW_ROW_KERNEL_WARNED.add(key)
-    warnings.warn(
-        f"Opaque RMSNorm: BLOCK_SIZE={block_size}, n_rows={n_rows} launches "
-        "the row kernel at one program per row.  Output is correct, but a "
-        "Liger-style block kernel would amortize launch overhead.",
-        stacklevel=3,
-    )
-
-
 def _rms_norm_forward_triton(
     X: torch.Tensor,
     W: torch.Tensor | None,
@@ -250,36 +312,60 @@ def _rms_norm_forward_triton(
     def grid(meta):
         return (n_rows,)
 
-    # Forward grid is ``(n_rows,)`` — one Triton program per row — so the
-    # kernel is correctness-safe at any shape.  The combination
-    # ``BLOCK_SIZE <= 256`` (small hidden dim, e.g. Mellum-2.0 q_norm /
-    # k_norm at head_dim=128) and ``n_rows >= 32k`` (vmapped microbatch
-    # * seq_len * num_heads under DP-SGD) launches an unhealthy number of
-    # tiny programs; a Liger-style block kernel that processes
-    # ``rows_per_sm`` rows per program would close the gap.  Until that
-    # lands, warn once per process so the perf hit is visible and keep
-    # going.
-    if not (BLOCK_SIZE > 256 or n_rows < 4096 * 8 or row_mode):
-        _warn_slow_row_kernel(BLOCK_SIZE, n_rows)
+    # The per-row forward (grid ``(n_rows,)``, one program per row) is
+    # launch-bound when the hidden dim is small (``BLOCK_SIZE <= 256``, e.g.
+    # Mellum-2.0 q_norm / k_norm at head_dim=128) AND ``n_rows >= 32k`` (vmapped
+    # microbatch * seq_len * num_heads under DP-SGD): one tiny program per row.
+    # In that regime use the block kernel — one program per SM, each looping
+    # ``rows_per_program`` rows (like the backward) — to amortize launch
+    # overhead. Identical math; ``row_mode`` forces the per-row path.
+    use_block = not (BLOCK_SIZE > 256 or n_rows < 4096 * 8 or row_mode)
 
     with torch_gpu_device(X.device):
-        _rms_norm_forward_kernel[grid](
-            Y,
-            Y.stride(0),
-            X,
-            X.stride(0),
-            W_contig,
-            W_contig.stride(0) if elementwise_affine else 0,
-            RSTD,
-            RSTD.stride(0),
-            n_cols,
-            eps,
-            offset,
-            casting_mode,
-            elementwise_affine=elementwise_affine,
-            BLOCK_SIZE=BLOCK_SIZE,
-            num_warps=num_warps,
-        )
+        if use_block:
+            sm_count = (
+                torch.cuda.get_device_properties(X.device).multi_processor_count
+                if X.device.type == "cuda"
+                else 1
+            )
+            rows_per_program = math.ceil(n_rows / sm_count)
+            _rms_norm_forward_block_kernel[(sm_count,)](
+                Y,
+                Y.stride(0),
+                X,
+                X.stride(0),
+                W_contig,
+                W_contig.stride(0) if elementwise_affine else 0,
+                RSTD,
+                RSTD.stride(0),
+                n_rows,
+                n_cols,
+                eps,
+                offset,
+                rows_per_program,
+                casting_mode,
+                elementwise_affine=elementwise_affine,
+                BLOCK_SIZE=BLOCK_SIZE,
+                num_warps=num_warps,
+            )
+        else:
+            _rms_norm_forward_kernel[grid](
+                Y,
+                Y.stride(0),
+                X,
+                X.stride(0),
+                W_contig,
+                W_contig.stride(0) if elementwise_affine else 0,
+                RSTD,
+                RSTD.stride(0),
+                n_cols,
+                eps,
+                offset,
+                casting_mode,
+                elementwise_affine=elementwise_affine,
+                BLOCK_SIZE=BLOCK_SIZE,
+                num_warps=num_warps,
+            )
 
     return Y.view(*shape), X, RSTD, BLOCK_SIZE, num_warps
 
