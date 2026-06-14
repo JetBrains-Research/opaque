@@ -1262,6 +1262,11 @@ def parse_args():
         # Mellum2-12B-A2.5B (MoE) DP-DPO at ε=8. At batch=128 the Rényi accountant
         # calibrates nm≈0.557, so the preference signal survives. LoRA on attention
         # projections only — routed experts are stacked nn.Parameter weights.
+        # HPs transferred from the A-T03/T04 Mellum-4b winners (lr=1e-4 / beta=0.3
+        # / clipping_norm=2.0); B-T04 (Mellum-2.0 at beta=0.3) showed strong
+        # margin growth mid-training before this commit. Promote ahead of B-T04
+        # terminal so the preset reflects current best evidence; reconsider once
+        # the Mellum-2.0 cross-check completes.
         _set("model_name", "JetBrains/Mellum2-12B-A2.5B-Base")
         _set("dataset", _CODESEC)
         _set("num_train_samples", 4000)
@@ -1272,10 +1277,11 @@ def parse_args():
         _set("log_steps", 2)
         _set("eval_steps", 25)
         _set("target_epsilon", 8.0)
-        _set("learning_rate", 5e-5)
+        _set("learning_rate", 1e-4)
         _set("optimizer", "adafactor")
         _set("loss_type", "sigmoid")
-        _set("beta", 0.1)
+        _set("beta", 0.3)
+        _set("clipping_norm", 2.0)
         _set("lora_r", 16)
         _set("lora_alpha", 32)
         _set("max_length", 1024)
@@ -1283,7 +1289,10 @@ def parse_args():
         _set("dtype", "bfloat16")
     elif args.preset == "mellum-codesec":
         # Mellum-4b (dense Llama) + code-security DPO at ε=8. Dense MLP, so LoRA
-        # also targets gate/up/down_proj.
+        # also targets gate/up/down_proj. HPs locked to the A-T03/T04 sweep
+        # winners (CyberNative DP-DPO HP sweep, 2026-06-13): lr=1e-4 / beta=0.3
+        # / clipping_norm=2.0 produces eval/loss=0.088 (vs 0.274 at the prior
+        # 5e-5 / 0.1 / 1.0 defaults) and eval/rewards/margins=12.2 (vs 4.58).
         _set("model_name", "JetBrains/Mellum-4b-base")
         _set("dataset", _CODESEC)
         _set("num_train_samples", 4000)
@@ -1294,10 +1303,11 @@ def parse_args():
         _set("log_steps", 2)
         _set("eval_steps", 25)
         _set("target_epsilon", 8.0)
-        _set("learning_rate", 5e-5)
+        _set("learning_rate", 1e-4)
         _set("optimizer", "adafactor")
         _set("loss_type", "sigmoid")
-        _set("beta", 0.1)
+        _set("beta", 0.3)
+        _set("clipping_norm", 2.0)
         _set("lora_r", 16)
         _set("lora_alpha", 32)
         _set("max_length", 1024)
