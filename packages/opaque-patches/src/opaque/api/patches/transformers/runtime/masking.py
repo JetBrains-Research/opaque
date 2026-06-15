@@ -7,13 +7,15 @@ from opaque.api.patches.transformers.components.attention import vmap_repeat_kv
 def _active_mask_dtype(input_embeds: torch.Tensor) -> torch.dtype:
     """Dtype the causal mask must use under autocast.
 
-    Mirrors ``_active_lora_dtype``: follow autocast when active, otherwise
-    honour the input dtype. Without this the attention block's q_proj casts
-    query to bf16 while the mask stays fp32, and SDPA raises
-    ``invalid dtype for bias - should match query's dtype``.
+    Follow autocast when active on the input's device, otherwise honour the
+    input dtype. Without this the attention block's q_proj casts query to bf16
+    while the mask stays fp32, and SDPA raises ``invalid dtype for bias -
+    should match query's dtype``. Reading the dtype off the input's device type
+    keeps this correct on CUDA, MPS and CPU alike.
     """
-    if input_embeds.is_cuda and torch.is_autocast_enabled("cuda"):
-        return torch.get_autocast_dtype("cuda")
+    device_type = input_embeds.device.type
+    if torch.is_autocast_enabled(device_type):
+        return torch.get_autocast_dtype(device_type)
     return input_embeds.dtype
 
 
