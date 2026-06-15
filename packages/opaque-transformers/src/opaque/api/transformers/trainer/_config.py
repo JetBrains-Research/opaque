@@ -228,7 +228,8 @@ class TrainingArguments:
     # Batch sizes
     # =================================================================
     per_device_train_batch_size: int = 8
-    per_device_eval_batch_size: int = 8
+    # ``None`` resolves to ``per_device_train_batch_size`` in ``__post_init__``.
+    per_device_eval_batch_size: int | None = None
     eval_accumulation_steps: int | None = None
     eval_delay: float = 0.0
     # Physical vmap chunk fed into the per-example clipping path.  Default
@@ -760,6 +761,10 @@ class TrainingArguments:
                 "'reduce-overhead', 'max-autotune', "
                 "'max-autotune-no-cudagraphs'."
             )
+
+        # Eval batch mirrors the train batch unless set explicitly.
+        if self.per_device_eval_batch_size is None:
+            self.per_device_eval_batch_size = self.per_device_train_batch_size
 
         # microbatch_size must fit in [1, per_device_train_batch_size]
         # so the per-rank logical batch divides cleanly into
