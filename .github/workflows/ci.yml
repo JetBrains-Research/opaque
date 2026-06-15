@@ -27,8 +27,10 @@ jobs:
         with:
           workspaces: "."
 
+      # No `--lib`: also run the crate's doc-tests so documented API examples
+      # can't rot. (No Rust integration tests — the crate's tests/ dir is Python.)
       - name: cargo test
-        run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
+        run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
 
   # Same platform matrix as the PR gate (see pr.yml for the full rationale),
   # but this lane keeps `slow` tests and the GPU leg runs the whole `cuda`

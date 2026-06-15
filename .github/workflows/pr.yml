@@ -59,8 +59,11 @@ jobs:
         with:
           workspaces: "."
 
+      # No `--lib`: also run the crate's doc-tests (~the `///` examples across
+      # src/), so documented API examples can't rot. (The crate has no Rust
+      # integration tests — its tests/ dir is Python.)
       - name: cargo test
-        run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
+        run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
 
   # One matrix over PLATFORMS (cpu / mps / gpu) × shards. Parallelism is
   # two-level: the matrix fans shards across runners, and `pytest -n auto`
