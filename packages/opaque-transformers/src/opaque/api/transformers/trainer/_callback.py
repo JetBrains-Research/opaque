@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     # types as our standalone ``TrainingArguments`` without taking a runtime
     # dependency from ``_callback`` on ``_config`` (today there is no cycle;
     # this is defensive for future evolution).
-    from ._config import TrainingArguments
+    from ._training_arguments import TrainingArguments
 
 
 __all__ = [
@@ -114,6 +114,10 @@ _GROUP_PRIVACY_SUFFIXES: tuple[tuple[str, str], ...] = (
     ("_clip_rate", "clip_rate"),
     ("_noise_std", "noise_std"),
 )
+# Keys recorded in the W&B run summary in their rewritten ``privacy/*`` form,
+# in addition to whatever per-step logging happens below. ``epsilon`` /
+# ``delta`` / ``noise_multiplier`` stay in the per-step stream too — at one
+# value per run they render as comparison stacks in W&B's multi-run view.
 _PRIVACY_SUMMARY_KEYS = {
     "privacy_epsilon",
     "privacy_delta",
@@ -122,6 +126,20 @@ _PRIVACY_SUMMARY_KEYS = {
     "privacy_calibration_noise_multiplier",
     "privacy_calibration_achieved_epsilon",
     "privacy_calibration_converged",
+    "privacy_noise_std",
+    "train_converged_microbatch_size",
+}
+# Subset of summary keys that are also dropped from the per-step ``wandb.log``
+# stream because their value is fixed for the run — only ``epsilon`` (which
+# accumulates), ``delta`` and ``noise_multiplier`` (useful for multi-run
+# comparison) are kept per-step.
+_PRIVACY_PER_STEP_SKIP_KEYS = {
+    "privacy_calibration_source",
+    "privacy_calibration_noise_multiplier",
+    "privacy_calibration_achieved_epsilon",
+    "privacy_calibration_converged",
+    "privacy_noise_std",
+    "train_converged_microbatch_size",
 }
 _WRAPPED_CALLBACK_CLASSES: dict[type[Any], type[Any]] = {}
 
@@ -189,13 +207,21 @@ def wrap_reporting_callback_class(callback_cls: type[Any]) -> type[Any]:
                     for key, value in raw_logs.items():
                         if key in single_value_scalars:
                             self._wandb.run.summary[key] = value
-                        privacy_key = _rewrite_privacy_key(key)
-                        if key in _PRIVACY_SUMMARY_KEYS and privacy_key is not None:
-                            self._wandb.run.summary[privacy_key] = value
+                        if key in _PRIVACY_SUMMARY_KEYS:
+                            # Privacy keys reach summary in their rewritten
+                            # ``privacy/*`` form; non-privacy summary keys
+                            # (e.g. ``train_converged_microbatch_size``) get
+                            # the same ``train/*`` rewrite as the per-step
+                            # stream so dashboards see one consistent name.
+                            summary_key = _rewrite_privacy_key(key)
+                            if summary_key is None:
+                                summary_key = "train/" + key
+                            self._wandb.run.summary[summary_key] = value
                     non_scalar_logs = {
                         key: value
                         for key, value in raw_logs.items()
                         if key not in single_value_scalars
+                        and key not in _PRIVACY_PER_STEP_SKIP_KEYS
                     }
                     self._wandb.log(
                         {
@@ -217,7 +243,12 @@ def wrap_reporting_callback_class(callback_cls: type[Any]) -> type[Any]:
                     self._init_summary_writer(args)
 
                 if self.tb_writer is not None:
-                    for key, value in rewrite_logs_for_reporting(logs).items():
+                    raw = {
+                        key: value
+                        for key, value in (logs or {}).items()
+                        if key not in _PRIVACY_PER_STEP_SKIP_KEYS
+                    }
+                    for key, value in rewrite_logs_for_reporting(raw).items():
                         if isinstance(value, (int, float)):
                             self.tb_writer.add_scalar(key, value, state.global_step)
                         elif isinstance(value, str):

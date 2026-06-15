@@ -216,10 +216,10 @@ def _fused_moe_backward(
     :func:`_grouped_AtB` Triton kernel, which has no group cap and needs no
     repeated-weight buffer.
 
-    ``compute_wgrad=False`` skips the mode-2 weight grads entirely (returns
-    ``dW1=dW2=None``). When the expert weights are frozen (DP-SGD LoRA on
-    attention only), those per-sample ``(B, E, ...)`` buffers are pure waste and
-    can dominate backward memory at large microbatch / many experts."""
+    ``compute_wgrad=False`` skips the mode-2 weight grads (returns
+    ``dW1=dW2=None``) for frozen expert weights: their per-sample
+    ``(B, E, ...)`` buffers are the largest backward allocation and autograd
+    discards them anyway."""
     dt = x_flat.dtype
     E = W1.shape[0]
     sort_idx, ends = _route_sort(real_eor, E)
@@ -253,8 +253,8 @@ def _fused_moe_backward(
     dx.index_add_(0, tok_s, dx_s.float())  # fp32 token reduction
     dx = dx.to(dt)
 
-    # Frozen experts (DP-SGD LoRA on attention only): the mode-2 weight grads are
-    # discarded by autograd, so skip the two giant ``(n_groups, ...)`` allocations.
+    # Frozen experts: autograd discards the mode-2 weight grads, so skip the
+    # ``(n_groups, ...)`` allocations.
     if not compute_wgrad:
         return dx, None, None, dtw
 
@@ -422,8 +422,8 @@ class Opaque_FusedMoE(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_out):
-        # needs_input_grad is (x, gate_up, down, top_k_index, top_k_weights); skip
-        # the mode-2 weight grads when both experts are frozen.
+        # needs_input_grad: (x, gate_up_proj, down_proj, top_k_index, top_k_weights).
+        # Skip the mode-2 weight grads when neither expert weight requires grad.
         compute_wgrad = ctx.needs_input_grad[1] or ctx.needs_input_grad[2]
         dx, dW1, dW2, dtw = _FusedMoEBackward.apply(
             grad_out, *ctx.saved_tensors, compute_wgrad

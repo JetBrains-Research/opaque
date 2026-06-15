@@ -1,7 +1,7 @@
 """Conftest for opaque-transformers tests.
 
-We import ``opaque.transformers`` and call ``patch_all()`` at module load so
-global HF runtime compat shims (masking, collator, checkpoint hooks) match what
+We install the global HF runtime compat shims (masking, collator, checkpoint
+hooks) at module load so they match what
 :class:`~opaque.transformers.trainer.DPTrainer` applies during ``__init__``.
 Guards: missing sub-packages must not break collection.
 
@@ -24,12 +24,12 @@ sys.path.append(str(Path(__file__).parent))
 
 from _hf_shared import MODEL_CONFIGS, STANDARD_LORA_CONFIG  # noqa: E402
 
-# Touch the façade so test collection can resolve imports; apply global
-# runtime compat patches (same env semantics as DPTrainer.__init__).
+# Apply global runtime compat patches (same env semantics as
+# DPTrainer.__init__) so test collection matches the trainer's runtime.
 try:
-    import opaque.transformers as _ot
+    from opaque.patches import apply_runtime_patches
 
-    _ot.patch_all()
+    apply_runtime_patches(compat=True)
 except ImportError:
     pass
 

@@ -21,7 +21,7 @@ from unittest.mock import patch
 import pytest
 import torch
 
-from opaque.api.transformers.trainer._config import TrainingArguments
+from opaque.api.transformers.trainer._training_arguments import TrainingArguments
 
 
 # ----------------------------------------------------------------------------

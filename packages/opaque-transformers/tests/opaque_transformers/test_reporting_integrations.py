@@ -352,6 +352,28 @@ def test_wandb_reporting_callback_rewrites_privacy_logs(tmp_path, monkeypatch):
     assert all("train/privacy_epsilon" not in payload for payload in payloads)
     assert instances[0]._wandb.run.summary["privacy/epsilon"] > 0.0
 
+    # Run-constants land in the summary but NOT in the per-step stream — only
+    # ``epsilon`` (which accumulates) and ``delta`` + ``noise_multiplier``
+    # (useful for multi-run comparison stacks) stay per-step. The calibration
+    # keys, ``noise_std``, and ``converged_microbatch_size`` are summary-only.
+    summary = instances[0]._wandb.run.summary
+    assert "privacy/noise_std" in summary
+    assert "privacy/calibration_source" in summary
+    for key in (
+        "privacy/noise_std",
+        "privacy/calibration_source",
+        "privacy/calibration_noise_multiplier",
+        "privacy/calibration_achieved_epsilon",
+        "privacy/calibration_converged",
+    ):
+        assert all(key not in payload for payload in payloads), (
+            f"{key} should be summary-only, not per-step"
+        )
+    # ``delta`` and ``noise_multiplier`` are kept in the per-step stream by
+    # design (single value per run → renders as a comparison stack across runs).
+    assert any("privacy/delta" in payload for payload in payloads)
+    assert any("privacy/noise_multiplier" in payload for payload in payloads)
+
 
 def test_artifact_callback_sees_complete_dp_checkpoint_after_save(
     tmp_path, monkeypatch

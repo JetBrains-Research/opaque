@@ -10,11 +10,21 @@ batched input (``(B, T, V)`` / ``(B, T)``).
 Numerical stability comes from :func:`torch.log_softmax`, which uses the
 log-sum-exp trick internally; we never materialise ``exp(logits)`` so large
 logits do not overflow.
+
+On CUDA the call dispatches to the patches chunked CE Triton kernel via
+``opaque_selective_log_softmax``, which never allocates the intermediate
+``log_softmax(logits)`` tensor. Off CUDA (CPU CI, MPS) the eager
+``log_softmax + gather`` path keeps the numeric contract intact.
 """
 
 from __future__ import annotations
 
 import torch
+
+from opaque.api.alignment._fused_lce import (
+    import_ce_kernel,
+    selective_log_softmax_available,
+)
 
 __all__ = ["selective_log_softmax"]
 
@@ -35,6 +45,10 @@ def selective_log_softmax(logits: torch.Tensor, indices: torch.Tensor) -> torch.
         Float tensor of shape ``(...)`` holding ``log p`` for the selected
         token at each position.
     """
+    if selective_log_softmax_available(logits):
+        kernel_mod = import_ce_kernel()
+        (logits,) = kernel_mod.follow_autocast(logits)
+        return kernel_mod.opaque_selective_log_softmax(logits, indices)
     log_probs = torch.log_softmax(logits, dim=-1)
     gathered = torch.gather(log_probs, dim=-1, index=indices.unsqueeze(-1))
     return gathered.squeeze(-1)

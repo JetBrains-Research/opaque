@@ -7,13 +7,13 @@
 #   RUN_NAME="trainer-ddp-dpsgd" \
 #     uv run cadence execution start \
 #     --preset ".cadence/configs/train_causal_lm_trainer (mellum_kstack_distributed).yaml" \
-#     -e EXTRA_ARGS="--max-steps 100 --noise-multiplier 1.0 --seed 42"
+#     -e EXTRA_ARGS="--stop-at-step 100 --noise-multiplier 1.0 --seed 42"
 #
 #   # DP-FTRL banded-MF with b_min_sep sampler
 #   RUN_NAME="trainer-ddp-dpftrl" \
 #     uv run cadence execution start \
 #     --preset ".cadence/configs/train_causal_lm_trainer (mellum_kstack_distributed).yaml" \
-#     -e EXTRA_ARGS="--max-steps 100 --noise-multiplier 1.0 --noise-mechanism mf_band --noise-mechanism-kwargs bands=16,momentum=0.9 --sampler b_min_sep --seed 42"
+#     -e EXTRA_ARGS="--stop-at-step 100 --noise-multiplier 1.0 --noise-mechanism mf_band --noise-mechanism-kwargs bands=16,momentum=0.9 --sampler b_min_sep --seed 42"
 #
 # Phase 10 wiring in _dp_trainer.py:
 #   - Phase 10a topology resolution (L374-379)

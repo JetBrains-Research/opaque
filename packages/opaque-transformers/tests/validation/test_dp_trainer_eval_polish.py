@@ -32,7 +32,8 @@ from torch import Tensor
 from transformers.trainer_utils import EvalPrediction
 from transformers.utils import ModelOutput
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments, TrainOutput
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
+from opaque.transformers.trainer.types import TrainOutput
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

@@ -5,7 +5,7 @@ Contains pure-Python utilities (``MODEL_CONFIGS``, ``STANDARD_LORA_CONFIG``,
 ``gpu_memory_gate_reason``, ``load_model_with_lora``,
 ``run_dp_training_step``) used by tests under ``validation/`` and
 ``distributed/``.  Session-scoped fixtures live in the sibling ``conftest.py``,
-which imports ``opaque.transformers`` and calls ``patch_all()`` so global HF
+which calls ``opaque.patches.apply_runtime_patches(compat=True)`` so global HF
 runtime compat shims are active for the whole test tree (DPTrainer also applies
 them on construction).
 """

@@ -573,7 +573,7 @@ def parse_args():
         "--gradient-checkpointing", action=argparse.BooleanOptionalAction, default=False
     )
     train_g.add_argument(
-        "--cpu-offload", action=argparse.BooleanOptionalAction, default=False
+        "--activation-offloading", action=argparse.BooleanOptionalAction, default=False
     )
 
     # LoRA
@@ -1301,7 +1301,7 @@ def main():
 
     offload_ctx = (
         torch.autograd.graph.save_on_cpu(pin_memory=True)
-        if args.cpu_offload
+        if args.activation_offloading
         else contextlib.nullcontext()
     )
 

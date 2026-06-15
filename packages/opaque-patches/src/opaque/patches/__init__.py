@@ -19,6 +19,7 @@ from opaque.api.patches import (
     apply_peft_model_patches,
     apply_runtime_patches,
     apply_transformers_model_patches,
+    is_runtime_patched,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "apply_runtime_patches",
     "apply_transformers_model_patches",
     "apply_peft_model_patches",
+    "is_runtime_patched",
 ]

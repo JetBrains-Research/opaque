@@ -38,11 +38,19 @@ two noise/sampling imports change.
 |---|---|
 | `opaque.alignment.sft.loss` | `nll_loss`, `dft_loss`, and the fused twins `fused_nll_loss`, `fused_dft_loss` |
 | `opaque.alignment.sft.collator` | `language_modeling_collator` (output schema `LMBatch` in `…collator.types`) |
-| `opaque.alignment.dpo.loss` | per-sequence logp (`sequence_logp`, `fused_sequence_logp`), 14 per-pair heads, and the log-ratio combinators |
+| `opaque.alignment.dpo.loss` | per-sequence logp (`sequence_logp`, `fused_sequence_logp`), 15 exported loss heads (13 per-pair + 2 reference-free, `simpo_loss` / `odds_ratio_loss`), and the 5 log-ratio combinators |
 | `opaque.alignment.dpo.collator` | `preference_collator` |
 | `opaque.alignment.dpo.reference` | `compute_ref_logprobs_for_dataset`, `null_ref_context`, `with_disabled_adapter`, `ema_update_reference` |
 | `opaque.alignment.dpo.metric` | `reward_metrics` |
 | `opaque.alignment.dpo.data` | `extract_prompt` |
+
+The `DPOTrainer` dispatcher (`opaque.transformers.trl`) maps **15**
+`loss_type` names to these exported heads — the 13 per-pair heads, plus `simpo`
+(added to the dispatcher) and `chosen_nll` (opaque's name for TRL's `sft`,
+reusing `chosen_nll_loss`). The
+reference-free composites `cpo` / `orpo` are assembled in the trainer from
+existing heads (a preference / odds-ratio term plus a per-token-mean NLL), so
+they are **not** separate exported heads.
 
 ## See also
 

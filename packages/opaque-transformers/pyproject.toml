@@ -22,7 +22,18 @@ dependencies = [
     "opaque-dpftrl",
     "opaque-accounting",
     "opaque-optimizers",
+    "opaque-alignment",
 ]
+
+[project.optional-dependencies]
+# Enables the ``opaque.transformers.trl.SFTConfig.from_trl`` /
+# ``DPOConfig.from_trl`` classmethods, which accept a real
+# ``trl.SFTConfig`` / ``trl.DPOConfig`` instance and translate it into
+# opaque's equivalent. The opaque trainers themselves do NOT require trl
+# — they re-implement the TRL-shaped surface natively. This extra is
+# only for users coming from existing TRL pipelines who want to convert
+# their configs.
+trl = ["trl>=1.0,<2.0"]
 
 [tool.setuptools]
 package-dir = { "" = "src" }
@@ -47,3 +58,4 @@ opaque-dpsgd = { workspace = true }
 opaque-dpftrl = { workspace = true }
 opaque-accounting = { workspace = true }
 opaque-optimizers = { workspace = true }
+opaque-alignment = { workspace = true }
