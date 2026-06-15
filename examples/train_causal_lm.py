@@ -798,7 +798,7 @@ def parse_args():
         _set("max_seq_len", 1024)
         _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
-        _set("microbatch_size", 8)
+        _set("microbatch_size", 16)
     elif args.preset == "qwen-7b-kstack":
         # Qwen2.5-Coder-7B + KStack LoRA fine-tuning at ε=3.  Inherits
         # the trainer's adafactor + BC-off defaults.

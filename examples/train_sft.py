@@ -971,7 +971,7 @@ def parse_args():
         _set("num_eval_samples", 1000)
         _set("num_epochs", 3)
         _set("batch_size", 128)
-        _set("microbatch_size", 8)
+        _set("microbatch_size", 16)
         _set("log_steps", 2)
         _set("eval_steps", 10)
         _set("target_epsilon", 10.0)

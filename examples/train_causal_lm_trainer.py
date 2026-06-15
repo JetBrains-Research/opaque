@@ -756,7 +756,7 @@ def parse_args() -> argparse.Namespace:
         _set("max_seq_len", 1024)
         _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
-        _set("microbatch_size", 8)
+        _set("microbatch_size", 16)
         _set("auto_find_microbatch_size", True)
     elif args.preset == "custom":
         pass
