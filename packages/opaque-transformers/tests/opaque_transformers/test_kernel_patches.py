@@ -650,9 +650,9 @@ class TestLoRAPatches:
         from opaque.patches import apply_model_patches
 
         base = torch.nn.Linear(64, 64, bias=False).to(device)
-        lora = PeftLoRALinear(
-            base, "default", r=8, lora_alpha=16, lora_dropout=0.0
-        ).to(device)
+        lora = PeftLoRALinear(base, "default", r=8, lora_alpha=16, lora_dropout=0.0).to(
+            device
+        )
         apply_model_patches(lora)
 
         if torch.cuda.is_available():
