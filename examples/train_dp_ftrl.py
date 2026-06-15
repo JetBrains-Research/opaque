@@ -1339,7 +1339,6 @@ def main():
     def _audit_method(estimate):
         """Pick the audit-method object on `estimate` per ``args.audit_method``."""
         return estimate.gdp() if args.audit_method == "gdp" else estimate.eps_delta()
-    pad_token_id = tokenizer.pad_token_id
 
     def eval_loss(trainable):
         """Token-weighted CE over the eval set (pad tokens masked to ``-100``).

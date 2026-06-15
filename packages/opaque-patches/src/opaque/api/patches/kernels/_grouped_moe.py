@@ -271,7 +271,7 @@ class _GroupedMoEBackward(torch.autograd.Function):
         if not compute_wgrad:
             # Frozen experts: emit a single unbatched zero weight grad with
             # ``out_dim=None`` so vmap broadcasts it, instead of materialising the
-            # per-sample ``(B, E, ...)`` buffers that OOM at Mellum-2.0 scale.
+            # per-sample ``(B, E, ...)`` buffers that OOM at large batch scale.
             return (
                 (
                     dx.reshape(B, T, H),
