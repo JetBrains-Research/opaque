@@ -203,6 +203,7 @@ def _fused_moe_backward(
     H,
     I,
     K,
+    compute_wgrad=True,
 ):
     """Manual grouped MoE backward. Returns ``dx`` (N,H), ``dW1`` (n_groups,2I,H),
     ``dW2`` (n_groups,H,I), ``dtw`` (N,K).
@@ -213,7 +214,12 @@ def _fused_moe_backward(
     ``group_of_row`` (== real expert for the summed path, or the virtual expert
     ``b*E+e`` for the per-sample DP path) and run through the custom
     :func:`_grouped_AtB` Triton kernel, which has no group cap and needs no
-    repeated-weight buffer."""
+    repeated-weight buffer.
+
+    ``compute_wgrad=False`` skips the mode-2 weight grads entirely (returns
+    ``dW1=dW2=None``). When the expert weights are frozen (DP-SGD LoRA on
+    attention only), those per-sample ``(B, E, ...)`` buffers are pure waste and
+    can dominate backward memory at large microbatch / many experts."""
     dt = x_flat.dtype
     E = W1.shape[0]
     sort_idx, ends = _route_sort(real_eor, E)
@@ -247,6 +253,11 @@ def _fused_moe_backward(
     dx.index_add_(0, tok_s, dx_s.float())  # fp32 token reduction
     dx = dx.to(dt)
 
+    # Frozen experts (DP-SGD LoRA on attention only): the mode-2 weight grads are
+    # discarded by autograd, so skip the two giant ``(n_groups, ...)`` allocations.
+    if not compute_wgrad:
+        return dx, None, None, dtw
+
     # Per-group weight grads (mode-2): re-sort the real-expert-ordered rows into
     # ``group_of_row`` order (a no-op permutation when groups == real experts),
     # then the custom kernel keeps each group separate — NOT summed across groups.
@@ -272,7 +283,9 @@ class _FusedMoEBackward(torch.autograd.Function):
     No double backward."""
 
     @staticmethod
-    def forward(grad_out, x, gate_up_proj, down_proj, top_k_index, top_k_weights):
+    def forward(
+        grad_out, x, gate_up_proj, down_proj, top_k_index, top_k_weights, compute_wgrad
+    ):
         N, H = x.shape
         K = top_k_index.shape[-1]
         E = gate_up_proj.shape[0]
@@ -294,6 +307,7 @@ class _FusedMoEBackward(torch.autograd.Function):
             H=H,
             I=I,
             K=K,
+            compute_wgrad=compute_wgrad,
         )
         return dx, dW1, dW2, dtw
 
@@ -307,7 +321,15 @@ class _FusedMoEBackward(torch.autograd.Function):
 
     @staticmethod
     def vmap(
-        info, in_dims, grad_out, x, gate_up_proj, down_proj, top_k_index, top_k_weights
+        info,
+        in_dims,
+        grad_out,
+        x,
+        gate_up_proj,
+        down_proj,
+        top_k_index,
+        top_k_weights,
+        compute_wgrad,
     ):
         # DP-SGD contract: grad_out/x/top_k batched at 0; shared weights unbatched.
         B, T, H = x.shape
@@ -343,7 +365,21 @@ class _FusedMoEBackward(torch.autograd.Function):
             H=H,
             I=I,
             K=K,
+            compute_wgrad=compute_wgrad,
         )
+        if not compute_wgrad:
+            # Frozen experts: emit a single unbatched zero weight grad with
+            # ``out_dim=None`` so vmap broadcasts it, instead of materialising the
+            # per-sample ``(B, E, ...)`` buffers.
+            return (
+                (
+                    dx.reshape(B, T, H),
+                    gate_up_proj.new_zeros(gate_up_proj.shape),
+                    down_proj.new_zeros(down_proj.shape),
+                    dtw.reshape(B, T, K),
+                ),
+                (0, None, None, 0),
+            )
         # dx/dtw per-token (merged batch); dW1/dW2 per-sample (kept, for DP-SGD).
         return (
             (
@@ -386,7 +422,12 @@ class Opaque_FusedMoE(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_out):
-        dx, dW1, dW2, dtw = _FusedMoEBackward.apply(grad_out, *ctx.saved_tensors)
+        # needs_input_grad is (x, gate_up, down, top_k_index, top_k_weights); skip
+        # the mode-2 weight grads when both experts are frozen.
+        compute_wgrad = ctx.needs_input_grad[1] or ctx.needs_input_grad[2]
+        dx, dW1, dW2, dtw = _FusedMoEBackward.apply(
+            grad_out, *ctx.saved_tensors, compute_wgrad
+        )
         # inputs: x, gate_up_proj, down_proj, top_k_index (int, no grad), top_k_weights
         return dx, dW1, dW2, None, dtw
 
