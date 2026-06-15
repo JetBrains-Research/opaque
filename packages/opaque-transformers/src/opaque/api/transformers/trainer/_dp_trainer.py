@@ -35,7 +35,10 @@ from datasets import Dataset
 from opaque.accounting import Accountant
 from opaque.accounting import calibration as cal
 from opaque.api.engine.clipping import clipped_grad
-from opaque.api.engine.device import device_capabilities
+from opaque.api.engine.device import (
+    device_capabilities,
+    sdpa_autocast_under_vmap_broken,
+)
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpftrl.noise import mf_gaussian_noise
@@ -198,39 +201,6 @@ def _compile_with_fullgraph_fallback(
             return fallback(*args, **kwargs)
 
     return wrapper
-
-
-@functools.lru_cache(maxsize=None)
-def _sdpa_autocast_under_vmap_broken(device_type: str) -> bool:
-    """Probe whether ``torch.autocast`` fails to cast SDPA under ``vmap(grad)``.
-
-    PyTorch bug (MPS, as of torch 2.10): ``torch.autocast`` does not cast
-    ``scaled_dot_product_attention`` inputs under functorch ``vmap``/``grad`` on
-    MPS — it does on CPU/CUDA, and it does on MPS *without* functorch.  So a
-    bf16 DP step (where RoPE leaves q/k fp32 while v is the bf16 v_proj output)
-    crashes in attention with a query/value dtype mismatch.
-
-    Run once (cached) and matched to the live torch, so the eager-attention
-    workaround auto-drops the moment a PyTorch release fixes it.  Returns
-    ``False`` on non-MPS devices and when the op actually works.
-    """
-    if device_type != "mps" or not torch.backends.mps.is_available():
-        return False
-
-    def _loss(scale: Tensor, q: Tensor, k: Tensor, v: Tensor) -> Tensor:
-        out = torch.nn.functional.scaled_dot_product_attention(q * scale, k, v)
-        return out.float().sum()
-
-    q = torch.randn(2, 1, 4, 8, device="mps")
-    k = torch.randn(2, 1, 4, 8, device="mps")
-    v = torch.randn(2, 1, 4, 8, device="mps", dtype=torch.bfloat16)
-    scale = torch.tensor(1.0, device="mps")
-    try:
-        with torch.autocast(device_type="mps", dtype=torch.bfloat16):
-            torch.vmap(torch.func.grad(_loss), in_dims=(None, 0, 0, 0))(scale, q, k, v)
-    except RuntimeError:
-        return True  # the dtype-mismatch crash → broken, workaround needed
-    return False  # ran cleanly → a torch that fixed it; no workaround
 
 
 class TrainOutput(NamedTuple):
@@ -744,13 +714,13 @@ class DPTrainer:
         under functorch ``vmap(grad)`` (it does on CPU/CUDA), so the bf16 DP step
         crashes in attention.  Eager attention sidesteps it **losslessly** —
         under ``vmap`` SDPA already decomposes to the same matmuls.  Probe-gated
-        (:func:`_sdpa_autocast_under_vmap_broken`) so this auto-drops on a torch
-        that fixes the upstream bug.  See the minimal repro in that probe.
+        (:func:`opaque.device.sdpa_autocast_under_vmap_broken`) so this auto-drops
+        on a torch that fixes the upstream bug.  See the minimal repro in that probe.
         """
         if (
             self._amp_dtype is None
             or self._device.type != "mps"
-            or not _sdpa_autocast_under_vmap_broken(self._device.type)
+            or not sdpa_autocast_under_vmap_broken(self._device.type)
         ):
             return
         model = self._model

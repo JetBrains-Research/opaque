@@ -7,6 +7,7 @@ from opaque.device import (
     DeviceCapabilities,
     device_capabilities,
     fused_kernels_available,
+    sdpa_autocast_under_vmap_broken,
 )
 
 
@@ -64,3 +65,17 @@ class TestDeviceCapabilities:
         assert caps.is_accelerator is True
         assert caps.peak_memory_trackable is True
         assert caps.supports_pin_memory is True
+
+
+class TestSdpaAutocastUnderVmapBroken:
+    def test_false_off_mps(self):
+        # The bug (and its eager-attention workaround) is MPS-only; CPU/CUDA
+        # always cast SDPA correctly under vmap(grad).
+        assert sdpa_autocast_under_vmap_broken("cpu") is False
+        assert sdpa_autocast_under_vmap_broken("cuda") is False
+
+    @pytest.mark.mps
+    def test_returns_bool_on_mps(self):
+        # Empirical probe — True on a buggy torch, False once the upstream fix
+        # (pytorch/pytorch#187282) lands; either way a plain bool.
+        assert isinstance(sdpa_autocast_under_vmap_broken("mps"), bool)

@@ -27,6 +27,7 @@ __all__ = [
     "DeviceCapabilities",
     "device_capabilities",
     "fused_kernels_available",
+    "sdpa_autocast_under_vmap_broken",
 ]
 
 
@@ -74,6 +75,40 @@ def fused_kernels_available() -> bool:
     pure-PyTorch eager implementations.
     """
     return torch.cuda.is_available() and _triton_importable()
+
+
+@functools.lru_cache(maxsize=None)
+def sdpa_autocast_under_vmap_broken(device_type: str) -> bool:
+    """Whether ``torch.autocast`` fails to cast SDPA under ``vmap(grad)`` here.
+
+    PyTorch bug (MPS): wrapped functorch tensors lose the MPS dispatch key, so
+    ``AutocastMPS`` is never re-derived and ``torch.autocast`` silently no-ops
+    under ``vmap``/``grad``.  A bf16 DP step (RoPE leaves q/k fp32 while v is the
+    bf16 v_proj output) then crashes in ``scaled_dot_product_attention`` with a
+    query/value dtype mismatch.  It casts fine on CPU/CUDA, and on MPS *without*
+    functorch.  Tracked upstream as pytorch/pytorch#187265 (fix #187282).
+
+    Empirical (run the failing op once, cached) and matched to the live torch, so
+    the eager-attention workaround auto-drops the moment a release fixes it.
+    Returns ``False`` on non-MPS devices and when the op runs cleanly.
+    """
+    if device_type != "mps" or not torch.backends.mps.is_available():
+        return False
+
+    def _loss(scale, q, k, v):
+        out = torch.nn.functional.scaled_dot_product_attention(q * scale, k, v)
+        return out.float().sum()
+
+    q = torch.randn(2, 1, 4, 8, device="mps")
+    k = torch.randn(2, 1, 4, 8, device="mps")
+    v = torch.randn(2, 1, 4, 8, device="mps", dtype=torch.bfloat16)
+    scale = torch.tensor(1.0, device="mps")
+    try:
+        with torch.autocast(device_type="mps", dtype=torch.bfloat16):
+            torch.vmap(torch.func.grad(_loss), in_dims=(None, 0, 0, 0))(scale, q, k, v)
+    except RuntimeError:
+        return True  # dtype-mismatch crash → bug present, workaround needed
+    return False  # ran cleanly → a torch that fixed it
 
 
 def _recommended_compile_backend(device_type: str) -> str | None:

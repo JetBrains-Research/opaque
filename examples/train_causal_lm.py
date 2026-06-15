@@ -54,6 +54,7 @@ from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
 
 from opaque.patches import apply_model_patches, apply_runtime_patches
+from opaque.device import sdpa_autocast_under_vmap_broken
 
 apply_runtime_patches()
 
@@ -592,15 +593,6 @@ def parse_args():
         "OPAQUE_NO_KERNEL_PATCH=1.",
     )
     dp_group.add_argument(
-        "--grouped-moe",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Force the grouped-GEMM MoE on/off (kernel-fused Triton on CUDA / "
-        "torch._grouped_mm on MPS-CPU) independent of --kernel-patches. Default "
-        "(unset) follows the kernels gate. Only affects MoE models (e.g. Mellum2); "
-        "--no-grouped-moe runs the dense expert path.",
-    )
-    dp_group.add_argument(
         "--torch-compile",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -997,8 +989,12 @@ def main():
 
     # Attention implementation: SDPA is the default in recent HuggingFace Transformers
     # and provides up to 3.6x memory savings over eager at seq_len=1024 with vmap.
-    # Use --attention eager to override (e.g., for debugging).
-    use_eager = args.attention == "eager" or device.type == "mps"
+    # Use --attention eager to override (e.g., for debugging). On MPS, force eager
+    # only while the live torch has the autocast-under-vmap SDPA bug (probe-gated,
+    # so this auto-drops once pytorch/pytorch#187282 lands).
+    use_eager = args.attention == "eager" or (
+        device.type == "mps" and sdpa_autocast_under_vmap_broken(device.type)
+    )
 
     # When a specific SDPA backend is requested, enable only that one globally.
     if not use_eager and args.sdpa_backend is not None:
@@ -1089,20 +1085,11 @@ def main():
     # compat bucket (not ``kernels``) because HF's experts forward isn't
     # ``vmap(grad)``-able and DP-SGD breaks without it — as do ``kv_cache`` and
     # the PEFT kernels. The global runtime patches above are untouched either way.
-    # ``--grouped-moe`` overrides the grouped-GEMM MoE gate independent of
-    # --kernel-patches (default None = follow the kernels gate). Lets the eager
-    # baseline keep dense MoE while a kernels-off run still exercises grouped, and
-    # vice-versa — used to measure grouped-vs-dense MoE on MPS/CPU.
-    moe_kw = {} if args.grouped_moe is None else {"grouped_moe": args.grouped_moe}
     if args.kernel_patches:
-        apply_model_patches(
-            model, kernels=True, fused_linear_cross_entropy=True, **moe_kw
-        )
+        apply_model_patches(model, kernels=True, fused_linear_cross_entropy=True)
     else:
         print("Kernel patches: DISABLED (eager baseline; compat/MoE/PEFT stay on)")
-        apply_model_patches(
-            model, kernels=False, fused_linear_cross_entropy=False, **moe_kw
-        )
+        apply_model_patches(model, kernels=False, fused_linear_cross_entropy=False)
     model.print_trainable_parameters()
     print_memory(device, "After LoRA")
 

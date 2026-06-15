@@ -120,6 +120,7 @@ from transformers import (
 )
 
 from opaque.patches import apply_model_patches, apply_runtime_patches
+from opaque.device import sdpa_autocast_under_vmap_broken
 
 apply_runtime_patches()
 
@@ -625,6 +626,17 @@ def parse_args():
     )
     dp_g.add_argument("--microbatch-size", type=int, default=None)
     dp_g.add_argument(
+        "--kernel-patches",
+        action=argparse.BooleanOptionalAction,
+        default=os.environ.get("OPAQUE_NO_KERNEL_PATCH", "0") != "1",
+        help="Apply the opaque Triton speed kernels (rope/rms_norm/activation/"
+        "fused-CE) to the model. On by default (auto-falls back to eager on "
+        "non-CUDA hosts). --no-kernel-patches forces the eager baseline; the "
+        "compat vmap-safety wrappers — including the load-bearing MoE experts "
+        "patch — plus kv_cache and PEFT kernels stay on. Default also follows "
+        "OPAQUE_NO_KERNEL_PATCH=1.",
+    )
+    dp_g.add_argument(
         "--torch-compile",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -948,7 +960,11 @@ def main():
     torch.manual_seed(args.seed)
 
     # --- Attention ---
-    use_eager = args.attention == "eager" or device.type == "mps"
+    # Force eager on MPS only while the live torch has the autocast-under-vmap
+    # SDPA bug (probe-gated, so it auto-drops once pytorch/pytorch#187282 lands).
+    use_eager = args.attention == "eager" or (
+        device.type == "mps" and sdpa_autocast_under_vmap_broken(device.type)
+    )
     if not use_eager and args.sdpa_backend is not None:
         backends = {
             "flash": torch.backends.cuda.enable_flash_sdp,
@@ -1014,10 +1030,18 @@ def main():
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
-    # Loss is the only consumer of the forward output in this script, so
-    # opt into the fused linear+CE kernel (skips ``lm_head`` and returns
+    # Loss is the only consumer of the forward output in this script, so the
+    # default opts into the fused linear+CE kernel (skips ``lm_head`` and returns
     # ``logits=None`` on the fast path — see ``apply_model_patches`` docs).
-    apply_model_patches(model, fused_linear_cross_entropy=True)
+    # ``--no-kernel-patches`` passes ``kernels=False`` for an eager baseline: it
+    # disables only the Triton speed kernels and fused linear-CE, while the
+    # ``compat`` vmap-safety wrappers (the load-bearing MoE experts patch,
+    # kv_cache, PEFT kernels) stay on.
+    if args.kernel_patches:
+        apply_model_patches(model, kernels=True, fused_linear_cross_entropy=True)
+    else:
+        print("Kernel patches: DISABLED (eager baseline; compat/MoE/PEFT stay on)")
+        apply_model_patches(model, kernels=False, fused_linear_cross_entropy=False)
     model.print_trainable_parameters()
     print_memory(device, "After LoRA")
 
