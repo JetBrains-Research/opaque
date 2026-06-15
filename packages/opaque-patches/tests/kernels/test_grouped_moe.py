@@ -179,12 +179,12 @@ def test_grouped_moe_dispatch_mps():
     _check_dispatch("mps")
 
 
-def _check_fused_gate(device: str) -> None:
-    # ``fused=False`` forces the dense ``Opaque_MoE`` compat path even for large E
-    # where the grouped-GEMM path is eligible: the output is bit-identical to the
-    # dense oracle (a clean proof of the route), while ``fused=True`` takes the
+def _check_grouped_gate(device: str) -> None:
+    # ``grouped=False`` forces the dense ``Opaque_MoE`` compat path even for large
+    # E where the grouped-GEMM path is eligible: the output is bit-identical to the
+    # dense oracle (a clean proof of the route), while ``grouped=True`` takes the
     # grouped path (equal to the oracle only within the accumulation-roundoff
-    # floor). This is the gate the ``fused_moe`` patch flag rides on.
+    # floor). This is the gate the ``grouped_moe`` patch flag rides on.
     gu, dn, x3, idx3, w3, B, T, H = _inputs(device, E=16)
     x2, idx2, w2 = (
         x3.reshape(B * T, H),
@@ -192,16 +192,16 @@ def _check_fused_gate(device: str) -> None:
         w3.reshape(B * T, -1),
     )
     ref = Opaque_MoE.apply(x2, gu, dn, idx2, w2)
-    dense = opaque_moe(x2, gu, dn, idx2, w2, fused=False)
-    grouped = opaque_moe(x2, gu, dn, idx2, w2, fused=True)
-    assert (dense - ref).abs().max().item() == 0.0, "fused=False must take dense path"
-    assert (grouped - ref).abs().max().item() < _TOL, "fused=True grouped parity"
+    dense = opaque_moe(x2, gu, dn, idx2, w2, grouped=False)
+    grouped = opaque_moe(x2, gu, dn, idx2, w2, grouped=True)
+    assert (dense - ref).abs().max().item() == 0.0, "grouped=False must take dense path"
+    assert (grouped - ref).abs().max().item() < _TOL, "grouped=True grouped parity"
 
 
-def test_grouped_moe_fused_gate_cpu():
-    _check_fused_gate("cpu")
+def test_grouped_moe_grouped_gate_cpu():
+    _check_grouped_gate("cpu")
 
 
 @pytest.mark.mps
-def test_grouped_moe_fused_gate_mps():
-    _check_fused_gate("mps")
+def test_grouped_moe_grouped_gate_mps():
+    _check_grouped_gate("mps")

@@ -167,18 +167,19 @@ class Opaque_MoE(torch.autograd.Function):
 _SPARSE_MOE_MIN_EXPERTS = 16
 
 
-def opaque_moe(x, gate_up_proj, down_proj, top_k_index, top_k_weights, *, fused=True):
+def opaque_moe(x, gate_up_proj, down_proj, top_k_index, top_k_weights, *, grouped=True):
     """MoE expert FFN. Autograd + ``vmap(grad)`` (DP-SGD) flow through the
     two-Function pair above.
 
-    ``fused`` (default ``True``) selects a **performance** grouped-GEMM path
-    suited to the host; ``fused=False`` forces the dense ``Opaque_MoE`` **compat**
-    path on every host. The patch layer wires ``fused`` from the ``fused_moe``
-    gate (which defaults to ``kernels``), so an eager run gets dense MoE while the
-    vmap-safe experts ``forward`` itself stays installed for DP correctness.
+    ``grouped`` (default ``True``) selects a **performance** grouped-GEMM path
+    suited to the host; ``grouped=False`` forces the dense ``Opaque_MoE``
+    **compat** path on every host. The patch layer wires ``grouped`` from the
+    ``grouped_moe`` gate, so a dense run still keeps the vmap-safe experts
+    ``forward`` installed for DP correctness.
 
-    With ``fused=True`` the dispatch is:
-    - CUDA bf16/fp16 + Triton -> sparse grouped-GEMM Triton ``Opaque_FusedMoE``;
+    With ``grouped=True`` the dispatch is:
+    - CUDA bf16/fp16 + Triton -> sparse grouped-GEMM Triton ``Opaque_FusedMoE``
+      (the *fused* variant — kernel-fused grouped GEMM);
     - else ``E >= _SPARSE_MOE_MIN_EXPERTS`` and ``torch._grouped_mm`` available
       (the MPS/CPU large-expert path) -> ``Opaque_GroupedMoE``;
     - otherwise -> dense ``Opaque_MoE``.
@@ -188,7 +189,7 @@ def opaque_moe(x, gate_up_proj, down_proj, top_k_index, top_k_weights, *, fused=
     (forward bit-identical, backward within the bf16 floor — see
     ``test_kernel_precision``).
     """
-    if fused:
+    if grouped:
         if _TRITON_AVAILABLE and x.is_cuda:
             from ._utils import follow_autocast
 
