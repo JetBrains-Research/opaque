@@ -55,16 +55,25 @@ jobs:
       - name: cargo test
         run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
 
-  # Tests run in parallel two ways: a CI matrix shards the heavy packages
-  # across runners (one job per shard × device), and `pytest -n auto` shards
-  # across cores within each runner (`--dist loadscope` keeps each test
-  # class/module on one worker so module/session fixtures stay effective and
-  # test ordering is preserved). The marker expression adds `not mps` only on
-  # the ubuntu (CPU) device; the macOS device keeps mps-marked tests.
+  # One matrix over PLATFORMS (cpu / mps / gpu) × shards. Parallelism is
+  # two-level: the matrix fans shards across runners, and `pytest -n auto`
+  # (cpu/mps only) fans across cores within a runner (`--dist loadscope` keeps
+  # each class/module on one worker so fixtures/order are preserved).
+  #
+  # The GPU platform is special and carried as a single `include` leg:
+  #   * one self-hosted GPU runner, so it is NOT sharded (parallel shards would
+  #     just queue on the one box) and runs serially (xdist workers would
+  #     contend for device memory) — hence `xdist: ""`;
+  #   * `soft: true` -> `continue-on-error`, so a GPU failure (or a runner that
+  #     can't see CUDA) is reported as success to `needs.*.result` and does NOT
+  #     block the required gate below. The GPU leg still shows red and turns the
+  #     overall run red — visible signal without gating merges while the runner
+  #     is unproven. Drop `soft` once the GPU runner reliably runs CUDA.
   python-tests:
     name: opaque-${{ matrix.shard.name }} (${{ matrix.device.label }})
     runs-on: ${{ matrix.device.os }}
-    timeout-minutes: 25  # safety net: a hung/preempted runner fails fast instead of hanging
+    continue-on-error: ${{ matrix.soft == true }}
+    timeout-minutes: 30  # safety net: a hung/preempted runner fails fast
     strategy:
       fail-fast: false
       matrix:
@@ -89,10 +98,24 @@ jobs:
             label: CPU
             os: ubuntu-latest
             marker: "not cuda and not mps and not slow"
+            xdist: "-n auto --dist loadscope"
           - name: mps
             label: MPS
             os: macos-latest
             marker: "not cuda and not slow"
+            xdist: "-n auto --dist loadscope"
+        # GPU platform: a single unsharded, serial, non-blocking leg.
+        include:
+          - shard:
+              name: all
+              paths: packages tests
+            device:
+              name: gpu
+              label: CUDA
+              os: GPU-runner-001
+              marker: "cuda and not slow"
+              xdist: ""
+            soft: true
 
     steps:
       - uses: actions/checkout@v5
@@ -112,73 +135,12 @@ jobs:
       - name: uv sync
         run: uv sync --group dev --all-packages --extra all
 
-      - name: pytest
-        run: |
-          uv run pytest ${{ matrix.shard.paths }} \
-            -m "${{ matrix.device.marker }}" \
-            -n auto --dist loadscope \
-            --cov=opaque \
-            --cov-report=xml:coverage.xml \
-            -q
-
-      - uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.xml
-          flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
-          fail_ci_if_error: false
-
-  # Single aggregating status check. `needs.python-tests.result` is `success`
-  # only when EVERY shard (all shard×device combinations) succeeded, so make
-  # *this one job* the required branch-protection check instead of listing
-  # each shard. Shards can be added, renamed, or removed without touching the
-  # protection rule. `if: always()` ensures the gate runs (and reports a
-  # failure) even when a shard fails, rather than being skipped. The GPU lane
-  # is intentionally NOT aggregated here — see python-tests-cuda.
-  python-tests-gate:
-    name: Python tests
-    if: always()
-    needs: [python-tests]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require all test shards to pass
-        run: |
-          result="${{ needs.python-tests.result }}"
-          echo "python-tests matrix result: $result"
-          test "$result" = "success"
-
-  # GPU smoke coverage on the PR gate: the fast (non-slow) CUDA-marked tests
-  # on the shared self-hosted GPU runner. Gated on the CPU/MPS shards so a PR
-  # that already fails basic checks doesn't tie up the single GPU box. Runs
-  # serially — one GPU, so xdist workers would contend for device memory. The
-  # full CUDA suite (slow DDP / pipeline / real-model tests) runs post-merge
-  # in ci.yml via `-m cuda`.
-  python-tests-cuda:
-    name: opaque (CUDA)
-    runs-on: GPU-runner-001
-    needs: [python-tests]
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - uses: astral-sh/setup-uv@v8.1.0
-        with:
-          enable-cache: true
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: uv sync
-        run: uv sync --group dev --all-packages --extra all
-
-      # Fail loudly if the runner can't actually run GPU tests. Without this,
-      # `torch.cuda.is_available()` being False makes every cuda-marked test
-      # auto-skip (see conftest.py) and the job reports green while exercising
-      # nothing — false confidence. This turns a silent no-op into a clear,
-      # diagnostic failure.
+      # GPU platform only: fail loudly if the runner can't actually run GPU
+      # tests. Otherwise `torch.cuda.is_available()` being False makes every
+      # cuda-marked test auto-skip (conftest.py) and the leg would look green
+      # while exercising nothing — false confidence.
       - name: Verify CUDA is available
+        if: ${{ matrix.device.name == 'gpu' }}
         run: |
           nvidia-smi || { echo "::error::nvidia-smi missing — runner has no visible NVIDIA GPU"; exit 1; }
           uv run python - <<'PY'
@@ -192,19 +154,38 @@ jobs:
           )
           PY
 
-      - name: pytest -m "cuda and not slow"
+      - name: pytest
         run: |
-          uv run pytest \
-            -m "cuda and not slow" \
+          uv run pytest ${{ matrix.shard.paths }} \
+            -m "${{ matrix.device.marker }}" \
+            ${{ matrix.device.xdist }} \
             --cov=opaque \
-            --cov-report=xml:coverage-cuda.xml \
+            --cov-report=xml:coverage.xml \
             -q
 
       - uses: codecov/codecov-action@v4
         with:
-          files: ./coverage-cuda.xml
-          flags: cuda
+          files: ./coverage.xml
+          flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false
+
+  # Single aggregating status check — the ONE job to mark required in branch
+  # protection. `needs.python-tests.result` is `success` only when every
+  # non-soft leg passed; the GPU leg's `continue-on-error` masks its result to
+  # success, so this gate reflects CPU + MPS only. Shards/platforms can be
+  # added or renamed without touching the protection rule. `if: always()` makes
+  # the gate report a failure (instead of being skipped) when a shard fails.
+  python-tests-gate:
+    name: Python tests
+    if: always()
+    needs: [python-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all (non-GPU) test legs to pass
+        run: |
+          result="${{ needs.python-tests.result }}"
+          echo "python-tests matrix result: $result"
+          test "$result" = "success"
 
   smoke-imports:
     name: Cross-package import smoke test

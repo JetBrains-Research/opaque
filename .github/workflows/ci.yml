@@ -26,12 +26,14 @@ jobs:
       - name: cargo test
         run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
 
-  # Same matrix/xdist sharding as the PR gate (see pr.yml for the rationale),
-  # but this lane keeps `slow` tests.
+  # Same platform matrix as the PR gate (see pr.yml for the full rationale),
+  # but this lane keeps `slow` tests and the GPU leg runs the whole `cuda`
+  # marker. The GPU platform stays a single unsharded, serial, soft leg.
   python-tests:
     name: opaque-${{ matrix.shard.name }} (${{ matrix.device.label }})
     runs-on: ${{ matrix.device.os }}
-    timeout-minutes: 35  # safety net; slow tests make these jobs longer than the PR gate
+    continue-on-error: ${{ matrix.soft == true }}
+    timeout-minutes: 40  # safety net; slow tests make these jobs longer than the PR gate
     strategy:
       fail-fast: false
       matrix:
@@ -53,10 +55,23 @@ jobs:
             label: CPU
             os: ubuntu-latest
             marker: "not cuda and not mps"
+            xdist: "-n auto --dist loadscope"
           - name: mps
             label: MPS
             os: macos-latest
             marker: "not cuda"
+            xdist: "-n auto --dist loadscope"
+        include:
+          - shard:
+              name: all
+              paths: packages tests
+            device:
+              name: gpu
+              label: CUDA
+              os: GPU-runner-001
+              marker: "cuda"
+              xdist: ""
+            soft: true
 
     steps:
       - uses: actions/checkout@v5
@@ -76,44 +91,11 @@ jobs:
       - name: uv sync
         run: uv sync --group dev --all-packages --extra all
 
-      - name: pytest
-        run: |
-          uv run pytest ${{ matrix.shard.paths }} \
-            -m "${{ matrix.device.marker }}" \
-            -n auto --dist loadscope \
-            --cov=opaque \
-            --cov-report=xml:coverage.xml \
-            -q
-
-      - uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.xml
-          flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
-          fail_ci_if_error: false
-
-  python-tests-cuda:
-    name: opaque (CUDA)
-    runs-on: GPU-runner-001
-    needs: [python-tests]
-
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - uses: astral-sh/setup-uv@v8.1.0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: uv sync
-        run: uv sync --group dev --all-packages --extra all
-
-      # Fail loudly if the runner can't actually run GPU tests — otherwise every
-      # cuda-marked test auto-skips (conftest.py) and the job reports green while
-      # exercising nothing.
+      # GPU platform only: fail loudly if the runner can't actually run GPU
+      # tests — otherwise every cuda-marked test auto-skips (conftest.py) and
+      # the leg reports green while exercising nothing.
       - name: Verify CUDA is available
+        if: ${{ matrix.device.name == 'gpu' }}
         run: |
           nvidia-smi || { echo "::error::nvidia-smi missing — runner has no visible NVIDIA GPU"; exit 1; }
           uv run python - <<'PY'
@@ -127,18 +109,19 @@ jobs:
           )
           PY
 
-      - name: pytest -m cuda
+      - name: pytest
         run: |
-          uv run pytest \
-            -m "cuda" \
+          uv run pytest ${{ matrix.shard.paths }} \
+            -m "${{ matrix.device.marker }}" \
+            ${{ matrix.device.xdist }} \
             --cov=opaque \
-            --cov-report=xml:coverage-cuda.xml \
+            --cov-report=xml:coverage.xml \
             -q
 
       - uses: codecov/codecov-action@v4
         with:
-          files: ./coverage-cuda.xml
-          flags: cuda
+          files: ./coverage.xml
+          flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false
 
   # ---------------------------------------------------------------------------
