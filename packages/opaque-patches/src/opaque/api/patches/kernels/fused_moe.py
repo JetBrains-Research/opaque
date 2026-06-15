@@ -218,9 +218,8 @@ def _fused_moe_backward(
 
     ``compute_wgrad=False`` skips the mode-2 weight grads entirely (returns
     ``dW1=dW2=None``). When the expert weights are frozen (DP-SGD LoRA on
-    attention only), those per-sample ``(B, E, ...)`` buffers are pure waste —
-    at Mellum-2.0 scale ``dW1``/``dW2`` together exceed 70 GB at microbatch=96
-    and OOM the backward even though the live forward is only ~23 GB."""
+    attention only), those per-sample ``(B, E, ...)`` buffers are pure waste and
+    can dominate backward memory at large microbatch / many experts."""
     dt = x_flat.dtype
     E = W1.shape[0]
     sort_idx, ends = _route_sort(real_eor, E)
@@ -371,7 +370,7 @@ class _FusedMoEBackward(torch.autograd.Function):
         if not compute_wgrad:
             # Frozen experts: emit a single unbatched zero weight grad with
             # ``out_dim=None`` so vmap broadcasts it, instead of materialising the
-            # per-sample ``(B, E, ...)`` buffers that OOM at Mellum-2.0 scale.
+            # per-sample ``(B, E, ...)`` buffers.
             return (
                 (
                     dx.reshape(B, T, H),
@@ -423,11 +422,8 @@ class Opaque_FusedMoE(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_out):
-        # needs_input_grad: (x, gate_up_proj, down_proj, top_k_index, top_k_weights).
-        # When the experts are frozen (DP-SGD LoRA on attention only) both weight
-        # grads are unneeded, so skip the per-sample mode-2 buffers — see
-        # ``_fused_moe_backward``'s ``compute_wgrad`` and the matching skip in
-        # ``Opaque_LinearCrossEntropyLoss``.
+        # needs_input_grad is (x, gate_up, down, top_k_index, top_k_weights); skip
+        # the mode-2 weight grads when both experts are frozen.
         compute_wgrad = ctx.needs_input_grad[1] or ctx.needs_input_grad[2]
         dx, dW1, dW2, dtw = _FusedMoEBackward.apply(
             grad_out, *ctx.saved_tensors, compute_wgrad

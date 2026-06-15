@@ -304,10 +304,9 @@ class TestRMSNormPerformance:
 
 
 class TestRMSNormBlockKernel:
-    """Force the block-kernel forward path: small hidden dim (head_dim-like) +
-    many rows — e.g. Mellum-2.0 q_norm / k_norm at head_dim=128 under vmapped
-    DP-SGD. This is the regime that used to raise (now routed to the block kernel
-    instead of the launch-bound per-row kernel). Parity with eager must hold.
+    """Force the block-kernel forward path: small hidden dim (head_dim-like) plus
+    many rows (e.g. QK-norm under vmapped per-example gradients). Forward output
+    and backward grads must match eager at this shape.
     """
 
     # n_rows (40960) >= 4096*8 and BLOCK_SIZE (=128) <= 256 -> use_block is True.
@@ -333,12 +332,15 @@ class TestRMSNormBlockKernel:
         assert_precision(y_o, y_r, rtol=RTOL_F, atol=ATOL_F, label="block gemma fwd")
 
     def test_block_backward(self, assert_precision):
-        # The forward hits the block kernel; the (unchanged) block backward must
-        # still match the eager grads at this shape.
+        # Forward hits the block kernel; the block backward must still match the
+        # eager grads at this shape.
         torch.manual_seed(6)
         eps = 1e-5
         x0 = torch.randn(
-            self._ROWS, self._DIM, device="cuda", dtype=torch.bfloat16,
+            self._ROWS,
+            self._DIM,
+            device="cuda",
+            dtype=torch.bfloat16,
             requires_grad=True,
         )
         w0 = torch.randn(

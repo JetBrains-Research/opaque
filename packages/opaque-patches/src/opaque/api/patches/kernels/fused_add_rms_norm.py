@@ -77,7 +77,7 @@ def _fused_add_rms_norm_forward_kernel(
     col_offsets = tl.arange(0, BLOCK_SIZE)
     mask = col_offsets < n_cols
 
-    # int64 stride math — vmap-mb=1024 × seq=1024 × hidden=4096 overflows int32.
+    # int64 stride math: ``row_idx * stride`` overflows int32 at large microbatch.
     Y_ptr += row_idx * triton_cast(Y_row_stride, tl.int64)
     S_ptr += row_idx * triton_cast(S_row_stride, tl.int64)
     X_ptr += row_idx * triton_cast(X_row_stride, tl.int64)

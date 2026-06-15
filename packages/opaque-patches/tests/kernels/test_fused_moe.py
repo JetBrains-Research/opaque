@@ -165,12 +165,9 @@ def test_vmap_grad_per_sample(assert_precision):
 
 
 def test_vmap_grad_frozen_experts(assert_precision):
-    """DP-SGD LoRA-on-attention case: experts frozen, only ``x``/``tw`` need grad.
-
-    ``ctx.needs_input_grad`` reports the experts as frozen, so the backward skips
-    the per-sample ``(B, E, ...)`` weight-grad buffers (``compute_wgrad=False``).
-    ``dx`` and ``dtw`` must still match the loop reference; the expert weights are
-    never differentiated so their grad is structurally absent."""
+    """Frozen experts (attention-only LoRA): only ``x``/``tw`` need grad, so the
+    backward takes the ``compute_wgrad=False`` skip. ``dx``/``dtw`` must still
+    match the loop reference."""
     B = 4
     _, gate_up, down, ti, tw = _inputs()
     xb = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16)
@@ -183,20 +180,23 @@ def test_vmap_grad_frozen_experts(assert_precision):
     def rloss(xs, t, w, g1, g2):
         return torch_reference_moe(xs, g1, g2, t, w).square().mean()
 
-    # Only x (0) and top_k_weights (4) are differentiated; experts (g1, g2) shared
-    # and frozen — exercises the compute_wgrad=False skip.
-    g_op = vmap(grad(loss, argnums=(0, 4)), in_dims=(0, 0, 0, None, None))(
+    # Only x (0) and top_k_weights (2, the ``w`` arg) are differentiated;
+    # experts g1/g2 (args 3, 4) stay shared and frozen — exercises the
+    # compute_wgrad=False skip.
+    g_op = vmap(grad(loss, argnums=(0, 2)), in_dims=(0, 0, 0, None, None))(
         xb, tib, twb, gate_up, down
     )
     refs = [
-        grad(rloss, argnums=(0, 4))(xb[i], tib[i], twb[i], gate_up, down)
+        grad(rloss, argnums=(0, 2))(xb[i], tib[i], twb[i], gate_up, down)
         for i in range(B)
     ]
     dx_r = torch.stack([r[0] for r in refs])
     dtw_r = torch.stack([r[1] for r in refs])
 
     assert_precision(g_op[0], dx_r, rtol=2e-2, atol=2e-2, label="frozen dx")
-    assert_precision(g_op[1], dtw_r, rtol=2e-2, atol=2e-2, label="frozen dtop_k_weights")
+    assert_precision(
+        g_op[1], dtw_r, rtol=2e-2, atol=2e-2, label="frozen dtop_k_weights"
+    )
     # Per-sample dx still genuinely distinct across the batch.
     assert (g_op[0][0] - g_op[0][1]).abs().max().item() > 0
 

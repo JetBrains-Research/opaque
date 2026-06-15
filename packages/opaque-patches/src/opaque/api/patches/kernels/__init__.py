@@ -14,7 +14,7 @@ import torch.nn.functional as F
 
 try:
     # Loss functions
-    from .cross_entropy import opaque_cross_entropy_loss
+    from .cross_entropy import opaque_cross_entropy_loss, opaque_selective_log_softmax
     from .linear_cross_entropy import opaque_linear_cross_entropy_loss
 
     # Activation functions
@@ -83,10 +83,17 @@ except ModuleNotFoundError as import_error:
         )
         return loss_flat.reshape(labels.shape)
 
-    # Memory-efficient drop-in: the chunked custom-autograd kernel streams the
-    # log-sum-exp over vocab chunks instead of materializing the full
-    # ``(tokens, vocab)`` logits, so large-vocab CE fits in memory on MPS/CPU
-    # and composes with ``vmap(grad)`` for DP-SGD. Pure-PyTorch (Triton-free).
+    def opaque_selective_log_softmax(logits, indices):
+        log_probs = torch.log_softmax(logits, dim=-1)
+        # Match the Triton kernel's ignore convention: -100 returns 0.
+        ignore = indices == -100
+        safe = indices.masked_fill(ignore, 0)
+        gathered = torch.gather(log_probs, dim=-1, index=safe.unsqueeze(-1)).squeeze(-1)
+        return gathered.masked_fill(ignore, 0.0)
+
+    # Chunked custom-autograd CE streams the log-sum-exp over vocab chunks
+    # instead of materializing the full ``(tokens, vocab)`` logits, so
+    # large-vocab CE fits in memory on MPS/CPU and stays ``vmap(grad)``-safe.
     from ._linear_ce_chunked import linear_cross_entropy_chunked
 
     def opaque_linear_cross_entropy_loss(
@@ -223,6 +230,7 @@ except ModuleNotFoundError as import_error:
 __all__ = [
     # Loss
     "opaque_cross_entropy_loss",
+    "opaque_selective_log_softmax",
     "opaque_linear_cross_entropy_loss",
     # MoE expert FFN
     "opaque_moe",

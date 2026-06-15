@@ -75,9 +75,8 @@ def _rms_norm_forward_kernel(
     col_offsets = tl.arange(0, BLOCK_SIZE)
     mask = col_offsets < n_cols
 
-    # int64 stride math: at vmap-mb=1024, seq=1024, hidden=4096 the row offset
-    # reaches 1M * 4096 ≈ 4.3e9 elements and overflows int32 → CUDA IMA. Mirrors
-    # the ``cross_entropy.py`` pattern for the same reason.
+    # int64 stride math: ``row_idx * stride`` overflows int32 past 2^31 elements
+    # at large microbatch (CUDA illegal access). Same pattern as ``cross_entropy.py``.
     y_base = Y_ptr + row_idx * triton_cast(Y_row_stride, tl.int64)
     x_base = X_ptr + row_idx * triton_cast(X_row_stride, tl.int64)
     rstd_base = RSTD_ptr + row_idx * triton_cast(RSTD_row_stride, tl.int64)
@@ -141,11 +140,10 @@ def _rms_norm_forward_block_kernel(
     """Block variant of the forward: one program per SM, each looping
     ``rows_per_program`` rows — mirrors :func:`_rms_norm_backward_kernel`.
 
-    Used for the small-hidden-dim + many-rows regime (e.g. Mellum-2.0 q_norm /
-    k_norm at head_dim=128 under vmapped DP-SGD) where the per-row kernel would
-    launch one tiny program per row.  The per-row body is identical to
-    :func:`_rms_norm_forward_kernel`; only the grid/loop differs.  The shared
-    weight is loaded once (loop-invariant)."""
+    Used for the small-hidden-dim, many-rows regime (small ``BLOCK_SIZE`` with
+    large ``n_rows``), where the per-row kernel would launch one tiny program per
+    row. The per-row body is identical to :func:`_rms_norm_forward_kernel`; only
+    the grid/loop differs. The shared weight is loaded once (loop-invariant)."""
     row_block_id = tl.program_id(0)
     row_start = row_block_id * rows_per_program
     row_end = tl.minimum((row_block_id + 1) * rows_per_program, n_rows)
@@ -312,13 +310,10 @@ def _rms_norm_forward_triton(
     def grid(meta):
         return (n_rows,)
 
-    # The per-row forward (grid ``(n_rows,)``, one program per row) is
-    # launch-bound when the hidden dim is small (``BLOCK_SIZE <= 256``, e.g.
-    # Mellum-2.0 q_norm / k_norm at head_dim=128) AND ``n_rows >= 32k`` (vmapped
-    # microbatch * seq_len * num_heads under DP-SGD): one tiny program per row.
-    # In that regime use the block kernel — one program per SM, each looping
-    # ``rows_per_program`` rows (like the backward) — to amortize launch
-    # overhead. Identical math; ``row_mode`` forces the per-row path.
+    # Small hidden dim (``BLOCK_SIZE <= 256``) with many rows (``n_rows >= 32k``)
+    # makes the per-row grid ``(n_rows,)`` launch one tiny program per row; the
+    # block kernel runs one program per SM, each looping ``rows_per_program``
+    # rows. Same math; ``row_mode`` forces the per-row path.
     use_block = not (BLOCK_SIZE > 256 or n_rows < 4096 * 8 or row_mode)
 
     with torch_gpu_device(X.device):

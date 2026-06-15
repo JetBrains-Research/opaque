@@ -229,10 +229,7 @@ class TrainingArguments:
     # Batch sizes
     # =================================================================
     per_device_train_batch_size: int = 8
-    # ``None`` defaults to ``per_device_train_batch_size`` in
-    # ``__post_init__`` so callers don't OOM when they bump the train batch
-    # for a big model and forget to also bump the eval batch (HF's stock
-    # default of 8 is silently retained otherwise).
+    # ``None`` resolves to ``per_device_train_batch_size`` in ``__post_init__``.
     per_device_eval_batch_size: int | None = None
     eval_accumulation_steps: int | None = None
     eval_delay: float = 0.0
@@ -780,9 +777,7 @@ class TrainingArguments:
                 "'max-autotune-no-cudagraphs'."
             )
 
-        # Default eval batch to the per-device train batch when caller
-        # leaves it unset, so bumping the train batch for a big model
-        # doesn't silently leave eval at HF's stock 8.
+        # Eval batch mirrors the train batch unless set explicitly.
         if self.per_device_eval_batch_size is None:
             self.per_device_eval_batch_size = self.per_device_train_batch_size
 

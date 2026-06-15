@@ -10,13 +10,8 @@ def _active_mask_dtype(input_embeds: torch.Tensor) -> torch.dtype:
     Follow autocast when active on the input's device, otherwise honour the
     input dtype. Without this the attention block's q_proj casts query to bf16
     while the mask stays fp32, and SDPA raises ``invalid dtype for bias -
-    should match query's dtype``.
-
-    Device-aware (CUDA **and** MPS), not CUDA-only: autocast fires under
-    ``vmap(grad)`` on MPS too (on a PyTorch with the functorch AutocastMPS
-    propagation fix), and even on the eager-attention fallback this keeps the
-    additive mask in the same dtype as the autocast'd scores instead of forcing
-    an fp32 up-promotion of the whole attention.
+    should match query's dtype``. Reading the dtype off the input's device type
+    keeps this correct on CUDA, MPS and CPU alike.
     """
     device_type = input_embeds.device.type
     if torch.is_autocast_enabled(device_type):
