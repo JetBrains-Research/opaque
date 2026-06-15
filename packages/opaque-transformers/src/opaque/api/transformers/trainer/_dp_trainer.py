@@ -880,20 +880,13 @@ class DPTrainer:
         # independently they would fall out of step-lockstep: one rank restarts
         # at microbatch=4 step 0 while a sibling is still on microbatch=8 step 3.
         # DP-SGD's per-step collectives (``sum_gradients_`` AllReduce + the
-        # ``ClippedPytree.max_norm`` cross-rank equality assert) would then
-        # meet at mismatched logical steps and raise ``max_norm mismatch
-        # across ranks``.  So after every attempt, all-reduce a MAX of each
-        # rank's "needs to step down" flag — if ANY rank OOMs, EVERY rank
-        # steps down together and restarts in lockstep.  The returned run is
+        # ``ClippedPytree.max_norm`` cross-rank equality assert) then meet at
+        # mismatched logical steps and raise ``max_norm mismatch across ranks``.
+        # Fix: after every attempt, ``_cluster_needs_step_down`` all-reduces a
+        # MAX of each rank's "needs to step down" flag — if ANY rank OOMs, EVERY
+        # rank steps down together and restarts in lockstep. The returned run is
         # the first attempt at which no rank OOMs, so all ranks ran it at an
         # identical microbatch and stayed synchronised end-to-end.
-        def _cluster_needs_step_down(local_oom: bool) -> bool:
-            if not self._ddp.is_distributed:
-                return local_oom
-            flag = torch.tensor([1.0 if local_oom else 0.0], device=self._device)
-            torch.distributed.all_reduce(flag, op=torch.distributed.ReduceOp.MAX)
-            return bool(flag.item() > 0.0)
-
         while True:
             # Stamp before the attempt so a successful run's logs carry it.
             self.state.converged_microbatch_size = current_microbatch_size
@@ -915,7 +908,7 @@ class DPTrainer:
             # Cluster-wide retry decision: a rank that succeeded must still
             # step down (and discard ``result``) if any sibling OOM'd, so the
             # whole cluster re-runs the next attempt in lockstep.
-            if _cluster_needs_step_down(local_oom):
+            if self._cluster_needs_step_down(local_oom):
                 if current_microbatch_size <= 1:
                     # Propagate the original OOM so callers see the actionable
                     # signal. Fall back to a synthetic message only when this
@@ -1069,6 +1062,19 @@ class DPTrainer:
         errors that happen to mention "out of memory" in the message.
         """
         return isinstance(err, torch.OutOfMemoryError)
+
+    def _cluster_needs_step_down(self, local_oom: bool) -> bool:
+        """Whether any rank OOM'd this attempt (cluster-wide MAX all-reduce).
+
+        The OOM-retry decision must be collective: if one rank steps the batch
+        down and a sibling doesn't, they desync on the next collective. Returns
+        ``local_oom`` unchanged when not distributed.
+        """
+        if not self._ddp.is_distributed:
+            return local_oom
+        flag = torch.tensor([1.0 if local_oom else 0.0], device=self._device)
+        torch.distributed.all_reduce(flag, op=torch.distributed.ReduceOp.MAX)
+        return bool(flag.item() > 0.0)
 
     def _reset_state_for_batch_size_retry(self, snapshot: DPTrainerState) -> None:
         self.state = DPTrainerState.from_json(snapshot.to_json())
@@ -2908,15 +2914,14 @@ class DPTrainer:
     ) -> EvaluationResult:
         """Drive a single :meth:`evaluation_loop` and return its result.
 
-        Pure forward + accumulator; no callback / log / state-mutation
-        side effects.  Shared by :meth:`evaluate` and :meth:`predict`.
+        Pure forward + accumulator; no callback / log side effects.  Shared by
+        :meth:`evaluate` and :meth:`predict`.  When ``auto_find_microbatch_size``
+        is set, an eval CUDA-OOM lowers ``args.per_device_eval_batch_size`` (and
+        clears the cached eval dataloader) before retrying.
         """
         # HF parity: start/stop memory tracker around the eval loop so
         # ``skip_memory_metrics=False`` captures eval-phase memory usage.
         self._memory_tracker.start()
-        loader = self.get_eval_dataloader(dataset)
-        self._callback_handler.eval_dataloader = loader
-        start_time = time.time()
         # ``eval_dtype`` casts ``self._model`` in place.  During an active
         # training run the eval forward goes through the functional
         # ``ctx.fmodel`` + detached param dicts, which the cast does NOT
@@ -2935,14 +2940,63 @@ class DPTrainer:
                 "(the nn.Module path)."
             )
             self._warned_full_eval_functional = True
-        with eval_dtype(self._model, self.args, self._train_dtype):
-            result = self.evaluation_loop(
-                loader,
-                description=description,
-                prediction_loss_only=prediction_loss_only,
-                ignore_keys=ignore_keys,
-                metric_key_prefix=metric_key_prefix,
+
+        # ``auto_find_microbatch_size`` also guards eval: on CUDA-OOM, halve
+        # ``per_device_eval_batch_size`` and retry. Eval has no gradient
+        # accumulation, so the eval batch is a pure throughput knob — shrinking
+        # it leaves the metrics unchanged. The step-down is cluster-wide so DDP
+        # ranks rebuild their loaders and retry in lockstep.
+        while True:
+            # Time only the attempt that succeeds — a failed OOM attempt below
+            # restarts the clock so eval throughput isn't under-reported.
+            start_time = time.time()
+            loader = self.get_eval_dataloader(dataset)
+            self._callback_handler.eval_dataloader = loader
+            local_oom = False
+            local_oom_error: BaseException | None = None
+            result = None
+            try:
+                with eval_dtype(self._model, self.args, self._train_dtype):
+                    result = self.evaluation_loop(
+                        loader,
+                        description=description,
+                        prediction_loss_only=prediction_loss_only,
+                        ignore_keys=ignore_keys,
+                        metric_key_prefix=metric_key_prefix,
+                    )
+            except RuntimeError as err:
+                if not (
+                    self.args.auto_find_microbatch_size and self._is_retryable_oom(err)
+                ):
+                    raise
+                local_oom = True
+                local_oom_error = err
+
+            if not self._cluster_needs_step_down(local_oom):
+                assert result is not None  # no rank OOM'd at this batch size
+                break
+
+            self._empty_device_cache_for_retry()
+            current = max(1, int(self.args.per_device_eval_batch_size))
+            if current <= 1:
+                if local_oom_error is not None:
+                    raise local_oom_error
+                raise RuntimeError(
+                    "auto_find_microbatch_size: eval OOMs at "
+                    "per_device_eval_batch_size=1. Reduce the eval sequence "
+                    "length or the model size."
+                )
+            reduced = max(1, current // 2)
+            log.warning(
+                "auto_find_microbatch_size: eval OOM at "
+                "per_device_eval_batch_size=%d, retrying at %d.",
+                current,
+                reduced,
             )
+            self.args.per_device_eval_batch_size = reduced
+            # Drop the cached loader so the next attempt rebuilds it smaller.
+            self._eval_dataloader = None
+
         total_batch_size = max(1, int(self.args.per_device_eval_batch_size))
         result.metrics.update(
             speed_metrics(
