@@ -1296,6 +1296,11 @@ def main():
     def merged_params(trainable):
         return {**frozen_params, **trainable}
 
+    # Hoist ``pad_token_id`` to a plain int: reading ``tokenizer.pad_token_id``
+    # inside the per-example loss hits the tokenizer's C-level ``__getattr__``
+    # every call, which Dynamo can't trace (torch.compile graph-breaks there).
+    pad_token_id = tokenizer.pad_token_id
+
     def per_example_loss_fn(trainable, input_ids):
         # Mask pad positions to ``-100`` so training CE scores only real
         # tokens — same masking contract the eval path uses and the same
@@ -1303,7 +1308,7 @@ def main():
         # Without this, the manual DP-FTRL loop trains on unmasked labels
         # while DPTrainer trains on masked labels, producing systematically
         # different ``train/loss`` curves under identical DP math. ``vmap``-safe.
-        labels = torch.where(input_ids == tokenizer.pad_token_id, -100, input_ids)
+        labels = torch.where(input_ids == pad_token_id, -100, input_ids)
         output = fmodel(merged_params(trainable), input_ids, labels=labels)
         return output.loss
 

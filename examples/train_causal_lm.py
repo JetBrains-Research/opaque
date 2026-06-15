@@ -592,6 +592,15 @@ def parse_args():
         "OPAQUE_NO_KERNEL_PATCH=1.",
     )
     dp_group.add_argument(
+        "--grouped-moe",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Force the grouped-GEMM MoE on/off (kernel-fused Triton on CUDA / "
+        "torch._grouped_mm on MPS-CPU) independent of --kernel-patches. Default "
+        "(unset) follows the kernels gate. Only affects MoE models (e.g. Mellum2); "
+        "--no-grouped-moe runs the dense expert path.",
+    )
+    dp_group.add_argument(
         "--torch-compile",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -1080,11 +1089,20 @@ def main():
     # compat bucket (not ``kernels``) because HF's experts forward isn't
     # ``vmap(grad)``-able and DP-SGD breaks without it — as do ``kv_cache`` and
     # the PEFT kernels. The global runtime patches above are untouched either way.
+    # ``--grouped-moe`` overrides the grouped-GEMM MoE gate independent of
+    # --kernel-patches (default None = follow the kernels gate). Lets the eager
+    # baseline keep dense MoE while a kernels-off run still exercises grouped, and
+    # vice-versa — used to measure grouped-vs-dense MoE on MPS/CPU.
+    moe_kw = {} if args.grouped_moe is None else {"grouped_moe": args.grouped_moe}
     if args.kernel_patches:
-        apply_model_patches(model, kernels=True, fused_linear_cross_entropy=True)
+        apply_model_patches(
+            model, kernels=True, fused_linear_cross_entropy=True, **moe_kw
+        )
     else:
         print("Kernel patches: DISABLED (eager baseline; compat/MoE/PEFT stay on)")
-        apply_model_patches(model, kernels=False, fused_linear_cross_entropy=False)
+        apply_model_patches(
+            model, kernels=False, fused_linear_cross_entropy=False, **moe_kw
+        )
     model.print_trainable_parameters()
     print_memory(device, "After LoRA")
 
@@ -1258,6 +1276,13 @@ def main():
     def merged_params(trainable):
         return {**frozen_params, **trainable}
 
+    # Hoist ``pad_token_id`` to a plain int. Reading ``tokenizer.pad_token_id``
+    # *inside* the per-example loss hits the tokenizer's C-level ``__getattr__``
+    # on every call — which Dynamo can't trace, so torch.compile graph-breaks
+    # there (``fullgraph=True`` bails). It's a constant; capture it once outside
+    # the hot, vmap(grad)-traced path.
+    pad_token_id = tokenizer.pad_token_id
+
     # Define per-example loss
     def per_example_loss_fn(trainable, input_ids):
         # Mask pad positions to ``-100`` so training CE scores only real
@@ -1266,7 +1291,7 @@ def main():
         # applies. Without this, the manual loop trains on unmasked labels
         # while DPTrainer trains on masked labels, producing systematically
         # different ``train/loss`` curves under identical DP math. ``vmap``-safe.
-        labels = torch.where(input_ids == tokenizer.pad_token_id, -100, input_ids)
+        labels = torch.where(input_ids == pad_token_id, -100, input_ids)
         output = fmodel(merged_params(trainable), input_ids, labels=labels)
         return output.loss
 
