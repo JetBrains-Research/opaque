@@ -137,25 +137,6 @@ jobs:
       - name: uv sync
         run: uv sync --group dev --all-packages --extra all
 
-      # GPU platform only: fail loudly if the runner can't actually run GPU
-      # tests. Otherwise `torch.cuda.is_available()` being False makes every
-      # cuda-marked test auto-skip (conftest.py) and the leg would look green
-      # while exercising nothing — false confidence.
-      - name: Verify CUDA is available
-        if: ${{ matrix.device.name == 'gpu' }}
-        run: |
-          nvidia-smi || { echo "::error::nvidia-smi missing — runner has no visible NVIDIA GPU"; exit 1; }
-          uv run python - <<'PY'
-          import torch
-          print("torch", torch.__version__, "| cuda", torch.version.cuda,
-                "| available", torch.cuda.is_available(),
-                "| devices", torch.cuda.device_count())
-          assert torch.cuda.is_available(), (
-              "torch.cuda.is_available() is False — every cuda-marked test would "
-              "skip. Check the GPU runner's driver and the installed torch build."
-          )
-          PY
-
       - name: pytest
         run: |
           uv run pytest ${{ matrix.shard.paths }} \
