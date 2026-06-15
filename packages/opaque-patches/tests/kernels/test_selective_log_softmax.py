@@ -72,11 +72,7 @@ def test_backward_matches_reference(vocab_size):
 
 @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
 def test_vmap_grad_matches_reference(vocab_size):
-    """``vmap(grad(opaque_selective_log_softmax-sum))`` matches the eager reference.
-
-    The DP-SGD path is ``vmap(grad(...))``; if the kernel's custom vmap rule
-    composes wrong, gradients silently zero out.
-    """
+    """``vmap(grad(opaque_selective_log_softmax-sum))`` matches the eager reference."""
     torch.manual_seed(2)
     logits = torch.randn(4, 16, vocab_size, device="cuda", dtype=torch.float32)
     indices = torch.randint(0, vocab_size, (4, 16), device="cuda")
@@ -107,9 +103,7 @@ def test_zero_dim_index_broadcasts():
     """0-dim scalar index broadcasts across leading dims, matching the eager contract."""
     torch.manual_seed(4)
     logits = torch.randn(2, 4, 32, device="cuda", dtype=torch.float32)
-    # The eager path supports a 0-dim index by broadcasting; the kernel sees the
-    # same index for every position. We expand here so the kernel's per-row
-    # contract holds while still validating the cross-call semantics.
+    # Expand the 0-dim index to per-row indices for the kernel's contract.
     idx0 = torch.tensor(7, device="cuda")
     expanded = idx0.expand(2, 4).contiguous()
 

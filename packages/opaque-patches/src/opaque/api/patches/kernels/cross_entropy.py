@@ -669,15 +669,12 @@ def opaque_selective_log_softmax(logits, indices):
     """Per-token ``log_softmax(logits, dim=-1).gather(-1, indices[..., None]).squeeze(-1)``.
 
     Logits-light: routes through the chunked CE Triton kernel, never
-    materialising a second ``(T, V)`` ``log_softmax`` tensor. Drop-in for
-    :func:`opaque.api.alignment.logprob.selective_log_softmax`'s contract on
-    its compatible callers (per-token logp at ``indices`` in ``[0, V)``).
+    materialising a second ``(T, V)`` ``log_softmax`` tensor. Returns per-token
+    logp at ``indices`` in ``[0, V)``.
 
-    Indices in the ignored-position sentinel ``-100`` return ``0`` (matching
-    the underlying CE kernel's ignore convention) — callers that previously
-    indexed with ``-100`` and treated the result as garbage are unaffected;
-    callers that masked the result afterward (the standard
-    :func:`sequence_logp` pattern) are unaffected too.
+    Indices set to the ignore sentinel ``-100`` return ``0`` (matching the CE
+    kernel's ignore convention), so the standard masked :func:`sequence_logp`
+    pattern is unaffected.
     """
     ensure_cuda_tensors(logits, indices, fn_name="opaque_selective_log_softmax")
     (logits,) = follow_autocast(logits)
