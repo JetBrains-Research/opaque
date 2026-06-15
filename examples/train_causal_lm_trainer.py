@@ -81,11 +81,12 @@ def _resolve_trainer_dtype(
 ) -> tuple[str, torch.dtype, str | None]:
     """Resolve dtype for DPTrainer, honouring bf16 wherever the device runs it.
 
-    DPTrainer's full-cast precision supports float32 everywhere and bf16 on any
-    accelerator that can actually execute it — CUDA (Ampere+) and Apple Silicon
-    (MPS) on a recent PyTorch.  We ask :func:`device_capabilities` rather than
-    hard-coding a per-device table so MPS bf16 stays enabled as PyTorch's Metal
-    support advances, instead of being silently downgraded to fp32.
+    DPTrainer's full-cast precision supports float32 everywhere and bf16 wherever
+    the device can actually execute it — CUDA (Ampere+), Apple Silicon (MPS) on a
+    recent PyTorch, and CPU (functional but slow, used under ``use_cpu=True``).
+    We ask :func:`device_capabilities` rather than hard-coding a per-device table
+    so MPS bf16 stays enabled as PyTorch's Metal support advances, instead of
+    being silently downgraded to fp32.
     """
     dtype_map = {
         "float32": torch.float32,

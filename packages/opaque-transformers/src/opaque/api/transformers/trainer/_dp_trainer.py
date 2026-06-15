@@ -3777,7 +3777,6 @@ class DPTrainer:
         ``vmap(grad)+clip`` *transform*) it builds — compiling the transform
         (functorch *inside* ``torch.compile``) is the supported, fusing pattern
         (~2x + lower peak memory on MPS, verified).  Compiling the inner loss and
-        lower peak memory on MPS, verified).  Compiling the inner loss and
         applying ``vmap(grad)`` outside is the unsupported ``grad(compiled_fn)``
         pattern that silently no-ops to eager.
 
@@ -3820,7 +3819,7 @@ class DPTrainer:
         microbatch_size: int,
         *,
         has_aux: bool = False,
-    ) -> Callable[..., Any]:
+    ) -> tuple[Callable[..., Any], Any]:
         """Create the clipped gradient function based on clipping mode.
 
         ``loss_fn`` stays eager; the resulting ``vmap(grad)+clip`` transform is

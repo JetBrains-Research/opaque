@@ -10,10 +10,12 @@ and ``torch.compile`` rules.  That drift is how macOS/MPS functionality became
 silently disabled, ``torch.compile`` silently mis-targeted.
 
 :func:`device_capabilities` answers all of those questions in one place so call
-sites query a capability instead of re-deriving it.  Results are probed once and
-cached per device *type*; the probes are deliberately empirical
-(allocate-and-run) rather than version-sniffing, so they track whatever the
-installed PyTorch actually supports on the host hardware.
+sites query a capability instead of re-deriving it.  The underlying probes are
+deliberately empirical (allocate-and-run) rather than version-sniffing — so they
+track whatever the installed PyTorch actually supports on the host hardware — and
+each is cached per device *type* (``functools.lru_cache``), so a repeated query
+re-runs no probe even though :func:`device_capabilities` itself rebuilds the
+lightweight record each call.
 """
 
 from __future__ import annotations
