@@ -187,3 +187,27 @@ filterwarnings = [
   # our code to change.
   "ignore:.*torch.jit.script_method. is deprecated.*:DeprecationWarning",
 ]
+
+[tool.ruff]
+# Codifies the lint/format behavior CI already runs (`ruff format packages/`,
+# `ruff check packages/`). These values match ruff's current defaults, so this
+# section changes nothing about CI results today — it just makes the settings
+# explicit and shared so the editor (Air's ruff integration) and CI agree.
+target-version = "py311"  # inferred from requires-python (>=3.11,<3.13)
+line-length = 88
+
+# First-party source roots of the PEP 420 `opaque` namespace. Used by ruff to
+# distinguish first- from third-party imports (import sorting / unresolved-import
+# rules). No effect on the default ruleset; in place for when those rules are on.
+src = [
+  "packages/opaque-accounting/src",
+  "packages/opaque-alignment/src",
+  "packages/opaque-auditing/src",
+  "packages/opaque-base/src",
+  "packages/opaque-dpftrl/src",
+  "packages/opaque-dpsgd/src",
+  "packages/opaque-engine/src",
+  "packages/opaque-optimizers/src",
+  "packages/opaque-patches/src",
+  "packages/opaque-transformers/src",
+]

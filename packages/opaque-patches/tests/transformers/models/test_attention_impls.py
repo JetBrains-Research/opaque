@@ -64,7 +64,18 @@ def test_sdpa_backends_under_vmap(backend, device):
     """Every selectable SDPA backend works under DP vmap(grad). MATH is
     vmap-native; efficient/cudnn run via the per-example-loop fallback until the
     upstream batching-rule patch lands; flash isn't selected (xfail)."""
-    from torch.nn.attention import sdpa_kernel
+    from torch.nn.attention import sdpa_kernel, SDPBackend
+
+    # The fused SDPA kernels (efficient/cudnn/flash) only provide a bf16 path on
+    # Ampere+ (sm>=80); on older GPUs (e.g. Turing/T4, sm_75) they raise
+    # "No available kernel". The MATH backend is pure-PyTorch and runs anywhere.
+    if backend is not SDPBackend.MATH and device.type == "cuda":
+        major, _ = torch.cuda.get_device_capability(device)
+        if major < 8:
+            pytest.skip(
+                "fused bf16 SDPA (efficient/cudnn/flash) requires CUDA sm>=80; "
+                f"this GPU is sm_{major}x"
+            )
 
     model = _build_llama(device, "sdpa")
     with sdpa_kernel([backend]):
