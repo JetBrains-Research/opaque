@@ -3203,7 +3203,7 @@ or <code>get_memory_stats(device)</code>.</p>
 <tr>
 <td>MPS</td>
 <td>Full</td>
-<td>Limited</td>
+<td>Partial</td>
 <td>Supported</td>
 </tr>
 <tr>
@@ -3214,6 +3214,25 @@ or <code>get_memory_stats(device)</code>.</p>
 </tr>
 </tbody>
 </table>
+<p>On MPS, <code>get_memory_stats</code> reports allocated, reserved, and total memory
+(via <code>torch.mps.current_allocated_memory</code>, <code>driver_allocated_memory</code>, and
+<code>recommended_max_memory</code>). PyTorch's MPS backend exposes no allocated-peak
+counter, so <strong><code>peak_gb</code> is the driver's reserved high-water mark</strong> — a
+monotonic measurement that <em>captures transients</em> (a tensor freed before the
+read still counts), which is the useful number for "how much did this step
+need". This is a precise measurement, so <code>MemoryStats.exact_peak</code> is <code>True</code>;
+it differs from CUDA's <code>peak_gb</code> only in <em>quantity</em> — reserved high-water (it
+equals <code>reserved_gb</code> and upper-bounds the allocated peak) rather than the
+allocated peak — not in precision.</p>
+<p>Because there is no cheap per-step peak reset on MPS, <code>step_perf</code> does not
+reset it each step (the only reset is <code>torch.mps.empty_cache</code>, too costly to
+run every step). Instead, MPS <code>peak_gb</code> accumulates as the run's reserved
+high-water and <code>max_peak_memory_gb</code> gives the run peak. For a clean
+per-config measurement (e.g. benchmarking kernels), call
+<code>reset_peak_memory(device)</code> before the measured region.</p>
+<p>Sub-step <code>.mark()</code> calls are device-synchronized, so their timings reflect
+real GPU execution — without the sync, an accelerator mark would record only
+async kernel-launch time (microseconds for hundreds of ms of work).</p>
 <h3 id="distributed-memory-considerations">Distributed memory considerations<a class="headerlink" href="#distributed-memory-considerations" title="Permanent link">&para;</a></h3>
 <p>In DDP training, each rank holds the full model and computes per-example
 gradients for its local batch. <code>AllReduce</code> temporarily doubles the gradient
