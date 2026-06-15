@@ -29,6 +29,14 @@ import riskcal.analysis as rc_analysis  # noqa: E402
 from dp_accounting.pld import privacy_loss_distribution as pld_lib  # noqa: E402
 
 import opaque.accounting as acc  # noqa: E402
+
+# Whole module marked `slow`: these cross-checks drive the *reference* libraries
+# (dp_accounting / riskcal), which run pure-Python PLD convolutions that are
+# far slower than opaque's Rust path and were the dominant cost of the dpsgd
+# PR-gate shard. They validate opaque against external implementations rather
+# than opaque's own logic (covered by test_accountant / test_composition /
+# test_calibration), so they belong on the main-CI lane, not every PR.
+pytestmark = pytest.mark.slow  # noqa: E402
 import opaque.dpsgd.accounting as dpsgd_acc  # noqa: E402
 from opaque.accounting import calibration as cal  # noqa: E402
 from opaque.api.accounting.core.discretization import get_discretization  # noqa: E402

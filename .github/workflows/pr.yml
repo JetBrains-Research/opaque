@@ -56,52 +56,39 @@ jobs:
         run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
 
   # Tests run in parallel two ways: a CI matrix shards the heavy packages
-  # across runners, and `pytest -n auto` shards across cores within each
-  # runner (`--dist loadscope` keeps each test class/module on one worker so
-  # module/session fixtures stay effective and test ordering is preserved).
-  #
-  # CPU (ubuntu — cheap, plentiful runners) is sharded into the three heavy
-  # packages plus a "rest" catch-all. MPS runs as a single job: macOS runners
-  # are expensive and concurrency-limited, so fanning out would risk the
-  # shards queueing serially — within-job `-n auto` already parallelizes it.
+  # across runners (one job per shard × device), and `pytest -n auto` shards
+  # across cores within each runner (`--dist loadscope` keeps each test
+  # class/module on one worker so module/session fixtures stay effective and
+  # test ordering is preserved). The marker expression adds `not mps` only on
+  # the ubuntu (CPU) device; the macOS device keeps mps-marked tests.
   python-tests:
-    name: Python tests — ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
+    name: Python tests — ${{ matrix.device.name }} ${{ matrix.shard.name }}
+    runs-on: ${{ matrix.device.os }}
+    timeout-minutes: 25  # safety net: a hung/preempted runner fails fast instead of hanging
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # PR gate excludes `slow`. Full main CI (ci.yml) runs slow too.
-          - name: CPU transformers
-            os: ubuntu-latest
-            marker-expression: "not cuda and not mps and not slow"
+        # PR gate excludes `slow` (full main CI in ci.yml runs slow too).
+        shard:
+          - name: transformers
             paths: packages/opaque-transformers
-            cov-flag: cpu-transformers
-          - name: CPU dpsgd
-            os: ubuntu-latest
-            marker-expression: "not cuda and not mps and not slow"
+          - name: dpsgd
             paths: packages/opaque-dpsgd
-            cov-flag: cpu-dpsgd
-          - name: CPU patches
-            os: ubuntu-latest
-            marker-expression: "not cuda and not mps and not slow"
+          - name: patches
             paths: packages/opaque-patches
-            cov-flag: cpu-patches
-          - name: CPU rest
-            os: ubuntu-latest
-            marker-expression: "not cuda and not mps and not slow"
+          - name: rest
             paths: >-
               packages/opaque-base packages/opaque-engine
               packages/opaque-optimizers packages/opaque-dpftrl
               packages/opaque-auditing packages/opaque-accounting
               packages/opaque-alignment tests
-            cov-flag: cpu-rest
-          - name: MPS
+        device:
+          - name: cpu
+            os: ubuntu-latest
+            marker: "not cuda and not mps and not slow"
+          - name: mps
             os: macos-latest
-            # MPS runner keeps mps-marked tests; cuda-marked auto-skip.
-            marker-expression: "not cuda and not slow"
-            paths: packages tests
-            cov-flag: mps
+            marker: "not cuda and not slow"
 
     steps:
       - uses: actions/checkout@v5
@@ -123,8 +110,8 @@ jobs:
 
       - name: pytest
         run: |
-          uv run pytest ${{ matrix.paths }} \
-            -m "${{ matrix.marker-expression }}" \
+          uv run pytest ${{ matrix.shard.paths }} \
+            -m "${{ matrix.device.marker }}" \
             -n auto --dist loadscope \
             --cov=opaque \
             --cov-report=xml:coverage.xml \
@@ -133,7 +120,7 @@ jobs:
       - uses: codecov/codecov-action@v4
         with:
           files: ./coverage.xml
-          flags: ${{ matrix.cov-flag }}
+          flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false
 
   smoke-imports:

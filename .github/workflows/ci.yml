@@ -27,44 +27,34 @@ jobs:
         run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
 
   # Same matrix/xdist sharding as the PR gate (see pr.yml for the rationale),
-  # but this lane keeps `slow` tests. CPU shards across the heavy packages on
-  # ubuntu; MPS runs as a single `-n auto` job on macOS.
+  # but this lane keeps `slow` tests.
   python-tests:
-    name: Python tests — ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
+    name: Python tests — ${{ matrix.device.name }} ${{ matrix.shard.name }}
+    runs-on: ${{ matrix.device.os }}
+    timeout-minutes: 35  # safety net; slow tests make these jobs longer than the PR gate
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: CPU transformers
-            os: ubuntu-latest
-            marker-expression: "not cuda and not mps"
+        shard:
+          - name: transformers
             paths: packages/opaque-transformers
-            cov-flag: cpu-transformers
-          - name: CPU dpsgd
-            os: ubuntu-latest
-            marker-expression: "not cuda and not mps"
+          - name: dpsgd
             paths: packages/opaque-dpsgd
-            cov-flag: cpu-dpsgd
-          - name: CPU patches
-            os: ubuntu-latest
-            marker-expression: "not cuda and not mps"
+          - name: patches
             paths: packages/opaque-patches
-            cov-flag: cpu-patches
-          - name: CPU rest
-            os: ubuntu-latest
-            marker-expression: "not cuda and not mps"
+          - name: rest
             paths: >-
               packages/opaque-base packages/opaque-engine
               packages/opaque-optimizers packages/opaque-dpftrl
               packages/opaque-auditing packages/opaque-accounting
               packages/opaque-alignment tests
-            cov-flag: cpu-rest
-          - name: MPS
+        device:
+          - name: cpu
+            os: ubuntu-latest
+            marker: "not cuda and not mps"
+          - name: mps
             os: macos-latest
-            marker-expression: "not cuda"
-            paths: packages tests
-            cov-flag: mps
+            marker: "not cuda"
 
     steps:
       - uses: actions/checkout@v5
@@ -86,8 +76,8 @@ jobs:
 
       - name: pytest
         run: |
-          uv run pytest ${{ matrix.paths }} \
-            -m "${{ matrix.marker-expression }}" \
+          uv run pytest ${{ matrix.shard.paths }} \
+            -m "${{ matrix.device.marker }}" \
             -n auto --dist loadscope \
             --cov=opaque \
             --cov-report=xml:coverage.xml \
@@ -96,7 +86,7 @@ jobs:
       - uses: codecov/codecov-action@v4
         with:
           files: ./coverage.xml
-          flags: ${{ matrix.cov-flag }}
+          flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false
 
   python-tests-cuda:
