@@ -114,7 +114,9 @@ jobs:
               label: CUDA
               os: GPU-runner-001
               marker: "cuda and not slow"
-              xdist: ""
+              # No xdist (single GPU); `-rs` surfaces skip reasons so a runner
+              # that can't satisfy the GPU tests isn't a silent no-op.
+              xdist: "-rs"
             soft: true
 
     steps:

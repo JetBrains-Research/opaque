@@ -70,7 +70,8 @@ jobs:
               label: CUDA
               os: GPU-runner-001
               marker: "cuda"
-              xdist: ""
+              # No xdist (single GPU); `-rs` surfaces skip reasons.
+              xdist: "-rs"
             soft: true
 
     steps:
