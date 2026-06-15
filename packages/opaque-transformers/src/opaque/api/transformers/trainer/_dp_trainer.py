@@ -35,6 +35,10 @@ from datasets import Dataset
 from opaque.accounting import Accountant
 from opaque.accounting import calibration as cal
 from opaque.api.engine.clipping import clipped_grad
+from opaque.api.engine.device import (
+    device_capabilities,
+    sdpa_autocast_under_vmap_broken,
+)
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpftrl.noise import mf_gaussian_noise
@@ -698,6 +702,57 @@ class DPTrainer:
 
         self._train_dtype = next(self._model.parameters()).dtype
         self._amp_dtype = torch.bfloat16 if a.bf16 else None
+        self._workaround_mps_bf16_sdpa()
+
+    def _workaround_mps_bf16_sdpa(self) -> None:
+        """Force eager attention for bf16 DP on MPS (PyTorch SDPA/autocast bug).
+
+        On MPS, ``torch.autocast`` does not cast ``scaled_dot_product_attention``
+        under functorch ``vmap(grad)`` (it does on CPU/CUDA), so the bf16 DP step
+        crashes in attention.  Eager attention sidesteps it **losslessly** —
+        under ``vmap`` SDPA already decomposes to the same matmuls.  Probe-gated
+        (:func:`opaque.device.sdpa_autocast_under_vmap_broken`) so this auto-drops
+        on a torch that fixes the upstream bug.  See the minimal repro in that probe.
+        """
+        if (
+            self._amp_dtype is None
+            or self._device.type != "mps"
+            or not sdpa_autocast_under_vmap_broken(self._device.type)
+        ):
+            return
+        model = self._model
+        cfg = getattr(model, "config", None)
+        if getattr(cfg, "_attn_implementation", None) == "eager":
+            return
+        setter = getattr(model, "set_attn_implementation", None)
+        if not callable(setter):
+            log.warning(
+                "bf16 DP on MPS hits a PyTorch bug (autocast doesn't cast SDPA "
+                "under vmap(grad) on MPS) and %s exposes no "
+                "set_attn_implementation; load the model with "
+                "attn_implementation='eager' to run bf16 on MPS.",
+                type(model).__name__,
+            )
+            return
+        try:
+            setter("eager")
+        except Exception as e:  # noqa: BLE001 - fall back to a clear instruction
+            log.warning(
+                "bf16 DP on MPS: could not switch %s to eager attention "
+                "(%s: %s); load it with attn_implementation='eager'.",
+                type(model).__name__,
+                type(e).__name__,
+                e,
+            )
+            return
+        log.warning(
+            "bf16 DP on MPS: switched the model to eager attention.  PyTorch's "
+            "autocast does not cast scaled_dot_product_attention under vmap(grad) "
+            "on MPS (works on CPU/CUDA), which crashes the bf16 DP step; eager "
+            "attention avoids it losslessly (SDPA decomposes to the same matmuls "
+            "under vmap).  Pass attn_implementation='eager' to silence this, or "
+            "use fp32 / CUDA.",
+        )
 
     def _effective_output_dir(self) -> str | None:
         return self.args.output_dir
@@ -1790,7 +1845,9 @@ class DPTrainer:
             local_oom_step = False
             grads = aux = None
             try:
-                with ctx.offload_ctx:
+                # autocast wraps the *outer* grad_fn (vmap(grad)+clip) call —
+                # the placement that actually casts on MPS (see _autocast_ctx).
+                with ctx.offload_ctx, self._autocast_ctx():
                     (grads, aux), ctx.clip_state = ctx.grad_fn(
                         ctx.trainable_params,
                         *batch_args,
@@ -3113,11 +3170,6 @@ class DPTrainer:
             ``(per_example_loss_fn, batch_argnums)``.
         """
         keys = batch_keys
-        amp_dtype = self._amp_dtype
-        device_type = self._device.type
-        # bf16 autocast only; no loss scaling (bf16 needs none, fp16 training
-        # is unsupported).
-        autocast_active = amp_dtype is not None
 
         def _call(merged: dict[str, Tensor], inputs: dict[str, Tensor]) -> Any:
             if with_metrics:
@@ -3130,34 +3182,24 @@ class DPTrainer:
             trainable: dict[str, Tensor],
             *batch_args: Tensor,
         ) -> Any:
+            # bf16 autocast (when enabled) is applied by the *caller* around the
+            # ``grad_fn`` call — the PyTorch idiom ``with autocast(): grad_fn(...)``
+            # — NOT here.  Entering autocast inside the function functorch
+            # differentiates is silently ignored on MPS (the AutocastMPS key
+            # isn't threaded through the ``grad`` transform), so it must wrap the
+            # outer ``vmap(grad)`` execution.  See ``_autocast_ctx``.
             merged = {**frozen_params, **trainable}
             inputs = dict(zip(keys, batch_args, strict=True))
-            if autocast_active:
-                with torch.autocast(device_type=device_type, dtype=amp_dtype):
-                    result = _call(merged, inputs)
-            else:
-                result = _call(merged, inputs)
+            return _call(merged, inputs)
 
-            return result
-
-        # When `args.torch_compile=True`, compile the loss closure (NOT
-        # the model — opaque's functional path goes through
-        # `functional_call`, which doesn't compose with model-compile).
-        # Try ``fullgraph=True`` first so graph breaks surface as errors
-        # at first call (otherwise torch.compile silently fragments and
-        # falls back to eager, giving the user no signal); lazily
-        # downgrade to ``fullgraph=False`` with a warning if the closure
-        # can't be traced fully.  Backends ``aot_eager`` / ``inductor``
-        # are validated upstream; users can set
-        # ``torch_compile_backend`` to anything torch.compile accepts.
-        compile_args = self.args
-        if compile_args.torch_compile:
-            backend = compile_args.torch_compile_backend or "inductor"
-            mode = compile_args.torch_compile_mode or "default"
-            per_example_loss = _compile_with_fullgraph_fallback(
-                per_example_loss, backend=backend, mode=mode
-            )
-
+        # ``torch.compile`` is applied to the DP *grad transform* in
+        # ``_create_grad_fn`` (``torch.compile`` wrapping ``vmap(grad(loss))`` +
+        # clip), NOT to this inner loss.  Compiling the loss and then applying
+        # ``vmap(grad)`` outside is the unsupported ``grad(compiled_fn)`` pattern
+        # — dynamo raises "Unsupported functorch tracing attempt" and silently
+        # falls back to eager, so it bought nothing (verified: 1.05x vs 2.0x).
+        # The loss therefore stays eager here; the whole transform is compiled
+        # one level up, where functorch lives *inside* the compiled region.
         return per_example_loss, tuple(range(1, 1 + len(keys)))
 
     def _get_eval_per_example_loss_fn(
@@ -3714,6 +3756,59 @@ class DPTrainer:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _autocast_ctx(self) -> contextlib.AbstractContextManager:
+        """Mixed-precision context to wrap the DP ``grad_fn`` call in.
+
+        bf16 autocast must wrap the *outer* ``vmap(grad)`` call — the PyTorch
+        idiom ``with autocast(): grad_fn(...)`` — not sit inside the grad'd
+        loss.  An autocast entered inside the function functorch differentiates
+        is silently ignored on MPS (the ``AutocastMPS`` key isn't threaded
+        through the ``grad`` transform), so the cast must happen here, around the
+        whole transform.  Returns a ``nullcontext`` when bf16 is off.
+        """
+        if self._amp_dtype is None:
+            return contextlib.nullcontext()
+        return torch.autocast(device_type=self._device.type, dtype=self._amp_dtype)
+
+    def _grad_compiler(self) -> Callable[[Callable], Callable] | None:
+        """Return a ``fn -> compiled_fn`` transform for the DP grad step, or None.
+
+        Applied by :meth:`_create_grad_fn` to the ``grad_fn`` (the
+        ``vmap(grad)+clip`` *transform*) it builds — compiling the transform
+        (functorch *inside* ``torch.compile``) is the supported, fusing pattern
+        (~2x + lower peak memory on MPS, verified).  Compiling the inner loss and
+        applying ``vmap(grad)`` outside is the unsupported ``grad(compiled_fn)``
+        pattern that silently no-ops to eager.
+
+        The returned compiler tries ``fullgraph=True`` first (graph breaks
+        surface as a warning, then lazily downgrade to ``fullgraph=False``).
+        The stateful ``adaptive`` / ``auto`` clip updates may graph-break; the
+        fallback keeps them correct, fusing the model fwd/bwd around the glue.
+        """
+        a = self.args
+        if not a.torch_compile:
+            return None
+        caps = device_capabilities(self._device)
+        if not caps.supports_compile:
+            log.warning(
+                "torch_compile=True but device %r has no supported torch.compile "
+                "backend; running the DP grad step eager.",
+                self._device.type,
+            )
+            return None
+        backend = a.torch_compile_backend or caps.recommended_compile_backend
+        mode = a.torch_compile_mode or "default"
+        log.info(
+            "torch.compile enabled on the DP grad transform: backend=%s mode=%s "
+            "device=%s (inductor → Triton on CUDA, Metal on MPS).",
+            backend,
+            mode,
+            self._device.type,
+        )
+        return lambda fn: _compile_with_fullgraph_fallback(
+            fn, backend=backend, mode=mode
+        )
+
     def _create_grad_fn(
         self,
         loss_fn: Callable[..., Any],
@@ -3724,8 +3819,11 @@ class DPTrainer:
         microbatch_size: int,
         *,
         has_aux: bool = False,
-    ) -> Callable[..., Any]:
+    ) -> tuple[Callable[..., Any], Any]:
         """Create the clipped gradient function based on clipping mode.
+
+        ``loss_fn`` stays eager; the resulting ``vmap(grad)+clip`` transform is
+        what gets ``torch.compile``'d (see :meth:`_grad_compiler`).
 
         When ``has_aux`` is set, ``loss_fn`` returns ``(loss, aux_dict)`` and the
         per-example ``aux_dict`` is forwarded into ``ClippedGradAux.loss_aux``.
@@ -3736,7 +3834,7 @@ class DPTrainer:
         auto_gamma = float(ca.get("gamma", 0.01))
 
         if a.clipping_mode == "adaptive":
-            return adaptive_clipped_grad(
+            grad_fn, state = adaptive_clipped_grad(
                 loss_fn,
                 argnums=0,
                 has_aux=has_aux,
@@ -3750,7 +3848,7 @@ class DPTrainer:
                 normalize_by=expected_batch_size,
             )
         elif a.clipping_mode == "auto":
-            return auto_clipped_grad(
+            grad_fn, state = auto_clipped_grad(
                 loss_fn,
                 argnums=0,
                 has_aux=has_aux,
@@ -3762,7 +3860,7 @@ class DPTrainer:
                 return_aux=True,
             )
         else:
-            return clipped_grad(
+            grad_fn, state = clipped_grad(
                 loss_fn,
                 argnums=0,
                 has_aux=has_aux,
@@ -3772,6 +3870,14 @@ class DPTrainer:
                 microbatch_size=microbatch_size,
                 return_aux=True,
             )
+        # ``torch.compile`` the transform (vmap(grad)+clip) *outside* the
+        # constructor — the caller's job, like autocast.  Compiling the inner
+        # loss instead and applying vmap(grad) outside is the unsupported
+        # ``grad(compiled_fn)`` pattern that silently no-ops to eager.
+        compiler = self._grad_compiler()
+        if compiler is not None:
+            grad_fn = compiler(grad_fn)
+        return grad_fn, state
 
     def _build_mechanism(
         self,

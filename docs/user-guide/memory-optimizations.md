@@ -245,8 +245,30 @@ or `get_memory_stats(device)`.
 | Device | Basic profiling | Detailed stats | Component tracking |
 |--------|----------------|----------------|-------------------|
 | CUDA | Full | Full | Supported |
-| MPS | Full | Limited | Supported |
+| MPS | Full | Partial | Supported |
 | CPU | Limited | Not available | Supported |
+
+On MPS, `get_memory_stats` reports allocated, reserved, and total memory
+(via `torch.mps.current_allocated_memory`, `driver_allocated_memory`, and
+`recommended_max_memory`). PyTorch's MPS backend exposes no allocated-peak
+counter, so **`peak_gb` is the driver's reserved high-water mark** — a
+monotonic measurement that *captures transients* (a tensor freed before the
+read still counts), which is the useful number for "how much did this step
+need". This is a precise measurement, so `MemoryStats.exact_peak` is `True`;
+it differs from CUDA's `peak_gb` only in *quantity* — reserved high-water (it
+equals `reserved_gb` and upper-bounds the allocated peak) rather than the
+allocated peak — not in precision.
+
+Because there is no cheap per-step peak reset on MPS, `step_perf` does not
+reset it each step (the only reset is `torch.mps.empty_cache`, too costly to
+run every step). Instead, MPS `peak_gb` accumulates as the run's reserved
+high-water and `max_peak_memory_gb` gives the run peak. For a clean
+per-config measurement (e.g. benchmarking kernels), call
+`reset_peak_memory(device)` before the measured region.
+
+Sub-step `.mark()` calls are device-synchronized, so their timings reflect
+real GPU execution — without the sync, an accelerator mark would record only
+async kernel-launch time (microseconds for hundreds of ms of work).
 
 ### Distributed memory considerations
 

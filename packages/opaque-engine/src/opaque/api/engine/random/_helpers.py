@@ -41,7 +41,8 @@ def set_reproducible_pytorch_seed(key_val: RngKey) -> None:
     Configures PyTorch and CUDNN for deterministic behavior by setting:
 
     - ``torch.manual_seed()`` for CPU operations
-    - ``torch.cuda.manual_seed_all()`` for all GPU operations
+    - ``torch.cuda.manual_seed_all()`` for all CUDA GPU operations
+    - ``torch.mps.manual_seed()`` for Apple Silicon (MPS) operations
     - ``torch.backends.cudnn`` flags for deterministic convolutions
     - Environment variables for cuBLAS library determinism
 
@@ -94,6 +95,11 @@ def set_reproducible_pytorch_seed(key_val: RngKey) -> None:
     # Set CPU and GPU seeds
     torch.manual_seed(int(torch_cpu_seed))
     torch.cuda.manual_seed_all(int(torch_gpu_seed))
+    # Apple Silicon (MPS) has a separate RNG that ``torch.cuda.manual_seed_all``
+    # (a lazy no-op off CUDA) never touches; seed it explicitly so model-side
+    # stochastic ops (dropout, weight init) are reproducible on MPS too.
+    if torch.backends.mps.is_available():
+        torch.mps.manual_seed(int(torch_gpu_seed))
 
     # Set numpy seed if available
     try:

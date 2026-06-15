@@ -159,29 +159,56 @@ class Opaque_MoE(torch.autograd.Function):
         return _moe_forward(x, gate_up_proj, down_proj, w_te), 0
 
 
-def opaque_moe(x, gate_up_proj, down_proj, top_k_index, top_k_weights):
+# Sparse pays off only past a break-even expert count: its routing / gather /
+# grouped-weight-grad-loop overhead beats the dense O(T*E) work once E is large
+# enough. Measured crossover on MPS is ~16 experts (dense scales linearly in E,
+# sparse sub-linearly: ~2x at E=128); below it the dense path is faster, so a
+# small-expert MoE (e.g. Mixtral-8) stays dense. Config-dependent heuristic.
+_SPARSE_MOE_MIN_EXPERTS = 16
+
+
+def opaque_moe(x, gate_up_proj, down_proj, top_k_index, top_k_weights, *, grouped=True):
     """MoE expert FFN. Autograd + ``vmap(grad)`` (DP-SGD) flow through the
     two-Function pair above.
 
-    Always dispatches to the sparse grouped-GEMM Triton path
-    (:func:`opaque_fused_moe`) when the tensors are CUDA bf16/fp16 with Triton
-    present, and to the dense torch ``Opaque_MoE`` otherwise (CPU, fp32). The two
-    are numerically equivalent — forward is bit-identical, backward matches within
-    the bf16 floor (see ``test_kernel_precision``) — so the fused path runs
-    whenever the hardware supports it; no opt-out knob.
+    ``grouped`` (default ``True``) selects a **performance** grouped-GEMM path
+    suited to the host; ``grouped=False`` forces the dense ``Opaque_MoE``
+    **compat** path on every host. The patch layer wires ``grouped`` from the
+    ``grouped_moe`` gate, so a dense run still keeps the vmap-safe experts
+    ``forward`` installed for DP correctness.
+
+    With ``grouped=True`` the dispatch is:
+    - CUDA bf16/fp16 + Triton -> sparse grouped-GEMM Triton ``Opaque_FusedMoE``
+      (the *fused* variant — kernel-fused grouped GEMM);
+    - else ``E >= _SPARSE_MOE_MIN_EXPERTS`` and ``torch._grouped_mm`` available
+      (the MPS/CPU large-expert path) -> ``Opaque_GroupedMoE``;
+    - otherwise -> dense ``Opaque_MoE``.
+
+    Both grouped-GEMM paths are performance variations — only ``Opaque_MoE`` is
+    the always-correct vmap/DP-safe fallback. All are numerically equivalent
+    (forward bit-identical, backward within the bf16 floor — see
+    ``test_kernel_precision``).
     """
-    if _TRITON_AVAILABLE and x.is_cuda:
-        from ._utils import follow_autocast
+    if grouped:
+        if _TRITON_AVAILABLE and x.is_cuda:
+            from ._utils import follow_autocast
 
-        x, gate_up_proj, down_proj, top_k_weights = follow_autocast(
-            x, gate_up_proj, down_proj, top_k_weights
-        )
-        if x.dtype in (torch.bfloat16, torch.float16):
-            from .fused_moe import Opaque_FusedMoE
-
-            return Opaque_FusedMoE.apply(
-                x, gate_up_proj, down_proj, top_k_index, top_k_weights
+            x, gate_up_proj, down_proj, top_k_weights = follow_autocast(
+                x, gate_up_proj, down_proj, top_k_weights
             )
+            if x.dtype in (torch.bfloat16, torch.float16):
+                from .fused_moe import Opaque_FusedMoE
+
+                return Opaque_FusedMoE.apply(
+                    x, gate_up_proj, down_proj, top_k_index, top_k_weights
+                )
+        elif gate_up_proj.shape[0] >= _SPARSE_MOE_MIN_EXPERTS:
+            from ._grouped_moe import Opaque_GroupedMoE, grouped_mm_available
+
+            if grouped_mm_available():
+                return Opaque_GroupedMoE.apply(
+                    x, gate_up_proj, down_proj, top_k_index, top_k_weights
+                )
     return Opaque_MoE.apply(x, gate_up_proj, down_proj, top_k_index, top_k_weights)
 
 

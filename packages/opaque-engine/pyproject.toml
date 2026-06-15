@@ -48,6 +48,7 @@ include = [
     "opaque.scheduling*",
     "opaque.profiling*",
     "opaque.precision*",
+    "opaque.device*",
 ]
 namespaces = true
 

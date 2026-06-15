@@ -8,7 +8,6 @@ import logging
 import types
 from typing import Callable
 
-import torch
 import torch.nn as nn
 
 from opaque.api.patches.transformers._registry import detect_family, get_family_apply_fn
@@ -31,14 +30,17 @@ _KERNEL_KWARGS = (
 
 
 def _has_kernel_runtime() -> bool:
-    """Return True iff CUDA + Triton are importable on this host."""
-    if not torch.cuda.is_available():
-        return False
-    try:
-        import triton  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    """Return True iff CUDA + Triton are importable on this host — the runtime the
+    Triton-only kernels (rope / rms_norm / activation / cross_entropy) need.
+
+    Delegates to :func:`opaque.api.engine.device.fused_kernels_available` so the
+    "what runs the fused kernels?" question has a single source of truth. Portable
+    accelerations (grouped-GEMM MoE, chunked CE) do NOT gate on this — they run on
+    MPS/CPU and default from ``performance``.
+    """
+    from opaque.api.engine.device import fused_kernels_available
+
+    return fused_kernels_available()
 
 
 def _patch_forward(
@@ -93,25 +95,21 @@ def apply_transformers_model_patches(
     - ``performance`` — memory-efficiency patches that run on any host
       (currently ``kv_cache``).
     - ``compat`` — vmap-safety wrappers (``eager_attention``, ``batchify``).
-    - ``kernels`` — Triton kernel patches that require CUDA + Triton
-      (``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
-      ``fused_linear_cross_entropy``). Defaults to ``performance`` when
-      ``None``; forced to ``False`` when CUDA / Triton can't be imported.
+    - ``kernels`` — "use accelerated kernels" (``rope``, ``rms_norm``,
+      ``activation``, ``cross_entropy``, ``grouped_moe``). Defaults to
+      ``performance`` when ``None``. The flag is unconditional; the **per-kernel
+      install** checks the environment (see the factory / family): the Triton-only
+      kernels gate on :func:`_has_kernel_runtime` so they're never installed
+      off-CUDA, while the portable ones (grouped-GEMM MoE on ``torch._grouped_mm``,
+      chunked CE) run on any host.
 
-    ``fused_linear_cross_entropy`` is a kernel kwarg promoted out of
-    ``**kwargs`` because it defaults to ``False`` rather than inheriting
-    from ``kernels``: the fused forward returns ``logits=None``, which
-    is incompatible with callers that read logits.
+    ``fused_linear_cross_entropy`` (the fused lm_head+CE kernel) is promoted out
+    of ``**kwargs`` because it defaults to ``False`` rather than inheriting from
+    ``kernels``: the fused forward returns ``logits=None``, incompatible with
+    callers that read logits.
     """
     if kernels is None:
         kernels = performance
-
-    # Auto-disable kernel-group patches when CUDA / Triton aren't there;
-    # the broader ``performance`` bucket is left alone so pure-Python
-    # performance shims (kv_cache) still apply on CPU / MPS hosts.
-    if not _has_kernel_runtime():
-        kernels = False
-        fused_linear_cross_entropy = False
 
     family = detect_family(model)
     if family is None:

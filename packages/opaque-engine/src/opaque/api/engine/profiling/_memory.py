@@ -40,6 +40,8 @@ from types import MappingProxyType
 
 import torch
 
+from opaque.api.engine.device import device_capabilities
+
 
 @dataclass(frozen=True)
 class MemoryStats:
@@ -48,11 +50,19 @@ class MemoryStats:
     All values are in GB for easy reading. Use to_dict() for logging.
 
     Attributes:
-        allocated_gb: Currently allocated memory
-        reserved_gb: Reserved by PyTorch allocator (includes fragmentation)
-        peak_gb: Peak allocated since last reset
-        free_gb: Estimated free memory (total - reserved)
-        total_gb: Total GPU memory
+        allocated_gb: Currently allocated memory.
+        reserved_gb: Reserved by the allocator (includes fragmentation). On
+            MPS this is the driver's reserved high-water mark.
+        peak_gb: Peak memory high-water during the window — a precise,
+            transient-capturing measurement on both accelerators (so
+            ``exact_peak`` is True), but a different *quantity* per backend:
+            peak *allocated* on CUDA (``max_memory_allocated``) vs the driver's
+            reserved high-water on MPS (``driver_allocated_memory``, which
+            equals ``reserved_gb`` and upper-bounds the allocated peak).
+            ``0.0`` with ``exact_peak=False`` on CPU, which has no peak counter.
+        free_gb: Estimated free memory (total - reserved).
+        total_gb: Total memory budget (CUDA total VRAM;
+            ``recommended_max_memory`` on MPS).
     """
 
     allocated_gb: float = 0.0
@@ -137,18 +147,30 @@ def get_memory_stats(device: torch.device | str) -> MemoryStats:
             known_total=True,
         )
     elif device.type == "mps":
+        # MPS exposes no allocated-peak counter, but the driver's reserved
+        # bytes are a monotonic high-water mark: the caching allocator grows
+        # them to meet peak demand and doesn't shrink on free (verified
+        # empirically).  So reserved doubles as an upper-bound 'peak' that
+        # *captures transients*, unlike the current allocation which misses any
+        # tensor freed before the read.  recommended_max_memory() is the
+        # working-set budget (total).  All three APIs ship in torch >= 2.9.
         allocated = torch.mps.current_allocated_memory() / (1024**3)
-        # MPS doesn't have peak tracking, use current as approximation
+        reserved = torch.mps.driver_allocated_memory() / (1024**3)
+        total = torch.mps.recommended_max_memory() / (1024**3)
         return MemoryStats(
             allocated_gb=allocated,
-            reserved_gb=allocated,
-            peak_gb=allocated,
-            free_gb=0.0,  # MPS doesn't expose this
-            total_gb=0.0,
-            exact_peak=False,
-            exact_reserved=False,
-            known_free=False,
-            known_total=False,
+            reserved_gb=reserved,
+            # The driver reserved high-water is a precise, transient-capturing
+            # measurement (exact_peak=True) — it differs from CUDA's peak only
+            # in *quantity* (reserved high-water vs allocated peak), not in
+            # precision.  It equals reserved_gb and upper-bounds allocated peak.
+            peak_gb=reserved,
+            free_gb=max(total - reserved, 0.0),
+            total_gb=total,
+            exact_peak=True,
+            exact_reserved=True,
+            known_free=True,
+            known_total=True,
         )
     else:
         return MemoryStats(
@@ -160,15 +182,24 @@ def get_memory_stats(device: torch.device | str) -> MemoryStats:
 
 
 def reset_peak_memory(device: torch.device | str) -> None:
-    """Reset peak memory counter for accurate per-phase tracking.
+    """Reset the peak-memory high-water mark for accurate per-phase tracking.
+
+    - **CUDA**: resets the exact peak-allocated counter (cheap).
+    - **MPS**: there is no peak counter, but the driver's *reserved* high-water
+      (which :func:`get_memory_stats` reports as ``peak_gb``) is reset by
+      releasing cached-but-unused blocks via ``torch.mps.empty_cache``.  This
+      is heavier than CUDA's counter reset and forces re-allocation on the next
+      step, so call it **between measured configs, not every step** — which is
+      why :func:`step_perf` does not invoke it on MPS automatically.
+    - **CPU**: no-op.
 
     Args:
         device: PyTorch device
 
     Example:
-        >>> reset_peak_memory("cuda")
+        >>> reset_peak_memory(device)  # clean baseline before a benchmark
         >>> # ... do training step ...
-        >>> stats = get_memory_stats("cuda")
+        >>> stats = get_memory_stats(device)
         >>> print(f"Step peak: {stats.peak_gb:.2f} GB")
     """
     if isinstance(device, str):
@@ -176,7 +207,10 @@ def reset_peak_memory(device: torch.device | str) -> None:
 
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
-    # MPS doesn't support peak memory reset
+    elif device.type == "mps":
+        # No peak counter to zero; drop cached blocks so the driver high-water
+        # re-baselines to the live working set (see get_memory_stats/MPS).
+        torch.mps.empty_cache()
 
 
 def print_memory(device: torch.device | str, label: str = "") -> MemoryStats:
@@ -288,17 +322,21 @@ class _StepPerfBuilder:
         self._perf: StepPerf | None = None
 
     def mark(self, name: str) -> None:
-        """Record a sub-step timing mark.
+        """Record a sub-step timing mark (device-synchronized).
 
-        Each mark records the elapsed time since the previous mark (or
-        since the step started if this is the first mark). The caller
-        controls whether to insert a GPU sync before the mark for
-        accurate sub-step timing on accelerators.
+        Records elapsed time since the previous mark (or since the step
+        started, for the first mark). The device is synchronized first so the
+        mark reflects real *execution* time: on CUDA/MPS kernel launches are
+        asynchronous, so an un-synchronized sub-step mark would record only
+        kernel-launch time — microseconds for hundreds of ms of GPU work. The
+        sync is a no-op on CPU. Marks therefore partition the step, and their
+        sum approximately equals the whole-step time.
 
         Args:
             name: Label for this sub-step (e.g. ``"clip"``, ``"noise"``,
                 ``"optimizer"``).
         """
+        _sync_device(self._device)
         now = time.perf_counter()
         self._marks[name] = now - self._last_mark_time
         self._last_mark_time = now
@@ -365,7 +403,11 @@ def step_perf(
 
     builder = _StepPerfBuilder(device, batch_size)
 
-    if track_memory and device.type == "cuda":
+    # Reset the peak counter only on devices that expose a cheap one (CUDA).
+    # On MPS the reset is ``empty_cache`` (see reset_peak_memory), too costly to
+    # run every step — there peak_gb accumulates as the run's reserved
+    # high-water, and max_peak_memory_gb across steps gives the run peak.
+    if track_memory and device_capabilities(device).peak_memory_trackable:
         reset_peak_memory(device)
 
     _sync_device(device)

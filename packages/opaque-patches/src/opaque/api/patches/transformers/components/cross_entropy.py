@@ -239,16 +239,31 @@ def _make_fused_ce_causal_lm_forward(original):
         )
         hidden_states = outputs[0]
 
-        use_fused_ce = (
-            hidden_states.is_cuda
-            and hidden_states.dtype in (torch.bfloat16, torch.float16)
-            and _fused_linear_ce_loss_is_supported(logits_to_keep, kwargs)
+        # CUDA + half precision routes to the Triton kernel; any other host
+        # (MPS/CPU) routes to the pure-PyTorch chunked kernel, which streams the
+        # log-sum-exp over vocab chunks (no full-logit materialization). The
+        # fused path returns ``logits=None`` — but ``fused_linear_cross_entropy``
+        # is opt-in (default off) precisely because of that, so a caller that
+        # enables it has accepted loss-only outputs regardless of device.
+        use_fused_ce = _fused_linear_ce_loss_is_supported(logits_to_keep, kwargs) and (
+            (
+                hidden_states.is_cuda
+                and hidden_states.dtype in (torch.bfloat16, torch.float16)
+            )
+            or not hidden_states.is_cuda
         )
 
         if use_fused_ce:
-            from opaque.api.patches.kernels.linear_cross_entropy import (
-                Opaque_LinearCrossEntropyLoss,
-            )
+            if hidden_states.is_cuda:
+                from opaque.api.patches.kernels.linear_cross_entropy import (
+                    Opaque_LinearCrossEntropyLoss,
+                )
+
+                ce_loss_fn = Opaque_LinearCrossEntropyLoss.apply
+            else:
+                from opaque.api.patches.kernels._linear_ce_chunked import (
+                    linear_nll_sum_chunked as ce_loss_fn,
+                )
 
             weight = self.lm_head.weight
 
@@ -270,7 +285,7 @@ def _make_fused_ce_causal_lm_forward(original):
             ignore_index = int(kwargs.get("ignore_index", -100))
             label_smoothing = float(kwargs.get("label_smoothing") or 0.0)
 
-            nll_sum = Opaque_LinearCrossEntropyLoss.apply(
+            nll_sum = ce_loss_fn(
                 hidden_states,
                 weight,
                 labels,

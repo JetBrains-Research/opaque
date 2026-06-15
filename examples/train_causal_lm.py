@@ -54,6 +54,7 @@ from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
 
 from opaque.patches import apply_model_patches, apply_runtime_patches
+from opaque.device import sdpa_autocast_under_vmap_broken
 
 apply_runtime_patches()
 
@@ -98,6 +99,36 @@ from opaque.types import (
 )
 from opaque.dpsgd.clipping import per_group
 import wandb
+
+
+def _compile_grad_fn(grad_fn, *, backend, mode):
+    """Caller-applied ``torch.compile`` of the DP grad transform.
+
+    Compiles the whole ``vmap(grad(loss))`` + clipping step (functorch *inside*
+    the compiled region — the supported, fusing pattern; ``vmap(grad)`` *outside*
+    a compiled loss is the unsupported ``grad(compiled_fn)`` case). Tries
+    ``fullgraph=True`` first and lazily falls back to ``fullgraph=False`` on the
+    first graph break (the failure is lazy — it surfaces on first execution).
+    """
+    full = torch.compile(grad_fn, backend=backend, mode=mode, fullgraph=True)
+    fallback = []
+
+    def wrapper(*args, **kwargs):
+        if fallback:
+            return fallback[0](*args, **kwargs)
+        try:
+            return full(*args, **kwargs)
+        except Exception as e:  # noqa: BLE001 — any compile failure → fallback
+            print(
+                f"WARNING: torch.compile(fullgraph=True) failed "
+                f"({type(e).__name__}: {e}); falling back to fullgraph=False."
+            )
+            fallback.append(
+                torch.compile(grad_fn, backend=backend, mode=mode, fullgraph=False)
+            )
+            return fallback[0](*args, **kwargs)
+
+    return wrapper
 
 
 def _effective(value):
@@ -556,6 +587,43 @@ def parse_args():
         help="Microbatch size passed to clipped_grad/adaptive_clipped_grad (None=process full batch with vmap, faster but more memory; use 0 on CLI to mean None)",
     )
     dp_group.add_argument(
+        "--kernel-patches",
+        action=argparse.BooleanOptionalAction,
+        default=os.environ.get("OPAQUE_NO_KERNEL_PATCH", "0") != "1",
+        help="Apply the opaque Triton speed kernels (rope/rms_norm/activation/"
+        "fused-CE) to the model. On by default (auto-falls back to eager on "
+        "non-CUDA hosts). --no-kernel-patches forces the eager baseline; the "
+        "compat vmap-safety wrappers — including the load-bearing MoE experts "
+        "patch — plus kv_cache and PEFT kernels stay on. Default also follows "
+        "OPAQUE_NO_KERNEL_PATCH=1.",
+    )
+    dp_group.add_argument(
+        "--torch-compile",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="torch.compile the DP per-example grad step (vmap(grad) + clipping). "
+        "Off by default; a large speedup on GPU/MPS once warm (the first step "
+        "pays the compile cost).",
+    )
+    dp_group.add_argument(
+        "--torch-compile-backend",
+        type=str,
+        default="inductor",
+        help="torch.compile backend (default: inductor).",
+    )
+    dp_group.add_argument(
+        "--torch-compile-mode",
+        type=str,
+        default="default",
+        choices=[
+            "default",
+            "reduce-overhead",
+            "max-autotune",
+            "max-autotune-no-cudagraphs",
+        ],
+        help="torch.compile mode (default: 'default').",
+    )
+    dp_group.add_argument(
         "--truncated-batch-size",
         type=int,
         default=None,
@@ -926,8 +994,12 @@ def main():
 
     # Attention implementation: SDPA is the default in recent HuggingFace Transformers
     # and provides up to 3.6x memory savings over eager at seq_len=1024 with vmap.
-    # Use --attention eager to override (e.g., for debugging).
-    use_eager = args.attention == "eager" or device.type == "mps"
+    # Use --attention eager to override (e.g., for debugging). On MPS, force eager
+    # only while the live torch has the autocast-under-vmap SDPA bug (probe-gated,
+    # so this auto-drops once pytorch/pytorch#187282 lands).
+    use_eager = args.attention == "eager" or (
+        device.type == "mps" and sdpa_autocast_under_vmap_broken(device.type)
+    )
 
     # When a specific SDPA backend is requested, enable only that one globally.
     if not use_eager and args.sdpa_backend is not None:
@@ -1007,10 +1079,22 @@ def main():
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
-    # Loss is the only consumer of the forward output in this script, so
-    # opt into the fused linear+CE kernel (skips ``lm_head`` and returns
+    # Loss is the only consumer of the forward output in this script, so the
+    # default opts into the fused linear+CE kernel (skips ``lm_head`` and returns
     # ``logits=None`` on the fast path — see ``apply_model_patches`` docs).
-    apply_model_patches(model, fused_linear_cross_entropy=True)
+    #
+    # ``--no-kernel-patches`` passes ``kernels=False`` for an eager baseline: it
+    # disables ONLY the Triton speed kernels (rope / rms_norm / activation /
+    # cross-entropy) and the fused linear-CE. The ``compat`` vmap-safety wrappers
+    # stay on — crucially the stacked-MoE ``experts`` patch, which lives in the
+    # compat bucket (not ``kernels``) because HF's experts forward isn't
+    # ``vmap(grad)``-able and DP-SGD breaks without it — as do ``kv_cache`` and
+    # the PEFT kernels. The global runtime patches above are untouched either way.
+    if args.kernel_patches:
+        apply_model_patches(model, kernels=True, fused_linear_cross_entropy=True)
+    else:
+        print("Kernel patches: DISABLED (eager baseline; compat/MoE/PEFT stay on)")
+        apply_model_patches(model, kernels=False, fused_linear_cross_entropy=False)
     model.print_trainable_parameters()
     print_memory(device, "After LoRA")
 
@@ -1184,15 +1268,20 @@ def main():
     def merged_params(trainable):
         return {**frozen_params, **trainable}
 
+    # Hoist ``pad_token_id`` to a plain int. Reading ``tokenizer.pad_token_id``
+    # *inside* the per-example loss hits the tokenizer's C-level ``__getattr__``
+    # on every call — which Dynamo can't trace, so torch.compile graph-breaks
+    # there (``fullgraph=True`` bails). It's a constant; capture it once outside
+    # the hot, vmap(grad)-traced path.
+    pad_token_id = tokenizer.pad_token_id
+
     # Define per-example loss
     def per_example_loss_fn(trainable, input_ids):
-        # Mask pad positions to ``-100`` so training CE scores only real
-        # tokens — same masking contract the eval path uses (L1211 below)
-        # and the same convention DPTrainer's ``DataCollatorForLanguageModeling``
-        # applies. Without this, the manual loop trains on unmasked labels
-        # while DPTrainer trains on masked labels, producing systematically
-        # different ``train/loss`` curves under identical DP math. ``vmap``-safe.
-        labels = torch.where(input_ids == tokenizer.pad_token_id, -100, input_ids)
+        # Mask pad positions to ``-100`` so training CE scores only real tokens —
+        # same masking the eval path and DPTrainer's collator apply. Without it the
+        # manual loop trains on unmasked labels while DPTrainer trains on masked
+        # ones, drifting ``train/loss`` under identical DP math. ``vmap``-safe.
+        labels = torch.where(input_ids == pad_token_id, -100, input_ids)
         output = fmodel(merged_params(trainable), input_ids, labels=labels)
         return output.loss
 
@@ -1237,8 +1326,6 @@ def main():
         print(
             f"  Reference scores: mean={audit_ref_scores.mean():.4f}, std={audit_ref_scores.std():.4f}"
         )
-
-    pad_token_id = tokenizer.pad_token_id
 
     def eval_loss(trainable):
         """Token-weighted CE over the eval set (pad tokens masked to ``-100``).
@@ -1354,6 +1441,14 @@ def main():
             microbatch_size=args.microbatch_size,
             return_aux=True,
             second_moment=use_second_moment,
+        )
+
+    # Caller-applied torch.compile of the whole DP grad transform (opt-in).
+    if args.torch_compile:
+        grad_fn = _compile_grad_fn(
+            grad_fn,
+            backend=args.torch_compile_backend,
+            mode=args.torch_compile_mode,
         )
 
     # Calibrate noise multiplier from target privacy budget
