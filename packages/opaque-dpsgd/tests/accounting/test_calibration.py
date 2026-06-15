@@ -137,11 +137,16 @@ class TestCalibrateErrors:
 class TestCalibratePrefix:
     """Calibrate a second stage over an already-executed prefix."""
 
+    # Composition counts are kept small on purpose: these tests assert
+    # step-count-independent invariants (prefix== closure equivalence,
+    # budget round-trip, prefix→more-noise monotonicity), so a short
+    # composition exercises the same calibration logic at a fraction of the
+    # PLD self-compose cost.
     def _stage(self, nm):
-        return dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.02) * 200
+        return dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.02) * 25
 
     def _prefix(self):
-        return dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), 0.01) * 100
+        return dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), 0.01) * 12
 
     def test_matches_manual_closure(self):
         """prefix= is equivalent to composing inside the objective."""
@@ -177,7 +182,9 @@ class TestCalibratePrefix:
 
     def test_prefix_exhausting_budget_raises(self):
         """Prefix alone above the target → bounds can't bracket."""
-        prefix = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.6), 0.02) * 2000
+        # Low-noise, high-sampling prefix that blows past ε=0.5 in few steps
+        # so the bracket can't be established — cheap to compose.
+        prefix = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.3), 0.1) * 100
         with pytest.raises(ValueError):
             cal.calibrate(
                 cal.epsilon_budget(0.5, delta=1e-5),

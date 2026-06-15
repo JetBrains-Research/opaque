@@ -14,14 +14,13 @@ import os
 import pytest
 import torch
 from peft import LoraConfig, TaskType, get_peft_model
-from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import TrainerCallback as _HFTrainerCallback
 from opaque.transformers.trainer.types import EvaluationResult, TrainOutput
 
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.api.transformers.trainer._state import DPTrainerState
 
-from _hf_shared import build_lm_dataset  # noqa: E402
+from _hf_shared import build_lm_dataset, make_gpt2  # noqa: E402
 
 
 def _default_args(**overrides) -> TrainingArguments:
@@ -51,13 +50,8 @@ def _default_args(**overrides) -> TrainingArguments:
 
 @pytest.fixture
 def gpt2_model_and_tokenizer():
-    """Load GPT-2 small and set pad_token."""
-    tokenizer = AutoTokenizer.from_pretrained("gpt2")
-    tokenizer.pad_token = tokenizer.eos_token
-
-    model = AutoModelForCausalLM.from_pretrained("gpt2")
-    model.config.pad_token_id = tokenizer.pad_token_id
-    return model, tokenizer
+    """Tiny randomly-initialised GPT-2 + tokenizer (see _hf_shared.make_gpt2)."""
+    return make_gpt2()
 
 
 @pytest.fixture

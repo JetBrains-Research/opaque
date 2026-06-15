@@ -12,6 +12,8 @@ them on construction).
 
 from __future__ import annotations
 
+import copy
+import functools
 from typing import Any
 
 import torch
@@ -132,6 +134,70 @@ def build_lm_dataset(
             }
         )
     return Dataset.from_list(rows)
+
+
+# =============================================================================
+# Lightweight GPT-2 factory for CPU mechanics tests
+# =============================================================================
+#
+# The DPTrainer validation suite exercises *training / eval / checkpoint
+# mechanics*, not pretrained-GPT-2 semantics — assertions are of the form
+# ``training_loss > 0``, ``generate() runs``, checkpoints round-trip, runs are
+# bit-identical, DP noise is applied, etc. None of that needs the 124M-param
+# pretrained weights. Constructing real GPT-2 per test (``from_pretrained`` ≈
+# 0.8s each) plus running fwd/bwd on 124M params on CPU dominated the suite.
+#
+# ``make_gpt2()`` returns a *tiny* (2-layer, 128-dim ≈ 7M-param) randomly
+# initialised GPT-2 deep-copied from a cached template, paired with the real
+# GPT-2 tokenizer. Keeping ``vocab_size=50257`` means the real tokenizer's ids
+# stay in range, so datasets built with it work unchanged. The template is
+# seeded, so every call yields identical starting weights — preserving the
+# "two models start equal" property that ``from_pretrained`` provided to the
+# reproducibility/determinism tests.
+
+
+@functools.lru_cache(maxsize=1)
+def gpt2_tokenizer():
+    """Cached real GPT-2 tokenizer with ``pad_token`` set to ``eos``."""
+    from transformers import AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained("gpt2")
+    tok.pad_token = tok.eos_token
+    return tok
+
+
+@functools.lru_cache(maxsize=1)
+def _tiny_gpt2_template():
+    from transformers import AutoConfig, AutoModelForCausalLM
+
+    cfg = AutoConfig.from_pretrained("gpt2")
+    cfg.n_layer = 2
+    cfg.n_embd = 128
+    cfg.n_head = 2
+    # vocab_size deliberately left at 50257 so the real tokenizer stays valid.
+    with torch.random.fork_rng():
+        torch.manual_seed(0)
+        model = AutoModelForCausalLM.from_config(cfg)
+    return model
+
+
+def make_gpt2_model():
+    """Fresh tiny GPT-2 (random init) with ``pad_token_id`` set.
+
+    Drop-in for a bare ``AutoModelForCausalLM.from_pretrained("gpt2")``.
+    """
+    model = copy.deepcopy(_tiny_gpt2_template())
+    model.config.pad_token_id = gpt2_tokenizer().pad_token_id
+    return model
+
+
+def make_gpt2():
+    """Fresh tiny GPT-2 (random init) + cached tokenizer.
+
+    Drop-in replacement for ``AutoModelForCausalLM.from_pretrained("gpt2")`` +
+    ``AutoTokenizer.from_pretrained("gpt2")`` in CPU mechanics tests.
+    """
+    return make_gpt2_model(), gpt2_tokenizer()
 
 
 def has_min_gpu_memory(min_gb, device=None):

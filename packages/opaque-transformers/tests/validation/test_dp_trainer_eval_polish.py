@@ -37,7 +37,7 @@ from opaque.transformers.trainer.types import TrainOutput
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from _hf_shared import build_lm_dataset  # noqa: E402
+from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -49,11 +49,10 @@ from _hf_shared import build_lm_dataset  # noqa: E402
 @pytest.fixture
 def gpt2_lora_and_tokenizer():
     from peft import LoraConfig, TaskType, get_peft_model
-    from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    tokenizer = gpt2_tokenizer()
     tokenizer.pad_token = tokenizer.eos_token
-    base = AutoModelForCausalLM.from_pretrained("gpt2")
+    base = make_gpt2_model()
     base.config.pad_token_id = tokenizer.pad_token_id
     lora_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,

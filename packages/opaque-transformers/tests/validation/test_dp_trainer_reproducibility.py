@@ -21,14 +21,13 @@ from pathlib import Path
 import pytest
 import torch
 from peft import LoraConfig, TaskType, get_peft_model
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 # ``_hf_shared`` is in the parent of ``validation/``; mirror the import
 # convention used by the sibling tests.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from _hf_shared import build_lm_dataset  # noqa: E402
+from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -38,9 +37,9 @@ from _hf_shared import build_lm_dataset  # noqa: E402
 
 @pytest.fixture
 def gpt2_model_and_tokenizer():
-    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    tokenizer = gpt2_tokenizer()
     tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModelForCausalLM.from_pretrained("gpt2")
+    model = make_gpt2_model()
     model.config.pad_token_id = tokenizer.pad_token_id
     return model, tokenizer
 
@@ -148,7 +147,7 @@ class TestBitIdenticalRuns:
         )
 
         # Fresh model / fresh trainer with the same seed.
-        base_model_b = AutoModelForCausalLM.from_pretrained("gpt2")
+        base_model_b = make_gpt2_model()
         base_model_b.config.pad_token_id = tokenizer.pad_token_id
         lora_b = _build_lora_model(base_model_b)
         run_b = _train_two_steps(
@@ -190,7 +189,7 @@ class TestBitIdenticalRuns:
             _args(tmp_path / "a", seed=42),
         )
 
-        base_b = AutoModelForCausalLM.from_pretrained("gpt2")
+        base_b = make_gpt2_model()
         base_b.config.pad_token_id = tokenizer.pad_token_id
         lora_b = _build_lora_model(base_b)
         run_b = _train_two_steps(
@@ -238,7 +237,7 @@ class TestBitIdenticalRuns:
             ),
         )
 
-        base_b = AutoModelForCausalLM.from_pretrained("gpt2")
+        base_b = make_gpt2_model()
         base_b.config.pad_token_id = tokenizer.pad_token_id
         lora_b = _build_lora_model(base_b, seed=7)
         run_b = _train_two_steps(
@@ -382,7 +381,7 @@ class TestPostInitIdempotency:
         # A fresh model with the *same* args object — would have
         # raised on FutureWarning re-emission or on ``output_dir``
         # being already-prefixed if ``__post_init__`` re-fired.
-        model_b = AutoModelForCausalLM.from_pretrained("gpt2")
+        model_b = make_gpt2_model()
         model_b.config.pad_token_id = tokenizer.pad_token_id
         lora_b = _build_lora_model(model_b)
         DPTrainer(
