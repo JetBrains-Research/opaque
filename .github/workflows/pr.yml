@@ -123,6 +123,47 @@ jobs:
           flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false
 
+  # GPU smoke coverage on the PR gate: the fast (non-slow) CUDA-marked tests
+  # on the shared self-hosted GPU runner. Gated on the CPU/MPS shards so a PR
+  # that already fails basic checks doesn't tie up the single GPU box. Runs
+  # serially — one GPU, so xdist workers would contend for device memory. The
+  # full CUDA suite (slow DDP / pipeline / real-model tests) runs post-merge
+  # in ci.yml via `-m cuda`.
+  python-tests-cuda:
+    name: Python tests — CUDA
+    runs-on: GPU-runner-001
+    needs: [python-tests]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: uv sync
+        run: uv sync --group dev --all-packages --extra all
+
+      - name: pytest -m "cuda and not slow"
+        run: |
+          uv run pytest \
+            -m "cuda and not slow" \
+            --cov=opaque \
+            --cov-report=xml:coverage-cuda.xml \
+            -q
+
+      - uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage-cuda.xml
+          flags: cuda
+          fail_ci_if_error: false
+
   smoke-imports:
     name: Cross-package import smoke test
     runs-on: ubuntu-latest
