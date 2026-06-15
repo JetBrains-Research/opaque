@@ -16,3 +16,15 @@ unsafe_code = "warn"
 [profile.release]
 opt-level = 3
 lto = true
+
+# The Monte-Carlo / PLD numerical tests (amplification::*, balls_in_bins) are
+# ~10-100x slower at opt-level 0, which made `cargo test` the slowest CI job by
+# far (compile was only ~40s; the rest was unoptimized test execution).
+# Optimize the test binary and its dependencies. Rust does not enable fast-math,
+# so higher opt-levels do not change floating-point results — the accounting
+# tolerances are unaffected, and debug-assertions stay on (test-profile default).
+[profile.test]
+opt-level = 2
+
+[profile.dev.package."*"]
+opt-level = 3

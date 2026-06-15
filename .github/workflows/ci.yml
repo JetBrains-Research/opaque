@@ -23,6 +23,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+
       - name: cargo test
         run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
 

@@ -52,6 +52,13 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # Cache the optimized dependency build (statrs/rustfft/nalgebra at
+      # opt-level 3 — see the test profile in Cargo.toml). The one-time cold
+      # compile is paid only when Cargo.lock changes; warm runs reuse it.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+
       - name: cargo test
         run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
 
