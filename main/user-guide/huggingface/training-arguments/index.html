@@ -1192,6 +1192,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#converting-from-hf-trl-configs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Converting from HF / TRL configs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#migrating-from-hf-unsupported-arguments" class="md-nav__link">
     <span class="md-ellipsis">
       Migrating from HF: unsupported arguments
@@ -1786,6 +1795,29 @@
   
   <span class="md-ellipsis">
     DPO
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../alignment/trainers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    SFT & DPO Trainers
     
   </span>
   
@@ -2700,6 +2732,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#converting-from-hf-trl-configs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Converting from HF / TRL configs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#migrating-from-hf-unsupported-arguments" class="md-nav__link">
     <span class="md-ellipsis">
       Migrating from HF: unsupported arguments
@@ -2751,7 +2792,8 @@ this once before tuning:</p>
 <ul>
 <li><code>per_device_train_batch_size</code> is the <strong>per-rank logical Poisson
   batch</strong> — the expected sample size drawn on each rank for one DP-SGD
-  step.  Matches HF semantics at <code>gradient_accumulation_steps=1</code>.</li>
+  step.  (This matches the HF interpretation when gradient accumulation
+  is one step — DPTrainer is permanently in that regime; see below.)</li>
 <li>Cluster-wide logical batch is <code>per_device_train_batch_size *
   world_size</code> (exposed as the HF property <code>train_batch_size</code>).  The
   sample rate <code>q = train_batch_size / N_total</code> drives privacy
@@ -2761,8 +2803,10 @@ this once before tuning:</p>
   per-rank logical batch into smaller vmap calls without changing the
   logical batch or the sample rate (privacy-neutral).</li>
 </ul>
-<p>DPTrainer has <strong>no <code>gradient_accumulation_steps</code></strong> — every step is
-one atomic clip-noise-step over one Poisson sample.</p>
+<p>To grow the effective batch, raise <code>per_device_train_batch_size</code> (the
+expected Poisson round size); the physical vmap chunk (<code>microbatch_size</code>,
+auto-shrunk under <code>auto_find_microbatch_size</code>) is decoupled from it and
+privacy-neutral.</p>
 <h2 id="privacy-targets">Privacy targets<a class="headerlink" href="#privacy-targets" title="Permanent link">&para;</a></h2>
 <p>The user-facing DP budget knobs:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">args</span> <span class="o">=</span> <span class="n">TrainingArguments</span><span class="p">(</span>
@@ -3105,12 +3149,47 @@ keys win on collision with the defaults table.</p>
 <p>For per-rank sharding, accountant cluster-wide composition, and
 rank-gated checkpointing, see
 <a href="../../distributed-trainer/">Distributed DPTrainer</a>.</p>
+<h2 id="converting-from-hf-trl-configs">Converting from HF / TRL configs<a class="headerlink" href="#converting-from-hf-trl-configs" title="Permanent link">&para;</a></h2>
+<p>Rather than hand-port an upstream config, convert it with the classmethod on
+the matching opaque config:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">TrainingArguments</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">args</span> <span class="o">=</span> <span class="n">TrainingArguments</span><span class="o">.</span><span class="n">from_hf</span><span class="p">(</span><span class="n">hf_args</span><span class="p">,</span> <span class="n">privacy_target_epsilon</span><span class="o">=</span><span class="mf">8.0</span><span class="p">)</span>
+</code></pre></div>
+<ul>
+<li><code>TrainingArguments.from_hf(hf_args, …)</code> — from <code>transformers.TrainingArguments</code></li>
+<li><code>SFTConfig.from_trl(trl_cfg, …)</code> — from <code>trl.SFTConfig</code></li>
+<li><code>DPOConfig.from_trl(trl_cfg, …)</code> — from <code>trl.DPOConfig</code></li>
+</ul>
+<p>(<code>SFTConfig</code> / <code>DPOConfig</code> live in <code>opaque.transformers.trl</code>.)</p>
+<p>What the converter does:</p>
+<ul>
+<li><strong>renames</strong> legacy names (<code>per_gpu_train_batch_size</code>, <code>lr_scheduler_type</code>, …);</li>
+<li><strong>collapses</strong> the HF effective batch (<code>per_device_train_batch_size ×
+  gradient_accumulation_steps</code>) into the logical Poisson batch, with
+  <code>per_device_train_batch_size</code> becoming the vmap <code>microbatch_size</code> and
+  <code>auto_find_batch_size → auto_find_microbatch_size</code>;</li>
+<li><strong>loosely maps</strong> <code>max_grad_norm → clipping_norm</code> (no warning — pass an
+  explicit <code>clipping_norm=</code> to override);</li>
+<li><strong>remaps</strong> optimizers (<code>adamw_torch</code>/<code>adamw_hf → adamw</code>,
+  <code>adamw_torch_fused → adamw</code> + <code>optim_args={"fused": True}</code>,
+  <code>adafactor=True → optim="adafactor"</code>) and <code>use_liger_kernel →
+  use_performance_kernels</code>;</li>
+<li><strong>drops</strong> irrelevant fields (with a <code>RuntimeWarning</code> when non-default), and
+  <strong>raises</strong> with a per-field rationale on unsupported ones (<code>fp16</code>, <code>fsdp</code>,
+  paged optimizers, …).</li>
+</ul>
+<p>A DP knob is required as an override (<code>privacy_noise_multiplier=</code> or
+<code>privacy_target_epsilon=</code>) — upstream configs carry no privacy budget. Any
+other keyword overrides the converted field <strong>by name</strong> after translation
+(e.g. <code>use_performance_kernels=True</code>); performance kernels default OFF on
+conversion to match HF/TRL since their default can't be distinguished from an
+explicit value.</p>
 <h2 id="migrating-from-hf-unsupported-arguments">Migrating from HF: unsupported arguments<a class="headerlink" href="#migrating-from-hf-unsupported-arguments" title="Permanent link">&para;</a></h2>
 <p><code>TrainingArguments</code> is a standalone dataclass, not a subclass of
-<code>transformers.TrainingArguments</code>.  HF knobs DPTrainer does <strong>not</strong>
-support are simply not fields, so passing them raises
-<code>TypeError: __init__() got an unexpected keyword argument …</code>.  When
-porting an HF script, remove or translate these:</p>
+<code>transformers.TrainingArguments</code>, so passing an unsupported HF knob to the
+constructor raises <code>TypeError</code> (the converters above translate or drop
+these for you). For reference, the notable ones:</p>
 <table>
 <thead>
 <tr>
@@ -3120,11 +3199,6 @@ porting an HF script, remove or translate these:</p>
 </tr>
 </thead>
 <tbody>
-<tr>
-<td><code>gradient_accumulation_steps</code></td>
-<td>One optimizer step must be exactly one Poisson round for the accountant to compose correctly</td>
-<td>Increase <code>per_device_train_batch_size</code> (the expected Poisson round size) for a larger effective batch; the physical vmap chunk (microbatch) is decoupled from it and auto-shrinks under <code>auto_find_microbatch_size=True</code> for OOM relief — accounting is unaffected</td>
-</tr>
 <tr>
 <td><code>group_by_length</code>, <code>length_column_name</code></td>
 <td>Length-bucketed batching breaks the equal per-example inclusion probability Poisson amplification relies on</td>
@@ -3162,9 +3236,10 @@ porting an HF script, remove or translate these:</p>
 </tr>
 </tbody>
 </table>
-<p><code>per_gpu_*</code>, <code>adafactor</code> (bool), <code>torchdynamo</code>, and the various
-deprecated <code>push_to_hub_*</code> aliases are likewise dropped — use their
-modern replacements.</p>
+<p><code>per_gpu_*</code> and the deprecated <code>push_to_hub_*</code> aliases are <em>renamed</em> to their
+modern equivalents; <code>adafactor=True</code> is <em>mapped</em> to <code>optim="adafactor"</code>.
+<code>torchdynamo</code> and other superseded flags are dropped — use their modern
+replacements.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../dptrainer/">DPTrainer</a> — what to call once the args are configured.</li>

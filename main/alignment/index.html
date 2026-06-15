@@ -1686,6 +1686,29 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="trainers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    SFT & DPO Trainers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2574,7 +2597,7 @@ two noise/sampling imports change.</p>
 </tr>
 <tr>
 <td><code>opaque.alignment.dpo.loss</code></td>
-<td>per-sequence logp (<code>sequence_logp</code>, <code>fused_sequence_logp</code>), 14 per-pair heads, and the log-ratio combinators</td>
+<td>per-sequence logp (<code>sequence_logp</code>, <code>fused_sequence_logp</code>), 15 exported loss heads (13 per-pair + 2 reference-free, <code>simpo_loss</code> / <code>odds_ratio_loss</code>), and the 5 log-ratio combinators</td>
 </tr>
 <tr>
 <td><code>opaque.alignment.dpo.collator</code></td>
@@ -2594,6 +2617,13 @@ two noise/sampling imports change.</p>
 </tr>
 </tbody>
 </table>
+<p>The <code>DPOTrainer</code> dispatcher (<code>opaque.transformers.trl</code>) maps <strong>15</strong>
+<code>loss_type</code> names to these exported heads — the 13 per-pair heads, plus <code>simpo</code>
+(added to the dispatcher) and <code>chosen_nll</code> (opaque's name for TRL's <code>sft</code>,
+reusing <code>chosen_nll_loss</code>). The
+reference-free composites <code>cpo</code> / <code>orpo</code> are assembled in the trainer from
+existing heads (a preference / odds-ratio term plus a per-token-mean NLL), so
+they are <strong>not</strong> separate exported heads.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="sft/">SFT end-to-end</a> — build a DP-SGD supervised fine-tuning run from

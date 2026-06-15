@@ -1610,6 +1610,29 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../alignment/trainers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    SFT & DPO Trainers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -3756,7 +3779,11 @@ a <code>completion_mask</code> for completion-only loss.</p>
 <ul>
 <li><strong><code>clone_chat_template()</code></strong> — copy a chat template (and its special tokens)
   from a source tokenizer onto a destination tokenizer and resize the model's
-  embedding matrix to match.</li>
+  embedding matrix to match. Returns the 3-tuple <code>(model, tokenizer,
+  added_token_ids)</code> — the (possibly resized) model, the updated tokenizer, and
+  the ids of any newly added special tokens (mark these trainable when the rest
+  of the model is frozen). Call it <strong>before</strong> <code>make_functional</code> (the embedding
+  resize must be captured in the functional snapshot).</li>
 <li><strong><code>get_training_chat_template()</code></strong> — return a chat-template string carrying
   assistant-turn <code>{% generation %}</code> markers so the assistant-token mask is
   recoverable at tokenization time.</li>

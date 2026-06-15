@@ -1612,6 +1612,29 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../alignment/trainers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    SFT & DPO Trainers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2988,8 +3011,9 @@ user-facing installation target.</p>
 <li><strong><a href="transformers/">Transformers</a></strong>: <code>opaque.transformers</code> — DP-SGD for HuggingFace models</li>
 <li><code>DPTrainer</code> — full constructor, methods, callback wiring, overridable hooks</li>
 <li><code>TrainingArguments</code> — every field grouped by concern (privacy, compute, patches, save, eval, …)</li>
-<li><code>EvaluationResult</code>, <code>TrainOutput</code> — return types</li>
-<li><code>patch_all</code>, <code>is_patched</code>, <code>is_vmap_patched</code> — runtime-patch entry points</li>
+<li><code>opaque.transformers.trainer.types</code> — <code>EvaluationResult</code>, <code>TrainOutput</code> return types</li>
+<li><code>opaque.patches.apply_runtime_patches</code> / <code>is_runtime_patched</code> — install/query the global runtime shims</li>
+<li><code>opaque.transformers.trl</code> — TRL-style <code>SFTTrainer</code> / <code>DPOTrainer</code> (+ <code>SFTConfig</code> / <code>DPOConfig</code>), built on <code>DPTrainer</code></li>
 </ul>
 <h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link">&para;</a></h2>
 <h3 id="typical-dp-sgd-workflow">Typical DP-SGD Workflow<a class="headerlink" href="#typical-dp-sgd-workflow" title="Permanent link">&para;</a></h3>
