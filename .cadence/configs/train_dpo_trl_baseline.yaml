@@ -1,37 +1,31 @@
-# Full DP-DPO run for opaque-alignment (Phase γ example) on a real model +
-# real preference dataset. Precomputes reference logps, then trains through the
-# per-example vmap DP-SGD path with DPO_LOSSES["sigmoid"].
+# DPO TRL upstream baseline. Trains the same JetBrains/Mellum2-12B-A2.5B-Base
+# + zed-industries/zeta DPO split as the opaque DPOTrainer at noise=0/clip=1e9,
+# but with vanilla upstream trl.DPOTrainer (sigmoid, beta=0.1), LoRA matching
+# the opaque ``mellum2-zeta`` preset (USE_LORA=1 by default). Mellum2 needs
+# transformers≥5.10 for the custom MellumForCausalLM architecture.
 #
-# Run:
-#   RUN_NAME="dpo-qwen-1" uv run cadence execution start \
-#     --preset ".cadence/configs/train_dpo (qwen_alignment).yaml" \
-#     -e EXTRA_ARGS="--loss-type ipo"
-
+# Pair with ``train_dpo_trainer (mellum2_zeta).yaml`` (opaque class-based DPO)
+# and ``train_dpo (mellum2_zeta).yaml`` (opaque loop-based DPO); the three
+# share model, dataset, batch (16), LR (5e-5), max-length (1024), beta (0.1),
+# and steps (100) so train/loss overlays cleanly.
 project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
-    # opaque-accounting (PyO3) needs rustc; the image doesn't ship it.
-    command -v rustc >/dev/null 2>&1 || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
-    . "$HOME/.cargo/env"
-
+    # Use the project's uv-managed venv so torch is available, then layer on
+    # the upstream trl + transformers≥5.10 stack via ``uv run --with`` (which
+    # actually adds those packages to the run's ephemeral environment — plain
+    # ``uv pip install`` is reverted by ``uv run``'s pre-sync step).
     uv sync --group dev --group examples --all-packages --extra all
-    uv pip install --quiet "maturin>=1.0,<2.0"
-    uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
 
-    uv run python examples/train_dpo.py \
-      --model Qwen/Qwen2.5-0.5B-Instruct \
-      --dataset trl-lib/ultrafeedback_binarized \
-      --beta 0.1 \
-      --max-length 512 \
-      --batch-size 8 \
-      --microbatch-size 2 \
-      --max-steps 50 \
-      --learning-rate 1e-4 \
-      --clipping-norm 1.0 \
-      --noise-multiplier 0.8 \
-      --log-steps 5 \
-      --seed 42 $EXTRA_ARGS
+    uv run \
+      --with "trl>=0.13" \
+      --with "transformers>=5.10,<6" \
+      --with "datasets>=3.0" \
+      --with "peft>=0.14" \
+      --with "accelerate>=1.0" \
+      --with "wandb>=0.17" \
+      python examples/train_dpo_trl_baseline.py
 provisioning:
   gpu_type: h200
   gpu_count: 1
@@ -46,8 +40,11 @@ env:
     WANDB_BASE_URL: https://jetbrains.wandb.io
     WANDB_ENTITY: federated-compute
     WANDB_PROJECT: opaque
-    RUN_NAME: "${oc.env:RUN_NAME,dpo-qwen-alignment}"
-    EXTRA_ARGS: ""
+    RUN_NAME: "${oc.env:RUN_NAME,trl-dpo-mellum2-zeta-baseline}"
+    DATASET_SPLIT: "${oc.env:DATASET_SPLIT,dpo}"
+    NUM_STEPS: "${oc.env:NUM_STEPS,100}"
+    BATCH_SIZE: "${oc.env:BATCH_SIZE,16}"
+    NUM_TRAIN_SAMPLES: "${oc.env:NUM_TRAIN_SAMPLES,132}"
   python:
     version: 3.11.14
   secrets:

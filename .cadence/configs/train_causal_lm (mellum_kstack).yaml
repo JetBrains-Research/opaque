@@ -1,7 +1,7 @@
 # Run example:
 # RUN_NAME="1-baseline" uv run cadence execution start \
 #   --preset ".cadence/configs/train_causal_lm (mellum_kstack).yaml" \
-#   -e EXTRA_ARGS="--max-steps 100"
+#   -e EXTRA_ARGS="--stop-at-step 100"
 
 project_name: jbr-fed
 working_dir: "."

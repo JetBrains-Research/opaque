@@ -47,9 +47,7 @@ from transformers import (
     DataCollatorForLanguageModeling,
 )
 
-from opaque.transformers import is_patched as is_transformers_patched
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
-from opaque.transformers import is_patched as is_kernel_patched
 
 log = logging.getLogger(__name__)
 
@@ -130,9 +128,7 @@ def _kernel_mode_summary(device: torch.device, dtype_name: str) -> tuple[str, st
         return "disabled", "triton package not installed"
     if dtype_name != "bfloat16":
         return "partial", f"dtype={dtype_name} (fused CE prefers bf16 here)"
-    if is_kernel_patched():
-        return "enabled", "global kernel patches applied"
-    return "partial", "kernel patch state unavailable"
+    return "enabled", "applied by DPTrainer"
 
 
 def _print_runtime_mode_report(
@@ -144,7 +140,6 @@ def _print_runtime_mode_report(
 ) -> None:
     """Print active runtime mode so fallback behavior is explicit."""
     kernel_mode, kernel_reason = _kernel_mode_summary(device, dtype_name)
-    kernels_on = device.type == "cuda" and is_kernel_patched()
 
     print("\nRuntime mode:")
     print(f"  Device: {device} ({device_label})")
@@ -152,7 +147,6 @@ def _print_runtime_mode_report(
     if dtype_warning:
         print(f"  Dtype fallback: {dtype_warning}")
     print(f"  Kernel optimizations: {kernel_mode} ({kernel_reason})")
-    print(f"  Patches: transformers={is_transformers_patched()}, kernels={kernels_on}")
 
     if device.type == "cpu":
         print("  Note: CPU path prioritizes correctness over throughput.")
@@ -260,7 +254,7 @@ def parse_args() -> argparse.Namespace:
         "--num-eval-samples-alt",
         dest="num_eval_samples",
         type=int,
-        default=100,
+        default=1000,
     )
     data_group.add_argument("--max-seq-len", type=int, default=512)
 
@@ -321,8 +315,10 @@ def parse_args() -> argparse.Namespace:
     train_group.add_argument(
         "--eval-on-start",
         action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Run an evaluation pass before the first training step.",
+        default=True,
+        help="Run an evaluation pass at step 0 before training begins, "
+        "providing a pre-training anchor for the eval curve. "
+        "``--no-eval-on-start`` skips it.",
     )
     train_group.add_argument(
         "--save-steps",
@@ -391,7 +387,14 @@ def parse_args() -> argparse.Namespace:
             "auto-detect the latest checkpoint under --output-dir."
         ),
     )
-    train_group.add_argument("--max-steps", type=int, default=None)
+    train_group.add_argument(
+        "--stop-at-step",
+        type=int,
+        default=None,
+        help="Stop the training loop after this many optimizer steps "
+        "(early-stop knob, not a privacy-accounting target — privacy is "
+        "calibrated from target_epsilon × steps × sample_rate regardless).",
+    )
     train_group.add_argument("--seed", type=int, default=42)
     train_group.add_argument(
         "--data-seed",
@@ -405,10 +408,10 @@ def parse_args() -> argparse.Namespace:
         default=False,
     )
     train_group.add_argument(
-        "--cpu-offload",
+        "--activation-offloading",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Use DPTrainer cpu_offload_activations.",
+        help="Use DPTrainer activation_offloading.",
     )
     train_group.add_argument(
         "--auto-find-microbatch-size",
@@ -604,7 +607,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     privacy_group = parser.add_argument_group("privacy", "Privacy accounting")
-    privacy_group.add_argument("--target-epsilon", type=float, default=3.0)
+    privacy_group.add_argument("--target-epsilon", type=float, default=8.0)
     privacy_group.add_argument("--target-delta", type=float, default=None)
     privacy_group.add_argument(
         "--noise-multiplier",
@@ -753,7 +756,7 @@ def parse_args() -> argparse.Namespace:
         _set("max_seq_len", 1024)
         _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
-        _set("microbatch_size", 8)
+        _set("microbatch_size", 16)
         _set("auto_find_microbatch_size", True)
     elif args.preset == "custom":
         pass
@@ -994,7 +997,7 @@ def main() -> int:
         load_best_model_at_end=args.load_best_model_at_end,
         metric_for_best_model=args.metric_for_best_model,
         greater_is_better=args.greater_is_better,
-        max_steps=args.max_steps if args.max_steps is not None else -1,
+        max_steps=args.stop_at_step if args.stop_at_step is not None else -1,
         num_train_epochs=args.num_epochs,
         per_device_train_batch_size=per_rank_logical_batch,
         per_device_eval_batch_size=args.eval_batch_size,
@@ -1013,7 +1016,7 @@ def main() -> int:
         bf16_full_eval=args.bf16_full_eval,
         gradient_checkpointing=args.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False},
-        cpu_offload_activations=args.cpu_offload,
+        activation_offloading=args.activation_offloading,
         microbatch_size=args.microbatch_size,
         auto_find_microbatch_size=args.auto_find_microbatch_size,
         torch_compile=args.torch_compile,

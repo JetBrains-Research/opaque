@@ -4,10 +4,8 @@
 ``transformers.TrainingArguments`` inheritance). The field surface is the
 intersection of "what makes sense for DP-SGD" and "what HF utilities we
 use (modelcard, reporting callbacks, ``state.compute_steps``, ...) read
-off the args object". Anything we previously rejected at construction
-just doesn't exist — passing the field as a kwarg now raises
-``TypeError: unexpected keyword argument`` (louder, harder to miss when
-porting from HF Trainer scripts).
+off the args object". Unsupported HF fields don't exist on the dataclass,
+so passing one as a kwarg raises ``TypeError: unexpected keyword argument``.
 
 The field surface stays close to HF for things we honour (``output_dir``,
 ``per_device_train_batch_size``, ``logging_strategy``, ``hub_*``,
@@ -228,7 +226,10 @@ class TrainingArguments:
     # Batch sizes
     # =================================================================
     per_device_train_batch_size: int = 8
-    # ``None`` resolves to ``per_device_train_batch_size`` in ``__post_init__``.
+    # ``None`` defaults to ``per_device_train_batch_size`` in
+    # ``__post_init__`` so callers don't OOM when they bump the train batch
+    # for a big model and forget to also bump the eval batch (HF's stock
+    # default of 8 is silently retained otherwise).
     per_device_eval_batch_size: int | None = None
     eval_accumulation_steps: int | None = None
     eval_delay: float = 0.0
@@ -359,6 +360,12 @@ class TrainingArguments:
     disable_tqdm: bool | None = None
     run_name: str | None = None
     project: str | None = None
+    # Trackio (HF's W&B-style tracker) config — consumed by HF Trainer's
+    # ``report_to=['trackio']`` callback path that opaque inherits.  Mirrors
+    # the HF spelling so HF-style configs flow through unchanged.
+    trackio_space_id: str | None = None
+    trackio_bucket_id: str | None = None
+    trackio_static_space_id: str | None | bool = None
 
     # =================================================================
     # Hub publishing (orthogonal to DP — publish the finished model)
@@ -420,7 +427,11 @@ class TrainingArguments:
     # =================================================================
     # Generic memory optimization (DP-shaped, not DP-specific)
     # =================================================================
-    cpu_offload_activations: bool = False
+    #: Offload saved activations to CPU during the backward pass to extend the
+    #: trainable batch past the GPU activation ceiling (host RAM is left
+    #: pageable — never pinned — so the OS can swap; see ``_setup_training``).
+    #: Trades host-transfer bandwidth for GPU memory; off by default.
+    activation_offloading: bool = False
 
     # =================================================================
     # Differential privacy (budget, mechanisms, sampling, DDP data policy)
@@ -465,6 +476,17 @@ class TrainingArguments:
     # arbitrary weights (public-data warmup, an HF checkpoint, a pretrained
     # model), load them at construction via ``model=...`` — the run begins
     # with a zero accountant.
+
+    # =================================================================
+    # Preemption
+    # =================================================================
+    # HF's just-in-time SIGTERM-triggered checkpoint save. The HF callback
+    # at :class:`transformers.trainer_jit_checkpoint.JITCheckpointCallback`
+    # calls ``trainer._save_checkpoint(model, trial)``; opaque's override
+    # accepts that signature and routes through ``self._ctx`` so the DP
+    # accountant + sampler RNG + optimizer state are captured intact in the
+    # snapshot, leaving the run resumable after preemption.
+    enable_jit_checkpoint: bool = False
 
     # =================================================================
     # Validation / coercion
@@ -523,8 +545,7 @@ class TrainingArguments:
             _nc.setdefault(_k, _default)
 
         # --- 2. Strategy validation -----------------------------------------
-        # Plain-string strategies; the HF enum round-trip was dropped
-        # alongside the enum imports.
+        # Plain-string strategies (no HF enum round-trip).
         if self.eval_strategy not in _INTERVAL_STRATEGIES:
             raise ValueError(
                 f"eval_strategy={self.eval_strategy!r}; "
@@ -675,7 +696,7 @@ class TrainingArguments:
         if self.greater_is_better is None and self.metric_for_best_model is not None:
             self.greater_is_better = not self.metric_for_best_model.endswith("loss")
 
-        # --- 5b. Cross-field invariants (formerly trainer-side) -------------
+        # --- 5b. Cross-field invariants -------------------------------------
         # ``save_strategy='best'`` requires eval to be configured so we
         # can actually pick a best checkpoint.
         if self.save_strategy == "best" and self.eval_strategy == "no":
@@ -762,7 +783,9 @@ class TrainingArguments:
                 "'max-autotune-no-cudagraphs'."
             )
 
-        # Eval batch mirrors the train batch unless set explicitly.
+        # Default eval batch to the per-device train batch when caller
+        # leaves it unset, so bumping the train batch for a big model
+        # doesn't silently leave eval at HF's stock 8.
         if self.per_device_eval_batch_size is None:
             self.per_device_eval_batch_size = self.per_device_train_batch_size
 
@@ -978,7 +1001,7 @@ class TrainingArguments:
 
         # ``include_for_metrics`` opts into populating optional fields on
         # ``EvalPrediction`` — currently ``{"inputs", "loss"}``.  Fail fast on
-        # unknown keys (HF's runtime ValueError; moved here for consistency).
+        # unknown keys (HF raises this at runtime; raised here instead).
         _allowed_include_for_metrics = frozenset({"inputs", "loss"})
         _bad = [
             k for k in self.include_for_metrics if k not in _allowed_include_for_metrics
@@ -1048,7 +1071,7 @@ class TrainingArguments:
     # constructor still raises ``TypeError``); they exist only so HF
     # utilities that read off the args object — ``transformers.modelcard``'s
     # ``extract_hyperparameters_from_trainer``, reporting callbacks — keep
-    # working after the corresponding fields were intentionally dropped.
+    # working without the corresponding dataclass fields.
 
     @property
     def gradient_accumulation_steps(self) -> int:
@@ -1129,6 +1152,118 @@ class TrainingArguments:
             except (TypeError, ValueError):
                 out[f.name] = str(value)
         return out
+
+    @classmethod
+    def from_hf(
+        cls,
+        hf_args: Any,
+        *,
+        # DP knobs (one of noise_multiplier / target_epsilon required)
+        privacy_noise_multiplier: float | None = None,
+        privacy_target_epsilon: float | None = None,
+        privacy_target_delta: float | None = None,
+        clipping_norm: float | dict[str, float] | None = None,
+        privacy_noise_mechanism: str = "gaussian",
+        privacy_noise_radius: float = 3.0,
+        clipping_mode: str = "fixed",
+        clipping_kwargs: dict[str, Any] | None = None,
+        sampling_mode: str = "auto",
+        sampling_kwargs: dict[str, Any] | None = None,
+        noise_calibration_kwargs: dict[str, Any] | None = None,
+        # Behavior
+        strict: bool = True,
+        **opaque_overrides: Any,
+    ) -> "TrainingArguments":
+        """Convert an HF ``TrainingArguments`` to opaque ``TrainingArguments``.
+
+        Required: exactly one of ``privacy_noise_multiplier=<float>``
+        (fixed-noise mode) or ``privacy_target_epsilon=<float>`` (calibrated
+        noise) must be set — opaque's runtime requires one to instantiate.
+
+        Translates HF fields by bucketed manifest (see
+        ``opaque.api.transformers.trainer._hf_convert``):
+
+        - **DIRECT**: ~80 fields with identical name and semantics — copied.
+        - **RENAME**: ``evaluation_strategy`` → ``eval_strategy``,
+          ``per_gpu_train_batch_size`` → ``per_device_train_batch_size``,
+          ``lr_scheduler_type`` → ``lr_scheduler``.
+        - **TRANSFORM**: HF's ``(per_device_train_batch_size, gradient_accumulation_steps)``
+          collapses into opaque's ``per_device_train_batch_size = product``
+          and ``microbatch_size = per_device``. This is *required* for
+          privacy-correct ε accounting — see "Batch semantics" below.
+        - **REJECT_IF_SET**: raises ``ValueError`` with a per-field
+          explanation if the user set ``fp16=True``, ``fsdp=...``,
+          ``deepspeed=...``, ``neftune_noise_alpha=...``,
+          ``optim='paged_adamw_8bit'``, etc.
+        - **DROP_WITH_WARN**: silently drops HF fields that have no opaque
+          equivalent (``do_train``, ``tpu_*``, ``group_by_length``, …);
+          emits ``RuntimeWarning`` if non-default and ``strict=True``.
+
+        Batch semantics
+        ----------------
+        DP-SGD's sample rate (and therefore ε via subsampling
+        amplification) is computed from the *logical* batch — the unit
+        over which one gradient + noise step occurs. In HF, that's
+        ``per_device_train_batch_size × gradient_accumulation_steps``;
+        in opaque, that's ``per_device_train_batch_size`` alone. The
+        converter collapses HF's two-field expression into opaque's
+        one-field expression with the multiplication, and sets
+        ``microbatch_size = per_device`` so the per-step memory
+        footprint matches HF's microbatch.
+
+        ``opaque_overrides`` allow setting any opaque-only field
+        (e.g. ``microbatch_size=4`` to override the derived value,
+        ``activation_offloading=True``). These take precedence over both
+        HF-derived and DP-default values.
+
+        Raises
+        ------
+        ImportError
+            If ``transformers`` is not installed.
+        TypeError
+            If ``hf_args`` is not a ``transformers.TrainingArguments`` instance.
+        ValueError
+            If neither ``privacy_noise_multiplier`` nor
+            ``privacy_target_epsilon`` is set, or if any REJECT_IF_SET
+            HF field is set to a non-default value.
+        """
+        # Local import keeps module load fast and avoids a hard import cycle
+        # (_hf_convert imports nothing from this module at load time).
+        from ._hf_convert import _convert_hf_training_arguments
+
+        # Collect the DP-knob kwargs into one dict the converter forwards.
+        dp_overrides: dict[str, Any] = {
+            "privacy_noise_multiplier": privacy_noise_multiplier,
+            "privacy_target_epsilon": privacy_target_epsilon,
+            "privacy_noise_mechanism": privacy_noise_mechanism,
+            "privacy_noise_radius": privacy_noise_radius,
+            "clipping_mode": clipping_mode,
+            "sampling_mode": sampling_mode,
+        }
+        # ``clipping_norm`` only overrides when explicitly passed; otherwise the
+        # value derived from HF ``max_grad_norm`` (or opaque's own default)
+        # stands.
+        if clipping_norm is not None:
+            dp_overrides["clipping_norm"] = clipping_norm
+        if privacy_target_delta is not None:
+            dp_overrides["privacy_target_delta"] = privacy_target_delta
+        if clipping_kwargs is not None:
+            dp_overrides["clipping_kwargs"] = clipping_kwargs
+        if sampling_kwargs is not None:
+            dp_overrides["sampling_kwargs"] = sampling_kwargs
+        if noise_calibration_kwargs is not None:
+            dp_overrides["noise_calibration_kwargs"] = noise_calibration_kwargs
+
+        converted = _convert_hf_training_arguments(
+            hf_args,
+            strict=strict,
+            **dp_overrides,
+        )
+
+        # ``opaque_overrides`` win over both HF-derived values and DP defaults.
+        converted.update(opaque_overrides)
+
+        return cls(**converted)
 
 
 # =====================================================================

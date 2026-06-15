@@ -18,16 +18,17 @@ Depends on `opaque-core`, `opaque-patches`, `opaque-dpsgd`, and `transformers>=4
 
 Runtime compat patches (vmap-safe masking, collator / checkpoint hooks) are
 applied when you construct :class:`opaque.transformers.trainer.DPTrainer`, or
-when you call :func:`opaque.transformers.patch_all` explicitly (e.g. in a
-notebook that uses HF primitives without the trainer).
+when you call :func:`opaque.patches.apply_runtime_patches` explicitly (e.g. in
+a notebook that uses HF primitives without the trainer).
 
 ```python
-import opaque.transformers as hf
+from opaque.patches import apply_runtime_patches, is_runtime_patched
+from opaque.transformers import DPTrainer
 
-hf.patch_all()          # global runtime shims — idempotent
+apply_runtime_patches(compat=True)     # global runtime shims — idempotent
 trainer = DPTrainer(model, args, ...)  # runtime compat + apply_model_patches on the model
 
-assert hf.is_patched()
+assert is_runtime_patched()
 ```
 
 ## Layout

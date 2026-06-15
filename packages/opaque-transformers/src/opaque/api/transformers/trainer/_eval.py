@@ -45,8 +45,10 @@ from transformers.trainer_utils import (
     denumpify_detensorize,
 )
 
+from .types import EvaluationResult  # re-export; canonical home is types.py
+
 if TYPE_CHECKING:
-    from ._config import TrainingArguments
+    from ._training_arguments import TrainingArguments
 
 
 __all__ = [
@@ -69,22 +71,6 @@ __all__ = [
 # skip ignored positions; padding logits with ``0`` would silently leak
 # ignored positions into accuracy / perplexity computations.
 _HF_PAD_VALUE = -100
-
-
-@dataclasses.dataclass
-class EvaluationResult:
-    """Output of :meth:`DPTrainer.evaluation_loop` /
-    :meth:`DPTrainer.evaluate` / :meth:`DPTrainer.predict`.
-
-    Fields mirror HF's ``EvalLoopOutput`` (``predictions``, ``label_ids``,
-    ``metrics``, ``num_samples``); ``predict`` returns the same shape
-    rather than the separate ``PredictionOutput`` HF used historically.
-    """
-
-    predictions: Any | None
-    label_ids: Any | None
-    metrics: dict[str, float]
-    num_samples: int
 
 
 # ---------------------------------------------------------------------------

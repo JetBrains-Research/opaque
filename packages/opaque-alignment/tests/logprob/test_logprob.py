@@ -393,3 +393,25 @@ def test_ld_alpha_vmap_grad_finite() -> None:
     g = vmap(grad(per_example))(logits, ids, cmask)
     assert g.shape == logits.shape
     assert torch.isfinite(g).all()
+
+
+# ------------------------------------------------------------------------
+# Dispatcher gate
+# ------------------------------------------------------------------------
+def test_selective_log_softmax_available_false_on_cpu() -> None:
+    """The chunked-CE Triton kernel can't run on CPU; gate must say so."""
+    from opaque.api.alignment._fused_lce import selective_log_softmax_available
+
+    logits = torch.randn(3, 4, 8)
+    assert selective_log_softmax_available(logits) is False
+
+
+def test_selective_log_softmax_eager_path_matches_reference_on_cpu() -> None:
+    """When the gate is False the dispatcher falls back to eager log_softmax+gather."""
+    logits = torch.randn(2, 5, 13)
+    indices = torch.randint(0, 13, (2, 5))
+    out = selective_log_softmax(logits, indices)
+    ref = (
+        torch.log_softmax(logits, dim=-1).gather(-1, indices.unsqueeze(-1)).squeeze(-1)
+    )
+    torch.testing.assert_close(out, ref)

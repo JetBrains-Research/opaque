@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Iterator
 import torch
 
 if TYPE_CHECKING:
-    from ._config import TrainingArguments
+    from ._training_arguments import TrainingArguments
 
 
 @contextmanager
