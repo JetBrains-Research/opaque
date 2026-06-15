@@ -55,6 +55,15 @@ jobs:
       - name: cargo test
         run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
 
+  # Tests run in parallel two ways: a CI matrix shards the heavy packages
+  # across runners, and `pytest -n auto` shards across cores within each
+  # runner (`--dist loadscope` keeps each test class/module on one worker so
+  # module/session fixtures stay effective and test ordering is preserved).
+  #
+  # CPU (ubuntu — cheap, plentiful runners) is sharded into the three heavy
+  # packages plus a "rest" catch-all. MPS runs as a single job: macOS runners
+  # are expensive and concurrency-limited, so fanning out would risk the
+  # shards queueing serially — within-job `-n auto` already parallelizes it.
   python-tests:
     name: Python tests — ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -62,18 +71,37 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: CPU
+          # PR gate excludes `slow`. Full main CI (ci.yml) runs slow too.
+          - name: CPU transformers
             os: ubuntu-latest
-            python-version: "3.11"
-            # PR gate excludes `slow`. Full main CI runs slow too.
             marker-expression: "not cuda and not mps and not slow"
-            coverage-suffix: ""
+            paths: packages/opaque-transformers
+            cov-flag: cpu-transformers
+          - name: CPU dpsgd
+            os: ubuntu-latest
+            marker-expression: "not cuda and not mps and not slow"
+            paths: packages/opaque-dpsgd
+            cov-flag: cpu-dpsgd
+          - name: CPU patches
+            os: ubuntu-latest
+            marker-expression: "not cuda and not mps and not slow"
+            paths: packages/opaque-patches
+            cov-flag: cpu-patches
+          - name: CPU rest
+            os: ubuntu-latest
+            marker-expression: "not cuda and not mps and not slow"
+            paths: >-
+              packages/opaque-base packages/opaque-engine
+              packages/opaque-optimizers packages/opaque-dpftrl
+              packages/opaque-auditing packages/opaque-accounting
+              packages/opaque-alignment tests
+            cov-flag: cpu-rest
           - name: MPS
             os: macos-latest
-            python-version: "3.11"
             # MPS runner keeps mps-marked tests; cuda-marked auto-skip.
             marker-expression: "not cuda and not slow"
-            coverage-suffix: "-mps"
+            paths: packages tests
+            cov-flag: mps
 
     steps:
       - uses: actions/checkout@v5
@@ -83,27 +111,29 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable  # needed to build opaque-accounting during uv sync
 
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true  # cache the resolved env across runs to cut per-shard sync cost
 
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
 
       - name: uv sync
         run: uv sync --group dev --all-packages --extra all
 
       - name: pytest
-        # `testpaths = ["packages"]` in pyproject.toml makes this the whole
-        # suite — no per-package enumeration.
         run: |
-          uv run pytest \
+          uv run pytest ${{ matrix.paths }} \
             -m "${{ matrix.marker-expression }}" \
+            -n auto --dist loadscope \
             --cov=opaque \
-            --cov-report=xml:coverage${{ matrix.coverage-suffix }}.xml \
-            -v
+            --cov-report=xml:coverage.xml \
+            -q
 
       - uses: codecov/codecov-action@v4
         with:
-          files: ./coverage${{ matrix.coverage-suffix }}.xml
+          files: ./coverage.xml
+          flags: ${{ matrix.cov-flag }}
           fail_ci_if_error: false
 
   smoke-imports:

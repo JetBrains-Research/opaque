@@ -26,6 +26,9 @@ jobs:
       - name: cargo test
         run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
 
+  # Same matrix/xdist sharding as the PR gate (see pr.yml for the rationale),
+  # but this lane keeps `slow` tests. CPU shards across the heavy packages on
+  # ubuntu; MPS runs as a single `-n auto` job on macOS.
   python-tests:
     name: Python tests — ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -33,16 +36,35 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: CPU
+          - name: CPU transformers
             os: ubuntu-latest
-            python-version: "3.11"
             marker-expression: "not cuda and not mps"
-            coverage-suffix: ""
+            paths: packages/opaque-transformers
+            cov-flag: cpu-transformers
+          - name: CPU dpsgd
+            os: ubuntu-latest
+            marker-expression: "not cuda and not mps"
+            paths: packages/opaque-dpsgd
+            cov-flag: cpu-dpsgd
+          - name: CPU patches
+            os: ubuntu-latest
+            marker-expression: "not cuda and not mps"
+            paths: packages/opaque-patches
+            cov-flag: cpu-patches
+          - name: CPU rest
+            os: ubuntu-latest
+            marker-expression: "not cuda and not mps"
+            paths: >-
+              packages/opaque-base packages/opaque-engine
+              packages/opaque-optimizers packages/opaque-dpftrl
+              packages/opaque-auditing packages/opaque-accounting
+              packages/opaque-alignment tests
+            cov-flag: cpu-rest
           - name: MPS
             os: macos-latest
-            python-version: "3.11"
             marker-expression: "not cuda"
-            coverage-suffix: "-mps"
+            paths: packages tests
+            cov-flag: mps
 
     steps:
       - uses: actions/checkout@v5
@@ -52,25 +74,29 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
 
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
 
       - name: uv sync
         run: uv sync --group dev --all-packages --extra all
 
       - name: pytest
         run: |
-          uv run pytest \
+          uv run pytest ${{ matrix.paths }} \
             -m "${{ matrix.marker-expression }}" \
+            -n auto --dist loadscope \
             --cov=opaque \
-            --cov-report=xml:coverage${{ matrix.coverage-suffix }}.xml \
-            -v
+            --cov-report=xml:coverage.xml \
+            -q
 
       - uses: codecov/codecov-action@v4
         with:
-          files: ./coverage${{ matrix.coverage-suffix }}.xml
+          files: ./coverage.xml
+          flags: ${{ matrix.cov-flag }}
           fail_ci_if_error: false
 
   python-tests-cuda:

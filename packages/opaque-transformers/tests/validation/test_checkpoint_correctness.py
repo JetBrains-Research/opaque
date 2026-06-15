@@ -25,12 +25,11 @@ from typing import Any
 
 import pytest
 from peft import LoraConfig, TaskType, get_peft_model
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.api.transformers.trainer._state import DPTrainerState
 
-from _hf_shared import build_lm_dataset  # noqa: E402
+from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -40,9 +39,9 @@ from _hf_shared import build_lm_dataset  # noqa: E402
 
 @pytest.fixture
 def small_model_and_tokenizer():
-    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    tokenizer = gpt2_tokenizer()
     tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModelForCausalLM.from_pretrained("gpt2")
+    model = make_gpt2_model()
     model.config.pad_token_id = tokenizer.pad_token_id
     return model, tokenizer
 

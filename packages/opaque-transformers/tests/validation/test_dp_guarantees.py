@@ -24,11 +24,10 @@ import os
 import pytest
 import torch
 from peft import LoraConfig, TaskType, get_peft_model
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
-from _hf_shared import build_lm_dataset  # noqa: E402
+from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -38,14 +37,14 @@ from _hf_shared import build_lm_dataset  # noqa: E402
 
 @pytest.fixture(scope="module")
 def gpt2_tok():
-    tok = AutoTokenizer.from_pretrained("gpt2")
+    tok = gpt2_tokenizer()
     tok.pad_token = tok.eos_token
     return tok
 
 
 @pytest.fixture
 def gpt2_lora(gpt2_tok):
-    model = AutoModelForCausalLM.from_pretrained("gpt2")
+    model = make_gpt2_model()
     model.config.pad_token_id = gpt2_tok.pad_token_id
     lora = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
@@ -117,7 +116,7 @@ def test_resume_from_save_only_model_checkpoint_is_refused(
     ckpt_dir = os.path.join(tmp_path, sorted(ckpts)[0])
     assert os.path.exists(os.path.join(ckpt_dir, "accountant.json"))
 
-    model2 = AutoModelForCausalLM.from_pretrained("gpt2")
+    model2 = make_gpt2_model()
     model2.config.pad_token_id = tok.pad_token_id
     model2 = get_peft_model(
         model2,
@@ -234,7 +233,7 @@ def test_resume_keeps_total_epsilon_on_budget(gpt2_lora, lm_dataset, tmp_path):
     eps_full = full.train().metrics["privacy_epsilon"]
 
     # Fresh model for the interrupted run.
-    model2 = AutoModelForCausalLM.from_pretrained("gpt2")
+    model2 = make_gpt2_model()
     model2.config.pad_token_id = tok.pad_token_id
     model2 = get_peft_model(
         model2,
@@ -365,7 +364,7 @@ def test_dp_noise_reproducible_at_sigma_positive(gpt2_tok, lm_dataset, tmp_path)
         # Fix the model/LoRA init identically across runs so only the
         # trainer's DP ``seed`` (noise + sampling RNG) varies.
         set_seed(0)
-        m = AutoModelForCausalLM.from_pretrained("gpt2")
+        m = make_gpt2_model()
         m.config.pad_token_id = gpt2_tok.pad_token_id
         m = get_peft_model(
             m,
@@ -474,7 +473,7 @@ def test_epoch_driven_resume_does_not_overshoot_budget(gpt2_lora, lm_dataset, tm
     ckpt = os.path.join(tmp_path, "checkpoint-3")  # mid epoch 0 (steps 1-4)
     assert os.path.isdir(ckpt)
 
-    model2 = AutoModelForCausalLM.from_pretrained("gpt2")
+    model2 = make_gpt2_model()
     model2.config.pad_token_id = tok.pad_token_id
     model2 = get_peft_model(
         model2,
