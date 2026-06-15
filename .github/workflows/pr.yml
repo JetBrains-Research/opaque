@@ -62,13 +62,15 @@ jobs:
   # test ordering is preserved). The marker expression adds `not mps` only on
   # the ubuntu (CPU) device; the macOS device keeps mps-marked tests.
   python-tests:
-    name: Python tests — ${{ matrix.device.name }} ${{ matrix.shard.name }}
+    name: opaque-${{ matrix.shard.name }} (${{ matrix.device.label }})
     runs-on: ${{ matrix.device.os }}
     timeout-minutes: 25  # safety net: a hung/preempted runner fails fast instead of hanging
     strategy:
       fail-fast: false
       matrix:
         # PR gate excludes `slow` (full main CI in ci.yml runs slow too).
+        # `rest` is the catch-all for every package not split into its own
+        # shard, plus the repo-level tests/ tree.
         shard:
           - name: transformers
             paths: packages/opaque-transformers
@@ -84,9 +86,11 @@ jobs:
               packages/opaque-alignment tests
         device:
           - name: cpu
+            label: CPU
             os: ubuntu-latest
             marker: "not cuda and not mps and not slow"
           - name: mps
+            label: MPS
             os: macos-latest
             marker: "not cuda and not slow"
 
@@ -123,6 +127,25 @@ jobs:
           flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false
 
+  # Single aggregating status check. `needs.python-tests.result` is `success`
+  # only when EVERY shard (all shard×device combinations) succeeded, so make
+  # *this one job* the required branch-protection check instead of listing
+  # each shard. Shards can be added, renamed, or removed without touching the
+  # protection rule. `if: always()` ensures the gate runs (and reports a
+  # failure) even when a shard fails, rather than being skipped. The GPU lane
+  # is intentionally NOT aggregated here — see python-tests-cuda.
+  python-tests-gate:
+    name: Python tests
+    if: always()
+    needs: [python-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all test shards to pass
+        run: |
+          result="${{ needs.python-tests.result }}"
+          echo "python-tests matrix result: $result"
+          test "$result" = "success"
+
   # GPU smoke coverage on the PR gate: the fast (non-slow) CUDA-marked tests
   # on the shared self-hosted GPU runner. Gated on the CPU/MPS shards so a PR
   # that already fails basic checks doesn't tie up the single GPU box. Runs
@@ -130,7 +153,7 @@ jobs:
   # full CUDA suite (slow DDP / pipeline / real-model tests) runs post-merge
   # in ci.yml via `-m cuda`.
   python-tests-cuda:
-    name: Python tests — CUDA
+    name: opaque (CUDA)
     runs-on: GPU-runner-001
     needs: [python-tests]
     timeout-minutes: 30

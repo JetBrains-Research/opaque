@@ -29,7 +29,7 @@ jobs:
   # Same matrix/xdist sharding as the PR gate (see pr.yml for the rationale),
   # but this lane keeps `slow` tests.
   python-tests:
-    name: Python tests — ${{ matrix.device.name }} ${{ matrix.shard.name }}
+    name: opaque-${{ matrix.shard.name }} (${{ matrix.device.label }})
     runs-on: ${{ matrix.device.os }}
     timeout-minutes: 35  # safety net; slow tests make these jobs longer than the PR gate
     strategy:
@@ -50,9 +50,11 @@ jobs:
               packages/opaque-alignment tests
         device:
           - name: cpu
+            label: CPU
             os: ubuntu-latest
             marker: "not cuda and not mps"
           - name: mps
+            label: MPS
             os: macos-latest
             marker: "not cuda"
 
@@ -90,7 +92,7 @@ jobs:
           fail_ci_if_error: false
 
   python-tests-cuda:
-    name: Python tests — CUDA
+    name: opaque (CUDA)
     runs-on: GPU-runner-001
     needs: [python-tests]
 
