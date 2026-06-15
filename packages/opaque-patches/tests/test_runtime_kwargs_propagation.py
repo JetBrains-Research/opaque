@@ -102,7 +102,7 @@ def test_apply_model_patches_compat_false_does_not_enable_runtime_patches(monkey
         collator as collator_runtime,
         masking as masking_runtime,
     )
-    from opaque.api.patches.torch import runtime as torch_runtime
+    import opaque.api.patches.torch as torch_pkg
 
     calls: list[str] = []
 
@@ -117,7 +117,7 @@ def test_apply_model_patches_compat_false_does_not_enable_runtime_patches(monkey
         lambda **kw: calls.append("collator"),
     )
     monkeypatch.setattr(
-        torch_runtime,
+        torch_pkg,
         "apply_checkpoint_patch",
         lambda **kw: calls.append("checkpoint"),
     )
@@ -136,7 +136,7 @@ def test_apply_model_patches_default_compat_enables_runtime_patches(monkeypatch)
         collator as collator_runtime,
         masking as masking_runtime,
     )
-    from opaque.api.patches.torch import runtime as torch_runtime
+    import opaque.api.patches.torch as torch_pkg
 
     calls: list[str] = []
 
@@ -151,7 +151,7 @@ def test_apply_model_patches_default_compat_enables_runtime_patches(monkeypatch)
         lambda **kw: calls.append("collator"),
     )
     monkeypatch.setattr(
-        torch_runtime,
+        torch_pkg,
         "apply_checkpoint_patch",
         lambda **kw: calls.append("checkpoint"),
     )
@@ -161,38 +161,5 @@ def test_apply_model_patches_default_compat_enables_runtime_patches(monkeypatch)
     assert set(calls) == {"masking", "collator", "checkpoint"}
 
 
-# Regression: apply_checkpoint_patch must run all of Patches 1-8 (a stale
-# import once aborted it mid-way, silently disabling cpu_offload + gc).
-
-
-@pytest.fixture
-def _reset_checkpoint_flag():
-    import opaque.api.patches.torch.runtime as rt
-
-    saved = rt._is_checkpoint_patched
-    rt._is_checkpoint_patched = False
-    yield rt
-    rt._is_checkpoint_patched = saved
-
-
-def test_set_module_params_import_path_is_valid():
-    from opaque.api.engine.functional import _set_module_params  # noqa: F401
-
-
-def test_checkpoint_patch_applies_all_patches(_reset_checkpoint_flag):
-    import torch.autograd.graph as autograd_graph
-    import torch.utils.checkpoint as checkpoint
-
-    rt = _reset_checkpoint_flag
-
-    rt.apply_checkpoint_patch(vmap_checkpointing=True)
-
-    assert rt._is_checkpoint_patched is True
-    assert autograd_graph.save_on_cpu.__name__ == "_VmapSaveOnCpu"
-    assert hasattr(checkpoint._NoopSaveInputs, "vmap")
-
-
-def test_checkpoint_patch_skipped_when_disabled(_reset_checkpoint_flag):
-    rt = _reset_checkpoint_flag
-    rt.apply_checkpoint_patch(vmap_checkpointing=False)
-    assert rt._is_checkpoint_patched is False
+# Which patches apply for which torch regime is covered by
+# tests/torch/test_checkpoint_gating.py.

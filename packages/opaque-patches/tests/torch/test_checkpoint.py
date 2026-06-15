@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from torch.func import grad, vmap
 from torch.utils.checkpoint import checkpoint
 
-from opaque.api.patches.torch.runtime import is_checkpoint_patched
+from opaque.api.patches.torch.checkpoint import is_checkpoint_patched
 from opaque.patches import apply_runtime_patches
 
 apply_runtime_patches(vmap_checkpointing=True)
@@ -50,15 +50,13 @@ class TestCheckpointPatches:
         torch.testing.assert_close(g, g_ref, rtol=1e-4, atol=1e-5)
 
     def test_functional_call_param_context_protocol(self, device):
-        """Patches 7-8: functional_call + checkpoint protocol restores params.
+        """functional_call + checkpoint: recomputation sees the correct params.
 
-        Verifies that checkpoint recomputation sees the correct parameters
-        from functional_call's thread-local context, WITHOUT any manual
-        _set_module_params calls.
+        Verifies that checkpoint recomputation reads the functional_call
+        parameters, which the patch re-binds for the backward recompute.
         """
         model = torch.nn.Linear(32, 32, bias=False).to(device)
 
-        # Use functional_call directly (no _set_module_params hack)
         new_weight = torch.randn(32, 32, device=device)
         params = {"weight": new_weight}
 

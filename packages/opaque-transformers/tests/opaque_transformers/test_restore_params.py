@@ -1,11 +1,10 @@
 """Regression: _restore_params must not re-derive trainability from the live
 module's requires_grad flags.
 
-After training, the functional param-restore protocol (_set_module_params)
-leaves detached requires_grad=False tensors on the module. The old guard
-re-derived the trainable set from the live module, saw an empty
-requires_grad set, and raised on every completing trainer run. The guard now
-validates keys against the model's state_dict instead.
+The live module's requires_grad flags are not a reliable record of what was
+trained under the functional training path. The old guard re-derived the
+trainable set from the live module and could raise on a completing trainer run;
+the guard now validates the provided keys against the model's state_dict instead.
 """
 
 from __future__ import annotations

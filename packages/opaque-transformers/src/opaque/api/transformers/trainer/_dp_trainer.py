@@ -4038,11 +4038,11 @@ class DPTrainer:
         (catching typo'd names in subclass overrides before the strict
         load) and overwrites those entries in the model's state dict.
 
-        Trainability is NOT re-derived from the live module's
-        ``requires_grad`` flags: the functional param-restore protocol
-        (``_set_module_params``) leaves detached, ``requires_grad=False``
-        tensors on the module after training, so the live flags no longer
-        reflect what was trained.
+        Keys come from ``trainable_params`` (the set that was actually
+        trained) and are validated against the model's ``state_dict`` rather
+        than re-derived from the live module's ``requires_grad`` flags, which
+        are not a reliable record of what was trained under the functional
+        training path.
         """
         model_keys = set(self._model.state_dict())
         unexpected = set(trainable_params) - model_keys
