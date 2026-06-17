@@ -1,6 +1,6 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Fast end-to-end smoke tests for DPTrainer + DP-FTRL.
+"""Fast end-to-end smoke tests for Trainer + DP-FTRL.
 
 Uses a tiny embedded LM (no HF model load) so the full
 mechanism-dispatch surface — strategy construction, amplifier wiring,
@@ -21,7 +21,7 @@ import pytest
 import torch
 from torch.utils.data import Dataset
 
-from opaque.api.transformers.trainer._dp_trainer import DPTrainer
+from opaque.api.transformers.trainer._trainer import Trainer
 from opaque.transformers import TrainingArguments
 
 
@@ -125,7 +125,7 @@ class TestDpFtrlTrain:
             max_steps=max_steps,
         )
         torch.manual_seed(0)
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=_TinyLM(),
             args=args,
             train_dataset=_TinyDS(),
@@ -169,7 +169,7 @@ class TestDpFtrlSamplerDispatch:
             max_steps=max_steps,
         )
         torch.manual_seed(0)
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=_TinyLM(),
             args=args,
             train_dataset=_TinyDS(),
@@ -214,7 +214,7 @@ class TestDpFtrlCheckpointRoundTrip:
             save_steps=4,
         )
         torch.manual_seed(0)
-        trainer1 = DPTrainer(
+        trainer1 = Trainer(
             model=_TinyLM(),
             args=args1,
             train_dataset=ds,
@@ -242,7 +242,7 @@ class TestDpFtrlCheckpointRoundTrip:
             save_steps=4,
         )
         torch.manual_seed(0)
-        trainer2 = DPTrainer(
+        trainer2 = Trainer(
             model=_TinyLM(),
             args=args2,
             train_dataset=ds,
@@ -312,7 +312,7 @@ class TestDpFtrlLrScheduleIntegration:
                 seed=0,
             )
             torch.manual_seed(0)
-            trainer = DPTrainer(
+            trainer = Trainer(
                 model=_TinyLM(),
                 args=args,
                 train_dataset=_TinyDS(),
@@ -356,7 +356,7 @@ class TestDpFtrlLrScheduleIntegration:
         # From-scratch run.
         args = TrainingArguments(output_dir=str(outdir), **kwargs)
         torch.manual_seed(0)
-        t1 = DPTrainer(
+        t1 = Trainer(
             model=_TinyLM(),
             args=args,
             train_dataset=_TinyDS(),
@@ -376,7 +376,7 @@ class TestDpFtrlLrScheduleIntegration:
         outdir2 = tmp_path / "bandmf_cosine_resumed"
         args2 = TrainingArguments(output_dir=str(outdir2), **kwargs)
         torch.manual_seed(0)
-        t2 = DPTrainer(
+        t2 = Trainer(
             model=_TinyLM(),
             args=args2,
             train_dataset=_TinyDS(),
@@ -401,7 +401,7 @@ class TestGaussianPathUnchanged:
             max_steps=4,
         )
         torch.manual_seed(0)
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=_TinyLM(),
             args=args,
             train_dataset=_TinyDS(),
@@ -432,7 +432,7 @@ class TestNonPrivateZeroNoise:
             noise_multiplier=0.0,
         )
         torch.manual_seed(0)
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=_TinyLM(),
             args=args,
             train_dataset=_TinyDS(),
@@ -460,7 +460,7 @@ class TestNonPrivateZeroNoise:
                 noise_multiplier=0.0,
             )
             torch.manual_seed(0)
-            trainer = DPTrainer(
+            trainer = Trainer(
                 model=_TinyLM(),
                 args=args,
                 train_dataset=_TinyDS(),
@@ -485,7 +485,7 @@ class TestNonPrivateZeroNoise:
         )
         assert math.isinf(args.clipping_norm)
         torch.manual_seed(0)
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=_TinyLM(),
             args=args,
             train_dataset=_TinyDS(),

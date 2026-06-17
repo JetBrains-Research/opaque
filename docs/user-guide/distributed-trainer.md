@@ -1,6 +1,6 @@
-# Distributed DPTrainer
+# Distributed Trainer
 
-`DPTrainer` supports multi-process DDP without Accelerate runtime ownership.
+`Trainer` supports multi-process DDP without Accelerate runtime ownership.
 This page documents the backend matrix, DP-specific distributed semantics, and
 the safe Hugging Face parity subset.
 
@@ -11,7 +11,7 @@ the safe Hugging Face parity subset.
 - Not supported: FSDP, DeepSpeed, TPU/XLA runtime ownership, Accelerate
   `DataLoaderConfiguration` knobs that conflict with Poisson DP semantics.
 
-`DPTrainer` expects the process group to be initialized externally and then
+`Trainer` expects the process group to be initialized externally and then
 validates that runtime against `TrainingArguments.ddp_backend`.
 
 ## Backend matrix
@@ -29,7 +29,7 @@ vendor runtime stacks and fail fast when unavailable.
 Use one process per rank:
 
 ```bash
-torchrun --nproc-per-node=4 train_dp_trainer.py
+torchrun --nproc-per-node=4 train_trainer.py
 ```
 
 ```python
@@ -73,7 +73,7 @@ Intentionally not exposed from Accelerate-style config:
 - `split_batches`, `dispatch_batches`, `even_batches`, `use_seedable_sampler`.
 
 These knobs conflict with Poisson-sampling semantics or imply batching behavior
-that `DPTrainer` does not implement.
+that `Trainer` does not implement.
 
 ## Rank-gated side effects
 
@@ -86,7 +86,7 @@ Under DDP, side effects are rank-gated:
 ## CI checklist for distributed changes
 
 - `uv run pytest packages/opaque-transformers/tests/opaque_transformers/test_config.py`
-- `CUDA_VISIBLE_DEVICES=0,1,2,3 uv run pytest packages/opaque-transformers/tests/distributed/test_ddp_trainer.py`
+- `CUDA_VISIBLE_DEVICES=0,1,2,3 uv run pytest packages/opaque-transformers/tests/distributed/test_distributed_trainer.py`
 - `uv run pytest packages/opaque-core/tests/distributed/`
 - `MASTER_ADDR=127.0.0.1 MASTER_PORT=<port> uv run pytest -k gloo packages/opaque-transformers/tests/distributed/`
 - `mpirun -n 2 uv run pytest -k mpi packages/opaque-transformers/tests/distributed/` (when MPI launcher/runtime is available)

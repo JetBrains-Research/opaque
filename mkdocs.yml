@@ -107,7 +107,7 @@ nav:
     - Distributed Training: user-guide/distributed.md
     - HuggingFace Integration:
       - Overview: user-guide/huggingface/index.md
-      - DPTrainer: user-guide/huggingface/dptrainer.md
+      - Trainer: user-guide/huggingface/trainer.md
       - TrainingArguments: user-guide/huggingface/training-arguments.md
       - Model Patches: user-guide/huggingface/model-patches.md
     - Memory Optimizations: user-guide/memory-optimizations.md

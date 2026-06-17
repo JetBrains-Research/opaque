@@ -13,7 +13,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
+from opaque.transformers.trainer import Trainer, TrainingArguments
 
 
 def _trainer(tmp_path):
@@ -27,7 +27,7 @@ def _trainer(tmp_path):
         privacy_target_epsilon=10.0,
         privacy_noise_multiplier=1.0,
     )
-    return DPTrainer(
+    return Trainer(
         model=model,
         args=args,
         train_dataset=[{"x": torch.zeros(4)}],

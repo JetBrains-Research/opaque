@@ -56,7 +56,7 @@ the router forces `kernels=False` when CUDA + Triton can't be
 imported, so `performance=True` keeps the pure-Python `kv_cache`
 patch on those hosts.  Configure the patch surface via the explicit
 flags (see
-[Model Patches — DPTrainer integration](user-guide/huggingface/model-patches.md#dptrainer-integration));
+[Model Patches — Trainer integration](user-guide/huggingface/model-patches.md#trainer-integration));
 opaque-patches has no environment-variable kill switches.
 
 Public standalone kernels (`opaque_swiglu`, `opaque_cross_entropy_loss`,

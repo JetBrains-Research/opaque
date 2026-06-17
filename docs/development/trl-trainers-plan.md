@@ -4,12 +4,12 @@
 
 **Scope:**
 - A new package `opaque-alignment` providing functional, mechanism-agnostic primitives for DP-safe preference learning (losses, collators, dataset transforms, reference-model helpers, alignment metrics).
-- TRL-style class trainers `opaque.transformers.trl.{SFTTrainer, DPOTrainer, KTOTrainer}` plus matching configs, built on top of `DPTrainer` and consuming `opaque-alignment` primitives.
+- TRL-style class trainers `opaque.transformers.trl.{SFTTrainer, DPOTrainer, KTOTrainer}` plus matching configs, built on top of `Trainer` and consuming `opaque-alignment` primitives.
 - Functional examples (`examples/train_sft.py`, `train_dpo.py`, `train_kto.py`) as siblings of trainer-based examples (`train_*_trainer.py`), mirroring the existing `train_causal_lm.py` ↔ `train_causal_lm_trainer.py` pattern.
 
 **Branches:**
-- Planning (this doc): `claude/add-trl-trainers-plan-nB07O`, rebased onto `feat/dptrainer-main-integration` which has both the post-refactor layout and the full `DPTrainer` implementation integrated.
-- Implementation phases: per-phase sub-branches off `feat/dptrainer-main-integration` (or its successor on main) once each phase is approved.
+- Planning (this doc): `claude/add-trl-trainers-plan-nB07O`, rebased onto `feat/trainer-main-integration` which has both the post-refactor layout and the full `Trainer` implementation integrated.
+- Implementation phases: per-phase sub-branches off `feat/trainer-main-integration` (or its successor on main) once each phase is approved.
 
 ---
 
@@ -22,7 +22,7 @@
 5. [`opaque-alignment` package design](#5-opaque-alignment-package-design)
 6. [`opaque.transformers.trl` package design](#6-opaquetransformerstrl-package-design)
 7. [Phase −1 — Kernel parity pass (`opaque-patches`)](#7-phase-1--kernel-parity-pass-opaque-patches)
-8. [Phase 0 — DPTrainer foundational changes](#8-phase-0--dptrainer-foundational-changes)
+8. [Phase 0 — Trainer foundational changes](#8-phase-0--trainer-foundational-changes)
 9. [Phase 0.25 — `opaque-alignment` package skeleton](#9-phase-025--opaque-alignment-package-skeleton)
 10. [Phase 0.5 — `opaque.distributed` extensions](#10-phase-05--opaquedistributed-extensions)
 11. [Phase 1 — SFTTrainer + alignment primitives](#11-phase-1--sfttrainer--alignment-primitives)
@@ -44,7 +44,7 @@
 ### 1.1 Goals
 
 - **New package `opaque-alignment`** with functional, mechanism-agnostic primitives for preference learning. Pure functions (no hidden state, no subclassing), composable with `vmap(grad(...))` per Opaque's design philosophy. Mirrors the role `opaque-engine` plays for DP-SGD/DP-FTRL primitives.
-- **Three TRL-style trainers** under `opaque.transformers.trl`: `SFTTrainer`, `DPOTrainer`, `KTOTrainer`. Each thin orchestration over `DPTrainer` + `opaque-alignment` primitives.
+- **Three TRL-style trainers** under `opaque.transformers.trl`: `SFTTrainer`, `DPOTrainer`, `KTOTrainer`. Each thin orchestration over `Trainer` + `opaque-alignment` primitives.
 - **Matching configs** `SFTConfig`, `DPOConfig`, `KTOConfig` extending `DPTrainingArguments` with TRL-parity fields.
 - **Every TRL loss variant** that is mathematically compatible with per-example DP-SGD lands in the appropriate phase. Variants that structurally violate per-example DP (`aot`, `aot_pair` — cross-example batch sort) are deliberately rejected with a documented reason.
 - **Every TRL advanced feature** that is compatible lands in some phase by the end of the plan. Features deliberately skipped (vision-language models) are documented in §16.
@@ -78,7 +78,7 @@ The DP foundation is split across three packages — `opaque-base` (serializatio
 - `opaque-dpsgd` — DP-SGD-specific noise, samplers, accounting integration.
 - `opaque-dpftrl` — DP-FTRL mechanisms (matrix factorization, BLT, BSR, BiSR, band-MF, λ-CGD), specialized samplers.
 - `opaque-patches` — HF Transformers compat patches + Triton kernels with vmap rules (the "Liger/Unsloth equivalent" reimplemented natively).
-- `opaque-transformers` — HF Trainer compatibility layer (`DPTrainer`). Full implementation present on `feat/dptrainer-main-integration` (the current base of this plan branch).
+- `opaque-transformers` — HF Trainer compatibility layer (`Trainer`). Full implementation present on `feat/trainer-main-integration` (the current base of this plan branch).
 - `opaque-accounting` — PLD privacy accounting (Rust via PyO3).
 - `opaque-auditing` — empirical privacy auditing.
 
@@ -127,7 +127,7 @@ Properties:
 ### 2.3 Where the implementation sits
 
 - `opaque-alignment` follows the same api/façade pattern.
-- The `DPTrainer` implementation lives on `feat/dptrainer-main-integration` (`_dp_trainer.py` is 4814 LOC, `_config.py` 1295 LOC); this plan's branch builds on it.
+- The `Trainer` implementation lives on `feat/trainer-main-integration` (`_trainer.py` is 4814 LOC, `_config.py` 1295 LOC); this plan's branch builds on it.
 
 ### 2.4 `_runtime_bootstrap.py`
 
@@ -137,7 +137,7 @@ Properties:
 - `is_patched() -> bool`, `is_vmap_patched() -> bool` — patch-state introspection.
 - `patch_all()` — idempotent public entry point.
 
-Called from `DPTrainer.__init__` at `_dp_trainer.py:416`. TRL trainers inherit this bootstrapping for free. Public functions are re-exported through `opaque.transformers.__init__` so user code can verify patch state or pre-apply.
+Called from `Trainer.__init__` at `_trainer.py:416`. TRL trainers inherit this bootstrapping for free. Public functions are re-exported through `opaque.transformers.__init__` so user code can verify patch state or pre-apply.
 
 ---
 
@@ -148,11 +148,11 @@ Called from `DPTrainer.__init__` at `_dp_trainer.py:416`. TRL trainers inherit t
 ```
 DP primitives (functional, composable)              Class wrapper (orchestration)
 ──────────────────────────────────────────          ─────────────────────────────────
-opaque-engine   (clipping, functional, …)       →   opaque.transformers.DPTrainer
+opaque-engine   (clipping, functional, …)       →   opaque.transformers.Trainer
 opaque-dpsgd    (noise, samplers, accounting)
 opaque-optimizers (adamw, sgd, …)
 
-examples/train_causal_lm.py        (functional)     examples/train_causal_lm_trainer.py  (DPTrainer)
+examples/train_causal_lm.py        (functional)     examples/train_causal_lm_trainer.py  (Trainer)
 ```
 
 ### 3.2 The same pattern, lifted one layer
@@ -189,7 +189,7 @@ examples/train_kto.py          (functional)          examples/train_kto_trainer.
 | Reward metrics, KL estimators, token accuracy | `opaque.api.alignment.metric` |
 | Fused chunked-preference kernels (the Liger memory trick) | `opaque.api.alignment.kernel` (self-contained pure-PyTorch; no `opaque-patches` dep needed for the base) |
 | Trainer classes, configs, signature columns, log() override | `opaque.api.transformers.trl` |
-| DPTrainer generic features (subclass hooks: signature columns, extra forward kwargs, autocast ctx) | `opaque.api.transformers.trainer` (DPTrainer itself) |
+| Trainer generic features (subclass hooks: signature columns, extra forward kwargs, autocast ctx) | `opaque.api.transformers.trainer` (Trainer itself) |
 | Cross-rank reductions for metrics / precompute | `opaque.api.engine.distributed` (functional primitives, not Accelerator-shaped) |
 
 ---
@@ -254,7 +254,7 @@ TRL's `num_items_in_batch` is the sum of `(labels != -100)` across the global ac
 **Audit rule for every loss port:** every divisor in the per-example loss closure must be one of:
 
 1. **Per-example computation** of example `i`'s data alone (e.g., `(labels_i != -100).sum()` for that example).
-2. **`expected_batch_size`** (public hyperparameter; Opaque already uses this for `clipped_grad(..., normalize_by=...)` at `_dp_trainer.py:3654,3663,3673`).
+2. **`expected_batch_size`** (public hyperparameter; Opaque already uses this for `clipped_grad(..., normalize_by=...)` at `_trainer.py:3654,3663,3673`).
 3. **A public constant** from `args` (e.g., `args.max_length`, `args.beta`).
 4. **Dropped entirely** and the normalization left to `clipped_grad`'s `normalize_by=expected_batch_size`.
 
@@ -397,8 +397,8 @@ Lives inside `opaque-transformers` distribution, following the api/façade patte
 packages/opaque-transformers/src/opaque/
 ├── api/
 │   └── transformers/
-│       ├── trainer/                      ← (existing, on feat/dptrainer-main-integration)
-│       │   └── _dp_trainer.py            ←   DPTrainer
+│       ├── trainer/                      ← (existing, on feat/trainer-main-integration)
+│       │   └── _trainer.py            ←   Trainer
 │       └── trl/                          ← NEW
 │           ├── __init__.py
 │           ├── _sft_trainer.py
@@ -410,7 +410,7 @@ packages/opaque-transformers/src/opaque/
 │           ├── _rlhf_mixin.py            ← shared trainer plumbing
 │           └── _callbacks.py             ← SyncRefModelCallback (TR-DPO)
 └── transformers/
-    ├── __init__.py                       ← existing façade (DPTrainer re-export)
+    ├── __init__.py                       ← existing façade (Trainer re-export)
     └── trl/                              ← NEW FAÇADE
         └── __init__.py                   ← from opaque.api.transformers.trl import …
 ```
@@ -443,7 +443,7 @@ dependencies = [
 ### 6.4 Inheritance + single-hook pattern
 
 ```python
-class OpaqueDPOTrainer(DPTrainer, RLHFMixin):
+class OpaqueDPOTrainer(Trainer, RLHFMixin):
     def __init__(self, model, ref_model=None, args=None, ...):
         # 1-6 above
         super().__init__(...)
@@ -501,13 +501,13 @@ Phase −1 runs in parallel with Phase 0 and can land independently.
 
 ---
 
-## 8. Phase 0 — DPTrainer foundational changes
+## 8. Phase 0 — Trainer foundational changes
 
-**Prerequisite:** none — `feat/dptrainer-main-integration` already carries the integrated DPTrainer. This phase adds small hooks to DPTrainer to make TRL-style subclassing ergonomic.
+**Prerequisite:** none — `feat/trainer-main-integration` already carries the integrated Trainer. This phase adds small hooks to Trainer to make TRL-style subclassing ergonomic.
 
 ### 8.1 The unified `compute_per_example_loss` hook
 
-DPTrainer exposes a **single** vmap-safe override hook that covers both training and per-example eval:
+Trainer exposes a **single** vmap-safe override hook that covers both training and per-example eval:
 
 ```python
 def compute_per_example_loss(
@@ -518,7 +518,7 @@ def compute_per_example_loss(
     *,
     return_logits: bool = False,
 ) -> Tensor | tuple[Tensor, Any]:
-    """The unified DP-correct override hook (_dp_trainer.py:1955).
+    """The unified DP-correct override hook (_trainer.py:1955).
 
     The trainer wraps it with vmap for training (then grad → clip →
     noise) AND for per-example eval (when 'loss' in include_for_metrics).
@@ -529,16 +529,16 @@ def compute_per_example_loss(
 
 | Symbol | Lives at | Role |
 |---|---|---|
-| `compute_per_example_loss(self, fmodel, params, inputs, *, return_logits)` | `_dp_trainer.py:1955` | **The single override hook.** vmap-batched by the caller for both training and per-example eval. Subclasses override this. |
-| `_build_per_example_loss(self, fmodel, frozen_params, batch_keys)` | `_dp_trainer.py:3002` | **Internal builder** — wraps `compute_per_example_loss` into the training vmap closure (calls it at `:3047-3053`), returns `(loss_fn, batch_argnums)` for `clipped_grad`. Subclasses normally do NOT override this. |
-| per-example eval path | `_dp_trainer.py:3115-3120` | Also wraps `compute_per_example_loss` under vmap when `'loss' in include_for_metrics`. The batched eval fast-path (`:2233-2253`) uses bound-module forward directly. |
+| `compute_per_example_loss(self, fmodel, params, inputs, *, return_logits)` | `_trainer.py:1955` | **The single override hook.** vmap-batched by the caller for both training and per-example eval. Subclasses override this. |
+| `_build_per_example_loss(self, fmodel, frozen_params, batch_keys)` | `_trainer.py:3002` | **Internal builder** — wraps `compute_per_example_loss` into the training vmap closure (calls it at `:3047-3053`), returns `(loss_fn, batch_argnums)` for `clipped_grad`. Subclasses normally do NOT override this. |
+| per-example eval path | `_trainer.py:3115-3120` | Also wraps `compute_per_example_loss` under vmap when `'loss' in include_for_metrics`. The batched eval fast-path (`:2233-2253`) uses bound-module forward directly. |
 
 There is exactly one place to put the loss math. The same `compute_per_example_loss` override is vmap'd for training (→ clip → noise) and for per-example eval, so training and eval can never drift apart. The constraints are uniform: the hook is always vmap-safe (no `nn.Module` state mutation, no `.item()` on dynamic shapes, no in-place input mutation, no Python control flow on tensor values).
 
 **TRL trainer override pattern (used in Phases 1–3):**
 
 ```python
-class OpaqueDPOTrainer(DPTrainer, RLHFMixin):
+class OpaqueDPOTrainer(Trainer, RLHFMixin):
     def compute_per_example_loss(self, fmodel, params, inputs, *, return_logits=False):
         # The SINGLE override. vmap-safe. Calls opaque.alignment.loss.dpo.DPO_LOSSES[...].
         # Returns scalar per example (training); the eval path returns the same,
@@ -548,18 +548,18 @@ class OpaqueDPOTrainer(DPTrainer, RLHFMixin):
 
 Trainers compute reward / token-accuracy / KL metrics from the `return_logits=True` payload, accumulating into `self._metrics["eval"]` inside the trainer's eval hook (not inside `compute_per_example_loss` itself).
 
-**`num_items_in_batch` is HF-parity passthrough only.** Accepted in `training_step` (`_dp_trainer.py:1725`) but **never used inside the DP path** — the per-example vmap path scales by `expected_batch_size` via `clipped_grad`, and the eval path uses per-real-token weighting (§8.1a). Subclasses must not introduce divisors that depend on it (DP-purity rule §4.4).
+**`num_items_in_batch` is HF-parity passthrough only.** Accepted in `training_step` (`_trainer.py:1725`) but **never used inside the DP path** — the per-example vmap path scales by `expected_batch_size` via `clipped_grad`, and the eval path uses per-real-token weighting (§8.1a). Subclasses must not introduce divisors that depend on it (DP-purity rule §4.4).
 
 ### 8.1a Per-real-token eval-loss weighting (new behavior)
 
-The eval loop (`_dp_trainer.py:2406-2432`) now weights per-example losses by **real-token count** (tokens where `labels != -100`), not by batch size — making eval loss padding-invariant and aligned with the manual-loop reference. Consequence for TRL trainers: the eval weighting is applied **by the trainer's eval loop**, not inside `compute_per_example_loss`. Subclasses return the raw per-example loss; the loop handles token-weighted reduction. No subclass action required, but parity tests should assert padding-invariance.
+The eval loop (`_trainer.py:2406-2432`) now weights per-example losses by **real-token count** (tokens where `labels != -100`), not by batch size — making eval loss padding-invariant and aligned with the manual-loop reference. Consequence for TRL trainers: the eval weighting is applied **by the trainer's eval loop**, not inside `compute_per_example_loss`. Subclasses return the raw per-example loss; the loop handles token-weighted reduction. No subclass action required, but parity tests should assert padding-invariance.
 
 ### 8.2 Smaller hooks to add
 
 | Hook | Purpose |
 |---|---|
-| `_default_signature_columns() -> list[str]` | Subclass override hook (vs. monkey-patching the whole `_set_signature_columns_if_needed` at `_dp_trainer.py:2899`). Empty by default; subclasses return their fixed list (e.g. DPO's `chosen_input_ids`, `ref_chosen_logps`, …). **This is the load-bearing hook** — it tells `_remove_unused_columns` (`:2927`) to keep the preference columns that aren't in `model.forward`'s signature. |
-| `compute_loss_context_manager()` | Returns `torch.autocast(...)` when `self._amp_dtype` set (initialized at `_dp_trainer.py:423`), else `nullcontext()`. HF parity. Used by DPO/KTO `prediction_step`. |
+| `_default_signature_columns() -> list[str]` | Subclass override hook (vs. monkey-patching the whole `_set_signature_columns_if_needed` at `_trainer.py:2899`). Empty by default; subclasses return their fixed list (e.g. DPO's `chosen_input_ids`, `ref_chosen_logps`, …). **This is the load-bearing hook** — it tells `_remove_unused_columns` (`:2927`) to keep the preference columns that aren't in `model.forward`'s signature. |
+| `compute_loss_context_manager()` | Returns `torch.autocast(...)` when `self._amp_dtype` set (initialized at `_trainer.py:423`), else `nullcontext()`. HF parity. Used by DPO/KTO `prediction_step`. |
 | `_default_collator()` factory hook | Subclass-overridable factory for a default collator when user doesn't pass one. |
 
 **No `_extra_forward_kwargs` allowlist.** TRL passes non-`forward()`-signature kwargs (`skip_logits`, `return_token_accuracy`, `use_token_scaling`) into the model — those are TRL's *Liger* metric flags. Opaque does not surface Liger directly (the kernel layer is `use_performance_kernels`), and the unified `compute_per_example_loss(fmodel, params, inputs)` hook hands the subclass full control over exactly what gets forwarded to `fmodel`. The subclass transforms/filters `inputs` itself before the forward, so a trainer-level allowlist is unnecessary. `_default_signature_columns` (column retention) is the only hook needed here.
@@ -570,8 +570,8 @@ The eval loop (`_dp_trainer.py:2406-2432`) now weights per-example losses by **r
 
 ### 8.4 Phase 0 deliverables
 
-- Patches to `_dp_trainer.py` (add hooks above) and `_config.py` (rename).
-- New tests in `tests/opaque_transformers/test_dp_trainer_subclass_hooks.py`:
+- Patches to `_trainer.py` (add hooks above) and `_config.py` (rename).
+- New tests in `tests/opaque_transformers/test_trainer_subclass_hooks.py`:
   - Confirm `_default_signature_columns` is honored (preference columns survive `_remove_unused_columns`).
   - Confirm a subclass `compute_per_example_loss` override drives **both** training and per-example eval.
   - Confirm `compute_loss_context_manager` returns the right context.
@@ -580,12 +580,12 @@ The eval loop (`_dp_trainer.py:2406-2432`) now weights per-example losses by **r
 
 **Effort: S (1–2 days)** — small: the unified `compute_per_example_loss` hook already exists; Phase 0 only adds the signature-columns hook, the autocast-context shim, the collator factory hook, and the config rename.
 
-**Work units (DAG).** The hooks touch the shared `_dp_trainer.py` / `_config.py`, so units serialize through one agent to avoid intra-file conflict; the test file is a parallel add. Max concurrency 2.
+**Work units (DAG).** The hooks touch the shared `_trainer.py` / `_config.py`, so units serialize through one agent to avoid intra-file conflict; the test file is a parallel add. Max concurrency 2.
 
 | Unit | Produces | Deps | Gate |
 |---|---|---|---|
-| 0.1 | `_dp_trainer.py` hooks (`_default_signature_columns`, `compute_loss_context_manager`, `_default_collator`) + `_config.py` rename (`cpu_offload_activations`→`activation_offloading` alias) | — | `infra` (+ GPU smoke, training-path touch) |
-| 0.2 | `tests/opaque_transformers/test_dp_trainer_subclass_hooks.py` | 0.1 | `infra` |
+| 0.1 | `_trainer.py` hooks (`_default_signature_columns`, `compute_loss_context_manager`, `_default_collator`) + `_config.py` rename (`cpu_offload_activations`→`activation_offloading` alias) | — | `infra` (+ GPU smoke, training-path touch) |
+| 0.2 | `tests/opaque_transformers/test_trainer_subclass_hooks.py` | 0.1 | `infra` |
 
 ---
 
@@ -626,7 +626,7 @@ def test_namespace_composes():
 
 ### 10.1 New functional primitives
 
-Current `opaque.distributed` surface (audited on `feat/dptrainer-main-integration`):
+Current `opaque.distributed` surface (audited on `feat/trainer-main-integration`):
 - ✅ Present: `is_distributed`, `get_rank`, `get_world_size`, `all_reduce`, `sum_gradients`, `sum_gradients_`, `sync`, `reduce_pytree`, `reduce_pytree_`, `local_shard`.
 - ❌ Missing: `gather_for_metrics`, `is_main_process`, `wait_for_everyone`, `num_processes`, `process_index`.
 
@@ -916,7 +916,7 @@ These are workstreams independent of loss math; separated to keep Phases 1–3 r
 
 ### 14.5 `activation_offloading`
 
-- Rename `cpu_offload_activations` → `activation_offloading` at DPTrainer level (Phase 0).
+- Rename `cpu_offload_activations` → `activation_offloading` at Trainer level (Phase 0).
 - Verify existing ctx-manager composes with `functional_call` under vmap (Phase 4 fixture).
 
 ### 14.6 Phase 4 tests
@@ -991,7 +991,7 @@ Sibling workstreams that become natural under the `opaque-alignment` + `opaque.t
 
 | Item | Effort | Rationale |
 |---|---|---|
-| **`OpaqueRewardTrainer` (DP RM)** | M | Pairwise BT loss on `AutoModelForSequenceClassification`. Direct `DPTrainer` subclass using `opaque.alignment.loss.reward` (new `loss/reward/` sub-concern with the BT formula). Prerequisite for decoupled DP-RLHF (arXiv:2603.22563). |
+| **`OpaqueRewardTrainer` (DP RM)** | M | Pairwise BT loss on `AutoModelForSequenceClassification`. Direct `Trainer` subclass using `opaque.alignment.loss.reward` (new `loss/reward/` sub-concern with the BT formula). Prerequisite for decoupled DP-RLHF (arXiv:2603.22563). |
 | **Decoupled DP-RLHF recipe** | M | Notebook chaining `OpaqueRewardTrainer` → vanilla `trl.PPOTrainer` (non-DP actor). Lives in `opaque.alignment.recipes`. |
 | **`OpaqueORPOTrainer`, `OpaqueCPOTrainer`, `OpaqueSimPOTrainer`** | M each | Different loss heads; thin trainer + new loss module. Pattern established by DPO. |
 | **`OpaqueGRPOTrainer`** | L | Trajectory-level — needs `old_logps` / `ref_logps` plumbing similar to DPO precompute. Worth designing once on top of completed infrastructure. |
@@ -1016,7 +1016,7 @@ Sibling workstreams that become natural under the `opaque-alignment` + `opaque.t
 | R7 | DP-purity violation slips through (data-dependent cross-example divisor) | M | H | Mandatory DP-purity test (§19.5) for every loss closure. NaN one example, assert only that row's grad changes. |
 | R8 | DP-AdamW formula drift vs paper | L | L | `opaque.optimizers.adamw(noise_bias_correction=True)` already matches arXiv:2505.08849. Treated as audit done. |
 | R10 | FlexAttention + vmap composition broken | M | M | Phase 4 fixture test. Fallback: SDPA + 4D block mask (slower). |
-| R11 | `feat/dptrainer-main-integration` rebases or evolves before this plan lands | L | M | Plan branch is rebased on top; rebase again if base moves. Phase 0 changes are small and easy to re-apply. |
+| R11 | `feat/trainer-main-integration` rebases or evolves before this plan lands | L | M | Plan branch is rebased on top; rebase again if base moves. Phase 0 changes are small and easy to re-apply. |
 | R12 | Chunked preference kernel port (Phase −1) takes longer than estimated | M | L | Optional optimization; SFT/DPO/KTO ship without it via standard `opaque_linear_cross_entropy_loss`. |
 
 ---
@@ -1075,31 +1075,31 @@ Replace one example's data with NaN; verify only that row's gradient is affected
 - `packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py` — fused linear CE with vmap rules (the chunked-NLL replacement).
 - `packages/opaque-patches/src/opaque/api/patches/kernels/{swiglu,geglu,rope_embedding,rms_norm,lora,fused_add_rms_norm}.py` — kernel coverage.
 
-### Opaque DPTrainer (`feat/dptrainer-main-integration`)
+### Opaque Trainer (`feat/trainer-main-integration`)
 
-Line numbers verified on `feat/dptrainer-main-integration` (`_dp_trainer.py` 4814 LOC, `_config.py` 1295 LOC):
+Line numbers verified on `feat/trainer-main-integration` (`_trainer.py` 4814 LOC, `_config.py` 1295 LOC):
 
-- `_dp_trainer.py:250` — `class DPTrainer`.
-- `_dp_trainer.py:1955` — `compute_per_example_loss(self, fmodel, params, inputs, *, return_logits)` (**the single override hook**; unified DP-correct training + per-example eval).
-- `_dp_trainer.py:3002` — `_build_per_example_loss(self, fmodel, frozen_params, batch_keys)` (internal builder; wraps `compute_per_example_loss` for the training vmap closure at `:3047-3053`).
-- `_dp_trainer.py:3115-3120` — per-example eval path (also wraps `compute_per_example_loss`).
-- `_dp_trainer.py:2075` — `prediction_step(...)`.
-- `_dp_trainer.py:1725` — `training_step(model, inputs, num_items_in_batch)` (`num_items_in_batch` accepted but unused in DP path).
-- `_dp_trainer.py:2288` — `evaluation_loop(...)`; `:2406-2432` — per-real-token eval-loss weighting.
-- `_dp_trainer.py:2883` — `_prepare_input(...)`.
-- `_dp_trainer.py:2899` — `_set_signature_columns_if_needed()`.
-- `_dp_trainer.py:2927` — `_remove_unused_columns(...)`.
-- `_dp_trainer.py:3123` — `_discover_batch_keys()`.
-- `_dp_trainer.py:2986` — `_prepare_dataset_and_collator(...)`.
-- `_dp_trainer.py:3154` — `get_train_dataloader()`.
-- `_dp_trainer.py:3297` — `get_eval_dataloader(eval_dataset)`.
-- `_dp_trainer.py:3424` — `create_optimizer()`.
-- `_dp_trainer.py:3465` — `create_scheduler(num_training_steps)`.
-- `_dp_trainer.py:3479` — `log(logs, start_time)`.
-- `_dp_trainer.py:3510` — `_maybe_log_save_evaluate(...)`.
-- `_dp_trainer.py:3654,3663,3673` — three call sites of `clipped_grad / adaptive_clipped_grad / auto_clipped_grad(..., normalize_by=expected_batch_size)`.
-- `_dp_trainer.py:423` — `_amp_dtype` initialization.
-- `_dp_trainer.py:416` — `_runtime_bootstrap` invocation (`_opaque_rt.apply_transformers_runtime_compat_patches()`; see §2.4).
+- `_trainer.py:250` — `class Trainer`.
+- `_trainer.py:1955` — `compute_per_example_loss(self, fmodel, params, inputs, *, return_logits)` (**the single override hook**; unified DP-correct training + per-example eval).
+- `_trainer.py:3002` — `_build_per_example_loss(self, fmodel, frozen_params, batch_keys)` (internal builder; wraps `compute_per_example_loss` for the training vmap closure at `:3047-3053`).
+- `_trainer.py:3115-3120` — per-example eval path (also wraps `compute_per_example_loss`).
+- `_trainer.py:2075` — `prediction_step(...)`.
+- `_trainer.py:1725` — `training_step(model, inputs, num_items_in_batch)` (`num_items_in_batch` accepted but unused in DP path).
+- `_trainer.py:2288` — `evaluation_loop(...)`; `:2406-2432` — per-real-token eval-loss weighting.
+- `_trainer.py:2883` — `_prepare_input(...)`.
+- `_trainer.py:2899` — `_set_signature_columns_if_needed()`.
+- `_trainer.py:2927` — `_remove_unused_columns(...)`.
+- `_trainer.py:3123` — `_discover_batch_keys()`.
+- `_trainer.py:2986` — `_prepare_dataset_and_collator(...)`.
+- `_trainer.py:3154` — `get_train_dataloader()`.
+- `_trainer.py:3297` — `get_eval_dataloader(eval_dataset)`.
+- `_trainer.py:3424` — `create_optimizer()`.
+- `_trainer.py:3465` — `create_scheduler(num_training_steps)`.
+- `_trainer.py:3479` — `log(logs, start_time)`.
+- `_trainer.py:3510` — `_maybe_log_save_evaluate(...)`.
+- `_trainer.py:3654,3663,3673` — three call sites of `clipped_grad / adaptive_clipped_grad / auto_clipped_grad(..., normalize_by=expected_batch_size)`.
+- `_trainer.py:423` — `_amp_dtype` initialization.
+- `_trainer.py:416` — `_runtime_bootstrap` invocation (`_opaque_rt.apply_transformers_runtime_compat_patches()`; see §2.4).
 - `_config.py:240` — `microbatch_size`; `:244` — `auto_find_microbatch_size`; `:389` — `use_performance_kernels`; `:398` — `performance_kernels_config`; `:406` — `use_compat_patches`; `:422` — `cpu_offload_activations` (rename target).
 
 ### TRL (analyzed at `/tmp/trl_src`, v1.5.0.dev0)

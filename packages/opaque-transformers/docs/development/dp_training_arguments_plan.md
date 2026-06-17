@@ -17,7 +17,7 @@
 >   batch (no internal grad-accumulation knob); cluster-wide logical
 >   batch is `per_device_train_batch_size * world_size`
 >   (the HF `train_batch_size` property).
-> - `DPTrainerState` is now a standalone dataclass with an explicit
+> - `TrainerState` is now a standalone dataclass with an explicit
 >   `version: int` field; it does **not** inherit from HF's
 >   `TrainerState`.
 > - The privacy accountant lives at the trainer level
@@ -29,7 +29,7 @@
 ## Current state
 
 `DPTrainingArguments` declares ~80 HF-compatible fields + ~20 dp_ fields.
-Most trainer-owned HF fields are now either wired into `DPTrainer` or rejected
+Most trainer-owned HF fields are now either wired into `Trainer` or rejected
 explicitly when their semantics conflict with the functional DP-SGD path. This
 plan tracks both the implemented support and the deliberate non-goals.
 
@@ -50,7 +50,7 @@ fields.
 **Code**:
 - New `opaque.scheduling` module: the curves torchopt doesn't ship — `cosine_schedule`, `inverse_sqrt_schedule`, `constant_schedule`, `linear_schedule`, `polynomial_schedule`, `one_minus_sqrt_schedule` — plus `with_warmup(decay, num_warmup_steps, base_lr)` and `with_restarts` composition primitives that auto-shift the step counter passed to `decay`.
 - HF shim `opaque.api.transformers.trainer._scheduler` (`build_lr_schedule(args, num_training_steps)`, `get_warmup_steps(...)`, `parse_optim_args(...)`): dispatches **10** of HF's `SchedulerType` strings — `linear`, `cosine`, `constant`, `constant_with_warmup`, `inverse_sqrt`, `polynomial`, `cosine_with_restarts`, `cosine_with_min_lr`, `cosine_warmup_with_min_lr`, `warmup_stable_decay` — to compositions of the primitives above; unknown kwargs raise `ValueError`.  `reduce_lr_on_plateau` is intentionally not supported: it's metric-driven and data-dependent, which doesn't fit the recipe-based static-schedule model the rest of `opaque.scheduling` is built on.
-- `DPTrainer.create_scheduler(num_training_steps)` (subclass override hook); called from `_setup_training` and the resulting callable is passed into `create_optimizer` for every optimizer branch (`adam`, `sgd`, `adamw-bc`, `adamw`).
+- `Trainer.create_scheduler(num_training_steps)` (subclass override hook); called from `_setup_training` and the resulting callable is passed into `create_optimizer` for every optimizer branch (`adam`, `sgd`, `adamw-bc`, `adamw`).
 - `learning_rate` is logged in `state.log_history` at each `logging_steps` boundary, computed as `lr_schedule(global_step - 1)` — the value just applied to the optimizer update at iteration `global_step` (HF parity: torchopt's `scale_by_schedule` increments the count *after* the update, so the LR consumed by step N is `schedule(N - 1)`).
 
 **Skip**: none for the dispatch surface (full HF coverage).  `optim_args` is implemented via `parse_optim_args`.
@@ -58,7 +58,7 @@ fields.
 **Tests**:
 - `packages/opaque-core/tests/scheduling/test_scheduling.py` — pointwise correctness of every primitive.
 - `packages/opaque-transformers/tests/opaque_transformers/test_scheduler_dispatch.py` — HF parity for each `lr_scheduler` (≈200 sample points per type at `tol=1e-9`); plus dispatch error cases and warmup edge cases (`warmup_steps=0`, `warmup_steps==num_training_steps`, `warmup_steps>num_training_steps`, `polynomial(power=1.0)` ≡ `linear`).
-- `packages/opaque-transformers/tests/validation/test_dp_trainer.py::TestDPTrainerLRScheduling` — end-to-end through `DPTrainer.train()`.
+- `packages/opaque-transformers/tests/validation/test_trainer.py::TestTrainerLRScheduling` — end-to-end through `Trainer.train()`.
 
 **Docs**: `docs/api/schedules.md`, `docs/user-guide/lr-scheduling.md`, plus an LR-scheduling section in `docs/user-guide/huggingface.md`.
 
@@ -67,7 +67,7 @@ fields.
 ## Phase 2: Saving & Checkpointing — implemented
 
 All three sub-phases (2a basic save, 2b best-model tracking, 2c resume) are
-wired in `DPTrainer`. See
+wired in `Trainer`. See
 [`docs/user-guide/checkpointing.md`](../../../../docs/user-guide/checkpointing.md)
 for user-facing documentation.
 
@@ -91,7 +91,7 @@ Highlights of what landed:
   from the metric-name suffix.
 - **Resume** — `train(resume_from_checkpoint=path|True|None)`. Restores
   model, optimizer, clip / noise / sampler / accountant states, RNG snapshots,
-  and `DPTrainerState`.  `ignore_data_skip` toggles sampler-state restore
+  and `TrainerState`.  `ignore_data_skip` toggles sampler-state restore
   (DP-valid either way); `restore_callback_states_from_checkpoint` honors
   HF semantics.  **Data-order parity is intentionally not byte-for-byte**:
   HF's resume rebuilds the dataloader and skips ``global_step`` batches
@@ -100,7 +100,7 @@ Highlights of what landed:
   same-distribution-but-different-sequence subsample.  Privacy budget
   is unchanged (one Poisson-amplified mechanism per iteration either
   way) — this is a deliberate variance-reduction trick that avoids
-  O(steps) replay cost.  See ``DPTrainer.train`` docstring.  Sharded
+  O(steps) replay cost.  See ``Trainer.train`` docstring.  Sharded
   safetensors (`model.safetensors.index.json`) and pickle index loads
   are supported via HF's `load_sharded_checkpoint`, imported conditionally
   since it relocated from `transformers.modeling_utils` (v4) to
@@ -137,13 +137,13 @@ clipping/noise/sampling types.
 ## Phase 3: Evaluation improvements — implemented
 
 All three sub-phases (3a core eval controls, 3b eval memory management, 3c
-metrics enrichment) are wired in `DPTrainer`. The eval loop now mirrors HF's
+metrics enrichment) are wired in `Trainer`. The eval loop now mirrors HF's
 `evaluation_loop()` + `prediction_step()` decomposition and accepts
 HF-typed `compute_metrics` callbacks unchanged.
 
 Highlights of what landed:
 
-- **Refactor** — `DPTrainer.evaluate()` is now a thin wrapper around
+- **Refactor** — `Trainer.evaluate()` is now a thin wrapper around
   `evaluation_loop()` + `prediction_step()`. The functional path
   (`fmodel + trainable_params`, mid-training) and the `nn.Module` path
   (post-training) both produce identically-shaped `(loss, logits, labels)`
@@ -181,7 +181,7 @@ Highlights of what landed:
   re-exported from `transformers.trainer_utils` via
   `opaque.api.transformers.trainer._eval`, with an import-time smoke check
   asserting the four field names we depend on.
-- **Validation** — `DPTrainer.__init__` calls `validate_eval_args(args,
+- **Validation** — `Trainer.__init__` calls `validate_eval_args(args,
   compute_metrics)`: raises `ValueError` if `batch_eval_metrics=True`
   without `compute_metrics`, or if `include_for_metrics` contains a key
   outside `{"inputs", "loss"}`.
@@ -239,7 +239,7 @@ last data batch), new `trainer/_eval.py` (`_PredictionAccumulator`,
 
 ## Phase 4: Device & Precision
 
-Current DPTrainer inherits device from the model and doesn't manage precision.
+Current Trainer inherits device from the model and doesn't manage precision.
 
 **Parameters**: `bf16`, `fp16`, `tf32`, `no_cuda`, `use_cpu`, `use_mps_device`, `bf16_full_eval`, `fp16_full_eval`
 
@@ -257,7 +257,7 @@ Current DPTrainer inherits device from the model and doesn't manage precision.
 
 ## Phase 5: Logging & Tracking — implemented
 
-All three sub-phases are wired in `DPTrainer`.
+All three sub-phases are wired in `Trainer`.
 
 ### Phase 5a: Strategy and filtering
 
@@ -460,7 +460,7 @@ potentially `trainer/_config.py` (additional arg validation if train-side
   `set_seed(seed)` is used for HF-compatible global RNG setup.
 
 **Validation**:
-- `tests/validation/test_dp_trainer_reproducibility.py` verifies changing
+- `tests/validation/test_trainer_reproducibility.py` verifies changing
   `data_seed` changes the sampling trajectory while keeping model seed fixed.
 - `tests/opaque_transformers/test_trainer_contract.py` locks in that
   `full_determinism=True` dispatches through HF's deterministic helper.
@@ -477,7 +477,7 @@ potentially `trainer/_config.py` (additional arg validation if train-side
   see. For causal-LM shaped logits/labels, the smoothing path applies the same
   one-token shift as the unsmoothed model loss. For classification/vector logits,
   it recomputes cross-entropy directly from logits and labels.
-- If a fused CE path returns only `loss` and hides logits, DPTrainer currently
+- If a fused CE path returns only `loss` and hides logits, Trainer currently
   warns once and falls back to the unsmoothed fused loss. This is a temporary
   safety rail; once the fused kernel exposes smoothing directly, that path should
   become a fused-kernel parity test instead of a lasting behavior contract.
@@ -505,19 +505,19 @@ potentially `trainer/_config.py` (additional arg validation if train-side
 
 **Validation**:
 
-- `tests/validation/test_dp_trainer.py` verifies explicit `train()` and
+- `tests/validation/test_trainer.py` verifies explicit `train()` and
   `predict()` calls run even when `do_train=False` / `do_predict=False`, plus
   debug hook wiring, prediction output shape, `past_index` rejection, and
   `auto_find_batch_size` retry/floor behavior.
-- `tests/validation/test_dp_trainer_eval_polish.py` verifies
+- `tests/validation/test_trainer_eval_polish.py` verifies
   `auto_find_batch_size` restores model state and RNG before retrying.
 - `tests/opaque_transformers/test_config.py` verifies `do_eval` auto-flip semantics
   and the full unsupported-parameter rejection table, including
   `neftune_noise_alpha` and `past_index`.
 
 **Files**: `trainer/__init__.py`, `trainer/_config.py`,
-`tests/validation/test_dp_trainer.py`,
-`tests/validation/test_dp_trainer_eval_polish.py`, and
+`tests/validation/test_trainer.py`,
+`tests/validation/test_trainer_eval_polish.py`, and
 `tests/opaque_transformers/test_config.py`.
 
 ---
@@ -533,7 +533,7 @@ Push models to HuggingFace Hub after training.
 - `init_hf_repo(token=None)` — calls `huggingface_hub.create_repo`, sets
   `self.hub_model_id` and `self.push_in_progress = None`.  Called from
   `__init__` when `push_to_hub=True`.  Exposed as a public method on
-  `DPTrainer` (mirrors `Trainer.init_hf_repo`).
+  `Trainer` (mirrors `Trainer.init_hf_repo`).
 - `_push_from_checkpoint(checkpoint_folder)` — async upload triggered at the
   end of `_save_checkpoint` when `push_to_hub=True`.  Respects all four
   `hub_strategy` values: `end` (skip), `every_save` (upload output_dir only),
@@ -560,7 +560,7 @@ Push models to HuggingFace Hub after training.
   `Trainer.create_model_card`).
 - Hub progress bars are suppressed (`hf_hub_utils.disable_progress_bars`)
   during the training loop when `push_to_hub=True` (HF parity).
-- Public properties `train_dataset` and `eval_dataset` added to `DPTrainer`
+- Public properties `train_dataset` and `eval_dataset` added to `Trainer`
   so `TrainingSummary.from_trainer(self)` can read them (HF parity).
 
 **Reuse**: `PushInProgress` (`transformers.utils.hub`), `upload_folder` /
@@ -587,7 +587,7 @@ trial objects.
 **Current status**: local Phase 9 support is wired for direct
 `train(trial=...)` runs, `model_init(trial)` reinitialization, trial-scoped
 output directories, public trainer helper methods,
-`hyperparameter_search(..., backend="optuna")` via a DPTrainer-owned local
+`hyperparameter_search(..., backend="optuna")` via a Trainer-owned local
 Optuna runner, and `hyperparameter_search(..., backend="wandb")` via a local
 W&B sweep agent. Phase 12 layers `hyperparameter_search(..., backend="ray")`
 on top via the Ray Tune adapter. Controller-provided dict trials remain supported as direct
@@ -621,7 +621,7 @@ on top via the Ray Tune adapter. Controller-provided dict trials remain supporte
 - Multi-rank Ray trials remain gated on Phase 10 (DDP); single-rank-per-trial
   sweeps (the common HPO case) work today.
 - W&B sweeps are supported as reporting/config plumbing; the actual training
-  loop still runs as independent DPTrainer invocations.
+  loop still runs as independent Trainer invocations.
 
 **Trial isolation contract**:
 
@@ -680,12 +680,12 @@ future Phase 10 distributed semantics.
   presenting Ray as a missing local trial object.
 - Reporting callbacks are tested as metrics/logging integrations that precede
   user callbacks and intentionally see `optimizer=None` / `lr_scheduler=None`
-  because DPTrainer owns functional optimizer state.
+  because Trainer owns functional optimizer state.
 - Direct dict trials are tested to rebuild callback handler state per trial.
 
 **Validation**:
 
-- Contract tests compare DPTrainer signatures against the supported subset of
+- Contract tests compare Trainer signatures against the supported subset of
   HF `Trainer.__init__`, `train`, `evaluate`, `predict`, and
   `hyperparameter_search`.
 - HPO smoke tests with a tiny model/dataset verify trials produce isolated
@@ -721,13 +721,13 @@ trainer.
   save events, and HPO trial scoping without networked integrations.
 - Optional TensorBoard smoke coverage runs when TensorBoard is installed.
 - Documented and tested: callbacks inspecting `optimizer` or `lr_scheduler` see
-  `None`, because DPTrainer owns functional optimizer and schedule state rather
+  `None`, because Trainer owns functional optimizer and schedule state rather
   than `torch.optim.Optimizer` / `torch.optim.lr_scheduler` objects.
 - HPO trial scoping is validated for callback state, trial names, trial params,
   and log payloads.
-- Artifact uploads follow HF's callback-owned behavior: DPTrainer writes the
+- Artifact uploads follow HF's callback-owned behavior: Trainer writes the
   checkpoint first, then fires `on_save`, so integration callbacks can upload
-  checkpoint artifacts when their own flags are enabled. DPTrainer does not add
+  checkpoint artifacts when their own flags are enabled. Trainer does not add
   a second artifact mediation layer in this phase.
 - Artifact coverage verifies that `on_save` callbacks see a fully written
   checkpoint with model weights, `accountant.json`, `trainer_state.json`, and
@@ -744,7 +744,7 @@ docs in `docs/user-guide/huggingface.md`.
 ## Phase 10: Distributed Training (DDP) — implemented
 
 Single-node multi-GPU DDP is wired end-to-end. Validated on 4× H100 via
-`packages/opaque-transformers/tests/distributed/test_ddp_trainer.py` (5
+`packages/opaque-transformers/tests/distributed/test_distributed_trainer.py` (5
 scenarios, all passing): runtime foundation, per-rank shard partition,
 global-mode independent streams, eval gather, RNG-per-rank checkpointing.
 Uses Opaque's own distributed primitives (`opaque.distributed.sync`,
@@ -759,7 +759,7 @@ User-facing doc: [docs/user-guide/distributed-trainer.md](../../../../docs/user-
 
 1. **No Accelerate.** HF's [`Trainer._setup_devices`
    (training_args.py:1798–1860)](/workspaces/transformers/src/transformers/training_args.py)
-   delegates to `Accelerate.PartialState`. DPTrainer's
+   delegates to `Accelerate.PartialState`. Trainer's
    `_setup_devices` already bypasses that
    ([_config.py:859–880](../../src/opaque/transformers/trainer/_config.py)),
    and the `parallel_mode` / `process_index` / `local_process_index`
@@ -769,7 +769,7 @@ User-facing doc: [docs/user-guide/distributed-trainer.md](../../../../docs/user-
    `LOCAL_RANK` / `RANK` / `WORLD_SIZE` env vars.
 2. **NCCL only, single node first.** Mirror the constraint already documented
    in [docs/user-guide/distributed.md:299–305](../../../../docs/user-guide/distributed.md).
-3. **Process-group ownership.** DPTrainer assumes the launcher
+3. **Process-group ownership.** Trainer assumes the launcher
    (`torchrun` or test-side `mp.spawn`) initialised the group; the trainer
    never calls `init_process_group` itself, mirroring HF
    ([trainer.py via PartialState]) and the existing
@@ -860,7 +860,7 @@ handlers anyway:
   raises).
 
 This block is in the **Phase 10 prerequisite** spot rather than 10c because
-DPTrainer doesn't strictly need it at the API level — the trainer calls
+Trainer doesn't strictly need it at the API level — the trainer calls
 `sync(clip_state)` and AllReduce's the gradient itself, never `sync(opt_state)`
 in the hot path. But the *trainer-level audit story* breaks without it: a user
 adding `sync(*all_state)` for debugging hits a `TypeError` on the new
@@ -874,7 +874,7 @@ optimizers. Land it before declaring Phase 10c done.
 > per-epoch key on every rank, regular `acc.poisson(...)` at the global rate.
 > The rest of this section is kept as historical design rationale.
 
-DPTrainer needs to commit to a default rank-data policy and offer the other
+Trainer needs to commit to a default rank-data policy and offer the other
 as an opt-in. Both are valid DP-SGD; they differ in sample-rate accounting.
 
 | Mode (proposed `dp_shard` value) | Dataset visibility per rank | Sampler key | Accounting | Default? |
@@ -899,7 +899,7 @@ The `dp_shard` arg lives next to the existing `dp_*` fields in
 
 ### Phase 10a: Runtime foundation (single-rank semantics correct everywhere)
 
-**Goal.** Make `DPTrainer` rank-aware end-to-end, gate every I/O site by rank,
+**Goal.** Make `Trainer` rank-aware end-to-end, gate every I/O site by rank,
 and lock in the rejection of unsupported wrappers — but do **not** yet change
 the DP step itself. After 10a, a 1-rank "distributed" run (`torchrun --nproc-per-node=1`)
 must produce byte-identical artefacts to today's single-process run.
@@ -922,14 +922,14 @@ must produce byte-identical artefacts to today's single-process run.
 - `_hub.py:88, 121`: gate `init_hf_repo`, `push_to_hub`, `_push_from_checkpoint`, `_finish_current_push`, `create_model_card` so that only world-rank-0 talks to Hub. Other ranks still call the public method (HF parity); the rank-0 guard is internal.
 
 **Touchpoints in `_config.py`**:
-- [_config.py:837–853](../../src/opaque/transformers/trainer/_config.py): expand the single-process distributed-defaults block to read `WORLD_SIZE` / `RANK` / `LOCAL_RANK`, set `self._n_gpu = 1` per rank when distributed, and validate `ddp_backend` (only `"nccl"` accepted; raise on `"gloo"` / `"mpi"` / `"xccl"` etc. with a "DPTrainer only validates NCCL" message).
+- [_config.py:837–853](../../src/opaque/transformers/trainer/_config.py): expand the single-process distributed-defaults block to read `WORLD_SIZE` / `RANK` / `LOCAL_RANK`, set `self._n_gpu = 1` per rank when distributed, and validate `ddp_backend` (only `"nccl"` accepted; raise on `"gloo"` / `"mpi"` / `"xccl"` etc. with a "Trainer only validates NCCL" message).
 - Keep `fsdp`, `fsdp_config`, `fsdp_min_num_params`, `fsdp_transformer_layer_cls_to_wrap`, `accelerator_config`, `parallelism_config`, `deepspeed`, `tpu_num_cores`, `mp_parameters` rejected exactly as today; add new contract test that exercises the rejection table when `WORLD_SIZE > 1` (the env shouldn't change the verdict).
 - Reject `ddp_static_graph` for now (not validated against vmap'd functional path); reject `gradient_as_bucket_view` for the same reason.
 
 **Validation surface for 10a**
 - Multi-process unit test (`tests/distributed/test_runtime_foundation.py`, `mp.spawn`, world=2 and 4): assert each rank reports correct `is_world_process_zero`, `is_local_process_zero`, and that `_save_checkpoint` writes exactly once on disk (not 4 copies).
 - Contract test on a 1-rank `torchrun` run: artefact directory is byte-identical to the equivalent single-process run (modulo timestamps in `trainer_state.json`). This is the "10a does not change behaviour for single rank" guarantee.
-- Reject-table test: `WORLD_SIZE=4 LOCAL_RANK=0 ... DPTrainer(args=DPTrainingArguments(deepspeed=...))` still raises `ValueError` from `__post_init__`.
+- Reject-table test: `WORLD_SIZE=4 LOCAL_RANK=0 ... Trainer(args=DPTrainingArguments(deepspeed=...))` still raises `ValueError` from `__post_init__`.
 
 ### Phase 10b: Distributed sampling, accounting, and checkpoint/resume
 
@@ -977,7 +977,7 @@ restores per-rank state without replaying batches.
 - Per-rank determinism test (`mp.spawn`, world=4): the union of indices yielded by all ranks across one epoch in `"per_rank"` mode forms a partition of `range(|D|)` (within Poisson tolerance for the last rank's remainder).
 - Cross-rank divergence test for `"global"` mode: same epoch index, two ranks emit different index sets with non-trivial overlap (Poisson duplication is the whole point).
 - Accountant parity test: a 1-rank world produces the same `epsilon_at(delta)` as today's single-process trainer, modulo composition order. A 4-rank `"global"` run gives ε strictly larger than a 4-rank `"per_rank"` run on the same global noise multiplier (the parallel-Poisson penalty).
-- Resume parity test (4-rank): `train(resume_from_checkpoint=...)` after a checkpoint at step N reproduces the next-step gradient norms and parameters that an uninterrupted run produces (already covered single-process at [tests/validation/test_dp_trainer.py]; extend to a `tests/distributed/` variant).
+- Resume parity test (4-rank): `train(resume_from_checkpoint=...)` after a checkpoint at step N reproduces the next-step gradient norms and parameters that an uninterrupted run produces (already covered single-process at [tests/validation/test_trainer.py]; extend to a `tests/distributed/` variant).
 
 ### Phase 10c: Distributed DP step
 
@@ -1131,7 +1131,7 @@ which uses `mp.spawn` so neither `torchrun` nor a fixed launcher is required):
 - All marked `pytestmark = pytest.mark.cuda` and skipped when
   `torch.cuda.device_count() < 2`, mirroring the existing core distributed tests.
 
-**Example**: extend `examples/train_causal_lm.py` so that the DPTrainer
+**Example**: extend `examples/train_causal_lm.py` so that the Trainer
 launch path documents the same `dist.init_process_group` / `local_shard` /
 `fold_in(key, rank)` surgery the standalone DP-SGD example already shows
 (or, cleaner, add a sibling `examples/dp_trainer_ddp.py`).
@@ -1139,8 +1139,8 @@ launch path documents the same `dist.init_process_group` / `local_shard` /
 **Docs**:
 - `docs/user-guide/distributed-trainer.md` — new page, mirrors
   [docs/user-guide/distributed.md](../../../../docs/user-guide/distributed.md)
-  but in DPTrainer terms: "set `dp_shard='per_rank'`, launch with
-  `torchrun --nproc-per-node=4 your_script.py`, and DPTrainer does the rest".
+  but in Trainer terms: "set `dp_shard='per_rank'`, launch with
+  `torchrun --nproc-per-node=4 your_script.py`, and Trainer does the rest".
   Cover the `per_rank` vs `global` decision matrix.
 - `docs/user-guide/huggingface.md` — add a "Distributed training" section
   pointing at the new page.
@@ -1168,7 +1168,7 @@ test is *not* sufficient evidence — `mp.spawn` over CUDA is the gate.
 - Ray-driven multi-process HPO — Phase 12.
 - Activation checkpointing under DDP with vmap — already supported by Opaque
   ([test_ddp_integration.py:53–65](../../../opaque-dpsgd/tests/distributed/test_ddp_integration.py)),
-  no DPTrainer-side work needed beyond a smoke test.
+  no Trainer-side work needed beyond a smoke test.
 
 **Files**: `trainer/__init__.py` (process helpers, save/log gates, sampler
 plumbing, `training_step` collectives, eval gather, `tr_loss` reduce),
@@ -1286,7 +1286,7 @@ kwargs (`resources_per_trial`, `progress_reporter`, `scheduler`, …).
 - `hyperparameter_search(backend=None)` calls `default_dp_hp_backend()`,
   which walks **Optuna → Ray → W&B** (SigOpt skipped) — the same relative
   order as HuggingFace's `default_hp_search_backend` for the backends
-  DPTrainer implements.
+  Trainer implements.
 
 - Ray trial resume picks the **highest-step** `checkpoint-*` directory
   under the Ray unpack path (deterministic; avoids `next(glob)`).
@@ -1328,7 +1328,7 @@ that extra. Symmetric extras `[optuna-hpo]`, `[wandb-hpo]`, and the
 
 ## Phase 13: Optional Functional Optimizer Expansion
 
-DPTrainer can only support optimizers whose state and update rules fit the
+Trainer can only support optimizers whose state and update rules fit the
 functional DP pipeline. Ordinary HF optimizer names are not enough: every
 candidate needs a torchopt-compatible transform or an equivalent functional
 implementation.
@@ -1375,7 +1375,7 @@ SageMaker model parallel, XLA/NPU-specific model paths.
 - Keep PEFT cases that behave like ordinary PyTorch modules separate from
   quantized or device-mapped PEFT paths.
 - Document the support matrix so users know which HF runtime conveniences are
-  intentionally outside DPTrainer's execution model.
+  intentionally outside Trainer's execution model.
 
 **Files**: `_config.py`, `trainer/__init__.py`, possible model-inspection
 helper, tests covering representative wrappers when optional dependencies are
@@ -1428,19 +1428,19 @@ available.
 | `per_gpu_train_batch_size` | None | **Deprecated** since Transformers 4.0; use `per_device_train_batch_size` |
 | `per_gpu_eval_batch_size` | None | **Deprecated** since Transformers 4.0; use `per_device_eval_batch_size` |
 | `adafactor` | False | **Deprecated**; use `optim="adafactor"` instead |
-| `fp16_opt_level` | "O1" | **Apex-specific**; DPTrainer uses model dtype directly, no mixed-precision autocast wrapper |
-| `half_precision_backend` | "auto" | **Accelerate-specific**; DPTrainer doesn't use Accelerate for mixed precision |
+| `fp16_opt_level` | "O1" | **Apex-specific**; Trainer uses model dtype directly, no mixed-precision autocast wrapper |
+| `half_precision_backend` | "auto" | **Accelerate-specific**; Trainer doesn't use Accelerate for mixed precision |
 | `fp16_backend` | "auto" | **Deprecated** alias for `half_precision_backend` |
 | `torchdynamo` | None | **Deprecated**; use `torch_compile` instead |
 | `use_legacy_prediction_loop` | False | **Deprecated**; only the modern `evaluation_loop` exists |
 | `group_by_length` | False | **DP-incompatible**: non-uniform batching breaks Poisson sampling; DP amplification by subsampling requires each example to be independently included with equal probability p = batch_size/n |
 | `length_column_name` | "length" | **Depends on** `group_by_length` which is excluded |
 | `dataloader_drop_last` | False | **Not applicable**: Poisson sampling produces variable-size batches by design; dropping the last batch is meaningless when every batch is independently sampled |
-| `fsdp` | None | **Not supported**: DPTrainer uses Opaque's own DDP primitives, not PyTorch FSDP; per-example gradient computation via vmap is incompatible with FSDP parameter sharding |
+| `fsdp` | None | **Not supported**: Trainer uses Opaque's own DDP primitives, not PyTorch FSDP; per-example gradient computation via vmap is incompatible with FSDP parameter sharding |
 | `fsdp_min_num_params` | 0 | **Depends on** `fsdp` which is not supported |
 | `fsdp_config` | None | **Depends on** `fsdp` which is not supported |
 | `fsdp_transformer_layer_cls_to_wrap` | None | **Depends on** `fsdp` which is not supported |
-| `accelerator_config` | None | **Not supported**: DPTrainer replaces Accelerate's backward/optimizer step with functional DP-SGD; Accelerate's gradient accumulation, mixed precision, and distributed abstractions conflict with Opaque's per-example gradient mechanics |
+| `accelerator_config` | None | **Not supported**: Trainer replaces Accelerate's backward/optimizer step with functional DP-SGD; Accelerate's gradient accumulation, mixed precision, and distributed abstractions conflict with Opaque's per-example gradient mechanics |
 | `parallelism_config` | None | **Not supported**: same as accelerator_config |
 | `deepspeed` | None | **Not supported**: DeepSpeed ZeRO's parameter/gradient sharding is incompatible with vmap-based per-example gradient computation |
 | `tpu_num_cores` | None | **Not supported**: TPU/XLA is not supported by Opaque's CUDA/CPU vmap backend |

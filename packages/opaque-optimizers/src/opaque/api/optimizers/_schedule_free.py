@@ -44,7 +44,7 @@ are ``x_t``, not the ``params`` argument the trainer passes in
 purpose of schedule-free averaging.  The wrapper exposes the published
 params via :func:`get_eval_params`, which trainer integrations should
 consult at save / eval boundaries.  This is the dependency that gates
-schedule-free's usefulness through ``DPTrainer``; the wrapper itself
+schedule-free's usefulness through ``Trainer``; the wrapper itself
 is correct end-to-end as a library API.
 """
 

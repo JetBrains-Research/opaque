@@ -25,7 +25,7 @@ requested column sets — callers vary ``cache_key`` (e.g. ``("dpo", model_name)
 as the escape hatch.
 
 **On-disk format.** ``safetensors`` is the project standard (also used by
-:class:`opaque.transformers.trainer.DPTrainer` for model weights). Native dtype
+:class:`opaque.transformers.trainer.Trainer` for model weights). Native dtype
 round-trip means a bf16 reference forward stores bf16 on disk with no precision
 loss and no implicit conversion. The HF ``Dataset.add_column`` boundary still
 demotes to a Python ``float`` list because PyArrow has no bf16 column type, but

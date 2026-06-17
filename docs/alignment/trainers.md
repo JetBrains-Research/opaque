@@ -5,7 +5,7 @@ The [SFT](sft.md) and [DPO](dpo.md) guides build a DP run by hand from
 wrap that pipeline: `opaque.transformers.trl.SFTTrainer` and `DPOTrainer`.
 They mirror `trl.SFTTrainer` / `trl.DPOTrainer` in structure and method names,
 but route the gradient through opaque's per-example DP
-[`DPTrainer`](../user-guide/huggingface/dptrainer.md) — one Poisson round is
+[`Trainer`](../user-guide/huggingface/trainer.md) — one Poisson round is
 one clip-noise-step. The alignment collators, losses, and reference helpers are
 the same primitives the by-hand guides use; the trainer is the orchestration
 layer.
@@ -400,5 +400,5 @@ supported and not implemented.
   reference.
 - [TrainingArguments](../user-guide/huggingface/training-arguments.md) — the
   inherited DP / clipping / sampling / save / eval knobs.
-- [DPTrainer](../user-guide/huggingface/dptrainer.md) — the per-example DP
+- [Trainer](../user-guide/huggingface/trainer.md) — the per-example DP
   trainer both classes subclass.

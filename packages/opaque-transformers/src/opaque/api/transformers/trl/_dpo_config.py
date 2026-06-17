@@ -27,7 +27,7 @@ _REFERENCE_FREE_HEADS = frozenset({"chosen_nll", "simpo", "cpo", "orpo"})
 
 @dataclasses.dataclass
 class DPOConfig(TrainingArguments):
-    """Arguments for Direct Preference Optimization on :class:`DPTrainer`."""
+    """Arguments for Direct Preference Optimization on :class:`Trainer`."""
 
     # ---- Learning rate override (TRL default differs from HF) ------------
     learning_rate: float = 1e-6

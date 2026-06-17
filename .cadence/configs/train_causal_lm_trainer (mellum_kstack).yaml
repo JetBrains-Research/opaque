@@ -1,5 +1,5 @@
 # Run example:
-# RUN_NAME="val/dptrainer/B-trainer-dp" uv run cadence execution start \
+# RUN_NAME="val/trainer/B-trainer-dp" uv run cadence execution start \
 #   --preset ".cadence/configs/train_causal_lm_trainer (mellum_kstack).yaml" \
 #   -e EXTRA_ARGS="--stop-at-step 100"
 
@@ -32,7 +32,7 @@ env:
     WANDB_BASE_URL: https://jetbrains.wandb.io
     WANDB_ENTITY: federated-compute
     WANDB_PROJECT: opaque
-    RUN_NAME: "${oc.env:RUN_NAME,mellum-kstack-dptrainer}"
+    RUN_NAME: "${oc.env:RUN_NAME,mellum-kstack-trainer}"
     EXTRA_ARGS: ""
   python:
     version: 3.11.14

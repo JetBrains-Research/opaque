@@ -1,6 +1,6 @@
-"""Subprocess-launchable DDP test runner for DPTrainer.
+"""Subprocess-launchable DDP test runner for Trainer.
 
-Launched by ``test_ddp_trainer.py`` via ``subprocess.Popen`` (one process
+Launched by ``test_distributed_trainer.py`` via ``subprocess.Popen`` (one process
 per rank). Receives ``RANK`` / ``LOCAL_RANK`` / ``WORLD_SIZE`` /
 ``MASTER_ADDR`` / ``MASTER_PORT`` from the env, runs a self-contained
 DDP scenario, and exits with a non-zero code on any assertion failure
@@ -30,7 +30,7 @@ from torch.utils.data import Dataset
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutput
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
+from opaque.transformers.trainer import Trainer, TrainingArguments
 
 
 class TinyConfig(PretrainedConfig):
@@ -159,7 +159,7 @@ def scenario_runtime_foundation(
         report_to=[],
     )
     ds = TinyDataset(n=32, seq_len=8, vocab=cfg.vocab_size)
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=model, args=args, train_dataset=ds, data_collator=_collate
     )
 
@@ -247,7 +247,7 @@ def scenario_eval_gather(rank: int, world_size: int, output_dir: str, **_) -> No
         captured["label_shape"] = ep.label_ids.shape
         return {"acc": 0.5}
 
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=model,
         args=args,
         train_dataset=train_ds,
@@ -302,7 +302,7 @@ def scenario_batch_eval_metrics(
             return {"seen": float(running["seen"])}
         return {}
 
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=model,
         args=args,
         train_dataset=train_ds,
@@ -330,7 +330,7 @@ def scenario_rank_gating_and_worker_seed(
         dataloader_num_workers=2,
         privacy_noise_multiplier=0.0,
     )
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=model,
         args=args,
         train_dataset=TinyDataset(8, 4, cfg.vocab_size),
@@ -405,7 +405,7 @@ def scenario_env_backend_diagnostic(output_dir: str, **_) -> None:
         privacy_noise_multiplier=0.0,
     )
     try:
-        DPTrainer(
+        Trainer(
             model=model,
             args=args,
             train_dataset=TinyDataset(8, 4, cfg.vocab_size),
@@ -415,7 +415,7 @@ def scenario_env_backend_diagnostic(output_dir: str, **_) -> None:
         msg = str(exc)
         assert "ddp_backend='xccl'" in msg or 'ddp_backend="xccl"' in msg
         return
-    raise AssertionError("Expected DPTrainer to fail fast for unavailable xccl runtime")
+    raise AssertionError("Expected Trainer to fail fast for unavailable xccl runtime")
 
 
 # ---------------------------------------------------------------------------
