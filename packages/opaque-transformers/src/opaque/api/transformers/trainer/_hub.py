@@ -1,4 +1,4 @@
-"""Hub publishing for DPTrainer.
+"""Hub publishing for Trainer.
 
 A deliberately minimal "publish & manage the finished model" surface — model
 *publishing*, not the HF in-training auto-push machinery (per-checkpoint
@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from transformers.modelcard import TrainingSummary
 
 if TYPE_CHECKING:
-    from ._dp_trainer import DPTrainer  # pragma: no cover
+    from ._trainer import Trainer  # pragma: no cover
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ def _create_repo(repo_name: str, *, token: str | None, private: bool | None) -> 
 # ---------------------------------------------------------------------------
 
 
-def init_hf_repo(trainer: "DPTrainer", token: str | None = None) -> None:
+def init_hf_repo(trainer: "Trainer", token: str | None = None) -> None:
     """Create (or validate) the Hub repo and set ``trainer.hub_model_id``.
 
     Mirrors ``Trainer.init_hf_repo``.  Only runs on process-zero.
@@ -107,7 +107,7 @@ def init_hf_repo(trainer: "DPTrainer", token: str | None = None) -> None:
 
 
 def push_to_hub(
-    trainer: "DPTrainer",
+    trainer: "Trainer",
     commit_message: str | None = "End of training",
     blocking: bool = True,
     token: str | None = None,
@@ -229,7 +229,7 @@ class DPTrainingSummary(TrainingSummary):
     @classmethod
     def from_trainer(
         cls,
-        trainer: "DPTrainer",
+        trainer: "Trainer",
         language: str | None = None,
         license: str | None = None,  # noqa: A002
         tags: str | list[str] | None = None,
@@ -265,7 +265,7 @@ class DPTrainingSummary(TrainingSummary):
 
 
 def create_model_card(
-    trainer: "DPTrainer",
+    trainer: "Trainer",
     language: str | None = None,
     license: str | None = None,  # noqa: A002
     tags: str | list[str] | None = None,
@@ -311,7 +311,7 @@ def create_model_card(
 
     # DPTrainingSummary.from_trainer reads trainer.train_dataset,
     # trainer.eval_dataset, trainer.model, trainer.args, trainer.state.
-    # DPTrainer exposes all of these as public properties.
+    # Trainer exposes all of these as public properties.
     training_summary = DPTrainingSummary.from_trainer(
         trainer,
         language=language,
@@ -334,7 +334,7 @@ def create_model_card(
     log.info("Model card written to %s", output_path)
 
 
-def _build_privacy_summary(trainer: "DPTrainer") -> dict[str, float | str]:
+def _build_privacy_summary(trainer: "Trainer") -> dict[str, float | str]:
     """Extract structured privacy values for model-card rendering."""
     a = trainer.args
 

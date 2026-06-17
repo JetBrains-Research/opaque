@@ -1,4 +1,4 @@
-"""HF Trainer contract regressions for DPTrainer."""
+"""HF Trainer contract regressions for Trainer."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ import torch
 from transformers.trainer_callback import DefaultFlowCallback, TrainerCallback
 
 import opaque.api.transformers.trainer._callback as callback_module
-import opaque.api.transformers.trainer._dp_trainer as trainer_impl
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
+import opaque.api.transformers.trainer._trainer as trainer_impl
+from opaque.transformers.trainer import Trainer, TrainingArguments
 
 
 class _LogitsOnlyModel(torch.nn.Module):
@@ -57,7 +57,7 @@ def test_constructor_accepts_hf_positional_model_and_optional_datasets(tmp_path)
     model = _LogitsOnlyModel()
     args = _args(tmp_path)
 
-    trainer = DPTrainer(model, args)
+    trainer = Trainer(model, args)
 
     assert trainer.model is model
     assert trainer.train_dataset is None
@@ -66,7 +66,7 @@ def test_constructor_accepts_hf_positional_model_and_optional_datasets(tmp_path)
 
 def test_label_less_predict_returns_logits_not_loss(tmp_path):
     args = _args(tmp_path, per_device_eval_batch_size=2)
-    trainer = DPTrainer(model=_LogitsOnlyModel(), args=args)
+    trainer = Trainer(model=_LogitsOnlyModel(), args=args)
     dataset = [{"x": torch.zeros(4)}, {"x": torch.ones(4)}]
 
     output = trainer.predict(dataset)
@@ -77,7 +77,7 @@ def test_label_less_predict_returns_logits_not_loss(tmp_path):
 
 
 def test_callback_returned_control_is_preserved(tmp_path):
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=_LogitsOnlyModel(),
         args=_args(tmp_path),
         callbacks=[_StopOnInitCallback()],
@@ -99,7 +99,7 @@ def test_reporting_callbacks_precede_user_callbacks_and_see_functional_slots(
         fake_reporting_callbacks,
     )
 
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=_LogitsOnlyModel(),
         args=_args(tmp_path, report_to="tensorboard"),
         callbacks=[_UserCallback()],
@@ -143,7 +143,7 @@ def test_full_determinism_uses_hf_deterministic_seed_helper(tmp_path, monkeypatc
     )
     monkeypatch.setattr(trainer_impl, "set_seed", fake_set_seed)
 
-    DPTrainer(
+    Trainer(
         model=_LogitsOnlyModel(),
         args=_args(tmp_path, full_determinism=True, seed=123),
     )
@@ -152,7 +152,7 @@ def test_full_determinism_uses_hf_deterministic_seed_helper(tmp_path, monkeypatc
 
 
 def test_label_smoothing_recomputes_loss_from_logits_for_vector_case(tmp_path):
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=_LogitsOnlyModel(),
         args=_args(tmp_path, label_smoothing_factor=0.2),
     )
@@ -187,7 +187,7 @@ def test_label_smoothing_recomputes_loss_from_logits_for_vector_case(tmp_path):
 
 
 def test_public_save_model_writes_training_args(tmp_path):
-    trainer = DPTrainer(model=_LogitsOnlyModel(), args=_args(tmp_path))
+    trainer = Trainer(model=_LogitsOnlyModel(), args=_args(tmp_path))
 
     trainer.save_model()
 
@@ -203,18 +203,18 @@ def test_train_signature_keeps_hf_subset():
     from transformers import Trainer
 
     trainer_train = inspect.signature(Trainer.train)
-    dp_train = inspect.signature(DPTrainer.train)
+    dp_train = inspect.signature(Trainer.train)
     for name in ["resume_from_checkpoint", "ignore_keys_for_eval"]:
         assert name in dp_train.parameters
         assert name in trainer_train.parameters
     assert not any(
         p.kind is inspect.Parameter.VAR_KEYWORD for p in dp_train.parameters.values()
     )
-    assert not hasattr(DPTrainer, "hyperparameter_search")
+    assert not hasattr(Trainer, "hyperparameter_search")
 
 
 def test_process_helpers_are_single_process_true(tmp_path):
-    trainer = DPTrainer(model=_LogitsOnlyModel(), args=_args(tmp_path))
+    trainer = Trainer(model=_LogitsOnlyModel(), args=_args(tmp_path))
 
     assert trainer.is_world_process_zero()
     assert trainer.is_local_process_zero()

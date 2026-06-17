@@ -8,7 +8,7 @@ Covers:
 - ``_load_best_model`` mutates ``self._model`` (so an immediate
   ``save_model()`` sees the loaded weights without going through
   ``_restore_params`` first).
-- ``DPTrainerState.stateful_callbacks`` round-trip
+- ``TrainerState.stateful_callbacks`` round-trip
   through ``to_json`` / ``from_json`` (single schema; no JSON re-parse).
 - ``_warn_on_arg_drift`` surfaces ``expected_batch_size`` drift so a
   user resuming with a changed batch size sees the privacy-relevant
@@ -26,8 +26,8 @@ from typing import Any
 import pytest
 from peft import LoraConfig, TaskType, get_peft_model
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
-from opaque.api.transformers.trainer._state import DPTrainerState
+from opaque.transformers.trainer import Trainer, TrainingArguments
+from opaque.api.transformers.trainer._state import TrainerState
 
 from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model  # noqa: E402
 
@@ -90,19 +90,19 @@ def _args(tmp_path, **overrides) -> TrainingArguments:
 
 
 # ---------------------------------------------------------------------------
-# DPTrainerState round-trip — single schema for trainer_state.json.
+# TrainerState round-trip — single schema for trainer_state.json.
 # ---------------------------------------------------------------------------
 
 
 class TestStateRoundTrip:
-    """``DPTrainerState`` round-trips every persisted field through ``to_json``."""
+    """``TrainerState`` round-trips every persisted field through ``to_json``."""
 
     def test_stateful_callbacks_round_trip(self):
-        s = DPTrainerState(
+        s = TrainerState(
             global_step=10,
             stateful_callbacks={"EarlyStoppingCallback": {"patience_counter": 3}},
         )
-        round_tripped = DPTrainerState.from_json(s.to_json())
+        round_tripped = TrainerState.from_json(s.to_json())
         assert round_tripped.stateful_callbacks == {
             "EarlyStoppingCallback": {"patience_counter": 3}
         }
@@ -110,7 +110,7 @@ class TestStateRoundTrip:
 
     def test_unknown_keys_dropped(self):
         # Forward-compat: a future field is ignored without raising.
-        s = DPTrainerState.from_json(
+        s = TrainerState.from_json(
             {
                 "global_step": 5,
                 "future_field_not_yet_invented": "anything",
@@ -144,7 +144,7 @@ class TestLoadBestModelMutates:
         ckpt_root.mkdir()
         save_target = tmp_path / "post_train"
 
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=model,
             args=_args(
                 ckpt_root,
@@ -218,7 +218,7 @@ class TestBestFolderLookup:
         """
         model, tokenizer = lora_model
 
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=model,
             args=_args(
                 tmp_path,
@@ -277,7 +277,7 @@ class TestSaveOnlyModelStillWritesTrainerState:
         tmp_path,
     ):
         model, tokenizer = lora_model
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=model,
             args=_args(
                 tmp_path,
@@ -318,7 +318,7 @@ class TestEarlyStoppingExportableState:
 
     This test pins the *save-side* contract.  The *load-side*
     contract (attribute-set on resume) is covered by the simpler
-    legacy callback test in ``test_dp_trainer.py``
+    legacy callback test in ``test_trainer.py``
     (``test_resume_restores_callback_state``).
     """
 
@@ -332,7 +332,7 @@ class TestEarlyStoppingExportableState:
 
         model, tokenizer = lora_model
         cb = EarlyStoppingCallback(early_stopping_patience=2)
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=model,
             args=_args(
                 tmp_path,
@@ -417,7 +417,7 @@ class TestArgDriftWarnings:
     ):
         """A synthetic bundle whose ``expected_batch_size`` differs warns."""
         model, tokenizer = lora_model
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=model,
             args=_args(tmp_path, per_device_train_batch_size=2),
             processing_class=tokenizer,
@@ -445,7 +445,7 @@ class TestArgDriftWarnings:
     def test_no_drift_no_warning(self, lora_model, tiny_dataset, tmp_path, caplog):
         """Identical saved/current bundle emits no drift warning."""
         model, tokenizer = lora_model
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=model,
             args=_args(tmp_path, per_device_train_batch_size=2),
             processing_class=tokenizer,
@@ -470,7 +470,7 @@ class TestArgDriftWarnings:
         training routinely (intentional_extend disposition).
         """
         model, tokenizer = lora_model
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=model,
             args=_args(tmp_path, per_device_train_batch_size=2, max_steps=10),
             processing_class=tokenizer,
@@ -496,7 +496,7 @@ class TestArgDriftWarnings:
         is shape-locked for the original composition.
         """
         model, tokenizer = lora_model
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=model,
             args=_args(tmp_path, per_device_train_batch_size=2, max_steps=10),
             processing_class=tokenizer,
@@ -515,7 +515,7 @@ class TestArgDriftWarnings:
     ):
         """``lr_scheduler`` drift is a shape-disposition warning."""
         model, tokenizer = lora_model
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=model,
             args=_args(tmp_path, per_device_train_batch_size=2, lr_scheduler="linear"),
             processing_class=tokenizer,

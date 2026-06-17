@@ -1,4 +1,4 @@
-"""Conftest for Transformers / DPTrainer integration tests.
+"""Conftest for Transformers / Trainer integration tests.
 
 Re-exports fixtures from _helpers (which also provides ``prepare_lora_model``
 and ``run_clipped_grad_test`` as plain functions that tests import directly).

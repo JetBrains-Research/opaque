@@ -2,7 +2,7 @@
 
 We install the global HF runtime compat shims (masking, collator, checkpoint
 hooks) at module load so they match what
-:class:`~opaque.transformers.trainer.DPTrainer` applies during ``__init__``.
+:class:`~opaque.transformers.trainer.Trainer` applies during ``__init__``.
 Guards: missing sub-packages must not break collection.
 
 Shared LoRA/DP-SGD helpers and ``MODEL_CONFIGS`` live in
@@ -25,7 +25,7 @@ sys.path.append(str(Path(__file__).parent))
 from _hf_shared import MODEL_CONFIGS, STANDARD_LORA_CONFIG  # noqa: E402
 
 # Apply global runtime compat patches (same env semantics as
-# DPTrainer.__init__) so test collection matches the trainer's runtime.
+# Trainer.__init__) so test collection matches the trainer's runtime.
 try:
     from opaque.patches import apply_runtime_patches
 

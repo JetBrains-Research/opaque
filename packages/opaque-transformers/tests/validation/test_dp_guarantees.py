@@ -1,6 +1,6 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""DP-correctness guarantees for :class:`DPTrainer`.
+"""DP-correctness guarantees for :class:`Trainer`.
 
 These tests guard the *privacy* behaviour of the trainer — the surface
 the rest of the suite mostly leaves unchecked.  They assert the things a
@@ -25,7 +25,7 @@ import pytest
 import torch
 from peft import LoraConfig, TaskType, get_peft_model
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
+from opaque.transformers.trainer import Trainer, TrainingArguments
 
 from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model  # noqa: E402
 
@@ -105,7 +105,7 @@ def test_resume_from_save_only_model_checkpoint_is_refused(
         save_steps=2,
         save_only_model=True,
     )
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=model, args=args, train_dataset=lm_dataset, processing_class=tok
     )
     trainer.train()
@@ -130,7 +130,7 @@ def test_resume_from_save_only_model_checkpoint_is_refused(
         ),
     )
     args2 = _args(tmp_path, max_steps=8, save_strategy="no")
-    trainer2 = DPTrainer(
+    trainer2 = Trainer(
         model=model2, args=args2, train_dataset=lm_dataset, processing_class=tok
     )
     with pytest.raises(RuntimeError, match="weights-only export"):
@@ -168,7 +168,7 @@ def test_calibrated_noise_hits_target_epsilon(gpt2_lora, lm_dataset, tmp_path):
         max_steps=4,
         save_strategy="no",
     )
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=model, args=args, train_dataset=lm_dataset, processing_class=tok
     )
     out = trainer.train()
@@ -201,7 +201,7 @@ def test_accountant_composes_exactly_total_steps(gpt2_lora, lm_dataset, tmp_path
         max_steps=5,
         save_strategy="no",
     )
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=model, args=args, train_dataset=lm_dataset, processing_class=tok
     )
     out = trainer.train()
@@ -227,7 +227,7 @@ def test_resume_keeps_total_epsilon_on_budget(gpt2_lora, lm_dataset, tmp_path):
         max_steps=4,
         save_strategy="no",
     )
-    full = DPTrainer(
+    full = Trainer(
         model=model, args=args_full, train_dataset=lm_dataset, processing_class=tok
     )
     eps_full = full.train().metrics["privacy_epsilon"]
@@ -255,7 +255,7 @@ def test_resume_keeps_total_epsilon_on_budget(gpt2_lora, lm_dataset, tmp_path):
         save_strategy="steps",
         save_steps=2,
     )
-    part = DPTrainer(
+    part = Trainer(
         model=model2, args=args_part, train_dataset=lm_dataset, processing_class=tok
     )
     part.train()
@@ -269,7 +269,7 @@ def test_resume_keeps_total_epsilon_on_budget(gpt2_lora, lm_dataset, tmp_path):
         max_steps=4,
         save_strategy="no",
     )
-    resumed = DPTrainer(
+    resumed = Trainer(
         model=model2, args=args_resume, train_dataset=lm_dataset, processing_class=tok
     )
     eps_resumed = resumed.train(resume_from_checkpoint=ckpt).metrics["privacy_epsilon"]
@@ -340,7 +340,7 @@ def test_eval_consumes_no_privacy_budget(gpt2_lora, lm_dataset, tmp_path):
         max_steps=4,
         save_strategy="no",
     )
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=model,
         args=args,
         train_dataset=lm_dataset,
@@ -384,7 +384,7 @@ def test_dp_noise_reproducible_at_sigma_positive(gpt2_tok, lm_dataset, tmp_path)
             max_steps=4,
             save_strategy="no",
         )
-        t = DPTrainer(
+        t = Trainer(
             model=m, args=args, train_dataset=lm_dataset, processing_class=gpt2_tok
         )
         t.train()  # restores trained params into t.model in its finally block
@@ -466,7 +466,7 @@ def test_epoch_driven_resume_does_not_overshoot_budget(gpt2_lora, lm_dataset, tm
     args = TrainingArguments(
         output_dir=str(tmp_path), save_strategy="steps", save_steps=3, **common
     )
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=model, args=args, train_dataset=lm_dataset, processing_class=tok
     )
     trainer.train()
@@ -489,7 +489,7 @@ def test_epoch_driven_resume_does_not_overshoot_budget(gpt2_lora, lm_dataset, tm
     args2 = TrainingArguments(
         output_dir=str(tmp_path), save_strategy="no", ignore_data_skip=True, **common
     )
-    resumed = DPTrainer(
+    resumed = Trainer(
         model=model2, args=args2, train_dataset=lm_dataset, processing_class=tok
     )
     out = resumed.train(resume_from_checkpoint=ckpt)
@@ -505,7 +505,7 @@ def test_multi_dataset_eval_namespaces_metrics(gpt2_lora, lm_dataset, tmp_path):
     as {prefix}_{name}_* (HF parity)."""
     model, tok = gpt2_lora
     args = _args(tmp_path, max_steps=2, save_strategy="no")
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=model, args=args, train_dataset=lm_dataset, processing_class=tok
     )
     trainer.train()
@@ -522,7 +522,7 @@ def test_partial_checkpoint_tmp_dir_is_ignored(gpt2_lora, lm_dataset, tmp_path):
 
     model, tok = gpt2_lora
     args = _args(tmp_path, max_steps=2, save_strategy="steps", save_steps=2)
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=model, args=args, train_dataset=lm_dataset, processing_class=tok
     )
     trainer.train()

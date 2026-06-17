@@ -1,9 +1,9 @@
-"""``DPOTrainer`` — Direct Preference Optimization on :class:`DPTrainer`.
+"""``DPOTrainer`` — Direct Preference Optimization on :class:`Trainer`.
 
 Mirrors ``trl.DPOTrainer`` in structure and method names — ``_prepare_dataset``
 / ``tokenize_row`` for data prep, ``compute_ref_log_probs`` for the reference
 pass, ``dpo_loss`` for the loss dispatch — but routes the gradient through
-Opaque's per-example :meth:`DPTrainer.compute_per_example_loss_and_metrics` seam
+Opaque's per-example :meth:`Trainer.compute_per_example_loss_and_metrics` seam
 (loss + reward telemetry in one forward; rewards ride the clipped-grad aux
 channel and the symmetric eval aux). The two forwards (chosen + rejected) are
 folded into the seam since a batched forward has no per-example DP meaning.
@@ -12,7 +12,7 @@ The reference policy enters via precompute: a one-shot pass attaches per-example
 ``ref_chosen_logps`` / ``ref_rejected_logps`` columns the collator emits as
 constants, so the per-example loss reads them without a second model inside
 ``vmap``. TR-DPO (``sync_ref_model``) instead recomputes the reference logps
-each step from an EMA reference, via the :meth:`DPTrainer._augment_inputs`
+each step from an EMA reference, via the :meth:`Trainer._augment_inputs`
 pre-``vmap`` hook.
 """
 
@@ -56,10 +56,10 @@ from opaque.alignment.dpo.reference import (
     null_ref_context,
 )
 from opaque.alignment.metric import entropy_from_logits, mean_token_accuracy
-from opaque.api.transformers.trainer import DPTrainer
+from opaque.api.transformers.trainer import Trainer
 
 # Single source of truth for PEFT detection (handles PeftModel + PeftMixedModel).
-from opaque.api.transformers.trainer._dp_trainer import _is_peft_model
+from opaque.api.transformers.trainer._trainer import _is_peft_model
 
 from ._dpo_config import _REFERENCE_FREE_HEADS, DPOConfig
 
@@ -155,7 +155,7 @@ def _resolve_fused_handles(model: Any, eligible: bool) -> tuple[str | None, str 
     return path_to_inner + prefix, lm_head_param_name
 
 
-class DPOTrainer(DPTrainer):
+class DPOTrainer(Trainer):
     """DP Direct Preference Optimization trainer."""
 
     def __init__(
@@ -915,7 +915,7 @@ class DPOTrainer(DPTrainer):
     ) -> tuple[Any, dict[str, Any]]:
         """One preference pair's DPO ``(loss, rewards/*)`` (vmap-batched).
 
-        This is the rich :class:`DPTrainer` seam: two policy forwards (chosen,
+        This is the rich :class:`Trainer` seam: two policy forwards (chosen,
         rejected) → per-sequence summed logps → the configured head(s), plus the
         per-example reward telemetry. The harness carries the telemetry through
         the clipped-grad aux channel (logged every training step) and aggregates
@@ -1148,7 +1148,7 @@ class DPOTrainer(DPTrainer):
         rich seam, using the **same** functional context as training
         (``self._ctx`` → live policy weights, not the stale ``self.model``), and
         publishes the per-example rewards on ``self._pending_eval_aux`` for
-        :meth:`DPTrainer.evaluation_loop` to aggregate into ``eval_rewards/*``.
+        :meth:`Trainer.evaluation_loop` to aggregate into ``eval_rewards/*``.
         Returns ``(per_example_loss, None, None)`` — no predictions/labels.
         """
         from opaque.functional import make_functional

@@ -1,7 +1,7 @@
 # TrainingArguments
 
 `opaque.transformers.TrainingArguments` mirrors the subset of
-HuggingFace `TrainingArguments` DPTrainer honours, plus DPTrainer's
+HuggingFace `TrainingArguments` Trainer honours, plus Trainer's
 own privacy / clipping / sampling / patching fields.  Unsupported HF
 knobs are intentionally omitted from the surface.
 
@@ -12,13 +12,13 @@ with every type / default / coercion rule, see
 
 ## Batch-size contract
 
-DPTrainer interprets batch-size args differently from stock HF.  Read
+Trainer interprets batch-size args differently from stock HF.  Read
 this once before tuning:
 
 - `per_device_train_batch_size` is the **per-rank logical Poisson
   batch** — the expected sample size drawn on each rank for one DP-SGD
   step.  (This matches the HF interpretation when gradient accumulation
-  is one step — DPTrainer is permanently in that regime; see below.)
+  is one step — Trainer is permanently in that regime; see below.)
 - Cluster-wide logical batch is `per_device_train_batch_size *
   world_size` (exposed as the HF property `train_batch_size`).  The
   sample rate `q = train_batch_size / N_total` drives privacy
@@ -238,11 +238,11 @@ Resume claims:
 - `average_tokens_across_devices=True` (default) — averages per-rank
   token counts into a cluster-wide total for `num_input_tokens_seen` /
   `train_tokens_per_second`.
-- DPTrainer is DDP-only; `DataParallel` is not supported.
+- Trainer is DDP-only; `DataParallel` is not supported.
 
 For per-rank sharding, accountant cluster-wide composition, and
 rank-gated checkpointing, see
-[Distributed DPTrainer](../distributed-trainer.md).
+[Distributed Trainer](../distributed-trainer.md).
 
 ## Converting from HF / TRL configs
 
@@ -292,7 +292,7 @@ explicit value.
 constructor raises `TypeError` (the converters above translate or drop
 these for you). For reference, the notable ones:
 
-| HF argument | Why it's unsupported | DPTrainer alternative |
+| HF argument | Why it's unsupported | Trainer alternative |
 | --- | --- | --- |
 | `group_by_length`, `length_column_name` | Length-bucketed batching breaks the equal per-example inclusion probability Poisson amplification relies on | Leave examples unsorted; Poisson sampling handles variable lengths |
 | `dataloader_drop_last` | The Poisson / random samplers produce variable-size batches, so dropping a "last batch" is meaningless; the sequential batch sampler already enforces drop-last internally where it matters for correctness | n/a (handled by the sampler) |
@@ -309,7 +309,7 @@ replacements.
 
 ## See also
 
-- [DPTrainer](dptrainer.md) — what to call once the args are configured.
+- [Trainer](trainer.md) — what to call once the args are configured.
 - [Model patches](model-patches.md) — kernel and patch configuration.
 - [API reference — transformers](../../reference/transformers.md) —
   every field, type, default, and validation rule.

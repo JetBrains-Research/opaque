@@ -292,7 +292,7 @@ class TestDriftDispositionResolution:
     """``_resolve_drift_disposition`` picks the right rule per mechanism."""
 
     def test_string_disposition_passthrough(self):
-        from opaque.api.transformers.trainer._dp_trainer import (
+        from opaque.api.transformers.trainer._trainer import (
             _resolve_drift_disposition,
         )
 
@@ -301,7 +301,7 @@ class TestDriftDispositionResolution:
         assert _resolve_drift_disposition(meta, "mf_band") == "shape"
 
     def test_dict_disposition_per_mechanism(self):
-        from opaque.api.transformers.trainer._dp_trainer import (
+        from opaque.api.transformers.trainer._trainer import (
             _resolve_drift_disposition,
         )
 
@@ -316,7 +316,7 @@ class TestDriftDispositionResolution:
         assert _resolve_drift_disposition(meta, "mf_blt") == "dp_relevant"
 
     def test_default_disposition_when_missing(self):
-        from opaque.api.transformers.trainer._dp_trainer import (
+        from opaque.api.transformers.trainer._trainer import (
             _resolve_drift_disposition,
         )
 

@@ -1,4 +1,4 @@
-"""Tests for the full HF ``TrainerCallback`` hook surface in DPTrainer.
+"""Tests for the full HF ``TrainerCallback`` hook surface in Trainer.
 
 Covers:
 
@@ -22,7 +22,7 @@ import torch
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import TrainerCallback
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
+from opaque.transformers.trainer import Trainer, TrainingArguments
 
 from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model  # noqa: E402
 
@@ -57,7 +57,7 @@ def lora_model(small_model_and_tokenizer):
 
 @pytest.fixture
 def tiny_dataset(small_model_and_tokenizer):
-    """Tiny pre-padded causal-LM dataset for DPTrainer integration tests.
+    """Tiny pre-padded causal-LM dataset for Trainer integration tests.
 
     The four texts are tokenised and pre-padded to a fixed length by
     :func:`build_lm_dataset` so HF's ``default_data_collator`` can
@@ -152,13 +152,13 @@ class _RecordingCallback(TrainerCallback):
 
 
 class TestHookSurface:
-    """The full HF hook surface fires from DPTrainer."""
+    """The full HF hook surface fires from Trainer."""
 
     def test_all_hooks_fire(self, lora_model, tiny_dataset, tmp_path):
         model, tokenizer = lora_model
         cb = _RecordingCallback()
 
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=model,
             args=_args(tmp_path, max_steps=2, num_train_epochs=1),
             processing_class=tokenizer,
@@ -189,7 +189,7 @@ class TestHookSurface:
 
         # ``on_substep_end`` must NOT fire — DP-SGD has no substep concept.
         assert "on_substep_end" not in names, (
-            "on_substep_end fired but DPTrainer should not emit it: "
+            "on_substep_end fired but Trainer should not emit it: "
             f"hook sequence was {names}"
         )
 
@@ -247,7 +247,7 @@ class TestControlFlags:
         model, tokenizer = lora_model
         stopper = _StopAtStepCallback(stop_at=2)
 
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=model,
             args=_args(tmp_path, max_steps=10, num_train_epochs=5),
             processing_class=tokenizer,
@@ -267,7 +267,7 @@ class TestControlFlags:
         model, tokenizer = lora_model
         forcer = _ForceSaveCallback(force_at=2)
 
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=model,
             args=_args(
                 tmp_path,
@@ -322,7 +322,7 @@ class TestOptimizerHookKwargs:
         model, tokenizer = lora_model
         capture = _GradCaptureCallback()
 
-        trainer = DPTrainer(
+        trainer = Trainer(
             model=model,
             args=_args(tmp_path, max_steps=2, num_train_epochs=1),
             processing_class=tokenizer,
@@ -344,7 +344,7 @@ class TestOptimizerHookKwargs:
 
 
 class TestArgsMutationHygiene:
-    """User-supplied ``TrainingArguments`` must not be mutated by DPTrainer."""
+    """User-supplied ``TrainingArguments`` must not be mutated by Trainer."""
 
     def test_args_unchanged_by_construction(self, lora_model, tiny_dataset, tmp_path):
         model, tokenizer = lora_model
@@ -372,9 +372,9 @@ class TestArgsMutationHygiene:
 
         snapshot = _user_facing(args)
 
-        # First DPTrainer: validates + would-mutate label_names / greater_is_better
+        # First Trainer: validates + would-mutate label_names / greater_is_better
         # / save_strategy in the legacy implementation.
-        DPTrainer(
+        Trainer(
             model=model,
             args=args,
             processing_class=tokenizer,
@@ -383,16 +383,16 @@ class TestArgsMutationHygiene:
         )
 
         assert _user_facing(args) == snapshot, (
-            "DPTrainer mutated user-supplied args during __init__"
+            "Trainer mutated user-supplied args during __init__"
         )
 
         # Second construction with the *same* args object must succeed and
         # leave args unchanged again.  This also exercises
         # ``TrainingArguments.__post_init__`` idempotency: ``args``
         # has already been ``__post_init__``-d once at construction
-        # time, so ``DPTrainer`` re-using it must not re-run the
+        # time, so ``Trainer`` re-using it must not re-run the
         # mutating coercions.
-        DPTrainer(
+        Trainer(
             model=model,
             args=args,
             processing_class=tokenizer,

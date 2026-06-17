@@ -1,4 +1,4 @@
-"""DDP runtime support for :class:`opaque.transformers.trainer.DPTrainer`.
+"""DDP runtime support for :class:`opaque.transformers.trainer.Trainer`.
 
 Owns the rank/world resolution, the per-process gating for I/O sites
 (logging, saving, hub push), and the small collection of cross-rank
@@ -41,7 +41,7 @@ _BACKEND_ENV_DEPENDENT_HINTS = {
 
 @dataclasses.dataclass(frozen=True)
 class DDPState:
-    """Snapshot of the rank/world topology for one DPTrainer instance.
+    """Snapshot of the rank/world topology for one Trainer instance.
 
     ``is_distributed`` reflects ``torch.distributed.is_initialized()`` at
     construction time. When it's ``False``, the trainer behaves

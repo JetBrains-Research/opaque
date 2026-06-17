@@ -14,7 +14,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
+from opaque.transformers.trainer import Trainer, TrainingArguments
 
 
 # ----------------------------------------------------------------------------
@@ -37,10 +37,10 @@ def _args(tmp_path, **overrides) -> TrainingArguments:
     return TrainingArguments(**defaults)
 
 
-def _tiny_trainer(tmp_path, **arg_overrides) -> tuple[DPTrainer, nn.Module]:
+def _tiny_trainer(tmp_path, **arg_overrides) -> tuple[Trainer, nn.Module]:
     model = nn.Linear(4, 2)
     args = _args(tmp_path, **arg_overrides)
-    trainer = DPTrainer(
+    trainer = Trainer(
         model=model,
         args=args,
         train_dataset=[{"x": torch.zeros(4)}],

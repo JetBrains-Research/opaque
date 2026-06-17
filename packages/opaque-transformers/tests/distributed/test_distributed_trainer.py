@@ -1,7 +1,7 @@
-"""DDP end-to-end tests for :class:`DPTrainer`.
+"""DDP end-to-end tests for :class:`Trainer`.
 
 Each test launches N rank workers via ``subprocess.Popen`` (one per rank)
-running :mod:`_ddp_runner` with the right ``RANK`` / ``LOCAL_RANK`` /
+running :mod:`_distributed_runner` with the right ``RANK`` / ``LOCAL_RANK`` /
 ``WORLD_SIZE`` env vars. We use subprocess rather than ``mp.spawn``
 because pytest's ``--import-mode=importlib`` mode renames test modules
 in a way the spawned worker can't unpickle.
@@ -25,7 +25,7 @@ import sys
 import pytest
 import torch
 
-RUNNER = os.path.join(os.path.dirname(__file__), "_ddp_runner.py")
+RUNNER = os.path.join(os.path.dirname(__file__), "_distributed_runner.py")
 
 
 def _free_port() -> int:

@@ -1,9 +1,9 @@
-"""``SFTTrainer`` — supervised fine-tuning on :class:`DPTrainer`.
+"""``SFTTrainer`` — supervised fine-tuning on :class:`Trainer`.
 
 Mirrors ``trl.SFTTrainer`` in structure and method names — ``_prepare_dataset``
 / ``tokenize_row`` for data prep, a language-modeling collator, and an
 ``nll``/``dft`` loss dispatch — but routes the training gradient through
-Opaque's per-example :meth:`DPTrainer.compute_per_example_loss` hook.
+Opaque's per-example :meth:`Trainer.compute_per_example_loss` hook.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from opaque.alignment.data import (
 from opaque.alignment.metric import entropy_from_logits, mean_token_accuracy
 from opaque.alignment.sft.collator import language_modeling_collator
 from opaque.alignment.sft.loss import dft_loss, fused_dft_loss, nll_loss
-from opaque.api.transformers.trainer import DPTrainer
+from opaque.api.transformers.trainer import Trainer
 
 from ._sft_config import SFTConfig
 
@@ -101,7 +101,7 @@ def _resolve_fused_handles(model: Any, eligible: bool) -> tuple[str | None, str 
     return path_to_inner + prefix, lm_head_param_name
 
 
-class SFTTrainer(DPTrainer):
+class SFTTrainer(Trainer):
     """DP supervised fine-tuning trainer.
 
     Args mirror ``trl.SFTTrainer.__init__`` for the supported subset; the model
@@ -351,7 +351,7 @@ class SFTTrainer(DPTrainer):
         format (plain text / prompt-completion / chat).
         """
         if dataset is None or len(dataset) == 0:
-            # Empty dataset: skip tokenization so ``DPTrainer``'s clearer
+            # Empty dataset: skip tokenization so ``Trainer``'s clearer
             # "train_dataset is empty" validation fires later, rather than an
             # IndexError on the ``dataset[0]`` chat-column probe below.
             return dataset
@@ -496,13 +496,13 @@ class SFTTrainer(DPTrainer):
         *,
         return_logits: bool = False,
     ) -> Any:
-        """One example's SFT loss (vmap-batched by :class:`DPTrainer`).
+        """One example's SFT loss (vmap-batched by :class:`Trainer`).
 
         The collator already folds ``completion_mask`` into ``-100`` labels, so
         this is a single forward + the configured head (``nll`` / ``dft``); both
         heads use a DP-safe per-example divisor. A custom ``compute_loss_func``
         (only valid on the ``nll`` path; ``dft`` / ``chunked_nll`` are guarded at
-        init) is honoured here per ``DPTrainer``'s contract
+        init) is honoured here per ``Trainer``'s contract
         ``compute_loss_func(outputs, labels) -> scalar`` — it runs inside vmap,
         so it must be a pure per-example tensor op (no ``num_items_in_batch`` /
         batch coupling). Per-example telemetry lives in

@@ -1,6 +1,6 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Pre-trim contract for ``DPTrainer.get_train_dataloader`` under DDP.
+"""Pre-trim contract for ``Trainer.get_train_dataloader`` under DDP.
 
 ``opaque.distributed.local_shard`` hands the remainder examples to the
 last rank when ``len(dataset) % world_size != 0``.  That's harmless for
@@ -20,7 +20,7 @@ import pytest
 import torch
 from torch.utils.data import Dataset
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
+from opaque.transformers.trainer import Trainer, TrainingArguments
 
 
 pytest.importorskip("transformers")
@@ -47,7 +47,7 @@ class _IdentityDataset(Dataset):
 def _shard_for(*, dataset_size: int, world_size: int, rank: int) -> Dataset:
     """Drive ``get_train_dataloader``'s shard path and return its dataset.
 
-    Builds a real ``DPTrainer`` then pins ``_ddp`` to ``(rank, world_size)``
+    Builds a real ``Trainer`` then pins ``_ddp`` to ``(rank, world_size)``
     and stubs ``_ctx`` so the dataloader factory takes the training branch
     (the inspection branch at ``ctx is None`` skips sharding).  The returned
     object is the rank-local dataset that the ``PoissonSampler`` would draw
@@ -66,7 +66,7 @@ def _shard_for(*, dataset_size: int, world_size: int, rank: int) -> Dataset:
         report_to=[],
         use_cpu=True,
     )
-    trainer = DPTrainer(model=model, args=args, train_dataset=dataset)
+    trainer = Trainer(model=model, args=args, train_dataset=dataset)
     trainer._ddp = dataclasses.replace(
         trainer._ddp,
         is_distributed=True,
@@ -122,8 +122,8 @@ class TestEqualShardTrim:
             _shard_for(dataset_size=2, world_size=3, rank=0)
 
 
-def _trainer_with_ddp(*, dataset_size: int, world_size: int) -> DPTrainer:
-    """Build a DPTrainer pinned to ``world_size`` (rank 0)."""
+def _trainer_with_ddp(*, dataset_size: int, world_size: int) -> Trainer:
+    """Build a Trainer pinned to ``world_size`` (rank 0)."""
     model = torch.nn.Linear(2, 2)
     dataset = _IdentityDataset(dataset_size)
     args = TrainingArguments(
@@ -137,7 +137,7 @@ def _trainer_with_ddp(*, dataset_size: int, world_size: int) -> DPTrainer:
         report_to=[],
         use_cpu=True,
     )
-    trainer = DPTrainer(model=model, args=args, train_dataset=dataset)
+    trainer = Trainer(model=model, args=args, train_dataset=dataset)
     trainer._ddp = dataclasses.replace(
         trainer._ddp,
         is_distributed=True,
@@ -158,7 +158,7 @@ class TestSampleRateInvariant:
     and compare the sampler's stored rate to it.
     """
 
-    def _setup(self, trainer: DPTrainer) -> None:
+    def _setup(self, trainer: Trainer) -> None:
         # ``_setup_training`` is the single source of truth for
         # ``ctx.sample_rate``; we drive it directly to keep the test fast
         # (no full ``train()`` loop required).  ``train()`` would otherwise
