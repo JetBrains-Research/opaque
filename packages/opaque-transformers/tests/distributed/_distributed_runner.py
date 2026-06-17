@@ -159,9 +159,7 @@ def scenario_runtime_foundation(
         report_to=[],
     )
     ds = TinyDataset(n=32, seq_len=8, vocab=cfg.vocab_size)
-    trainer = Trainer(
-        model=model, args=args, train_dataset=ds, data_collator=_collate
-    )
+    trainer = Trainer(model=model, args=args, train_dataset=ds, data_collator=_collate)
 
     # Rank/world plumbing.
     assert trainer._ddp.is_distributed
