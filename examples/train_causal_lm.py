@@ -516,6 +516,27 @@ def parse_args():
         default=False,
         help="Run MBPP+ evaluation after training (requires --output-dir)",
     )
+    train_group.add_argument(
+        "--restore-best-checkpoint",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Before saving / downstream eval, restore the trainable params from "
+            "the step with the lowest eval/loss instead of using the final step. "
+            "Removes the single-checkpoint lottery from downstream pass@1. "
+            "Tracked params are snapshotted to CPU at each new-best eval."
+        ),
+    )
+    train_group.add_argument(
+        "--eval-ema-beta",
+        type=float,
+        default=0.7,
+        help=(
+            "EMA decay for the smoothed eval/loss metric (eval/loss_ema). "
+            "0 disables EMA logging. The smoothed metric makes run-to-run "
+            "comparison robust to per-checkpoint eval noise."
+        ),
+    )
 
     lora_group = parser.add_argument_group("lora", "LoRA adapter settings")
     lora_group.add_argument(
@@ -1872,6 +1893,21 @@ def main():
             step=0,
         )
 
+    # --- Eval-noise bookkeeping (best-checkpoint + EMA) ---
+    # best_eval_loss / best_eval_step track the lowest eval/loss seen.
+    # best_snapshot holds a CPU copy of the trainable params at that step; it is
+    # restored before saving + downstream eval when --restore-best-checkpoint.
+    # eval_loss_ema is a smoothed metric robust to per-checkpoint eval noise.
+    best_eval_loss = initial_eval_loss
+    best_eval_step = 0
+    best_snapshot = (
+        {k: v.detach().cpu().clone() for k, v in trainable_params.items()}
+        if args.restore_best_checkpoint and is_main_process
+        else None
+    )
+    eval_loss_ema = initial_eval_loss
+    _ema_beta = float(args.eval_ema_beta)
+
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
         print("-" * 80)
@@ -2256,11 +2292,29 @@ def main():
                 accounting = acc.cached(accounting)
                 epsilon = accounting.epsilon_at(args.target_delta)
 
+                # Track best checkpoint + EMA (eval-noise fix).
+                if _ema_beta > 0:
+                    eval_loss_ema = (
+                        _ema_beta * eval_loss_ema + (1.0 - _ema_beta) * current_eval_loss
+                    )
+                if current_eval_loss < best_eval_loss:
+                    best_eval_loss = current_eval_loss
+                    best_eval_step = global_step
+                    if best_snapshot is not None:
+                        for k, v in trainable_params.items():
+                            best_snapshot[k].copy_(v.detach().to("cpu"))
+
                 metrics = {
                     "eval/loss": current_eval_loss,
+                    "eval/loss_min": best_eval_loss,
                     "privacy/epsilon": epsilon,
                 }
-                eval_msg = f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
+                if _ema_beta > 0:
+                    metrics["eval/loss_ema"] = eval_loss_ema
+                eval_msg = (
+                    f"  → Eval: loss={current_eval_loss:.4f} "
+                    f"(min={best_eval_loss:.4f}@{best_eval_step}), ε={epsilon:.3f}"
+                )
 
                 if args.audit:
                     audit_estimate = run_audit(trainable_params)
@@ -2368,6 +2422,28 @@ def main():
     summary_profiler = sync(profiler) if is_ddp else profiler
     print("\n" + summary_profiler.final_summary())
     print("\n" + summary_profiler.checkpoint_summary())
+
+    # Record denoised eval metrics in the wandb summary so run-to-run
+    # comparison uses min / EMA instead of the noisy final-step value.
+    if use_wandb:
+        wandb.run.summary["eval/loss_min"] = best_eval_loss
+        wandb.run.summary["eval/loss_min_step"] = best_eval_step
+        if _ema_beta > 0:
+            wandb.run.summary["eval/loss_ema"] = eval_loss_ema
+
+    # Restore the best-eval checkpoint before saving / downstream eval.
+    # trainable_params share storage with peft_model (functional detach +
+    # in-place optimizer updates), so copy_ propagates to the live model.
+    if best_snapshot is not None and is_main_process:
+        if best_eval_step != global_step:
+            print(
+                f"\nRestoring best checkpoint (eval/loss={best_eval_loss:.4f} "
+                f"@ step {best_eval_step}, vs final step {global_step})..."
+            )
+            for k, v in trainable_params.items():
+                v.detach().copy_(best_snapshot[k].to(v.device, v.dtype))
+        else:
+            print(f"\nBest checkpoint IS the final step ({global_step}); no restore needed.")
 
     # Save model and run downstream evaluation
     if args.output_dir and is_main_process:
