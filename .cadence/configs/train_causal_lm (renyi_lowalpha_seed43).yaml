@@ -1,0 +1,106 @@
+# Rényi α ∈ (0,1) sweep — seed-43 replication of the qwen-coder-v2 batch.
+# Re-runs the m=2 LoRA-XSe adaptive-depth recipe (Qwen2.5-Coder-7B + KStack, ε=3)
+# at a fresh seed to put variance bars on the α=0.5 MBPP pass@1 win (0.667 @ seed42).
+#
+# α is parametrized via the XSE_ALPHA env var; override per run with
+#   start_execution_from_preset(env_vars={"XSE_ALPHA": "0.25", "RUN_NAME": "..."}).
+project_name: jbr-fed
+working_dir: "."
+cmd:
+  - |-
+    uv sync --group dev --group examples --all-packages --extra all
+    XSE_ADAPTIVE_DEPTH=1.0 XSE_ADAPTIVE_DEPTH_MARGIN=2 XSE_ADAPTIVE_DEPTH_ALPHA=$XSE_ALPHA \
+      uv run python examples/train_causal_lm.py \
+      --preset qwen-coder-kstack-lora \
+      --lora-method lora-xs --lora-r 32 --lora-alpha 32 \
+      --lora-xs-orthonormal-a \
+      --lora-xse-p-e 0.5 --lora-xse-rotation-step-interval 3 \
+      --warmup-steps 20 --seed 43 \
+      --output-dir /tmp/adapter --eval-humaneval --eval-mbpp
+provisioning:
+  gpu_type: h200
+  gpu_count: 1
+  cpu_count: 16
+  ram: 200
+teamcity:
+  url: https://api.cadence.jetbrains.com
+  build_conf_id: JbrFed_JetTrain
+env:
+  variables:
+    PYTHONUNBUFFERED: "1"
+    WANDB_BASE_URL: https://jetbrains.wandb.io
+    WANDB_ENTITY: federated-compute
+    WANDB_PROJECT: opaque-lora-xs
+    XSE_ALPHA: "${oc.env:XSE_ALPHA,0.5}"
+    RUN_NAME: "${oc.env:RUN_NAME,xse-r32-renyi-seed43}"
+  python:
+    version: 3.11.14
+  secrets:
+    variables:
+      HF_TOKEN: "${oc.env:HF_TOKEN}"
+      WANDB_API_KEY: "${oc.env:WANDB_API_KEY}"
+    ssh_keys: []
+  aws:
+    sync_config: false
+    sync_credentials: false
+    sync_cache: false
+project_sync:
+  local:
+    root: "."
+    storage_name: Cadence Storage
+    uri: ""
+    exclude:
+      - ".git/*"
+      - "**/.git/*"
+      - ".github/*"
+      - "trainer_output/**"
+      - "**/trainer_output/**"
+      - ".venv/*"
+      - "**/.venv/*"
+      - "venv/*"
+      - "**/venv/*"
+      - "target/*"
+      - "**/target/*"
+      - "dist/*"
+      - "**/dist/*"
+      - "build/*"
+      - "**/build/*"
+      - "wheels/*"
+      - "**/wheels/*"
+      - "site/*"
+      - "**/site/*"
+      - ".ruff_cache/*"
+      - "**/.ruff_cache/*"
+      - ".pytest_cache/*"
+      - "**/.pytest_cache/*"
+      - ".mypy_cache/*"
+      - "**/.mypy_cache/*"
+      - "__pycache__/*"
+      - "**/__pycache__/*"
+      - ".idea/*"
+      - "**/.idea/*"
+      - ".vscode/*"
+      - "**/.vscode/*"
+      - ".claude/*"
+      - "**/.claude/*"
+      - ".temp/*"
+      - "**/.temp/*"
+      - "wandb/*"
+      - "**/wandb/*"
+      - "*.jsonl"
+      - "**/*.jsonl"
+      - "*.so"
+      - "**/*.so"
+      - "*.dylib"
+      - "**/*.dylib"
+      - "*.whl"
+      - "**/*.whl"
+    include: []
+    sync_back: false
+    snapshots: true
+    storage_type: DEFAULT
+inputs: []
+outputs: []
+mounts: []
+storages: []
+description: "${oc.env:RUN_NAME,xse-r32-renyi-seed43}"

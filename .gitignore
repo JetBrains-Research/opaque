@@ -109,3 +109,7 @@ output.log
 
 # Claude Code session state
 .claude/
+
+# Cadence run cache + downloaded PDFs (download artifacts, not source)
+.cadence/cache/
+docs/*.pdf
