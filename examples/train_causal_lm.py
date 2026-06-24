@@ -2058,6 +2058,11 @@ def main():
                         _r_block_coherence_sum = 0.0
                         _n_layers = 0
                         _n_explore_growth = 0
+                        # Per-layer momentum-spectrum collection (rank-reallocation
+                        # probe): does recoverable rank vary ACROSS layers?
+                        _pl_m_info = []     # per-layer M_R normalized Shannon entropy
+                        _pl_rec_rank = []   # per-layer #singular values > 2*median (spike count)
+                        _pl_top_ratio = []  # per-layer s_max / median (top-spike strength)
 
                         _inner_state_for_diag = (
                             opt_state.inner
@@ -2144,9 +2149,14 @@ def main():
                                 ].to(torch.float32)
                                 _m_norm_f = float(torch.linalg.norm(_m_R).item())
                                 _m_frob_sum += _m_norm_f
-                                _m_info_sum += _spectral_entropy(
-                                    _svdvals(_m_R)
-                                )
+                                _m_svs = _svdvals(_m_R)
+                                _m_ent = _spectral_entropy(_m_svs)
+                                _m_info_sum += _m_ent
+                                # Per-layer collection for the reallocation probe.
+                                _m_med = float(_m_svs.median().clamp(min=1e-12).item())
+                                _pl_m_info.append(float(_m_ent))
+                                _pl_rec_rank.append(int((_m_svs > 2.0 * _m_med).sum().item()))
+                                _pl_top_ratio.append(float((_m_svs[0] / _m_med).item()))
 
                                 # Continuous m_explore_ratio: ‖m[r_keep:,:]‖/‖m[:r_keep,:]‖
                                 if _r_e > 0:
@@ -2202,6 +2212,31 @@ def main():
                             wb_metrics["xs/r_effective_rank"] = _m2.exp(
                                 _avg_info * _m2.log(max(_avg_r, 1))
                             )
+
+                        # -- Per-layer M_R spread (rank-reallocation probe) --
+                        # The decisive question: do layers DIFFER in recoverable
+                        # rank? If rec_rank_max >> rec_rank_min, reallocation has
+                        # headroom; if all layers look alike, the idea is dead.
+                        if _pl_m_info:
+                            def _spread(xs):
+                                s = sorted(xs); n = len(s); mu = sum(xs) / n
+                                q = lambda p: s[min(n - 1, int(p * (n - 1) + 0.5))]
+                                return (s[0], q(0.5), s[-1],
+                                        (sum((x - mu) ** 2 for x in xs) / n) ** 0.5)
+                            _mi = _spread(_pl_m_info)
+                            wb_metrics["xs_spread/m_info_min"] = _mi[0]
+                            wb_metrics["xs_spread/m_info_median"] = _mi[1]
+                            wb_metrics["xs_spread/m_info_max"] = _mi[2]
+                            wb_metrics["xs_spread/m_info_std"] = _mi[3]
+                            wb_metrics["xs_spread/m_info_hist"] = wandb.Histogram(_pl_m_info)
+                            _rr = _spread([float(x) for x in _pl_rec_rank])
+                            wb_metrics["xs_spread/rec_rank_min"] = _rr[0]
+                            wb_metrics["xs_spread/rec_rank_median"] = _rr[1]
+                            wb_metrics["xs_spread/rec_rank_max"] = _rr[2]
+                            wb_metrics["xs_spread/rec_rank_std"] = _rr[3]
+                            wb_metrics["xs_spread/rec_rank_hist"] = wandb.Histogram(_pl_rec_rank)
+                            wb_metrics["xs_spread/top_ratio_median"] = _spread(_pl_top_ratio)[1]
+                            wb_metrics["xs_spread/n_layers"] = len(_pl_m_info)
 
                         # -- Rotation-event metrics (rotation/) --
                         if _xse_active and getattr(opt_state, "last_diag", None):
