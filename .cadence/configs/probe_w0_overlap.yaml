@@ -19,12 +19,16 @@ teamcity:
 env:
   variables:
     PYTHONUNBUFFERED: "1"
+    WANDB_BASE_URL: https://jetbrains.wandb.io
+    WANDB_ENTITY: federated-compute
+    WANDB_PROJECT: opaque-lora-xs
     RUN_NAME: "${oc.env:RUN_NAME,probe-w0-overlap}"
   python:
     version: 3.11.14
   secrets:
     variables:
       HF_TOKEN: "${oc.env:HF_TOKEN}"
+      WANDB_API_KEY: "${oc.env:WANDB_API_KEY}"
     ssh_keys: []
   aws:
     sync_config: false
