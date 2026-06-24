@@ -1,0 +1,65 @@
+# W0-cage overlap probe — does the fine-tuning gradient point outside W0's
+# top-r singular subspace? Clean (non-DP) full-layer gradient geometry.
+# Submit:
+#   start_execution_from_preset(preset_path=".cadence/configs/probe_w0_overlap.yaml")
+project_name: jbr-fed
+working_dir: "."
+cmd:
+  - |-
+    uv sync --group examples --all-packages
+    uv run python examples/probe_w0_overlap.py
+provisioning:
+  gpu_type: h100
+  gpu_count: 1
+  cpu_count: 20
+  ram: 160
+teamcity:
+  url: https://api.cadence.jetbrains.com
+  build_conf_id: JbrFed_JetTrain
+env:
+  variables:
+    PYTHONUNBUFFERED: "1"
+    RUN_NAME: "${oc.env:RUN_NAME,probe-w0-overlap}"
+  python:
+    version: 3.11.14
+  secrets:
+    variables:
+      HF_TOKEN: "${oc.env:HF_TOKEN}"
+    ssh_keys: []
+  aws:
+    sync_config: false
+    sync_credentials: false
+    sync_cache: false
+project_sync:
+  local:
+    root: "."
+    storage_name: Cadence Storage
+    uri: ""
+    exclude:
+      - ".git/*"
+      - "**/.git/*"
+      - ".venv/*"
+      - "**/.venv/*"
+      - "**/__pycache__/*"
+      - ".idea/*"
+      - "**/.idea/*"
+      - ".claude/*"
+      - "**/.claude/*"
+      - ".cadence/cache/*"
+      - "wandb/*"
+      - "**/wandb/*"
+      - "*.jsonl"
+      - "**/*.jsonl"
+      - "*.so"
+      - "**/*.so"
+      - "*.whl"
+      - "**/*.whl"
+    include: []
+    sync_back: false
+    snapshots: true
+    storage_type: DEFAULT
+inputs: []
+outputs: []
+mounts: []
+storages: []
+description: "${oc.env:RUN_NAME,probe-w0-overlap}"
