@@ -21,6 +21,7 @@ from _hf_shared import (
     gpu_memory_gate_reason,
     has_min_gpu_memory,
     make_gpt2,
+    run_dp_training_step,
 )
 
 from opaque.api.engine.clipping import clipped_grad
@@ -188,6 +189,27 @@ class TestGPT2LoRADPTraining:
             )
             assert grad.shape == trainable[name].shape, f"Shape mismatch for {name}"
             assert torch.isfinite(grad).all(), f"Non-finite gradient for {name}"
+
+    def test_run_dp_training_step_with_accumulation(self, gpt2_with_lora):
+        """Gradient accumulation should rebuild clipped metadata explicitly."""
+        model, tokenizer = gpt2_with_lora
+
+        grads, _ = run_dp_training_step(
+            model,
+            tokenizer,
+            batch_size=2,
+            max_length=16,
+            accum_steps=2,
+            training_steps=1,
+            learning_rate=1e-3,
+            clipping_norm=1.0,
+        )
+
+        assert isinstance(grads, ClippedPytree)
+        assert float(grads.max_norm) == 1.0
+        assert len(grads.pytree) > 0
+        for grad in grads.pytree.values():
+            assert torch.isfinite(grad).all()
 
     def test_clipped_grad_with_return_values(self, gpt2_with_lora, sample_batch):
         """Test that return_values=True returns per-example losses."""
