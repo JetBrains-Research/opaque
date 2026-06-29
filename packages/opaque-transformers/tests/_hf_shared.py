@@ -413,7 +413,9 @@ def run_dp_training_step(
             )
 
             if accumulated_pytree is None:
-                accumulated_pytree = tree_map(lambda x: x.detach().clone(), grads.pytree)
+                accumulated_pytree = tree_map(
+                    lambda x: x.detach().clone(), grads.pytree
+                )
                 accumulated_max_norm = grads.max_norm
             else:
                 accumulated_pytree = tree_map(
