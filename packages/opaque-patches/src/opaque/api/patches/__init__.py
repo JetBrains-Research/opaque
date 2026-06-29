@@ -138,11 +138,25 @@ def apply_runtime_patches(
 
     if vmap_checkpointing:
         try:
-            from opaque.api.patches.torch.runtime import apply_checkpoint_patch
+            from opaque.api.patches.torch import apply_checkpoint_patch
 
             apply_checkpoint_patch(vmap_checkpointing=vmap_checkpointing)
         except ImportError:
-            pass
+            logger.warning(
+                "opaque: checkpoint+functorch patches unavailable; "
+                "gradient checkpointing under vmap(grad(...)) may break.",
+                exc_info=True,
+            )
+
+
+def is_runtime_patched() -> bool:
+    """``True`` once :func:`apply_runtime_patches` has run in this interpreter.
+
+    ``DPTrainer`` applies the runtime patches during construction; this lets a
+    script that drives HF primitives without ``DPTrainer`` check whether the
+    global shims are installed.
+    """
+    return _runtime_patches_applied
 
 
 __all__ = [
@@ -150,4 +164,5 @@ __all__ = [
     "apply_runtime_patches",
     "apply_transformers_model_patches",
     "apply_peft_model_patches",
+    "is_runtime_patched",
 ]

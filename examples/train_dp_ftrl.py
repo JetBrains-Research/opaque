@@ -120,6 +120,7 @@ from transformers import (
 )
 
 from opaque.patches import apply_model_patches, apply_runtime_patches
+from opaque.device import sdpa_autocast_under_vmap_broken
 
 apply_runtime_patches()
 
@@ -177,6 +178,36 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Shared utilities (same as train_causal_lm.py)
 # ---------------------------------------------------------------------------
+
+
+def _compile_grad_fn(grad_fn, *, backend, mode):
+    """Caller-applied ``torch.compile`` of the DP grad transform.
+
+    Compiles the whole ``vmap(grad(loss))`` + clipping step (functorch *inside*
+    the compiled region — the supported, fusing pattern; ``vmap(grad)`` *outside*
+    a compiled loss is the unsupported ``grad(compiled_fn)`` case). Tries
+    ``fullgraph=True`` first and lazily falls back to ``fullgraph=False`` on the
+    first graph break (the failure is lazy — it surfaces on first execution).
+    """
+    full = torch.compile(grad_fn, backend=backend, mode=mode, fullgraph=True)
+    fallback = []
+
+    def wrapper(*args, **kwargs):
+        if fallback:
+            return fallback[0](*args, **kwargs)
+        try:
+            return full(*args, **kwargs)
+        except Exception as e:  # noqa: BLE001 — any compile failure → fallback
+            print(
+                f"WARNING: torch.compile(fullgraph=True) failed "
+                f"({type(e).__name__}: {e}); falling back to fullgraph=False."
+            )
+            fallback.append(
+                torch.compile(grad_fn, backend=backend, mode=mode, fullgraph=False)
+            )
+            return fallback[0](*args, **kwargs)
+
+    return wrapper
 
 
 def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
@@ -542,7 +573,7 @@ def parse_args():
         "--gradient-checkpointing", action=argparse.BooleanOptionalAction, default=False
     )
     train_g.add_argument(
-        "--cpu-offload", action=argparse.BooleanOptionalAction, default=False
+        "--activation-offloading", action=argparse.BooleanOptionalAction, default=False
     )
 
     # LoRA
@@ -594,6 +625,39 @@ def parse_args():
         "MF ``mf_gaussian_noise`` uses the same Mahalanobis allocation as DP-SGD Gaussian.",
     )
     dp_g.add_argument("--microbatch-size", type=int, default=None)
+    dp_g.add_argument(
+        "--kernel-patches",
+        action=argparse.BooleanOptionalAction,
+        default=os.environ.get("OPAQUE_NO_KERNEL_PATCH", "0") != "1",
+        help="Apply the opaque Triton speed kernels (rope/rms_norm/activation/"
+        "fused-CE) to the model. On by default (auto-falls back to eager on "
+        "non-CUDA hosts). --no-kernel-patches forces the eager baseline; the "
+        "compat vmap-safety wrappers — including the load-bearing MoE experts "
+        "patch — plus kv_cache and PEFT kernels stay on. Default also follows "
+        "OPAQUE_NO_KERNEL_PATCH=1.",
+    )
+    dp_g.add_argument(
+        "--torch-compile",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="torch.compile the DP per-example grad step (vmap(grad) + clipping). "
+        "Off by default; a large speedup on GPU/MPS once warm (the first step "
+        "pays the compile cost).",
+    )
+    dp_g.add_argument(
+        "--torch-compile-backend", type=str, default="inductor",
+        help="torch.compile backend (default: inductor).",
+    )
+    dp_g.add_argument(
+        "--torch-compile-mode", type=str, default="default",
+        choices=[
+            "default",
+            "reduce-overhead",
+            "max-autotune",
+            "max-autotune-no-cudagraphs",
+        ],
+        help="torch.compile mode (default: 'default').",
+    )
     dp_g.add_argument(
         "--bands",
         type=int,
@@ -896,7 +960,11 @@ def main():
     torch.manual_seed(args.seed)
 
     # --- Attention ---
-    use_eager = args.attention == "eager" or device.type == "mps"
+    # Force eager on MPS only while the live torch has the autocast-under-vmap
+    # SDPA bug (probe-gated, so it auto-drops once pytorch/pytorch#187282 lands).
+    use_eager = args.attention == "eager" or (
+        device.type == "mps" and sdpa_autocast_under_vmap_broken(device.type)
+    )
     if not use_eager and args.sdpa_backend is not None:
         backends = {
             "flash": torch.backends.cuda.enable_flash_sdp,
@@ -962,10 +1030,18 @@ def main():
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
-    # Loss is the only consumer of the forward output in this script, so
-    # opt into the fused linear+CE kernel (skips ``lm_head`` and returns
+    # Loss is the only consumer of the forward output in this script, so the
+    # default opts into the fused linear+CE kernel (skips ``lm_head`` and returns
     # ``logits=None`` on the fast path — see ``apply_model_patches`` docs).
-    apply_model_patches(model, fused_linear_cross_entropy=True)
+    # ``--no-kernel-patches`` passes ``kernels=False`` for an eager baseline: it
+    # disables only the Triton speed kernels and fused linear-CE, while the
+    # ``compat`` vmap-safety wrappers (the load-bearing MoE experts patch,
+    # kv_cache, PEFT kernels) stay on.
+    if args.kernel_patches:
+        apply_model_patches(model, kernels=True, fused_linear_cross_entropy=True)
+    else:
+        print("Kernel patches: DISABLED (eager baseline; compat/MoE/PEFT stay on)")
+        apply_model_patches(model, kernels=False, fused_linear_cross_entropy=False)
     model.print_trainable_parameters()
     print_memory(device, "After LoRA")
 
@@ -1225,7 +1301,7 @@ def main():
 
     offload_ctx = (
         torch.autograd.graph.save_on_cpu(pin_memory=True)
-        if args.cpu_offload
+        if args.activation_offloading
         else contextlib.nullcontext()
     )
 
@@ -1244,6 +1320,11 @@ def main():
     def merged_params(trainable):
         return {**frozen_params, **trainable}
 
+    # Hoist ``pad_token_id`` to a plain int: reading ``tokenizer.pad_token_id``
+    # inside the per-example loss hits the tokenizer's C-level ``__getattr__``
+    # every call, which Dynamo can't trace (torch.compile graph-breaks there).
+    pad_token_id = tokenizer.pad_token_id
+
     def per_example_loss_fn(trainable, input_ids):
         # Mask pad positions to ``-100`` so training CE scores only real
         # tokens — same masking contract the eval path uses and the same
@@ -1251,7 +1332,7 @@ def main():
         # Without this, the manual DP-FTRL loop trains on unmasked labels
         # while DPTrainer trains on masked labels, producing systematically
         # different ``train/loss`` curves under identical DP math. ``vmap``-safe.
-        labels = torch.where(input_ids == tokenizer.pad_token_id, -100, input_ids)
+        labels = torch.where(input_ids == pad_token_id, -100, input_ids)
         output = fmodel(merged_params(trainable), input_ids, labels=labels)
         return output.loss
 
@@ -1282,7 +1363,6 @@ def main():
     def _audit_method(estimate):
         """Pick the audit-method object on `estimate` per ``args.audit_method``."""
         return estimate.gdp() if args.audit_method == "gdp" else estimate.eps_delta()
-    pad_token_id = tokenizer.pad_token_id
 
     def eval_loss(trainable):
         """Token-weighted CE over the eval set (pad tokens masked to ``-100``).
@@ -1342,6 +1422,15 @@ def main():
             return_aux=True,
             second_moment=args.second_moment,
         )
+
+    # Caller-applied torch.compile of the whole DP grad transform (opt-in).
+    if args.torch_compile:
+        grad_fn = _compile_grad_fn(
+            grad_fn,
+            backend=args.torch_compile_backend,
+            mode=args.torch_compile_mode,
+        )
+
     zeta = (
         clip_norm.effective / args.batch_size
         if isinstance(clip_norm, PerGroup)

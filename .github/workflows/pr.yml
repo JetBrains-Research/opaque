@@ -52,28 +52,82 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: cargo test
-        run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
+      # Cache the optimized dependency build (statrs/rustfft/nalgebra at
+      # opt-level 3 — see the test profile in Cargo.toml). The one-time cold
+      # compile is paid only when Cargo.lock changes; warm runs reuse it.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
 
+      # No `--lib`: also run the crate's doc-tests (~the `///` examples across
+      # src/), so documented API examples can't rot. (The crate has no Rust
+      # integration tests — its tests/ dir is Python.)
+      - name: cargo test
+        run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
+
+  # One matrix over PLATFORMS (cpu / mps / gpu) × shards. Parallelism is
+  # two-level: the matrix fans shards across runners, and `pytest -n auto`
+  # (cpu/mps only) fans across cores within a runner (`--dist loadscope` keeps
+  # each class/module on one worker so fixtures/order are preserved).
+  #
+  # The GPU platform is special and carried as a single `include` leg:
+  #   * one self-hosted GPU runner, so it is NOT sharded (parallel shards would
+  #     just queue on the one box) and runs serially (xdist workers would
+  #     contend for device memory) — hence `xdist: ""`;
+  #   * `soft: true` -> `continue-on-error`, so a GPU failure (or a runner that
+  #     can't see CUDA) is reported as success to `needs.*.result` and does NOT
+  #     block the required gate below. The GPU leg still shows red and turns the
+  #     overall run red — visible signal without gating merges while the runner
+  #     is unproven. Drop `soft` once the GPU runner reliably runs CUDA.
   python-tests:
-    name: Python tests — ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
+    name: opaque-${{ matrix.shard.name }} (${{ matrix.device.label }})
+    runs-on: ${{ matrix.device.os }}
+    continue-on-error: ${{ matrix.soft == true }}
+    timeout-minutes: 30  # safety net: a hung/preempted runner fails fast
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: CPU
+        # PR gate excludes `slow` (full main CI in ci.yml runs slow too).
+        # `rest` is the catch-all for every package not split into its own
+        # shard, plus the repo-level tests/ tree.
+        shard:
+          - name: transformers
+            paths: packages/opaque-transformers
+          - name: dpsgd
+            paths: packages/opaque-dpsgd
+          - name: patches
+            paths: packages/opaque-patches
+          - name: rest
+            paths: >-
+              packages/opaque-base packages/opaque-engine
+              packages/opaque-optimizers packages/opaque-dpftrl
+              packages/opaque-auditing packages/opaque-accounting
+              packages/opaque-alignment tests
+        device:
+          - name: cpu
+            label: CPU
             os: ubuntu-latest
-            python-version: "3.11"
-            # PR gate excludes `slow`. Full main CI runs slow too.
-            marker-expression: "not cuda and not mps and not slow"
-            coverage-suffix: ""
-          - name: MPS
+            marker: "not cuda and not mps and not slow"
+            xdist: "-n auto --dist loadscope"
+          - name: mps
+            label: MPS
             os: macos-latest
-            python-version: "3.11"
-            # MPS runner keeps mps-marked tests; cuda-marked auto-skip.
-            marker-expression: "not cuda and not slow"
-            coverage-suffix: "-mps"
+            marker: "not cuda and not slow"
+            xdist: "-n auto --dist loadscope"
+        # GPU platform: a single unsharded, serial, non-blocking leg.
+        include:
+          - shard:
+              name: all
+              paths: packages tests
+            device:
+              name: gpu
+              label: CUDA
+              os: GPU-runner-001
+              marker: "cuda and not slow"
+              # No xdist (single GPU); `-rs` surfaces skip reasons so a runner
+              # that can't satisfy the GPU tests isn't a silent no-op.
+              xdist: "-rs"
+            soft: true
 
     steps:
       - uses: actions/checkout@v5
@@ -83,28 +137,48 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable  # needed to build opaque-accounting during uv sync
 
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true  # cache the resolved env across runs to cut per-shard sync cost
 
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
 
       - name: uv sync
         run: uv sync --group dev --all-packages --extra all
 
       - name: pytest
-        # `testpaths = ["packages"]` in pyproject.toml makes this the whole
-        # suite — no per-package enumeration.
         run: |
-          uv run pytest \
-            -m "${{ matrix.marker-expression }}" \
+          uv run pytest ${{ matrix.shard.paths }} \
+            -m "${{ matrix.device.marker }}" \
+            ${{ matrix.device.xdist }} \
             --cov=opaque \
-            --cov-report=xml:coverage${{ matrix.coverage-suffix }}.xml \
-            -v
+            --cov-report=xml:coverage.xml \
+            -q
 
       - uses: codecov/codecov-action@v4
         with:
-          files: ./coverage${{ matrix.coverage-suffix }}.xml
+          files: ./coverage.xml
+          flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false
+
+  # Single aggregating status check — the ONE job to mark required in branch
+  # protection. `needs.python-tests.result` is `success` only when every
+  # non-soft leg passed; the GPU leg's `continue-on-error` masks its result to
+  # success, so this gate reflects CPU + MPS only. Shards/platforms can be
+  # added or renamed without touching the protection rule. `if: always()` makes
+  # the gate report a failure (instead of being skipped) when a shard fails.
+  python-tests-gate:
+    name: Python tests
+    if: always()
+    needs: [python-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all (non-GPU) test legs to pass
+        run: |
+          result="${{ needs.python-tests.result }}"
+          echo "python-tests matrix result: $result"
+          test "$result" = "success"
 
   smoke-imports:
     name: Cross-package import smoke test

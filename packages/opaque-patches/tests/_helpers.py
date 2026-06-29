@@ -46,8 +46,20 @@ requires_hf_auth = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def qwen2_config():
+    # Shrink to a tiny-but-structurally-faithful Qwen2: 2 layers and a narrow
+    # width keep the vmap(grad) attention/MLP work cheap, while a 4-head /
+    # 2-kv-head split preserves the GQA ``repeat_kv`` path these tests
+    # exercise. ``head_dim`` is pinned explicitly so it can't stay at the
+    # 0.5B value (64) and desync q_proj's output width from ``hidden_size``.
+    # ``vocab_size`` is left untouched so the real Qwen2 tokenizer's ids stay
+    # in range (the embedding is frozen, so its size costs only a lookup).
     config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
     config.num_hidden_layers = 2
+    config.hidden_size = 128
+    config.num_attention_heads = 4
+    config.num_key_value_heads = 2
+    config.head_dim = config.hidden_size // config.num_attention_heads
+    config.intermediate_size = 256
     return config
 
 

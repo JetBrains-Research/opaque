@@ -20,6 +20,7 @@ from _hf_shared import (
     get_default_gpu_device,
     gpu_memory_gate_reason,
     has_min_gpu_memory,
+    make_gpt2,
 )
 
 from opaque.api.engine.clipping import clipped_grad
@@ -43,19 +44,12 @@ from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
 @pytest.fixture
 def gpt2_model_and_tokenizer():
-    """Load GPT-2 small model and tokenizer.
+    """Tiny randomly-initialised GPT-2 + tokenizer (see _hf_shared.make_gpt2).
 
     Uses default attention (SDPA) - vmap compatibility is handled by
     import-time patches applied when opaque is imported.
     """
-    model_name = "gpt2"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    tokenizer.pad_token = tokenizer.eos_token
-
-    model = AutoModelForCausalLM.from_pretrained(model_name)
-    model.config.pad_token_id = tokenizer.pad_token_id
-
-    return model, tokenizer
+    return make_gpt2()
 
 
 @pytest.fixture

@@ -86,8 +86,12 @@ def _bind_fused_forward(model):
 
 
 @pytest.mark.parametrize("family", sorted(_FAMILY_SPECS))
-def test_fused_ce_wrapper_matches_hf_with_labels_on_cpu(family):
-    """T1: wrapper should match stock HF numerics when CUDA fused path is disabled."""
+def test_fused_ce_wrapper_matches_hf_loss_on_cpu(family):
+    """T1: with labels, the fused-CE wrapper matches stock HF *loss* and skips
+    logits. Off-CUDA the chunked kernel powers the fused path (it streams the LSE
+    in fp32, so the loss matches HF's fp32 CE); ``logits`` is ``None`` because the
+    fast path never materializes ``lm_head`` — the opt-in ``logits=None`` contract.
+    The fallback-with-logits path is covered by ``preserves_logits_to_keep``."""
     torch.manual_seed(0)
     base = _tiny_model(family)
     wrapped = copy.deepcopy(base)
@@ -111,8 +115,8 @@ def test_fused_ce_wrapper_matches_hf_with_labels_on_cpu(family):
             return_dict=True,
         )
 
-    assert torch.allclose(out_base.logits, out_wrapped.logits, atol=1e-6, rtol=1e-5)
-    assert torch.allclose(out_base.loss, out_wrapped.loss, atol=1e-6, rtol=1e-5)
+    assert out_wrapped.logits is None  # fused path skips lm_head materialization
+    assert torch.allclose(out_base.loss, out_wrapped.loss, atol=1e-4, rtol=1e-4)
 
 
 @pytest.mark.parametrize("family", sorted(_FAMILY_SPECS))

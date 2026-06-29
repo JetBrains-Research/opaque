@@ -5,9 +5,10 @@ live in ``packages/opaque-dpsgd/tests/rng/test_rng_helpers_integration.py``;
 opaque-engine has no dependency on opaque-dpsgd.
 """
 
+import pytest
 import torch
 
-from opaque.random import random_key
+from opaque.random import key, random_key, set_reproducible_pytorch_seed
 from opaque.random.types import RngKey
 
 
@@ -39,3 +40,31 @@ class TestRandomKey:
         gen2 = generator_from_key(k2)
         t2 = torch.randn(10, generator=gen2)
         assert not torch.allclose(t1, t2)
+
+
+class TestReproducibleSeed:
+    """``set_reproducible_pytorch_seed`` seeds every available device RNG."""
+
+    def test_cpu_reproducible(self):
+        set_reproducible_pytorch_seed(key(42))
+        a = torch.randn(1000)
+        set_reproducible_pytorch_seed(key(42))
+        b = torch.randn(1000)
+        assert torch.equal(a, b)
+
+    @pytest.mark.mps
+    def test_mps_reproducible(self):
+        """The MPS generator must be seeded too, not just CPU/CUDA.
+
+        Regression guard: model-side stochastic ops (dropout, weight init) on
+        Apple Silicon are only reproducible if ``torch.mps.manual_seed`` runs.
+        """
+        set_reproducible_pytorch_seed(key(42))
+        a = torch.randn(1000, device="mps").cpu()
+        set_reproducible_pytorch_seed(key(42))
+        b = torch.randn(1000, device="mps").cpu()
+        assert torch.equal(a, b)
+
+        set_reproducible_pytorch_seed(key(43))
+        c = torch.randn(1000, device="mps").cpu()
+        assert not torch.equal(a, c)

@@ -23,26 +23,62 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: cargo test
-        run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
 
+      # No `--lib`: also run the crate's doc-tests so documented API examples
+      # can't rot. (No Rust integration tests — the crate's tests/ dir is Python.)
+      - name: cargo test
+        run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
+
+  # Same platform matrix as the PR gate (see pr.yml for the full rationale),
+  # but this lane keeps `slow` tests and the GPU leg runs the whole `cuda`
+  # marker. The GPU platform stays a single unsharded, serial, soft leg.
   python-tests:
-    name: Python tests — ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
+    name: opaque-${{ matrix.shard.name }} (${{ matrix.device.label }})
+    runs-on: ${{ matrix.device.os }}
+    continue-on-error: ${{ matrix.soft == true }}
+    timeout-minutes: 40  # safety net; slow tests make these jobs longer than the PR gate
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: CPU
+        shard:
+          - name: transformers
+            paths: packages/opaque-transformers
+          - name: dpsgd
+            paths: packages/opaque-dpsgd
+          - name: patches
+            paths: packages/opaque-patches
+          - name: rest
+            paths: >-
+              packages/opaque-base packages/opaque-engine
+              packages/opaque-optimizers packages/opaque-dpftrl
+              packages/opaque-auditing packages/opaque-accounting
+              packages/opaque-alignment tests
+        device:
+          - name: cpu
+            label: CPU
             os: ubuntu-latest
-            python-version: "3.11"
-            marker-expression: "not cuda and not mps"
-            coverage-suffix: ""
-          - name: MPS
+            marker: "not cuda and not mps"
+            xdist: "-n auto --dist loadscope"
+          - name: mps
+            label: MPS
             os: macos-latest
-            python-version: "3.11"
-            marker-expression: "not cuda"
-            coverage-suffix: "-mps"
+            marker: "not cuda"
+            xdist: "-n auto --dist loadscope"
+        include:
+          - shard:
+              name: all
+              paths: packages tests
+            device:
+              name: gpu
+              label: CUDA
+              os: GPU-runner-001
+              marker: "cuda"
+              # No xdist (single GPU); `-rs` surfaces skip reasons.
+              xdist: "-rs"
+            soft: true
 
     steps:
       - uses: actions/checkout@v5
@@ -52,38 +88,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: astral-sh/setup-uv@v8.1.0
-
-      - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: uv sync
-        run: uv sync --group dev --all-packages --extra all
-
-      - name: pytest
-        run: |
-          uv run pytest \
-            -m "${{ matrix.marker-expression }}" \
-            --cov=opaque \
-            --cov-report=xml:coverage${{ matrix.coverage-suffix }}.xml \
-            -v
-
-      - uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage${{ matrix.coverage-suffix }}.xml
-          fail_ci_if_error: false
-
-  python-tests-cuda:
-    name: Python tests — CUDA
-    runs-on: GPU-runner-001
-    needs: [python-tests]
-
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - uses: astral-sh/setup-uv@v8.1.0
+          enable-cache: true
 
       - uses: actions/setup-python@v6
         with:
@@ -92,18 +98,19 @@ jobs:
       - name: uv sync
         run: uv sync --group dev --all-packages --extra all
 
-      - name: pytest -m cuda
+      - name: pytest
         run: |
-          uv run pytest \
-            -m "cuda" \
+          uv run pytest ${{ matrix.shard.paths }} \
+            -m "${{ matrix.device.marker }}" \
+            ${{ matrix.device.xdist }} \
             --cov=opaque \
-            --cov-report=xml:coverage-cuda.xml \
-            -v
+            --cov-report=xml:coverage.xml \
+            -q
 
       - uses: codecov/codecov-action@v4
         with:
-          files: ./coverage-cuda.xml
-          flags: cuda
+          files: ./coverage.xml
+          flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false
 
   # ---------------------------------------------------------------------------

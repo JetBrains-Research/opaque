@@ -91,6 +91,11 @@ except ModuleNotFoundError as import_error:
         gathered = torch.gather(log_probs, dim=-1, index=safe.unsqueeze(-1)).squeeze(-1)
         return gathered.masked_fill(ignore, 0.0)
 
+    # Chunked custom-autograd CE streams the log-sum-exp over vocab chunks
+    # instead of materializing the full ``(tokens, vocab)`` logits, so
+    # large-vocab CE fits in memory on MPS/CPU and stays ``vmap(grad)``-safe.
+    from ._linear_ce_chunked import linear_cross_entropy_chunked
+
     def opaque_linear_cross_entropy_loss(
         hidden_states,
         weight,
@@ -98,23 +103,17 @@ except ModuleNotFoundError as import_error:
         ignore_index=-100,
         logit_softcapping=0,
         label_smoothing=0.0,
+        use_token_scaling=False,
     ):
-        shifted_hidden = hidden_states[..., :-1, :].contiguous()
-        shifted_labels = labels[..., 1:].contiguous()
-        logits = shifted_hidden @ weight.transpose(-1, -2)
-        logits = _apply_logit_transforms(logits, logit_softcapping, 0)
-        loss_flat = F.cross_entropy(
-            logits.reshape(-1, logits.shape[-1]),
-            shifted_labels.reshape(-1),
-            reduction="none",
-            ignore_index=ignore_index,
-            label_smoothing=float(label_smoothing or 0.0),
+        return linear_cross_entropy_chunked(
+            hidden_states,
+            weight,
+            labels,
+            ignore_index,
+            logit_softcapping,
+            label_smoothing,
+            use_token_scaling,
         )
-        nll_sum = loss_flat.sum()
-        n_valid = (
-            (shifted_labels.reshape(-1) != ignore_index).sum().float().clamp(min=1)
-        )
-        return nll_sum / n_valid
 
     def opaque_swiglu(gate, up):
         return F.silu(gate) * up

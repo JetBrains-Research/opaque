@@ -35,7 +35,7 @@ from opaque.api.transformers.trainer._scheduler import (  # noqa: E402
     build_lr_schedule,
     get_warmup_steps,
 )
-from opaque.api.transformers.trainer._config import _parse_dict_string  # noqa: E402
+from opaque.api.transformers.trainer._training_arguments import _parse_dict_string  # noqa: E402
 
 
 BASE_LR = 1e-3

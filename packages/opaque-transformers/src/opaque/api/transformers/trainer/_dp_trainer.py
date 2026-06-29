@@ -25,7 +25,7 @@ import os
 import shutil
 import time
 from collections.abc import Mapping
-from typing import Any, Callable, NamedTuple
+from typing import Any, Callable
 
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
@@ -35,6 +35,10 @@ from datasets import Dataset
 from opaque.accounting import Accountant
 from opaque.accounting import calibration as cal
 from opaque.api.engine.clipping import clipped_grad
+from opaque.api.engine.device import (
+    device_capabilities,
+    sdpa_autocast_under_vmap_broken,
+)
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpftrl.noise import mf_gaussian_noise
@@ -55,8 +59,9 @@ from ._callback import (
     is_metric_improved,
     resolve_eval_metric,
 )
-from ._config import TrainingArguments
-from ._eval import EvalPrediction, EvaluationResult
+from ._training_arguments import TrainingArguments
+from ._eval import EvalPrediction
+from .types import EvaluationResult, TrainOutput
 from ._precision import eval_dtype
 from ._scheduler import build_lr_schedule
 from ._state import DPTrainerState
@@ -199,14 +204,6 @@ def _compile_with_fullgraph_fallback(
     return wrapper
 
 
-class TrainOutput(NamedTuple):
-    """Return type of ``DPTrainer.train()``, mirroring HF's TrainOutput."""
-
-    global_step: int
-    training_loss: float
-    metrics: dict[str, float]
-
-
 @dataclasses.dataclass
 class _TrainingContext:
     """Mutable state carried through the training loop."""
@@ -240,8 +237,8 @@ class _TrainingContext:
     save_steps_resolved: int = 0
     # Configured clip threshold (scalar or PerGroup).  Adaptive mode
     # overrides this each step via ``clip_state.clipping_norm``; fixed
-    # mode reads the configured value directly because the new
-    # ``FixedClipState`` is a marker without per-state fields.
+    # mode reads the configured value directly because ``FixedClipState``
+    # is a marker without per-state fields.
     clip_norm: Any = None
     mechanism_kind: str = "gaussian"
     mf: _dpftrl.MFContext | None = None
@@ -351,14 +348,18 @@ class DPTrainer:
         # ``None`` here so model rebinding can invalidate the cache.
         self._eval_per_example_loss_fn: Callable | None = None
         self._eval_per_example_loss_fn_model: Any = None
+        # Per-batch eval telemetry channel: a subclass ``prediction_step`` sets
+        # this to a per-example dict that ``evaluation_loop`` collects + means
+        # into the eval metrics (symmetric with the train-step aux channel).
+        self._pending_eval_aux: dict[str, Tensor] | None = None
 
         # Default label_names so the eval loop can identify label tensors in
-        # the batch dict.  HF parity (trainer.py:789-797): inspect the
-        # model's forward signature for parameters whose name contains
-        # "label" — for ``*ForQuestionAnswering`` models additionally pick
-        # up ``start_positions`` / ``end_positions``.  Walk through the
-        # PEFT wrapper to the base model so the inspected signature is the
-        # one that actually consumes the labels.  Snapshot to a private
+        # the batch dict.  HF parity: inspect the model's forward signature
+        # for parameters whose name contains "label" — for
+        # ``*ForQuestionAnswering`` models additionally pick up
+        # ``start_positions`` / ``end_positions``.  Walk through the PEFT
+        # wrapper to the base model so the inspected signature is the one
+        # that actually consumes the labels.  Snapshot to a private
         # attribute so the user-supplied ``args`` is never mutated.
         if args.label_names is not None:
             self._label_names: list[str] = list(args.label_names)
@@ -413,9 +414,9 @@ class DPTrainer:
         # Explicit patch sites (no import-time mutation of HF globals):
         # 1) global runtime compat (masking / collator / checkpoint hooks)
         # 2) ``apply_model_patches(..., compat=use_compat_patches, performance=True, kernels=use_performance_kernels)``
-        from opaque.api.transformers import _runtime_bootstrap as _opaque_rt
+        from opaque.patches import apply_runtime_patches
 
-        _opaque_rt.apply_transformers_runtime_compat_patches()
+        apply_runtime_patches(compat=True)
         self._apply_opaque_model_patches()
 
         # Compute precision: bf16 autocast for training, full-cast only for
@@ -701,6 +702,57 @@ class DPTrainer:
 
         self._train_dtype = next(self._model.parameters()).dtype
         self._amp_dtype = torch.bfloat16 if a.bf16 else None
+        self._workaround_mps_bf16_sdpa()
+
+    def _workaround_mps_bf16_sdpa(self) -> None:
+        """Force eager attention for bf16 DP on MPS (PyTorch SDPA/autocast bug).
+
+        On MPS, ``torch.autocast`` does not cast ``scaled_dot_product_attention``
+        under functorch ``vmap(grad)`` (it does on CPU/CUDA), so the bf16 DP step
+        crashes in attention.  Eager attention sidesteps it **losslessly** —
+        under ``vmap`` SDPA already decomposes to the same matmuls.  Probe-gated
+        (:func:`opaque.device.sdpa_autocast_under_vmap_broken`) so this auto-drops
+        on a torch that fixes the upstream bug.  See the minimal repro in that probe.
+        """
+        if (
+            self._amp_dtype is None
+            or self._device.type != "mps"
+            or not sdpa_autocast_under_vmap_broken(self._device.type)
+        ):
+            return
+        model = self._model
+        cfg = getattr(model, "config", None)
+        if getattr(cfg, "_attn_implementation", None) == "eager":
+            return
+        setter = getattr(model, "set_attn_implementation", None)
+        if not callable(setter):
+            log.warning(
+                "bf16 DP on MPS hits a PyTorch bug (autocast doesn't cast SDPA "
+                "under vmap(grad) on MPS) and %s exposes no "
+                "set_attn_implementation; load the model with "
+                "attn_implementation='eager' to run bf16 on MPS.",
+                type(model).__name__,
+            )
+            return
+        try:
+            setter("eager")
+        except Exception as e:  # noqa: BLE001 - fall back to a clear instruction
+            log.warning(
+                "bf16 DP on MPS: could not switch %s to eager attention "
+                "(%s: %s); load it with attn_implementation='eager'.",
+                type(model).__name__,
+                type(e).__name__,
+                e,
+            )
+            return
+        log.warning(
+            "bf16 DP on MPS: switched the model to eager attention.  PyTorch's "
+            "autocast does not cast scaled_dot_product_attention under vmap(grad) "
+            "on MPS (works on CPU/CUDA), which crashes the bf16 DP step; eager "
+            "attention avoids it losslessly (SDPA decomposes to the same matmuls "
+            "under vmap).  Pass attn_implementation='eager' to silence this, or "
+            "use fp32 / CUDA.",
+        )
 
     def _effective_output_dir(self) -> str | None:
         return self.args.output_dir
@@ -816,11 +868,11 @@ class DPTrainer:
         # independently they would fall out of step-lockstep: one rank restarts
         # at microbatch=4 step 0 while a sibling is still on microbatch=8 step 3.
         # DP-SGD's per-step collectives (``sum_gradients_`` AllReduce + the
-        # ``ClippedPytree.max_norm`` cross-rank equality assert) then meet at
-        # mismatched logical steps and raise ``max_norm mismatch across ranks``.
-        # Fix: after every attempt, ``_cluster_needs_step_down`` all-reduces a
-        # MAX of each rank's "needs to step down" flag — if ANY rank OOMs, EVERY
-        # rank steps down together and restarts in lockstep. The returned run is
+        # ``ClippedPytree.max_norm`` cross-rank equality assert) would then
+        # meet at mismatched logical steps and raise ``max_norm mismatch
+        # across ranks``.  So after every attempt, all-reduce a MAX of each
+        # rank's "needs to step down" flag — if ANY rank OOMs, EVERY rank
+        # steps down together and restarts in lockstep.  The returned run is
         # the first attempt at which no rank OOMs, so all ranks ran it at an
         # identical microbatch and stayed synchronised end-to-end.
         while True:
@@ -1073,7 +1125,7 @@ class DPTrainer:
 
         # --- CPU offload context ---
         offload_ctx: Any = contextlib.nullcontext()
-        if a.cpu_offload_activations:
+        if a.activation_offloading:
             # ``pin_memory=False`` is forced: ``cpu_offload`` exists to
             # extend batches past the GPU ceiling, and pinning host RAM
             # would re-cap that expansion at the host limit (host-OOM is
@@ -1107,10 +1159,16 @@ class DPTrainer:
         # Subclasses override :meth:`compute_per_example_loss` for
         # domain-specific losses; ``_build_per_example_loss`` here just
         # wraps it with autocast / torch.compile.
+        # Subclasses that override ``compute_per_example_loss_and_metrics`` emit
+        # per-example telemetry; the loss closure then returns ``(loss, aux)`` and
+        # the grad fn is built with ``has_aux=True``. Detected by override (no
+        # flag); ``False`` keeps the standard path bit-identical.
+        wants_metrics = self._overrides_metrics_seam()
         per_example_loss_fn, batch_argnums = self._build_per_example_loss(
             fmodel,
             frozen_params,
             batch_keys,
+            with_metrics=wants_metrics,
         )
 
         # --- Sampling & step calculations ---
@@ -1200,6 +1258,7 @@ class DPTrainer:
             clip_norm,
             expected_batch_size,
             microbatch_size,
+            has_aux=wants_metrics,
         )
 
         # --- LR schedule ---
@@ -1315,11 +1374,9 @@ class DPTrainer:
                 key=key(a.seed),
             )
         else:
-            # DP-FTRL: pull the participation context off the raw
-            # amplifier (matches the legacy script's
-            # ``_amp.n_steps`` / ``min_sep`` / ``max_participations``
-            # pattern) so the streaming noise matrix tracks the
-            # calibrated PLD exactly.
+            # DP-FTRL: pull the participation context (``n_steps`` /
+            # ``min_sep`` / ``max_participations``) off the raw amplifier so
+            # the streaming noise matrix tracks the calibrated PLD exactly.
             assert mf is not None
             _amp = mf.amplifier_factory(noise_multiplier)
             noise_fn, noise_state = mf_gaussian_noise(
@@ -1462,8 +1519,8 @@ class DPTrainer:
         if a.eval_on_start:
             self.evaluate(ignore_keys=ignore_keys_for_eval)
 
-        # Build the train loader ONCE.  Under the new sampler contract,
-        # a single ``PoissonSampler(n_steps=total_steps)`` drives every
+        # Build the train loader ONCE: a single
+        # ``PoissonSampler(n_steps=total_steps)`` drives every
         # epoch; the outer loop's role is purely callback synthesis
         # (``on_epoch_begin`` / ``on_epoch_end``) and per-epoch break
         # handling.  Resume restores the sampler's ``consumed`` cursor
@@ -1538,12 +1595,12 @@ class DPTrainer:
 
                 # Empty Poisson round: no loss / tokens to accumulate.  The
                 # optimizer still applied a pure-noise update and
-                # ``global_step`` already advanced, so we must NOT skip the
-                # log/save/eval gate below — a save or eval boundary landing
-                # exactly on an empty round used to be silently dropped.
-                # ``step_result`` carries only ``{loss: 0, batch_size: 0}``
-                # here, which the gate reads via ``.get`` defaults (the logged
-                # loss is the windowed average, unaffected by this step).
+                # ``global_step`` already advanced, so the log/save/eval gate
+                # below must still run — a save or eval boundary can land
+                # exactly on an empty round.  ``step_result`` carries only
+                # ``{loss: 0, batch_size: 0}`` here, which the gate reads via
+                # ``.get`` defaults (the logged loss is the windowed average,
+                # unaffected by this step).
                 if batch_size != 0:
                     last_loss = step_result["loss"]
                     last_step_result = step_result
@@ -1748,6 +1805,12 @@ class DPTrainer:
                 "DPTrainer's functional context is not initialised."
             )
         inputs = self._prepare_input(inputs)
+        # Subclass hook: augment the batch with tensors computed *outside* vmap
+        # (e.g. TR-DPO's per-step reference logps). Default is a no-op. Any keys
+        # it adds must already be present in ``ctx.batch_keys`` (discovered at
+        # setup), so subclasses seed placeholder columns at construction and the
+        # hook overwrites their values here.
+        inputs = self._augment_inputs(inputs)
         # Positional batch tensors in the order discovered at
         # ``_setup_training`` time.  Matches the ``batch_argnums`` the
         # loss builder published, so ``vmap`` batches correctly.
@@ -1766,9 +1829,9 @@ class DPTrainer:
         # collectives below run unchanged on a zero-grad pytree — every
         # rank issues a SUM AllReduce on identical-zero tensors, so the
         # cluster stays in lockstep even when individual ranks see empty
-        # Poisson rounds.  This matches ``examples/train_causal_lm.py``'s
-        # handling: privacy budget is consumed for every step regardless
-        # of realized batch size (Poisson accounting is data-independent).
+        # Poisson rounds.  Privacy budget is consumed for every step
+        # regardless of realized batch size (Poisson accounting is
+        # data-independent).
         leading = batch_args[0]
         step_batch_size = int(leading.shape[0])
         # Per-step perf tracker covers clip → DDP sync → noise → optimizer;
@@ -1788,7 +1851,9 @@ class DPTrainer:
             local_oom_step = False
             grads = aux = None
             try:
-                with ctx.offload_ctx:
+                # autocast wraps the *outer* grad_fn (vmap(grad)+clip) call —
+                # the placement that actually casts on MPS (see _autocast_ctx).
+                with ctx.offload_ctx, self._autocast_ctx():
                     (grads, aux), ctx.clip_state = ctx.grad_fn(
                         ctx.trainable_params,
                         *batch_args,
@@ -1900,18 +1965,15 @@ class DPTrainer:
         if batch_size == 0:
             return {"loss": 0.0, "batch_size": 0}
 
-        # Noise σ travels on the ``NoisedPytree`` wrapper now;
-        # ``_effective`` handles both scalar and ``PerGroup`` shapes.
-        # ``grads.max_norm`` is the *realized* per-step clipping
-        # threshold: ``adaptive_clipped_grad`` updates it geometrically
-        # via ``_next_clipping_norm`` each step, and ``FixedClipState``
-        # leaves it equal to the configured ``ctx.clip_norm``.  Reading
-        # it off the ``ClippedPytree`` mirrors the manual-loop reference
-        # (``examples/train_causal_lm.py:1685``) and avoids the stale
-        # ``ctx.clip_norm`` fallback the previous ``getattr`` shape hit
-        # under adaptive mode (``AdaptiveClipState`` carries
+        # Noise σ travels on the ``NoisedPytree`` wrapper; ``_effective``
+        # handles both scalar and ``PerGroup`` shapes.  ``grads.max_norm``
+        # is the *realized* per-step clipping threshold: ``adaptive_clipped_grad``
+        # updates it geometrically via ``_next_clipping_norm`` each step, and
+        # ``FixedClipState`` leaves it equal to the configured ``ctx.clip_norm``.
+        # Read it off the ``ClippedPytree`` rather than ``ctx.clip_norm`` —
+        # under adaptive mode ``AdaptiveClipState`` carries
         # ``_current_clipping_norm`` / ``_next_clipping_norm``, not
-        # ``clipping_norm``).
+        # ``clipping_norm``.
         noise_std = noisy_grads.noise_stddev
         clipping_norm = grads.max_norm
         metrics: dict[str, Any] = {
@@ -1952,11 +2014,33 @@ class DPTrainer:
                     metrics["clip_rate"] = sum(_rates) / len(_rates)
                     metrics["clip_rate_max"] = max(_rates)
 
+        # Per-example training telemetry from the loss closure (e.g. DPO
+        # rewards). ``aux.loss_aux`` is a dict of per-example tensors, already
+        # summed/gathered across ranks by ``sync(aux)``; mean each into a scalar.
+        # Same un-noised diagnostic posture as the logged ``loss`` mean above.
+        loss_aux = getattr(aux, "loss_aux", None)
+        if loss_aux:
+            metrics["loss_aux"] = {
+                name: value.float().mean().item() for name, value in loss_aux.items()
+            }
+
         return metrics
 
     # ------------------------------------------------------------------
     # evaluate() — functional forward, no param restoration
     # ------------------------------------------------------------------
+
+    def _augment_inputs(self, inputs: dict[str, Tensor]) -> dict[str, Tensor]:
+        """Hook to augment a prepared batch before the per-example vmap.
+
+        Runs once per step in :meth:`training_step`, *outside* ``vmap`` and on
+        the trainer device. The default is a no-op. Subclasses use it to
+        overwrite placeholder batch tensors with quantities that must be
+        recomputed each step from an evolving non-``vmap`` artefact — e.g.
+        TR-DPO's reference log-probs from an EMA reference model. Keys it writes
+        must already exist in ``ctx.batch_keys`` (seed them at construction).
+        """
+        return inputs
 
     def compute_per_example_loss(
         self,
@@ -2077,6 +2161,37 @@ class DPTrainer:
         if return_logits:
             return loss, output_logits
         return loss
+
+    def compute_per_example_loss_and_metrics(
+        self,
+        fmodel: Callable[..., Any],
+        params: dict[str, Tensor],
+        inputs: dict[str, Tensor],
+    ) -> tuple[Tensor, dict[str, Tensor]]:
+        """Per-example ``(loss, telemetry)`` seam — the rich training/eval hook.
+
+        Returns one example's loss **and** a dict of per-example telemetry
+        tensors (e.g. DPO ``rewards/*``). The harness carries the telemetry
+        through the clipped-grad ``loss_aux`` channel (DDP-summed by
+        ``sync(aux)``), means it per logged step, and aggregates it in the eval
+        loop — so a subclass that overrides this gets ``rewards/*`` logged in
+        both train and eval from a single forward, with no extra wiring.
+
+        The default has no extra telemetry: it delegates to
+        :meth:`compute_per_example_loss`, so trainers whose per-example loss
+        emits no metrics (SFT / causal-LM) override only that simpler hook and
+        are unaffected by this seam. Overriding *this* method auto-enables the
+        aux path (no flag): the trainer detects the override and threads
+        ``has_aux`` accordingly.
+        """
+        return self.compute_per_example_loss(fmodel, params, inputs), {}
+
+    def _overrides_metrics_seam(self) -> bool:
+        """Whether a subclass overrides :meth:`compute_per_example_loss_and_metrics`."""
+        return (
+            type(self).compute_per_example_loss_and_metrics
+            is not DPTrainer.compute_per_example_loss_and_metrics
+        )
 
     def prediction_step(
         self,
@@ -2340,9 +2455,8 @@ class DPTrainer:
         include_inputs = "inputs" in include_for
         include_losses = "loss" in include_for
 
-        # HF parity (trainer.py:4863-4866 → ``EvalPrediction.inputs``):
-        # ``inputs`` exposed to ``compute_metrics`` carries only the
-        # model's *primary* input column, not the entire batch dict.
+        # HF parity: ``inputs`` exposed to ``compute_metrics`` carries only
+        # the model's *primary* input column, not the entire batch dict.
         main_input_name = getattr(self._model, "main_input_name", "input_ids")
 
         # HF-parity entry log so train-time eval, final eval, and predict
@@ -2374,11 +2488,17 @@ class DPTrainer:
         total_loss = 0.0
         loss_samples = 0
         total_samples = 0
+        # Symmetric per-example eval telemetry: a subclass ``prediction_step``
+        # populates ``self._pending_eval_aux`` with the same per-example dict the
+        # training aux channel carries (e.g. DPO ``rewards/*``); collect + mean it
+        # into the eval metrics, mirroring the train-step aux logging.
+        eval_aux_chunks: dict[str, list[Tensor]] = {}
 
         for batch in dataloader:
             bs = _eval.find_batch_size(batch) or 0
             if bs == 0:
                 continue
+            self._pending_eval_aux = None
             with self._perf_tracker.eval(batch_size=bs):
                 loss, logits, labels = self.prediction_step(
                     self._model,
@@ -2386,6 +2506,11 @@ class DPTrainer:
                     prediction_loss_only=ploss_only,
                     ignore_keys=ignore_keys,
                 )
+            step_aux = self._pending_eval_aux
+            self._pending_eval_aux = None
+            if step_aux:
+                for name, value in step_aux.items():
+                    eval_aux_chunks.setdefault(name, []).append(value.detach())
 
             # Per-batch progress hook (HF parity); progress bars / NES
             # callbacks rely on this firing once per eval batch.
@@ -2401,14 +2526,12 @@ class DPTrainer:
             # the mean over real (non-``-100``) tokens, so:
             #   - scalar branch: ``loss.item() * real_tokens_in_batch`` is
             #     the total CE; dividing the running sum by the running
-            #     ``loss_samples`` count gives per-real-token mean CE
-            #     (matches the manual loop's eval reduction at
-            #     ``examples/train_causal_lm.py:1227-1231``).
+            #     ``loss_samples`` count gives per-real-token mean CE.
             #   - 1-D branch: ``loss[i] * real_tokens_in_example[i]`` is
             #     example i's total CE; summing then dividing by the total
             #     real-token count gives the same per-token mean.
             # When labels aren't exposed (rare), fall back to per-example
-            # weighting (the historical reduction).
+            # weighting.
             if loss is not None:
                 if labels is not None:
                     # HF's ForCausalLMLoss scores ``labels[..., 1:]`` (drops
@@ -2474,6 +2597,17 @@ class DPTrainer:
         metrics: dict[str, Any] = {}
         if loss_samples > 0:
             metrics["loss"] = total_loss / loss_samples
+
+        # Per-example eval telemetry (e.g. DPO ``rewards/*``): gather each
+        # accumulated per-example tensor across ranks and mean. Bare keys here;
+        # ``with_metric_prefix`` below namespaces them as ``{prefix}_<key>``.
+        if eval_aux_chunks:
+            from opaque.distributed import gather_for_metrics
+
+            for name, chunks in eval_aux_chunks.items():
+                gathered = gather_for_metrics(torch.cat(chunks))
+                if gathered.numel() > 0:
+                    metrics[name] = float(gathered.float().mean().item())
 
         # HF parity: under DDP each rank's dataloader sees a per-rank
         # shard (``local_shard``) so ``len(dataset)`` reports per-rank
@@ -3060,15 +3194,16 @@ class DPTrainer:
         batch_keys: tuple[str, ...],
         *,
         return_logits: bool = False,
+        with_metrics: bool = False,
     ) -> tuple[Callable[..., Any], tuple[int, ...]]:
-        """Wrap :meth:`compute_per_example_loss` for ``vmap(grad(...))``.
+        """Wrap the per-example loss hook for ``vmap(grad(...))``.
 
-        Bridges the user-facing override hook (``compute_per_example_loss``,
-        kwargs-style) to ``clipped_grad``'s positional contract:
-        ``(trainable_params, *batch_args) -> scalar_loss``.  The training
-        loop concerns — bf16 autocast and ``torch.compile`` — wrap around
-        the user's per-example loss math here so subclasses don't have to
-        reimplement them.
+        Bridges the user-facing override hooks (``compute_per_example_loss`` or,
+        when ``with_metrics``, the richer ``compute_per_example_loss_and_metrics``)
+        to ``clipped_grad``'s positional contract
+        ``(trainable_params, *batch_args) -> scalar_loss``. The training-loop
+        concerns — bf16 autocast and ``torch.compile`` — wrap around the user's
+        per-example loss math here so subclasses don't have to reimplement them.
 
         Args:
             fmodel: Functional model from
@@ -3079,53 +3214,46 @@ class DPTrainer:
                 (discovered via :meth:`_discover_batch_keys`).
             return_logits: When ``True``, the closure returns
                 ``(loss, logits)`` instead of just ``loss``.
+            with_metrics: When ``True``, the closure returns ``(loss, aux_dict)``
+                via :meth:`compute_per_example_loss_and_metrics`; the caller
+                pairs this with ``_create_grad_fn(..., has_aux=True)`` so
+                ``clipped_grad`` forwards ``aux_dict`` into
+                ``ClippedGradAux.loss_aux``.
 
         Returns:
             ``(per_example_loss_fn, batch_argnums)``.
         """
         keys = batch_keys
-        amp_dtype = self._amp_dtype
-        device_type = self._device.type
-        # bf16 autocast only; no loss scaling (bf16 needs none, fp16 training
-        # is unsupported).
-        autocast_active = amp_dtype is not None
+
+        def _call(merged: dict[str, Tensor], inputs: dict[str, Tensor]) -> Any:
+            if with_metrics:
+                return self.compute_per_example_loss_and_metrics(fmodel, merged, inputs)
+            return self.compute_per_example_loss(
+                fmodel, merged, inputs, return_logits=return_logits
+            )
 
         def per_example_loss(
             trainable: dict[str, Tensor],
             *batch_args: Tensor,
         ) -> Any:
+            # bf16 autocast (when enabled) is applied by the *caller* around the
+            # ``grad_fn`` call — the PyTorch idiom ``with autocast(): grad_fn(...)``
+            # — NOT here.  Entering autocast inside the function functorch
+            # differentiates is silently ignored on MPS (the AutocastMPS key
+            # isn't threaded through the ``grad`` transform), so it must wrap the
+            # outer ``vmap(grad)`` execution.  See ``_autocast_ctx``.
             merged = {**frozen_params, **trainable}
             inputs = dict(zip(keys, batch_args, strict=True))
-            if autocast_active:
-                with torch.autocast(device_type=device_type, dtype=amp_dtype):
-                    result = self.compute_per_example_loss(
-                        fmodel, merged, inputs, return_logits=return_logits
-                    )
-            else:
-                result = self.compute_per_example_loss(
-                    fmodel, merged, inputs, return_logits=return_logits
-                )
+            return _call(merged, inputs)
 
-            return result
-
-        # When `args.torch_compile=True`, compile the loss closure (NOT
-        # the model — opaque's functional path goes through
-        # `functional_call`, which doesn't compose with model-compile).
-        # Try ``fullgraph=True`` first so graph breaks surface as errors
-        # at first call (otherwise torch.compile silently fragments and
-        # falls back to eager, giving the user no signal); lazily
-        # downgrade to ``fullgraph=False`` with a warning if the closure
-        # can't be traced fully.  Backends ``aot_eager`` / ``inductor``
-        # are validated upstream; users can set
-        # ``torch_compile_backend`` to anything torch.compile accepts.
-        compile_args = self.args
-        if compile_args.torch_compile:
-            backend = compile_args.torch_compile_backend or "inductor"
-            mode = compile_args.torch_compile_mode or "default"
-            per_example_loss = _compile_with_fullgraph_fallback(
-                per_example_loss, backend=backend, mode=mode
-            )
-
+        # ``torch.compile`` is applied to the DP *grad transform* in
+        # ``_create_grad_fn`` (``torch.compile`` wrapping ``vmap(grad(loss))`` +
+        # clip), NOT to this inner loss.  Compiling the loss and then applying
+        # ``vmap(grad)`` outside is the unsupported ``grad(compiled_fn)`` pattern
+        # — dynamo raises "Unsupported functorch tracing attempt" and silently
+        # falls back to eager, so it bought nothing (verified: 1.05x vs 2.0x).
+        # The loss therefore stays eager here; the whole transform is compiled
+        # one level up, where functorch lives *inside* the compiled region.
         return per_example_loss, tuple(range(1, 1 + len(keys)))
 
     def _get_eval_per_example_loss_fn(
@@ -3651,6 +3779,9 @@ class DPTrainer:
             ).items():
                 for metric_name, value in group_values.items():
                     logs[f"privacy_group_{group_name}_{metric_name}"] = value
+            # Subclass training telemetry (e.g. DPO ``rewards/*``) surfaced by
+            # ``training_step`` from the clipped-grad ``loss_aux`` channel.
+            logs.update(step_result.get("loss_aux", {}))
             # Opaque per-step performance metrics (step_time_sec,
             # samples_per_second, memory_*, clip_sec / noise_sec /
             # optimizer_sec from ``sp.mark(...)``).  Bare keys; the
@@ -3672,12 +3803,65 @@ class DPTrainer:
             ctrl.should_evaluate = False
 
         if ctrl.should_save:
-            self._save_checkpoint(ctx, global_step)
+            self._save_checkpoint()
             ctrl.should_save = False
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _autocast_ctx(self) -> contextlib.AbstractContextManager:
+        """Mixed-precision context to wrap the DP ``grad_fn`` call in.
+
+        bf16 autocast must wrap the *outer* ``vmap(grad)`` call — the PyTorch
+        idiom ``with autocast(): grad_fn(...)`` — not sit inside the grad'd
+        loss.  An autocast entered inside the function functorch differentiates
+        is silently ignored on MPS (the ``AutocastMPS`` key isn't threaded
+        through the ``grad`` transform), so the cast must happen here, around the
+        whole transform.  Returns a ``nullcontext`` when bf16 is off.
+        """
+        if self._amp_dtype is None:
+            return contextlib.nullcontext()
+        return torch.autocast(device_type=self._device.type, dtype=self._amp_dtype)
+
+    def _grad_compiler(self) -> Callable[[Callable], Callable] | None:
+        """Return a ``fn -> compiled_fn`` transform for the DP grad step, or None.
+
+        Applied by :meth:`_create_grad_fn` to the ``grad_fn`` (the
+        ``vmap(grad)+clip`` *transform*) it builds — compiling the transform
+        (functorch *inside* ``torch.compile``) is the supported, fusing pattern
+        (~2x + lower peak memory on MPS, verified).  Compiling the inner loss and
+        applying ``vmap(grad)`` outside is the unsupported ``grad(compiled_fn)``
+        pattern that silently no-ops to eager.
+
+        The returned compiler tries ``fullgraph=True`` first (graph breaks
+        surface as a warning, then lazily downgrade to ``fullgraph=False``).
+        The stateful ``adaptive`` / ``auto`` clip updates may graph-break; the
+        fallback keeps them correct, fusing the model fwd/bwd around the glue.
+        """
+        a = self.args
+        if not a.torch_compile:
+            return None
+        caps = device_capabilities(self._device)
+        if not caps.supports_compile:
+            log.warning(
+                "torch_compile=True but device %r has no supported torch.compile "
+                "backend; running the DP grad step eager.",
+                self._device.type,
+            )
+            return None
+        backend = a.torch_compile_backend or caps.recommended_compile_backend
+        mode = a.torch_compile_mode or "default"
+        log.info(
+            "torch.compile enabled on the DP grad transform: backend=%s mode=%s "
+            "device=%s (inductor → Triton on CUDA, Metal on MPS).",
+            backend,
+            mode,
+            self._device.type,
+        )
+        return lambda fn: _compile_with_fullgraph_fallback(
+            fn, backend=backend, mode=mode
+        )
 
     def _create_grad_fn(
         self,
@@ -3687,17 +3871,27 @@ class DPTrainer:
         clip_norm: Any,
         expected_batch_size: int,
         microbatch_size: int,
-    ) -> Callable[..., Any]:
-        """Create the clipped gradient function based on clipping mode."""
+        *,
+        has_aux: bool = False,
+    ) -> tuple[Callable[..., Any], Any]:
+        """Create the clipped gradient function based on clipping mode.
+
+        ``loss_fn`` stays eager; the resulting ``vmap(grad)+clip`` transform is
+        what gets ``torch.compile``'d (see :meth:`_grad_compiler`).
+
+        When ``has_aux`` is set, ``loss_fn`` returns ``(loss, aux_dict)`` and the
+        per-example ``aux_dict`` is forwarded into ``ClippedGradAux.loss_aux``.
+        """
         ca = a.clipping_kwargs
         target_clip_rate = float(ca.get("target_clipping_rate", 0.5))
         clip_norm_max = float(ca.get("norm_max", 10.0))
         auto_gamma = float(ca.get("gamma", 0.01))
 
         if a.clipping_mode == "adaptive":
-            return adaptive_clipped_grad(
+            grad_fn, state = adaptive_clipped_grad(
                 loss_fn,
                 argnums=0,
+                has_aux=has_aux,
                 batch_argnums=batch_argnums,
                 initial_clipping_norm=clip_norm,
                 target_quantile=1.0 - target_clip_rate,
@@ -3708,9 +3902,10 @@ class DPTrainer:
                 normalize_by=expected_batch_size,
             )
         elif a.clipping_mode == "auto":
-            return auto_clipped_grad(
+            grad_fn, state = auto_clipped_grad(
                 loss_fn,
                 argnums=0,
+                has_aux=has_aux,
                 batch_argnums=batch_argnums,
                 R=clip_norm,
                 gamma=auto_gamma,
@@ -3719,15 +3914,24 @@ class DPTrainer:
                 return_aux=True,
             )
         else:
-            return clipped_grad(
+            grad_fn, state = clipped_grad(
                 loss_fn,
                 argnums=0,
+                has_aux=has_aux,
                 batch_argnums=batch_argnums,
                 clipping_norm=clip_norm,
                 normalize_by=expected_batch_size,
                 microbatch_size=microbatch_size,
                 return_aux=True,
             )
+        # ``torch.compile`` the transform (vmap(grad)+clip) *outside* the
+        # constructor — the caller's job, like autocast.  Compiling the inner
+        # loss instead and applying vmap(grad) outside is the unsupported
+        # ``grad(compiled_fn)`` pattern that silently no-ops to eager.
+        compiler = self._grad_compiler()
+        if compiler is not None:
+            grad_fn = compiler(grad_fn)
+        return grad_fn, state
 
     def _build_mechanism(
         self,
@@ -3888,11 +4092,11 @@ class DPTrainer:
         (catching typo'd names in subclass overrides before the strict
         load) and overwrites those entries in the model's state dict.
 
-        Trainability is NOT re-derived from the live module's
-        ``requires_grad`` flags: the functional param-restore protocol
-        (``_set_module_params``) leaves detached, ``requires_grad=False``
-        tensors on the module after training, so the live flags no longer
-        reflect what was trained.
+        Keys come from ``trainable_params`` (the set that was actually
+        trained) and are validated against the model's ``state_dict`` rather
+        than re-derived from the live module's ``requires_grad`` flags, which
+        are not a reliable record of what was trained under the functional
+        training path.
         """
         model_keys = set(self._model.state_dict())
         unexpected = set(trainable_params) - model_keys
@@ -4238,7 +4442,7 @@ class DPTrainer:
         if a.push_to_hub and not _internal_call:
             _hub.push_to_hub(self, commit_message="Model save", revision=a.hub_revision)
 
-    def _save_checkpoint(self, ctx: "_TrainingContext", step: int) -> str:
+    def _save_checkpoint(self, model: Any = None, trial: Any = None) -> str:
         """Write a complete ``checkpoint-<step>`` directory; returns its path.
 
         Under DDP, the rank-0 process writes shared artefacts (model weights,
@@ -4246,7 +4450,27 @@ class DPTrainer:
         every rank writes its own RNG snapshot (per-rank file so each rank
         can resume its own non-DP RNG), and a barrier at the end keeps all
         ranks in lockstep before any continues.
+
+        Signature mirrors HF ``Trainer._save_checkpoint(model, trial)`` so
+        HF-side callbacks that invoke it directly — notably
+        :class:`transformers.trainer_jit_checkpoint.JITCheckpointCallback`
+        on SIGTERM under ``enable_jit_checkpoint=True`` — compose without
+        an adapter. ``model`` and ``trial`` are accepted and ignored: opaque
+        tracks the live model and HP-search trial on ``self`` already.
+        DP-aware state (accountant, sampler RNG, optimizer) is pulled from
+        :attr:`self._ctx` (the active training context); a call outside an
+        active ``train()`` invocation raises.
         """
+        del model, trial  # HF parity; opaque uses ``self._ctx`` / ``self._model``.
+        ctx = self._ctx
+        if ctx is None:
+            raise RuntimeError(
+                "DPTrainer._save_checkpoint called with no active training "
+                "context. Checkpoints carry DP accountant + sampler RNG + "
+                "optimizer state, which only exist while ``train()`` is "
+                "running."
+            )
+        step = int(self.state.global_step)
         a = self.args
         output_dir = self._effective_output_dir()
         if output_dir is None:
@@ -4488,7 +4712,7 @@ class DPTrainer:
         target = os.path.join(output_dir, f"{ckpt.PREFIX_CHECKPOINT_DIR}-{global_step}")
         if os.path.isdir(target):
             return
-        self._save_checkpoint(ctx, global_step)
+        self._save_checkpoint()
 
     def _refresh_final_checkpoint_state(self, global_step: int) -> None:
         """Refresh final checkpoint metadata after final logs update callbacks."""

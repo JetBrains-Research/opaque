@@ -243,8 +243,8 @@ class TestEndToEnd:
         )
 
         assert grads is not None, "No gradients returned"
-        assert len(grads) > 0, "Empty gradient dict"
-        for name, g in grads.items():
+        assert len(grads.pytree) > 0, "Empty gradient dict"
+        for name, g in grads.pytree.items():
             assert not torch.isnan(g).any(), f"NaN in grad for {name}"
 
 
@@ -258,9 +258,9 @@ class TestConfiguration:
 
     def test_kernel_patched_flag(self):
         """is_kernel_patched() should return True after import opaque."""
-        from opaque.transformers import is_patched
+        from opaque.patches import is_runtime_patched
 
-        assert isinstance(is_patched(), bool)
+        assert isinstance(is_runtime_patched(), bool)
 
 
 # =============================================================================
@@ -524,19 +524,33 @@ class TestCrossEntropyPatches:
         assert not torch.isnan(logits.grad).any(), "NaN in loss gradients"
         assert not torch.isinf(logits.grad).any(), "Inf in loss gradients"
 
-    def test_loss_mapping_patched(self):
-        """LOSS_MAPPING should point to Opaque loss function after patching."""
+    def test_loss_patch_attaches_to_model_instance(self, device):
+        """The CE patch sets ``loss_function`` on matching model *instances* —
+        it is not a global ``LOSS_MAPPING`` entry. Verifying the actual
+        mechanism is device-agnostic (the helper just rebinds the attribute)."""
         from opaque.api.patches.transformers.components.cross_entropy import (
             _opaque_causal_lm_loss,
+            apply_causal_lm_loss_function_patch,
+        )
+        from transformers.models.llama.modeling_llama import (
+            LlamaConfig,
+            LlamaForCausalLM,
         )
 
-        try:
-            from transformers.loss.loss_utils import LOSS_MAPPING
-        except ImportError:
-            pytest.skip("transformers not available")
+        model = LlamaForCausalLM(
+            LlamaConfig(
+                vocab_size=256,
+                hidden_size=64,
+                intermediate_size=128,
+                num_hidden_layers=1,
+                num_attention_heads=4,
+                num_key_value_heads=4,
+            )
+        ).to(device)
 
-        if torch.cuda.is_available():
-            assert LOSS_MAPPING.get("ForCausalLM") is _opaque_causal_lm_loss
+        patched = apply_causal_lm_loss_function_patch(model, type(model))
+        assert patched, "loss patch did not match the model class"
+        assert model.loss_function is _opaque_causal_lm_loss
 
 
 # =============================================================================
@@ -625,17 +639,24 @@ class TestLoRAPatches:
         assert A_grad is not None, "No gradient for LoRA A"
         assert B_grad is not None, "No gradient for LoRA B"
 
-    def test_lora_class_patched(self):
-        """peft.tuners.lora.Linear should have patched forward."""
+    def test_lora_patch_attaches_to_instance(self, device):
+        """The LoRA kernel patch rebinds the *instance* ``forward`` of peft
+        LoRA ``Linear`` modules (not the class). It only activates on
+        CUDA + Triton, so the assertion is guarded accordingly."""
         try:
             from peft.tuners.lora import Linear as PeftLoRALinear
         except ImportError:
             pytest.skip("peft not available")
+        from opaque.patches import apply_model_patches
+
+        base = torch.nn.Linear(64, 64, bias=False).to(device)
+        lora = PeftLoRALinear(base, "default", r=8, lora_alpha=16, lora_dropout=0.0).to(
+            device
+        )
+        apply_model_patches(lora)
 
         if torch.cuda.is_available():
-            assert PeftLoRALinear.forward.__qualname__.startswith(
-                "_make_lora_linear_forward"
-            )
+            assert hasattr(lora.forward, "__opaque_patched__")
 
 
 # =============================================================================
@@ -753,7 +774,7 @@ class TestFusedLoRAMLP:
 
     def test_fused_lora_mlp_forward(self, device):
         """Fused LoRA MLP forward should match PyTorch matmul reference."""
-        from opaque.patches.kernels.lora import Opaque_LoRA_MLP
+        from opaque.api.patches.kernels.lora import Opaque_LoRA_MLP
 
         torch.manual_seed(42)
         batch, seq, hidden, intermediate, rank = 2, 16, 256, 512, 8
@@ -789,7 +810,7 @@ class TestFusedLoRAMLP:
 
     def test_fused_lora_mlp_backward(self, device):
         """Fused LoRA MLP should produce correct gradients."""
-        from opaque.patches.kernels.lora import Opaque_LoRA_MLP
+        from opaque.api.patches.kernels.lora import Opaque_LoRA_MLP
 
         torch.manual_seed(42)
         batch, seq, hidden, intermediate, rank = 2, 16, 256, 512, 8
@@ -917,7 +938,7 @@ class TestFusedLoRAQKV:
 
     def test_fused_lora_qkv_forward(self, device):
         """Fused LoRA QKV forward should match PyTorch matmul reference."""
-        from opaque.patches.kernels.lora import Opaque_LoRA_QKV
+        from opaque.api.patches.kernels.lora import Opaque_LoRA_QKV
 
         torch.manual_seed(42)
         batch, seq, hidden, q_out, kv_out, rank = 2, 16, 256, 256, 64, 8
@@ -968,7 +989,7 @@ class TestFusedLoRAQKV:
 
     def test_fused_lora_qkv_backward(self, device):
         """Fused LoRA QKV should produce correct gradients."""
-        from opaque.patches.kernels.lora import Opaque_LoRA_QKV
+        from opaque.api.patches.kernels.lora import Opaque_LoRA_QKV
 
         torch.manual_seed(42)
         batch, seq, hidden, q_out, kv_out, rank = 2, 16, 256, 256, 64, 8
@@ -1188,6 +1209,6 @@ class TestFusedLoRAQKV:
         )
 
         assert grads is not None, "No gradients returned"
-        assert len(grads) > 0, "Empty gradient dict"
-        for name, g in grads.items():
+        assert len(grads.pytree) > 0, "Empty gradient dict"
+        for name, g in grads.pytree.items():
             assert not torch.isnan(g).any(), f"NaN in grad for {name}"

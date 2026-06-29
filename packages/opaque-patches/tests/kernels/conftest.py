@@ -38,8 +38,14 @@ def pytest_collection_modifyitems(config, items):
         f"(found {total_gb:.2f}GB)."
     )
     skip_marker = pytest.mark.skip(reason=reason)
+    # `pytest_collection_modifyitems` receives the WHOLE session's items, not
+    # just this directory's — so scope the skip to the kernel stress suite
+    # (this conftest's directory). Without this guard a <24GB GPU would skip
+    # every CUDA test in the repo, not just the kernel stress tests.
+    kernels_dir = os.path.dirname(os.path.abspath(__file__))
     for item in items:
-        item.add_marker(skip_marker)
+        if os.path.abspath(str(item.fspath)).startswith(kernels_dir + os.sep):
+            item.add_marker(skip_marker)
 
 
 # ============================================================================

@@ -3,12 +3,12 @@
 # Sharded baseline (default --shard):
 #   RUN_NAME="pp-sharded-4gpu" uv run cadence execution start \
 #     --preset ".cadence/configs/train_causal_lm (mellum_kstack_distributed).yaml" \
-#     -e EXTRA_ARGS="--max-steps 100"
+#     -e EXTRA_ARGS="--stop-at-step 100"
 #
 # Parallel Poisson (--no-shard, sample_rate auto-divided by world_size):
 #   RUN_NAME="pp-parallel-4gpu" uv run cadence execution start \
 #     --preset ".cadence/configs/train_causal_lm (mellum_kstack_distributed).yaml" \
-#     -e EXTRA_ARGS="--no-shard --max-steps 100"
+#     -e EXTRA_ARGS="--no-shard --stop-at-step 100"
 
 project_name: jbr-fed
 working_dir: "."
