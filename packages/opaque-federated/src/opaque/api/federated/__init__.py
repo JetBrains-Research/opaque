@@ -1,3 +1,6 @@
 """Federated twins of the DP training loop's data primitives, on IFED."""
 
-__all__: list[str] = []
+from opaque.api.federated.data import DataLoader
+from opaque.api.federated.sampling import MinSepSampler
+
+__all__ = ["DataLoader", "MinSepSampler"]
