@@ -7,8 +7,11 @@ from ``opaque.*``, and the ifed-client state classes it uses travel by value
 client builds the server plan).
 """
 
-from __future__ import annotations
-
+# NO `from __future__ import annotations` here: the executor resolves the
+# pickled aggregate's type hints at runtime (ifed_server.phases re-types agent
+# states from them), so the annotations must be concrete objects cloudpickle
+# carries with the closure — not strings evaluated against globals the
+# executor doesn't have.
 from collections.abc import Callable
 
 from ifed_client import AgentState, RoundResult

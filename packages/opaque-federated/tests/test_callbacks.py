@@ -82,3 +82,12 @@ def test_pickles_without_opaque(monkeypatch):
     out = restored([_agent_state({"w": torch.full((2,), 30.0)})])
     assert out.count == 1
     assert _global_norm(out.grads) <= 1.0 + 1e-5
+
+    # ifed_server.phases resolves the aggregate's hints at runtime to re-type
+    # agent states — they must be concrete objects carried with the closure,
+    # not strings evaluated against globals the executor doesn't have.
+    import typing
+
+    hints = typing.get_type_hints(restored)
+    assert typing.get_args(hints["states"])[0].__name__ == "AgentState"
+    assert hints["return"].__name__ == "RoundResult"
