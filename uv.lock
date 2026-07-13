@@ -1049,7 +1049,7 @@ wheels = [
 [[package]]
 name = "ifed-client"
 version = "3.2.0"
-source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fclient&branch=claude%2Fifed-opaque-integration-8f72zv#3fe16c36dd90c9dcc8a233bd5ca460f2219a22b7" }
+source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fclient&branch=evgri243%2Fifed-integration#64bd5d8b70b14b16a41d9ba4392f8c113d82b8d1" }
 dependencies = [
     { name = "cloudpickle" },
     { name = "ifed-compiler" },
@@ -1062,7 +1062,7 @@ dependencies = [
 [[package]]
 name = "ifed-compiler"
 version = "3.2.0"
-source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fcompiler&branch=claude%2Fifed-opaque-integration-8f72zv#3fe16c36dd90c9dcc8a233bd5ca460f2219a22b7" }
+source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fcompiler&branch=evgri243%2Fifed-integration#64bd5d8b70b14b16a41d9ba4392f8c113d82b8d1" }
 dependencies = [
     { name = "autoflake" },
     { name = "ifed-native" },
@@ -1074,7 +1074,7 @@ dependencies = [
 [[package]]
 name = "ifed-native"
 version = "3.2.0"
-source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fnative&branch=claude%2Fifed-opaque-integration-8f72zv#3fe16c36dd90c9dcc8a233bd5ca460f2219a22b7" }
+source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fnative&branch=evgri243%2Fifed-integration#64bd5d8b70b14b16a41d9ba4392f8c113d82b8d1" }
 dependencies = [
     { name = "torch" },
 ]
@@ -1082,7 +1082,7 @@ dependencies = [
 [[package]]
 name = "ifed-sdk"
 version = "3.2.0"
-source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fsdk&branch=claude%2Fifed-opaque-integration-8f72zv#3fe16c36dd90c9dcc8a233bd5ca460f2219a22b7" }
+source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fsdk&branch=evgri243%2Fifed-integration#64bd5d8b70b14b16a41d9ba4392f8c113d82b8d1" }
 dependencies = [
     { name = "numpy" },
     { name = "safetensors" },
@@ -1092,7 +1092,7 @@ dependencies = [
 [[package]]
 name = "ifed-server"
 version = "3.2.0"
-source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fserver&branch=claude%2Fifed-opaque-integration-8f72zv#3fe16c36dd90c9dcc8a233bd5ca460f2219a22b7" }
+source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fserver&branch=evgri243%2Fifed-integration#64bd5d8b70b14b16a41d9ba4392f8c113d82b8d1" }
 dependencies = [
     { name = "cloudpickle" },
     { name = "torch" },
@@ -2610,11 +2610,11 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ifed-client", git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fclient&branch=claude%2Fifed-opaque-integration-8f72zv" },
-    { name = "ifed-compiler", git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fcompiler&branch=claude%2Fifed-opaque-integration-8f72zv" },
-    { name = "ifed-native", git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fnative&branch=claude%2Fifed-opaque-integration-8f72zv" },
-    { name = "ifed-sdk", git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fsdk&branch=claude%2Fifed-opaque-integration-8f72zv" },
-    { name = "ifed-server", git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fserver&branch=claude%2Fifed-opaque-integration-8f72zv" },
+    { name = "ifed-client", git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fclient&branch=evgri243%2Fifed-integration" },
+    { name = "ifed-compiler", git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fcompiler&branch=evgri243%2Fifed-integration" },
+    { name = "ifed-native", git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fnative&branch=evgri243%2Fifed-integration" },
+    { name = "ifed-sdk", git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fsdk&branch=evgri243%2Fifed-integration" },
+    { name = "ifed-server", git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fserver&branch=evgri243%2Fifed-integration" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "torch", specifier = ">=2.9.0" },
 ]
