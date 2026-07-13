@@ -111,6 +111,12 @@ opaque-accounting = { workspace = true }
 opaque-patches = { workspace = true }
 opaque-alignment = { workspace = true }
 opaque-federated = { workspace = true }
+# ifed closure for opaque-federated: another repo's uv workspace, not on PyPI.
+ifed-client = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/client" }
+ifed-sdk = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/sdk" }
+ifed-server = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/server" }
+ifed-compiler = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/compiler" }
+ifed-native = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/native" }
 
 [dependency-groups]
 # Developer tooling (test runner, linter, stats helpers, cross-validation

@@ -49,10 +49,9 @@ git_describe_command = "git describe --dirty --tags --long --match v*"
 [tool.uv]
 package = true
 
+# The ifed-* sources live at the WORKSPACE ROOT pyproject: member-level
+# sources travel with this package when it is consumed as a path dependency
+# (e.g. the ifed repo's example), where they would conflict with the
+# consumer's own ifed checkout.
 [tool.uv.sources]
 opaque-engine = { workspace = true }
-ifed-client = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/client" }
-ifed-sdk = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/sdk" }
-ifed-server = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/server" }
-ifed-compiler = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/compiler" }
-ifed-native = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/native" }
