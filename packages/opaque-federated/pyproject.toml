@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opaque-federated"
+dynamic = ["version"]
+description = "Opaque federated learning on IFED: federated twins of the DP loop's data primitives (population, cohort sampler, loader, clipped_grad)"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Opaque Contributors" }]
+requires-python = ">=3.11,<3.13"
+keywords = ["differential-privacy", "federated-learning", "pytorch", "privacy"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
+]
+# The full ifed closure is declared directly: ifed packages live in another uv
+# workspace (JetBrains-Research/ifed), whose workspace sources don't travel with
+# a git checkout, and none of them are on PyPI. Note ifed pins torch==2.11.0,
+# which narrows this workspace's torch resolution accordingly.
+dependencies = [
+    "torch>=2.9.0",
+    "opaque-engine",
+    "ifed-client==3.2.0",
+    "ifed-sdk==3.2.0",
+    "ifed-server==3.2.0",
+    "ifed-compiler==3.2.0",
+    "ifed-native==3.2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["opaque.federated*", "opaque.api.federated*"]
+namespaces = true
+
+[tool.setuptools_scm]
+root = "../.."
+fallback_version = "0.0.0"
+git_describe_command = "git describe --dirty --tags --long --match v*"
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+opaque-engine = { workspace = true }
+ifed-client = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/client" }
+ifed-sdk = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/sdk" }
+ifed-server = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/server" }
+ifed-compiler = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/compiler" }
+ifed-native = { git = "https://github.com/JetBrains-Research/ifed", branch = "claude/ifed-opaque-integration-8f72zv", subdirectory = "engine/pytorch/python/native" }

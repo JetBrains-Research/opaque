@@ -5,6 +5,12 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# ifed-native (a git dependency of opaque-federated) embeds a prebuilt C++
+# bridge by default; CI installs it bridge-less — the federated tests stub the
+# ifed execution layer and never dlopen it.
+env:
+  IFED_BRIDGE_OPTIONAL: "1"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false  # main pushes are precious — don't kill in-flight publishes
@@ -55,7 +61,7 @@ jobs:
               packages/opaque-base packages/opaque-engine
               packages/opaque-optimizers packages/opaque-dpftrl
               packages/opaque-auditing packages/opaque-accounting
-              packages/opaque-alignment tests
+              packages/opaque-alignment packages/opaque-federated tests
         device:
           - name: cpu
             label: CPU
@@ -134,6 +140,7 @@ jobs:
           - opaque-alignment
           - opaque-patches
           - opaque-transformers
+          - opaque-federated
 
     steps:
       - uses: actions/checkout@v5

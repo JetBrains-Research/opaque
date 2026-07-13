@@ -68,6 +68,10 @@ WHEEL_IMPORT_ROOTS: dict[str, tuple[str, ...]] = {
         "opaque.api.dpsgd",
         "opaque.api.accounting.dpsgd",
     ),
+    "opaque-federated": (
+        "opaque.federated",
+        "opaque.api.federated",
+    ),
     "opaque-dpftrl": (
         "opaque.dpftrl",
         "opaque.api.dpftrl",

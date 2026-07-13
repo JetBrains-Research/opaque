@@ -41,6 +41,7 @@ dependencies = [
 [project.optional-dependencies]
 auditing = ["opaque-auditing"]
 dpftrl = ["opaque-dpftrl"]
+federated = ["opaque-federated"]
 alignment = ["opaque-alignment"]
 transformers = [
     "opaque-transformers",
@@ -49,6 +50,7 @@ transformers = [
 all = [
     "opaque[auditing]",
     "opaque[dpftrl]",
+    "opaque[federated]",
     "opaque[alignment]",
     "opaque[transformers]"
 ]
@@ -84,6 +86,7 @@ workspace.members = [
     "packages/opaque-accounting",
     "packages/opaque-patches",
     "packages/opaque-alignment",
+    "packages/opaque-federated",
 ]
 # Allow torch 2.10 (old checkpoint arch) through 2.12 (new arch); the checkpoint
 # patches detect the running torch and adapt, including skipping themselves once
@@ -107,6 +110,7 @@ opaque-transformers = { workspace = true }
 opaque-accounting = { workspace = true }
 opaque-patches = { workspace = true }
 opaque-alignment = { workspace = true }
+opaque-federated = { workspace = true }
 
 [dependency-groups]
 # Developer tooling (test runner, linter, stats helpers, cross-validation
@@ -207,6 +211,7 @@ src = [
   "packages/opaque-dpftrl/src",
   "packages/opaque-dpsgd/src",
   "packages/opaque-engine/src",
+  "packages/opaque-federated/src",
   "packages/opaque-optimizers/src",
   "packages/opaque-patches/src",
   "packages/opaque-transformers/src",

@@ -59,6 +59,9 @@ FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
         "opaque/dpsgd/accounting/mechanisms/__init__.py",
         "opaque/dpsgd/accounting/amplification/__init__.py",
     ),
+    "opaque-federated": (
+        "opaque/federated/__init__.py",
+    ),
     "opaque-dpftrl": (
         "opaque/dpftrl/__init__.py",
         "opaque/dpftrl/clipping/__init__.py",

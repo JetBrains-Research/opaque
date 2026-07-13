@@ -61,6 +61,17 @@ FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
         "opaque.api.patches",
         "opaque.api.transformers",
     ),
+    # opaque-federated builds only on the substrate (opaque-engine / ifed);
+    # it must never import a mechanism, optimizer, or trainer wheel.
+    "opaque-federated": (
+        "opaque.api.optimizers",
+        "opaque.api.accounting",
+        "opaque.api.dpsgd",
+        "opaque.api.dpftrl",
+        "opaque.api.auditing",
+        "opaque.api.patches",
+        "opaque.api.transformers",
+    ),
     # opaque-alignment is mechanism-agnostic (plan §1.1): it builds only on
     # the substrate wheels (opaque-engine, opaque-base). It must never import
     # a mechanism, optimizer, or trainer wheel. The alignment-specific kernels
