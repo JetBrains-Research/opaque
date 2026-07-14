@@ -6,12 +6,17 @@ import pickle
 import pytest
 import torch
 
-ifed_client = pytest.importorskip("ifed_client")
+ifed = pytest.importorskip("ifed")
 cloudpickle = pytest.importorskip("cloudpickle")
 
+# ifed 4.0 folded the former ``ifed_client`` package into ``ifed`` — AgentState and
+# pickle_defaults_by_value now live under ifed._defaults / ifed._bundle (the same paths the
+# production opaque.federated callbacks import). The pre-4.0 ``ifed_client`` import silently
+# skipped this whole module (privacy-critical clip-math + executor-safe pickling), so it is
+# imported hard here.
 from ifed.metrics import MetricsBundle  # noqa: E402
-from ifed_client import AgentState  # noqa: E402
-from ifed_client._bundle import pickle_defaults_by_value  # noqa: E402
+from ifed._defaults import AgentState  # noqa: E402
+from ifed._bundle import pickle_defaults_by_value  # noqa: E402
 
 from opaque.federated import make_clipping_aggregate  # noqa: E402
 
