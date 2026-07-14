@@ -4,15 +4,13 @@ from itertools import islice
 
 import pytest
 
-ifed = pytest.importorskip("ifed")
-
-from opaque.federated import MinSepSampler  # noqa: E402
+from opaque.federated import MinSepSampler, Population  # noqa: E402
 from opaque.serialization import from_state_dict, state_dict  # noqa: E402
 
 
 @pytest.fixture
 def population():
-    return ifed.Population("/hive", datasets=["Iris"])
+    return Population(name="/hive")
 
 
 def test_yields_cohort_specs(population):
@@ -43,7 +41,7 @@ def test_unbounded_and_consumed(population):
 
 
 def test_validation(population):
-    with pytest.raises(TypeError, match="ifed.Population"):
+    with pytest.raises(TypeError, match="opaque.federated.Population"):
         MinSepSampler("/hive", batch_size=2, bands=2)
     with pytest.raises(ValueError, match="batch_size"):
         MinSepSampler(population, batch_size=0, bands=2)
@@ -77,7 +75,7 @@ def test_serialization_rejects_population_mismatch(population):
     sampler = MinSepSampler(population, batch_size=2, bands=2)
     sd = state_dict(sampler)
     other = MinSepSampler(
-        ifed.Population("/other", datasets=["Iris"]), batch_size=2, bands=2
+        Population(name="/other"), batch_size=2, bands=2
     )
     with pytest.raises(ValueError, match="population"):
         from_state_dict(other, sd)

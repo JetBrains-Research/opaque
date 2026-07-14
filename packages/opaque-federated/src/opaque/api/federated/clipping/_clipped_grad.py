@@ -7,12 +7,12 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 import ifed
-from ifed_client import RoundInput
 
 from opaque.api.engine.clipping.types import FixedClipState
 from opaque.api.engine.types import ClippedPytree, clipped
 
 from opaque.api.federated.clipping._callbacks import make_clipping_aggregate
+from opaque.api.federated.data._population import Cohort
 
 
 def _dataset_of(loss_fn: Callable) -> type:
@@ -37,9 +37,7 @@ def clipped_grad(
     data: type | None = None,
     normalize_by: float | None = None,
     local_batch_size: int = 32,
-    population: str = "/hive",
-    requirements: dict | None = None,
-    dataset_policies: dict | None = None,
+    policy: ifed.ComputationPolicy | None = None,
     extra_requirements: Sequence[str] = (),
     round_input_timeout: int = 3600,
     round_timeout: float = 3600.0,
@@ -51,8 +49,8 @@ def clipped_grad(
     The factory is **eager**: it compiles the loss into an IFED plan
     (``ifed.FunctionalModel`` → TorchScript agent artifact + cloudpickled
     server callbacks, with :func:`make_clipping_aggregate` as the per-client
-    clipping ``aggregate``) and uploads it once. The returned ``grad_fn``
-    lazily opens ONE interactive IFED task on its first call — sized by the
+    clipping ``aggregate``). The returned ``grad_fn`` lazily registers ONE
+    interactive IFED task on its first call — sized by the
     cohort's loader (``rounds``, ``cardinality = cohort.size``,
     ``separation = cohort.separation``) — and then drives **one federated
     iteration per application**::
@@ -71,7 +69,7 @@ def clipped_grad(
         loss_fn: Functional loss ``loss_fn(params, data) -> scalar`` with
             explicit params, written in the TorchScript subset (see
             ``ifed.FunctionalModel``).
-        client: An ``ifed_client.Client`` session (server or simulation).
+        client: An ``ifed.Client`` session (server or simulation).
         clipping_norm: Per-client L2 clipping threshold ``C``.
         params: Parameter template (names/shapes/dtypes) for compilation;
             actual values travel per round through ``grad_fn``.
@@ -80,9 +78,8 @@ def clipped_grad(
         normalize_by: Gradient normalization constant; defaults to the cohort
             size, yielding averaged gradients with sensitivity ``C / k``.
         local_batch_size: Agent-side minibatch size for local computation.
-        population: Population URI; must match the loader's population.
-        requirements: Agent requirements dict (cpuCount, memoryMb, gpu, ...).
-        dataset_policies: Per-dataset dataAvailability overrides.
+        policy: Native IFED data-availability and requirements restrictions.
+            Its assign separation is derived from the Opaque cohort policy.
         extra_requirements: Extra pip requirements for the executor venv.
         round_input_timeout: Seconds the *platform* waits for each round input.
         round_timeout: Seconds *this client* waits for each round's result.
@@ -95,14 +92,11 @@ def clipped_grad(
     """
     dataset = data if data is not None else _dataset_of(loss_fn)
     model = ifed.FunctionalModel(
-        loss_fn, params=params, data=dataset, batch_size=local_batch_size
+        loss=loss_fn, params=params, data=dataset, batch_size=local_batch_size
     )
-    plan = client.compile(
+    plan = ifed.pytorch.compile(
         model,
-        population=population,
         aggregate=make_clipping_aggregate(clipping_norm),
-        requirements=requirements,
-        dataset_policies=dataset_policies,
         extra_requirements=extra_requirements,
     )
 
@@ -114,7 +108,7 @@ def clipped_grad(
     nb = 0.0
 
     def grad_fn(
-        params: dict, cohort: ifed.Cohort, *, state: FixedClipState
+        params: dict, cohort: Cohort, *, state: FixedClipState
     ) -> tuple[ClippedPytree, FixedClipState]:
         nonlocal run, origin, cohort_size, cohort_separation, expected_round, nb
         if cohort.origin is None or cohort.rounds is None or cohort.population is None:
@@ -123,20 +117,23 @@ def clipped_grad(
                 "Cohort carries no rounds/population/origin to open the run with"
             )
         if run is None:
-            if cohort.population.uri != population:
-                raise ValueError(
-                    f"loader population {cohort.population.uri!r} does not match "
-                    f"the population this plan was compiled for ({population!r})"
-                )
             nb = float(normalize_by) if normalize_by is not None else float(cohort.size)
-            run = plan.open(
-                rounds=cohort.rounds,
-                cardinality=cohort.size,
-                separation=cohort.separation,
-                population=cohort.population.uri,
+            base_policy = policy or ifed.ComputationPolicy()
+            task = ifed.Task(
+                plan=plan,
+                population=ifed.Population(name=cohort.population.name, cardinality=cohort.size),
+                policy=ifed.ComputationPolicy(
+                    data_availability=base_policy.data_availability,
+                    assign_separation=ifed.AssignSeparationPolicy(
+                        iteration_delta=cohort.separation
+                    ),
+                    requirements=base_policy.requirements,
+                ),
+                iterations=cohort.rounds,
+                interactive=True,
                 round_input_timeout=round_input_timeout,
-                iteration_timeout=round_timeout,
             )
+            run = client.create_task(task)
             grad_fn.run = run
             origin = cohort.origin
             cohort_size = cohort.size
@@ -157,7 +154,7 @@ def clipped_grad(
             )
         expected_round += 1
 
-        out = run.next(RoundInput(params=params))
+        out = run.iterate(ifed.ModelState(params=params)).result(round_timeout)
         if out.count != cohort.size:
             raise RuntimeError(
                 f"round {cohort.round} aggregated {out.count} contributions, "

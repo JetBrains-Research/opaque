@@ -6,8 +6,7 @@ import dataclasses
 from collections.abc import Iterator
 from typing import Any, Mapping
 
-import ifed
-
+from opaque.api.federated.data._population import Cohort, Population
 from opaque.api.federated.sampling import MinSepSampler
 
 
@@ -27,7 +26,7 @@ class DataLoader:
     data only by executing its round.
 
     Args:
-        population: The :class:`ifed.Population` to iterate.
+        population: The Opaque :class:`Population` to iterate.
         batch_sampler: The cohort sampler (e.g. :class:`MinSepSampler`); its
             population must match ``population``.
         rounds: The round horizon — how many cohorts to yield. Becomes the
@@ -36,7 +35,7 @@ class DataLoader:
 
     def __init__(
         self,
-        population: ifed.Population,
+        population: Population,
         *,
         batch_sampler: MinSepSampler,
         rounds: int,
@@ -46,8 +45,8 @@ class DataLoader:
         sampler_population = getattr(batch_sampler, "population", None)
         if sampler_population is not None and sampler_population != population:
             raise ValueError(
-                f"batch_sampler population {sampler_population.uri!r} does not "
-                f"match loader population {population.uri!r}"
+                f"batch_sampler population {sampler_population.name!r} does not "
+                f"match loader population {population.name!r}"
             )
         self.population = population
         self.batch_sampler = batch_sampler
@@ -63,7 +62,7 @@ class DataLoader:
     def __len__(self) -> int:
         return self.rounds - self._consumed
 
-    def __iter__(self) -> Iterator[ifed.Cohort]:
+    def __iter__(self) -> Iterator[Cohort]:
         sampler = iter(self.batch_sampler)
         while self._consumed < self.rounds:
             spec = next(sampler)
@@ -79,7 +78,7 @@ class DataLoader:
 
     def __repr__(self) -> str:
         return (
-            f"DataLoader(population={self.population.uri!r}, "
+            f"DataLoader(population={self.population.name!r}, "
             f"batch_sampler={self.batch_sampler!r}, rounds={self.rounds})"
         )
 
@@ -88,8 +87,7 @@ def _state_dict_loader(loader: DataLoader) -> dict[str, Any]:
     from opaque.serialization import state_dict
 
     return {
-        "population_uri": loader.population.uri,
-        "dataset_names": list(loader.population.datasets),
+        "population_name": loader.population.name,
         "rounds": int(loader.rounds),
         "consumed": int(loader.consumed),
         "batch_sampler": state_dict(loader.batch_sampler),
@@ -99,8 +97,8 @@ def _state_dict_loader(loader: DataLoader) -> dict[str, Any]:
 def _from_state_dict_loader(template: DataLoader, sd: Mapping[str, Any]) -> DataLoader:
     from opaque.serialization import from_state_dict
 
-    saved = (str(sd["population_uri"]), tuple(sd["dataset_names"]))
-    have = (template.population.uri, tuple(template.population.datasets))
+    saved = str(sd["population_name"])
+    have = template.population.name
     if saved != have:
         raise ValueError(
             f"DataLoader.from_state_dict: template population {have} does not "

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any, Mapping
 
-import ifed
+from opaque.api.federated.data._population import Cohort, Population
 
 
 class MinSepSampler:
@@ -13,7 +13,7 @@ class MinSepSampler:
 
     The federated twin of :class:`opaque.dpftrl.sampling.BMinSepSampler`, with
     the *client* as the privacy unit and IFED as the enforcement mechanism:
-    every yielded :class:`ifed.Cohort` carries ``separation = bands - 1``,
+    every yielded :class:`Cohort` carries ``separation = bands - 1``,
     which the consumer compiles onto IFED's ``assignSeparation`` policy — an
     agent that served round ``r`` is platform-ineligible until round
     ``r + bands``.
@@ -35,22 +35,22 @@ class MinSepSampler:
     the batch size is a constant, not a random variable.
 
     Args:
-        population: The :class:`ifed.Population` to draw cohorts from.
+        population: The Opaque :class:`Population` to draw cohorts from.
         batch_size: Exact clients per cohort (IFED ``cardinality``).
         bands: Minimum-separation parameter ``b`` (same as BandMF bandwidth);
             ``bands=1`` allows every agent every round.
 
     Example::
 
-        population = ifed.Population("/hive", datasets=[Iris])
+        population = Population(name="/hive")
         sampler = MinSepSampler(population, batch_size=8, bands=4)
         loader = DataLoader(population, batch_sampler=sampler, rounds=60)
     """
 
-    def __init__(self, population: ifed.Population, batch_size: int, bands: int):
-        if not isinstance(population, ifed.Population):
+    def __init__(self, population: Population, batch_size: int, bands: int):
+        if not isinstance(population, Population):
             raise TypeError(
-                f"population must be an ifed.Population, got {type(population).__name__}"
+                f"population must be an opaque.federated.Population, got {type(population).__name__}"
             )
         if batch_size < 1:
             raise ValueError(f"batch_size must be >= 1, got {batch_size}")
@@ -71,9 +71,9 @@ class MinSepSampler:
         """IFED ``assignSeparation.iterationDelta`` this sampler compiles to."""
         return self.bands - 1
 
-    def __iter__(self) -> Iterator[ifed.Cohort]:
+    def __iter__(self) -> Iterator[Cohort]:
         while True:
-            spec = ifed.Cohort(
+            spec = Cohort(
                 round=self._consumed,
                 size=self.batch_size,
                 separation=self.separation,
@@ -83,15 +83,14 @@ class MinSepSampler:
 
     def __repr__(self) -> str:
         return (
-            f"MinSepSampler(population={self.population.uri!r}, "
+            f"MinSepSampler(population={self.population.name!r}, "
             f"batch_size={self.batch_size}, bands={self.bands})"
         )
 
 
 def _state_dict_min_sep(s: MinSepSampler) -> dict[str, Any]:
     return {
-        "population_uri": s.population.uri,
-        "dataset_names": list(s.population.datasets),
+        "population_name": s.population.name,
         "batch_size": int(s.batch_size),
         "bands": int(s.bands),
         "consumed": int(s.consumed),
@@ -107,8 +106,8 @@ def _from_state_dict_min_sep(
     resuming against a different population would silently change the
     participation structure being accounted.
     """
-    saved = (str(sd["population_uri"]), tuple(sd["dataset_names"]))
-    have = (template.population.uri, tuple(template.population.datasets))
+    saved = str(sd["population_name"])
+    have = template.population.name
     if saved != have:
         raise ValueError(
             f"MinSepSampler.from_state_dict: template population {have} does "

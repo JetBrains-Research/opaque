@@ -11,22 +11,21 @@ the `Accountant`) is the unchanged central chain.
 
 | central | federated | notes |
 |-----------|-----------|-------|
-| `Dataset` | `ifed.Population(uri, datasets=[...])` | a dynamic pool of clients holding named datasets; schema-free and non-indexable |
-| `Sampler` | `opaque.federated.MinSepSampler` | yields `ifed.Cohort` *specs*; the platform enforces the participation constraint |
-| `batch` | `ifed.Cohort` | symbolic — per-client gradients depend on the params, so a cohort is resolved by executing its round |
+| `Dataset` | `opaque.federated.Population(name)` | a symbolic pool of clients selected by Opaque |
+| `Sampler` | `opaque.federated.MinSepSampler` | yields Opaque `Cohort` *specs*; the platform enforces the participation constraint |
+| `batch` | `opaque.federated.Cohort` | symbolic — per-client gradients depend on the params, so a cohort is resolved by executing its round |
 | `DataLoader` | `opaque.federated.DataLoader` | bounds the stream to `rounds` cohorts |
 | `clipped_grad` | `opaque.federated.clipped_grad` | per-**client** clipping over a cohort; one call = one federated iteration |
 
 ```python
 import ifed
 import opaque.federated as fed
-from ifed_client import Client
 
-population = ifed.Population("/hive", datasets=[Iris])
+population = fed.Population(name="/hive")
 sampler    = fed.MinSepSampler(population, batch_size=8, bands=4)
 loader     = fed.DataLoader(population, batch_sampler=sampler, rounds=60)
 
-with Client(server="http://host:15004") as client:
+with ifed.Client(server="http://host:15004") as client:
     grad_fn, clip_state = fed.clipped_grad(loss_fn, client, clipping_norm=1.0,
                                            params=params, data=Iris)
     for cohort in loader:

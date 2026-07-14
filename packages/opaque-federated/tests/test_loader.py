@@ -2,15 +2,13 @@
 
 import pytest
 
-ifed = pytest.importorskip("ifed")
-
-from opaque.federated import DataLoader, MinSepSampler  # noqa: E402
+from opaque.federated import DataLoader, MinSepSampler, Population  # noqa: E402
 from opaque.serialization import from_state_dict, state_dict  # noqa: E402
 
 
 @pytest.fixture
 def population():
-    return ifed.Population("/hive", datasets=["Iris"])
+    return Population(name="/hive")
 
 
 def _loader(population, rounds=5, batch_size=2, bands=2):
@@ -52,7 +50,7 @@ def test_len_counts_down(population):
 
 def test_population_mismatch_raises(population):
     sampler = MinSepSampler(population, batch_size=2, bands=2)
-    other = ifed.Population("/other", datasets=["Iris"])
+    other = Population(name="/other")
     with pytest.raises(ValueError, match="does not match loader population"):
         DataLoader(other, batch_sampler=sampler, rounds=3)
 

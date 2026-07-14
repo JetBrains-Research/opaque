@@ -29,7 +29,6 @@ classifiers = [
 dependencies = [
     "torch>=2.9.0",
     "opaque-engine",
-    "ifed-client==3.2.0",
     "ifed-sdk==3.2.0",
     "ifed-server==3.2.0",
     "ifed-compiler==3.2.0",

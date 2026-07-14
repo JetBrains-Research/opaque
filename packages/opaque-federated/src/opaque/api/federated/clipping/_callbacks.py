@@ -1,10 +1,9 @@
 """Server-side per-client clipping aggregate, shipped cloudpickled to IFED.
 
 The returned closure runs in IFED's executor venv, which has ``torch`` and
-``ifed-sdk`` but **no opaque and no ifed-client** — it must reference nothing
-from ``opaque.*``, and the ifed-client state classes it uses travel by value
-(``ifed_client._bundle.pickle_defaults_by_value`` registers them when the
-client builds the server plan).
+``ifed-sdk`` but **no opaque**. It must reference nothing from ``opaque.*``;
+the default IFED state classes it uses travel by value when the server plan is
+built.
 """
 
 # NO `from __future__ import annotations` here: the executor resolves the
@@ -14,7 +13,7 @@ client builds the server plan).
 # executor doesn't have.
 from collections.abc import Callable
 
-from ifed_client import AgentState, RoundResult
+from ifed._defaults import AgentState, RoundResult
 
 
 def make_clipping_aggregate(clipping_norm: float) -> Callable:

@@ -9,13 +9,13 @@ Federated twins of the central DP training loop's data primitives, executed on
   `ClippedPytree` shapes as `opaque.dpsgd.clipping.clipped_grad`, so the
   noise → optimizer → accountant chain is byte-identical to central.
 - `opaque.federated.MinSepSampler` — the federated `BMinSepSampler`: yields
-  `ifed.Cohort` specs and compiles minimum separation onto IFED's
+  Opaque `Cohort` specs and compiles minimum separation onto IFED's
   assign-separation policy. No sampling randomness is claimed (selection is
   platform-greedy), so it pairs with **non-amplified** BandMF accounting.
 - `opaque.federated.DataLoader` — iterates a population for `rounds` cohorts.
 
 ```python
-population = ifed.Population("/hive", datasets=[Iris])
+population = fed.Population(name="/hive")
 sampler    = fed.MinSepSampler(population, batch_size=8, bands=4)
 loader     = fed.DataLoader(population, batch_sampler=sampler, rounds=60)
 
