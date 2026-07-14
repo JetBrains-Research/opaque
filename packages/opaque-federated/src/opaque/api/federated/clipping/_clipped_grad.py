@@ -69,7 +69,10 @@ def clipped_grad(
         loss_fn: Functional loss ``loss_fn(params, data) -> scalar`` with
             explicit params, written in the TorchScript subset (see
             ``ifed.FunctionalModel``).
-        client: An ``ifed.Client`` session (server or simulation).
+        client: An ``ifed.Client`` bound to an endpoint — from
+            ``ifed.Client(server=…)`` / ``IFED_SERVER``, or ``ifed.Simulation(…).client()``
+            for a local run. (In ifed 4.0 the Client no longer discovers or launches a
+            simulation; use ``ifed.Simulation`` for that.)
         clipping_norm: Per-client L2 clipping threshold ``C``.
         params: Parameter template (names/shapes/dtypes) for compilation;
             actual values travel per round through ``grad_fn``.
@@ -111,11 +114,13 @@ def clipped_grad(
         params: dict, cohort: Cohort, *, state: FixedClipState
     ) -> tuple[ClippedPytree, FixedClipState]:
         nonlocal run, origin, cohort_size, cohort_separation, expected_round, nb
-        if cohort.origin is None or cohort.rounds is None or cohort.population is None:
+        if cohort.origin is None or cohort.population is None:
             raise ValueError(
                 "cohorts must come from opaque.federated.DataLoader — a raw "
-                "Cohort carries no rounds/population/origin to open the run with"
+                "Cohort carries no population/origin to open the run with"
             )
+        # rounds=None (an unbounded DataLoader) maps to an unbounded interactive IFED
+        # task (iterations=None); the loop is then finished explicitly by the researcher.
         if run is None:
             nb = float(normalize_by) if normalize_by is not None else float(cohort.size)
             base_policy = policy or ifed.ComputationPolicy()
