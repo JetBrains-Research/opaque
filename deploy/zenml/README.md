@@ -74,11 +74,20 @@ and pushes `opaque-train:<branch>-<sha>` on push to `main` or the
 `david-stan/zenml-training` branch (auth via opaque's existing Workload
 Identity — no SA key needed).
 
-- **Only secret required:** **`SUBMODULE_PAT`** — a PAT with read access to
-  `JetBrains-Research/LoRA-Privacy`, because `vendor/lora-privacy` is a separate
-  private repo the default Actions token can't fetch. GCP auth reuses the repo
-  vars `GCP_WORKLOAD_IDENTITY_PROVIDER` + `GCP_SERVICE_ACCOUNT_EMAIL` (already
-  set for the devcontainer build).
+- **Only secret required:** **`LORA_PRIVACY_DEPLOY_KEY`** — the private half of a
+  read-only SSH deploy key on `JetBrains-Research/LoRA-Privacy`, because
+  `vendor/lora-privacy` is a separate private repo the default Actions token
+  can't fetch. A deploy key is bound to that one repo and needs no org/SAML/PAT
+  approval. Create it with:
+  ```bash
+  ssh-keygen -t ed25519 -N "" -f lora_privacy_deploy -C "opaque-ci-lora-privacy"
+  ```
+  Add `lora_privacy_deploy.pub` to `LoRA-Privacy` → Settings → Deploy keys
+  (leave "Allow write access" **off**), then paste the private file
+  `lora_privacy_deploy` into opaque → Settings → Secrets → Actions as
+  `LORA_PRIVACY_DEPLOY_KEY`. GCP auth reuses the repo vars
+  `GCP_WORKLOAD_IDENTITY_PROVIDER` + `GCP_SERVICE_ACCOUNT_EMAIL` (already set for
+  the devcontainer build).
 - Optional repo vars: `OPAQUE_DOCKER_REGISTRY`, `TRAIN_IMAGE_RUNNER` (a bigger
   runner if `ubuntu-latest` runs out of disk).
 - The run summary prints the exact `OPAQUE_DOCKER_TAG` to submit with.

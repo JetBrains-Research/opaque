@@ -24,10 +24,11 @@
 # build-devcontainer workflow uses) — no service-account JSON key needed.
 #
 # Requirements:
-#   secret SUBMODULE_PAT              — PAT with read access to
-#     JetBrains-Research/LoRA-Privacy (the vendor/lora-privacy submodule lives in
-#     a separate private repo the default GITHUB_TOKEN can't fetch). This is the
-#     only secret you must add.
+#   secret LORA_PRIVACY_DEPLOY_KEY    — private half of a read-only SSH deploy key
+#     on JetBrains-Research/LoRA-Privacy (the vendor/lora-privacy submodule lives
+#     in a separate private repo the default GITHUB_TOKEN can't fetch). A deploy
+#     key is bound to that one repo and needs no org/SAML/PAT approval. This is
+#     the only secret you must add.
 #   var    GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL — already set
 #     for the devcontainer build; reused here.
 #   var    OPAQUE_DOCKER_REGISTRY     — optional; defaults to the gke-dev-dws-jbr
@@ -91,18 +92,22 @@ jobs:
         uses: actions/checkout@v5
         with:
           # Default GITHUB_TOKEN reads opaque fine. Don't persist it in git config
-          # so it can't shadow the submodule PAT used below.
+          # so it can't shadow the deploy key used for the submodule below.
           persist-credentials: false
 
       - name: Fetch lora-privacy submodule
         env:
           # vendor/lora-privacy is a separate private repo
-          # (JetBrains-Research/LoRA-Privacy) the default token can't read, so use
-          # SUBMODULE_PAT (scoped to that repo). Actions masks the secret value
-          # even where it appears inside the rewritten URL.
-          SUBMODULE_PAT: ${{ secrets.SUBMODULE_PAT }}
+          # (JetBrains-Research/LoRA-Privacy) the default token can't read. Its
+          # .gitmodules URL is git@github.com:..., so a read-only deploy key loaded
+          # over SSH authenticates the clone directly — no org/SAML/PAT approval.
+          DEPLOY_KEY: ${{ secrets.LORA_PRIVACY_DEPLOY_KEY }}
         run: |
-          git config --global url."https://x-access-token:${SUBMODULE_PAT}@github.com/".insteadOf "git@github.com:"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/lora_privacy
+          chmod 600 ~/.ssh/lora_privacy
+          ssh-keyscan -t rsa,ecdsa,ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/lora_privacy -o IdentitiesOnly=yes"
           git submodule sync --recursive
           git submodule update --init --recursive
 
