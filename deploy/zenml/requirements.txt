@@ -1,0 +1,18 @@
+# Client-side deps for submitting the pipeline (laptop / CI). These build the
+# jb-mlops step settings and talk to the ZenML server; they are NOT needed in
+# the training image.
+#
+# jb-mlops lives on the private `space-tools` index, so install with uv (which
+# reads the index + UV_INDEX_SPACE_TOOLS_USERNAME/PASSWORD from your env):
+#
+#   uv venv .zenml-client && source .zenml-client/bin/activate
+#   uv pip install \
+#     --index space-tools=https://packages.jetbrains.team/pypi/p/grazi/jetbrains-ai-tools/simple \
+#     -r deploy/zenml/requirements.txt
+#
+# Pin ZenML to the server version (0.94.6) to avoid client/server mismatch.
+zenml==0.94.6
+jb-mlops[zenml]==0.0.41
+kubernetes
+gcsfs
+google-cloud-storage

@@ -1,0 +1,27 @@
+# Per-Dockerfile ignore (BuildKit reads `<dockerfile>.dockerignore` when the
+# build context is the repo root). Keeps the context lean but KEEPS packages/
+# and vendor/ — the uv workspace members + vendored lora-privacy submodule are
+# required to build.
+.git
+**/.venv
+venv
+**/__pycache__
+**/*.pyc
+**/target
+**/*.so
+**/*.dylib
+**/*.whl
+dist
+build
+site
+wandb
+trainer_output
+**/trainer_output
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+.idea
+.vscode
+.cursor
+.claude
+.temp

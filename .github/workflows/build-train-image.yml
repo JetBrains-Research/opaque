@@ -1,0 +1,165 @@
+# Copyright 2025 JetBrains S.r.o.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Builds the opaque training image (deploy/zenml/Dockerfile) and pushes it to
+# the GCP Artifact Registry the `gke-ai-for-code` ZenML stack pulls from, so the
+# heavy CUDA/Rust build runs on a Linux amd64 runner instead of a laptop.
+#
+# Submit runs afterwards from your laptop against the pushed tag:
+#   export OPAQUE_DOCKER_REGISTRY=<registry>  OPAQUE_DOCKER_TAG=<tag>
+#   python deploy/zenml/run.py smoke --no-gpu   # then: both / dp / nodp
+#
+# Requirements (repo or org level):
+#   secret GCP_GRAZIE_DEV_DOCKER_JSON — SA key with push rights to the registry
+#     (the same credential next-edit-pipeline uses; may already be an org secret)
+#   var    OPAQUE_DOCKER_REGISTRY     — optional; defaults to the grazie-ml repo
+#   var    TRAIN_IMAGE_RUNNER         — optional; a bigger runner if the build
+#                                       runs out of disk on ubuntu-latest
+name: Build Training Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag (default: <branch>-<sha7>)"
+        required: false
+        default: ""
+      push:
+        description: "Push to the registry"
+        required: false
+        default: true
+        type: boolean
+  push:
+    branches:
+      - main
+    paths:
+      - deploy/zenml/Dockerfile
+      - deploy/zenml/Dockerfile.dockerignore
+      - deploy/zenml/docker_images.py
+      - .github/workflows/build-train-image.yml
+      - pyproject.toml
+      - uv.lock
+  # Build (and push a pr-<n> tag) whenever the image inputs change on a PR, so
+  # the image can be built from the branch before it lands on main.
+  pull_request:
+    paths:
+      - deploy/zenml/Dockerfile
+      - deploy/zenml/Dockerfile.dockerignore
+      - deploy/zenml/docker_images.py
+      - .github/workflows/build-train-image.yml
+      - pyproject.toml
+      - uv.lock
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & push opaque-train
+    runs-on: ${{ vars.TRAIN_IMAGE_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      REGISTRY: ${{ vars.OPAQUE_DOCKER_REGISTRY || 'europe-west4-docker.pkg.dev/grazie-development/grazie-ml' }}
+      IMAGE_NAME: opaque-train
+      # workflow_dispatch respects the `push` input; push/pull_request always push.
+      DO_PUSH: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
+
+    steps:
+      - name: Checkout (with lora-privacy submodule)
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          sudo docker image prune --all --force || true
+          df -h
+
+      - name: Compute image tags
+        id: meta
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            TAG="pr-${{ github.event.pull_request.number }}-${GITHUB_SHA::7}"
+          else
+            SANITIZED="$(echo "${GITHUB_REF_NAME}" | sed 's#[^a-zA-Z0-9._-]#-#g')"
+            TAG="${SANITIZED}-${GITHUB_SHA::7}"
+          fi
+          IMAGE="${REGISTRY}/${IMAGE_NAME}"
+          {
+            echo "tag=${TAG}"
+            echo "image=${IMAGE}"
+            echo "tags<<EOF"
+            echo "${IMAGE}:${TAG}"
+            if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+              echo "${IMAGE}:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Authenticate to Google Cloud
+        if: env.DO_PUSH == 'true'
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_GRAZIE_DEV_DOCKER_JSON }}
+          token_format: access_token
+
+      - name: Login to Artifact Registry
+        if: env.DO_PUSH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: europe-west4-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/zenml/Dockerfile
+          platforms: linux/amd64
+          push: ${{ env.DO_PUSH == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "### opaque-train image"
+            echo
+            if [ "${DO_PUSH}" = "true" ]; then
+              echo "Pushed \`${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}\`"
+            else
+              echo "Built \`${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}\` (not pushed)"
+            fi
+            echo
+            echo "Submit against it from your laptop:"
+            echo '```bash'
+            echo "export OPAQUE_DOCKER_REGISTRY=${REGISTRY}"
+            echo "export OPAQUE_DOCKER_TAG=${{ steps.meta.outputs.tag }}"
+            echo "python deploy/zenml/run.py smoke --no-gpu"
+            echo "python deploy/zenml/run.py both"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
