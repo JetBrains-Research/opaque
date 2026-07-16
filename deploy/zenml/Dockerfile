@@ -24,6 +24,18 @@ ENV PATH="/root/.local/bin:${PATH}"
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 ENV PATH="/root/.cargo/bin:${PATH}"
 
+# The ZenML Kubernetes stack rejects root containers (the kubelet fails them with
+# `CreateContainerConfigError: container has runAsNonRoot and image will run as
+# root`). Create an unprivileged runtime user up-front, matching the jb-mlops /
+# NES convention (user `nonroot`, home `/home/nonroot`). `/app` is where the
+# ZenML entrypoint writes its config + downloaded pipeline code
+# (`ZENML_CONFIG_PATH=/app/.config`).
+ARG NONROOT_UID=1000
+ARG NONROOT_GID=1000
+RUN groupadd --gid ${NONROOT_GID} nonroot \
+    && useradd --create-home --home-dir /home/nonroot --uid ${NONROOT_UID} --gid ${NONROOT_GID} --shell /bin/bash nonroot \
+    && mkdir -p /app
+
 WORKDIR /opt/opaque
 COPY . /opt/opaque
 
@@ -33,6 +45,9 @@ COPY . /opt/opaque
 # internal-only cadence/keyring/jupyter deps that aren't needed in-cluster.
 # (--eval-humaneval/--eval-mbpp additionally need `evalplus`; the renyi arms
 # don't use them, so it's omitted to keep the image small.)
+#
+# Ownership of the app dirs is handed to the runtime user in this same layer so
+# the multi-GB venv isn't duplicated into a separate `chown` layer.
 RUN uv sync --all-packages --extra all \
     && uv pip install \
         "torchopt>=0.7.3" \
@@ -44,13 +59,20 @@ RUN uv sync --all-packages --extra all \
         "zenml==0.94.6" \
         "kubernetes" \
         "gcsfs" \
-        "google-cloud-storage"
+        "google-cloud-storage" \
+    && chown -R ${NONROOT_UID}:${NONROOT_GID} /opt/opaque /app /home/nonroot
 
 # Make the workspace venv the default interpreter so ZenML (and the trainer
-# subprocess) run inside it.
+# subprocess) run inside it, and point HOME at the nonroot home. The trainer's
+# cwd is /opt/opaque (owned by nonroot above); large caches/temp are routed onto
+# the mounted /scratch volume at runtime (see pipeline.py).
 ENV VIRTUAL_ENV=/opt/opaque/.venv \
     PATH="/opt/opaque/.venv/bin:${PATH}" \
-    OPAQUE_REPO_DIR=/opt/opaque
+    OPAQUE_REPO_DIR=/opt/opaque \
+    HOME=/home/nonroot
 
-# Sanity check: opaque (with its Rust extension) and torch import cleanly.
+USER nonroot
+
+# Sanity check: opaque (with its Rust extension) and torch import cleanly as the
+# unprivileged runtime user.
 RUN python -c "import opaque.accounting, torch, transformers, peft, zenml; print('opaque image OK', torch.__version__)"

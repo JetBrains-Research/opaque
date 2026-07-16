@@ -98,8 +98,22 @@ def training_settings(
         ],
     )
 
+    # Submit asynchronously, exactly like NES (`pusk/launch.py` forces
+    # ``synchronous=False`` on every run): the client returns as soon as the
+    # orchestrator Job is created instead of blocking for the whole run, and pod
+    # startup/retries are left to the Kubernetes Job. The run is then monitored
+    # via the dashboard / ZenML API. (The training image must run as non-root, or
+    # the pod fails with ``CreateContainerConfigError: container has runAsNonRoot
+    # and image will run as root`` — see deploy/zenml/Dockerfile.)
+    orchestrator_kwargs = {"synchronous": False, **kwargs.pop("orchestrator_kwargs", {})}
+    # Optional: keep finished/failed Jobs (and their pods/events) around for
+    # post-mortem inspection instead of the stack's aggressive default TTL.
+    if (ttl := os.environ.get("OPAQUE_JOB_TTL_SECONDS")):
+        orchestrator_kwargs.setdefault("ttl_seconds_after_finished", int(ttl))
+
     return get_step_settings(
         docker_image=get_image_url(DockerImage.TRAIN, tag=docker_image_tag),
         pod_configuration=pod_configuration,
+        orchestrator_kwargs=orchestrator_kwargs,
         **kwargs,
     )
