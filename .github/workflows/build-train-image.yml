@@ -23,6 +23,9 @@
 # Requirements (repo or org level):
 #   secret GCP_GRAZIE_DEV_DOCKER_JSON — SA key with push rights to the registry
 #     (the same credential next-edit-pipeline uses; may already be an org secret)
+#   secret SUBMODULE_PAT              — PAT with read access to
+#     JetBrains-Research/LoRA-Privacy (the vendor/lora-privacy submodule lives in
+#     a separate private repo the default GITHUB_TOKEN can't fetch)
 #   var    OPAQUE_DOCKER_REGISTRY     — optional; defaults to the grazie-ml repo
 #   var    TRAIN_IMAGE_RUNNER         — optional; a bigger runner if the build
 #                                       runs out of disk on ubuntu-latest
@@ -41,25 +44,20 @@ on:
         default: true
         type: boolean
   push:
+    # `main` for the canonical image; the zenml-training research branch so the
+    # image can be built directly from it (it carries the lora-privacy submodule,
+    # presets and handoff the image needs — none of which are on main yet, so a
+    # PR-to-main isn't the build vehicle).
     branches:
       - main
+      - david-stan/zenml-training
     paths:
-      - deploy/zenml/Dockerfile
-      - deploy/zenml/Dockerfile.dockerignore
-      - deploy/zenml/docker_images.py
-      - .github/workflows/build-train-image.yml
+      - deploy/zenml/**
+      - examples/**
+      - vendor/**
       - pyproject.toml
       - uv.lock
-  # Build (and push a pr-<n> tag) whenever the image inputs change on a PR, so
-  # the image can be built from the branch before it lands on main.
-  pull_request:
-    paths:
-      - deploy/zenml/Dockerfile
-      - deploy/zenml/Dockerfile.dockerignore
-      - deploy/zenml/docker_images.py
       - .github/workflows/build-train-image.yml
-      - pyproject.toml
-      - uv.lock
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -83,6 +81,11 @@ jobs:
         uses: actions/checkout@v5
         with:
           submodules: recursive
+          # vendor/lora-privacy is a separate private repo
+          # (JetBrains-Research/LoRA-Privacy); the default GITHUB_TOKEN can't
+          # fetch a cross-repo private submodule, so set SUBMODULE_PAT to a PAT
+          # (or fine-grained token) with read access to that repo.
+          token: ${{ secrets.SUBMODULE_PAT || github.token }}
 
       - name: Free disk space
         run: |
