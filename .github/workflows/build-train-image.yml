@@ -87,15 +87,24 @@ jobs:
       DO_PUSH: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
 
     steps:
-      - name: Checkout (with lora-privacy submodule)
+      - name: Checkout opaque
         uses: actions/checkout@v5
         with:
-          submodules: recursive
+          # Default GITHUB_TOKEN reads opaque fine. Don't persist it in git config
+          # so it can't shadow the submodule PAT used below.
+          persist-credentials: false
+
+      - name: Fetch lora-privacy submodule
+        env:
           # vendor/lora-privacy is a separate private repo
-          # (JetBrains-Research/LoRA-Privacy); the default GITHUB_TOKEN can't
-          # fetch a cross-repo private submodule, so set SUBMODULE_PAT to a PAT
-          # (or fine-grained token) with read access to that repo.
-          token: ${{ secrets.SUBMODULE_PAT || github.token }}
+          # (JetBrains-Research/LoRA-Privacy) the default token can't read, so use
+          # SUBMODULE_PAT (scoped to that repo). Actions masks the secret value
+          # even where it appears inside the rewritten URL.
+          SUBMODULE_PAT: ${{ secrets.SUBMODULE_PAT }}
+        run: |
+          git config --global url."https://x-access-token:${SUBMODULE_PAT}@github.com/".insteadOf "git@github.com:"
+          git submodule sync --recursive
+          git submodule update --init --recursive
 
       - name: Free disk space
         run: |
