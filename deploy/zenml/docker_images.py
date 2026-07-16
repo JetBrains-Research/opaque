@@ -18,13 +18,14 @@ from enum import Enum
 
 __all__ = ["DockerImage", "get_image_url", "get_override_env_name"]
 
-# Registry the target GKE cluster can pull from. Defaults to the same GCP
-# Artifact Registry ``next-edit-pipeline`` pushes to (the ``gke-ai-for-code``
-# stack already pulls its training images from here), so ``opaque-train`` sits
-# beside ``next-edit-pipeline-*``. Override with OPAQUE_DOCKER_REGISTRY.
+# Registry the target GKE cluster pulls from. Defaults to the GCP Artifact
+# Registry opaque's CI Workload Identity can push to (same project as the
+# devcontainer image). Override with OPAQUE_DOCKER_REGISTRY — e.g. point at
+# ``europe-west4-docker.pkg.dev/grazie-development/grazie-ml`` (where NES pushes)
+# if the cluster can't pull from this project.
 DOCKER_REGISTRY = os.environ.get(
     "OPAQUE_DOCKER_REGISTRY",
-    "europe-west4-docker.pkg.dev/grazie-development/grazie-ml",
+    "europe-west4-docker.pkg.dev/gke-dev-dws-jbr/ml",
 )
 PROJECT_NAME = "opaque"
 DOCKER_TAG = os.environ.get("OPAQUE_DOCKER_TAG", "latest")

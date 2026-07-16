@@ -20,15 +20,24 @@
 #   export OPAQUE_DOCKER_REGISTRY=<registry>  OPAQUE_DOCKER_TAG=<tag>
 #   python deploy/zenml/run.py smoke --no-gpu   # then: both / dp / nodp
 #
-# Requirements (repo or org level):
-#   secret GCP_GRAZIE_DEV_DOCKER_JSON — SA key with push rights to the registry
-#     (the same credential next-edit-pipeline uses; may already be an org secret)
+# Auth reuses opaque's existing Workload Identity Federation (the same vars the
+# build-devcontainer workflow uses) — no service-account JSON key needed.
+#
+# Requirements:
 #   secret SUBMODULE_PAT              — PAT with read access to
 #     JetBrains-Research/LoRA-Privacy (the vendor/lora-privacy submodule lives in
-#     a separate private repo the default GITHUB_TOKEN can't fetch)
-#   var    OPAQUE_DOCKER_REGISTRY     — optional; defaults to the grazie-ml repo
+#     a separate private repo the default GITHUB_TOKEN can't fetch). This is the
+#     only secret you must add.
+#   var    GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL — already set
+#     for the devcontainer build; reused here.
+#   var    OPAQUE_DOCKER_REGISTRY     — optional; defaults to the gke-dev-dws-jbr
+#     repo that the WIF service account can push to.
 #   var    TRAIN_IMAGE_RUNNER         — optional; a bigger runner if the build
 #                                       runs out of disk on ubuntu-latest
+#
+# NOTE: the gke-ai-for-code cluster must be able to pull from this registry. If
+# ZenML pods hit ImagePullBackOff, grant the cluster's node SA
+# roles/artifactregistry.reader on this project (or switch back to grazie-ml).
 name: Build Training Image
 
 on:
@@ -70,8 +79,9 @@ jobs:
     timeout-minutes: 120
     permissions:
       contents: read
+      id-token: write  # required for Workload Identity Federation
     env:
-      REGISTRY: ${{ vars.OPAQUE_DOCKER_REGISTRY || 'europe-west4-docker.pkg.dev/grazie-development/grazie-ml' }}
+      REGISTRY: ${{ vars.OPAQUE_DOCKER_REGISTRY || 'europe-west4-docker.pkg.dev/gke-dev-dws-jbr/ml' }}
       IMAGE_NAME: opaque-train
       # workflow_dispatch respects the `push` input; push/pull_request always push.
       DO_PUSH: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
@@ -125,7 +135,8 @@ jobs:
         id: auth
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_GRAZIE_DEV_DOCKER_JSON }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
           token_format: access_token
 
       - name: Login to Artifact Registry

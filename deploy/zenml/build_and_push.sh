@@ -15,7 +15,7 @@ set -euo pipefail
 # is honored with the repo-root build context.
 export DOCKER_BUILDKIT=1
 
-REGISTRY="${OPAQUE_DOCKER_REGISTRY:-europe-west4-docker.pkg.dev/grazie-development/grazie-ml}"
+REGISTRY="${OPAQUE_DOCKER_REGISTRY:-europe-west4-docker.pkg.dev/gke-dev-dws-jbr/ml}"
 TAG="${OPAQUE_DOCKER_TAG:-latest}"
 IMAGE="${OPAQUE_DOCKER_IMAGE_TRAIN:-${REGISTRY}/opaque-train:${TAG}}"
 

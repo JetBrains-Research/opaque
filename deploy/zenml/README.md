@@ -56,10 +56,11 @@ Everything here is **non-TRACE** — no AWS role, no `trace` project.
      -r deploy/zenml/requirements.txt
    ```
 
-3. **Push rights** to the GCP Artifact Registry `gke-ai-for-code` already pulls
-   from — `europe-west4-docker.pkg.dev/grazie-development/grazie-ml` (the same
-   repo NES pushes `next-edit-pipeline-*` to). Override with
-   `OPAQUE_DOCKER_REGISTRY` for a different repo.
+3. **A registry the `gke-ai-for-code` cluster can pull from.** CI defaults to
+   `europe-west4-docker.pkg.dev/gke-dev-dws-jbr/ml` (the project opaque's
+   Workload Identity can push to — same as the devcontainer image). If the
+   cluster can't pull from there, point `OPAQUE_DOCKER_REGISTRY` at
+   `…/grazie-development/grazie-ml` (where NES pushes) instead.
 4. The shared **`ai-for-code`** ZenML secret already holds `WANDB_API_KEY` +
    `HF_TOKEN`; nothing to create. (Override with `OPAQUE_ZENML_SECRET` if you
    keep creds elsewhere.)
@@ -69,16 +70,18 @@ Everything here is **non-TRACE** — no AWS role, no `trace` project.
 **Recommended: GitHub Actions** (`.github/workflows/build-train-image.yml`).
 CI runners are Linux `amd64`, so the heavy CUDA/Rust build avoids a laptop
 QEMU cross-build and gets layer caching. It builds `deploy/zenml/Dockerfile`
-and pushes `opaque-train:<branch>-<sha>` to `grazie-development/grazie-ml`.
+and pushes `opaque-train:<branch>-<sha>` on push to `main` or the
+`david-stan/zenml-training` branch (auth via opaque's existing Workload
+Identity — no SA key needed).
 
-- Needs the secret **`GCP_GRAZIE_DEV_DOCKER_JSON`** (SA key with push rights —
-  the same credential NES uses; it may already be an org secret). Optional repo
-  vars: `OPAQUE_DOCKER_REGISTRY` (defaults to the grazie-ml repo) and
-  `TRAIN_IMAGE_RUNNER` (a bigger runner if `ubuntu-latest` runs out of disk).
-- **Dispatch caveat:** GitHub only shows *Run workflow* once the file is on the
-  **default branch**, so merge this branch to `main` first, then Actions →
-  *Build Training Image* → *Run workflow* (pick a branch/tag). The run summary
-  prints the exact `OPAQUE_DOCKER_TAG` to submit with.
+- **Only secret required:** **`SUBMODULE_PAT`** — a PAT with read access to
+  `JetBrains-Research/LoRA-Privacy`, because `vendor/lora-privacy` is a separate
+  private repo the default Actions token can't fetch. GCP auth reuses the repo
+  vars `GCP_WORKLOAD_IDENTITY_PROVIDER` + `GCP_SERVICE_ACCOUNT_EMAIL` (already
+  set for the devcontainer build).
+- Optional repo vars: `OPAQUE_DOCKER_REGISTRY`, `TRAIN_IMAGE_RUNNER` (a bigger
+  runner if `ubuntu-latest` runs out of disk).
+- The run summary prints the exact `OPAQUE_DOCKER_TAG` to submit with.
 
 **Or build locally:**
 
@@ -125,7 +128,7 @@ done
 | `OPAQUE_ZENML_PROJECT` | `models-rd` | ZenML project to submit to |
 | `OPAQUE_ZENML_STACK` | `gke-ai-for-code` | non-TRACE GPU stack |
 | `OPAQUE_ZENML_LOGIN` | *(none)* | if set, `zenml login <target>` before submit |
-| `OPAQUE_DOCKER_REGISTRY` | `…/grazie-development/grazie-ml` | registry for `opaque-train` (same as NES) |
+| `OPAQUE_DOCKER_REGISTRY` | `…/gke-dev-dws-jbr/ml` | registry for `opaque-train` (WIF can push; override to grazie-ml if needed) |
 | `OPAQUE_DOCKER_TAG` | `latest` | image tag |
 | `OPAQUE_DOCKER_IMAGE_TRAIN` | *(none)* | full image URL override (wins over registry/tag) |
 | `OPAQUE_ZENML_SECRET` | `ai-for-code` | ZenML secret with `WANDB_API_KEY` + `HF_TOKEN` |
