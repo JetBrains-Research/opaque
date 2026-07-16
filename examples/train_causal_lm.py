@@ -2292,6 +2292,21 @@ def main():
                                 _v = _agg("alpha")
                                 if _v is not None:
                                     wb_metrics["rotation/alpha"] = _v
+                                # Diagnostic Rényi effective-rank α-grid, mean
+                                # over layers. The DP-inflation test: under DP
+                                # the low-α values (a0/a0p5) sit far above the
+                                # stable rank (ainf); under non-DP the curve is
+                                # flatter. See docs/renyi-effective-rank-theory.md.
+                                for _gk in ("r_eff_a0", "r_eff_a0p5", "r_eff_a1",
+                                            "r_eff_a2", "r_eff_ainf"):
+                                    _v = _agg(_gk)
+                                    if _v is not None:
+                                        wb_metrics[f"rotation/{_gk}"] = _v
+                                # Noise-inflation gap: low-α minus stable rank.
+                                _lo = _agg("r_eff_a0p5")
+                                _hi = _agg("r_eff_ainf")
+                                if _lo is not None and _hi is not None:
+                                    wb_metrics["rotation/renyi_gap_a0p5_ainf"] = _lo - _hi
                     # Per-group metrics under group/ section
                     if (
                         isinstance(step_clip_norm, PerGroup)

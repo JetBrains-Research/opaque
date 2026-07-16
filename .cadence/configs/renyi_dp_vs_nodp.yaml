@@ -1,0 +1,77 @@
+# Rényi α-inflation test — DP arm (ε=3).
+# Identical to renyi_nodp.yaml except this arm keeps DP noise (calibrated to
+# target_epsilon=3.0 by the qwen-coder-kstack-lora preset). The non-DP arm adds
+# --noise-multiplier 0. Everything else (model, data, r=16, p_e=0.333, 1 epoch,
+# adaptive-depth OFF) is identical, so DP noise is the ONLY variable.
+#
+# Tests: does DP noise inflate the low-α Rényi effective rank of the core R
+# spectrum (rotation/r_eff_a0, r_eff_a0p5) relative to the stable rank
+# (rotation/r_eff_ainf)? See docs/renyi-effective-rank-theory.md §III.
+#
+# Submit:
+#   start_execution_from_preset(preset_path=".cadence/configs/renyi_dp_vs_nodp.yaml")
+project_name: jbr-fed
+working_dir: "."
+cmd:
+  - |-
+    uv sync --group examples --all-packages
+    uv run python examples/train_causal_lm.py --preset qwen-coder-kstack-lora --lora-method lora-xs --lora-xse-p-e 0.333 --num-epochs 1
+provisioning:
+  gpu_type: h100
+  gpu_count: 1
+  cpu_count: 20
+  ram: 160
+teamcity:
+  url: https://api.cadence.jetbrains.com
+  build_conf_id: JbrFed_JetTrain
+env:
+  variables:
+    PYTHONUNBUFFERED: "1"
+    WANDB_BASE_URL: https://jetbrains.wandb.io
+    WANDB_ENTITY: federated-compute
+    WANDB_PROJECT: opaque-lora-xs
+    RUN_NAME: "${oc.env:RUN_NAME,renyi-alpha-dp-eps3}"
+  python:
+    version: 3.11.14
+  secrets:
+    variables:
+      HF_TOKEN: "${oc.env:HF_TOKEN}"
+      WANDB_API_KEY: "${oc.env:WANDB_API_KEY}"
+    ssh_keys: []
+  aws:
+    sync_config: false
+    sync_credentials: false
+    sync_cache: false
+project_sync:
+  local:
+    root: "."
+    storage_name: Cadence Storage
+    uri: ""
+    exclude:
+      - ".git/*"
+      - "**/.git/*"
+      - ".venv/*"
+      - "**/.venv/*"
+      - "**/__pycache__/*"
+      - ".idea/*"
+      - "**/.idea/*"
+      - ".claude/*"
+      - "**/.claude/*"
+      - ".cadence/cache/*"
+      - "wandb/*"
+      - "**/wandb/*"
+      - "*.jsonl"
+      - "**/*.jsonl"
+      - "*.so"
+      - "**/*.so"
+      - "*.whl"
+      - "**/*.whl"
+    include: []
+    sync_back: false
+    snapshots: true
+    storage_type: DEFAULT
+inputs: []
+outputs: []
+mounts: []
+storages: []
+description: "${oc.env:RUN_NAME,renyi-alpha-dp-eps3}"
