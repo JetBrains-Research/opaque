@@ -12,7 +12,7 @@ from opaque.api.engine.clipping.types import FixedClipState
 from opaque.api.engine.types import ClippedPytree, clipped
 
 from opaque.api.federated.clipping._callbacks import make_clipping_aggregate
-from opaque.api.federated.data._population import Cohort
+from opaque.api.federated.data.types import Cohort
 
 
 def _dataset_of(loss_fn: Callable) -> type:
@@ -70,9 +70,8 @@ def clipped_grad(
             explicit params, written in the TorchScript subset (see
             ``ifed.FunctionalModel``).
         client: An ``ifed.Client`` bound to an endpoint — from
-            ``ifed.Client(server=…)`` / ``IFED_SERVER``, or ``ifed.Simulation(…).client()``
-            for a local run. (In ifed 4.0 the Client no longer discovers or launches a
-            simulation; use ``ifed.Simulation`` for that.)
+            ``ifed.Client(server=…)`` or the ``IFED_SERVER`` injected by
+            ``ifed run``. The client never discovers or launches a simulation.
         clipping_norm: Per-client L2 clipping threshold ``C``.
         params: Parameter template (names/shapes/dtypes) for compilation;
             actual values travel per round through ``grad_fn``.
@@ -126,7 +125,11 @@ def clipped_grad(
             base_policy = policy or ifed.ComputationPolicy()
             task = ifed.Task(
                 plan=plan,
-                population=ifed.Population(name=cohort.population.name, cardinality=cohort.size),
+                population=ifed.Population(
+                    name=cohort.population.name,
+                    version=cohort.population.version,
+                    cardinality=cohort.size,
+                ),
                 policy=ifed.ComputationPolicy(
                     data_availability=base_policy.data_availability,
                     assign_separation=ifed.AssignSeparationPolicy(

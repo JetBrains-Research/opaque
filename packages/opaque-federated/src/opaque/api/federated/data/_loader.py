@@ -6,7 +6,7 @@ import dataclasses
 from collections.abc import Iterator
 from typing import Any, Mapping
 
-from opaque.api.federated.data._population import Cohort, Population
+from opaque.api.federated.data.types import Cohort, Population
 from opaque.api.federated.sampling import MinSepSampler
 
 
@@ -88,6 +88,7 @@ def _state_dict_loader(loader: DataLoader) -> dict[str, Any]:
 
     return {
         "population_name": loader.population.name,
+        "population_version": loader.population.version,
         "rounds": int(loader.rounds),
         "consumed": int(loader.consumed),
         "batch_sampler": state_dict(loader.batch_sampler),
@@ -97,12 +98,15 @@ def _state_dict_loader(loader: DataLoader) -> dict[str, Any]:
 def _from_state_dict_loader(template: DataLoader, sd: Mapping[str, Any]) -> DataLoader:
     from opaque.serialization import from_state_dict
 
-    saved = str(sd["population_name"])
-    have = template.population.name
+    saved = Population(
+        name=str(sd["population_name"]),
+        version=str(sd.get("population_version", "*")),
+    )
+    have = template.population
     if saved != have:
         raise ValueError(
-            f"DataLoader.from_state_dict: template population {have} does not "
-            f"match snapshot {saved}."
+            f"DataLoader.from_state_dict: template population {have!r} does not "
+            f"match snapshot {saved!r}."
         )
     loader = DataLoader(
         template.population,

@@ -1049,7 +1049,7 @@ wheels = [
 [[package]]
 name = "ifed-compiler"
 version = "4.0.0"
-source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fcompiler&branch=claude%2Fsdk-lifecycle-ifed-run-9p6w6w#7e96fab84fdddb8413a35519b8cd30887d98e648" }
+source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fcompiler&branch=claude%2Fsdk-lifecycle-ifed-run-9p6w6w#0e562fa84c068307732fe96eb530b2f7b0dd9831" }
 dependencies = [
     { name = "autoflake" },
     { name = "ifed-native" },
@@ -1061,7 +1061,7 @@ dependencies = [
 [[package]]
 name = "ifed-native"
 version = "4.0.0"
-source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fnative&branch=claude%2Fsdk-lifecycle-ifed-run-9p6w6w#7e96fab84fdddb8413a35519b8cd30887d98e648" }
+source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fnative&branch=claude%2Fsdk-lifecycle-ifed-run-9p6w6w#0e562fa84c068307732fe96eb530b2f7b0dd9831" }
 dependencies = [
     { name = "torch" },
 ]
@@ -1069,7 +1069,7 @@ dependencies = [
 [[package]]
 name = "ifed-sdk"
 version = "4.0.0"
-source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fsdk&branch=claude%2Fsdk-lifecycle-ifed-run-9p6w6w#7e96fab84fdddb8413a35519b8cd30887d98e648" }
+source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fsdk&branch=claude%2Fsdk-lifecycle-ifed-run-9p6w6w#0e562fa84c068307732fe96eb530b2f7b0dd9831" }
 dependencies = [
     { name = "cloudpickle" },
     { name = "ifed-compiler" },
@@ -1083,7 +1083,7 @@ dependencies = [
 [[package]]
 name = "ifed-server"
 version = "4.0.0"
-source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fserver&branch=claude%2Fsdk-lifecycle-ifed-run-9p6w6w#7e96fab84fdddb8413a35519b8cd30887d98e648" }
+source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fserver&branch=claude%2Fsdk-lifecycle-ifed-run-9p6w6w#0e562fa84c068307732fe96eb530b2f7b0dd9831" }
 dependencies = [
     { name = "cloudpickle" },
     { name = "torch" },

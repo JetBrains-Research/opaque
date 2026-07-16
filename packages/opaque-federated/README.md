@@ -15,7 +15,7 @@ Federated twins of the central DP training loop's data primitives, executed on
 - `opaque.federated.DataLoader` — iterates a population for `rounds` cohorts.
 
 ```python
-population = fed.Population(name="/hive")
+population = fed.population("/hive", version="*")
 sampler    = fed.MinSepSampler(population, batch_size=8, bands=4)
 loader     = fed.DataLoader(population, batch_sampler=sampler, rounds=60)
 
@@ -25,5 +25,13 @@ for cohort in loader:
     ...  # gaussian_noise / optimizer / accountant — unchanged central opaque
 ```
 
-See `docs/reference/federated.md` in this repo and `docs/dev/opaque-federated.md`
-in the ifed repo for the design.
+The first loader-produced cohort supplies the native task's population,
+cardinality, separation, and horizon. Run the canonical Iris regression from
+the repository root through the runner-owned simulator:
+
+```bash
+ifed run --simulate examples/federated_regression_simulation.yaml \
+  examples/federated_regression.py
+```
+
+See `docs/reference/federated.md` in this repository for the complete contract.

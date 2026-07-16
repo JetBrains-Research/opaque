@@ -4,13 +4,17 @@ from itertools import islice
 
 import pytest
 
-from opaque.federated import MinSepSampler, Population  # noqa: E402
+from opaque.federated import (  # noqa: E402
+    MinSepSampler,
+    Population,
+    population as make_population,
+)
 from opaque.serialization import from_state_dict, state_dict  # noqa: E402
 
 
 @pytest.fixture
 def population():
-    return Population(name="/hive")
+    return make_population("/hive")
 
 
 def test_yields_cohort_specs(population):
@@ -74,8 +78,19 @@ def test_serialization_roundtrip(population):
 def test_serialization_rejects_population_mismatch(population):
     sampler = MinSepSampler(population, batch_size=2, bands=2)
     sd = state_dict(sampler)
-    other = MinSepSampler(
-        Population(name="/other"), batch_size=2, bands=2
-    )
+    other = MinSepSampler(Population(name="/other"), batch_size=2, bands=2)
     with pytest.raises(ValueError, match="population"):
         from_state_dict(other, sd)
+
+
+def test_serialization_rejects_population_version_mismatch():
+    population = make_population("/hive", version="1.*")
+    sampler = MinSepSampler(population, batch_size=2, bands=2)
+    snapshot = state_dict(sampler)
+    assert snapshot["population_version"] == "1.*"
+
+    other = MinSepSampler(
+        make_population("/hive", version="2.*"), batch_size=2, bands=2
+    )
+    with pytest.raises(ValueError, match="population"):
+        from_state_dict(other, snapshot)

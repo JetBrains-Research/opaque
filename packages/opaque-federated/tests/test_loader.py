@@ -2,18 +2,57 @@
 
 import pytest
 
-from opaque.federated import DataLoader, MinSepSampler, Population  # noqa: E402
+from opaque.api.federated.data.types import (  # noqa: E402
+    Cohort as InternalCohort,
+    Population as InternalPopulation,
+)
+from opaque.federated import (  # noqa: E402
+    Cohort,
+    DataLoader,
+    MinSepSampler,
+    Population,
+    population as make_population,
+)
+from opaque.federated.data import (  # noqa: E402
+    DataLoader as DataLoaderFromData,
+    population as population_from_data,
+)
+from opaque.federated.data.types import (  # noqa: E402
+    Cohort as FacadeCohort,
+    Population as FacadePopulation,
+)
 from opaque.serialization import from_state_dict, state_dict  # noqa: E402
 
 
 @pytest.fixture
 def population():
-    return Population(name="/hive")
+    return make_population("/hive")
 
 
 def _loader(population, rounds=5, batch_size=2, bands=2):
     sampler = MinSepSampler(population, batch_size=batch_size, bands=bands)
     return DataLoader(population, batch_sampler=sampler, rounds=rounds)
+
+
+def test_population_factory_and_type_facades():
+    value = make_population("/hive", version="1.*")
+    assert value == population_from_data("/hive", version="1.*")
+    assert value == Population(name="/hive", version="1.*")
+    assert value.version == "1.*"
+    assert Population is FacadePopulation is InternalPopulation
+    assert Cohort is FacadeCohort is InternalCohort
+    assert DataLoaderFromData is DataLoader
+
+
+@pytest.mark.parametrize("name", ["hive", "", 1])
+def test_population_factory_rejects_invalid_name(name):
+    with pytest.raises((TypeError, ValueError), match="population name"):
+        make_population(name)
+
+
+def test_population_factory_rejects_empty_version():
+    with pytest.raises(ValueError, match="version"):
+        make_population("/hive", version="")
 
 
 def test_yields_exactly_rounds_cohorts(population):
@@ -73,3 +112,17 @@ def test_serialization_roundtrip(population):
     assert restored.consumed == 2
     remaining = list(restored)
     assert [c.round for c in remaining] == [2, 3, 4, 5]
+
+
+def test_serialization_retains_population_version():
+    original_population = make_population("/hive", version="1.*")
+    loader = _loader(original_population)
+    snapshot = state_dict(loader)
+    assert snapshot["population_version"] == "1.*"
+
+    restored = from_state_dict(_loader(original_population), snapshot)
+    assert restored.population.version == "1.*"
+
+    other_version = make_population("/hive", version="2.*")
+    with pytest.raises(ValueError, match="population"):
+        from_state_dict(_loader(other_version), snapshot)

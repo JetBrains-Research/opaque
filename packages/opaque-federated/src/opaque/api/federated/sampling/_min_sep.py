@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any, Mapping
 
-from opaque.api.federated.data._population import Cohort, Population
+from opaque.api.federated.data.types import Cohort, Population
 
 
 class MinSepSampler:
@@ -42,7 +42,7 @@ class MinSepSampler:
 
     Example::
 
-        population = Population(name="/hive")
+        population = opaque.federated.population("/hive")
         sampler = MinSepSampler(population, batch_size=8, bands=4)
         loader = DataLoader(population, batch_sampler=sampler, rounds=60)
     """
@@ -91,6 +91,7 @@ class MinSepSampler:
 def _state_dict_min_sep(s: MinSepSampler) -> dict[str, Any]:
     return {
         "population_name": s.population.name,
+        "population_version": s.population.version,
         "batch_size": int(s.batch_size),
         "bands": int(s.bands),
         "consumed": int(s.consumed),
@@ -106,12 +107,15 @@ def _from_state_dict_min_sep(
     resuming against a different population would silently change the
     participation structure being accounted.
     """
-    saved = str(sd["population_name"])
-    have = template.population.name
+    saved = Population(
+        name=str(sd["population_name"]),
+        version=str(sd.get("population_version", "*")),
+    )
+    have = template.population
     if saved != have:
         raise ValueError(
-            f"MinSepSampler.from_state_dict: template population {have} does "
-            f"not match snapshot {saved}."
+            f"MinSepSampler.from_state_dict: template population {have!r} does "
+            f"not match snapshot {saved!r}."
         )
     sampler = MinSepSampler(
         template.population,

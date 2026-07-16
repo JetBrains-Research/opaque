@@ -61,6 +61,8 @@ FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
     ),
     "opaque-federated": (
         "opaque/federated/__init__.py",
+        "opaque/federated/data/__init__.py",
+        "opaque/federated/data/types.py",
     ),
     "opaque-dpftrl": (
         "opaque/dpftrl/__init__.py",

@@ -10,7 +10,13 @@ from ifed._defaults import RoundResult  # noqa: E402
 
 from opaque.api.engine.clipping.types import FixedClipState  # noqa: E402
 from opaque.api.engine.types import ClippedPytree  # noqa: E402
-from opaque.federated import Cohort, DataLoader, MinSepSampler, Population, clipped_grad  # noqa: E402
+from opaque.federated import (  # noqa: E402
+    Cohort,
+    DataLoader,
+    MinSepSampler,
+    clipped_grad,
+    population as make_population,
+)
 
 
 class Iris(ifed.Dataset):
@@ -67,7 +73,7 @@ class FakeClient:
 
 @pytest.fixture
 def population():
-    return Population(name="/hive")
+    return make_population("/hive")
 
 
 def _loader(population, rounds=4, batch_size=2, bands=2):
@@ -81,7 +87,8 @@ def test_eager_compile_at_factory(population, monkeypatch):
     monkeypatch.setattr(
         ifed.pytorch,
         "compile",
-        lambda model, **kwargs: calls.append((model, kwargs)) or FakePlan(client.run._count_fn),
+        lambda model, **kwargs: calls.append((model, kwargs))
+        or FakePlan(client.run._count_fn),
     )
     grad_fn, clip_state = clipped_grad(
         loss_fn, client, clipping_norm=1.0, params=PARAMS, data=Iris
@@ -96,7 +103,11 @@ def test_eager_compile_at_factory(population, monkeypatch):
 
 def test_lazy_task_from_cohort_config(population, monkeypatch):
     client = FakeClient()
-    monkeypatch.setattr(ifed.pytorch, "compile", lambda *_args, **_kwargs: FakePlan(client.run._count_fn))
+    monkeypatch.setattr(
+        ifed.pytorch,
+        "compile",
+        lambda *_args, **_kwargs: FakePlan(client.run._count_fn),
+    )
     grad_fn, clip_state = clipped_grad(
         loss_fn,
         client,
@@ -114,16 +125,41 @@ def test_lazy_task_from_cohort_config(population, monkeypatch):
     assert task.population == ifed.Population(name="/hive", cardinality=2)
     assert task.iterations == 4
     assert task.round_input_timeout == 120
-    assert task.policy.assign_separation == ifed.AssignSeparationPolicy(iteration_delta=2)
+    assert task.policy.assign_separation == ifed.AssignSeparationPolicy(
+        iteration_delta=2
+    )
     assert grad_fn.run is client.run
 
     grad_fn(PARAMS, next(cohorts), state=clip_state)
     assert len(client.task_calls) == 1  # created exactly once
 
 
+def test_native_task_population_retains_version(monkeypatch):
+    client = FakeClient()
+    monkeypatch.setattr(
+        ifed.pytorch,
+        "compile",
+        lambda *_args, **_kwargs: FakePlan(client.run._count_fn),
+    )
+    grad_fn, clip_state = clipped_grad(
+        loss_fn, client, clipping_norm=1.0, params=PARAMS, data=Iris
+    )
+    population = make_population("/hive", version="1.*")
+
+    grad_fn(PARAMS, next(iter(_loader(population))), state=clip_state)
+
+    assert client.task_calls[0].population == ifed.Population(
+        name="/hive", version="1.*", cardinality=2
+    )
+
+
 def test_model_state_and_clipped_output(population, monkeypatch):
     client = FakeClient()
-    monkeypatch.setattr(ifed.pytorch, "compile", lambda *_args, **_kwargs: FakePlan(client.run._count_fn))
+    monkeypatch.setattr(
+        ifed.pytorch,
+        "compile",
+        lambda *_args, **_kwargs: FakePlan(client.run._count_fn),
+    )
     grad_fn, clip_state = clipped_grad(
         loss_fn, client, clipping_norm=1.0, params=PARAMS, data=Iris
     )
@@ -144,7 +180,11 @@ def test_model_state_and_clipped_output(population, monkeypatch):
 
 def test_normalize_by_override(population, monkeypatch):
     client = FakeClient()
-    monkeypatch.setattr(ifed.pytorch, "compile", lambda *_args, **_kwargs: FakePlan(client.run._count_fn))
+    monkeypatch.setattr(
+        ifed.pytorch,
+        "compile",
+        lambda *_args, **_kwargs: FakePlan(client.run._count_fn),
+    )
     grad_fn, clip_state = clipped_grad(
         loss_fn, client, clipping_norm=1.0, params=PARAMS, data=Iris, normalize_by=4.0
     )
@@ -156,7 +196,11 @@ def test_normalize_by_override(population, monkeypatch):
 
 def test_rejects_raw_cohort(population, monkeypatch):
     client = FakeClient()
-    monkeypatch.setattr(ifed.pytorch, "compile", lambda *_args, **_kwargs: FakePlan(client.run._count_fn))
+    monkeypatch.setattr(
+        ifed.pytorch,
+        "compile",
+        lambda *_args, **_kwargs: FakePlan(client.run._count_fn),
+    )
     grad_fn, clip_state = clipped_grad(
         loss_fn, client, clipping_norm=1.0, params=PARAMS, data=Iris
     )
@@ -166,7 +210,11 @@ def test_rejects_raw_cohort(population, monkeypatch):
 
 def test_rejects_cohort_from_other_loader(population, monkeypatch):
     client = FakeClient()
-    monkeypatch.setattr(ifed.pytorch, "compile", lambda *_args, **_kwargs: FakePlan(client.run._count_fn))
+    monkeypatch.setattr(
+        ifed.pytorch,
+        "compile",
+        lambda *_args, **_kwargs: FakePlan(client.run._count_fn),
+    )
     grad_fn, clip_state = clipped_grad(
         loss_fn, client, clipping_norm=1.0, params=PARAMS, data=Iris
     )
@@ -177,7 +225,11 @@ def test_rejects_cohort_from_other_loader(population, monkeypatch):
 
 def test_rejects_out_of_order_round(population, monkeypatch):
     client = FakeClient()
-    monkeypatch.setattr(ifed.pytorch, "compile", lambda *_args, **_kwargs: FakePlan(client.run._count_fn))
+    monkeypatch.setattr(
+        ifed.pytorch,
+        "compile",
+        lambda *_args, **_kwargs: FakePlan(client.run._count_fn),
+    )
     grad_fn, clip_state = clipped_grad(
         loss_fn, client, clipping_norm=1.0, params=PARAMS, data=Iris
     )
@@ -190,7 +242,11 @@ def test_rejects_out_of_order_round(population, monkeypatch):
 
 def test_preserves_native_policy(population, monkeypatch):
     client = FakeClient()
-    monkeypatch.setattr(ifed.pytorch, "compile", lambda *_args, **_kwargs: FakePlan(client.run._count_fn))
+    monkeypatch.setattr(
+        ifed.pytorch,
+        "compile",
+        lambda *_args, **_kwargs: FakePlan(client.run._count_fn),
+    )
     policy = ifed.ComputationPolicy(requirements=ifed.Requirements(gpu=False))
     grad_fn, clip_state = clipped_grad(
         loss_fn,
@@ -206,7 +262,11 @@ def test_preserves_native_policy(population, monkeypatch):
 
 def test_rejects_wrong_contribution_count(population, monkeypatch):
     client = FakeClient(count_fn=lambda: 1)  # one short
-    monkeypatch.setattr(ifed.pytorch, "compile", lambda *_args, **_kwargs: FakePlan(client.run._count_fn))
+    monkeypatch.setattr(
+        ifed.pytorch,
+        "compile",
+        lambda *_args, **_kwargs: FakePlan(client.run._count_fn),
+    )
     grad_fn, clip_state = clipped_grad(
         loss_fn, client, clipping_norm=1.0, params=PARAMS, data=Iris
     )
@@ -217,3 +277,15 @@ def test_rejects_wrong_contribution_count(population, monkeypatch):
 def test_requires_dataset(population):
     with pytest.raises(TypeError, match="pass data="):
         clipped_grad(loss_fn, FakeClient(), clipping_norm=1.0, params=PARAMS)
+
+
+def test_rejects_removed_population_argument(population):
+    with pytest.raises(TypeError, match="population"):
+        clipped_grad(
+            loss_fn,
+            FakeClient(),
+            clipping_norm=1.0,
+            params=PARAMS,
+            data=Iris,
+            population=population,
+        )

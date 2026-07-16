@@ -11,7 +11,7 @@ the `Accountant`) is the unchanged central chain.
 
 | central | federated | notes |
 |-----------|-----------|-------|
-| `Dataset` | `opaque.federated.Population(name)` | a symbolic pool of clients selected by Opaque |
+| `Dataset` | `opaque.federated.population(name, version="*")` | a symbolic pool of clients selected by Opaque |
 | `Sampler` | `opaque.federated.MinSepSampler` | yields Opaque `Cohort` *specs*; the platform enforces the participation constraint |
 | `batch` | `opaque.federated.Cohort` | symbolic — per-client gradients depend on the params, so a cohort is resolved by executing its round |
 | `DataLoader` | `opaque.federated.DataLoader` | bounds the stream to `rounds` cohorts |
@@ -21,7 +21,7 @@ the `Accountant`) is the unchanged central chain.
 import ifed
 import opaque.federated as fed
 
-population = fed.Population(name="/hive")
+population = fed.population("/hive", version="*")
 sampler    = fed.MinSepSampler(population, batch_size=8, bands=4)
 loader     = fed.DataLoader(population, batch_sampler=sampler, rounds=60)
 
@@ -38,6 +38,24 @@ executes each round on ONE long-lived interactive IFED task, so the
 minimum-separation policy spans the whole run. The per-client clip runs in
 IFED's trusted aggregator; the returned `ClippedPytree` carries
 `max_norm = clipping_norm / cohort_size`, exactly like central.
+
+The first cohort produced by `DataLoader` supplies the native task's population
+name and version, exact cardinality, minimum separation, and round horizon.
+Later cohorts must come from that same loader in order and retain those values.
+
+## End-to-end example
+
+The canonical `examples/federated_regression.py` script contains only the DP loop
+and constructs `ifed.Client()` from the runner-injected endpoint. Run it with its
+sibling simulation fixture from the repository root:
+
+```bash
+ifed run --simulate examples/federated_regression_simulation.yaml \
+  examples/federated_regression.py
+```
+
+Pass script arguments directly after the script, for example `--rounds 3`. The fixture
+provides exactly two split agents for the script's two-client cohorts.
 
 ## Sampling honesty
 
@@ -62,6 +80,8 @@ only expose the participation structure (`bands`, `batch_size`, `rounds`).
 
 ## API
 
+::: opaque.federated.population
+
 ::: opaque.federated.clipped_grad
 
 ::: opaque.federated.MinSepSampler
@@ -69,7 +89,3 @@ only expose the participation structure (`bands`, `batch_size`, `rounds`).
 ::: opaque.federated.DataLoader
 
 ::: opaque.federated.make_clipping_aggregate
-
-**See also**: `docs/dev/opaque-federated.md` in the ifed repository for the
-platform-side design (interactive runs, assign-separation enforcement,
-failure semantics).
