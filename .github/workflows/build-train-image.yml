@@ -30,7 +30,8 @@
 #     key is bound to that one repo and needs no org/SAML/PAT approval. This is
 #     the only secret you must add.
 #   var    GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL — already set
-#     for the devcontainer build; reused here.
+#     as `devcontainer` environment variables for the devcontainer build; this job
+#     joins that environment (see `environment:` below) to reuse them.
 #   var    OPAQUE_DOCKER_REGISTRY     — optional; defaults to the gke-dev-dws-jbr
 #     repo that the WIF service account can push to.
 #   var    TRAIN_IMAGE_RUNNER         — optional; a bigger runner if the build
@@ -78,6 +79,10 @@ jobs:
     name: Build & push opaque-train
     runs-on: ${{ vars.TRAIN_IMAGE_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 120
+    # GCP_WORKLOAD_IDENTITY_PROVIDER / GCP_SERVICE_ACCOUNT_EMAIL are scoped to this
+    # GitHub Environment (same as build-devcontainer.yaml), not the repo, so the
+    # job must declare it or those vars resolve empty and google auth fails.
+    environment: devcontainer
     permissions:
       contents: read
       id-token: write  # required for Workload Identity Federation
