@@ -42,7 +42,13 @@ sys.path.insert(0, str(HERE))
 # non-TRACE resources NES training uses.                                        #
 # --------------------------------------------------------------------------- #
 PROJECT = os.environ.get("OPAQUE_ZENML_PROJECT", "models-rd")
-STACK = os.environ.get("OPAQUE_ZENML_STACK", "gke-ai-for-code")
+# Default to the plain non-TRACE GPU stack (Kubernetes orchestrator
+# `zenml-workload-common-gpus`, GCS artifact store, GCP registry). It has no
+# Slack alerter, so the training image only needs `zenml[connectors-gcp]` — no
+# `slack-sdk`. `gke-ai-for-code` also works but its Slack alerter requires
+# `slack-sdk` baked into the image. Project stays `models-rd` so the
+# `ai-for-code` secret (WANDB/HF) resolves regardless of stack.
+STACK = os.environ.get("OPAQUE_ZENML_STACK", "gke-europe-west4")
 LOGIN_TARGET = os.environ.get("OPAQUE_ZENML_LOGIN", "").strip()
 SCRATCH_DIR = os.environ.get("OPAQUE_SCRATCH_DIR", "/scratch")
 

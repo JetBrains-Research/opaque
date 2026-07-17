@@ -96,15 +96,31 @@ def training_settings(
             MountConfiguration(mount_path=SCRATCH_DIR, size_gb=DEFAULT_SCRATCH_GB),
             MountConfiguration(mount_path="/tmp", size_gb=DEFAULT_TMP_GB),
         ],
+        # These non-TRACE GKE stacks enforce ``runAsNonRoot``. The kubelet can
+        # only verify that from a *numeric* UID, so a bare ``USER nonroot`` image
+        # is rejected with ``CreateContainerConfigError: container has
+        # runAsNonRoot and image has non-numeric user (nonroot)``. Pin the pod
+        # securityContext to UID/GID 1000 (the image's ``nonroot`` user) so the
+        # check passes with any image. ``fsGroup`` makes the mounted /scratch +
+        # /tmp PVCs group-writable by that user (they mount root-owned, so a
+        # non-root process otherwise can't write to them). pod_spec.security_context
+        # starts unset, so this dict is applied verbatim (clean camelCase keys).
+        additional_pod_spec_args={
+            "security_context": {
+                "runAsUser": 1000,
+                "runAsGroup": 1000,
+                "runAsNonRoot": True,
+                "fsGroup": 1000,
+            }
+        },
     )
 
     # Submit asynchronously, exactly like NES (`pusk/launch.py` forces
     # ``synchronous=False`` on every run): the client returns as soon as the
     # orchestrator Job is created instead of blocking for the whole run, and pod
     # startup/retries are left to the Kubernetes Job. The run is then monitored
-    # via the dashboard / ZenML API. (The training image must run as non-root, or
-    # the pod fails with ``CreateContainerConfigError: container has runAsNonRoot
-    # and image will run as root`` — see deploy/zenml/Dockerfile.)
+    # via the dashboard / ZenML API. (Non-root enforcement is handled by the pod
+    # securityContext set on ``pod_configuration`` above.)
     orchestrator_kwargs = {"synchronous": False, **kwargs.pop("orchestrator_kwargs", {})}
     # Optional: keep finished/failed Jobs (and their pods/events) around for
     # post-mortem inspection instead of the stack's aggressive default TTL.

@@ -46,6 +46,16 @@ COPY . /opt/opaque
 # (--eval-humaneval/--eval-mbpp additionally need `evalplus`; the renyi arms
 # don't use them, so it's omitted to keep the image small.)
 #
+# `zenml[connectors-gcp]` (not the full `zenml integration install gcp`) pulls the
+# minimal prerequisites for ZenML's GCP service connector — google-cloud-container
+# + google-cloud-artifact-registry (+ storage/kubernetes we already need). The
+# GCS artifact store authenticates via that connector, so without these the step
+# pod dies with `NotImplementedError: Service connector type gcp is not available
+# locally`. We deliberately avoid the full integration (kfp / aiplatform /
+# pipeline-components + a gcsfs<=2024.12 downgrade) to keep the image lean and
+# steer clear of dependency conflicts with torch/transformers. `gcsfs` is the one
+# extra the artifact store's filesystem needs that the connector extra omits.
+#
 # Ownership of the app dirs is handed to the runtime user in this same layer so
 # the multi-GB venv isn't duplicated into a separate `chown` layer.
 RUN uv sync --all-packages --extra all \
@@ -56,10 +66,8 @@ RUN uv sync --all-packages --extra all \
         "peft>=0.18.0" \
         "wandb>=0.16.0" \
         ./vendor/lora-privacy \
-        "zenml==0.94.6" \
-        "kubernetes" \
+        "zenml[connectors-gcp]==0.94.6" \
         "gcsfs" \
-        "google-cloud-storage" \
     && chown -R ${NONROOT_UID}:${NONROOT_GID} /opt/opaque /app /home/nonroot
 
 # Make the workspace venv the default interpreter so ZenML (and the trainer
@@ -74,5 +82,11 @@ ENV VIRTUAL_ENV=/opt/opaque/.venv \
 USER nonroot
 
 # Sanity check: opaque (with its Rust extension) and torch import cleanly as the
-# unprivileged runtime user.
-RUN python -c "import opaque.accounting, torch, transformers, peft, zenml; print('opaque image OK', torch.__version__)"
+# unprivileged runtime user, and the ZenML GCP service connector registers (it is
+# what the GCS artifact store uses to authenticate from the step pod). Failing
+# here surfaces a missing connector dep at build time instead of mid-run.
+RUN python -c "import opaque.accounting, torch, transformers, peft, zenml; \
+from zenml.service_connectors.service_connector_registry import service_connector_registry as r; \
+r.register_builtin_service_connectors(); \
+assert 'gcp' in r.service_connector_types, 'GCP service connector failed to register'; \
+print('opaque image OK', torch.__version__, '| gcp connector OK')"
