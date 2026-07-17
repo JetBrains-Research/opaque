@@ -108,6 +108,20 @@ def submit(arm: str, run_name: str | None, seed: int | None, gpu: bool, extra: l
     cmd_args, default_name = _resolve_cmd_args(arm, seed, extra)
     run_name = run_name or default_name
 
+    # Footgun guard: settings.py propagates the submit-shell WANDB_MODE into the
+    # pod, so WANDB_MODE=disabled (common in shell profiles) makes a real GPU run
+    # train while silently recording NOTHING. For GPU runs, override disabled ->
+    # online so results are never lost. Escape hatch: OPAQUE_ALLOW_WANDB_DISABLED=1.
+    if gpu and os.environ.get("WANDB_MODE") == "disabled":
+        if os.environ.get("OPAQUE_ALLOW_WANDB_DISABLED") == "1":
+            print("WARNING: WANDB_MODE=disabled on a GPU run — metrics will NOT be "
+                  "tracked (OPAQUE_ALLOW_WANDB_DISABLED=1 set).")
+        else:
+            print("NOTICE: WANDB_MODE=disabled would silently drop ALL metrics on a "
+                  "GPU run; overriding to WANDB_MODE=online. Set "
+                  "OPAQUE_ALLOW_WANDB_DISABLED=1 to keep it disabled.")
+            os.environ["WANDB_MODE"] = "online"
+
     # Imported lazily so --dry-run works without jb-mlops / zenml installed
     # (docker_images is pure-stdlib; settings pulls in jb-mlops + zenml).
     from docker_images import DockerImage, get_image_url
