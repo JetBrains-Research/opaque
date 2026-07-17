@@ -45,6 +45,12 @@ DEFAULT_WANDB_PROJECT = "opaque-lora-xs"
 
 # Step (trainer) pod resources. H100 80GB + 20 CPU + 160Gi RAM match the Cadence
 # renyi preset (``.cadence/configs/renyi_dp_vs_nodp.yaml`` provisioning block).
+# OPAQUE_GPU_TYPE selects the accelerator (one of the ``GPUs`` enum names: H100,
+# A100_80GB, A100, L4). To fall back off a saturated H100 pool, set
+# ``OPAQUE_GPU_TYPE=A100_80GB`` -- and lower OPAQUE_CPU_COUNT / OPAQUE_MEMORY_GB
+# to fit the smaller single-A100 node shape (a2-ultragpu-1g is ~12 vCPU/170Gi,
+# vs the H100 a3-highgpu-1g's ~26 vCPU/234Gi).
+DEFAULT_GPU_TYPE = os.environ.get("OPAQUE_GPU_TYPE", "H100")
 DEFAULT_MEMORY_GB = float(os.environ.get("OPAQUE_MEMORY_GB", "160"))
 DEFAULT_MEMORY_LIMIT_GB = float(os.environ.get("OPAQUE_MEMORY_LIMIT_GB", "200"))
 DEFAULT_CPU_COUNT = float(os.environ.get("OPAQUE_CPU_COUNT", "20"))
@@ -74,6 +80,15 @@ _SECURITY_CONTEXT: dict[str, Any] = {
         "fsGroup": 1000,
     }
 }
+
+
+def _gpu_type() -> GPUs:
+    """Resolve ``OPAQUE_GPU_TYPE`` to a ``GPUs`` enum member (default H100)."""
+    try:
+        return GPUs[DEFAULT_GPU_TYPE]
+    except KeyError as exc:
+        valid = ", ".join(g.name for g in GPUs)
+        raise ValueError(f"OPAQUE_GPU_TYPE={DEFAULT_GPU_TYPE!r} is not one of: {valid}") from exc
 
 
 def secret_env(env_name: str, *, key: str | None = None, secret: str = DEFAULT_ZENML_SECRET) -> dict[str, Any]:
@@ -146,7 +161,7 @@ def training_settings(
         memory_limit_gb=DEFAULT_MEMORY_LIMIT_GB,
         cpu_count=DEFAULT_CPU_COUNT,
         ephemeral_storage_gb=5,
-        gpu=GPUs.H100 if gpu else None,
+        gpu=_gpu_type() if gpu else None,
         gpu_count=1 if gpu else None,
         extra_envs=extra_envs,
         storage_configuration=[
