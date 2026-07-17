@@ -41,18 +41,32 @@ noised state; never clean gradients. State it as a lemma (post-processing).
 
 ## 2. Hypotheses (pre-registered, falsifiable)
 
-- **H1 — Frontier.** Rényi(α=∞)-allocation ≥ AdaLoRA and ≥ uniform LoRA-XS on the
-  privacy–utility frontier for ε ∈ {1, 3, 8}.
-- **H2 — Theory fingerprint.** The advantage *grows as ε decreases* (more noise ⇒
-  more mis-allocation to fix). ← the compelling, hard-to-fake result.
-- **H3 — Order ablation.** Downstream utility is ordered α=∞ ≥ α=2 ≥ α=1 ≥ α=0.5
-  for the allocation measure. ← proves the win is the Rényi-order insight.
+> **Framing update after the proof panel** (`vendor/lora-privacy/docs/renyi-proof-status.md`).
+> The stable-rank prescription is **not universal**: it is MSE-optimal only in the
+> **high-noise regime** where $N_\infty\ge k$ (Theorem 4′), and can *lose* at
+> strong signal / low noise. So the experiments must **map the regime**, not chase
+> a blanket "α=∞ always wins." The theory's sharp, falsifiable prediction is a
+> *2-D regime map over (ε, r)*: the advantage concentrates in the **high-noise
+> (low ε) / small-r corner** and fades toward low noise. That is harder to fake
+> than a single win and is the headline result.
+
+- **H1 — Frontier win in-regime.** Rényi(α=∞)-allocation ≥ AdaLoRA and ≥ uniform
+  LoRA-XS on the privacy–utility frontier for ε ∈ {1, 3, 8}, **strongest at ε=1**.
+- **H2 — Regime map (the theory fingerprint).** The advantage over AdaLoRA/uniform
+  *grows as ε decreases and as r decreases* (more noise / less headroom ⇒ more
+  mis-allocation to fix). Equivalently: the win tracks $P(N_\infty\ge k)$ across
+  the (ε, r) grid. ← the compelling, hard-to-fake result.
+- **H3 — Order ablation.** In the high-noise cells, utility is ordered
+  α=∞ ≥ α=2 ≥ α=1 ≥ α=0.5. In low-noise cells the ordering *may invert toward a
+  finite α* (predicted by the interior-optimum finding) — a bonus confirmation if
+  seen. ← proves the win is the Rényi-order insight and its regime-dependence.
 - **H4 — Rotation cadence.** `renyi_gap_a0p5_ainf` decreases with rotation interval
   / momentum β; every-step rotation gives the noisiest estimates and *hurts more
   under DP than non-DP*. Optimal interval ≈ the momentum-tied default.
 
 Primary endpoint = downstream task metric (not eval loss). Decide it per task in
-§5 before running.
+§5 before running. NOTE: do **not** pre-register "α=∞ is universally best" — the
+panel disproved that; H2/H3 are the regime-aware, defensible versions.
 
 ---
 
@@ -100,28 +114,43 @@ Ship Tier 1 + Tier 2 minimum; add Tier 3 for a strong generality claim.
 
 ## 6. Figures (what the paper shows)
 
-1. **Privacy–utility frontier**: x=ε, y=metric, line/method, CIs. Money shot:
-   our line above AdaLoRA + uniform, gap widening at low ε (H1+H2).
-2. **Order ablation**: utility vs allocation-α (0.5→1→2→∞) (H3).
-3. **Mechanism→outcome bridge**: AdaLoRA importance ranking on noised vs clean
+1. **The regime map (headline).** Heatmap over the **(ε, r) grid** of the utility
+   advantage of α=∞-allocation vs AdaLoRA/uniform — hot in the high-noise/small-r
+   corner, cooling toward low noise (H2). Overlay the contour where
+   $\hat P(N_\infty\ge k)=0.5$ (the theory's predicted boundary from Theorem 4′).
+   This single figure *is* the paper: it shows the win AND that it appears exactly
+   where the theory says it must.
+2. **Privacy–utility frontier**: x=ε, y=metric, line/method, CIs — a 1-D slice of
+   figure 1 at fixed r; gap widening at low ε (H1).
+3. **Order ablation**: utility vs allocation-α (0.5→1→2→∞), split by high-noise vs
+   low-noise cells (H3; ordering may invert in low-noise).
+4. **Mechanism→outcome bridge**: AdaLoRA importance ranking on noised vs clean
    spectra (how badly it mis-orders under DP) next to our robust ranking.
-4. **Rotation cadence**: `renyi_gap` and utility vs interval, DP vs non-DP (H4).
+5. **Rotation cadence**: `renyi_gap` and utility vs interval, DP vs non-DP (H4).
 
 ---
 
 ## 7. Go/No-Go gates (cheap; run BEFORE the campaign)
 
-One task (GLUE-SST2 or the Qwen setup), worst-noise ε=1:
+Run these in the **high-noise corner** (worst-noise ε=1, small r), where the
+theory says the effect is largest, on one task (GLUE-SST2 or the Qwen setup):
 
+0. **Are we in the valid regime?** Estimate $\hat P(N_\infty\ge k)$ from the
+   noised per-layer spectra (Theorem 4′'s hypothesis). If $\approx1$ at ε=1 we are
+   in-regime → proceed; if the cores are already strong-signal ($N_\infty<k$
+   common) the stable-rank claim doesn't apply here → move to a smaller-r / lower-ε
+   cell or reconsider.
 1. **Non-trivial allocation?** Compute `k̂_ℓ = r_eff^(∞)` per layer under DP. Flat
    ⇒ allocation ≈ uniform ⇒ no win possible ⇒ **STOP / pivot**. Spread ⇒ go.
 2. **Does AdaLoRA mis-rank under DP?** Compare its importance order on noised vs
    clean spectra. Barely changes ⇒ critique weak. Reorders ⇒ strong.
 3. **Single-cell H3:** α=∞ vs α=1 allocation, 5 seeds, one task, ε=1. Real margin
-   for α=∞ ⇒ **green-light full sweep.** Within noise even at ε=1 ⇒ the utility
-   win likely won't materialize ⇒ pivot to the **analysis/critique paper** (§10).
+   for α=∞ ⇒ **green-light the (ε, r) regime-map sweep.** Within noise even at ε=1
+   (the most favorable cell) ⇒ the utility win likely won't materialize ⇒ pivot to
+   the **analysis/critique paper** (§10).
 
-Cost: ~5–10 runs. This is the closest thing to "for sure" available honestly.
+Cost: ~5–10 runs. This is the closest thing to "for sure" available honestly, and
+it also tells you *which cell* of the regime map to expand into first.
 
 ---
 
@@ -138,13 +167,16 @@ Cost: ~5–10 runs. This is the closest thing to "for sure" available honestly.
 
 ## 9. Scale & sequencing
 
-1. **§7 gates** (~1 day, ~10 runs) — go/no-go.
-2. **Tier 1 frontier** (4–6 methods × 3 ε × 4 tasks × 5 seeds ≈ 240 RoBERTa runs,
-   hours each) — H1/H2/H3 on the canonical benchmark.
-3. **Tier 2 hero** (7B, 3 seeds) — H1/H2 on code.
+1. **§7 gates** (~1 day, ~10 runs) — go/no-go + locate the hot cell.
+2. **Tier 1 regime map** — the headline figure: 4–6 methods × **(ε ∈ {1,3,8}) ×
+   (r ∈ {4,8,16,32})** × ≥2 GLUE tasks × 5 seeds on RoBERTa-large (hours each).
+   Builds the (ε, r) heatmap (H1/H2) and the α-order ablation (H3).
+3. **Tier 2 hero** (7B, 3 seeds) — confirm the frontier slice on code.
 4. **H4 rotation sub-study** (cheap; reuse Tier 1 task).
 5. **Tier 3 generality** if 2–4 are positive.
-6. Theory tightening (deterministic-equivalent proof) in parallel.
+6. **Theory tightening in parallel** — the finite-r RMT items in
+   `vendor/lora-privacy/docs/renyi-proof-status.md` (the panel found the r→∞
+   claims false; the finite-r versions are what the regime map validates).
 
 ---
 
