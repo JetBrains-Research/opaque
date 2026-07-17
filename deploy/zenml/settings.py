@@ -151,6 +151,25 @@ def training_settings(
         {"name": "PYTORCH_CUDA_ALLOC_CONF", "value": "expandable_segments:True"},
     ]
 
+    # Forward campaign-control env vars set on the submit side into the trainer
+    # pod, so e.g. `XSE_ADAPTIVE_DEPTH=1 XSE_ADAPTIVE_DEPTH_ALPHA=inf python
+    # deploy/zenml/run.py dp ...` reaches lora_privacy.peft_lora_xs.xse (which
+    # reads these knobs). Only forwarded when actually set (empty => trainer
+    # defaults apply). See docs/renyi-zenml-campaign-plan.md.
+    _PASSTHROUGH_ENV = (
+        "XSE_ADAPTIVE_DEPTH",
+        "XSE_ADAPTIVE_DEPTH_ALPHA",
+        "XSE_ADAPTIVE_DEPTH_MARGIN",
+        "XSE_MP_SHRINKAGE",
+        "XSE_MP_SHRINKAGE_END",
+        "XSE_MP_SHRINKAGE_DECAY_STEPS",
+    )
+    extra_envs += [
+        {"name": _k, "value": os.environ[_k]}
+        for _k in _PASSTHROUGH_ENV
+        if os.environ.get(_k) not in (None, "")
+    ]
+
     # Step (trainer) pod: the actual GPU work. Mounts /scratch + /tmp PVCs, gets
     # the W&B/HF creds, and requests the H100. ``dict(_SECURITY_CONTEXT)`` is
     # copied because ``get_pod_config`` mutates ``additional_pod_spec_args`` in
