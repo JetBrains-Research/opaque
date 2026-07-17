@@ -582,6 +582,27 @@ def parse_args():
         help="LoRA-XS: R matrix init std N(0, sigma^2) (default: 1e-5)",
     )
     lora_group.add_argument(
+        "--lora-xs-rank-pattern-json",
+        type=str,
+        default=None,
+        help=(
+            "LoRA-XS: path to a JSON dict {module_name_or_pattern: r_l} of "
+            "per-layer rank overrides (variable-rank / Rényi allocation). "
+            "Modules not listed use --lora-r. Generate it with "
+            "examples/compute_rank_allocation.py."
+        ),
+    )
+    lora_group.add_argument(
+        "--dump-core-spectra",
+        type=str,
+        default=None,
+        help=(
+            "LoRA-XS: after training, dump each layer's core-R singular values "
+            "to this JSON path ({module: [sigmas]}). Run a short probe with "
+            "--max-steps N and this flag, then feed to compute_rank_allocation.py."
+        ),
+    )
+    lora_group.add_argument(
         "--lora-xs-orthonormal-a",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -1174,8 +1195,20 @@ def main():
             raise ValueError(
                 "--lora-xs-manifold-init-sigma-w requires --lora-xs-manifold-mode."
             )
+        rank_pattern: dict = {}
+        if getattr(args, "lora_xs_rank_pattern_json", None):
+            import json as _json
+
+            with open(args.lora_xs_rank_pattern_json) as _f:
+                rank_pattern = {str(k): int(v) for k, v in _json.load(_f).items()}
+            print(
+                f"LoRA-XS per-layer rank allocation: {len(rank_pattern)} module "
+                f"overrides loaded from {args.lora_xs_rank_pattern_json}; "
+                f"ranks {sorted(set(rank_pattern.values()))}"
+            )
         lora_config = LoraXSConfig(
             r=args.lora_r,
+            rank_pattern=rank_pattern,
             lora_alpha=args.lora_alpha,
             target_modules=args.lora_modules,
             lora_dropout=0.0,
@@ -1201,6 +1234,24 @@ def main():
     model = get_peft_model(model, lora_config)
     apply_model_patches(model)
     model.print_trainable_parameters()
+
+    # Verify per-layer rank allocation actually applied (silent fallback to
+    # uniform r would invalidate the whole variable-rank experiment).
+    if args.lora_method == "lora-xs" and getattr(args, "lora_xs_rank_pattern_json", None):
+        _seen = {}
+        for _n, _m in model.named_modules():
+            _R = getattr(_m, "lora_xs_R", None)
+            if _R is not None and "default" in _R:
+                _w = getattr(_R["default"], "weight", _R["default"])
+                _seen[_n] = int(_w.shape[0])
+        _uniq = sorted(set(_seen.values()))
+        _n_nonuniform = sum(1 for v in _seen.values() if v != args.lora_r)
+        print(f"[rank-alloc] applied ranks {_uniq} across {len(_seen)} LoRA-XS "
+              f"layers; {_n_nonuniform} differ from --lora-r={args.lora_r}")
+        if _n_nonuniform == 0:
+            print("[rank-alloc] WARNING: rank_pattern produced NO per-layer "
+                  "variation — check that JSON keys match module names "
+                  "(silent fallback to uniform r).")
 
     profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")
@@ -2494,6 +2545,32 @@ def main():
                 v.detach().copy_(best_snapshot[k].to(v.device, v.dtype))
         else:
             print(f"\nBest checkpoint IS the final step ({global_step}); no restore needed.")
+
+    # Optional: dump per-layer core spectra for Rényi rank allocation (probe).
+    # Pair with --max-steps N for a short warm-up; feed the JSON to
+    # examples/compute_rank_allocation.py to build a --lora-xs-rank-pattern-json.
+    if getattr(args, "dump_core_spectra", None) and is_main_process:
+        import json as _json
+
+        _pm = model._module if hasattr(model, "_module") else model
+        _spectra: dict[str, list[float]] = {}
+        for _name, _mod in _pm.named_modules():
+            _R = getattr(_mod, "lora_xs_R", None)
+            if _R is None or "default" not in _R:
+                continue
+            _entry = _R["default"]
+            _w = getattr(_entry, "weight", _entry).detach().float()
+            if _w.ndim != 2:
+                continue
+            _key = _name
+            for _pfx in ("base_model.model.", "base_model."):
+                if _key.startswith(_pfx):
+                    _key = _key[len(_pfx):]
+                    break
+            _spectra[_key] = torch.linalg.svdvals(_w).cpu().tolist()
+        with open(args.dump_core_spectra, "w") as _f:
+            _json.dump(_spectra, _f)
+        print(f"Dumped {len(_spectra)} per-layer core spectra to {args.dump_core_spectra}")
 
     # Save model and run downstream evaluation
     if args.output_dir and is_main_process:
