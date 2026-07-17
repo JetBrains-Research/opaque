@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -89,6 +90,33 @@ def train_arm(
             Path(env[key]).mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             LOGGER.warning("Could not create %s=%s (%s)", key, env[key], exc)
+
+    # ZenML injects secret values verbatim, and the shared ``ai-for-code`` secret
+    # can carry stray bytes around the token (a trailing newline from the secret
+    # store, or an invisible/zero-width char from a copy-paste). wandb 0.28's key
+    # validator (wbauth) accepts only ``[\w-]`` in the API key and rejects
+    # anything else with "API key may only contain the letters A-Z, digits and
+    # underscores", so a single stray byte fails ``wandb.init()``. ``str.strip()``
+    # only catches leading/trailing standard whitespace, so instead keep exactly
+    # the characters the validator allows — a valid W&B/HF token (including an
+    # on-prem ``local-`` prefix) is entirely ``[\w-]`` anyway. Log the dropped
+    # code points (not the secret) so a genuinely malformed token is diagnosable.
+    for _cred in ("WANDB_API_KEY", "HF_TOKEN"):
+        raw = env.get(_cred)
+        if not raw:
+            continue
+        cleaned = re.sub(r"[^\w-]", "", raw)
+        if cleaned != raw:
+            dropped = [f"U+{ord(c):04X}" for c in raw if not re.fullmatch(r"[\w-]", c)]
+            LOGGER.warning(
+                "%s carried %d non-token char(s) %s; sanitized (len %d -> %d)",
+                _cred,
+                len(raw) - len(cleaned),
+                dropped,
+                len(raw),
+                len(cleaned),
+            )
+        env[_cred] = cleaned
 
     if env.get("WANDB_API_KEY"):
         env.setdefault("WANDB_MODE", "online")

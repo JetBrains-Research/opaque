@@ -7,9 +7,15 @@ uses) to produce the Kubernetes orchestrator + Docker settings for a GPU
 training pod, so opaque runs on the non-TRACE GKE stack exactly the way NES
 training does.
 
-Secrets are injected into the pod as env vars via ZenML secret references
-(``{{ai-for-code.WANDB_API_KEY}}``) — reusing the same shared ``ai-for-code``
-ZenML secret NES already relies on, so no opaque-specific secret is required.
+Secrets are injected into the pod as env vars via native Kubernetes
+``secretKeyRef`` entries; the kubelet resolves them at pod start, so a
+credential never lands in the pod spec or the ZenML run metadata. ``HF_TOKEN``
+comes from the shared ``ai-for-code`` Secret (key ``hf_token``, reused from NES).
+The W&B key comes from a dedicated ``opaque-wandb`` Secret because the shared
+ai-for-code W&B key is not a ``federated-compute`` team member and so cannot
+write to the ``opaque-lora-xs`` project; ``opaque-wandb`` holds a team-member
+key. (A ZenML ``{{secret.key}}`` reference is *not* used because ZenML 0.94 does
+not substitute such references placed in raw Kubernetes pod env.)
 
 Only imported on the submitting side (laptop / CI), where ``jb-mlops`` is
 installed from the ``space-tools`` index; the training image does not need it.
@@ -27,9 +33,12 @@ from docker_images import DockerImage, get_image_url
 
 __all__ = ["training_settings", "wandb_envs", "hf_envs", "secret_env"]
 
-# Shared ZenML secret holding WANDB_API_KEY + HF_TOKEN (created for NES; reused
-# verbatim). Override with OPAQUE_ZENML_SECRET if you keep creds elsewhere.
+# Native k8s Secrets (in the orchestrator namespace) backing the pod creds via
+# ``secretKeyRef``. ``ai-for-code`` (shared, from NES) provides HF_TOKEN;
+# ``opaque-wandb`` (dedicated) provides a WANDB_API_KEY that belongs to a
+# ``federated-compute`` team member. Both names are env-overridable.
 DEFAULT_ZENML_SECRET = os.environ.get("OPAQUE_ZENML_SECRET", "ai-for-code")
+DEFAULT_WANDB_SECRET = os.environ.get("OPAQUE_WANDB_SECRET", "opaque-wandb")
 DEFAULT_WANDB_BASE_URL = "https://jetbrains.wandb.io"
 DEFAULT_WANDB_ENTITY = "federated-compute"
 DEFAULT_WANDB_PROJECT = "opaque-lora-xs"
@@ -44,22 +53,36 @@ DEFAULT_TMP_GB = float(os.environ.get("OPAQUE_TMP_GB", "100"))
 SCRATCH_DIR = os.environ.get("OPAQUE_SCRATCH_DIR", "/scratch")
 
 
-def secret_env(env_name: str, *, field: str | None = None, secret: str = DEFAULT_ZENML_SECRET) -> dict[str, Any]:
-    """A pod env var sourced from a ZenML secret (``{{secret.field}}``)."""
-    return {"name": env_name, "value": "{{" + f"{secret}.{field or env_name}" + "}}"}
+def secret_env(env_name: str, *, key: str | None = None, secret: str = DEFAULT_ZENML_SECRET) -> dict[str, Any]:
+    """A pod env var sourced from the native k8s ``Secret`` via ``secretKeyRef``.
+
+    ``key`` is the key *inside* the Secret and defaults to ``env_name``. The
+    cluster Secret stores ``WANDB_API_KEY`` under a matching key but the HF token
+    under lowercase ``hf_token`` (see ``hf_envs``). The kubelet injects the value
+    at pod start, so it is never written into the pod spec or run metadata.
+    """
+    return {"name": env_name, "valueFrom": {"secretKeyRef": {"name": secret, "key": key or env_name}}}
 
 
 def wandb_envs() -> list[dict[str, Any]]:
-    return [
+    envs: list[dict[str, Any]] = [
         {"name": "WANDB_BASE_URL", "value": os.environ.get("WANDB_BASE_URL", DEFAULT_WANDB_BASE_URL)},
         {"name": "WANDB_ENTITY", "value": os.environ.get("WANDB_ENTITY", DEFAULT_WANDB_ENTITY)},
         {"name": "WANDB_PROJECT", "value": os.environ.get("WANDB_PROJECT", DEFAULT_WANDB_PROJECT)},
-        secret_env("WANDB_API_KEY"),
+        secret_env("WANDB_API_KEY", secret=DEFAULT_WANDB_SECRET),
     ]
+    # Propagate an explicit WANDB_MODE (e.g. ``offline``) from the submitting env
+    # so a smoke can validate the whole pipeline without W&B write access to the
+    # target project. Left unset, the trainer picks online when a key is present.
+    if mode := os.environ.get("WANDB_MODE"):
+        envs.append({"name": "WANDB_MODE", "value": mode})
+    return envs
 
 
 def hf_envs() -> list[dict[str, Any]]:
-    return [secret_env("HF_TOKEN")]
+    # The shared ``ai-for-code`` k8s Secret stores the HF token under the
+    # lowercase key ``hf_token`` (the WANDB key matches its env name).
+    return [secret_env("HF_TOKEN", key="hf_token")]
 
 
 def training_settings(
