@@ -43,8 +43,8 @@ COPY . /opt/opaque
 # runtime deps and a ZenML client matching the server (0.94.6). We install the
 # training deps explicitly rather than via `--group examples` to avoid the
 # internal-only cadence/keyring/jupyter deps that aren't needed in-cluster.
-# (--eval-humaneval/--eval-mbpp additionally need `evalplus`; the renyi arms
-# don't use them, so it's omitted to keep the image small.)
+# `evalplus` (below) is included so --eval-humaneval/--eval-mbpp downstream
+# pass@1 evaluation works in-cluster (the utility-comparison arms need it).
 #
 # `zenml[connectors-gcp]` (not the full `zenml integration install gcp`) pulls the
 # minimal prerequisites for ZenML's GCP service connector — google-cloud-container
@@ -68,6 +68,7 @@ RUN uv sync --all-packages --extra all \
         ./vendor/lora-privacy \
         "zenml[connectors-gcp]==0.94.6" \
         "gcsfs" \
+        "evalplus==0.3.1" \
     && chown -R ${NONROOT_UID}:${NONROOT_GID} /opt/opaque /app /home/nonroot
 
 # Make the workspace venv the default interpreter so ZenML (and the trainer
