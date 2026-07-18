@@ -593,6 +593,16 @@ def parse_args():
         ),
     )
     lora_group.add_argument(
+        "--lora-xs-rank-pattern-b64",
+        type=str,
+        default=None,
+        help=(
+            "LoRA-XS: base64-encoded JSON {module: r_l} rank pattern, passed "
+            "inline (avoids needing a file in the image). Used for probe-based "
+            "allocation: probe dumps spectra -> compute allocation -> pass here."
+        ),
+    )
+    lora_group.add_argument(
         "--lora-xs-rank-alloc",
         choices=["none", "w0"],
         default="none",
@@ -1219,7 +1229,19 @@ def main():
                 "--lora-xs-manifold-init-sigma-w requires --lora-xs-manifold-mode."
             )
         rank_pattern: dict = {}
-        if getattr(args, "lora_xs_rank_pattern_json", None):
+        if getattr(args, "lora_xs_rank_pattern_b64", None):
+            import base64 as _b64
+            import json as _json
+
+            rank_pattern = {
+                str(k): int(v)
+                for k, v in _json.loads(_b64.b64decode(args.lora_xs_rank_pattern_b64)).items()
+            }
+            print(
+                f"LoRA-XS per-layer rank allocation (inline b64): {len(rank_pattern)} "
+                f"overrides; ranks {sorted(set(rank_pattern.values()))}"
+            )
+        elif getattr(args, "lora_xs_rank_pattern_json", None):
             import json as _json
 
             with open(args.lora_xs_rank_pattern_json) as _f:
@@ -1296,6 +1318,7 @@ def main():
     # uniform r would invalidate the whole variable-rank experiment).
     if args.lora_method == "lora-xs" and (
         getattr(args, "lora_xs_rank_pattern_json", None)
+        or getattr(args, "lora_xs_rank_pattern_b64", None)
         or getattr(args, "lora_xs_rank_alloc", "none") != "none"
     ):
         _seen = {}
@@ -2631,6 +2654,14 @@ def main():
         with open(args.dump_core_spectra, "w") as _f:
             _json.dump(_spectra, _f)
         print(f"Dumped {len(_spectra)} per-layer core spectra to {args.dump_core_spectra}")
+        # Also stash on the W&B run summary so a probe run's spectra can be read
+        # back remotely (pods are ephemeral) to compute the allocation.
+        if use_wandb:
+            try:
+                wandb.run.summary["probe/core_spectra_json"] = _json.dumps(_spectra)
+                print("Logged probe/core_spectra_json to W&B summary")
+            except Exception as _e:
+                print(f"W&B spectra log failed: {_e}")
 
     # Save model and run downstream evaluation
     if args.output_dir and is_main_process:
