@@ -16,14 +16,13 @@ stable-rank effective rank of the core):
 | | eval/loss_min | renyi_gap (a0.5 − a∞) |
 |---|---|---|
 | **DP (ε=3)** | 0.3469 ± 0.0004 (n=3) | **4.72 ± 0.002 (n=3)** |
-| **non-DP** | 0.3444 ± 0.000 (n=2*) | **1.24 ± 0.010 (n=2*)** |
+| **non-DP** | 0.3444 ± 0.0001 (n=3) | **1.24 ± 0.01 (n=3)** |
 
 **DP inflates the low-α effective rank ~3.8× vs non-DP**, with very tight CIs
-(±0.002 / ±0.010). This is the multi-seed confirmation of the earlier single-seed
-result (2.9×) and the synthetic prediction (~2.7×). The core thesis — *DP noise
-inflates the low-α (diversity) effective rank while the stable rank stays robust*
-— holds robustly on the real 7B model. (*non-DP n=2; the 3rd seed was still
-running at write time.)
+(±0.002 / ±0.01), n=3 both arms. This is the multi-seed confirmation of the
+earlier single-seed result (2.9×) and the synthetic prediction (~2.7×). The core
+thesis — *DP noise inflates the low-α (diversity) effective rank while the stable
+rank stays robust* — holds robustly on the real 7B model.
 
 The DP privacy cost on the task is small and clean: eval/loss 0.3469 (DP) vs
 0.3444 (non-DP), ≈ +0.0025.
@@ -41,8 +40,8 @@ Non-DP:
 | 2 | 0.3440 | 0.3435 | 0.3436 |
 | ∞ | 0.3436 | 0.3436 | 0.3436 |
 
-DP ε=3 (m=2): α=0.5 → 0.3459, α=1 → 0.3458, α=2 → 0.3464*, α=∞ → 0.3459
-(*a2 was still running; preliminary).
+DP ε=3 (m=2): α=0.5 → 0.3459, α=1 → 0.3458, α=2 → 0.3458, α=∞ → 0.3459
+(all final; flat within noise, range 0.0001).
 
 **Reading it honestly:**
 - **Non-DP: completely flat** (0.3435–0.3440, range 0.0005 = within noise). This
@@ -94,8 +93,9 @@ high α filters noise, even though it doesn't translate into an eval/loss gain.
 - **eval/loss only** — rerun the best arms with `--eval-humaneval --eval-mbpp`.
 - **Per-layer allocation arms** (the actual method vs AdaLoRA-style naive score)
   still to run — image `f677706` is built; see `renyi-zenml-campaign-plan.md`.
-- 2 runs (`renyi-ad-dp3-a2-m2-s42`, `renyi-nodp-s44`) were finishing at write
-  time; they only firm up the a2 DP cell and non-DP seed n → 3.
+- All 22 runs finished (the last two, `renyi-ad-dp3-a2-m2-s42` → 0.3458 and
+  `renyi-nodp-s44` → 0.3443/gap 1.248, are folded in above; they left the
+  conclusions unchanged — DP α-sweep flatter, non-DP seed n=3).
 
 *Bottom line: the mechanism is confirmed and tight; the utility payoff is still
 open and now has a precise, falsifiable next experiment (per-layer allocation +
