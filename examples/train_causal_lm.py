@@ -593,6 +593,29 @@ def parse_args():
         ),
     )
     lora_group.add_argument(
+        "--lora-xs-rank-alloc",
+        choices=["none", "w0"],
+        default="none",
+        help=(
+            "LoRA-XS: in-process per-layer rank allocation. 'w0' scores each "
+            "target W0 by its Rényi effective rank (--lora-xs-alloc-alpha) and "
+            "allocates the fixed budget n_layers*r^2 proportionally (data-free, "
+            "epsilon-free). 'none' = uniform --lora-r."
+        ),
+    )
+    lora_group.add_argument(
+        "--lora-xs-alloc-alpha",
+        type=str,
+        default="inf",
+        help="Rényi order for --lora-xs-rank-alloc scoring ('inf'=stable rank; 1=Shannon).",
+    )
+    lora_group.add_argument(
+        "--lora-xs-alloc-probe-r",
+        type=int,
+        default=32,
+        help="Top singular values per layer used to score W0 for allocation.",
+    )
+    lora_group.add_argument(
         "--dump-core-spectra",
         type=str,
         default=None,
@@ -1206,6 +1229,40 @@ def main():
                 f"overrides loaded from {args.lora_xs_rank_pattern_json}; "
                 f"ranks {sorted(set(rank_pattern.values()))}"
             )
+        elif getattr(args, "lora_xs_rank_alloc", "none") == "w0":
+            # In-process, data-free per-layer allocation: score each target W0 by
+            # its Rényi effective rank (alpha) and allocate the fixed budget
+            # sum_l r_l^2 = n_layers * lora_r^2 proportionally. Depends only on the
+            # frozen base weights (no data) -> trivially epsilon-free. See
+            # docs/renyi-zenml-campaign-plan.md.
+            import re as _re
+
+            from lora_privacy.peft_lora_xs.allocation import allocate_from_spectra
+
+            _mods = args.lora_modules if isinstance(args.lora_modules, list) else [args.lora_modules]
+            _probe_r = int(getattr(args, "lora_xs_alloc_probe_r", 32))
+            _spectra: dict[str, list[float]] = {}
+            for _name, _m in model.named_modules():
+                _w = getattr(_m, "weight", None)
+                if _w is None or _w.ndim != 2:
+                    continue
+                if not any(_name.endswith(s) or _re.search(rf"(^|\.){s}$", _name) for s in _mods):
+                    continue
+                _q = min(_probe_r + 8, _w.shape[0], _w.shape[1])
+                _sv = torch.linalg.svdvals(_w.detach().float())[:_q] if _q >= min(_w.shape) \
+                    else torch.svd_lowrank(_w.detach().float(), q=_q)[1]
+                _spectra[_name] = _sv.cpu().tolist()
+            _alpha = float(getattr(args, "lora_xs_alloc_alpha", "inf")) if str(
+                getattr(args, "lora_xs_alloc_alpha", "inf")).lower() not in ("inf", "infinity") else float("inf")
+            rank_pattern = allocate_from_spectra(
+                _spectra, mode="renyi", alpha=_alpha, uniform_r=args.lora_r, r_min=2,
+            )
+            _ach = sum(v * v for v in rank_pattern.values())
+            print(
+                f"LoRA-XS W0 allocation (alpha={_alpha}): {len(rank_pattern)} layers, "
+                f"ranks {sorted(set(rank_pattern.values()))}, budget "
+                f"{_ach}/{len(rank_pattern) * args.lora_r ** 2}"
+            )
         lora_config = LoraXSConfig(
             r=args.lora_r,
             rank_pattern=rank_pattern,
@@ -1237,7 +1294,10 @@ def main():
 
     # Verify per-layer rank allocation actually applied (silent fallback to
     # uniform r would invalidate the whole variable-rank experiment).
-    if args.lora_method == "lora-xs" and getattr(args, "lora_xs_rank_pattern_json", None):
+    if args.lora_method == "lora-xs" and (
+        getattr(args, "lora_xs_rank_pattern_json", None)
+        or getattr(args, "lora_xs_rank_alloc", "none") != "none"
+    ):
         _seen = {}
         for _n, _m in model.named_modules():
             _R = getattr(_m, "lora_xs_R", None)
