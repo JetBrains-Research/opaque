@@ -3641,9 +3641,12 @@ the workload coefficients):</p>
 <a id="__codelineno-19-20" name="__codelineno-19-20" href="#__codelineno-19-20"></a>
 <a id="__codelineno-19-21" name="__codelineno-19-21" href="#__codelineno-19-21"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<p>The K-step ε is bounded above by <code>proc.epsilon_at(delta)</code> and is monotone
-non-decreasing in K — both follow from the post-processing inequality on the
-deployed N-step mechanism. <code>K &gt; proc.n_steps</code> raises <code>ValueError</code>.</p>
+<p>For analytic DP-FTRL accountants, the K-step ε is bounded above by
+<code>proc.epsilon_at(delta)</code> and is monotone non-decreasing in K — both follow
+from the post-processing inequality on the deployed N-step mechanism.
+Monte Carlo b-min-sep and Balls-in-Bins results remain point estimates pending
+the RC-4 confidence correction, so this guarantee is not asserted for their
+reported ε values. <code>K &gt; proc.n_steps</code> raises <code>ValueError</code>.</p>
 <h3 id="serialization">Serialization<a class="headerlink" href="#serialization" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">Accountant</span>
 <a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">from_state_dict</span><span class="p">,</span> <span class="n">state_dict</span>
@@ -3691,17 +3694,22 @@ discretization:</p>
 <td>Log tail mass cutoff.</td>
 </tr>
 <tr>
-<td><code>pessimistic_estimate</code></td>
-<td>True</td>
-<td>Round upward for safe guarantees.</td>
-</tr>
-<tr>
 <td><code>max_grid_size</code></td>
 <td>10,000,000</td>
 <td>Maximum grid bins before coarsening.</td>
 </tr>
 </tbody>
 </table>
+<p>Discretization is always conservative: exact privacy-loss atoms, PMF
+coarsening, and histogram buckets are rounded upward to the grid. There is no
+option to request an optimistic or lower-bound accounting result.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>The b-min-sep and Balls-in-Bins Monte Carlo PLDs are empirical point
+estimates. Conservative grid bucketing does not provide the RC-4
+confidence correction; do not treat their reported ε values as upper
+confidence bounds.</p>
+</div>
 <h2 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
 <p>See <a href="../../reference/accounting/">Accounting API Reference</a> for complete function
 signatures and return types.</p>

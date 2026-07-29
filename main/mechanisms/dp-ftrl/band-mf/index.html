@@ -3037,6 +3037,12 @@ for matrix mechanisms): pass the BandMF strategy’s first-column coefficients,
 <code>n_steps</code>, and <code>p0</code> to <code>opaque.accounting.b_min_sep(...)</code>.
 Training scripts can select it with <code>--band-mf-sampling b_min_sep</code> (see
 <code>examples/train_dp_ftrl.py</code>).</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Monte Carlo PLDs are empirical point estimates. Their conservative grid
+bucketing does not replace the RC-4 confidence correction, so reported ε
+values are not upper confidence bounds.</p>
+</div>
 <table>
 <thead>
 <tr>
@@ -3073,7 +3079,7 @@ from the noise strategy. For end-to-end usage, <code>mf_gaussian_noise()</code> 
 </div>
 <h2 id="assumptions-and-limitations">Assumptions and limitations<a class="headerlink" href="#assumptions-and-limitations" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>DP correctness</strong> is for the <strong>implemented</strong> banded Toeplitz matrix <span class="arithmatex">\(C\)</span> and the sampler you pair with accounting. If those match, the privacy guarantee stands even when the workload model is approximate.</li>
+<li><strong>DP correctness</strong> is for the <strong>implemented</strong> banded Toeplitz matrix <span class="arithmatex">\(C\)</span> and the sampler you pair with accounting. For Monte Carlo amplifications, RC-4 confidence correction is still required before a reported ε is an upper confidence bound.</li>
 <li><strong><code>lr_schedule</code> (optional)</strong>: workload coefficients are folded into a <strong>lower-triangular Toeplitz</strong> workload inside optimization. That matches the usual <strong>constant</strong> learning-rate momentum-SGD story. For a <strong>varying</strong> schedule <span class="arithmatex">\(\eta_t\)</span>, the implied Toeplitz workload can differ from the full map <span class="arithmatex">\(W_{t,s}=\eta_t\beta^{t-s}\)</span>: privacy is still valid for the constructed <span class="arithmatex">\(C\)</span>; <strong>utility</strong> alignment is approximate unless <span class="arithmatex">\(\eta\)</span> is constant. See the <a href="../../../user-guide/dp-ftrl/">DP-FTRL user guide</a>.</li>
 <li><strong>Momentum <span class="arithmatex">\(\beta=0\)</span></strong>: Opaque warns because the workload becomes essentially identity (little benefit over independent noise).</li>
 </ul>

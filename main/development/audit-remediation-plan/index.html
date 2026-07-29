@@ -2564,6 +2564,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="1.1 One-line / one-function fixes that change ε today">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#accounting-remediation-status-phase-0" class="md-nav__link">
+    <span class="md-ellipsis">
+      Accounting remediation status (Phase 0)
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -3072,9 +3087,9 @@
 <td>DP-FTRL per-step accounting silently degrades to K-fold single-step composition</td>
 </tr>
 <tr>
-<td><code>eps_delta_pld</code> atom → <code>ceil</code> (pessimistic)</td>
+<td>✅ <code>eps_delta_pld</code> atom → <code>ceil</code> (safe-only)</td>
 <td><code>src/mechanisms/eps_delta.rs:43</code></td>
-<td>Declared ε understated, error × composition count</td>
+<td>Declared ε cannot round below the requested value</td>
 </tr>
 <tr>
 <td>✅ <code>calibrate()</code> return the <em>proven-safe</em> bracket endpoint; one-sided acceptance; relative tolerance; raise on non-convergence</td>
@@ -3112,11 +3127,6 @@
 <td><strong>Infinite hang</strong> for m&gt;2000 with a strong attack</td>
 </tr>
 <tr>
-<td><code>pessimistic_estimate</code> passthrough in <code>eps_delta_pld</code>/<code>identity_pld</code></td>
-<td><code>eps_delta.rs:46</code>, <code>identity.rs:22</code></td>
-<td><code>PessimisticMismatch</code> on any non-default config</td>
-</tr>
-<tr>
 <td>Structurally fixed collective sequence in <code>sync(aux)</code></td>
 <td><code>engine/clipping/_distributed.py:59-82</code></td>
 <td><strong>One empty Poisson batch permanently desynchronizes the process group</strong> (critical)</td>
@@ -3124,14 +3134,22 @@
 </tbody>
 </table>
 <p><strong>Effort: 3–4 engineer-days</strong>, plus regression tests (another 2). These are unrelated to each other — parallelize across whoever is available.</p>
+<h4 id="accounting-remediation-status-phase-0">Accounting remediation status (Phase 0)<a class="headerlink" href="#accounting-remediation-status-phase-0" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Safe-only PLDs:</strong> <code>DiscretizationConfig</code>, PMFs, and all Python process APIs no longer expose estimate mode. Exact atoms, coarsening, truncation, and Monte Carlo histograms take the upper-bound path, and unsupported legacy keywords fail explicitly.</li>
+<li><strong>Exact mechanisms:</strong> <code>eps_delta_pld</code> uses ceiling placement, so a finite exact atom never falls below its declared ε; identity uses the same single safe policy.</li>
+<li><strong>PyO3 error conversion:</strong> every binding uses one exhaustive <code>From&lt;PldError&gt; for PyErr</code> conversion. Invalid input and incompatible operands raise <code>ValueError</code>; numerical, calibration-execution, and invalid-state failures raise <code>RuntimeError</code> with native diagnostic context.</li>
+<li><strong>Precision evidence:</strong> the current engine precision surface remains loss-scaler-only, with existing loss-scaler coverage; no precision dispatcher, fallback, or compatibility shim was added for this accounting remediation.</li>
+<li><strong>MC confidence remains open:</strong> RC-4/A3 is not resolved. Conservative histogram bucketing does not turn b-min-sep or Balls-in-Bins point estimates into confidence bounds.</li>
+</ul>
 <h3 id="12-fail-closed-conversions-cheap-prevents-the-silent-degradation-class">1.2 Fail-closed conversions (cheap, prevents the silent-degradation class)<a class="headerlink" href="#12-fail-closed-conversions-cheap-prevents-the-silent-degradation-class" title="Permanent link">&para;</a></h3>
-<p>Convert "unknown → skip" into "unknown → raise" at four dispatch sites. This is the same 5-line change repeated, and it converts eight <em>silent</em> findings into loud ones even before the real fixes land:</p>
+<p>Convert "unknown → skip" into "unknown → raise" at three remaining dispatch sites. This is the same 5-line change repeated, and it converts eight <em>silent</em> findings into loud ones even before the real fixes land:</p>
 <ul>
 <li><code>base/serialization/_dispatch.py:54-60</code> — MRO fallback + raise on unregistered non-container</li>
-<li><code>engine/precision/_loss_scaler.py:187-203</code> — raise on wrapper types / zero tensor leaves</li>
 <li><code>engine/distributed/gradients.py:124-174</code> — <code>_reduce</code>/<code>_clone</code> raise on non-Tensor non-None leaf</li>
 <li><code>engine/distributed/_state.py:266-276</code> — MRO walk against <code>_SYNC_REGISTRY</code>, raise on miss</li>
 </ul>
+<p><strong>Not applicable in this checkout:</strong> the audited precision-dispatch action references a removed/nonexistent <code>_dispatch</code> path. <code>opaque.api.engine.precision.__init__</code> exports only the current loss-scaling surface, and <code>_loss_scaler.py</code> has no silent fallback dispatch path; no compatibility shim or new engine code is needed.</p>
 <p><strong>Effort: 1 day.</strong> See RC-7 for the full fix.</p>
 <h3 id="13-claims-to-withdraw-immediately-docs-only-1-day-total">1.3 Claims to withdraw immediately (docs-only, ~1 day total)<a class="headerlink" href="#13-claims-to-withdraw-immediately-docs-only-1-day-total" title="Permanent link">&para;</a></h3>
 <p>Every one of these is a documented guarantee that the code does not provide. Withdraw now; restore only when the corresponding fix lands.</p>
@@ -3217,7 +3235,7 @@
 <h3 id="rc-15-packaging-supply-chain">RC-15 — Packaging / supply chain<a class="headerlink" href="#rc-15-packaging-supply-chain" title="Permanent link">&para;</a></h3>
 <p>PyPI name collision + dependency confusion; unpinned metapackage (<code>set_build_versions.sh:144-153</code> is a no-op sed); non-manylinux wheels + no sdist; <code>__pycache__</code> in the wheel; missing LICENSE/NOTICE in sub-wheels; unattributed Unsloth <code>_utils.py</code>; <code>opaque-transformers</code> pyproject with no license/classifiers and a contradictory <code>requires-python</code>; Dependabot blind to 10 manifests + Cargo.lock + uv.lock; dead <code>unsafe_code</code> workspace lint.</p>
 <h3 id="rc-16-accounting-core-api-returns-unsafe-values">RC-16 — Accounting core API returns unsafe values<a class="headerlink" href="#rc-16-accounting-core-api-returns-unsafe-values" title="Permanent link">&para;</a></h3>
-<p><code>calibrate()</code> (two-sided tolerance, direction constant, non-convergence returns), <code>budget_exceeded</code>, <code>CachedProcess</code>, <code>set_discretization</code>, <code>_process_codec</code> recursion (RecursionError at ~2500 steps — <strong>checkpointing an accountant fails mid-run</strong>), non-dataclass Budget serialization, <code>Pld.self_compose(0)</code> panic through PyO3, u32 count truncation, <code>pessimistic_estimate=false</code> no-op, <code>poisson(1.0)</code>/<code>parallel_poisson</code> validation. One package, one batch.</p>
+<p><code>calibrate()</code> (two-sided tolerance, direction constant, non-convergence returns), <code>budget_exceeded</code>, <code>CachedProcess</code>, <code>set_discretization</code>, <code>_process_codec</code> recursion (RecursionError at ~2500 steps — <strong>checkpointing an accountant fails mid-run</strong>), non-dataclass Budget serialization, <code>Pld.self_compose(0)</code> panic through PyO3, u32 count truncation, and <code>poisson(1.0)</code>/<code>parallel_poisson</code> validation. The optimistic estimate mode was removed as a fail-closed API change.</p>
 <hr />
 <h2 id="3-work-batches-grouped-by-filesubsystem-so-related-fixes-land-together">3. Work batches — grouped by file/subsystem so related fixes land together<a class="headerlink" href="#3-work-batches-grouped-by-filesubsystem-so-related-fixes-land-together" title="Permanent link">&para;</a></h2>
 <p>Effort is engineer-days for implementation <strong>plus</strong> the regression tests named in the findings.</p>
@@ -3228,7 +3246,7 @@ Covers RC-16 + RC-6's generation counter. Includes: iterative serialize/load/<co
 <em>Blocks: everything.</em></p>
 <p><strong>A2. <code>opaque-accounting</code> Rust mechanisms + numerics</strong> — 4d
 <code>mechanisms/eps_delta.rs</code>, <code>mechanisms/identity.rs</code>, <code>discretization/connect_the_dots.rs</code>, <code>numerics/fft.rs</code>, <code>pld/pmf/dense.rs</code>
-Ceil-rounding, pessimistic passthrough, <code>PyResult</code> on <code>self_compose</code>, u32 guard, and either implement or <strong>delete</strong> the optimistic estimate (currently a no-op documented as producing a lower bound).</p>
+Ceiling rounding, unconditional conservative PMF construction, <code>PyResult</code> on <code>self_compose</code>, and the u32 guard. The optimistic estimate mode was deleted rather than retained as a compatibility no-op.</p>
 <p><strong>A3. Monte-Carlo upper-confidence-bound PLDs</strong> — 10–12d ⚠ hardest single item
 <code>amplification/balls_in_bins/monte_carlo.rs</code>, <code>identity.rs</code>, <code>mc.rs</code>, <code>b_min_sep/registry.rs</code>, Python wrappers, <code>docs/reference/accounting.md</code>
 RC-4. Needs statistical design review, not just coding. Deliverables: UCB PMF construction, confidence level plumbed through <code>DiscretizationConfig</code>, closed-form/quadrature cross-check for BnB-Identity at small b,E at the <strong>default</strong> 100k budget, and a test asserting ε <em>increases</em> as <code>num_mc_samples</code> decreases.

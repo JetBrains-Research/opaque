@@ -3461,17 +3461,30 @@ when computing privacy metrics via <code>pld()</code>, not stored in process str
 <td>Tails below exp(bound) are truncated</td>
 </tr>
 <tr>
-<td><code>pessimistic_estimate</code></td>
-<td><code>True</code></td>
-<td>Round upward for safe upper bounds</td>
-</tr>
-<tr>
 <td><code>max_grid_size</code></td>
 <td><code>10_000_000</code></td>
 <td>Coarsen grid if it exceeds this many bins</td>
 </tr>
+<tr>
+<td><code>tail_mass_truncation</code></td>
+<td><code>1e-15</code></td>
+<td>Tail-mass budget during composition</td>
+</tr>
+<tr>
+<td><code>num_mc_samples</code></td>
+<td><code>100_000</code></td>
+<td>Samples for Monte Carlo PLD builders</td>
+</tr>
+<tr>
+<td><code>seed</code></td>
+<td><code>42</code></td>
+<td>RNG seed for Monte Carlo PLD builders</td>
+</tr>
 </tbody>
 </table>
+<p>Discretization is unconditionally conservative: exact atoms, PMF coarsening,
+and histogram buckets are rounded upward. The API has no optimistic or
+lower-bound mode.</p>
 <p><strong>Query-time configuration (recommended):</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Create processes without config</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
@@ -3678,6 +3691,12 @@ Uses Monte Carlo PLD accounting. <code>inner</code> must be <code>BandMf</code>.
 <code>strategy_coefficients</code> is the first column of the same BandMF strategy matrix
 used for noise. <code>p0</code> is the per-example participation rate per iteration
 <code>E[|B|]/|D|</code> (match the training sampler’s target batch size).</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>b-min-sep and Balls-in-Bins Monte Carlo PLDs are point estimates without
+the RC-4 confidence correction. Conservative discretization does not make
+their reported ε values upper confidence bounds.</p>
+</div>
 <h3 id="balls_in_binsinner-num_bins-num_epochs-lr_weightsnone-dpprocess"><code>balls_in_bins(inner, num_bins, num_epochs, *, lr_weights=None) -&gt; DpProcess</code><a class="headerlink" href="#balls_in_binsinner-num_bins-num_epochs-lr_weightsnone-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Balls-in-Bins (random-partition) amplification. Returns the <strong>total</strong> privacy
 cost across all epochs — do NOT compose further with <code>* num_epochs</code>.</p>
@@ -3707,9 +3726,11 @@ BLT), uses Monte Carlo sampling of the dominating pair.</p>
 <p>Adapter that wraps a whole-process DP-FTRL accountant so it composes
 step-by-step under <code>Accountant</code>'s <code>acct |= step</code> idiom (the DP-SGD path
 shape). <code>per_step(proc) * K</code> materialises the strategy-aware K-prefix
-PLD via <code>proc._pld_at_horizon(K)</code> — bounded above by
-<code>proc.epsilon_at(δ)</code> and monotone non-decreasing in K (post-processing
-on the deployed N-step mechanism). <code>K &gt; proc.n_steps</code> raises;
+PLD via <code>proc._pld_at_horizon(K)</code>. For analytic PLDs, this is bounded above
+by <code>proc.epsilon_at(δ)</code> and monotone non-decreasing in K by post-processing
+on the deployed N-step mechanism. Monte Carlo b-min-sep and Balls-in-Bins
+results remain point estimates pending the RC-4 confidence correction, so this
+guarantee is not asserted for their reported ε values. <code>K &gt; proc.n_steps</code> raises;
 <code>PerStep</code> only composes with other <code>PerStep</code> instances wrapping the
 <em>same</em> underlying process.</p>
 <ul>
@@ -3721,7 +3742,7 @@ on the deployed N-step mechanism). <code>K &gt; proc.n_steps</code> raises;
 <a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">15_624</span><span class="p">,</span>
 <a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="p">)</span>
 <a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">per_step</span><span class="p">(</span><span class="n">proc</span><span class="p">)</span>
-<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="n">eps_K</span> <span class="o">=</span> <span class="p">(</span><span class="n">step</span> <span class="o">*</span> <span class="mi">1_000</span><span class="p">)</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>   <span class="c1"># K-step ε ≤ proc.epsilon_at(δ)</span>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="n">eps_K</span> <span class="o">=</span> <span class="p">(</span><span class="n">step</span> <span class="o">*</span> <span class="mi">1_000</span><span class="p">)</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>   <span class="c1"># analytic PLD: K-step ε ≤ proc.epsilon_at(δ)</span>
 </code></pre></div>
 <hr />
 <h2 id="composition-functions">Composition Functions<a class="headerlink" href="#composition-functions" title="Permanent link">&para;</a></h2>
