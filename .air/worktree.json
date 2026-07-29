@@ -8,10 +8,7 @@
     ],
     "setup": {
         "macos": [
-            "if ! command -v cc >/dev/null 2>&1; then echo 'A C compiler is required to build opaque-accounting. Install Xcode Command Line Tools.' >&2; exit 1; fi",
-            "if ! command -v uv >/dev/null 2>&1; then curl -LsSf https://astral.sh/uv/install.sh | sh; fi",
-            "if ! command -v cargo >/dev/null 2>&1; then curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; fi",
-            "export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv sync --group dev --all-packages --extra all"
+            "uv sync --group dev --all-packages --extra all"
         ]
     },
     "cleanup": {
