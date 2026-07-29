@@ -1,0 +1,19 @@
+{
+    "environment": [
+        {
+            "type": "env",
+            "key": "PYTHONUNBUFFERED",
+            "value": "1"
+        }
+    ],
+    "setup": {
+        "macos": [
+            "if ! command -v uv >/dev/null 2>&1; then curl -LsSf https://astral.sh/uv/install.sh | sh; fi",
+            "if ! command -v cargo >/dev/null 2>&1; then curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; fi",
+            "export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv sync --group dev --all-packages --extra all"
+        ]
+    },
+    "cleanup": {
+        "macos": []
+    }
+}
