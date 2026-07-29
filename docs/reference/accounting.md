@@ -593,7 +593,7 @@ Binary search for finding parameter values that achieve a target privacy budget.
 ### `calibrate(budget, process, param_min, param_max, tolerance=1e-6, max_iterations=100, prefix=None) -> CalibrateResult`
 
 Binary search for a parameter value such that `process(param)` produces a
-`DpProcess` achieving the given privacy budget.
+`DpProcess` achieving the given privacy budget from the privacy-safe side.
 
 | Parameter        | Default | Description                                              |
 |------------------|---------|----------------------------------------------------------|
@@ -601,14 +601,16 @@ Binary search for a parameter value such that `process(param)` produces a
 | `process`        |         | Callable: `float -> DpProcess`                           |
 | `param_min`      |         | Lower bound for search                                   |
 | `param_max`      |         | Upper bound for search                                   |
-| `tolerance`      | `1e-6`  | Convergence threshold on `abs(achieved - target)`        |
-| `max_iterations` | `100`   | Maximum binary search iterations                         |
+| `tolerance`      | `1e-6`  | Positive, finite relative convergence tolerance          |
+| `max_iterations` | `100`   | Positive maximum number of binary search iterations      |
 | `prefix`         | `None`  | Already-executed `DpProcess` composed into every probe   |
 
 The `process` callable takes a single float parameter and returns a `DpProcess`.
-The default parameter range is tuned for noise_multiplier search, but
-`calibrate()` is general: it can calibrate any float parameter in a process
-against any budget.
+Its metric must be monotone in the direction declared by the budget. The
+current direction contract supports parameters such as `noise_multiplier`,
+whose increase improves privacy: epsilon, delta, and advantage decrease, while
+beta and risk increase. `param_min` must be the unsafe endpoint and `param_max`
+the privacy-safe endpoint under that contract.
 
 ```python
 import opaque.accounting as acc
@@ -624,6 +626,15 @@ result = cal.calibrate(
 print(f"noise_multiplier = {result.param:.4f}, epsilon = {result.achieved:.6f}")
 ```
 
+Every successful result is privacy-safe and relatively close to the target:
+decreasing privacy-loss budgets return `achieved <= target`, while increasing
+privacy-gain budgets return `achieved >= target`. In both cases,
+`math.isclose(achieved, target, rel_tol=tolerance, abs_tol=0.0)` is true.
+`tolerance` must be finite and positive, and `max_iterations` must be positive;
+invalid values raise `ValueError` before the process is evaluated. If no safe
+endpoint reaches the requested relative tolerance, `calibrate()` raises
+`RuntimeError` instead of returning an under-noised parameter.
+
 Calibrating a second stage against the remaining budget (see
 [Seeding with a prior process](#seeding-with-a-prior-process)): pass the
 earlier run's executed process as `prefix`. Each probe evaluates
@@ -637,17 +648,6 @@ result = cal.calibrate(
     param_min=0.5,
     param_max=5.0,
     prefix=sft.process,  # from the SFT run's accountant.json
-)
-```
-
-Calibrating a different parameter (e.g., sample rate):
-
-```python
-result = cal.calibrate(
-    cal.epsilon_budget(3.0, delta=1e-5),
-    lambda q: dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), sample_rate=q) * 1000,
-    param_min=1e-4,
-    param_max=0.1,
 )
 ```
 
@@ -677,7 +677,7 @@ Returned by `calibrate()`.
 | `achieved`  | `float` | Achieved metric value at `param`                 |
 | `target`    | `float` | Target metric value                              |
 | `iterations`| `int`   | Number of binary search iterations               |
-| `converged` | `bool`  | Whether convergence was reached within tolerance |
+| `converged` | `bool`  | Always `True` for a successfully returned result |
 
 ### Budget Factories
 
