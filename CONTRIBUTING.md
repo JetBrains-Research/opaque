@@ -11,11 +11,11 @@ Thank you for your interest in contributing to Opaque!
 git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
 
-# Install dependencies
-uv sync
+# Install the complete contributor environment
+uv sync --group dev --all-packages --extra all
 
-# Verify installation
-uv run pytest
+# Verify the CPU PR lane
+uv run pytest -m "not cuda and not mps and not slow"
 ```
 
 ---
@@ -46,21 +46,30 @@ pyproject.toml           # opaque — pins the curated sub-package bundle
 README.md                # top-level description
 
 packages/
-├── opaque-core/         # RNG, pytree, internal _clipping, scheduling, distributed plumbing
-├── opaque-dpsgd/        # Gaussian/per-group noise, AdamW-BC, Poisson samplers
-├── opaque-dpftrl/       # Correlated-noise mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD)
+├── opaque-base/         # Pure-Python serialization registry
+├── opaque-engine/       # Torch substrate: pytree, clipping, scheduling, distributed support
+├── opaque-optimizers/   # Functional optimizer chain
+├── opaque-accounting/   # Rust/PyO3 PLD privacy accounting
+├── opaque-dpsgd/        # DP-SGD noise, adaptive clipping, and sampling
+├── opaque-dpftrl/       # Correlated-noise DP-FTRL mechanisms and sampling
 ├── opaque-auditing/     # Empirical privacy auditing
-├── opaque-patches/      # Triton kernels, checkpoint patches, HF compatibility + PEFT patching
-├── opaque-transformers/  # Transformers compat patches (vmap-safe attention, KV cache)
-└── opaque-accounting/   # Rust/PyO3 PLD privacy accounting
+├── opaque-patches/      # PyTorch, Transformers, and Triton patches
+├── opaque-transformers/ # Hugging Face trainer integration
+└── opaque-alignment/    # DP-safe SFT and DPO primitives
 
 docs/                    # User documentation (getting-started, guides, tutorials, API)
 examples/                # Example scripts and notebooks
 ```
 
-**For Python changes**: edit the relevant `packages/opaque-<name>/src/opaque/<name>/` and add tests under the matching `packages/opaque-<name>/tests/`.
+**For Python changes**: edit the relevant implementation under
+`packages/opaque-<name>/src/opaque/api/` and add tests under the matching
+`packages/opaque-<name>/tests/`. Public façades under `src/opaque/` contain
+only re-exports; user-facing examples should import through those façades.
 
-**For accounting changes**: if you only need the existing Rust API from Python, work in `packages/opaque-accounting/opaque_accounting/`. If you need to modify the Rust core, work in `packages/opaque-accounting/src/`.
+**For accounting changes**: Python façade and wrapper code lives under
+`packages/opaque-accounting/src/opaque/`; the Rust crate is in
+`packages/opaque-accounting/src/` with its manifest at
+`packages/opaque-accounting/Cargo.toml`.
 
 ---
 
@@ -103,13 +112,13 @@ Opaque follows a Test-Driven Development workflow:
 
 ### Dependency Groups and Extras
 
-Opaque keeps only two root `uv` dependency groups; everything else lives in
+Opaque keeps three root `uv` dependency groups; everything else lives in
 per-package `[project.optional-dependencies]`:
 
 ```bash
-uv sync --group dev --all-packages          # Tests + lint: pytest, ruff, scipy, all workspace packages
-uv sync --group examples --all-packages        # Examples runtime: torchopt, datasets, wandb (plus opaque packages)
-uv sync --group docs                           # + mkdocs stack
+uv sync --group dev --all-packages --extra all       # Tests + lint: pytest, ruff, scipy, workspace extras
+uv sync --group examples --all-packages --extra all  # Training examples: datasets, W&B, and workspace extras
+uv sync --group docs --all-packages                  # MkDocs stack and documented package sources
 
 # Package extras (compose with --extra):
 #   opaque[transformers]             — HuggingFace + patching stack
@@ -129,7 +138,7 @@ uv run pytest
 uv run pytest --cov=opaque --cov-report=html
 
 # Specific test file
-uv run pytest packages/opaque-core/tests/clipping/test_clipped_fun.py -v
+uv run pytest packages/opaque-engine/tests/clipping/test_clipped_fun.py -v
 ```
 
 ### Test Markers and Filtering
@@ -201,7 +210,7 @@ uv run ruff check --fix packages/
 ```
 
 **Standards**:
-- Line length: 100 characters
+- Line length: 88 characters
 - Type hints for public APIs
 - Google-style docstrings
 
@@ -230,7 +239,7 @@ uv run ruff check --fix packages/
 
 **Format**:
 ```
-<type>: <subject>
+<type>(scope): <imperative subject>
 
 <body>
 ```
@@ -249,7 +258,7 @@ the above shape — no merge if the title doesn't parse.
 
 **Example**:
 ```
-feat: implement basic clipped_grad
+feat(dpsgd): add clipped-grad example
 
 - Add clipped_grad to opaque.dpsgd.clipping
 - Support single parameter and batch data
@@ -295,9 +304,8 @@ This keeps release docs stable while allowing continuous docs updates on `main`.
 
 ## Creating a Release
 
-Opaque uses **lockstep versioning**: all eight distributions (`opaque`,
-`opaque-core`, `opaque-dpsgd`, `opaque-dpftrl`, `opaque-auditing`,
-`opaque-patches`, `opaque-transformers`, `opaque-accounting`) release
+Opaque uses **lockstep versioning**: the root distribution and all workspace
+sub-packages release
 at the same version. Python sub-package versions come from
 [`setuptools-scm`](https://setuptools-scm.readthedocs.io/) — no
 `version = "..."` literal to bump in `pyproject.toml` files.

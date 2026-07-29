@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import torch
-from torch.profiler import record_function
+from torch.autograd.profiler import record_function
 
 from opaque.types import SecondMomentClippingOutput, clipped
 
@@ -199,8 +199,8 @@ def adaptive_clipped_grad(
 
     Example (single-device or distributed):
         >>> import torch
-        >>> from opaque.api.dpsgd.clipping import adaptive_clipped_grad
-        >>> from opaque.api.dpsgd.noise import gaussian_noise
+        >>> from opaque.dpsgd.clipping import adaptive_clipped_grad
+        >>> from opaque.dpsgd.noise import gaussian_noise
         >>> from opaque.random import key
         >>> import torchopt
         >>>

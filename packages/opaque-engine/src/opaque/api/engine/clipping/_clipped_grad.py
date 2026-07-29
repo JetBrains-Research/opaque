@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import torch
+from torch.autograd.profiler import record_function
 from torch.func import grad_and_value
-from torch.profiler import record_function
 
 from opaque.api.engine.types import clipped
 
@@ -19,6 +19,7 @@ from opaque.api.engine.clipping._helpers import (
     zero_grads_like,
 )
 from opaque.api.engine.clipping._clipped_fun import FixedClipState, clipped_fun
+from opaque.api.engine.clipping._types import ClippedGradFn
 from opaque.api.engine.types import PerGroup
 
 
@@ -88,7 +89,7 @@ def clipped_grad(
     compute_dtype: torch.dtype | None = None,
     _force_grad_norms: bool = False,
     _scale_fn: Callable | None = None,
-) -> tuple[Callable, FixedClipState]:
+) -> tuple[ClippedGradFn, FixedClipState]:
     """Create a function to compute the sum of clipped gradients of loss_fn.
 
     This function acts as a transformation similar to `torch.func.grad`, but with added
@@ -105,7 +106,7 @@ def clipped_grad(
 
     Example Usage:
         >>> import torch
-        >>> from opaque.api.engine.clipping import clipped_grad
+        >>> from opaque.dpsgd.clipping import clipped_grad
         >>> f = lambda param, data: 0.5 * ((data - param) ** 2).mean()
         >>> g, clip_state = clipped_grad(f, clipping_norm=float('inf'))
         >>> result, clip_state = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]), state=clip_state)
@@ -175,7 +176,7 @@ def clipped_grad(
             bf16/fp16 to float32 for numerical stability. Independent of
             ``dtype`` (which controls the *output* dtype).
     Returns:
-        Tuple of (clipped_grad_fn, clip_state) where:
+        Tuple of (:class:`ClippedGradFn`, clip_state) where:
         - clipped_grad_fn: A function that computes the sum of clipped per-example gradients.
           Call signature: clipped_grads, new_state = clipped_grad_fn(..., state=clip_state)
           If auxiliary outputs are requested, returns: (clipped_grads, grad_aux), new_state

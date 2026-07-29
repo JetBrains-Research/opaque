@@ -28,7 +28,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import torch
-from torch.profiler import record_function
+from torch.autograd.profiler import record_function
 
 from opaque.api.engine.noise_allocation import per_group_noise_stddev
 from opaque.random.types import RngKey

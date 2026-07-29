@@ -9,6 +9,9 @@ from opaque.api.engine.clipping.types import (
     AutoClippedFunAux,
     AutoClippedGradAux,
     AutoClipState,
+    ClippedGradFn,
+    ClippedGradResult,
+    FixedClipState,
 )
 from opaque.api.dpsgd.clipping._adaptive import (
     AdaptiveClippedGradAux,
@@ -21,4 +24,7 @@ __all__ = [
     "AutoClipState",
     "AutoClippedFunAux",
     "AutoClippedGradAux",
+    "ClippedGradFn",
+    "ClippedGradResult",
+    "FixedClipState",
 ]

@@ -5,9 +5,9 @@
       <sourceFolder url="file://$MODULE_DIR$/packages/opaque-auditing/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/packages/opaque-auditing/tests" isTestSource="true" />
     </content>
+    <orderEntry type="jdk" jdkName="uv (opaque)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="opaque-engine" exported="" />
     <orderEntry type="module" module-name="opaque-accounting" exported="" />
-    <orderEntry type="jdk" jdkName="uv (opaque)" jdkType="Python SDK" />
   </component>
 </module>

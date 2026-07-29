@@ -2,14 +2,18 @@
 <module external.system.id="pyproject.toml" type="PYTHON_MODULE" version="4">
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/packages/opaque-federated/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/packages/opaque-federated/tests" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
+    <orderEntry type="jdk" jdkName="uv (opaque)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="opaque-dpsgd" exported="" />
     <orderEntry type="module" module-name="opaque-engine" exported="" />
     <orderEntry type="module" module-name="opaque-optimizers" exported="" />
     <orderEntry type="module" module-name="opaque-accounting" exported="" />
     <orderEntry type="module" module-name="opaque-patches" exported="" />
-    <orderEntry type="jdk" jdkName="uv (opaque)" jdkType="Python SDK" />
   </component>
 </module>

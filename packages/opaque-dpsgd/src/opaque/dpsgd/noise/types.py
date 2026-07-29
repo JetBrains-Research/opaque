@@ -1,5 +1,15 @@
-"""DP-SGD noise types façade — re-exports ``GaussianNoiseState``."""
+"""DP-SGD noise types façade."""
 
-from opaque.api.dpsgd.noise.types import GaussianNoiseState
+from opaque.api.dpsgd.noise.types import (
+    GaussianNoiseFn,
+    GaussianNoiseInput,
+    GaussianNoiseOutput,
+    GaussianNoiseState,
+)
 
-__all__ = ["GaussianNoiseState"]
+__all__ = [
+    "GaussianNoiseFn",
+    "GaussianNoiseInput",
+    "GaussianNoiseOutput",
+    "GaussianNoiseState",
+]
