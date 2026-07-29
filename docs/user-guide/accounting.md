@@ -387,8 +387,17 @@ noise_multiplier = result.param
 ```
 
 The `process` argument is a lambda that takes the parameter being calibrated
-and returns a `DpProcess`. `calibrate` binary-searches for the parameter
-value where the budget metric equals the target.
+and returns a `DpProcess`. `calibrate` binary-searches for a privacy-safe
+parameter whose metric is within the requested relative tolerance. For
+privacy-loss budgets (epsilon, delta, and advantage), the returned metric is
+at or below the target. For privacy-gain budgets (beta and risk), it is at or
+above the target. Every successfully returned result has `converged=True`.
+
+The `tolerance` argument must be finite and positive, and `max_iterations`
+must be positive. Invalid values raise `ValueError` before the process is
+evaluated. If the search cannot find a safe endpoint satisfying
+`math.isclose(achieved, target, rel_tol=tolerance, abs_tol=0.0)`, it raises
+`RuntimeError` instead of returning an under-noised parameter.
 
 ### Budget types
 
@@ -400,20 +409,13 @@ value where the budget metric equals the target.
 | `acc.beta_budget(beta, alpha)` | beta | increasing (more noise = higher beta) |
 | `acc.risk_budget(risk, prior)` | risk | increasing |
 
-### Calibrating other parameters
+### Search direction
 
-`calibrate` works with any float parameter, not just noise multiplier. For
-example, calibrating the sample rate:
-
-```python
-result = acc.calibrate(
-    acc.epsilon_budget(3.0, delta=1e-5),
-    lambda sr: dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=sr) * 1000,
-    param_min=0.001,
-    param_max=0.1,
-)
-sample_rate = result.param
-```
+The current search contract supports parameters such as noise multiplier whose
+increase improves privacy in the direction declared by the selected budget:
+privacy-loss metrics decrease and privacy-gain metrics increase. The metric
+produced by `process(param)` must follow that declared direction, with
+`param_min` as the unsafe endpoint and `param_max` as the safe endpoint.
 
 ## Accountant
 
