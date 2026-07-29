@@ -77,13 +77,4 @@ print("opaque-dpsgd version:", version("opaque-dpsgd"))
 `opaque` itself is a [PEP 420] namespace with no top-level Python code, so
 query the installed distributions individually.
 
-## PyCharm
-
-In PyCharm, select the `uv` interpreter for the project where you ran
-`uv add`. Completion and Quick Documentation follow Opaque's public façade
-imports, such as `opaque.dpsgd.clipping`, `opaque.dpsgd.noise`, and
-`opaque.accounting`; avoid copying `opaque.api.*` paths from implementation
-tracebacks into application code. Clone Opaque and use an editable workspace
-only when you need to debug or change its implementation.
-
 [PEP 420]: https://peps.python.org/pep-0420/

@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="train_dpo (smoke)" type="PythonConfigurationType" factoryName="Python" folderName="Examples">
+  <configuration default="false" name="train_causal_lm (smoke)" type="PythonConfigurationType" factoryName="Python">
     <module name="opaque" />
     <option name="ENV_FILES" value="" />
     <option name="INTERPRETER_OPTIONS" value="" />
@@ -17,9 +17,10 @@
     <option name="ADD_CONTENT_ROOTS" value="true" />
     <option name="ADD_SOURCE_ROOTS" value="true" />
     <option name="DEBUG_JUST_MY_CODE" value="true" />
+    <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
     <option name="RUN_TOOL" value="true" />
-    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/train_dpo.py" />
-    <option name="PARAMETERS" value="--smoke" />
+    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/train_causal_lm.py" />
+    <option name="PARAMETERS" value="--preset smoke" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />

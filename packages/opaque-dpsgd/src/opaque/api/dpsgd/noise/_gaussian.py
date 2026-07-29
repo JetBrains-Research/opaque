@@ -10,7 +10,7 @@ The API returns ``(noise_fn, state)`` where state is always immutable:
 
     >>> from opaque.random import key
     >>> from opaque.types import clipped
-    >>> from opaque.dpsgd.noise import gaussian_noise
+    >>> from opaque.api.dpsgd.noise import gaussian_noise
     >>> noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(42))
     >>> noisy_grads, state = noise_fn(clipped(grads, max_norm=1.0), state)
 
@@ -36,9 +36,11 @@ from __future__ import annotations
 
 import dataclasses
 import math
+from collections.abc import Callable
+from typing import Any
 
 import torch
-from torch.autograd.profiler import record_function
+from torch.profiler import record_function
 
 from opaque.types import (
     ClippedPytree,
@@ -58,7 +60,6 @@ from opaque.api.engine.noise_allocation import (
     per_group_noise_stddev,
     resolve_paired_clipped,
 )
-from opaque.api.dpsgd.noise._types import GaussianNoiseFn
 
 
 _SQRT2 = math.sqrt(2.0)
@@ -150,7 +151,7 @@ def gaussian_noise(
     bound: float | tuple[float, float] | list[float] | None = None,
     compute_dtype: torch.dtype = torch.float32,
 ) -> tuple[
-    GaussianNoiseFn,
+    Callable[..., tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
 ]:
     """Create a Gaussian noise function with immutable state.
@@ -203,7 +204,7 @@ def gaussian_noise(
     Example:
         >>> import torch
         >>> from opaque.types import clipped
-        >>> from opaque.dpsgd.noise import gaussian_noise
+        >>> from opaque.api.dpsgd.noise import gaussian_noise
         >>> from opaque.random import key
         >>>
         >>> noise_fn, state = gaussian_noise(noise_multiplier=1.1, key=key(42))

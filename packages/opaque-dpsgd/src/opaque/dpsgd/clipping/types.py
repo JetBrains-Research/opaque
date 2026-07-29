@@ -12,9 +12,6 @@ from opaque.api.engine.clipping.types import (
     AutoClippedFunAux,
     AutoClippedGradAux,
     AutoClipState,
-    ClippedGradFn,
-    ClippedGradResult,
-    FixedClipState,
 )
 
 __all__ = [
@@ -23,7 +20,4 @@ __all__ = [
     "AutoClipState",
     "AutoClippedFunAux",
     "AutoClippedGradAux",
-    "ClippedGradFn",
-    "ClippedGradResult",
-    "FixedClipState",
 ]

@@ -142,8 +142,6 @@ nav:
     - Cross-cutting:
       - Privacy Auditing: tutorials/privacy_auditing.ipynb
       - Distributed Training: tutorials/distributed_training.ipynb
-  - Development:
-    - Overview: development/index.md
   - API Reference:
     - Overview: reference/index.md
     - Serialization: reference/serialization.md

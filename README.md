@@ -89,8 +89,7 @@ apply_model_patches(model)
 `apply_runtime_patches()` enables the runtime-side checkpoint, collator, and
 loss-mapping fixes. `apply_model_patches(model)` wires compat wrappers and
 Triton kernels into the specific model instance, including PEFT/LoRA modules.
-See [`docs/user-guide/huggingface/`](docs/user-guide/huggingface/index.md) for the
-model matrix and tuning knobs.
+See `docs/user-guide/huggingface.md` for the model matrix and tuning knobs.
 
 ## Example
 
@@ -168,11 +167,10 @@ uv run pytest -m "not cuda and not mps and not slow"        # PR-equivalent suit
 uv run ruff format packages/                                # Format
 uv run ruff check packages/                                 # Lint
 uv run --group docs mkdocs build --strict                   # Build docs
-cargo test --workspace
+cargo test --manifest-path packages/opaque-accounting/Cargo.toml
 ```
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full development workflow.
-The [development guide](docs/development/index.md) includes fork-based setup.
 
 ## References
 
