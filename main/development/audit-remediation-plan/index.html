@@ -1,0 +1,3532 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Functional DP-SGD for PyTorch">
+      
+      
+        <meta name="author" content="Opaque Contributors">
+      
+      
+        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/development/audit-remediation-plan/">
+      
+      
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.23">
+    
+    
+      
+        <title>Opaque DP Library — Remediation Plan - Opaque</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.84d31ad4.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#opaque-dp-library-remediation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Opaque" class="md-header__button md-logo" aria-label="Opaque" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Opaque
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Opaque DP Library — Remediation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/JetBrains-Research/opaque" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    JetBrains-Research/opaque
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../user-guide/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../mechanisms/" class="md-tabs__link">
+          
+  
+  
+  Mechanisms
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../alignment/" class="md-tabs__link">
+          
+  
+  
+  Alignment
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tutorials/" class="md-tabs__link">
+          
+  
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Opaque" class="md-nav__button md-logo" aria-label="Opaque" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Opaque
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/JetBrains-Research/opaque" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    JetBrains-Research/opaque
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Quick Start
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    User Guide
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            User Guide
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/dp-concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Differential Privacy Concepts
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/rng-key/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Random Number Generation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4" id="__nav_3_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    End-to-end pipelines
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4">
+            <span class="md-nav__icon md-icon"></span>
+            End-to-end pipelines
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/dp-sgd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    DP-SGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/dp-ftrl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    DP-FTRL
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/clipping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Per-Example Gradient Clipping
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/noise/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Noise Addition
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/precision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Mixed Precision
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/accounting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Privacy Accounting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/sampling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Sampling & Microbatching
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/optimizers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Optimizers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/lr-scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    LR Scheduling
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed Training
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_13" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_13" id="__nav_3_13_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    HuggingFace Integration
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_13">
+            <span class="md-nav__icon md-icon"></span>
+            HuggingFace Integration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/huggingface/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/huggingface/dptrainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/huggingface/training-arguments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    TrainingArguments
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/huggingface/model-patches/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Model Patches
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/memory-optimizations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Memory Optimizations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/auditing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Privacy Auditing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../limitations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Known Limitations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Mechanisms
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Mechanisms
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    DP-SGD
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            DP-SGD
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/dp-sgd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/dp-sgd/gaussian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Gaussian
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    DP-FTRL
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            DP-FTRL
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/dp-ftrl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/dp-ftrl/band-mf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BandMF
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/dp-ftrl/blt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BLT
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/dp-ftrl/bsr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BSR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/dp-ftrl/bisr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BISR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/dp-ftrl/lambda-cgd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    DP-λCGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Alignment
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Alignment
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../alignment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../alignment/sft/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    SFT
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../alignment/dpo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    DPO
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../alignment/trainers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    SFT & DPO Trainers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Tutorials
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Tutorials
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_2" id="__nav_6_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    DP-SGD track
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_2">
+            <span class="md-nav__icon md-icon"></span>
+            DP-SGD track
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/dp_sgd_training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Train a Model with DP-SGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/accounting_and_calibration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Privacy Accounting and Calibration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/sampling_and_microbatching/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Sampling Strategies and Microbatching
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/llm_finetuning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Fine-tune an LLM with Differential Privacy
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_3" id="__nav_6_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    DP-FTRL track
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_3">
+            <span class="md-nav__icon md-icon"></span>
+            DP-FTRL track
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/dp_ftrl_training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Train a Model with DP-FTRL
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_4" id="__nav_6_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Cross-cutting
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_4">
+            <span class="md-nav__icon md-icon"></span>
+            Cross-cutting
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/privacy_auditing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Privacy Auditing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/distributed_training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DP-SGD Training
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Development
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Development
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    API Reference
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            API Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/serialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Serialization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/clipping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Clipping
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/noise/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Noise
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/accounting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Accounting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/sampling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Sampling
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/rng/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Random
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/distributed/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/auditing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Auditing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/utilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Utilities
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/optimizers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Optimizers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/schedules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Schedules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/transformers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Transformers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/alignment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Alignment
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#0-read-this-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      0. Read this first
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0. Read this first">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#01-duplicates-inside-the-verified-list-do-not-open-12-tickets" class="md-nav__link">
+    <span class="md-ellipsis">
+      0.1 Duplicates inside the verified list — do not open 12 tickets
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#02-two-decisions-to-make-before-any-code-is-written" class="md-nav__link">
+    <span class="md-ellipsis">
+      0.2 Two decisions to make before any code is written
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-phase-0-stop-the-bleeding-target-5-working-days" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Phase 0 — Stop the bleeding (target: 5 working days)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Phase 0 — Stop the bleeding (target: 5 working days)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-one-line-one-function-fixes-that-change-today" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.1 One-line / one-function fixes that change ε today
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-fail-closed-conversions-cheap-prevents-the-silent-degradation-class" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.2 Fail-closed conversions (cheap, prevents the silent-degradation class)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13-claims-to-withdraw-immediately-docs-only-1-day-total" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.3 Claims to withdraw immediately (docs-only, ~1 day total)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#14-add-the-missing-disclosures-docs-only-1-day" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.4 Add the missing disclosures (docs-only, ~1 day)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#15-supply-chain-do-these-this-week-they-are-not-code-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.5 Supply chain — do these this week, they are not code changes
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-root-cause-clusters-fix-these-once-not-fifteen-times" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Root-cause clusters — fix these once, not fifteen times
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Root-cause clusters — fix these once, not fifteen times">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rc-1-there-is-no-binding-between-the-sampler-you-run-and-the-amplification-you-account-for" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-1 — There is no binding between the sampler you run and the amplification you account for
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-2-the-deployed-gaussian-is-not-the-gaussian-the-accountant-prices" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-2 — The deployed Gaussian is not the Gaussian the accountant prices
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-3-adaclips-released-statistic-adaclips-charged-statistic" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-3 — AdaClip's released statistic ≠ AdaClip's charged statistic
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-4-monte-carlo-point-estimates-are-presented-as-privacy-guarantees" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-4 — Monte-Carlo point estimates are presented as privacy guarantees
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-5-mf-noise-engines-have-no-horizon-guard-and-no-correlation-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-5 — MF noise engines have no horizon guard and no correlation test
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-6-strategy-identity-is-not-a-fingerprint-but-plds-are-cached-on-self" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-6 — Strategy identity is not a fingerprint, but PLDs are cached on self
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-7-dispatch-is-by-exact-type-and-by-runtime-value-with-unknown-silently-skip-as-the-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-7 — Dispatch is by exact type and by runtime value, with "unknown → silently skip" as the default
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-8-collective-counts-are-data-dependent-and-no-multi-rank-code-path-is-exercised-in-ci" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-8 — Collective counts are data-dependent, and no multi-rank code path is exercised in CI
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-9-the-library-has-no-definition-of-what-leaves-the-mechanism" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-9 — The library has no definition of "what leaves the mechanism"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-10-the-auditor-was-never-calibrated-under-the-null" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-10 — The auditor was never calibrated under the null
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-11-docs-are-hand-maintained-against-a-refactored-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-11 — Docs are hand-maintained against a refactored API
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-12-ci-cannot-fail-on-the-things-that-matter" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-12 — CI cannot fail on the things that matter
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-13-citations" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-13 — Citations
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-14-performance-claims-with-no-harness" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-14 — Performance claims with no harness
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-15-packaging-supply-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-15 — Packaging / supply chain
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rc-16-accounting-core-api-returns-unsafe-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      RC-16 — Accounting core API returns unsafe values
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-work-batches-grouped-by-filesubsystem-so-related-fixes-land-together" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Work batches — grouped by file/subsystem so related fixes land together
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Work batches — grouped by file/subsystem so related fixes land together">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#track-a-accounting-blocks-everything-that-prints-an" class="md-nav__link">
+    <span class="md-ellipsis">
+      Track A — Accounting (blocks everything that prints an ε)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#track-b-mechanisms-the-noise-that-actually-gets-released" class="md-nav__link">
+    <span class="md-ellipsis">
+      Track B — Mechanisms (the noise that actually gets released)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#track-c-distributed-engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      Track C — Distributed / engine
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#track-d-auditing-self-contained-can-run-fully-parallel" class="md-nav__link">
+    <span class="md-ellipsis">
+      Track D — Auditing (self-contained; can run fully parallel)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#track-e-optimizers" class="md-nav__link">
+    <span class="md-ellipsis">
+      Track E — Optimizers
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#track-f-trainers-alignment-patches" class="md-nav__link">
+    <span class="md-ellipsis">
+      Track F — Trainers / alignment / patches
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#track-g-infrastructure-see-4-for-the-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      Track G — Infrastructure (see §4 for the mapping)
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-dependency-order-what-must-exist-before-what-can-be-tested" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Dependency order — what must exist before what can be tested
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-infrastructure-that-prevents-recurrence" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Infrastructure that prevents recurrence
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-sequence-and-milestones" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. Sequence and milestones
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Sequence and milestones">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#m0-nothing-is-silently-wrong-week-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      M0 — "Nothing is silently wrong" (week 1)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#m1-the-accountant-is-trustworthy-weeks-24" class="md-nav__link">
+    <span class="md-ellipsis">
+      M1 — "The accountant is trustworthy" (weeks 2–4)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#m2-the-mechanism-matches-the-accountant-weeks-37-overlaps-m1" class="md-nav__link">
+    <span class="md-ellipsis">
+      M2 — "The mechanism matches the accountant" (weeks 3–7, overlaps M1)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#m3-the-auditor-works-weeks-48-fully-parallel" class="md-nav__link">
+    <span class="md-ellipsis">
+      M3 — "The auditor works" (weeks 4–8, fully parallel)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#m4-dp-ftrl-and-mc-amplification-are-sound-weeks-610" class="md-nav__link">
+    <span class="md-ellipsis">
+      M4 — "DP-FTRL and MC amplification are sound" (weeks 6–10)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#m5-trainers-alignment-patches-weeks-712" class="md-nav__link">
+    <span class="md-ellipsis">
+      M5 — "Trainers, alignment, patches" (weeks 7–12)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#m6-it-cant-regress-weeks-913-overlaps-m5" class="md-nav__link">
+    <span class="md-ellipsis">
+      M6 — "It can't regress" (weeks 9–13, overlaps M5)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#totals" class="md-nav__link">
+    <span class="md-ellipsis">
+      Totals
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-three-things-to-cut-if-the-schedule-compresses" class="md-nav__link">
+    <span class="md-ellipsis">
+      The three things to cut if the schedule compresses
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="opaque-dp-library-remediation-plan">Opaque DP Library — Remediation Plan<a class="headerlink" href="#opaque-dp-library-remediation-plan" title="Permanent link">&para;</a></h1>
+<p><strong>Scope:</strong> ~185 verified findings + 24 pre-established issues (A–X). After de-duplication (see §0.1) there are <strong>~170 distinct defects</strong> across 10 packages, docs, and CI.</p>
+<p><strong>Framing:</strong> this is a differential privacy library. The failure mode that matters is not "crashes" — it is "prints a number that is wrong in the unsafe direction and the user believes it." That ordering drives the whole plan: everything that corrupts a released ε, or that releases data the accountant never charged for, comes first, regardless of how small the diff is.</p>
+<hr />
+<h2 id="0-read-this-first">0. Read this first<a class="headerlink" href="#0-read-this-first" title="Permanent link">&para;</a></h2>
+<h3 id="01-duplicates-inside-the-verified-list-do-not-open-12-tickets">0.1 Duplicates inside the verified list — do not open 12 tickets<a class="headerlink" href="#01-duplicates-inside-the-verified-list-do-not-open-12-tickets" title="Permanent link">&para;</a></h3>
+<p>These are the same defect reported from different call sites. One fix each:</p>
+<table>
+<thead>
+<tr>
+<th>Merge into</th>
+<th>Duplicated by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>_gaussian.py</code> inverse-CDF truncation</td>
+<td>"hard-truncated at ±5.1666σ", "samples a hard-truncated atom-carrying distribution", "Unbounded Gaussian path hard-truncates at ±5.16σ" (3 reports, 1 bug)</td>
+</tr>
+<tr>
+<td>λ-CGD zero noise at step <code>n_steps</code></td>
+<td>"λ-CGD with normalized=True emits ZERO noise", "DP-λ-CGD emits exactly zero noise at step == n_steps"</td>
+</tr>
+<tr>
+<td><code>all_finite()</code> wrapper no-op</td>
+<td>"returns True unconditionally for ClippedPytree…", "can never return False on a clipped_grad output"</td>
+</tr>
+<tr>
+<td>Loss-scaler "zero privacy budget" claim</td>
+<td>docs/user-guide/precision.md finding + <code>_loss_scaler.py:27-34</code> finding</td>
+</tr>
+<tr>
+<td>AdaClip realized-vs-expected batch denominator</td>
+<td><code>_clipped_fun.py:569-586</code> finding + <code>_adaptive.py:103-114</code> finding + the Rust <code>adaclip.rs</code> Δ=1/2 finding are <strong>one root cause</strong> (§2, RC-3)</td>
+</tr>
+<tr>
+<td>MF noise redrawn every step</td>
+<td>"dense-matrix MF engine path redraws", "_tensor_mf_noise redraws the full Gaussian vector"</td>
+</tr>
+<tr>
+<td><code>train_dp_ftrl.py</code> one-epoch runs</td>
+<td>"BLT and Balls-in-Bins runs execute exactly one epoch", "reuses an already-exhausted sampler object"</td>
+</tr>
+<tr>
+<td>DP-FTRL doc signature drift</td>
+<td>"Every DP-FTRL mechanism doc page…", "~35 documentation call sites"</td>
+</tr>
+<tr>
+<td><code>gradient_checkpointing</code> default</td>
+<td>docs/alignment/trainers.md finding + docs/reference/transformers.md finding</td>
+</tr>
+<tr>
+<td>NOTICE broken paths</td>
+<td>two separate reports of the same eight paths</td>
+</tr>
+<tr>
+<td>trl extra never installed</td>
+<td>"trl extra is installed by no CI command", "All 33 TRL-compatibility tests are gated"</td>
+</tr>
+<tr>
+<td>Quickstart sampler mismatch</td>
+<td>"Quick Start calibrates a Poisson-amplified ε", "Quick Start and the DP-SGD / auditing tutorials" (the second supersedes)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="02-two-decisions-to-make-before-any-code-is-written">0.2 Two decisions to make before any code is written<a class="headerlink" href="#02-two-decisions-to-make-before-any-code-is-written" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Release hold.</strong> Every published wheel currently computes ε through <code>calibrate()</code> (returns budget-violating parameters as converged), <code>budget_exceeded</code> (inverted for two of three budget types), and <code>CachedProcess</code> (silently drops DP-FTRL per-step accounting). Yank or mark yanked, and publish an <strong>ERRATA</strong> stating which ε values from which versions must be recomputed. This is not optional for a DP library — users may have published privacy claims derived from these numbers.</li>
+<li><strong>Claim inventory.</strong> Approximately 20 documented guarantees are false as written (§1.3). Withdrawing a claim is a 10-minute edit and is <em>always</em> available as an interim mitigation while the underlying fix is engineered. Use it aggressively; do not let a 2-week fix gate a 10-minute retraction.</li>
+</ol>
+<hr />
+<h2 id="1-phase-0-stop-the-bleeding-target-5-working-days">1. Phase 0 — Stop the bleeding (target: 5 working days)<a class="headerlink" href="#1-phase-0-stop-the-bleeding-target-5-working-days" title="Permanent link">&para;</a></h2>
+<p>Three parallel tracks. Nothing here should be blocked on design work.</p>
+<h3 id="11-one-line-one-function-fixes-that-change-today">1.1 One-line / one-function fixes that change ε <em>today</em><a class="headerlink" href="#11-one-line-one-function-fixes-that-change-today" title="Permanent link">&para;</a></h3>
+<p>Order by (impact ÷ diff size). All of these are ≤ 1 day each and several are ≤ 1 hour.</p>
+<table>
+<thead>
+<tr>
+<th>Fix</th>
+<th>File</th>
+<th>Effect if not fixed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Invert <code>budget_exceeded</code> comparison</td>
+<td><code>opaque-accounting/.../core/_accountant.py:209-213</code></td>
+<td>Beta/Risk budget runs report "under budget" while over it</td>
+</tr>
+<tr>
+<td><code>CachedProcess.repeated_pld</code> passthrough</td>
+<td><code>.../core/composition/_cached.py</code></td>
+<td>DP-FTRL per-step accounting silently degrades to K-fold single-step composition</td>
+</tr>
+<tr>
+<td><code>eps_delta_pld</code> atom → <code>ceil</code> (pessimistic)</td>
+<td><code>src/mechanisms/eps_delta.rs:43</code></td>
+<td>Declared ε understated, error × composition count</td>
+</tr>
+<tr>
+<td><code>calibrate()</code> return the <em>proven-safe</em> bracket endpoint; one-sided acceptance; relative tolerance; raise on non-convergence</td>
+<td><code>.../core/calibration.py:341-367</code></td>
+<td>Returns noise multipliers that violate the budget with <code>converged=True</code></td>
+</tr>
+<tr>
+<td>Horizon guard in all three MF <code>noise_fn</code>s (<code>step &gt;= n_steps</code> → raise)</td>
+<td><code>dpftrl/noise/_lambda_cgd.py</code>, <code>_engine.py:319-341</code></td>
+<td><strong>Zero-noise release of clipped gradients</strong> at step <em>n</em>; unaccounted noise past horizon</td>
+</tr>
+<tr>
+<td>Flatten with paths in per-group clip; raise on group/leaf mismatch</td>
+<td><code>engine/clipping/_pytree.py:180-220, 58-93</code></td>
+<td><strong>No clipping at all</strong> on any nested parameter pytree</td>
+</tr>
+<tr>
+<td>Split the RNG key for quantile vs gradient noise</td>
+<td><code>transformers/.../_dp_trainer.py:1368, 3847</code> + 3 examples</td>
+<td>AdaClip composition void — identical noise streams</td>
+</tr>
+<tr>
+<td><code>pass target_quantile=target_clip_rate</code></td>
+<td><code>_dp_trainer.py:3843</code> + 3 examples</td>
+<td>Adaptive clipping converges to the wrong quantile</td>
+</tr>
+<tr>
+<td>Reject non-finite scores in <code>one_run()</code></td>
+<td><code>auditing/one_run/_estimate.py:37-83</code></td>
+<td>NaN scores manufacture ε̂ from a numerically broken run</td>
+</tr>
+<tr>
+<td>Cap/bound the <code>_mu_at</code> doubling + bisection</td>
+<td><code>auditing/one_run/_gdp.py:66-77</code></td>
+<td><strong>Infinite hang</strong> for m&gt;2000 with a strong attack</td>
+</tr>
+<tr>
+<td><code>pessimistic_estimate</code> passthrough in <code>eps_delta_pld</code>/<code>identity_pld</code></td>
+<td><code>eps_delta.rs:46</code>, <code>identity.rs:22</code></td>
+<td><code>PessimisticMismatch</code> on any non-default config</td>
+</tr>
+<tr>
+<td>Structurally fixed collective sequence in <code>sync(aux)</code></td>
+<td><code>engine/clipping/_distributed.py:59-82</code></td>
+<td><strong>One empty Poisson batch permanently desynchronizes the process group</strong> (critical)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Effort: 3–4 engineer-days</strong>, plus regression tests (another 2). These are unrelated to each other — parallelize across whoever is available.</p>
+<h3 id="12-fail-closed-conversions-cheap-prevents-the-silent-degradation-class">1.2 Fail-closed conversions (cheap, prevents the silent-degradation class)<a class="headerlink" href="#12-fail-closed-conversions-cheap-prevents-the-silent-degradation-class" title="Permanent link">&para;</a></h3>
+<p>Convert "unknown → skip" into "unknown → raise" at four dispatch sites. This is the same 5-line change repeated, and it converts eight <em>silent</em> findings into loud ones even before the real fixes land:</p>
+<ul>
+<li><code>base/serialization/_dispatch.py:54-60</code> — MRO fallback + raise on unregistered non-container</li>
+<li><code>engine/precision/_loss_scaler.py:187-203</code> — raise on wrapper types / zero tensor leaves</li>
+<li><code>engine/distributed/gradients.py:124-174</code> — <code>_reduce</code>/<code>_clone</code> raise on non-Tensor non-None leaf</li>
+<li><code>engine/distributed/_state.py:266-276</code> — MRO walk against <code>_SYNC_REGISTRY</code>, raise on miss</li>
+</ul>
+<p><strong>Effort: 1 day.</strong> See RC-7 for the full fix.</p>
+<h3 id="13-claims-to-withdraw-immediately-docs-only-1-day-total">1.3 Claims to withdraw immediately (docs-only, ~1 day total)<a class="headerlink" href="#13-claims-to-withdraw-immediately-docs-only-1-day-total" title="Permanent link">&para;</a></h3>
+<p>Every one of these is a documented guarantee that the code does not provide. Withdraw now; restore only when the corresponding fix lands.</p>
+<ol>
+<li><code>bound=</code> Gaussian is "post-processing on the standard (ε,δ)-Gaussian" — <code>docs/user-guide/noise.md:174-179</code>. It resamples; it is not post-processing; there is no bounded-Gaussian accountant. Mark <strong>experimental, not covered by the recorded ε</strong>.</li>
+<li>"Skipped steps consume zero privacy budget" — <code>precision.md:95-99</code> + <code>_loss_scaler.py:27-34</code>. The skip is a data-dependent branch on the un-noised gradient.</li>
+<li>"eps_K ≤ eps_N exactly" and monotone-in-K for b-min-sep — <code>b_min_sep/registry.rs:74-83</code>, <code>_b_min_sep/__init__.py</code>, <code>docs/reference/accounting.md:418-425</code>. Both measurably violated.</li>
+<li>"Hard ceiling ε ≤ ln(m / −ln α) regardless of method" — <code>docs/user-guide/auditing.md:183-196</code>. False for the default μ-GDP method.</li>
+<li>"Every Opaque mechanism is in the Gaussian-DP family" — <code>auditing.md:66-70</code> (issue R).</li>
+<li>"First optimal-rate DP-DPO loss" for SquareChiPO — <code>_squarechipo.py</code> docstring, <code>trl-trainers-plan.md:318,1129</code>, <code>reference/alignment.md:47</code> (issue A).</li>
+<li>"Every public loss is NaN-injection verified" — <code>opaque-alignment/README.md:25-27</code>.</li>
+<li>"TRL numeric parity gate (σ=0, C=∞, 1e-3)" — issue F; no test imports trl.</li>
+<li>"Continuous privacy regression testing" — issue G; no scheduled workflow exists.</li>
+<li>All benchmark tables with no harness — <code>memory-optimizations.md:50-55,170-213</code>, <code>bisr.md:112-120</code>, the 81% Mellum-4b claim, the 22%-vs-40% contradiction (issue W), schedule-free √n, Adadelta memory, <code>row_norms_squared</code> "sub-second", <code>pre_clipping_transform</code> docstring (issue U — that one is <em>someone else's text</em>, remove or attribute).</li>
+<li><code>float32</code> inverse-CDF sampling "yields a true Gaussian" — <code>_gaussian.py:189-196</code>.</li>
+<li><code>adaptive_clipped_grad</code> "automatically detects if distributed" — <code>_adaptive.py:200,212</code>.</li>
+<li>MC-derived ε values are point estimates — add a one-line caveat to <code>docs/reference/accounting.md</code> and the <code>pld()</code> docstrings until RC-4 lands.</li>
+</ol>
+<h3 id="14-add-the-missing-disclosures-docs-only-1-day">1.4 Add the missing disclosures (docs-only, ~1 day)<a class="headerlink" href="#14-add-the-missing-disclosures-docs-only-1-day" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>docs/limitations.md</code>: "Randomness and the threat model."</strong> The PRNG is not cryptographically secure; the seed is user-chosen, printed, and checkpointed; the guarantee is void against anyone who learns it. Noise state in checkpoints must be stripped before publishing artifacts.</li>
+<li><strong><code>docs/limitations.md</code>: "Telemetry outside the guarantee."</strong> Every logging step publishes un-noised mean loss, mean pre-clip grad norm, clip rate, realized Poisson batch size, DPO reward means. Mirror the disclosure <code>DPTrainer.evaluate</code> already makes at <code>_dp_trainer.py:2716-2725</code>. Add <code>runs/</code> to <code>ignore_patterns</code> in <code>_hub.push_to_hub</code> <strong>today</strong> — that one is an actual exfiltration path.</li>
+<li>Fix the four alignment metric docstrings that say "not for release" while both shipped trainers release them.</li>
+</ul>
+<h3 id="15-supply-chain-do-these-this-week-they-are-not-code-changes">1.5 Supply chain — do these this week, they are not code changes<a class="headerlink" href="#15-supply-chain-do-these-this-week-they-are-not-code-changes" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Register all five <code>opaque-*</code> distribution names on PyPI</strong> as placeholders. Right now <code>pip install opaque-engine</code> from the documented <code>--extra-index-url</code> command is a live dependency-confusion vector.</li>
+<li>Switch documented install to <code>--index-url</code> (README.md:57-59, installation.md:12-15). Note separately: the name <code>opaque</code> on PyPI belongs to an unrelated project and can never be reclaimed — plan a rename to <code>opaque-dp</code>.</li>
+<li><strong>Gate publishing on tests</strong>: add <code>rust-tests</code>/<code>python-tests</code> to <code>needs:</code> for <code>publish-dev-wheels</code> (ci.yml) and add a test job gating <code>publish</code> (release.yml). Wheels currently ship from a red tree.</li>
+<li>Add <code>if: github.event.pull_request.head.repo.full_name == github.repository</code> to the self-hosted GPU leg (pr.yml:85) — a fork PR currently executes arbitrary code on a non-ephemeral runner.</li>
+</ul>
+<p><strong>Phase 0 total: ~1 engineer-week</strong> (parallelizable to ~3 calendar days across 3 people).</p>
+<hr />
+<h2 id="2-root-cause-clusters-fix-these-once-not-fifteen-times">2. Root-cause clusters — fix these once, not fifteen times<a class="headerlink" href="#2-root-cause-clusters-fix-these-once-not-fifteen-times" title="Permanent link">&para;</a></h2>
+<p>This section is the point of the document. Each cluster is <strong>one design change</strong> that resolves the listed findings. Do not let these be worked as independent tickets.</p>
+<h3 id="rc-1-there-is-no-binding-between-the-sampler-you-run-and-the-amplification-you-account-for">RC-1 — There is no binding between the sampler you run and the amplification you account for<a class="headerlink" href="#rc-1-there-is-no-binding-between-the-sampler-you-run-and-the-amplification-you-account-for" title="Permanent link">&para;</a></h3>
+<p><strong>Resolves:</strong> quickstart + DP-SGD tutorial + auditing tutorial + DP-FTRL tutorial sampler mismatches; <code>train_sft.py --no-shard</code>+<code>--truncated-batch-size</code>; <code>BallsInBinsSampler</code> dropping empty bins; <code>train_dp_ftrl.py</code> one-epoch runs; <code>distributed.md</code> unbounded sampler; <code>dp-sgd.md</code> end-to-end loop; issue O (audit coin flip changes n → changes min_sep/bins).</p>
+<p><strong>Change:</strong> samplers emit a <code>SamplingContract</code> (mode, <code>sample_rate</code>, <code>n_steps</code>, <code>min_sep</code>, <code>num_bins</code>, <code>max_participations</code>). Amplification factories <em>require</em> one; <code>Accountant</code> records it; a mismatch raises. <code>BallsInBinsSampler</code> yields empty batches for empty bins so the declared <code>num_bins</code> stays true. <code>parallel_poisson(poisson(...))</code> composes rather than either-or.</p>
+<p><strong>Why one change:</strong> every one of these bugs is "the runtime sampling distribution and the accounted distribution differ, and nothing checks." Ten doc rewrites without the contract will drift again within two releases.</p>
+<h3 id="rc-2-the-deployed-gaussian-is-not-the-gaussian-the-accountant-prices">RC-2 — The deployed Gaussian is not the Gaussian the accountant prices<a class="headerlink" href="#rc-2-the-deployed-gaussian-is-not-the-gaussian-the-accountant-prices" title="Permanent link">&para;</a></h3>
+<p><strong>Resolves:</strong> fp32 inverse-CDF ±5.1666σ truncation (×3 reports); bounded-Gaussian collapse to a deterministic zero-noise release beyond ~5σ; bounded-Gaussian "post-processing" doc claim; bounded Gaussian reporting nominal <code>noise_stddev</code> while realized variance is smaller (breaking Adam/Adafactor bias correction); no mechanism↔accountant conformance test.</p>
+<p><strong>Change:</strong> (a) replace the inverse-CDF path with <code>torch.normal</code> in float64 → cast (matching the DP-FTRL path), or a proper discrete Gaussian (Canonne–Kamath–Steinke) with a matching PLD; (b) reimplement <code>bound=</code> as <em>actual</em> post-processing (<code>clamp(gaussian_sample, low, high)</code>), which is genuinely (ε,δ)-preserving and removes the tail-underflow entirely; (c) report the realized std.</p>
+<p><strong>Why one change:</strong> (b) makes the collapse bug, the doc claim, and the bias-correction bug all disappear at once. Do not fix the <code>log_ndtr</code>/<code>erfcinv</code> numerics — that preserves a mechanism with no accountant.</p>
+<h3 id="rc-3-adaclips-released-statistic-adaclips-charged-statistic">RC-3 — AdaClip's released statistic ≠ AdaClip's charged statistic<a class="headerlink" href="#rc-3-adaclips-released-statistic-adaclips-charged-statistic" title="Permanent link">&para;</a></h3>
+<p><strong>Resolves:</strong> <code>adaclip.rs:32-33</code> factor-4 undercharge; realized-batch denominator (×2 reports); <code>fraction_noise_std</code> defaulted independently at two sites; RNG key collision; <code>target_clipping_rate</code> inversion; circular <code>test_adaclip_effective_noise</code>; missing "Privacy accounting" docstring section.</p>
+<p><strong>Change:</strong> release the count against a <strong>public</strong> denominator — <code>noisy_rate = (num_clipped − B/2 + N(0,σ_b²)) / expected_batch_size + 1/2</code> (Andrew et al. / TF-Privacy <code>QuantileEstimatorQuery</code> form). Then make <code>adaclip()</code> accept the <code>AdaptiveClipState</code> rather than a loose float, so <code>fraction_noise_std</code> and <code>expected_batch_size</code> have exactly one source of truth and the accountant validates against the runtime.</p>
+<p><strong>Why one change:</strong> the four-way undercharge, the drift, and the double-default are all "two places independently decide what the released statistic is."</p>
+<h3 id="rc-4-monte-carlo-point-estimates-are-presented-as-privacy-guarantees">RC-4 — Monte-Carlo point estimates are presented as privacy guarantees<a class="headerlink" href="#rc-4-monte-carlo-point-estimates-are-presented-as-privacy-guarantees" title="Permanent link">&para;</a></h3>
+<p><strong>Resolves:</strong> MC PLDs with no confidence correction (<code>epsilon_at(δ)</code> returns finite for δ ≪ 1/num_mc_samples); b-min-sep non-monotonicity; MC amplification validated only by MC-vs-MC smoke tests; issue I (per-step invariant sandwich skipped for 6 of 8 MC pairs); <code>MAX_LINEAR_FFT_SIZE</code> guard inert because MC PLDs have zero tail budget.</p>
+<p><strong>Change:</strong> <code>samples_to_pmf</code> / <code>weighted_samples_to_pmf</code> must return a <strong>high-probability upper bound</strong>, not an empirical histogram: reserve mass above the (1−k/n) empirical quantile into <code>infinity_mass</code>; inflate buckets by one-sided Clopper-Pearson / empirical-Bernstein at a caller-visible confidence level; residual → <code>infinity_mass</code>. Surface confidence level + resolution floor through <code>DiscretizationConfig</code>.</p>
+<p><strong>Why one change:</strong> the UCB construction makes the monotonicity claim <strong>true by construction</strong>, gives the FFT guard a non-zero tail budget to work with, and makes the sandwich tests in issue I passable rather than skippable. Fixing the monotonicity claim by memoizing a running max is a workaround that leaves the underlying unsoundness.</p>
+<h3 id="rc-5-mf-noise-engines-have-no-horizon-guard-and-no-correlation-test">RC-5 — MF noise engines have no horizon guard and no correlation test<a class="headerlink" href="#rc-5-mf-noise-engines-have-no-horizon-guard-and-no-correlation-test" title="Permanent link">&para;</a></h3>
+<p><strong>Resolves:</strong> λ-CGD zero noise at step n (×2); streaming MF no horizon guard; <code>_column_norm</code> returning 0/NaN; dense engine redrawing base Gaussians (×2 reports — zero cross-step correlation, i.e. <em>not matrix-factorization noise at all</em>); BISR truncating C to <code>bandwidth</code> instead of <code>n_steps</code>; <code>_momentum_workload_coef</code> applying the LR schedule along the lag axis.</p>
+<p><strong>Change:</strong> thread <code>n_steps</code> into <code>_matrix_factorization_noise</code>/<code>_make_raw_mf_noise</code> and raise in all three <code>noise_fn</code>s. Derive base z_j from a per-<strong>column</strong> key <code>fold_in(key, j)</code>, not a per-step key. Add an <strong>empirical covariance test</strong>: sample the noise sequence and assert Cov ≈ σ²C⁻¹(C⁻¹)ᵀ, run against dense <em>and</em> streaming engines. That single test catches all four correlation/truncation bugs and prevents the next one.</p>
+<h3 id="rc-6-strategy-identity-is-not-a-fingerprint-but-plds-are-cached-on-self">RC-6 — Strategy identity is not a fingerprint, but PLDs are cached on <code>self</code><a class="headerlink" href="#rc-6-strategy-identity-is-not-a-fingerprint-but-plds-are-cached-on-self" title="Permanent link">&para;</a></h3>
+<p><strong>Resolves:</strong> <code>lr_schedule</code> excluded via <code>compare=False</code> while <code>pld</code> workers are <code>lru_cache</code>d on <code>self</code> → <strong>two different BLT mechanisms share one cached ε</strong> (<code>_blt.py:122</code>, <code>_band_mf.py:115</code>, 3 consumers); <code>set_discretization()</code> silently ignored for already-computed PLDs; <code>calibrate()</code> cleanup docstring overstating what is released.</p>
+<p><strong>Change:</strong> introduce <code>mechanism_fingerprint()</code> covering the materialized schedule and the resolved <code>DiscretizationConfig</code>; key every PLD cache on it; bump a module-level generation counter in <code>set_discretization()</code>. One cache-key redesign, three findings.</p>
+<h3 id="rc-7-dispatch-is-by-exact-type-and-by-runtime-value-with-unknown-silently-skip-as-the-default">RC-7 — Dispatch is by exact type and by runtime value, with "unknown → silently skip" as the default<a class="headerlink" href="#rc-7-dispatch-is-by-exact-type-and-by-runtime-value-with-unknown-silently-skip-as-the-default" title="Permanent link">&para;</a></h3>
+<p><strong>Resolves (8 findings + issue H's blast radius):</strong> <code>state_dict()</code> dropping every <code>torch.Tensor</code> subclass (including <code>nn.Parameter</code> from <code>make_functional</code>); <code>all_finite()</code> returning True for the library's own clipping wrappers (×2); <code>sum_gradients</code>/<code>reduce_pytree</code> no-op on <code>SecondMomentClippingOutput</code> (<strong>each DDP rank trains on its own shard, silently</strong>); <code>sync()</code> missing every <code>ClippedGradAux</code> subclass; <code>_split_aux_fields</code> classifying by value; <code>sync_object</code> skipping non-numeric fields; tensor deserialization accepting shape mismatch; per-group clipping no-op on nested pytrees.</p>
+<p><strong>Change — one policy, applied at every registry:</strong>
+1. exact-type miss → walk <code>__mro__</code> before giving up;
+2. still a miss on a non-container, non-primitive leaf → <strong>raise <code>TypeError</code></strong>, never skip;
+3. anything that enumerates fields for a collective enumerates the <strong>dataclass schema</strong>, never the runtime values.</p>
+<p>Then register the four wrapper NamedTuples/dataclasses properly (or make them optree nodes) and every one of these resolves.</p>
+<h3 id="rc-8-collective-counts-are-data-dependent-and-no-multi-rank-code-path-is-exercised-in-ci">RC-8 — Collective counts are data-dependent, and no multi-rank code path is exercised in CI<a class="headerlink" href="#rc-8-collective-counts-are-data-dependent-and-no-multi-rank-code-path-is-exercised-in-ci" title="Permanent link">&para;</a></h3>
+<p><strong>Resolves:</strong> <code>sync(aux)</code> empty-batch desync (critical); <code>_split_aux_fields</code> None-on-one-rank; <code>sync_object</code> value-derived field map; <code>sync_perf_tracker</code> per-rank stage dicts; <code>reduce_scalar</code> hard-coded fp32 making "exact" equality a 24-bit comparison; <code>gather_for_metrics</code> with uneven per-rank lengths; <code>sync_object</code>'s TypeError-retry re-issuing collectives; issue H (√W scaling vs asserted-equal seeds).</p>
+<p><strong>Change:</strong> the fix for each is small; <strong>the reason all eight exist is G1 (§4)</strong> — no multi-rank collective code executes in CI. Build the gloo lane <em>first</em>, then fix. Also give <code>reduce_scalar</code> a <code>dtype</code> param defaulting to float64 plus an integer-exact path, then set <code>atol=rtol=0</code> on the equality guards.</p>
+<h3 id="rc-9-the-library-has-no-definition-of-what-leaves-the-mechanism">RC-9 — The library has no definition of "what leaves the mechanism"<a class="headerlink" href="#rc-9-the-library-has-no-definition-of-what-leaves-the-mechanism" title="Permanent link">&para;</a></h3>
+<p><strong>Resolves:</strong> per-step un-noised telemetry from <code>DPTrainer</code> and both alignment trainers; the four "not for release" metric docstrings; TR-DPO writing per-example private reference logprobs to <code>tempfile.gettempdir()</code> with default perms (+ issue Q); the loss-scaler data-dependent skip; <code>runs/</code> pushed to the Hub.</p>
+<p><strong>Change:</strong> a single <code>Release</code> boundary concept: anything that crosses it is either (a) noised and composed into <code>ctx.accounting</code>, or (b) behind <code>allow_unaccounted_telemetry=True</code> with a loud warning, or (c) not emitted. Then apply it at the ~6 sites. Also: cache dir 0700, files 0600, and <code>write_cache=False</code> for TR-DPO.</p>
+<h3 id="rc-10-the-auditor-was-never-calibrated-under-the-null">RC-10 — The auditor was never calibrated under the null<a class="headerlink" href="#rc-10-the-auditor-was-never-calibrated-under-the-null" title="Permanent link">&para;</a></h3>
+<p><strong>Resolves:</strong> issues B (v_k = 0.5 truncation inflating ε̂ for every m&gt;2000 audit), C (post-hoc threshold selected with secret labels, Type-I 4–5× nominal), D (no two-sided validation); NaN scores; +inf scores corrupting TPR/FPR denominators; <code>attack_auc</code> returning convex-hull AUC (biased above 0.5 under the null, ~0% CI coverage); <code>gdp(grid_size)</code> returning ε̂=0 for a leaky audit; <code>_mu_at</code> hang; the false "hard ceiling" claim; no canary construction (README says "canary injection", code only subsets natural rows); no key-domain separation between the audit RNG and the mechanism RNG; the unstated score-ordering contract; the "Bonferroni" comment describing a correction that does not exist.</p>
+<p><strong>Change:</strong> treat the estimator as unsound and rebuild the statistical core: conservative μ-dependent bound for truncated ranks (not the constant 0.5); threshold selection that does not consult labels (or an explicit multiplicity correction); denominators from <code>n_in</code>/<code>n_out</code>; raw ROC for AUC; grid size as a function of n with a convergence guard. <strong>Then</strong> build the Type-I calibration suite (G6) — 200 null runs, assert empirical false-positive rate ≤ α + binomial slack — and only then is any ε̂ this library prints meaningful.</p>
+<h3 id="rc-11-docs-are-hand-maintained-against-a-refactored-api">RC-11 — Docs are hand-maintained against a refactored API<a class="headerlink" href="#rc-11-docs-are-hand-maintained-against-a-refactored-api" title="Permanent link">&para;</a></h3>
+<p><strong>Resolves:</strong> ~35 DP-FTRL call sites + 2 public factory docstrings; <code>rng.md</code>'s six broken <code>gaussian_noise</code> calls; <code>transformers.md</code> tables (missing <code>chunked_nll</code>, <code>use_performance_kernels</code>; two invented behaviours); <code>gradient_checkpointing</code> default in 3 places; <code>privacy_target_delta</code> documented default; <code>.pyi</code> missing <code>tail_mass_truncation</code>; <code>CONTRIBUTING.md</code>, <code>README.md</code>, <code>AGENTS.md</code> rule 6, <code>.github/WORKFLOWS.md</code>, NOTICE paths, alignment <code>.npz</code> format, <code>docs/development/opaque-alignment-plan.md</code> (doesn't exist).</p>
+<p><strong>Change:</strong> generate what can be generated (tables from <code>dataclasses.fields</code>, <code>.pyi</code> from pyo3 signatures) and <strong>execute what can't</strong> (G4). The manual sweep without the gate buys you one release.</p>
+<h3 id="rc-12-ci-cannot-fail-on-the-things-that-matter">RC-12 — CI cannot fail on the things that matter<a class="headerlink" href="#rc-12-ci-cannot-fail-on-the-things-that-matter" title="Permanent link">&para;</a></h3>
+<p>See §4. Eight findings, all "the test exists but never runs, or the lane is <code>continue-on-error</code>."</p>
+<h3 id="rc-13-citations">RC-13 — Citations<a class="headerlink" href="#rc-13-citations" title="Permanent link">&para;</a></h3>
+<p>~12 verified findings + issue E (14 of 20 alignment loss files). Pattern is uniform: correct prose, wrong arXiv ID; or correct ID, fabricated title; or invented author lists. Two of them (<code>_lambda_cgd.py</code>/<code>lambda_cgd.rs</code>, <code>bisr.rs</code>/<code>bisr.md</code>) put fabricated titles <strong>in the accounting crate itself</strong>. One fix (G5): a single <code>references.bib</code>, all citations rendered from it, CI resolves each ID against arXiv metadata.</p>
+<h3 id="rc-14-performance-claims-with-no-harness">RC-14 — Performance claims with no harness<a class="headerlink" href="#rc-14-performance-claims-with-no-harness" title="Permanent link">&para;</a></h3>
+<p>Issue J (no benchmark harness exists), issue W, the memory-optimizations tables, the BISR bandwidth table, schedule-free √n, Adadelta memory, <code>row_norms_squared</code> "sub-second" (actually O(bands·n²), eager at construction), <code>adaptive_clipped_grad(return_aux=False)</code> materializing per-example gradients and discarding them (defeats <code>microbatch_size</code>), <code>MAX_LINEAR_FFT_SIZE</code>. <strong>Dependency: the harness must exist before any of these numbers can be restated.</strong></p>
+<h3 id="rc-15-packaging-supply-chain">RC-15 — Packaging / supply chain<a class="headerlink" href="#rc-15-packaging-supply-chain" title="Permanent link">&para;</a></h3>
+<p>PyPI name collision + dependency confusion; unpinned metapackage (<code>set_build_versions.sh:144-153</code> is a no-op sed); non-manylinux wheels + no sdist; <code>__pycache__</code> in the wheel; missing LICENSE/NOTICE in sub-wheels; unattributed Unsloth <code>_utils.py</code>; <code>opaque-transformers</code> pyproject with no license/classifiers and a contradictory <code>requires-python</code>; Dependabot blind to 10 manifests + Cargo.lock + uv.lock; dead <code>unsafe_code</code> workspace lint.</p>
+<h3 id="rc-16-accounting-core-api-returns-unsafe-values">RC-16 — Accounting core API returns unsafe values<a class="headerlink" href="#rc-16-accounting-core-api-returns-unsafe-values" title="Permanent link">&para;</a></h3>
+<p><code>calibrate()</code> (two-sided tolerance, direction constant, non-convergence returns), <code>budget_exceeded</code>, <code>CachedProcess</code>, <code>set_discretization</code>, <code>_process_codec</code> recursion (RecursionError at ~2500 steps — <strong>checkpointing an accountant fails mid-run</strong>), non-dataclass Budget serialization, <code>Pld.self_compose(0)</code> panic through PyO3, u32 count truncation, <code>pessimistic_estimate=false</code> no-op, <code>poisson(1.0)</code>/<code>parallel_poisson</code> validation. One package, one batch.</p>
+<hr />
+<h2 id="3-work-batches-grouped-by-filesubsystem-so-related-fixes-land-together">3. Work batches — grouped by file/subsystem so related fixes land together<a class="headerlink" href="#3-work-batches-grouped-by-filesubsystem-so-related-fixes-land-together" title="Permanent link">&para;</a></h2>
+<p>Effort is engineer-days for implementation <strong>plus</strong> the regression tests named in the findings.</p>
+<h3 id="track-a-accounting-blocks-everything-that-prints-an">Track A — Accounting (blocks everything that prints an ε)<a class="headerlink" href="#track-a-accounting-blocks-everything-that-prints-an" title="Permanent link">&para;</a></h3>
+<p><strong>A1. <code>opaque-accounting</code> core Python</strong> — 5d
+<code>core/calibration.py</code>, <code>core/_accountant.py</code>, <code>core/composition/_cached.py</code>, <code>core/discretization.py</code>, <code>core/_process_codec.py</code>, <code>opaque_accounting.pyi</code>
+Covers RC-16 + RC-6's generation counter. Includes: iterative serialize/load/<code>__eq__</code> (mirror <code>iter_hash</code>), idempotent <code>cached()</code>, extend <code>test_iter_hash.py</code> to assert <code>state_dict</code>/<code>==</code> at depth 10,000.
+<em>Blocks: everything.</em></p>
+<p><strong>A2. <code>opaque-accounting</code> Rust mechanisms + numerics</strong> — 4d
+<code>mechanisms/eps_delta.rs</code>, <code>mechanisms/identity.rs</code>, <code>discretization/connect_the_dots.rs</code>, <code>numerics/fft.rs</code>, <code>pld/pmf/dense.rs</code>
+Ceil-rounding, pessimistic passthrough, <code>PyResult</code> on <code>self_compose</code>, u32 guard, and either implement or <strong>delete</strong> the optimistic estimate (currently a no-op documented as producing a lower bound).</p>
+<p><strong>A3. Monte-Carlo upper-confidence-bound PLDs</strong> — 10–12d ⚠ hardest single item
+<code>amplification/balls_in_bins/monte_carlo.rs</code>, <code>identity.rs</code>, <code>mc.rs</code>, <code>b_min_sep/registry.rs</code>, Python wrappers, <code>docs/reference/accounting.md</code>
+RC-4. Needs statistical design review, not just coding. Deliverables: UCB PMF construction, confidence level plumbed through <code>DiscretizationConfig</code>, closed-form/quadrature cross-check for BnB-Identity at small b,E at the <strong>default</strong> 100k budget, and a test asserting ε <em>increases</em> as <code>num_mc_samples</code> decreases.
+<em>Blocks: b-min-sep monotonicity restoration, issue I sandwich tests, any BnB/b-min-sep ε claim.</em></p>
+<p><strong>A4. DP-SGD amplification API hygiene</strong> — 1d
+<code>poisson(1.0)</code> special-case, <code>parallel_poisson</code> delegating to <code>poisson()</code> + <code>num_workers</code> validation, <code>TestParallelPoissonCrossValidation</code> made non-vacuous against dp_accounting or the Rust golden vectors.</p>
+<h3 id="track-b-mechanisms-the-noise-that-actually-gets-released">Track B — Mechanisms (the noise that actually gets released)<a class="headerlink" href="#track-b-mechanisms-the-noise-that-actually-gets-released" title="Permanent link">&para;</a></h3>
+<p><strong>B1. <code>_gaussian.py</code> sampler + bounded mode</strong> — 5d
+RC-2, all of it, plus the empirical-max regression test (≥1e8 draws, assert not pinned) and the realized-std reporting.
+<em>Blocks: any DP-SGD ε claim.</em></p>
+<p><strong>B2. AdaClip end-to-end</strong> — 8d
+<code>transformations/adaclip.rs</code>, <code>dpsgd/clipping/_adaptive.py</code>, <code>engine/clipping/_clipped_fun.py:569-586</code>, <code>accounting/dpsgd/mechanisms/_adaclip.py</code>, <code>_dp_trainer.py:3832-3847</code>, <code>examples/train_{causal_lm,sft,dpo}.py</code>, <code>tests/accounting/test_cross_validation.py:393-421</code>
+RC-3. Ship with the MC sensitivity test the finding names: empirically estimate the per-record sensitivity of the released rate, assert ≤ what <code>adaclip()</code> charges.</p>
+<p><strong>B3. DP-FTRL noise engines</strong> — 10d
+<code>_lambda_cgd.py</code>, <code>_engine.py</code>, <code>_bisr.py</code>, <code>_second_moment.py</code>, <code>_blt.py</code>, <code>_band_mf.py</code>, <code>_mf_gaussian_noise.py</code>, <code>sampling/_balls_in_bins.py</code>
+RC-5 + RC-6 + the second-moment budget split (use deployed-participation sensitivities; the extra L-BFGS solve disappears) + lazy/closed-form <code>row_l2_at</code> + BnB empty-bin emission.
+The <strong>covariance test</strong> is the deliverable that matters here.</p>
+<p><strong>B4. Clipping correctness</strong> — 4d
+<code>engine/clipping/_pytree.py</code> (nested per-group; bf16 scale rounding — multiply by <code>nextafter(s, 0)</code> so the stated <code>‖out‖ ≤ C</code> guarantee actually holds), <code>engine/types.py</code> <code>PerGroup</code> immutability + fingerprint-based MF latch, <code>_clipped_fun.py</code> microbatch accumulator dtype + the <code>return_aux=False</code> per-example materialization.</p>
+<h3 id="track-c-distributed-engine">Track C — Distributed / engine<a class="headerlink" href="#track-c-distributed-engine" title="Permanent link">&para;</a></h3>
+<p><strong>C1. gloo 2-rank CPU lane</strong> — 4d — <strong>do this before C2</strong>
+See G1. Reuse <code>packages/opaque-transformers/tests/distributed/_ddp_runner.py</code>.</p>
+<p><strong>C2. Distributed correctness</strong> — 6d
+<code>engine/distributed/_state.py</code>, <code>engine/distributed/gradients.py</code>, <code>engine/clipping/_distributed.py</code>, <code>engine/profiling/_distributed.py</code>, <code>_dp_trainer.py:2596-2604</code>
+RC-7 + RC-8. Land the fail-closed policy (§1.2) as the first commit of this batch, then each individual fix is small and <em>verifiable</em> on the new lane.</p>
+<p><strong>C3. Serialization &amp; precision</strong> — 3d
+<code>base/serialization/_dispatch.py</code>, <code>engine/serialization/_structural.py</code>, <code>engine/precision/_loss_scaler.py</code>
+RC-7 remainder. <code>all_finite</code> needs the per-example finite mask surfaced from <code>clipped_fun</code> <strong>before</strong> <code>clip_pytree</code>'s <code>nan_to_num</code> — otherwise the check is structurally impossible, not just mis-dispatched.</p>
+<h3 id="track-d-auditing-self-contained-can-run-fully-parallel">Track D — Auditing (self-contained; can run fully parallel)<a class="headerlink" href="#track-d-auditing-self-contained-can-run-fully-parallel" title="Permanent link">&para;</a></h3>
+<p><strong>D1. Estimator rebuild</strong> — 8d — <code>one_run/_gdp.py</code>, <code>_estimate.py</code>, <code>_roc.py</code>, <code>_eps_delta.py</code>
+<strong>D2. Type-I calibration + negative controls</strong> — 5d — G6
+<strong>D3. Canary construction + key separation + façade + docs</strong> — 4d — <code>_coin_flip.py</code>, <code>attacks/_helpers.py</code>, <code>docs/user-guide/auditing.md</code>, <code>auditing/types</code> re-exports
+<em>D1 blocks D2 blocks any "we audited this" statement anywhere in the repo or docs.</em></p>
+<h3 id="track-e-optimizers">Track E — Optimizers<a class="headerlink" href="#track-e-optimizers" title="Permanent link">&para;</a></h3>
+<p><strong>E1. Numerical correctness</strong> — 5d
+<code>_adafactor.py</code> (<code>eps_root</code> absolute floors firing for 100% of coordinates — Adafactor is currently RMS-normalized SGD with a no-op bias correction), <code>_adam.py</code> second-moment scale mismatch (Σgᵢ² vs (Σgᵢ)², ~√B effective-LR difference despite being documented as interchangeable), <code>phi</code> dropped on checkpoint restore across 6 optimizers, <code>_adadelta.py</code> allocation, <code>_chain.py</code> <code>update_rms_clip</code> scope.
+<strong>E2. De-vacuum the tests</strong> — 3d — <code>tests/test_adam.py</code> low-SNR regime, BC state_dict round-trip, real Adagrad gradients, schedule across save/restore.
+<strong>Note:</strong> E1's Adafactor fix invalidates the empirical claims at <code>docs/user-guide/optimizers.md:221,265</code> — re-measure (needs Track G harness) before restating.</p>
+<h3 id="track-f-trainers-alignment-patches">Track F — Trainers / alignment / patches<a class="headerlink" href="#track-f-trainers-alignment-patches" title="Permanent link">&para;</a></h3>
+<p><strong>F1. <code>DPTrainer</code></strong> — 7d — RNG split, telemetry boundary (RC-9), uneven eval gather, fractional epochs, <code>load_best_model_at_end</code>, <code>from_hf</code> fused-optim, stop-at-ε per-step evaluation, SFT <code>dft</code> eval loss, unwired <code>privacy_noise_radius</code>/<code>log_level*</code> (wire or delete).
+<strong>F2. Alignment plumbing</strong> — 6d — chat-template Gemma span detection (<strong>silently marks user/system tokens as assistant</strong> — a training-data correctness bug with privacy consequences), ref-logprob cache fingerprint, <code>compute_ref_logprobs_for_dataset</code> sharding, <code>null_ref_context</code> adapter, fused/eager token-count dtype, metric docstrings.
+<strong>F3. Alignment losses (issues A, E, K–P)</strong> — 8–10d — SquareChiPO DP construction (or permanent claim withdrawal), BCO delta contract, MPO normalization, f-divergence α inversion + cap, LD-DPO completion-relative positions, DiscoPOP fp16 clamp, 14 citation fixes. <strong>Parity tests against TRL at σ=0/C=∞ are the acceptance criterion</strong> (issue F).
+<strong>F4. Patches</strong> — 8d — sliding-window attention collapsed to full causal (<strong>silent numerical divergence for every sliding-window family</strong>), Gemma2 softcapping dropped, CE backward overwriting <code>outputs.logits</code>, checkpoint shim disabling <code>torch.func</code> process-wide, LoRA in-place dX / lite-vmap reshape / <code>up_proj</code> bias / <code>in_dims</code> validation, router dropout+batchify ordering, <code>fused_moe.py</code> false claims (issue V).
+<strong>F5. Patched-vs-unpatched parity suite</strong> — 4d — see G7; this is what makes F4 verifiable.</p>
+<h3 id="track-g-infrastructure-see-4-for-the-mapping">Track G — Infrastructure (see §4 for the mapping)<a class="headerlink" href="#track-g-infrastructure-see-4-for-the-mapping" title="Permanent link">&para;</a></h3>
+<p><strong>G-build. Benchmark harness</strong> — 6d, then 3d to restate/retract every number.
+<strong>G-ci. CI overhaul</strong> — 5d.
+<strong>G-docs. Snippet execution gate + doc sweep</strong> — 7d.
+<strong>G-cite. Bibliography + arXiv check</strong> — 4d.
+<strong>G-pkg. Packaging/supply chain</strong> — 4d.</p>
+<hr />
+<h2 id="4-dependency-order-what-must-exist-before-what-can-be-tested">4. Dependency order — what must exist before what can be tested<a class="headerlink" href="#4-dependency-order-what-must-exist-before-what-can-be-tested" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>                    ┌─ A1 (accounting core) ──────────────┐
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>Phase 0 ────────────┤                                     ├──&gt; any ε claim
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>                    └─ A2 (Rust mechanisms) ──────────────┘
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>                                 │
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>                                 ├──&gt; A3 (MC-UCB) ──&gt; b-min-sep/BnB claims, issue I sandwich tests
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>                                 │
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>   G2 (conformance harness) ─────┼──&gt; B1 (gaussian) ──&gt; DP-SGD ε claims
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>                                 └──&gt; B2 (AdaClip)  ──&gt; AdaClip ε claims
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>   C1 (gloo lane) ──────────────────&gt; C2 (distributed fixes)   [C2 is untestable before C1]
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>   D1 (estimator) ──&gt; D2 (Type-I suite) ──&gt; any audited-ε statement, issue D, issue O
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>   G-build (harness) ────────────────&gt; every performance claim (RC-14, W, J)
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>   G-docs (snippet gate) ────────────&gt; the ~40-site doc sweep (RC-11)
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>                                       [sweeping first = drift returns next release]
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>   RC-1 SamplingContract ────────────&gt; quickstart/tutorials/examples rewrites
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>   RC-7 fail-closed policy ─────────&gt; C2, C3, B4  [land the policy commit first]
+</code></pre></div>
+<p><strong>Five hard orderings, stated plainly:</strong></p>
+<ol>
+<li><strong>The auditor before any audited-ε claim.</strong> D1 must land before D2, D2 before anything in docs or README says a number was empirically validated. Issue O also means the audit harness in <code>train_dp_ftrl.py</code> is currently comparing two <em>different mechanisms</em> — fix that with RC-1 before trusting any output.</li>
+<li><strong>The gloo lane before the distributed fixes.</strong> Every RC-8 fix is a 10-line change that is impossible to verify today. Build the lane, watch it fail on the current code, then fix.</li>
+<li><strong>The benchmark harness before any performance number.</strong> Do not restate the memory-optimizations tables, the BISR table, the Adafactor comparison, or the second-moment overhead from memory.</li>
+<li><strong>MC-UCB before b-min-sep/BnB claims and before issue I's sandwich tests.</strong> The tests are skipped for 6 of 8 pairs <em>because</em> the estimates are non-conservative point estimates.</li>
+<li><strong>The conformance harness (G2) before signing off B1/B2.</strong> Otherwise you are trading one unvalidated mechanism for another.</li>
+</ol>
+<hr />
+<h2 id="5-infrastructure-that-prevents-recurrence">5. Infrastructure that prevents recurrence<a class="headerlink" href="#5-infrastructure-that-prevents-recurrence" title="Permanent link">&para;</a></h2>
+<p>Each gate is listed with <strong>the issue class it would have caught</strong>, so the investment is justifiable.</p>
+<table>
+<thead>
+<tr>
+<th>Gate</th>
+<th>Build cost</th>
+<th>Catches</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>G1. gloo/CPU 2-rank blocking lane</strong> — existing DDP scenarios + a full DP step (<code>sum_gradients_</code> → <code>sync(clip_state, aux)</code> → <code>sync(noise_state)</code>) with (a) one rank drawing an empty Poisson batch, (b) <code>second_moment=True</code>, (c) uneven eval shard, (d) rank-0-only profiler stage</td>
+<td>4d</td>
+<td>All 8 RC-8 findings + issue H + the <code>sum_gradients</code> no-op + <code>gather_for_metrics</code>. Today <strong>zero</strong> multi-rank collective code executes in CI.</td>
+</tr>
+<tr>
+<td><strong>G2. Mechanism↔accountant conformance suite</strong> — for each deployed noise path, empirically estimate the hockey-stick divergence (or realized σ / released-statistic sensitivity) between neighbouring inputs and assert it is dominated by the PLD the accounting factory produces. Include bounded mode with the centre several σ outside the interval, and adaptive with a Poisson batch &lt; <code>expected_batch_size</code></td>
+<td>6d</td>
+<td>RC-2 (all), RC-3 (all), bounded-Gaussian stddev, the circular <code>test_adaclip_effective_noise</code>, "no test connects the deployed mechanism to the accountant that charges for it". <strong>This is the single highest-value new test suite in the repo.</strong></td>
+</tr>
+<tr>
+<td><strong>G3. Sampler↔accountant contract</strong> (RC-1) + a test that the sampler drives exactly <code>n_steps</code> batches per configured run</td>
+<td>3d</td>
+<td>All 9 RC-1 findings + issue O.</td>
+</tr>
+<tr>
+<td><strong>G4. Executable docs</strong> — <code>pytest --doctest-glob</code> / mkdocs codeblock exec over <code>docs/**/*.md</code>, <code>nbmake</code> over CPU-runnable notebooks, plus signature-binding of every factory call in every docstring</td>
+<td>7d</td>
+<td>All of RC-11 (~40 sites), the notebooks published with <code>execute: false</code>, the <code>rng.md</code> calls that raise, the DP-FTRL factory docstrings.</td>
+</tr>
+<tr>
+<td><strong>G5. <code>references.bib</code> + arXiv metadata resolution in CI</strong></td>
+<td>4d</td>
+<td>All of RC-13 + issue E (14 files). Three fabricated titles currently live in the Rust accounting crate.</td>
+</tr>
+<tr>
+<td><strong>G6. Auditor Type-I calibration suite</strong> — 200 null runs, assert P(ε̂&gt;0) ≤ α + binomial slack; m=5000 case to exercise rank truncation; assert truncated ≤ untruncated at higher <code>_MAX_EXACT_RANKS</code></td>
+<td>5d</td>
+<td>RC-10 (all), issue D.</td>
+</tr>
+<tr>
+<td><strong>G7. Structural property tests</strong> — round-trip <code>state_dict</code> over <code>dict(nn.Linear.named_parameters())</code>; <code>all_finite(clipped({'w':[inf]}))</code> is False; <code>sync</code>/<code>reduce_pytree</code> over every registered wrapper; patched-vs-unpatched forward+grad parity per model family (eager <em>and</em> sdpa, and a config with <code>sliding_window &lt; seq_len</code>)</td>
+<td>6d</td>
+<td>All 8 RC-7 findings + F4's sliding-window and Gemma2 bugs + the CE-logits overwrite.</td>
+</tr>
+<tr>
+<td><strong>G8. CI gating fixes</strong> — tests in <code>needs:</code> for both publish paths; blocking <code>ddp-correctness</code> leg; CPU reference lane for Triton kernels via the existing functional fallbacks; <code>trl</code> in the dev group; python 3.12 axis; a <code>--resolution highest</code> (torch 2.12) leg and a <code>transformers==4.57.*</code> leg; assert the CUDA leg executed &gt;0 tests; assert no test module unexpectedly skips at import</td>
+<td>5d</td>
+<td>RC-12 (8 findings) incl. "wheels ship from a red tree", "33 TRL tests never run", "version-adaptive branches never execute", "12 silent skips read as green".</td>
+</tr>
+<tr>
+<td><strong>G9. Nightly privacy-regression workflow</strong> (issue G — currently no scheduled workflow exists at all) — golden ε vectors vs <code>dp_accounting</code>/riskcal across every mechanism × amplifier pair, fail on drift beyond a tight tolerance</td>
+<td>4d</td>
+<td>The entire "ε silently changed" class; would have caught the <code>eps_delta</code> rounding, <code>CachedProcess</code>, and <code>budget_exceeded</code> findings on the commit that introduced them.</td>
+</tr>
+<tr>
+<td><strong>G10. Benchmark harness</strong> (issue J) with committed results + hardware/commit in every table caption</td>
+<td>6d</td>
+<td>RC-14 (all), issue W.</td>
+</tr>
+<tr>
+<td><strong>G11. Extend <code>tests/contracts/</code></strong> — every NOTICE path resolves; documented defaults vs <code>dataclasses.fields</code>; <code>.pyi</code> vs pyo3 signatures; <code>test_all_exports_match</code> promoted from opaque-alignment to all 10 wheels (AGENTS.md rule 6 currently describes a file covering 1 of 10)</td>
+<td>3d</td>
+<td>~10 docs-drift findings, cheaply and permanently. This directory already exists — extending it is the lowest-friction gate in the list.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Total infrastructure: ~53 engineer-days.</strong> It is roughly a third of the total programme and it is what stops this report from being written again in six months.</p>
+<hr />
+<h2 id="6-sequence-and-milestones">6. Sequence and milestones<a class="headerlink" href="#6-sequence-and-milestones" title="Permanent link">&para;</a></h2>
+<p>Assumes <strong>3 engineers</strong>: one on accounting/mechanisms (statistical background required for A3), one on engine/distributed/infra, one on trainers/alignment/patches/docs. Calendar estimates assume normal review overhead.</p>
+<h3 id="m0-nothing-is-silently-wrong-week-1">M0 — "Nothing is silently wrong" (week 1)<a class="headerlink" href="#m0-nothing-is-silently-wrong-week-1" title="Permanent link">&para;</a></h3>
+<p>Phase 0 (§1) in full: the 12 one-liners, the fail-closed conversions, all 13 claim withdrawals, the two new <code>limitations.md</code> sections, PyPI name registration, release gating, fork-PR guard, <code>runs/</code> ignore.
+<strong>Exit:</strong> ERRATA published; no shipped path returns a budget-violating parameter with <code>converged=True</code>; no zero-noise release path; no un-guarded empty-batch DDP desync.
+<em>≈ 5 engineer-days across 3 people.</em></p>
+<h3 id="m1-the-accountant-is-trustworthy-weeks-24">M1 — "The accountant is trustworthy" (weeks 2–4)<a class="headerlink" href="#m1-the-accountant-is-trustworthy-weeks-24" title="Permanent link">&para;</a></h3>
+<p>A1, A2, A4 · G9 (nightly golden-vector regression) · G11 (contract tests) · C1 (gloo lane) · G5 (bibliography) + the citation sweep.
+<strong>Exit:</strong> ε from any non-MC path is reproducible, checkpointable at any depth, and cross-validated nightly against <code>dp_accounting</code>. A blocking multi-rank lane exists and is red.
+<em>≈ 22 engineer-days.</em></p>
+<h3 id="m2-the-mechanism-matches-the-accountant-weeks-37-overlaps-m1">M2 — "The mechanism matches the accountant" (weeks 3–7, overlaps M1)<a class="headerlink" href="#m2-the-mechanism-matches-the-accountant-weeks-37-overlaps-m1" title="Permanent link">&para;</a></h3>
+<p>G2 (conformance harness) → B1 (Gaussian) → B2 (AdaClip) · B4 (clipping) · C2+C3 (distributed + serialization, on the now-green-able lane) · RC-1 <code>SamplingContract</code> (G3) and the quickstart/tutorial/example rewrites.
+<strong>Exit:</strong> every deployed noise path has an empirical conformance test against the PLD that prices it. The documented copy-paste training loops produce a valid ε.
+<em>≈ 34 engineer-days.</em></p>
+<h3 id="m3-the-auditor-works-weeks-48-fully-parallel">M3 — "The auditor works" (weeks 4–8, fully parallel)<a class="headerlink" href="#m3-the-auditor-works-weeks-48-fully-parallel" title="Permanent link">&para;</a></h3>
+<p>D1 → D2 (G6) → D3.
+<strong>Exit:</strong> Type-I error at nominal level across 200 null runs; no hang; no NaN-manufactured ε̂; the "hard ceiling" and Gaussian-DP-family claims corrected; issue O resolved so the audit compares one mechanism to itself.
+<em>≈ 17 engineer-days.</em></p>
+<h3 id="m4-dp-ftrl-and-mc-amplification-are-sound-weeks-610">M4 — "DP-FTRL and MC amplification are sound" (weeks 6–10)<a class="headerlink" href="#m4-dp-ftrl-and-mc-amplification-are-sound-weeks-610" title="Permanent link">&para;</a></h3>
+<p>B3 (MF engines + covariance test) · A3 (MC-UCB) → restore the b-min-sep monotonicity claim by construction → un-skip issue I's sandwich tests at tight tolerance.
+<strong>Exit:</strong> MF noise is provably correlated as specified; MC-derived ε values are upper confidence bounds with a documented confidence level and resolution floor; <code>epsilon_at(δ)</code> returns INFINITY below the MC floor rather than a finite number.
+<em>≈ 22 engineer-days. A3 is the schedule risk — start the statistical design in M2.</em></p>
+<h3 id="m5-trainers-alignment-patches-weeks-712">M5 — "Trainers, alignment, patches" (weeks 7–12)<a class="headerlink" href="#m5-trainers-alignment-patches-weeks-712" title="Permanent link">&para;</a></h3>
+<p>F1 · F2 · F3 (with the TRL parity gate that issue F says already exists) · F4 · F5 (G7 parity suite) · E1 · E2.
+<strong>Exit:</strong> no un-accounted telemetry without an explicit opt-in; chat-template role spans validated by acceptance test; sliding-window and softcapping numerics match upstream to a stated tolerance; the SquareChiPO claim is either implemented or gone.
+<em>≈ 44 engineer-days.</em></p>
+<h3 id="m6-it-cant-regress-weeks-913-overlaps-m5">M6 — "It can't regress" (weeks 9–13, overlaps M5)<a class="headerlink" href="#m6-it-cant-regress-weeks-913-overlaps-m5" title="Permanent link">&para;</a></h3>
+<p>G4 (executable docs) → the RC-11 sweep · G8 (CI overhaul) · G10 (benchmark harness) → restate or delete every performance number · G-pkg (RC-15: manylinux, sdist, licenses, NOTICE, Unsloth attribution, transformers pyproject, Dependabot, <code>__pycache__</code>, <code>set_build_versions.sh</code>).
+<strong>Exit:</strong> a docs snippet that does not run fails the build; a wheel cannot publish from a red tree; every published number has a script behind it.
+<em>≈ 31 engineer-days.</em></p>
+<hr />
+<h3 id="totals">Totals<a class="headerlink" href="#totals" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Engineer-days</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Phase 0 / M0</td>
+<td>5</td>
+</tr>
+<tr>
+<td>Correctness work (M1–M5, excl. infra)</td>
+<td>~118</td>
+</tr>
+<tr>
+<td>Infrastructure (G1–G11)</td>
+<td>~53</td>
+</tr>
+<tr>
+<td>Docs sweep + citations + claims</td>
+<td>~19</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>~195 engineer-days ≈ 39 engineer-weeks</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>With 3 engineers: ~13 calendar weeks</strong> to M6, with the critical safety content (M0–M2) landing in the first 7. With 1 engineer: ~9 months, and I would not run this library in production during that period without M0–M2 complete.</p>
+<h3 id="the-three-things-to-cut-if-the-schedule-compresses">The three things to cut if the schedule compresses<a class="headerlink" href="#the-three-things-to-cut-if-the-schedule-compresses" title="Permanent link">&para;</a></h3>
+<p>Cut <strong>scope</strong>, never <strong>gates</strong>. In order of what is safest to defer:
+1. F3 (alignment loss corrections) — withdraw the claims, mark the losses experimental, defer the implementations.
+2. G10 + all performance restatements — delete the numbers instead of re-measuring them.
+3. F4's non-numerical patch issues (LoRA vmap <code>in_dims</code>, router ordering) — keep the sliding-window and softcapping fixes, they are silent numerical divergence.</p>
+<p><strong>Do not cut:</strong> G1, G2, G6, G9. Those four gates are the difference between fixing 170 bugs and fixing 170 bugs again.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/JetBrains-Research/opaque" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.f55a23d4.min.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
