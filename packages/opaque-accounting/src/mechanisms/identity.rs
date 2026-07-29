@@ -15,13 +15,7 @@ pub fn identity_pld(config: &DiscretizationConfig) -> Result<PrivacyLossDistribu
     let mut masses = BTreeMap::new();
     masses.insert(0, 1.0);
 
-    let pmf = Pmf::from_sparse(
-        config.discretization,
-        masses,
-        0.0,
-        true,
-        config.max_grid_size,
-    );
+    let pmf = Pmf::from_sparse(config.discretization, masses, 0.0, config.max_grid_size);
     Ok(PrivacyLossDistribution::new_symmetric(pmf))
 }
 

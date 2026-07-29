@@ -267,7 +267,6 @@ pub fn bnb_mc_pld(
     let chol = BandedCholesky::compute(gram, b, 1e-6)?;
 
     let disc = config.discretization;
-    let pessimistic = config.pessimistic_estimate;
     let sigma2 = sigma * sigma;
     let inv_2sig2 = 1.0 / (2.0 * sigma2);
 
@@ -340,28 +339,16 @@ pub fn bnb_mc_pld(
         .collect();
 
     // Build PMFs from samples
-    let pmf_remove = samples_to_pmf(&remove_samples, disc, pessimistic, config.max_grid_size);
-    let pmf_add = samples_to_pmf(&add_samples, disc, pessimistic, config.max_grid_size);
+    let pmf_remove = samples_to_pmf(&remove_samples, disc, config.max_grid_size);
+    let pmf_add = samples_to_pmf(&add_samples, disc, config.max_grid_size);
 
     Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add))
 }
 
 /// Convert MC samples into a discrete PMF on the PLD grid.
-pub(crate) fn samples_to_pmf(
-    samples: &[f64],
-    discretization: f64,
-    pessimistic_estimate: bool,
-    max_grid_size: usize,
-) -> Pmf {
+pub(crate) fn samples_to_pmf(samples: &[f64], discretization: f64, max_grid_size: usize) -> Pmf {
     if samples.is_empty() {
-        return Pmf::new(
-            discretization,
-            0,
-            vec![1.0],
-            0.0,
-            pessimistic_estimate,
-            max_grid_size,
-        );
+        return Pmf::new(discretization, 0, vec![1.0], 0.0, max_grid_size);
     }
 
     let n = samples.len() as f64;
@@ -396,11 +383,7 @@ pub(crate) fn samples_to_pmf(
             continue;
         }
 
-        let bucket_idx = if pessimistic_estimate {
-            (y / effective_disc).ceil() as i64 - effective_lo
-        } else {
-            (y / effective_disc).round() as i64 - effective_lo
-        };
+        let bucket_idx = (y / effective_disc).ceil() as i64 - effective_lo;
 
         if bucket_idx < 0 {
             probs[0] += 1.0 / n;
@@ -416,7 +399,6 @@ pub(crate) fn samples_to_pmf(
         effective_lo,
         probs,
         infinity_mass,
-        pessimistic_estimate,
         max_grid_size,
     )
 }

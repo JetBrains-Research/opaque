@@ -2,12 +2,7 @@
 
 use pyo3::prelude::*;
 
-use crate::error::PldError;
 use crate::pld::PrivacyLossDistribution;
-
-fn to_py_err(e: PldError) -> PyErr {
-    pyo3::exceptions::PyValueError::new_err(e.to_string())
-}
 
 /// An opaque Privacy Loss Distribution (PLD).
 ///
@@ -101,8 +96,12 @@ impl PyPld {
     ///
     /// Returns:
     ///     Pld: Composed PLD.
+    ///
+    /// Raises:
+    ///     ValueError: If the PLDs have incompatible discretizations or types.
+    ///     RuntimeError: If composition encounters an invalid internal state.
     fn compose(&self, other: &PyPld) -> PyResult<PyPld> {
-        let pld = self.inner.compose(&other.inner).map_err(to_py_err)?;
+        let pld = self.inner.compose(&other.inner)?;
         Ok(PyPld { inner: pld })
     }
 

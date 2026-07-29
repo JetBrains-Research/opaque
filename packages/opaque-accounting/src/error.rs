@@ -22,10 +22,6 @@ pub enum PldError {
     #[error("Discretization intervals differ: {0} != {1}")]
     DiscretizationMismatch(f64, f64),
 
-    /// Pessimistic estimate settings must match for composition
-    #[error("Pessimistic estimate settings differ: {0} != {1}")]
-    PessimisticMismatch(bool, bool),
-
     /// Cannot compose PMFs of different types
     #[error("Cannot compose PMFs of different types: {0} with {1}")]
     TypeMismatch(String, String),

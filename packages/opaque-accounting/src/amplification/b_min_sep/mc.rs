@@ -252,7 +252,6 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
     let bands = strategy_coef.len();
     let sigma2 = sigma * sigma;
     let disc = config.discretization;
-    let pessimistic = config.pessimistic_estimate;
     let coef = strategy_coef.to_vec();
     let n_threads = rayon::current_num_threads().max(1);
     let samples_per_thread = num_samples / n_threads;
@@ -313,8 +312,8 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
         })
         .collect();
 
-    let pmf_remove = samples_to_pmf(&remove_samples, disc, pessimistic, config.max_grid_size);
-    let pmf_add = samples_to_pmf(&add_samples, disc, pessimistic, config.max_grid_size);
+    let pmf_remove = samples_to_pmf(&remove_samples, disc, config.max_grid_size);
+    let pmf_add = samples_to_pmf(&add_samples, disc, config.max_grid_size);
 
     Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add))
 }
@@ -363,7 +362,6 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
     let bands = strategy_coef.len();
     let sigma2 = sigma * sigma;
     let disc = config.discretization;
-    let pessimistic = config.pessimistic_estimate;
 
     let n_threads = rayon::current_num_threads().max(1);
     let samples_per_thread = num_samples / n_threads;
@@ -417,8 +415,8 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
         })
         .collect();
 
-    let pmf_remove = samples_to_pmf(&remove_samples, disc, pessimistic, config.max_grid_size);
-    let pmf_add = samples_to_pmf(&add_samples, disc, pessimistic, config.max_grid_size);
+    let pmf_remove = samples_to_pmf(&remove_samples, disc, config.max_grid_size);
+    let pmf_add = samples_to_pmf(&add_samples, disc, config.max_grid_size);
 
     Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add))
 }

@@ -21,8 +21,7 @@ pub fn py_poisson_gaussian_pld(
     rate: f64,
     config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
-    let pld = crate::amplification::poisson_gaussian_pld(noise_multiplier, rate, &config.inner)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let pld = crate::amplification::poisson_gaussian_pld(noise_multiplier, rate, &config.inner)?;
     Ok(PyPld::new(pld))
 }
 
@@ -56,8 +55,7 @@ pub fn py_truncated_poisson_gaussian_pld(
         batch_size_max,
         dataset_size,
         &config.inner,
-    )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    )?;
     Ok(PyPld::new(pld))
 }
 
@@ -87,8 +85,7 @@ pub fn py_parallel_poisson_gaussian_pld(
         rate,
         microbatches,
         &config.inner,
-    )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    )?;
     Ok(PyPld::new(pld))
 }
 
@@ -110,7 +107,8 @@ pub fn py_parallel_poisson_gaussian_pld(
 ///     Pld: The privacy loss distribution (asymmetric, remove + add).
 ///
 /// Raises:
-///     ValueError: If parameters are invalid.
+///     ValueError: If parameters or configuration are invalid.
+///     RuntimeError: If sampling or PLD construction encounters a numerical failure.
 #[pyfunction]
 #[pyo3(name = "bnb_mc_pld", signature = (gram, num_bins, sigma, config))]
 pub fn py_bnb_mc_pld(
@@ -119,8 +117,7 @@ pub fn py_bnb_mc_pld(
     sigma: f64,
     config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
-    let pld = crate::amplification::bnb_mc_pld(&gram, num_bins, sigma, &config.inner)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let pld = crate::amplification::bnb_mc_pld(&gram, num_bins, sigma, &config.inner)?;
     Ok(PyPld::new(pld))
 }
 
@@ -147,6 +144,10 @@ pub fn py_bnb_mc_pld(
 ///
 /// Returns:
 ///     Pld: The privacy loss distribution (asymmetric, remove + add).
+///
+/// Raises:
+///     ValueError: If parameters or configuration are invalid.
+///     RuntimeError: If sampling or PLD construction encounters a numerical failure.
 #[pyfunction]
 #[pyo3(
     name = "bnb_mc_pld_identity",
@@ -165,8 +166,7 @@ pub fn py_bnb_mc_pld_identity(
         sigma,
         importance_tilt,
         &config.inner,
-    )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    )?;
     Ok(PyPld::new(pld))
 }
 
@@ -193,8 +193,7 @@ pub fn py_bandmf_b_min_sep_warm_mc_pld(
         p,
         sigma,
         &config.inner,
-    )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    )?;
     Ok(PyPld::new(pld))
 }
 
@@ -210,14 +209,13 @@ pub fn py_register_b_min_sep_transcript_corpus(
     num_samples: usize,
     seed: u64,
 ) -> PyResult<u64> {
-    crate::amplification::register_b_min_sep_transcripts(
+    Ok(crate::amplification::register_b_min_sep_transcripts(
         &strategy_coef,
         n_steps,
         p,
         num_samples,
         seed,
-    )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    )?)
 }
 
 #[pyfunction]
@@ -246,7 +244,6 @@ pub fn py_bandmf_b_min_sep_pld_from_transcript_handle(
         p,
         sigma,
         &config.inner,
-    )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    )?;
     Ok(PyPld::new(pld))
 }

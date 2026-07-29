@@ -46,7 +46,7 @@ Order by (impact ÷ diff size). All of these are ≤ 1 day each and several are 
 |---|---|---|
 | Invert `budget_exceeded` comparison | `opaque-accounting/.../core/_accountant.py:209-213` | Beta/Risk budget runs report "under budget" while over it |
 | `CachedProcess.repeated_pld` passthrough | `.../core/composition/_cached.py` | DP-FTRL per-step accounting silently degrades to K-fold single-step composition |
-| `eps_delta_pld` atom → `ceil` (pessimistic) | `src/mechanisms/eps_delta.rs:43` | Declared ε understated, error × composition count |
+| ✅ `eps_delta_pld` atom → `ceil` (safe-only) | `src/mechanisms/eps_delta.rs:43` | Declared ε cannot round below the requested value |
 | ✅ `calibrate()` return the *proven-safe* bracket endpoint; one-sided acceptance; relative tolerance; raise on non-convergence | `.../core/calibration.py:341-367` | Returns noise multipliers that violate the budget with `converged=True` |
 | Horizon guard in all three MF `noise_fn`s (`step >= n_steps` → raise) | `dpftrl/noise/_lambda_cgd.py`, `_engine.py:319-341` | **Zero-noise release of clipped gradients** at step *n*; unaccounted noise past horizon |
 | Flatten with paths in per-group clip; raise on group/leaf mismatch | `engine/clipping/_pytree.py:180-220, 58-93` | **No clipping at all** on any nested parameter pytree |
@@ -54,19 +54,27 @@ Order by (impact ÷ diff size). All of these are ≤ 1 day each and several are 
 | `pass target_quantile=target_clip_rate` | `_dp_trainer.py:3843` + 3 examples | Adaptive clipping converges to the wrong quantile |
 | Reject non-finite scores in `one_run()` | `auditing/one_run/_estimate.py:37-83` | NaN scores manufacture ε̂ from a numerically broken run |
 | Cap/bound the `_mu_at` doubling + bisection | `auditing/one_run/_gdp.py:66-77` | **Infinite hang** for m>2000 with a strong attack |
-| `pessimistic_estimate` passthrough in `eps_delta_pld`/`identity_pld` | `eps_delta.rs:46`, `identity.rs:22` | `PessimisticMismatch` on any non-default config |
 | Structurally fixed collective sequence in `sync(aux)` | `engine/clipping/_distributed.py:59-82` | **One empty Poisson batch permanently desynchronizes the process group** (critical) |
 
 **Effort: 3–4 engineer-days**, plus regression tests (another 2). These are unrelated to each other — parallelize across whoever is available.
 
+#### Accounting remediation status (Phase 0)
+
+- **Safe-only PLDs:** `DiscretizationConfig`, PMFs, and all Python process APIs no longer expose estimate mode. Exact atoms, coarsening, truncation, and Monte Carlo histograms take the upper-bound path, and unsupported legacy keywords fail explicitly.
+- **Exact mechanisms:** `eps_delta_pld` uses ceiling placement, so a finite exact atom never falls below its declared ε; identity uses the same single safe policy.
+- **PyO3 error conversion:** every binding uses one exhaustive `From<PldError> for PyErr` conversion. Invalid input and incompatible operands raise `ValueError`; numerical, calibration-execution, and invalid-state failures raise `RuntimeError` with native diagnostic context.
+- **Precision evidence:** the current engine precision surface remains loss-scaler-only, with existing loss-scaler coverage; no precision dispatcher, fallback, or compatibility shim was added for this accounting remediation.
+- **MC confidence remains open:** RC-4/A3 is not resolved. Conservative histogram bucketing does not turn b-min-sep or Balls-in-Bins point estimates into confidence bounds.
+
 ### 1.2 Fail-closed conversions (cheap, prevents the silent-degradation class)
 
-Convert "unknown → skip" into "unknown → raise" at four dispatch sites. This is the same 5-line change repeated, and it converts eight *silent* findings into loud ones even before the real fixes land:
+Convert "unknown → skip" into "unknown → raise" at three remaining dispatch sites. This is the same 5-line change repeated, and it converts eight *silent* findings into loud ones even before the real fixes land:
 
 - `base/serialization/_dispatch.py:54-60` — MRO fallback + raise on unregistered non-container
-- `engine/precision/_loss_scaler.py:187-203` — raise on wrapper types / zero tensor leaves
 - `engine/distributed/gradients.py:124-174` — `_reduce`/`_clone` raise on non-Tensor non-None leaf
 - `engine/distributed/_state.py:266-276` — MRO walk against `_SYNC_REGISTRY`, raise on miss
+
+**Not applicable in this checkout:** the audited precision-dispatch action references a removed/nonexistent `_dispatch` path. `opaque.api.engine.precision.__init__` exports only the current loss-scaling surface, and `_loss_scaler.py` has no silent fallback dispatch path; no compatibility shim or new engine code is needed.
 
 **Effort: 1 day.** See RC-7 for the full fix.
 
@@ -190,7 +198,7 @@ Issue J (no benchmark harness exists), issue W, the memory-optimizations tables,
 PyPI name collision + dependency confusion; unpinned metapackage (`set_build_versions.sh:144-153` is a no-op sed); non-manylinux wheels + no sdist; `__pycache__` in the wheel; missing LICENSE/NOTICE in sub-wheels; unattributed Unsloth `_utils.py`; `opaque-transformers` pyproject with no license/classifiers and a contradictory `requires-python`; Dependabot blind to 10 manifests + Cargo.lock + uv.lock; dead `unsafe_code` workspace lint.
 
 ### RC-16 — Accounting core API returns unsafe values
-`calibrate()` (two-sided tolerance, direction constant, non-convergence returns), `budget_exceeded`, `CachedProcess`, `set_discretization`, `_process_codec` recursion (RecursionError at ~2500 steps — **checkpointing an accountant fails mid-run**), non-dataclass Budget serialization, `Pld.self_compose(0)` panic through PyO3, u32 count truncation, `pessimistic_estimate=false` no-op, `poisson(1.0)`/`parallel_poisson` validation. One package, one batch.
+`calibrate()` (two-sided tolerance, direction constant, non-convergence returns), `budget_exceeded`, `CachedProcess`, `set_discretization`, `_process_codec` recursion (RecursionError at ~2500 steps — **checkpointing an accountant fails mid-run**), non-dataclass Budget serialization, `Pld.self_compose(0)` panic through PyO3, u32 count truncation, and `poisson(1.0)`/`parallel_poisson` validation. The optimistic estimate mode was removed as a fail-closed API change.
 
 ---
 
@@ -207,7 +215,7 @@ Covers RC-16 + RC-6's generation counter. Includes: iterative serialize/load/`__
 
 **A2. `opaque-accounting` Rust mechanisms + numerics** — 4d
 `mechanisms/eps_delta.rs`, `mechanisms/identity.rs`, `discretization/connect_the_dots.rs`, `numerics/fft.rs`, `pld/pmf/dense.rs`
-Ceil-rounding, pessimistic passthrough, `PyResult` on `self_compose`, u32 guard, and either implement or **delete** the optimistic estimate (currently a no-op documented as producing a lower bound).
+Ceiling rounding, unconditional conservative PMF construction, `PyResult` on `self_compose`, and the u32 guard. The optimistic estimate mode was deleted rather than retained as a compatibility no-op.
 
 **A3. Monte-Carlo upper-confidence-bound PLDs** — 10–12d ⚠ hardest single item
 `amplification/balls_in_bins/monte_carlo.rs`, `identity.rs`, `mc.rs`, `b_min_sep/registry.rs`, Python wrappers, `docs/reference/accounting.md`

@@ -129,6 +129,11 @@ for matrix mechanisms): pass the BandMF strategy’s first-column coefficients,
 Training scripts can select it with `--band-mf-sampling b_min_sep` (see
 `examples/train_dp_ftrl.py`).
 
+!!! warning
+    Monte Carlo PLDs are empirical point estimates. Their conservative grid
+    bucketing does not replace the RC-4 confidence correction, so reported ε
+    values are not upper confidence bounds.
+
 | Amplification | Supported | Notes |
 |---------------|:---------:|-------|
 | `b_min_sep()` | Yes | MC PLD; default `num_mc_samples=100_000` |
@@ -152,7 +157,7 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 
 ## Assumptions and limitations
 
-- **DP correctness** is for the **implemented** banded Toeplitz matrix \(C\) and the sampler you pair with accounting. If those match, the privacy guarantee stands even when the workload model is approximate.
+- **DP correctness** is for the **implemented** banded Toeplitz matrix \(C\) and the sampler you pair with accounting. For Monte Carlo amplifications, RC-4 confidence correction is still required before a reported ε is an upper confidence bound.
 - **`lr_schedule` (optional)**: workload coefficients are folded into a **lower-triangular Toeplitz** workload inside optimization. That matches the usual **constant** learning-rate momentum-SGD story. For a **varying** schedule \(\eta_t\), the implied Toeplitz workload can differ from the full map \(W_{t,s}=\eta_t\beta^{t-s}\): privacy is still valid for the constructed \(C\); **utility** alignment is approximate unless \(\eta\) is constant. See the [DP-FTRL user guide](../../user-guide/dp-ftrl.md).
 - **Momentum \(\beta=0\)**: Opaque warns because the workload becomes essentially identity (little benefit over independent noise).
 

@@ -132,7 +132,6 @@ class CyclicPoisson(DpFtrlProcess):
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
         """K-step Poisson-amplified PLD using N-tuned strategy quantities.
@@ -151,7 +150,6 @@ class CyclicPoisson(DpFtrlProcess):
         config = get_discretization(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
 
@@ -194,14 +192,12 @@ class CyclicPoisson(DpFtrlProcess):
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
         return self._pld_at_horizon(
             self.n_steps,
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
 

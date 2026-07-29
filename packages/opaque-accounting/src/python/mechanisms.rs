@@ -13,11 +13,14 @@ use super::pld::PyPld;
 ///
 /// Returns:
 ///     Pld: The privacy loss distribution.
+///
+/// Raises:
+///     ValueError: If parameters or configuration are invalid.
+///     RuntimeError: If PLD construction encounters a numerical failure.
 #[pyfunction]
 #[pyo3(name = "gaussian_pld", signature = (noise_multiplier, config))]
 pub fn py_gaussian_pld(noise_multiplier: f64, config: &PyDiscretizationConfig) -> PyResult<PyPld> {
-    let pld = crate::mechanisms::gaussian_pld(noise_multiplier, &config.inner)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let pld = crate::mechanisms::gaussian_pld(noise_multiplier, &config.inner)?;
     Ok(PyPld::new(pld))
 }
 
@@ -30,6 +33,10 @@ pub fn py_gaussian_pld(noise_multiplier: f64, config: &PyDiscretizationConfig) -
 ///
 /// Returns:
 ///     Pld: The privacy loss distribution.
+///
+/// Raises:
+///     ValueError: If parameters or configuration are invalid.
+///     RuntimeError: If PLD construction encounters a numerical failure.
 #[pyfunction]
 #[pyo3(name = "eps_delta_pld", signature = (epsilon, delta, config))]
 pub fn py_eps_delta_pld(
@@ -37,8 +44,7 @@ pub fn py_eps_delta_pld(
     delta: f64,
     config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
-    let pld = crate::mechanisms::eps_delta_pld(epsilon, delta, &config.inner)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let pld = crate::mechanisms::eps_delta_pld(epsilon, delta, &config.inner)?;
     Ok(PyPld::new(pld))
 }
 
@@ -49,11 +55,14 @@ pub fn py_eps_delta_pld(
 ///
 /// Returns:
 ///     Pld: The identity PLD (neutral element for composition).
+///
+/// Raises:
+///     ValueError: If configuration is invalid.
+///     RuntimeError: If PLD construction encounters a numerical failure.
 #[pyfunction]
 #[pyo3(name = "identity_pld", signature = (config))]
 pub fn py_identity_pld(config: &PyDiscretizationConfig) -> PyResult<PyPld> {
-    let pld = crate::mechanisms::identity_pld(&config.inner)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let pld = crate::mechanisms::identity_pld(&config.inner)?;
     Ok(PyPld::new(pld))
 }
 
@@ -67,7 +76,6 @@ pub fn py_identity_pld(config: &PyDiscretizationConfig) -> PyResult<PyPld> {
 #[pyfunction]
 #[pyo3(name = "non_private_pld", signature = (config))]
 pub fn py_non_private_pld(config: &PyDiscretizationConfig) -> PyResult<PyPld> {
-    let pld = crate::mechanisms::non_private_pld(&config.inner)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let pld = crate::mechanisms::non_private_pld(&config.inner)?;
     Ok(PyPld::new(pld))
 }

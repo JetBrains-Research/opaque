@@ -13,8 +13,7 @@ use crate::error::{PldError, Result};
 /// # Defaults
 ///
 /// The default configuration (`DiscretizationConfig::default()`) uses:
-/// discretization = 1e-4, log_mass_truncation_bound = -50.0,
-/// pessimistic_estimate = true.
+/// discretization = 1e-4, log_mass_truncation_bound = -50.0.
 ///
 /// The truncation bound -50 matches Google dp_accounting's default, ensuring
 /// Poisson-subsampled mechanisms produce identical epsilon bounds and grid
@@ -43,14 +42,6 @@ pub struct DiscretizationConfig {
     ///
     /// Example: -50 means truncate mass < e^{-50} ≈ 1.9×10^{-22}. Default: -50.0.
     pub log_mass_truncation_bound: f64,
-
-    /// Whether to use pessimistic (conservative) estimation
-    ///
-    /// - `true` (default): Adds truncated tail mass to boundary elements, providing
-    ///   a conservative upper bound on privacy loss. Use for privacy guarantees.
-    /// - `false`: Discards truncated mass, providing a tighter but potentially
-    ///   underestimating bound. Use only for analysis, not guarantees.
-    pub pessimistic_estimate: bool,
 
     /// Maximum number of grid points allowed before adaptive coarsening kicks in
     ///
@@ -84,25 +75,12 @@ pub struct DiscretizationConfig {
 }
 
 impl DiscretizationConfig {
-    /// Create a new discretization configuration with pessimistic estimation (default)
+    /// Create a new conservative discretization configuration.
     ///
     /// # Errors
     ///
     /// * `PldError::InvalidParameter` - If discretization ≤ 0 or log_mass_truncation_bound ≥ 0
     pub fn new(discretization: f64, log_mass_truncation_bound: f64) -> Result<Self> {
-        Self::with_estimate(discretization, log_mass_truncation_bound, true)
-    }
-
-    /// Create a new discretization configuration with specified estimation mode
-    ///
-    /// # Errors
-    ///
-    /// * `PldError::InvalidParameter` - If discretization ≤ 0 or log_mass_truncation_bound ≥ 0
-    pub fn with_estimate(
-        discretization: f64,
-        log_mass_truncation_bound: f64,
-        pessimistic_estimate: bool,
-    ) -> Result<Self> {
         if discretization <= 0.0 {
             return Err(PldError::InvalidParameter(format!(
                 "Discretization must be positive, got {}",
@@ -119,7 +97,6 @@ impl DiscretizationConfig {
         Ok(Self {
             discretization,
             log_mass_truncation_bound,
-            pessimistic_estimate,
             max_grid_size: 10_000_000,
             tail_mass_truncation: 1e-15,
             num_mc_samples: 100_000,
@@ -154,7 +131,6 @@ impl Default for DiscretizationConfig {
         Self {
             discretization: 1e-4,
             log_mass_truncation_bound: -50.0,
-            pessimistic_estimate: true,
             max_grid_size: 10_000_000,
             tail_mass_truncation: 1e-15,
             num_mc_samples: 100_000,
@@ -192,7 +168,6 @@ mod tests {
         let config = DiscretizationConfig::default();
         assert_eq!(config.discretization, 1e-4);
         assert_eq!(config.log_mass_truncation_bound, -50.0);
-        assert_eq!(config.pessimistic_estimate, true);
     }
 
     #[test]
@@ -205,15 +180,6 @@ mod tests {
     fn test_discretization_config_invalid_log_mass() {
         assert!(DiscretizationConfig::new(0.01, 0.0).is_err());
         assert!(DiscretizationConfig::new(0.01, 1.0).is_err());
-    }
-
-    #[test]
-    fn test_discretization_config_with_estimate() {
-        let pessimistic = DiscretizationConfig::with_estimate(0.01, -30.0, true).unwrap();
-        assert!(pessimistic.pessimistic_estimate);
-
-        let optimistic = DiscretizationConfig::with_estimate(0.01, -30.0, false).unwrap();
-        assert!(!optimistic.pessimistic_estimate);
     }
 
     #[test]

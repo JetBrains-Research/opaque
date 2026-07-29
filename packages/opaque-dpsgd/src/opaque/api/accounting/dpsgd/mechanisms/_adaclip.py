@@ -61,7 +61,6 @@ class AdaClip(DpProcess):
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
         from opaque.api.accounting.core.discretization import get_discretization
@@ -69,7 +68,6 @@ class AdaClip(DpProcess):
         config = get_discretization(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
 
@@ -84,7 +82,6 @@ class AdaClip(DpProcess):
                 inner_pld = self.inner.pld(
                     discretization=discretization,
                     log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-                    pessimistic_estimate=pessimistic_estimate,
                     max_grid_size=max_grid_size,
                 )
                 sigma_b = self.expected_batch_size * self.fraction_noise_std

@@ -14,7 +14,6 @@ class DiscretizationConfig:
     Args:
         discretization: Grid spacing for the PLD PMF. Smaller = tighter, slower.
         log_x_mass_truncation_bound: Log tail mass cutoff in x-space. Tails below exp(bound) are truncated.
-        pessimistic_estimate: Round upward for safe upper bounds (True) or downward (False).
         max_grid_size: Maximum grid bins before automatic coarsening.
         num_mc_samples: Number of Monte Carlo samples for MC-based accounting.
         seed: RNG seed for Monte Carlo reproducibility.
@@ -22,7 +21,6 @@ class DiscretizationConfig:
 
     discretization: float = 1e-4
     log_x_mass_truncation_bound: float = -50.0
-    pessimistic_estimate: bool = True
     max_grid_size: int = 10_000_000
     tail_mass_truncation: float = 1e-15
     num_mc_samples: int = 100_000
@@ -33,7 +31,6 @@ class DiscretizationConfig:
         return _native.DiscretizationConfig(
             discretization=self.discretization,
             log_mass_truncation_bound=self.log_x_mass_truncation_bound,
-            pessimistic_estimate=self.pessimistic_estimate,
             max_grid_size=self.max_grid_size,
             tail_mass_truncation=self.tail_mass_truncation,
             num_mc_samples=self.num_mc_samples,
@@ -54,7 +51,6 @@ _default_config: DiscretizationConfig | None = None
 def set_discretization(
     discretization: float = 1e-4,
     log_x_mass_truncation_bound: float = -50.0,
-    pessimistic_estimate: bool = True,
     max_grid_size: int = 10_000_000,
     tail_mass_truncation: float = 1e-15,
     num_mc_samples: int = 100_000,
@@ -70,9 +66,6 @@ def set_discretization(
             Error scales as O(disc^2). Default: 1e-4.
         log_x_mass_truncation_bound: Tails with log-probability below this bound in x-space
             are truncated. Default: -50 (matching Google).
-        pessimistic_estimate: If True (default), round probabilities upward to
-            produce an **upper bound** on privacy loss (safe for guarantees). If
-            False, round downward (optimistic estimate, useful for debugging only).
         max_grid_size: If grid exceeds this many bins, coarsen discretization
             automatically. Default: 10,000,000.
         tail_mass_truncation: Chernoff tail budget during composition (Rust default 1e-15).
@@ -91,7 +84,6 @@ def set_discretization(
     _default_config = DiscretizationConfig(
         discretization=discretization,
         log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-        pessimistic_estimate=pessimistic_estimate,
         max_grid_size=max_grid_size,
         tail_mass_truncation=tail_mass_truncation,
         num_mc_samples=num_mc_samples,
@@ -103,7 +95,6 @@ def get_discretization(
     *,
     discretization: float | None = None,
     log_x_mass_truncation_bound: float | None = None,
-    pessimistic_estimate: bool | None = None,
     max_grid_size: int | None = None,
     tail_mass_truncation: float | None = None,
     num_mc_samples: int | None = None,
@@ -121,7 +112,6 @@ def get_discretization(
     Args:
         discretization: Grid spacing (query-time override).
         log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
-        pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
         max_grid_size: Maximum grid size before coarsening (query-time override).
         tail_mass_truncation: Composition tail budget (query-time override).
         num_mc_samples: Number of Monte Carlo samples (query-time override).
@@ -145,7 +135,6 @@ def get_discretization(
     if (
         discretization is None
         and log_x_mass_truncation_bound is None
-        and pessimistic_estimate is None
         and max_grid_size is None
         and tail_mass_truncation is None
         and num_mc_samples is None
@@ -162,11 +151,6 @@ def get_discretization(
             log_x_mass_truncation_bound
             if log_x_mass_truncation_bound is not None
             else base.log_x_mass_truncation_bound
-        ),
-        pessimistic_estimate=(
-            pessimistic_estimate
-            if pessimistic_estimate is not None
-            else base.pessimistic_estimate
         ),
         max_grid_size=max_grid_size
         if max_grid_size is not None

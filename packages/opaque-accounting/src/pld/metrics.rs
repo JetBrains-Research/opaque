@@ -446,7 +446,7 @@ mod tests {
     fn identity_pld() -> PrivacyLossDistribution {
         let mut masses = BTreeMap::new();
         masses.insert(0, 1.0);
-        PrivacyLossDistribution::new_symmetric(Pmf::from_sparse(0.1, masses, 0.0, true, usize::MAX))
+        PrivacyLossDistribution::new_symmetric(Pmf::from_sparse(0.1, masses, 0.0, usize::MAX))
     }
 
     // -----------------------------------------------------------------------
@@ -456,7 +456,7 @@ mod tests {
     #[test]
     fn test_pmf_delta_all_mass_below_epsilon() {
         // All losses <= epsilon → delta = infinity_mass only
-        let pmf = Pmf::new(0.1, -5, vec![0.3, 0.4, 0.3], 0.0, true, usize::MAX);
+        let pmf = Pmf::new(0.1, -5, vec![0.3, 0.4, 0.3], 0.0, usize::MAX);
         // Losses: -0.5, -0.4, -0.3. Query epsilon=0.0 → all below
         let d = pmf_delta(&pmf, 0.0);
         assert!((d - 0.0).abs() < 1e-15);
@@ -465,7 +465,7 @@ mod tests {
     #[test]
     fn test_pmf_delta_all_mass_above_epsilon() {
         // All losses > epsilon → delta is large
-        let pmf = Pmf::new(0.1, 10, vec![0.5, 0.5], 0.0, true, usize::MAX);
+        let pmf = Pmf::new(0.1, 10, vec![0.5, 0.5], 0.0, usize::MAX);
         // Losses: 1.0, 1.1. Query epsilon=0.0 → all above
         let d = pmf_delta(&pmf, 0.0);
         // delta = (1 - exp(-1.0))*0.5 + (1 - exp(-1.1))*0.5
@@ -474,8 +474,8 @@ mod tests {
     }
 
     #[test]
-    fn test_pmf_delta_includes_infinity_mass() {
-        let pmf = Pmf::new(0.1, 0, vec![0.7], 0.3, true, usize::MAX);
+    fn test_pmf_delta_includes_conservative_right_tail_mass() {
+        let pmf = Pmf::new(0.1, 0, vec![0.7], 0.3, usize::MAX);
         let d = pmf_delta(&pmf, 10.0);
         // All finite losses (0.0) < epsilon=10.0, so only infinity_mass contributes
         assert!((d - 0.3).abs() < 1e-15);
@@ -488,7 +488,6 @@ mod tests {
             -5,
             vec![0.1, 0.2, 0.3, 0.2, 0.1, 0.05, 0.05],
             0.0,
-            true,
             usize::MAX,
         );
         let epsilons = [-1.0, -0.5, 0.0, 0.5, 1.0, 2.0];
@@ -512,14 +511,14 @@ mod tests {
 
     #[test]
     fn test_pmf_epsilon_returns_infinity_when_infmass_exceeds_target() {
-        let pmf = Pmf::new(0.1, 0, vec![0.5], 0.6, true, usize::MAX);
+        let pmf = Pmf::new(0.1, 0, vec![0.5], 0.6, usize::MAX);
         let eps = pmf_epsilon(&pmf, 0.3);
         assert!(eps.is_infinite());
     }
 
     #[test]
     fn test_pmf_epsilon_returns_zero_for_large_target() {
-        let pmf = Pmf::new(0.1, 0, vec![0.3, 0.5, 0.2], 0.0, true, usize::MAX);
+        let pmf = Pmf::new(0.1, 0, vec![0.3, 0.5, 0.2], 0.0, usize::MAX);
         let eps = pmf_epsilon(&pmf, 1.0);
         assert!((eps - 0.0).abs() < 1e-10);
     }
@@ -531,7 +530,6 @@ mod tests {
             -5,
             vec![0.1, 0.2, 0.3, 0.2, 0.1, 0.05, 0.05],
             0.0,
-            true,
             usize::MAX,
         );
         let targets = [0.01, 0.05, 0.1, 0.2, 0.5];
@@ -551,14 +549,7 @@ mod tests {
 
     #[test]
     fn test_pmf_epsilon_and_delta_are_consistent() {
-        let pmf = Pmf::new(
-            0.1,
-            -5,
-            vec![0.1, 0.2, 0.4, 0.2, 0.1],
-            0.0,
-            true,
-            usize::MAX,
-        );
+        let pmf = Pmf::new(0.1, -5, vec![0.1, 0.2, 0.4, 0.2, 0.1], 0.0, usize::MAX);
 
         for &target_delta in &[0.01, 0.05, 0.1, 0.2, 0.4] {
             let eps = pmf_epsilon(&pmf, target_delta);
@@ -581,14 +572,14 @@ mod tests {
 
     #[test]
     fn test_pmf_beta_boundary_alpha_zero() {
-        let pmf = Pmf::new(0.1, 0, vec![0.5, 0.3, 0.1], 0.1, true, usize::MAX);
+        let pmf = Pmf::new(0.1, 0, vec![0.5, 0.3, 0.1], 0.1, usize::MAX);
         let b = pmf_beta(&pmf, 0.0);
         assert!((b - (1.0 - pmf.infinity_mass)).abs() < 1e-12);
     }
 
     #[test]
     fn test_pmf_beta_boundary_alpha_one() {
-        let pmf = Pmf::new(0.1, 0, vec![0.5, 0.3, 0.2], 0.0, true, usize::MAX);
+        let pmf = Pmf::new(0.1, 0, vec![0.5, 0.3, 0.2], 0.0, usize::MAX);
         let b = pmf_beta(&pmf, 1.0);
         assert!((b - 0.0).abs() < 1e-12);
     }
@@ -600,7 +591,6 @@ mod tests {
             -5,
             vec![0.1, 0.2, 0.3, 0.2, 0.1, 0.05, 0.05],
             0.0,
-            true,
             usize::MAX,
         );
         let alphas = [0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9, 1.0];
@@ -626,7 +616,6 @@ mod tests {
             0,
             vec![0.1, 0.2, 0.3, 0.2, 0.1, 0.05, 0.05],
             0.0,
-            true,
             usize::MAX,
         );
 
@@ -672,7 +661,6 @@ mod tests {
             -3,
             vec![0.1, 0.2, 0.3, 0.2, 0.1, 0.05, 0.05],
             0.0,
-            true,
             usize::MAX,
         );
         let pld = sym_pld(pmf);
@@ -682,8 +670,8 @@ mod tests {
     #[test]
     fn test_delta_asymmetric_takes_worst_case() {
         // Create asymmetric PLD where ADD has larger delta than REMOVE
-        let remove = Pmf::new(0.1, 0, vec![0.5, 0.3, 0.2], 0.0, true, usize::MAX);
-        let add = Pmf::new(0.1, 5, vec![0.3, 0.4, 0.3], 0.0, true, usize::MAX);
+        let remove = Pmf::new(0.1, 0, vec![0.5, 0.3, 0.2], 0.0, usize::MAX);
+        let add = Pmf::new(0.1, 5, vec![0.3, 0.4, 0.3], 0.0, usize::MAX);
         let pld = asym_pld(remove.clone(), add.clone());
 
         let d = delta(&pld, 0.0);
@@ -695,8 +683,8 @@ mod tests {
 
     #[test]
     fn test_epsilon_asymmetric_takes_worst_case() {
-        let remove = Pmf::new(0.1, 0, vec![0.5, 0.3, 0.2], 0.0, true, usize::MAX);
-        let add = Pmf::new(0.1, 5, vec![0.3, 0.4, 0.3], 0.0, true, usize::MAX);
+        let remove = Pmf::new(0.1, 0, vec![0.5, 0.3, 0.2], 0.0, usize::MAX);
+        let add = Pmf::new(0.1, 5, vec![0.3, 0.4, 0.3], 0.0, usize::MAX);
         let pld = asym_pld(remove.clone(), add.clone());
 
         let eps = epsilon(&pld, 0.1);
@@ -713,7 +701,6 @@ mod tests {
             -3,
             vec![0.1, 0.2, 0.3, 0.2, 0.1, 0.05, 0.05],
             0.0,
-            true,
             usize::MAX,
         );
         let pld = sym_pld(pmf);
@@ -745,7 +732,7 @@ mod tests {
     #[test]
     fn test_bayes_risk_leq_min_prior() {
         // Bayes risk is always <= min(prior, 1-prior) (the identity bound)
-        let pmf = Pmf::new(0.1, 0, vec![0.3, 0.4, 0.2], 0.1, true, usize::MAX);
+        let pmf = Pmf::new(0.1, 0, vec![0.3, 0.4, 0.2], 0.1, usize::MAX);
         let pld = sym_pld(pmf);
 
         for &prior in &[0.1, 0.3, 0.5, 0.7, 0.9] {
@@ -765,14 +752,7 @@ mod tests {
         // risk(prior) == risk(1-prior) for symmetric PLDs with losses centered at 0
         // lower_loss_index=-2, 5 elements → losses: -0.2, -0.1, 0.0, 0.1, 0.2
         // Symmetric weights around center
-        let pmf = Pmf::new(
-            0.1,
-            -2,
-            vec![0.1, 0.2, 0.4, 0.2, 0.1],
-            0.0,
-            true,
-            usize::MAX,
-        );
+        let pmf = Pmf::new(0.1, -2, vec![0.1, 0.2, 0.4, 0.2, 0.1], 0.0, usize::MAX);
         let pld = sym_pld(pmf);
 
         for &prior in &[0.1, 0.2, 0.3, 0.4] {
@@ -794,16 +774,16 @@ mod tests {
 
     #[test]
     fn test_beta_asymmetric_boundary_alpha_zero() {
-        let remove = Pmf::new(0.1, 0, vec![0.5, 0.3, 0.1], 0.1, true, usize::MAX);
-        let add = Pmf::new(0.1, 0, vec![0.4, 0.4, 0.2], 0.0, true, usize::MAX);
+        let remove = Pmf::new(0.1, 0, vec![0.5, 0.3, 0.1], 0.1, usize::MAX);
+        let add = Pmf::new(0.1, 0, vec![0.4, 0.4, 0.2], 0.0, usize::MAX);
         let b = pmf_beta_asymmetric(&remove, &add, 0.0);
         assert!((b - (1.0 - remove.infinity_mass)).abs() < 1e-12);
     }
 
     #[test]
     fn test_beta_asymmetric_boundary_alpha_one() {
-        let remove = Pmf::new(0.1, 0, vec![0.5, 0.3, 0.2], 0.0, true, usize::MAX);
-        let add = Pmf::new(0.1, 0, vec![0.4, 0.4, 0.2], 0.0, true, usize::MAX);
+        let remove = Pmf::new(0.1, 0, vec![0.5, 0.3, 0.2], 0.0, usize::MAX);
+        let add = Pmf::new(0.1, 0, vec![0.4, 0.4, 0.2], 0.0, usize::MAX);
         let b = pmf_beta_asymmetric(&remove, &add, 1.0);
         assert!((b - 0.0).abs() < 1e-12);
     }
@@ -815,7 +795,6 @@ mod tests {
             -3,
             vec![0.1, 0.2, 0.3, 0.2, 0.1, 0.05, 0.05],
             0.0,
-            true,
             usize::MAX,
         );
         let add = Pmf::new(
@@ -823,7 +802,6 @@ mod tests {
             -2,
             vec![0.05, 0.15, 0.4, 0.25, 0.1, 0.05],
             0.0,
-            true,
             usize::MAX,
         );
 
@@ -847,8 +825,8 @@ mod tests {
 
     #[test]
     fn test_beta_inverse_swaps_roles() {
-        let remove = Pmf::new(0.1, -3, vec![0.1, 0.3, 0.4, 0.2], 0.0, true, usize::MAX);
-        let add = Pmf::new(0.1, -2, vec![0.2, 0.3, 0.3, 0.2], 0.0, true, usize::MAX);
+        let remove = Pmf::new(0.1, -3, vec![0.1, 0.3, 0.4, 0.2], 0.0, usize::MAX);
+        let add = Pmf::new(0.1, -2, vec![0.2, 0.3, 0.3, 0.2], 0.0, usize::MAX);
 
         // beta_inverse(remove, add, alpha) == beta_asymmetric(add, remove, alpha)
         for &alpha in &[0.0, 0.1, 0.3, 0.5, 0.8, 1.0] {

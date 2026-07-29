@@ -140,10 +140,14 @@ class DiscretizationConfig:
             Smaller values give tighter bounds but use more memory.
         log_mass_truncation_bound: Log tail mass cutoff. Default: -50.0.
             Tails below exp(bound) are truncated.
-        pessimistic_estimate: If True (default), round probabilities upward
-            for an upper bound on privacy loss (safe for guarantees).
         max_grid_size: Maximum grid bins before automatic coarsening.
             Default: 10,000,000.
+        tail_mass_truncation: Total tail mass budget for Chernoff truncation
+            during composition. Default: 1e-15.
+        num_mc_samples: Number of Monte Carlo samples for MC-based PLD
+            computations. Default: 100,000.
+        seed: RNG seed for reproducible Monte Carlo PLD computation.
+            Default: 42.
 
     Example::
 
@@ -155,8 +159,8 @@ class DiscretizationConfig:
         self,
         discretization: float = 1e-4,
         log_mass_truncation_bound: float = -50.0,
-        pessimistic_estimate: bool = True,
         max_grid_size: int = 10_000_000,
+        tail_mass_truncation: float = 1e-15,
         num_mc_samples: int = 100_000,
         seed: int = 42,
     ) -> None: ...
@@ -171,13 +175,13 @@ class DiscretizationConfig:
         ...
 
     @property
-    def pessimistic_estimate(self) -> bool:
-        """Whether to round upward (upper bound on loss)."""
+    def max_grid_size(self) -> int:
+        """Maximum bins before automatic coarsening."""
         ...
 
     @property
-    def max_grid_size(self) -> int:
-        """Maximum bins before automatic coarsening."""
+    def tail_mass_truncation(self) -> float:
+        """Total tail mass budget for composition truncation."""
         ...
 
     @property

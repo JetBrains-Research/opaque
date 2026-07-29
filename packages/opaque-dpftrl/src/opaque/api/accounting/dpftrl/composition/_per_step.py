@@ -53,14 +53,12 @@ class PerStep(DpProcess):
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
         return self.proc._pld_at_horizon(
             1,
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
 
@@ -70,7 +68,6 @@ class PerStep(DpProcess):
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
         if count <= 0:
@@ -85,7 +82,6 @@ class PerStep(DpProcess):
             count,
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
 

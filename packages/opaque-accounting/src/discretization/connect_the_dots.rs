@@ -72,7 +72,6 @@ pub(crate) fn discretize_from_deltas(
         rounded_epsilon_lower,
         rounded_epsilon_upper,
         config.discretization,
-        config.pessimistic_estimate,
         config.max_grid_size,
     )
 }
@@ -85,7 +84,6 @@ fn create_pmf_connect_the_dots_uniform(
     rounded_epsilon_lower: i64,
     rounded_epsilon_upper: i64,
     discretization: f64,
-    pessimistic_estimate: bool,
     max_grid_size: usize,
 ) -> Result<Pmf> {
     let n = deltas.len();
@@ -114,7 +112,6 @@ fn create_pmf_connect_the_dots_uniform(
             discretization,
             masses,
             deltas[0],
-            pessimistic_estimate,
             max_grid_size,
         ));
     }
@@ -174,7 +171,6 @@ fn create_pmf_connect_the_dots_uniform(
         discretization,
         masses,
         infinity_mass,
-        pessimistic_estimate,
         max_grid_size,
     ))
 }
