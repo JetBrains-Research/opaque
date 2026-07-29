@@ -354,6 +354,26 @@
     
     
       <li class="md-tabs__item">
+        <a href="../../development/" class="md-tabs__link">
+          
+  
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
         <a href="../../reference/" class="md-tabs__link">
           
   
@@ -616,6 +636,15 @@
   <a href="#verify-installation" class="md-nav__link">
     <span class="md-ellipsis">
       Verify Installation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pycharm" class="md-nav__link">
+    <span class="md-ellipsis">
+      PyCharm
     </span>
   </a>
   
@@ -2188,7 +2217,7 @@
   
   
   <span class="md-ellipsis">
-    API Reference
+    Development
     
   </span>
   
@@ -2198,6 +2227,79 @@
         
         <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Development
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    API Reference
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             API Reference
           </label>
@@ -2642,6 +2744,15 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#pycharm" class="md-nav__link">
+    <span class="md-ellipsis">
+      PyCharm
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2713,6 +2824,13 @@
 </code></pre></div>
 <p><code>opaque</code> itself is a <a href="https://peps.python.org/pep-0420/">PEP 420</a> namespace with no top-level Python code, so
 query the installed distributions individually.</p>
+<h2 id="pycharm">PyCharm<a class="headerlink" href="#pycharm" title="Permanent link">&para;</a></h2>
+<p>In PyCharm, select the <code>uv</code> interpreter for the project where you ran
+<code>uv add</code>. Completion and Quick Documentation follow Opaque's public façade
+imports, such as <code>opaque.dpsgd.clipping</code>, <code>opaque.dpsgd.noise</code>, and
+<code>opaque.accounting</code>; avoid copying <code>opaque.api.*</code> paths from implementation
+tracebacks into application code. Clone Opaque and use an editable workspace
+only when you need to debug or change its implementation.</p>
 
 
 
