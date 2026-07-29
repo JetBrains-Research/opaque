@@ -22,7 +22,7 @@ pub fn py_poisson_gaussian_pld(
     config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
     let pld = crate::amplification::poisson_gaussian_pld(noise_multiplier, rate, &config.inner)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        .map_err(super::pld_error_to_py_err)?;
     Ok(PyPld::new(pld))
 }
 
@@ -57,7 +57,7 @@ pub fn py_truncated_poisson_gaussian_pld(
         dataset_size,
         &config.inner,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    .map_err(super::pld_error_to_py_err)?;
     Ok(PyPld::new(pld))
 }
 
@@ -88,7 +88,7 @@ pub fn py_parallel_poisson_gaussian_pld(
         microbatches,
         &config.inner,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    .map_err(super::pld_error_to_py_err)?;
     Ok(PyPld::new(pld))
 }
 
@@ -120,7 +120,7 @@ pub fn py_bnb_mc_pld(
     config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
     let pld = crate::amplification::bnb_mc_pld(&gram, num_bins, sigma, &config.inner)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        .map_err(super::pld_error_to_py_err)?;
     Ok(PyPld::new(pld))
 }
 
@@ -166,7 +166,7 @@ pub fn py_bnb_mc_pld_identity(
         importance_tilt,
         &config.inner,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    .map_err(super::pld_error_to_py_err)?;
     Ok(PyPld::new(pld))
 }
 
@@ -194,7 +194,7 @@ pub fn py_bandmf_b_min_sep_warm_mc_pld(
         sigma,
         &config.inner,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    .map_err(super::pld_error_to_py_err)?;
     Ok(PyPld::new(pld))
 }
 
@@ -217,7 +217,7 @@ pub fn py_register_b_min_sep_transcript_corpus(
         num_samples,
         seed,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    .map_err(super::pld_error_to_py_err)
 }
 
 #[pyfunction]
@@ -247,6 +247,6 @@ pub fn py_bandmf_b_min_sep_pld_from_transcript_handle(
         sigma,
         &config.inner,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    .map_err(super::pld_error_to_py_err)?;
     Ok(PyPld::new(pld))
 }

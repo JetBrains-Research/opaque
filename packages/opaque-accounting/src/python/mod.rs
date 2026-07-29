@@ -10,7 +10,34 @@ mod matrix_factorization;
 mod mechanisms;
 mod pld;
 
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
+
+use crate::error::PldError;
+
+pub(crate) fn pld_error_to_py_err(error: PldError) -> PyErr {
+    let message = error.to_string();
+
+    match error {
+        PldError::InvalidParameter(_)
+        | PldError::CalibrationInvalidConfig(_)
+        | PldError::CalibrationOutOfBounds { .. }
+        | PldError::UnsupportedAdjacency { .. }
+        | PldError::EmptyCollection(_)
+        | PldError::InfiniteBounds(_)
+        | PldError::EmptyAccountant(_)
+        | PldError::UnsupportedEvent(_) => PyValueError::new_err(message),
+        PldError::DiscretizationMismatch(_, _)
+        | PldError::PessimisticMismatch(_, _)
+        | PldError::TypeMismatch(_, _)
+        | PldError::NumericalError(_)
+        | PldError::InsufficientMass(_, _)
+        | PldError::CalibrationEvaluationFailed(_)
+        | PldError::CalibrationConvergenceFailed { .. }
+        | PldError::CalibrationMetricUnavailable(_)
+        | PldError::LogSubtractionError { .. } => PyRuntimeError::new_err(message),
+    }
+}
 
 /// Register all Python-visible types and functions.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {

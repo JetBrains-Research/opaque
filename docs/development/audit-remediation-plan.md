@@ -54,19 +54,25 @@ Order by (impact ÷ diff size). All of these are ≤ 1 day each and several are 
 | `pass target_quantile=target_clip_rate` | `_dp_trainer.py:3843` + 3 examples | Adaptive clipping converges to the wrong quantile |
 | Reject non-finite scores in `one_run()` | `auditing/one_run/_estimate.py:37-83` | NaN scores manufacture ε̂ from a numerically broken run |
 | Cap/bound the `_mu_at` doubling + bisection | `auditing/one_run/_gdp.py:66-77` | **Infinite hang** for m>2000 with a strong attack |
-| `pessimistic_estimate` passthrough in `eps_delta_pld`/`identity_pld` | `eps_delta.rs:46`, `identity.rs:22` | `PessimisticMismatch` on any non-default config |
+| ✅ `pessimistic_estimate` passthrough in `eps_delta_pld`/`identity_pld` | `eps_delta.rs:46`, `identity.rs:22` | `PessimisticMismatch` on any non-default config |
 | Structurally fixed collective sequence in `sync(aux)` | `engine/clipping/_distributed.py:59-82` | **One empty Poisson batch permanently desynchronizes the process group** (critical) |
 
 **Effort: 3–4 engineer-days**, plus regression tests (another 2). These are unrelated to each other — parallelize across whoever is available.
 
+#### Accounting remediation status (completed)
+
+- **Exact mechanisms:** `eps_delta_pld` and `identity_pld` preserve `DiscretizationConfig.pessimistic_estimate`; Rust tests cover both estimate modes, and public Python tests confirm a mixed-mode composition raises `RuntimeError`.
+- **PyO3 error conversion:** all native accounting bindings use one exhaustive `PldError` mapper. Invalid input remains a `ValueError`; composition, numerical, and internal failures are `RuntimeError` with their native diagnostic preserved.
+
 ### 1.2 Fail-closed conversions (cheap, prevents the silent-degradation class)
 
-Convert "unknown → skip" into "unknown → raise" at four dispatch sites. This is the same 5-line change repeated, and it converts eight *silent* findings into loud ones even before the real fixes land:
+Convert "unknown → skip" into "unknown → raise" at three remaining dispatch sites. This is the same 5-line change repeated, and it converts eight *silent* findings into loud ones even before the real fixes land:
 
 - `base/serialization/_dispatch.py:54-60` — MRO fallback + raise on unregistered non-container
-- `engine/precision/_loss_scaler.py:187-203` — raise on wrapper types / zero tensor leaves
 - `engine/distributed/gradients.py:124-174` — `_reduce`/`_clone` raise on non-Tensor non-None leaf
 - `engine/distributed/_state.py:266-276` — MRO walk against `_SYNC_REGISTRY`, raise on miss
+
+**Not applicable in this checkout:** the audited precision-dispatch action references a removed/nonexistent `_dispatch` path. `opaque.api.engine.precision.__init__` exports only the current loss-scaling surface, and `_loss_scaler.py` has no silent fallback dispatch path; no compatibility shim or new engine code is needed.
 
 **Effort: 1 day.** See RC-7 for the full fix.
 

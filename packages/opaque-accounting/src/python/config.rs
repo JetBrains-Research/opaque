@@ -3,11 +3,6 @@
 use pyo3::prelude::*;
 
 use crate::discretization::DiscretizationConfig;
-use crate::error::PldError;
-
-fn to_py_err(e: PldError) -> PyErr {
-    pyo3::exceptions::PyValueError::new_err(e.to_string())
-}
 
 /// Discretization configuration for PLD computation.
 ///
@@ -43,7 +38,7 @@ impl PyDiscretizationConfig {
             log_mass_truncation_bound,
             pessimistic_estimate,
         )
-        .map_err(to_py_err)?
+        .map_err(super::pld_error_to_py_err)?
         .with_max_grid_size(max_grid_size);
         inner.tail_mass_truncation = tail_mass_truncation;
         inner.num_mc_samples = num_mc_samples;

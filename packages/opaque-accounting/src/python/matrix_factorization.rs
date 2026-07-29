@@ -32,7 +32,7 @@ pub fn py_mf_gaussian_pld(
 ) -> PyResult<PyPld> {
     let pld =
         crate::matrix_factorization::mf_gaussian_pld(noise_multiplier, sensitivity, &config.inner)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+            .map_err(super::pld_error_to_py_err)?;
     Ok(PyPld::new(pld))
 }
 
@@ -91,7 +91,7 @@ pub fn py_minsep_true_max_participations(
 #[pyo3(name = "single_participation_sensitivity", signature = (column_norms,))]
 pub fn py_single_participation_sensitivity(column_norms: Vec<f64>) -> PyResult<f64> {
     crate::matrix_factorization::single_participation_sensitivity(&column_norms)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+        .map_err(super::pld_error_to_py_err)
 }
 
 /// Exact L2 sensitivity for banded Gram matrices under min-sep participation.
@@ -114,7 +114,7 @@ pub fn py_banded_sensitivity(
     max_participations: Option<usize>,
 ) -> PyResult<f64> {
     crate::matrix_factorization::banded_sensitivity(&gram_diag, min_sep, max_participations)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+        .map_err(super::pld_error_to_py_err)
 }
 
 /// Upper bound on L2 sensitivity for general Gram matrices.
@@ -144,7 +144,7 @@ pub fn py_general_sensitivity_upper_bound(
         min_sep,
         max_participations,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    .map_err(super::pld_error_to_py_err)
 }
 
 /// L2 sensitivity under fixed-epoch participation.
@@ -163,7 +163,7 @@ pub fn py_general_sensitivity_upper_bound(
 #[pyo3(name = "fixed_epoch_sensitivity", signature = (gram_matrix, n, epochs))]
 pub fn py_fixed_epoch_sensitivity(gram_matrix: Vec<f64>, n: usize, epochs: usize) -> PyResult<f64> {
     crate::matrix_factorization::fixed_epoch_sensitivity(&gram_matrix, n, epochs)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+        .map_err(super::pld_error_to_py_err)
 }
 
 /// Sensitivity squared for a BLT strategy matrix.
@@ -188,7 +188,7 @@ pub fn py_blt_sensitivity_squared(
     n: f64,
 ) -> PyResult<f64> {
     crate::matrix_factorization::blt_sensitivity_squared(&buf_decay, &output_scale, n)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+        .map_err(super::pld_error_to_py_err)
 }
 
 /// Sensitivity squared for a Toeplitz matrix under min-sep participation.
@@ -221,7 +221,7 @@ pub fn py_toeplitz_minsep_sensitivity_squared(
         min_sep,
         max_participations,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    .map_err(super::pld_error_to_py_err)
 }
 
 /// Squared L2 sensitivity of the DP-λCGD strategy matrix.
@@ -258,7 +258,7 @@ pub fn py_lambda_cgd_sensitivity_squared(
         max_participations,
         momentum,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    .map_err(super::pld_error_to_py_err)
 }
 
 /// Squared L2 sensitivity of the column-normalized DP-λCGD.
@@ -294,7 +294,7 @@ pub fn py_lambda_cgd_normalized_sensitivity_squared(
         max_participations,
         momentum,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    .map_err(super::pld_error_to_py_err)
 }
 
 /// Compute the BnB Gram matrix for DP-λCGD.
@@ -334,7 +334,7 @@ pub fn py_lambda_cgd_gram_matrix(
         normalized,
         momentum,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    .map_err(super::pld_error_to_py_err)
 }
 
 /// Compute the BnB Gram matrix for DP-λCGD with LR-schedule weighting.
@@ -376,7 +376,7 @@ pub fn py_lambda_cgd_gram_matrix_lr(
         normalized,
         &lr_weights,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    .map_err(super::pld_error_to_py_err)
 }
 
 /// Max column L2 norm of the DP-λCGD strategy matrix.
@@ -396,7 +396,7 @@ pub fn py_lambda_cgd_gram_matrix_lr(
 #[pyo3(name = "lambda_cgd_max_column_norm", signature = (lambda_, n_steps))]
 pub fn py_lambda_cgd_max_column_norm(lambda_: f64, n_steps: usize) -> PyResult<f64> {
     crate::matrix_factorization::lambda_cgd_max_column_norm(lambda_, n_steps)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+        .map_err(super::pld_error_to_py_err)
 }
 
 // ── BISR (Banded Inverse Square Root) ────────────────────────────
@@ -428,7 +428,7 @@ pub fn py_bisr_sensitivity_squared(
         max_participations,
         momentum,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    .map_err(super::pld_error_to_py_err)
 }
 
 /// Squared L2 sensitivity of column-normalized BISR.
@@ -458,7 +458,7 @@ pub fn py_bisr_normalized_sensitivity_squared(
         max_participations,
         momentum,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    .map_err(super::pld_error_to_py_err)
 }
 
 /// BnB Gram matrix for BISR with optional momentum.
@@ -491,7 +491,7 @@ pub fn py_bisr_gram_matrix(
         normalized,
         momentum,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    .map_err(super::pld_error_to_py_err)
 }
 
 /// BnB Gram matrix for BISR with LR-schedule weighting.
@@ -527,7 +527,7 @@ pub fn py_bisr_gram_matrix_lr(
         normalized,
         &lr_weights,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    .map_err(super::pld_error_to_py_err)
 }
 
 /// BnB Gram matrix for a banded Toeplitz strategy (known forward coefficients).
@@ -559,7 +559,7 @@ pub fn py_toeplitz_gram_matrix(
         max_participations,
         normalized,
     )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    .map_err(super::pld_error_to_py_err)
 }
 
 /// Compute BISR strategy coefficients from inverse coefficients.

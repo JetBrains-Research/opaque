@@ -44,7 +44,13 @@ pub fn eps_delta_pld(
     let mut masses = BTreeMap::new();
     masses.insert(index, 1.0 - delta);
 
-    let pmf = Pmf::from_sparse(disc, masses, delta, true, config.max_grid_size);
+    let pmf = Pmf::from_sparse(
+        disc,
+        masses,
+        delta,
+        config.pessimistic_estimate,
+        config.max_grid_size,
+    );
     Ok(PrivacyLossDistribution::new_symmetric(pmf))
 }
 
@@ -82,6 +88,18 @@ mod tests {
     fn test_eps_delta_pure_dp() {
         let pld = eps_delta_pld(1.0, 0.0, &default_config()).unwrap();
         assert_eq!(pld.delta_at(1.0), 0.0);
+    }
+
+    #[test]
+    fn test_eps_delta_preserves_estimate_mode() {
+        for pessimistic_estimate in [true, false] {
+            let mut config = default_config();
+            config.pessimistic_estimate = pessimistic_estimate;
+
+            let pld = eps_delta_pld(1.0, 1e-5, &config).unwrap();
+
+            assert_eq!(pld.pmf_remove.pessimistic_estimate, pessimistic_estimate);
+        }
     }
 
     #[test]
