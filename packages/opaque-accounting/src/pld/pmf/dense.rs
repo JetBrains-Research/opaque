@@ -75,9 +75,6 @@ pub struct Pmf {
     /// delta (at loss = −∞, the hockey-stick term is always 0).
     pub negative_infinity_mass: f64,
 
-    /// Whether to use pessimistic rounding (upper bound on delta)
-    pub pessimistic_estimate: bool,
-
     /// Maximum grid size before post-composition coarsening triggers.
     /// `usize::MAX` disables coarsening (default).
     pub max_grid_size: usize,
@@ -112,14 +109,12 @@ impl Pmf {
     /// * `lower_loss_index` - Index of the first bucket
     /// * `probs` - Probability masses for each bucket
     /// * `infinity_mass` - Tail probability at +∞
-    /// * `pessimistic_estimate` - Whether to use pessimistic rounding
     /// * `max_grid_size` - Maximum grid size before coarsening
     pub fn new(
         discretization: f64,
         lower_loss_index: i64,
         probs: Vec<f64>,
         infinity_mass: f64,
-        pessimistic_estimate: bool,
         max_grid_size: usize,
     ) -> Self {
         Self {
@@ -128,7 +123,6 @@ impl Pmf {
             probs,
             infinity_mass,
             negative_infinity_mass: 0.0,
-            pessimistic_estimate,
             max_grid_size,
             right_tail_budget: 0.0,
             left_tail_budget: 0.0,
@@ -161,13 +155,6 @@ impl Pmf {
     /// `Ok(Some(CoarsenAction))` if one side must be coarsened (power-of-2 ratio).
     /// Returns `Err` for incompatible parameters.
     pub(crate) fn validate_composable(&self, other: &Pmf) -> Result<Option<CoarsenAction>> {
-        if self.pessimistic_estimate != other.pessimistic_estimate {
-            return Err(PldError::PessimisticMismatch(
-                self.pessimistic_estimate,
-                other.pessimistic_estimate,
-            ));
-        }
-
         let (larger, smaller) = if self.discretization >= other.discretization {
             (self.discretization, other.discretization)
         } else {
@@ -215,7 +202,6 @@ impl Pmf {
     /// # Errors
     ///
     /// * `PldError::DiscretizationMismatch` - If discretizations are incompatible
-    /// * `PldError::PessimisticMismatch` - If pessimistic settings differ
     pub fn compose(self, other: Pmf, tail_mass_truncation: f64) -> Result<Pmf> {
         let action = self.validate_composable(&other)?;
 
@@ -231,7 +217,7 @@ impl Pmf {
 
         // Apply tail truncation if requested
         let (offset, result_probs, right_tail_mass) = if tail_mass_truncation > 0.0 {
-            truncate_tails(&conv_result, tail_mass_truncation, lhs.pessimistic_estimate)
+            truncate_tails(&conv_result, tail_mass_truncation)
         } else {
             (0, conv_result, 0.0)
         };
@@ -258,7 +244,6 @@ impl Pmf {
             probs: result_probs,
             infinity_mass: result_infinity_mass,
             negative_infinity_mass: result_negative_infinity_mass,
-            pessimistic_estimate: lhs.pessimistic_estimate,
             max_grid_size: lhs.max_grid_size.max(rhs.max_grid_size),
             right_tail_budget: combine_budgets(lhs.right_tail_budget, rhs.right_tail_budget),
             left_tail_budget: combine_budgets(lhs.left_tail_budget, rhs.left_tail_budget),
@@ -354,7 +339,6 @@ impl Pmf {
             probs: result_probs,
             infinity_mass: result_infinity_mass,
             negative_infinity_mass: result_negative_infinity_mass,
-            pessimistic_estimate: self.pessimistic_estimate,
             max_grid_size: self.max_grid_size,
             right_tail_budget: self.right_tail_budget,
             left_tail_budget: self.left_tail_budget,
@@ -382,9 +366,8 @@ impl Pmf {
     /// approximately `probs.len() / factor` elements. Total probability
     /// mass (including infinity_mass) is conserved.
     ///
-    /// For pessimistic estimation, each group's coarse index is shifted up by 1
-    /// so that the coarse bin epsilon OVERESTIMATES the maximum original epsilon
-    /// in the group (conservative for privacy).
+    /// Each group's coarse index is shifted up by 1 so that the coarse bin epsilon
+    /// overestimates the maximum original epsilon in the group.
     pub(crate) fn coarsen(&self, factor: usize) -> Pmf {
         if factor <= 1 {
             return self.clone();
@@ -414,11 +397,7 @@ impl Pmf {
 
         // Coarse index of the first group.
         let base_coarse_lower = aligned_lower / f; // aligned_lower is already a multiple of f
-        let coarse_lower = if self.pessimistic_estimate {
-            base_coarse_lower + 1
-        } else {
-            base_coarse_lower
-        };
+        let coarse_lower = base_coarse_lower + 1;
 
         Pmf {
             discretization: self.discretization * factor as f64,
@@ -426,7 +405,6 @@ impl Pmf {
             probs: coarse_probs,
             infinity_mass: self.infinity_mass,
             negative_infinity_mass: self.negative_infinity_mass,
-            pessimistic_estimate: self.pessimistic_estimate,
             max_grid_size: self.max_grid_size,
             right_tail_budget: self.right_tail_budget,
             left_tail_budget: self.left_tail_budget,
@@ -452,13 +430,12 @@ impl Pmf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::PldError;
     use approx::assert_relative_eq;
 
     #[test]
     fn test_dense_compose_basic() {
-        let pmf1 = Pmf::new(0.1, 0, vec![0.3, 0.7], 0.0, true, usize::MAX);
-        let pmf2 = Pmf::new(0.1, 0, vec![0.4, 0.6], 0.0, true, usize::MAX);
+        let pmf1 = Pmf::new(0.1, 0, vec![0.3, 0.7], 0.0, usize::MAX);
+        let pmf2 = Pmf::new(0.1, 0, vec![0.4, 0.6], 0.0, usize::MAX);
 
         let composed = pmf1.compose(pmf2, 0.0).unwrap();
 
@@ -474,8 +451,8 @@ mod tests {
 
     #[test]
     fn test_dense_compose_with_infinity_mass() {
-        let pmf1 = Pmf::new(0.1, 0, vec![0.9], 0.1, true, usize::MAX);
-        let pmf2 = Pmf::new(0.1, 0, vec![0.9], 0.1, true, usize::MAX);
+        let pmf1 = Pmf::new(0.1, 0, vec![0.9], 0.1, usize::MAX);
+        let pmf2 = Pmf::new(0.1, 0, vec![0.9], 0.1, usize::MAX);
 
         let composed = pmf1.compose(pmf2, 0.0).unwrap();
 
@@ -485,8 +462,8 @@ mod tests {
 
     #[test]
     fn test_dense_compose_offset() {
-        let pmf1 = Pmf::new(0.1, -5, vec![0.3, 0.7], 0.0, true, usize::MAX);
-        let pmf2 = Pmf::new(0.1, 3, vec![0.4, 0.6], 0.0, true, usize::MAX);
+        let pmf1 = Pmf::new(0.1, -5, vec![0.3, 0.7], 0.0, usize::MAX);
+        let pmf2 = Pmf::new(0.1, 3, vec![0.4, 0.6], 0.0, usize::MAX);
 
         let composed = pmf1.compose(pmf2, 0.0).unwrap();
 
@@ -496,7 +473,7 @@ mod tests {
 
     #[test]
     fn test_dense_self_compose() {
-        let pmf = Pmf::new(0.1, 0, vec![0.3, 0.5, 0.2], 0.0, true, usize::MAX);
+        let pmf = Pmf::new(0.1, 0, vec![0.3, 0.5, 0.2], 0.0, usize::MAX);
 
         let composed = pmf.self_compose(3);
 
@@ -508,19 +485,19 @@ mod tests {
     }
 
     #[test]
-    fn test_dense_self_compose_with_infinity_mass() {
-        let pmf = Pmf::new(0.1, 0, vec![0.8, 0.1], 0.1, true, usize::MAX);
+    fn test_dense_self_compose_conservatively_adds_right_tail_budget() {
+        let pmf = Pmf::new(0.1, 0, vec![0.8, 0.1], 0.1, usize::MAX).with_tail_budgets(0.01, 0.0);
 
         let composed = pmf.self_compose(2);
 
-        // infinity_mass = 1 - (1 - 0.1)^2 = 1 - 0.81 = 0.19
-        assert_relative_eq!(composed.infinity_mass, 0.19, epsilon = 1e-10);
+        // infinity_mass = 1 - (1 - 0.1)^2 + 0.01 = 0.20
+        assert_relative_eq!(composed.infinity_mass, 0.20, epsilon = 1e-10);
     }
 
     #[test]
     fn test_compose_discretization_mismatch() {
-        let pmf1 = Pmf::new(0.1, 0, vec![1.0], 0.0, true, usize::MAX);
-        let pmf2 = Pmf::new(0.3, 0, vec![1.0], 0.0, true, usize::MAX);
+        let pmf1 = Pmf::new(0.1, 0, vec![1.0], 0.0, usize::MAX);
+        let pmf2 = Pmf::new(0.3, 0, vec![1.0], 0.0, usize::MAX);
 
         let result = pmf1.compose(pmf2, 0.0);
 
@@ -532,23 +509,9 @@ mod tests {
     }
 
     #[test]
-    fn test_compose_pessimistic_mismatch() {
-        let pmf1 = Pmf::new(0.1, 0, vec![1.0], 0.0, true, usize::MAX);
-        let pmf2 = Pmf::new(0.1, 0, vec![1.0], 0.0, false, usize::MAX);
-
-        let result = pmf1.compose(pmf2, 0.0);
-
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            PldError::PessimisticMismatch(_, _)
-        ));
-    }
-
-    #[test]
     fn test_composition_commutativity() {
-        let pmf1 = Pmf::new(0.1, 0, vec![0.3, 0.5, 0.2], 0.0, true, usize::MAX);
-        let pmf2 = Pmf::new(0.1, 0, vec![0.4, 0.4, 0.2], 0.0, true, usize::MAX);
+        let pmf1 = Pmf::new(0.1, 0, vec![0.3, 0.5, 0.2], 0.0, usize::MAX);
+        let pmf2 = Pmf::new(0.1, 0, vec![0.4, 0.4, 0.2], 0.0, usize::MAX);
 
         let composed1 = pmf1.clone().compose(pmf2.clone(), 0.0).unwrap();
         let composed2 = pmf2.compose(pmf1, 0.0).unwrap();
@@ -562,9 +525,9 @@ mod tests {
 
     #[test]
     fn test_composition_associativity() {
-        let pmf1 = Pmf::new(0.1, 0, vec![0.4, 0.6], 0.0, true, usize::MAX);
-        let pmf2 = Pmf::new(0.1, 0, vec![0.3, 0.7], 0.0, true, usize::MAX);
-        let pmf3 = Pmf::new(0.1, 0, vec![0.5, 0.5], 0.0, true, usize::MAX);
+        let pmf1 = Pmf::new(0.1, 0, vec![0.4, 0.6], 0.0, usize::MAX);
+        let pmf2 = Pmf::new(0.1, 0, vec![0.3, 0.7], 0.0, usize::MAX);
+        let pmf3 = Pmf::new(0.1, 0, vec![0.5, 0.5], 0.0, usize::MAX);
 
         let left = pmf1
             .clone()
@@ -584,7 +547,7 @@ mod tests {
 
     #[test]
     fn test_self_compose_vs_repeated_composition() {
-        let pmf = Pmf::new(0.1, 0, vec![0.4, 0.6], 0.0, true, usize::MAX);
+        let pmf = Pmf::new(0.1, 0, vec![0.4, 0.6], 0.0, usize::MAX);
 
         let composed_fast = pmf.clone().self_compose(3);
         let composed_slow = pmf
@@ -608,7 +571,7 @@ mod tests {
 
     #[test]
     fn test_coarsen_factor_1_identity() {
-        let pmf = Pmf::new(0.1, -5, vec![0.2, 0.3, 0.4, 0.1], 0.0, true, usize::MAX);
+        let pmf = Pmf::new(0.1, -5, vec![0.2, 0.3, 0.4, 0.1], 0.0, usize::MAX);
         let coarsened = pmf.coarsen(1);
         assert_eq!(coarsened.discretization, 0.1);
         assert_eq!(coarsened.lower_loss_index, -5);
@@ -617,7 +580,7 @@ mod tests {
 
     #[test]
     fn test_coarsen_factor_2() {
-        let pmf = Pmf::new(0.1, -4, vec![0.1, 0.2, 0.3, 0.4], 0.0, true, usize::MAX);
+        let pmf = Pmf::new(0.1, -4, vec![0.1, 0.2, 0.3, 0.4], 0.0, usize::MAX);
         let coarsened = pmf.coarsen(2);
         assert_relative_eq!(coarsened.discretization, 0.2);
         assert_eq!(coarsened.lower_loss_index, -1);
@@ -633,7 +596,6 @@ mod tests {
             -10,
             vec![0.1, 0.15, 0.25, 0.2, 0.1, 0.05, 0.1, 0.05],
             0.0,
-            true,
             usize::MAX,
         );
         let original_mass: f64 = pmf.probs.iter().sum::<f64>() + pmf.infinity_mass;
@@ -646,7 +608,7 @@ mod tests {
 
     #[test]
     fn test_coarsen_negative_index_alignment() {
-        let pmf = Pmf::new(0.1, -7, vec![0.5, 0.3, 0.2], 0.0, true, usize::MAX);
+        let pmf = Pmf::new(0.1, -7, vec![0.5, 0.3, 0.2], 0.0, usize::MAX);
         let coarsened = pmf.coarsen(4);
         assert_relative_eq!(coarsened.discretization, 0.4);
         assert_eq!(coarsened.lower_loss_index, -1);
@@ -656,16 +618,16 @@ mod tests {
 
     #[test]
     fn test_validate_composable_equal_disc() {
-        let pmf1 = Pmf::new(0.1, 0, vec![1.0], 0.0, true, usize::MAX);
-        let pmf2 = Pmf::new(0.1, 0, vec![1.0], 0.0, true, usize::MAX);
+        let pmf1 = Pmf::new(0.1, 0, vec![1.0], 0.0, usize::MAX);
+        let pmf2 = Pmf::new(0.1, 0, vec![1.0], 0.0, usize::MAX);
         let result = pmf1.validate_composable(&pmf2).unwrap();
         assert!(result.is_none());
     }
 
     #[test]
     fn test_validate_composable_power_of_2_multiple() {
-        let pmf1 = Pmf::new(0.1, 0, vec![1.0], 0.0, true, usize::MAX);
-        let pmf2 = Pmf::new(0.4, 0, vec![1.0], 0.0, true, usize::MAX);
+        let pmf1 = Pmf::new(0.1, 0, vec![1.0], 0.0, usize::MAX);
+        let pmf2 = Pmf::new(0.4, 0, vec![1.0], 0.0, usize::MAX);
         let result = pmf1.validate_composable(&pmf2).unwrap();
         assert_eq!(result, Some(CoarsenAction::CoarsenSelf(4)));
 
@@ -675,15 +637,15 @@ mod tests {
 
     #[test]
     fn test_validate_composable_non_power_of_2_rejects() {
-        let pmf1 = Pmf::new(0.1, 0, vec![1.0], 0.0, true, usize::MAX);
-        let pmf2 = Pmf::new(0.3, 0, vec![1.0], 0.0, true, usize::MAX);
+        let pmf1 = Pmf::new(0.1, 0, vec![1.0], 0.0, usize::MAX);
+        let pmf2 = Pmf::new(0.3, 0, vec![1.0], 0.0, usize::MAX);
         assert!(pmf1.validate_composable(&pmf2).is_err());
     }
 
     #[test]
     fn test_compose_auto_coarsens() {
-        let pmf1 = Pmf::new(0.1, -2, vec![0.1, 0.3, 0.4, 0.2], 0.0, true, usize::MAX);
-        let pmf2 = Pmf::new(0.2, -1, vec![0.6, 0.4], 0.0, true, usize::MAX);
+        let pmf1 = Pmf::new(0.1, -2, vec![0.1, 0.3, 0.4, 0.2], 0.0, usize::MAX);
+        let pmf2 = Pmf::new(0.2, -1, vec![0.6, 0.4], 0.0, usize::MAX);
         let composed = pmf1.compose(pmf2, 0.0).unwrap();
         assert_relative_eq!(composed.discretization, 0.2);
         let total: f64 = composed.probs.iter().sum::<f64>() + composed.infinity_mass;
@@ -692,8 +654,8 @@ mod tests {
 
     #[test]
     fn test_compose_auto_coarsens_matches_manual() {
-        let pmf1 = Pmf::new(0.1, -4, vec![0.1, 0.2, 0.3, 0.4], 0.0, true, usize::MAX);
-        let pmf2 = Pmf::new(0.2, -2, vec![0.5, 0.3, 0.2], 0.0, true, usize::MAX);
+        let pmf1 = Pmf::new(0.1, -4, vec![0.1, 0.2, 0.3, 0.4], 0.0, usize::MAX);
+        let pmf2 = Pmf::new(0.2, -2, vec![0.5, 0.3, 0.2], 0.0, usize::MAX);
 
         let pmf1_coarsened = pmf1.coarsen(2);
         let manual = pmf1_coarsened.compose(pmf2.clone(), 0.0).unwrap();

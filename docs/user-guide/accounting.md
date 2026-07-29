@@ -474,9 +474,12 @@ for batch in dataloader:
 eps = acct.epsilon_at(delta=1e-5)
 ```
 
-The K-step ε is bounded above by `proc.epsilon_at(delta)` and is monotone
-non-decreasing in K — both follow from the post-processing inequality on the
-deployed N-step mechanism. `K > proc.n_steps` raises `ValueError`.
+For analytic DP-FTRL accountants, the K-step ε is bounded above by
+`proc.epsilon_at(delta)` and is monotone non-decreasing in K — both follow
+from the post-processing inequality on the deployed N-step mechanism.
+Monte Carlo b-min-sep and Balls-in-Bins results remain point estimates pending
+the RC-4 confidence correction, so this guarantee is not asserted for their
+reported ε values. `K > proc.n_steps` raises `ValueError`.
 
 ### Serialization
 
@@ -521,8 +524,17 @@ eps = training.epsilon_at(delta=1e-5, discretization=1e-5)
 |-----------|---------|--------|
 | `discretization` | 1e-4 | Grid spacing. Smaller = tighter, slower. |
 | `log_x_mass_truncation_bound` | -50.0 | Log tail mass cutoff. |
-| `pessimistic_estimate` | True | Round upward for safe guarantees. |
 | `max_grid_size` | 10,000,000 | Maximum grid bins before coarsening. |
+
+Discretization is always conservative: exact privacy-loss atoms, PMF
+coarsening, and histogram buckets are rounded upward to the grid. There is no
+option to request an optimistic or lower-bound accounting result.
+
+!!! warning
+    The b-min-sep and Balls-in-Bins Monte Carlo PLDs are empirical point
+    estimates. Conservative grid bucketing does not provide the RC-4
+    confidence correction; do not treat their reported ε values as upper
+    confidence bounds.
 
 ## API reference
 

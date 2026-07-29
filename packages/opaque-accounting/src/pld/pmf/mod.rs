@@ -46,11 +46,7 @@ pub(crate) enum CoarsenAction {
 /// - offset: number of elements removed from the left
 /// - truncated_probs: the remaining probability array
 /// - right_tail_mass: mass removed from the right (to be added to infinity_mass)
-pub(crate) fn truncate_tails(
-    probs: &[f64],
-    tail_mass_truncation: f64,
-    pessimistic_estimate: bool,
-) -> (usize, Vec<f64>, f64) {
+pub(crate) fn truncate_tails(probs: &[f64], tail_mass_truncation: f64) -> (usize, Vec<f64>, f64) {
     if probs.is_empty() || tail_mass_truncation <= 0.0 {
         return (0, probs.to_vec(), 0.0);
     }
@@ -88,8 +84,7 @@ pub(crate) fn truncate_tails(
     let end = probs.len() - right_truncate;
     let mut truncated = probs[left_truncate..end].to_vec();
 
-    // Handle truncated mass based on pessimistic_estimate
-    if pessimistic_estimate && !truncated.is_empty() {
+    if !truncated.is_empty() {
         // Add left truncated mass to the first remaining element
         truncated[0] += left_mass;
         // Right truncated mass goes to infinity_mass (returned separately)
@@ -108,18 +103,10 @@ impl Pmf {
         discretization: f64,
         loss_probs: BTreeMap<i64, f64>,
         infinity_mass: f64,
-        pessimistic_estimate: bool,
         max_grid_size: usize,
     ) -> Self {
         if loss_probs.is_empty() {
-            return Pmf::new(
-                discretization,
-                0,
-                vec![],
-                infinity_mass,
-                pessimistic_estimate,
-                max_grid_size,
-            );
+            return Pmf::new(discretization, 0, vec![], infinity_mass, max_grid_size);
         }
 
         let min_key = *loss_probs.keys().min().unwrap();
@@ -131,14 +118,7 @@ impl Pmf {
             probs[(key - min_key) as usize] = prob;
         }
 
-        Pmf::new(
-            discretization,
-            min_key,
-            probs,
-            infinity_mass,
-            pessimistic_estimate,
-            max_grid_size,
-        )
+        Pmf::new(discretization, min_key, probs, infinity_mass, max_grid_size)
     }
 }
 
@@ -154,7 +134,6 @@ mod tests {
             0,
             (0..1001).map(|_| 1.0 / 1001.0).collect(),
             0.0,
-            true,
             usize::MAX,
         );
         let pmf2 = Pmf::new(
@@ -162,7 +141,6 @@ mod tests {
             0,
             (0..1001).map(|_| 1.0 / 1001.0).collect(),
             0.0,
-            true,
             usize::MAX,
         );
 
@@ -175,7 +153,7 @@ mod tests {
         let mut masses = BTreeMap::new();
         masses.insert(0, 0.5);
         masses.insert(5, 0.5);
-        let pmf = Pmf::from_sparse(0.1, masses, 0.0, true, usize::MAX);
+        let pmf = Pmf::from_sparse(0.1, masses, 0.0, usize::MAX);
 
         assert_eq!(pmf.size(), 6); // indices 0..5 inclusive
         assert_relative_eq!(pmf.probs[0], 0.5, epsilon = 1e-10);
@@ -185,7 +163,7 @@ mod tests {
     #[test]
     fn test_from_sparse_empty() {
         let masses = BTreeMap::new();
-        let pmf = Pmf::from_sparse(0.1, masses, 0.0, true, usize::MAX);
+        let pmf = Pmf::from_sparse(0.1, masses, 0.0, usize::MAX);
         assert_eq!(pmf.size(), 0);
     }
 
@@ -195,7 +173,7 @@ mod tests {
         for i in 0..100 {
             masses.insert(i, 0.01);
         }
-        let pmf = Pmf::from_sparse(0.1, masses, 0.0, true, usize::MAX);
+        let pmf = Pmf::from_sparse(0.1, masses, 0.0, usize::MAX);
         assert_eq!(pmf.size(), 100);
         let total: f64 = pmf.probs.iter().sum();
         assert_relative_eq!(total, 1.0, epsilon = 1e-10);

@@ -5,6 +5,7 @@ import pytest
 import opaque.accounting as acc  # noqa: F401  (used elsewhere; keep for cohesion)
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.api.accounting.core.discretization import (
+    DiscretizationConfig,
     get_discretization,
     set_discretization,
 )
@@ -34,7 +35,6 @@ class TestSetGetDiscretization:
         assert cfg.log_x_mass_truncation_bound == pytest.approx(
             -50.0
         )  # Library default
-        assert cfg.pessimistic_estimate is True
         assert cfg.max_grid_size == 10_000_000
 
     def test_set_and_get(self):
@@ -47,14 +47,18 @@ class TestSetGetDiscretization:
         set_discretization(
             discretization=1e-3,
             log_x_mass_truncation_bound=-40.0,
-            pessimistic_estimate=False,
             max_grid_size=500_000,
+            tail_mass_truncation=1e-12,
+            num_mc_samples=10_000,
+            seed=7,
         )
         cfg = get_discretization()
         assert cfg.discretization == pytest.approx(1e-3)
         assert cfg.log_x_mass_truncation_bound == pytest.approx(-40.0)
-        assert cfg.pessimistic_estimate is False
         assert cfg.max_grid_size == 500_000
+        assert cfg.tail_mass_truncation == pytest.approx(1e-12)
+        assert cfg.num_mc_samples == 10_000
+        assert cfg.seed == 7
 
     def test_overwrite(self):
         set_discretization(discretization=1e-3)
@@ -105,16 +109,6 @@ class TestQueryTimeOverrides:
         global_cfg = get_discretization()
         assert global_cfg.log_x_mass_truncation_bound == pytest.approx(-50.0)
 
-    def test_pessimistic_estimate_override(self):
-        """Query-time pessimistic_estimate override works."""
-        set_discretization(pessimistic_estimate=True)
-
-        cfg = get_discretization(pessimistic_estimate=False)
-        assert cfg.pessimistic_estimate is False
-
-        global_cfg = get_discretization()
-        assert global_cfg.pessimistic_estimate is True
-
     def test_max_grid_size_override(self):
         """Query-time max_grid_size override works."""
         set_discretization(max_grid_size=10_000_000)
@@ -130,7 +124,6 @@ class TestQueryTimeOverrides:
         set_discretization(
             discretization=1e-3,
             log_x_mass_truncation_bound=-50.0,
-            pessimistic_estimate=True,
             max_grid_size=10_000_000,
         )
 
@@ -144,7 +137,6 @@ class TestQueryTimeOverrides:
         assert cfg.log_x_mass_truncation_bound == pytest.approx(-30.0)
 
         # Non-overridden values from global default
-        assert cfg.pessimistic_estimate is True
         assert cfg.max_grid_size == 10_000_000
 
     def test_override_on_library_default(self):
@@ -161,5 +153,45 @@ class TestQueryTimeOverrides:
         assert cfg.discretization == pytest.approx(1e-5)
         assert cfg.log_x_mass_truncation_bound == pytest.approx(-30.0)
         # Library defaults for rest
-        assert cfg.pessimistic_estimate is True
         assert cfg.max_grid_size == 10_000_000
+
+
+class TestDiscretizationBehavior:
+    """Native configuration conversion and exact-grid behavior."""
+
+    def test_config_converts_native_controls(self):
+        config = DiscretizationConfig(
+            discretization=1e-3,
+            log_x_mass_truncation_bound=-40.0,
+            max_grid_size=500_000,
+            tail_mass_truncation=1e-12,
+            num_mc_samples=10_000,
+            seed=7,
+        )
+
+        native = config.to_native()
+        assert native.discretization == pytest.approx(1e-3)
+        assert native.log_mass_truncation_bound == pytest.approx(-40.0)
+        assert native.max_grid_size == 500_000
+        assert native.tail_mass_truncation == pytest.approx(1e-12)
+        assert native.num_mc_samples == 10_000
+        assert native.seed == 7
+        assert config == DiscretizationConfig(
+            discretization=1e-3,
+            log_x_mass_truncation_bound=-40.0,
+            max_grid_size=500_000,
+            tail_mass_truncation=1e-12,
+            num_mc_samples=10_000,
+            seed=7,
+        )
+        assert hash(config) == hash(config)
+
+    def test_exact_atoms_and_composition_round_up_to_the_grid(self):
+        process = acc.eps_delta(0.11, 0.0)
+        pld = process.pld(discretization=0.1)
+
+        assert pld.delta_at(0.11) > 0.0
+        assert pld.delta_at(0.2) == pytest.approx(0.0)
+        composed = pld.compose(pld)
+        assert composed.delta_at(0.22) > 0.0
+        assert composed.delta_at(0.4) == pytest.approx(0.0)

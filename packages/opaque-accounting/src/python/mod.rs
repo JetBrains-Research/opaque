@@ -15,27 +15,141 @@ use pyo3::prelude::*;
 
 use crate::error::PldError;
 
-pub(crate) fn pld_error_to_py_err(error: PldError) -> PyErr {
-    let message = error.to_string();
+impl From<PldError> for PyErr {
+    fn from(error: PldError) -> Self {
+        let message = error.to_string();
 
-    match error {
-        PldError::InvalidParameter(_)
-        | PldError::CalibrationInvalidConfig(_)
-        | PldError::CalibrationOutOfBounds { .. }
-        | PldError::UnsupportedAdjacency { .. }
-        | PldError::EmptyCollection(_)
-        | PldError::InfiniteBounds(_)
-        | PldError::EmptyAccountant(_)
-        | PldError::UnsupportedEvent(_) => PyValueError::new_err(message),
-        PldError::DiscretizationMismatch(_, _)
-        | PldError::PessimisticMismatch(_, _)
-        | PldError::TypeMismatch(_, _)
-        | PldError::NumericalError(_)
-        | PldError::InsufficientMass(_, _)
-        | PldError::CalibrationEvaluationFailed(_)
-        | PldError::CalibrationConvergenceFailed { .. }
-        | PldError::CalibrationMetricUnavailable(_)
-        | PldError::LogSubtractionError { .. } => PyRuntimeError::new_err(message),
+        match error {
+            PldError::InvalidParameter(_)
+            | PldError::DiscretizationMismatch(_, _)
+            | PldError::TypeMismatch(_, _)
+            | PldError::CalibrationInvalidConfig(_)
+            | PldError::CalibrationOutOfBounds { .. }
+            | PldError::UnsupportedAdjacency { .. }
+            | PldError::EmptyCollection(_)
+            | PldError::InfiniteBounds(_)
+            | PldError::UnsupportedEvent(_) => PyValueError::new_err(message),
+            PldError::NumericalError(_)
+            | PldError::InsufficientMass(_, _)
+            | PldError::CalibrationEvaluationFailed(_)
+            | PldError::CalibrationConvergenceFailed { .. }
+            | PldError::CalibrationMetricUnavailable(_)
+            | PldError::LogSubtractionError { .. }
+            | PldError::EmptyAccountant(_) => PyRuntimeError::new_err(message),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pld_errors_map_to_stable_python_categories() {
+        Python::attach(|py| {
+            let cases = [
+                (
+                    PldError::DiscretizationMismatch(0.1, 0.3),
+                    true,
+                    "Discretization intervals differ",
+                ),
+                (
+                    PldError::TypeMismatch("dense".into(), "sparse".into()),
+                    true,
+                    "Cannot compose PMFs",
+                ),
+                (
+                    PldError::InvalidParameter("invalid value".into()),
+                    true,
+                    "invalid value",
+                ),
+                (
+                    PldError::NumericalError("unstable convolution".into()),
+                    false,
+                    "unstable convolution",
+                ),
+                (
+                    PldError::InsufficientMass(0.2, 0.1),
+                    false,
+                    "Insufficient probability mass",
+                ),
+                (
+                    PldError::CalibrationEvaluationFailed("evaluation failed".into()),
+                    false,
+                    "evaluation failed",
+                ),
+                (
+                    PldError::CalibrationConvergenceFailed {
+                        iterations: 8,
+                        last_param: 0.75,
+                    },
+                    false,
+                    "8 iterations",
+                ),
+                (
+                    PldError::CalibrationInvalidConfig("invalid calibration".into()),
+                    true,
+                    "invalid calibration",
+                ),
+                (
+                    PldError::CalibrationMetricUnavailable("epsilon".into()),
+                    false,
+                    "epsilon",
+                ),
+                (
+                    PldError::CalibrationOutOfBounds {
+                        param: 2.0,
+                        min: 0.0,
+                        max: 1.0,
+                    },
+                    true,
+                    "out of bounds",
+                ),
+                (
+                    PldError::UnsupportedAdjacency {
+                        mechanism: "Gaussian",
+                        adjacency: "ADD",
+                    },
+                    true,
+                    "Gaussian",
+                ),
+                (
+                    PldError::LogSubtractionError { a: 0.0, b: 1.0 },
+                    false,
+                    "Log subtraction error",
+                ),
+                (
+                    PldError::EmptyCollection("empty strategy"),
+                    true,
+                    "empty strategy",
+                ),
+                (
+                    PldError::InfiniteBounds("unbounded epsilon".into()),
+                    true,
+                    "unbounded epsilon",
+                ),
+                (
+                    PldError::EmptyAccountant("missing PLD"),
+                    false,
+                    "missing PLD",
+                ),
+                (
+                    PldError::UnsupportedEvent("custom event".into()),
+                    true,
+                    "custom event",
+                ),
+            ];
+
+            for (error, expects_value_error, message) in cases {
+                let py_error: PyErr = error.into();
+                assert!(py_error.to_string().contains(message));
+                if expects_value_error {
+                    assert!(py_error.is_instance_of::<PyValueError>(py));
+                } else {
+                    assert!(py_error.is_instance_of::<PyRuntimeError>(py));
+                }
+            }
+        });
     }
 }
 

@@ -118,8 +118,14 @@ when computing privacy metrics via `pld()`, not stored in process structure.
 |--------------------------------|--------------|--------------------------------------------------|
 | `discretization`               | `1e-4`       | Grid spacing for PLD PMF. Error scales as O(d^2) |
 | `log_x_mass_truncation_bound`  | `-50`        | Tails below exp(bound) are truncated             |
-| `pessimistic_estimate`         | `True`       | Round upward for safe upper bounds               |
 | `max_grid_size`                | `10_000_000` | Coarsen grid if it exceeds this many bins        |
+| `tail_mass_truncation`         | `1e-15`      | Tail-mass budget during composition              |
+| `num_mc_samples`               | `100_000`    | Samples for Monte Carlo PLD builders             |
+| `seed`                         | `42`         | RNG seed for Monte Carlo PLD builders            |
+
+Discretization is unconditionally conservative: exact atoms, PMF coarsening,
+and histogram buckets are rounded upward. The API has no optimistic or
+lower-bound mode.
 
 **Query-time configuration (recommended):**
 
@@ -384,6 +390,11 @@ Uses Monte Carlo PLD accounting. `inner` must be `BandMf`.
 used for noise. `p0` is the per-example participation rate per iteration
 `E[|B|]/|D|` (match the training sampler’s target batch size).
 
+!!! warning
+    b-min-sep and Balls-in-Bins Monte Carlo PLDs are point estimates without
+    the RC-4 confidence correction. Conservative discretization does not make
+    their reported ε values upper confidence bounds.
+
 ### `balls_in_bins(inner, num_bins, num_epochs, *, lr_weights=None) -> DpProcess`
 
 Balls-in-Bins (random-partition) amplification. Returns the **total** privacy
@@ -418,9 +429,11 @@ proc = dpftrl_acc.balls_in_bins(dpsgd_acc.gaussian(1.1), num_bins=100, num_epoch
 Adapter that wraps a whole-process DP-FTRL accountant so it composes
 step-by-step under `Accountant`'s `acct |= step` idiom (the DP-SGD path
 shape). `per_step(proc) * K` materialises the strategy-aware K-prefix
-PLD via `proc._pld_at_horizon(K)` — bounded above by
-`proc.epsilon_at(δ)` and monotone non-decreasing in K (post-processing
-on the deployed N-step mechanism). `K > proc.n_steps` raises;
+PLD via `proc._pld_at_horizon(K)`. For analytic PLDs, this is bounded above
+by `proc.epsilon_at(δ)` and monotone non-decreasing in K by post-processing
+on the deployed N-step mechanism. Monte Carlo b-min-sep and Balls-in-Bins
+results remain point estimates pending the RC-4 confidence correction, so this
+guarantee is not asserted for their reported ε values. `K > proc.n_steps` raises;
 `PerStep` only composes with other `PerStep` instances wrapping the
 *same* underlying process.
 
@@ -433,7 +446,7 @@ proc = dpftrl_acc.poisson(
     sample_rate=0.01, n_steps=15_624,
 )
 step = dpftrl_acc.per_step(proc)
-eps_K = (step * 1_000).epsilon_at(1e-5)   # K-step ε ≤ proc.epsilon_at(δ)
+eps_K = (step * 1_000).epsilon_at(1e-5)   # analytic PLD: K-step ε ≤ proc.epsilon_at(δ)
 ```
 
 ---

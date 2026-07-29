@@ -15,13 +15,7 @@ pub fn identity_pld(config: &DiscretizationConfig) -> Result<PrivacyLossDistribu
     let mut masses = BTreeMap::new();
     masses.insert(0, 1.0);
 
-    let pmf = Pmf::from_sparse(
-        config.discretization,
-        masses,
-        0.0,
-        config.pessimistic_estimate,
-        config.max_grid_size,
-    );
+    let pmf = Pmf::from_sparse(config.discretization, masses, 0.0, config.max_grid_size);
     Ok(PrivacyLossDistribution::new_symmetric(pmf))
 }
 
@@ -53,18 +47,6 @@ mod tests {
     fn test_identity_advantage_zero() {
         let pld = identity_pld(&default_config()).unwrap();
         assert_eq!(pld.advantage(), 0.0);
-    }
-
-    #[test]
-    fn test_identity_preserves_estimate_mode() {
-        for pessimistic_estimate in [true, false] {
-            let mut config = default_config();
-            config.pessimistic_estimate = pessimistic_estimate;
-
-            let pld = identity_pld(&config).unwrap();
-
-            assert_eq!(pld.pmf_remove.pessimistic_estimate, pessimistic_estimate);
-        }
     }
 
     #[test]

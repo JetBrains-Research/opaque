@@ -24,16 +24,12 @@ def test_invalid_generic_mechanism_parameter_raises_value_error():
         acc.eps_delta(-1.0).pld()
 
 
-@pytest.mark.parametrize(
-    "mechanism",
-    ["identity", "eps_delta"],
-)
-def test_mixed_estimate_modes_raise_runtime_error(mechanism: str):
+def test_incompatible_pld_operands_raise_value_error():
     import opaque.accounting as acc
 
-    process = acc.identity() if mechanism == "identity" else acc.eps_delta(1.0, 1e-5)
-    pessimistic = process.pld(pessimistic_estimate=True)
-    optimistic = process.pld(pessimistic_estimate=False)
+    process = acc.eps_delta(1.0, 1e-5)
+    fine = process.pld(discretization=0.1)
+    incompatible = process.pld(discretization=0.3)
 
-    with pytest.raises(RuntimeError, match="Pessimistic estimate settings differ"):
-        pessimistic.compose(optimistic)
+    with pytest.raises(ValueError, match="Discretization intervals differ"):
+        fine.compose(incompatible)

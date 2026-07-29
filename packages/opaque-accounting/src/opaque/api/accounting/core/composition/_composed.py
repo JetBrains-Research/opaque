@@ -28,13 +28,11 @@ class Composed(DpProcess):
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
         kw = dict(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
         # Walk the left spine iteratively (mirrors __hash__) to avoid

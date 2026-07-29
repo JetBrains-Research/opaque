@@ -83,7 +83,7 @@ impl PrivacyLossDistribution {
     /// masses.insert(0, 0.5);
     /// masses.insert(5, 0.5);
     ///
-    /// let pmf = Pmf::from_sparse(0.1, masses, 0.0, true, usize::MAX);
+    /// let pmf = Pmf::from_sparse(0.1, masses, 0.0, usize::MAX);
     /// let pld = PrivacyLossDistribution::new_symmetric(pmf);
     ///
     /// assert!(pld.is_symmetric());
@@ -120,8 +120,8 @@ impl PrivacyLossDistribution {
     /// masses_add.insert(0, 0.4);
     /// masses_add.insert(5, 0.6);
     ///
-    /// let pmf_remove = Pmf::from_sparse(0.1, masses_remove, 0.0, true, usize::MAX);
-    /// let pmf_add = Pmf::from_sparse(0.1, masses_add, 0.0, true, usize::MAX);
+    /// let pmf_remove = Pmf::from_sparse(0.1, masses_remove, 0.0, usize::MAX);
+    /// let pmf_add = Pmf::from_sparse(0.1, masses_add, 0.0, usize::MAX);
     ///
     /// let pld = PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add);
     ///
@@ -365,7 +365,7 @@ impl PrivacyLossDistribution {
     ///
     /// # Errors
     ///
-    /// Returns error if PMFs have incompatible parameters (discretization, pessimistic_estimate)
+    /// Returns an error if PMFs have incompatible discretizations.
     ///
     /// # Examples
     ///
@@ -514,7 +514,7 @@ mod tests {
         let mut masses = BTreeMap::new();
         masses.insert(offset, prob1);
         masses.insert(offset + 5, prob2);
-        Pmf::from_sparse(0.1, masses, 0.0, true, usize::MAX)
+        Pmf::from_sparse(0.1, masses, 0.0, usize::MAX)
     }
 
     #[test]
@@ -802,7 +802,7 @@ mod tests {
     fn make_identity_pld() -> PrivacyLossDistribution {
         let mut masses = BTreeMap::new();
         masses.insert(0, 1.0);
-        let pmf = Pmf::from_sparse(1e-4, masses, 0.0, true, usize::MAX);
+        let pmf = Pmf::from_sparse(1e-4, masses, 0.0, usize::MAX);
         PrivacyLossDistribution::new_symmetric(pmf)
     }
 

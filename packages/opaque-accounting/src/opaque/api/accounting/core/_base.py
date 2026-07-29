@@ -107,7 +107,6 @@ class DpProcess(ABC):
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
         """Compute the Privacy Loss Distribution.
@@ -119,7 +118,6 @@ class DpProcess(ABC):
         Args:
             discretization: Grid spacing for PLD (query-time override).
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
-            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
         """
         ...
@@ -130,7 +128,6 @@ class DpProcess(ABC):
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> float:
         """Smallest ε achieving (ε, δ)-DP.
@@ -139,13 +136,11 @@ class DpProcess(ABC):
             delta: Failure probability.
             discretization: Grid spacing (query-time override).
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
-            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
         """
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         ).epsilon_at(delta)
 
@@ -155,7 +150,6 @@ class DpProcess(ABC):
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> float:
         """Smallest δ achieving (ε, δ)-DP.
@@ -164,13 +158,11 @@ class DpProcess(ABC):
             epsilon: Privacy budget.
             discretization: Grid spacing (query-time override).
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
-            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
         """
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         ).delta_at(epsilon)
 
@@ -179,7 +171,6 @@ class DpProcess(ABC):
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> float:
         """Total-variation advantage (f-DP).
@@ -187,13 +178,11 @@ class DpProcess(ABC):
         Args:
             discretization: Grid spacing (query-time override).
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
-            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
         """
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         ).advantage()
 
@@ -203,7 +192,6 @@ class DpProcess(ABC):
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> float:
         """Type-II error at given Type-I error α.
@@ -212,13 +200,11 @@ class DpProcess(ABC):
             alpha: Type-I error rate.
             discretization: Grid spacing (query-time override).
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
-            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
         """
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         ).beta_at(alpha)
 
@@ -228,7 +214,6 @@ class DpProcess(ABC):
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> float:
         """Bayes risk under optimal adversary.
@@ -237,13 +222,11 @@ class DpProcess(ABC):
             prior: Prior probability.
             discretization: Grid spacing (query-time override).
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
-            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
         """
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         ).risk_at(prior)
 
@@ -263,7 +246,6 @@ class DpProcess(ABC):
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
         """PLD for ``count`` independent applications of this process.
@@ -277,7 +259,6 @@ class DpProcess(ABC):
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         ).self_compose(count)
 

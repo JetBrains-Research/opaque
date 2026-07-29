@@ -129,18 +129,10 @@ fn sample_add_identity(
 fn weighted_samples_to_pmf(
     samples: &[(f64, f64)],
     discretization: f64,
-    pessimistic_estimate: bool,
     max_grid_size: usize,
 ) -> Pmf {
     if samples.is_empty() {
-        return Pmf::new(
-            discretization,
-            0,
-            vec![1.0],
-            0.0,
-            pessimistic_estimate,
-            max_grid_size,
-        );
+        return Pmf::new(discretization, 0, vec![1.0], 0.0, max_grid_size);
     }
 
     let n = samples.len() as f64;
@@ -162,14 +154,7 @@ fn weighted_samples_to_pmf(
             .map(|(_, w)| *w)
             .sum::<f64>()
             * inv_n;
-        return Pmf::new(
-            discretization,
-            0,
-            vec![0.0],
-            inf_mass,
-            pessimistic_estimate,
-            max_grid_size,
-        );
+        return Pmf::new(discretization, 0, vec![0.0], inf_mass, max_grid_size);
     }
 
     let grid_lo = (min_sample / discretization).floor() as i64 - 1;
@@ -199,11 +184,7 @@ fn weighted_samples_to_pmf(
             }
             continue;
         }
-        let bucket_idx = if pessimistic_estimate {
-            (y / effective_disc).ceil() as i64 - effective_lo
-        } else {
-            (y / effective_disc).round() as i64 - effective_lo
-        };
+        let bucket_idx = (y / effective_disc).ceil() as i64 - effective_lo;
         if bucket_idx < 0 {
             probs[0] += p;
         } else if bucket_idx >= effective_grid_size as i64 {
@@ -218,7 +199,6 @@ fn weighted_samples_to_pmf(
         effective_lo,
         probs,
         infinity_mass,
-        pessimistic_estimate,
         max_grid_size,
     )
 }
@@ -319,11 +299,10 @@ pub fn bnb_mc_pld_identity(
         .collect();
 
     let disc = config.discretization;
-    let pessimistic = config.pessimistic_estimate;
     let max_grid = config.max_grid_size;
 
-    let pmf_remove = weighted_samples_to_pmf(&remove_samples, disc, pessimistic, max_grid);
-    let pmf_add = samples_to_pmf(&add_samples, disc, pessimistic, max_grid);
+    let pmf_remove = weighted_samples_to_pmf(&remove_samples, disc, max_grid);
+    let pmf_add = samples_to_pmf(&add_samples, disc, max_grid);
 
     Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add))
 }
