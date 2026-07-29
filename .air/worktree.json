@@ -1,0 +1,17 @@
+{
+    "environment": [
+        {
+            "type": "env",
+            "key": "PYTHONUNBUFFERED",
+            "value": "1"
+        }
+    ],
+    "setup": {
+        "macos": [
+            "uv sync --group dev --all-packages --extra all"
+        ]
+    },
+    "cleanup": {
+        "macos": []
+    }
+}
