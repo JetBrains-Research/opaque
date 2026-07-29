@@ -7,10 +7,24 @@ set -e
 # the full contributor workspace. All steps are idempotent.
 
 # 1. System packages for curl-based installers and the Rust/maturin build.
-if command -v apt-get >/dev/null 2>&1; then
-    apt-get update
-    apt-get install -y --no-install-recommends \
-        curl ca-certificates build-essential pkg-config git
+if ! command -v cc >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+        if [ "$(id -u)" -eq 0 ]; then
+            apt-get update
+            apt-get install -y --no-install-recommends \
+                curl ca-certificates build-essential pkg-config git
+        elif command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends \
+                curl ca-certificates build-essential pkg-config git
+        else
+            echo "A C compiler is required but neither root nor sudo is available." >&2
+            exit 1
+        fi
+    else
+        echo "A C compiler is required to build opaque-accounting, but no supported package manager is available." >&2
+        exit 1
+    fi
 fi
 
 # 2. Install uv if it is missing (installs into ~/.local/bin).
