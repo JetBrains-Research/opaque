@@ -142,6 +142,12 @@ class DiscretizationConfig:
             Tails below exp(bound) are truncated.
         max_grid_size: Maximum grid bins before automatic coarsening.
             Default: 10,000,000.
+        tail_mass_truncation: Total tail mass budget for Chernoff truncation
+            during composition. Default: 1e-15.
+        num_mc_samples: Number of Monte Carlo samples for MC-based PLD
+            computations. Default: 100,000.
+        seed: RNG seed for reproducible Monte Carlo PLD computation.
+            Default: 42.
 
     Example::
 
@@ -171,6 +177,11 @@ class DiscretizationConfig:
     @property
     def max_grid_size(self) -> int:
         """Maximum bins before automatic coarsening."""
+        ...
+
+    @property
+    def tail_mass_truncation(self) -> float:
+        """Total tail mass budget for composition truncation."""
         ...
 
     @property

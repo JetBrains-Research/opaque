@@ -46,7 +46,7 @@ mod tests {
 
     #[test]
     fn pld_errors_map_to_stable_python_categories() {
-        Python::attach(|py| {
+        Python::with_gil(|py| {
             let cases = [
                 (
                     PldError::DiscretizationMismatch(0.1, 0.3),

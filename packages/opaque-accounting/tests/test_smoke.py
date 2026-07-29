@@ -6,6 +6,9 @@ Algorithm-specific PLD factories live in ``opaque.dpsgd.accounting`` /
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 import pytest
 
 
@@ -33,3 +36,27 @@ def test_incompatible_pld_operands_raise_value_error():
 
     with pytest.raises(ValueError, match="Discretization intervals differ"):
         fine.compose(incompatible)
+
+
+def test_discretization_config_stub_matches_native_surface():
+    stub_path = (
+        Path(__file__).parents[1]
+        / "src/opaque/api/accounting/core/opaque_accounting.pyi"
+    )
+    module = ast.parse(stub_path.read_text())
+    config = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.ClassDef) and node.name == "DiscretizationConfig"
+    )
+    members = {
+        node.name
+        for node in config.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    docstring = ast.get_docstring(config)
+
+    assert {"tail_mass_truncation", "num_mc_samples", "seed"} <= members
+    assert docstring is not None
+    for argument in ("tail_mass_truncation", "num_mc_samples", "seed"):
+        assert f"{argument}:" in docstring
