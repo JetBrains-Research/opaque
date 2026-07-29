@@ -1,6 +1,7 @@
 """Tests for opaque.accounting.calibration — binary search calibration framework."""
 
 import math
+from dataclasses import dataclass
 
 import pytest
 
@@ -14,6 +15,42 @@ from opaque.api.accounting.core.calibration import (
     EpsilonBudget,
     RiskBudget,
 )
+
+
+@dataclass(frozen=True)
+class _MetricProcess:
+    metric: float
+
+
+@dataclass(frozen=True)
+class _MetricBudget:
+    value: float
+    decreasing: bool
+    name: str = "test metric"
+
+    def evaluate(self, process: _MetricProcess) -> float:
+        return process.metric
+
+
+def _assert_safe_result(
+    result: CalibrateResult,
+    *,
+    target: float,
+    decreasing: bool,
+    tolerance: float = 1e-6,
+) -> None:
+    assert result.converged is True
+    if decreasing:
+        assert result.achieved <= target
+    else:
+        assert result.achieved >= target
+    assert math.isclose(
+        result.achieved,
+        target,
+        rel_tol=tolerance,
+        abs_tol=0.0,
+    )
+
 
 # -- Budget validation -------------------------------------------------------
 
@@ -130,6 +167,128 @@ class TestCalibrateErrors:
                 cal.epsilon_budget(0.001, delta=1e-5), self._process, 0.5, 0.6
             )
 
+    @pytest.mark.parametrize("tolerance", [0.0, -1.0, math.nan, math.inf, -math.inf])
+    def test_invalid_tolerance_rejected_before_process_probe(self, tolerance):
+        calls = []
+
+        def process(param):
+            calls.append(param)
+            return _MetricProcess(param)
+
+        with pytest.raises(ValueError, match="tolerance"):
+            cal.calibrate(
+                _MetricBudget(1.0, decreasing=False),
+                process,
+                0.0,
+                2.0,
+                tolerance=tolerance,
+            )
+
+        assert calls == []
+
+    @pytest.mark.parametrize("max_iterations", [0, -1])
+    def test_invalid_iteration_limit_rejected_before_process_probe(
+        self, max_iterations
+    ):
+        calls = []
+
+        def process(param):
+            calls.append(param)
+            return _MetricProcess(param)
+
+        with pytest.raises(ValueError, match="max_iterations"):
+            cal.calibrate(
+                _MetricBudget(1.0, decreasing=False),
+                process,
+                0.0,
+                2.0,
+                max_iterations=max_iterations,
+            )
+
+        assert calls == []
+
+
+class TestCalibrateSafeEndpoint:
+    @pytest.mark.parametrize(
+        ("decreasing", "metric"),
+        [
+            pytest.param(True, lambda param: 2.05 - param, id="decreasing"),
+            pytest.param(False, lambda param: param - 0.05, id="increasing"),
+        ],
+    )
+    def test_unsafe_first_midpoint_is_not_returned(self, decreasing, metric):
+        target = 1.0
+        tolerance = 0.1
+        first_midpoint = metric(1.0)
+        assert math.isclose(
+            first_midpoint,
+            target,
+            rel_tol=tolerance,
+            abs_tol=0.0,
+        )
+        assert (first_midpoint > target) == decreasing
+
+        result = cal.calibrate(
+            _MetricBudget(target, decreasing=decreasing),
+            lambda param: _MetricProcess(metric(param)),
+            0.0,
+            2.0,
+            tolerance=tolerance,
+        )
+
+        assert result.param != 1.0
+        _assert_safe_result(
+            result,
+            target=target,
+            decreasing=decreasing,
+            tolerance=tolerance,
+        )
+
+    def test_small_target_uses_relative_tolerance(self):
+        target = 1e-9
+        tolerance = 1e-6
+
+        result = cal.calibrate(
+            _MetricBudget(target, decreasing=True),
+            lambda param: _MetricProcess(1.8e-9 - param * 1e-9),
+            0.0,
+            1.0,
+            tolerance=tolerance,
+        )
+
+        _assert_safe_result(
+            result,
+            target=target,
+            decreasing=True,
+            tolerance=tolerance,
+        )
+
+    def test_iteration_exhaustion_raises_without_an_extra_probe(self):
+        calls = []
+
+        def process(param):
+            calls.append(param)
+            return _MetricProcess(2.0 if param < 1.0 else 0.5)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            cal.calibrate(
+                _MetricBudget(1.0, decreasing=True, name="step metric"),
+                process,
+                0.0,
+                2.0,
+                tolerance=1e-6,
+                max_iterations=4,
+            )
+
+        message = str(exc_info.value)
+        assert "step metric" in message
+        assert "target=1.0" in message
+        assert "relative tolerance=1e-06" in message
+        assert "iterations=4" in message
+        assert "final bracket=[" in message
+        assert "last safe achieved=0.5" in message
+        assert len(calls) == 2 + 4
+
 
 # -- Prefix (sequential composition across runs) ------------------------------
 
@@ -166,10 +325,12 @@ class TestCalibratePrefix:
         result = cal.calibrate(
             cal.epsilon_budget(6.0, delta=1e-5), self._stage, 0.3, 3.0, prefix=prefix
         )
-        assert result.converged
+        _assert_safe_result(result, target=6.0, decreasing=True)
 
         total = prefix | self._stage(result.param)
-        assert abs(total.epsilon_at(1e-5) - 6.0) < 1e-4
+        achieved = total.epsilon_at(1e-5)
+        assert achieved <= 6.0
+        assert math.isclose(achieved, 6.0, rel_tol=1e-6, abs_tol=0.0)
 
     def test_prefix_demands_more_noise(self):
         """Same budget with a prefix → larger noise multiplier."""
@@ -210,22 +371,19 @@ class TestCalibrateEpsilon:
             cal.epsilon_budget(5.0, delta=1e-5), self._process, 0.3, 1.2
         )
         assert isinstance(result, CalibrateResult)
-        assert result.converged
-        assert abs(result.achieved - 5.0) < 1e-4
+        _assert_safe_result(result, target=5.0, decreasing=True)
 
     def test_strict_epsilon(self):
         result = cal.calibrate(
             cal.epsilon_budget(4.0, delta=1e-5), self._process, 0.3, 1.2
         )
-        assert result.converged
-        assert abs(result.achieved - 4.0) < 1e-4
+        _assert_safe_result(result, target=4.0, decreasing=True)
 
     def test_loose_epsilon(self):
         result = cal.calibrate(
             cal.epsilon_budget(8.0, delta=1e-5), self._process, 0.1, 1.0
         )
-        assert result.converged
-        assert abs(result.achieved - 8.0) < 1e-4
+        _assert_safe_result(result, target=8.0, decreasing=True)
 
     def test_monotonicity(self):
         """Stricter target → more noise."""
@@ -254,8 +412,7 @@ class TestCalibrateDifferentBatchSizes:
             0.1,
             1.2,
         )
-        assert result.converged
-        assert abs(result.achieved - 5.0) < 1e-3
+        _assert_safe_result(result, target=5.0, decreasing=True)
 
 
 @pytest.mark.slow
@@ -269,8 +426,7 @@ class TestCalibrateAdvantage:
             0.3,
             1.2,
         )
-        assert result.converged
-        assert abs(result.achieved - 0.1) < 1e-4
+        _assert_safe_result(result, target=0.1, decreasing=True)
 
 
 @pytest.mark.slow
@@ -289,8 +445,7 @@ class TestCalibrateBeta:
             0.3,
             1.2,
         )
-        assert result.converged
-        assert abs(result.achieved - 0.5) < 1e-3
+        _assert_safe_result(result, target=0.5, decreasing=False)
 
     def test_monotonicity(self):
         """Stricter (higher) beta target → more noise."""

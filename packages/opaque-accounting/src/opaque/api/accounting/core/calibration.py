@@ -60,7 +60,7 @@ class CalibrateResult:
         achieved: Achieved metric value.
         target: Target metric value.
         iterations: Number of binary search iterations.
-        converged: Whether calibration converged within tolerance.
+        converged: Always ``True`` for results returned by :func:`calibrate`.
     """
 
     param: float
@@ -96,7 +96,15 @@ def calibrate(
     Each budget declares a ``decreasing`` property that tells the search
     whether the metric decreases (True) or increases (False) as the
     calibrated parameter grows.  Epsilon/delta/advantage are decreasing;
-    beta/risk are increasing.  The binary search adapts automatically.
+    beta/risk are increasing.  The process metric must be monotone in that
+    declared direction, as it is when calibrating a noise multiplier.
+
+    Successful results are one-sided and privacy-safe.  A decreasing
+    privacy-loss metric satisfies ``achieved <= target``; an increasing
+    privacy-gain metric satisfies ``achieved >= target``.  In both cases,
+    ``achieved`` and ``target`` are close under the requested relative
+    tolerance.  If no safe endpoint reaches that tolerance, calibration
+    raises instead of returning an under-noised parameter.
 
     **Parameters:**
 
@@ -112,23 +120,25 @@ def calibrate(
 
             Important: If process() raises an exception, it propagates immediately.
 
-        param_min: Lower bound for search (usually produces more private result)
-            - Assumed to satisfy: metric(param_min) > budget.value
-            - Example: 0.5 for noise_multiplier at high privacy
+        param_min: Lower, unsafe bound for the search
+            - For decreasing metrics: metric(param_min) >= budget.value
+            - For increasing metrics: metric(param_min) <= budget.value
+            - Example: a low noise_multiplier
 
-        param_max: Upper bound for search (usually produces less private result)
-            - Assumed to satisfy: metric(param_max) < budget.value
-            - Example: 3.0 for noise_multiplier at lower privacy
+        param_max: Upper, privacy-safe bound for the search
+            - For decreasing metrics: metric(param_max) <= budget.value
+            - For increasing metrics: metric(param_max) >= budget.value
+            - Example: a high noise_multiplier
 
-        tolerance: Convergence threshold
-            - Stops early when |achieved - budget.value| < tolerance
+        tolerance: Positive, finite relative convergence tolerance
+            - Uses ``math.isclose(achieved, target, rel_tol=tolerance, abs_tol=0)``
             - Default: 1e-6 (very tight, suitable for most applications)
             - Use 1e-2 for faster convergence, 1e-8 for maximum precision
 
-        max_iterations: Maximum binary search iterations
+        max_iterations: Positive maximum number of binary search iterations
             - Each iteration halves the search space
             - 100 iterations gives ~1e-30 precision (rarely needed)
-            - If not converged after max_iterations, returns False for converged
+            - Exhaustion raises RuntimeError
 
         prefix: Optional already-executed process; each probe evaluates
             ``prefix | process(param)``, so the budget is the total across
@@ -140,12 +150,14 @@ def calibrate(
         - achieved: Metric value at found parameter
         - target: Target metric value (for comparison)
         - iterations: Number of iterations performed
-        - converged: True if |achieved - target| < tolerance
+        - converged: always True for a successfully returned result
 
     Raises:
+        ValueError: If tolerance is not finite and positive, or max_iterations is not positive
         ValueError: If param_min >= param_max
         ValueError: If bounds don't bracket the target (both val_min/val_max above or below target)
         ValueError: If budget evaluation returns inf or nan at the bounds
+        RuntimeError: If no privacy-safe endpoint converges within max_iterations
         Exception: If process() or budget.evaluate() raises an exception
 
     Native LRU caches registered via :mod:`opaque.api.accounting.core._native_cache`
@@ -227,7 +239,7 @@ def calibrate(
       → Try expanding param_min/param_max range
     - *ValueError: budget evaluation returned infinity*
       → Privacy budget may be unreachable with your mechanism; try higher param_min or lower budget value
-    - *Not converging within max_iterations*
+    - *RuntimeError: calibration did not converge*
       → Increase tolerance or max_iterations; check that param changes actually affect metric
     """
     if prefix is not None:
@@ -260,6 +272,10 @@ def _calibrate_impl(
     tolerance: float,
     max_iterations: int,
 ) -> CalibrateResult:
+    if not math.isfinite(tolerance) or tolerance <= 0:
+        raise ValueError(f"tolerance must be finite and > 0, got {tolerance}")
+    if max_iterations <= 0:
+        raise ValueError(f"max_iterations must be > 0, got {max_iterations}")
     if param_min >= param_max:
         raise ValueError(f"param_min ({param_min}) must be < param_max ({param_max})")
 
@@ -319,10 +335,33 @@ def _calibrate_impl(
             f"The target may be unreachable with these bounds."
         )
 
-    # Binary search
+    def is_safe(achieved: float) -> bool:
+        if decreasing:
+            return achieved <= budget.value
+        return achieved >= budget.value
+
+    # The existing bracketing contract makes param_max the proven-safe bound.
+    # Retain its already-evaluated metric so every successful result is safe and
+    # exhaustion does not require an additional, untracked process evaluation.
     lo = param_min
     hi = param_max
+    safe_param = param_max
+    safe_value = val_max
     iterations = 0
+
+    if math.isclose(
+        safe_value,
+        budget.value,
+        rel_tol=tolerance,
+        abs_tol=0.0,
+    ):
+        return CalibrateResult(
+            param=safe_param,
+            achieved=safe_value,
+            target=budget.value,
+            iterations=iterations,
+            converged=True,
+        )
 
     for iteration in range(max_iterations):
         iterations = iteration + 1
@@ -337,33 +376,33 @@ def _calibrate_impl(
                 f"produces valid DpProcess objects for all parameter values."
             )
 
-        # Check convergence
-        if abs(current - budget.value) < tolerance:
+        if is_safe(current):
+            hi = mid
+            safe_param = mid
+            safe_value = current
+        else:
+            lo = mid
+
+        # Convergence is accepted only from the proven privacy-safe endpoint.
+        if math.isclose(
+            safe_value,
+            budget.value,
+            rel_tol=tolerance,
+            abs_tol=0.0,
+        ):
             return CalibrateResult(
-                param=mid,
-                achieved=current,
+                param=safe_param,
+                achieved=safe_value,
                 target=budget.value,
                 iterations=iterations,
                 converged=True,
             )
 
-        # Update bounds using budget's declared direction
-        if (current > budget.value) == decreasing:
-            lo = mid
-        else:
-            hi = mid
-
-    # Max iterations reached - return best estimate
-    mid = (lo + hi) / 2
-    proc = process(mid)
-    current = budget.evaluate(proc)
-
-    return CalibrateResult(
-        param=mid,
-        achieved=current,
-        target=budget.value,
-        iterations=iterations,
-        converged=False,
+    raise RuntimeError(
+        f"Calibration for {budget.name} did not converge: "
+        f"target={budget.value}, relative tolerance={tolerance}, "
+        f"iterations={iterations}, final bracket=[{lo}, {hi}], "
+        f"last safe achieved={safe_value} at param={safe_param}."
     )
 
 
