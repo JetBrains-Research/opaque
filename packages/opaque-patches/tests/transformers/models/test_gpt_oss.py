@@ -9,20 +9,20 @@ so Opaque patches only RMSNorm/RoPE/CE. HF's own experts forward is built on
 Opaque expert kernel here.
 """
 
-import os
 import sys
+from pathlib import Path
 
 import pytest
 
 pytest.importorskip("transformers")
 
-sys.path.insert(0, os.path.dirname(__file__))
-from _test_utils import (  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _test_utils import (
+    assert_forward_backward,
+    assert_forward_no_grad,
+    assert_vmap_grad,
     build_moe_model,
     experts_forward_patched,
-    assert_forward_no_grad,
-    assert_forward_backward,
-    assert_vmap_grad,
 )
 
 

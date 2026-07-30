@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import Tensor
+
 from transformers.trainer_pt_utils import (
     find_batch_size,
     nested_concat,
@@ -154,6 +155,7 @@ class _PredictionAccumulator:
         ``inputs_decode = inputs[main_input_name]``), or ``None`` if the
         collator didn't emit the primary input.
         """
+        del batch_size  # reserved for HF-parity scalar-loss expansion
         # ``loss`` is either scalar (the standard ``prediction_step``
         # path: a batch-mean reduced by the model's ``forward``) or 1-D
         # of length ``batch_size`` (the vmap'd eval closure path
@@ -408,7 +410,7 @@ def _freeze_hot_chunk(
 
 
 def should_run_eval_at_step(
-    args: "TrainingArguments",
+    args: TrainingArguments,
     global_step: int,
     epoch: float,
     eval_steps_resolved: int,
@@ -502,7 +504,7 @@ def resolve_eval_num_samples(dataloader: Any, *, observed: int) -> int:
     # 1. dataset.__len__ (map-style or finite IterableDataset).
     try:
         if dataset is not None:
-            return int(len(dataset))
+            return len(dataset)
     except TypeError:
         pass
     # 2. Sharded iterable datasets carry a usable ``num_examples`` attr.

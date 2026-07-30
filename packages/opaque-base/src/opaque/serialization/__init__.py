@@ -32,12 +32,12 @@ from opaque.api.base.serialization import (
 )
 
 __all__ = [
-    "state_dict",
-    "from_state_dict",
-    "register_serializer",
-    "lookup_serializer",
-    "Serializer",
-    "SerializedState",
-    "StateDictFn",
     "FromStateDictFn",
+    "SerializedState",
+    "Serializer",
+    "StateDictFn",
+    "from_state_dict",
+    "lookup_serializer",
+    "register_serializer",
+    "state_dict",
 ]

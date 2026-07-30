@@ -17,13 +17,14 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.types import clipped  # noqa: E402
-from opaque.types import noised  # noqa: E402
-from opaque.types import PerGroup  # noqa: E402
-from opaque.types import SecondMomentNoiseOutput  # noqa: E402
-from opaque.optimizers import adam, adamw  # noqa: E402
-from opaque.optimizers.types import AdamState  # noqa: E402
-
+from opaque.optimizers import adam, adamw
+from opaque.optimizers.types import AdamState
+from opaque.types import (
+    PerGroup,
+    SecondMomentNoiseOutput,
+    clipped,
+    noised,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -63,7 +64,8 @@ def _adam_state(chain_state) -> AdamState:
 class TestVanillaAdamW:
     def test_returns_gradient_transformation(self):
         opt = adamw(lr=1e-3)
-        assert hasattr(opt, "init") and hasattr(opt, "update")
+        assert hasattr(opt, "init")
+        assert hasattr(opt, "update")
 
     def test_state_carries_phi_even_when_unused(self, params):
         opt = adamw(lr=1e-3)
@@ -75,9 +77,9 @@ class TestVanillaAdamW:
     @pytest.mark.parametrize(
         "kwargs",
         [
-            dict(lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01),
-            dict(lr=0.1, betas=(0.85, 0.99), eps=1e-6, weight_decay=0.0),
-            dict(lr=5e-4, weight_decay=0.1),
+            {"lr": 1e-3, "betas": (0.9, 0.999), "eps": 1e-8, "weight_decay": 0.01},
+            {"lr": 0.1, "betas": (0.85, 0.99), "eps": 1e-6, "weight_decay": 0.0},
+            {"lr": 5e-4, "weight_decay": 0.1},
         ],
         ids=["default", "high_lr_no_wd", "heavy_wd"],
     )
@@ -451,7 +453,7 @@ class TestSecondMomentMode:
             clipped(sq_grads, max_norm=1.0),
         )
         with pytest.raises(
-            TypeError, match="SecondMomentNoiseOutput.noisy_squared_grads"
+            TypeError, match=r"SecondMomentNoiseOutput.noisy_squared_grads"
         ):
             opt.update(output, state, params=params)
 

@@ -14,9 +14,9 @@ sync function: each subsystem registers its types on import.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+import contextlib
 from dataclasses import fields, is_dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.distributed as dist
@@ -24,6 +24,9 @@ import torch.distributed as dist
 from opaque.api.engine.pytree import tree_map
 
 from .collectives import all_reduce_, get_world_size, is_distributed
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
 
 
 def assert_scalar_equal(
@@ -247,12 +250,10 @@ def _ensure_builtin_sync_types_loaded() -> None:
     façade would require an extra side-effect import there, so we target
     the impl module directly.
     """
-    import opaque.api.engine.clipping._distributed  # noqa: F401
+    import opaque.api.engine.clipping._distributed
 
-    try:
+    with contextlib.suppress(ImportError):
         import opaque.api.engine.profiling._distributed  # noqa: F401
-    except ImportError:
-        pass
 
 
 def sync(*states: Any) -> Any:
@@ -290,7 +291,7 @@ __all__ = [
     "gather_pytree",
     "gather_tensors",
     "reduce_scalar",
-    "sync_object",
     "register_sync_type",
     "sync",
+    "sync_object",
 ]

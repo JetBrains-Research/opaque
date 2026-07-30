@@ -14,12 +14,12 @@ from dataclasses import replace
 import torch
 
 from opaque.api.engine.clipping._distributed import sync_clipped_grad_aux
-from opaque.distributed import is_distributed
 from opaque.api.engine.distributed._state import (
     reduce_scalar,
     register_sync_type,
     sync_object,
 )
+from opaque.distributed import is_distributed
 from opaque.random import fold_in, generator_from_key
 from opaque.types import PerGroup
 

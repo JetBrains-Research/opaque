@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
-import torch
 import logging
+
+import torch
 
 from ._utils import _active_lora_dtype
 

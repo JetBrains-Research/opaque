@@ -547,6 +547,6 @@ def test_large_batch_shapes() -> None:
     batch = collate(examples)
     B, L = batch["input_ids"].shape
     assert B == 8
-    assert L <= max_len
+    assert max_len >= L
     assert batch["attention_mask"].shape == (B, L)
     assert batch["labels"].shape == (B, L)

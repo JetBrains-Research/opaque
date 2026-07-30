@@ -12,6 +12,7 @@ helpers preprocess log-ratios before a variant.
 
 from opaque.api.alignment.dpo.loss._apo import apo_down_loss, apo_zero_loss
 from opaque.api.alignment.dpo.loss._bco import bco_loss
+from opaque.api.alignment.dpo.loss._chosen_nll import chosen_nll_loss
 from opaque.api.alignment.dpo.loss._discopop import discopop_loss
 from opaque.api.alignment.dpo.loss._exo import exo_loss
 from opaque.api.alignment.dpo.loss._f_divergence import (
@@ -25,9 +26,8 @@ from opaque.api.alignment.dpo.loss._mpo import mpo_combine
 from opaque.api.alignment.dpo.loss._nca import nca_loss
 from opaque.api.alignment.dpo.loss._orpo import odds_ratio_loss
 from opaque.api.alignment.dpo.loss._robust import robust_loss
-from opaque.api.alignment.dpo.loss._chosen_nll import chosen_nll_loss
-from opaque.api.alignment.dpo.loss._simpo import simpo_loss
 from opaque.api.alignment.dpo.loss._sigmoid import sigmoid_loss
+from opaque.api.alignment.dpo.loss._simpo import simpo_loss
 from opaque.api.alignment.dpo.loss._sppo import sppo_loss
 from opaque.api.alignment.dpo.loss._squarechipo import squarechipo_loss
 from opaque.api.alignment.dpo.loss._wpo import wpo_weights

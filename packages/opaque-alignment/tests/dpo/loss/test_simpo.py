@@ -7,11 +7,11 @@ from __future__ import annotations
 import math
 
 import torch
-import torch.nn.functional as F  # noqa: N812
+import torch.nn.functional as F
 from torch.func import grad, vmap
 
-from opaque.api.alignment.dpo.loss._simpo import simpo_loss
 from opaque.api.alignment.dpo.loss._sigmoid import sigmoid_loss
+from opaque.api.alignment.dpo.loss._simpo import simpo_loss
 
 
 class TestSimpo:
@@ -56,4 +56,5 @@ class TestSimpo:
         gc, gr = vmap(
             grad(lambda a, b: simpo_loss(a, b, beta=0.1, gamma=0.3), argnums=(0, 1))
         )(c, r)
-        assert torch.isfinite(gc).all() and torch.isfinite(gr).all()
+        assert torch.isfinite(gc).all()
+        assert torch.isfinite(gr).all()

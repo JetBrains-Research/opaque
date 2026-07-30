@@ -158,9 +158,7 @@ def _fused_linear_ce_loss_is_supported(
     if kwargs.get("weight") is not None:
         return False
     ii = kwargs.get("ignore_index", -100)
-    if torch.is_tensor(ii):
-        return False
-    return True
+    return not torch.is_tensor(ii)
 
 
 def _make_fused_ce_causal_lm_forward(original):
@@ -313,8 +311,8 @@ def _make_fused_ce_causal_lm_forward(original):
             loss = self.loss_function(logits, labels, self.vocab_size, **kwargs)
 
         if not return_dict:
-            output = (logits,) + outputs[1:]
-            return (loss,) + output if loss is not None else output
+            output = (logits, *outputs[1:])
+            return (loss, *output) if loss is not None else output
 
         from transformers.modeling_outputs import CausalLMOutputWithPast
 

@@ -5,12 +5,10 @@ import math
 import pytest
 import torch
 
-from opaque.types import ClippedPytree
-
-from opaque.types import PerGroup
-from opaque.dpsgd.clipping import per_group
 from opaque.api.dpsgd.clipping._adaptive import AdaptiveClipState, adaptive_clipped_grad
+from opaque.dpsgd.clipping import per_group
 from opaque.random import key
+from opaque.types import ClippedPytree, PerGroup
 
 
 def _unwrap_clipped(value):
@@ -53,7 +51,7 @@ class TestAdaptivePerGroupBasic:
         params = {"a": torch.randn(10), "b": torch.randn(5)}
         pg = _make_per_group(params)
 
-        grad_fn, clip_state = adaptive_clipped_grad(
+        _grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clipping_norm=pg,
             key=key(0),
@@ -81,7 +79,7 @@ class TestAdaptivePerGroupBasic:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        (grads, aux), clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        (_grads, _aux), clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         assert isinstance(clip_state._current_clipping_norm, PerGroup)
         assert isinstance(clip_state._next_clipping_norm, PerGroup)
@@ -168,7 +166,7 @@ class TestAdaptivePerGroupConvergence:
 
         # Run several steps
         for _ in range(5):
-            (_, aux), clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+            (_, _aux), clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Group "a" should have adapted to a different threshold than "b"
         final = clip_state._next_clipping_norm
@@ -305,7 +303,7 @@ class TestAdaptivePerGroupAux:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        (grads, aux), clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        (_grads, aux), clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Aux should have group_norms
         assert aux.group_norms is not None
@@ -334,7 +332,7 @@ class TestAdaptivePerGroupAux:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        _grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Even without return_aux, adaptation should work (state should change)
         assert isinstance(clip_state._next_clipping_norm, PerGroup)
@@ -553,7 +551,7 @@ class TestGroupNormsInAux:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        (grads, aux), _ = grad_fn(params, batch_x, batch_y, state=clip_state)
+        (_grads, aux), _ = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         assert aux.group_norms is not None
         assert "a" in aux.group_norms
@@ -578,6 +576,6 @@ class TestGroupNormsInAux:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        (grads, aux), _ = grad_fn(params, batch_x, batch_y, state=clip_state)
+        (_grads, aux), _ = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         assert aux.group_norms is None

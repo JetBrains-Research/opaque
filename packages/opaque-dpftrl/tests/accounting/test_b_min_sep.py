@@ -50,7 +50,8 @@ def test_b_min_sep_smoke_pld():
         p0=0.02,
     )
     eps = proc.pld(num_mc_samples=5000, seed=123).epsilon_at(1e-3)
-    assert eps > 0.0 and eps < 500.0
+    assert eps > 0.0
+    assert eps < 500.0
 
 
 def test_transcript_cache_reuses_same_handle():
@@ -61,7 +62,8 @@ def test_transcript_cache_reuses_same_handle():
 
     h1 = get_handle_or_none((1.0, 0.0), 12, 0.08, 80, 7)
     h2 = get_handle_or_none((1.0, 0.0), 12, 0.08, 80, 7)
-    assert h1 is not None and h2 is not None
+    assert h1 is not None
+    assert h2 is not None
     assert h1 == h2
 
 
@@ -106,7 +108,8 @@ def test_transcript_cache_evicts_lru(monkeypatch):
 
     h1 = tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 1)
     h2 = tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 2)
-    assert h1 is not None and h2 is not None
+    assert h1 is not None
+    assert h2 is not None
     assert len(tc._cache) == 2
     assert calls == [("register", h1), ("register", h2)]
 

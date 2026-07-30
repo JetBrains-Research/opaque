@@ -27,11 +27,17 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Use the lockfile ruff (not unpinned `uvx ruff`) so CI and local
+      # `uv run ruff` stay on the same version. Rule selection lives in
+      # pyproject.toml `[tool.ruff.lint]`.
+      - name: Install locked ruff
+        run: uv sync --group dev --no-install-workspace --frozen
+
       - name: Format Python code
-        run: uvx ruff format packages/
+        run: uv run --no-sync ruff format packages/
 
       - name: Auto-fix linting issues
-        run: uvx ruff check --fix packages/
+        run: uv run --no-sync ruff check --fix packages/
 
       - name: Commit formatting changes
         uses: stefanzweifel/git-auto-commit-action@v5
@@ -41,8 +47,8 @@ jobs:
 
       - name: Verify no remaining issues
         run: |
-          uvx ruff format --check packages/
-          uvx ruff check packages/
+          uv run --no-sync ruff format --check packages/
+          uv run --no-sync ruff check packages/
 
   format-rust:
     name: Format Rust

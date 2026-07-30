@@ -20,8 +20,8 @@ import math
 import pytest
 from transformers.debug_utils import DebugOption
 
-from opaque.transformers.trainer import TrainingArguments
 from opaque.api.transformers.trainer._training_arguments import _DP_OPTIMIZERS
+from opaque.transformers.trainer import TrainingArguments
 
 
 class TestLegacyAliases:
@@ -114,7 +114,7 @@ class TestStrategyCoercion:
     """The four strategy enum fields are coerced to canonical strings."""
 
     @pytest.mark.parametrize(
-        "field,value,expected",
+        ("field", "value", "expected"),
         [
             ("eval_strategy", "steps", "steps"),
             ("eval_strategy", "epoch", "epoch"),
@@ -144,13 +144,13 @@ class TestStrategyCoercion:
         assert getattr(args, field) == expected
 
     def test_unknown_strategy_raises(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"eval_strategy=.*expected one of"):
             TrainingArguments(
                 privacy_noise_multiplier=1.0, eval_strategy="completely-bogus"
             )
 
     def test_unknown_lr_scheduler_raises(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="not a valid SchedulerType"):
             TrainingArguments(
                 privacy_noise_multiplier=1.0, lr_scheduler="not-a-real-scheduler"
             )
@@ -164,7 +164,7 @@ class TestHFFieldNormalization:
         assert args.debug == [DebugOption.UNDERFLOW_OVERFLOW]
 
     @pytest.mark.parametrize(
-        "value,expected",
+        ("value", "expected"),
         [(True, "all"), (False, "no"), ("non_padding", "non_padding")],
     )
     def test_include_num_input_tokens_seen_normalizes(self, value, expected):
@@ -180,7 +180,7 @@ class TestHFFieldNormalization:
             )
 
     @pytest.mark.parametrize(
-        "value,expected",
+        ("value", "expected"),
         [
             (None, []),
             ("none", []),
@@ -274,7 +274,7 @@ class TestOptimizerSupportSurface:
         ],
     )
     def test_unsupported_optimizers_raise_with_supported_list(self, optim):
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="expected one of") as exc_info:
             TrainingArguments(privacy_noise_multiplier=1.0, optim=optim)
         message = str(exc_info.value)
         assert optim in message
@@ -349,7 +349,7 @@ class TestMaxGradNorm:
     def test_none_rejected(self):
         # There is exactly one way to disable clipping (math.inf); None is not
         # it and must point users at the canonical form.
-        with pytest.raises(ValueError, match="math.inf"):
+        with pytest.raises(ValueError, match=r"math.inf"):
             TrainingArguments(clipping_norm=None, privacy_noise_multiplier=0.0)
 
     @pytest.mark.parametrize("nm", [None, 0.5, 1.0])
@@ -455,7 +455,7 @@ class TestMechanismAndSamplerDefaults:
             )
 
     @pytest.mark.parametrize(
-        "mechanism,expected_sampler",
+        ("mechanism", "expected_sampler"),
         [
             ("mf_band", "b_min_sep"),
             ("mf_blt", "balls_in_bins"),

@@ -13,11 +13,11 @@ Config: Mellum-4b scale (intermediate_dim=8256)
 import pytest
 import torch
 import torch.nn.functional as F
-from torch.func import vmap, grad
+from torch.func import grad, vmap
 
 pytest.importorskip("triton")
 
-from opaque.api.patches.kernels.geglu import Opaque_GeGLU_Exact, Opaque_GeGLU_Approx
+from opaque.api.patches.kernels.geglu import Opaque_GeGLU_Approx, Opaque_GeGLU_Exact
 
 pytestmark = [
     pytest.mark.cuda,

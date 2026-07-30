@@ -15,7 +15,6 @@ import torch
 
 from opaque.types import PerGroup, clipped
 
-
 # ── Scalar max_norm ──────────────────────────────────────────────────
 
 
@@ -109,7 +108,7 @@ class TestValidation:
 
     def test_unknown_allocation_raises(self):
         cg = clipped(torch.zeros(4), max_norm=1.0)
-        with pytest.raises(ValueError, match="isotropic.*optimal"):
+        with pytest.raises(ValueError, match=r"isotropic.*optimal"):
             cg.noise_stddev_for(noise_multiplier=0.5, allocation="bogus")  # type: ignore[arg-type]
 
     def test_negative_per_group_bound_raises(self):

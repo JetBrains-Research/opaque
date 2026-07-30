@@ -21,6 +21,7 @@ import torch.nn.functional as F
 
 pytest.importorskip("triton")
 
+from opaque.api.patches.kernels.moe import opaque_moe
 from opaque.patches.kernels import (
     opaque_cross_entropy_loss,
     opaque_geglu_approx,
@@ -28,7 +29,6 @@ from opaque.patches.kernels import (
     opaque_rms_norm,
     opaque_swiglu,
 )
-from opaque.api.patches.kernels.moe import opaque_moe
 
 pytestmark = [
     pytest.mark.cuda,
@@ -81,7 +81,7 @@ def test_rms_norm_precision():
 
 
 @pytest.mark.parametrize(
-    "name,eager_fn,opaque_fn",
+    ("name", "eager_fn", "opaque_fn"),
     [
         ("swiglu", lambda g, u: F.silu(g) * u, opaque_swiglu),
         ("geglu_exact", lambda g, u: F.gelu(g) * u, opaque_geglu_exact),

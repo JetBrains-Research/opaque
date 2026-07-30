@@ -9,9 +9,9 @@ from opaque.api.accounting.dpftrl.composition import per_step
 from opaque.api.accounting.dpftrl.mechanisms import mf_gaussian
 
 __all__ = [
-    "mf_gaussian",
-    "poisson",
     "b_min_sep",
     "balls_in_bins",
+    "mf_gaussian",
     "per_step",
+    "poisson",
 ]

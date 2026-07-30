@@ -42,7 +42,8 @@ class TestComposed:
         b = dpsgd_acc.gaussian(0.5)
         composed = Composed(a, b)
         eps = composed.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
         # eps of composition > eps of each part
         assert eps > a.epsilon_at(1e-5)
         assert eps > b.epsilon_at(1e-5)
@@ -76,7 +77,8 @@ class TestRepeated:
         step = dpsgd_acc.gaussian(0.8)
         r = Repeated(step, 10)
         eps = r.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
         # 10x composition > single step
         assert eps > step.epsilon_at(1e-5)
 
@@ -106,7 +108,8 @@ class TestCachedProcess:
     def test_pld_returns_valid(self):
         cp = CachedProcess(dpsgd_acc.gaussian(0.8))
         eps = cp.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
     def test_opaque_merge_barrier(self):
         """CachedProcess merges equal inner via structural equality."""

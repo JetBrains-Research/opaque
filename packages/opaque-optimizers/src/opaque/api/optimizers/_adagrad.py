@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -50,11 +50,12 @@ except ImportError as exc:
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
 
-from opaque.types import PerGroup, TensorPytree
-from opaque.pytree import tree_map
 from opaque.api.optimizers._bias_correction import is_per_group, resolve_noise_variance
 from opaque.api.optimizers._chain import make_optimizer_chain
+from opaque.pytree import tree_map
 
+if TYPE_CHECKING:
+    from opaque.types import PerGroup, TensorPytree
 
 _LR = float | Callable[[int], float]
 
@@ -94,8 +95,8 @@ def _scale_by_adagrad(
         updates: Any,
         state: AdagradState,
         *,
-        params: Any = None,  # noqa: ARG001
-        inplace: bool = False,  # noqa: ARG001
+        params: Any = None,
+        inplace: bool = False,
         noise_stddev: float | PerGroup | None = None,
     ) -> tuple[Any, AdagradState]:
         t = state.step + 1
@@ -225,4 +226,4 @@ def adagrad(
     )
 
 
-__all__ = ["adagrad", "AdagradState"]
+__all__ = ["AdagradState", "adagrad"]

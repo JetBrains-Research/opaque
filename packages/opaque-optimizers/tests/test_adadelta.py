@@ -22,13 +22,14 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.types import clipped  # noqa: E402, F401
-from opaque.types import noised  # noqa: E402
-from opaque.types import PerGroup  # noqa: E402
-from opaque.types import SecondMomentNoiseOutput  # noqa: E402
-from opaque.optimizers import adadelta  # noqa: E402
-from opaque.optimizers.types import AdadeltaState  # noqa: E402
-
+from opaque.optimizers import adadelta
+from opaque.optimizers.types import AdadeltaState
+from opaque.types import (
+    PerGroup,
+    SecondMomentNoiseOutput,
+    clipped,  # noqa: F401
+    noised,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures

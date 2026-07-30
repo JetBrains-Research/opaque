@@ -6,7 +6,6 @@ import functools
 from dataclasses import dataclass
 
 from opaque.api.accounting.core import _native
-
 from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core.mechanisms._nonprivate import NonPrivate
 from opaque.api.accounting.dpsgd.amplification._poisson import Poisson

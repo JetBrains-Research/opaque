@@ -20,7 +20,7 @@ import math
 
 import pytest
 import torch
-import torch.nn.functional as F  # noqa: N812
+import torch.nn.functional as F
 from torch.func import grad, vmap
 
 from opaque.api.alignment.logprob._gather import selective_log_softmax

@@ -10,8 +10,10 @@ import threading
 import warnings
 import weakref
 from collections import OrderedDict
-from collections.abc import Callable
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _T = TypeVar("_T")
 
@@ -149,7 +151,7 @@ class NativeCache:
     def _safe_destruct(self, handle: int) -> None:
         try:
             self._destructor(handle)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             warnings.warn(
                 f"NativeCache({self._name!r}): destructor failed for handle "
                 f"{handle}: {exc}",

@@ -162,7 +162,7 @@ class TestCalibrateErrors:
 
     def test_budget_outside_bracket(self):
         """Target not achievable within bounds → ValueError."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="unreachable"):
             cal.calibrate(
                 cal.epsilon_budget(0.001, delta=1e-5), self._process, 0.5, 0.6
             )
@@ -346,7 +346,7 @@ class TestCalibratePrefix:
         # Low-noise, high-sampling prefix that blows past ε=0.5 in few steps
         # so the bracket can't be established — cheap to compose.
         prefix = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.3), 0.1) * 100
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="unreachable"):
             cal.calibrate(
                 cal.epsilon_budget(0.5, delta=1e-5),
                 self._stage,

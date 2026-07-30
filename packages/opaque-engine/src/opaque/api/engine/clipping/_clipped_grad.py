@@ -2,25 +2,26 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch.autograd.profiler import record_function
 from torch.func import grad_and_value
 
-from opaque.api.engine.types import clipped
-
+from opaque.api.engine.clipping._clipped_fun import FixedClipState, clipped_fun
 from opaque.api.engine.clipping._helpers import (
     batch_size_from_args,
     normalize_fun_to_return_aux,
     normalize_to_tuple,
     zero_grads_like,
 )
-from opaque.api.engine.clipping._clipped_fun import FixedClipState, clipped_fun
-from opaque.api.engine.clipping._types import ClippedGradFn
-from opaque.api.engine.types import PerGroup
+from opaque.api.engine.types import PerGroup, clipped
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from opaque.api.engine.clipping._types import ClippedGradFn
 
 
 @dataclass(frozen=True)
@@ -308,4 +309,4 @@ def clipped_grad(
         return grad_fn_wrapper, clip_state
 
 
-__all__ = ["clipped_grad", "ClippedGradAux"]
+__all__ = ["ClippedGradAux", "clipped_grad"]

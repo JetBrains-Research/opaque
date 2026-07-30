@@ -12,7 +12,7 @@ from opaque.auditing.types import OneRunEstimate
 from opaque.random import key
 
 
-@pytest.fixture()
+@pytest.fixture
 def linear_setup():
     """Create a simple linear model, dataset, and loss function."""
     torch.manual_seed(42)
@@ -115,7 +115,7 @@ class TestLossScores:
 class TestLossScoresSingleArg:
     """Tests for loss_scores with single batch arg (HF-like pattern)."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def single_arg_setup(self):
         """Create a setup where loss_fn takes (params, tokens)."""
         torch.manual_seed(42)
@@ -147,7 +147,7 @@ class TestLossScoresSingleArg:
 class TestLossScoresDictBatch:
     """Tests for loss_scores with dict-style batches (HuggingFace pattern)."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def dict_dataset_setup(self):
         """Create a setup with a dict-style dataset and collate_fn."""
         torch.manual_seed(42)

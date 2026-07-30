@@ -23,30 +23,30 @@ import pytest
 import torch
 from transformers.training_args import OptimizerNames
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.api.transformers.trainer._optim import (
     build_optimizer,
     canonical_optimizer_names,
 )
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 
 def _args(tmp_path, **overrides) -> TrainingArguments:
     """Optimizer-test args (CPU-pinned, σ=0 for bit-comparable runs)."""
-    defaults = dict(
-        output_dir=str(tmp_path),
-        per_device_train_batch_size=4,
-        max_steps=3,
-        num_train_epochs=1,
-        logging_steps=1,
-        save_strategy="no",
-        eval_strategy="no",
+    defaults = {
+        "output_dir": str(tmp_path),
+        "per_device_train_batch_size": 4,
+        "max_steps": 3,
+        "num_train_epochs": 1,
+        "logging_steps": 1,
+        "save_strategy": "no",
+        "eval_strategy": "no",
         # NM=0.0 = non-private; target_eps is meaningless on this path.
-        privacy_noise_multiplier=0.0,
-        clipping_norm=1.0,
-        learning_rate=1e-2,
-        seed=42,
-        use_cpu=True,
-    )
+        "privacy_noise_multiplier": 0.0,
+        "clipping_norm": 1.0,
+        "learning_rate": 1e-2,
+        "seed": 42,
+        "use_cpu": True,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 
@@ -127,7 +127,9 @@ class TestOptimRejectsUnsupportedNames:
 
     @pytest.mark.parametrize("name", REJECTED_OPTIMIZER_NAMES)
     def test_unsupported_optim_raises(self, tmp_path, name):
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match="is not supported by DPTrainer"
+        ) as exc_info:
             _args(tmp_path, optim=name)
         message = str(exc_info.value)
         assert name in message, (
@@ -266,7 +268,7 @@ class TestOptimizerClsAndKwargsFunctional:
             validate_functional_optimizer_cls_and_kwargs,
         )
 
-        with pytest.raises(RuntimeError, match="torch.optim"):
+        with pytest.raises(RuntimeError, match=r"torch.optim"):
             validate_functional_optimizer_cls_and_kwargs((optim.AdamW, {}))
 
 

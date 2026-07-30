@@ -2,6 +2,7 @@ import pytest
 
 pytest.importorskip("transformers")
 import torch
+
 from opaque.patches import apply_runtime_patches
 
 

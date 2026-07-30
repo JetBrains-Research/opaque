@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Union
+from typing import TYPE_CHECKING
 
 from opaque.api.engine.scheduling._decay import resolve_decay
 from opaque.api.engine.scheduling._ramp import resolve_ramp
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 __all__ = ["WarmupStableDecay", "warmup_stable_decay"]
 
@@ -34,8 +36,8 @@ class WarmupStableDecay:
     num_warmup_steps: int
     num_stable_steps: int
     num_decay_steps: int
-    warmup_ramp: Union[str, Callable[[float], float]] = "linear"
-    decay_shape: Union[str, Callable[[float], float]] = "1-sqrt"
+    warmup_ramp: str | Callable[[float], float] = "linear"
+    decay_shape: str | Callable[[float], float] = "1-sqrt"
 
     def __call__(self, step: int) -> float:
         warmup_fn = resolve_ramp(self.warmup_ramp, field="warmup_ramp")

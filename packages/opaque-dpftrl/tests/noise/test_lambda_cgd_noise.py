@@ -4,13 +4,10 @@ import pytest
 import torch
 
 import opaque.dpftrl.accounting as ftrl_acc
-from opaque.types import clipped
-
-from opaque.types import NoisedPytree
-
 from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
 from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.random import key
+from opaque.types import NoisedPytree, clipped
 
 
 def _make_noise(template, n_steps=100, lambda_=0.9, normalized=True, seed=42):
@@ -113,7 +110,7 @@ class TestLambdaCgdNoise:
         """Works with multiple parameter tensors."""
         template = {"w1": torch.zeros(5), "w2": torch.zeros(3, 4)}
         noise_fn, state = _make_noise(template)
-        noised, new_state = _call(
+        noised, _new_state = _call(
             noise_fn,
             {"w1": torch.zeros(5), "w2": torch.zeros(3, 4)},
             state,
@@ -142,9 +139,9 @@ class TestLambdaCgdNoise:
         assert state._step_counter == 2
 
     def test_rejects_invalid_lambda(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"lambda_ must be in \[0, 1\)"):
             lambda_cgd_strategy(lambda_=-0.1)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"lambda_ must be in \[0, 1\)"):
             lambda_cgd_strategy(lambda_=1.0)
 
     def test_prng_replay_correctness(self):
@@ -169,7 +166,7 @@ class TestLambdaCgdNoise:
         torch.testing.assert_close(step1_corr["w"], expected, atol=1e-6, rtol=1e-6)
 
 
-_PARTICIPATION = dict(n_steps=100, min_sep=25, max_participations=4)
+_PARTICIPATION = {"n_steps": 100, "min_sep": 25, "max_participations": 4}
 
 
 class TestLambdaCgdStrategy:

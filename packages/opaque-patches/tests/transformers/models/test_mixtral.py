@@ -2,22 +2,22 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the mixtral family (MoE)."""
 
-import os
 import sys
+from pathlib import Path
 
 import pytest
 import torch
 
 pytest.importorskip("transformers")
 
-sys.path.insert(0, os.path.dirname(__file__))
-from _test_utils import (  # noqa: E402
-    build_moe_model,
-    experts_forward_patched,
-    assert_forward_no_grad,
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _test_utils import (
     assert_forward_backward,
+    assert_forward_no_grad,
     assert_vmap_forward,
     assert_vmap_grad,
+    build_moe_model,
+    experts_forward_patched,
 )
 
 

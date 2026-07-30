@@ -6,6 +6,17 @@ import pytest
 import torch
 
 from opaque.api.engine.noise_allocation import paired_noise_stddevs
+from opaque.dpftrl.noise import (
+    band_mf_strategy,
+    bisr_strategy,
+    blt_strategy,
+    bsr_strategy,
+    identity_strategy,
+    lambda_cgd_strategy,
+    mf_gaussian_noise,
+)
+from opaque.dpftrl.noise.types import SecondMomentMFNoiseState
+from opaque.random import key
 from opaque.types import (
     NoisedPytree,
     PerGroup,
@@ -13,18 +24,6 @@ from opaque.types import (
     SecondMomentNoiseOutput,
     clipped,
 )
-from opaque.dpftrl.noise import (
-    band_mf_strategy,
-    bisr_strategy,
-    bsr_strategy,
-    blt_strategy,
-    identity_strategy,
-    lambda_cgd_strategy,
-    mf_gaussian_noise,
-)
-from opaque.dpftrl.noise.types import SecondMomentMFNoiseState
-from opaque.random import key
-
 
 _SENSITIVITY = 0.1
 
@@ -99,11 +98,11 @@ class TestSecondMomentCalibration:
         assert b_second > a_second
 
     def test_rejects_invalid(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="noise_multiplier must be non-negative"):
             paired_noise_stddevs(-1.0, first=0.1, second=0.01)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="first must be non-negative"):
             paired_noise_stddevs(1.0, first=-0.1, second=0.01)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="second must be non-negative"):
             paired_noise_stddevs(1.0, first=0.1, second=-0.01)
 
 

@@ -21,11 +21,12 @@ import shutil
 import socket
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 import torch
 
-RUNNER = os.path.join(os.path.dirname(__file__), "_ddp_runner.py")
+RUNNER = str(Path(__file__).resolve().parent / "_ddp_runner.py")
 
 
 def _free_port() -> int:
@@ -67,15 +68,15 @@ def _run_ddp(
     # Quiet HF/torch in workers; keep our own stderr pristine.
     env["TRANSFORMERS_VERBOSITY"] = "error"
     try:
-        for rank in range(world_size):
-            procs.append(
-                subprocess.Popen(
-                    common + ["--rank", str(rank)],
-                    env=env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
+        procs = [
+            subprocess.Popen(
+                [*common, "--rank", str(rank)],
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
+            for rank in range(world_size)
+        ]
         results = []
         for p in procs:
             stdout, stderr = p.communicate(timeout=timeout)

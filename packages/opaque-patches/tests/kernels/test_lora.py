@@ -16,18 +16,19 @@ Config: Mellum-4b scale (hidden=3072, intermediate=8256, rank=64)
 """
 
 import math
+
 import pytest
 import torch
 import torch.nn.functional as F
-from torch.func import vmap, grad
+from torch.func import grad, vmap
 
 pytest.importorskip("triton")
 
 from opaque.api.patches.kernels.lora import (
-    Opaque_LoRA_W,
-    Opaque_LoRA_QKV,
-    Opaque_LoRA_MLP,
     ACTIVATION_SWIGLU,
+    Opaque_LoRA_MLP,
+    Opaque_LoRA_QKV,
+    Opaque_LoRA_W,
 )
 
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
@@ -142,7 +143,7 @@ class TestLoRAWForward:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         X = torch.randn(BATCH, SEQ, HIDDEN, **kw)
         W = _kaiming_weight(HIDDEN, HIDDEN, **kw)
@@ -168,7 +169,7 @@ class TestLoRAWBackward:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         X_pt = torch.randn(BATCH, SEQ, HIDDEN, **kw, requires_grad=True)
         W = _kaiming_weight(HIDDEN, HIDDEN, **kw)
@@ -208,7 +209,7 @@ class TestLoRAWVmapForward:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         W = _kaiming_weight(HIDDEN, HIDDEN, **kw)
         A = _lora_weight(HIDDEN, RANK, **kw)
@@ -236,7 +237,7 @@ class TestLoRAWVmapGrad:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         W = _kaiming_weight(HIDDEN, HIDDEN, **kw)
         A = _lora_weight(HIDDEN, RANK, **kw)
@@ -268,7 +269,7 @@ class TestLoRAWVmapGrad:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         W = _kaiming_weight(HIDDEN, HIDDEN, **kw)
         A = _lora_weight(HIDDEN, RANK, **kw)
@@ -308,7 +309,7 @@ class TestLoRAWPerformance:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         X = torch.randn(BATCH, SEQ, HIDDEN, **kw)
         W = _kaiming_weight(HIDDEN, HIDDEN, **kw)
@@ -337,7 +338,7 @@ class TestLoRAWPerformance:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         X = torch.randn(BATCH, SEQ, HIDDEN, **kw, requires_grad=True)
         W = _kaiming_weight(HIDDEN, HIDDEN, **kw)
@@ -373,7 +374,7 @@ class TestLoRAQKVForward:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         X = torch.randn(BATCH, SEQ, HIDDEN, **kw)
         Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(HIDDEN, RANK, **kw)
@@ -401,7 +402,7 @@ class TestLoRAQKVBackward:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         X_pt = torch.randn(BATCH, SEQ, HIDDEN, **kw, requires_grad=True)
         Wq, Aq_pt, Bq_pt, Wk, Ak_pt, Bk_pt, Wv, Av_pt, Bv_pt = _make_qkv_weights(
@@ -515,7 +516,7 @@ class TestLoRAQKVVmapForward:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(HIDDEN, RANK, **kw)
         X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, **kw)
@@ -548,7 +549,7 @@ class TestLoRAQKVVmapGrad:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(HIDDEN, RANK, **kw)
         X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, **kw)
@@ -583,7 +584,7 @@ class TestLoRAQKVVmapGrad:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(HIDDEN, RANK, **kw)
         X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, **kw)
@@ -626,7 +627,7 @@ class TestLoRAQKVPerformance:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         X = torch.randn(BATCH, SEQ, HIDDEN, **kw)
         Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(HIDDEN, RANK, **kw)
@@ -659,7 +660,7 @@ class TestLoRAQKVPerformance:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         X = torch.randn(BATCH, SEQ, HIDDEN, **kw, requires_grad=True)
         Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(HIDDEN, RANK, **kw)
@@ -706,7 +707,7 @@ class TestLoRAMLPForward:
         INTERMEDIATE = mellum_config["intermediate_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         X = torch.randn(BATCH, SEQ, HIDDEN, **kw)
 
@@ -750,7 +751,7 @@ class TestLoRAMLPBackward:
         INTERMEDIATE = mellum_config["intermediate_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         X_pt = torch.randn(BATCH, SEQ, HIDDEN, **kw, requires_grad=True)
 
@@ -872,7 +873,7 @@ class TestLoRAMLPVmapForward:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         Wg = _kaiming_weight(INTERMEDIATE, HIDDEN, **kw)
         Ag = _lora_weight(HIDDEN, RANK, **kw)
@@ -921,7 +922,7 @@ class TestLoRAMLPVmapGrad:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         Wg = _kaiming_weight(INTERMEDIATE, HIDDEN, **kw)
         Ag = _lora_weight(HIDDEN, RANK, **kw)
@@ -970,7 +971,7 @@ class TestLoRAMLPVmapGrad:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         Wg = _kaiming_weight(INTERMEDIATE, HIDDEN, **kw)
         Ag = _lora_weight(HIDDEN, RANK, **kw)
@@ -1023,7 +1024,7 @@ class TestLoRAMLPPerformance:
         INTERMEDIATE = mellum_config["intermediate_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         X = torch.randn(BATCH, SEQ, HIDDEN, **kw)
 
@@ -1066,7 +1067,7 @@ class TestLoRAMLPPerformance:
         INTERMEDIATE = mellum_config["intermediate_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.bfloat16)
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         X = torch.randn(BATCH, SEQ, HIDDEN, **kw, requires_grad=True)
 

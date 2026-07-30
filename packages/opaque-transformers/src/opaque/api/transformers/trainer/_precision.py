@@ -10,18 +10,20 @@ model cast) — see
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING
 
 import torch
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from ._training_arguments import TrainingArguments
 
 
 @contextmanager
 def eval_dtype(
     model: torch.nn.Module,
-    args: "TrainingArguments",
+    args: TrainingArguments,
     train_dtype: torch.dtype,
 ) -> Iterator[None]:
     """Cast ``model`` to the eval dtype for the duration of the context.

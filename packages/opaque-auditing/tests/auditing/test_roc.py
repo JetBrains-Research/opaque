@@ -47,11 +47,11 @@ class TestGetTnFnCounts:
             assert fn[idx[0]] == 0
 
     def test_complete_overlap(self):
-        thresholds, tn, fn = get_tn_fn_counts([1, 2, 3, 4, 5], [1, 2, 3, 4, 5])
+        _thresholds, tn, fn = get_tn_fn_counts([1, 2, 3, 4, 5], [1, 2, 3, 4, 5])
         np.testing.assert_array_equal(tn, fn)
 
     def test_empty_out_scores(self):
-        thresholds, tn, fn = get_tn_fn_counts([1, 2, 3], [])
+        _thresholds, tn, _fn = get_tn_fn_counts([1, 2, 3], [])
         assert np.all(tn == 0)
 
     def test_both_empty_raises(self):

@@ -11,9 +11,9 @@ calls into.  End-to-end DPTrainer + DP-FTRL is covered by
 from __future__ import annotations
 
 import pytest
-
 from torch.utils.data import Dataset
 
+from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.transformers.trainer import _dpftrl
 from opaque.dpftrl import (
     BallsInBinsSampler,
@@ -21,7 +21,6 @@ from opaque.dpftrl import (
     CyclicPoissonSampler,
     SequentialBatchSampler,
 )
-from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.dpftrl.noise.types import (
     BandMfStrategy,
     BisrStrategy,
@@ -97,7 +96,7 @@ class TestBuildStrategyLrSchedule:
 
 class TestBuildStrategy:
     @pytest.mark.parametrize(
-        "mechanism,kwargs,cls",
+        ("mechanism", "kwargs", "cls"),
         [
             ("mf_band", {"bands": 4}, BandMfStrategy),
             ("mf_blt", {"max_buffers": 4}, BltStrategy),

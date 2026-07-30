@@ -24,11 +24,11 @@ from opaque.distributed.collectives import barrier as _opaque_barrier
 
 __all__ = [
     "DDPState",
+    "barrier",
     "resolve_ddp_state",
-    "validate_ddp_backend",
     "should_log",
     "should_save",
-    "barrier",
+    "validate_ddp_backend",
 ]
 
 _BACKEND_ENV_DEPENDENT_HINTS = {
@@ -89,8 +89,8 @@ def resolve_ddp_state(device: torch.device, args: Any | None = None) -> DDPState
                 "nccl" if torch.cuda.is_available() else "gloo"
             )
             timeout_seconds = int(args.ddp_timeout)
-            from datetime import timedelta as _td
             import logging as _logging
+            from datetime import timedelta as _td
 
             torch.distributed.init_process_group(
                 backend=backend, timeout=_td(seconds=timeout_seconds)
@@ -121,7 +121,7 @@ def resolve_ddp_state(device: torch.device, args: Any | None = None) -> DDPState
     return DDPState(
         is_distributed=False,
         rank=0,
-        local_rank=local_rank if local_rank >= 0 else 0,
+        local_rank=max(local_rank, 0),
         world_size=1,
         backend=None,
         device=device,

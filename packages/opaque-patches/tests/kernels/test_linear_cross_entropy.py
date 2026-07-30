@@ -25,7 +25,7 @@ Reference uses manual shift: logits[:-1] vs labels[1:].
 import pytest
 import torch
 import torch.nn.functional as F
-from torch.func import vmap, grad
+from torch.func import grad, vmap
 
 pytest.importorskip("triton")
 

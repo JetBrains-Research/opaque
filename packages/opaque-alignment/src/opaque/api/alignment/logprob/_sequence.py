@@ -24,7 +24,7 @@ from opaque.api.alignment._fused_lce import lce_available, linear_nll_sum
 
 from ._gather import selective_log_softmax
 
-__all__ = ["sequence_logp", "fused_sequence_logp"]
+__all__ = ["fused_sequence_logp", "sequence_logp"]
 
 
 def sequence_logp(

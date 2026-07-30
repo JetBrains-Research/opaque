@@ -13,10 +13,18 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.types import noised  # noqa: E402
-from opaque.types import SecondMomentNoiseOutput  # noqa: E402
-from opaque.optimizers import adafactor, adamw, ademamix, lion, schedule_free  # noqa: E402
-from opaque.serialization import from_state_dict, state_dict  # noqa: E402
+from opaque.optimizers import (
+    adafactor,
+    adamw,
+    ademamix,
+    lion,
+    schedule_free,
+)
+from opaque.serialization import from_state_dict, state_dict
+from opaque.types import (
+    SecondMomentNoiseOutput,
+    noised,
+)
 
 
 @pytest.fixture
@@ -180,9 +188,9 @@ class TestAdafactor:
         _, state = opt.update(matrix_grads, state, params=matrix_params)
         sd = state_dict(state)
         # treespec is opaque; should not appear in the saved dict.
-        assert not any("treespec" in k for k in sd.keys())
+        assert not any("treespec" in k for k in sd)
         # v_flat tensors should be there.
-        assert any("v_flat" in k for k in sd.keys())
+        assert any("v_flat" in k for k in sd)
 
 
 class TestScheduleFree:
@@ -250,5 +258,5 @@ class TestRobustness:
         tensor_key = next(k for k, v in sd.items() if isinstance(v, torch.Tensor))
         sd[tensor_key] = "not a tensor"
         template = opt.init(params)
-        with pytest.raises(TypeError, match="torch.Tensor"):
+        with pytest.raises(TypeError, match=r"torch.Tensor"):
             from_state_dict(template, sd)

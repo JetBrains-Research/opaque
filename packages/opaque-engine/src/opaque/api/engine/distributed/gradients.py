@@ -19,11 +19,11 @@ from typing import Any
 import torch
 import torch.distributed as dist
 
-from opaque.api.engine.types import ClippedPytree, NoisedPytree
 from opaque.api.engine.pytree import tree_map
+from opaque.api.engine.types import ClippedPytree, NoisedPytree
 
-from .collectives import all_reduce_, get_world_size, is_distributed
 from ._state import assert_scalar_equal
+from .collectives import all_reduce_, get_world_size, is_distributed
 
 
 def _is_noised(pytree: Any) -> bool:

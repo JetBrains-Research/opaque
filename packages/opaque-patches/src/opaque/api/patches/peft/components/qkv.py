@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+
 from ._utils import _active_lora_dtype, _extract_lora_params
 
 _FUSEABLE_QKV_ATTENTION_CLASSES = {

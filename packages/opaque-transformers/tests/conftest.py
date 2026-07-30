@@ -22,7 +22,7 @@ import pytest
 # at multiple package roots collides, so tests/* are treated as plain dirs).
 sys.path.append(str(Path(__file__).parent))
 
-from _hf_shared import MODEL_CONFIGS, STANDARD_LORA_CONFIG  # noqa: E402
+from _hf_shared import MODEL_CONFIGS, STANDARD_LORA_CONFIG
 
 # Apply global runtime compat patches (same env semantics as
 # DPTrainer.__init__) so test collection matches the trainer's runtime.

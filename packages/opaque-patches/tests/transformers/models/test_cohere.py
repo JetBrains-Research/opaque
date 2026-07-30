@@ -6,18 +6,20 @@ import pytest
 
 pytest.importorskip("transformers")
 
-from transformers.models.cohere.modeling_cohere import CohereConfig, CohereForCausalLM
-from opaque.patches import apply_model_patches
 import sys
-import os
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
+from transformers.models.cohere.modeling_cohere import CohereConfig, CohereForCausalLM
+
+from opaque.patches import apply_model_patches
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _test_utils import (
-    get_tiny_config_kwargs,
-    assert_forward_no_grad,
     assert_forward_backward,
+    assert_forward_no_grad,
     assert_vmap_forward,
     assert_vmap_grad,
+    get_tiny_config_kwargs,
 )
 
 

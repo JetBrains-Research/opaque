@@ -13,13 +13,13 @@ from opaque.api.dpftrl.noise.types import (
 )
 
 __all__ = [
-    "MFNoiseState",
-    "SecondMomentMFNoiseState",
-    "MfStrategy",
     "BandMfStrategy",
     "BisrStrategy",
     "BltStrategy",
     "BsrStrategy",
     "IdentityStrategy",
     "LambdaCgdStrategy",
+    "MFNoiseState",
+    "MfStrategy",
+    "SecondMomentMFNoiseState",
 ]

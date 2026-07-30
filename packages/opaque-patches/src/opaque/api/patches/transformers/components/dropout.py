@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import torch.nn as nn
 
-
 # Float dropout-rate attributes that model forwards read directly (not via an
 # ``nn.Dropout`` module) — notably the value SDPA gets as ``dropout_p``.
 _DROPOUT_ATTRS = (

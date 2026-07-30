@@ -83,15 +83,15 @@ from opaque.api.optimizers._sgd import sgd
 from . import distributed as _distributed_optimizer_registration  # noqa: F401
 
 __all__ = [
+    "adadelta",
+    "adafactor",
+    "adagrad",
     "adam",
     "adamw",
-    "sgd",
-    "lion",
     "ademamix",
-    "adafactor",
-    "rmsprop",
-    "adagrad",
-    "adadelta",
+    "lion",
     "radam",
+    "rmsprop",
     "schedule_free",
+    "sgd",
 ]

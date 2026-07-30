@@ -16,14 +16,13 @@ Covers the publish-only surface (no in-training auto-push):
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import torch
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
 import opaque.api.transformers.trainer._hub as _hub
-
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -31,16 +30,16 @@ import opaque.api.transformers.trainer._hub as _hub
 
 
 def _args(tmp_path, **overrides) -> TrainingArguments:
-    defaults = dict(
-        output_dir=str(tmp_path),
-        per_device_train_batch_size=1,
-        max_steps=1,
-        num_train_epochs=1,
-        save_strategy="no",
-        use_cpu=True,
-        privacy_target_epsilon=10.0,
-        privacy_noise_multiplier=1.0,
-    )
+    defaults = {
+        "output_dir": str(tmp_path),
+        "per_device_train_batch_size": 1,
+        "max_steps": 1,
+        "num_train_epochs": 1,
+        "save_strategy": "no",
+        "use_cpu": True,
+        "privacy_target_epsilon": 10.0,
+        "privacy_noise_multiplier": 1.0,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 
@@ -222,13 +221,13 @@ class TestCreateModelCard:
             return_value="# Model\n\nSome card content.\n",
         ):
             _hub.create_model_card(trainer)
-        readme = os.path.join(str(tmp_path), "README.md")
-        return open(readme).read()
+        readme = Path(tmp_path) / "README.md"
+        return readme.read_text()
 
     def test_readme_written(self, tmp_path):
         content = self._build_card(tmp_path)
         assert len(content) > 0
-        assert os.path.isfile(str(tmp_path / "README.md"))
+        assert (tmp_path / "README.md").is_file()
 
     def test_dp_section_present(self, tmp_path):
         content = self._build_card(tmp_path)
@@ -260,7 +259,8 @@ class TestCreateModelCard:
             _hub.create_model_card(
                 _tiny_trainer_with_hub(tmp_path),
             )
-        content2 = open(str(tmp_path / "README.md")).read()
+        with (tmp_path / "README.md").open() as f:
+            content2 = f.read()
         # Section should appear exactly once.
         assert content2.count("<!-- opaque-dp:begin -->") == 1
         assert content2.count("<!-- opaque-dp:end -->") == 1

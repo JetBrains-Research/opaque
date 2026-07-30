@@ -33,7 +33,7 @@ __all__ = [
 ]
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _triton_importable() -> bool:
     try:
         import triton  # noqa: F401
@@ -42,7 +42,7 @@ def _triton_importable() -> bool:
     return True
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _probe_bf16(device_type: str) -> bool:
     """Empirically determine whether ``device_type`` can run a bf16 op.
 
@@ -63,7 +63,7 @@ def _probe_bf16(device_type: str) -> bool:
             # bf16 on CPU is functional (used for full-cast / autocast), just
             # slow; opaque's trainer gates it behind ``use_cpu=True``.
             return True
-    except Exception:  # noqa: BLE001 - any failure means "not usable here"
+    except Exception:
         return False
     return False
 
@@ -79,7 +79,7 @@ def fused_kernels_available() -> bool:
     return torch.cuda.is_available() and _triton_importable()
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def sdpa_autocast_under_vmap_broken(device_type: str) -> bool:
     """Whether ``torch.autocast`` fails to cast SDPA under ``vmap(grad)`` here.
 

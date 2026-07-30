@@ -10,10 +10,10 @@ from opaque.api.engine.random import (
 )
 
 __all__ = [
-    "key",
-    "split",
     "fold_in",
     "generator_from_key",
+    "key",
     "random_key",
     "set_reproducible_pytorch_seed",
+    "split",
 ]

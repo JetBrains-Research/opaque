@@ -7,9 +7,8 @@ For comprehensive validation against JAX-Privacy, see tests/jax_validation/test_
 import pytest
 import torch
 
-from opaque.types import ClippedPytree
-
 from opaque.api.engine.clipping import clipped_grad
+from opaque.types import ClippedPytree
 
 
 def _unwrap_clipped(value):
@@ -240,7 +239,7 @@ def test_clipped_grad_actual_clipping():
     param = torch.tensor(0.0)
     data = torch.tensor([100.0, 200.0, 300.0])  # Large values -> large gradients
 
-    (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
+    (_grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
 
     # Check that some gradients were clipped
     assert (grad_aux.grad_norms > clipping_norm).any(), (
@@ -274,7 +273,7 @@ def test_clipped_grad_preserves_direction():
     unclipped_norm = unclipped_grad.abs().item()
 
     # Compute clipped gradient
-    (grad, grad_aux), _ = grad_fn(param, data_single, state=clip_state)
+    (grad, _grad_aux), _ = grad_fn(param, data_single, state=clip_state)
     grad = _unwrap_clipped(grad)
 
     # Check direction is preserved (signs match)

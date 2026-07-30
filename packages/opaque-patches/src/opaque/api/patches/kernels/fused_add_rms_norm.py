@@ -281,10 +281,8 @@ def _fused_add_rms_norm_backward_triton(
         )
 
     has_dS = dS_out is not None
-    if has_dS:
-        dS_out_2d = dS_out.contiguous().view(-1, dim)
-    else:
-        dS_out_2d = dY  # unused when has_dS_out=False
+    # dY is unused when has_dS_out=False
+    dS_out_2d = dS_out.contiguous().view(-1, dim) if has_dS else dY
 
     S = S.contiguous().view(-1, dim)
 
@@ -297,10 +295,7 @@ def _fused_add_rms_norm_backward_triton(
     rows_per_program = math.ceil(n_rows / sm_count)
     grid = (sm_count,)
 
-    if in_place:
-        dX = dY
-    else:
-        dX = torch.empty_like(dY)
+    dX = dY if in_place else torch.empty_like(dY)
 
     W_contig = W.contiguous()
     x_dtype_triton = _TORCH_TO_TRITON_DTYPES[S.dtype]
@@ -372,7 +367,7 @@ class _FusedAddRMSNormBackward(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        del ctx  # noqa: ARG001
+        del ctx
 
     @staticmethod
     def backward(ctx, *grad_outputs):
@@ -457,7 +452,7 @@ class Opaque_FusedAddRMSNorm(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        X, R, W, eps, offset, casting_mode, in_place = inputs
+        _X, _R, W, eps, offset, casting_mode, in_place = inputs
         cm = _casting_mode_int(casting_mode)
         _, S = output
         S_saved = S.detach().clone().contiguous()

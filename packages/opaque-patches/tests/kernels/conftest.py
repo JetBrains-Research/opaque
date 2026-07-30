@@ -11,11 +11,11 @@ Provides pytest fixtures for:
 
 import gc
 import json
-import os
 import time
+from pathlib import Path
+
 import pytest
 import torch
-
 
 MIN_KERNEL_CUDA_MEM_GB = 24
 
@@ -42,9 +42,9 @@ def pytest_collection_modifyitems(config, items):
     # just this directory's — so scope the skip to the kernel stress suite
     # (this conftest's directory). Without this guard a <24GB GPU would skip
     # every CUDA test in the repo, not just the kernel stress tests.
-    kernels_dir = os.path.dirname(os.path.abspath(__file__))
+    kernels_dir = Path(__file__).resolve().parent
     for item in items:
-        if os.path.abspath(str(item.fspath)).startswith(kernels_dir + os.sep):
+        if Path(str(item.fspath)).resolve().is_relative_to(kernels_dir):
             item.add_marker(skip_marker)
 
 
@@ -249,15 +249,13 @@ def pytest_sessionfinish(session, exitstatus):
     if not path or not _PERF_ROWS:
         return
 
-    abs_path = os.path.abspath(path)
-    parent = os.path.dirname(abs_path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
+    abs_path = Path(path).resolve()
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
 
     existing: list = []
-    if os.path.exists(abs_path):
+    if abs_path.exists():
         try:
-            with open(abs_path) as fh:
+            with abs_path.open() as fh:
                 loaded = json.load(fh)
             if isinstance(loaded, list):
                 existing = loaded
@@ -266,7 +264,7 @@ def pytest_sessionfinish(session, exitstatus):
 
     existing.extend(_PERF_ROWS)
 
-    with open(abs_path, "w") as fh:
+    with abs_path.open("w") as fh:
         json.dump(existing, fh, indent=2)
         fh.write("\n")
 

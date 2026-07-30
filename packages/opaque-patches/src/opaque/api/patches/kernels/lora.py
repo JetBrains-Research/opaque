@@ -28,14 +28,13 @@ import torch
 import torch.nn.functional as F
 
 from ._utils import ensure_cuda_tensors, follow_autocast
-
-from .swiglu import _triton_swiglu_forward, _triton_swiglu_backward_fused
 from .geglu import (
-    _triton_geglu_exact_forward,
-    _triton_geglu_exact_backward_fused,
-    _triton_geglu_approx_forward,
     _triton_geglu_approx_backward_fused,
+    _triton_geglu_approx_forward,
+    _triton_geglu_exact_backward_fused,
+    _triton_geglu_exact_forward,
 )
+from .swiglu import _triton_swiglu_backward_fused, _triton_swiglu_forward
 
 # Activation types for LoRA_MLP
 ACTIVATION_SWIGLU = 0
@@ -130,7 +129,7 @@ class _LoRAWBackward(torch.autograd.Function):
 
     @staticmethod
     def vmap(info, in_dims, grad_out, X, W, A, B, scaling):
-        grad_out_bdim, X_bdim, W_bdim, A_bdim, B_bdim, scaling_bdim = in_dims
+        _grad_out_bdim, _X_bdim, _W_bdim, _A_bdim, _B_bdim, _scaling_bdim = in_dims
 
         B_vmap = X.shape[0]
         hidden_dim = X.shape[-1]
@@ -192,7 +191,7 @@ class _LoRAWBackwardLite(torch.autograd.Function):
 
     @staticmethod
     def vmap(info, in_dims, grad_out, W, A, B, scaling):
-        grad_out_bdim, W_bdim, A_bdim, B_bdim, scaling_bdim = in_dims
+        grad_out_bdim, _W_bdim, _A_bdim, _B_bdim, _scaling_bdim = in_dims
 
         grad_out_merged = grad_out.reshape(-1, *grad_out.shape[2:])
         dX = _lora_w_backward_lite(grad_out_merged, W, A, B, scaling)
@@ -966,7 +965,7 @@ def _lora_mlp_backward_lite(
 
     # Fused backward: recompute h, overwrite gate→dgate, up→dup
     act_backward_fused = _ACTIVATION_BACKWARD_FUSED[activation_type]
-    h, dgate, dup = act_backward_fused(dh, gate_flat, up_flat)
+    _h, dgate, dup = act_backward_fused(dh, gate_flat, up_flat)
 
     # dX: fresh allocation (no X buffer to reuse)
     dX = torch.mm(dgate, Wg)
@@ -1118,7 +1117,7 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
     @staticmethod
     def setup_context(ctx, inputs, output):
         X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, activation_type = inputs
-        out, gate, up, h = output
+        _out, gate, up, _h = output
         # Don't save h — recomputed in backward via fused kernel (Unsloth pattern)
         # Under vmap(grad()), grad() detaches captured LoRA weights (requires_grad=False).
         # Skip saving X when weight grads aren't needed — reduces peak memory.

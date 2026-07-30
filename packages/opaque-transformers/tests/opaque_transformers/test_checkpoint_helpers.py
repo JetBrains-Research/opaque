@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import fields
+from pathlib import Path
 
 import pytest
 import torch
 
+import opaque.api.transformers.trainer._checkpoint as ckpt
 from opaque.api.engine.clipping.types import FixedClipState
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 from opaque.serialization import from_state_dict as opaque_from_state_dict
-import opaque.api.transformers.trainer._checkpoint as ckpt
 
 
 class TestParseCheckpointStep:
@@ -41,15 +41,12 @@ class TestListAndLastCheckpoint:
             (tmp_path / f"checkpoint-{step}").mkdir()
         (tmp_path / "model").mkdir()  # ignored
         listing = ckpt.list_checkpoints(str(tmp_path))
-        assert [os.path.basename(p) for p in listing] == [
+        assert [Path(p).name for p in listing] == [
             "checkpoint-10",
             "checkpoint-50",
             "checkpoint-100",
         ]
-        assert (
-            os.path.basename(ckpt.get_last_checkpoint(str(tmp_path)))
-            == "checkpoint-100"
-        )
+        assert Path(ckpt.get_last_checkpoint(str(tmp_path))).name == "checkpoint-100"
 
     def test_files_with_checkpoint_prefix_ignored(self, tmp_path):
         (tmp_path / "checkpoint-99").touch()  # file, not dir
@@ -78,7 +75,7 @@ class TestRotateCheckpoints:
         for s in (1, 2, 3, 4, 5):
             self._make(tmp_path, s)
         ckpt.rotate_checkpoints(str(tmp_path), save_total_limit=2)
-        names = [os.path.basename(p) for p in ckpt.list_checkpoints(str(tmp_path))]
+        names = [Path(p).name for p in ckpt.list_checkpoints(str(tmp_path))]
         assert names == ["checkpoint-4", "checkpoint-5"]
 
     def test_protects_best_when_outside_window(self, tmp_path):
@@ -88,9 +85,7 @@ class TestRotateCheckpoints:
         ckpt.rotate_checkpoints(
             str(tmp_path), save_total_limit=2, best_model_checkpoint=best
         )
-        names = sorted(
-            os.path.basename(p) for p in ckpt.list_checkpoints(str(tmp_path))
-        )
+        names = sorted(Path(p).name for p in ckpt.list_checkpoints(str(tmp_path)))
         # Both most-recent (5) and best (1) survive; total kept = max(2, 2) = 2
         assert "checkpoint-1" in names
         assert "checkpoint-5" in names
@@ -103,9 +98,7 @@ class TestRotateCheckpoints:
         ckpt.rotate_checkpoints(
             str(tmp_path), save_total_limit=1, best_model_checkpoint=best
         )
-        names = sorted(
-            os.path.basename(p) for p in ckpt.list_checkpoints(str(tmp_path))
-        )
+        names = sorted(Path(p).name for p in ckpt.list_checkpoints(str(tmp_path)))
         assert names == ["checkpoint-2", "checkpoint-3"]
 
 
@@ -254,7 +247,7 @@ class TestRuntimeCheckpointDriftMetadata:
         raise AssertionError(f"no field {name!r} on RuntimeCheckpoint")
 
     @pytest.mark.parametrize(
-        "field_name,expected",
+        ("field_name", "expected"),
         [
             ("sample_rate", "dp_relevant"),
             ("target_delta", "dp_relevant"),

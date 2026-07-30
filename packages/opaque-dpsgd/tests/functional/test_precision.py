@@ -30,8 +30,8 @@ import torchopt
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.optimizers import adamw
 from opaque.functional import make_functional
+from opaque.optimizers import adamw
 from opaque.random import key
 
 
@@ -134,11 +134,14 @@ def test_bf16_full_pipeline_cuda():
     x, y = _make_batch(torch.bfloat16, torch.device("cuda"))
     grads, noised, new_params = _full_step(model, x, y, noise_stddev=0.5)
     for g in grads:
-        assert torch.isfinite(g).all() and g.dtype == torch.bfloat16
+        assert torch.isfinite(g).all()
+        assert g.dtype == torch.bfloat16
     for n in noised:
-        assert torch.isfinite(n).all() and n.dtype == torch.bfloat16
+        assert torch.isfinite(n).all()
+        assert n.dtype == torch.bfloat16
     for p in new_params:
-        assert torch.isfinite(p).all() and p.dtype == torch.bfloat16
+        assert torch.isfinite(p).all()
+        assert p.dtype == torch.bfloat16
 
 
 # ----------------------------------------------------------------------------
@@ -180,7 +183,8 @@ def _step_simple(model: nn.Module, x: torch.Tensor, y: torch.Tensor):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="TF32 is CUDA-only")
-def test_tf32_on_off_parity_within_tolerance(_saved_tf32):
+@pytest.mark.usefixtures("_saved_tf32")
+def test_tf32_on_off_parity_within_tolerance():
     """TF32 on vs off: matmul precision differs but gradient flow stays close."""
     torch.manual_seed(0)
     model = _build_model().cuda()
@@ -202,7 +206,8 @@ def test_tf32_on_off_parity_within_tolerance(_saved_tf32):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="TF32 is CUDA-only")
-def test_tf32_via_set_float32_matmul_precision(_saved_tf32):
+@pytest.mark.usefixtures("_saved_tf32")
+def test_tf32_via_set_float32_matmul_precision():
     """``torch.set_float32_matmul_precision('high')`` is also non-disruptive."""
     torch.manual_seed(0)
     model = nn.Sequential(nn.Linear(8, 8), nn.Linear(8, 4)).cuda()
@@ -280,7 +285,8 @@ def test_fp16_autocast_bare_probe_runs():
     x = torch.randn(5, 8, device="cuda")
     y = torch.randn(5, 4, device="cuda")
     grads = _step_with_autocast(model, x, y, loss_scale=1.0)
-    assert grads is not None and len(grads) > 0
+    assert grads is not None
+    assert len(grads) > 0
 
 
 @_AUTOCAST_REQUIRES_CUDA

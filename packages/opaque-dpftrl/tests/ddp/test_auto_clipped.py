@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-
 from dpftrl_ddp_helpers import _spawn, _worker_auto_mf
-
 
 pytestmark = pytest.mark.cuda
 

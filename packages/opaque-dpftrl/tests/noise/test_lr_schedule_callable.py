@@ -17,8 +17,7 @@ from opaque.dpftrl.noise import band_mf_strategy, blt_strategy
 from opaque.scheduling import linear_schedule
 from opaque.serialization import state_dict
 
-
-_PART = dict(n_steps=64, min_sep=16, max_participations=4)
+_PART = {"n_steps": 64, "min_sep": 16, "max_participations": 4}
 
 
 class TestBandMfLrScheduleCallable:

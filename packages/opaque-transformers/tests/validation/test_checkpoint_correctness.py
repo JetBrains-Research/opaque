@@ -20,17 +20,15 @@ from __future__ import annotations
 
 import json
 import logging
-import os
+from pathlib import Path
 from typing import Any
 
 import pytest
+from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model
 from peft import LoraConfig, TaskType, get_peft_model
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.api.transformers.trainer._state import DPTrainerState
-
-from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model  # noqa: E402
-
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 # ---------------------------------------------------------------------------
 # Fixtures (same shape as test_callback_hooks.py).
@@ -74,17 +72,17 @@ def tiny_dataset(small_model_and_tokenizer):
 def _args(tmp_path, **overrides) -> TrainingArguments:
     # ``use_cpu=True``: pin to CPU so the trainer's ``args.device``
     # resolves to CPU regardless of the host (LoRA fixtures are CPU).
-    defaults: dict[str, Any] = dict(
-        output_dir=str(tmp_path),
-        per_device_train_batch_size=2,
-        privacy_target_epsilon=10.0,
-        privacy_noise_multiplier=1.0,
-        max_steps=4,
-        num_train_epochs=1,
-        logging_steps=1,
-        save_strategy="no",
-        use_cpu=True,
-    )
+    defaults: dict[str, Any] = {
+        "output_dir": str(tmp_path),
+        "per_device_train_batch_size": 2,
+        "privacy_target_epsilon": 10.0,
+        "privacy_noise_multiplier": 1.0,
+        "max_steps": 4,
+        "num_train_epochs": 1,
+        "logging_steps": 1,
+        "save_strategy": "no",
+        "use_cpu": True,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 
@@ -170,8 +168,8 @@ class TestLoadBestModelMutates:
         best_dir = trainer.state.best_model_checkpoint
         from safetensors.torch import load_file as load_safetensors
 
-        adapter_path = os.path.join(best_dir, "adapter_model.safetensors")
-        if not os.path.exists(adapter_path):
+        adapter_path = str(Path(best_dir) / "adapter_model.safetensors")
+        if not Path(adapter_path).exists():
             pytest.skip(f"Expected adapter weights under {best_dir} not found")
         best_weights = load_safetensors(adapter_path, device="cpu")
 
@@ -241,13 +239,11 @@ class TestBestFolderLookup:
         if trainer.state.best_global_step is None:
             pytest.skip("Eval never improved; nothing to verify.")
 
-        expected = os.path.join(
-            str(tmp_path),
-            f"checkpoint-{trainer.state.best_global_step}",
-        )
+        expected = str(tmp_path / f"checkpoint-{trainer.state.best_global_step}")
         assert trainer.state.best_model_checkpoint is not None
-        assert os.path.abspath(trainer.state.best_model_checkpoint) == os.path.abspath(
-            expected
+        assert (
+            Path(trainer.state.best_model_checkpoint).resolve()
+            == Path(expected).resolve()
         ), (
             f"best_model_checkpoint should resolve to checkpoint-"
             f"{trainer.state.best_global_step} via folder lookup; got "
@@ -255,9 +251,9 @@ class TestBestFolderLookup:
         )
         # The folder should also exist on disk and be persisted in
         # trainer_state.json (single schema; no JSON re-parse).
-        ts_path = os.path.join(expected, "trainer_state.json")
-        assert os.path.exists(ts_path)
-        with open(ts_path) as f:
+        ts_path = Path(expected) / "trainer_state.json"
+        assert ts_path.exists()
+        with ts_path.open() as f:
             ts = json.load(f)
         assert ts["best_global_step"] == trainer.state.best_global_step
 
@@ -356,7 +352,7 @@ class TestEarlyStoppingExportableState:
         # ``transformers.trainer_callback.TrainerState`` writes too —
         # the schema is the canonical HF round-trip shape.
         ts_path = tmp_path / "checkpoint-2" / "trainer_state.json"
-        with open(ts_path) as f:
+        with ts_path.open() as f:
             ts = json.load(f)
         cb_payload = ts["stateful_callbacks"].get("EarlyStoppingCallback")
         assert cb_payload is not None

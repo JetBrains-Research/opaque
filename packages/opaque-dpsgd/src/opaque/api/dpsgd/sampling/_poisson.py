@@ -25,8 +25,9 @@ from typing import Any
 import numpy as np
 from torch.utils.data import Sampler
 
-from ._helpers import _plain_poisson_step_indices
 from opaque.random.types import RngKey
+
+from ._helpers import _plain_poisson_step_indices
 
 
 class PoissonSampler(Sampler):

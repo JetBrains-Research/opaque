@@ -48,7 +48,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -62,10 +62,11 @@ except ImportError as exc:
 
 import optree
 
-from opaque.types import PerGroup, TensorPytree
 from opaque.api.optimizers._bias_correction import resolve_noise_variance
 from opaque.api.optimizers._chain import make_optimizer_chain
 
+if TYPE_CHECKING:
+    from opaque.types import PerGroup, TensorPytree
 
 _LR = float | Callable[[int], float]
 
@@ -176,8 +177,8 @@ def _scale_by_adafactor(
         updates: Any,
         state: AdafactorState,
         *,
-        params: Any = None,  # noqa: ARG001
-        inplace: bool = False,  # noqa: ARG001
+        params: Any = None,
+        inplace: bool = False,
         noise_stddev: float | PerGroup | None = None,
     ) -> tuple[Any, AdafactorState]:
         t = state.step + 1
@@ -247,7 +248,8 @@ def _scale_by_adafactor(
             assert state.m is not None
             flat_old_m, _ = optree.tree_flatten(state.m)
             new_flat_m = [
-                b1 * old_m + (1.0 - b1) * g for old_m, g in zip(flat_old_m, new_grads)
+                b1 * old_m + (1.0 - b1) * g
+                for old_m, g in zip(flat_old_m, new_grads, strict=False)
             ]
             updates_unflat = optree.tree_unflatten(state.treespec, new_flat_m)
             new_m = optree.tree_unflatten(state.treespec, new_flat_m)
@@ -345,4 +347,4 @@ def adafactor(
     )
 
 
-__all__ = ["adafactor", "AdafactorState"]
+__all__ = ["AdafactorState", "adafactor"]

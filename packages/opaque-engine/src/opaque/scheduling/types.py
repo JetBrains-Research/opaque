@@ -22,15 +22,15 @@ from opaque.api.engine.scheduling.types import (
 )
 
 __all__ = [
-    "Schedule",
     "ConstantSchedule",
-    "LinearSchedule",
-    "PolynomialSchedule",
-    "ExponentialSchedule",
     "CosineSchedule",
+    "ExponentialSchedule",
     "InverseSqrtSchedule",
+    "LinearSchedule",
     "OneMinusSqrtSchedule",
-    "WithWarmup",
-    "WithRestarts",
+    "PolynomialSchedule",
+    "Schedule",
     "WarmupStableDecay",
+    "WithRestarts",
+    "WithWarmup",
 ]

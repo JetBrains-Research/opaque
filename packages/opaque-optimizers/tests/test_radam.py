@@ -19,14 +19,15 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.types import clipped  # noqa: E402, F401
-from opaque.types import noised  # noqa: E402
-from opaque.types import PerGroup  # noqa: E402
-from opaque.types import SecondMomentNoiseOutput  # noqa: E402
-from opaque.optimizers import radam  # noqa: E402
-from opaque.optimizers.types import RAdamState  # noqa: E402
-from opaque.api.optimizers._radam import _rectification, _rho_t  # noqa: E402
-
+from opaque.api.optimizers._radam import _rectification, _rho_t
+from opaque.optimizers import radam
+from opaque.optimizers.types import RAdamState
+from opaque.types import (
+    PerGroup,
+    SecondMomentNoiseOutput,
+    clipped,  # noqa: F401
+    noised,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures

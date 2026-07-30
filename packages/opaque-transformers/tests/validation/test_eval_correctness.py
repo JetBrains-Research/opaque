@@ -16,14 +16,12 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model
 from datasets import concatenate_datasets
 from peft import LoraConfig, TaskType, get_peft_model
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.api.transformers.trainer._eval import speed_metrics
-
-from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model  # noqa: E402
-
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 # ---------------------------------------------------------------------------
 # Pure-helper tests (no DP run required).
@@ -111,19 +109,19 @@ def tiny_dataset(small_model_and_tokenizer):
 def _args(tmp_path, **overrides) -> TrainingArguments:
     # ``use_cpu=True``: pin to CPU so the trainer's ``args.device``
     # resolves to CPU regardless of the host (LoRA fixtures are CPU).
-    defaults: dict[str, Any] = dict(
-        output_dir=str(tmp_path),
-        per_device_train_batch_size=2,
-        per_device_eval_batch_size=4,  # 8 / 4 = 2 batches
-        privacy_target_epsilon=10.0,
-        privacy_noise_multiplier=1.0,
-        clipping_norm=1.0,
-        max_steps=2,
-        num_train_epochs=1,
-        logging_steps=1,
-        save_strategy="no",
-        use_cpu=True,
-    )
+    defaults: dict[str, Any] = {
+        "output_dir": str(tmp_path),
+        "per_device_train_batch_size": 2,
+        "per_device_eval_batch_size": 4,  # 8 / 4 = 2 batches
+        "privacy_target_epsilon": 10.0,
+        "privacy_noise_multiplier": 1.0,
+        "clipping_norm": 1.0,
+        "max_steps": 2,
+        "num_train_epochs": 1,
+        "logging_steps": 1,
+        "save_strategy": "no",
+        "use_cpu": True,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 

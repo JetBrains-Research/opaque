@@ -19,7 +19,10 @@ desired; the loss function itself is purely algebraic.
 
 from __future__ import annotations
 
-import torch
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import torch
 
 __all__ = ["ipo_loss"]
 

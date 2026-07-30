@@ -1,6 +1,7 @@
 import pytest
-from opaque.api.patches.transformers._router import apply_transformers_model_patches
 import torch.nn as nn
+
+from opaque.api.patches.transformers._router import apply_transformers_model_patches
 
 
 class MockConfig:

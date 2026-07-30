@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import copy
 import functools
-from collections.abc import Mapping
-from typing import Callable, TypeVar
+from collections.abc import Callable, Mapping
+from typing import TypeVar
 
 import torch
 

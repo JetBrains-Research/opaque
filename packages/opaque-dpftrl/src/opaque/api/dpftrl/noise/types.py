@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-import torch
-
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
 from opaque.api.dpftrl.noise._bisr import BisrStrategy
 from opaque.api.dpftrl.noise._blt import BltStrategy
@@ -21,6 +19,8 @@ from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy
 from opaque.api.dpftrl.noise._second_moment import SecondMomentMFNoiseState
 
 if TYPE_CHECKING:
+    import torch
+
     from opaque.api.dpftrl.noise._streaming_matrix import StreamingMatrix
 
 
@@ -46,7 +46,7 @@ class MfStrategy(Protocol):
         n_steps: int,
         min_sep: int,
         max_participations: int | None,
-    ) -> "torch.Tensor": ...
+    ) -> torch.Tensor: ...
 
     def gram_matrix(
         self,
@@ -62,7 +62,7 @@ class MfStrategy(Protocol):
         n_steps: int,
         min_sep: int,
         max_participations: int | None,
-    ) -> "StreamingMatrix": ...
+    ) -> StreamingMatrix: ...
 
     def sensitivity(
         self,
@@ -74,13 +74,13 @@ class MfStrategy(Protocol):
 
 
 __all__ = [
-    "MFNoiseState",
-    "SecondMomentMFNoiseState",
-    "MfStrategy",
     "BandMfStrategy",
     "BisrStrategy",
     "BltStrategy",
     "BsrStrategy",
     "IdentityStrategy",
     "LambdaCgdStrategy",
+    "MFNoiseState",
+    "MfStrategy",
+    "SecondMomentMFNoiseState",
 ]

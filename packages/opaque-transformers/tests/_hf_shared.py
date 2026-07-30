@@ -202,10 +202,7 @@ def make_gpt2():
 
 def has_min_gpu_memory(min_gb, device=None):
     """Check if GPU has minimum required memory."""
-    if device is None:
-        gpu_device = get_default_gpu_device()
-    else:
-        gpu_device = torch.device(device)
+    gpu_device = get_default_gpu_device() if device is None else torch.device(device)
 
     if gpu_device is None:
         return False
@@ -255,10 +252,7 @@ def has_min_gpu_memory(min_gb, device=None):
 
 def gpu_memory_gate_reason(min_gb, device=None):
     """Return standardized skip reason for GPU memory gating."""
-    if device is None:
-        gpu_device = get_default_gpu_device()
-    else:
-        gpu_device = torch.device(device)
+    gpu_device = get_default_gpu_device() if device is None else torch.device(device)
 
     if gpu_device is None:
         return f"Requires GPU with >= {min_gb}GB memory"

@@ -2,7 +2,7 @@
 
 import pytest
 
-import opaque.accounting as acc  # noqa: F401  (used elsewhere; keep for cohesion)
+import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.api.accounting.core.discretization import (
     DiscretizationConfig,

@@ -15,8 +15,8 @@ from ._sft_config import SFTConfig
 from ._sft_trainer import SFTTrainer
 
 __all__ = [
-    "SFTConfig",
-    "SFTTrainer",
     "DPOConfig",
     "DPOTrainer",
+    "SFTConfig",
+    "SFTTrainer",
 ]

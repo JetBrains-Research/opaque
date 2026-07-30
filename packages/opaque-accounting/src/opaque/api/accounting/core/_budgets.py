@@ -23,9 +23,10 @@ Example::
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from opaque.api.accounting.core._base import DpProcess
+if TYPE_CHECKING:
+    from opaque.api.accounting.core._base import DpProcess
 
 # =============================================================================
 # Budget protocol

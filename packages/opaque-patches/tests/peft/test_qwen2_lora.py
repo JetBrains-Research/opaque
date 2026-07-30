@@ -1,10 +1,11 @@
-from opaque.patches import apply_model_patches, apply_runtime_patches
 import pytest
 import torch
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 from peft import LoraConfig, get_peft_model
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+
 from opaque.api.engine.clipping import clipped_grad
 from opaque.functional import make_functional
+from opaque.patches import apply_model_patches, apply_runtime_patches
 
 apply_runtime_patches()
 pytestmark = pytest.mark.skipif(
@@ -50,7 +51,7 @@ class TestEndToEnd:
         grad_fn, clip_state = clipped_grad(
             per_example_loss, argnums=0, batch_argnums=(2, 3, 4), clipping_norm=1.0
         )
-        grads, state = grad_fn(
+        grads, _state = grad_fn(
             trainable, frozen, input_ids, attention_mask, labels, state=clip_state
         )
         assert grads is not None, "No gradients returned"

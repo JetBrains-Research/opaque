@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 import torch
-
 from dpftrl_ddp_helpers import (
     SimpleModel,
     _fixed_sd_mf,
@@ -15,13 +14,13 @@ from dpftrl_ddp_helpers import (
     _worker_mf_clip_three_steps,
     _worker_mf_parity,
 )
+
 from opaque.distributed import sum_gradients
 from opaque.dpftrl.clipping import clipped_grad
 from opaque.dpftrl.noise import identity_strategy, mf_gaussian_noise
 from opaque.functional import make_functional
 from opaque.pytree import tree_map
 from opaque.random import key
-
 
 pytestmark = pytest.mark.cuda
 

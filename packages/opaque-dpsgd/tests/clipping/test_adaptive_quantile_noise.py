@@ -3,10 +3,9 @@
 import pytest
 import torch
 
-from opaque.types import ClippedPytree
-
 from opaque.api.dpsgd.clipping._adaptive import adaptive_clipped_grad
 from opaque.random import key
+from opaque.types import ClippedPytree
 
 
 def _unwrap_clipped(value):

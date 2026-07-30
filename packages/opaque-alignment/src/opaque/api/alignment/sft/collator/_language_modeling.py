@@ -30,9 +30,12 @@ Design notes
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import torch
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 __all__ = ["language_modeling_collator"]
 
@@ -56,10 +59,10 @@ class _LMCollator:
     """
 
     __slots__ = (
-        "_pad_token_id",
-        "_max_length",
         "_completion_only_loss",
+        "_max_length",
         "_pad_to_multiple_of",
+        "_pad_token_id",
     )
 
     def __init__(
@@ -129,7 +132,9 @@ class _LMCollator:
         if has_completion_mask:
             completion_mask_t = torch.zeros((B, L), dtype=torch.long)
 
-        for i, (ids, cm) in enumerate(zip(input_ids_list, completion_mask_list)):
+        for i, (ids, cm) in enumerate(
+            zip(input_ids_list, completion_mask_list, strict=False)
+        ):
             seq_len = len(ids)
             input_ids_t[i, :seq_len] = torch.tensor(ids, dtype=torch.long)
             attention_mask_t[i, :seq_len] = 1

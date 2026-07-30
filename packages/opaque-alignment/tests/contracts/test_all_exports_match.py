@@ -76,10 +76,8 @@ def test_module_exports_match(module_name: str) -> None:
     # torch (e.g. ``dataclass``, ``Literal``, ``annotations``) are ignored.
     def _is_package_surface(value: object) -> bool:
         origin = getattr(value, "__module__", "") or ""
-        return (
-            origin == module_name
-            or origin.startswith("opaque.alignment")
-            or origin.startswith("opaque.api.alignment")
+        return origin == module_name or origin.startswith(
+            ("opaque.alignment", "opaque.api.alignment")
         )
 
     leaked = {

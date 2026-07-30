@@ -20,6 +20,9 @@ def apply() -> None:
 
     orig = eager._autograd_grad
 
+    # Keep the ``create_graph`` keyword name: functorch calls this with
+    # ``create_graph=True``. The value is intentionally ignored — we always
+    # force False for first-order opaque (see module docstring).
     def _autograd_grad(
         outputs, inputs, grad_outputs=None, retain_graph=False, create_graph=True
     ):

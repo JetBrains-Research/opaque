@@ -36,7 +36,7 @@ import opaque.accounting as acc  # noqa: E402
 # PR-gate shard. They validate opaque against external implementations rather
 # than opaque's own logic (covered by test_accountant / test_composition /
 # test_calibration), so they belong on the main-CI lane, not every PR.
-pytestmark = pytest.mark.slow  # noqa: E402
+pytestmark = pytest.mark.slow
 import opaque.dpsgd.accounting as dpsgd_acc  # noqa: E402
 from opaque.accounting import calibration as cal  # noqa: E402
 from opaque.api.accounting.core.discretization import get_discretization  # noqa: E402
@@ -375,14 +375,16 @@ class TestParallelPoissonCrossValidation:
         eps = proc.epsilon_at(1e-5)
 
         # Must be finite and positive
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
         # Compare with non-parallel: parallel sampling should account for duplication
         # (when same example appears in multiple workers)
         proc_no_acc = dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), q) * 500
         eps_no_acc = proc_no_acc.epsilon_at(1e-5)
         # Both should be reasonable
-        assert math.isfinite(eps_no_acc) and eps_no_acc > 0
+        assert math.isfinite(eps_no_acc)
+        assert eps_no_acc > 0
 
 
 # ============================================================================
@@ -394,7 +396,7 @@ class TestAdaClipCrossValidation:
     """AdaClip: verify adaclip_sensitivity formula matches expected z_eff."""
 
     @pytest.mark.parametrize(
-        "sigma,batch_size",
+        ("sigma", "batch_size"),
         [
             (1.0, 1000),
             (1.1, 1000),
@@ -437,7 +439,8 @@ class TestAdaClipCrossValidation:
             * 1000
         )
         eps = step.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
 
 # ============================================================================

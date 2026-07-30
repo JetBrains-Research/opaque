@@ -14,7 +14,7 @@ Parametrized over vocab sizes: 32768 (single-chunk) and 128256 (Mellum-4b, chunk
 import pytest
 import torch
 import torch.nn.functional as F
-from torch.func import vmap, grad
+from torch.func import grad, vmap
 
 pytest.importorskip("triton")
 

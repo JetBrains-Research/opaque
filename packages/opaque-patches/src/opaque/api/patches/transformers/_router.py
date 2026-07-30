@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import logging
 import types
-from typing import Callable
-
-import torch.nn as nn
+from typing import TYPE_CHECKING
 
 from opaque.api.patches.transformers._registry import detect_family, get_family_apply_fn
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    import torch.nn as nn
 
 logger = logging.getLogger(__name__)
 

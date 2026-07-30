@@ -20,7 +20,7 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-__all__ = ["apo_zero_loss", "apo_down_loss"]
+__all__ = ["apo_down_loss", "apo_zero_loss"]
 
 
 def apo_zero_loss(

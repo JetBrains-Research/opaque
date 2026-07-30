@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
-from typing import NamedTuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 import scipy.special

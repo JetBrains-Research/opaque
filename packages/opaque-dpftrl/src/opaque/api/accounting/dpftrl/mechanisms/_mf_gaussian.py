@@ -28,7 +28,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from opaque.api.accounting.core import _native
-
 from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core.discretization import get_discretization
 
@@ -47,7 +46,7 @@ class MfGaussian(DpProcess):
     """
 
     noise_multiplier: float
-    strategy: "MfStrategy"
+    strategy: MfStrategy
     n_steps: int = 1
     min_sep: int = 1
     max_participations: int | None = None
@@ -89,7 +88,7 @@ class MfGaussian(DpProcess):
 
 def mf_gaussian(
     noise_multiplier: float,
-    strategy: "MfStrategy",
+    strategy: MfStrategy,
     *,
     n_steps: int = 1,
     min_sep: int = 1,

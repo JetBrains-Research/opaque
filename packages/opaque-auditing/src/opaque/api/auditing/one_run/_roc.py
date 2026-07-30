@@ -65,7 +65,7 @@ def tpr_at_given_fpr(
 ) -> np.ndarray | float:
     """Maximum TPR at a given FPR, with linear interpolation."""
     fpr_arr = np.asarray(fpr)
-    if not np.all((0 <= fpr_arr) & (fpr_arr <= 1)):
+    if not np.all((fpr_arr >= 0) & (fpr_arr <= 1)):
         raise ValueError(f"fpr must be in [0, 1], got {fpr}")
 
     n_pos = tp_counts[-1]

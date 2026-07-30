@@ -1,10 +1,12 @@
-from opaque.patches import apply_model_patches, apply_runtime_patches
 import pytest
-from .._helpers import requires_hf_auth
 import torch
 import torch.nn.functional as F
-from transformers import AutoConfig, AutoModelForCausalLM
 from peft import LoraConfig, get_peft_model
+from transformers import AutoConfig, AutoModelForCausalLM
+
+from opaque.patches import apply_model_patches, apply_runtime_patches
+
+from .._helpers import requires_hf_auth
 
 apply_runtime_patches()
 pytestmark = pytest.mark.skipif(

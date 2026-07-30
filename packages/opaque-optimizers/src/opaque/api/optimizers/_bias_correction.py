@@ -112,9 +112,9 @@ def update_phi_ema(
 
 
 __all__ = [
-    "resolve_noise_variance",
+    "init_per_group_phi",
     "is_per_group",
+    "resolve_noise_variance",
     "update_phi_ema",
     "walk_dict_leaves",
-    "init_per_group_phi",
 ]

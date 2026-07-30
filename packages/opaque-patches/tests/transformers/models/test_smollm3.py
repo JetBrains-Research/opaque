@@ -6,21 +6,23 @@ import pytest
 
 pytest.importorskip("transformers")
 
+import sys
+from pathlib import Path
+
 from transformers.models.smollm3.modeling_smollm3 import (
     SmolLM3Config,
     SmolLM3ForCausalLM,
 )
-from opaque.patches import apply_model_patches
-import sys
-import os
 
-sys.path.insert(0, os.path.dirname(__file__))
+from opaque.patches import apply_model_patches
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _test_utils import (
-    get_tiny_config_kwargs,
-    assert_forward_no_grad,
     assert_forward_backward,
+    assert_forward_no_grad,
     assert_vmap_forward,
     assert_vmap_grad,
+    get_tiny_config_kwargs,
 )
 
 

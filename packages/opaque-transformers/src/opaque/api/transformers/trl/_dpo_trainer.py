@@ -22,7 +22,7 @@ import copy
 import dataclasses
 import uuid
 from operator import attrgetter
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -62,6 +62,9 @@ from opaque.api.transformers.trainer import DPTrainer
 from opaque.api.transformers.trainer._dp_trainer import _is_peft_model
 
 from ._dpo_config import _REFERENCE_FREE_HEADS, DPOConfig
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # TRL ``loss_type`` name → ``opaque.alignment.dpo.loss`` head. An unknown value
 # raises a standard ``KeyError`` at dispatch.
@@ -345,7 +348,7 @@ class DPOTrainer(DPTrainer):
                     model_id=model_id,
                     collator=data_collator,
                     batch_size=batch_size,
-                    cache_key=cache_key + ("eval",),
+                    cache_key=(*cache_key, "eval"),
                     disable_dropout=args.disable_dropout,
                 )
 
@@ -790,7 +793,9 @@ class DPOTrainer(DPTrainer):
 
         parts: dict[str, torch.Tensor] = {}
         weights: dict[str, float] = {}
-        for name, weight, head in zip(self._loss_type, self._loss_weights, self._heads):
+        for name, weight, head in zip(
+            self._loss_type, self._loss_weights, self._heads, strict=False
+        ):
             weights[name] = weight
             # ---- reference-free composites (assembled by hand) ----
             if name == "chosen_nll":
@@ -1151,6 +1156,7 @@ class DPOTrainer(DPTrainer):
         :meth:`DPTrainer.evaluation_loop` to aggregate into ``eval_rewards/*``.
         Returns ``(per_example_loss, None, None)`` — no predictions/labels.
         """
+        del model, prediction_loss_only, ignore_keys
         from opaque.functional import make_functional
 
         ctx = self._ctx
@@ -1173,7 +1179,7 @@ class DPOTrainer(DPTrainer):
 
         def per_example(p, *args):
             return self.compute_per_example_loss_and_metrics(
-                fmodel, p, dict(zip(keys, args))
+                fmodel, p, dict(zip(keys, args, strict=False))
             )
 
         vmapped = torch.vmap(per_example, in_dims=(None,) + (0,) * len(keys))

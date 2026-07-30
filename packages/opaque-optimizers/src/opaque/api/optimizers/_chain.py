@@ -28,13 +28,8 @@ except ImportError as exc:
 
 import torch
 
-from opaque.types import ClippedPytree
-
-from opaque.types import NoisedPytree
-
-from opaque.types import SecondMomentNoiseOutput
 from opaque.pytree import tree_map
-
+from opaque.types import ClippedPytree, NoisedPytree, SecondMomentNoiseOutput
 
 _LR = float | Callable[[int], float]
 
@@ -55,8 +50,8 @@ def _rms_clip_transform(threshold: float) -> GradientTransformation:
         updates: Any,
         state: tuple,
         *,
-        params: Any = None,  # noqa: ARG001
-        inplace: bool = False,  # noqa: ARG001
+        params: Any = None,
+        inplace: bool = False,
     ) -> tuple[Any, tuple]:
         # Global RMS across all leaves (param-count-weighted mean of squares).
         sq_sum = torch.zeros((), dtype=torch.float64)

@@ -11,7 +11,7 @@ from opaque.auditing import gradient_scores, one_run
 from opaque.random import key
 
 
-@pytest.fixture()
+@pytest.fixture
 def linear_setup():
     """Create a simple linear model, dataset, and loss function."""
     torch.manual_seed(42)

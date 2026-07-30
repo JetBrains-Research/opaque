@@ -1,8 +1,9 @@
 import pytest
-from ..._helpers import requires_hf_auth
 import torch
 import torch.nn.functional as F
 from transformers import AutoConfig
+
+from ..._helpers import requires_hf_auth
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(),

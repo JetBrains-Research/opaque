@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import importlib
 import logging
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from opaque.api.patches.transformers.components.attention import (
     vmap_eager_attention_forward,
@@ -39,6 +39,8 @@ from opaque.api.patches.transformers.components.masking import (
 )
 from opaque.api.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 log = logging.getLogger(__name__)
 
@@ -188,7 +190,7 @@ def make_apply_family_patches(
 
 
 __all__ = [
+    "_reset_patched_families",
     "family_name",
     "make_apply_family_patches",
-    "_reset_patched_families",
 ]

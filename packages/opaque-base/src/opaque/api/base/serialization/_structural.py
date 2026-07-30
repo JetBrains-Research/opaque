@@ -17,8 +17,8 @@ on import.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Mapping
-from typing import Any, Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 
 WalkSave = Callable[[Any, str, dict[str, Any]], None]
 WalkLoad = Callable[[Any, Mapping[str, Any], str], Any]
@@ -100,4 +100,4 @@ def walk_load(
     return template
 
 
-__all__ = ["walk_save", "walk_load", "WalkSave", "WalkLoad"]
+__all__ = ["WalkLoad", "WalkSave", "walk_load", "walk_save"]

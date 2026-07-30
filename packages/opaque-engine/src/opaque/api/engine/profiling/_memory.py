@@ -34,13 +34,16 @@ from __future__ import annotations
 import time
 import warnings
 from contextlib import contextmanager
-from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 import torch
 
 from opaque.api.engine.device import device_capabilities
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
 
 
 @dataclass(frozen=True)
@@ -465,7 +468,7 @@ class PerfState:
     max_peak_memory_gb: float = 0.0
     last_step: StepPerf | None = None
 
-    def add(self, perf: StepPerf) -> "PerfState":
+    def add(self, perf: StepPerf) -> PerfState:
         """Return a new state incorporating a completed step.
 
         The first step is treated as warmup and excluded from the
@@ -708,14 +711,14 @@ def perf_tracker(
 
 
 __all__ = [
-    "StepPerf",
-    "step_perf",
-    "PerfState",
     "PerfStage",
+    "PerfState",
     "PerfTracker",
-    "perf_tracker",
-    "get_memory_stats",
-    "reset_peak_memory",
-    "print_memory",
+    "StepPerf",
     "empty_cache",
+    "get_memory_stats",
+    "perf_tracker",
+    "print_memory",
+    "reset_peak_memory",
+    "step_perf",
 ]

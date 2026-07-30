@@ -98,11 +98,13 @@ def test_apply_model_patches_propagates_explicit_runtime_kwargs(monkeypatch):
 def test_apply_model_patches_compat_false_does_not_enable_runtime_patches(monkeypatch):
     """End-to-end: when compat=False, none of the three runtime sub-patches fire."""
     import opaque.api.patches as patches_init
+    import opaque.api.patches.torch as torch_pkg
     from opaque.api.patches.transformers.runtime import (
         collator as collator_runtime,
+    )
+    from opaque.api.patches.transformers.runtime import (
         masking as masking_runtime,
     )
-    import opaque.api.patches.torch as torch_pkg
 
     calls: list[str] = []
 
@@ -132,11 +134,13 @@ def test_apply_model_patches_compat_false_does_not_enable_runtime_patches(monkey
 def test_apply_model_patches_default_compat_enables_runtime_patches(monkeypatch):
     """Sanity: default behavior (compat=True) still applies the runtime patches."""
     import opaque.api.patches as patches_init
+    import opaque.api.patches.torch as torch_pkg
     from opaque.api.patches.transformers.runtime import (
         collator as collator_runtime,
+    )
+    from opaque.api.patches.transformers.runtime import (
         masking as masking_runtime,
     )
-    import opaque.api.patches.torch as torch_pkg
 
     calls: list[str] = []
 

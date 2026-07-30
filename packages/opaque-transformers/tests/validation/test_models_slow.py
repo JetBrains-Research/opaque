@@ -6,7 +6,6 @@ Tests use shared model configs and utilities from tests/conftest.py to avoid dup
 """
 
 import pytest
-
 from _hf_shared import (
     MODEL_CONFIGS,
     get_default_gpu_device,
@@ -15,6 +14,7 @@ from _hf_shared import (
     load_model_with_lora,
     run_dp_training_step,
 )
+
 from opaque.types import ClippedPytree
 
 transformers = pytest.importorskip("transformers")
@@ -46,7 +46,7 @@ class TestRealModelsSingleGPU:
         model, tokenizer = load_model_with_lora(config, device=str(gpu_device))
 
         # Run training using shared utility
-        grads, state = run_dp_training_step(
+        grads, _state = run_dp_training_step(
             model,
             tokenizer,
             batch_size=config["batch_size"],

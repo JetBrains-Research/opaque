@@ -17,17 +17,19 @@ import pytest
 pytest.importorskip("transformers")
 pytest.importorskip("datasets")
 
-import torch  # noqa: E402
-from datasets import Dataset  # noqa: E402
-from transformers import (  # noqa: E402
+from typing import ClassVar
+
+import torch
+from datasets import Dataset
+from transformers import (
     LlamaConfig,
     LlamaForCausalLM,
     Qwen2Config,
     Qwen2ForCausalLM,
 )
 
-from opaque.alignment.dpo.loss import sequence_logp  # noqa: E402
-from opaque.transformers.trl import (  # noqa: E402
+from opaque.alignment.dpo.loss import sequence_logp
+from opaque.transformers.trl import (
     DPOConfig,
     DPOTrainer,
     SFTConfig,
@@ -165,7 +167,7 @@ def test_model_init_kwargs_field_present():
 
 
 def test_duplicate_loss_type_fails_fast():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="duplicates"):
         DPOConfig(
             output_dir="x",
             loss_type=["sigmoid", "sigmoid"],
@@ -175,7 +177,7 @@ def test_duplicate_loss_type_fails_fast():
 
 def test_sync_ref_model_requires_reference_using_loss():
     # TR-DPO has nothing to sync toward when every head is reference-free.
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="sync_ref_model"):
         DPOConfig(
             output_dir="x",
             sync_ref_model=True,
@@ -187,7 +189,7 @@ def test_sync_ref_model_requires_reference_using_loss():
 def test_chosen_nll_is_a_reference_free_head():
     # ``chosen_nll`` (opaque's name for TRL's ``sft`` head) scores the policy's
     # own logp, so it is reference-free — TR-DPO has nothing to sync toward.
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="sync_ref_model"):
         DPOConfig(
             output_dir="x",
             sync_ref_model=True,
@@ -204,7 +206,7 @@ def test_reference_free_flag_is_gone():
 
 
 def test_robust_label_smoothing_validation():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="label_smoothing"):
         DPOConfig(
             output_dir="x",
             loss_type=["robust"],
@@ -330,8 +332,13 @@ def test_sft_eos_token_honored_when_set_else_tokenizer(tmp_path):
         pad_token = "<pad>"
         eos_token = "</s>"
 
-        _vocab = {"hello": 5, "world": 6, "</s>": 2, "<eos2>": 3}
-        _specials = ("</s>", "<eos2>")
+        _vocab: ClassVar[dict[str, int]] = {
+            "hello": 5,
+            "world": 6,
+            "</s>": 2,
+            "<eos2>": 3,
+        }
+        _specials: ClassVar[tuple[str, ...]] = ("</s>", "<eos2>")
 
         def save_pretrained(self, *a, **k):
             return None
@@ -758,7 +765,7 @@ def _per_example_losses(trainer, batch):
     def fn(tp, *batch_args):
         merged = {**frozen, **tp}
         return trainer.compute_per_example_loss(
-            fmodel, merged, dict(zip(keys, batch_args))
+            fmodel, merged, dict(zip(keys, batch_args, strict=False))
         )
 
     vmapped = torch.vmap(fn, in_dims=(None,) + (0,) * len(keys))
@@ -1345,7 +1352,9 @@ def test_sft_fused_last_hidden_state_is_last_layer_only(tmp_path):
     trainer.model.eval()
     rows = [trainer.train_dataset[i] for i in range(2)]
     batch = _to_device(trainer, trainer.data_collator(rows))
-    fmodel, trainable, frozen = make_functional(trainer.model, partition_trainable=True)
+    _fmodel, trainable, frozen = make_functional(
+        trainer.model, partition_trainable=True
+    )
     params = {**frozen, **trainable}
     hidden = trainer._last_hidden_state(
         params, batch["input_ids"], batch["attention_mask"]

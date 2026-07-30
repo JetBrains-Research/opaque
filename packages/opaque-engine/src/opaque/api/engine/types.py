@@ -28,13 +28,14 @@ import math
 from abc import ABC
 from dataclasses import dataclass, replace
 from numbers import Real
-from typing import Any, Literal, NamedTuple, Union
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import torch
 
 from opaque.api.engine.pytree import tree_map
-from opaque.api.engine.random.types import RngKey
 
+if TYPE_CHECKING:
+    from opaque.api.engine.random.types import RngKey
 
 # ===========================================================================
 # Pytree alias
@@ -46,16 +47,16 @@ from opaque.api.engine.random.types import RngKey
 # and serialises (``dict``, ``list``, ``tuple``); custom ``Mapping`` /
 # ``Sequence`` subclasses are intentionally excluded.
 #
-# Real ``Union`` (not a string) so ``typing.get_type_hints()`` and
+# Real ``|`` union (not a string) so ``typing.get_type_hints()`` and
 # ``typing.get_args()`` see the alias correctly.  Recursion is encoded
 # with forward references; static checkers expand the alias to ``Any``,
 # which is fine — the alias is documentation-grade typing.
-TensorPytree = Union[
-    torch.Tensor,
-    dict[str, "TensorPytree"],
-    list["TensorPytree"],
-    tuple["TensorPytree", ...],
-]
+TensorPytree = (
+    torch.Tensor
+    | dict[str, "TensorPytree"]
+    | list["TensorPytree"]
+    | tuple["TensorPytree", ...]
+)
 
 
 # ===========================================================================
@@ -139,7 +140,7 @@ class PerGroup:
 # ===========================================================================
 
 
-class ClipState(ABC):
+class ClipState(ABC):  # noqa: B024 — intentional empty marker base
     """Base class for clipping state.
 
     The explicit state token returned by clipping transforms.  Fixed
@@ -325,25 +326,25 @@ class ClippedPytree:
             raise ZeroDivisionError("ClippedPytree division by zero")
         return self._scaled(1.0 / factor)
 
-    def __rtruediv__(self, scalar: Any) -> ClippedPytree:  # noqa: ARG002
+    def __rtruediv__(self, scalar: Any) -> ClippedPytree:
         raise TypeError(_unsupported_message("reverse division"))
 
     def __neg__(self) -> ClippedPytree:
         return self._scaled(-1.0)
 
-    def __add__(self, other: Any) -> ClippedPytree:  # noqa: ARG002
+    def __add__(self, other: Any) -> ClippedPytree:
         raise TypeError(_unsupported_message("addition"))
 
-    def __radd__(self, other: Any) -> ClippedPytree:  # noqa: ARG002
+    def __radd__(self, other: Any) -> ClippedPytree:
         raise TypeError(_unsupported_message("addition"))
 
-    def __sub__(self, other: Any) -> ClippedPytree:  # noqa: ARG002
+    def __sub__(self, other: Any) -> ClippedPytree:
         raise TypeError(_unsupported_message("subtraction"))
 
-    def __rsub__(self, other: Any) -> ClippedPytree:  # noqa: ARG002
+    def __rsub__(self, other: Any) -> ClippedPytree:
         raise TypeError(_unsupported_message("subtraction"))
 
-    def __pow__(self, exponent: Any) -> ClippedPytree:  # noqa: ARG002
+    def __pow__(self, exponent: Any) -> ClippedPytree:
         raise TypeError(_unsupported_message("power"))
 
     def clone(self) -> ClippedPytree:

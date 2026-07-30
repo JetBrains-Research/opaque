@@ -19,19 +19,19 @@ from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 
 def _args(tmp_path, **overrides) -> TrainingArguments:
-    defaults = dict(
-        output_dir=str(tmp_path),
-        per_device_train_batch_size=1,
-        max_steps=1,
-        num_train_epochs=1,
-        save_strategy="no",
-        use_cpu=True,
+    defaults = {
+        "output_dir": str(tmp_path),
+        "per_device_train_batch_size": 1,
+        "max_steps": 1,
+        "num_train_epochs": 1,
+        "save_strategy": "no",
+        "use_cpu": True,
         # Synthetic ``nn.Linear`` fixture; not in opaque's family
         # registry — silence the "no detectable family" info log.
-        use_compat_patches=False,
-        privacy_target_epsilon=10.0,
-        privacy_noise_multiplier=1.0,
-    )
+        "use_compat_patches": False,
+        "privacy_target_epsilon": 10.0,
+        "privacy_noise_multiplier": 1.0,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 

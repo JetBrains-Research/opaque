@@ -5,14 +5,10 @@ import math
 import pytest
 import torch
 
-from opaque.types import clipped
-
-from opaque.types import NoisedPytree
-
-from opaque.types import PerGroup
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.noise.types import GaussianNoiseState
 from opaque.random import key
+from opaque.types import NoisedPytree, PerGroup, clipped
 
 
 class TestGaussianNoisePerGroup:
@@ -20,7 +16,7 @@ class TestGaussianNoisePerGroup:
 
     def _make_pg(self, param_keys, group_values):
         groups = {k: k for k in param_keys}
-        values = {k: v for k, v in zip(param_keys, group_values)}
+        values = dict(zip(param_keys, group_values, strict=False))
         return PerGroup(groups=groups, values=values)
 
     def test_returns_tuple(self):
@@ -124,8 +120,7 @@ class TestEndToEndPerGroup:
     """Integration test: clipped_grad emits clipped values for gaussian_noise."""
 
     def test_full_pipeline_per_group_bound(self):
-        from opaque.dpsgd.clipping import clipped_grad
-        from opaque.dpsgd.clipping import per_group
+        from opaque.dpsgd.clipping import clipped_grad, per_group
 
         def loss(params, data):
             pred = params["attn_w"] * data + params["mlp_w"] * data

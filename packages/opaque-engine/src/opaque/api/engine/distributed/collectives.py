@@ -125,15 +125,15 @@ def gather_for_metrics(tensor: torch.Tensor) -> torch.Tensor:
 
 
 __all__ = [
-    "is_distributed",
-    "get_rank",
-    "get_world_size",
     "all_reduce",
     "all_reduce_",
     "barrier",
+    "gather_for_metrics",
+    "get_rank",
+    "get_world_size",
+    "is_distributed",
     "is_main_process",
     "num_processes",
     "process_index",
     "wait_for_everyone",
-    "gather_for_metrics",
 ]

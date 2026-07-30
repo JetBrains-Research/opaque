@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 import torch
-
 from dpsgd_ddp_helpers import (
     SimpleModel,
     _fixed_sd_clipped,
@@ -15,12 +14,12 @@ from dpsgd_ddp_helpers import (
     _worker_dp_parity,
     _worker_dp_training_step,
 )
+
+from opaque.distributed import sum_gradients
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.distributed import sum_gradients
 from opaque.functional import make_functional
 from opaque.random import key
-
 
 pytestmark = pytest.mark.cuda
 

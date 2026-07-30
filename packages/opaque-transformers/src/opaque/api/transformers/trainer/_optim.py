@@ -28,10 +28,12 @@ Names that have no DP-aware mapping (8-bit, paged, GaLore, fused
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import opaque.optimizers as opaque_opt
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 GradientTransformation = Any  # torchopt.base.GradientTransformation, lazy
 
@@ -297,8 +299,8 @@ def validate_functional_optimizer_cls_and_kwargs(
 
 __all__ = [
     "build_optimizer",
-    "resolve_optimizer_name",
     "canonical_optimizer_names",
+    "resolve_optimizer_name",
     "supported_names",
     "validate_functional_optimizer_cls_and_kwargs",
 ]

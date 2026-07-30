@@ -16,10 +16,10 @@ from opaque.api.accounting.dpftrl.composition import PerStep
 from opaque.api.accounting.dpftrl.mechanisms.types import MfGaussian
 
 __all__ = [
-    "MfGaussian",
-    "CyclicPoisson",
     "BMinSep",
     "BallsInBins",
+    "CyclicPoisson",
     "DpFtrlProcess",
+    "MfGaussian",
     "PerStep",
 ]

@@ -8,11 +8,13 @@ skips it (opaque non-containers).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import _structural
 from ._registry import _REGISTRY
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def _join_path(prefix: str, rel_key: str) -> str:
@@ -93,4 +95,4 @@ def from_state_dict(template: Any, sd: Mapping[str, Any]) -> Any:
     return _walk_load(template, sd, "")
 
 
-__all__ = ["state_dict", "from_state_dict"]
+__all__ = ["from_state_dict", "state_dict"]

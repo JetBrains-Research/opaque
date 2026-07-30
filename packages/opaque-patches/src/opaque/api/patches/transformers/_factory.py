@@ -23,8 +23,7 @@ from __future__ import annotations
 import functools
 import importlib
 import logging
-from collections.abc import Callable
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from opaque.api.patches.transformers._router import (
     _has_kernel_runtime,
@@ -61,6 +60,8 @@ from opaque.api.patches.transformers.components.swiglu import (
     _make_swiglu_mlp_forward,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 log = logging.getLogger(__name__)
 
@@ -357,13 +358,13 @@ def make_apply_model_patches(
 
 
 __all__ = [
-    "make_apply_model_patches",
-    "register_activation_kind",
-    "register_rms_norm_kind",
-    "register_fused_add_rms_kind",
-    "register_moe_kind",
     "ActivationKind",
-    "RmsNormKind",
     "FusedAddRmsKind",
     "MoeKind",
+    "RmsNormKind",
+    "make_apply_model_patches",
+    "register_activation_kind",
+    "register_fused_add_rms_kind",
+    "register_moe_kind",
+    "register_rms_norm_kind",
 ]

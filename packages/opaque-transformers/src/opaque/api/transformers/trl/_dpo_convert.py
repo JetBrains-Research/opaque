@@ -7,7 +7,7 @@ exactly one bucket, enforced by ``test_compat_manifest_exhaustive.py``.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from opaque.api.transformers.trainer._convert import _normalize_dp_overrides
 
@@ -19,6 +19,8 @@ from ._convert import (
     _reject_truncation_mode,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 TRL_DPO_DIRECT_FIELDS: frozenset[str] = frozenset(
     {

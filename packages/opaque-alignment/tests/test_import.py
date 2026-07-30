@@ -10,20 +10,20 @@ from __future__ import annotations
 
 
 def test_facade_imports() -> None:
-    import opaque.alignment  # noqa: F401
+    import opaque.alignment
 
     assert hasattr(opaque.alignment, "__all__")
 
 
 def test_impl_namespace_imports() -> None:
-    import opaque.api.alignment  # noqa: F401
+    import opaque.api.alignment
 
     assert hasattr(opaque.api.alignment, "__all__")
 
 
 def test_namespace_coexists_with_engine() -> None:
     # Importing alignment must not break sibling wheels sharing ``opaque.*``.
-    import opaque.alignment  # noqa: F401
+    import opaque.alignment
     import opaque.distributed  # from opaque-engine
 
     assert hasattr(opaque.distributed, "gather_for_metrics")

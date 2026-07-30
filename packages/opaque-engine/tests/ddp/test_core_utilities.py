@@ -8,17 +8,6 @@ For actual multi-device distributed tests, see ``test_collectives.py`` and
 import pytest
 import torch
 
-from opaque.types import ClippedPytree
-
-from opaque.types import NoisedPytree
-
-from opaque.distributed import is_distributed, get_rank, get_world_size, sum_gradients
-from opaque.distributed.collectives import all_reduce, all_reduce_, barrier
-from opaque.distributed.gradients import (  # noqa: F401
-    reduce_pytree,
-    reduce_pytree_,
-    sum_gradients_,
-)
 from opaque.api.engine.distributed._state import (  # noqa: F401  (used in TestModuleExports)
     assert_pytree_equal,
     assert_scalar_equal,
@@ -33,6 +22,14 @@ from opaque.api.engine.distributed._state import (  # noqa: F401  (used in TestM
 from opaque.api.engine.distributed.gradients import (
     _reduced_metadata as _reduced_metadata,
 )
+from opaque.distributed import get_rank, get_world_size, is_distributed, sum_gradients
+from opaque.distributed.collectives import all_reduce, all_reduce_, barrier
+from opaque.distributed.gradients import (  # noqa: F401
+    reduce_pytree,
+    reduce_pytree_,
+    sum_gradients_,
+)
+from opaque.types import ClippedPytree, NoisedPytree
 
 
 class TestNonDistributed:
@@ -119,12 +116,10 @@ class TestAllReduceValidation:
                 continue
 
             # Just check it gets past parameter validation
-            try:
+            with pytest.raises(RuntimeError, match="not initialized"):
                 all_reduce(tensor, op=op)
+            with pytest.raises(RuntimeError, match="not initialized"):
                 all_reduce_(tensor, op=op)
-            except RuntimeError as e:
-                # Expected if not initialized
-                assert "not initialized" in str(e)
 
 
 class TestBoundedGradientAggregation:
@@ -225,7 +220,8 @@ class TestModuleExports:
             "sync",
             "local_shard",
         ]:
-            assert hasattr(root, name) and callable(getattr(root, name)), name
+            assert hasattr(root, name), name
+            assert callable(getattr(root, name)), name
 
     def test_submodule_exports(self):
         """Lower-level primitives live in the two power-user submodules."""

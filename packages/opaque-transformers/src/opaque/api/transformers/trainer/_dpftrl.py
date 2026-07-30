@@ -18,8 +18,7 @@ it with :func:`opaque.dpftrl.accounting.per_step` for the
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from opaque.dpftrl import (
     BallsInBinsSampler,
@@ -34,14 +33,24 @@ from opaque.dpftrl import (
     lambda_cgd_strategy,
 )
 from opaque.dpftrl.accounting import (
-    balls_in_bins as _ftrl_balls_in_bins,
     b_min_sep as _ftrl_b_min_sep,
+)
+from opaque.dpftrl.accounting import (
+    balls_in_bins as _ftrl_balls_in_bins,
+)
+from opaque.dpftrl.accounting import (
     mf_gaussian,
     per_step,
+)
+from opaque.dpftrl.accounting import (
     poisson as _ftrl_poisson,
 )
 from opaque.dpsgd.sampling import PoissonSampler
-from opaque.random.types import RngKey
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from opaque.random.types import RngKey
 
 
 @dataclasses.dataclass(frozen=True)
@@ -262,8 +271,8 @@ def build_sampler(
 
 __all__ = [
     "MFContext",
-    "build_strategy",
     "build_amplifier_factory",
-    "build_step_mechanism_factory",
     "build_sampler",
+    "build_step_mechanism_factory",
+    "build_strategy",
 ]

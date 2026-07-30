@@ -14,14 +14,14 @@ from opaque.api.engine.profiling import (
 )
 
 __all__ = [
-    "StepPerf",
-    "step_perf",
     "PerfStage",
-    "PerfTracker",
-    "perf_tracker",
     "PerfState",
+    "PerfTracker",
+    "StepPerf",
+    "empty_cache",
     "get_memory_stats",
+    "perf_tracker",
     "print_memory",
     "reset_peak_memory",
-    "empty_cache",
+    "step_perf",
 ]

@@ -15,15 +15,19 @@ from __future__ import annotations
 import warnings
 from dataclasses import dataclass, field
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 import torch
 
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
-from opaque.api.engine.scheduling.types import Schedule
 
-from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import inverse_as_streaming_matrix
 from ._toeplitz import optimize as optimize_toeplitz
+
+if TYPE_CHECKING:
+    from opaque.api.engine.scheduling.types import Schedule
+
+    from ._streaming_matrix import StreamingMatrix
 
 
 def _momentum_workload_coef(

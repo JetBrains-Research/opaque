@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 
 import torch
-import torch.nn.functional as F  # noqa: N812
+import torch.nn.functional as F
 from torch.func import grad, vmap
 
 from opaque.api.alignment.dpo.loss._orpo import odds_ratio_loss
@@ -50,4 +50,5 @@ class TestOddsRatio:
         c = -torch.rand(6) - 0.05  # strictly negative log-probs
         r = -torch.rand(6) - 0.05
         gc, gr = vmap(grad(odds_ratio_loss, argnums=(0, 1)))(c, r)
-        assert torch.isfinite(gc).all() and torch.isfinite(gr).all()
+        assert torch.isfinite(gc).all()
+        assert torch.isfinite(gr).all()

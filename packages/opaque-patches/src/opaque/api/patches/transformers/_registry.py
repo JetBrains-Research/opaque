@@ -39,10 +39,12 @@ Now ``opaque.patches.apply_model_patches(my_fam_instance)`` routes to it.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-import torch.nn as nn
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
+    import torch.nn as nn
 
 _FAMILY_REGISTRY: dict[str, Callable] = {}
 

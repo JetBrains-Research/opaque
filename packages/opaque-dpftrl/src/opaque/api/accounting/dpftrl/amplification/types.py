@@ -38,4 +38,4 @@ class MfAmplification(Protocol):
     def max_participations(self) -> int: ...
 
 
-__all__ = ["CyclicPoisson", "BMinSep", "BallsInBins", "MfAmplification"]
+__all__ = ["BMinSep", "BallsInBins", "CyclicPoisson", "MfAmplification"]

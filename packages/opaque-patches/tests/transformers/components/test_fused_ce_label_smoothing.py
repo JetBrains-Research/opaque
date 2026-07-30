@@ -19,7 +19,6 @@ from opaque.api.patches.kernels.linear_cross_entropy import (
     Opaque_LinearCrossEntropyLoss,
 )
 
-
 _KERNELS_AVAILABLE = (
     torch.cuda.is_available() and importlib.util.find_spec("triton") is not None
 )

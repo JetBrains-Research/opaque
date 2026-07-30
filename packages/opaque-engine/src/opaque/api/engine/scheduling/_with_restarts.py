@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from opaque.api.engine.scheduling._schedule import Schedule
+if TYPE_CHECKING:
+    from opaque.api.engine.scheduling._schedule import Schedule
 
 __all__ = ["WithRestarts", "with_restarts"]
 

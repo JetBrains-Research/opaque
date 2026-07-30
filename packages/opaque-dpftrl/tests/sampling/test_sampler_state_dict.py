@@ -18,13 +18,13 @@ import torch
 from torch.utils.data import TensorDataset
 
 from opaque.dpftrl.sampling import (
-    BMinSepSampler,
     BallsInBinsSampler,
+    BMinSepSampler,
     CyclicPoissonSampler,
     SequentialBatchSampler,
 )
 from opaque.random import key
-from opaque.serialization import state_dict, from_state_dict
+from opaque.serialization import from_state_dict, state_dict
 
 
 def _ds(n: int = 200) -> TensorDataset:

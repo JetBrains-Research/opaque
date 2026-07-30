@@ -10,9 +10,10 @@ tensor shapes use ``(B, L)`` for micro-batch size ``B`` and padded length ``L``.
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
-import torch
+if TYPE_CHECKING:
+    import torch
 
 __all__ = ["LMBatch"]
 

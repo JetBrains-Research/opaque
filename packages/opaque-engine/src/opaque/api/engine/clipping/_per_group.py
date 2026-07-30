@@ -101,9 +101,8 @@ def per_group(
                 f"Per-group value must be positive, got {val} for pattern '{pat}'."
             )
 
-    if fallback is not None:
-        if fallback <= 0:
-            raise ValueError(f"Fallback value must be positive, got {fallback}.")
+    if fallback is not None and fallback <= 0:
+        raise ValueError(f"Fallback value must be positive, got {fallback}.")
 
     param_keys = _extract_keys(params)
 

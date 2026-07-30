@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
 import torch
+
 from opaque.api.patches.transformers.components.attention import vmap_repeat_kv
 
 
@@ -71,9 +72,12 @@ def vmap_create_causal_mask(
     # @check_model_inputs resolves use_cache=None to config.use_cache=True),
     # so we check for actual cached data rather than just None.
     attn_impl = getattr(config, "_attn_implementation", None)
-    if attention_mask is None and attn_impl != "eager":
-        if _safe_seq_length(past_key_values) <= 0:
-            return None
+    if (
+        attention_mask is None
+        and attn_impl != "eager"
+        and _safe_seq_length(past_key_values) <= 0
+    ):
+        return None
 
     # Detect batchless input (under vmap without with_batch_dim) vs batched
     if input_embeds.ndim == 2:

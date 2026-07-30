@@ -8,20 +8,20 @@ one MoE (mellum) — work under DP ``vmap(grad)`` on BOTH ``eager`` (the
 O(N²) reference) and ``sdpa``.
 """
 
-import os
 import sys
+from pathlib import Path
 
 import pytest
 import torch
 
 pytest.importorskip("transformers")
 
-sys.path.insert(0, os.path.dirname(__file__))
-from _test_utils import (  # noqa: E402
-    build_moe_model,
-    get_tiny_config_kwargs,
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _test_utils import (
     assert_forward_no_grad,
     assert_vmap_grad,
+    build_moe_model,
+    get_tiny_config_kwargs,
 )
 
 IMPLS = ["eager", "sdpa"]
@@ -29,6 +29,7 @@ IMPLS = ["eager", "sdpa"]
 
 def _build_llama(device, impl="sdpa"):
     from transformers.models.llama.modeling_llama import LlamaConfig, LlamaForCausalLM
+
     from opaque.patches import apply_model_patches
 
     config = LlamaConfig(**get_tiny_config_kwargs())
@@ -64,7 +65,7 @@ def test_sdpa_backends_under_vmap(backend, device):
     """Every selectable SDPA backend works under DP vmap(grad). MATH is
     vmap-native; efficient/cudnn run via the per-example-loop fallback until the
     upstream batching-rule patch lands; flash isn't selected (xfail)."""
-    from torch.nn.attention import sdpa_kernel, SDPBackend
+    from torch.nn.attention import SDPBackend, sdpa_kernel
 
     # The fused SDPA kernels (efficient/cudnn/flash) only provide a bf16 path on
     # Ampere+ (sm>=80); on older GPUs (e.g. Turing/T4, sm_75) they raise
@@ -85,6 +86,7 @@ def test_sdpa_backends_under_vmap(backend, device):
 @pytest.mark.parametrize("impl", IMPLS)
 def test_llama_attention_impl(impl, device):
     from transformers.models.llama.modeling_llama import LlamaConfig, LlamaForCausalLM
+
     from opaque.patches import apply_model_patches
 
     config = LlamaConfig(**get_tiny_config_kwargs())

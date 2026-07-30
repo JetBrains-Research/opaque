@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._native_cache import native_cache
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _cache = native_cache(
     name="b_min_sep_transcripts",

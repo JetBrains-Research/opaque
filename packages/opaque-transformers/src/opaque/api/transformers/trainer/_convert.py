@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import dataclasses
 import warnings
-from collections.abc import Mapping
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
 
 
 def _normalize_dp_overrides(

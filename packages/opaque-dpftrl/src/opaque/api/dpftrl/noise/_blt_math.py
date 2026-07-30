@@ -18,29 +18,36 @@ import dataclasses
 import functools
 import logging
 import math
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 
 from . import (
     _sensitivity as sensitivity,
+)
+from . import (
     _streaming_matrix as streaming_matrix,
+)
+from . import (
     _toeplitz as toeplitz,
 )
 from ._engine import _internal_compute_dtype
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "BufferedToeplitz",
-    "optimize",
-    "materialize",
     "inverse",
     "inverse_as_streaming_matrix",
-    "sensitivity_squared",
-    "max_error",
     "iteration_error",
+    "materialize",
+    "max_error",
+    "optimize",
+    "sensitivity_squared",
 ]
 
 

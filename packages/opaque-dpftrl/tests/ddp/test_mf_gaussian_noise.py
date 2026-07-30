@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import pytest
 import torch
-
 from dpftrl_ddp_helpers import (
     _spawn,
     _worker_identity_mf_three_steps,
     _worker_mf_shared_noise,
 )
-
 
 pytestmark = pytest.mark.cuda
 

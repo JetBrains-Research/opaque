@@ -20,7 +20,8 @@ them (e.g. ``sequence_logp`` via :mod:`opaque.alignment.dpo`), following the
 shared-impl re-import pattern of ``opaque.dpsgd.clipping``.
 """
 
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 
 from opaque.alignment import data, dpo, metric, sft
 

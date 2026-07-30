@@ -2,20 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the gpt2 family (compat-only: batchify + kv_cache, no kernels)."""
 
-import os
 import sys
+from pathlib import Path
 
 import pytest
 
 pytest.importorskip("transformers")
 
 from transformers.models.gpt2.modeling_gpt2 import GPT2Config, GPT2LMHeadModel
+
 from opaque.patches import apply_model_patches
 
-sys.path.insert(0, os.path.dirname(__file__))
-from _test_utils import (  # noqa: E402
-    assert_forward_no_grad,
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _test_utils import (
     assert_forward_backward,
+    assert_forward_no_grad,
     assert_vmap_forward,
     assert_vmap_grad,
 )

@@ -9,18 +9,17 @@ the trainer's default ``transformers.default_data_collator`` directly.
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 
 import pytest
 import torch
+from _hf_shared import build_lm_dataset, make_gpt2
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import TrainerCallback as _HFTrainerCallback
-from opaque.transformers.trainer.types import EvaluationResult, TrainOutput
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.api.transformers.trainer._state import DPTrainerState
-
-from _hf_shared import build_lm_dataset, make_gpt2  # noqa: E402
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
+from opaque.transformers.trainer.types import EvaluationResult, TrainOutput
 
 
 def _default_args(**overrides) -> TrainingArguments:
@@ -32,13 +31,13 @@ def _default_args(**overrides) -> TrainingArguments:
     device mismatch).  Tests that explicitly need an accelerator can
     override.
     """
-    defaults = dict(
-        per_device_train_batch_size=4,
-        clipping_norm=1.0,
-        privacy_target_epsilon=10.0,
-        privacy_noise_multiplier=1.0,
-        use_cpu=True,
-    )
+    defaults = {
+        "per_device_train_batch_size": 4,
+        "clipping_norm": 1.0,
+        "privacy_target_epsilon": 10.0,
+        "privacy_noise_multiplier": 1.0,
+        "use_cpu": True,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 
@@ -284,10 +283,13 @@ class TestDPTrainerTrain:
 
         changed = False
         for n, p in model.named_parameters():
-            if p.requires_grad and n in pre_train_params:
-                if not torch.allclose(p.data, pre_train_params[n]):
-                    changed = True
-                    break
+            if (
+                p.requires_grad
+                and n in pre_train_params
+                and not torch.allclose(p.data, pre_train_params[n])
+            ):
+                changed = True
+                break
         assert changed, "Model parameters did not change after training"
 
     def test_model_generates_after_training(self, gpt2_with_lora, tiny_lm_dataset):
@@ -718,7 +720,7 @@ class TestDPTrainerLRScheduling:
         #   step 5 → schedule(4) = 1e-3 * 1/3
         expected = [0.0, 5e-4, 1e-3, 1e-3 * 2 / 3, 1e-3 * 1 / 3]
         assert len(lrs) == 5
-        for got, exp in zip(lrs, expected):
+        for got, exp in zip(lrs, expected, strict=False):
             assert got == pytest.approx(exp, abs=1e-9)
 
     def test_warmup_changes_param_trajectory(self, gpt2_with_lora, tiny_lm_dataset):
@@ -730,16 +732,16 @@ class TestDPTrainerLRScheduling:
             if p.requires_grad
         }
 
-        common = dict(
-            clipping_norm=1.0,
-            max_steps=4,
-            num_train_epochs=1,
-            learning_rate=1e-3,
-            warmup_steps=2,
-            seed=42,
-            eval_strategy="no",
-            logging_steps=999,
-        )
+        common = {
+            "clipping_norm": 1.0,
+            "max_steps": 4,
+            "num_train_epochs": 1,
+            "learning_rate": 1e-3,
+            "warmup_steps": 2,
+            "seed": 42,
+            "eval_strategy": "no",
+            "logging_steps": 999,
+        }
 
         trainer1 = DPTrainer(
             model=model_const,
@@ -785,20 +787,20 @@ class TestDPTrainerCheckpointing:
     """End-to-end checkpoint save / rotation / final-save tests."""
 
     def _common_args(self, output_dir, **overrides):
-        defaults = dict(
-            clipping_norm=1.0,
-            max_steps=4,
-            num_train_epochs=1,
-            learning_rate=1e-3,
-            lr_scheduler="constant",
-            eval_strategy="no",
-            logging_steps=1,
-            output_dir=str(output_dir),
-            save_strategy="steps",
-            save_steps=2,
-            save_safetensors=True,
-            overwrite_output_dir=True,
-        )
+        defaults = {
+            "clipping_norm": 1.0,
+            "max_steps": 4,
+            "num_train_epochs": 1,
+            "learning_rate": 1e-3,
+            "lr_scheduler": "constant",
+            "eval_strategy": "no",
+            "logging_steps": 1,
+            "output_dir": str(output_dir),
+            "save_strategy": "steps",
+            "save_steps": 2,
+            "save_safetensors": True,
+            "overwrite_output_dir": True,
+        }
         defaults.update(overrides)
         return _default_args(**defaults)
 
@@ -1022,7 +1024,7 @@ class TestDPTrainerCheckpointing:
         trainer.train()
 
         state_path = tmp_path / "checkpoint-2" / "trainer_state.json"
-        with open(state_path) as f:
+        with state_path.open() as f:
             data = json.load(f)
         assert data["global_step"] == 2
         assert data["max_steps"] == 2
@@ -1167,7 +1169,7 @@ class TestDPTrainerCheckpointing:
         assert trainer.state.best_metric is not None
         assert trainer.state.best_global_step in (2, 4)
         assert trainer.state.best_model_checkpoint is not None
-        assert os.path.isdir(trainer.state.best_model_checkpoint)
+        assert Path(trainer.state.best_model_checkpoint).is_dir()
 
     def test_save_strategy_best_only_saves_on_improvement(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
@@ -1230,13 +1232,13 @@ class TestDPTrainerCheckpointing:
                     control.should_save = True
                     control.should_training_stop = True
 
-        common = dict(
-            max_steps=10,
-            lr_scheduler="linear",
-            warmup_steps=2,
-            learning_rate=1e-3,
-            logging_steps=1,
-        )
+        common = {
+            "max_steps": 10,
+            "lr_scheduler": "linear",
+            "warmup_steps": 2,
+            "learning_rate": 1e-3,
+            "logging_steps": 1,
+        }
 
         # --- continuous baseline ---
         model_c, tokenizer_c = gpt2_with_lora
@@ -1270,7 +1272,7 @@ class TestDPTrainerCheckpointing:
         )
         trainer_1.train()
         ckpt_dir = str(chain_dir / "checkpoint-5")
-        assert os.path.isdir(ckpt_dir), f"checkpoint-5 not written at {chain_dir}"
+        assert Path(ckpt_dir).is_dir(), f"checkpoint-5 not written at {chain_dir}"
 
         # --- phase 2: resume same args, run to step 10 ---
         model_2, tokenizer_2 = gpt2_with_lora
@@ -1292,7 +1294,9 @@ class TestDPTrainerCheckpointing:
             f"(phase1's 5 + phase2's 5); got {len(lrs_chained)} entries"
         )
 
-        for step, (got, exp) in enumerate(zip(lrs_chained, lrs_continuous), start=1):
+        for step, (got, exp) in enumerate(
+            zip(lrs_chained, lrs_continuous, strict=False), start=1
+        ):
             assert got == pytest.approx(exp, abs=1e-9), (
                 f"LR mismatch at global_step={step}: chained={got}, continuous={exp}"
             )
@@ -1313,7 +1317,7 @@ class TestDPTrainerCheckpointing:
         out1 = trainer1.train()
         assert out1.global_step == 2
         ckpt_dir = str(tmp_path / "checkpoint-2")
-        assert os.path.isdir(ckpt_dir)
+        assert Path(ckpt_dir).is_dir()
 
         # Resume: max_steps=4 → run 2 more steps starting at global_step=2.
         model2, tokenizer2 = gpt2_with_lora
@@ -1328,7 +1332,7 @@ class TestDPTrainerCheckpointing:
         assert out2.global_step == 4
         assert trainer2.state.global_step == 4
         # checkpoint-4 was just written by the final save / save_steps.
-        assert os.path.isdir(str(tmp_path / "checkpoint-4"))
+        assert (tmp_path / "checkpoint-4").is_dir()
 
     def test_resume_true_finds_latest(self, gpt2_with_lora, tiny_lm_dataset, tmp_path):
         """resume_from_checkpoint=True picks the latest checkpoint under output_dir."""
@@ -1393,7 +1397,6 @@ class TestDPTrainerCheckpointing:
     ):
         """A checkpoint missing ``accountant.json`` is not a complete DP
         checkpoint, so resume rejects it as a weights-only export."""
-        import os
 
         # Produce a checkpoint, then delete its accountant.json.
         model, tokenizer = gpt2_with_lora
@@ -1406,7 +1409,7 @@ class TestDPTrainerCheckpointing:
         )
         trainer.train()
         ckpt_dir = tmp_path / "checkpoint-2"
-        os.remove(ckpt_dir / "accountant.json")
+        (ckpt_dir / "accountant.json").unlink()
 
         model2, tokenizer2 = gpt2_with_lora
         trainer2 = DPTrainer(
@@ -1501,9 +1504,9 @@ class TestDPTrainerCheckpointing:
         trainer1.train()
         ckpt_dir = str(tmp_path / "checkpoint-2")
         # Interpretability file always present; resumability files absent.
-        assert os.path.exists(os.path.join(ckpt_dir, "accountant.json"))
-        assert not os.path.exists(os.path.join(ckpt_dir, "dp_optimizer.pt"))
-        assert not os.path.exists(os.path.join(ckpt_dir, "dp_state.pt"))
+        assert (Path(ckpt_dir) / "accountant.json").exists()
+        assert not (Path(ckpt_dir) / "dp_optimizer.pt").exists()
+        assert not (Path(ckpt_dir) / "dp_state.pt").exists()
 
         model2, tokenizer2 = gpt2_with_lora
         out2_dir = tmp_path / "resumed"
@@ -1581,7 +1584,7 @@ class TestDPTrainerCheckpointing:
         )
         trainer1.train()
         # The trainer writes the callback's ExportableState payload into the JSON.
-        with open(tmp_path / "checkpoint-2" / "trainer_state.json") as f:
+        with (tmp_path / "checkpoint-2" / "trainer_state.json").open() as f:
             ts = json.load(f)
         assert ts.get("stateful_callbacks", {}).get("StatefulCallback") == {
             "args": {},

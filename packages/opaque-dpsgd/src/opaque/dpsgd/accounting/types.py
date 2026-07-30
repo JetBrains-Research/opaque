@@ -11,8 +11,8 @@ from opaque.api.accounting.dpsgd.amplification.types import (
 from opaque.api.accounting.dpsgd.mechanisms.types import AdaClip, Gaussian
 
 __all__ = [
-    "Gaussian",
     "AdaClip",
-    "Poisson",
+    "Gaussian",
     "ParallelPoisson",
+    "Poisson",
 ]

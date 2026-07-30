@@ -5,20 +5,19 @@ functions handle batch_size=0 correctly — producing zero grads, empty aux
 tensors, preserving adaptive clipping_norm, and avoiding DDP deadlocks.
 """
 
-import torch
 import pytest
+import torch
 
-from opaque.types import ClippedPytree
-
-from opaque.api.engine.clipping import clipped_grad
-from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.api.dpsgd.clipping._adaptive import (
-    AdaptiveClipState,
     AdaptiveClippedGradAux,
+    AdaptiveClipState,
     _compute_clipping_stats,
 )
+from opaque.api.engine.clipping import clipped_grad
 from opaque.api.engine.clipping._clipped_grad import ClippedGradAux
+from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.random import key
+from opaque.types import ClippedPytree
 
 
 def _unwrap_clipped(value):
@@ -74,7 +73,7 @@ class TestComputeClippingStats:
 
     def test_all_below_clip_norm(self):
         norms = torch.tensor([0.1, 0.2, 0.3])
-        num_clipped, total, rate = _compute_clipping_stats(norms, clipping_norm=1.0)
+        num_clipped, _total, rate = _compute_clipping_stats(norms, clipping_norm=1.0)
         assert num_clipped == 0.0
         assert rate == 0.0
 
@@ -92,7 +91,7 @@ class TestClippedGradEmptyBatch:
             batch_argnums=(1, 2),
             clipping_norm=1.0,
         )
-        grads, new_state = grad_fn(params, *empty_batch, state=clip_state)
+        grads, _new_state = grad_fn(params, *empty_batch, state=clip_state)
         grads = _unwrap_clipped(grads)
         assert grads.shape == params.shape
         assert torch.all(grads == 0)
@@ -222,7 +221,7 @@ class TestAdaptiveClippedGradEmptyBatch:
             batch_argnums=(1, 2),
             return_aux=True,
         )
-        (grads, aux), new_state = grad_fn(params, *empty_batch, state=clip_state)
+        (_grads, aux), _new_state = grad_fn(params, *empty_batch, state=clip_state)
 
         assert isinstance(aux, AdaptiveClippedGradAux)
         assert aux.grad_norms.shape == (0,)

@@ -5,24 +5,23 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset
 
-from opaque.types import clipped
-
-from opaque.dpftrl.noise import mf_gaussian_noise
-from opaque.dpftrl.noise import (
-    band_mf_strategy,
-    bisr_strategy,
-    blt_strategy,
-    identity_strategy,
-    lambda_cgd_strategy,
-)
 from opaque.api.dpftrl.noise._engine import _matrix_factorization_noise
 from opaque.api.dpftrl.noise._streaming_matrix import identity
 from opaque.api.dpftrl.noise._toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )
-from opaque.random import key
+from opaque.dpftrl.noise import (
+    band_mf_strategy,
+    bisr_strategy,
+    blt_strategy,
+    identity_strategy,
+    lambda_cgd_strategy,
+    mf_gaussian_noise,
+)
 from opaque.dpftrl.sampling import BallsInBinsSampler
+from opaque.random import key
+from opaque.types import clipped
 
 
 def _engine_train_loop(
@@ -450,26 +449,26 @@ class TestMfNoiseStrategies:
         return model, opt, template, x, y
 
     @pytest.mark.parametrize(
-        "strategy_factory,kwargs",
+        ("strategy_factory", "kwargs"),
         [
             pytest.param(
                 lambda: identity_strategy(),
-                dict(n_steps=50, min_sep=1, max_participations=1),
+                {"n_steps": 50, "min_sep": 1, "max_participations": 1},
                 id="identity",
             ),
             pytest.param(
                 lambda: band_mf_strategy(bands=10, momentum=0.0),
-                dict(n_steps=50, min_sep=1, max_participations=1),
+                {"n_steps": 50, "min_sep": 1, "max_participations": 1},
                 id="band_mf",
             ),
             pytest.param(
                 lambda: lambda_cgd_strategy(lambda_=0.9),
-                dict(n_steps=50, min_sep=1, max_participations=1),
+                {"n_steps": 50, "min_sep": 1, "max_participations": 1},
                 id="lambda_cgd",
             ),
             pytest.param(
                 lambda: bisr_strategy(bandwidth=4),
-                dict(n_steps=50, min_sep=10, max_participations=5),
+                {"n_steps": 50, "min_sep": 10, "max_participations": 5},
                 id="bisr",
             ),
         ],

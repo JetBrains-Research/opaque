@@ -36,30 +36,32 @@ from __future__ import annotations
 
 import dataclasses
 import math
+from typing import TYPE_CHECKING
 
 import torch
 from torch.autograd.profiler import record_function
 
-from opaque.types import (
-    ClippedPytree,
-    NoiseState,
-    NoisedPytree,
-    PerGroup,
-    SecondMomentClippingOutput,
-    SecondMomentNoiseOutput,
-)
-from opaque.random import generator_from_key
-from opaque.random.types import RngKey
-from opaque.random import fold_in as rng_fold_in
-from opaque.pytree import tree_map
 from opaque.api.engine.noise_allocation import (
     PAIRED_FIRST_STREAM_FOLD,
     PAIRED_SECOND_STREAM_FOLD,
     per_group_noise_stddev,
     resolve_paired_clipped,
 )
-from opaque.api.dpsgd.noise._types import GaussianNoiseFn
+from opaque.pytree import tree_map
+from opaque.random import fold_in as rng_fold_in
+from opaque.random import generator_from_key
+from opaque.random.types import RngKey
+from opaque.types import (
+    ClippedPytree,
+    NoisedPytree,
+    NoiseState,
+    PerGroup,
+    SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
+)
 
+if TYPE_CHECKING:
+    from opaque.api.dpsgd.noise._types import GaussianNoiseFn
 
 _SQRT2 = math.sqrt(2.0)
 
@@ -257,10 +259,7 @@ def gaussian_noise(
             device=device
         )
 
-        if in_dtype != compute_dtype:
-            center_c = center.to(compute_dtype)
-        else:
-            center_c = center
+        center_c = center.to(compute_dtype) if in_dtype != compute_dtype else center
 
         # Clamp ``u`` away from 0 and 1 so ``2u-1`` never reaches ±1 and
         # ``erfinv`` can't return ±inf.  ``finfo.tiny`` (denormal min) is
@@ -409,4 +408,4 @@ def gaussian_noise(
     return noise_fn, state
 
 
-__all__ = ["gaussian_noise", "GaussianNoiseState"]
+__all__ = ["GaussianNoiseState", "gaussian_noise"]

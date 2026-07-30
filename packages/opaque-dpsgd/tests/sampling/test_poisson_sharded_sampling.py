@@ -6,8 +6,8 @@ import numpy as np
 import torch
 from torch.utils.data import TensorDataset
 
-from opaque.dpsgd.sampling import PoissonSampler
 from opaque.distributed import local_shard
+from opaque.dpsgd.sampling import PoissonSampler
 from opaque.random import fold_in, key
 
 
@@ -61,7 +61,7 @@ class TestShardedSampling:
             sampler = PoissonSampler(
                 shard, sample_rate=0.5, n_steps=1, key=fold_in(key(42), rank)
             )
-            batch = list(sampler)[0]
+            batch = next(iter(sampler))
             shard_size = len(shard)
             assert all(0 <= idx < shard_size for idx in batch)
 
@@ -122,7 +122,7 @@ class TestPoissonTruncatedDistributed:
                 n_steps=1,
                 key=fold_in(key(100), rank),
             )
-            batch = list(sampler)[0]
+            batch = next(iter(sampler))
             assert len(batch) <= max_batch_size
 
     def test_truncated_single_device(self) -> None:

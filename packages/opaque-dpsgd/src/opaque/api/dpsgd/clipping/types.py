@@ -5,6 +5,10 @@ Includes adaptive (DP-SGD) and AUTO-S dataclasses used in type annotations.
 
 from __future__ import annotations
 
+from opaque.api.dpsgd.clipping._adaptive import (
+    AdaptiveClippedGradAux,
+    AdaptiveClipState,
+)
 from opaque.api.engine.clipping.types import (
     AutoClippedFunAux,
     AutoClippedGradAux,
@@ -12,10 +16,6 @@ from opaque.api.engine.clipping.types import (
     ClippedGradFn,
     ClippedGradResult,
     FixedClipState,
-)
-from opaque.api.dpsgd.clipping._adaptive import (
-    AdaptiveClippedGradAux,
-    AdaptiveClipState,
 )
 
 __all__ = [

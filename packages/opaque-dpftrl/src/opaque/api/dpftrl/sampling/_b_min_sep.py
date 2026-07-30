@@ -12,13 +12,15 @@ per-example rate ``p_0`` used in cyclic Poisson accounting). For target
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Iterator, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from torch.utils.data import Sampler
 
 from opaque.random.types import RngKey
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
 
 
 class BMinSepSampler(Sampler):

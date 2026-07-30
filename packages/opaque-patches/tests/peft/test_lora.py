@@ -1,7 +1,8 @@
-from opaque.patches import apply_runtime_patches
 import pytest
 import torch
 import torch.nn.functional as F
+
+from opaque.patches import apply_runtime_patches
 
 apply_runtime_patches()
 

@@ -23,7 +23,6 @@ closed-form column factor, and streaming-matrix strategies precompute
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -47,12 +46,14 @@ from ._lambda_cgd import LambdaCgdStrategy, _make_lambda_cgd_noise
 from ._second_moment import SecondMomentMFNoiseState, make_second_moment_mf_noise
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from .types import MfStrategy
 
 
 def mf_gaussian_noise(
     grad_template: Any,
-    strategy: "MfStrategy",
+    strategy: MfStrategy,
     *,
     n_steps: int,
     min_sep: int = 1,
@@ -60,7 +61,7 @@ def mf_gaussian_noise(
     noise_multiplier: float,
     key: RngKey,
     compute_dtype: torch.dtype = torch.float32,
-    second_moment_strategy: "MfStrategy | None" = None,
+    second_moment_strategy: MfStrategy | None = None,
 ) -> tuple[
     Callable[..., tuple[Any, MFNoiseState | SecondMomentMFNoiseState]],
     MFNoiseState | SecondMomentMFNoiseState,
@@ -201,7 +202,7 @@ def mf_gaussian_noise(
 
 def _make_raw_mf_noise(
     grad_template: Any,
-    strategy: "MfStrategy",
+    strategy: MfStrategy,
     *,
     n_steps: int,
     min_sep: int,

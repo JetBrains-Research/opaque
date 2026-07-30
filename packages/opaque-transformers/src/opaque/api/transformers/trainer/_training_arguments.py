@@ -69,16 +69,16 @@ import os
 from collections.abc import Mapping, Sequence
 from dataclasses import field
 from functools import cached_property
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import torch
+
 from opaque.api.engine.device import device_capabilities
-from opaque.scheduling.types import Schedule
 from transformers.debug_utils import DebugOption
 from transformers.trainer_utils import SchedulerType
 from transformers.training_args import ParallelMode
 from transformers.utils import is_torch_bf16_gpu_available, is_torch_xla_available
-
 
 # Plain-string strategy domains; replaces HF's ``IntervalStrategy`` and
 # ``SaveStrategy`` enums (we never need the enum form, only the value).
@@ -186,10 +186,13 @@ _MECH_DEFAULTS: dict[str, dict[str, Any]] = {
 # Optimizer surface is owned by ``_optim``; keep validation logic and
 # aliases in one place so ``TrainingArguments`` and optimizer factory
 # stay in sync.
-from ._optim import (  # noqa: E402
+from ._optim import (  # noqa: E402, I001
     resolve_optimizer_name as _resolve_optimizer_name,
     supported_names as _supported_optimizer_names,
 )
+
+if TYPE_CHECKING:
+    from opaque.scheduling.types import Schedule
 
 _DP_OPTIMIZERS: tuple[str, ...] = _supported_optimizer_names()
 
@@ -366,7 +369,7 @@ class TrainingArguments:
     # the HF spelling so HF-style configs flow through unchanged.
     trackio_space_id: str | None = None
     trackio_bucket_id: str | None = None
-    trackio_static_space_id: str | None | bool = None
+    trackio_static_space_id: str | bool | None = None
 
     # =================================================================
     # Hub publishing (orthogonal to DP — publish the finished model)
@@ -510,11 +513,11 @@ class TrainingArguments:
             self.output_dir = "trainer_output"
             log.info("No output directory specified, defaulting to 'trainer_output'.")
         if self.output_dir is not None:
-            self.output_dir = os.path.expanduser(self.output_dir)
+            self.output_dir = str(Path(self.output_dir).expanduser())
         if self.logging_dir is None and self.output_dir is not None:
-            self.logging_dir = os.path.join(self.output_dir, "runs")
+            self.logging_dir = str(Path(self.output_dir) / "runs")
         if self.logging_dir is not None:
-            self.logging_dir = os.path.expanduser(self.logging_dir)
+            self.logging_dir = str(Path(self.logging_dir).expanduser())
 
         # Dict-shaped fields accept Mapping (incl. OmegaConf DictConfig),
         # JSON object string, HF-style "key=value,..." string, or None.
@@ -604,7 +607,7 @@ class TrainingArguments:
 
         # --- 3. ``disable_tqdm`` default from log level (HF parity) ---------
         if self.disable_tqdm is None:
-            self.disable_tqdm = log.getEffectiveLevel() > logging.WARN
+            self.disable_tqdm = log.getEffectiveLevel() > logging.WARNING
 
         # --- 4. Cadence-alignment validation --------------------------------
         if self.eval_strategy == "steps" and (
@@ -663,32 +666,36 @@ class TrainingArguments:
                     f"{self.eval_strategy}\n  Save strategy: "
                     f"{self.save_strategy}"
                 )
-            if self.eval_strategy == "steps" and self.eval_steps and self.save_steps:
-                if self.save_steps % self.eval_steps != 0:
-                    if self.eval_steps < 1 or self.save_steps < 1:
-                        if not (self.eval_steps < 1 and self.save_steps < 1):
-                            raise ValueError(
-                                "--load_best_model_at_end requires the saving steps to be a multiple "
-                                "of the evaluation steps, which cannot be guaranteed when mixing "
-                                f"ratio and absolute steps for save_steps={self.save_steps} and "
-                                f"eval_steps={self.eval_steps}."
-                            )
-                        large_multiplier = 1_000_000
-                        if (self.save_steps * large_multiplier) % (
-                            self.eval_steps * large_multiplier
-                        ) != 0:
-                            raise ValueError(
-                                "--load_best_model_at_end requires the saving steps to be a multiple "
-                                f"of the evaluation steps, but found save_steps={self.save_steps}, "
-                                f"which is not a multiple of eval_steps={self.eval_steps}."
-                            )
-                    else:
+            if (
+                self.eval_strategy == "steps"
+                and self.eval_steps
+                and self.save_steps
+                and self.save_steps % self.eval_steps != 0
+            ):
+                if self.eval_steps < 1 or self.save_steps < 1:
+                    if not (self.eval_steps < 1 and self.save_steps < 1):
                         raise ValueError(
-                            "--load_best_model_at_end requires the saving steps to "
-                            "be a round multiple of the evaluation steps, but found "
-                            f"save_steps={self.save_steps}, which is not a round "
-                            f"multiple of eval_steps={self.eval_steps}."
+                            "--load_best_model_at_end requires the saving steps to be a multiple "
+                            "of the evaluation steps, which cannot be guaranteed when mixing "
+                            f"ratio and absolute steps for save_steps={self.save_steps} and "
+                            f"eval_steps={self.eval_steps}."
                         )
+                    large_multiplier = 1_000_000
+                    if (self.save_steps * large_multiplier) % (
+                        self.eval_steps * large_multiplier
+                    ) != 0:
+                        raise ValueError(
+                            "--load_best_model_at_end requires the saving steps to be a multiple "
+                            f"of the evaluation steps, but found save_steps={self.save_steps}, "
+                            f"which is not a multiple of eval_steps={self.eval_steps}."
+                        )
+                else:
+                    raise ValueError(
+                        "--load_best_model_at_end requires the saving steps to "
+                        "be a round multiple of the evaluation steps, but found "
+                        f"save_steps={self.save_steps}, which is not a round "
+                        f"multiple of eval_steps={self.eval_steps}."
+                    )
 
         # --- 5. Default population ------------------------------------------
         if self.load_best_model_at_end and self.metric_for_best_model is None:
@@ -1186,7 +1193,7 @@ class TrainingArguments:
         # Behavior
         strict: bool = True,
         **opaque_overrides: Any,
-    ) -> "TrainingArguments":
+    ) -> TrainingArguments:
         """Convert an HF ``TrainingArguments`` to opaque ``TrainingArguments``.
 
         Required: exactly one of ``privacy_noise_multiplier=<float>``

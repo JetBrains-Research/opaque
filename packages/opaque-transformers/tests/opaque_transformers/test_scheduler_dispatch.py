@@ -18,8 +18,8 @@ transformers = pytest.importorskip(
     "transformers", reason="transformers required for HF cross-check"
 )
 
-from torch.optim import SGD  # noqa: E402
-from transformers.optimization import (  # noqa: E402
+from torch.optim import SGD
+from transformers.optimization import (
     get_constant_schedule,
     get_constant_schedule_with_warmup,
     get_cosine_schedule_with_warmup,
@@ -31,12 +31,13 @@ from transformers.optimization import (  # noqa: E402
     get_wsd_schedule,
 )
 
-from opaque.api.transformers.trainer._scheduler import (  # noqa: E402
+from opaque.api.transformers.trainer._scheduler import (
     build_lr_schedule,
     get_warmup_steps,
 )
-from opaque.api.transformers.trainer._training_arguments import _parse_dict_string  # noqa: E402
-
+from opaque.api.transformers.trainer._training_arguments import (
+    _parse_dict_string,
+)
 
 BASE_LR = 1e-3
 
@@ -192,7 +193,7 @@ class TestPointwiseParity:
         _assert_pointwise(ours, hf, 1000)
 
     @pytest.mark.parametrize(
-        "warmup,total,k",
+        ("warmup", "total", "k"),
         [
             (101, 1000, 4),  # decay=899, 899 % 4 == 3
             (50, 997, 3),  # decay=947, 947 % 3 == 2

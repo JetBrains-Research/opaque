@@ -36,7 +36,6 @@ from opaque.api.alignment.dpo.reference._adapter import (  # noqa: E402
     with_disabled_adapter,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -148,9 +147,8 @@ def test_lora_disable_path_adapter_restored_on_exception() -> None:
     model = _make_peft_model()
     active_before = list(model.active_adapters)
 
-    with pytest.raises(RuntimeError, match="test error"):
-        with null_ref_context(model):
-            raise RuntimeError("test error")
+    with pytest.raises(RuntimeError, match="test error"), null_ref_context(model):
+        raise RuntimeError("test error")
 
     active_after = list(model.active_adapters)
     assert active_after == active_before, "Active adapter not restored after exception"
@@ -205,9 +203,8 @@ def test_lora_ref_adapter_path_restores_on_exception() -> None:
     model.add_adapter("ref", ref_lora_cfg)
     model.set_adapter("default")
 
-    with pytest.raises(ValueError, match="boom"):
-        with null_ref_context(model):
-            raise ValueError("boom")
+    with pytest.raises(ValueError, match="boom"), null_ref_context(model):
+        raise ValueError("boom")
 
     assert list(model.active_adapters) == ["default"], (
         "Active adapter not restored after exception (ref-adapter path)"

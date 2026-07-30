@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 import pytest
 
 # TRL is the optional ``opaque[trl]`` extra. Skip the entire module when
@@ -10,7 +9,6 @@ import pytest
 trl = pytest.importorskip("trl")
 
 from opaque.transformers.trl import SFTConfig  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

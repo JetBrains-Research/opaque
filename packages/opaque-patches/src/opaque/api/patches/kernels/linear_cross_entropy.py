@@ -46,7 +46,6 @@ from ._utils import (
     tl_softcapping_grad,
 )
 
-
 # =============================================================================
 # Autotune configs (subset of CCE defaults, sufficient for our use case)
 # =============================================================================
@@ -150,7 +149,7 @@ def _linear_ce_forward_kernel(
 
     # Tiled matmul: logits[b,v] = Σ_d E[b,d] * C[v,d]
     accum = tl.zeros((BLOCK_B, BLOCK_V), dtype=tl.float32)
-    for d in range(0, tl.cdiv(D, BLOCK_D)):
+    for d in range(tl.cdiv(D, BLOCK_D)):
         e_mask = offs_b[:, None] < BMax
         if not EVEN_D:
             e_mask = e_mask & (offs_d[None, :] < (D - d * BLOCK_D))
@@ -231,7 +230,9 @@ else:
         {
             k: (lambda args, _v=v: _v)
             for k, v in Config(
-                dict(BLOCK_B=128, BLOCK_V=128, BLOCK_D=32), num_warps=4, num_stages=4
+                {"BLOCK_B": 128, "BLOCK_V": 128, "BLOCK_D": 32},
+                num_warps=4,
+                num_stages=4,
             )
             .all_kwargs()
             .items()
@@ -264,19 +265,13 @@ def _mm_backward(
     b_ptrs = b_ptrs + d_inds * stride_bd
     da_ptrs = da_ptrs + d_inds * stride_ad
 
-    for d in range(0, tl.cdiv(D, BLOCK_D)):
-        if EVEN_D:
-            mask = partial_mask_b
-        else:
-            mask = partial_mask_b & (d_inds < (D - d * BLOCK_D))
+    for d in range(tl.cdiv(D, BLOCK_D)):
+        mask = partial_mask_b if EVEN_D else partial_mask_b & (d_inds < D - d * BLOCK_D)
 
         b = tl.load(b_ptrs, mask=mask, other=0.0)
         da_i = tl.dot(do, b, input_precision="ieee").to(da_ptrs.dtype.element_ty)
 
-        if EVEN_D:
-            mask = partial_mask_a
-        else:
-            mask = partial_mask_a & (d_inds < (D - d * BLOCK_D))
+        mask = partial_mask_a if EVEN_D else partial_mask_a & (d_inds < D - d * BLOCK_D)
 
         lock_offset = d // tl.cdiv(D, BLOCK_D * n_locks)
         this_da_lock_ptr = da_lock_ptr + lock_offset
@@ -356,7 +351,7 @@ def _linear_ce_backward_kernel(
 
     # Recompute logits via tiled matmul E @ C^T
     accum = tl.zeros((BLOCK_B, BLOCK_V), dtype=tl.float32)
-    for d in range(0, tl.cdiv(D, BLOCK_D)):
+    for d in range(tl.cdiv(D, BLOCK_D)):
         e_mask = offs_b[:, None] < BMax
         if not EVEN_D:
             e_mask = e_mask & (offs_d[None, :] < (D - d * BLOCK_D))
@@ -511,7 +506,9 @@ else:
         {
             k: (lambda args, _v=v: _v)
             for k, v in Config(
-                dict(BLOCK_B=128, BLOCK_V=128, BLOCK_D=32), num_warps=4, num_stages=4
+                {"BLOCK_B": 128, "BLOCK_V": 128, "BLOCK_D": 32},
+                num_warps=4,
+                num_stages=4,
             )
             .all_kwargs()
             .items()
@@ -664,10 +661,7 @@ def _backward_impl(
     assert e.is_contiguous()
     assert c.shape[1] == e.shape[1]
 
-    if valids is not None:
-        B = valids.size(0)
-    else:
-        B = e.size(0)
+    B = valids.size(0) if valids is not None else e.size(0)
 
     V, D = c.shape
     nd_locks = triton.cdiv(D, 64)
@@ -834,9 +828,9 @@ class _LinearCEBackward(torch.autograd.Function):
     ):
         (
             grad_bdim,
-            h_bdim,
+            _h_bdim,
             w_bdim,
-            lab_bdim,
+            _lab_bdim,
             sc_bdim,
             ii_bdim,
             dc_bdim,

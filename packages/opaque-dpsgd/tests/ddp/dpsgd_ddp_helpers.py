@@ -10,9 +10,9 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn as nn
 
+from opaque.distributed import sum_gradients, sync
 from opaque.dpsgd.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.distributed import sum_gradients, sync
 from opaque.functional import make_functional
 from opaque.pytree import tree_leaves
 from opaque.random import key

@@ -11,21 +11,21 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import os
 import random
 import re
 import shutil
 from dataclasses import field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
-from transformers.trainer import TRAINER_STATE_NAME
-from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
-from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME
 
 from opaque.serialization import state_dict as opaque_state_dict
 from opaque.types import ClipState, NoiseState
+from transformers.trainer import TRAINER_STATE_NAME
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
+from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME
 
 log = logging.getLogger(__name__)
 
@@ -41,34 +41,34 @@ DP_STATE_BUNDLE_VERSION = 3
 _CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")
 
 __all__ = [
-    "PREFIX_CHECKPOINT_DIR",
-    "WEIGHTS_NAME",
-    "SAFE_WEIGHTS_NAME",
-    "DP_OPTIMIZER_NAME",
-    "TRAINING_ARGS_NAME",
-    "TRAINER_STATE_NAME",
-    "DP_STATE_NAME",
     "DP_ACCOUNTANT_NAME",
+    "DP_OPTIMIZER_NAME",
     "DP_STATE_BUNDLE_VERSION",
+    "DP_STATE_NAME",
+    "PREFIX_CHECKPOINT_DIR",
     "RNG_STATE_NAME",
+    "SAFE_WEIGHTS_NAME",
+    "TRAINER_STATE_NAME",
+    "TRAINING_ARGS_NAME",
+    "WEIGHTS_NAME",
     "RuntimeCheckpoint",
-    "parse_checkpoint_step",
-    "list_checkpoints",
     "get_last_checkpoint",
-    "rotate_checkpoints",
-    "rng_state_path",
-    "snapshot_rng_state",
-    "restore_rng_state",
-    "save_dp_runtime_state",
+    "list_checkpoints",
     "load_dp_runtime_state",
+    "parse_checkpoint_step",
+    "restore_rng_state",
+    "rng_state_path",
+    "rotate_checkpoints",
+    "save_dp_runtime_state",
+    "snapshot_rng_state",
 ]
 
 
 def rng_state_path(ckpt_dir: str, *, rank: int = 0, world_size: int = 1) -> str:
     """Resolve the RNG-snapshot path for ``rank`` in a ``world_size``-process run."""
     if world_size <= 1:
-        return os.path.join(ckpt_dir, RNG_STATE_NAME)
-    return os.path.join(ckpt_dir, f"rng_state_{int(rank)}.pth")
+        return str(Path(ckpt_dir) / RNG_STATE_NAME)
+    return str(Path(ckpt_dir) / f"rng_state_{int(rank)}.pth")
 
 
 # ---------------------------------------------------------------------------
@@ -78,22 +78,22 @@ def rng_state_path(ckpt_dir: str, *, rank: int = 0, world_size: int = 1) -> str:
 
 def parse_checkpoint_step(path: str) -> int | None:
     """Extract the step number from a ``checkpoint-N`` directory name."""
-    m = _CHECKPOINT_RE.match(os.path.basename(path.rstrip(os.sep)))
+    m = _CHECKPOINT_RE.match(Path(path.rstrip("/\\")).name)
     return int(m.group(1)) if m is not None else None
 
 
 def list_checkpoints(folder: str) -> list[str]:
     """Return ``checkpoint-N`` subdirectories of ``folder`` sorted by step ascending."""
-    if not os.path.isdir(folder):
+    folder_path = Path(folder)
+    if not folder_path.is_dir():
         return []
     found: list[tuple[int, str]] = []
-    for name in os.listdir(folder):
-        full = os.path.join(folder, name)
-        if not os.path.isdir(full):
+    for child in folder_path.iterdir():
+        if not child.is_dir():
             continue
-        step = parse_checkpoint_step(name)
+        step = parse_checkpoint_step(child.name)
         if step is not None:
-            found.append((step, full))
+            found.append((step, str(child)))
     return [path for _, path in sorted(found)]
 
 
@@ -128,9 +128,9 @@ def rotate_checkpoints(
 
     protected: set[str] = {checkpoints[-1]}
     if best_model_checkpoint is not None:
-        best_abs = os.path.abspath(best_model_checkpoint)
+        best_abs = Path(best_model_checkpoint).resolve()
         for path in checkpoints:
-            if os.path.abspath(path) == best_abs:
+            if Path(path).resolve() == best_abs:
                 protected.add(path)
                 break
 

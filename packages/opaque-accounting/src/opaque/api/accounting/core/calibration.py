@@ -23,16 +23,13 @@ Example::
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from dataclasses import dataclass
-
-from opaque.api.accounting.core._base import DpProcess
-from opaque.api.accounting.core._native_cache import _clear_all_native_caches
+from typing import TYPE_CHECKING
 
 # Re-export budgets so ``from opaque.api.accounting.core.calibration import Budget``
 # and ``from opaque.accounting import calibration as cal; cal.epsilon_budget(...)``
 # work as convenience imports.
-from opaque.api.accounting.core._budgets import (  # noqa: F401
+from opaque.api.accounting.core._budgets import (
     AdvantageBudget,
     BetaBudget,
     Budget,
@@ -45,6 +42,12 @@ from opaque.api.accounting.core._budgets import (  # noqa: F401
     epsilon_budget,
     risk_budget,
 )
+from opaque.api.accounting.core._native_cache import _clear_all_native_caches
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from opaque.api.accounting.core._base import DpProcess
 
 # =============================================================================
 # Calibration

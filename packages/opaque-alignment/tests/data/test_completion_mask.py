@@ -23,10 +23,10 @@ import pytest
 
 transformers = pytest.importorskip("transformers")
 
-from transformers import PreTrainedTokenizerFast  # noqa: E402
-from tokenizers import Tokenizer, AddedToken  # noqa: E402
+from tokenizers import AddedToken, Tokenizer  # noqa: E402
 from tokenizers.models import BPE  # noqa: E402
 from tokenizers.pre_tokenizers import Whitespace  # noqa: E402
+from transformers import PreTrainedTokenizerFast  # noqa: E402
 
 from opaque.api.alignment.data._chat_template import (  # noqa: E402
     get_training_chat_template,
@@ -128,14 +128,14 @@ class TestApplyChatTemplateWithMask:
 
         # Every token flagged 1 must be an assistant-response token, and every
         # assistant-response token (and only those) must be flagged 1.
-        unmasked = [t for t, m in zip(tokens, mask) if m == 1]
+        unmasked = [t for t, m in zip(tokens, mask, strict=False) if m == 1]
         assert unmasked == _ASSISTANT_TOKENS, (
             f"completion_mask should be 1 only on {_ASSISTANT_TOKENS}; "
-            f"tokens/mask = {list(zip(tokens, mask))}"
+            f"tokens/mask = {list(zip(tokens, mask, strict=False))}"
         )
 
         # The system/user prompt tokens must all be masked to 0.
-        for token, m in zip(tokens, mask):
+        for token, m in zip(tokens, mask, strict=False):
             if token not in _ASSISTANT_TOKENS:
                 assert m == 0, f"prompt token {token!r} should be masked 0, got {m}"
 

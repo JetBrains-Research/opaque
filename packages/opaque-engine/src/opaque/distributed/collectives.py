@@ -10,10 +10,10 @@ from opaque.api.engine.distributed.collectives import (
 )
 
 __all__ = [
-    "is_distributed",
-    "get_rank",
-    "get_world_size",
     "all_reduce",
     "all_reduce_",
     "barrier",
+    "get_rank",
+    "get_world_size",
+    "is_distributed",
 ]

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import torch
 
-from opaque.types import clipped
-
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
+from opaque.types import clipped
 
 
 def test_default_compute_dtype_is_fp32():

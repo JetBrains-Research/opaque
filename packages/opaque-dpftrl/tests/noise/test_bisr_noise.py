@@ -5,8 +5,7 @@ import pytest
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.dpftrl.noise._bisr import BisrStrategy, bisr_strategy
 
-
-_PART = dict(n_steps=100, min_sep=25, max_participations=4)
+_PART = {"n_steps": 100, "min_sep": 25, "max_participations": 4}
 
 
 class TestBisrStrategy:
@@ -31,7 +30,7 @@ class TestBisrStrategy:
         assert bisr_strategy(bandwidth=4, momentum=0.95).sensitivity(**_PART) > 0
 
     def test_rejects_bad_bandwidth(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="bandwidth must be >= 2"):
             bisr_strategy(bandwidth=1)
 
 

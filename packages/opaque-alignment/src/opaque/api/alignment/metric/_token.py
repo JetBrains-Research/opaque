@@ -8,7 +8,10 @@ divide-by-zero on an all-masked batch via ``mask.sum().clamp(min=1)``.
 
 from __future__ import annotations
 
-import torch
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import torch
 
 __all__ = ["entropy_from_logits", "mean_token_accuracy"]
 

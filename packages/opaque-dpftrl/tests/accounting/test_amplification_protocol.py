@@ -39,9 +39,12 @@ def _poisson():
 def test_protocol_conformance(make):
     proc = make()
     assert isinstance(proc, MfAmplification)
-    assert isinstance(proc.n_steps, int) and proc.n_steps >= 1
-    assert isinstance(proc.min_sep, int) and proc.min_sep >= 1
-    assert isinstance(proc.max_participations, int) and proc.max_participations >= 1
+    assert isinstance(proc.n_steps, int)
+    assert proc.n_steps >= 1
+    assert isinstance(proc.min_sep, int)
+    assert proc.min_sep >= 1
+    assert isinstance(proc.max_participations, int)
+    assert proc.max_participations >= 1
 
 
 def test_balls_in_bins_formulas():

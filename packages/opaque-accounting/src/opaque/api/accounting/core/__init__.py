@@ -21,27 +21,18 @@ except ImportError as e:
         "-m packages/opaque-accounting/Cargo.toml"
     ) from e
 
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 
 try:
     __version__ = _pkg_version("opaque-accounting")
 except PackageNotFoundError:
     __version__ = "0.0.0"
 
-from . import (
-    amplification,
-    calibration,
-    composition,
-    discretization,
-    mechanisms,
-)
-
-from opaque.api.accounting.core._accountant import Accountant
-
 # Side-effect import: registers Accountant + DpProcess subclasses with
 # the unified ``opaque.api.base.serialization`` registry.
 import opaque.api.accounting.core._serialization  # noqa: F401
-
+from opaque.api.accounting.core._accountant import Accountant
 from opaque.api.accounting.core.calibration import (
     advantage_budget,
     beta_budget,
@@ -56,6 +47,14 @@ from opaque.api.accounting.core.discretization import (
     set_discretization,
 )
 from opaque.api.accounting.core.mechanisms import eps_delta, identity, nonprivate
+
+from . import (
+    amplification,
+    calibration,
+    composition,
+    discretization,
+    mechanisms,
+)
 
 __all__ = [
     "__version__",

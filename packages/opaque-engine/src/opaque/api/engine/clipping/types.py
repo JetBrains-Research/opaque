@@ -13,8 +13,7 @@ from opaque.api.engine.clipping._auto import (
     AutoClippedGradAux,
     AutoClipState,
 )
-from opaque.api.engine.clipping._clipped_fun import ClippedFunAux
-from opaque.api.engine.clipping._clipped_fun import FixedClipState
+from opaque.api.engine.clipping._clipped_fun import ClippedFunAux, FixedClipState
 from opaque.api.engine.clipping._clipped_grad import ClippedGradAux
 from opaque.api.engine.clipping._pytree import ClipPytreeAux
 from opaque.api.engine.clipping._types import ClippedGradFn, ClippedGradResult
@@ -25,8 +24,8 @@ __all__ = [
     "AutoClippedGradAux",
     "ClipPytreeAux",
     "ClippedFunAux",
-    "ClippedGradFn",
     "ClippedGradAux",
+    "ClippedGradFn",
     "ClippedGradResult",
     "FixedClipState",
 ]

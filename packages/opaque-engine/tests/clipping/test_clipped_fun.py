@@ -4,10 +4,9 @@ import pytest
 import torch
 from torch.func import grad
 
-from opaque.types import ClippedPytree
-
 from opaque.api.engine.clipping._clipped_fun import clipped_fun
 from opaque.api.engine.clipping._pytree import clip_pytree
+from opaque.types import ClippedPytree
 
 
 def _unwrap_clipped(value):
@@ -314,7 +313,8 @@ def test_clipped_fun_pytree_params():
     clipped_grads, _ = clipped_grad_fn(params, data, state=clip_state)
     clipped_grads = _unwrap_clipped(clipped_grads)
     assert isinstance(clipped_grads, dict)
-    assert "w" in clipped_grads and "b" in clipped_grads
+    assert "w" in clipped_grads
+    assert "b" in clipped_grads
     assert isinstance(clipped_grads["w"], torch.Tensor)
     assert isinstance(clipped_grads["b"], torch.Tensor)
 
@@ -347,11 +347,14 @@ def test_clipped_fun_nested_pytree_params():
     clipped_grads, _ = clipped_grad_fn(params, data, state=clip_state)
     clipped_grads = _unwrap_clipped(clipped_grads)
     assert isinstance(clipped_grads, dict)
-    assert "layer1" in clipped_grads and "layer2" in clipped_grads
+    assert "layer1" in clipped_grads
+    assert "layer2" in clipped_grads
     assert isinstance(clipped_grads["layer1"], dict)
     assert isinstance(clipped_grads["layer2"], dict)
-    assert "w" in clipped_grads["layer1"] and "b" in clipped_grads["layer1"]
-    assert "w" in clipped_grads["layer2"] and "b" in clipped_grads["layer2"]
+    assert "w" in clipped_grads["layer1"]
+    assert "b" in clipped_grads["layer1"]
+    assert "w" in clipped_grads["layer2"]
+    assert "b" in clipped_grads["layer2"]
     assert all(
         isinstance(clipped_grads[layer][key], torch.Tensor)
         for layer in ["layer1", "layer2"]

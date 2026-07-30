@@ -7,10 +7,12 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.types import noised  # noqa: E402
-from opaque.types import PerGroup  # noqa: E402
-from opaque.optimizers import adafactor  # noqa: E402
-from opaque.optimizers.types import AdafactorState  # noqa: E402
+from opaque.optimizers import adafactor
+from opaque.optimizers.types import AdafactorState
+from opaque.types import (
+    PerGroup,
+    noised,
+)
 
 
 @pytest.fixture
@@ -193,7 +195,7 @@ class TestBCMode:
             params=matrix_params,
         )
         af = _af_state(state)
-        path_to_phi = dict(zip(af.paths, af.phi_flat))
+        path_to_phi = dict(zip(af.paths, af.phi_flat, strict=False))
         # Group "attn" → σ=0.2 → variance 0.04 (× one-step EMA factor)
         # Group "mlp"  → σ=0.8 → variance 0.64
         # The two should differ proportionally to (0.04, 0.64).

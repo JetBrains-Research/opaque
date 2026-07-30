@@ -30,11 +30,11 @@ class Composed(DpProcess):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
-        kw = dict(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            max_grid_size=max_grid_size,
-        )
+        kw = {
+            "discretization": discretization,
+            "log_x_mass_truncation_bound": log_x_mass_truncation_bound,
+            "max_grid_size": max_grid_size,
+        }
         # Walk the left spine iteratively (mirrors __hash__) to avoid
         # O(depth) Python call stack on left-skewed trees.
         rights: list[DpProcess] = []

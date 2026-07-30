@@ -19,16 +19,14 @@ DP regression would silently break:
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 
 import pytest
 import torch
+from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model
 from peft import LoraConfig, TaskType, get_peft_model
 
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
-
-from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Fixtures (module-scoped: GPT-2 load is the slow part)
@@ -73,16 +71,16 @@ def lm_dataset(gpt2_tok):
 
 
 def _args(tmp_path, **overrides) -> TrainingArguments:
-    defaults = dict(
-        output_dir=str(tmp_path),
-        per_device_train_batch_size=4,
-        clipping_norm=1.0,
-        privacy_target_epsilon=10.0,
-        privacy_noise_multiplier=1.0,
-        use_cpu=True,
-        report_to=[],
-        max_steps=4,
-    )
+    defaults = {
+        "output_dir": str(tmp_path),
+        "per_device_train_batch_size": 4,
+        "clipping_norm": 1.0,
+        "privacy_target_epsilon": 10.0,
+        "privacy_noise_multiplier": 1.0,
+        "use_cpu": True,
+        "report_to": [],
+        "max_steps": 4,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 
@@ -111,10 +109,12 @@ def test_resume_from_save_only_model_checkpoint_is_refused(
     trainer.train()
 
     # Find a checkpoint and confirm it has accountant.json but no dp_state.
-    ckpts = [d for d in os.listdir(tmp_path) if d.startswith("checkpoint-")]
+    ckpts = [
+        d.name for d in Path(tmp_path).iterdir() if d.name.startswith("checkpoint-")
+    ]
     assert ckpts, "expected at least one checkpoint"
-    ckpt_dir = os.path.join(tmp_path, sorted(ckpts)[0])
-    assert os.path.exists(os.path.join(ckpt_dir, "accountant.json"))
+    ckpt_dir = Path(tmp_path) / min(ckpts)
+    assert (ckpt_dir / "accountant.json").exists()
 
     model2 = make_gpt2_model()
     model2.config.pad_token_id = tok.pad_token_id
@@ -259,8 +259,8 @@ def test_resume_keeps_total_epsilon_on_budget(gpt2_lora, lm_dataset, tmp_path):
         model=model2, args=args_part, train_dataset=lm_dataset, processing_class=tok
     )
     part.train()
-    ckpt = os.path.join(part_dir, "checkpoint-2")
-    assert os.path.isdir(ckpt)
+    ckpt = str(Path(part_dir) / "checkpoint-2")
+    assert Path(ckpt).is_dir()
 
     args_resume = _args(
         part_dir,
@@ -454,15 +454,15 @@ def test_epoch_driven_resume_does_not_overshoot_budget(gpt2_lora, lm_dataset, tm
     model, tok = gpt2_lora
     nm, delta = 1.0, 1e-5
     # batch 2 over 8 examples -> q=0.25 -> 4 steps/epoch; 2 epochs -> 8 total.
-    common = dict(
-        per_device_train_batch_size=2,
-        clipping_norm=1.0,
-        privacy_noise_multiplier=nm,
-        privacy_target_delta=delta,
-        use_cpu=True,
-        report_to=[],
-        num_train_epochs=2,
-    )
+    common = {
+        "per_device_train_batch_size": 2,
+        "clipping_norm": 1.0,
+        "privacy_noise_multiplier": nm,
+        "privacy_target_delta": delta,
+        "use_cpu": True,
+        "report_to": [],
+        "num_train_epochs": 2,
+    }
     args = TrainingArguments(
         output_dir=str(tmp_path), save_strategy="steps", save_steps=3, **common
     )
@@ -470,8 +470,8 @@ def test_epoch_driven_resume_does_not_overshoot_budget(gpt2_lora, lm_dataset, tm
         model=model, args=args, train_dataset=lm_dataset, processing_class=tok
     )
     trainer.train()
-    ckpt = os.path.join(tmp_path, "checkpoint-3")  # mid epoch 0 (steps 1-4)
-    assert os.path.isdir(ckpt)
+    ckpt = str(Path(tmp_path) / "checkpoint-3")  # mid epoch 0 (steps 1-4)
+    assert Path(ckpt).is_dir()
 
     model2 = make_gpt2_model()
     model2.config.pad_token_id = tok.pad_token_id
@@ -512,7 +512,8 @@ def test_multi_dataset_eval_namespaces_metrics(gpt2_lora, lm_dataset, tmp_path):
     metrics = trainer.evaluate(eval_dataset={"a": lm_dataset, "b": lm_dataset})
     assert any(k.startswith("eval_a_") for k in metrics)
     assert any(k.startswith("eval_b_") for k in metrics)
-    assert "eval_a_loss" in metrics and "eval_b_loss" in metrics
+    assert "eval_a_loss" in metrics
+    assert "eval_b_loss" in metrics
 
 
 def test_partial_checkpoint_tmp_dir_is_ignored(gpt2_lora, lm_dataset, tmp_path):
@@ -534,4 +535,5 @@ def test_partial_checkpoint_tmp_dir_is_ignored(gpt2_lora, lm_dataset, tmp_path):
     found = ckpt.list_checkpoints(str(tmp_path))
     assert all(not p.endswith(".tmp") for p in found)
     last = ckpt.get_last_checkpoint(str(tmp_path))
-    assert last is not None and last.endswith("checkpoint-2")  # not the .tmp
+    assert last is not None
+    assert last.endswith("checkpoint-2")

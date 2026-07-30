@@ -90,7 +90,7 @@ class TestEpsilonAt:
     """Tests for eps_delta().epsilon_at()."""
 
     def test_perfect_separation(self):
-        estimate = _make_estimate(list(range(100, 150)), list(range(0, 50)))
+        estimate = _make_estimate(list(range(100, 150)), list(range(50)))
         eps = estimate.eps_delta().epsilon_at(significance=0.05, delta=0, threshold=75)
         assert eps > 0
 
@@ -240,11 +240,11 @@ class TestAucCI:
 
     def test_invalid_confidence(self):
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="confidence must be in"):
             estimate.attack_auc(confidence=0.0)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="confidence must be in"):
             estimate.attack_auc(confidence=1.0)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="confidence must be in"):
             estimate.attack_auc(confidence=-0.1)
 
 

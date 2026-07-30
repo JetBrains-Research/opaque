@@ -66,6 +66,11 @@ hardware backend automatically skip when it is unavailable; see the
 [test-marker reference](https://github.com/JetBrains-Research/opaque/blob/main/CONTRIBUTING.md#test-markers-and-filtering)
 for the available selections.
 
+Lint rules that need a dedicated migration (typing, docstrings, exception
+taxonomy, complexity) are tracked in
+[Ruff deferred-rule workstreams](ruff-deferred-workstreams.md) — do not
+enable those families in a drive-by Format Python PR.
+
 ## Submit a pull request
 
 Use a focused branch from your fork, add regression coverage for behavior

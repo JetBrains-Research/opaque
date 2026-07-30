@@ -9,6 +9,7 @@ typical use cases in DP training:
 
 from __future__ import annotations
 
+import contextlib
 import os
 import secrets
 
@@ -102,10 +103,8 @@ def set_reproducible_pytorch_seed(key_val: RngKey) -> None:
         torch.mps.manual_seed(int(torch_gpu_seed))
 
     # Set numpy seed if available
-    try:
+    with contextlib.suppress(ImportError, RuntimeError):
         np.random.seed(int(numpy_seed))
-    except (ImportError, RuntimeError):
-        pass  # numpy not available or already seeded
 
     # Configure CUDNN for deterministic behavior
     torch.backends.cudnn.deterministic = True
@@ -113,11 +112,8 @@ def set_reproducible_pytorch_seed(key_val: RngKey) -> None:
 
     # Set PyTorch deterministic algorithms (PyTorch >= 1.11)
     # May reduce performance and may raise errors if operations lack deterministic implementations
-    try:
+    with contextlib.suppress(AttributeError, RuntimeError):
         torch.use_deterministic_algorithms(True)
-    except (AttributeError, RuntimeError):
-        # Older PyTorch or flag already set - silently ignore
-        pass
 
     # Configure cuBLAS for deterministic behavior
     # Format: ":size" or ":size:seed" (we use ":16:8" - 16MB workspace with seed)

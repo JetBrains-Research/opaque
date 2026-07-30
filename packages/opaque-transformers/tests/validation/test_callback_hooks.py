@@ -14,18 +14,15 @@ Covers:
 from __future__ import annotations
 
 import dataclasses
-import os
 from typing import Any
 
 import pytest
 import torch
+from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import TrainerCallback
 
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
-
-from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Local fixtures (kept here so the file is self-contained for callback work).
@@ -75,17 +72,17 @@ def _args(tmp_path, **overrides) -> TrainingArguments:
     # ``use_cpu=True``: pin to CPU so the trainer's ``args.device``
     # resolves to CPU regardless of the host (the LoRA fixture creates
     # a CPU-resident model).
-    defaults: dict[str, Any] = dict(
-        output_dir=str(tmp_path),
-        per_device_train_batch_size=2,
-        privacy_target_epsilon=10.0,
-        privacy_noise_multiplier=1.0,
-        max_steps=4,
-        num_train_epochs=1,
-        logging_steps=1,
-        save_strategy="no",
-        use_cpu=True,
-    )
+    defaults: dict[str, Any] = {
+        "output_dir": str(tmp_path),
+        "per_device_train_batch_size": 2,
+        "privacy_target_epsilon": 10.0,
+        "privacy_noise_multiplier": 1.0,
+        "max_steps": 4,
+        "num_train_epochs": 1,
+        "logging_steps": 1,
+        "save_strategy": "no",
+        "use_cpu": True,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 
@@ -283,7 +280,7 @@ class TestControlFlags:
         trainer.train()
 
         # save_strategy='no' but the callback forced should_save=True at step 2.
-        assert os.path.isdir(os.path.join(str(tmp_path), "checkpoint-2"))
+        assert (tmp_path / "checkpoint-2").is_dir()
 
 
 # ---------------------------------------------------------------------------

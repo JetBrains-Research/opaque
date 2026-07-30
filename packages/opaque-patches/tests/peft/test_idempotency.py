@@ -9,7 +9,7 @@ pytest.importorskip("transformers")
 pytest.importorskip("peft")
 
 from peft import LoraConfig, get_peft_model
-from transformers import LlamaConfig, AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, LlamaConfig
 
 from opaque.patches import apply_model_patches
 

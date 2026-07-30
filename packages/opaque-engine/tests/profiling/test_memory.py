@@ -8,8 +8,7 @@ import pytest
 import torch
 
 from opaque.profiling import PerfState, StepPerf, get_memory_stats, step_perf
-from opaque.profiling.types import MemoryStats  # noqa: F401
-
+from opaque.profiling.types import MemoryStats
 
 # Test on available devices
 DEVICES = ["cpu"]

@@ -22,11 +22,11 @@ Notes
 - Handles microbatching for memory efficiency in gradient clipping.
 """
 
-from collections.abc import Callable  # noqa: E402
-from typing import Any  # noqa: E402
+from collections.abc import Callable
+from typing import Any
 
-import optree as _ot  # noqa: E402
-import torch  # noqa: E402
+import optree as _ot
+import torch
 
 
 def tree_leaves(tree: Any) -> list[torch.Tensor]:
@@ -70,8 +70,6 @@ def tree_map(fn: Callable[..., Any], *trees: Any) -> Any:
 def tree_map_with_path(
     fn: Callable[[tuple[Any, ...], Any], Any],
     tree: Any,
-    *,
-    namespace: str = "",
 ) -> Any:
     """Apply function to leaves with their path in the tree.
 
@@ -80,7 +78,6 @@ def tree_map_with_path(
     Args:
         fn: Function that takes (path, leaf) where path is a tuple of keys
         tree: PyTree to traverse
-        namespace: Optional namespace prefix for paths
 
     Returns:
         PyTree with same structure, with fn applied to (path, leaf)
@@ -97,9 +94,9 @@ def tree_map_with_path(
 
     def _traverse(path: tuple, subtree: Any) -> Any:
         if isinstance(subtree, dict):
-            return {k: _traverse(path + (k,), v) for k, v in subtree.items()}
+            return {k: _traverse((*path, k), v) for k, v in subtree.items()}
         elif isinstance(subtree, (list, tuple)):
-            result = [_traverse(path + (i,), v) for i, v in enumerate(subtree)]
+            result = [_traverse((*path, i), v) for i, v in enumerate(subtree)]
             return type(subtree)(result)
         else:
             # Leaf node
@@ -150,20 +147,20 @@ def partition(
             true_dict = {}
             false_dict = {}
             for k, v in subtree.items():
-                true_part, false_part = _partition_subtree(path + (k,), v)
+                true_part, false_part = _partition_subtree((*path, k), v)
                 if true_part is not None:
                     true_dict[k] = true_part
                 if false_part is not None:
                     false_dict[k] = false_part
             return (
-                true_dict if true_dict else None,
-                false_dict if false_dict else None,
+                true_dict or None,
+                false_dict or None,
             )
         elif isinstance(subtree, (list, tuple)):
             true_list = []
             false_list = []
             for i, v in enumerate(subtree):
-                true_part, false_part = _partition_subtree(path + (i,), v)
+                true_part, false_part = _partition_subtree((*path, i), v)
                 true_list.append(true_part)
                 false_list.append(false_part)
             # Keep same type (list vs tuple)
@@ -367,10 +364,10 @@ def global_norm(
 
 
 __all__ = [
+    "global_norm",
+    "merge",
+    "partition",
     "tree_leaves",
     "tree_map",
     "tree_map_with_path",
-    "partition",
-    "merge",
-    "global_norm",
 ]

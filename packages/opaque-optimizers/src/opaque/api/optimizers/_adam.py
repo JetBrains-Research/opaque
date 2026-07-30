@@ -51,7 +51,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -63,15 +63,16 @@ except ImportError as exc:
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
 
-from opaque.types import PerGroup, TensorPytree
-from opaque.pytree import tree_map
 from opaque.api.optimizers._bias_correction import (
     is_per_group,
     resolve_noise_variance,
     update_phi_ema,
 )
 from opaque.api.optimizers._chain import make_optimizer_chain
+from opaque.pytree import tree_map
 
+if TYPE_CHECKING:
+    from opaque.types import PerGroup, TensorPytree
 
 _LR = float | Callable[[int], float]
 
@@ -145,8 +146,8 @@ def _scale_by_adam(
         updates: Any,
         state: AdamState,
         *,
-        params: Any = None,  # noqa: ARG001
-        inplace: bool = False,  # noqa: ARG001
+        params: Any = None,
+        inplace: bool = False,
         noise_stddev: float | PerGroup | None = None,
         noisy_squared_grads: Any = None,
     ) -> tuple[Any, AdamState]:
@@ -383,4 +384,4 @@ def _validate(
         )
 
 
-__all__ = ["adam", "adamw", "AdamState"]
+__all__ = ["AdamState", "adam", "adamw"]

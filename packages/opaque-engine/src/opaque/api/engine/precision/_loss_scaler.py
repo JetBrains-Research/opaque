@@ -47,13 +47,14 @@ determined by ``init_scale`` at factory time.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import torch
 
 from opaque.pytree import tree_leaves, tree_map
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 __all__ = ["LossScaler", "LossScalerState", "all_finite", "loss_scaler"]
 

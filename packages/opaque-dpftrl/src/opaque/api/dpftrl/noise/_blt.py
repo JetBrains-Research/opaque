@@ -18,25 +18,37 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 import torch
 
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
-from opaque.api.engine.scheduling.types import Schedule
 
 from ._band_mf import _momentum_workload_coef
 from ._blt_math import (
     BufferedToeplitz,
+)
+from ._blt_math import (
     inverse_as_streaming_matrix as _blt_inverse_as_streaming_matrix,
+)
+from ._blt_math import (
     optimize as _blt_optimize,
+)
+from ._blt_math import (
     sensitivity_squared as _blt_sensitivity_squared,
+)
+from ._blt_math import (
     toeplitz_coefs as _blt_toeplitz_coefs,
 )
 from ._sensitivity import minsep_true_max_participations
-from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import (
     minsep_sensitivity_squared as _toeplitz_minsep_sensitivity_squared,
 )
+
+if TYPE_CHECKING:
+    from opaque.api.engine.scheduling.types import Schedule
+
+    from ._streaming_matrix import StreamingMatrix
 
 
 def _native():

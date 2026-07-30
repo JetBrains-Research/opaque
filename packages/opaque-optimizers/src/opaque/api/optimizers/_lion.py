@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -32,10 +32,11 @@ except ImportError as exc:
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
 
-from opaque.types import TensorPytree
-from opaque.pytree import tree_map
 from opaque.api.optimizers._chain import make_optimizer_chain
+from opaque.pytree import tree_map
 
+if TYPE_CHECKING:
+    from opaque.types import TensorPytree
 
 _LR = float | Callable[[int], float]
 
@@ -58,8 +59,8 @@ def _scale_by_lion(b1: float, b2: float) -> GradientTransformation:
         updates: Any,
         state: LionState,
         *,
-        params: Any = None,  # noqa: ARG001
-        inplace: bool = False,  # noqa: ARG001
+        params: Any = None,
+        inplace: bool = False,
     ) -> tuple[Any, LionState]:
         # Direction: sign of (b1 * m + (1-b1) * g).
         direction = tree_map(
@@ -112,4 +113,4 @@ def lion(
     )
 
 
-__all__ = ["lion", "LionState"]
+__all__ = ["LionState", "lion"]

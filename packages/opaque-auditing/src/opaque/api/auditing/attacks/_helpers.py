@@ -31,7 +31,7 @@ def _merge_args(
     n_total = len(args) + len(batch_argnums)
     result: list[Any] = [None] * n_total
 
-    for pos, tensor in zip(batch_argnums, batch_tensors):
+    for pos, tensor in zip(batch_argnums, batch_tensors, strict=False):
         result[pos] = tensor
 
     arg_iter = iter(args)

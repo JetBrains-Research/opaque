@@ -23,7 +23,6 @@ import torch
 
 from opaque.api.transformers.trainer._training_arguments import TrainingArguments
 
-
 # ----------------------------------------------------------------------------
 # Helper: build minimal args (skip output_dir / privacy fields by
 # providing only what _setup_devices reads).
@@ -31,12 +30,12 @@ from opaque.api.transformers.trainer._training_arguments import TrainingArgument
 
 
 def _args(**kwargs) -> TrainingArguments:
-    defaults = dict(
-        output_dir=None,
-        privacy_target_epsilon=10.0,
-        privacy_noise_multiplier=1.0,
-        save_strategy="no",
-    )
+    defaults = {
+        "output_dir": None,
+        "privacy_target_epsilon": 10.0,
+        "privacy_noise_multiplier": 1.0,
+        "save_strategy": "no",
+    }
     defaults.update(kwargs)
     return TrainingArguments(**defaults)
 

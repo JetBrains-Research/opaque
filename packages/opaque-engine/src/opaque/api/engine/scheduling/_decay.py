@@ -16,7 +16,10 @@ at runtime but won't round-trip through the universal serializer.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 __all__ = ["NAMED_DECAYS", "resolve_decay"]
 

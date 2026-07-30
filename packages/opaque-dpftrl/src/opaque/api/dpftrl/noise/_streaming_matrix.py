@@ -16,11 +16,13 @@ Example:
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
-from typing import Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 import optree as _ot
 import torch
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 State = TypeVar("State")
 

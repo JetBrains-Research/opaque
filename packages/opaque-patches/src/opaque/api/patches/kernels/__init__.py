@@ -15,32 +15,32 @@ import torch.nn.functional as F
 try:
     # Loss functions
     from .cross_entropy import opaque_cross_entropy_loss, opaque_selective_log_softmax
+    from .fused_add_rms_norm import opaque_fused_add_rms_norm
+    from .geglu import opaque_geglu_approx, opaque_geglu_exact
     from .linear_cross_entropy import opaque_linear_cross_entropy_loss
-
-    # Activation functions
-    from .swiglu import opaque_swiglu
-    from .geglu import opaque_geglu_exact, opaque_geglu_approx
-
-    # Position embeddings
-    from .rope_embedding import opaque_rope, opaque_rope_qk, opaque_slow_rope
 
     # LoRA kernels
     from .lora import (
-        opaque_lora_w,
-        opaque_lora_qkv,
-        opaque_lora_mlp,
-        ACTIVATION_SWIGLU,
-        ACTIVATION_GEGLU_EXACT,
         ACTIVATION_GEGLU_APPROX,
+        ACTIVATION_GEGLU_EXACT,
+        ACTIVATION_SWIGLU,
+        opaque_lora_mlp,
+        opaque_lora_qkv,
+        opaque_lora_w,
     )
-    from .rms_norm import opaque_rms_norm
-    from .fused_add_rms_norm import opaque_fused_add_rms_norm
 
     # MoE expert FFN — single public op. ``opaque_moe`` transparently uses the
     # sparse grouped-GEMM Triton kernel on CUDA bf16/fp16 and the dense torch path
     # otherwise; fused-ness is an internal detail (like ``opaque_cross_entropy_loss``
     # chunking over large vocab), not a separate op, so it is not exported.
     from .moe import opaque_moe
+    from .rms_norm import opaque_rms_norm
+
+    # Position embeddings
+    from .rope_embedding import opaque_rope, opaque_rope_qk, opaque_slow_rope
+
+    # Activation functions
+    from .swiglu import opaque_swiglu
 except ModuleNotFoundError as import_error:
     if import_error.name != "triton":
         raise

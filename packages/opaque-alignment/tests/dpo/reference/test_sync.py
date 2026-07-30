@@ -15,7 +15,6 @@ import torch
 
 from opaque.api.alignment.dpo.reference._sync import ema_update_reference
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

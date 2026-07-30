@@ -2,4 +2,4 @@
 
 from opaque.api.accounting.dpsgd.mechanisms import adaclip, gaussian
 
-__all__ = ["gaussian", "adaclip"]
+__all__ = ["adaclip", "gaussian"]

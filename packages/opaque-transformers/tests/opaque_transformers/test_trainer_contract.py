@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import inspect
 
 import torch
@@ -39,16 +38,16 @@ class _UserCallback(TrainerCallback):
 
 
 def _args(tmp_path, **overrides) -> TrainingArguments:
-    defaults = dict(
-        output_dir=str(tmp_path),
-        save_strategy="no",
-        use_cpu=True,
+    defaults = {
+        "output_dir": str(tmp_path),
+        "save_strategy": "no",
+        "use_cpu": True,
         # ``_LogitsOnlyModel`` is a synthetic test fixture; not in
         # opaque's family registry — silence the info log.
-        use_compat_patches=False,
-        privacy_target_epsilon=10.0,
-        privacy_noise_multiplier=1.0,
-    )
+        "use_compat_patches": False,
+        "privacy_target_epsilon": 10.0,
+        "privacy_noise_multiplier": 1.0,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 
@@ -191,7 +190,7 @@ def test_public_save_model_writes_training_args(tmp_path):
 
     trainer.save_model()
 
-    assert os.path.exists(tmp_path / "training_args.bin")
+    assert (tmp_path / "training_args.bin").exists()
 
 
 def test_train_signature_keeps_hf_subset():

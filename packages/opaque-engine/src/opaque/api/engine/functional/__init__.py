@@ -5,11 +5,11 @@ particularly for converting stateful nn.Module objects to functional form
 compatible with torch.func transformations.
 """
 
-from collections.abc import Callable  # noqa: E402
-import functools  # noqa: E402
+import functools
+from collections.abc import Callable
 
-import torch  # noqa: E402
-import torch.nn as nn  # noqa: E402
+import torch
+import torch.nn as nn
 
 
 def make_functional(
@@ -280,7 +280,7 @@ def with_batch_dim(
 
     # Normalize batch_kwargs: tuple → dict using global min_ndim
     if isinstance(batch_kwargs, tuple):
-        batch_kwargs_dict: dict[str, int | None] = {k: min_ndim for k in batch_kwargs}
+        batch_kwargs_dict: dict[str, int | None] = dict.fromkeys(batch_kwargs, min_ndim)
     else:
         batch_kwargs_dict = dict(batch_kwargs)
 
@@ -362,4 +362,4 @@ def with_batch_dim(
 
 from opaque.api.engine.functional._collate import empty_collate  # noqa: E402
 
-__all__ = ["make_functional", "with_batch_dim", "empty_collate"]
+__all__ = ["empty_collate", "make_functional", "with_batch_dim"]

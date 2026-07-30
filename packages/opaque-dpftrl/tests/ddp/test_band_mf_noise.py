@@ -7,20 +7,19 @@ from pathlib import Path
 
 import pytest
 import torch
-
 from dpftrl_ddp_helpers import (
     TinyModel,
     _fixed_sd_tiny,
     _spawn,
     _worker_band_parity,
 )
+
 from opaque.distributed import sum_gradients
 from opaque.dpftrl.clipping import clipped_grad
 from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
 from opaque.functional import make_functional
 from opaque.pytree import tree_map
 from opaque.random import key
-
 
 pytestmark = pytest.mark.cuda
 

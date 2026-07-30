@@ -23,7 +23,10 @@ non-detached weight would couple the gradient through the probability term.
 
 from __future__ import annotations
 
-import torch
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import torch
 
 __all__ = ["wpo_weights"]
 

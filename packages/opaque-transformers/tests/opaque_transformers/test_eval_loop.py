@@ -20,7 +20,6 @@ from opaque.api.transformers.trainer._eval import (
     with_metric_prefix,
 )
 
-
 # ---------------------------------------------------------------------------
 # Stand-in args object
 # ---------------------------------------------------------------------------
@@ -138,7 +137,7 @@ class TestPredictionAccumulator:
                 inputs=torch.zeros(2, dtype=torch.long),
                 batch_size=2,
             )
-        preds, labels, inputs, losses = acc.finalize()
+        preds, labels, _inputs, losses = acc.finalize()
         assert preds is None
         assert labels is None
         assert losses is not None
@@ -153,8 +152,10 @@ class TestPredictionAccumulator:
         for _ in range(3):
             _add_batch(acc, 0.5)
         preds, labels, _, _ = acc.finalize()
-        assert isinstance(preds, list) and len(preds) == 3
-        assert isinstance(labels, list) and len(labels) == 3
+        assert isinstance(preds, list)
+        assert len(preds) == 3
+        assert isinstance(labels, list)
+        assert len(labels) == 3
 
     def test_accumulation_steps_flush_cadence(self):
         # 5 batches with eval_accumulation_steps=2 → flushes after batch 2

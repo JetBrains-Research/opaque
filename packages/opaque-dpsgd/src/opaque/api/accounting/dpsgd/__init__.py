@@ -10,4 +10,4 @@ from opaque.api.accounting.dpsgd.amplification import (
 )
 from opaque.api.accounting.dpsgd.mechanisms import adaclip, gaussian
 
-__all__ = ["gaussian", "adaclip", "poisson", "parallel_poisson"]
+__all__ = ["adaclip", "gaussian", "parallel_poisson", "poisson"]
