@@ -70,8 +70,6 @@ def tree_map(fn: Callable[..., Any], *trees: Any) -> Any:
 def tree_map_with_path(
     fn: Callable[[tuple[Any, ...], Any], Any],
     tree: Any,
-    *,
-    _namespace: str = "",
 ) -> Any:
     """Apply function to leaves with their path in the tree.
 
@@ -80,7 +78,6 @@ def tree_map_with_path(
     Args:
         fn: Function that takes (path, leaf) where path is a tuple of keys
         tree: PyTree to traverse
-        namespace: Optional namespace prefix for paths
 
     Returns:
         PyTree with same structure, with fn applied to (path, leaf)
