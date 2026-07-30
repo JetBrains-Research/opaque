@@ -210,7 +210,9 @@ class Accountant:
             return False
 
         achieved = self._budget.evaluate(self.process)
-        return achieved > self._budget.value
+        if self._budget.decreasing:
+            return achieved > self._budget.value
+        return achieved < self._budget.value
 
 
 def _accountant_state_dict(acct: Accountant) -> dict[str, Any]:

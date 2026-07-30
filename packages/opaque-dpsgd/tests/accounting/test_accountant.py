@@ -210,6 +210,34 @@ class TestAccountantBudget:
         # Should not raise
         _ = acct.budget_exceeded
 
+    @pytest.mark.parametrize(
+        ("evaluate", "make_budget"),
+        [
+            (
+                lambda process: process.beta_at(0.1),
+                lambda value: acc.beta_budget(value, alpha=0.1),
+            ),
+            (
+                lambda process: process.risk_at(0.5),
+                lambda value: acc.risk_budget(value, prior=0.5),
+            ),
+        ],
+        ids=["beta", "risk"],
+    )
+    def test_privacy_gain_budget_direction(self, evaluate, make_budget):
+        """Beta and risk budgets are exceeded when achieved privacy is too low."""
+        process = dpsgd_acc.gaussian(1.0)
+        achieved = evaluate(process)
+
+        stricter_budget = make_budget(achieved + (1.0 - achieved) / 2.0)
+        assert Accountant(budget=stricter_budget, prefix=process).budget_exceeded
+
+        equal_budget = make_budget(achieved)
+        assert not Accountant(budget=equal_budget, prefix=process).budget_exceeded
+
+        looser_budget = make_budget(achieved / 2.0)
+        assert not Accountant(budget=looser_budget, prefix=process).budget_exceeded
+
 
 # ============================================================================
 # Functional properties & API consistency
