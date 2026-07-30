@@ -38,7 +38,7 @@ Permanent ignores that are **not** workstreams (document only):
 | `E501` | Formatter owns line length |
 | `RUF001` / `RUF002` / `RUF003` | Intentional unicode in math strings / docs / comments |
 | `RUF022` | Alphabetical `__all__` destroys thematic section comments |
-| `ARG004` (+ kernel / optimizer / test ARG per-file) | Fixed `autograd.Function` / vmap / torchopt signatures |
+| `ARG004` (+ kernel / optimizer / test / checkpoint ARG per-file) | Fixed `autograd.Function` / vmap / torchopt / monkeypatch signatures — keyword names like `create_graph=` must stay even when unused |
 | `INP001` on `**/tests/**`, `tests/**`, `packages/*/src/opaque/*.py` | Pytest trees and PEP 420 façades must not grow `__init__.py` |
 
 ---
