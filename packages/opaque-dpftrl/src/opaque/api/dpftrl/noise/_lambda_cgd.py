@@ -31,7 +31,12 @@ from opaque.pytree import tree_map
 from opaque.random import fold_in as rng_fold_in
 from opaque.random import generator_from_key
 
-from ._engine import MFNoiseState, _check_mf_horizon, _iid_normal_noise
+from ._engine import (
+    MFNoiseState,
+    _check_mf_horizon,
+    _iid_normal_noise,
+    _require_positive_int_horizon,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -201,8 +206,7 @@ def _make_lambda_cgd_noise(
     :class:`NoisedPytree.noise_stddev` (= ``base_σ · row_l2_at(step)``).
     Adam-family bias correction reads that realized σ.
     """
-    if n_steps < 1:
-        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+    n_steps = _require_positive_int_horizon(n_steps)
 
     lambda_ = strategy.lambda_
     normalized = strategy.normalized

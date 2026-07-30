@@ -196,6 +196,19 @@ def _check_mf_horizon(step: int, n_steps: int) -> None:
         )
 
 
+def _require_positive_int_horizon(n_steps: object) -> int:
+    """Validate a calibrated MF horizon as a positive ``int``.
+
+    Rejects bools and non-integers (``int(2.9)`` truncation would silently
+    shrink the horizon).  Returns the validated value for callers to latch.
+    """
+    if isinstance(n_steps, bool) or not isinstance(n_steps, int):
+        raise TypeError(f"n_steps must be an int, got {type(n_steps).__name__}")
+    if n_steps < 1:
+        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+    return n_steps
+
+
 def _matrix_factorization_noise(
     grad_template: Any,
     noising: torch.Tensor | streaming_matrix.StreamingMatrix,
@@ -265,9 +278,9 @@ def _tensor_mf_noise(
     """(noise_fn, state) from a 2D noising matrix C^{-1}."""
     if noising.ndim != 2:
         raise ValueError(f"Expected 2D matrix, found shape {noising.shape}")
-    horizon = noising.shape[0] if n_steps is None else int(n_steps)
-    if horizon < 1:
-        raise ValueError(f"n_steps must be >= 1, got {horizon}")
+    horizon = (
+        noising.shape[0] if n_steps is None else _require_positive_int_horizon(n_steps)
+    )
     if horizon > noising.shape[0]:
         raise ValueError(
             f"n_steps ({horizon}) exceeds noising matrix rows ({noising.shape[0]})."
@@ -355,8 +368,7 @@ def _streaming_mf_noise(
     ``n_steps`` keep the previous unbounded behaviour (tests that drive
     a streaming matrix without a declared horizon).
     """
-    if n_steps is not None and n_steps < 1:
-        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+    horizon = None if n_steps is None else _require_positive_int_horizon(n_steps)
     streaming_state = noising.init_multiply(grad_template)
     state = MFNoiseState(
         _inner_state=streaming_state,
@@ -366,8 +378,8 @@ def _streaming_mf_noise(
 
     def noise_fn(clipped_grads, st, *, stddev: float | PerGroup):
         step = st._step_counter
-        if n_steps is not None:
-            _check_mf_horizon(step, n_steps)
+        if horizon is not None:
+            _check_mf_horizon(step, horizon)
         step_key = rng_fold_in(st._rng_key, step)
         g = generator_from_key(step_key)
         s_state = st._inner_state

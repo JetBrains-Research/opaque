@@ -157,3 +157,59 @@ class TestDenseEngineHorizonGuard:
         for _ in range(20):
             _, state = noise_fn({"w": torch.zeros(8)}, state, stddev=1.0)
         assert state._step_counter == 20
+
+
+class TestNStepsTypeValidation:
+    def test_dense_rejects_float_n_steps(self):
+        with pytest.raises(TypeError, match=r"n_steps must be an int"):
+            _matrix_factorization_noise(
+                {"w": torch.zeros(8)},
+                torch.eye(5, dtype=torch.float64),
+                key=key(0),
+                n_steps=2.9,  # type: ignore[arg-type]
+            )
+
+    def test_streaming_rejects_float_n_steps(self):
+        with pytest.raises(TypeError, match=r"n_steps must be an int"):
+            _matrix_factorization_noise(
+                {"w": torch.zeros(8)},
+                identity(),
+                key=key(0),
+                n_steps=5.5,  # type: ignore[arg-type]
+            )
+
+    def test_lambda_cgd_rejects_float_n_steps(self):
+        with pytest.raises(TypeError, match=r"n_steps must be an int"):
+            mf_gaussian_noise(
+                {"w": torch.zeros(8)},
+                lambda_cgd_strategy(lambda_=0.9),
+                n_steps=4.2,  # type: ignore[arg-type]
+                noise_multiplier=1.0,
+                key=key(0),
+            )
+
+    def test_rejects_bool_n_steps(self):
+        with pytest.raises(TypeError, match=r"n_steps must be an int"):
+            _matrix_factorization_noise(
+                {"w": torch.zeros(8)},
+                torch.eye(5, dtype=torch.float64),
+                key=key(0),
+                n_steps=True,  # type: ignore[arg-type]
+            )
+
+
+class TestRowL2HorizonGuard:
+    def test_band_mf_row_l2_raises_value_error_past_horizon(self):
+        from opaque.api.dpftrl.noise._mf_gaussian_noise import _make_raw_mf_noise
+
+        _, _, row_l2_at = _make_raw_mf_noise(
+            {"w": torch.zeros(8)},
+            band_mf_strategy(bands=3),
+            n_steps=4,
+            min_sep=1,
+            max_participations=1,
+            key=key(0),
+        )
+        assert row_l2_at(0) > 0.0
+        with pytest.raises(ValueError, match=_HORIZON_MATCH):
+            row_l2_at(4)
