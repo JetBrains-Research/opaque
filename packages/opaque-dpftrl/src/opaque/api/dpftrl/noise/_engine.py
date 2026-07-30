@@ -109,19 +109,13 @@ def _iid_normal_noise(
             raise
 
     if isinstance(stddev, PerGroup):
-        if not isinstance(target_tree, dict):
-            raise TypeError(
-                "PerGroup stddev for MF noise requires a flat dict of tensors "
-                "(matching make_functional trainable params), got "
-                f"{type(target_tree).__name__}."
-            )
+        from opaque.api.engine.clipping._per_group import require_flat_param_dict
+
+        target_tree = require_flat_param_dict(
+            target_tree, context="PerGroup stddev for MF noise"
+        )
         out: dict[str, Any] = {}
         for param_key, tensor in target_tree.items():
-            if not isinstance(tensor, torch.Tensor):
-                raise TypeError(
-                    "PerGroup MF noise expects dict[str, Tensor] leaves; "
-                    f"got {type(tensor).__name__} for key {param_key!r}."
-                )
             leaf_std = stddev.for_key(param_key)
             noise = _randn_on_device(
                 tensor.shape,
@@ -301,12 +295,11 @@ def _tensor_mf_noise(
         matrix_row_base = noising[step_index]
 
         if isinstance(stddev, PerGroup):
-            if not isinstance(clipped_grads, dict):
-                raise TypeError(
-                    "PerGroup stddev for dense MF noise requires a flat dict of "
-                    "tensors (matching make_functional trainable params), got "
-                    f"{type(clipped_grads).__name__}."
-                )
+            from opaque.api.engine.clipping._per_group import require_flat_param_dict
+
+            clipped_grads = require_flat_param_dict(
+                clipped_grads, context="PerGroup stddev for dense MF noise"
+            )
 
             def add_noise_keyed(param_key: str, grad_tensor: torch.Tensor):
                 eff = stddev.for_key(param_key)
@@ -320,14 +313,7 @@ def _tensor_mf_noise(
                 )
                 return (grad_tensor + noise).to(grad_tensor.dtype)
 
-            noisy_grads = {}
-            for k, v in clipped_grads.items():
-                if not isinstance(v, torch.Tensor):
-                    raise TypeError(
-                        "PerGroup dense MF noise expects dict[str, Tensor] leaves; "
-                        f"got {type(v).__name__} for key {k!r}."
-                    )
-                noisy_grads[k] = add_noise_keyed(k, v)
+            noisy_grads = {k: add_noise_keyed(k, v) for k, v in clipped_grads.items()}
         else:
             matrix_row = matrix_row_base * float(stddev)
 

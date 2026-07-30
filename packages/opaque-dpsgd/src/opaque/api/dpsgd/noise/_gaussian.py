@@ -288,11 +288,11 @@ def gaussian_noise(
 
         # Per-group σ: ClippedPytree.pytree must be a flat dict[path_key, Tensor].
         if isinstance(effective_stddev, PerGroup):
-            if not isinstance(grads, dict):
-                raise TypeError(
-                    "gaussian_noise with PerGroup stddev requires "
-                    "ClippedPytree.pytree to be a dict[str, torch.Tensor]."
-                )
+            from opaque.api.engine.clipping._per_group import require_flat_param_dict
+
+            grads = require_flat_param_dict(
+                grads, context="gaussian_noise with PerGroup stddev"
+            )
             noised = {}
             for param_key, tensor in grads.items():
                 group_std = effective_stddev.for_key(param_key)

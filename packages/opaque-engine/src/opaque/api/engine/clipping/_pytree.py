@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections import namedtuple
+from typing import Any
 
 import torch
 
+from opaque.api.engine.clipping._per_group import require_flat_param_dict
 from opaque.api.engine.pytree import global_norm, tree_map
 from opaque.api.engine.types import PerGroup
 
@@ -19,8 +21,27 @@ Fields:
 """
 
 
+def _validate_per_group_keys(
+    pytree: dict[str, torch.Tensor],
+    pg: PerGroup,
+) -> None:
+    """Require a 1:1 match between flat dict keys and ``pg.groups`` keys."""
+    leaf_set = set(pytree)
+    group_set = set(pg.groups)
+    if leaf_set == group_set:
+        return
+    missing_in_groups = sorted(leaf_set - group_set)
+    missing_in_tree = sorted(group_set - leaf_set)
+    parts: list[str] = ["PerGroup parameter keys must match the pytree keys exactly."]
+    if missing_in_groups:
+        parts.append(f"Keys with no group assignment: {missing_in_groups}.")
+    if missing_in_tree:
+        parts.append(f"Group keys with no matching leaf: {missing_in_tree}.")
+    raise ValueError(" ".join(parts))
+
+
 def _resolve_compute_dtype_for_reduction(
-    pytree: dict[str, object],
+    pytree: dict[str, torch.Tensor],
     compute_dtype: torch.dtype | None,
 ) -> torch.dtype:
     """Pick the dtype for sum-of-squares reductions.
@@ -37,7 +58,7 @@ def _resolve_compute_dtype_for_reduction(
         return compute_dtype
     acc = torch.float32  # baseline; bf16/fp16 always promote to at least this
     for leaf in pytree.values():
-        if not isinstance(leaf, torch.Tensor) or not torch.is_floating_point(leaf):
+        if not torch.is_floating_point(leaf):
             continue
         promoted = (
             torch.float32
@@ -55,12 +76,12 @@ def _auto_scale_per_group(
     compute_dtype: torch.dtype | None,
 ) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
     """Per-group AUTO-S scaling: each group is scaled to sensitivity R_k."""
+    pytree = require_flat_param_dict(pytree, context="PerGroup auto_scale_pytree")
+    _validate_per_group_keys(pytree, pg)
     acc_dtype = _resolve_compute_dtype_for_reduction(pytree, compute_dtype)
 
     group_sq_norms: dict[str, torch.Tensor] = {}
     for key, tensor in pytree.items():
-        if not isinstance(tensor, torch.Tensor):
-            continue
         group_name = pg.groups[key]
         sq = (tensor.to(acc_dtype) ** 2).sum()
         if group_name in group_sq_norms:
@@ -79,14 +100,10 @@ def _auto_scale_per_group(
         scale = torch.where(torch.isfinite(scale), scale, zero)
         group_scales[group_name] = scale
 
-    scaled: dict[str, torch.Tensor] = {}
-    for key, val in pytree.items():
-        if isinstance(val, torch.Tensor):
-            group_name = pg.groups[key]
-            scale = group_scales[group_name]
-            scaled[key] = scale.to(dtype=val.dtype) * val
-        else:
-            scaled[key] = val
+    scaled = {
+        key: group_scales[pg.groups[key]].to(dtype=val.dtype) * val
+        for key, val in pytree.items()
+    }
 
     orig_norm = global_norm(pytree, compute_dtype=compute_dtype)
     group_norms = {name: torch.sqrt(sq) for name, sq in group_sq_norms.items()}
@@ -94,12 +111,12 @@ def _auto_scale_per_group(
 
 
 def auto_scale_pytree(
-    pytree: dict[str, torch.Tensor],
+    pytree: Any,
     R: float | PerGroup = 1.0,
     gamma: float = 0.01,
     *,
     compute_dtype: torch.dtype | None = None,
-) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
+) -> tuple[Any, ClipPytreeAux]:
     r"""AUTO-S automatic scaling of a PyTree (Bu et al., NeurIPS 2023).
 
     Scales the PyTree by ``R / (\|pytree\| + gamma)`` so the output L2
@@ -109,7 +126,9 @@ def auto_scale_pytree(
     learning rate.
 
     Args:
-        pytree: Dictionary of tensors to scale.
+        pytree: Tensors to scale.  Scalar ``R`` accepts any pytree;
+            ``PerGroup`` requires a flat ``dict[str, Tensor]`` whose keys
+            match ``R.groups`` exactly (``named_parameters`` layout).
         R: Output sensitivity bound (non-negative). When ``PerGroup``, each
             group is scaled independently to its own bound.
         gamma: Small positive denominator stabilizer :math:`\gamma` (default
@@ -172,14 +191,18 @@ def _clip_pytree_per_group(
     return_zero: bool,
     compute_dtype: torch.dtype | None,
 ) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
-    """Per-group clipping: each group is clipped to its own L2 norm max_norm."""
+    """Per-group clipping: each group is clipped to its own L2 norm max_norm.
+
+    Requires a flat ``dict[str, Tensor]`` whose keys match ``pg.groups``.
+    Nested containers are rejected — flatten to ``named_parameters`` keys.
+    """
+    pytree = require_flat_param_dict(pytree, context="PerGroup clip_pytree")
+    _validate_per_group_keys(pytree, pg)
     acc_dtype = _resolve_compute_dtype_for_reduction(pytree, compute_dtype)
 
     # 1. Accumulate squared norms per group
     group_sq_norms: dict[str, torch.Tensor] = {}
     for key, tensor in pytree.items():
-        if not isinstance(tensor, torch.Tensor):
-            continue
         group_name = pg.groups[key]
         sq = (tensor.to(acc_dtype) ** 2).sum()
         if group_name in group_sq_norms:
@@ -200,14 +223,10 @@ def _clip_pytree_per_group(
         group_scales[group_name] = scale
 
     # 3. Apply per-group scales
-    clipped: dict[str, torch.Tensor] = {}
-    for key, val in pytree.items():
-        if isinstance(val, torch.Tensor):
-            group_name = pg.groups[key]
-            scale = group_scales[group_name]
-            clipped[key] = scale.to(dtype=val.dtype) * val
-        else:
-            clipped[key] = val
+    clipped = {
+        key: group_scales[pg.groups[key]].to(dtype=val.dtype) * val
+        for key, val in pytree.items()
+    }
 
     if return_zero:
         clipped = tree_map(
@@ -221,19 +240,21 @@ def _clip_pytree_per_group(
 
 
 def clip_pytree(
-    pytree: dict[str, torch.Tensor],
+    pytree: Any,
     clipping_norm: float | PerGroup,
     return_zero: bool = False,
     *,
     compute_dtype: torch.dtype | None = None,
-) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
+) -> tuple[Any, ClipPytreeAux]:
     """Clip a PyTree of tensors to a maximum L2 norm.
 
     NaN and Inf values in the input are replaced with zeros before clipping.
     This is vmap-compatible and DP-safe (the clipped output has norm <= clipping_norm).
 
     Args:
-        pytree: Dictionary of tensors to clip
+        pytree: Tensors to clip.  Scalar ``clipping_norm`` accepts any pytree;
+            ``PerGroup`` requires a flat ``dict[str, Tensor]`` whose keys match
+            ``clipping_norm.groups`` exactly (``named_parameters`` layout).
         clipping_norm: Maximum L2 norm (non-negative, or inf for no clipping).
             When ``PerGroup``, each group of parameters is clipped independently
             to its own norm bound.

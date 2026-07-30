@@ -7,27 +7,53 @@ pg = per_group(params, q_proj=1.0, fallback=0.5)  # catch-all
 
 from __future__ import annotations
 
+from typing import Any
+
+import torch
+
 from opaque.api.engine.types import PerGroup as _PerGroup
 
 
-def _extract_keys(params) -> list[str]:
-    """Extract all leaf keys from a parameter dict.
+def require_flat_param_dict(
+    params: Any,
+    *,
+    context: str,
+) -> dict[str, torch.Tensor]:
+    """Require a flat ``dict[str, Tensor]`` (``named_parameters`` layout).
 
-    For flat dicts (``make_functional`` output): returns dict keys directly.
-    For nested dicts: returns dotted paths to leaf tensors.
+    Per-group clipping, noise, and :func:`per_group` key parameter names.
+    Nested containers have no unique top-level string key per tensor leaf, and
+    a top-level ``.items()`` walk would silently skip nested tensors — so the
+    PerGroup pipeline rejects nesting instead of inventing a dotted-path
+    encoding.  Flatten with ``dict(module.named_parameters())`` or
+    ``make_functional(..., partition_trainable=True)`` first.
+
+    Scalar (global) clipping / noise still accept arbitrary pytrees via
+    ``tree_map`` / ``global_norm``.
     """
-    keys: list[str] = []
+    if not isinstance(params, dict):
+        raise TypeError(
+            f"{context} requires a flat dict[str, Tensor] "
+            f"(named_parameters layout); got {type(params).__name__}."
+        )
+    bad_keys = [
+        key for key, value in params.items() if not isinstance(value, torch.Tensor)
+    ]
+    if bad_keys:
+        sample = ", ".join(repr(k) for k in bad_keys[:5])
+        more = "" if len(bad_keys) <= 5 else f" (+{len(bad_keys) - 5} more)"
+        raise TypeError(
+            f"{context} requires a flat dict[str, Tensor]; "
+            f"non-tensor values at keys: {sample}{more}. "
+            f"Flatten nested params "
+            f"(e.g. dict(module.named_parameters())) before per-group use."
+        )
+    return params
 
-    def _recurse(d, prefix):
-        for k, v in d.items():
-            full_key = f"{prefix}.{k}" if prefix else str(k)
-            if isinstance(v, dict):
-                _recurse(v, full_key)
-            else:
-                keys.append(full_key)
 
-    _recurse(params, "")
-    return keys
+def _extract_keys(params: dict[str, torch.Tensor]) -> list[str]:
+    """Return top-level keys from a flat parameter dict."""
+    return [str(k) for k in params]
 
 
 def per_group(
@@ -44,6 +70,12 @@ def per_group(
     whose key contains the substring are assigned to that group.  Every
     parameter must match exactly one pattern (error on 0 or 2+).
 
+    ``params`` must be a flat ``dict[str, Tensor]`` in
+    ``named_parameters`` / ``make_functional(..., partition_trainable=True)``
+    layout.  Nested dicts are rejected — flatten first so group keys match
+    the pytree that :func:`~opaque.api.engine.clipping.clip_pytree` and
+    per-group noise will see.
+
     The ``patterns`` dict arg merges with ``**kwargs`` to support keys
     containing dots (which cannot be used as keyword arguments)::
 
@@ -56,8 +88,8 @@ def per_group(
     parameters raise ``ValueError``.
 
     Args:
-        params: Parameter dict (flat or nested).  Keys are matched against
-            patterns.
+        params: Flat parameter dict (``dict[str, Tensor]``).  Keys are
+            matched against patterns.
         patterns: Optional dict of ``{pattern: value}`` pairs.  Merged with
             ``**kwargs``.
         fallback: Optional value for parameters that don't match any
@@ -76,6 +108,7 @@ def per_group(
         when parameter keys or grouping patterns change.
 
     Raises:
+        TypeError: If ``params`` is not a flat ``dict[str, Tensor]``.
         ValueError: If no patterns are provided, if a parameter matches zero
             patterns (and no ``fallback`` is given), if a parameter
             matches multiple patterns, or if any value is not positive.
@@ -87,6 +120,8 @@ def per_group(
         ...           gate_proj=1.0, up_proj=1.0, down_proj=1.0)
         >>> per_group(params, **{f'layers.{i}': norms[i] for i in range(32)})
     """
+    params = require_flat_param_dict(params, context="per_group")
+
     all_patterns: dict[str, float] = {}
     if patterns is not None:
         all_patterns.update(patterns)
@@ -134,4 +169,4 @@ def per_group(
     return _PerGroup(groups=groups, values=values)
 
 
-__all__ = ["per_group"]
+__all__ = ["per_group", "require_flat_param_dict"]

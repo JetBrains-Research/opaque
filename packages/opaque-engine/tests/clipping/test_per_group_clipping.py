@@ -111,6 +111,35 @@ class TestClipPytreePerGroup:
         assert not torch.isnan(clipped["a"]).any()
         torch.testing.assert_close(clipped["a"], torch.tensor([0.0, 0.0]))
 
+    def test_nested_pytree_raises(self):
+        """Per-group clip requires a flat dict — nested must not silently skip."""
+        pytree = {
+            "layer1": {
+                "attn": torch.tensor([3.0, 4.0]),
+                "mlp": torch.tensor([30.0]),
+            },
+        }
+        pg = PerGroup(
+            groups={"layer1.attn": "attn", "layer1.mlp": "mlp"},
+            values={"attn": 1.0, "mlp": 1.0},
+        )
+        with pytest.raises(TypeError, match="flat dict\\[str, Tensor\\]"):
+            clip_pytree(pytree, pg)
+
+    def test_group_key_mismatch_raises(self):
+        """Missing or extra PerGroup keys must raise, not skip clipping."""
+        pytree = {"a": torch.tensor([1.0]), "b": torch.tensor([2.0])}
+        pg_missing = PerGroup(groups={"a": "g1"}, values={"g1": 1.0})
+        with pytest.raises(ValueError, match="must match the pytree keys exactly"):
+            clip_pytree(pytree, pg_missing)
+
+        pg_extra = PerGroup(
+            groups={"a": "g1", "b": "g2", "c": "g3"},
+            values={"g1": 1.0, "g2": 1.0, "g3": 1.0},
+        )
+        with pytest.raises(ValueError, match="must match the pytree keys exactly"):
+            clip_pytree(pytree, pg_extra)
+
 
 class TestFixedClipStatePerGroup:
     """Tests for fixed clipping marker state and factory validation."""

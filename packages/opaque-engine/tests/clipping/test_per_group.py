@@ -108,16 +108,14 @@ class TestPerGroupHelper:
         assert pg.groups["layers.0.attn.weight"] == "layers.0.attn"
         assert pg.groups["layers.0.mlp.weight"] == "mlp"
 
-    def test_nested_dict(self):
+    def test_nested_dict_raises(self):
+        """Nested params are rejected — PerGroup keys must match flat clip/noise."""
         params = {
             "layer1": {"attn": torch.zeros(1), "mlp": torch.zeros(1)},
             "layer2": {"attn": torch.zeros(1), "mlp": torch.zeros(1)},
         }
-        pg = per_group(params, attn=1.0, mlp=2.0)
-        assert pg.groups["layer1.attn"] == "attn"
-        assert pg.groups["layer1.mlp"] == "mlp"
-        assert pg.groups["layer2.attn"] == "attn"
-        assert pg.groups["layer2.mlp"] == "mlp"
+        with pytest.raises(TypeError, match="flat dict\\[str, Tensor\\]"):
+            per_group(params, attn=1.0, mlp=2.0)
 
     def test_no_match_raises(self):
         params = {"weight": torch.zeros(1)}

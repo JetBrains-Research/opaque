@@ -113,6 +113,23 @@ class TestAutoScalePytree:
         max_norm = math.sqrt(0.5**2 + 1.5**2)
         assert total_norm <= max_norm + 1e-4
 
+    def test_nested_pytree_raises(self):
+        pytree = {
+            "layer1": {"attn": torch.tensor([3.0, 4.0]), "mlp": torch.tensor([6.0])},
+        }
+        pg = PerGroup(
+            groups={"layer1.attn": "attn", "layer1.mlp": "mlp"},
+            values={"attn": 2.0, "mlp": 1.0},
+        )
+        with pytest.raises(TypeError, match="flat dict\\[str, Tensor\\]"):
+            auto_scale_pytree(pytree, R=pg)
+
+    def test_group_key_mismatch_raises(self):
+        pytree = {"a": torch.tensor([1.0]), "b": torch.tensor([2.0])}
+        pg = PerGroup(groups={"a": "g1"}, values={"g1": 1.0})
+        with pytest.raises(ValueError, match="must match the pytree keys exactly"):
+            auto_scale_pytree(pytree, R=pg)
+
 
 class TestAutoClipState:
     """Tests for AutoClipState marker behavior and factory validation."""
