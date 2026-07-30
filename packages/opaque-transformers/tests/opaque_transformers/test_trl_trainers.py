@@ -167,7 +167,7 @@ def test_model_init_kwargs_field_present():
 
 
 def test_duplicate_loss_type_fails_fast():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="duplicates"):
         DPOConfig(
             output_dir="x",
             loss_type=["sigmoid", "sigmoid"],
@@ -177,7 +177,7 @@ def test_duplicate_loss_type_fails_fast():
 
 def test_sync_ref_model_requires_reference_using_loss():
     # TR-DPO has nothing to sync toward when every head is reference-free.
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="sync_ref_model"):
         DPOConfig(
             output_dir="x",
             sync_ref_model=True,
@@ -189,7 +189,7 @@ def test_sync_ref_model_requires_reference_using_loss():
 def test_chosen_nll_is_a_reference_free_head():
     # ``chosen_nll`` (opaque's name for TRL's ``sft`` head) scores the policy's
     # own logp, so it is reference-free — TR-DPO has nothing to sync toward.
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="sync_ref_model"):
         DPOConfig(
             output_dir="x",
             sync_ref_model=True,
@@ -206,7 +206,7 @@ def test_reference_free_flag_is_gone():
 
 
 def test_robust_label_smoothing_validation():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="label_smoothing"):
         DPOConfig(
             output_dir="x",
             loss_type=["robust"],

@@ -127,7 +127,9 @@ class TestOptimRejectsUnsupportedNames:
 
     @pytest.mark.parametrize("name", REJECTED_OPTIMIZER_NAMES)
     def test_unsupported_optim_raises(self, tmp_path, name):
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match="is not supported by DPTrainer"
+        ) as exc_info:
             _args(tmp_path, optim=name)
         message = str(exc_info.value)
         assert name in message, (

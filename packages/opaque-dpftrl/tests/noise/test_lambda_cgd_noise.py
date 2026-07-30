@@ -139,9 +139,9 @@ class TestLambdaCgdNoise:
         assert state._step_counter == 2
 
     def test_rejects_invalid_lambda(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"lambda_ must be in \[0, 1\)"):
             lambda_cgd_strategy(lambda_=-0.1)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"lambda_ must be in \[0, 1\)"):
             lambda_cgd_strategy(lambda_=1.0)
 
     def test_prng_replay_correctness(self):

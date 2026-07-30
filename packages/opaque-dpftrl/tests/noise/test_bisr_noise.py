@@ -30,7 +30,7 @@ class TestBisrStrategy:
         assert bisr_strategy(bandwidth=4, momentum=0.95).sensitivity(**_PART) > 0
 
     def test_rejects_bad_bandwidth(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="bandwidth must be >= 2"):
             bisr_strategy(bandwidth=1)
 
 

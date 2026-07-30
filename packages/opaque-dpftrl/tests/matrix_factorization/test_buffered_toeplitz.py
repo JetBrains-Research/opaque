@@ -468,5 +468,5 @@ class TestFromRationalApprox:
         assert torch.all(blt.buf_decay < 1)
 
     def test_invalid_num_buffers(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="num_buffers must be >= 1"):
             BufferedToeplitz.from_rational_approx_to_sqrt_x(num_buffers=0)

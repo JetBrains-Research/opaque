@@ -98,11 +98,11 @@ class TestSecondMomentCalibration:
         assert b_second > a_second
 
     def test_rejects_invalid(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="noise_multiplier must be non-negative"):
             paired_noise_stddevs(-1.0, first=0.1, second=0.01)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="first must be non-negative"):
             paired_noise_stddevs(1.0, first=-0.1, second=0.01)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="second must be non-negative"):
             paired_noise_stddevs(1.0, first=0.1, second=-0.01)
 
 

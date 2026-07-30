@@ -97,7 +97,7 @@ class TestBandedMasks:
         torch.testing.assert_close(mask, expected)
 
     def test_invalid_bands(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="num_bands must be >= 1"):
             banded_lower_triangular_mask(4, 0)
 
 

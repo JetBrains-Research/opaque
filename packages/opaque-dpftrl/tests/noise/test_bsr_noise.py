@@ -40,7 +40,7 @@ class TestBsrStrategy:
             bsr_strategy(bandwidth=4, alpha=0.9, beta=0.95)
 
     def test_rejects_momentum_one(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"β in \[0, 1\)"):
             bsr_strategy(bandwidth=4, alpha=1.0, beta=1.0)
 
     def test_rejects_unknown_normalized_kwarg(self):

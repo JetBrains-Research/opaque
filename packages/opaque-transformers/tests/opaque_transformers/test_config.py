@@ -144,13 +144,13 @@ class TestStrategyCoercion:
         assert getattr(args, field) == expected
 
     def test_unknown_strategy_raises(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"eval_strategy=.*expected one of"):
             TrainingArguments(
                 privacy_noise_multiplier=1.0, eval_strategy="completely-bogus"
             )
 
     def test_unknown_lr_scheduler_raises(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="not a valid SchedulerType"):
             TrainingArguments(
                 privacy_noise_multiplier=1.0, lr_scheduler="not-a-real-scheduler"
             )
@@ -274,7 +274,7 @@ class TestOptimizerSupportSurface:
         ],
     )
     def test_unsupported_optimizers_raise_with_supported_list(self, optim):
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="expected one of") as exc_info:
             TrainingArguments(privacy_noise_multiplier=1.0, optim=optim)
         message = str(exc_info.value)
         assert optim in message

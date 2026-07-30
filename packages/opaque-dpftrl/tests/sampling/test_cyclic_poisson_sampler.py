@@ -247,7 +247,7 @@ class TestCyclicPoissonSamplerEdgeCases:
 
     def test_empty_dataset_raises(self):
         """Empty dataset raises error."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="data_source must not be empty"):
             CyclicPoissonSampler([], sample_rate=0.5, key=key(0))
 
     def test_single_example(self):
@@ -310,15 +310,15 @@ class TestCyclicPoissonSamplerEdgeCases:
 
     def test_invalid_sampling_prob_raises(self):
         """Invalid sampling_prob raises ValueError."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"sample_rate must be in \(0, 1\]"):
             CyclicPoissonSampler(range(10), sample_rate=0.0, key=key(0))
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"sample_rate must be in \(0, 1\]"):
             CyclicPoissonSampler(range(10), sample_rate=1.5, key=key(0))
 
     def test_invalid_bands_raises(self):
         """Invalid bands raises ValueError."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="bands must be >= 1"):
             CyclicPoissonSampler(range(10), sample_rate=0.5, bands=0, key=key(0))
 
 
