@@ -44,7 +44,7 @@ Order by (impact ÷ diff size). All of these are ≤ 1 day each and several are 
 
 | Fix | File | Effect if not fixed |
 |---|---|---|
-| Invert `budget_exceeded` comparison | `opaque-accounting/.../core/_accountant.py:209-213` | Beta/Risk budget runs report "under budget" while over it |
+| ✅ Invert `budget_exceeded` comparison | `opaque-accounting/.../core/_accountant.py:209-213` | Beta/Risk budget runs report "under budget" while over it |
 | `CachedProcess.repeated_pld` passthrough | `.../core/composition/_cached.py` | DP-FTRL per-step accounting silently degrades to K-fold single-step composition |
 | ✅ `eps_delta_pld` atom → `ceil` (safe-only) | `src/mechanisms/eps_delta.rs:43` | Declared ε cannot round below the requested value |
 | ✅ `calibrate()` return the *proven-safe* bracket endpoint; one-sided acceptance; relative tolerance; raise on non-convergence | `.../core/calibration.py:341-367` | Returns noise multipliers that violate the budget with `converged=True` |

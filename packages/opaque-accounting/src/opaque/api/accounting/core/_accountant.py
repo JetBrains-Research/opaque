@@ -197,7 +197,7 @@ class Accountant:
 
     @property
     def budget_exceeded(self) -> bool:
-        """Check if accumulated privacy exceeds the budget.
+        """Check if accumulated privacy violates the budget.
 
         Returns False if no budget was specified. Otherwise, evaluates the
         target metric on the accumulated process and checks if it violates
@@ -210,7 +210,9 @@ class Accountant:
             return False
 
         achieved = self._budget.evaluate(self.process)
-        return achieved > self._budget.value
+        if self._budget.decreasing:
+            return achieved > self._budget.value
+        return achieved < self._budget.value
 
 
 def _accountant_state_dict(acct: Accountant) -> dict[str, Any]:
