@@ -17,11 +17,11 @@ the multi-rank scenarios.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import shutil
 import socket
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 import torch

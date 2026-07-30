@@ -18,11 +18,11 @@ unrelated to the DDP path under test.
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import json
 import os
 import sys
 import tempfile
+from pathlib import Path
 
 import torch
 import torch.distributed as dist
