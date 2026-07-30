@@ -26,7 +26,9 @@ this once before tuning:
 - Internal microbatch chunking is only activated by
   `auto_find_microbatch_size=True` on OOM retry — it splits the
   per-rank logical batch into smaller vmap calls without changing the
-  logical batch or the sample rate (privacy-neutral).
+  logical batch or the sample rate (privacy-neutral). The same flag also
+  halves `per_device_eval_batch_size` on an eval/predict CUDA-OOM
+  (eval has no grad-accumulation, so shrinking it is privacy-neutral).
 
 To grow the effective batch, raise `per_device_train_batch_size` (the
 expected Poisson round size); the physical vmap chunk (`microbatch_size`,

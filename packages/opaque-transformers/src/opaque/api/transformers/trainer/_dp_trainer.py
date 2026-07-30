@@ -2493,19 +2493,32 @@ class DPTrainer:
         # training aux channel carries (e.g. DPO ``rewards/*``); collect + mean it
         # into the eval metrics, mirroring the train-step aux logging.
         eval_aux_chunks: dict[str, list[Tensor]] = {}
+        # Under DDP an OOM in ``prediction_step`` must become a *collective*
+        # event before the end-of-loop ``reduce_scalar`` / gather: if the
+        # OOM'ing rank skipped those ops while siblings issued them, the
+        # process group would deadlock. Mirror the training-step guard —
+        # catch a retryable OOM, break out of the batch loop, then
+        # all-reduce a MAX flag so EVERY rank raises before collectives.
+        local_oom = False
 
         for batch in dataloader:
             bs = _eval.find_batch_size(batch) or 0
             if bs == 0:
                 continue
             self._pending_eval_aux = None
-            with self._perf_tracker.eval(batch_size=bs):
-                loss, logits, labels = self.prediction_step(
-                    self._model,
-                    batch,
-                    prediction_loss_only=ploss_only,
-                    ignore_keys=ignore_keys,
-                )
+            try:
+                with self._perf_tracker.eval(batch_size=bs):
+                    loss, logits, labels = self.prediction_step(
+                        self._model,
+                        batch,
+                        prediction_loss_only=ploss_only,
+                        ignore_keys=ignore_keys,
+                    )
+            except RuntimeError as err:
+                if not (self._ddp.is_distributed and self._is_retryable_oom(err)):
+                    raise
+                local_oom = True
+                break
             step_aux = self._pending_eval_aux
             self._pending_eval_aux = None
             if step_aux:
@@ -2577,6 +2590,17 @@ class DPTrainer:
                 labels=labels,
                 inputs=main_input,
                 batch_size=bs,
+            )
+
+        # Cluster-wide OOM check before end-of-loop collectives. Ranks that
+        # finished their shard wait here for siblings still iterating; a
+        # mid-loop OOM on any rank then raises on every rank so nobody enters
+        # ``reduce_scalar`` / gather. Matches the training-step guard.
+        if self._ddp.is_distributed and self._cluster_needs_step_down(local_oom):
+            raise torch.OutOfMemoryError(
+                "collective eval batch retry (a rank OOM'd in prediction_step; "
+                "whole cluster steps down to a smaller "
+                "per_device_eval_batch_size)."
             )
 
         # ----- Finalize metrics -----
@@ -2914,8 +2938,10 @@ class DPTrainer:
         # ``auto_find_microbatch_size`` also guards eval: on CUDA-OOM, halve
         # ``per_device_eval_batch_size`` and retry. Eval has no gradient
         # accumulation, so the eval batch is a pure throughput knob — shrinking
-        # it leaves the metrics unchanged. The step-down is cluster-wide so DDP
-        # ranks rebuild their loaders and retry in lockstep.
+        # it leaves the metrics unchanged. ``evaluation_loop`` turns a per-rank
+        # OOM into a cluster-wide raise before its end-of-loop collectives (so
+        # DDP doesn't deadlock); the step-down here then rebuilds loaders and
+        # retries in lockstep.
         while True:
             # Time only the attempt that succeeds — a failed OOM attempt below
             # restarts the clock so eval throughput isn't under-reported.

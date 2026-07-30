@@ -214,7 +214,7 @@ Dataclass surface.  Every field listed here exists on
 | `per_device_eval_batch_size` | `int` | `8` | Eval batch size (fixed, not Poisson). |
 | `eval_accumulation_steps` | `int \| None` | `None` | Move accumulated eval tensors to CPU every N batches. |
 | `eval_delay` | `float` | `0.0` | Skip eval for the first N steps / epochs. |
-| `auto_find_microbatch_size` | `bool` | `False` | On OOM, halve the microbatch size and retry.  Logical batch and privacy unchanged. |
+| `auto_find_microbatch_size` | `bool` | `False` | On train OOM, halve the microbatch and retry; on eval/predict OOM, halve `per_device_eval_batch_size`. Logical batch and privacy unchanged. |
 
 ### Optimizer and LR
 
