@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """End-to-end DP-SGD LoRA training example for SFT (Supervised Fine-Tuning).
 
-This is the SFT sibling of ``examples/train_causal_lm.py`` (the comprehensive
+This is the SFT sibling of ``examples/train_dpsgd.py`` (the comprehensive
 DP-SGD baseline) and ``examples/train_dpo.py``. It ports the full production-style
-DP-SGD scaffolding from ``train_causal_lm.py`` — clipping + noise + accounting +
+DP-SGD scaffolding from ``train_dpsgd.py`` — clipping + noise + accounting +
 calibration + auditing + LoRA + LR schedules + distributed/Poisson sampling +
 W&B — and swaps in the SFT-specific loss and data machinery from
 ``opaque-alignment``:
@@ -22,7 +22,7 @@ W&B — and swaps in the SFT-specific loss and data machinery from
 Because the eager SFT losses consume ``out.logits``, this script applies
 ``apply_model_patches(model)`` **without** ``fused_linear_cross_entropy``: the
 fused linear+CE patch returns ``logits=None`` on its fast path, which the eager
-losses cannot use.  (``train_causal_lm.py`` can opt into the fused kernel because
+losses cannot use.  (``train_dpsgd.py`` can opt into the fused kernel because
 it consumes ``output.loss`` directly.)
 
 Eval reports held-out *language-modeling* quality — mean eval loss + perplexity,

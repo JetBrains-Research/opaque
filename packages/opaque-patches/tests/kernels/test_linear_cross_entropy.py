@@ -12,7 +12,7 @@ Tests:
 Uses bf16 throughout — CCE backward requires half precision.
 ``mellum_config`` (see ``kernels/conftest.py``) uses Mellum-4b-shaped tensors
 (seq 1024, hidden 3072, vocab up to 128256): realistic geometry comparable to
-``train_causal_lm.py --preset mellum-kstack``, not tiny matrices where launch
+``train_dpsgd.py --preset mellum-kstack``, not tiny matrices where launch
 and dispatch dominate the timing story.
 
 Parametrized over vocab sizes: 32768 (single-chunk) and 128256 (Mellum-4b, chunked path).

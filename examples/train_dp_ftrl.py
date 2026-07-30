@@ -5,7 +5,7 @@ noise from matrix factorization mechanisms. Unlike standard DP-SGD, the noise
 is correlated across steps, yielding better privacy/utility tradeoffs when
 combined with the correct optimizer.
 
-KEY DIFFERENCES FROM DP-SGD (train_causal_lm.py):
+KEY DIFFERENCES FROM DP-SGD (train_dpsgd.py):
 
   1. Optimizer: SGD with Polyak momentum (default), or one of the
      Opaque-built v-using optimizers (``adamw``, ``ademamix``).  For
@@ -176,7 +176,7 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Shared utilities (same as train_causal_lm.py)
+# Shared utilities (same as train_dpsgd.py)
 # ---------------------------------------------------------------------------
 
 

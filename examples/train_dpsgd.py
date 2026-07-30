@@ -10,19 +10,19 @@ This example is designed as a production-style script (not a tutorial):
 USAGE:
 
   # Quick smoke test (~2-3 minutes, SmolLM2-135M on KExercises)
-  python examples/train_causal_lm.py --preset smoke
+  python examples/train_dpsgd.py --preset smoke
 
   # Or use default settings (same as smoke)
-  python examples/train_causal_lm.py
+  python examples/train_dpsgd.py
 
   # Full production training on Mellum-4b + KStack (~3-5 hours)
-  python examples/train_causal_lm.py --preset mellum-kstack
+  python examples/train_dpsgd.py --preset mellum-kstack
 
   # 4-GPU distributed run with torchrun
-  torchrun --nproc_per_node=4 examples/train_causal_lm.py --preset mellum-kstack
+  torchrun --nproc_per_node=4 examples/train_dpsgd.py --preset mellum-kstack
 
   # Or customize individual parameters:
-  python examples/train_causal_lm.py \\
+  python examples/train_dpsgd.py \\
     --model-name "JetBrains/Mellum-4b-base" \\
     --dataset "JetBrains/KStack" \\
     --dataset-text-field "content" \\

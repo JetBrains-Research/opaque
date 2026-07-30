@@ -199,7 +199,7 @@ The fused path returns `logits=None` from `XForCausalLM.forward`, which is
 incompatible with callers that read `outputs.logits` — `compute_metrics`,
 `preprocess_logits_for_metrics`, and generation eval. Enable the patch when
 loss is the only consumer of the forward output;
-`examples/train_causal_lm.py` and `examples/train_dp_ftrl.py` do.
+`examples/train_dpsgd.py` and `examples/train_dp_ftrl.py` do.
 
 | Metric | V=32K | V=128K |
 |--------|-------|--------|

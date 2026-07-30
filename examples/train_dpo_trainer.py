@@ -297,7 +297,7 @@ def parse_args() -> argparse.Namespace:
         help="Evaluate every N steps on a held-out slice (disjoint slice of "
         "the same dataset, after the --num-train-samples). Set to ``0`` to "
         "disable eval entirely. Default matches train_dpo.py / "
-        "train_causal_lm_trainer.py.",
+        "train_dpsgd_trainer.py.",
     )
     p.add_argument(
         "--num-eval-samples",

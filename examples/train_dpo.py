@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """End-to-end DP-SGD LoRA training example for DPO (Direct Preference Optimization).
 
-This is the DPO sibling of ``examples/train_causal_lm.py`` (the comprehensive
+This is the DPO sibling of ``examples/train_dpsgd.py`` (the comprehensive
 DP-SGD baseline) and ``examples/train_sft.py``. It ports the full production-style
-DP-SGD scaffolding from ``train_causal_lm.py`` — clipping + noise + accounting +
+DP-SGD scaffolding from ``train_dpsgd.py`` — clipping + noise + accounting +
 calibration + auditing + LoRA + LR schedules + distributed/Poisson sampling +
 W&B — and swaps in the DPO-specific loss, data, and reference machinery from
 ``opaque-alignment``:

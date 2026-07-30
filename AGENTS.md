@@ -355,7 +355,7 @@ the agent file for the full protocol.
 ## Training entry points
 
 ```bash
-uv run python examples/train_causal_lm.py --preset mellum-kstack --max-steps 100
+uv run python examples/train_dpsgd.py --preset mellum-kstack --max-steps 100
 uv run python examples/train_dp_ftrl.py   # MF-based DP-FTRL training
 ```
 
@@ -363,7 +363,7 @@ Baseline without kernel patches:
 
 ```bash
 OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all \
-  uv run python examples/train_causal_lm.py --preset mellum-kstack --max-steps 100
+  uv run python examples/train_dpsgd.py --preset mellum-kstack --max-steps 100
 ```
 
 ## Cadence presets
@@ -372,10 +372,10 @@ GPU training configs in `.cadence/configs/`:
 
 | Preset file | Entry point | Notes |
 | --- | --- | --- |
-| `train_causal_lm (mellum_kstack).yaml` | `train_causal_lm.py --preset mellum-kstack` | Single H200, DP-SGD |
+| `train_dpsgd (mellum_kstack).yaml` | `train_dpsgd.py --preset mellum-kstack` | Single H200, DP-SGD |
 | `train_dp_ftrl (mellum_kstack).yaml` | `train_dp_ftrl.py --preset mellum-kstack` | Single H200, DP-FTRL |
-| `train_causal_lm (qwen_7b_kstack).yaml` | `train_causal_lm.py` | 7B model, single H200 |
-| `train_causal_lm (mellum_kstack_distributed).yaml` | `train_causal_lm.py --preset mellum-kstack` | Multi-GPU DDP |
+| `train_dpsgd (qwen_7b_kstack).yaml` | `train_dpsgd.py` | 7B model, single H200 |
+| `train_dpsgd (mellum_kstack_distributed).yaml` | `train_dpsgd.py --preset mellum-kstack` | Multi-GPU DDP |
 | `train_dp_ftrl (mellum_kstack_distributed).yaml` | `train_dp_ftrl.py --preset mellum-kstack` | Multi-GPU DDP |
 
 Override args via `-e EXTRA_ARGS="--max-steps 200"` and run name via
@@ -436,7 +436,7 @@ the canonical lint / test / Rust-test commands.
   MF-specific ones (`band_mf`, `blt`, `bisr`, etc.) live in
   `opaque.dpftrl.accounting`.
 - CUDA/MPS tests auto-skip; no special handling needed on CPU-only VMs.
-- Running the `examples/` training scripts (e.g. `train_causal_lm.py`)
+- Running the `examples/` training scripts (e.g. `train_dpsgd.py`)
   additionally needs the `examples` dependency group
   (`uv sync --group examples --all-packages --extra all`; `datasets`,
   `wandb`, etc.). Add `--no-wandb` for offline runs.

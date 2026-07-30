@@ -7,24 +7,24 @@ the same ``TrainingArguments``.
 USAGE:
 
   # Quick smoke test, SmolLM2-135M on KExercises (DP-SGD)
-  python examples/train_causal_lm_trainer.py --preset smoke
+  python examples/train_dpsgd_trainer.py --preset smoke
 
   # Full production-style configuration on Mellum-4b + KStack (DP-SGD)
-  python examples/train_causal_lm_trainer.py --preset mellum-kstack
+  python examples/train_dpsgd_trainer.py --preset mellum-kstack
 
   # DP-FTRL with banded MF (Mellum-shaped defaults: bands=16, sampler=b_min_sep)
-  python examples/train_causal_lm_trainer.py --preset mellum-kstack \
+  python examples/train_dpsgd_trainer.py --preset mellum-kstack \
       --noise-mechanism mf_band
 
   # DP-FTRL with BLT (balls-in-bins sampling)
-  python examples/train_causal_lm_trainer.py --preset smoke \
+  python examples/train_dpsgd_trainer.py --preset smoke \
       --noise-mechanism mf_blt --noise-mechanism-kwargs max_buffers=16
 
   # Save DPTrainer checkpoints every eval interval
-  python examples/train_causal_lm_trainer.py --preset smoke --save-steps 10
+  python examples/train_dpsgd_trainer.py --preset smoke --save-steps 10
 
   # Disable W&B/HF reporting callbacks
-  python examples/train_causal_lm_trainer.py --preset smoke --no-wandb
+  python examples/train_dpsgd_trainer.py --preset smoke --no-wandb
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ def _select_device() -> tuple[torch.device, str]:
     Each torchrun rank reads ``LOCAL_RANK`` to pin itself to a distinct CUDA
     device; without this every rank lands on ``cuda:0`` and NCCL crashes with
     ``Duplicate GPU detected`` at the first collective.  Mirrors the manual-
-    loop example (``examples/train_causal_lm.py:_select_device``).
+    loop example (``examples/train_dpsgd.py:_select_device``).
     """
     if torch.cuda.is_available():
         local_rank_env = os.environ.get("LOCAL_RANK")
