@@ -3032,7 +3032,7 @@
 <td>"dense-matrix MF engine path redraws", "_tensor_mf_noise redraws the full Gaussian vector"</td>
 </tr>
 <tr>
-<td><code>train_dp_ftrl.py</code> one-epoch runs</td>
+<td><code>train_dpftrl.py</code> one-epoch runs</td>
 <td>"BLT and Balls-in-Bins runs execute exactly one epoch", "reuses an already-exhausted sampler object"</td>
 </tr>
 <tr>
@@ -3186,7 +3186,7 @@
 <h2 id="2-root-cause-clusters-fix-these-once-not-fifteen-times">2. Root-cause clusters — fix these once, not fifteen times<a class="headerlink" href="#2-root-cause-clusters-fix-these-once-not-fifteen-times" title="Permanent link">&para;</a></h2>
 <p>This section is the point of the document. Each cluster is <strong>one design change</strong> that resolves the listed findings. Do not let these be worked as independent tickets.</p>
 <h3 id="rc-1-there-is-no-binding-between-the-sampler-you-run-and-the-amplification-you-account-for">RC-1 — There is no binding between the sampler you run and the amplification you account for<a class="headerlink" href="#rc-1-there-is-no-binding-between-the-sampler-you-run-and-the-amplification-you-account-for" title="Permanent link">&para;</a></h3>
-<p><strong>Resolves:</strong> quickstart + DP-SGD tutorial + auditing tutorial + DP-FTRL tutorial sampler mismatches; <code>train_sft.py --no-shard</code>+<code>--truncated-batch-size</code>; <code>BallsInBinsSampler</code> dropping empty bins; <code>train_dp_ftrl.py</code> one-epoch runs; <code>distributed.md</code> unbounded sampler; <code>dp-sgd.md</code> end-to-end loop; issue O (audit coin flip changes n → changes min_sep/bins).</p>
+<p><strong>Resolves:</strong> quickstart + DP-SGD tutorial + auditing tutorial + DP-FTRL tutorial sampler mismatches; <code>train_sft.py --no-shard</code>+<code>--truncated-batch-size</code>; <code>BallsInBinsSampler</code> dropping empty bins; <code>train_dpftrl.py</code> one-epoch runs; <code>distributed.md</code> unbounded sampler; <code>dp-sgd.md</code> end-to-end loop; issue O (audit coin flip changes n → changes min_sep/bins).</p>
 <p><strong>Change:</strong> samplers emit a <code>SamplingContract</code> (mode, <code>sample_rate</code>, <code>n_steps</code>, <code>min_sep</code>, <code>num_bins</code>, <code>max_participations</code>). Amplification factories <em>require</em> one; <code>Accountant</code> records it; a mismatch raises. <code>BallsInBinsSampler</code> yields empty batches for empty bins so the declared <code>num_bins</code> stays true. <code>parallel_poisson(poisson(...))</code> composes rather than either-or.</p>
 <p><strong>Why one change:</strong> every one of these bugs is "the runtime sampling distribution and the accounted distribution differ, and nothing checks." Ten doc rewrites without the contract will drift again within two releases.</p>
 <h3 id="rc-2-the-deployed-gaussian-is-not-the-gaussian-the-accountant-prices">RC-2 — The deployed Gaussian is not the Gaussian the accountant prices<a class="headerlink" href="#rc-2-the-deployed-gaussian-is-not-the-gaussian-the-accountant-prices" title="Permanent link">&para;</a></h3>
@@ -3322,7 +3322,7 @@ RC-7 remainder. <code>all_finite</code> needs the per-example finite mask surfac
 </code></pre></div>
 <p><strong>Five hard orderings, stated plainly:</strong></p>
 <ol>
-<li><strong>The auditor before any audited-ε claim.</strong> D1 must land before D2, D2 before anything in docs or README says a number was empirically validated. Issue O also means the audit harness in <code>train_dp_ftrl.py</code> is currently comparing two <em>different mechanisms</em> — fix that with RC-1 before trusting any output.</li>
+<li><strong>The auditor before any audited-ε claim.</strong> D1 must land before D2, D2 before anything in docs or README says a number was empirically validated. Issue O also means the audit harness in <code>train_dpftrl.py</code> is currently comparing two <em>different mechanisms</em> — fix that with RC-1 before trusting any output.</li>
 <li><strong>The gloo lane before the distributed fixes.</strong> Every RC-8 fix is a 10-line change that is impossible to verify today. Build the lane, watch it fail on the current code, then fix.</li>
 <li><strong>The benchmark harness before any performance number.</strong> Do not restate the memory-optimizations tables, the BISR table, the Adafactor comparison, or the second-moment overhead from memory.</li>
 <li><strong>MC-UCB before b-min-sep/BnB claims and before issue I's sandwich tests.</strong> The tests are skipped for 6 of 8 pairs <em>because</em> the estimates are non-conservative point estimates.</li>

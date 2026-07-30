@@ -3398,7 +3398,7 @@ wrapper. AUTO-S clipping (<code>auto_clipped_grad(..., second_moment=True)</code
 calibrates against the same plain <code>dpsgd_acc.gaussian(nm)</code> because AUTO-S
 contributes no extra threshold-quantile cost.</p>
 <h3 id="cli">CLI<a class="headerlink" href="#cli" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>python<span class="w"> </span>examples/train_dp_ftrl.py<span class="w"> </span>--preset<span class="w"> </span>smoke<span class="w"> </span>--optimizer<span class="w"> </span>adamw<span class="w"> </span>--mechanism<span class="w"> </span>blt<span class="w"> </span>--second-moment
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>python<span class="w"> </span>examples/train_dpftrl.py<span class="w"> </span>--preset<span class="w"> </span>smoke<span class="w"> </span>--optimizer<span class="w"> </span>adamw<span class="w"> </span>--mechanism<span class="w"> </span>blt<span class="w"> </span>--second-moment
 </code></pre></div>
 <p>Works with MF mechanisms supported by <code>mf_gaussian_noise</code>: <code>band_mf</code>, <code>blt</code>,
 <code>bisr</code>, <code>bsr</code>, and <code>lambda_cgd</code>.  In second-moment mode, pass

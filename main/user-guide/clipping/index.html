@@ -1115,9 +1115,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cli-usage-in-train_causal_lmpy" class="md-nav__link">
+  <a href="#cli-usage-in-train_dpsgdpy" class="md-nav__link">
     <span class="md-ellipsis">
-      CLI usage in train_causal_lm.py
+      CLI usage in train_dpsgd.py
     </span>
   </a>
   
@@ -3190,9 +3190,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cli-usage-in-train_causal_lmpy" class="md-nav__link">
+  <a href="#cli-usage-in-train_dpsgdpy" class="md-nav__link">
     <span class="md-ellipsis">
-      CLI usage in train_causal_lm.py
+      CLI usage in train_dpsgd.py
     </span>
   </a>
   
@@ -3746,13 +3746,13 @@ introduces no extra data-dependent query:</p>
 <a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="p">)</span>
 <a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a><span class="c1"># grads.max_norm.effective = sqrt(sum R_k^2) / normalize_by</span>
 </code></pre></div>
-<h3 id="cli-usage-in-train_causal_lmpy">CLI usage in <code>train_causal_lm.py</code><a class="headerlink" href="#cli-usage-in-train_causal_lmpy" title="Permanent link">&para;</a></h3>
+<h3 id="cli-usage-in-train_dpsgdpy">CLI usage in <code>train_dpsgd.py</code><a class="headerlink" href="#cli-usage-in-train_dpsgdpy" title="Permanent link">&para;</a></h3>
 <p>The training script exposes clipping mode through <code>--clipping-mode</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="c1"># Flat AUTO-S (default R=1, γ=0.01)</span>
-<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>python<span class="w"> </span>examples/train_causal_lm.py<span class="w"> </span>--clipping-mode<span class="w"> </span>auto<span class="w"> </span>--clipping-norm<span class="w"> </span><span class="m">1</span>.0
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>python<span class="w"> </span>examples/train_dpsgd.py<span class="w"> </span>--clipping-mode<span class="w"> </span>auto<span class="w"> </span>--clipping-norm<span class="w"> </span><span class="m">1</span>.0
 <a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>
 <a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="c1"># Per-layer AUTO-S: smaller R for q_proj (naturally smaller gradients)</span>
-<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>python<span class="w"> </span>examples/train_causal_lm.py<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>python<span class="w"> </span>examples/train_dpsgd.py<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="w">    </span>--clipping-mode<span class="w"> </span>auto<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="w">    </span>--per-group-clipping<span class="w"> </span><span class="nv">q_proj</span><span class="o">=</span><span class="m">0</span>.1<span class="w"> </span><span class="nv">fallback</span><span class="o">=</span><span class="m">0</span>.9<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="w">    </span>--auto-clipping-gamma<span class="w"> </span><span class="m">0</span>.01

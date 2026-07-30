@@ -3194,7 +3194,7 @@ keys, then call <code>noise_stddev_for</code> as above.</p>
 <span class="arithmatex">\(\sigma_i \propto \sqrt{C_i}\)</span>.  <code>gaussian_noise</code> applies the optimal
 allocation automatically when <code>grads.max_norm</code> is a <code>PerGroup</code>.  Privacy
 accounting is identical under either allocation — just <code>gaussian(nm)</code>.</p>
-<p>The <a href="https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py">training script</a> uses this by default
+<p>The <a href="https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dpsgd.py">training script</a> uses this by default
 when per-group clipping is active.</p>
 <p>Alternatively, isotropic noise (same σ everywhere) also works:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>

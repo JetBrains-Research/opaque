@@ -3202,7 +3202,7 @@ path. Enabled by passing <code>fused_linear_cross_entropy=True</code> to
 incompatible with callers that read <code>outputs.logits</code> — <code>compute_metrics</code>,
 <code>preprocess_logits_for_metrics</code>, and generation eval. Enable the patch when
 loss is the only consumer of the forward output;
-<code>examples/train_causal_lm.py</code> and <code>examples/train_dp_ftrl.py</code> do.</p>
+<code>examples/train_dpsgd.py</code> and <code>examples/train_dpftrl.py</code> do.</p>
 <table>
 <thead>
 <tr>

@@ -2971,8 +2971,8 @@ would be worst-case across the family rather than instance-specific. The
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
 <a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ε (audit): </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
-<p>See <a href="https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py">examples/train_causal_lm.py</a>
-and <a href="https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dp_ftrl.py">examples/train_dp_ftrl.py</a>
+<p>See <a href="https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dpsgd.py">examples/train_dpsgd.py</a>
+and <a href="https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dpftrl.py">examples/train_dpftrl.py</a>
 for complete working examples with the <code>--audit</code> flag.</p>
 <h3 id="parameter-reference">Parameter reference<a class="headerlink" href="#parameter-reference" title="Permanent link">&para;</a></h3>
 <ul>
