@@ -436,20 +436,15 @@ the canonical lint / test / Rust-test commands.
   MF-specific ones (`band_mf`, `blt`, `bisr`, etc.) live in
   `opaque.dpftrl.accounting`.
 - CUDA/MPS tests auto-skip; no special handling needed on CPU-only VMs.
-- Running the `examples/` training scripts (e.g. `train_dpsgd.py`)
-  additionally needs the `examples` dependency group
-  (`uv sync --group examples --all-packages --extra all`; `datasets`,
-  `wandb`, etc.). Add `--no-wandb` for offline runs.
-- The example scripts hit the network (HuggingFace) for models/datasets.
-  Two non-obvious gotchas with the installed `transformers` /
-  `huggingface_hub` versions: (1) the `smoke` preset's default model
-  `gpt2` is **not** a supported family and fails in the opaque patches
-  (`'GPT2LMHeadModel' object has no attribute 'model'`) — use a supported
-  family instead (e.g. `--model-name hf-internal-testing/tiny-random-LlamaForCausalLM
-  --lora-modules q_proj k_proj v_proj o_proj` for a fast CPU smoke run);
-  (2) legacy single-name dataset ids like `ag_news` are rejected by the
-  newer `huggingface_hub` — pass the namespaced id (`--dataset fancyzhx/ag_news
-  --dataset-text-field text`).
+- Running the `examples/` training scripts requires the `examples` dependency
+  group (`uv sync --group examples --all-packages --extra all`, which adds
+  `datasets`, `wandb`, and related packages). Pass `--no-wandb` for offline runs.
+- The example scripts download models and datasets from the Hugging Face Hub.
+  Two constraints apply with the pinned `transformers` / `huggingface_hub`
+  versions: the model must belong to a supported family (listed above), as
+  unsupported architectures such as GPT-2 fail inside the opaque patches; and
+  datasets must be referenced by their namespaced Hub id (`owner/name`), since
+  the legacy single-name ids are no longer accepted.
 
 ### PR workflow
 
