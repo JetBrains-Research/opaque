@@ -107,10 +107,7 @@ def _rms_norm_forward_kernel(
     if casting_mode == 0:
         X_row = X_row.to(X_row_dtype)
 
-    if elementwise_affine:
-        Y_row = X_row * (offset + W_row)
-    else:
-        Y_row = X_row
+    Y_row = X_row * (offset + W_row) if elementwise_affine else X_row
 
     if casting_mode == 1:
         Y_row = Y_row.to(X_row_dtype)
@@ -188,10 +185,7 @@ def _rms_norm_forward_block_kernel(
         if casting_mode == 0:
             X_row = X_row.to(X_row_dtype)
 
-        if elementwise_affine:
-            Y_row = X_row * (offset_r + W_row)
-        else:
-            Y_row = X_row
+        Y_row = X_row * (offset_r + W_row) if elementwise_affine else X_row
 
         if casting_mode == 1:
             Y_row = Y_row.to(X_row_dtype)
@@ -258,15 +252,9 @@ def _rms_norm_backward_kernel(
                 m = dY_row.to(tl.float32)
         elif casting_mode == 1:
             dY_row = dY_row.to(tl.float32)
-            if elementwise_affine:
-                m = dY_row * W_row
-            else:
-                m = dY_row
+            m = dY_row * W_row if elementwise_affine else dY_row
         else:
-            if elementwise_affine:
-                m = dY_row * W_row
-            else:
-                m = dY_row
+            m = dY_row * W_row if elementwise_affine else dY_row
 
         dX_row = rstd_row * m
         dX_row += rstd_row * (
@@ -402,10 +390,7 @@ def _rms_norm_backward_triton(
     rows_per_program = math.ceil(n_rows / sm_count)
     grid = (sm_count,)
 
-    if in_place:
-        dX = dY
-    else:
-        dX = torch.zeros_like(dY)
+    dX = dY if in_place else torch.zeros_like(dY)
 
     W_contig = W.contiguous() if elementwise_affine else None
 
@@ -437,10 +422,7 @@ def _rms_norm_backward_triton(
         )
 
     dX = dX.view(*shape)
-    if elementwise_affine:
-        dW = _dW.sum(dim=0).to(W.dtype)
-    else:
-        dW = dY.new_zeros(0)
+    dW = _dW.sum(dim=0).to(W.dtype) if elementwise_affine else dY.new_zeros(0)
     return dX, dW
 
 

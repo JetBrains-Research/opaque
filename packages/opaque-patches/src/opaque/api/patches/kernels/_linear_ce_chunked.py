@@ -202,11 +202,8 @@ class _ChunkedLinearCE(torch.autograd.Function):
             idx = (targets - lo).clamp(0, hi - lo - 1)
             onehot = torch.zeros_like(p).scatter(1, idx[:, None], 1.0)
             onehot = onehot * sel[:, None].to(p.dtype)
-            if eps:
-                # q_v = (1-eps)*onehot + eps/V ; dloss/dlogit = p - q
-                gl = p - ((1.0 - eps) * onehot + eps / V)
-            else:
-                gl = p - onehot
+            # q_v = (1-eps)*onehot + eps/V ; dloss/dlogit = p - q
+            gl = p - ((1.0 - eps) * onehot + eps / V) if eps else p - onehot
             if softcap is not None:
                 gl = gl * (1.0 - (lc / softcap) ** 2)  # tanh-cap chain rule
             gl = gl * row[:, None]

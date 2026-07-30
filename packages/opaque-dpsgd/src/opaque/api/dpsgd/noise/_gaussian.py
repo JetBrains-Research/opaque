@@ -259,10 +259,7 @@ def gaussian_noise(
             device=device
         )
 
-        if in_dtype != compute_dtype:
-            center_c = center.to(compute_dtype)
-        else:
-            center_c = center
+        center_c = center.to(compute_dtype) if in_dtype != compute_dtype else center
 
         # Clamp ``u`` away from 0 and 1 so ``2u-1`` never reaches ±1 and
         # ``erfinv`` can't return ±inf.  ``finfo.tiny`` (denormal min) is

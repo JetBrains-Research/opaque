@@ -266,18 +266,12 @@ def _mm_backward(
     da_ptrs = da_ptrs + d_inds * stride_ad
 
     for d in range(tl.cdiv(D, BLOCK_D)):
-        if EVEN_D:
-            mask = partial_mask_b
-        else:
-            mask = partial_mask_b & (d_inds < (D - d * BLOCK_D))
+        mask = partial_mask_b if EVEN_D else partial_mask_b & (d_inds < D - d * BLOCK_D)
 
         b = tl.load(b_ptrs, mask=mask, other=0.0)
         da_i = tl.dot(do, b, input_precision="ieee").to(da_ptrs.dtype.element_ty)
 
-        if EVEN_D:
-            mask = partial_mask_a
-        else:
-            mask = partial_mask_a & (d_inds < (D - d * BLOCK_D))
+        mask = partial_mask_a if EVEN_D else partial_mask_a & (d_inds < D - d * BLOCK_D)
 
         lock_offset = d // tl.cdiv(D, BLOCK_D * n_locks)
         this_da_lock_ptr = da_lock_ptr + lock_offset
@@ -667,10 +661,7 @@ def _backward_impl(
     assert e.is_contiguous()
     assert c.shape[1] == e.shape[1]
 
-    if valids is not None:
-        B = valids.size(0)
-    else:
-        B = e.size(0)
+    B = valids.size(0) if valids is not None else e.size(0)
 
     V, D = c.shape
     nd_locks = triton.cdiv(D, 64)

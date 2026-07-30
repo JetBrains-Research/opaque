@@ -214,7 +214,6 @@ src = [
 [tool.ruff.lint]
 # High-signal rules. Omitted only when they fight intentional design or are a
 # separate documentation/typing project — not merely because they need edits:
-#   INP001  — false positive on pytest test trees (no __init__.py by design)
 #   PLC0415 — many lazy / optional / cycle-breaking imports are intentional
 #   TRY003  — requires bespoke exception classes for every message; low fit
 #   PLR0913/PLR0915/PLR0917/PLR2004 — API arity & magic-number nags; style debt
@@ -241,6 +240,7 @@ select = [
   "TC",   # move typing-only imports under TYPE_CHECKING
   "ARG",  # unused args (prefix with _)
   "PTH",  # prefer pathlib over os.path
+  "INP",  # flag missing __init__.py (tests + PEP 420 façades ignored below)
 ]
 ignore = [
   "E501",   # formatter owns line length
@@ -249,8 +249,6 @@ ignore = [
   "RUF003", # intentional unicode in comments
   "RUF022", # keep thematic __all__ section comments
   "B019",   # lru_cache on frozen PLD mechanism methods is intentional
-  "SIM108", # if/else often clearer than ternary here
-  "PT011",  # broad pytest.raises(...) used intentionally in places
   "ARG004", # autograd.Function / vmap staticmethod signatures are fixed APIs
 ]
 
@@ -264,7 +262,12 @@ known-first-party = ["opaque"]
 "packages/opaque-optimizers/tests/**" = ["E402"]
 "packages/opaque-transformers/tests/opaque_transformers/test_scheduler_dispatch.py" = ["E402"]
 # Test suites routinely take fixture/interface args they do not read.
-"**/tests/**" = ["ARG001", "ARG002", "ARG005"]
+# INP001: pytest trees intentionally omit __init__.py.
+"**/tests/**" = ["ARG001", "ARG002", "ARG005", "INP001"]
+"tests/**" = ["INP001"]
+# PEP 420: `opaque/` has no __init__.py (multi-wheel namespace); façade
+# modules live directly under src/opaque/ (see tests/contracts/test_pep420_no_init.py).
+"packages/*/src/opaque/*.py" = ["INP001"]
 # Triton kernels + autograd.Function.vmap must mirror fixed call signatures.
 "packages/opaque-patches/src/opaque/api/patches/kernels/**" = ["ARG001", "ARG002", "ARG005"]
 # Optimizer update() kwargs match a uniform torchopt-style signature.
