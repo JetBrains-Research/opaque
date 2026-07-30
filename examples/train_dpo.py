@@ -59,7 +59,7 @@ USAGE:
   # Smoke test (CPU, ~seconds, no network)
   python examples/train_dpo.py --smoke
 
-  # Quick test preset (Qwen2.5-Coder-0.5B + code-security DPO)
+  # Quick test preset (SmolLM2-135M-Instruct + code-security DPO)
   python examples/train_dpo.py --preset smoke
 
   # Full production training on Qwen2.5-Coder-7B + code-security DPO at ε=8
@@ -70,7 +70,7 @@ USAGE:
 
   # Or customize individual parameters:
   python examples/train_dpo.py \\
-    --model-name "Qwen/Qwen2.5-Coder-0.5B-Instruct" \\
+    --model-name "HuggingFaceTB/SmolLM2-135M-Instruct" \\
     --dataset "CyberNative/Code_Vulnerability_Security_DPO" \\
     --loss-type sigmoid --beta 0.1 \\
     --num-train-samples 5000 --num-eval-samples 500 \\
@@ -722,7 +722,7 @@ def parse_args():
         ],
         default="smoke",
         help="Apply preset configuration (custom=keep explicit args, "
-        "smoke=quick test Qwen2.5-Coder-0.5B + code-security DPO at ε=8, "
+        "smoke=quick test SmolLM2-135M-Instruct + code-security DPO at ε=8, "
         "qwen-7b-codesec=Qwen2.5-Coder-7B + code-security DPO at ε=8 with adafactor @ 5e-5, "
         "mellum-codesec=Mellum-4b dense + code-security DPO at ε=8, "
         "mellum2-codesec=Mellum2-12B-A2.5B MoE + code-security DPO at ε=8).",
@@ -734,7 +734,7 @@ def parse_args():
         "--model",
         dest="model_name",
         type=str,
-        default="Qwen/Qwen2.5-Coder-0.5B-Instruct",
+        default="HuggingFaceTB/SmolLM2-135M-Instruct",
         help="HuggingFace model name or local path",
     )
     model_group.add_argument(
@@ -1218,15 +1218,12 @@ def parse_args():
     # The loader collapses (system, question) -> prompt.
     _CODESEC = "CyberNative/Code_Vulnerability_Security_DPO"
     if args.preset == "smoke":
-        _set("model_name", "Qwen/Qwen2.5-Coder-0.5B-Instruct")
+        _set("model_name", "HuggingFaceTB/SmolLM2-135M-Instruct")
         _set("dataset", _CODESEC)
         _set("num_train_samples", 256)
         _set("num_eval_samples", 64)
         _set("num_epochs", 1)
         _set("batch_size", 16)
-        # DPO runs two forwards (chosen + rejected) per example; microbatch so
-        # the 0.5B per-sample vmap grads fit modest (~16 GB) CPU dev boxes.
-        _set("microbatch_size", 4)
         _set("log_steps", 5)
         _set("eval_steps", 5)
         _set("target_epsilon", 8.0)

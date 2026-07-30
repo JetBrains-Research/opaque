@@ -47,7 +47,7 @@ MECHANISMS:
 
 USAGE:
 
-  # Quick smoke test (~2 minutes, Qwen2.5-Coder-0.5B on KExercises)
+  # Quick smoke test (~2 minutes, SmolLM2-135M on KExercises)
   python examples/train_dp_ftrl.py --preset smoke
 
   # BandMF + b-min-sep on Mellum (default mechanism: b=64, momentum=0.95)
@@ -397,7 +397,7 @@ def parse_args():
 
     # Model
     model_g = parser.add_argument_group("model")
-    model_g.add_argument("--model-name", type=str, default="Qwen/Qwen2.5-Coder-0.5B")
+    model_g.add_argument("--model-name", type=str, default="HuggingFaceTB/SmolLM2-135M")
     model_g.add_argument(
         "--attention", type=str, choices=["eager", "sdpa"], default="sdpa"
     )
@@ -622,7 +622,7 @@ def parse_args():
         default=None,
         metavar="PATTERN=NORM",
         help="Per-group clipping norms as PATTERN=NORM pairs (e.g. q_proj=0.9 v_proj=0.5 "
-        "for --preset smoke Qwen2.5-Coder LoRA, or q_proj=0.5 fallback=1.0 for Mellum presets). "
+        "for --preset smoke SmolLM2 LoRA, or q_proj=0.5 fallback=1.0 for Mellum presets). "
         "Each trainable param must match exactly one pattern substring. "
         "Use 'fallback=NORM' as catch-all.  Incompatible with adaptive clipping; "
         "MF ``mf_gaussian_noise`` uses the same Mahalanobis allocation as DP-SGD Gaussian.",
@@ -802,16 +802,13 @@ def parse_args():
             setattr(args, name, value)
 
     if args.preset == "smoke":
-        _set("model_name", "Qwen/Qwen2.5-Coder-0.5B")
+        _set("model_name", "HuggingFaceTB/SmolLM2-135M")
         _set("dataset", "JetBrains/KExercises")
         _set("dataset_text_field", "solution")
         _set("num_train_samples", 256)
         _set("num_eval_samples", 64)
         _set("num_epochs", 1)
         _set("batch_size", 32)
-        # Microbatch so per-sample vmap grads for a 0.5B model fit modest
-        # (~16 GB) CPU dev boxes; the H200 presets can drop this.
-        _set("microbatch_size", 4)
         _set("log_steps", 5)
         _set("eval_steps", 5)
         _set("target_epsilon", 3.0)

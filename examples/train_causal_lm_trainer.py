@@ -6,7 +6,7 @@ the same ``TrainingArguments``.
 
 USAGE:
 
-  # Quick smoke test, Qwen2.5-Coder-0.5B on KExercises (DP-SGD)
+  # Quick smoke test, SmolLM2-135M on KExercises (DP-SGD)
   python examples/train_causal_lm_trainer.py --preset smoke
 
   # Full production-style configuration on Mellum-4b + KStack (DP-SGD)
@@ -205,7 +205,7 @@ def parse_args() -> argparse.Namespace:
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
     model_group.add_argument(
-        "--model-name", type=str, default="Qwen/Qwen2.5-Coder-0.5B"
+        "--model-name", type=str, default="HuggingFaceTB/SmolLM2-135M"
     )
     model_group.add_argument(
         "--attention",
@@ -680,16 +680,13 @@ def parse_args() -> argparse.Namespace:
             setattr(args, name, value)
 
     if args.preset == "smoke":
-        _set("model_name", "Qwen/Qwen2.5-Coder-0.5B")
+        _set("model_name", "HuggingFaceTB/SmolLM2-135M")
         _set("dataset", "JetBrains/KExercises")
         _set("dataset_text_field", "solution")
         _set("num_train_samples", 256)
         _set("num_eval_samples", 64)
         _set("num_epochs", 1)
         _set("batch_size", 32)
-        # Microbatch so per-sample vmap grads for a 0.5B model fit modest
-        # (~16 GB) CPU dev boxes; the H200 presets can drop this.
-        _set("microbatch_size", 4)
         _set("log_steps", 5)
         _set("eval_steps", 5)
         _set("target_epsilon", 3.0)

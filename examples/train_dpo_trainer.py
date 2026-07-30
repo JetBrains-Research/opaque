@@ -20,7 +20,7 @@ Examples::
 
     # Vanilla DPO (LoRA policy, base model as the reference)
     uv run python examples/train_dpo_trainer.py \\
-      --model Qwen/Qwen2.5-Coder-0.5B-Instruct \\
+      --model HuggingFaceTB/SmolLM2-135M-Instruct \\
       --dataset CyberNative/Code_Vulnerability_Security_DPO \\
       --beta 0.1 --max-length 512 --batch-size 8 --microbatch-size 2 \\
       --max-steps 50 --learning-rate 1e-4 --peft \\
@@ -111,7 +111,7 @@ def _to_trl_canonical_dpo(row: dict) -> dict:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="DP DPO with the class-based DPOTrainer")
-    p.add_argument("--model", default="Qwen/Qwen2.5-Coder-0.5B-Instruct")
+    p.add_argument("--model", default="HuggingFaceTB/SmolLM2-135M-Instruct")
     p.add_argument(
         "--ref-model",
         default=None,
@@ -187,10 +187,10 @@ def parse_args() -> argparse.Namespace:
     # --- Training ----------------------------------------------------------
     p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--batch-size", type=int, default=16)
-    # ``None`` → vmap over the full batch (no chunking). Default to a small
-    # chunk so the 0.5B two-forward DPO per-example grads fit modest (~16 GB)
-    # CPU dev boxes; raise or set 0 (=None) on bigger accelerators.
-    p.add_argument("--microbatch-size", type=int, default=4)
+    # ``None`` → vmap over the full batch (no chunking). Override
+    # explicitly if a model's per-example memory footprint requires
+    # splitting the logical batch into smaller chunks.
+    p.add_argument("--microbatch-size", type=int, default=None)
     p.add_argument(
         "--precompute-ref-batch-size",
         type=int,

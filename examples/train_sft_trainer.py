@@ -16,7 +16,7 @@ Examples::
 
     # Plain LoRA SFT on raw text
     uv run python examples/train_sft_trainer.py \\
-      --model-name Qwen/Qwen2.5-Coder-0.5B \\
+      --model-name HuggingFaceTB/SmolLM2-135M \\
       --dataset JetBrains/KExercises --dataset-text-field solution \\
       --num-train-samples 2000 --loss-type nll \\
       --max-length 512 --batch-size 8 --num-steps 50 \\
@@ -33,7 +33,7 @@ Examples::
     # PEFT added-token path: clone a chat template + special tokens, train the
     # new embedding rows alongside the LoRA adapter, mask to assistant turns.
     uv run python examples/train_sft_trainer.py \\
-      --chat-template-path Qwen/Qwen2.5-Coder-0.5B-Instruct --assistant-only-loss
+      --chat-template-path HuggingFaceTB/SmolLM2-135M-Instruct --assistant-only-loss
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ def _configure_reporting(no_wandb: bool) -> list[str]:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="DP SFT with the class-based SFTTrainer")
-    p.add_argument("--model-name", default="Qwen/Qwen2.5-Coder-0.5B")
+    p.add_argument("--model-name", default="HuggingFaceTB/SmolLM2-135M")
     p.add_argument("--dataset", default="JetBrains/KExercises")
     p.add_argument("--dataset-config", default=None)
     p.add_argument("--dataset-split", default="train")
@@ -116,9 +116,7 @@ def parse_args() -> argparse.Namespace:
     # --- Training ----------------------------------------------------------
     p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--batch-size", type=int, default=16)
-    # Default to a small chunk so the 0.5B per-sample vmap grads fit modest
-    # (~16 GB) CPU dev boxes; raise or set 0 (=None) on bigger accelerators.
-    p.add_argument("--microbatch-size", type=int, default=4)
+    p.add_argument("--microbatch-size", type=int, default=None)
     p.add_argument(
         "--stop-at-step",
         type=int,

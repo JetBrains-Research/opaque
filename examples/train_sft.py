@@ -71,7 +71,7 @@ USAGE:
   # Smoke test (CPU, ~seconds, no network)
   python examples/train_sft.py --smoke
 
-  # Quick test preset (Qwen2.5-Coder-0.5B on KExercises, plain text field)
+  # Quick test preset (SmolLM2-135M on KExercises, plain text field)
   python examples/train_sft.py --preset smoke
 
   # Completion-only SFT on a chat dataset
@@ -468,7 +468,7 @@ def parse_args():
         ],
         default="smoke",
         help="Apply preset configuration (custom=keep explicit args, "
-        "smoke=quick test Qwen2.5-Coder-0.5B + KExercises at ε=8, "
+        "smoke=quick test SmolLM2-135M + KExercises at ε=8, "
         "mellum-kstack=Mellum-4b + KStack at ε=10 with adafactor @ 5e-5, "
         "mellum2-kstack=Mellum2-12B-A2.5B MoE + KStack at ε=10 with adafactor @ 5e-5, "
         "qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at ε=3 with adafactor @ 5e-4).",
@@ -480,7 +480,7 @@ def parse_args():
         "--model",
         dest="model_name",
         type=str,
-        default="Qwen/Qwen2.5-Coder-0.5B",
+        default="HuggingFaceTB/SmolLM2-135M",
         help="HuggingFace model name or local path",
     )
     model_group.add_argument(
@@ -917,8 +917,8 @@ def parse_args():
 
     # Apply preset configurations (CLI args take precedence)
     if args.preset == "smoke":
-        # Quick smoke test with Qwen2.5-Coder-0.5B + KExercises (plain text field).
-        _set("model_name", "Qwen/Qwen2.5-Coder-0.5B")
+        # Quick smoke test with SmolLM2-135M + KExercises (plain text field).
+        _set("model_name", "HuggingFaceTB/SmolLM2-135M")
         _set("dataset", "JetBrains/KExercises")
         _set("dataset_text_field", "solution")
         _set("completion_only", False)
@@ -926,9 +926,6 @@ def parse_args():
         _set("num_eval_samples", 64)
         _set("num_epochs", 1)
         _set("batch_size", 32)
-        # Microbatch so per-sample vmap grads for a 0.5B model fit modest
-        # (~16 GB) CPU dev boxes; the H200 presets can drop this.
-        _set("microbatch_size", 4)
         _set("log_steps", 5)
         _set("eval_steps", 5)
         _set("target_epsilon", 8.0)

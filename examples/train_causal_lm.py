@@ -9,7 +9,7 @@ This example is designed as a production-style script (not a tutorial):
 
 USAGE:
 
-  # Quick smoke test (~2-3 minutes, Qwen2.5-Coder-0.5B on KExercises)
+  # Quick smoke test (~2-3 minutes, SmolLM2-135M on KExercises)
   python examples/train_causal_lm.py --preset smoke
 
   # Or use default settings (same as smoke)
@@ -354,7 +354,7 @@ def parse_args():
     model_group.add_argument(
         "--model-name",
         type=str,
-        default="Qwen/Qwen2.5-Coder-0.5B",
+        default="HuggingFaceTB/SmolLM2-135M",
         help="HuggingFace model name or local path",
     )
     model_group.add_argument(
@@ -806,17 +806,14 @@ def parse_args():
 
     # Apply preset configurations (CLI args take precedence)
     if args.preset == "smoke":
-        # Quick smoke test with Qwen2.5-Coder-0.5B (~8 steps, ~2-3 minutes)
-        _set("model_name", "Qwen/Qwen2.5-Coder-0.5B")
+        # Quick smoke test with SmolLM2-135M (~8 steps, ~2-3 minutes)
+        _set("model_name", "HuggingFaceTB/SmolLM2-135M")
         _set("dataset", "JetBrains/KExercises")
         _set("dataset_text_field", "solution")
         _set("num_train_samples", 256)
         _set("num_eval_samples", 64)
         _set("num_epochs", 1)
         _set("batch_size", 32)
-        # Microbatch so per-sample vmap grads for a 0.5B model fit modest
-        # (~16 GB) CPU dev boxes; the H200 presets can drop this.
-        _set("microbatch_size", 4)
         _set("log_steps", 5)
         _set("eval_steps", 5)
         _set("target_epsilon", 3.0)
