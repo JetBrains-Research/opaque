@@ -26,7 +26,7 @@ import shutil
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torchopt
@@ -49,7 +49,6 @@ from opaque.dpsgd.noise import gaussian_noise
 from opaque.functional import make_functional
 from opaque.profiling import PerfTracker, perf_tracker
 from opaque.random import key, split
-from opaque.random.types import RngKey
 from opaque.serialization import (
     from_state_dict as opaque_from_state_dict,
 )
@@ -73,6 +72,9 @@ from transformers.trainer_utils import (
     speed_metrics,
 )
 from transformers.utils import find_labels
+
+if TYPE_CHECKING:
+    from opaque.random.types import RngKey
 
 from . import _checkpoint as ckpt
 from . import _distributed, _dpftrl, _eval, _hub
