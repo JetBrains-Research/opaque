@@ -67,13 +67,27 @@ def _configure_reporting(no_wandb: bool) -> list[str]:
     return ["wandb"]
 
 
+def _require_configured(parser, args, required=("model_name", "dataset")):
+    """Fail fast if fields with no neutral default are still unset."""
+    missing = [name for name in required if getattr(args, name) is None]
+    if missing:
+        flags = ", ".join("--" + name.replace("_", "-") for name in missing)
+        parser.error(f"missing required configuration: {flags}. Pass them directly.")
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="DP SFT with the class-based SFTTrainer")
-    p.add_argument("--model-name", default="HuggingFaceTB/SmolLM2-135M")
-    p.add_argument("--dataset", default="JetBrains/KExercises")
+    p.add_argument(
+        "--model-name",
+        default=None,
+        help="HuggingFace model name or local path (required)",
+    )
+    p.add_argument(
+        "--dataset", default=None, help="HuggingFace dataset name (required)"
+    )
     p.add_argument("--dataset-config", default=None)
     p.add_argument("--dataset-split", default="train")
-    p.add_argument("--dataset-text-field", default="solution")
+    p.add_argument("--dataset-text-field", default="text")
     p.add_argument("--num-train-samples", type=int, default=256)
     # --- Loss --------------------------------------------------------------
     p.add_argument(
@@ -120,7 +134,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--stop-at-step",
         type=int,
-        default=50,
+        default=8,
         help="Stop the training loop after this many optimizer steps "
         "(early-stop knob, not a privacy-accounting target — privacy is "
         "calibrated from target_epsilon × steps × sample_rate regardless).",
@@ -237,7 +251,9 @@ def parse_args() -> argparse.Namespace:
         help="Disable W&B logging; defaults to enabled when WANDB_PROJECT / "
         "WANDB_API_KEY env vars are set (the Cadence presets plumb these).",
     )
-    return p.parse_args()
+    args = p.parse_args()
+    _require_configured(p, args)
+    return args
 
 
 def label_smoothed_ce(outputs, labels: torch.Tensor) -> torch.Tensor:
