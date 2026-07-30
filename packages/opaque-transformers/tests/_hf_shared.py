@@ -352,10 +352,18 @@ def run_dp_training_step(
     learning_rate=1e-3,
     clipping_norm=1.0,
 ):
-    """Run DP-SGD training with clipped gradients and gradient accumulation."""
+    """Run DP-SGD training with clipped gradients and gradient accumulation.
+
+    Returns:
+        tuple: ``(accumulated, state)`` where ``accumulated`` is a
+        :class:`~opaque.types.ClippedPytree` for the last training step
+        (access tensor leaves via ``accumulated.pytree``) and ``state`` is
+        the final clipping state.
+    """
     from opaque.api.engine.clipping import clipped_grad
     from opaque.functional import make_functional
     from opaque.pytree import tree_map
+    from opaque.types import clipped
 
     device = next(model.parameters()).device
 
@@ -398,7 +406,8 @@ def run_dp_training_step(
     last_accumulated = None
 
     for _step in range(training_steps):
-        accumulated = None
+        accumulated_pytree = None
+        accumulated_max_norm = None
 
         for _ in range(accum_steps):
             grads, state = grad_fn(
@@ -410,18 +419,26 @@ def run_dp_training_step(
                 state=state,
             )
 
-            if accumulated is None:
-                accumulated = tree_map(lambda x: x.detach().clone(), grads)
+            if accumulated_pytree is None:
+                accumulated_pytree = tree_map(
+                    lambda x: x.detach().clone(), grads.pytree
+                )
+                accumulated_max_norm = grads.max_norm
             else:
-                accumulated = tree_map(lambda x, y: x + y, accumulated, grads)
+                accumulated_pytree = tree_map(
+                    lambda x, y: x + y, accumulated_pytree, grads.pytree
+                )
 
         scale = 1.0 / float(accum_steps)
-        accumulated = tree_map(lambda x, s=scale: x * s, accumulated)
+        accumulated = clipped(
+            tree_map(lambda x, s=scale: x * s, accumulated_pytree),
+            max_norm=accumulated_max_norm,
+        )
 
         trainable_params = tree_map(
             lambda p, g: p - learning_rate * g,
             trainable_params,
-            accumulated,
+            accumulated.pytree,
         )
 
         last_accumulated = accumulated
