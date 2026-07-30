@@ -1224,6 +1224,10 @@ def parse_args():
         _set("num_eval_samples", 64)
         _set("num_epochs", 1)
         _set("batch_size", 16)
+        # DPO runs two forwards (chosen + rejected) over full-length
+        # sequences, so microbatch the per-sample vmap grads to fit modest
+        # (~16 GB) CPU dev boxes; the H200 presets can drop this.
+        _set("microbatch_size", 4)
         _set("log_steps", 5)
         _set("eval_steps", 5)
         _set("target_epsilon", 8.0)

@@ -808,7 +808,10 @@ def parse_args():
         _set("num_train_samples", 256)
         _set("num_eval_samples", 64)
         _set("num_epochs", 1)
-        _set("batch_size", 32)
+        # band_mf Poisson sampling needs batch_size * bands < num_train_samples
+        # (here 16 * 8 = 128 < 256); a larger batch would push the per-band
+        # sampling probability to 1 and break PLD accounting on this tiny set.
+        _set("batch_size", 16)
         _set("log_steps", 5)
         _set("eval_steps", 5)
         _set("target_epsilon", 3.0)
