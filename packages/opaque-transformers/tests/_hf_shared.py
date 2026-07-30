@@ -352,7 +352,14 @@ def run_dp_training_step(
     learning_rate=1e-3,
     clipping_norm=1.0,
 ):
-    """Run DP-SGD training with clipped gradients and gradient accumulation."""
+    """Run DP-SGD training with clipped gradients and gradient accumulation.
+
+    Returns:
+        tuple: ``(accumulated, state)`` where ``accumulated`` is a
+        :class:`~opaque.types.ClippedPytree` for the last training step
+        (access tensor leaves via ``accumulated.pytree``) and ``state`` is
+        the final clipping state.
+    """
     from opaque.api.engine.clipping import clipped_grad
     from opaque.functional import make_functional
     from opaque.pytree import tree_map

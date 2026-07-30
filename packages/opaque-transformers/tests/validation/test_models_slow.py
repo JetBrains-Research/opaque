@@ -15,6 +15,7 @@ from _hf_shared import (
     load_model_with_lora,
     run_dp_training_step,
 )
+from opaque.types import ClippedPytree
 
 transformers = pytest.importorskip("transformers")
 peft = pytest.importorskip("peft")
@@ -56,5 +57,6 @@ class TestRealModelsSingleGPU:
             clipping_norm=1.0,
         )
 
-        # Verify training produced gradients
-        assert len(grads) > 0
+        # Verify training produced clipped gradients with preserved metadata
+        assert isinstance(grads, ClippedPytree)
+        assert len(grads.pytree) > 0
