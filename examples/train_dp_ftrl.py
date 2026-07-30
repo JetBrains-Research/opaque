@@ -416,12 +416,12 @@ def parse_args():
 
     # Data
     data_g = parser.add_argument_group("data")
-    data_g.add_argument("--dataset", type=str, default="JetBrains/KExercises")
+    data_g.add_argument("--dataset", type=str, default="fancyzhx/ag_news")
     data_g.add_argument(
         "--dataset-subset", dest="dataset_subset", type=str, default=None
     )
     data_g.add_argument("--dataset-split", type=str, default="train")
-    data_g.add_argument("--dataset-text-field", type=str, default="solution")
+    data_g.add_argument("--dataset-text-field", type=str, default="text")
     data_g.add_argument("--num-train-samples", type=int, default=5000)
     data_g.add_argument("--num-eval-samples", type=int, default=100)
     data_g.add_argument("--max-seq-len", type=int, default=512)

@@ -376,7 +376,7 @@ def parse_args():
     data_group.add_argument(
         "--dataset",
         type=str,
-        default="JetBrains/KExercises",
+        default="fancyzhx/ag_news",
         help="HuggingFace dataset name",
     )
     data_group.add_argument(
@@ -393,7 +393,7 @@ def parse_args():
     data_group.add_argument(
         "--dataset-text-field",
         type=str,
-        default="solution",
+        default="text",
         help="Field containing text",
     )
     data_group.add_argument(
@@ -813,7 +813,9 @@ def parse_args():
         _set("num_train_samples", 256)
         _set("num_eval_samples", 64)
         _set("num_epochs", 1)
-        _set("batch_size", 32)
+        # batch_size 16 keeps the per-sample vmap grads within modest
+        # (~16 GB) CPU dev boxes; the H200 presets use much larger batches.
+        _set("batch_size", 16)
         _set("log_steps", 5)
         _set("eval_steps", 5)
         _set("target_epsilon", 3.0)

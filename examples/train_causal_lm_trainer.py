@@ -230,7 +230,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     data_group = parser.add_argument_group("data", "Dataset and tokenization settings")
-    data_group.add_argument("--dataset", type=str, default="JetBrains/KExercises")
+    data_group.add_argument("--dataset", type=str, default="fancyzhx/ag_news")
     data_group.add_argument(
         "--dataset-subset",
         "--dataset-name",
@@ -240,7 +240,7 @@ def parse_args() -> argparse.Namespace:
         help="Optional HF load_dataset name/subset argument.",
     )
     data_group.add_argument("--dataset-split", type=str, default="train")
-    data_group.add_argument("--dataset-text-field", type=str, default="solution")
+    data_group.add_argument("--dataset-text-field", type=str, default="text")
     data_group.add_argument("--num-train-samples", type=int, default=5000)
     data_group.add_argument(
         "--num-eval-samples",
@@ -686,7 +686,9 @@ def parse_args() -> argparse.Namespace:
         _set("num_train_samples", 256)
         _set("num_eval_samples", 64)
         _set("num_epochs", 1)
-        _set("batch_size", 32)
+        # batch_size 16 keeps the per-sample vmap grads within modest
+        # (~16 GB) CPU dev boxes; the H200 presets use much larger batches.
+        _set("batch_size", 16)
         _set("log_steps", 5)
         _set("eval_steps", 5)
         _set("target_epsilon", 3.0)
