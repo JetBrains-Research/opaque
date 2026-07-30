@@ -291,8 +291,8 @@ fast path, which is incompatible with callers that read
 materialised tensor.  The patch is **opt-in** for this reason:
 enable via `apply_model_patches(model,
 fused_linear_cross_entropy=True)` when loss is the only consumer of
-the forward output.  `examples/train_causal_lm.py` and
-`examples/train_dp_ftrl.py` enable it.
+the forward output.  `examples/train_dpsgd.py` and
+`examples/train_dpftrl.py` enable it.
 
 `cross_entropy=True` (default when `kernels=True`) still installs
 the non-fused chunked CE via `loss_function`, which operates on

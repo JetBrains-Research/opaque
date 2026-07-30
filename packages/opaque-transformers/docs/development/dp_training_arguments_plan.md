@@ -773,7 +773,7 @@ User-facing doc: [docs/user-guide/distributed-trainer.md](../../../../docs/user-
    (`torchrun` or test-side `mp.spawn`) initialised the group; the trainer
    never calls `init_process_group` itself, mirroring HF
    ([trainer.py via PartialState]) and the existing
-   [examples/train_causal_lm.py:51–52](../../../../examples/train_causal_lm.py).
+   [examples/train_dpsgd.py:51–52](../../../../examples/train_dpsgd.py).
 4. **Privacy invariant per step still holds.** One optimizer step = one
    logical Poisson round across the cluster. Sharded mode preserves the
    global rate by construction; parallel-Poisson mode is accounted for by
@@ -886,7 +886,7 @@ as an opt-in. Both are valid DP-SGD; they differ in sample-rate accounting.
 The sharded default mirrors HF's `DistributedSampler` pattern (see
 [trainer.py:1037–1064](/workspaces/transformers/src/transformers/trainer.py)
 `_get_eval_sampler`) and matches the worked example in
-[examples/train_causal_lm.py:121–139](../../../../examples/train_causal_lm.py).
+[examples/train_dpsgd.py:121–139](../../../../examples/train_dpsgd.py).
 Parallel-Poisson is the right choice when (a) the user can't shard cleanly
 (streaming / iterable datasets), or (b) they want sampling diversity to
 exceed a single-shard's index space; the cost is the extra ε term encoded
@@ -1013,7 +1013,7 @@ if self._ddp.is_distributed:
 
 Everything else is unchanged: noise is identical on every rank because the
 shared key + same `noise_state` + same numerics yields identical samples (see
-the existing distributed example at [examples/train_causal_lm.py:1409–1450](../../../../examples/train_causal_lm.py)).
+the existing distributed example at [examples/train_dpsgd.py:1409–1450](../../../../examples/train_dpsgd.py)).
 Optimizer state stays in sync by virtue of pure-functional torchopt.
 
 **Subtleties**
@@ -1131,7 +1131,7 @@ which uses `mp.spawn` so neither `torchrun` nor a fixed launcher is required):
 - All marked `pytestmark = pytest.mark.cuda` and skipped when
   `torch.cuda.device_count() < 2`, mirroring the existing core distributed tests.
 
-**Example**: extend `examples/train_causal_lm.py` so that the DPTrainer
+**Example**: extend `examples/train_dpsgd.py` so that the DPTrainer
 launch path documents the same `dist.init_process_group` / `local_shard` /
 `fold_in(key, rank)` surgery the standalone DP-SGD example already shows
 (or, cleaner, add a sibling `examples/dp_trainer_ddp.py`).

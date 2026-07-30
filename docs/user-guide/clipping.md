@@ -562,16 +562,16 @@ grad_fn, clip_state = auto_clipped_grad(
 # grads.max_norm.effective = sqrt(sum R_k^2) / normalize_by
 ```
 
-### CLI usage in `train_causal_lm.py`
+### CLI usage in `train_dpsgd.py`
 
 The training script exposes clipping mode through `--clipping-mode`:
 
 ```bash
 # Flat AUTO-S (default R=1, γ=0.01)
-python examples/train_causal_lm.py --clipping-mode auto --clipping-norm 1.0
+python examples/train_dpsgd.py --clipping-mode auto --clipping-norm 1.0
 
 # Per-layer AUTO-S: smaller R for q_proj (naturally smaller gradients)
-python examples/train_causal_lm.py \
+python examples/train_dpsgd.py \
     --clipping-mode auto \
     --per-group-clipping q_proj=0.1 fallback=0.9 \
     --auto-clipping-gamma 0.01

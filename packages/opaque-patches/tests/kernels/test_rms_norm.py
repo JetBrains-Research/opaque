@@ -10,7 +10,7 @@ Tests:
 Performance: opaque must beat reference on time (within tolerance) or peak memory.
 
 Config: Mellum-4b ``hidden_dim`` and sequence length via ``mellum_config``
-(``conftest``), comparable to ``train_causal_lm.py --preset mellum-kstack`` geometry.
+(``conftest``), comparable to ``train_dpsgd.py --preset mellum-kstack`` geometry.
 """
 
 import pytest

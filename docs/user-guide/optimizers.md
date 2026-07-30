@@ -331,7 +331,7 @@ contributes no extra threshold-quantile cost.
 ### CLI
 
 ```bash
-python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --mechanism blt --second-moment
+python examples/train_dpftrl.py --preset smoke --optimizer adamw --mechanism blt --second-moment
 ```
 
 Works with MF mechanisms supported by `mf_gaussian_noise`: `band_mf`, `blt`,

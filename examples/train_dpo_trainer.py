@@ -20,8 +20,8 @@ Examples::
 
     # Vanilla DPO (LoRA policy, base model as the reference)
     uv run python examples/train_dpo_trainer.py \\
-      --model Qwen/Qwen2.5-0.5B-Instruct \\
-      --dataset trl-lib/ultrafeedback_binarized \\
+      --model HuggingFaceTB/SmolLM2-135M-Instruct \\
+      --dataset CyberNative/Code_Vulnerability_Security_DPO \\
       --beta 0.1 --max-length 512 --batch-size 8 --microbatch-size 2 \\
       --max-steps 50 --learning-rate 1e-4 --peft \\
       --clipping-norm 1.0 --noise-multiplier 0.8 --log-steps 5 --seed 42
@@ -63,6 +63,8 @@ def _configure_reporting(no_wandb: bool) -> list[str]:
             "online" if os.environ.get("WANDB_API_KEY") else "offline"
         )
     return ["wandb"]
+
+
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from opaque.transformers.trl import DPOConfig, DPOTrainer
@@ -107,9 +109,20 @@ def _to_trl_canonical_dpo(row: dict) -> dict:
     }
 
 
+def _require_configured(parser, args, required=("model", "dataset")):
+    missing = [name for name in required if getattr(args, name) is None]
+    if missing:
+        flags = ", ".join("--" + name.replace("_", "-") for name in missing)
+        parser.error(f"missing required configuration: {flags}. Pass them directly.")
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="DP DPO with the class-based DPOTrainer")
-    p.add_argument("--model", default="Qwen/Qwen2.5-0.5B-Instruct")
+    p.add_argument(
+        "--model",
+        default=None,
+        help="HuggingFace model name or local path (required)",
+    )
     p.add_argument(
         "--ref-model",
         default=None,
@@ -117,9 +130,13 @@ def parse_args() -> argparse.Namespace:
         "(auto-loaded) for reference-using heads; ignored for reference-free "
         "heads and when --peft is set (the PEFT base serves as the reference).",
     )
-    p.add_argument("--dataset", default="trl-lib/ultrafeedback_binarized")
+    p.add_argument(
+        "--dataset",
+        default=None,
+        help="HuggingFace preference dataset (chosen/rejected columns; required)",
+    )
     p.add_argument("--dataset-split", default="train")
-    p.add_argument("--num-train-samples", type=int, default=2000)
+    p.add_argument("--num-train-samples", type=int, default=256)
     # --- Loss --------------------------------------------------------------
     p.add_argument(
         "--loss-type",
@@ -183,7 +200,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.set_defaults(log_completion_metrics=False)
     # --- Training ----------------------------------------------------------
-    p.add_argument("--max-length", type=int, default=1024)
+    p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--batch-size", type=int, default=16)
     # ``None`` → vmap over the full batch (no chunking). Override
     # explicitly if a model's per-example memory footprint requires
@@ -200,7 +217,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--stop-at-step",
         type=int,
-        default=50,
+        default=8,
         help="Stop the training loop after this many optimizer steps "
         "(early-stop knob, not a privacy-accounting target — privacy is "
         "calibrated from target_epsilon × steps × sample_rate regardless).",
@@ -280,12 +297,12 @@ def parse_args() -> argparse.Namespace:
         help="Evaluate every N steps on a held-out slice (disjoint slice of "
         "the same dataset, after the --num-train-samples). Set to ``0`` to "
         "disable eval entirely. Default matches train_dpo.py / "
-        "train_causal_lm_trainer.py.",
+        "train_dpsgd_trainer.py.",
     )
     p.add_argument(
         "--num-eval-samples",
         type=int,
-        default=2000,
+        default=64,
         help="Held-out preference-pair count for eval. Matches train_dpo.py. "
         "rewards/accuracies is a binary signal so wants a larger eval set than "
         "scalar loss; 2000 pairs ≈ 0.7%% std-err on the accuracy estimate.",
@@ -319,7 +336,9 @@ def parse_args() -> argparse.Namespace:
         help="Disable W&B logging; defaults to enabled when WANDB_PROJECT / "
         "WANDB_API_KEY env vars are set (the Cadence presets plumb these).",
     )
-    return p.parse_args()
+    args = p.parse_args()
+    _require_configured(p, args)
+    return args
 
 
 def main() -> int:
@@ -378,8 +397,10 @@ def main() -> int:
     # zed-industries/zeta (NES) ships (events, input, output, rejected); both
     # are remapped to (prompt, chosen, rejected) so the collator + tokenize_row
     # see a TRL-canonical row. ultrafeedback already has ``prompt``.
-    if all_rows and "prompt" not in all_rows[0] and (
-        "question" in all_rows[0] or "input" in all_rows[0]
+    if (
+        all_rows
+        and "prompt" not in all_rows[0]
+        and ("question" in all_rows[0] or "input" in all_rows[0])
     ):
         all_rows = [_to_trl_canonical_dpo(row) for row in all_rows]
     train_dataset = Dataset.from_list(all_rows[: args.num_train_samples])
@@ -392,9 +413,7 @@ def main() -> int:
     report_to = _configure_reporting(args.no_wandb)
     run_name = os.environ.get("WANDB_NAME") or os.environ.get("RUN_NAME")
 
-    optim_args = (
-        "noise_bias_correction=True" if args.noise_bias_correction else None
-    )
+    optim_args = "noise_bias_correction=True" if args.noise_bias_correction else None
     eval_kwargs: dict = {}
     if args.eval_steps:
         eval_kwargs = {

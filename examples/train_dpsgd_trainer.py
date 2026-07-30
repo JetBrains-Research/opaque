@@ -6,25 +6,25 @@ the same ``TrainingArguments``.
 
 USAGE:
 
-  # Quick smoke test, GPT-2 on ag_news (DP-SGD)
-  python examples/train_causal_lm_trainer.py --preset smoke
+  # Quick smoke test, SmolLM2-135M on KExercises (DP-SGD)
+  python examples/train_dpsgd_trainer.py --preset smoke
 
   # Full production-style configuration on Mellum-4b + KStack (DP-SGD)
-  python examples/train_causal_lm_trainer.py --preset mellum-kstack
+  python examples/train_dpsgd_trainer.py --preset mellum-kstack
 
   # DP-FTRL with banded MF (Mellum-shaped defaults: bands=16, sampler=b_min_sep)
-  python examples/train_causal_lm_trainer.py --preset mellum-kstack \
+  python examples/train_dpsgd_trainer.py --preset mellum-kstack \
       --noise-mechanism mf_band
 
   # DP-FTRL with BLT (balls-in-bins sampling)
-  python examples/train_causal_lm_trainer.py --preset smoke \
+  python examples/train_dpsgd_trainer.py --preset smoke \
       --noise-mechanism mf_blt --noise-mechanism-kwargs max_buffers=16
 
   # Save DPTrainer checkpoints every eval interval
-  python examples/train_causal_lm_trainer.py --preset smoke --save-steps 10
+  python examples/train_dpsgd_trainer.py --preset smoke --save-steps 10
 
   # Disable W&B/HF reporting callbacks
-  python examples/train_causal_lm_trainer.py --preset smoke --no-wandb
+  python examples/train_dpsgd_trainer.py --preset smoke --no-wandb
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ def _select_device() -> tuple[torch.device, str]:
     Each torchrun rank reads ``LOCAL_RANK`` to pin itself to a distinct CUDA
     device; without this every rank lands on ``cuda:0`` and NCCL crashes with
     ``Duplicate GPU detected`` at the first collective.  Mirrors the manual-
-    loop example (``examples/train_causal_lm.py:_select_device``).
+    loop example (``examples/train_dpsgd.py:_select_device``).
     """
     if torch.cuda.is_available():
         local_rank_env = os.environ.get("LOCAL_RANK")
@@ -190,6 +190,16 @@ def _provided_dests(parser: argparse.ArgumentParser) -> set[str]:
     return provided
 
 
+def _require_configured(parser, args, required=("model_name", "dataset")):
+    missing = [name for name in required if getattr(args, name) is None]
+    if missing:
+        flags = ", ".join("--" + name.replace("_", "-") for name in missing)
+        parser.error(
+            f"missing required configuration: {flags}. "
+            f"Pass them directly or select a --preset (e.g. --preset smoke)."
+        )
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments with logical groups."""
     parser = argparse.ArgumentParser(
@@ -198,13 +208,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["custom", "smoke", "mellum-kstack", "mellum2-kstack"],
-        default="smoke",
-        help="Apply preset configuration (CLI args take precedence).",
+        choices=["smoke", "mellum-kstack", "mellum2-kstack"],
+        default=None,
+        help="Optional preset that fills in any unset arguments (CLI args take "
+        "precedence). Omit it to configure the run directly (at least "
+        "--model-name and --dataset).",
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
-    model_group.add_argument("--model-name", type=str, default="gpt2")
+    model_group.add_argument("--model-name", type=str, default=None)
     model_group.add_argument(
         "--attention",
         type=str,
@@ -228,7 +240,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     data_group = parser.add_argument_group("data", "Dataset and tokenization settings")
-    data_group.add_argument("--dataset", type=str, default="ag_news")
+    data_group.add_argument("--dataset", type=str, default=None)
     data_group.add_argument(
         "--dataset-subset",
         "--dataset-name",
@@ -503,7 +515,7 @@ def parse_args() -> argparse.Namespace:
         "--lora-modules",
         type=str,
         nargs="+",
-        default=["c_attn", "c_proj"],
+        default=["q_proj", "k_proj", "v_proj", "o_proj"],
     )
 
     dp_group = parser.add_argument_group("dp", "DP-SGD clipping and noise")
@@ -678,21 +690,21 @@ def parse_args() -> argparse.Namespace:
             setattr(args, name, value)
 
     if args.preset == "smoke":
-        _set("model_name", "gpt2")
-        _set("dataset", "ag_news")
-        _set("dataset_text_field", "text")
-        _set("num_train_samples", 1000)
-        _set("num_eval_samples", 100)
-        _set("num_epochs", 3)
-        _set("batch_size", 32)
-        _set("log_steps", 10)
-        _set("eval_steps", 10)
+        _set("model_name", "HuggingFaceTB/SmolLM2-135M")
+        _set("dataset", "JetBrains/KExercises")
+        _set("dataset_text_field", "solution")
+        _set("num_train_samples", 256)
+        _set("num_eval_samples", 64)
+        _set("num_epochs", 1)
+        _set("batch_size", 16)
+        _set("log_steps", 5)
+        _set("eval_steps", 5)
         _set("target_epsilon", 3.0)
         _set("learning_rate", 1e-5)
         _set("lora_r", 4)
         _set("lora_alpha", 8)
         _set("max_seq_len", 512)
-        _set("lora_modules", ["c_attn", "c_proj"])
+        _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
     elif args.preset == "mellum-kstack":
         _set("model_name", "JetBrains/Mellum-4b-base")
@@ -749,8 +761,8 @@ def parse_args() -> argparse.Namespace:
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
         _set("auto_find_microbatch_size", True)
-    elif args.preset == "custom":
-        pass
+
+    _require_configured(parser, args)
 
     if args.microbatch_size == 0:
         args.microbatch_size = None

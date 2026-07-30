@@ -9,20 +9,20 @@ This example is designed as a production-style script (not a tutorial):
 
 USAGE:
 
-  # Quick smoke test (~5 minutes, GPT-2 on ag_news)
-  python examples/train_causal_lm.py --preset smoke
+  # Quick smoke test (~2-3 minutes, SmolLM2-135M on KExercises)
+  python examples/train_dpsgd.py --preset smoke
 
   # Or use default settings (same as smoke)
-  python examples/train_causal_lm.py
+  python examples/train_dpsgd.py
 
   # Full production training on Mellum-4b + KStack (~3-5 hours)
-  python examples/train_causal_lm.py --preset mellum-kstack
+  python examples/train_dpsgd.py --preset mellum-kstack
 
   # 4-GPU distributed run with torchrun
-  torchrun --nproc_per_node=4 examples/train_causal_lm.py --preset mellum-kstack
+  torchrun --nproc_per_node=4 examples/train_dpsgd.py --preset mellum-kstack
 
   # Or customize individual parameters:
-  python examples/train_causal_lm.py \\
+  python examples/train_dpsgd.py \\
     --model-name "JetBrains/Mellum-4b-base" \\
     --dataset "JetBrains/KStack" \\
     --dataset-text-field "content" \\
@@ -329,6 +329,16 @@ def _load_streaming_subset(
     return Dataset.from_list(rows)
 
 
+def _require_configured(parser, args, required=("model_name", "dataset")):
+    missing = [name for name in required if getattr(args, name) is None]
+    if missing:
+        flags = ", ".join("--" + name.replace("_", "-") for name in missing)
+        parser.error(
+            f"missing required configuration: {flags}. "
+            f"Pass them directly or select a --preset (e.g. --preset smoke)."
+        )
+
+
 def parse_args():
     """Parse command-line arguments with logical groups."""
     parser = argparse.ArgumentParser(
@@ -339,17 +349,26 @@ def parse_args():
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["custom", "smoke", "mellum-kstack", "mellum2-kstack", "qwen-7b-kstack"],
-        default="smoke",
-        help="Apply preset configuration (custom=keep explicit args, smoke=quick test ~2min, mellum-kstack=Mellum-4b + KStack at ε=10 with adafactor @ 5e-5, qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at ε=3 with adafactor @ 5e-4).",
+        choices=[
+            "smoke",
+            "mellum-kstack",
+            "mellum2-kstack",
+            "qwen-7b-kstack",
+        ],
+        default=None,
+        help="Optional preset that fills in any unset arguments. Omit it to "
+        "configure the run directly (at least --model-name and --dataset). "
+        "smoke=quick test ~2min, mellum-kstack=Mellum-4b + KStack at ε=10 with "
+        "adafactor @ 5e-5, qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at ε=3 with "
+        "adafactor @ 5e-4.",
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
     model_group.add_argument(
         "--model-name",
         type=str,
-        default="gpt2",
-        help="HuggingFace model name or local path",
+        default=None,
+        help="HuggingFace model name or local path (required unless a --preset sets it)",
     )
     model_group.add_argument(
         "--attention",
@@ -368,7 +387,10 @@ def parse_args():
 
     data_group = parser.add_argument_group("data", "Dataset and tokenization settings")
     data_group.add_argument(
-        "--dataset", type=str, default="ag_news", help="HuggingFace dataset name"
+        "--dataset",
+        type=str,
+        default=None,
+        help="HuggingFace dataset name (required unless a --preset sets it)",
     )
     data_group.add_argument(
         "--dataset-subset",
@@ -532,7 +554,7 @@ def parse_args():
         "--lora-modules",
         type=str,
         nargs="+",
-        default=["c_attn", "c_proj"],
+        default=["q_proj", "k_proj", "v_proj", "o_proj"],
         help="Target module names for LoRA",
     )
 
@@ -797,22 +819,21 @@ def parse_args():
 
     # Apply preset configurations (CLI args take precedence)
     if args.preset == "smoke":
-        # Quick smoke test with GPT-2 (~100 steps, ~2-3 minutes)
-        _set("model_name", "gpt2")
-        _set("dataset", "ag_news")
-        _set("dataset_text_field", "text")
-        _set("num_train_samples", 1000)
-        _set("num_eval_samples", 100)
-        _set("num_epochs", 3)
-        _set("batch_size", 32)
-        _set("log_steps", 10)
-        _set("eval_steps", 10)
+        _set("model_name", "HuggingFaceTB/SmolLM2-135M")
+        _set("dataset", "JetBrains/KExercises")
+        _set("dataset_text_field", "solution")
+        _set("num_train_samples", 256)
+        _set("num_eval_samples", 64)
+        _set("num_epochs", 1)
+        _set("batch_size", 16)
+        _set("log_steps", 5)
+        _set("eval_steps", 5)
         _set("target_epsilon", 3.0)
         _set("learning_rate", 1e-5)
         _set("lora_r", 4)
         _set("lora_alpha", 8)
         _set("max_seq_len", 512)
-        _set("lora_modules", ["c_attn", "c_proj"])
+        _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
         _set("audit", False)
     elif args.preset == "mellum-kstack":
@@ -898,9 +919,8 @@ def parse_args():
             ],
         )
         _set("dtype", "bfloat16")
-    elif args.preset == "custom":
-        # Keep all user-provided/default CLI arguments unchanged.
-        pass
+
+    _require_configured(parser, args)
 
     # --microbatch-size 0 means "no microbatching" (full-batch vmap).
     # Needed because argparse type=int can't accept None on CLI to override presets.

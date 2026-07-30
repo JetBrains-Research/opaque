@@ -1,19 +1,27 @@
-# Run example:
-# RUN_NAME="qwen-7b-lora-r16-adafactor-lr5e-4" uv run cadence execution start \
-#   --preset ".cadence/configs/train_causal_lm (qwen_7b_kstack).yaml" \
-#   -e EXTRA_ARGS=""
+# 4-GPU distributed training for parallel Poisson experiments.
+#
+# Sharded baseline (default --shard):
+#   RUN_NAME="pp-sharded-4gpu" uv run cadence execution start \
+#     --preset ".cadence/configs/train_dpsgd (mellum_kstack_distributed).yaml" \
+#     -e EXTRA_ARGS="--stop-at-step 100"
+#
+# Parallel Poisson (--no-shard, sample_rate auto-divided by world_size):
+#   RUN_NAME="pp-parallel-4gpu" uv run cadence execution start \
+#     --preset ".cadence/configs/train_dpsgd (mellum_kstack_distributed).yaml" \
+#     -e EXTRA_ARGS="--no-shard --stop-at-step 100"
 
 project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
     uv sync --group dev --group examples --all-packages --extra all  # "all" is a real extra in pyproject.toml
-    uv run python examples/train_causal_lm.py --preset qwen-7b-kstack $EXTRA_ARGS
+    uv run torchrun --nproc_per_node=4 examples/train_dpsgd.py --preset mellum-kstack --gradient-checkpointing --microbatch-size 4 $EXTRA_ARGS
 provisioning:
-  gpu_type: h200
-  gpu_count: 1
-  cpu_count: 16
-  ram: 200
+  gpu_type: a10g
+  gpu_count: 4
+  cpu_count: 48
+  ram: 192
+  blank: false
 teamcity:
   url: https://api.cadence.jetbrains.com
   build_conf_id: JbrFed_JetTrain
@@ -23,7 +31,7 @@ env:
     WANDB_BASE_URL: https://jetbrains.wandb.io
     WANDB_ENTITY: federated-compute
     WANDB_PROJECT: opaque
-    RUN_NAME: "${oc.env:RUN_NAME,qwen-7b-kstack-dp-sgd}"
+    RUN_NAME: "${oc.env:RUN_NAME,mellum-kstack-distributed}"
     EXTRA_ARGS: ""
   python:
     version: 3.11.14

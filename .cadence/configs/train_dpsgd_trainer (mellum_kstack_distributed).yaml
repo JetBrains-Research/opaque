@@ -1,18 +1,18 @@
 # 4-GPU distributed DPTrainer (4×A10g) — validates the trainer-side DDP
 # path that mirrors the manual-loop DDP setup in
-# ``train_causal_lm (mellum_kstack_distributed).yaml``.
+# ``train_dpsgd (mellum_kstack_distributed).yaml``.
 #
 # Run examples:
 #   # DP-SGD, 4 ranks (sharded data — trainer's default and only mode)
 #   RUN_NAME="trainer-ddp-dpsgd" \
 #     uv run cadence execution start \
-#     --preset ".cadence/configs/train_causal_lm_trainer (mellum_kstack_distributed).yaml" \
+#     --preset ".cadence/configs/train_dpsgd_trainer (mellum_kstack_distributed).yaml" \
 #     -e EXTRA_ARGS="--stop-at-step 100 --noise-multiplier 1.0 --seed 42"
 #
 #   # DP-FTRL banded-MF with b_min_sep sampler
 #   RUN_NAME="trainer-ddp-dpftrl" \
 #     uv run cadence execution start \
-#     --preset ".cadence/configs/train_causal_lm_trainer (mellum_kstack_distributed).yaml" \
+#     --preset ".cadence/configs/train_dpsgd_trainer (mellum_kstack_distributed).yaml" \
 #     -e EXTRA_ARGS="--stop-at-step 100 --noise-multiplier 1.0 --noise-mechanism mf_band --noise-mechanism-kwargs bands=16,momentum=0.9 --sampler b_min_sep --seed 42"
 #
 # Phase 10 wiring in _dp_trainer.py:
@@ -35,7 +35,7 @@ cmd:
     uv pip install --quiet "maturin>=1.0,<2.0"
     uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
 
-    uv run torchrun --nproc_per_node=4 examples/train_causal_lm_trainer.py --preset mellum-kstack --gradient-checkpointing --microbatch-size 4 $EXTRA_ARGS
+    uv run torchrun --nproc_per_node=4 examples/train_dpsgd_trainer.py --preset mellum-kstack --gradient-checkpointing --microbatch-size 4 $EXTRA_ARGS
 provisioning:
   gpu_type: a10g
   gpu_count: 4

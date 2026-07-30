@@ -16,8 +16,8 @@ Examples::
 
     # Plain LoRA SFT on raw text
     uv run python examples/train_sft_trainer.py \\
-      --model-name Qwen/Qwen2.5-0.5B \\
-      --dataset roneneldan/TinyStories --dataset-text-field text \\
+      --model-name HuggingFaceTB/SmolLM2-135M \\
+      --dataset JetBrains/KExercises --dataset-text-field solution \\
       --num-train-samples 2000 --loss-type nll \\
       --max-length 512 --batch-size 8 --num-steps 50 \\
       --learning-rate 1e-4 --clipping-norm 1.0 --noise-multiplier 0.8 \\
@@ -33,7 +33,7 @@ Examples::
     # PEFT added-token path: clone a chat template + special tokens, train the
     # new embedding rows alongside the LoRA adapter, mask to assistant turns.
     uv run python examples/train_sft_trainer.py \\
-      --chat-template-path Qwen/Qwen2.5-0.5B-Instruct --assistant-only-loss
+      --chat-template-path HuggingFaceTB/SmolLM2-135M-Instruct --assistant-only-loss
 """
 
 from __future__ import annotations
@@ -67,14 +67,27 @@ def _configure_reporting(no_wandb: bool) -> list[str]:
     return ["wandb"]
 
 
+def _require_configured(parser, args, required=("model_name", "dataset")):
+    missing = [name for name in required if getattr(args, name) is None]
+    if missing:
+        flags = ", ".join("--" + name.replace("_", "-") for name in missing)
+        parser.error(f"missing required configuration: {flags}. Pass them directly.")
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="DP SFT with the class-based SFTTrainer")
-    p.add_argument("--model-name", default="Qwen/Qwen2.5-0.5B")
-    p.add_argument("--dataset", default="roneneldan/TinyStories")
+    p.add_argument(
+        "--model-name",
+        default=None,
+        help="HuggingFace model name or local path (required)",
+    )
+    p.add_argument(
+        "--dataset", default=None, help="HuggingFace dataset name (required)"
+    )
     p.add_argument("--dataset-config", default=None)
     p.add_argument("--dataset-split", default="train")
     p.add_argument("--dataset-text-field", default="text")
-    p.add_argument("--num-train-samples", type=int, default=2000)
+    p.add_argument("--num-train-samples", type=int, default=256)
     # --- Loss --------------------------------------------------------------
     p.add_argument(
         "--loss-type",
@@ -120,7 +133,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--stop-at-step",
         type=int,
-        default=50,
+        default=8,
         help="Stop the training loop after this many optimizer steps "
         "(early-stop knob, not a privacy-accounting target — privacy is "
         "calibrated from target_epsilon × steps × sample_rate regardless).",
@@ -198,14 +211,14 @@ def parse_args() -> argparse.Namespace:
         help="Evaluate every N steps on a held-out slice (disjoint slice of "
         "the same dataset, after the --num-train-samples). Set to ``0`` to "
         "disable eval entirely. Default matches train_sft.py / "
-        "train_causal_lm_trainer.py.",
+        "train_dpsgd_trainer.py.",
     )
     p.add_argument(
         "--num-eval-samples",
         type=int,
-        default=1000,
+        default=64,
         help="Held-out sample count for eval. Matches train_sft.py / "
-        "train_causal_lm_trainer.py. At 100 the per-eval loss is too noisy "
+        "train_dpsgd_trainer.py. At 100 the per-eval loss is too noisy "
         "to read learning dynamics; 1000 keeps the per-eval std-err around 3%%.",
     )
     p.add_argument(
@@ -237,7 +250,9 @@ def parse_args() -> argparse.Namespace:
         help="Disable W&B logging; defaults to enabled when WANDB_PROJECT / "
         "WANDB_API_KEY env vars are set (the Cadence presets plumb these).",
     )
-    return p.parse_args()
+    args = p.parse_args()
+    _require_configured(p, args)
+    return args
 
 
 def label_smoothed_ce(outputs, labels: torch.Tensor) -> torch.Tensor:
@@ -295,9 +310,7 @@ def main() -> int:
     report_to = _configure_reporting(args.no_wandb)
     run_name = os.environ.get("WANDB_NAME") or os.environ.get("RUN_NAME")
 
-    optim_args = (
-        "noise_bias_correction=True" if args.noise_bias_correction else None
-    )
+    optim_args = "noise_bias_correction=True" if args.noise_bias_correction else None
     eval_kwargs: dict = {}
     if args.eval_steps:
         eval_kwargs = {

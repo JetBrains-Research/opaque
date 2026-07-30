@@ -13,7 +13,7 @@ headroom over the observed drift while still catching real bugs
 etc.).
 
 This is the test that mirrors what the Cadence single-vs-multi-GPU
-``train_causal_lm`` W&B comparison checks at production scale.
+``train_dpsgd`` W&B comparison checks at production scale.
 """
 
 from __future__ import annotations

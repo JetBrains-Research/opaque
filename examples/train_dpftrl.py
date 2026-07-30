@@ -5,7 +5,7 @@ noise from matrix factorization mechanisms. Unlike standard DP-SGD, the noise
 is correlated across steps, yielding better privacy/utility tradeoffs when
 combined with the correct optimizer.
 
-KEY DIFFERENCES FROM DP-SGD (train_causal_lm.py):
+KEY DIFFERENCES FROM DP-SGD (train_dpsgd.py):
 
   1. Optimizer: SGD with Polyak momentum (default), or one of the
      Opaque-built v-using optimizers (``adamw``, ``ademamix``).  For
@@ -47,46 +47,46 @@ MECHANISMS:
 
 USAGE:
 
-  # Quick smoke test (~2 minutes, GPT-2 on ag_news)
-  python examples/train_dp_ftrl.py --preset smoke
+  # Quick smoke test (~2 minutes, SmolLM2-135M on KExercises)
+  python examples/train_dpftrl.py --preset smoke
 
   # BandMF + b-min-sep on Mellum (default mechanism: b=64, momentum=0.95)
-  python examples/train_dp_ftrl.py --preset mellum-kstack
+  python examples/train_dpftrl.py --preset mellum-kstack
 
   # 4-GPU distributed run with torchrun (sharded, same global batch as 1-GPU)
-  torchrun --nproc_per_node=4 examples/train_dp_ftrl.py --preset mellum-kstack
+  torchrun --nproc_per_node=4 examples/train_dpftrl.py --preset mellum-kstack
 
   # BLT on Mellum (near-optimal correlated noise; heavier calibration solve)
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism blt
+  python examples/train_dpftrl.py --preset mellum-kstack --mechanism blt
 
   # DP-λCGD with Balls-in-Bins sampling (bandwidth-2 correlated noise, λ=0.9)
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism lambda_cgd --lambda_ 0.9
+  python examples/train_dpftrl.py --preset mellum-kstack --mechanism lambda_cgd --lambda_ 0.9
 
   # BISR with bandwidth=4, Balls-in-Bins sampling
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism bisr --bisr-bandwidth 4
+  python examples/train_dpftrl.py --preset mellum-kstack --mechanism bisr --bisr-bandwidth 4
 
   # BSR (closed-form): workload α via --bsr-alpha (paper default 1.0); optimizer WD is separate (--weight-decay, default 0)
-  python examples/train_dp_ftrl.py --preset smoke --mechanism bsr --bsr-bandwidth 8 --bsr-alpha 1.0
+  python examples/train_dpftrl.py --preset smoke --mechanism bsr --bsr-bandwidth 8 --bsr-alpha 1.0
 
   # DP-SGD baseline for fair comparison (same loop, independent noise)
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism identity
+  python examples/train_dpftrl.py --preset mellum-kstack --mechanism identity
 
   # Non-DP baseline (no noise, no privacy accounting, same loop)
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism none
+  python examples/train_dpftrl.py --preset mellum-kstack --mechanism none
 
     # Adam-family without private second moments (single-stream MF noise)
-  python examples/train_dp_ftrl.py --preset smoke --optimizer adamw
+  python examples/train_dpftrl.py --preset smoke --optimizer adamw
 
     # DP-Adam with private second moments (two MF noise streams)
-    python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --second-moment
-    python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --second-moment --mechanism blt
-    python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --second-moment --beta1 0.9 --beta2 0.999
+    python examples/train_dpftrl.py --preset smoke --optimizer adamw --second-moment
+    python examples/train_dpftrl.py --preset smoke --optimizer adamw --second-moment --mechanism blt
+    python examples/train_dpftrl.py --preset smoke --optimizer adamw --second-moment --beta1 0.9 --beta2 0.999
 
     # AdEMAMix with private second moments — slow EMA captures long-range gradient signal
-    python examples/train_dp_ftrl.py --preset smoke --optimizer ademamix --second-moment
+    python examples/train_dpftrl.py --preset smoke --optimizer ademamix --second-moment
 
     # Lion under MF noise (no private second moment — lion has no second moment)
-  python examples/train_dp_ftrl.py --preset smoke --optimizer lion
+  python examples/train_dpftrl.py --preset smoke --optimizer lion
 
 REFERENCES:
 
@@ -176,7 +176,7 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Shared utilities (same as train_causal_lm.py)
+# Shared utilities (same as train_dpsgd.py)
 # ---------------------------------------------------------------------------
 
 
@@ -382,6 +382,16 @@ def make_lr_schedule(
 # ---------------------------------------------------------------------------
 
 
+def _require_configured(parser, args, required=("model_name", "dataset")):
+    missing = [name for name in required if getattr(args, name) is None]
+    if missing:
+        flags = ", ".join("--" + name.replace("_", "-") for name in missing)
+        parser.error(
+            f"missing required configuration: {flags}. "
+            f"Pass them directly or select a --preset (e.g. --preset smoke)."
+        )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="DP-FTRL training with matrix factorization noise"
@@ -390,14 +400,15 @@ def parse_args():
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["custom", "smoke", "mellum-kstack", "mellum2-kstack"],
-        default="smoke",
-        help="Preset configuration.",
+        choices=["smoke", "mellum-kstack", "mellum2-kstack"],
+        default=None,
+        help="Optional preset that fills in any unset arguments. Omit it to "
+        "configure the run directly (at least --model-name and --dataset).",
     )
 
     # Model
     model_g = parser.add_argument_group("model")
-    model_g.add_argument("--model-name", type=str, default="gpt2")
+    model_g.add_argument("--model-name", type=str, default=None)
     model_g.add_argument(
         "--attention", type=str, choices=["eager", "sdpa"], default="sdpa"
     )
@@ -416,7 +427,7 @@ def parse_args():
 
     # Data
     data_g = parser.add_argument_group("data")
-    data_g.add_argument("--dataset", type=str, default="ag_news")
+    data_g.add_argument("--dataset", type=str, default=None)
     data_g.add_argument(
         "--dataset-subset", dest="dataset_subset", type=str, default=None
     )
@@ -581,7 +592,10 @@ def parse_args():
     lora_g.add_argument("--lora-r", type=int, default=4)
     lora_g.add_argument("--lora-alpha", type=int, default=8)
     lora_g.add_argument(
-        "--lora-modules", type=str, nargs="+", default=["c_attn", "c_proj"]
+        "--lora-modules",
+        type=str,
+        nargs="+",
+        default=["q_proj", "k_proj", "v_proj", "o_proj"],
     )
 
     # DP / MF mechanism
@@ -618,8 +632,8 @@ def parse_args():
         nargs="+",
         default=None,
         metavar="PATTERN=NORM",
-        help="Per-group clipping norms as PATTERN=NORM pairs (e.g. c_attn=0.9 c_proj=0.5 "
-        "for --preset smoke GPT-2 LoRA, or q_proj=0.5 fallback=1.0 for Mellum presets). "
+        help="Per-group clipping norms as PATTERN=NORM pairs (e.g. q_proj=0.9 v_proj=0.5 "
+        "for --preset smoke SmolLM2 LoRA, or q_proj=0.5 fallback=1.0 for Mellum presets). "
         "Each trainable param must match exactly one pattern substring. "
         "Use 'fallback=NORM' as catch-all.  Incompatible with adaptive clipping; "
         "MF ``mf_gaussian_noise`` uses the same Mahalanobis allocation as DP-SGD Gaussian.",
@@ -645,11 +659,15 @@ def parse_args():
         "pays the compile cost).",
     )
     dp_g.add_argument(
-        "--torch-compile-backend", type=str, default="inductor",
+        "--torch-compile-backend",
+        type=str,
+        default="inductor",
         help="torch.compile backend (default: inductor).",
     )
     dp_g.add_argument(
-        "--torch-compile-mode", type=str, default="default",
+        "--torch-compile-mode",
+        type=str,
+        default="default",
         choices=[
             "default",
             "reduce-overhead",
@@ -795,21 +813,21 @@ def parse_args():
             setattr(args, name, value)
 
     if args.preset == "smoke":
-        _set("model_name", "gpt2")
-        _set("dataset", "ag_news")
-        _set("dataset_text_field", "text")
-        _set("num_train_samples", 1000)
-        _set("num_eval_samples", 100)
-        _set("num_epochs", 3)
-        _set("batch_size", 32)
-        _set("log_steps", 10)
-        _set("eval_steps", 10)
+        _set("model_name", "HuggingFaceTB/SmolLM2-135M")
+        _set("dataset", "JetBrains/KExercises")
+        _set("dataset_text_field", "solution")
+        _set("num_train_samples", 256)
+        _set("num_eval_samples", 64)
+        _set("num_epochs", 1)
+        _set("batch_size", 16)
+        _set("log_steps", 5)
+        _set("eval_steps", 5)
         _set("target_epsilon", 3.0)
         _set("learning_rate", 5e-4)
         _set("lora_r", 4)
         _set("lora_alpha", 8)
         _set("max_seq_len", 512)
-        _set("lora_modules", ["c_attn", "c_proj"])
+        _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
     elif args.preset == "mellum-kstack":
         _set("model_name", "JetBrains/Mellum-4b-base")
@@ -870,6 +888,9 @@ def parse_args():
         _set("mechanism", "band_mf")
         _set("band_mf_sampling", "b_min_sep")
         _set("lr_warmup_steps", 0)
+
+    _require_configured(parser, args)
+
     if args.microbatch_size == 0:
         args.microbatch_size = None
     if args.eval_batch_size is None:
@@ -2076,7 +2097,6 @@ def main():
                 )
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
                 sp.mark("optimizer")
-
 
             if batch_size == 0:
                 global_step += 1

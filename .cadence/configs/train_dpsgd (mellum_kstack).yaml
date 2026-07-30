@@ -1,20 +1,28 @@
 # Run example:
-# RUN_NAME="ftrl-bandmf-b10-4gpu" uv run cadence execution start \
-#   --preset ".cadence/configs/train_dp_ftrl (mellum_kstack_distributed).yaml" \
-#   -e EXTRA_ARGS="--mechanism band_mf --bands 10"
+# RUN_NAME="1-baseline" uv run cadence execution start \
+#   --preset ".cadence/configs/train_dpsgd (mellum_kstack).yaml" \
+#   -e EXTRA_ARGS="--stop-at-step 100"
 
 project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
+    # opaque-accounting (PyO3) needs rustc; the image doesn't ship it.
+    # `uv sync` doesn't reliably trigger the maturin build on cached `.venv`
+    # state, so call maturin develop explicitly to guarantee the .so lands.
+    command -v rustc >/dev/null 2>&1 || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    . "$HOME/.cargo/env"
+
     uv sync --group dev --group examples --all-packages --extra all  # "all" is a real extra in pyproject.toml
-    uv run torchrun --nproc_per_node=4 examples/train_dp_ftrl.py --preset mellum-kstack --gradient-checkpointing --microbatch-size 4 $EXTRA_ARGS
+    uv pip install --quiet "maturin>=1.0,<2.0"
+    uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
+
+    uv run python examples/train_dpsgd.py --preset mellum-kstack $EXTRA_ARGS
 provisioning:
-  gpu_type: a10g
-  gpu_count: 4
-  cpu_count: 48
-  ram: 192
-  blank: false
+  gpu_type: h200
+  gpu_count: 1
+  cpu_count: 16
+  ram: 200
 teamcity:
   url: https://api.cadence.jetbrains.com
   build_conf_id: JbrFed_JetTrain
@@ -24,7 +32,7 @@ env:
     WANDB_BASE_URL: https://jetbrains.wandb.io
     WANDB_ENTITY: federated-compute
     WANDB_PROJECT: opaque
-    RUN_NAME: "${oc.env:RUN_NAME,mellum-kstack-dp-ftrl-distributed}"
+    RUN_NAME: "${oc.env:RUN_NAME,mellum-kstack-dp-sgd}"
     EXTRA_ARGS: ""
   python:
     version: 3.11.14

@@ -1,23 +1,14 @@
 # Run example:
-# RUN_NAME="val/dptrainer/B-trainer-dp" uv run cadence execution start \
-#   --preset ".cadence/configs/train_causal_lm_trainer (mellum_kstack).yaml" \
-#   -e EXTRA_ARGS="--stop-at-step 100"
+# RUN_NAME="ftrl-bandmf-b10" uv run cadence execution start \
+#   --preset ".cadence/configs/train_dpftrl (mellum_kstack).yaml" \
+#   -e EXTRA_ARGS="--mechanism band_mf --bands 10"
 
 project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
-    # opaque-accounting (PyO3) needs rustc; the image doesn't ship it.
-    # `uv sync` doesn't reliably trigger the maturin build on cached `.venv`
-    # state, so call maturin develop explicitly to guarantee the .so lands.
-    command -v rustc >/dev/null 2>&1 || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
-    . "$HOME/.cargo/env"
-
-    uv sync --group dev --group examples --all-packages --extra all
-    uv pip install --quiet "maturin>=1.0,<2.0"
-    uv run maturin develop --release -m packages/opaque-accounting/Cargo.toml
-
-    uv run python examples/train_causal_lm_trainer.py --preset mellum-kstack $EXTRA_ARGS
+    uv sync --group dev --group examples --all-packages --extra all  # "all" is a real extra in pyproject.toml
+    uv run python examples/train_dpftrl.py --preset mellum-kstack $EXTRA_ARGS
 provisioning:
   gpu_type: h200
   gpu_count: 1
@@ -32,7 +23,7 @@ env:
     WANDB_BASE_URL: https://jetbrains.wandb.io
     WANDB_ENTITY: federated-compute
     WANDB_PROJECT: opaque
-    RUN_NAME: "${oc.env:RUN_NAME,mellum-kstack-dptrainer}"
+    RUN_NAME: "${oc.env:RUN_NAME,mellum-kstack-dp-ftrl}"
     EXTRA_ARGS: ""
   python:
     version: 3.11.14

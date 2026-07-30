@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """End-to-end DP-SGD LoRA training example for DPO (Direct Preference Optimization).
 
-This is the DPO sibling of ``examples/train_causal_lm.py`` (the comprehensive
+This is the DPO sibling of ``examples/train_dpsgd.py`` (the comprehensive
 DP-SGD baseline) and ``examples/train_sft.py``. It ports the full production-style
-DP-SGD scaffolding from ``train_causal_lm.py`` — clipping + noise + accounting +
+DP-SGD scaffolding from ``train_dpsgd.py`` — clipping + noise + accounting +
 calibration + auditing + LoRA + LR schedules + distributed/Poisson sampling +
 W&B — and swaps in the DPO-specific loss, data, and reference machinery from
 ``opaque-alignment``:
@@ -59,7 +59,7 @@ USAGE:
   # Smoke test (CPU, ~seconds, no network)
   python examples/train_dpo.py --smoke
 
-  # Quick test preset (Qwen2.5-Coder-0.5B + code-security DPO)
+  # Quick test preset (SmolLM2-135M-Instruct + code-security DPO)
   python examples/train_dpo.py --preset smoke
 
   # Full production training on Qwen2.5-Coder-7B + code-security DPO at ε=8
@@ -70,7 +70,7 @@ USAGE:
 
   # Or customize individual parameters:
   python examples/train_dpo.py \\
-    --model-name "Qwen/Qwen2.5-Coder-0.5B-Instruct" \\
+    --model-name "HuggingFaceTB/SmolLM2-135M-Instruct" \\
     --dataset "CyberNative/Code_Vulnerability_Security_DPO" \\
     --loss-type sigmoid --beta 0.1 \\
     --num-train-samples 5000 --num-eval-samples 500 \\
@@ -696,6 +696,16 @@ def _make_ref_callable(model, device=None):
     return ref
 
 
+def _require_configured(parser, args, required=("model_name", "dataset")):
+    missing = [name for name in required if getattr(args, name) is None]
+    if missing:
+        flags = ", ".join("--" + name.replace("_", "-") for name in missing)
+        parser.error(
+            f"missing required configuration: {flags}. "
+            f"Pass them directly or select a --preset (e.g. --preset smoke)."
+        )
+
+
 def parse_args():
     """Parse command-line arguments with logical groups."""
     parser = argparse.ArgumentParser(
@@ -714,18 +724,19 @@ def parse_args():
         "--preset",
         type=str,
         choices=[
-            "custom",
             "smoke",
             "qwen-7b-codesec",
             "mellum-codesec",
             "mellum2-codesec",
         ],
-        default="smoke",
-        help="Apply preset configuration (custom=keep explicit args, "
-        "smoke=quick test Qwen2.5-Coder-0.5B + code-security DPO at ε=8, "
+        default=None,
+        help="Optional preset that fills in any unset arguments. Omit it to "
+        "configure the run directly (at least --model-name and --dataset), or "
+        "use --smoke for the hermetic no-network test. "
+        "smoke=quick test SmolLM2-135M-Instruct + code-security DPO at ε=8, "
         "qwen-7b-codesec=Qwen2.5-Coder-7B + code-security DPO at ε=8 with adafactor @ 5e-5, "
         "mellum-codesec=Mellum-4b dense + code-security DPO at ε=8, "
-        "mellum2-codesec=Mellum2-12B-A2.5B MoE + code-security DPO at ε=8).",
+        "mellum2-codesec=Mellum2-12B-A2.5B MoE + code-security DPO at ε=8.",
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
@@ -734,8 +745,8 @@ def parse_args():
         "--model",
         dest="model_name",
         type=str,
-        default="Qwen/Qwen2.5-0.5B-Instruct",
-        help="HuggingFace model name or local path",
+        default=None,
+        help="HuggingFace model name or local path (required unless a --preset sets it)",
     )
     model_group.add_argument(
         "--attention",
@@ -756,8 +767,9 @@ def parse_args():
     data_group.add_argument(
         "--dataset",
         type=str,
-        default="CyberNative/Code_Vulnerability_Security_DPO",
-        help="HuggingFace preference dataset name (must have chosen/rejected columns)",
+        default=None,
+        help="HuggingFace preference dataset name (must have chosen/rejected "
+        "columns; required unless a --preset sets it)",
     )
     data_group.add_argument(
         "--dataset-subset",
@@ -1218,21 +1230,22 @@ def parse_args():
     # The loader collapses (system, question) -> prompt.
     _CODESEC = "CyberNative/Code_Vulnerability_Security_DPO"
     if args.preset == "smoke":
-        _set("model_name", "Qwen/Qwen2.5-Coder-0.5B-Instruct")
+        _set("model_name", "HuggingFaceTB/SmolLM2-135M-Instruct")
         _set("dataset", _CODESEC)
-        _set("num_train_samples", 1000)
-        _set("num_eval_samples", 100)
+        _set("num_train_samples", 256)
+        _set("num_eval_samples", 64)
         _set("num_epochs", 1)
         _set("batch_size", 16)
+        _set("microbatch_size", 4)
         _set("log_steps", 5)
-        _set("eval_steps", 10)
+        _set("eval_steps", 5)
         _set("target_epsilon", 8.0)
         _set("learning_rate", 5e-5)
         _set("loss_type", "sigmoid")
         _set("beta", 0.1)
         _set("lora_r", 16)
         _set("lora_alpha", 32)
-        _set("max_length", 1024)
+        _set("max_length", 512)
         _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
         _set("audit", False)
@@ -1257,7 +1270,15 @@ def parse_args():
         _set("max_length", 1024)
         _set(
             "lora_modules",
-            ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
         )
         _set("dtype", "bfloat16")
     elif args.preset == "mellum2-codesec":
@@ -1308,12 +1329,20 @@ def parse_args():
         _set("max_length", 1024)
         _set(
             "lora_modules",
-            ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
         )
         _set("dtype", "bfloat16")
-    elif args.preset == "custom":
-        # Keep all user-provided/default CLI arguments unchanged.
-        pass
+
+    if not args.smoke:
+        _require_configured(parser, args)
 
     # --microbatch-size 0 means "no microbatching" (full-batch vmap).
     # Needed because argparse type=int can't accept None on CLI to override presets.
@@ -2090,14 +2119,14 @@ def main():
                 chosen_lrs.append(c_logp - ref_chosen_lp)
                 rejected_lrs.append(r_logp - ref_rejected_lp)
                 # logps/* is always the summed (un-normalized) sequence logp.
-                chosen_logps.append(sequence_logp(c_out.logits, chosen_ids, chosen_cmask))
+                chosen_logps.append(
+                    sequence_logp(c_out.logits, chosen_ids, chosen_cmask)
+                )
                 rejected_logps.append(
                     sequence_logp(r_out.logits, rejected_ids, rejected_cmask)
                 )
                 if log_metrics:
-                    logits_chosen.append(
-                        _masked_mean_logit(c_out.logits, chosen_cmask)
-                    )
+                    logits_chosen.append(_masked_mean_logit(c_out.logits, chosen_cmask))
                     logits_rejected.append(
                         _masked_mean_logit(r_out.logits, rejected_cmask)
                     )

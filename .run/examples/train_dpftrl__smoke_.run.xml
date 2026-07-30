@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="train_causal_lm (smoke)" type="PythonConfigurationType" factoryName="Python" folderName="Examples">
+  <configuration default="false" name="train_dpftrl (smoke)" type="PythonConfigurationType" factoryName="Python" folderName="Examples">
     <module name="opaque" />
     <option name="ENV_FILES" value="" />
     <option name="INTERPRETER_OPTIONS" value="" />
@@ -19,7 +19,7 @@
     <option name="DEBUG_JUST_MY_CODE" value="true" />
     <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
     <option name="RUN_TOOL" value="true" />
-    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/train_causal_lm.py" />
+    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/train_dpftrl.py" />
     <option name="PARAMETERS" value="--preset smoke" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />

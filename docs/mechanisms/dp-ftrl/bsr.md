@@ -79,7 +79,7 @@ noise_fn, state = mf_gaussian_noise(
 ## Assumptions and limitations
 
 - **Closed-form regime only**: \(\beta \in [0,1)\), \(\alpha \in (0,1]\), \(\alpha > \beta\). Other hyperparameters raise `ValueError` with guidance to use `band_mf_strategy`.
-- **`examples/train_dp_ftrl.py`**: workload **`--bsr-alpha`** → `alpha`; **`--momentum`** (SGD) or **`--beta1`** (Adam) → `beta`. Optimizer **`--weight-decay`** is separate (default `0.0`).
+- **`examples/train_dpftrl.py`**: workload **`--bsr-alpha`** → `alpha`; **`--momentum`** (SGD) or **`--beta1`** (Adam) → `beta`. Optimizer **`--weight-decay`** is separate (default `0.0`).
 - **No learning-rate schedule**: BSR coefficients assume the paper’s workload; use BandMF/BLT with `lr_schedule` if you need schedule-shaped workloads in the optimizer.
 - **vs BISR**: BISR bands the **inverse** square root of the workload (different coefficient family). BSR bands the **forward** square root factors from Theorem 1.
 - **`normalized=True`**: Not currently supported.

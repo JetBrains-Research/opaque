@@ -127,7 +127,7 @@ Opaque pairs this with **Monte Carlo PLD** accounting (same family as BnB MC
 for matrix mechanisms): pass the BandMF strategy’s first-column coefficients,
 `n_steps`, and `p0` to `opaque.accounting.b_min_sep(...)`.
 Training scripts can select it with `--band-mf-sampling b_min_sep` (see
-`examples/train_dp_ftrl.py`).
+`examples/train_dpftrl.py`).
 
 !!! warning
     Monte Carlo PLDs are empirical point estimates. Their conservative grid

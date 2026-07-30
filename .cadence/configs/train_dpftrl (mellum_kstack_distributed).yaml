@@ -1,21 +1,14 @@
-# 4-GPU distributed training for parallel Poisson experiments.
-#
-# Sharded baseline (default --shard):
-#   RUN_NAME="pp-sharded-4gpu" uv run cadence execution start \
-#     --preset ".cadence/configs/train_causal_lm (mellum_kstack_distributed).yaml" \
-#     -e EXTRA_ARGS="--stop-at-step 100"
-#
-# Parallel Poisson (--no-shard, sample_rate auto-divided by world_size):
-#   RUN_NAME="pp-parallel-4gpu" uv run cadence execution start \
-#     --preset ".cadence/configs/train_causal_lm (mellum_kstack_distributed).yaml" \
-#     -e EXTRA_ARGS="--no-shard --stop-at-step 100"
+# Run example:
+# RUN_NAME="ftrl-bandmf-b10-4gpu" uv run cadence execution start \
+#   --preset ".cadence/configs/train_dpftrl (mellum_kstack_distributed).yaml" \
+#   -e EXTRA_ARGS="--mechanism band_mf --bands 10"
 
 project_name: jbr-fed
 working_dir: "."
 cmd:
   - |-
     uv sync --group dev --group examples --all-packages --extra all  # "all" is a real extra in pyproject.toml
-    uv run torchrun --nproc_per_node=4 examples/train_causal_lm.py --preset mellum-kstack --gradient-checkpointing --microbatch-size 4 $EXTRA_ARGS
+    uv run torchrun --nproc_per_node=4 examples/train_dpftrl.py --preset mellum-kstack --gradient-checkpointing --microbatch-size 4 $EXTRA_ARGS
 provisioning:
   gpu_type: a10g
   gpu_count: 4
@@ -31,7 +24,7 @@ env:
     WANDB_BASE_URL: https://jetbrains.wandb.io
     WANDB_ENTITY: federated-compute
     WANDB_PROJECT: opaque
-    RUN_NAME: "${oc.env:RUN_NAME,mellum-kstack-distributed}"
+    RUN_NAME: "${oc.env:RUN_NAME,mellum-kstack-dp-ftrl-distributed}"
     EXTRA_ARGS: ""
   python:
     version: 3.11.14
