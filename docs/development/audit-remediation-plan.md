@@ -48,7 +48,7 @@ Order by (impact ÷ diff size). All of these are ≤ 1 day each and several are 
 | ✅ `CachedProcess.repeated_pld` passthrough | `.../core/composition/_cached.py` | DP-FTRL per-step accounting silently degrades to K-fold single-step composition |
 | ✅ `eps_delta_pld` atom → `ceil` (safe-only) | `src/mechanisms/eps_delta.rs:43` | Declared ε cannot round below the requested value |
 | ✅ `calibrate()` return the *proven-safe* bracket endpoint; one-sided acceptance; relative tolerance; raise on non-convergence | `.../core/calibration.py:341-367` | Returns noise multipliers that violate the budget with `converged=True` |
-| Horizon guard in all three MF `noise_fn`s (`step >= n_steps` → raise) | `dpftrl/noise/_lambda_cgd.py`, `_engine.py:319-341` | **Zero-noise release of clipped gradients** at step *n*; unaccounted noise past horizon |
+| ✅ Horizon guard in all three MF `noise_fn`s (`step >= n_steps` → raise) | `dpftrl/noise/_lambda_cgd.py`, `_engine.py:319-341` | **Zero-noise release of clipped gradients** at step *n*; unaccounted noise past horizon |
 | Flatten with paths in per-group clip; raise on group/leaf mismatch | `engine/clipping/_pytree.py:180-220, 58-93` | **No clipping at all** on any nested parameter pytree |
 | Split the RNG key for quantile vs gradient noise | `transformers/.../_dp_trainer.py:1368, 3847` + 3 examples | AdaClip composition void — identical noise streams |
 | `pass target_quantile=target_clip_rate` | `_dp_trainer.py:3843` + 3 examples | Adaptive clipping converges to the wrong quantile |

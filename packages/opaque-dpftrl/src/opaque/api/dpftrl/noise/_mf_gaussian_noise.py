@@ -36,6 +36,7 @@ from opaque.types import NoisedPytree, PerGroup, SecondMomentClippingOutput
 from ._distributed import mf_per_group_sync_fingerprint_for_latch
 from ._engine import (
     MFNoiseState,
+    _check_mf_horizon,
     _expect_clipped,
     _matrix_factorization_noise,
     _resolve_noise_multiplier,
@@ -246,6 +247,7 @@ def _make_raw_mf_noise(
         streaming,
         key=key,
         compute_dtype=compute_dtype,
+        n_steps=n_steps,
     )
     if isinstance(strategy, IdentityStrategy):
         # C^{-1} is the identity, every row has L2 = 1; skip the
@@ -264,8 +266,10 @@ def _make_raw_mf_noise(
         row_norms = streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()
 
         def row_l2_at(step: int) -> float:
-            idx = min(step, row_norms.shape[0] - 1)
-            return float(row_norms[idx])
+            # Mirror the noise_fn horizon guard so a direct lookup past
+            # ``n_steps`` raises ValueError rather than IndexError.
+            _check_mf_horizon(step, n_steps)
+            return float(row_norms[step])
 
     return noise_fn, state, row_l2_at
 
