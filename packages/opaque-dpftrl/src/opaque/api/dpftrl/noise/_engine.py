@@ -180,12 +180,29 @@ def _gaussian_linear_combination(
     return result
 
 
+def _check_mf_horizon(step: int, n_steps: int) -> None:
+    """Raise if ``step`` is outside the calibrated MF horizon ``[0, n_steps)``.
+
+    MF strategies (and their accountants) are built for a fixed horizon.
+    Calling ``noise_fn`` at ``step >= n_steps`` is either a zero-noise
+    release (normalized λ-CGD) or unaccounted correlated noise (streaming
+    / dense engines).  Fail closed rather than silently continuing.
+    """
+    if step >= n_steps:
+        raise ValueError(
+            f"MF noise step {step} is outside the calibrated horizon "
+            f"[0, {n_steps}). Rebuild the noise mechanism with a larger "
+            f"n_steps, or stop calling noise_fn after {n_steps} iterations."
+        )
+
+
 def _matrix_factorization_noise(
     grad_template: Any,
     noising: torch.Tensor | streaming_matrix.StreamingMatrix,
     *,
     key: RngKey,
     compute_dtype: torch.dtype = torch.float32,
+    n_steps: int | None = None,
 ) -> tuple[
     Callable[..., tuple[Any, MFNoiseState]],
     MFNoiseState,
@@ -202,6 +219,12 @@ def _matrix_factorization_noise(
         compute_dtype: Dtype used for the underlying ``torch.randn`` and
             linear-combination arithmetic.  Matches the
             :func:`opaque.dpsgd.noise.gaussian_noise` convention.
+        n_steps: Calibrated training horizon.  When provided, ``noise_fn``
+            raises once ``step >= n_steps``.  For dense tensors, defaults
+            to ``noising.shape[0]`` when omitted.  Streaming matrices have
+            no intrinsic size — omit only for direct engine callers that
+            intentionally leave the sequence unbounded; the public
+            :func:`mf_gaussian_noise` factory always passes ``n_steps``.
 
     Returns:
         ``(noise_fn, state)`` where
@@ -213,11 +236,19 @@ def _matrix_factorization_noise(
     """
     if isinstance(noising, torch.Tensor):
         return _tensor_mf_noise(
-            grad_template, noising, key=key, compute_dtype=compute_dtype
+            grad_template,
+            noising,
+            key=key,
+            compute_dtype=compute_dtype,
+            n_steps=n_steps,
         )
     elif isinstance(noising, streaming_matrix.StreamingMatrix):
         return _streaming_mf_noise(
-            grad_template, noising, key=key, compute_dtype=compute_dtype
+            grad_template,
+            noising,
+            key=key,
+            compute_dtype=compute_dtype,
+            n_steps=n_steps,
         )
     else:
         raise TypeError(f"Unsupported noising type: {type(noising)}")
@@ -229,10 +260,18 @@ def _tensor_mf_noise(
     *,
     key: RngKey,
     compute_dtype: torch.dtype = torch.float32,
+    n_steps: int | None = None,
 ) -> tuple[Callable, MFNoiseState]:
     """(noise_fn, state) from a 2D noising matrix C^{-1}."""
     if noising.ndim != 2:
         raise ValueError(f"Expected 2D matrix, found shape {noising.shape}")
+    horizon = noising.shape[0] if n_steps is None else int(n_steps)
+    if horizon < 1:
+        raise ValueError(f"n_steps must be >= 1, got {horizon}")
+    if horizon > noising.shape[0]:
+        raise ValueError(
+            f"n_steps ({horizon}) exceeds noising matrix rows ({noising.shape[0]})."
+        )
 
     state = MFNoiseState(
         _inner_state=torch.tensor(0, dtype=torch.long),
@@ -242,15 +281,11 @@ def _tensor_mf_noise(
 
     def noise_fn(clipped_grads, st, *, stddev: float | PerGroup):
         index = st._inner_state
+        step_index = int(index)
+        _check_mf_horizon(step_index, horizon)
         step_key = rng_fold_in(st._rng_key, st._step_counter)
         g = generator_from_key(step_key)
-        max_steps = noising.shape[0]
-        if index >= max_steps:
-            raise ValueError(
-                f"Step {index} exceeds noising matrix size {max_steps}. "
-                f"The noising matrix must have at least as many rows as steps."
-            )
-        matrix_row_base = noising[index]
+        matrix_row_base = noising[step_index]
 
         if isinstance(stddev, PerGroup):
             if not isinstance(clipped_grads, dict):
@@ -310,8 +345,18 @@ def _streaming_mf_noise(
     *,
     key: RngKey,
     compute_dtype: torch.dtype = torch.float32,
+    n_steps: int | None = None,
 ) -> tuple[Callable, MFNoiseState]:
-    """(noise_fn, state) from a streaming noising matrix C^{-1}."""
+    """(noise_fn, state) from a streaming noising matrix C^{-1}.
+
+    ``n_steps`` is the calibrated horizon.  When provided, ``noise_fn``
+    raises once ``step >= n_steps`` so past-horizon correlated noise is
+    never released unaccounted.  Direct engine callers that omit
+    ``n_steps`` keep the previous unbounded behaviour (tests that drive
+    a streaming matrix without a declared horizon).
+    """
+    if n_steps is not None and n_steps < 1:
+        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
     streaming_state = noising.init_multiply(grad_template)
     state = MFNoiseState(
         _inner_state=streaming_state,
@@ -320,7 +365,10 @@ def _streaming_mf_noise(
     )
 
     def noise_fn(clipped_grads, st, *, stddev: float | PerGroup):
-        step_key = rng_fold_in(st._rng_key, st._step_counter)
+        step = st._step_counter
+        if n_steps is not None:
+            _check_mf_horizon(step, n_steps)
+        step_key = rng_fold_in(st._rng_key, step)
         g = generator_from_key(step_key)
         s_state = st._inner_state
 
@@ -338,7 +386,7 @@ def _streaming_mf_noise(
         )
         new_state = MFNoiseState(
             _inner_state=new_streaming_state,
-            _step_counter=st._step_counter + 1,
+            _step_counter=step + 1,
             _rng_key=st._rng_key,
         )
         return noisy_grads, new_state

@@ -246,6 +246,7 @@ def _make_raw_mf_noise(
         streaming,
         key=key,
         compute_dtype=compute_dtype,
+        n_steps=n_steps,
     )
     if isinstance(strategy, IdentityStrategy):
         # C^{-1} is the identity, every row has L2 = 1; skip the
@@ -264,8 +265,9 @@ def _make_raw_mf_noise(
         row_norms = streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()
 
         def row_l2_at(step: int) -> float:
-            idx = min(step, row_norms.shape[0] - 1)
-            return float(row_norms[idx])
+            # Past-horizon calls raise inside ``noise_fn`` before this
+            # lookup runs; clamp is only a defensive index bound.
+            return float(row_norms[step])
 
     return noise_fn, state, row_l2_at
 

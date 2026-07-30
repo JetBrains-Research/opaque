@@ -31,7 +31,7 @@ from opaque.pytree import tree_map
 from opaque.random import fold_in as rng_fold_in
 from opaque.random import generator_from_key
 
-from ._engine import MFNoiseState, _iid_normal_noise
+from ._engine import MFNoiseState, _check_mf_horizon, _iid_normal_noise
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -65,7 +65,16 @@ def _lambda_cgd_gram_matrix_cached(
 
 
 def _column_norm(lambda_: float, n_steps: int, step: int) -> float:
-    """Column norm :math:`d_t` of :math:`C_\\lambda` at 0-indexed step t."""
+    """Column norm :math:`d_t` of :math:`C_\\lambda` at 0-indexed step t.
+
+    ``step`` must be in ``[0, n_steps)``.  At ``step == n_steps`` the
+    closed form collapses to 0 (and beyond it is undefined), which would
+    zero out the released noise under ``normalized=True``.
+    """
+    if step < 0 or step >= n_steps:
+        raise ValueError(
+            f"column-norm step {step} is outside the calibrated horizon [0, {n_steps})."
+        )
     if lambda_ == 0.0:
         return 1.0
     remaining = n_steps - step
@@ -160,13 +169,13 @@ def _lambda_cgd_row_l2(strategy: LambdaCgdStrategy, n_steps: int, step: int) -> 
     At step 0 there is no previous-step term so the factor is just the
     optional column-norm multiplier; at step t≥1 the unnormalized factor
     is ``sqrt(1 + λ²)`` from ``z_t − λ z_{t−1}``.
+
+    ``step`` must be in ``[0, n_steps)`` — the noise function raises on
+    past-horizon calls, so this lookup is never asked to invent a factor
+    outside the calibrated matrix.
     """
     lam = strategy.lambda_
-    col = (
-        _column_norm(lam, n_steps, min(step, n_steps - 1))
-        if strategy.normalized
-        else 1.0
-    )
+    col = _column_norm(lam, n_steps, step) if strategy.normalized else 1.0
     if step == 0 or lam == 0.0:
         return col
     return col * math.sqrt(1.0 + lam * lam)
@@ -192,6 +201,9 @@ def _make_lambda_cgd_noise(
     :class:`NoisedPytree.noise_stddev` (= ``base_σ · row_l2_at(step)``).
     Adam-family bias correction reads that realized σ.
     """
+    if n_steps < 1:
+        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+
     lambda_ = strategy.lambda_
     normalized = strategy.normalized
 
@@ -208,6 +220,7 @@ def _make_lambda_cgd_noise(
         stddev: float | PerGroup,
     ) -> tuple[Any, MFNoiseState]:
         step = st._step_counter
+        _check_mf_horizon(step, n_steps)
 
         current_key = rng_fold_in(st._rng_key, step)
         g_current = generator_from_key(current_key)
