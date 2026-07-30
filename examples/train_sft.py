@@ -71,7 +71,7 @@ USAGE:
   # Smoke test (CPU, ~seconds, no network)
   python examples/train_sft.py --smoke
 
-  # Quick test preset (GPT-2 on ag_news, plain text field)
+  # Quick test preset (Qwen2.5-Coder-0.5B on KExercises, plain text field)
   python examples/train_sft.py --preset smoke
 
   # Completion-only SFT on a chat dataset
@@ -459,10 +459,16 @@ def parse_args():
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["custom", "smoke", "mellum-kstack", "mellum2-kstack", "qwen-7b-kstack"],
+        choices=[
+            "custom",
+            "smoke",
+            "mellum-kstack",
+            "mellum2-kstack",
+            "qwen-7b-kstack",
+        ],
         default="smoke",
         help="Apply preset configuration (custom=keep explicit args, "
-        "smoke=quick test GPT-2 + ag_news at ε=8, "
+        "smoke=quick test Qwen2.5-Coder-0.5B + KExercises at ε=8, "
         "mellum-kstack=Mellum-4b + KStack at ε=10 with adafactor @ 5e-5, "
         "mellum2-kstack=Mellum2-12B-A2.5B MoE + KStack at ε=10 with adafactor @ 5e-5, "
         "qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at ε=3 with adafactor @ 5e-4).",
@@ -474,7 +480,7 @@ def parse_args():
         "--model",
         dest="model_name",
         type=str,
-        default="gpt2",
+        default="Qwen/Qwen2.5-Coder-0.5B",
         help="HuggingFace model name or local path",
     )
     model_group.add_argument(
@@ -494,7 +500,10 @@ def parse_args():
 
     data_group = parser.add_argument_group("data", "Dataset and tokenization settings")
     data_group.add_argument(
-        "--dataset", type=str, default="ag_news", help="HuggingFace dataset name"
+        "--dataset",
+        type=str,
+        default="JetBrains/KExercises",
+        help="HuggingFace dataset name",
     )
     data_group.add_argument(
         "--dataset-subset",
@@ -510,7 +519,7 @@ def parse_args():
     data_group.add_argument(
         "--dataset-text-field",
         type=str,
-        default="text",
+        default="solution",
         help="Field containing raw text (plain-text path; ignored under --completion-only).",
     )
     data_group.add_argument(
@@ -680,7 +689,7 @@ def parse_args():
         "--lora-modules",
         type=str,
         nargs="+",
-        default=["c_attn", "c_proj"],
+        default=["q_proj", "k_proj", "v_proj", "o_proj"],
         help="Target module names for LoRA",
     )
 
@@ -908,24 +917,27 @@ def parse_args():
 
     # Apply preset configurations (CLI args take precedence)
     if args.preset == "smoke":
-        # Quick smoke test with GPT-2 + ag_news (plain text field).
-        _set("model_name", "gpt2")
-        _set("dataset", "ag_news")
-        _set("dataset_text_field", "text")
+        # Quick smoke test with Qwen2.5-Coder-0.5B + KExercises (plain text field).
+        _set("model_name", "Qwen/Qwen2.5-Coder-0.5B")
+        _set("dataset", "JetBrains/KExercises")
+        _set("dataset_text_field", "solution")
         _set("completion_only", False)
-        _set("num_train_samples", 1000)
-        _set("num_eval_samples", 100)
-        _set("num_epochs", 3)
+        _set("num_train_samples", 256)
+        _set("num_eval_samples", 64)
+        _set("num_epochs", 1)
         _set("batch_size", 32)
-        _set("log_steps", 10)
-        _set("eval_steps", 10)
+        # Microbatch so per-sample vmap grads for a 0.5B model fit modest
+        # (~16 GB) CPU dev boxes; the H200 presets can drop this.
+        _set("microbatch_size", 4)
+        _set("log_steps", 5)
+        _set("eval_steps", 5)
         _set("target_epsilon", 8.0)
         _set("learning_rate", 1e-5)
         _set("loss_type", "nll")
         _set("lora_r", 4)
         _set("lora_alpha", 8)
         _set("max_length", 512)
-        _set("lora_modules", ["c_attn", "c_proj"])
+        _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
         _set("audit", False)
     elif args.preset == "mellum-kstack":
@@ -1656,8 +1668,7 @@ def main():
                     * num_tokens
                 )
                 ent_sum += (
-                    float(entropy_from_logits(out.logits, mask).item())
-                    * num_tokens
+                    float(entropy_from_logits(out.logits, mask).item()) * num_tokens
                 )
                 metric_tokens += num_tokens
             if total_tokens == 0:

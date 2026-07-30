@@ -6,7 +6,7 @@ the same ``TrainingArguments``.
 
 USAGE:
 
-  # Quick smoke test, GPT-2 on ag_news (DP-SGD)
+  # Quick smoke test, Qwen2.5-Coder-0.5B on KExercises (DP-SGD)
   python examples/train_causal_lm_trainer.py --preset smoke
 
   # Full production-style configuration on Mellum-4b + KStack (DP-SGD)
@@ -204,7 +204,9 @@ def parse_args() -> argparse.Namespace:
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
-    model_group.add_argument("--model-name", type=str, default="gpt2")
+    model_group.add_argument(
+        "--model-name", type=str, default="Qwen/Qwen2.5-Coder-0.5B"
+    )
     model_group.add_argument(
         "--attention",
         type=str,
@@ -228,7 +230,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     data_group = parser.add_argument_group("data", "Dataset and tokenization settings")
-    data_group.add_argument("--dataset", type=str, default="ag_news")
+    data_group.add_argument("--dataset", type=str, default="JetBrains/KExercises")
     data_group.add_argument(
         "--dataset-subset",
         "--dataset-name",
@@ -238,7 +240,7 @@ def parse_args() -> argparse.Namespace:
         help="Optional HF load_dataset name/subset argument.",
     )
     data_group.add_argument("--dataset-split", type=str, default="train")
-    data_group.add_argument("--dataset-text-field", type=str, default="text")
+    data_group.add_argument("--dataset-text-field", type=str, default="solution")
     data_group.add_argument("--num-train-samples", type=int, default=5000)
     data_group.add_argument(
         "--num-eval-samples",
@@ -503,7 +505,7 @@ def parse_args() -> argparse.Namespace:
         "--lora-modules",
         type=str,
         nargs="+",
-        default=["c_attn", "c_proj"],
+        default=["q_proj", "k_proj", "v_proj", "o_proj"],
     )
 
     dp_group = parser.add_argument_group("dp", "DP-SGD clipping and noise")
@@ -678,21 +680,24 @@ def parse_args() -> argparse.Namespace:
             setattr(args, name, value)
 
     if args.preset == "smoke":
-        _set("model_name", "gpt2")
-        _set("dataset", "ag_news")
-        _set("dataset_text_field", "text")
-        _set("num_train_samples", 1000)
-        _set("num_eval_samples", 100)
-        _set("num_epochs", 3)
+        _set("model_name", "Qwen/Qwen2.5-Coder-0.5B")
+        _set("dataset", "JetBrains/KExercises")
+        _set("dataset_text_field", "solution")
+        _set("num_train_samples", 256)
+        _set("num_eval_samples", 64)
+        _set("num_epochs", 1)
         _set("batch_size", 32)
-        _set("log_steps", 10)
-        _set("eval_steps", 10)
+        # Microbatch so per-sample vmap grads for a 0.5B model fit modest
+        # (~16 GB) CPU dev boxes; the H200 presets can drop this.
+        _set("microbatch_size", 4)
+        _set("log_steps", 5)
+        _set("eval_steps", 5)
         _set("target_epsilon", 3.0)
         _set("learning_rate", 1e-5)
         _set("lora_r", 4)
         _set("lora_alpha", 8)
         _set("max_seq_len", 512)
-        _set("lora_modules", ["c_attn", "c_proj"])
+        _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
     elif args.preset == "mellum-kstack":
         _set("model_name", "JetBrains/Mellum-4b-base")

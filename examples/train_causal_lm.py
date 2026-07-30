@@ -9,7 +9,7 @@ This example is designed as a production-style script (not a tutorial):
 
 USAGE:
 
-  # Quick smoke test (~5 minutes, GPT-2 on ag_news)
+  # Quick smoke test (~2-3 minutes, Qwen2.5-Coder-0.5B on KExercises)
   python examples/train_causal_lm.py --preset smoke
 
   # Or use default settings (same as smoke)
@@ -339,7 +339,13 @@ def parse_args():
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["custom", "smoke", "mellum-kstack", "mellum2-kstack", "qwen-7b-kstack"],
+        choices=[
+            "custom",
+            "smoke",
+            "mellum-kstack",
+            "mellum2-kstack",
+            "qwen-7b-kstack",
+        ],
         default="smoke",
         help="Apply preset configuration (custom=keep explicit args, smoke=quick test ~2min, mellum-kstack=Mellum-4b + KStack at ε=10 with adafactor @ 5e-5, qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at ε=3 with adafactor @ 5e-4).",
     )
@@ -348,7 +354,7 @@ def parse_args():
     model_group.add_argument(
         "--model-name",
         type=str,
-        default="gpt2",
+        default="Qwen/Qwen2.5-Coder-0.5B",
         help="HuggingFace model name or local path",
     )
     model_group.add_argument(
@@ -368,7 +374,10 @@ def parse_args():
 
     data_group = parser.add_argument_group("data", "Dataset and tokenization settings")
     data_group.add_argument(
-        "--dataset", type=str, default="ag_news", help="HuggingFace dataset name"
+        "--dataset",
+        type=str,
+        default="JetBrains/KExercises",
+        help="HuggingFace dataset name",
     )
     data_group.add_argument(
         "--dataset-subset",
@@ -384,7 +393,7 @@ def parse_args():
     data_group.add_argument(
         "--dataset-text-field",
         type=str,
-        default="text",
+        default="solution",
         help="Field containing text",
     )
     data_group.add_argument(
@@ -532,7 +541,7 @@ def parse_args():
         "--lora-modules",
         type=str,
         nargs="+",
-        default=["c_attn", "c_proj"],
+        default=["q_proj", "k_proj", "v_proj", "o_proj"],
         help="Target module names for LoRA",
     )
 
@@ -797,22 +806,25 @@ def parse_args():
 
     # Apply preset configurations (CLI args take precedence)
     if args.preset == "smoke":
-        # Quick smoke test with GPT-2 (~100 steps, ~2-3 minutes)
-        _set("model_name", "gpt2")
-        _set("dataset", "ag_news")
-        _set("dataset_text_field", "text")
-        _set("num_train_samples", 1000)
-        _set("num_eval_samples", 100)
-        _set("num_epochs", 3)
+        # Quick smoke test with Qwen2.5-Coder-0.5B (~8 steps, ~2-3 minutes)
+        _set("model_name", "Qwen/Qwen2.5-Coder-0.5B")
+        _set("dataset", "JetBrains/KExercises")
+        _set("dataset_text_field", "solution")
+        _set("num_train_samples", 256)
+        _set("num_eval_samples", 64)
+        _set("num_epochs", 1)
         _set("batch_size", 32)
-        _set("log_steps", 10)
-        _set("eval_steps", 10)
+        # Microbatch so per-sample vmap grads for a 0.5B model fit modest
+        # (~16 GB) CPU dev boxes; the H200 presets can drop this.
+        _set("microbatch_size", 4)
+        _set("log_steps", 5)
+        _set("eval_steps", 5)
         _set("target_epsilon", 3.0)
         _set("learning_rate", 1e-5)
         _set("lora_r", 4)
         _set("lora_alpha", 8)
         _set("max_seq_len", 512)
-        _set("lora_modules", ["c_attn", "c_proj"])
+        _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
         _set("audit", False)
     elif args.preset == "mellum-kstack":

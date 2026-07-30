@@ -47,7 +47,7 @@ MECHANISMS:
 
 USAGE:
 
-  # Quick smoke test (~2 minutes, GPT-2 on ag_news)
+  # Quick smoke test (~2 minutes, Qwen2.5-Coder-0.5B on KExercises)
   python examples/train_dp_ftrl.py --preset smoke
 
   # BandMF + b-min-sep on Mellum (default mechanism: b=64, momentum=0.95)
@@ -397,7 +397,7 @@ def parse_args():
 
     # Model
     model_g = parser.add_argument_group("model")
-    model_g.add_argument("--model-name", type=str, default="gpt2")
+    model_g.add_argument("--model-name", type=str, default="Qwen/Qwen2.5-Coder-0.5B")
     model_g.add_argument(
         "--attention", type=str, choices=["eager", "sdpa"], default="sdpa"
     )
@@ -416,12 +416,12 @@ def parse_args():
 
     # Data
     data_g = parser.add_argument_group("data")
-    data_g.add_argument("--dataset", type=str, default="ag_news")
+    data_g.add_argument("--dataset", type=str, default="JetBrains/KExercises")
     data_g.add_argument(
         "--dataset-subset", dest="dataset_subset", type=str, default=None
     )
     data_g.add_argument("--dataset-split", type=str, default="train")
-    data_g.add_argument("--dataset-text-field", type=str, default="text")
+    data_g.add_argument("--dataset-text-field", type=str, default="solution")
     data_g.add_argument("--num-train-samples", type=int, default=5000)
     data_g.add_argument("--num-eval-samples", type=int, default=100)
     data_g.add_argument("--max-seq-len", type=int, default=512)
@@ -581,7 +581,10 @@ def parse_args():
     lora_g.add_argument("--lora-r", type=int, default=4)
     lora_g.add_argument("--lora-alpha", type=int, default=8)
     lora_g.add_argument(
-        "--lora-modules", type=str, nargs="+", default=["c_attn", "c_proj"]
+        "--lora-modules",
+        type=str,
+        nargs="+",
+        default=["q_proj", "k_proj", "v_proj", "o_proj"],
     )
 
     # DP / MF mechanism
@@ -618,8 +621,8 @@ def parse_args():
         nargs="+",
         default=None,
         metavar="PATTERN=NORM",
-        help="Per-group clipping norms as PATTERN=NORM pairs (e.g. c_attn=0.9 c_proj=0.5 "
-        "for --preset smoke GPT-2 LoRA, or q_proj=0.5 fallback=1.0 for Mellum presets). "
+        help="Per-group clipping norms as PATTERN=NORM pairs (e.g. q_proj=0.9 v_proj=0.5 "
+        "for --preset smoke Qwen2.5-Coder LoRA, or q_proj=0.5 fallback=1.0 for Mellum presets). "
         "Each trainable param must match exactly one pattern substring. "
         "Use 'fallback=NORM' as catch-all.  Incompatible with adaptive clipping; "
         "MF ``mf_gaussian_noise`` uses the same Mahalanobis allocation as DP-SGD Gaussian.",
@@ -645,11 +648,15 @@ def parse_args():
         "pays the compile cost).",
     )
     dp_g.add_argument(
-        "--torch-compile-backend", type=str, default="inductor",
+        "--torch-compile-backend",
+        type=str,
+        default="inductor",
         help="torch.compile backend (default: inductor).",
     )
     dp_g.add_argument(
-        "--torch-compile-mode", type=str, default="default",
+        "--torch-compile-mode",
+        type=str,
+        default="default",
         choices=[
             "default",
             "reduce-overhead",
@@ -795,21 +802,24 @@ def parse_args():
             setattr(args, name, value)
 
     if args.preset == "smoke":
-        _set("model_name", "gpt2")
-        _set("dataset", "ag_news")
-        _set("dataset_text_field", "text")
-        _set("num_train_samples", 1000)
-        _set("num_eval_samples", 100)
-        _set("num_epochs", 3)
+        _set("model_name", "Qwen/Qwen2.5-Coder-0.5B")
+        _set("dataset", "JetBrains/KExercises")
+        _set("dataset_text_field", "solution")
+        _set("num_train_samples", 256)
+        _set("num_eval_samples", 64)
+        _set("num_epochs", 1)
         _set("batch_size", 32)
-        _set("log_steps", 10)
-        _set("eval_steps", 10)
+        # Microbatch so per-sample vmap grads for a 0.5B model fit modest
+        # (~16 GB) CPU dev boxes; the H200 presets can drop this.
+        _set("microbatch_size", 4)
+        _set("log_steps", 5)
+        _set("eval_steps", 5)
         _set("target_epsilon", 3.0)
         _set("learning_rate", 5e-4)
         _set("lora_r", 4)
         _set("lora_alpha", 8)
         _set("max_seq_len", 512)
-        _set("lora_modules", ["c_attn", "c_proj"])
+        _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
     elif args.preset == "mellum-kstack":
         _set("model_name", "JetBrains/Mellum-4b-base")
@@ -2076,7 +2086,6 @@ def main():
                 )
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
                 sp.mark("optimizer")
-
 
             if batch_size == 0:
                 global_step += 1

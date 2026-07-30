@@ -16,8 +16,8 @@ Examples::
 
     # Plain LoRA SFT on raw text
     uv run python examples/train_sft_trainer.py \\
-      --model-name Qwen/Qwen2.5-0.5B \\
-      --dataset roneneldan/TinyStories --dataset-text-field text \\
+      --model-name Qwen/Qwen2.5-Coder-0.5B \\
+      --dataset JetBrains/KExercises --dataset-text-field solution \\
       --num-train-samples 2000 --loss-type nll \\
       --max-length 512 --batch-size 8 --num-steps 50 \\
       --learning-rate 1e-4 --clipping-norm 1.0 --noise-multiplier 0.8 \\
@@ -33,7 +33,7 @@ Examples::
     # PEFT added-token path: clone a chat template + special tokens, train the
     # new embedding rows alongside the LoRA adapter, mask to assistant turns.
     uv run python examples/train_sft_trainer.py \\
-      --chat-template-path Qwen/Qwen2.5-0.5B-Instruct --assistant-only-loss
+      --chat-template-path Qwen/Qwen2.5-Coder-0.5B-Instruct --assistant-only-loss
 """
 
 from __future__ import annotations
@@ -69,12 +69,12 @@ def _configure_reporting(no_wandb: bool) -> list[str]:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="DP SFT with the class-based SFTTrainer")
-    p.add_argument("--model-name", default="Qwen/Qwen2.5-0.5B")
-    p.add_argument("--dataset", default="roneneldan/TinyStories")
+    p.add_argument("--model-name", default="Qwen/Qwen2.5-Coder-0.5B")
+    p.add_argument("--dataset", default="JetBrains/KExercises")
     p.add_argument("--dataset-config", default=None)
     p.add_argument("--dataset-split", default="train")
-    p.add_argument("--dataset-text-field", default="text")
-    p.add_argument("--num-train-samples", type=int, default=2000)
+    p.add_argument("--dataset-text-field", default="solution")
+    p.add_argument("--num-train-samples", type=int, default=256)
     # --- Loss --------------------------------------------------------------
     p.add_argument(
         "--loss-type",
@@ -116,7 +116,9 @@ def parse_args() -> argparse.Namespace:
     # --- Training ----------------------------------------------------------
     p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--batch-size", type=int, default=16)
-    p.add_argument("--microbatch-size", type=int, default=None)
+    # Default to a small chunk so the 0.5B per-sample vmap grads fit modest
+    # (~16 GB) CPU dev boxes; raise or set 0 (=None) on bigger accelerators.
+    p.add_argument("--microbatch-size", type=int, default=4)
     p.add_argument(
         "--stop-at-step",
         type=int,
@@ -203,7 +205,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--num-eval-samples",
         type=int,
-        default=1000,
+        default=64,
         help="Held-out sample count for eval. Matches train_sft.py / "
         "train_causal_lm_trainer.py. At 100 the per-eval loss is too noisy "
         "to read learning dynamics; 1000 keeps the per-eval std-err around 3%%.",
@@ -295,9 +297,7 @@ def main() -> int:
     report_to = _configure_reporting(args.no_wandb)
     run_name = os.environ.get("WANDB_NAME") or os.environ.get("RUN_NAME")
 
-    optim_args = (
-        "noise_bias_correction=True" if args.noise_bias_correction else None
-    )
+    optim_args = "noise_bias_correction=True" if args.noise_bias_correction else None
     eval_kwargs: dict = {}
     if args.eval_steps:
         eval_kwargs = {

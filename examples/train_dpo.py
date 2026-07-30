@@ -734,7 +734,7 @@ def parse_args():
         "--model",
         dest="model_name",
         type=str,
-        default="Qwen/Qwen2.5-0.5B-Instruct",
+        default="Qwen/Qwen2.5-Coder-0.5B-Instruct",
         help="HuggingFace model name or local path",
     )
     model_group.add_argument(
@@ -1220,19 +1220,22 @@ def parse_args():
     if args.preset == "smoke":
         _set("model_name", "Qwen/Qwen2.5-Coder-0.5B-Instruct")
         _set("dataset", _CODESEC)
-        _set("num_train_samples", 1000)
-        _set("num_eval_samples", 100)
+        _set("num_train_samples", 256)
+        _set("num_eval_samples", 64)
         _set("num_epochs", 1)
         _set("batch_size", 16)
+        # DPO runs two forwards (chosen + rejected) per example; microbatch so
+        # the 0.5B per-sample vmap grads fit modest (~16 GB) CPU dev boxes.
+        _set("microbatch_size", 4)
         _set("log_steps", 5)
-        _set("eval_steps", 10)
+        _set("eval_steps", 5)
         _set("target_epsilon", 8.0)
         _set("learning_rate", 5e-5)
         _set("loss_type", "sigmoid")
         _set("beta", 0.1)
         _set("lora_r", 16)
         _set("lora_alpha", 32)
-        _set("max_length", 1024)
+        _set("max_length", 512)
         _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
         _set("audit", False)
@@ -1257,7 +1260,15 @@ def parse_args():
         _set("max_length", 1024)
         _set(
             "lora_modules",
-            ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
         )
         _set("dtype", "bfloat16")
     elif args.preset == "mellum2-codesec":
@@ -1308,7 +1319,15 @@ def parse_args():
         _set("max_length", 1024)
         _set(
             "lora_modules",
-            ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
         )
         _set("dtype", "bfloat16")
     elif args.preset == "custom":
@@ -2090,14 +2109,14 @@ def main():
                 chosen_lrs.append(c_logp - ref_chosen_lp)
                 rejected_lrs.append(r_logp - ref_rejected_lp)
                 # logps/* is always the summed (un-normalized) sequence logp.
-                chosen_logps.append(sequence_logp(c_out.logits, chosen_ids, chosen_cmask))
+                chosen_logps.append(
+                    sequence_logp(c_out.logits, chosen_ids, chosen_cmask)
+                )
                 rejected_logps.append(
                     sequence_logp(r_out.logits, rejected_ids, rejected_cmask)
                 )
                 if log_metrics:
-                    logits_chosen.append(
-                        _masked_mean_logit(c_out.logits, chosen_cmask)
-                    )
+                    logits_chosen.append(_masked_mean_logit(c_out.logits, chosen_cmask))
                     logits_rejected.append(
                         _masked_mean_logit(r_out.logits, rejected_cmask)
                     )
