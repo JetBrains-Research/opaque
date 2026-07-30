@@ -290,6 +290,51 @@ class TestPerStepCrossAmp:
 
 
 # ---------------------------------------------------------------------------
+# CachedProcess must relay repeated_pld — otherwise DPTrainer's
+# ``acc.cached(per_step(proc))`` path silently falls back to K-fold
+# single-step composition and inflates ε for every MF run.
+# ---------------------------------------------------------------------------
+
+
+class TestCachedPerStepRepeatedPld:
+    """``cached(per_step(p)) * K`` must equal ``per_step(p) * K``.
+
+    Band-MF with ``bands > 1`` is required so the Identity degeneracy
+    (where K-fold single-step composition happens to match the horizon
+    PLD) cannot mask a missing ``CachedProcess.repeated_pld`` relay.
+    """
+
+    def _band_proc(self, *, n_steps: int = 128, bands: int = 16) -> DpFtrlProcess:
+        return ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=bands)),
+            sample_rate=0.01,
+            n_steps=n_steps,
+        )
+
+    def test_cached_repeated_matches_uncached(self):
+        proc = self._band_proc()
+        step = ftrl_acc.per_step(proc)
+        K = proc.n_steps
+
+        e_uncached = (step * K).epsilon_at(_DELTA)
+        e_cached = (acc.cached(step) * K).epsilon_at(_DELTA)
+        assert math.isclose(e_uncached, e_cached, rel_tol=0.0, abs_tol=0.0)
+
+    def test_cached_repeated_pld_is_horizon_not_self_compose(self):
+        """Guard against the pre-fix failure mode (~2× inflated ε)."""
+        proc = self._band_proc()
+        step = ftrl_acc.per_step(proc)
+        K = proc.n_steps
+
+        e_cached = (acc.cached(step) * K).epsilon_at(_DELTA)
+        e_horizon = proc._pld_at_horizon(K).epsilon_at(_DELTA)
+        # Wrong path would be step.pld().self_compose(K) ≈ 2× horizon.
+        e_wrong = step.pld().self_compose(K).epsilon_at(_DELTA)
+        assert math.isclose(e_cached, e_horizon, rel_tol=0.0, abs_tol=0.0)
+        assert e_wrong > e_horizon * 1.5
+
+
+# ---------------------------------------------------------------------------
 # Serialization registry hardening: abstract bases must NOT be registered.
 # ---------------------------------------------------------------------------
 

@@ -25,6 +25,11 @@ class CachedProcess(DpProcess):
     optimizer from looking through the cache boundary. Cached wrappers
     can still merge via structural equality of their inner processes.
 
+    :meth:`repeated_pld` is a transparent relay to ``inner.repeated_pld``
+    so wrappers around processes that override K-fold behaviour
+    (notably DP-FTRL :class:`~opaque.api.accounting.dpftrl.composition.PerStep`)
+    keep their strategy-aware horizon PLD under ``cached(step) * K``.
+
     Since every :meth:`DpProcess.pld` already caches, this wrapper's
     primary purpose is the merge barrier rather than caching (though it
     does raise the cache size to 16).
@@ -48,6 +53,26 @@ class CachedProcess(DpProcess):
         max_grid_size: int | None = None,
     ) -> Pld:
         return self.inner.pld(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            max_grid_size=max_grid_size,
+        )
+
+    def repeated_pld(
+        self,
+        count: int,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
+        # Transparent relay: CachedProcess is a merge barrier / cache, not a
+        # privacy transform.  Without this, Repeated(CachedProcess(inner), K)
+        # falls through to DpProcess.repeated_pld = self.pld().self_compose(K)
+        # and discards any override on *inner* (notably PerStep, whose K-step
+        # PLD is not the K-fold composition of a single-step PLD).
+        return self.inner.repeated_pld(
+            count,
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
