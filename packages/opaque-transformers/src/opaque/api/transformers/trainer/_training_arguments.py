@@ -262,7 +262,9 @@ class TrainingArguments:
     microbatch_size: int | None = None
     # On a CUDA-OOM raised mid-step, halve the current microbatch and
     # retry until it fits.  Starting point is ``microbatch_size`` if set,
-    # else ``per_device_train_batch_size``.
+    # else ``per_device_train_batch_size``.  The same flag also guards
+    # eval / predict: on OOM, halve ``per_device_eval_batch_size`` and
+    # retry (eval has no grad-accumulation, so this is privacy-neutral).
     auto_find_microbatch_size: bool = False
 
     # =================================================================
