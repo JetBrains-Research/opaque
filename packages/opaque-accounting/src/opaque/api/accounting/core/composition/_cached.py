@@ -27,8 +27,8 @@ class CachedProcess(DpProcess):
 
     :meth:`repeated_pld` is a transparent relay to ``inner.repeated_pld``
     so wrappers around processes that override K-fold behaviour
-    (notably DP-FTRL :class:`~opaque.api.accounting.dpftrl.composition.PerStep`)
-    keep their strategy-aware horizon PLD under ``cached(step) * K``.
+    (notably DP-FTRL ``PerStep``) keep their strategy-aware horizon PLD
+    under ``cached(step) * K``.
 
     Since every :meth:`DpProcess.pld` already caches, this wrapper's
     primary purpose is the merge barrier rather than caching (though it
