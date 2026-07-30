@@ -110,7 +110,6 @@ def _to_trl_canonical_dpo(row: dict) -> dict:
 
 
 def _require_configured(parser, args, required=("model", "dataset")):
-    """Fail fast if fields with no neutral default are still unset."""
     missing = [name for name in required if getattr(args, name) is None]
     if missing:
         flags = ", ".join("--" + name.replace("_", "-") for name in missing)
@@ -203,11 +202,10 @@ def parse_args() -> argparse.Namespace:
     # --- Training ----------------------------------------------------------
     p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--batch-size", type=int, default=16)
-    # ``None`` → vmap over the full batch (no chunking). DPO runs two
-    # forwards (chosen + rejected) per example, so default to a small chunk
-    # that fits modest (~16 GB) CPU dev boxes; raise or set 0 (=None) on
-    # bigger accelerators.
-    p.add_argument("--microbatch-size", type=int, default=4)
+    # ``None`` → vmap over the full batch (no chunking). Override
+    # explicitly if a model's per-example memory footprint requires
+    # splitting the logical batch into smaller chunks.
+    p.add_argument("--microbatch-size", type=int, default=None)
     p.add_argument(
         "--precompute-ref-batch-size",
         type=int,

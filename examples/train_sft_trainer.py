@@ -68,7 +68,6 @@ def _configure_reporting(no_wandb: bool) -> list[str]:
 
 
 def _require_configured(parser, args, required=("model_name", "dataset")):
-    """Fail fast if fields with no neutral default are still unset."""
     missing = [name for name in required if getattr(args, name) is None]
     if missing:
         flags = ", ".join("--" + name.replace("_", "-") for name in missing)

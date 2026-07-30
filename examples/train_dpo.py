@@ -697,10 +697,6 @@ def _make_ref_callable(model, device=None):
 
 
 def _require_configured(parser, args, required=("model_name", "dataset")):
-    """Fail fast if fields with no neutral default are still unset.
-
-    Presets fill these in; a preset-free run must provide them on the CLI.
-    """
     missing = [name for name in required if getattr(args, name) is None]
     if missing:
         flags = ", ".join("--" + name.replace("_", "-") for name in missing)
@@ -1240,9 +1236,6 @@ def parse_args():
         _set("num_eval_samples", 64)
         _set("num_epochs", 1)
         _set("batch_size", 16)
-        # DPO runs two forwards (chosen + rejected) over full-length
-        # sequences, so microbatch the per-sample vmap grads to fit modest
-        # (~16 GB) CPU dev boxes; the H200 presets can drop this.
         _set("microbatch_size", 4)
         _set("log_steps", 5)
         _set("eval_steps", 5)
@@ -1348,8 +1341,6 @@ def parse_args():
         )
         _set("dtype", "bfloat16")
 
-    # The hermetic --smoke path builds its own random model + synthetic data,
-    # so it needs no model/dataset; every other run does.
     if not args.smoke:
         _require_configured(parser, args)
 

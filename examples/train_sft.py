@@ -443,10 +443,6 @@ def _make_per_example_loss(fmodel, frozen, *, loss_type):
 
 
 def _require_configured(parser, args, required=("model_name", "dataset")):
-    """Fail fast if fields with no neutral default are still unset.
-
-    Presets fill these in; a preset-free run must provide them on the CLI.
-    """
     missing = [name for name in required if getattr(args, name) is None]
     if missing:
         flags = ", ".join("--" + name.replace("_", "-") for name in missing)
@@ -931,7 +927,6 @@ def parse_args():
 
     # Apply preset configurations (CLI args take precedence)
     if args.preset == "smoke":
-        # Quick smoke test with SmolLM2-135M + KExercises (plain text field).
         _set("model_name", "HuggingFaceTB/SmolLM2-135M")
         _set("dataset", "JetBrains/KExercises")
         _set("dataset_text_field", "solution")
@@ -939,8 +934,6 @@ def parse_args():
         _set("num_train_samples", 256)
         _set("num_eval_samples", 64)
         _set("num_epochs", 1)
-        # batch_size 16 keeps the per-sample vmap grads within modest
-        # (~16 GB) CPU dev boxes; the H200 presets use much larger batches.
         _set("batch_size", 16)
         _set("log_steps", 5)
         _set("eval_steps", 5)
