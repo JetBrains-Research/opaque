@@ -21,7 +21,7 @@ def apply() -> None:
         return  # torch >= 2.12: symbol removed, no rule needed
 
     @staticmethod
-    def _vmap(_info, _in_dims, *args):
+    def _vmap(info, in_dims, *args):
         return _NoopSaveInputs.apply(*args), None
 
     _NoopSaveInputs.vmap = _vmap

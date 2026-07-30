@@ -270,5 +270,8 @@ known-first-party = ["opaque"]
 "packages/*/src/opaque/*.py" = ["INP001"]
 # Triton kernels + autograd.Function.vmap must mirror fixed call signatures.
 "packages/opaque-patches/src/opaque/api/patches/kernels/**" = ["ARG001", "ARG002", "ARG005"]
+# Checkpoint monkeypatches must keep keyword-compatible parameter names
+# (e.g. create_graph=) even when the value is intentionally unused.
+"packages/opaque-patches/src/opaque/api/patches/torch/checkpoint/**" = ["ARG001", "ARG002", "ARG004", "ARG005"]
 # Optimizer update() kwargs match a uniform torchopt-style signature.
 "packages/opaque-optimizers/src/opaque/api/optimizers/**" = ["ARG001", "ARG002"]

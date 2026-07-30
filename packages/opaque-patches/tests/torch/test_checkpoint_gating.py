@@ -92,3 +92,25 @@ def test_idempotent(applied, monkeypatch):
     first = list(applied)
     ck.apply_checkpoint_patch(vmap_checkpointing=True)
     assert applied == first  # second call is a no-op
+
+
+def test_create_graph_patch_accepts_create_graph_keyword():
+    """functorch calls the patched helper with ``create_graph=`` as a kwarg.
+
+    Renaming that parameter (e.g. ARG unused-arg underscore) breaks
+    ``vmap(grad(...))`` with TypeError: unexpected keyword argument.
+    """
+    import torch
+    import torch._functorch.eager_transforms as eager
+
+    from opaque.api.patches.torch.checkpoint import create_graph as cg
+
+    # Apply on a fresh copy of the current helper so the test is hermetic.
+    before = eager._autograd_grad
+    try:
+        cg.apply()
+        x = torch.tensor(1.0, requires_grad=True)
+        (y,) = eager._autograd_grad((x * 2,), (x,), create_graph=True)
+        assert torch.allclose(y, torch.tensor(2.0))
+    finally:
+        eager._autograd_grad = before
