@@ -45,7 +45,7 @@ Order by (impact ÷ diff size). All of these are ≤ 1 day each and several are 
 | Fix | File | Effect if not fixed |
 |---|---|---|
 | ✅ Invert `budget_exceeded` comparison | `opaque-accounting/.../core/_accountant.py:209-213` | Beta/Risk budget runs report "under budget" while over it |
-| `CachedProcess.repeated_pld` passthrough | `.../core/composition/_cached.py` | DP-FTRL per-step accounting silently degrades to K-fold single-step composition |
+| ✅ `CachedProcess.repeated_pld` passthrough | `.../core/composition/_cached.py` | DP-FTRL per-step accounting silently degrades to K-fold single-step composition |
 | ✅ `eps_delta_pld` atom → `ceil` (safe-only) | `src/mechanisms/eps_delta.rs:43` | Declared ε cannot round below the requested value |
 | ✅ `calibrate()` return the *proven-safe* bracket endpoint; one-sided acceptance; relative tolerance; raise on non-convergence | `.../core/calibration.py:341-367` | Returns noise multipliers that violate the budget with `converged=True` |
 | Horizon guard in all three MF `noise_fn`s (`step >= n_steps` → raise) | `dpftrl/noise/_lambda_cgd.py`, `_engine.py:319-341` | **Zero-noise release of clipped gradients** at step *n*; unaccounted noise past horizon |
@@ -62,6 +62,8 @@ Order by (impact ÷ diff size). All of these are ≤ 1 day each and several are 
 
 - **Safe-only PLDs:** `DiscretizationConfig`, PMFs, and all Python process APIs no longer expose estimate mode. Exact atoms, coarsening, truncation, and Monte Carlo histograms take the upper-bound path, and unsupported legacy keywords fail explicitly.
 - **Exact mechanisms:** `eps_delta_pld` uses ceiling placement, so a finite exact atom never falls below its declared ε; identity uses the same single safe policy.
+- **Calibration / budget:** `calibrate()` returns the proven-safe bracket endpoint with one-sided acceptance; `budget_exceeded` compares in the correct direction for all three budget types.
+- **CachedProcess:** `repeated_pld` relays to `inner.repeated_pld`, so `cached(per_step(...)) * K` keeps the DP-FTRL horizon PLD instead of K-fold single-step composition.
 - **PyO3 error conversion:** every binding uses one exhaustive `From<PldError> for PyErr` conversion. Invalid input and incompatible operands raise `ValueError`; numerical, calibration-execution, and invalid-state failures raise `RuntimeError` with native diagnostic context.
 - **Precision evidence:** the current engine precision surface remains loss-scaler-only, with existing loss-scaler coverage; no precision dispatcher, fallback, or compatibility shim was added for this accounting remediation.
 - **MC confidence remains open:** RC-4/A3 is not resolved. Conservative histogram bucketing does not turn b-min-sep or Balls-in-Bins point estimates into confidence bounds.
