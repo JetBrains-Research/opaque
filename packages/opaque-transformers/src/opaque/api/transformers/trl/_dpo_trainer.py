@@ -1140,10 +1140,10 @@ class DPOTrainer(DPTrainer):
     # ------------------------------------------------------------------
     def prediction_step(
         self,
-        _model: Any,
+        model: Any,
         inputs: dict[str, Any],
-        _prediction_loss_only: bool,
-        _ignore_keys: list[str] | None = None,
+        prediction_loss_only: bool,
+        ignore_keys: list[str] | None = None,
     ) -> tuple[Any, None, None]:
         """One eval batch → per-example DPO loss (+ rewards via the aux channel).
 
@@ -1156,6 +1156,7 @@ class DPOTrainer(DPTrainer):
         :meth:`DPTrainer.evaluation_loop` to aggregate into ``eval_rewards/*``.
         Returns ``(per_example_loss, None, None)`` — no predictions/labels.
         """
+        del model, prediction_loss_only, ignore_keys
         from opaque.functional import make_functional
 
         ctx = self._ctx

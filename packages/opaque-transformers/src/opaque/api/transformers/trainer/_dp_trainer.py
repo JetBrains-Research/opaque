@@ -765,7 +765,7 @@ class DPTrainer:
 
     def train(
         self,
-        resume_from_checkpoint: str | bool | None = None,
+        resume_from_checkpoint: str | bool | os.PathLike[str] | None = None,
         ignore_keys_for_eval: list[str] | None = None,
     ) -> TrainOutput:
         """Run the full DP-SGD training loop.
@@ -773,8 +773,8 @@ class DPTrainer:
         Args:
             resume_from_checkpoint: ``None`` falls back to
                 ``args.resume_from_checkpoint``. ``True`` auto-detects the latest
-                ``checkpoint-*`` under ``args.output_dir``. A string is treated
-                as the concrete checkpoint directory.
+                ``checkpoint-*`` under ``args.output_dir``. A string or
+                ``PathLike`` is treated as the concrete checkpoint directory.
 
         Resume semantics under DP differ from HF's batch-replay model:
 
@@ -818,7 +818,7 @@ class DPTrainer:
 
     def _train_dispatch(
         self,
-        resume_from_checkpoint: str | bool | None,
+        resume_from_checkpoint: str | bool | os.PathLike[str] | None,
         ignore_keys_for_eval: list[str] | None,
     ) -> TrainOutput:
         """Inner dispatch."""
@@ -959,7 +959,7 @@ class DPTrainer:
     def _train_once(
         self,
         *,
-        resume_from_checkpoint: str | bool | None,
+        resume_from_checkpoint: str | bool | os.PathLike[str] | None,
         microbatch_size_override: int | None,
         ignore_keys_for_eval: list[str] | None,
     ) -> TrainOutput:
@@ -4685,7 +4685,9 @@ class DPTrainer:
     # Resume / load
     # ------------------------------------------------------------------
 
-    def _resolve_resume_path(self, value: str | bool | None) -> str | None:
+    def _resolve_resume_path(
+        self, value: str | bool | os.PathLike[str] | None
+    ) -> str | None:
         """Resolve ``resume_from_checkpoint`` to a concrete directory or ``None``.
 
         ``True`` is **tolerant**: if a checkpoint exists under
@@ -4713,9 +4715,12 @@ class DPTrainer:
                 )
                 return None
             return found
+        if isinstance(value, os.PathLike):
+            value = os.fspath(value)
         if not isinstance(value, str):
             raise TypeError(
-                f"resume_from_checkpoint must be str | bool | None, got {type(value).__name__}"
+                "resume_from_checkpoint must be str | bool | PathLike | None, "
+                f"got {type(value).__name__}"
             )
         if not Path(value).is_dir():
             raise FileNotFoundError(

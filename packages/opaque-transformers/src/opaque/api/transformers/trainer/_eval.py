@@ -143,7 +143,7 @@ class _PredictionAccumulator:
         labels: Any | None,
         inputs: Tensor | None,
         *,
-        _batch_size: int,
+        batch_size: int,
     ) -> None:
         """Append one batch's tensors to the on-device "hot" buffers.
 
@@ -155,6 +155,7 @@ class _PredictionAccumulator:
         ``inputs_decode = inputs[main_input_name]``), or ``None`` if the
         collator didn't emit the primary input.
         """
+        del batch_size  # reserved for HF-parity scalar-loss expansion
         # ``loss`` is either scalar (the standard ``prediction_step``
         # path: a batch-mean reduced by the model's ``forward``) or 1-D
         # of length ``batch_size`` (the vmap'd eval closure path
