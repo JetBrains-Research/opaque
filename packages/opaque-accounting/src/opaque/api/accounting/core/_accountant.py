@@ -197,7 +197,7 @@ class Accountant:
 
     @property
     def budget_exceeded(self) -> bool:
-        """Check if accumulated privacy exceeds the budget.
+        """Check if accumulated privacy violates the budget.
 
         Returns False if no budget was specified. Otherwise, evaluates the
         target metric on the accumulated process and checks if it violates

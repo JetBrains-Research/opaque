@@ -211,25 +211,27 @@ class TestAccountantBudget:
         _ = acct.budget_exceeded
 
     @pytest.mark.parametrize(
-        ("evaluate", "make_budget"),
+        ("evaluate", "make_budget", "metric_max"),
         [
             (
                 lambda process: process.beta_at(0.1),
                 lambda value: acc.beta_budget(value, alpha=0.1),
+                1.0,
             ),
             (
                 lambda process: process.risk_at(0.5),
                 lambda value: acc.risk_budget(value, prior=0.5),
+                0.5,
             ),
         ],
         ids=["beta", "risk"],
     )
-    def test_privacy_gain_budget_direction(self, evaluate, make_budget):
+    def test_privacy_gain_budget_direction(self, evaluate, make_budget, metric_max):
         """Beta and risk budgets are exceeded when achieved privacy is too low."""
         process = dpsgd_acc.gaussian(1.0)
         achieved = evaluate(process)
 
-        stricter_budget = make_budget(achieved + (1.0 - achieved) / 2.0)
+        stricter_budget = make_budget(achieved + (metric_max - achieved) / 2.0)
         assert Accountant(budget=stricter_budget, prefix=process).budget_exceeded
 
         equal_budget = make_budget(achieved)
