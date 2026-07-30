@@ -18,6 +18,7 @@ from peft import LoraConfig, TaskType, get_peft_model
 from transformers import TrainerCallback as _HFTrainerCallback
 
 from opaque.api.transformers.trainer._state import DPTrainerState
+from opaque.random import key, split
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.transformers.trainer.types import EvaluationResult, TrainOutput
 
@@ -623,6 +624,30 @@ class TestDPTrainerTrainerContractFlags:
 
 class TestDPTrainerAdaptiveClipping:
     """Test adaptive clipping mode."""
+
+    def test_quantile_and_gradient_noise_use_split_keys(
+        self, gpt2_with_lora, tiny_lm_dataset
+    ):
+        model, tokenizer = gpt2_with_lora
+        seed = 123
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                clipping_mode="adaptive",
+                clipping_norm=1.0,
+                max_steps=1,
+                seed=seed,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+        )
+
+        ctx = trainer._setup_training()
+        quantile_noise_key, gradient_noise_key = split(key(seed))
+
+        assert ctx.clip_state._rng_key == quantile_noise_key
+        assert ctx.noise_state._rng_key == gradient_noise_key
+        assert ctx.clip_state._rng_key != ctx.noise_state._rng_key
 
     def test_adaptive_clipping_runs(self, gpt2_with_lora, tiny_lm_dataset):
         model, tokenizer = gpt2_with_lora
