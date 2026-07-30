@@ -27,8 +27,9 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Use the lockfile ruff (not unpinned `uvx ruff`). Ruff 0.16 widened the
-      # default rule set; floating to latest broke this required check on every PR.
+      # Use the lockfile ruff (not unpinned `uvx ruff`) so CI and local
+      # `uv run ruff` stay on the same version. Rule selection lives in
+      # pyproject.toml `[tool.ruff.lint]`.
       - name: Install locked ruff
         run: uv sync --group dev --no-install-workspace --frozen
 
